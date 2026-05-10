@@ -2,7 +2,7 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY backend/package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+RUN npm ci --omit=dev && npm cache clean --force
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────
 FROM node:20-alpine AS runtime
