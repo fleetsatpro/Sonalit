@@ -8,7 +8,7 @@ import { useAuthStore } from '../store';
 import { Button } from '../components/UI';
 
 const schema = z.object({
-  email: z.string().email('Enter a valid email'),
+  email: z.string().min(1, 'Enter a valid email'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
 });
 
