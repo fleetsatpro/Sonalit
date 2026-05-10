@@ -6,7 +6,7 @@ const { asyncHandler } = require('../middleware/error');
 const logger = require('../utils/logger');
 
 const loginSchema = Joi.object({
-  email: Joi.string().email().required(),
+  email: Joi.string().required(),
   password: Joi.string().min(6).required(),
 });
 
