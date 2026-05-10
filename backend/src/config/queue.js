@@ -21,7 +21,7 @@ function createQueues() {
 
   const redisUrl = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
   const url = new URL(redisUrl);
-  const connection = { host: url.hostname, port: parseInt(url.port) || 6379, password: url.password || undefined };
+  const connection = { host: url.hostname, port: parseInt(url.port) || 6379, password: url.password || process.env.REDIS_PASSWORD || undefined };
 
   const defaultJobOptions = {
     attempts: parseInt(process.env.MAX_QUEUE_RETRIES) || 3,
