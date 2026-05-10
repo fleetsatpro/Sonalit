@@ -10,7 +10,7 @@ let notificationQueue = null;
 function getConnection() {
   const redis = getRedis();
   if (!redis) return null;
-  return { host: redis.options?.host || '127.0.0.1', port: redis.options?.port || 6379 };
+  return { host: redis.options?.host || '127.0.0.1', port: redis.options?.port || 6379, password: redis.options?.password || process.env.REDIS_PASSWORD || undefined };
 }
 
 function createQueues() {
