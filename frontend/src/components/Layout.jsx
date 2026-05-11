@@ -229,7 +229,7 @@ function SidebarContent({ collapsed, mobile, onClose, user, unreadCount, onLogou
   );
 }
 
-export default function Layout({ children }) {
+export default function Layout({ children }) { try {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -327,3 +327,4 @@ export default function Layout({ children }) {
     </div>
   );
 }
+} catch(e) { return <div style={{color:'red',padding:'20px'}}>{e.toString()}</div>; }
