@@ -1,33 +1,29 @@
-
 import { useEffect, useState, useRef } from 'react';
 import { vehiclesAPI } from '../services/api';
 import { Spinner } from '../components/UI';
 import { timeAgo } from '../utils/helpers';
 
-// Safe socket import — won't crash if service is missing or method doesn't exist
-let socketService = null;
-try { socketService = (await import('../services/socket')).default; } catch (_) {}
-
 const STATUS_COLOR = { active:'#22D3A0', idle:'#64748b', maintenance:'#F59E0B', offline:'#475569' };
 const REGIONS = {
-  'All':      { center:[1.0,  35.0],   zoom:5 },
-  'Kenya':    { center:[-1.286,36.817],zoom:7 },
-  'Tanzania': { center:[-6.369,34.888],zoom:7 },
-  'DRC':      { center:[-4.038,21.758],zoom:6 },
-  'Mali':     { center:[12.653,-8.0],  zoom:6 },
+  'All':      { center:[1.0,   35.0],   zoom:5 },
+  'Kenya':    { center:[-1.286,36.817], zoom:7 },
+  'Tanzania': { center:[-6.369,34.888], zoom:7 },
+  'DRC':      { center:[-4.038,21.758], zoom:6 },
+  'Mali':     { center:[12.653,-8.0],   zoom:6 },
 };
 
 export default function GPSPage() {
-  const mapRef         = useRef(null);
-  const mapInstance    = useRef(null);
-  const markers        = useRef({});
-  const leafletRef     = useRef(null);
-  const [vehicles,   setVehicles]   = useState([]);
-  const [loading,    setLoading]    = useState(true);
-  const [region,     setRegion]     = useState('All');
-  const [filter,     setFilter]     = useState('all');
-  const [liveCount,  setLiveCount]  = useState(0);
-  const [selected,   setSelected]   = useState(null);
+  const mapRef      = useRef(null);
+  const mapInstance = useRef(null);
+  const markers     = useRef({});
+  const leafletRef  = useRef(null);
+
+  const [vehicles,  setVehicles]  = useState([]);
+  const [loading,   setLoading]   = useState(true);
+  const [region,    setRegion]    = useState('All');
+  const [filter,    setFilter]    = useState('all');
+  const [liveCount, setLiveCount] = useState(0);
+  const [selected,  setSelected]  = useState(null);
 
   const makeIcon = (L, v) => {
     const c = STATUS_COLOR[v.status] || '#64748b';
@@ -57,8 +53,8 @@ export default function GPSPage() {
         <b style="color:#F0B429;font-size:13px">${v.registration || '—'}</b><br/>
         <span style="color:${c}">${(v.status||'unknown').toUpperCase()}</span><br/>
         Speed: ${(v.speed||0).toFixed(0)} km/h<br/>
-        ${v.driver_name ? 'Driver: ' + v.driver_name + '<br/>' : ''}
-        ${v.last_update ? 'Updated: ' + timeAgo(v.last_update) : ''}
+        ${v.driver_name ? 'Driver: '+v.driver_name+'<br/>' : ''}
+        ${v.last_update ? 'Updated: '+timeAgo(v.last_update) : ''}
       </div>`, { className:'' });
     markers.current[v.id] = m;
   };
@@ -82,45 +78,59 @@ export default function GPSPage() {
 
   const loadVehicles = async () => {
     try {
-      // vehiclesAPI.list and .getAll are both patched in api.js extensions
       const fn = vehiclesAPI.list || vehiclesAPI.getAll;
       const r  = await fn({ limit: 200 });
       const data = (r.data.data || []).map(v => ({
         ...v,
-        lat:         v.lat         || (-1.286 + (Math.random() - 0.5) * 2.5),
-        lng:         v.lng         || (36.817 + (Math.random() - 0.5) * 2.5),
-        speed:       v.speed       || (v.status === 'active' ? Math.random() * 90 : 0),
+        lat:         v.lat         || (-1.286 + (Math.random()-0.5)*2.5),
+        lng:         v.lng         || (36.817 + (Math.random()-0.5)*2.5),
+        speed:       v.speed       || (v.status==='active' ? Math.random()*90 : 0),
         last_update: v.last_update || new Date().toISOString(),
       }));
       setVehicles(data);
       if (!mapInstance.current) { await initMap(data); }
-      else { const L = leafletRef.current; if (L) data.forEach(v => addOrUpdateMarker(L, mapInstance.current, v)); }
+      else {
+        const L = leafletRef.current;
+        if (L) data.forEach(v => addOrUpdateMarker(L, mapInstance.current, v));
+      }
     } catch (e) { console.error('loadVehicles:', e); }
     finally { setLoading(false); }
   };
 
   useEffect(() => {
     loadVehicles();
-    // Safe socket subscription
-    if (socketService && typeof socketService.onVehicleUpdate === 'function') {
-      socketService.onVehicleUpdate(d => {
-        setVehicles(p => p.map(v => v.id === d.vehicleId
-          ? { ...v, lat:d.lat, lng:d.lng, speed:d.speed, last_update:new Date().toISOString() }
-          : v
-        ));
-        if (markers.current[d.vehicleId] && mapInstance.current) {
-          markers.current[d.vehicleId].setLatLng([d.lat, d.lng]);
+
+    // Safe socket wiring — resolved at runtime, never at module load
+    let unsub = null;
+    import('../services/socket')
+      .then(mod => {
+        const svc = mod.default;
+        if (svc && typeof svc.onVehicleUpdate === 'function') {
+          unsub = svc.onVehicleUpdate(d => {
+            setVehicles(p => p.map(v =>
+              v.id === d.vehicleId
+                ? { ...v, lat:d.lat, lng:d.lng, speed:d.speed, last_update:new Date().toISOString() }
+                : v
+            ));
+            if (markers.current[d.vehicleId]) {
+              markers.current[d.vehicleId].setLatLng([d.lat, d.lng]);
+            }
+            setLiveCount(c => c + 1);
+          });
         }
-        setLiveCount(c => c + 1);
-      });
-    }
+      })
+      .catch(() => {}); // socket module missing — silently skip
+
     const iv = setInterval(loadVehicles, 30000);
-    return () => clearInterval(iv);
+    return () => {
+      clearInterval(iv);
+      if (typeof unsub === 'function') unsub();
+    };
   }, []);
 
   useEffect(() => {
     if (mapInstance.current && REGIONS[region]) {
-      mapInstance.current.setView(REGIONS[region].center, REGIONS[region].zoom, { animate: true });
+      mapInstance.current.setView(REGIONS[region].center, REGIONS[region].zoom, { animate:true });
     }
   }, [region]);
 
@@ -135,19 +145,19 @@ export default function GPSPage() {
         </div>
         <div className="flex items-center gap-2">
           <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-success" />
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"/>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-success"/>
           </span>
           <span className="text-[10px] font-mono text-success tracking-wider">{liveCount} LIVE UPDATES</span>
         </div>
       </div>
 
       <div className="grid grid-cols-4 gap-3 flex-shrink-0">
-        {[['TOTAL',   vehicles.length,                                       'text-slate-300'],
-          ['ACTIVE',  vehicles.filter(v => v.status === 'active').length,    'text-success'],
-          ['MOVING',  vehicles.filter(v => (v.speed || 0) > 2).length,       'text-gold'],
-          ['OFFLINE', vehicles.filter(v => v.status === 'offline').length,   'text-danger'],
-        ].map(([l, v, c]) => (
+        {[['TOTAL',   vehicles.length,                                      'text-slate-300'],
+          ['ACTIVE',  vehicles.filter(v => v.status==='active').length,     'text-success'],
+          ['MOVING',  vehicles.filter(v => (v.speed||0) > 2).length,        'text-gold'],
+          ['OFFLINE', vehicles.filter(v => v.status==='offline').length,    'text-danger'],
+        ].map(([l,v,c]) => (
           <div key={l} className="bg-navy-900 border border-white/5 rounded-xl p-3 text-center">
             <p className={`font-display text-2xl font-bold ${c}`}>{v}</p>
             <p className="text-[9px] font-mono text-slate-600 tracking-wider mt-0.5">{l}</p>
@@ -174,12 +184,12 @@ export default function GPSPage() {
         <div className="flex-1 rounded-xl overflow-hidden border border-white/5 relative min-h-[400px] bg-[#0A0F1A]">
           {loading && (
             <div className="absolute inset-0 flex items-center justify-center z-10 bg-[#0A0F1A]">
-              <div className="text-center"><Spinner size="lg" /><p className="text-slate-500 text-xs font-mono mt-3">LOADING MAP…</p></div>
+              <div className="text-center"><Spinner size="lg"/><p className="text-slate-500 text-xs font-mono mt-3">LOADING MAP…</p></div>
             </div>
           )}
-          <div ref={mapRef} style={{ height:'100%', width:'100%' }} />
+          <div ref={mapRef} style={{ height:'100%', width:'100%' }}/>
           <div className="absolute top-3 left-3 z-[1000] flex items-center gap-2 bg-[#0A0F1A]/90 border border-white/10 rounded-lg px-3 py-1.5 backdrop-blur-sm pointer-events-none">
-            <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse"/>
             <span className="text-[10px] font-mono text-slate-300">{filtered.length} VEHICLES · {region.toUpperCase()}</span>
           </div>
         </div>
@@ -187,15 +197,15 @@ export default function GPSPage() {
         <div className="w-56 flex-shrink-0 hidden lg:flex flex-col gap-2 overflow-y-auto">
           <p className="text-[10px] font-mono text-slate-600 tracking-wider px-1">VEHICLE LIST</p>
           {filtered.map(v => (
-            <div key={v.id} onClick={() => setSelected(v.id === selected ? null : v.id)}
+            <div key={v.id} onClick={() => setSelected(v.id===selected ? null : v.id)}
               className={`bg-navy-900 border rounded-xl p-3 cursor-pointer transition-all ${selected===v.id?'border-gold/30 bg-gold/5':'border-white/5 hover:border-white/10'}`}>
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-xs font-mono font-bold text-slate-200">{v.registration}</span>
-                <span className="w-1.5 h-1.5 rounded-full" style={{ background: STATUS_COLOR[v.status] || '#475569' }} />
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: STATUS_COLOR[v.status]||'#475569' }}/>
               </div>
               <div className="text-[10px] font-mono text-slate-500 space-y-0.5">
-                <div className="flex justify-between"><span>Speed</span><span className={v.speed > 2 ? 'text-gold' : 'text-slate-600'}>{(v.speed||0).toFixed(0)} km/h</span></div>
-                <div className="flex justify-between"><span>Status</span><span style={{ color: STATUS_COLOR[v.status] || '#64748b' }}>{v.status?.toUpperCase()}</span></div>
+                <div className="flex justify-between"><span>Speed</span><span className={v.speed>2?'text-gold':'text-slate-600'}>{(v.speed||0).toFixed(0)} km/h</span></div>
+                <div className="flex justify-between"><span>Status</span><span style={{ color: STATUS_COLOR[v.status]||'#64748b' }}>{v.status?.toUpperCase()}</span></div>
               </div>
             </div>
           ))}
