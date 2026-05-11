@@ -1,327 +1,412 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 
-function haversine(lat1, lon1, lat2, lon2) {
-  const R = 6371000, r = Math.PI / 180;
-  const dLat = (lat2 - lat1) * r, dLon = (lon2 - lon1) * r;
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*r)*Math.cos(lat2*r)*Math.sin(dLon/2)**2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-}
+function haversine(lat1,lon1,lat2,lon2){const R=6371000,r=Math.PI/180,dLat=(lat2-lat1)*r,dLon=(lon2-lon1)*r,a=Math.sin(dLat/2)**2+Math.cos(lat1*r)*Math.cos(lat2*r)*Math.sin(dLon/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));}
+function pad2(n){return String(Math.floor(Math.abs(n))).padStart(2,"0");}
+function fmtTime(s){return `${pad2(s/3600)}:${pad2((s%3600)/60)}:${pad2(s%60)}`;}
+function fmtDist(m){return m<1000?`${Math.round(m)} m`:`${(m/1000).toFixed(2)} km`;}
+function bearingLabel(d){if(d==null)return "—";return ["N","NE","E","SE","S","SW","W","NW"][Math.round(d/45)%8];}
+function accColor(a){if(a==null)return "#6b7280";if(a<10)return "#22c55e";if(a<30)return "#eab308";return "#ef4444";}
+function dms(deg,pos,neg){const d=Math.floor(Math.abs(deg)),m=Math.floor((Math.abs(deg)-d)*60),s=((Math.abs(deg)-d-m/60)*3600).toFixed(1);return `${d}°${m}'${s}"${deg>=0?pos:neg}`;}
 
-function pad2(n) { return String(Math.floor(Math.abs(n))).padStart(2,"0"); }
-function fmtTime(s) { return `${pad2(s/3600)}:${pad2((s%3600)/60)}:${pad2(s%60)}`; }
-function fmtDist(m) { return m < 1000 ? `${Math.round(m)} m` : `${(m/1000).toFixed(2)} km`; }
-function bearing(deg) {
-  if (deg == null) return "—";
-  return ["N","NE","E","SE","S","SW","W","NW"][Math.round(deg/45)%8];
-}
-function accColor(acc) {
-  if (acc == null) return "#6b7280";
-  if (acc < 10) return "#22c55e";
-  if (acc < 30) return "#eab308";
-  return "#ef4444";
-}
-
-function Stat({ label, main, unit, sub }) {
-  return (
-    <div style={{
-      background:"#1e293b", borderRadius:10, padding:"10px 8px",
-      textAlign:"center", border:"1px solid rgba(255,255,255,0.07)",
-    }}>
-      <div style={{ fontSize:9, color:"#64748b", textTransform:"uppercase", letterSpacing:1 }}>{label}</div>
-      <div style={{ fontSize:20, fontWeight:800, color:"white", lineHeight:1.3 }}>{main}</div>
-      {unit ? <div style={{ fontSize:11, color:"#3b82f6" }}>{unit}</div> : null}
-      {sub ? <div style={{ fontSize:10, color:"#64748b" }}>{sub}</div> : null}
+function Stat({label,main,unit,sub}){
+  return(
+    <div style={{background:"#1e293b",borderRadius:10,padding:"8px 5px",textAlign:"center",border:"1px solid rgba(255,255,255,0.07)"}}>
+      <div style={{fontSize:8,color:"#64748b",textTransform:"uppercase",letterSpacing:1}}>{label}</div>
+      <div style={{fontSize:16,fontWeight:800,color:"white",lineHeight:1.3}}>{main}</div>
+      {unit?<div style={{fontSize:10,color:"#3b82f6"}}>{unit}</div>:null}
+      {sub?<div style={{fontSize:9,color:"#64748b"}}>{sub}</div>:null}
     </div>
   );
 }
 
-function MapBtn({ children, onClick, active }) {
-  return (
+function MapBtn({children,onClick,active}){
+  return(
     <button onClick={onClick} style={{
-      background: active ? "#3b82f6" : "rgba(15,23,42,0.85)",
-      color:"white", border:"1px solid rgba(255,255,255,0.15)",
-      borderRadius:8, width:38, height:38, fontSize:18, cursor:"pointer",
-      backdropFilter:"blur(8px)", display:"flex", alignItems:"center", justifyContent:"center",
+      background:active?"#3b82f6":"rgba(15,23,42,0.88)",color:"white",
+      border:"1px solid rgba(255,255,255,0.15)",borderRadius:8,
+      width:38,height:38,fontSize:17,cursor:"pointer",
+      backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center"
     }}>{children}</button>
   );
 }
 
-export default function GPSPage() {
-  const mapDivRef   = useRef(null);
-  const mapRef      = useRef(null);
-  const baseTileRef = useRef(null);
-  const lblTileRef  = useRef(null);
-  const markerRef   = useRef(null);
-  const circleRef   = useRef(null);
-  const polyRef     = useRef(null);
-  const watchRef    = useRef(null);
-  const timerRef    = useRef(null);
-  const lastPosRef  = useRef(null);
-  const startRef    = useRef(null);
-  const pointsRef   = useRef([]);
-  const followRef   = useRef(true);
+function ElevChart({points}){
+  if(!points||points.length<3)return null;
+  const W=240,H=38,P=3,min=Math.min(...points),max=Math.max(...points),range=max-min||1;
+  const xs=points.map((_,i)=>P+(i/(points.length-1))*(W-2*P));
+  const ys=points.map(v=>H-P-((v-min)/range)*(H-2*P));
+  const line=xs.map((x,i)=>`${i===0?"M":"L"}${x.toFixed(1)},${ys[i].toFixed(1)}`).join(" ");
+  const area=line+` L${xs[xs.length-1].toFixed(1)},${H-P} L${xs[0].toFixed(1)},${H-P} Z`;
+  return(
+    <div style={{marginBottom:8}}>
+      <div style={{fontSize:9,color:"#64748b",textTransform:"uppercase",letterSpacing:1,marginBottom:2}}>
+        Elevation &nbsp;<span style={{color:"#94a3b8",fontWeight:"normal"}}>{Math.round(min)}m – {Math.round(max)}m</span>
+      </div>
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{background:"#1e293b",borderRadius:6,display:"block"}} preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="eg" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.35"/>
+            <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.02"/>
+          </linearGradient>
+        </defs>
+        <path d={area} fill="url(#eg)"/>
+        <path d={line} fill="none" stroke="#3b82f6" strokeWidth="1.5" strokeLinejoin="round"/>
+      </svg>
+    </div>
+  );
+}
 
-  const [leafletReady, setLeafletReady] = useState(false);
-  const [tracking,  setTracking]  = useState(false);
-  const [satellite, setSatellite] = useState(false);
-  const [labels,    setLabels]    = useState(true);
-  const [follow,    setFollow]    = useState(true);
-  const [lat,       setLat]       = useState(null);
-  const [lng,       setLng]       = useState(null);
-  const [speed,     setSpeed]     = useState(null);
-  const [heading,   setHeading]   = useState(null);
-  const [altitude,  setAltitude]  = useState(null);
-  const [accuracy,  setAccuracy]  = useState(null);
-  const [distance,  setDistance]  = useState(0);
-  const [elapsed,   setElapsed]   = useState(0);
-  const [maxSpeed,  setMaxSpeed]  = useState(0);
-  const [error,     setError]     = useState(null);
+export default function GPSPage(){
+  const mapDivRef      = useRef(null);
+  const mapRef         = useRef(null);
+  const baseTileRef    = useRef(null);
+  const lblTileRef     = useRef(null);
+  const markerRef      = useRef(null);
+  const circleRef      = useRef(null);
+  const polyRef        = useRef(null);
+  const fenceCircleRef = useRef(null);
+  const watchRef       = useRef(null);
+  const timerRef       = useRef(null);
+  const wakeLockRef    = useRef(null);
+  const lastPosRef     = useRef(null);
+  const startRef       = useRef(null);
+  const polyPtsRef     = useRef([]);
+  const trackPtsRef    = useRef([]);
+  const followRef      = useRef(true);
+  const geocodeRef     = useRef(null);
+  const lastVibrateRef = useRef(0);
+  const speedAlertRef  = useRef(false);
+  const speedLimitRef  = useRef(50);
+  const fenceOnRef     = useRef(false);
+  const fenceDataRef   = useRef(null);
 
-  useEffect(() => {
-    if (window.L) { setLeafletReady(true); return; }
-    const css = document.createElement("link");
-    css.rel = "stylesheet";
-    css.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-    document.head.appendChild(css);
-    const js = document.createElement("script");
-    js.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-    js.onload = () => setLeafletReady(true);
-    document.head.appendChild(js);
-  }, []);
+  const [leafletReady,   setLeafletReady]   = useState(false);
+  const [tracking,       setTracking]       = useState(false);
+  const [satellite,      setSatellite]      = useState(false);
+  const [labels,         setLabels]         = useState(true);
+  const [follow,         setFollow]         = useState(true);
+  const [lat,            setLat]            = useState(null);
+  const [lng,            setLng]            = useState(null);
+  const [speed,          setSpeed]          = useState(null);
+  const [heading,        setHeading]        = useState(null);
+  const [altitude,       setAltitude]       = useState(null);
+  const [accuracy,       setAccuracy]       = useState(null);
+  const [distance,       setDistance]       = useState(0);
+  const [elapsed,        setElapsed]        = useState(0);
+  const [maxSpeed,       setMaxSpeed]       = useState(0);
+  const [address,        setAddress]        = useState(null);
+  const [elevPts,        setElevPts]        = useState([]);
+  const [speedBreached,  setSpeedBreached]  = useState(false);
+  const [fenceBreached,  setFenceBreached]  = useState(false);
+  const [bgWarning,      setBgWarning]      = useState(false);
+  const [error,          setError]          = useState(null);
+  const [showTools,      setShowTools]      = useState(false);
+  const [speedAlertOn,   setSpeedAlertOn]   = useState(false);
+  const [speedLimitKmh,  setSpeedLimitKmh]  = useState(50);
+  const [fenceOn,        setFenceOn]        = useState(false);
+  const [fenceRadiusM,   setFenceRadiusM]   = useState(200);
+  const [wakeLockOn,     setWakeLockOn]     = useState(false);
 
-  useEffect(() => {
-    if (!leafletReady || !mapDivRef.current || mapRef.current) return;
-    const L = window.L;
-    const map = L.map(mapDivRef.current, { center:[20,0], zoom:2, zoomControl:false });
-    L.control.zoom({ position:"bottomright" }).addTo(map);
-    map.on("dragstart", () => { followRef.current = false; setFollow(false); });
+  useEffect(()=>{ speedAlertRef.current=speedAlertOn; },[speedAlertOn]);
+  useEffect(()=>{ speedLimitRef.current=speedLimitKmh; },[speedLimitKmh]);
+  useEffect(()=>{ fenceOnRef.current=fenceOn; },[fenceOn]);
 
-    baseTileRef.current = L.tileLayer(
-      "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-      { attribution:"© OpenStreetMap", maxZoom:19 }
-    ).addTo(map);
+  useEffect(()=>{
+    if(window.L){setLeafletReady(true);return;}
+    const css=document.createElement("link");css.rel="stylesheet";
+    css.href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";document.head.appendChild(css);
+    const js=document.createElement("script");js.src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+    js.onload=()=>setLeafletReady(true);document.head.appendChild(js);
+  },[]);
 
-    mapRef.current = map;
-  }, [leafletReady]);
+  useEffect(()=>{
+    if(!leafletReady||!mapDivRef.current||mapRef.current)return;
+    const L=window.L;
+    const map=L.map(mapDivRef.current,{center:[20,0],zoom:2,zoomControl:false});
+    L.control.zoom({position:"bottomright"}).addTo(map);
+    map.on("dragstart",()=>{followRef.current=false;setFollow(false);});
+    baseTileRef.current=L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap",maxZoom:19}).addTo(map);
+    mapRef.current=map;
+  },[leafletReady]);
 
-  const applyTiles = useCallback((isSat, showLabels) => {
-    const L = window.L;
-    const map = mapRef.current;
-    if (!map || !L) return;
+  useEffect(()=>{
+    const h=()=>setBgWarning(document.hidden);
+    document.addEventListener("visibilitychange",h);
+    return()=>document.removeEventListener("visibilitychange",h);
+  },[]);
 
-    if (baseTileRef.current) { baseTileRef.current.remove(); baseTileRef.current = null; }
-    if (lblTileRef.current)  { lblTileRef.current.remove();  lblTileRef.current  = null; }
+  const requestWakeLock=useCallback(async()=>{
+    if(!("wakeLock" in navigator))return;
+    try{
+      wakeLockRef.current=await navigator.wakeLock.request("screen");
+      setWakeLockOn(true);
+      wakeLockRef.current.addEventListener("release",()=>{
+        setWakeLockOn(false);
+        if(watchRef.current!=null)requestWakeLock();
+      });
+    }catch(e){console.warn("Wake lock:",e);}
+  },[]);
 
-    if (isSat) {
-      // Real satellite imagery (Esri World Imagery)
-      baseTileRef.current = L.tileLayer(
-        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        { attribution:"© Esri © Maxar © Earthstar Geographics", maxZoom:19 }
-      ).addTo(map);
+  const releaseWakeLock=useCallback(()=>{
+    if(wakeLockRef.current){wakeLockRef.current.release();wakeLockRef.current=null;}
+    setWakeLockOn(false);
+  },[]);
 
-      if (showLabels) {
-        // Place names + roads overlay on top of satellite
-        lblTileRef.current = L.tileLayer(
-          "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
-          { attribution:"", maxZoom:19, opacity:1 }
-        ).addTo(map);
-      }
-    } else {
-      // Standard street map with everything
-      baseTileRef.current = L.tileLayer(
-        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-        { attribution:"© OpenStreetMap", maxZoom:19 }
-      ).addTo(map);
+  const applyTiles=useCallback((isSat,showLbls)=>{
+    const L=window.L,map=mapRef.current;if(!map||!L)return;
+    if(baseTileRef.current){baseTileRef.current.remove();baseTileRef.current=null;}
+    if(lblTileRef.current){lblTileRef.current.remove();lblTileRef.current=null;}
+    if(isSat){
+      baseTileRef.current=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{attribution:"© Esri © Maxar",maxZoom:19}).addTo(map);
+      if(showLbls)lblTileRef.current=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",{attribution:"",maxZoom:19}).addTo(map);
+    }else{
+      baseTileRef.current=L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap",maxZoom:19}).addTo(map);
     }
-  }, []);
+  },[]);
 
-  const handlePosition = useCallback((pos) => {
-    const { latitude, longitude, speed:spd, heading:hdg, altitude:alt, accuracy:acc } = pos.coords;
-    setLat(latitude); setLng(longitude);
-    setSpeed(spd); setHeading(hdg); setAltitude(alt); setAccuracy(acc);
-    if (spd != null) setMaxSpeed(prev => Math.max(prev, spd));
+  const reverseGeocode=useCallback((la,lo)=>{
+    if(geocodeRef.current)return;
+    geocodeRef.current=setTimeout(async()=>{
+      try{
+        const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${la}&lon=${lo}`,{headers:{"Accept-Language":"en"}});
+        const d=await r.json();const a=d.address||{};
+        const parts=[a.road,a.suburb||a.neighbourhood,a.city||a.town||a.village].filter(Boolean);
+        setAddress(parts.slice(0,2).join(", ")||(d.display_name||"").split(",")[0]);
+      }catch{}
+      geocodeRef.current=null;
+    },15000);
+  },[]);
 
-    if (lastPosRef.current) {
-      const d = haversine(lastPosRef.current.lat, lastPosRef.current.lng, latitude, longitude);
-      if (d > 3) { setDistance(prev => prev + d); lastPosRef.current = { lat:latitude, lng:longitude }; }
-    } else {
-      lastPosRef.current = { lat:latitude, lng:longitude };
+  const handlePosition=useCallback((pos)=>{
+    const{latitude:la,longitude:lo,speed:spd,heading:hdg,altitude:alt,accuracy:acc}=pos.coords;
+    setLat(la);setLng(lo);setSpeed(spd);setHeading(hdg);setAltitude(alt);setAccuracy(acc);
+
+    if(spd!=null){
+      setMaxSpeed(prev=>Math.max(prev,spd));
+      const kmh=spd*3.6;
+      if(speedAlertRef.current&&kmh>speedLimitRef.current){
+        setSpeedBreached(true);
+        const now=Date.now();
+        if(now-lastVibrateRef.current>20000&&navigator.vibrate){navigator.vibrate([300,100,300]);lastVibrateRef.current=now;}
+      }else{setSpeedBreached(false);}
     }
 
-    const L = window.L;
-    const map = mapRef.current;
-    if (!map || !L) return;
+    if(alt!=null)setElevPts(prev=>[...prev.slice(-150),alt]);
 
-    if (followRef.current) map.setView([latitude, longitude], Math.max(map.getZoom(), 16), { animate:true });
+    if(lastPosRef.current){
+      const d=haversine(lastPosRef.current.lat,lastPosRef.current.lng,la,lo);
+      if(d>3){setDistance(prev=>prev+d);lastPosRef.current={lat:la,lng:lo};}
+    }else{lastPosRef.current={lat:la,lng:lo};}
 
-    const icon = L.divIcon({
-      className:"",
-      html:`<div style="width:18px;height:18px;background:#3b82f6;border:2.5px solid white;border-radius:50%;box-shadow:0 0 0 5px rgba(59,130,246,0.25);"></div>`,
-      iconSize:[18,18], iconAnchor:[9,9],
-    });
+    polyPtsRef.current.push([la,lo]);
+    trackPtsRef.current.push({lat:la,lng:lo,alt,t:new Date().toISOString()});
 
-    if (!markerRef.current) {
-      markerRef.current = L.marker([latitude, longitude], { icon }).addTo(map).bindPopup("<b>You are here</b>");
-    } else {
-      markerRef.current.setLatLng([latitude, longitude]).setIcon(icon);
+    if(fenceOnRef.current&&fenceDataRef.current){
+      const dist=haversine(la,lo,fenceDataRef.current.lat,fenceDataRef.current.lng);
+      const breached=dist>fenceDataRef.current.radius;
+      setFenceBreached(breached);
+      if(breached){const now=Date.now();if(now-lastVibrateRef.current>20000&&navigator.vibrate){navigator.vibrate(500);lastVibrateRef.current=now;}}
     }
 
-    if (!circleRef.current) {
-      circleRef.current = L.circle([latitude, longitude], {
-        radius:acc, color:"#3b82f6", fillColor:"#3b82f6",
-        fillOpacity:0.07, weight:1, dashArray:"5 5",
-      }).addTo(map);
-    } else {
-      circleRef.current.setLatLng([latitude, longitude]).setRadius(acc);
-    }
+    const L=window.L,map=mapRef.current;if(!map||!L)return;
+    if(followRef.current)map.setView([la,lo],Math.max(map.getZoom(),16),{animate:true});
 
-    pointsRef.current.push([latitude, longitude]);
-    if (!polyRef.current) {
-      polyRef.current = L.polyline(pointsRef.current, { color:"#f97316", weight:3, opacity:0.85 }).addTo(map);
-    } else {
-      polyRef.current.setLatLngs(pointsRef.current);
-    }
-  }, []);
+    const icon=L.divIcon({className:"",html:`<div style="width:18px;height:18px;background:#3b82f6;border:2.5px solid white;border-radius:50%;box-shadow:0 0 0 6px rgba(59,130,246,0.22);"></div>`,iconSize:[18,18],iconAnchor:[9,9]});
+    if(!markerRef.current){markerRef.current=L.marker([la,lo],{icon}).addTo(map).bindPopup("<b>You are here</b>");}
+    else{markerRef.current.setLatLng([la,lo]).setIcon(icon);}
 
-  const startTracking = useCallback(() => {
-    if (!navigator.geolocation) { setError("Geolocation not supported."); return; }
-    setError(null); setDistance(0); setElapsed(0); setMaxSpeed(0);
-    pointsRef.current = []; lastPosRef.current = null;
-    startRef.current = Date.now();
-    followRef.current = true; setFollow(true);
+    if(!circleRef.current){circleRef.current=L.circle([la,lo],{radius:acc,color:"#3b82f6",fillColor:"#3b82f6",fillOpacity:0.07,weight:1,dashArray:"5 5"}).addTo(map);}
+    else{circleRef.current.setLatLng([la,lo]).setRadius(acc);}
 
-    if (polyRef.current)   { polyRef.current.remove();   polyRef.current   = null; }
-    if (markerRef.current) { markerRef.current.remove(); markerRef.current = null; }
-    if (circleRef.current) { circleRef.current.remove(); circleRef.current = null; }
+    if(!polyRef.current){polyRef.current=L.polyline(polyPtsRef.current,{color:"#f97316",weight:3,opacity:0.85}).addTo(map);}
+    else{polyRef.current.setLatLngs(polyPtsRef.current);}
 
-    timerRef.current = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
-    }, 1000);
+    reverseGeocode(la,lo);
+  },[reverseGeocode]);
 
-    watchRef.current = navigator.geolocation.watchPosition(
-      handlePosition,
-      (e) => setError(e.message),
-      { enableHighAccuracy:true, maximumAge:0, timeout:15000 }
-    );
+  const startTracking=useCallback(()=>{
+    if(!navigator.geolocation){setError("Geolocation not supported.");return;}
+    setError(null);setDistance(0);setElapsed(0);setMaxSpeed(0);
+    setAddress(null);setElevPts([]);setSpeedBreached(false);setFenceBreached(false);
+    polyPtsRef.current=[];trackPtsRef.current=[];lastPosRef.current=null;
+    startRef.current=Date.now();followRef.current=true;setFollow(true);
+    if(polyRef.current){polyRef.current.remove();polyRef.current=null;}
+    if(markerRef.current){markerRef.current.remove();markerRef.current=null;}
+    if(circleRef.current){circleRef.current.remove();circleRef.current=null;}
+    requestWakeLock();
+    timerRef.current=setInterval(()=>setElapsed(Math.floor((Date.now()-startRef.current)/1000)),1000);
+    watchRef.current=navigator.geolocation.watchPosition(handlePosition,(e)=>setError(e.message),{enableHighAccuracy:true,maximumAge:0,timeout:15000});
     setTracking(true);
-  }, [handlePosition]);
+  },[handlePosition,requestWakeLock]);
 
-  const stopTracking = useCallback(() => {
-    if (watchRef.current != null) { navigator.geolocation.clearWatch(watchRef.current); watchRef.current = null; }
-    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-    setTracking(false);
-  }, []);
+  const stopTracking=useCallback(()=>{
+    if(watchRef.current!=null){navigator.geolocation.clearWatch(watchRef.current);watchRef.current=null;}
+    if(timerRef.current){clearInterval(timerRef.current);timerRef.current=null;}
+    releaseWakeLock();
+    setTracking(false);setSpeedBreached(false);setFenceBreached(false);
+  },[releaseWakeLock]);
 
-  const toggleSatellite = useCallback(() => {
-    const next = !satellite;
-    setSatellite(next);
-    applyTiles(next, labels);
-  }, [satellite, labels, applyTiles]);
+  const exportGPX=useCallback(()=>{
+    const pts=trackPtsRef.current;
+    if(pts.length===0){setError("No track data yet.");return;}
+    const xml=`<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Sonalit GPS" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk><name>Track ${new Date().toLocaleDateString()}</name><trkseg>
+${pts.map(p=>`    <trkpt lat="${p.lat.toFixed(7)}" lon="${p.lng.toFixed(7)}">${p.alt!=null?`<ele>${p.alt.toFixed(1)}</ele>`:""}<time>${p.t}</time></trkpt>`).join("\n")}
+  </trkseg></trk>
+</gpx>`;
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(new Blob([xml],{type:"application/gpx+xml"}));
+    a.download=`sonalit-track-${Date.now()}.gpx`;a.click();
+  },[]);
 
-  const toggleLabels = useCallback(() => {
-    const next = !labels;
-    setLabels(next);
-    applyTiles(satellite, next);
-  }, [satellite, labels, applyTiles]);
-
-  const centerMap = useCallback(() => {
-    followRef.current = true; setFollow(true);
-    if (lat != null && mapRef.current) {
-      mapRef.current.setView([lat, lng], Math.max(mapRef.current.getZoom(), 16), { animate:true });
+  const setFenceHere=useCallback(()=>{
+    if(lat==null)return;
+    const f={lat,lng,radius:fenceRadiusM};
+    fenceDataRef.current=f;fenceOnRef.current=true;setFenceOn(true);
+    const L=window.L,map=mapRef.current;
+    if(map&&L){
+      if(fenceCircleRef.current)fenceCircleRef.current.remove();
+      fenceCircleRef.current=L.circle([lat,lng],{radius:fenceRadiusM,color:"#f59e0b",fillColor:"#f59e0b",fillOpacity:0.1,weight:2,dashArray:"8 4"}).addTo(map).bindPopup(`Geofence: ${fenceRadiusM}m`);
     }
-  }, [lat, lng]);
+  },[lat,lng,fenceRadiusM]);
 
-  useEffect(() => () => stopTracking(), [stopTracking]);
+  const clearFence=useCallback(()=>{
+    fenceDataRef.current=null;fenceOnRef.current=false;setFenceOn(false);setFenceBreached(false);
+    if(fenceCircleRef.current){fenceCircleRef.current.remove();fenceCircleRef.current=null;}
+  },[]);
 
-  const kmh    = speed != null ? (speed * 3.6).toFixed(1)   : "—";
-  const mph    = speed != null ? (speed * 2.237).toFixed(1) : null;
-  const maxKmh = maxSpeed > 0  ? (maxSpeed * 3.6).toFixed(1) : "—";
+  useEffect(()=>()=>stopTracking(),[stopTracking]);
 
-  return (
-    <div style={{ display:"flex", flexDirection:"column", height:"100vh", background:"#0f172a", color:"white", fontFamily:"system-ui,sans-serif", overflow:"hidden" }}>
+  const kmh    = speed!=null?(speed*3.6).toFixed(1):"—";
+  const mph    = speed!=null?(speed*2.237).toFixed(1):null;
+  const maxKmh = maxSpeed>0?(maxSpeed*3.6).toFixed(1):"—";
+  const avgKmh = elapsed>10&&distance>0?((distance/elapsed)*3.6).toFixed(1):"—";
+  const cals   = distance>0?Math.round(distance/1000*62):0;
+  const grade  = elevPts.length>5?(((elevPts[elevPts.length-1]-elevPts[Math.max(0,elevPts.length-10)])/Math.max(distance,1))*100).toFixed(1):null;
 
-      <div style={{ flex:1, position:"relative", minHeight:0 }}>
-        <div ref={mapDivRef} style={{ width:"100%", height:"100%" }} />
+  return(
+    <div style={{display:"flex",flexDirection:"column",height:"100vh",background:"#0f172a",color:"white",fontFamily:"system-ui,sans-serif",overflow:"hidden"}}>
 
-        <div style={{ position:"absolute", top:12, right:12, zIndex:1000, display:"flex", flexDirection:"column", gap:6 }}>
-          <MapBtn onClick={toggleSatellite} active={satellite} title="Toggle satellite">{satellite ? "🗺" : "🛰"}</MapBtn>
-          {satellite && (
-            <MapBtn onClick={toggleLabels} active={labels} title="Toggle labels">🏷</MapBtn>
-          )}
-          <MapBtn onClick={centerMap} active={follow}>📍</MapBtn>
+      {/* Alert banners */}
+      {speedBreached&&(
+        <div style={{background:"#dc2626",color:"white",textAlign:"center",padding:"5px 8px",fontSize:12,fontWeight:700,zIndex:9999,flexShrink:0}}>
+          ⚡ SPEED ALERT — {kmh} km/h (limit {speedLimitKmh} km/h)
+        </div>
+      )}
+      {fenceBreached&&(
+        <div style={{background:"#d97706",color:"black",textAlign:"center",padding:"5px 8px",fontSize:12,fontWeight:700,zIndex:9999,flexShrink:0}}>
+          ⚠️ GEOFENCE BREACHED — You have left your zone!
+        </div>
+      )}
+      {bgWarning&&tracking&&(
+        <div style={{background:"#7c3aed",color:"white",textAlign:"center",padding:"4px",fontSize:11,zIndex:9999,flexShrink:0}}>
+          ⚠️ Keep this tab open — GPS pauses in the background on mobile
+        </div>
+      )}
+
+      {/* Map */}
+      <div style={{flex:1,position:"relative",minHeight:0}}>
+        <div ref={mapDivRef} style={{width:"100%",height:"100%"}}/>
+
+        {/* Right buttons */}
+        <div style={{position:"absolute",top:12,right:12,zIndex:1000,display:"flex",flexDirection:"column",gap:6}}>
+          <MapBtn onClick={()=>{const n=!satellite;setSatellite(n);applyTiles(n,labels);}} active={satellite}>{satellite?"🗺":"🛰"}</MapBtn>
+          {satellite&&<MapBtn onClick={()=>{const n=!labels;setLabels(n);applyTiles(satellite,n);}} active={labels}>🏷</MapBtn>}
+          <MapBtn onClick={()=>{followRef.current=true;setFollow(true);if(lat!=null&&mapRef.current)mapRef.current.setView([lat,lng],Math.max(mapRef.current.getZoom(),16),{animate:true});}} active={follow}>📍</MapBtn>
+          <MapBtn onClick={()=>setShowTools(p=>!p)} active={showTools}>⚙️</MapBtn>
         </div>
 
-        <div style={{
-          position:"absolute", top:12, left:12, zIndex:1000,
-          width:54, height:54, borderRadius:"50%",
-          background:"rgba(15,23,42,0.85)", backdropFilter:"blur(8px)",
-          border:"1px solid rgba(255,255,255,0.12)",
-          display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column",
-        }}>
-          <div style={{ transform:`rotate(${heading != null ? -heading : 0}deg)`, transition:"transform 0.4s", fontSize:24 }}>🧭</div>
-          <div style={{ fontSize:9, color:"#64748b", marginTop:1 }}>{heading != null ? `${Math.round(heading)}°` : "—"}</div>
+        {/* Compass */}
+        <div style={{position:"absolute",top:12,left:12,zIndex:1000,width:52,height:52,borderRadius:"50%",background:"rgba(15,23,42,0.88)",backdropFilter:"blur(8px)",border:"1px solid rgba(255,255,255,0.12)",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column"}}>
+          <div style={{transform:`rotate(${heading!=null?-heading:0}deg)`,transition:"transform 0.4s",fontSize:22}}>🧭</div>
+          <div style={{fontSize:8,color:"#64748b"}}>{heading!=null?`${Math.round(heading)}°`:"—"}</div>
         </div>
 
-        {satellite && (
-          <div style={{
-            position:"absolute", bottom:16, left:12, zIndex:1000,
-            background:"rgba(15,23,42,0.75)", backdropFilter:"blur(6px)",
-            border:"1px solid rgba(255,255,255,0.1)", borderRadius:6,
-            padding:"4px 8px", fontSize:10, color:"#94a3b8",
-          }}>
-            🛰 Satellite · {labels ? "Labels ON" : "Labels OFF"}
+        {/* Wake lock indicator */}
+        {wakeLockOn&&<div style={{position:"absolute",top:12,left:68,zIndex:1000,background:"rgba(34,197,94,0.2)",border:"1px solid #22c55e",borderRadius:6,padding:"2px 7px",fontSize:10,color:"#22c55e"}}>🔒 Screen Lock</div>}
+
+        {/* Tools panel */}
+        {showTools&&(
+          <div style={{position:"absolute",top:12,right:58,zIndex:1000,background:"rgba(15,23,42,0.97)",backdropFilter:"blur(12px)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:12,padding:14,width:230}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",marginBottom:10}}>⚙️ TOOLS</div>
+
+            {/* Speed alert */}
+            <div style={{marginBottom:12}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+                <span style={{fontSize:12}}>⚡ Speed Alert</span>
+                <button onClick={()=>setSpeedAlertOn(p=>!p)} style={{background:speedAlertOn?"#22c55e":"#374151",color:"white",border:"none",borderRadius:12,padding:"2px 10px",fontSize:11,cursor:"pointer"}}>{speedAlertOn?"ON":"OFF"}</button>
+              </div>
+              <input type="range" min="20" max="200" step="10" value={speedLimitKmh} onChange={e=>setSpeedLimitKmh(Number(e.target.value))} style={{width:"100%",accentColor:"#ef4444"}}/>
+              <div style={{fontSize:10,color:"#64748b",textAlign:"right"}}>{speedLimitKmh} km/h limit</div>
+            </div>
+
+            {/* Geofence */}
+            <div style={{marginBottom:12}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+                <span style={{fontSize:12}}>🔵 Geofence</span>
+                {fenceOn
+                  ?<button onClick={clearFence} style={{background:"#ef4444",color:"white",border:"none",borderRadius:12,padding:"2px 10px",fontSize:11,cursor:"pointer"}}>Clear</button>
+                  :<button onClick={setFenceHere} disabled={lat==null} style={{background:lat!=null?"#f59e0b":"#374151",color:lat!=null?"black":"white",border:"none",borderRadius:12,padding:"2px 10px",fontSize:11,cursor:"pointer"}}>Set Here</button>
+                }
+              </div>
+              <input type="range" min="50" max="2000" step="50" value={fenceRadiusM} onChange={e=>setFenceRadiusM(Number(e.target.value))} style={{width:"100%",accentColor:"#f59e0b"}}/>
+              <div style={{fontSize:10,color:"#64748b",textAlign:"right"}}>{fenceRadiusM}m radius</div>
+            </div>
+
+            {/* GPX Export */}
+            <button onClick={exportGPX} style={{width:"100%",background:"#1d4ed8",color:"white",border:"none",borderRadius:8,padding:"7px 0",fontSize:12,cursor:"pointer",fontWeight:600}}>
+              📤 Export GPX File
+            </button>
+            <div style={{fontSize:9,color:"#475569",marginTop:4,textAlign:"center"}}>Open in Google Earth, Strava, etc.</div>
           </div>
         )}
 
-        {!tracking && !lat && (
-          <div style={{
-            position:"absolute", top:"50%", left:"50%", transform:"translate(-50%,-50%)",
-            background:"rgba(15,23,42,0.9)", backdropFilter:"blur(10px)",
-            border:"1px solid rgba(255,255,255,0.1)", borderRadius:16,
-            padding:"20px 28px", textAlign:"center", zIndex:1000,
-          }}>
-            <div style={{ fontSize:36, marginBottom:8 }}>📡</div>
-            <div style={{ color:"#94a3b8", fontSize:14 }}>Tap START TRACKING below</div>
+        {/* Idle prompt */}
+        {!tracking&&!lat&&(
+          <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",background:"rgba(15,23,42,0.92)",backdropFilter:"blur(12px)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:16,padding:"22px 32px",textAlign:"center",zIndex:1000}}>
+            <div style={{fontSize:38,marginBottom:8}}>📡</div>
+            <div style={{color:"#94a3b8",fontSize:14}}>Tap START TRACKING below</div>
+            <div style={{color:"#475569",fontSize:11,marginTop:4}}>Keep screen on for best results</div>
           </div>
         )}
 
-        {error && (
-          <div style={{
-            position:"absolute", bottom:16, left:"50%", transform:"translateX(-50%)",
-            background:"#ef4444", color:"white", padding:"8px 14px",
-            borderRadius:8, fontSize:13, zIndex:1000, whiteSpace:"nowrap",
-          }}>⚠️ {error}</div>
+        {error&&(
+          <div style={{position:"absolute",bottom:16,left:"50%",transform:"translateX(-50%)",background:"#ef4444",color:"white",padding:"8px 14px",borderRadius:8,fontSize:13,zIndex:1000}}>
+            ⚠️ {error}
+          </div>
         )}
       </div>
 
-      <div style={{ background:"#0f172a", borderTop:"1px solid rgba(255,255,255,0.08)", padding:"10px 14px 18px", flexShrink:0 }}>
-        <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:"#64748b", marginBottom:10 }}>
-          <span>📍 {lat != null ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : "Acquiring signal..."}</span>
-          <span style={{ color:accColor(accuracy) }}>
-            {accuracy != null ? `±${Math.round(accuracy)}m` : "—"}
-          </span>
+      {/* Bottom panel */}
+      <div style={{background:"#0f172a",borderTop:"1px solid rgba(255,255,255,0.08)",padding:"8px 12px 16px",flexShrink:0,overflowY:"auto",maxHeight:"55vh"}}>
+        {address&&<div style={{fontSize:12,color:"#94a3b8",marginBottom:3,textAlign:"center",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>📍 {address}</div>}
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#64748b",marginBottom:8}}>
+          <span>{lat!=null?`${dms(lat,"N","S")}  ${dms(lng,"E","W")}`:"Acquiring signal..."}</span>
+          <span style={{color:accColor(accuracy)}}>{accuracy!=null?`±${Math.round(accuracy)}m`:"—"}</span>
         </div>
 
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:6, marginBottom:10 }}>
-          <Stat label="Speed"     main={kmh}    unit="km/h" sub={mph ? `${mph} mph` : null} />
-          <Stat label="Max Speed" main={maxKmh} unit="km/h" />
-          <Stat label="Heading"   main={heading != null ? `${Math.round(heading)}°` : "—"} unit={bearing(heading)} />
-          <Stat label="Altitude"  main={altitude != null ? `${Math.round(altitude)}` : "—"} unit="m" />
-          <Stat label="Distance"  main={fmtDist(distance)} unit="" />
-          <Stat label="Time"      main={fmtTime(elapsed)}  unit="" />
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:5,marginBottom:8}}>
+          <Stat label="Speed"    main={kmh}    unit="km/h"    sub={mph?`${mph}mph`:null}/>
+          <Stat label="Max"      main={maxKmh} unit="km/h"/>
+          <Stat label="Avg"      main={avgKmh} unit="km/h"/>
+          <Stat label="Heading"  main={heading!=null?`${Math.round(heading)}°`:"—"} unit={bearingLabel(heading)}/>
+          <Stat label="Altitude" main={altitude!=null?`${Math.round(altitude)}`:"—"} unit="m" sub={grade!=null?`${grade}% grade`:null}/>
+          <Stat label="Distance" main={fmtDist(distance)}/>
+          <Stat label="Time"     main={fmtTime(elapsed)}/>
+          <Stat label="Calories" main={cals>0?cals:"—"} unit={cals>0?"kcal":null}/>
         </div>
 
-        <button
-          onClick={tracking ? stopTracking : startTracking}
-          style={{
-            width:"100%", padding:"14px", border:"none", borderRadius:12,
-            background: tracking ? "#ef4444" : "#22c55e",
-            color:"white", fontSize:15, fontWeight:700, cursor:"pointer",
-            display:"flex", alignItems:"center", justifyContent:"center", gap:8,
-          }}
-        >
-          <span style={{ width:10, height:10, borderRadius:tracking ? 2 : "50%", background:"white", display:"inline-block" }} />
-          {tracking ? "STOP TRACKING" : "START TRACKING"}
+        <ElevChart points={elevPts}/>
+
+        <button onClick={tracking?stopTracking:startTracking} style={{
+          width:"100%",padding:"13px",border:"none",borderRadius:12,
+          background:tracking?"#ef4444":"#22c55e",
+          color:"white",fontSize:15,fontWeight:700,cursor:"pointer",
+          display:"flex",alignItems:"center",justifyContent:"center",gap:8
+        }}>
+          <span style={{width:10,height:10,borderRadius:tracking?2:"50%",background:"white",display:"inline-block"}}/>
+          {tracking?"STOP TRACKING":"START TRACKING"}
         </button>
       </div>
     </div>
