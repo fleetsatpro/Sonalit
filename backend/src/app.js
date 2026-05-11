@@ -98,6 +98,10 @@ app.use('/api/v1/alerts', require('./routes/alerts'));
 app.use('/api/v1/messages', require('./routes/messages'));
 app.use('/api/v1/analytics', require('./routes/analytics'));
 app.use('/api/v1/geofences', require('./routes/geofences'));
+app.use('/api/v1/devices', require('./routes/devices'));
+app.use('/api/v1/incidents', require('./routes/incidents'));
+app.use('/api/v1/rules', require('./routes/rules'));
+app.use('/api/v1/geofences', require('./routes/geofences'));
 app.use('/api/gps', require('./routes/gps'));
 
 // 404
