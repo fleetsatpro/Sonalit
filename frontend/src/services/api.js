@@ -81,4 +81,15 @@ export const analyticsAPI = {
   incidentHeatmap: () => api.get('/analytics/incident-heatmap'),
 };
 
+
+export const gpsAPI = {
+  list: (params) => api.get('/gps', { params }),
+};
+
+convoysAPI.getAll = (params) => api.get('/convoys', { params });
+convoysAPI.updateStatus = (id, status) => api.patch('/convoys/' + id, { status });
+vehiclesAPI.getAll = (params) => api.get('/vehicles', { params });
+alertsAPI.getAll = (params) => api.get('/alerts', { params });
+alertsAPI.acknowledge = (id) => api.patch('/alerts/' + id, { resolved: true });
+
 export default api;
