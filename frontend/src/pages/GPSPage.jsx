@@ -47,33 +47,35 @@ function MapBtn({ children, onClick, active }) {
 }
 
 export default function GPSPage() {
-  const mapDivRef = useRef(null);
-  const mapRef    = useRef(null);
-  const tileRef   = useRef(null);
-  const markerRef = useRef(null);
-  const circleRef = useRef(null);
-  const polyRef   = useRef(null);
-  const watchRef  = useRef(null);
-  const timerRef  = useRef(null);
+  const mapDivRef   = useRef(null);
+  const mapRef      = useRef(null);
+  const baseTileRef = useRef(null);
+  const lblTileRef  = useRef(null);
+  const markerRef   = useRef(null);
+  const circleRef   = useRef(null);
+  const polyRef     = useRef(null);
+  const watchRef    = useRef(null);
+  const timerRef    = useRef(null);
   const lastPosRef  = useRef(null);
   const startRef    = useRef(null);
   const pointsRef   = useRef([]);
   const followRef   = useRef(true);
 
   const [leafletReady, setLeafletReady] = useState(false);
-  const [tracking,   setTracking]   = useState(false);
-  const [satellite,  setSatellite]  = useState(false);
-  const [follow,     setFollow]     = useState(true);
-  const [lat,        setLat]        = useState(null);
-  const [lng,        setLng]        = useState(null);
-  const [speed,      setSpeed]      = useState(null);
-  const [heading,    setHeading]    = useState(null);
-  const [altitude,   setAltitude]   = useState(null);
-  const [accuracy,   setAccuracy]   = useState(null);
-  const [distance,   setDistance]   = useState(0);
-  const [elapsed,    setElapsed]    = useState(0);
-  const [maxSpeed,   setMaxSpeed]   = useState(0);
-  const [error,      setError]      = useState(null);
+  const [tracking,  setTracking]  = useState(false);
+  const [satellite, setSatellite] = useState(false);
+  const [labels,    setLabels]    = useState(true);
+  const [follow,    setFollow]    = useState(true);
+  const [lat,       setLat]       = useState(null);
+  const [lng,       setLng]       = useState(null);
+  const [speed,     setSpeed]     = useState(null);
+  const [heading,   setHeading]   = useState(null);
+  const [altitude,  setAltitude]  = useState(null);
+  const [accuracy,  setAccuracy]  = useState(null);
+  const [distance,  setDistance]  = useState(0);
+  const [elapsed,   setElapsed]   = useState(0);
+  const [maxSpeed,  setMaxSpeed]  = useState(0);
+  const [error,     setError]     = useState(null);
 
   useEffect(() => {
     if (window.L) { setLeafletReady(true); return; }
@@ -93,12 +95,45 @@ export default function GPSPage() {
     const map = L.map(mapDivRef.current, { center:[20,0], zoom:2, zoomControl:false });
     L.control.zoom({ position:"bottomright" }).addTo(map);
     map.on("dragstart", () => { followRef.current = false; setFollow(false); });
-    tileRef.current = L.tileLayer(
+
+    baseTileRef.current = L.tileLayer(
       "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
       { attribution:"© OpenStreetMap", maxZoom:19 }
     ).addTo(map);
+
     mapRef.current = map;
   }, [leafletReady]);
+
+  const applyTiles = useCallback((isSat, showLabels) => {
+    const L = window.L;
+    const map = mapRef.current;
+    if (!map || !L) return;
+
+    if (baseTileRef.current) { baseTileRef.current.remove(); baseTileRef.current = null; }
+    if (lblTileRef.current)  { lblTileRef.current.remove();  lblTileRef.current  = null; }
+
+    if (isSat) {
+      // Real satellite imagery (Esri World Imagery)
+      baseTileRef.current = L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        { attribution:"© Esri © Maxar © Earthstar Geographics", maxZoom:19 }
+      ).addTo(map);
+
+      if (showLabels) {
+        // Place names + roads overlay on top of satellite
+        lblTileRef.current = L.tileLayer(
+          "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+          { attribution:"", maxZoom:19, opacity:1 }
+        ).addTo(map);
+      }
+    } else {
+      // Standard street map with everything
+      baseTileRef.current = L.tileLayer(
+        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        { attribution:"© OpenStreetMap", maxZoom:19 }
+      ).addTo(map);
+    }
+  }, []);
 
   const handlePosition = useCallback((pos) => {
     const { latitude, longitude, speed:spd, heading:hdg, altitude:alt, accuracy:acc } = pos.coords;
@@ -178,18 +213,16 @@ export default function GPSPage() {
   }, []);
 
   const toggleSatellite = useCallback(() => {
-    const L = window.L; const map = mapRef.current;
-    if (!map || !L || !tileRef.current) return;
-    tileRef.current.remove();
-    const newSat = !satellite;
-    tileRef.current = L.tileLayer(
-      newSat
-        ? "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-        : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-      { attribution: newSat ? "© Esri" : "© OpenStreetMap", maxZoom:19 }
-    ).addTo(map);
-    setSatellite(newSat);
-  }, [satellite]);
+    const next = !satellite;
+    setSatellite(next);
+    applyTiles(next, labels);
+  }, [satellite, labels, applyTiles]);
+
+  const toggleLabels = useCallback(() => {
+    const next = !labels;
+    setLabels(next);
+    applyTiles(satellite, next);
+  }, [satellite, labels, applyTiles]);
 
   const centerMap = useCallback(() => {
     followRef.current = true; setFollow(true);
@@ -211,7 +244,10 @@ export default function GPSPage() {
         <div ref={mapDivRef} style={{ width:"100%", height:"100%" }} />
 
         <div style={{ position:"absolute", top:12, right:12, zIndex:1000, display:"flex", flexDirection:"column", gap:6 }}>
-          <MapBtn onClick={toggleSatellite} active={satellite}>{satellite ? "🗺" : "🛰"}</MapBtn>
+          <MapBtn onClick={toggleSatellite} active={satellite} title="Toggle satellite">{satellite ? "🗺" : "🛰"}</MapBtn>
+          {satellite && (
+            <MapBtn onClick={toggleLabels} active={labels} title="Toggle labels">🏷</MapBtn>
+          )}
           <MapBtn onClick={centerMap} active={follow}>📍</MapBtn>
         </div>
 
@@ -225,6 +261,17 @@ export default function GPSPage() {
           <div style={{ transform:`rotate(${heading != null ? -heading : 0}deg)`, transition:"transform 0.4s", fontSize:24 }}>🧭</div>
           <div style={{ fontSize:9, color:"#64748b", marginTop:1 }}>{heading != null ? `${Math.round(heading)}°` : "—"}</div>
         </div>
+
+        {satellite && (
+          <div style={{
+            position:"absolute", bottom:16, left:12, zIndex:1000,
+            background:"rgba(15,23,42,0.75)", backdropFilter:"blur(6px)",
+            border:"1px solid rgba(255,255,255,0.1)", borderRadius:6,
+            padding:"4px 8px", fontSize:10, color:"#94a3b8",
+          }}>
+            🛰 Satellite · {labels ? "Labels ON" : "Labels OFF"}
+          </div>
+        )}
 
         {!tracking && !lat && (
           <div style={{
@@ -256,8 +303,8 @@ export default function GPSPage() {
         </div>
 
         <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:6, marginBottom:10 }}>
-          <Stat label="Speed"     main={kmh}      unit="km/h"         sub={mph ? `${mph} mph` : null} />
-          <Stat label="Max Speed" main={maxKmh}   unit="km/h" />
+          <Stat label="Speed"     main={kmh}    unit="km/h" sub={mph ? `${mph} mph` : null} />
+          <Stat label="Max Speed" main={maxKmh} unit="km/h" />
           <Stat label="Heading"   main={heading != null ? `${Math.round(heading)}°` : "—"} unit={bearing(heading)} />
           <Stat label="Altitude"  main={altitude != null ? `${Math.round(altitude)}` : "—"} unit="m" />
           <Stat label="Distance"  main={fmtDist(distance)} unit="" />
