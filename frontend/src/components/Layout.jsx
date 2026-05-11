@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Truck, Shield, Bell, BarChart3,
+  LayoutDashboard, Truck, Shield, Bell, BarChart3, Navigation,
   MessageSquare, Settings, LogOut, Menu, X, Zap, Radio,
   Search, ChevronRight,
 } from 'lucide-react';
@@ -16,6 +16,7 @@ const NAV = [
   { to: '/alerts',    label: 'Alerts',     Icon: Bell            },
   { to: '/analytics', label: 'Analytics',  Icon: BarChart3       },
   { to: '/messages',  label: 'Messages',   Icon: MessageSquare   },
+  { to: '/gps', label: 'GPS Track', Icon: Navigation },
   { to: '/settings',  label: 'Settings',   Icon: Settings        },
 ];
 
