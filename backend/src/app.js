@@ -97,6 +97,7 @@ app.use('/api/v1/convoys', require('./routes/convoys'));
 app.use('/api/v1/alerts', require('./routes/alerts'));
 app.use('/api/v1/messages', require('./routes/messages'));
 app.use('/api/v1/analytics', require('./routes/analytics'));
+app.use('/api/v1/geofences', require('./routes/geofences'));
 app.use('/api/gps', require('./routes/gps'));
 
 // 404
