@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import React, { useEffect, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store';
 import Layout from './components/Layout';

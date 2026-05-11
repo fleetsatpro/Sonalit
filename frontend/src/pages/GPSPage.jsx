@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+// leaflet css loaded via index.html
 import { Navigation, Truck, Shield, AlertTriangle, Radio, Maximize2, Filter } from 'lucide-react';
 import { vehiclesAPI } from '../services/api';
 import socketService from '../services/socket';
