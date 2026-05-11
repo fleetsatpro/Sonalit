@@ -82,10 +82,3 @@ export const analyticsAPI = {
 };
 
 export default api;
-
-// ── API extensions ──────────────────────────────────────────
-convoysAPI.getAll = (params) => api.get('/convoys', { params });
-convoysAPI.updateStatus = (id, status) => api.patch(`/convoys/${id}`, { status });
-vehiclesAPI.getAll = (params) => api.get('/vehicles', { params });
-alertsAPI.getAll = (params) => api.get('/alerts', { params });
-alertsAPI.acknowledge = (id) => api.patch(`/alerts/${id}`, { resolved: true });
