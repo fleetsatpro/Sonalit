@@ -3,7 +3,7 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Truck, Shield, Bell, BarChart3, Navigation,
   MessageSquare, Settings, LogOut, Menu, X, Zap, Radio,
-  Search, ChevronRight,
+  Search, ChevronRight, AlertTriangle, Cpu,
 } from 'lucide-react';
 import { useAuthStore, useAlertStore } from '../store';
 import socketService from '../services/socket';
@@ -234,7 +234,7 @@ export default function Layout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const { user, logout } = useAuthStore();
+  const { user, logout, fetchMe } = useAuthStore();
   const { alerts, unreadCount, addLiveAlert } = useAlertStore();
   const navigate = useNavigate();
   const location = useLocation();
