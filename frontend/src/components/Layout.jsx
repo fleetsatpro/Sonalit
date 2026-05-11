@@ -16,6 +16,7 @@ const NAV = [
   { to: '/alerts',    label: 'Alerts',     Icon: Bell            },
   { to: '/analytics', label: 'Analytics',  Icon: BarChart3       },
   { to: '/messages',  label: 'Messages',   Icon: MessageSquare   },
+  { to: '/gps', label: 'GPS Track', Icon: Navigation },
   { to: '/settings',  label: 'Settings',   Icon: Settings        },
 ];
 
