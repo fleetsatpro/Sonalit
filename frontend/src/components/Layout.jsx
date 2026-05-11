@@ -10,17 +10,17 @@ import socketService from '../services/socket';
 import { initials, timeAgo } from '../utils/helpers';
 
 const NAV = [
-  { to: '/',           label: 'Dashboard',  Icon: LayoutDashboard },
-  { to: '/fleet',      label: 'Fleet',      Icon: Truck           },
-  { to: '/convoys',    label: 'Convoys',    Icon: Shield          },
-  { to: '/gps',        label: 'GPS Track',  Icon: Navigation      },
-  { to: '/alerts',     label: 'Alerts',     Icon: Bell            },
-  { to: '/incidents',  label: 'Incidents',  Icon: AlertTriangle   },
-  { to: '/analytics',  label: 'Analytics',  Icon: BarChart3       },
-  { to: '/devices',    label: 'Devices',    Icon: Cpu             },
-  { to: '/rules',      label: 'Rules',      Icon: Zap             },
-  { to: '/messages',   label: 'Messages',   Icon: MessageSquare   },
-  { to: '/settings',   label: 'Settings',   Icon: Settings        },
+  { to: '/',          label: 'Dashboard', Icon: LayoutDashboard },
+  { to: '/fleet',     label: 'Fleet',     Icon: Truck           },
+  { to: '/convoys',   label: 'Convoys',   Icon: Shield          },
+  { to: '/gps',       label: 'GPS Track', Icon: Navigation      },
+  { to: '/alerts',    label: 'Alerts',    Icon: Bell            },
+  { to: '/incidents', label: 'Incidents', Icon: AlertTriangle   },
+  { to: '/analytics', label: 'Analytics', Icon: BarChart3       },
+  { to: '/devices',   label: 'Devices',   Icon: Cpu             },
+  { to: '/rules',     label: 'Rules',     Icon: Zap             },
+  { to: '/messages',  label: 'Messages',  Icon: MessageSquare   },
+  { to: '/settings',  label: 'Settings',  Icon: Settings        },
 ];
 
 function Clock() {

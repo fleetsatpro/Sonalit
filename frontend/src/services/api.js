@@ -140,4 +140,69 @@ if (typeof alertsAPI !== 'undefined') {
 }
 export const gpsAPI = { list: (p) => api.get('/gps', { params: p }) };
 
+
+// ── AUTO-GENERATED EXTENSIONS ──
+export const geofenceAPI = {
+  list:   (p)      => api.get('/geofences',          { params: p }),
+  create: (d)      => api.post('/geofences',          d),
+  update: (id, d)  => api.put('/geofences/' + id,     d),
+  delete: (id)     => api.delete('/geofences/' + id),
+};
+export const deviceAPI = {
+  list:   (p)     => api.get('/devices',              { params: p }),
+  create: (d)     => api.post('/devices',              d),
+  update: (id, d) => api.put('/devices/' + id,         d),
+  health: (id)    => api.get('/devices/' + id + '/health'),
+};
+export const incidentAPI = {
+  list:       (p)     => api.get('/incidents',                    { params: p }),
+  create:     (d)     => api.post('/incidents',                    d),
+  update:     (id, d) => api.patch('/incidents/' + id,             d),
+  addComment: (id, c) => api.post('/incidents/' + id + '/comments', { content: c }),
+};
+export const ruleAPI = {
+  list:   ()          => api.get('/rules'),
+  create: (d)         => api.post('/rules',             d),
+  toggle: (id, en)    => api.patch('/rules/' + id,      { enabled: en }),
+  delete: (id)        => api.delete('/rules/' + id),
+};
+export const reportAPI = {
+  generate: (type, p) => api.post('/reports/generate', { type, ...p }),
+  list:     ()        => api.get('/reports'),
+  download: (id)      => api.get('/reports/' + id + '/download', { responseType: 'blob' }),
+};
+export const tripAPI = {
+  list:     (p)  => api.get('/trips',                { params: p }),
+  get:      (id) => api.get('/trips/' + id),
+  playback: (id) => api.get('/trips/' + id + '/playback'),
+};
+export const gpsAPI = {
+  list: (p) => api.get('/gps', { params: p }),
+};
+// analyticsAPI — created if not already exported
+let analyticsAPI;
+try { analyticsAPI = (await import('./api')).analyticsAPI; } catch(_) {}
+if (!analyticsAPI) {
+  analyticsAPI = {
+    dashboard:        () => api.get('/analytics/dashboard'),
+    convoyMetrics:    () => api.get('/analytics/convoy-metrics'),
+    fleetUtilization: () => api.get('/analytics/fleet-utilization'),
+  };
+}
+export { analyticsAPI };
+// Patch existing APIs with missing methods (safe — only adds, never overwrites)
+if (typeof vehiclesAPI !== 'undefined') {
+  if (!vehiclesAPI.list)   vehiclesAPI.list   = (p) => api.get('/vehicles', { params: p });
+  if (!vehiclesAPI.getAll) vehiclesAPI.getAll = (p) => api.get('/vehicles', { params: p });
+}
+if (typeof convoysAPI !== 'undefined') {
+  if (!convoysAPI.getAll)      convoysAPI.getAll      = (p) => api.get('/convoys', { params: p });
+  if (!convoysAPI.updateStatus) convoysAPI.updateStatus = (id, s) => api.patch('/convoys/' + id, { status: s });
+}
+if (typeof alertsAPI !== 'undefined') {
+  if (!alertsAPI.list)        alertsAPI.list        = (p)     => api.get('/alerts', { params: p });
+  if (!alertsAPI.acknowledge) alertsAPI.acknowledge = (id)    => api.patch('/alerts/' + id, { resolved: true });
+  if (!alertsAPI.update)      alertsAPI.update      = (id, d) => api.patch('/alerts/' + id, d);
+}
+
 export default api;
