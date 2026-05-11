@@ -69,6 +69,7 @@ app.use(rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   standardHeaders: true,
+  validate: { xForwardedForHeader: false },
   legacyHeaders: false,
   message: { error: 'Too many requests — try again in 15 minutes' },
 }));
