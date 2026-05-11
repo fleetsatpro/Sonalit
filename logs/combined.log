@@ -1,0 +1,9 @@
+2026-05-10 01:16:13 [info]: New PostgreSQL client connected
+2026-05-10 01:16:53 [info]: New PostgreSQL client connected
+2026-05-10 01:16:53 [info]: New PostgreSQL client connected
+2026-05-10 01:16:53 [info]: New PostgreSQL client connected
+2026-05-10 01:16:53 [info]: New PostgreSQL client connected
+2026-05-10 01:16:54 [warn]: Slow query detected (1181ms): INSERT INTO users (email, name, password_hash, role) VALUES ($1,$2,$3,'analyst') ON CONFLICT (email)
+2026-05-10 01:16:54 [warn]: Slow query detected (1219ms): INSERT INTO users (email, name, password_hash, role) VALUES ($1,$2,$3,'admin') ON CONFLICT (email) D
+2026-05-10 01:16:54 [warn]: Slow query detected (1263ms): INSERT INTO users (email, name, password_hash, role) VALUES ($1,$2,$3,'operator') ON CONFLICT (email
+2026-05-10 01:16:54 [warn]: Slow query detected (1273ms): INSERT INTO users (email, name, password_hash, role) VALUES ($1,$2,$3,'dispatcher') ON CONFLICT (ema
