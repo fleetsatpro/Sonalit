@@ -1,3 +1,4 @@
+
 import React, { useEffect, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store';
@@ -11,6 +12,9 @@ import AlertsPage from './pages/AlertsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import MessagesPage from './pages/MessagesPage';
 import SettingsPage from './pages/SettingsPage';
+import IncidentsPage from './pages/IncidentsPage';
+import DevicesPage from './pages/DevicesPage';
+import RulesPage from './pages/RulesPage';
 import { Component } from 'react';
 
 const GPSPage = React.lazy(() => import('./pages/GPSPage'));
@@ -42,15 +46,18 @@ function AppRoutes() {
           <Layout>
             <ErrorBoundary>
               <Routes>
-                <Route path="/"          element={<DashboardPage />} />
-                <Route path="/fleet"     element={<FleetPage />} />
-                <Route path="/convoys"   element={<ConvoysPage />} />
-                <Route path="/alerts"    element={<AlertsPage />} />
-                <Route path="/analytics" element={<AnalyticsPage />} />
-                <Route path="/messages"  element={<MessagesPage />} />
-                <Route path="/settings"  element={<SettingsPage />} />
-                <Route path="/gps"       element={<Suspense fallback={<Fallback/>}><GPSPage/></Suspense>} />
-                <Route path="*"          element={<Navigate to="/" replace />} />
+                <Route path="/"           element={<DashboardPage />} />
+                <Route path="/fleet"      element={<FleetPage />} />
+                <Route path="/convoys"    element={<ConvoysPage />} />
+                <Route path="/alerts"     element={<AlertsPage />} />
+                <Route path="/analytics"  element={<AnalyticsPage />} />
+                <Route path="/messages"   element={<MessagesPage />} />
+                <Route path="/settings"   element={<SettingsPage />} />
+                <Route path="/incidents"  element={<IncidentsPage />} />
+                <Route path="/devices"    element={<DevicesPage />} />
+                <Route path="/rules"      element={<RulesPage />} />
+                <Route path="/gps"        element={<Suspense fallback={<Fallback/>}><GPSPage/></Suspense>} />
+                <Route path="*"           element={<Navigate to="/" replace />} />
               </Routes>
             </ErrorBoundary>
           </Layout>
