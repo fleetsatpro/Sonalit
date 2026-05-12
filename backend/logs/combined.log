@@ -754,3 +754,134 @@
 2026-05-12 16:49:10 [info]: GET /api/v1/ai/risk/65233672-1fe7-49d4-b696-fde926f5631c 304 - - 1.815 ms
 2026-05-12 16:49:10 [info]: GET /api/v1/ai/risk/65233672-1fe7-49d4-b696-fde926f5631c 304 - - 1.882 ms
 2026-05-12 16:49:19 [info]: GET /api/v1/vehicles 304 - - 2.506 ms
+2026-05-12 17:02:51 [info]: New PostgreSQL client connected
+2026-05-12 17:02:51 [info]: Login: admin@fleetops.local (admin)
+2026-05-12 17:02:51 [info]: POST /api/v1/auth/login 200 379 - 94.034 ms
+2026-05-12 17:02:52 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 7.176 ms
+2026-05-12 17:02:52 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 2.694 ms
+2026-05-12 17:02:52 [info]: GET /api/v1/convoys?status=active&limit=5 304 - - 4.150 ms
+2026-05-12 17:02:52 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 4.533 ms
+2026-05-12 17:02:52 [info]: New PostgreSQL client connected
+2026-05-12 17:02:52 [info]: New PostgreSQL client connected
+2026-05-12 17:02:52 [info]: New PostgreSQL client connected
+2026-05-12 17:02:52 [info]: New PostgreSQL client connected
+2026-05-12 17:02:52 [info]: New PostgreSQL client connected
+2026-05-12 17:02:52 [info]: GET /api/v1/analytics/dashboard 304 - - 36.196 ms
+2026-05-12 17:02:52 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 4.306 ms
+2026-05-12 17:02:52 [info]: GET /api/v1/convoys?status=active&limit=5 304 - - 2.809 ms
+2026-05-12 17:02:52 [info]: GET /api/v1/analytics/dashboard 304 - - 4.800 ms
+2026-05-12 17:02:52 [info]: New PostgreSQL client connected
+2026-05-12 17:02:52 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 21.766 ms
+2026-05-12 17:02:52 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 2.811 ms
+2026-05-12 17:03:07 [info]: GET /api/v1/vehicles?page=1&limit=15 200 8470 - 2.796 ms
+2026-05-12 17:03:07 [info]: GET /api/v1/vehicles?page=1&limit=15 304 - - 2.997 ms
+2026-05-12 17:03:21 [info]: GET /api/v1/convoys?limit=50 304 - - 7.371 ms
+2026-05-12 17:03:21 [info]: GET /api/v1/convoys?limit=50 304 - - 2.520 ms
+2026-05-12 17:03:32 [info]: GET /api/v1/vehicles?limit=200 200 8471 - 3.303 ms
+2026-05-12 17:03:32 [info]: GET /api/v1/geofences 304 - - 2.066 ms
+2026-05-12 17:03:32 [info]: GET /api/v1/vehicles?limit=200 304 - - 3.336 ms
+2026-05-12 17:03:51 [info]: GET /api/v1/alerts?resolved=false 304 - - 2.607 ms
+2026-05-12 17:03:52 [info]: GET /api/v1/alerts?resolved=false 304 - - 2.245 ms
+2026-05-12 17:04:02 [info]: GET /api/v1/incidents 304 - - 2.044 ms
+2026-05-12 17:04:03 [info]: GET /api/v1/incidents 304 - - 2.322 ms
+2026-05-12 17:04:11 [info]: GET /api/v1/alerts?limit=200 304 - - 5.109 ms
+2026-05-12 17:04:11 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 5.116 ms
+2026-05-12 17:04:11 [info]: New PostgreSQL client connected
+2026-05-12 17:04:11 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 30.335 ms
+2026-05-12 17:04:11 [info]: New PostgreSQL client connected
+2026-05-12 17:04:11 [info]: New PostgreSQL client connected
+2026-05-12 17:04:11 [info]: New PostgreSQL client connected
+2026-05-12 17:04:11 [info]: New PostgreSQL client connected
+2026-05-12 17:04:11 [info]: New PostgreSQL client connected
+2026-05-12 17:04:11 [info]: GET /api/v1/analytics/dashboard 304 - - 53.415 ms
+2026-05-12 17:04:11 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 2.477 ms
+2026-05-12 17:04:11 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 2.555 ms
+2026-05-12 17:04:11 [info]: GET /api/v1/analytics/dashboard 304 - - 3.698 ms
+2026-05-12 17:04:12 [info]: GET /api/v1/alerts?limit=200 304 - - 4.393 ms
+2026-05-12 17:04:21 [info]: GET /api/v1/devices 304 - - 2.327 ms
+2026-05-12 17:04:22 [info]: GET /api/v1/devices 304 - - 3.102 ms
+2026-05-12 17:04:31 [info]: GET /api/v1/rules 304 - - 2.041 ms
+2026-05-12 17:04:31 [info]: GET /api/v1/rules 304 - - 1.934 ms
+2026-05-12 17:04:41 [info]: GET /api/v1/messages/channels 304 - - 2.184 ms
+2026-05-12 17:04:41 [info]: GET /api/v1/messages/channels 304 - - 3.353 ms
+2026-05-12 17:04:41 [info]: GET /api/v1/messages/channels/b3682ebf-1ad7-405a-b232-93bf3f553b1a 304 - - 4.309 ms
+2026-05-12 17:04:50 [info]: GET /api/v1/reports 304 - - 2.677 ms
+2026-05-12 17:04:51 [info]: GET /api/v1/reports 304 - - 2.578 ms
+2026-05-12 17:11:27 [info]: New PostgreSQL client connected
+2026-05-12 17:11:27 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 43.615 ms
+2026-05-12 17:11:28 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 9.681 ms
+2026-05-12 17:11:28 [info]: New PostgreSQL client connected
+2026-05-12 17:11:28 [info]: New PostgreSQL client connected
+2026-05-12 17:11:28 [info]: New PostgreSQL client connected
+2026-05-12 17:11:28 [info]: New PostgreSQL client connected
+2026-05-12 17:11:28 [info]: New PostgreSQL client connected
+2026-05-12 17:11:28 [info]: GET /api/v1/analytics/dashboard 304 - - 77.783 ms
+2026-05-12 17:11:28 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 9.976 ms
+2026-05-12 17:11:28 [info]: GET /api/v1/convoys?status=active&limit=5 304 - - 16.502 ms
+2026-05-12 17:11:28 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 2.720 ms
+2026-05-12 17:11:28 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 3.047 ms
+2026-05-12 17:11:28 [info]: GET /api/v1/analytics/dashboard 304 - - 4.943 ms
+2026-05-12 17:11:28 [info]: GET /api/v1/convoys?status=active&limit=5 304 - - 6.263 ms
+2026-05-12 17:11:28 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 2.502 ms
+2026-05-12 17:11:35 [info]: GET /api/v1/auth/me 200 178 - 2.196 ms
+2026-05-12 17:11:35 [info]: GET /api/v1/auth/me 200 178 - 3.184 ms
+2026-05-12 17:11:35 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 3.359 ms
+2026-05-12 17:11:35 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 23.506 ms
+2026-05-12 17:11:35 [info]: New PostgreSQL client connected
+2026-05-12 17:11:35 [info]: New PostgreSQL client connected
+2026-05-12 17:11:35 [info]: GET /api/v1/analytics/dashboard 200 118 - 70.973 ms
+2026-05-12 17:11:35 [info]: GET /api/v1/alerts?resolved=false&limit=5 200 1049 - 72.785 ms
+2026-05-12 17:11:35 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 2.304 ms
+2026-05-12 17:11:35 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 2.490 ms
+2026-05-12 17:11:35 [info]: GET /api/v1/analytics/dashboard 304 - - 2.585 ms
+2026-05-12 17:11:35 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 2.723 ms
+2026-05-12 17:12:01 [info]: GET /api/v1/vehicles 304 - - 3.634 ms
+2026-05-12 17:12:06 [info]: GET /api/v1/convoys 200 1623 - 2.722 ms
+2026-05-12 17:12:06 [info]: GET /api/v1/convoys 304 - - 4.944 ms
+2026-05-12 17:12:06 [info]: GET /api/v1/ai/risk/d2121a38-4c72-4859-980a-6874d3158254 304 - - 2.380 ms
+2026-05-12 17:12:06 [info]: GET /api/v1/ai/risk/65233672-1fe7-49d4-b696-fde926f5631c 304 - - 4.383 ms
+2026-05-12 17:12:06 [info]: GET /api/v1/ai/risk/5171c006-bc7c-45f1-9077-f2fb756d0baa 304 - - 8.236 ms
+2026-05-12 17:12:06 [info]: GET /api/v1/ai/risk/d2121a38-4c72-4859-980a-6874d3158254 304 - - 1.754 ms
+2026-05-12 17:12:06 [info]: GET /api/v1/ai/risk/65233672-1fe7-49d4-b696-fde926f5631c 304 - - 3.599 ms
+2026-05-12 17:12:06 [info]: GET /api/v1/ai/risk/5171c006-bc7c-45f1-9077-f2fb756d0baa 304 - - 1.705 ms
+2026-05-12 17:12:07 [info]: GET /api/v1/vehicles 200 8470 - 2.528 ms
+2026-05-12 17:12:15 [info]: GET /api/v1/sensors/24ad7382-17e1-45ef-b199-c3e08a5d2d14/latest 200 13 - 2.010 ms
+2026-05-12 17:12:40 [info]: GET /api/v1/auth/me 304 - - 1.827 ms
+2026-05-12 17:12:40 [info]: GET /api/v1/auth/me 304 - - 2.507 ms
+2026-05-12 17:12:40 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 3.865 ms
+2026-05-12 17:12:41 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 20.042 ms
+2026-05-12 17:12:41 [info]: New PostgreSQL client connected
+2026-05-12 17:12:41 [info]: New PostgreSQL client connected
+2026-05-12 17:12:41 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 18.908 ms
+2026-05-12 17:12:41 [info]: New PostgreSQL client connected
+2026-05-12 17:12:41 [info]: New PostgreSQL client connected
+2026-05-12 17:12:41 [info]: New PostgreSQL client connected
+2026-05-12 17:12:41 [info]: GET /api/v1/analytics/dashboard 304 - - 89.097 ms
+2026-05-12 17:12:41 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 2.553 ms
+2026-05-12 17:12:41 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 3.067 ms
+2026-05-12 17:12:41 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 5.124 ms
+2026-05-12 17:12:41 [info]: GET /api/v1/analytics/dashboard 304 - - 3.645 ms
+2026-05-12 17:13:11 [info]: GET /api/v1/analytics/dashboard 304 - - 6.618 ms
+2026-05-12 17:13:11 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 4.827 ms
+2026-05-12 17:13:11 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 6.984 ms
+2026-05-12 17:13:40 [info]: GET /api/v1/auth/me 200 178 - 2.927 ms
+2026-05-12 17:13:40 [info]: GET /api/v1/auth/me 200 178 - 2.321 ms
+2026-05-12 17:13:40 [info]: GET /api/v1/analytics/dashboard 200 118 - 3.603 ms
+2026-05-12 17:13:40 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 10.089 ms
+2026-05-12 17:13:40 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 11.189 ms
+2026-05-12 17:13:40 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 19.879 ms
+2026-05-12 17:13:40 [info]: GET /api/v1/analytics/dashboard 304 - - 2.754 ms
+2026-05-12 17:13:40 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 3.145 ms
+2026-05-12 17:13:40 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 5.429 ms
+2026-05-12 17:13:40 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 2.957 ms
+2026-05-12 17:13:44 [info]: GET /api/v1/convoys 304 - - 6.692 ms
+2026-05-12 17:13:45 [info]: GET /api/v1/ai/risk/65233672-1fe7-49d4-b696-fde926f5631c 304 - - 3.730 ms
+2026-05-12 17:13:45 [info]: GET /api/v1/convoys 304 - - 3.317 ms
+2026-05-12 17:13:45 [info]: GET /api/v1/ai/risk/5171c006-bc7c-45f1-9077-f2fb756d0baa 304 - - 2.798 ms
+2026-05-12 17:13:45 [info]: GET /api/v1/ai/risk/d2121a38-4c72-4859-980a-6874d3158254 304 - - 1.809 ms
+2026-05-12 17:13:45 [info]: GET /api/v1/ai/risk/65233672-1fe7-49d4-b696-fde926f5631c 304 - - 2.450 ms
+2026-05-12 17:13:45 [info]: GET /api/v1/ai/risk/5171c006-bc7c-45f1-9077-f2fb756d0baa 304 - - 1.903 ms
+2026-05-12 17:13:45 [info]: GET /api/v1/ai/risk/d2121a38-4c72-4859-980a-6874d3158254 304 - - 1.855 ms
+2026-05-12 17:13:53 [info]: GET /api/v1/vehicles 304 - - 2.498 ms
+2026-05-12 17:16:52 [info]: New PostgreSQL client connected
+2026-05-12 17:17:29 [info]: New PostgreSQL client connected
