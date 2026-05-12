@@ -1,0 +1,12 @@
+{
+  "name": "FleetOps",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:20",
+  "features": {
+    "ghcr.io/devcontainers/features/postgresql:1": {"version": "16"}
+  },
+  "postStartCommand": "sudo service postgresql start",
+  "forwardPorts": [5000, 5173],
+  "portsAttributes": {
+    "5173": {"onAutoForward": "openBrowser"}
+  }
+}
