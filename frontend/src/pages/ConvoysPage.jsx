@@ -1,88 +1,359 @@
-import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { Route, Plus, X, ChevronRight, Shield, FileText, AlertTriangle, Activity } from 'lucide-react';
-import toast from 'react-hot-toast';
-import { useConvoyStore } from '../store';
-import { convoysAPI, documentsAPI } from '../services/api';
-import api from '../services/api';
-import { Card, Button, Input, Spinner, EmptyState } from '../components/UI';
-import { formatDate } from '../utils/helpers';
+import { useEffect, useState, useCallback } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import {
+  Route, Plus, X, ChevronRight, Shield, FileText, AlertTriangle,
+  Activity, Truck, Clock, MapPin, Users, TrendingUp, Radio,
+  CheckCircle, AlertCircle, Navigation, Fuel, Wrench, Eye
+} from "lucide-react";
+import toast from "react-hot-toast";
+import { useConvoyStore } from "../store";
+import { convoysAPI, documentsAPI } from "../services/api";
+import api from "../services/api";
+import { Card, Button, Input, Spinner, EmptyState } from "../components/UI";
+import { formatDate } from "../utils/helpers";
 
-const convoySchema = z.object({
-  name: z.string().min(3, 'Min 3 characters'),
-  region: z.string().min(1, 'Required'),
-  priority: z.enum(['low','medium','high','critical']),
-  route_origin: z.string().min(1, 'Required'),
-  route_destination: z.string().min(1, 'Required'),
+const schema = z.object({
+  name: z.string().min(3),
+  region: z.string().min(1),
+  priority: z.enum(["low","medium","high","critical"]),
+  route_origin: z.string().min(1),
+  route_destination: z.string().min(1),
   description: z.string().optional(),
   departure_time: z.string().optional(),
 });
 
-const REGIONS = ['Kenya','Tanzania','DRC','Mali','Nigeria','Ethiopia'];
-const STATUS_COLS = ['planned','active','completed','aborted'];
-
-const statusColors = {
-  planned:   'border-slate-600/30 bg-slate-800/20',
-  active:    'border-success/30 bg-success/5',
-  completed: 'border-blue-500/30 bg-blue-500/5',
-  aborted:   'border-danger/30 bg-danger/5',
-};
+const REGIONS = ["Kenya","Tanzania","DRC","Mali","Nigeria","Ethiopia","Uganda","Sudan"];
 
 const priorityColors = {
-  low:      'text-slate-400',
-  medium:   'text-blue-400',
-  high:     'text-amber-400',
-  critical: 'text-danger',
+  low: "text-slate-400 bg-slate-500/10 border-slate-500/20",
+  medium: "text-blue-400 bg-blue-500/10 border-blue-500/20",
+  high: "text-amber-400 bg-amber-500/10 border-amber-500/20",
+  critical: "text-red-400 bg-red-500/10 border-red-500/20",
 };
 
-const riskColors = {
-  LOW:      'text-success bg-success/10 border-success/20',
-  MEDIUM:   'text-amber-400 bg-amber-400/10 border-amber-400/20',
-  HIGH:     'text-orange-400 bg-orange-400/10 border-orange-400/20',
-  CRITICAL: 'text-danger bg-danger/10 border-danger/20',
+const riskConfig = {
+  LOW:      { color: "text-emerald-400", bg: "bg-emerald-400/10", border: "border-emerald-400/20", dot: "bg-emerald-400" },
+  MEDIUM:   { color: "text-amber-400",   bg: "bg-amber-400/10",   border: "border-amber-400/20",   dot: "bg-amber-400"   },
+  HIGH:     { color: "text-orange-400",  bg: "bg-orange-400/10",  border: "border-orange-400/20",  dot: "bg-orange-400"  },
+  CRITICAL: { color: "text-red-400",     bg: "bg-red-400/10",     border: "border-red-400/20",     dot: "bg-red-400 animate-pulse" },
 };
 
-function RiskBadge({ convoyId }) {
+const statusConfig = {
+  planned:   { color: "text-slate-400",   border: "border-slate-600/30",   bg: "bg-slate-800/30",   header: "bg-slate-800/50"   },
+  active:    { color: "text-emerald-400", border: "border-emerald-500/30", bg: "bg-emerald-900/10", header: "bg-emerald-900/30" },
+  completed: { color: "text-blue-400",    border: "border-blue-500/30",    bg: "bg-blue-900/10",    header: "bg-blue-900/30"    },
+  aborted:   { color: "text-red-400",     border: "border-red-500/30",     bg: "bg-red-900/10",     header: "bg-red-900/30"     },
+};
+
+function RiskBadge({ convoyId, inline = false }) {
   const [risk, setRisk] = useState(null);
   useEffect(() => {
-    api.get(`/ai/risk/${convoyId}`)
-      .then(r => setRisk(r.data.data))
-      .catch(() => {});
+    api.get("/ai/risk/" + convoyId).then(r => setRisk(r.data.data)).catch(() => {});
   }, [convoyId]);
-  if (!risk) return null;
-  return (
-    <span className={`inline-flex items-center gap-1 text-[9px] font-mono font-bold px-2 py-0.5 rounded-full border ${riskColors[risk.level] || riskColors.LOW}`}>
-      <Shield size={9} />
+  if (!risk) return <div className="w-12 h-4 bg-navy-700 rounded animate-pulse" />;
+  const c = riskConfig[risk.level] || riskConfig.LOW;
+  if (inline) return (
+    <span className={"inline-flex items-center gap-1 text-[9px] font-mono font-bold px-2 py-0.5 rounded-full border " + c.bg + " " + c.border + " " + c.color}>
+      <span className={"w-1.5 h-1.5 rounded-full " + c.dot} />
       {risk.level}
     </span>
   );
+  return (
+    <div className={"flex items-center gap-2 px-3 py-2 rounded-lg border " + c.bg + " " + c.border}>
+      <Shield size={13} className={c.color} />
+      <span className={"text-xs font-mono font-bold " + c.color}>{risk.level} RISK</span>
+      {risk.openAlerts > 0 && <span className="text-[10px] text-slate-500 ml-auto">{risk.openAlerts} open alerts</span>}
+    </div>
+  );
 }
 
-function ConvoyCard({ convoy, onSelect, selected, onStatusChange }) {
+function ETACountdown({ estimatedArrival }) {
+  const [remaining, setRemaining] = useState("");
+  useEffect(() => {
+    if (!estimatedArrival) return;
+    const calc = () => {
+      const diff = new Date(estimatedArrival) - Date.now();
+      if (diff <= 0) { setRemaining("ARRIVED"); return; }
+      const h = Math.floor(diff / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      setRemaining(h + "h " + m + "m");
+    };
+    calc();
+    const t = setInterval(calc, 60000);
+    return () => clearInterval(t);
+  }, [estimatedArrival]);
+  if (!estimatedArrival || !remaining) return null;
   return (
-    <div
-      onClick={() => onSelect(convoy)}
-      className={`bg-navy-900 border rounded-xl p-4 cursor-pointer transition-all hover:border-white/10 mb-3
-        ${selected ? 'border-gold/30 bg-gold/5' : 'border-white/[0.04]'}`}
-    >
-      <div className="flex items-start justify-between mb-2">
-        <p className="text-sm font-medium text-slate-200">{convoy.name}</p>
-        <span className={`text-[10px] font-mono font-bold ${priorityColors[convoy.priority]}`}>
+    <div className="flex items-center gap-1.5 text-[10px] font-mono">
+      <Clock size={10} className="text-gold" />
+      <span className="text-gold font-bold">ETA {remaining}</span>
+    </div>
+  );
+}
+
+function ConvoyCard({ convoy, onSelect, selected }) {
+  const sc = statusConfig[convoy.status] || statusConfig.planned;
+  return (
+    <div onClick={() => onSelect(convoy)}
+      className={"border rounded-xl overflow-hidden cursor-pointer transition-all hover:scale-[1.01] mb-3 " + sc.border + (selected ? " ring-2 ring-gold/40" : "")}>
+      <div className={"px-4 py-2.5 flex items-center justify-between " + sc.header}>
+        <span className={"text-[9px] font-mono font-bold tracking-widest " + sc.color}>{convoy.name}</span>
+        <span className={"text-[9px] font-mono font-bold px-2 py-0.5 rounded-full border " + (priorityColors[convoy.priority] || priorityColors.medium)}>
           {convoy.priority?.toUpperCase()}
         </span>
       </div>
-      <p className="text-xs text-slate-500 mb-2">{convoy.route_origin} → {convoy.route_destination}</p>
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] font-mono text-slate-600">{convoy.region}</span>
+      <div className={"px-4 py-3 " + sc.bg}>
+        <div className="flex items-center gap-1.5 text-sm text-slate-300 mb-2">
+          <Navigation size={11} className="text-slate-500 flex-shrink-0" />
+          <span className="truncate">{convoy.route_origin} → {convoy.route_destination}</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-mono text-slate-500 flex items-center gap-1">
+              <MapPin size={9} />{convoy.region}
+            </span>
+            {convoy.vehicle_count > 0 && (
+              <span className="text-[10px] font-mono text-slate-500 flex items-center gap-1">
+                <Truck size={9} />{convoy.vehicle_count}
+              </span>
+            )}
+          </div>
+          <RiskBadge convoyId={convoy.id} inline />
+        </div>
+        {convoy.status === "active" && (
+          <div className="mt-2 pt-2 border-t border-white/5">
+            <ETACountdown estimatedArrival={convoy.estimated_arrival} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ConvoyDetailPanel({ convoy, onClose, onRefresh }) {
+  const [tab, setTab] = useState("overview");
+  const [vehicles, setVehicles] = useState([]);
+  const [alerts, setAlerts] = useState([]);
+  const [docs, setDocs] = useState([]);
+  const [loadingVehicles, setLoadingVehicles] = useState(false);
+
+  useEffect(() => {
+    setTab("overview");
+    setLoadingVehicles(true);
+    Promise.all([
+      api.get("/vehicles", { params: { convoy_id: convoy.id, limit: 20 } }).catch(() => ({ data: { data: [] } })),
+      api.get("/alerts", { params: { limit: 10, resolved: "false" } }).catch(() => ({ data: { data: [] } })),
+      api.get("/documents", { params: { convoy_id: convoy.id } }).catch(() => ({ data: { data: [] } })),
+    ]).then(([v, a, d]) => {
+      setVehicles(v.data.data || []);
+      setAlerts((a.data.data || []).filter(al => al.convoy_id === convoy.id));
+      setDocs(d.data.data || []);
+    }).finally(() => setLoadingVehicles(false));
+  }, [convoy.id]);
+
+  const changeStatus = async (status) => {
+    try {
+      await convoysAPI.updateStatus(convoy.id, status);
+      toast.success("Status → " + status);
+      onRefresh();
+    } catch { toast.error("Failed"); }
+  };
+
+  const TABS = [
+    { key: "overview", label: "Overview" },
+    { key: "vehicles", label: "Vehicles (" + vehicles.length + ")" },
+    { key: "alerts",   label: "Alerts (" + alerts.length + ")" },
+    { key: "docs",     label: "Docs (" + docs.length + ")" },
+  ];
+
+  const STATUS_TRANSITIONS = {
+    planned:   ["active", "aborted"],
+    active:    ["completed", "aborted"],
+    completed: [],
+    aborted:   ["planned"],
+  };
+
+  return (
+    <div className="w-96 flex-shrink-0 bg-navy-900 border border-white/[0.06] rounded-2xl overflow-hidden flex flex-col" style={{maxHeight:"calc(100vh - 140px)"}}>
+      {/* Header */}
+      <div className="px-5 py-4 border-b border-white/[0.06] bg-navy-800/50">
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <p className="font-display font-bold text-gold text-base">{convoy.name}</p>
+            <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-0.5">
+              <Navigation size={10} />{convoy.route_origin} → {convoy.route_destination}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-slate-600 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors">
+            <X size={14} />
+          </button>
+        </div>
         <RiskBadge convoyId={convoy.id} />
       </div>
-      {convoy.vehicle_count > 0 && (
-        <p className="text-[10px] text-slate-600 mt-1.5">
-          <Activity size={9} className="inline mr-1" />{convoy.vehicle_count} vehicle{convoy.vehicle_count !== 1 ? 's' : ''}
-        </p>
-      )}
+
+      {/* Tabs */}
+      <div className="flex border-b border-white/[0.06] px-2">
+        {TABS.map(t => (
+          <button key={t.key} onClick={() => setTab(t.key)}
+            className={"px-3 py-2.5 text-[10px] font-mono font-bold tracking-wider transition-colors border-b-2 " +
+              (tab === t.key ? "text-gold border-gold" : "text-slate-600 border-transparent hover:text-slate-400")}>
+            {t.label.toUpperCase()}
+          </button>
+        ))}
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {tab === "overview" && (
+          <div className="space-y-4">
+            {/* Status + Priority */}
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                ["Status", convoy.status?.toUpperCase(), "text-slate-200"],
+                ["Priority", convoy.priority?.toUpperCase(), priorityColors[convoy.priority]?.split(" ")[0] || "text-slate-200"],
+                ["Region", convoy.region, "text-slate-200"],
+                ["Vehicles", vehicles.length, "text-gold"],
+              ].map(([label, value, color]) => (
+                <div key={label} className="bg-navy-800 rounded-xl p-3 border border-white/5">
+                  <p className="text-[9px] font-mono text-slate-500 tracking-wider mb-1">{label.toUpperCase()}</p>
+                  <p className={"text-sm font-bold " + color}>{value}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Timeline */}
+            <div className="bg-navy-800 rounded-xl p-3 border border-white/5">
+              <p className="text-[9px] font-mono text-slate-500 tracking-wider mb-3">TIMELINE</p>
+              <div className="space-y-2">
+                {[
+                  ["Created", convoy.created_at],
+                  ["Departure", convoy.departure_time],
+                  ["Est. Arrival", convoy.estimated_arrival],
+                  ["Actual Arrival", convoy.arrival_time],
+                ].map(([label, val]) => val && (
+                  <div key={label} className="flex items-center justify-between text-xs">
+                    <span className="text-slate-500">{label}</span>
+                    <span className="font-mono text-slate-300">{formatDate(val)}</span>
+                  </div>
+                ))}
+              </div>
+              {convoy.status === "active" && convoy.estimated_arrival && (
+                <div className="mt-3 pt-3 border-t border-white/5">
+                  <ETACountdown estimatedArrival={convoy.estimated_arrival} />
+                </div>
+              )}
+            </div>
+
+            {/* Description */}
+            {convoy.description && (
+              <div className="bg-navy-800 rounded-xl p-3 border border-white/5">
+                <p className="text-[9px] font-mono text-slate-500 tracking-wider mb-2">MISSION BRIEF</p>
+                <p className="text-xs text-slate-300 leading-relaxed">{convoy.description}</p>
+              </div>
+            )}
+
+            {/* Status transitions */}
+            {(STATUS_TRANSITIONS[convoy.status] || []).length > 0 && (
+              <div>
+                <p className="text-[9px] font-mono text-slate-600 mb-2">CHANGE STATUS</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {(STATUS_TRANSITIONS[convoy.status] || []).map(s => (
+                    <button key={s} onClick={() => changeStatus(s)}
+                      className={"py-2 text-[10px] font-mono font-bold border rounded-lg transition-colors " +
+                        (s === "aborted" ? "border-red-500/30 text-red-400 hover:bg-red-500/10" :
+                         s === "active" ? "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10" :
+                         "border-blue-500/30 text-blue-400 hover:bg-blue-500/10")}>
+                      → {s.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === "vehicles" && (
+          <div className="space-y-2">
+            {loadingVehicles ? <div className="flex justify-center py-8"><Spinner /></div>
+              : vehicles.length === 0
+                ? <div className="text-center py-8 text-slate-600 text-sm">No vehicles assigned</div>
+                : vehicles.map(v => (
+                  <div key={v.id} className="bg-navy-800 rounded-xl p-3 border border-white/5 flex items-center gap-3">
+                    <div className={"w-2 h-2 rounded-full flex-shrink-0 " +
+                      (v.status === "active" ? "bg-emerald-400" : v.status === "offline" ? "bg-red-400" : "bg-slate-500")} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-mono font-bold text-slate-200">{v.registration}</p>
+                      <p className="text-[10px] text-slate-500">{v.type} · {v.driver_name || "No driver"}</p>
+                    </div>
+                    <div className="text-right">
+                      {v.fuel_level != null && (
+                        <p className={"text-[10px] font-mono font-bold " + (v.fuel_level < 25 ? "text-red-400" : v.fuel_level < 50 ? "text-amber-400" : "text-emerald-400")}>
+                          {parseFloat(v.fuel_level).toFixed(0)}% fuel
+                        </p>
+                      )}
+                      {v.speed > 0 && <p className="text-[10px] text-slate-500">{v.speed} km/h</p>}
+                    </div>
+                  </div>
+                ))}
+          </div>
+        )}
+
+        {tab === "alerts" && (
+          <div className="space-y-2">
+            {alerts.length === 0
+              ? <div className="text-center py-8 text-slate-600 text-sm flex flex-col items-center gap-2">
+                  <CheckCircle size={24} className="text-emerald-500/50" />
+                  No open alerts for this convoy
+                </div>
+              : alerts.map(a => (
+                <div key={a.id} className={"rounded-xl p-3 border " +
+                  (a.severity === "critical" ? "bg-red-900/20 border-red-500/20" :
+                   a.severity === "high" ? "bg-orange-900/20 border-orange-500/20" :
+                   "bg-navy-800 border-white/5")}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={"text-[9px] font-mono font-bold " +
+                      (a.severity === "critical" ? "text-red-400" : a.severity === "high" ? "text-orange-400" : "text-amber-400")}>
+                      {a.severity?.toUpperCase()}
+                    </span>
+                    <span className="text-[9px] text-slate-500">{a.type}</span>
+                  </div>
+                  <p className="text-xs text-slate-300">{a.message}</p>
+                </div>
+              ))}
+          </div>
+        )}
+
+        {tab === "docs" && (
+          <div className="space-y-2">
+            {docs.length === 0
+              ? <p className="text-center py-8 text-slate-600 text-sm">No documents attached</p>
+              : docs.map(d => (
+                <div key={d.id} className="bg-navy-800 rounded-xl p-3 border border-white/5 flex items-center gap-3">
+                  <FileText size={13} className="text-slate-500 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-slate-300 truncate">{d.title}</p>
+                    <p className="text-[10px] text-slate-600">{d.type?.replace(/_/g, " ")}</p>
+                  </div>
+                  {d.valid_until && new Date(d.valid_until) < new Date(Date.now() + 7*86400000) && (
+                    <AlertTriangle size={12} className="text-amber-400 flex-shrink-0" />
+                  )}
+                </div>
+              ))}
+            <button onClick={async () => {
+              try {
+                await api.post("/documents", { convoy_id: convoy.id, type: "manifest", title: "Manifest — " + convoy.name });
+                const r = await api.get("/documents", { params: { convoy_id: convoy.id } });
+                setDocs(r.data.data || []);
+                toast.success("Document added");
+              } catch { toast.error("Failed"); }
+            }} className="w-full py-2.5 border border-dashed border-white/10 hover:border-white/20 text-slate-600 hover:text-slate-400 rounded-xl text-xs font-mono transition-colors">
+              + ADD DOCUMENT
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -91,195 +362,150 @@ export default function ConvoysPage() {
   const { convoys, loading, fetchConvoys, createConvoy } = useConvoyStore();
   const [showForm, setShowForm] = useState(false);
   const [selected, setSelected] = useState(null);
-  const [documents, setDocuments] = useState([]);
-  const [docsLoading, setDocsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('details');
+  const [view, setView] = useState("board"); // board | list
 
   const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm({
-    resolver: zodResolver(convoySchema),
-    defaultValues: { priority: 'medium' },
+    resolver: zodResolver(schema),
+    defaultValues: { priority: "medium", region: "Kenya" },
   });
 
   useEffect(() => { fetchConvoys(); }, []);
 
-  useEffect(() => {
-    if (!selected || activeTab !== 'documents') return;
-    setDocsLoading(true);
-    documentsAPI.list({ convoy_id: selected.id })
-      .then(r => setDocuments(r.data.data || []))
-      .catch(() => {})
-      .finally(() => setDocsLoading(false));
-  }, [selected?.id, activeTab]);
-
   const onSubmit = async (data) => {
     try {
       await createConvoy(data);
-      toast.success('Convoy created');
+      toast.success("Convoy created");
       reset();
       setShowForm(false);
-    } catch (e) {
-      toast.error(e.response?.data?.error || 'Failed');
-    }
+    } catch (e) { toast.error(e.response?.data?.error || "Failed"); }
   };
 
-  const changeStatus = async (id, status) => {
-    try {
-      await convoysAPI.updateStatus(id, status);
-      toast.success(`Status → ${status}`);
-      fetchConvoys();
-      if (selected?.id === id) setSelected(prev => ({ ...prev, status }));
-    } catch { toast.error('Update failed'); }
-  };
+  const byStatus = (s) => convoys.filter(c => c.status === s);
 
-  const byStatus = (status) => convoys.filter(c => c.status === status);
+  const STATUS_COLS = [
+    { key: "planned",   label: "Planned",   count: byStatus("planned").length },
+    { key: "active",    label: "Active",    count: byStatus("active").length  },
+    { key: "completed", label: "Completed", count: byStatus("completed").length },
+    { key: "aborted",   label: "Aborted",   count: byStatus("aborted").length  },
+  ];
+
+  // Summary stats
+  const totalVehicles = convoys.reduce((s, c) => s + (c.vehicle_count || 0), 0);
+  const criticalCount = convoys.filter(c => c.priority === "critical" && c.status === "active").length;
 
   return (
-    <div className="space-y-5 max-w-[1600px]">
+    <div className="space-y-5 max-w-[1800px]">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-lg font-bold text-gold tracking-widest">CONVOY OPERATIONS</h1>
-          <p className="text-slate-500 text-sm font-mono mt-0.5">{convoys.length} mission{convoys.length !== 1 ? 's' : ''} loaded</p>
+          <p className="text-slate-500 text-sm font-mono mt-0.5">
+            {convoys.length} missions · {byStatus("active").length} active · {totalVehicles} vehicles deployed
+          </p>
         </div>
-        <Button onClick={() => setShowForm(f => !f)}>
-          {showForm ? <X size={14} /> : <Plus size={14} />}
-          {showForm ? 'Cancel' : '+ New Convoy'}
-        </Button>
+        <div className="flex items-center gap-3">
+          <button onClick={() => setShowForm(f => !f)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-gold/10 border border-gold/30 text-gold rounded-xl text-sm font-mono font-bold hover:bg-gold/20 transition-colors">
+            {showForm ? <><X size={13} /> CANCEL</> : <><Plus size={13} /> NEW CONVOY</>}
+          </button>
+        </div>
       </div>
 
-      {showForm && (
-        <Card>
-          <div className="p-5">
-            <p className="text-xs font-mono text-slate-500 uppercase tracking-wider mb-4">Create Convoy</p>
-            <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <Input label="Convoy Name *" placeholder="Operation Alpha" {...register('name')} error={errors.name?.message} />
-              <div className="space-y-1">
-                <label className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">Region *</label>
-                <select {...register('region')} className="w-full bg-navy-800 border border-white/10 focus:border-gold/40 rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none">
-                  <option value="">Select</option>
-                  {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">Priority *</label>
-                <select {...register('priority')} className="w-full bg-navy-800 border border-white/10 focus:border-gold/40 rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none">
-                  {['low','medium','high','critical'].map(p => <option key={p} value={p}>{p}</option>)}
-                </select>
-              </div>
-              <Input label="Origin *" placeholder="Nairobi" {...register('route_origin')} error={errors.route_origin?.message} />
-              <Input label="Destination *" placeholder="Mombasa" {...register('route_destination')} error={errors.route_destination?.message} />
-              <Input label="Departure time" type="datetime-local" {...register('departure_time')} />
-              <div className="sm:col-span-2 lg:col-span-3">
-                <Input label="Description" placeholder="Mission briefing..." {...register('description')} />
-              </div>
-              <div className="sm:col-span-2 lg:col-span-3 flex justify-end">
-                <Button type="submit" loading={isSubmitting}><Route size={14} />Create Convoy</Button>
-              </div>
-            </form>
+      {/* Stats */}
+      <div className="grid grid-cols-4 gap-3">
+        {[
+          ["PLANNED",   byStatus("planned").length,   "text-slate-300"],
+          ["ACTIVE",    byStatus("active").length,    "text-emerald-400"],
+          ["COMPLETED", byStatus("completed").length, "text-blue-400"],
+          ["CRITICAL",  criticalCount,                "text-red-400"],
+        ].map(([label, val, color]) => (
+          <div key={label} className="bg-navy-900 border border-white/5 rounded-xl p-4 text-center">
+            <p className={"font-display text-3xl font-bold " + color}>{val}</p>
+            <p className="text-[9px] font-mono text-slate-600 tracking-widest mt-1">{label}</p>
           </div>
-        </Card>
+        ))}
+      </div>
+
+      {/* Create form */}
+      {showForm && (
+        <div className="bg-navy-900 border border-white/[0.06] rounded-2xl p-5">
+          <p className="text-[10px] font-mono text-slate-500 uppercase tracking-widest mb-4">CREATE CONVOY</p>
+          <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="space-y-1">
+              <label className="text-[9px] font-mono text-slate-500 uppercase tracking-widest">Convoy Name *</label>
+              <input {...register("name")} placeholder="Operation Alpha" className="w-full bg-navy-800 border border-white/10 focus:border-gold/40 rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none placeholder-slate-600" />
+              {errors.name && <p className="text-[10px] text-red-400">{errors.name.message}</p>}
+            </div>
+            <div className="space-y-1">
+              <label className="text-[9px] font-mono text-slate-500 uppercase tracking-widest">Region *</label>
+              <select {...register("region")} className="w-full bg-navy-800 border border-white/10 focus:border-gold/40 rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none">
+                {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[9px] font-mono text-slate-500 uppercase tracking-widest">Priority *</label>
+              <select {...register("priority")} className="w-full bg-navy-800 border border-white/10 focus:border-gold/40 rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none">
+                {["low","medium","high","critical"].map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase()+p.slice(1)}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[9px] font-mono text-slate-500 uppercase tracking-widest">Departure Time</label>
+              <input {...register("departure_time")} type="datetime-local" className="w-full bg-navy-800 border border-white/10 focus:border-gold/40 rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[9px] font-mono text-slate-500 uppercase tracking-widest">Origin *</label>
+              <input {...register("route_origin")} placeholder="Nairobi" className="w-full bg-navy-800 border border-white/10 focus:border-gold/40 rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none placeholder-slate-600" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[9px] font-mono text-slate-500 uppercase tracking-widest">Destination *</label>
+              <input {...register("route_destination")} placeholder="Mombasa" className="w-full bg-navy-800 border border-white/10 focus:border-gold/40 rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none placeholder-slate-600" />
+            </div>
+            <div className="space-y-1 sm:col-span-2">
+              <label className="text-[9px] font-mono text-slate-500 uppercase tracking-widest">Mission Brief</label>
+              <input {...register("description")} placeholder="Mission objectives and security notes..." className="w-full bg-navy-800 border border-white/10 focus:border-gold/40 rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none placeholder-slate-600" />
+            </div>
+            <div className="flex items-end">
+              <button type="submit" disabled={isSubmitting} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gold text-navy-950 rounded-lg text-sm font-mono font-bold hover:bg-gold/90 transition-colors disabled:opacity-50">
+                <Route size={13} />{isSubmitting ? "CREATING..." : "CREATE MISSION"}
+              </button>
+            </div>
+          </form>
+        </div>
       )}
 
+      {/* Main content */}
       <div className="flex gap-5">
         {/* Kanban board */}
-        <div className="flex-1 grid grid-cols-2 xl:grid-cols-4 gap-4 min-w-0">
-          {STATUS_COLS.map(status => (
-            <div key={status} className={`border rounded-xl p-3 ${statusColors[status]}`}>
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-[10px] font-mono font-bold text-slate-400 tracking-widest">{status.toUpperCase()}</p>
-                <span className="text-[10px] font-mono text-slate-600">{byStatus(status).length}</span>
+        <div className={"grid gap-4 flex-1 min-w-0 " + (selected ? "grid-cols-2 xl:grid-cols-4" : "grid-cols-2 xl:grid-cols-4")}>
+          {STATUS_COLS.map(({ key, label, count }) => {
+            const sc = statusConfig[key] || statusConfig.planned;
+            const items = byStatus(key);
+            return (
+              <div key={key} className={"border rounded-xl overflow-hidden " + sc.border}>
+                <div className={"px-4 py-2.5 flex items-center justify-between " + sc.header}>
+                  <span className={"text-[9px] font-mono font-bold tracking-widest " + sc.color}>{label.toUpperCase()}</span>
+                  <span className={"w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold " + sc.color + " " + sc.bg}>{count}</span>
+                </div>
+                <div className="p-3">
+                  {loading ? <div className="flex justify-center py-8"><Spinner /></div>
+                    : items.length === 0
+                      ? <p className="text-center text-[10px] text-slate-700 py-8 font-mono">— EMPTY —</p>
+                      : items.map(c => (
+                        <ConvoyCard key={c.id} convoy={c} onSelect={setSelected} selected={selected?.id === c.id} />
+                      ))}
+                </div>
               </div>
-              {loading ? (
-                <div className="flex justify-center py-8"><Spinner /></div>
-              ) : byStatus(status).length === 0 ? (
-                <p className="text-center text-[10px] text-slate-700 py-6">— empty —</p>
-              ) : (
-                byStatus(status).map(c => (
-                  <ConvoyCard key={c.id} convoy={c} onSelect={setSelected} selected={selected?.id === c.id} onStatusChange={changeStatus} />
-                ))
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Detail panel */}
         {selected && (
-          <div className="w-80 flex-shrink-0">
-            <Card>
-              <div className="p-4">
-                <div className="flex items-start justify-between mb-1">
-                  <p className="font-bold text-gold">{selected.name}</p>
-                  <button onClick={() => setSelected(null)} className="text-slate-600 hover:text-white"><X size={14} /></button>
-                </div>
-                <p className="text-xs text-slate-500 mb-4">{selected.route_origin} → {selected.route_destination}</p>
-
-                {/* Tabs */}
-                <div className="flex gap-1 bg-navy-800 rounded-lg p-1 mb-4">
-                  {['details','documents'].map(t => (
-                    <button key={t} onClick={() => setActiveTab(t)}
-                      className={`flex-1 py-1.5 text-[10px] font-mono font-bold rounded-md transition-colors
-                        ${activeTab === t ? 'bg-gold/10 text-gold' : 'text-slate-500 hover:text-slate-300'}`}>
-                      {t.toUpperCase()}
-                    </button>
-                  ))}
-                </div>
-
-                {activeTab === 'details' && (
-                  <div className="space-y-3 text-sm">
-                    <div className="flex justify-between"><span className="text-slate-500">Status</span><span className="text-slate-200 capitalize">{selected.status}</span></div>
-                    <div className="flex justify-between"><span className="text-slate-500">Priority</span><span className={priorityColors[selected.priority]}>{selected.priority?.toUpperCase()}</span></div>
-                    <div className="flex justify-between"><span className="text-slate-500">Region</span><span className="text-slate-200">{selected.region}</span></div>
-                    {selected.departure_time && <div className="flex justify-between"><span className="text-slate-500">Departure</span><span className="text-slate-200">{formatDate(selected.departure_time)}</span></div>}
-                    <div className="flex justify-between items-center"><span className="text-slate-500">Risk</span><RiskBadge convoyId={selected.id} /></div>
-
-                    {/* Status transitions */}
-                    <div className="pt-3 border-t border-white/5">
-                      <p className="text-[10px] font-mono text-slate-600 mb-2">CHANGE STATUS</p>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {STATUS_COLS.filter(s => s !== selected.status).map(s => (
-                          <button key={s} onClick={() => changeStatus(selected.id, s)}
-                            className="py-1.5 text-[10px] font-mono border border-white/5 hover:border-white/10 text-slate-500 hover:text-slate-300 rounded-lg transition-colors">
-                            → {s.toUpperCase()}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {activeTab === 'documents' && (
-                  <div className="space-y-3">
-                    {docsLoading ? <div className="flex justify-center py-4"><Spinner /></div>
-                      : documents.length === 0
-                        ? <p className="text-xs text-slate-600 text-center py-4">No documents</p>
-                        : documents.map(d => (
-                          <div key={d.id} className="flex items-center gap-2.5 p-2.5 bg-navy-800 rounded-lg border border-white/5">
-                            <FileText size={13} className="text-slate-500 flex-shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs text-slate-300 truncate">{d.title}</p>
-                              <p className="text-[10px] text-slate-600">{d.type?.replace(/_/g, ' ')}</p>
-                            </div>
-                            {d.valid_until && new Date(d.valid_until) < new Date(Date.now() + 7*24*3600000) && (
-                              <AlertTriangle size={12} className="text-amber-400 flex-shrink-0" />
-                            )}
-                          </div>
-                        ))
-                    }
-                    <button
-                      onClick={async () => {
-                        try {
-                          await documentsAPI.create({ convoy_id: selected.id, type: 'manifest', title: `Manifest — ${selected.name}` });
-                          toast.success('Document added');
-                          setActiveTab('documents');
-                        } catch { toast.error('Failed'); }
-                      }}
-                      className="w-full py-2 text-xs border border-dashed border-white/10 hover:border-white/20 text-slate-600 hover:text-slate-400 rounded-lg transition-colors">
-                      + Add Document
-                    </button>
-                  </div>
-                )}
-              </div>
-            </Card>
-          </div>
+          <ConvoyDetailPanel
+            convoy={selected}
+            onClose={() => setSelected(null)}
+            onRefresh={() => { fetchConvoys(); }}
+          />
         )}
       </div>
     </div>

@@ -20,3 +20,45 @@
     at Function.process_params (/workspaces/Sonalit/backend/node_modules/express/lib/router/index.js:346:12)
     at next (/workspaces/Sonalit/backend/node_modules/express/lib/router/index.js:280:10)
     at internalNext (/workspaces/Sonalit/backend/node_modules/helmet/index.cjs:537:6)
+2026-05-12 20:27:16 [error]: Database query error: connect ECONNREFUSED /var/run/postgresql/.s.PGSQL.5432
+Query: SELECT id, email, name, role, status, password_hash FROM users WHERE email = $1 AND deleted_at IS NULL
+2026-05-12 20:27:16 [error]: [POST /api/v1/auth/login] Error: connect ECONNREFUSED /var/run/postgresql/.s.PGSQL.5432
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/controllers/authController.js:19:18
+2026-05-12 20:27:17 [error]: Database query error: connect ECONNREFUSED /var/run/postgresql/.s.PGSQL.5432
+Query: SELECT id, email, name, role, status, password_hash FROM users WHERE email = $1 AND deleted_at IS NULL
+2026-05-12 20:27:17 [error]: [POST /api/v1/auth/login] Error: connect ECONNREFUSED /var/run/postgresql/.s.PGSQL.5432
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/controllers/authController.js:19:18
+2026-05-12 20:27:18 [error]: Database query error: connect ECONNREFUSED /var/run/postgresql/.s.PGSQL.5432
+Query: SELECT id, email, name, role, status, password_hash FROM users WHERE email = $1 AND deleted_at IS NULL
+2026-05-12 20:27:18 [error]: [POST /api/v1/auth/login] Error: connect ECONNREFUSED /var/run/postgresql/.s.PGSQL.5432
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/controllers/authController.js:19:18
+2026-05-12 20:27:19 [error]: Database query error: connect ECONNREFUSED /var/run/postgresql/.s.PGSQL.5432
+Query: SELECT id, email, name, role, status, password_hash FROM users WHERE email = $1 AND deleted_at IS NULL
+2026-05-12 20:27:19 [error]: [POST /api/v1/auth/login] Error: connect ECONNREFUSED /var/run/postgresql/.s.PGSQL.5432
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/controllers/authController.js:19:18
+2026-05-12 20:27:20 [error]: Database query error: connect ECONNREFUSED /var/run/postgresql/.s.PGSQL.5432
+Query: SELECT id, email, name, role, status, password_hash FROM users WHERE email = $1 AND deleted_at IS NULL
+2026-05-12 20:27:20 [error]: [POST /api/v1/auth/login] Error: connect ECONNREFUSED /var/run/postgresql/.s.PGSQL.5432
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/controllers/authController.js:19:18
+2026-05-12 20:27:21 [error]: Database query error: connect ECONNREFUSED /var/run/postgresql/.s.PGSQL.5432
+Query: SELECT id, email, name, role, status, password_hash FROM users WHERE email = $1 AND deleted_at IS NULL
+2026-05-12 20:27:21 [error]: [POST /api/v1/auth/login] Error: connect ECONNREFUSED /var/run/postgresql/.s.PGSQL.5432
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/controllers/authController.js:19:18

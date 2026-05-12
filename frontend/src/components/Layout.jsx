@@ -1,329 +1,191 @@
-import { useState, useEffect, useRef } from 'react';
-import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { FileText, LayoutDashboard, Truck, Shield, Bell, BarChart3, Navigation,
-  MessageSquare, Settings, LogOut, Menu, X, Zap, Radio,
-  Search, ChevronRight, AlertTriangle, Cpu,
-} from "lucide-react";
+import { useState, useEffect } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import {
+  LayoutDashboard, Truck, Route, MapPin, Bell, BarChart3,
+  MessageSquare, Settings, Shield, Cpu, Zap, FileText,
+  LogOut, ChevronLeft, ChevronRight, Menu, X, Package,
+  Users, DollarSign, Wrench, Activity, Navigation,
+  AlertTriangle, TrendingUp
+} from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useAuthStore, useAlertStore } from '../store';
-import socketService from '../services/socket';
-import { initials, timeAgo } from '../utils/helpers';
+import CommandBar from './CommandBar';
+import WarRoom from './WarRoom';
+import OfflineBanner from './OfflineBanner';
 
-const NAV = [
-  { to: '/',          label: 'Dashboard', Icon: LayoutDashboard },
-  { to: '/fleet',     label: 'Fleet',     Icon: Truck           },
-  { to: '/convoys',   label: 'Convoys',   Icon: Shield          },
-  { to: '/gps',       label: 'GPS Track', Icon: Navigation      },
-  { to: '/alerts',    label: 'Alerts',    Icon: Bell            },
-  { to: '/incidents', label: 'Incidents', Icon: AlertTriangle   },
-  { to: '/analytics', label: 'Analytics', Icon: BarChart3       },
-  { to: '/devices',   label: 'Devices',   Icon: Cpu             },
-  { to: '/rules',     label: 'Rules',     Icon: Zap             },
-  { to: '/messages',  label: 'Messages',  Icon: MessageSquare   },
-  { to: '/reports',   label: 'Reports',   Icon: FileText    },
-  { to: '/settings',  label: 'Settings',  Icon: Settings        },
+const NAV_SECTIONS = [
+  {
+    label: 'OPERATIONS',
+    items: [
+      { to: '/',           icon: LayoutDashboard, label: 'Command Center' },
+      { to: '/fleet',      icon: Truck,           label: 'Fleet'          },
+      { to: '/convoys',    icon: Route,           label: 'Convoys'        },
+      { to: '/shipments',  icon: Package,         label: 'Shipments'      },
+      { to: '/drivers',    icon: Users,           label: 'Drivers'        },
+      { to: '/gps',        icon: MapPin,          label: 'GPS Track'      },
+    ]
+  },
+  {
+    label: 'INTELLIGENCE',
+    items: [
+      { to: '/alerts',     icon: Bell,            label: 'Alerts',      badge: true },
+      { to: '/incidents',  icon: AlertTriangle,   label: 'Incidents'    },
+      { to: '/analytics',  icon: BarChart3,       label: 'Analytics'    },
+      { to: '/reports',    icon: FileText,        label: 'Reports'      },
+    ]
+  },
+  {
+    label: 'MANAGEMENT',
+    items: [
+      { to: '/maintenance',icon: Wrench,          label: 'Maintenance'  },
+      { to: '/finance',    icon: DollarSign,      label: 'Finance'      },
+      { to: '/devices',    icon: Cpu,             label: 'Devices'      },
+      { to: '/rules',      icon: Zap,             label: 'Rules'        },
+      { to: '/messages',   icon: MessageSquare,   label: 'Messages'     },
+      { to: '/settings',   icon: Settings,        label: 'Settings'     },
+    ]
+  }
 ];
 
 function Clock() {
   const [time, setTime] = useState(new Date());
-  useEffect(() => {
-    const id = setInterval(() => setTime(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
+  useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
   return (
-    <div className="hidden lg:flex flex-col items-end">
-      <span className="font-mono text-sm font-bold text-slate-200 tabular-nums tracking-wider">
-        {time.toLocaleTimeString('en-GB', { hour12: false })}
-      </span>
-      <span className="font-mono text-[10px] text-slate-600 tracking-widest">
-        {time.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} · UTC
-      </span>
+    <div className="text-right">
+      <p className="font-display text-sm font-bold text-slate-200 tabular-nums">
+        {time.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', second:'2-digit' })}
+      </p>
+      <p className="text-[9px] font-mono text-slate-500">
+        {time.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })} · UTC
+      </p>
     </div>
-  );
-}
-
-function NotificationPanel({ open, onClose, alerts }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
-    if (open) document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open, onClose]);
-  const severityColor = { critical: 'bg-red-500', high: 'bg-amber-500', medium: 'bg-blue-400', low: 'bg-success' };
-  return (
-    <div ref={ref} className={`absolute top-full right-0 mt-2 w-80 bg-navy-900 border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden transition-all duration-200 origin-top-right
-      ${open ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-95 pointer-events-none'}`}>
-      <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
-        <span className="text-xs font-mono font-bold text-slate-300 tracking-wider">NOTIFICATIONS</span>
-        <button onClick={onClose} className="text-slate-600 hover:text-slate-400"><X size={13} /></button>
-      </div>
-      <div className="max-h-72 overflow-y-auto divide-y divide-white/5">
-        {alerts.slice(0, 8).map((a, i) => (
-          <div key={i} className="px-4 py-3 hover:bg-white/3 transition-colors flex items-start gap-3">
-            <span className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${severityColor[a.severity] || 'bg-slate-500'} ${a.severity === 'critical' ? 'animate-pulse' : ''}`} />
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-slate-300 leading-snug line-clamp-2">{a.message}</p>
-              <p className="text-[10px] font-mono text-slate-600 mt-1">{timeAgo(a.created_at)}</p>
-            </div>
-          </div>
-        ))}
-        {alerts.length === 0 && (
-          <div className="px-4 py-8 text-center text-slate-600 text-xs font-mono">NO ACTIVE ALERTS</div>
-        )}
-      </div>
-      <div className="px-4 py-2 border-t border-white/5">
-        <NavLink to="/alerts" onClick={onClose} className="text-xs text-gold hover:text-gold-light font-mono flex items-center gap-1 justify-center">
-          View all alerts <ChevronRight size={11} />
-        </NavLink>
-      </div>
-    </div>
-  );
-}
-
-function GlobalSearch({ open, onClose }) {
-  const [query, setQuery] = useState('');
-  const inputRef = useRef(null);
-  const navigate = useNavigate();
-  useEffect(() => {
-    if (open) { setTimeout(() => inputRef.current?.focus(), 50); setQuery(''); }
-  }, [open]);
-  useEffect(() => {
-    const handler = (e) => { if (e.key === 'Escape') onClose(); };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
-  const quickLinks = [
-    { label: 'Dashboard',       to: '/',          hint: 'Overview'  },
-    { label: 'Fleet Management',to: '/fleet',      hint: 'Vehicles'  },
-    { label: 'Active Convoys',  to: '/convoys',    hint: 'Missions'  },
-    { label: 'Alert Center',    to: '/alerts',     hint: 'Incidents' },
-    { label: 'Analytics',       to: '/analytics',  hint: 'Reports'   },
-  ];
-  const filtered = quickLinks.filter(l => l.label.toLowerCase().includes(query.toLowerCase()));
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center pt-24 px-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-lg bg-navy-900 border border-white/10 rounded-xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-white/5">
-          <Search size={16} className="text-slate-500 flex-shrink-0" />
-          <input ref={inputRef} value={query} onChange={e => setQuery(e.target.value)}
-            placeholder="Search pages, convoys, vehicles..."
-            className="flex-1 bg-transparent text-sm text-slate-200 placeholder-slate-600 outline-none" />
-          <kbd className="hidden sm:flex items-center px-1.5 py-0.5 bg-navy-800 border border-white/10 rounded text-[10px] text-slate-500 font-mono">ESC</kbd>
-        </div>
-        <div className="py-2">
-          {filtered.length === 0
-            ? <p className="px-4 py-6 text-center text-xs text-slate-600 font-mono">NO RESULTS</p>
-            : filtered.map(l => (
-              <button key={l.to} onClick={() => { navigate(l.to); onClose(); }}
-                className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-white/5 transition-colors text-left">
-                <span className="text-sm text-slate-300">{l.label}</span>
-                <span className="text-xs text-slate-600 font-mono">{l.hint}</span>
-              </button>
-            ))
-          }
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SidebarContent({ collapsed, mobile, onClose, user, unreadCount, onLogout }) {
-  return (
-    <aside className={`flex flex-col h-full bg-[#0A0F1A] border-r border-white/[0.06] transition-all duration-300 ${mobile ? 'w-64' : collapsed ? 'w-16' : 'w-60'}`}>
-      <div className={`flex items-center gap-3 px-4 py-5 border-b border-white/[0.06] flex-shrink-0 ${collapsed && !mobile ? 'justify-center px-2' : ''}`}>
-        <div className="relative w-8 h-8 flex-shrink-0">
-          <div className="absolute inset-0 bg-gold/20 rounded-lg blur-sm" />
-          <div className="relative w-8 h-8 bg-gradient-to-br from-gold to-amber-600 rounded-lg flex items-center justify-center shadow-lg">
-            <Zap size={15} className="text-navy-950" />
-          </div>
-        </div>
-        {(!collapsed || mobile) && (
-          <div className="flex-1 min-w-0">
-            <p className="font-display text-sm font-bold text-gold tracking-[0.15em] leading-none">FleetOps</p>
-            <p className="text-[9px] text-slate-600 font-mono tracking-[0.3em] mt-0.5">PRO · TACTICAL</p>
-          </div>
-        )}
-        {mobile && (
-          <button onClick={onClose} className="p-1 hover:bg-white/5 rounded text-slate-500 hover:text-slate-300 flex-shrink-0">
-            <X size={15} />
-          </button>
-        )}
-      </div>
-
-      {(!collapsed || mobile) && (
-        <div className="mx-3 mt-3 mb-1">
-          <div className="px-3 py-2 bg-success/5 border border-success/15 rounded-lg flex items-center gap-2">
-            <span className="relative flex-shrink-0">
-              <span className="absolute inline-flex h-2 w-2 rounded-full bg-success opacity-75 animate-ping" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-success" />
-            </span>
-            <span className="text-[10px] font-mono text-success tracking-[0.2em]">LIVE · CONNECTED</span>
-            <Radio size={10} className="text-success/60 ml-auto" />
-          </div>
-        </div>
-      )}
-      {collapsed && !mobile && (
-        <div className="flex justify-center mt-3 mb-1">
-          <span className="relative">
-            <span className="absolute inline-flex h-2 w-2 rounded-full bg-success opacity-75 animate-ping" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-success" />
-          </span>
-        </div>
-      )}
-
-      {(!collapsed || mobile) && (
-        <p className="px-5 mt-3 mb-1 text-[9px] font-mono text-slate-700 tracking-[0.25em]">NAVIGATION</p>
-      )}
-
-      <nav className="flex-1 px-2 py-1 space-y-0.5 overflow-y-auto">
-        {NAV.map(({ to, label, Icon }) => (
-          <NavLink key={to} to={to} end={to === '/'}
-            onClick={() => mobile && onClose()}
-            className={({ isActive }) =>
-              `group flex items-center gap-3 rounded-lg transition-all duration-150 relative
-              ${collapsed && !mobile ? 'justify-center px-0 py-3' : 'px-3 py-2.5'}
-              ${isActive ? 'bg-gold/10 text-gold' : 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.04]'}`
-            }>
-            {({ isActive }) => (
-              <>
-                {isActive && !collapsed && <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-gold rounded-r-full" />}
-                <Icon size={15} className={`flex-shrink-0 transition-colors ${isActive ? 'text-gold' : 'text-slate-600 group-hover:text-slate-400'}`} />
-                {(!collapsed || mobile) && <span className={`text-sm font-medium flex-1 ${isActive ? 'text-gold' : ''}`}>{label}</span>}
-                {collapsed && !mobile && (
-                  <span className="absolute left-full ml-3 bg-navy-800 border border-white/10 text-slate-200 text-xs font-mono px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap transition-opacity z-50">
-                    {label}
-                  </span>
-                )}
-                {label === 'Alerts' && unreadCount > 0 && (
-                  (!collapsed || mobile)
-                    ? <span className="ml-auto bg-danger text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center font-mono">{unreadCount > 99 ? '99+' : unreadCount}</span>
-                    : <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-danger animate-pulse" />
-                )}
-              </>
-            )}
-          </NavLink>
-        ))}
-      </nav>
-
-      <div className={`border-t border-white/[0.06] p-3 flex-shrink-0 ${collapsed && !mobile ? 'flex justify-center' : ''}`}>
-        {(!collapsed || mobile) ? (
-          <div className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-white/[0.04] transition-colors group">
-            <div className="w-8 h-8 rounded-lg bg-gold/15 border border-gold/25 flex items-center justify-center flex-shrink-0">
-              <span className="text-gold text-xs font-bold font-mono">{initials(user?.name)}</span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-slate-300 truncate leading-tight">{user?.name}</p>
-              <p className="text-[9px] text-slate-600 font-mono uppercase tracking-wider">{user?.role}</p>
-            </div>
-            <button onClick={onLogout} className="p-1.5 rounded-md hover:bg-danger/10 text-slate-600 hover:text-danger transition-colors opacity-0 group-hover:opacity-100">
-              <LogOut size={13} />
-            </button>
-          </div>
-        ) : (
-          <button onClick={onLogout} className="p-2 rounded-lg hover:bg-danger/10 text-slate-600 hover:text-danger transition-colors">
-            <LogOut size={14} />
-          </button>
-        )}
-      </div>
-    </aside>
   );
 }
 
 export default function Layout({ children }) {
+  const { user, logout } = useAuthStore();
+  const { unreadCount } = useAlertStore?.() || { unreadCount: 0 };
+  const location = useLocation();
+  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [notifOpen, setNotifOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const { user, logout, fetchMe } = useAuthStore();
-  const { alerts, unreadCount, addLiveAlert } = useAlertStore();
-  const navigate = useNavigate();
-  const location = useLocation();
 
-  useEffect(() => {
-    const socket = socketService.connect();
-    if (!socket) return;
-    socketService.onAlertNew((alert) => addLiveAlert(alert));
-    return () => socketService.disconnect();
-  }, []);
+  const handleLogout = () => { logout(); navigate('/login'); toast.success('Signed out'); };
+  const initials = (name) => (name || 'U').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
 
-  useEffect(() => { setMobileOpen(false); }, [location.pathname]);
+  const NavContent = ({ mobile = false }) => (
+    <div className={`${mobile ? 'w-64' : 'w-full'} h-full bg-navy-950 border-r border-white/[0.04] flex flex-col`}>
+      {/* Logo */}
+      <div className={`flex items-center gap-3 px-4 py-4 border-b border-white/[0.04] ${collapsed && !mobile ? 'justify-center px-3' : ''}`}>
+        <div className="w-8 h-8 bg-gold rounded-lg flex items-center justify-center flex-shrink-0">
+          <span className="font-display text-navy-950 font-black text-sm">F</span>
+        </div>
+        {(!collapsed || mobile) && (
+          <div>
+            <p className="font-display text-sm font-bold text-gold tracking-widest">FLEETOPS</p>
+            <p className="text-[8px] font-mono text-slate-500 tracking-widest">ENTERPRISE · v2.0</p>
+          </div>
+        )}
+      </div>
 
-  useEffect(() => {
-    const handler = (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setSearchOpen(true); } };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, []);
+      {/* Nav sections */}
+      <nav className="flex-1 overflow-y-auto py-3 px-2">
+        {NAV_SECTIONS.map(section => (
+          <div key={section.label} className="mb-4">
+            {(!collapsed || mobile) && (
+              <p className="text-[8px] font-mono text-slate-600 tracking-widest px-3 pb-1">{section.label}</p>
+            )}
+            <div className="space-y-0.5">
+              {section.items.map(({ to, icon: Icon, label, badge }) => {
+                const active = to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
+                const badgeCount = badge ? unreadCount : 0;
+                return (
+                  <Link key={to} to={to} onClick={() => setMobileOpen(false)}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-all
+                      ${active ? 'bg-gold/10 border border-gold/20 text-gold' : 'text-slate-500 hover:text-slate-200 hover:bg-white/[0.03]'}
+                      ${collapsed && !mobile ? 'justify-center' : ''}`}>
+                    <div className="relative flex-shrink-0">
+                      <Icon size={14} />
+                      {badgeCount > 0 && (
+                        <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-danger rounded-full text-[7px] font-bold flex items-center justify-center text-white">
+                          {badgeCount > 9 ? '9+' : badgeCount}
+                        </span>
+                      )}
+                    </div>
+                    {(!collapsed || mobile) && <span className="font-medium truncate">{label}</span>}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </nav>
 
-  const handleLogout = () => { logout(); navigate('/login'); };
-  const pageTitle = NAV.find(n => n.to === location.pathname || (n.to !== '/' && location.pathname.startsWith(n.to)))?.label || 'Dashboard';
+      {/* User */}
+      <div className={`border-t border-white/[0.04] p-3 ${collapsed && !mobile ? 'flex flex-col items-center' : ''}`}>
+        {(!collapsed || mobile) && (
+          <div className="flex items-center gap-2.5 px-2 py-2 mb-1">
+            <div className="w-7 h-7 rounded-lg bg-gold/20 border border-gold/30 flex items-center justify-center flex-shrink-0">
+              <span className="text-[10px] font-bold font-mono text-gold">{initials(user?.name)}</span>
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-slate-200 truncate">{user?.name}</p>
+              <p className="text-[8px] text-slate-500 font-mono uppercase">{user?.role}</p>
+            </div>
+          </div>
+        )}
+        <button onClick={handleLogout}
+          className={`flex items-center gap-2 w-full text-slate-500 hover:text-danger px-3 py-2 rounded-lg text-xs transition-colors hover:bg-danger/5
+            ${collapsed && !mobile ? 'justify-center' : ''}`}>
+          <LogOut size={12} />
+          {(!collapsed || mobile) && 'Sign out'}
+        </button>
+      </div>
+
+      {/* Collapse toggle */}
+      {!mobile && (
+        <button onClick={() => setCollapsed(c => !c)}
+          className="absolute -right-3 top-20 w-6 h-6 bg-navy-900 border border-white/10 rounded-full flex items-center justify-center text-slate-500 hover:text-gold transition-colors z-10">
+          {collapsed ? <ChevronRight size={11} /> : <ChevronLeft size={11} />}
+        </button>
+      )}
+    </div>
+  );
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#060B14]">
-      <div className={`hidden lg:flex flex-shrink-0 transition-all duration-300 ${collapsed ? 'w-16' : 'w-60'}`}>
-        <SidebarContent collapsed={collapsed} user={user} unreadCount={unreadCount} onLogout={handleLogout} />
-      </div>
-
+    <div className="flex h-screen bg-navy-950 overflow-hidden">
+      {/* Mobile overlay */}
       {mobileOpen && (
-        <>
-          <div className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm lg:hidden" onClick={() => setMobileOpen(false)} />
-          <div className="fixed inset-y-0 left-0 z-50 lg:hidden">
-            <SidebarContent mobile user={user} unreadCount={unreadCount} onClose={() => setMobileOpen(false)} onLogout={handleLogout} />
+        <div className="fixed inset-0 z-50 flex" onClick={() => setMobileOpen(false)}>
+          <div className="relative flex-shrink-0" onClick={e => e.stopPropagation()}>
+            <NavContent mobile />
           </div>
-        </>
+        </div>
       )}
 
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="bg-[#0A0F1A]/90 backdrop-blur-md border-b border-white/[0.06] px-4 lg:px-5 py-3 flex items-center gap-3 flex-shrink-0 z-30">
-          <button onClick={() => setMobileOpen(true)} className="lg:hidden p-1.5 rounded-lg hover:bg-white/5 text-slate-500 hover:text-slate-300 transition-colors">
-            <Menu size={18} />
-          </button>
-          <button onClick={() => setCollapsed(!collapsed)} className="hidden lg:flex p-1.5 rounded-lg hover:bg-white/5 text-slate-600 hover:text-slate-400 transition-colors">
-            <Menu size={15} />
-          </button>
-          <div className="hidden lg:flex items-center gap-2 text-xs font-mono">
-            <span className="text-slate-600">FLEETOPS</span>
-            <ChevronRight size={12} className="text-slate-700" />
-            <span className="text-slate-400 uppercase tracking-wider">{pageTitle}</span>
-          </div>
-          <div className="flex-1" />
-          <button onClick={() => setSearchOpen(true)}
-            className="flex items-center gap-2 bg-navy-800/60 border border-white/[0.08] rounded-lg px-3 py-1.5 text-slate-500 hover:text-slate-300 hover:border-white/15 transition-all text-xs font-mono">
-            <Search size={13} />
-            <span className="hidden sm:inline">Search...</span>
-            <span className="hidden sm:flex items-center gap-0.5 ml-2 opacity-50">
-              <kbd className="bg-navy-700 px-1 rounded text-[10px]">⌘</kbd>
-              <kbd className="bg-navy-700 px-1 rounded text-[10px]">K</kbd>
-            </span>
-          </button>
-          <Clock />
-          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 bg-success/5 border border-success/15 rounded-lg">
-            <span className="w-1.5 h-1.5 rounded-full bg-success" />
-            <span className="text-[10px] font-mono text-success/80 tracking-wider">NOMINAL</span>
-          </div>
-          <div className="relative">
-            <button onClick={() => setNotifOpen(!notifOpen)}
-              className={`relative p-2 rounded-lg border transition-all duration-150 ${notifOpen ? 'bg-gold/10 border-gold/30 text-gold' : 'border-white/[0.08] hover:border-white/15 text-slate-500 hover:text-slate-300'}`}>
-              <Bell size={15} />
-              {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 bg-danger rounded-full flex items-center justify-center text-[9px] font-bold text-white font-mono">
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </span>
-              )}
-            </button>
-            <NotificationPanel open={notifOpen} onClose={() => setNotifOpen(false)} alerts={alerts} />
-          </div>
-          <div className="w-7 h-7 rounded-lg bg-gold/15 border border-gold/25 flex items-center justify-center cursor-pointer hover:bg-gold/20 transition-colors"
-               onClick={handleLogout} title="Logout">
-            <span className="text-gold text-[10px] font-bold font-mono">{initials(user?.name)}</span>
-          </div>
-        </header>
-
-        <main className="flex-1 overflow-y-auto">
-          <div className="p-4 lg:p-6 min-h-full">{children}</div>
-        </main>
+      {/* Desktop sidebar */}
+      <div className={`hidden lg:flex relative flex-shrink-0 transition-all duration-200 ${collapsed ? 'w-14' : 'w-52'}`}>
+        <NavContent />
       </div>
 
-      <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
+      {/* Main */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <OfflineBanner />
+        <header className="flex-shrink-0 flex items-center justify-between px-5 py-3 border-b border-white/[0.04] bg-navy-950/80 backdrop-blur-sm">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setMobileOpen(true)} className="lg:hidden p-1.5 text-slate-400 hover:text-white"><Menu size={16}/></button>
+            <div className="flex items-center gap-2">
+              <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+              <span className="text-[9px] font-mono text-success font-bold tracking-widest hidden sm:block">SYSTEM NOMINAL · ALL NODES ONLINE</span>
+            </div>
+          </div>
+          <Clock />
+        </header>
+        <main className="flex-1 overflow-y-auto p-5 lg:p-6">{children}</main>
+      </div>
+
+      <CommandBar />
+      <WarRoom />
     </div>
   );
 }
