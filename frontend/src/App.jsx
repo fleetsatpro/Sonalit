@@ -8,6 +8,7 @@ import ConvoysPage from './pages/ConvoysPage';
 import AlertsPage from './pages/AlertsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import MessagesPage from './pages/MessagesPage';
+import ReportsPage from './pages/ReportsPage';
 import SettingsPage from './pages/SettingsPage';
 import IncidentsPage from './pages/IncidentsPage';
 import DevicesPage from './pages/DevicesPage';
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="/alerts" element={<RequireAuth><AlertsPage /></RequireAuth>} />
         <Route path="/analytics" element={<RequireAuth><AnalyticsPage /></RequireAuth>} />
         <Route path="/messages" element={<RequireAuth><MessagesPage /></RequireAuth>} />
+        <Route path="/reports" element={<RequireAuth><ReportsPage /></RequireAuth>} />
         <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
         <Route path="/incidents" element={<RequireAuth><IncidentsPage /></RequireAuth>} />
         <Route path="/devices" element={<RequireAuth><DevicesPage /></RequireAuth>} />

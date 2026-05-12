@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import {
-  LayoutDashboard, Truck, Shield, Bell, BarChart3, Navigation,
+import { FileText, LayoutDashboard, Truck, Shield, Bell, BarChart3, Navigation,
   MessageSquare, Settings, LogOut, Menu, X, Zap, Radio,
   Search, ChevronRight, AlertTriangle, Cpu,
-} from 'lucide-react';
+} from "lucide-react";
 import { useAuthStore, useAlertStore } from '../store';
 import socketService from '../services/socket';
 import { initials, timeAgo } from '../utils/helpers';
@@ -20,6 +19,7 @@ const NAV = [
   { to: '/devices',   label: 'Devices',   Icon: Cpu             },
   { to: '/rules',     label: 'Rules',     Icon: Zap             },
   { to: '/messages',  label: 'Messages',  Icon: MessageSquare   },
+  { to: '/reports',   label: 'Reports',   Icon: FileText    },
   { to: '/settings',  label: 'Settings',  Icon: Settings        },
 ];
 
