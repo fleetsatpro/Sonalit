@@ -1,11 +1,8 @@
 {
   "name": "FleetOps",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:20-bookworm",
-  "features": {
-    "ghcr.io/devcontainers/features/postgresql:1": {"version": "16"}
-  },
-  "postStartCommand": "sudo service postgresql start || true",
-  "postCreateCommand": "cd /workspaces/Sonalit && bash setup.sh",
+  "onCreateCommand": "npm install -g nodemon && cd /workspaces/Sonalit/backend && npm install && cd /workspaces/Sonalit/frontend && npm install",
+  "postStartCommand": "bash /workspaces/Sonalit/setup.sh",
   "forwardPorts": [5000, 5173],
   "portsAttributes": {
     "5173": {"onAutoForward": "openBrowser"},
