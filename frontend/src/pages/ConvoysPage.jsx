@@ -2,213 +2,286 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Plus, ChevronRight, Trash2, Users } from 'lucide-react';
+import { Route, Plus, X, ChevronRight, Shield, FileText, AlertTriangle, Activity } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useConvoyStore } from '../store';
-import { convoysAPI } from '../services/api';
-import { Badge, Button, Card, Modal, Input, Select, ConfirmDialog, Spinner, EmptyState } from '../components/UI';
-import { formatDate, priorityColor, truncate } from '../utils/helpers';
+import { convoysAPI, documentsAPI } from '../services/api';
+import api from '../services/api';
+import { Card, Button, Input, Spinner, EmptyState } from '../components/UI';
+import { formatDate } from '../utils/helpers';
 
-const REGIONS = ['Kenya', 'DRC', 'Tanzania', 'Mali'];
-const PRIORITIES = ['low', 'medium', 'high', 'critical'];
-const COLUMNS = ['planned', 'active', 'completed', 'aborted'];
-const TRANSITIONS = { planned: ['active'], active: ['completed', 'aborted'], completed: [], aborted: [] };
-
-const schema = z.object({
-  name: z.string().min(3).max(100),
-  region: z.string().min(1),
-  priority: z.string().min(1),
-  routeOrigin: z.string().min(2).max(100),
-  routeDestination: z.string().min(2).max(100),
-  description: z.string().max(500).optional(),
-  estimatedArrival: z.string().optional(),
+const convoySchema = z.object({
+  name: z.string().min(3, 'Min 3 characters'),
+  region: z.string().min(1, 'Required'),
+  priority: z.enum(['low','medium','high','critical']),
+  route_origin: z.string().min(1, 'Required'),
+  route_destination: z.string().min(1, 'Required'),
+  description: z.string().optional(),
+  departure_time: z.string().optional(),
 });
 
-function ConvoyModal({ open, onClose, onSaved }) {
-  const { register, handleSubmit, formState: { errors }, reset } = useForm({ resolver: zodResolver(schema) });
-  const [saving, setSaving] = useState(false);
-  useEffect(() => { if (open) reset({}); }, [open]);
+const REGIONS = ['Kenya','Tanzania','DRC','Mali','Nigeria','Ethiopia'];
+const STATUS_COLS = ['planned','active','completed','aborted'];
 
-  const onSubmit = async (data) => {
-    setSaving(true);
-    try {
-      await convoysAPI.create({ ...data, estimatedArrival: data.estimatedArrival || undefined });
-      toast.success('Convoy created');
-      onSaved();
-      onClose();
-    } catch (e) {
-      toast.error(e.response?.data?.error || 'Create failed');
-    } finally { setSaving(false); }
-  };
+const statusColors = {
+  planned:   'border-slate-600/30 bg-slate-800/20',
+  active:    'border-success/30 bg-success/5',
+  completed: 'border-blue-500/30 bg-blue-500/5',
+  aborted:   'border-danger/30 bg-danger/5',
+};
 
+const priorityColors = {
+  low:      'text-slate-400',
+  medium:   'text-blue-400',
+  high:     'text-amber-400',
+  critical: 'text-danger',
+};
+
+const riskColors = {
+  LOW:      'text-success bg-success/10 border-success/20',
+  MEDIUM:   'text-amber-400 bg-amber-400/10 border-amber-400/20',
+  HIGH:     'text-orange-400 bg-orange-400/10 border-orange-400/20',
+  CRITICAL: 'text-danger bg-danger/10 border-danger/20',
+};
+
+function RiskBadge({ convoyId }) {
+  const [risk, setRisk] = useState(null);
+  useEffect(() => {
+    api.get(`/ai/risk/${convoyId}`)
+      .then(r => setRisk(r.data.data))
+      .catch(() => {});
+  }, [convoyId]);
+  if (!risk) return null;
   return (
-    <Modal open={open} onClose={onClose} title="New Convoy" size="lg"
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button loading={saving} onClick={handleSubmit(onSubmit)}>Create Convoy</Button></>}>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="col-span-2"><Input label="Mission Name" placeholder="Operation Alpha" error={errors.name?.message} {...register('name')} /></div>
-        <Select label="Region" error={errors.region?.message} {...register('region')}>
-          <option value="">Select region…</option>
-          {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
-        </Select>
-        <Select label="Priority" error={errors.priority?.message} {...register('priority')}>
-          <option value="">Select priority…</option>
-          {PRIORITIES.map((p) => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
-        </Select>
-        <Input label="Route Origin" placeholder="Nairobi" error={errors.routeOrigin?.message} {...register('routeOrigin')} />
-        <Input label="Route Destination" placeholder="Mombasa" error={errors.routeDestination?.message} {...register('routeDestination')} />
-        <div className="col-span-2">
-          <Input label="Estimated Arrival (optional)" type="datetime-local" {...register('estimatedArrival')} />
-        </div>
-        <div className="col-span-2">
-          <label className="block text-xs font-medium text-slate-400 uppercase tracking-widest mb-1.5">Description (optional)</label>
-          <textarea rows={2} placeholder="Mission details…" {...register('description')}
-            className="w-full bg-navy-800 border border-white/10 focus:border-gold/50 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 outline-none resize-none transition-colors" />
-        </div>
-      </div>
-    </Modal>
+    <span className={`inline-flex items-center gap-1 text-[9px] font-mono font-bold px-2 py-0.5 rounded-full border ${riskColors[risk.level] || riskColors.LOW}`}>
+      <Shield size={9} />
+      {risk.level}
+    </span>
   );
 }
 
-function ConvoyCard({ convoy, onStatusChange, onDelete }) {
-  const [eventsOpen, setEventsOpen] = useState(false);
-  const [events, setEvents] = useState([]);
-  const nextStatuses = TRANSITIONS[convoy.status] || [];
-  const dot = { planned: 'bg-blue-400', active: 'bg-success', completed: 'bg-slate-500', aborted: 'bg-danger' };
-
-  const loadEvents = async () => {
-    const r = await convoysAPI.events(convoy.id);
-    setEvents(r.data.data);
-    setEventsOpen(true);
-  };
-
+function ConvoyCard({ convoy, onSelect, selected, onStatusChange }) {
   return (
-    <>
-      <div className="bg-navy-800 border border-white/5 hover:border-white/10 rounded-xl p-4 space-y-3 transition-colors">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dot[convoy.status]}`} />
-            <p className="text-sm font-medium text-slate-100 leading-tight">{convoy.name}</p>
-          </div>
-          <div className="flex gap-1">
-            <button onClick={loadEvents} className="p-1 text-slate-600 hover:text-slate-300 transition-colors" title="Timeline"><ChevronRight size={13} /></button>
-            {convoy.status === 'planned' && (
-              <button onClick={() => onDelete(convoy)} className="p-1 text-slate-600 hover:text-danger transition-colors" title="Delete"><Trash2 size={13} /></button>
-            )}
-          </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-500">{convoy.region}</span>
-            <span className="font-mono" style={{ color: priorityColor(convoy.priority) }}>{convoy.priority}</span>
-          </div>
-          <p className="text-xs text-slate-500 font-mono">{convoy.route_origin} → {convoy.route_destination}</p>
-          <div className="flex items-center gap-1 text-xs text-slate-500">
-            <Users size={11} />
-            <span>{convoy.vehicle_count ?? 0} vehicles</span>
-          </div>
-          {convoy.description && <p className="text-xs text-slate-600 leading-snug">{truncate(convoy.description, 70)}</p>}
-        </div>
-
-        {nextStatuses.length > 0 && (
-          <div className="flex gap-1.5 pt-1">
-            {nextStatuses.map((s) => (
-              <button key={s} onClick={() => onStatusChange(convoy.id, s)}
-                className={`flex-1 text-xs py-1 rounded-md border font-medium transition-colors
-                  ${s === 'active' ? 'border-success/30 text-success hover:bg-success/10' : ''}
-                  ${s === 'completed' ? 'border-blue-500/30 text-blue-400 hover:bg-blue-500/10' : ''}
-                  ${s === 'aborted' ? 'border-danger/30 text-danger hover:bg-danger/10' : ''}`}>
-                → {s}
-              </button>
-            ))}
-          </div>
-        )}
-        <p className="text-[10px] text-slate-700 font-mono">{formatDate(convoy.created_at, { day: '2-digit', month: 'short' })}</p>
+    <div
+      onClick={() => onSelect(convoy)}
+      className={`bg-navy-900 border rounded-xl p-4 cursor-pointer transition-all hover:border-white/10 mb-3
+        ${selected ? 'border-gold/30 bg-gold/5' : 'border-white/[0.04]'}`}
+    >
+      <div className="flex items-start justify-between mb-2">
+        <p className="text-sm font-medium text-slate-200">{convoy.name}</p>
+        <span className={`text-[10px] font-mono font-bold ${priorityColors[convoy.priority]}`}>
+          {convoy.priority?.toUpperCase()}
+        </span>
       </div>
-
-      <Modal open={eventsOpen} onClose={() => setEventsOpen(false)} title={`Timeline — ${convoy.name}`} size="lg"
-        footer={<Button variant="ghost" onClick={() => setEventsOpen(false)}>Close</Button>}>
-        <div className="space-y-2 max-h-80 overflow-y-auto">
-          {events.length === 0 && <p className="text-slate-500 text-sm text-center py-8">No events recorded</p>}
-          {events.map((ev) => (
-            <div key={ev.id} className="flex gap-3 items-start p-3 bg-navy-800 rounded-lg">
-              <Badge severity={ev.severity}>{ev.severity}</Badge>
-              <div>
-                <p className="text-xs text-slate-300">{ev.message || ev.type}</p>
-                <p className="text-[10px] text-slate-600 font-mono mt-0.5">{formatDate(ev.created_at)}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </Modal>
-    </>
+      <p className="text-xs text-slate-500 mb-2">{convoy.route_origin} → {convoy.route_destination}</p>
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-mono text-slate-600">{convoy.region}</span>
+        <RiskBadge convoyId={convoy.id} />
+      </div>
+      {convoy.vehicle_count > 0 && (
+        <p className="text-[10px] text-slate-600 mt-1.5">
+          <Activity size={9} className="inline mr-1" />{convoy.vehicle_count} vehicle{convoy.vehicle_count !== 1 ? 's' : ''}
+        </p>
+      )}
+    </div>
   );
 }
 
 export default function ConvoysPage() {
-  const { convoys, loading, fetchConvoys, updateStatus, deleteConvoy } = useConvoyStore();
-  const [modalOpen, setModalOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState(null);
+  const { convoys, loading, fetchConvoys, createConvoy } = useConvoyStore();
+  const [showForm, setShowForm] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [documents, setDocuments] = useState([]);
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('details');
 
-  useEffect(() => { fetchConvoys({ limit: 50 }); }, []);
+  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm({
+    resolver: zodResolver(convoySchema),
+    defaultValues: { priority: 'medium' },
+  });
 
-  const handleStatusChange = async (id, status) => {
+  useEffect(() => { fetchConvoys(); }, []);
+
+  useEffect(() => {
+    if (!selected || activeTab !== 'documents') return;
+    setDocsLoading(true);
+    documentsAPI.list({ convoy_id: selected.id })
+      .then(r => setDocuments(r.data.data || []))
+      .catch(() => {})
+      .finally(() => setDocsLoading(false));
+  }, [selected?.id, activeTab]);
+
+  const onSubmit = async (data) => {
     try {
-      await updateStatus(id, status);
-      toast.success(`Convoy → ${status}`);
+      await createConvoy(data);
+      toast.success('Convoy created');
+      reset();
+      setShowForm(false);
     } catch (e) {
-      toast.error(e.response?.data?.error || 'Status update failed');
+      toast.error(e.response?.data?.error || 'Failed');
     }
   };
 
-  const handleDelete = async () => {
+  const changeStatus = async (id, status) => {
     try {
-      await deleteConvoy(deleteTarget.id);
-      toast.success('Convoy removed');
-    } catch (e) {
-      toast.error(e.response?.data?.error || 'Delete failed');
-    }
+      await convoysAPI.updateStatus(id, status);
+      toast.success(`Status → ${status}`);
+      fetchConvoys();
+      if (selected?.id === id) setSelected(prev => ({ ...prev, status }));
+    } catch { toast.error('Update failed'); }
   };
 
-  if (loading) return <div className="flex justify-center pt-20"><Spinner size="lg" /></div>;
+  const byStatus = (status) => convoys.filter(c => c.status === status);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 max-w-[1600px]">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-lg font-bold text-gold tracking-widest">CONVOY OPERATIONS</h1>
-          <p className="text-slate-500 text-sm font-mono mt-0.5">{convoys.length} missions loaded</p>
+          <p className="text-slate-500 text-sm font-mono mt-0.5">{convoys.length} mission{convoys.length !== 1 ? 's' : ''} loaded</p>
         </div>
-        <Button onClick={() => setModalOpen(true)}><Plus size={15} /> New Convoy</Button>
+        <Button onClick={() => setShowForm(f => !f)}>
+          {showForm ? <X size={14} /> : <Plus size={14} />}
+          {showForm ? 'Cancel' : '+ New Convoy'}
+        </Button>
       </div>
 
-      {/* Kanban */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        {COLUMNS.map((col) => {
-          const cards = convoys.filter((c) => c.status === col);
-          const colStyle = { planned: 'border-blue-500/20 bg-blue-500/5', active: 'border-success/20 bg-success/5', completed: 'border-slate-500/20 bg-slate-800/30', aborted: 'border-danger/20 bg-danger/5' };
-          return (
-            <div key={col} className={`rounded-xl border ${colStyle[col]} p-3`}>
-              <div className="flex items-center justify-between mb-3 px-1">
-                <p className="text-xs font-mono uppercase tracking-widest text-slate-400">{col}</p>
-                <span className="text-xs font-mono bg-navy-900 px-2 py-0.5 rounded-full text-slate-500">{cards.length}</span>
+      {showForm && (
+        <Card>
+          <div className="p-5">
+            <p className="text-xs font-mono text-slate-500 uppercase tracking-wider mb-4">Create Convoy</p>
+            <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <Input label="Convoy Name *" placeholder="Operation Alpha" {...register('name')} error={errors.name?.message} />
+              <div className="space-y-1">
+                <label className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">Region *</label>
+                <select {...register('region')} className="w-full bg-navy-800 border border-white/10 focus:border-gold/40 rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none">
+                  <option value="">Select</option>
+                  {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
               </div>
-              <div className="space-y-3">
-                {cards.map((c) => (
-                  <ConvoyCard key={c.id} convoy={c} onStatusChange={handleStatusChange} onDelete={setDeleteTarget} />
-                ))}
-                {cards.length === 0 && (
-                  <p className="text-center text-xs text-slate-700 py-6 font-mono">— empty —</p>
+              <div className="space-y-1">
+                <label className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">Priority *</label>
+                <select {...register('priority')} className="w-full bg-navy-800 border border-white/10 focus:border-gold/40 rounded-lg px-3 py-2.5 text-sm text-slate-200 outline-none">
+                  {['low','medium','high','critical'].map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+              <Input label="Origin *" placeholder="Nairobi" {...register('route_origin')} error={errors.route_origin?.message} />
+              <Input label="Destination *" placeholder="Mombasa" {...register('route_destination')} error={errors.route_destination?.message} />
+              <Input label="Departure time" type="datetime-local" {...register('departure_time')} />
+              <div className="sm:col-span-2 lg:col-span-3">
+                <Input label="Description" placeholder="Mission briefing..." {...register('description')} />
+              </div>
+              <div className="sm:col-span-2 lg:col-span-3 flex justify-end">
+                <Button type="submit" loading={isSubmitting}><Route size={14} />Create Convoy</Button>
+              </div>
+            </form>
+          </div>
+        </Card>
+      )}
+
+      <div className="flex gap-5">
+        {/* Kanban board */}
+        <div className="flex-1 grid grid-cols-2 xl:grid-cols-4 gap-4 min-w-0">
+          {STATUS_COLS.map(status => (
+            <div key={status} className={`border rounded-xl p-3 ${statusColors[status]}`}>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[10px] font-mono font-bold text-slate-400 tracking-widest">{status.toUpperCase()}</p>
+                <span className="text-[10px] font-mono text-slate-600">{byStatus(status).length}</span>
+              </div>
+              {loading ? (
+                <div className="flex justify-center py-8"><Spinner /></div>
+              ) : byStatus(status).length === 0 ? (
+                <p className="text-center text-[10px] text-slate-700 py-6">— empty —</p>
+              ) : (
+                byStatus(status).map(c => (
+                  <ConvoyCard key={c.id} convoy={c} onSelect={setSelected} selected={selected?.id === c.id} onStatusChange={changeStatus} />
+                ))
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Detail panel */}
+        {selected && (
+          <div className="w-80 flex-shrink-0">
+            <Card>
+              <div className="p-4">
+                <div className="flex items-start justify-between mb-1">
+                  <p className="font-bold text-gold">{selected.name}</p>
+                  <button onClick={() => setSelected(null)} className="text-slate-600 hover:text-white"><X size={14} /></button>
+                </div>
+                <p className="text-xs text-slate-500 mb-4">{selected.route_origin} → {selected.route_destination}</p>
+
+                {/* Tabs */}
+                <div className="flex gap-1 bg-navy-800 rounded-lg p-1 mb-4">
+                  {['details','documents'].map(t => (
+                    <button key={t} onClick={() => setActiveTab(t)}
+                      className={`flex-1 py-1.5 text-[10px] font-mono font-bold rounded-md transition-colors
+                        ${activeTab === t ? 'bg-gold/10 text-gold' : 'text-slate-500 hover:text-slate-300'}`}>
+                      {t.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+
+                {activeTab === 'details' && (
+                  <div className="space-y-3 text-sm">
+                    <div className="flex justify-between"><span className="text-slate-500">Status</span><span className="text-slate-200 capitalize">{selected.status}</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">Priority</span><span className={priorityColors[selected.priority]}>{selected.priority?.toUpperCase()}</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">Region</span><span className="text-slate-200">{selected.region}</span></div>
+                    {selected.departure_time && <div className="flex justify-between"><span className="text-slate-500">Departure</span><span className="text-slate-200">{formatDate(selected.departure_time)}</span></div>}
+                    <div className="flex justify-between items-center"><span className="text-slate-500">Risk</span><RiskBadge convoyId={selected.id} /></div>
+
+                    {/* Status transitions */}
+                    <div className="pt-3 border-t border-white/5">
+                      <p className="text-[10px] font-mono text-slate-600 mb-2">CHANGE STATUS</p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {STATUS_COLS.filter(s => s !== selected.status).map(s => (
+                          <button key={s} onClick={() => changeStatus(selected.id, s)}
+                            className="py-1.5 text-[10px] font-mono border border-white/5 hover:border-white/10 text-slate-500 hover:text-slate-300 rounded-lg transition-colors">
+                            → {s.toUpperCase()}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === 'documents' && (
+                  <div className="space-y-3">
+                    {docsLoading ? <div className="flex justify-center py-4"><Spinner /></div>
+                      : documents.length === 0
+                        ? <p className="text-xs text-slate-600 text-center py-4">No documents</p>
+                        : documents.map(d => (
+                          <div key={d.id} className="flex items-center gap-2.5 p-2.5 bg-navy-800 rounded-lg border border-white/5">
+                            <FileText size={13} className="text-slate-500 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs text-slate-300 truncate">{d.title}</p>
+                              <p className="text-[10px] text-slate-600">{d.type?.replace(/_/g, ' ')}</p>
+                            </div>
+                            {d.valid_until && new Date(d.valid_until) < new Date(Date.now() + 7*24*3600000) && (
+                              <AlertTriangle size={12} className="text-amber-400 flex-shrink-0" />
+                            )}
+                          </div>
+                        ))
+                    }
+                    <button
+                      onClick={async () => {
+                        try {
+                          await documentsAPI.create({ convoy_id: selected.id, type: 'manifest', title: `Manifest — ${selected.name}` });
+                          toast.success('Document added');
+                          setActiveTab('documents');
+                        } catch { toast.error('Failed'); }
+                      }}
+                      className="w-full py-2 text-xs border border-dashed border-white/10 hover:border-white/20 text-slate-600 hover:text-slate-400 rounded-lg transition-colors">
+                      + Add Document
+                    </button>
+                  </div>
                 )}
               </div>
-            </div>
-          );
-        })}
+            </Card>
+          </div>
+        )}
       </div>
-
-      <ConvoyModal open={modalOpen} onClose={() => setModalOpen(false)} onSaved={() => fetchConvoys({ limit: 50 })} />
-      <ConfirmDialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDelete}
-        title="Delete Convoy" message={`Delete "${deleteTarget?.name}"? This cannot be undone.`} confirmLabel="Delete" danger />
     </div>
   );
 }
