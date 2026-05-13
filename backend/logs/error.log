@@ -62,3 +62,55 @@ Query: SELECT id, email, name, role, status, password_hash FROM users WHERE emai
     at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
     at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
     at async /workspaces/Sonalit/backend/src/controllers/authController.js:19:18
+2026-05-13 07:31:47 [error]: Database query error: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+Query: SELECT id, email, name, role, status, password_hash FROM users WHERE email = $1 AND deleted_at IS NULL
+2026-05-13 07:31:47 [error]: [POST /api/v1/auth/login] Error: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/controllers/authController.js:19:18
+2026-05-13 07:36:41 [error]: Database query error: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+Query: SELECT NOW() AS now
+2026-05-13 07:37:45 [error]: Database query error: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+Query: SELECT NOW() AS now
+2026-05-13 07:49:32 [error]: Database query error: relation "drivers" does not exist
+Query: SELECT d.*, v.registration AS vehicle_registration, v.type AS vehicle_type
+       FROM drivers d LEFT JOIN vehicles v ON v.id = d.current_vehicle_id
+       WHERE d.deleted_at IS NULL
+       ORDER BY d.driver_score DESC, d.name
+       LIMIT $1 OFFSET $2
+2026-05-13 07:49:32 [error]: [GET /api/v1/drivers] error: relation "drivers" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/drivers.js:16:20
+2026-05-13 07:49:38 [error]: Database query error: relation "shipments" does not exist
+Query: 
+      SELECT
+        COUNT(*) total,
+        COUNT(*) FILTER (WHERE status='in_transit') in_transit,
+        COUNT(*) FILTER (WHERE status='delivered') delivered,
+        COUNT(*) FILTER (WHERE status='pending') pending,
+        COUNT(*) FILTER (WHERE status='failed') failed,
+        COUNT(*) FILTER (WHERE priority='critical') critical,
+        AVG(EXTRACT(EPOCH FROM (actual_delivery - scheduled_delivery))/3600) FILTER (WHERE actual_delivery IS NOT NULL AND scheduled_delivery IS NOT NULL) avg_delay_hours
+      FROM shipments WHERE deleted_at IS NULL
+2026-05-13 07:49:38 [error]: [GET /api/v1/shipments/stats/summary] error: relation "shipments" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/shipments.js:119:20
+2026-05-13 07:49:38 [error]: Database query error: relation "shipments" does not exist
+Query: SELECT s.*, c.name AS convoy_name, v.registration AS vehicle_reg, d.name AS driver_name
+       FROM shipments s
+       LEFT JOIN convoys c ON c.id = s.convoy_id
+       LEFT JOIN vehicles v ON v.id = s.vehicle_id
+       LEFT JOIN drivers d ON d.id = s.driver_id
+       WHERE s.deleted_at IS NULL
+       ORDER BY s.created_at DESC
+       LIMIT $1 OFFSET $2
+2026-05-13 07:49:38 [error]: [GET /api/v1/shipments] error: relation "shipments" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/shipments.js:26:20

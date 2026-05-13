@@ -47,7 +47,8 @@ export const useVehicleStore = create((set, get) => ({
     set({ loading: true });
     try {
       const res = await vehiclesAPI.list(params);
-      set({ vehicles: res.data.data, pagination: res.data.pagination, total: res.data.pagination.totalCount, loading: false });
+      const pagination = res.data.pagination || {};
+      set({ vehicles: res.data.data || [], pagination, total: pagination.totalCount || res.data.total || 0, loading: false });
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to load vehicles');
       set({ loading: false });

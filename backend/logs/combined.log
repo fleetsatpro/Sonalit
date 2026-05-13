@@ -1266,3 +1266,279 @@ Query: SELECT id, email, name, role, status, password_hash FROM users WHERE emai
     at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
     at async /workspaces/Sonalit/backend/src/controllers/authController.js:19:18
 2026-05-12 20:27:21 [info]: POST /api/v1/auth/login 500 33 - 1.683 ms
+2026-05-13 07:19:48 [warn]: Route not found: drivers — Cannot find module '../../../sonalit-fixed/backend/src/middleware/auth'
+Require stack:
+- /workspaces/Sonalit/backend/src/routes/drivers.js
+- /workspaces/Sonalit/backend/src/app.js
+2026-05-13 07:19:48 [warn]: Route not found: shipments — Cannot find module '../../../sonalit-fixed/backend/src/middleware/auth'
+Require stack:
+- /workspaces/Sonalit/backend/src/routes/shipments.js
+- /workspaces/Sonalit/backend/src/app.js
+2026-05-13 07:19:48 [warn]: Route not found: finance — Cannot find module '../../../sonalit-fixed/backend/src/middleware/auth'
+Require stack:
+- /workspaces/Sonalit/backend/src/routes/finance.js
+- /workspaces/Sonalit/backend/src/app.js
+2026-05-13 07:19:48 [warn]: Route not found: maintenance — Cannot find module '../../../sonalit-fixed/backend/src/middleware/auth'
+Require stack:
+- /workspaces/Sonalit/backend/src/routes/maintenance.js
+- /workspaces/Sonalit/backend/src/app.js
+2026-05-13 07:19:48 [warn]: Route not found: riskzones — Cannot find module '../../../sonalit-fixed/backend/src/middleware/auth'
+Require stack:
+- /workspaces/Sonalit/backend/src/routes/riskzones.js
+- /workspaces/Sonalit/backend/src/app.js
+2026-05-13 07:19:48 [warn]: Queues disabled — DISABLE_REDIS=true
+2026-05-13 07:19:48 [info]: FleetOps Enterprise v2.1 running on port 5000 [development]
+2026-05-13 07:27:45 [info]: Route loaded: /api/v1/drivers
+2026-05-13 07:27:45 [info]: Route loaded: /api/v1/shipments
+2026-05-13 07:27:45 [info]: Route loaded: /api/v1/finance
+2026-05-13 07:27:45 [info]: Route loaded: /api/v1/maintenance
+2026-05-13 07:27:45 [info]: Route loaded: /api/v1/riskzones
+2026-05-13 07:27:45 [warn]: Queues disabled — DISABLE_REDIS=true
+2026-05-13 07:27:45 [info]: FleetOps Enterprise v2.1 running on port 5000 [development]
+2026-05-13 07:30:03 [info]: Route loaded: /api/v1/drivers
+2026-05-13 07:30:03 [info]: Route loaded: /api/v1/shipments
+2026-05-13 07:30:03 [info]: Route loaded: /api/v1/finance
+2026-05-13 07:30:03 [info]: Route loaded: /api/v1/maintenance
+2026-05-13 07:30:03 [info]: Route loaded: /api/v1/riskzones
+2026-05-13 07:30:03 [warn]: Queues disabled — DISABLE_REDIS=true
+2026-05-13 07:30:03 [info]: FleetOps Enterprise v2.1 running on port 5000 [development]
+2026-05-13 07:31:47 [error]: Database query error: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+Query: SELECT id, email, name, role, status, password_hash FROM users WHERE email = $1 AND deleted_at IS NULL
+2026-05-13 07:31:47 [error]: [POST /api/v1/auth/login] Error: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/controllers/authController.js:19:18
+2026-05-13 07:31:47 [info]: POST /api/v1/auth/login 500 33 - 25.516 ms
+2026-05-13 07:36:41 [warn]: Redis disabled via DISABLE_REDIS=true. Queue workers will not start.
+2026-05-13 07:36:41 [error]: Database query error: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+Query: SELECT NOW() AS now
+2026-05-13 07:36:41 [info]: GET /health 503 78 - 5.659 ms
+2026-05-13 07:37:45 [warn]: Redis disabled via DISABLE_REDIS=true. Queue workers will not start.
+2026-05-13 07:37:45 [error]: Database query error: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+Query: SELECT NOW() AS now
+2026-05-13 07:37:45 [info]: GET /health 503 78 - 4.924 ms
+2026-05-13 07:38:30 [info]: Route loaded: /api/v1/drivers
+2026-05-13 07:38:30 [info]: Route loaded: /api/v1/shipments
+2026-05-13 07:38:30 [info]: Route loaded: /api/v1/finance
+2026-05-13 07:38:30 [info]: Route loaded: /api/v1/maintenance
+2026-05-13 07:38:30 [info]: Route loaded: /api/v1/riskzones
+2026-05-13 07:38:30 [warn]: Queues disabled — DISABLE_REDIS=true
+2026-05-13 07:38:30 [info]: FleetOps Enterprise v2.1 running on port 5000 [development]
+2026-05-13 07:39:48 [info]: Route loaded: /api/v1/drivers
+2026-05-13 07:39:48 [info]: Route loaded: /api/v1/shipments
+2026-05-13 07:39:48 [info]: Route loaded: /api/v1/finance
+2026-05-13 07:39:48 [info]: Route loaded: /api/v1/maintenance
+2026-05-13 07:39:48 [info]: Route loaded: /api/v1/riskzones
+2026-05-13 07:39:48 [warn]: Queues disabled — DISABLE_REDIS=true
+2026-05-13 07:39:48 [info]: FleetOps Enterprise v2.1 running on port 5000 [development]
+2026-05-13 07:40:27 [warn]: Redis disabled via DISABLE_REDIS=true. Queue workers will not start.
+2026-05-13 07:40:27 [info]: New PostgreSQL client connected
+2026-05-13 07:40:27 [info]: GET /health 200 91 - 50.442 ms
+2026-05-13 07:40:47 [info]: Login: admin@fleetops.local (admin)
+2026-05-13 07:40:47 [info]: POST /api/v1/auth/login 200 379 - 353.528 ms
+2026-05-13 07:42:22 [info]: Route loaded: /api/v1/drivers
+2026-05-13 07:42:22 [info]: Route loaded: /api/v1/shipments
+2026-05-13 07:42:22 [info]: Route loaded: /api/v1/finance
+2026-05-13 07:42:22 [info]: Route loaded: /api/v1/maintenance
+2026-05-13 07:42:22 [info]: Route loaded: /api/v1/riskzones
+2026-05-13 07:42:22 [warn]: Queues disabled — DISABLE_REDIS=true
+2026-05-13 07:42:22 [info]: FleetOps Enterprise v2.1 running on port 5000 [development]
+2026-05-13 07:43:06 [info]: New PostgreSQL client connected
+2026-05-13 07:43:06 [info]: Login: admin@fleetops.local (admin)
+2026-05-13 07:43:06 [info]: POST /api/v1/auth/login 200 379 - 144.902 ms
+2026-05-13 07:43:07 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 30.629 ms
+2026-05-13 07:43:07 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 19.372 ms
+2026-05-13 07:43:07 [info]: New PostgreSQL client connected
+2026-05-13 07:43:07 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 60.436 ms
+2026-05-13 07:43:07 [info]: New PostgreSQL client connected
+2026-05-13 07:43:07 [info]: New PostgreSQL client connected
+2026-05-13 07:43:07 [info]: New PostgreSQL client connected
+2026-05-13 07:43:07 [info]: New PostgreSQL client connected
+2026-05-13 07:43:07 [info]: New PostgreSQL client connected
+2026-05-13 07:43:07 [info]: GET /api/v1/analytics/dashboard 304 - - 66.906 ms
+2026-05-13 07:43:08 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 4.114 ms
+2026-05-13 07:43:08 [info]: GET /api/v1/analytics/dashboard 304 - - 8.599 ms
+2026-05-13 07:43:08 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 4.057 ms
+2026-05-13 07:43:08 [info]: Socket: -h_niPUjYyL2aDmrAAAB user=admin@fleetops.local
+2026-05-13 07:43:08 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 3.559 ms
+2026-05-13 07:43:11 [info]: GET /api/v1/vehicles?limit=200 200 9263 - 12.188 ms
+2026-05-13 07:43:11 [info]: GET /api/v1/vehicles?limit=200 304 - - 3.223 ms
+2026-05-13 07:43:12 [info]: GET /api/v1/geofences 304 - - 2.795 ms
+2026-05-13 07:43:14 [info]: GET /api/v1/vehicles 304 - - 3.393 ms
+2026-05-13 07:43:16 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 3.334 ms
+2026-05-13 07:43:16 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 2.116 ms
+2026-05-13 07:43:17 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 2.587 ms
+2026-05-13 07:43:17 [info]: GET /api/v1/analytics/dashboard 304 - - 2.974 ms
+2026-05-13 07:43:17 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 4.521 ms
+2026-05-13 07:43:17 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 4.551 ms
+2026-05-13 07:43:17 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 3.339 ms
+2026-05-13 07:43:17 [info]: GET /api/v1/analytics/dashboard 304 - - 4.242 ms
+2026-05-13 07:43:19 [info]: GET /api/v1/reports 304 - - 7.041 ms
+2026-05-13 07:43:20 [info]: GET /api/v1/reports 304 - - 2.132 ms
+2026-05-13 07:43:22 [info]: GET /api/v1/analytics/dashboard 304 - - 5.150 ms
+2026-05-13 07:43:22 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 12.250 ms
+2026-05-13 07:43:22 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 8.362 ms
+2026-05-13 07:43:22 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 12.757 ms
+2026-05-13 07:43:22 [info]: GET /api/v1/analytics/dashboard 304 - - 5.937 ms
+2026-05-13 07:43:22 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 15.000 ms
+2026-05-13 07:43:22 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 24.035 ms
+2026-05-13 07:43:22 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 26.123 ms
+2026-05-13 07:43:33 [info]: GET /api/v1/convoys 200 1792 - 3.451 ms
+2026-05-13 07:43:33 [info]: GET /api/v1/convoys 304 - - 2.736 ms
+2026-05-13 07:43:33 [info]: GET /api/v1/ai/risk/65233672-1fe7-49d4-b696-fde926f5631c 200 49 - 4.563 ms
+2026-05-13 07:43:33 [info]: GET /api/v1/ai/risk/5171c006-bc7c-45f1-9077-f2fb756d0baa 200 49 - 4.153 ms
+2026-05-13 07:43:33 [info]: GET /api/v1/ai/risk/d2121a38-4c72-4859-980a-6874d3158254 200 53 - 2.660 ms
+2026-05-13 07:43:34 [info]: GET /api/v1/ai/risk/65233672-1fe7-49d4-b696-fde926f5631c 304 - - 7.274 ms
+2026-05-13 07:43:34 [info]: GET /api/v1/ai/risk/5171c006-bc7c-45f1-9077-f2fb756d0baa 304 - - 2.422 ms
+2026-05-13 07:43:34 [info]: GET /api/v1/ai/risk/d2121a38-4c72-4859-980a-6874d3158254 304 - - 2.141 ms
+2026-05-13 07:43:39 [info]: GET /api/v1/vehicles?limit=200 304 - - 3.193 ms
+2026-05-13 07:43:40 [info]: GET /api/v1/vehicles?limit=200 304 - - 2.800 ms
+2026-05-13 07:43:40 [info]: GET /api/v1/geofences 304 - - 3.016 ms
+2026-05-13 07:43:52 [info]: GET /api/v1/vehicles 304 - - 5.251 ms
+2026-05-13 07:46:36 [info]: Socket disconnected: -h_niPUjYyL2aDmrAAAB
+2026-05-13 07:46:40 [info]: Socket: T6gPdNc2UVB-eFhXAAAD user=admin@fleetops.local
+2026-05-13 07:46:40 [info]: New PostgreSQL client connected
+2026-05-13 07:46:40 [info]: GET /api/v1/auth/me 200 178 - 9.159 ms
+2026-05-13 07:46:40 [info]: GET /api/v1/auth/me 304 - - 1.918 ms
+2026-05-13 07:46:41 [info]: New PostgreSQL client connected
+2026-05-13 07:46:41 [info]: New PostgreSQL client connected
+2026-05-13 07:46:41 [info]: New PostgreSQL client connected
+2026-05-13 07:46:41 [info]: New PostgreSQL client connected
+2026-05-13 07:46:41 [info]: New PostgreSQL client connected
+2026-05-13 07:46:41 [info]: GET /api/v1/analytics/dashboard 304 - - 72.570 ms
+2026-05-13 07:46:41 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 4.849 ms
+2026-05-13 07:46:41 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 4.372 ms
+2026-05-13 07:46:41 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 3.062 ms
+2026-05-13 07:46:41 [info]: GET /api/v1/analytics/dashboard 304 - - 3.705 ms
+2026-05-13 07:46:41 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 3.625 ms
+2026-05-13 07:46:41 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 2.623 ms
+2026-05-13 07:46:41 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 2.069 ms
+2026-05-13 07:46:42 [info]: Socket: EAy-yHrKaG7sXIT1AAAF user=admin@fleetops.local
+2026-05-13 07:46:46 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 4.024 ms
+2026-05-13 07:46:46 [info]: GET /api/v1/analytics/dashboard 304 - - 6.708 ms
+2026-05-13 07:46:46 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 4.792 ms
+2026-05-13 07:46:46 [info]: GET /api/v1/alerts?limit=200 200 1224 - 7.181 ms
+2026-05-13 07:46:46 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 2.517 ms
+2026-05-13 07:46:46 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 6.469 ms
+2026-05-13 07:46:46 [info]: GET /api/v1/analytics/dashboard 304 - - 3.677 ms
+2026-05-13 07:46:46 [info]: GET /api/v1/alerts?limit=200 304 - - 7.288 ms
+2026-05-13 07:46:46 [info]: GET /api/v1/vehicles?limit=200 200 9263 - 2.728 ms
+2026-05-13 07:46:47 [info]: GET /api/v1/vehicles?limit=200 304 - - 3.142 ms
+2026-05-13 07:46:47 [info]: GET /api/v1/geofences 304 - - 2.480 ms
+2026-05-13 07:47:06 [info]: Login: admin@fleetops.local (admin)
+2026-05-13 07:47:06 [info]: POST /api/v1/auth/login 200 379 - 86.334 ms
+2026-05-13 07:47:06 [info]: GET /api/v1/analytics/dashboard 200 118 - 2.919 ms
+2026-05-13 07:47:17 [info]: GET /api/v1/vehicles?limit=200 304 - - 2.674 ms
+2026-05-13 07:47:47 [info]: GET /api/v1/vehicles?limit=200 200 9263 - 2.684 ms
+2026-05-13 07:48:13 [info]: Socket disconnected: T6gPdNc2UVB-eFhXAAAD
+2026-05-13 07:48:13 [info]: Socket disconnected: EAy-yHrKaG7sXIT1AAAF
+2026-05-13 07:48:16 [info]: Socket: 5BlTNZ-qAoVJMSJoAAAH user=admin@fleetops.local
+2026-05-13 07:48:17 [info]: Socket: SPidsmd0lBnPI-2KAAAJ user=admin@fleetops.local
+2026-05-13 07:48:17 [info]: New PostgreSQL client connected
+2026-05-13 07:48:17 [info]: GET /api/v1/vehicles?limit=200 200 9263 - 11.838 ms
+2026-05-13 07:48:47 [info]: GET /api/v1/vehicles?limit=200 200 9263 - 3.844 ms
+2026-05-13 07:48:47 [info]: Socket disconnected: 5BlTNZ-qAoVJMSJoAAAH
+2026-05-13 07:49:05 [info]: GET /api/v1/auth/me 200 178 - 4.209 ms
+2026-05-13 07:49:05 [info]: GET /api/v1/auth/me 200 178 - 6.303 ms
+2026-05-13 07:49:07 [info]: GET /api/v1/vehicles 304 - - 2.546 ms
+2026-05-13 07:49:16 [info]: GET /api/v1/geofences 304 - - 5.148 ms
+2026-05-13 07:49:16 [info]: GET /api/v1/vehicles?limit=100 200 9263 - 4.865 ms
+2026-05-13 07:49:17 [info]: GET /api/v1/vehicles?limit=200 200 9263 - 3.114 ms
+2026-05-13 07:49:31 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.785 ms
+2026-05-13 07:49:32 [error]: Database query error: relation "drivers" does not exist
+Query: SELECT d.*, v.registration AS vehicle_registration, v.type AS vehicle_type
+       FROM drivers d LEFT JOIN vehicles v ON v.id = d.current_vehicle_id
+       WHERE d.deleted_at IS NULL
+       ORDER BY d.driver_score DESC, d.name
+       LIMIT $1 OFFSET $2
+2026-05-13 07:49:32 [error]: [GET /api/v1/drivers] error: relation "drivers" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/drivers.js:16:20
+2026-05-13 07:49:32 [info]: GET /api/v1/drivers?limit=50 500 33 - 3.704 ms
+2026-05-13 07:49:38 [info]: New PostgreSQL client connected
+2026-05-13 07:49:38 [info]: New PostgreSQL client connected
+2026-05-13 07:49:38 [error]: Database query error: relation "shipments" does not exist
+Query: 
+      SELECT
+        COUNT(*) total,
+        COUNT(*) FILTER (WHERE status='in_transit') in_transit,
+        COUNT(*) FILTER (WHERE status='delivered') delivered,
+        COUNT(*) FILTER (WHERE status='pending') pending,
+        COUNT(*) FILTER (WHERE status='failed') failed,
+        COUNT(*) FILTER (WHERE priority='critical') critical,
+        AVG(EXTRACT(EPOCH FROM (actual_delivery - scheduled_delivery))/3600) FILTER (WHERE actual_delivery IS NOT NULL AND scheduled_delivery IS NOT NULL) avg_delay_hours
+      FROM shipments WHERE deleted_at IS NULL
+2026-05-13 07:49:38 [error]: [GET /api/v1/shipments/stats/summary] error: relation "shipments" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/shipments.js:119:20
+2026-05-13 07:49:38 [info]: GET /api/v1/shipments/stats/summary 500 33 - 19.655 ms
+2026-05-13 07:49:38 [error]: Database query error: relation "shipments" does not exist
+Query: SELECT s.*, c.name AS convoy_name, v.registration AS vehicle_reg, d.name AS driver_name
+       FROM shipments s
+       LEFT JOIN convoys c ON c.id = s.convoy_id
+       LEFT JOIN vehicles v ON v.id = s.vehicle_id
+       LEFT JOIN drivers d ON d.id = s.driver_id
+       WHERE s.deleted_at IS NULL
+       ORDER BY s.created_at DESC
+       LIMIT $1 OFFSET $2
+2026-05-13 07:49:38 [error]: [GET /api/v1/shipments] error: relation "shipments" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/shipments.js:26:20
+2026-05-13 07:49:38 [info]: GET /api/v1/shipments?limit=50 500 33 - 24.643 ms
+2026-05-13 07:49:41 [info]: New PostgreSQL client connected
+2026-05-13 07:49:41 [info]: GET /api/v1/convoys 304 - - 19.620 ms
+2026-05-13 07:49:41 [info]: GET /api/v1/convoys 304 - - 4.759 ms
+2026-05-13 07:49:41 [info]: GET /api/v1/ai/risk/d2121a38-4c72-4859-980a-6874d3158254 304 - - 8.969 ms
+2026-05-13 07:49:41 [info]: GET /api/v1/ai/risk/5171c006-bc7c-45f1-9077-f2fb756d0baa 304 - - 1.874 ms
+2026-05-13 07:49:41 [info]: New PostgreSQL client connected
+2026-05-13 07:49:41 [info]: GET /api/v1/ai/risk/65233672-1fe7-49d4-b696-fde926f5631c 304 - - 22.673 ms
+2026-05-13 07:49:42 [info]: GET /api/v1/ai/risk/d2121a38-4c72-4859-980a-6874d3158254 304 - - 8.460 ms
+2026-05-13 07:49:42 [info]: GET /api/v1/ai/risk/5171c006-bc7c-45f1-9077-f2fb756d0baa 304 - - 11.745 ms
+2026-05-13 07:49:42 [info]: GET /api/v1/ai/risk/65233672-1fe7-49d4-b696-fde926f5631c 304 - - 6.825 ms
+2026-05-13 07:49:43 [info]: GET /api/v1/vehicles 304 - - 3.425 ms
+2026-05-13 07:49:46 [info]: GET /api/v1/vehicles?limit=100 304 - - 7.982 ms
+2026-05-13 07:49:47 [info]: GET /api/v1/vehicles?limit=200 200 9263 - 2.762 ms
+2026-05-13 07:49:52 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 8.666 ms
+2026-05-13 07:49:52 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 16.870 ms
+2026-05-13 07:49:52 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 7.173 ms
+2026-05-13 07:49:52 [info]: New PostgreSQL client connected
+2026-05-13 07:49:52 [info]: New PostgreSQL client connected
+2026-05-13 07:49:52 [info]: New PostgreSQL client connected
+2026-05-13 07:49:52 [info]: New PostgreSQL client connected
+2026-05-13 07:49:52 [info]: GET /api/v1/analytics/dashboard 304 - - 49.445 ms
+2026-05-13 07:49:53 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 3.159 ms
+2026-05-13 07:49:53 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 4.203 ms
+2026-05-13 07:49:53 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 3.802 ms
+2026-05-13 07:49:53 [info]: GET /api/v1/analytics/dashboard 304 - - 3.416 ms
+2026-05-13 07:50:01 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.159 ms
+2026-05-13 07:50:02 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 3.677 ms
+2026-05-13 07:50:02 [info]: GET /api/v1/alerts?limit=200 304 - - 11.702 ms
+2026-05-13 07:50:02 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 7.723 ms
+2026-05-13 07:50:02 [info]: New PostgreSQL client connected
+2026-05-13 07:50:02 [info]: GET /api/v1/analytics/dashboard 304 - - 34.796 ms
+2026-05-13 07:50:02 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 3.228 ms
+2026-05-13 07:50:02 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 4.133 ms
+2026-05-13 07:50:02 [info]: GET /api/v1/alerts?limit=200 304 - - 7.093 ms
+2026-05-13 07:50:02 [info]: GET /api/v1/analytics/dashboard 304 - - 3.154 ms
+2026-05-13 07:50:10 [info]: GET /api/v1/reports 304 - - 2.008 ms
+2026-05-13 07:50:10 [info]: GET /api/v1/reports 304 - - 1.811 ms
+2026-05-13 07:50:16 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.648 ms
+2026-05-13 07:50:31 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.578 ms
+2026-05-13 07:50:46 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.731 ms
+2026-05-13 07:51:01 [info]: GET /api/v1/vehicles?limit=100 304 - - 10.756 ms
+2026-05-13 07:51:04 [info]: GET /api/v1/vehicles?limit=200 200 9263 - 6.333 ms
+2026-05-13 07:51:16 [info]: GET /api/v1/vehicles?limit=100 200 9263 - 2.594 ms
+2026-05-13 07:51:31 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.473 ms
+2026-05-13 07:51:46 [info]: GET /api/v1/vehicles?limit=100 200 9263 - 2.968 ms
+2026-05-13 07:52:01 [info]: GET /api/v1/vehicles?limit=100 304 - - 15.566 ms
+2026-05-13 07:52:04 [info]: GET /api/v1/vehicles?limit=200 304 - - 10.409 ms
+2026-05-13 07:52:16 [info]: GET /api/v1/vehicles?limit=100 200 9263 - 7.220 ms
+2026-05-13 07:52:31 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.633 ms
+2026-05-13 07:52:46 [info]: GET /api/v1/vehicles?limit=100 200 9263 - 17.366 ms

@@ -1,6 +1,6 @@
 const router = require('express').Router();
-const { authenticate, authorize } = require('../../../sonalit-fixed/backend/src/middleware/auth');
-const { query } = require('../../../sonalit-fixed/backend/src/config/database');
+const { authenticate, authorize } = require('../middleware/auth');
+const { query } = require('../config/database');
 
 router.use(authenticate);
 

@@ -1,6 +1,6 @@
 const router = require('express').Router();
-const { authenticate } = require('../../../sonalit-fixed/backend/src/middleware/auth');
-const { query } = require('../../../sonalit-fixed/backend/src/config/database');
+const { authenticate } = require('../middleware/auth');
+const { query } = require('../config/database');
 const crypto = require('crypto');
 
 router.use(authenticate);
