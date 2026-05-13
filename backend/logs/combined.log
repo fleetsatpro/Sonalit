@@ -2053,3 +2053,32 @@ Query: SELECT d.*, v.registration AS vehicle_registration, v.type AS vehicle_typ
 2026-05-13 08:19:18 [info]: Socket disconnected: 9YyTcqEoCKPWk5_sAAAL
 2026-05-13 08:19:18 [info]: GET /api/v1/alerts?limit=50&resolved=false 304 - - 2.354 ms
 2026-05-13 08:19:18 [info]: GET /api/v1/alerts?limit=50&resolved=false 304 - - 3.109 ms
+2026-05-13 12:03:31 [info]: Route loaded: /api/v1/drivers
+2026-05-13 12:03:31 [info]: Route loaded: /api/v1/shipments
+2026-05-13 12:03:31 [info]: Route loaded: /api/v1/finance
+2026-05-13 12:03:31 [info]: Route loaded: /api/v1/maintenance
+2026-05-13 12:03:31 [info]: Route loaded: /api/v1/riskzones
+2026-05-13 12:03:31 [warn]: Queues disabled — DISABLE_REDIS=true
+2026-05-13 12:03:31 [info]: FleetOps Enterprise v2.1 running on port 5000 [development]
+2026-05-13 12:10:34 [error]: Database query error: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+Query: SELECT id, email, name, role, status, password_hash FROM users WHERE email = $1 AND deleted_at IS NULL
+2026-05-13 12:10:34 [error]: [POST /api/v1/auth/login] Error: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/controllers/authController.js:19:18
+2026-05-13 12:10:34 [info]: POST /api/v1/auth/login 500 33 - 26.394 ms
+2026-05-13 12:11:46 [warn]: Redis disabled via DISABLE_REDIS=true. Queue workers will not start.
+2026-05-13 12:11:46 [error]: Database query error: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+Query: SELECT NOW() AS now
+2026-05-13 12:11:46 [info]: GET /health 503 78 - 7.990 ms
+2026-05-13 12:33:04 [info]: Route loaded: /api/v1/drivers
+2026-05-13 12:33:04 [info]: Route loaded: /api/v1/shipments
+2026-05-13 12:33:04 [info]: Route loaded: /api/v1/finance
+2026-05-13 12:33:04 [info]: Route loaded: /api/v1/maintenance
+2026-05-13 12:33:04 [info]: Route loaded: /api/v1/riskzones
+2026-05-13 12:33:04 [warn]: Queues disabled — DISABLE_REDIS=true
+2026-05-13 12:33:04 [info]: FleetOps Enterprise v2.1 running on port 5000 [development]
+2026-05-13 12:48:10 [info]: New PostgreSQL client connected
+2026-05-13 12:48:10 [info]: Login: admin@fleetops.local (admin)
+2026-05-13 12:48:10 [info]: POST /api/v1/auth/login 200 379 - 1052.648 ms

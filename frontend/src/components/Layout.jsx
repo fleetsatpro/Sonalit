@@ -294,7 +294,7 @@ export default function Layout({ children }) {
             {/* Search hint */}
             <button
               className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-xl text-[10px] font-mono text-slate-500 hover:text-slate-300 hover:border-white/10 transition-all"
-              onClick={() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }))}
+              onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }))}
             >
               <Search size={11} />
               <span>Search…</span>
