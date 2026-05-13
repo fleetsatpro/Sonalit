@@ -173,7 +173,7 @@ function Typing() {
   );
 }
 
-export default function ChatArea({ apiKey, activeModule, userClass, autonomyLevel, mobileActive }) {
+export default function ChatArea({ activeModule, userClass, autonomyLevel, mobileActive }) {
   const [msgs,    setMsgs]    = useState([]);
   const [input,   setInput]   = useState('');
   const [loading, setLoading] = useState(false);
@@ -220,20 +220,10 @@ export default function ChatArea({ apiKey, activeModule, userClass, autonomyLeve
     ].join('');
 
     try {
-      const key = apiKey || import.meta.env.VITE_ANTHROPIC_API_KEY;
-      if (!key) throw new Error('NO_KEY');
-
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch('/api/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': key,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1500,
           system: systemPrompt,
           messages: history.map(m => ({ role: m.role, content: m.content })),
         }),
@@ -249,9 +239,7 @@ export default function ChatArea({ apiKey, activeModule, userClass, autonomyLeve
       setMsgs(prev => [...prev, { role: 'assistant', content, ts: Date.now() }]);
     } catch (e) {
       setError(
-        e.message === 'NO_KEY'
-          ? 'No API key configured. Set VITE_ANTHROPIC_API_KEY in your .env file.'
-          : `Sonalit API Error: ${e.message}`
+        `Sonalit API Error: ${e.message}`
       );
     } finally {
       setLoading(false);
