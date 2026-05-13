@@ -190,7 +190,7 @@ function DispatchModal({ open, onClose, onSuccess }) {
   useEffect(() => {
     if (open) {
       setFetching(true);
-      convoysAPI.getAll({ status: 'planned' })
+      convoysAPI.list({ status: 'planned' })
         .then(r => setConvoys(r.data.data || []))
         .catch(() => {})
         .finally(() => setFetching(false));
@@ -311,7 +311,7 @@ export default function DashboardPage() {
         analyticsAPI.dashboard(),
         analyticsAPI.convoyMetrics(),
         analyticsAPI.fleetUtilization(),
-        convoysAPI.getAll({ status: 'active', limit: 5 }),
+        convoysAPI.list({ status: 'active', limit: 5 }),
       ]);
       setKpis(dash.data.data);
       setConvoyMetrics(metrics.data.data.slice(-14).map((d) => ({

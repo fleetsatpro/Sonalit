@@ -5,6 +5,7 @@ import { useAuthStore } from './store';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import { registerServiceWorker } from './services/offline';
+import socketService from './services/socket';
 import LoginPage from './pages/LoginPage';
 
 const DashboardPage  = lazy(() => import('./pages/DashboardPage'));
@@ -43,7 +44,7 @@ function RequireAuth({ children }) {
 export default function App() {
   const { token, fetchMe } = useAuthStore();
   useEffect(() => {
-    if (token) fetchMe();
+    if (token) { fetchMe(); socketService.connect(); }
     registerServiceWorker();
   }, []);
 

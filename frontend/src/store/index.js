@@ -48,7 +48,7 @@ export const useVehicleStore = create((set, get) => ({
     try {
       const res = await vehiclesAPI.list(params);
       const pagination = res.data.pagination || {};
-      set({ vehicles: res.data.data || [], pagination, total: pagination.totalCount || res.data.total || 0, loading: false });
+      set({ vehicles: res.data.data || [], pagination, total: parseInt(pagination.totalCount || res.data.total || 0), loading: false });
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to load vehicles');
       set({ loading: false });
@@ -94,7 +94,8 @@ export const useConvoyStore = create((set) => ({
     set({ loading: true });
     try {
       const res = await convoysAPI.list(params);
-      set({ convoys: res.data.data, total: res.data.pagination.totalCount, loading: false });
+      const pg2 = res.data.pagination || {};
+      set({ convoys: res.data.data || [], total: pg2.totalCount || res.data.total || 0, loading: false });
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to load convoys');
       set({ loading: false });
@@ -127,7 +128,8 @@ export const useAlertStore = create((set) => ({
     try {
       const res = await alertsAPI.list(params);
       const unread = res.data.data.filter((a) => !a.acknowledged_at).length;
-      set({ alerts: res.data.data, total: res.data.pagination.totalCount, unreadCount: unread, loading: false });
+      const pg3 = res.data.pagination || {};
+      set({ alerts: res.data.data || [], total: pg3.totalCount || res.data.total || 0, unreadCount: unread, loading: false });
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to load alerts');
       set({ loading: false });

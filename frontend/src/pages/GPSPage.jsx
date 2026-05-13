@@ -1,3 +1,4 @@
+import 'leaflet/dist/leaflet.css';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { vehiclesAPI, alertsAPI, geofenceAPI } from '../services/api';
@@ -118,6 +119,7 @@ export default function GPSPage() {
 
   // ── Socket live updates ────────────────────────────────────────────────
   useEffect(() => {
+    socketService.connect();
     socketService.onVehicleUpdate(data => {
       setVehicles(prev => prev.map(v =>
         v.id === data.vehicleId ? { ...v, lat: data.lat, lng: data.lng, speed: data.speed || v.speed } : v
@@ -348,7 +350,7 @@ export default function GPSPage() {
   );
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', height:'calc(100vh - 90px)', gap:10, fontFamily:'monospace' }}>
+    <div style={{ display:'flex', flexDirection:'column', height:'calc(100vh - 104px)', gap:10, fontFamily:'monospace' }}>
 
       {/* Header */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
@@ -433,7 +435,7 @@ export default function GPSPage() {
               <div style={{ textAlign:'center' }}><Spinner /><p style={{ color:'#475569', fontSize:10, marginTop:8 }}>INITIALISING MAP…</p></div>
             </div>
           )}
-          <div ref={mapRef} style={{ height:'100%', width:'100%' }} />
+          <div ref={mapRef} style={{ height:'100%', width:'100%', minHeight:'400px' }} />
 
           {/* Draw banner */}
           {drawMode && (

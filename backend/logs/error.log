@@ -114,3 +114,201 @@ Query: SELECT s.*, c.name AS convoy_name, v.registration AS vehicle_reg, d.name 
     at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
     at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
     at async /workspaces/Sonalit/backend/src/routes/shipments.js:26:20
+2026-05-13 08:10:47 [error]: Database query error: relation "drivers" does not exist
+Query: SELECT d.*, v.registration AS vehicle_registration, v.type AS vehicle_type
+       FROM drivers d LEFT JOIN vehicles v ON v.id = d.current_vehicle_id
+       WHERE d.deleted_at IS NULL
+       ORDER BY d.driver_score DESC, d.name
+       LIMIT $1 OFFSET $2
+2026-05-13 08:10:47 [error]: [GET /api/v1/drivers] error: relation "drivers" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/drivers.js:16:20
+2026-05-13 08:10:54 [error]: Database query error: relation "shipments" does not exist
+Query: SELECT s.*, c.name AS convoy_name, v.registration AS vehicle_reg, d.name AS driver_name
+       FROM shipments s
+       LEFT JOIN convoys c ON c.id = s.convoy_id
+       LEFT JOIN vehicles v ON v.id = s.vehicle_id
+       LEFT JOIN drivers d ON d.id = s.driver_id
+       WHERE s.deleted_at IS NULL
+       ORDER BY s.created_at DESC
+       LIMIT $1 OFFSET $2
+2026-05-13 08:10:54 [error]: [GET /api/v1/shipments] error: relation "shipments" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/shipments.js:26:20
+2026-05-13 08:10:55 [error]: Database query error: relation "shipments" does not exist
+Query: 
+      SELECT
+        COUNT(*) total,
+        COUNT(*) FILTER (WHERE status='in_transit') in_transit,
+        COUNT(*) FILTER (WHERE status='delivered') delivered,
+        COUNT(*) FILTER (WHERE status='pending') pending,
+        COUNT(*) FILTER (WHERE status='failed') failed,
+        COUNT(*) FILTER (WHERE priority='critical') critical,
+        AVG(EXTRACT(EPOCH FROM (actual_delivery - scheduled_delivery))/3600) FILTER (WHERE actual_delivery IS NOT NULL AND scheduled_delivery IS NOT NULL) avg_delay_hours
+      FROM shipments WHERE deleted_at IS NULL
+2026-05-13 08:10:55 [error]: [GET /api/v1/shipments/stats/summary] error: relation "shipments" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/shipments.js:119:20
+2026-05-13 08:13:00 [error]: Database query error: relation "invoices" does not exist
+Query: SELECT * FROM invoices WHERE 1=1  ORDER BY created_at DESC LIMIT $1 OFFSET $2
+2026-05-13 08:13:00 [error]: [GET /api/v1/finance/invoices] error: relation "invoices" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/finance.js:48:20
+2026-05-13 08:13:00 [error]: Database query error: relation "expenses" does not exist
+Query: SELECT e.*, v.registration, d.name AS driver_name FROM expenses e
+       LEFT JOIN vehicles v ON v.id=e.vehicle_id LEFT JOIN drivers d ON d.id=e.driver_id
+       WHERE 1=1 ORDER BY e.expense_date DESC LIMIT $1
+2026-05-13 08:13:00 [error]: [GET /api/v1/finance/expenses] error: relation "expenses" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/finance.js:84:20
+2026-05-13 08:13:00 [error]: Database query error: relation "invoices" does not exist
+Query: SELECT
+        COUNT(*) total_invoices,
+        SUM(total) FILTER (WHERE status='paid') revenue_collected,
+        SUM(total) FILTER (WHERE status='sent') revenue_pending,
+        SUM(total) FILTER (WHERE status='overdue') revenue_overdue,
+        COUNT(*) FILTER (WHERE status='overdue') overdue_count
+        FROM invoices
+2026-05-13 08:13:00 [error]: [GET /api/v1/finance/dashboard] error: relation "invoices" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async Promise.all (index 0)
+    at async /workspaces/Sonalit/backend/src/routes/finance.js:10:45
+2026-05-13 08:13:00 [error]: Database query error: relation "trips" does not exist
+Query: 
+      SELECT
+        v.registration,
+        v.type,
+        v.region,
+        COUNT(t.id) trips,
+        SUM(t.distance_km) total_km,
+        SUM(t.cost_usd) total_cost,
+        SUM(e.amount) FILTER (WHERE e.vehicle_id = v.id) total_expenses,
+        SUM(i.total) FILTER (WHERE i.id IS NOT NULL) total_revenue,
+        ROUND((SUM(i.total) - SUM(t.cost_usd) - COALESCE(SUM(e.amount),0))::numeric, 2) profit
+      FROM vehicles v
+      LEFT JOIN trips t ON t.vehicle_id = v.id AND t.started_at > NOW() - INTERVAL '30 days'
+      LEFT JOIN expenses e ON e.vehicle_id = v.id AND e.expense_date > NOW() - INTERVAL '30 days'
+      LEFT JOIN shipments s ON s.vehicle_id = v.id
+      LEFT JOIN invoices i ON i.shipment_id = s.id AND i.status = 'paid'
+      WHERE v.deleted_at IS NULL
+      GROUP BY v.id, v.registration, v.type, v.region
+      ORDER BY profit DESC NULLS LAST
+      LIMIT 20
+    
+2026-05-13 08:13:00 [error]: [GET /api/v1/finance/profitability] error: relation "trips" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/finance.js:110:20
+2026-05-13 08:13:00 [error]: Database query error: relation "expenses" does not exist
+Query: SELECT
+        SUM(amount) total_expenses,
+        SUM(amount) FILTER (WHERE category='fuel') fuel_costs,
+        SUM(amount) FILTER (WHERE category='maintenance') maintenance_costs,
+        SUM(amount) FILTER (WHERE category='toll') toll_costs,
+        SUM(amount) FILTER (WHERE category='driver_allowance') allowances
+        FROM expenses WHERE expense_date > NOW() - INTERVAL '30 days'
+2026-05-13 08:13:00 [error]: Database query error: relation "trips" does not exist
+Query: SELECT
+        COUNT(*) total_trips,
+        SUM(distance_km) total_km,
+        SUM(fuel_used) total_fuel_used,
+        AVG(fuel_used/NULLIF(distance_km,0)*100) avg_fuel_per_100km,
+        SUM(cost_usd) total_trip_cost
+        FROM trips WHERE started_at > NOW() - INTERVAL '30 days'
+2026-05-13 08:13:00 [error]: Database query error: relation "invoices" does not exist
+Query: SELECT * FROM invoices WHERE 1=1  ORDER BY created_at DESC LIMIT $1 OFFSET $2
+2026-05-13 08:13:00 [error]: [GET /api/v1/finance/invoices] error: relation "invoices" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/finance.js:48:20
+2026-05-13 08:13:00 [error]: Database query error: relation "expenses" does not exist
+Query: SELECT e.*, v.registration, d.name AS driver_name FROM expenses e
+       LEFT JOIN vehicles v ON v.id=e.vehicle_id LEFT JOIN drivers d ON d.id=e.driver_id
+       WHERE 1=1 ORDER BY e.expense_date DESC LIMIT $1
+2026-05-13 08:13:00 [error]: [GET /api/v1/finance/expenses] error: relation "expenses" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/finance.js:84:20
+2026-05-13 08:13:00 [error]: Database query error: relation "invoices" does not exist
+Query: SELECT
+        COUNT(*) total_invoices,
+        SUM(total) FILTER (WHERE status='paid') revenue_collected,
+        SUM(total) FILTER (WHERE status='sent') revenue_pending,
+        SUM(total) FILTER (WHERE status='overdue') revenue_overdue,
+        COUNT(*) FILTER (WHERE status='overdue') overdue_count
+        FROM invoices
+2026-05-13 08:13:00 [error]: [GET /api/v1/finance/dashboard] error: relation "invoices" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async Promise.all (index 0)
+    at async /workspaces/Sonalit/backend/src/routes/finance.js:10:45
+2026-05-13 08:13:00 [error]: Database query error: relation "expenses" does not exist
+Query: SELECT
+        SUM(amount) total_expenses,
+        SUM(amount) FILTER (WHERE category='fuel') fuel_costs,
+        SUM(amount) FILTER (WHERE category='maintenance') maintenance_costs,
+        SUM(amount) FILTER (WHERE category='toll') toll_costs,
+        SUM(amount) FILTER (WHERE category='driver_allowance') allowances
+        FROM expenses WHERE expense_date > NOW() - INTERVAL '30 days'
+2026-05-13 08:13:00 [error]: Database query error: relation "trips" does not exist
+Query: SELECT
+        COUNT(*) total_trips,
+        SUM(distance_km) total_km,
+        SUM(fuel_used) total_fuel_used,
+        AVG(fuel_used/NULLIF(distance_km,0)*100) avg_fuel_per_100km,
+        SUM(cost_usd) total_trip_cost
+        FROM trips WHERE started_at > NOW() - INTERVAL '30 days'
+2026-05-13 08:13:00 [error]: Database query error: relation "trips" does not exist
+Query: 
+      SELECT
+        v.registration,
+        v.type,
+        v.region,
+        COUNT(t.id) trips,
+        SUM(t.distance_km) total_km,
+        SUM(t.cost_usd) total_cost,
+        SUM(e.amount) FILTER (WHERE e.vehicle_id = v.id) total_expenses,
+        SUM(i.total) FILTER (WHERE i.id IS NOT NULL) total_revenue,
+        ROUND((SUM(i.total) - SUM(t.cost_usd) - COALESCE(SUM(e.amount),0))::numeric, 2) profit
+      FROM vehicles v
+      LEFT JOIN trips t ON t.vehicle_id = v.id AND t.started_at > NOW() - INTERVAL '30 days'
+      LEFT JOIN expenses e ON e.vehicle_id = v.id AND e.expense_date > NOW() - INTERVAL '30 days'
+      LEFT JOIN shipments s ON s.vehicle_id = v.id
+      LEFT JOIN invoices i ON i.shipment_id = s.id AND i.status = 'paid'
+      WHERE v.deleted_at IS NULL
+      GROUP BY v.id, v.registration, v.type, v.region
+      ORDER BY profit DESC NULLS LAST
+      LIMIT 20
+    
+2026-05-13 08:13:00 [error]: [GET /api/v1/finance/profitability] error: relation "trips" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/finance.js:110:20
+2026-05-13 08:17:20 [error]: Database query error: relation "drivers" does not exist
+Query: SELECT d.*, v.registration AS vehicle_registration, v.type AS vehicle_type
+       FROM drivers d LEFT JOIN vehicles v ON v.id = d.current_vehicle_id
+       WHERE d.deleted_at IS NULL
+       ORDER BY d.driver_score DESC, d.name
+       LIMIT $1 OFFSET $2
+2026-05-13 08:17:20 [error]: [GET /api/v1/drivers] error: relation "drivers" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/drivers.js:16:20

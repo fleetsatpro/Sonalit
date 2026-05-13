@@ -1542,3 +1542,514 @@ Query: SELECT s.*, c.name AS convoy_name, v.registration AS vehicle_reg, d.name 
 2026-05-13 07:52:16 [info]: GET /api/v1/vehicles?limit=100 200 9263 - 7.220 ms
 2026-05-13 07:52:31 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.633 ms
 2026-05-13 07:52:46 [info]: GET /api/v1/vehicles?limit=100 200 9263 - 17.366 ms
+2026-05-13 07:53:01 [info]: GET /api/v1/vehicles?limit=100 304 - - 5.063 ms
+2026-05-13 07:53:04 [info]: GET /api/v1/vehicles?limit=200 304 - - 7.133 ms
+2026-05-13 07:53:16 [info]: GET /api/v1/vehicles?limit=100 200 9263 - 6.080 ms
+2026-05-13 07:53:41 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.550 ms
+2026-05-13 07:53:44 [info]: GET /api/v1/auth/me 304 - - 2.262 ms
+2026-05-13 07:53:44 [info]: GET /api/v1/reports 304 - - 1.814 ms
+2026-05-13 07:53:45 [info]: GET /api/v1/auth/me 304 - - 5.866 ms
+2026-05-13 07:53:45 [info]: GET /api/v1/reports 304 - - 6.620 ms
+2026-05-13 07:53:46 [info]: Socket: -rf4sUQ1vQuap-N7AAAL user=admin@fleetops.local
+2026-05-13 07:53:47 [info]: GET /api/v1/incidents 304 - - 51.515 ms
+2026-05-13 07:53:48 [info]: GET /api/v1/incidents 304 - - 3.402 ms
+2026-05-13 07:53:49 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 4.129 ms
+2026-05-13 07:53:49 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 15.939 ms
+2026-05-13 07:53:49 [info]: New PostgreSQL client connected
+2026-05-13 07:53:49 [info]: New PostgreSQL client connected
+2026-05-13 07:53:49 [info]: New PostgreSQL client connected
+2026-05-13 07:53:49 [info]: New PostgreSQL client connected
+2026-05-13 07:53:49 [info]: New PostgreSQL client connected
+2026-05-13 07:53:49 [info]: GET /api/v1/analytics/dashboard 304 - - 95.531 ms
+2026-05-13 07:53:50 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 10.298 ms
+2026-05-13 07:53:50 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 20.842 ms
+2026-05-13 07:53:50 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 28.305 ms
+2026-05-13 07:53:50 [info]: GET /api/v1/analytics/dashboard 304 - - 8.411 ms
+2026-05-13 07:53:50 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 8.790 ms
+2026-05-13 07:53:52 [info]: Socket disconnected: -rf4sUQ1vQuap-N7AAAL
+2026-05-13 07:53:56 [info]: GET /api/v1/auth/me 304 - - 3.730 ms
+2026-05-13 07:53:56 [info]: GET /api/v1/auth/me 304 - - 2.329 ms
+2026-05-13 07:53:58 [info]: GET /api/v1/vehicles?limit=200 304 - - 3.883 ms
+2026-05-13 07:54:00 [info]: Socket disconnected: SPidsmd0lBnPI-2KAAAJ
+2026-05-13 08:06:01 [info]: Route loaded: /api/v1/drivers
+2026-05-13 08:06:01 [info]: Route loaded: /api/v1/shipments
+2026-05-13 08:06:01 [info]: Route loaded: /api/v1/finance
+2026-05-13 08:06:01 [info]: Route loaded: /api/v1/maintenance
+2026-05-13 08:06:01 [info]: Route loaded: /api/v1/riskzones
+2026-05-13 08:06:01 [warn]: Queues disabled — DISABLE_REDIS=true
+2026-05-13 08:06:01 [info]: FleetOps Enterprise v2.1 running on port 5000 [development]
+2026-05-13 08:08:35 [info]: Route loaded: /api/v1/drivers
+2026-05-13 08:08:35 [info]: Route loaded: /api/v1/shipments
+2026-05-13 08:08:35 [info]: Route loaded: /api/v1/finance
+2026-05-13 08:08:35 [info]: Route loaded: /api/v1/maintenance
+2026-05-13 08:08:35 [info]: Route loaded: /api/v1/riskzones
+2026-05-13 08:08:35 [warn]: Queues disabled — DISABLE_REDIS=true
+2026-05-13 08:08:35 [info]: FleetOps Enterprise v2.1 running on port 5000 [development]
+2026-05-13 08:09:36 [info]: New PostgreSQL client connected
+2026-05-13 08:09:36 [info]: GET /api/v1/auth/me 200 178 - 123.428 ms
+2026-05-13 08:09:36 [info]: GET /api/v1/auth/me 304 - - 2.912 ms
+2026-05-13 08:09:36 [info]: Socket: ghxYrRniwZI_-F2YAAAB user=admin@fleetops.local
+2026-05-13 08:09:37 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 11.893 ms
+2026-05-13 08:09:37 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 7.013 ms
+2026-05-13 08:09:38 [info]: New PostgreSQL client connected
+2026-05-13 08:09:38 [info]: New PostgreSQL client connected
+2026-05-13 08:09:38 [info]: GET /api/v1/convoys?status=active&limit=5 200 648 - 16.900 ms
+2026-05-13 08:09:38 [info]: New PostgreSQL client connected
+2026-05-13 08:09:38 [info]: New PostgreSQL client connected
+2026-05-13 08:09:38 [info]: New PostgreSQL client connected
+2026-05-13 08:09:38 [info]: GET /api/v1/analytics/dashboard 200 118 - 62.344 ms
+2026-05-13 08:09:38 [info]: New PostgreSQL client connected
+2026-05-13 08:09:38 [info]: GET /api/v1/alerts?resolved=false&limit=5 200 1222 - 66.528 ms
+2026-05-13 08:09:38 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 3.670 ms
+2026-05-13 08:09:38 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 9.267 ms
+2026-05-13 08:09:38 [info]: GET /api/v1/convoys?status=active&limit=5 304 - - 4.509 ms
+2026-05-13 08:09:38 [info]: GET /api/v1/analytics/dashboard 304 - - 4.758 ms
+2026-05-13 08:09:38 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 3.664 ms
+2026-05-13 08:09:38 [info]: Socket disconnected: ghxYrRniwZI_-F2YAAAB
+2026-05-13 08:09:41 [info]: GET /api/v1/auth/me 200 178 - 4.876 ms
+2026-05-13 08:09:41 [info]: GET /api/v1/auth/me 200 178 - 3.931 ms
+2026-05-13 08:09:42 [info]: Socket: 8D9_hN47J6ppo_ZYAAAD user=admin@fleetops.local
+2026-05-13 08:09:42 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 6.792 ms
+2026-05-13 08:09:42 [info]: GET /api/v1/convoys?status=active&limit=5 304 - - 11.585 ms
+2026-05-13 08:09:42 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 2.594 ms
+2026-05-13 08:09:42 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 6.265 ms
+2026-05-13 08:09:42 [info]: GET /api/v1/analytics/dashboard 304 - - 5.138 ms
+2026-05-13 08:09:42 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 6.466 ms
+2026-05-13 08:09:42 [info]: GET /api/v1/convoys?status=active&limit=5 304 - - 5.478 ms
+2026-05-13 08:09:42 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 2.773 ms
+2026-05-13 08:09:43 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 7.611 ms
+2026-05-13 08:09:43 [info]: GET /api/v1/analytics/dashboard 304 - - 6.460 ms
+2026-05-13 08:09:54 [info]: GET /api/v1/geofences 304 - - 5.354 ms
+2026-05-13 08:09:54 [info]: GET /api/v1/vehicles?limit=100 200 9263 - 4.784 ms
+2026-05-13 08:10:09 [info]: GET /api/v1/vehicles?limit=100 304 - - 6.550 ms
+2026-05-13 08:10:24 [info]: GET /api/v1/vehicles?limit=100 200 9263 - 2.930 ms
+2026-05-13 08:10:40 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.058 ms
+2026-05-13 08:10:47 [error]: Database query error: relation "drivers" does not exist
+Query: SELECT d.*, v.registration AS vehicle_registration, v.type AS vehicle_type
+       FROM drivers d LEFT JOIN vehicles v ON v.id = d.current_vehicle_id
+       WHERE d.deleted_at IS NULL
+       ORDER BY d.driver_score DESC, d.name
+       LIMIT $1 OFFSET $2
+2026-05-13 08:10:47 [error]: [GET /api/v1/drivers] error: relation "drivers" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/drivers.js:16:20
+2026-05-13 08:10:47 [info]: GET /api/v1/drivers?limit=50 500 33 - 7.419 ms
+2026-05-13 08:10:54 [info]: New PostgreSQL client connected
+2026-05-13 08:10:54 [info]: GET /api/v1/vehicles?limit=100 200 9263 - 14.194 ms
+2026-05-13 08:10:54 [error]: Database query error: relation "shipments" does not exist
+Query: SELECT s.*, c.name AS convoy_name, v.registration AS vehicle_reg, d.name AS driver_name
+       FROM shipments s
+       LEFT JOIN convoys c ON c.id = s.convoy_id
+       LEFT JOIN vehicles v ON v.id = s.vehicle_id
+       LEFT JOIN drivers d ON d.id = s.driver_id
+       WHERE s.deleted_at IS NULL
+       ORDER BY s.created_at DESC
+       LIMIT $1 OFFSET $2
+2026-05-13 08:10:54 [error]: [GET /api/v1/shipments] error: relation "shipments" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/shipments.js:26:20
+2026-05-13 08:10:54 [info]: GET /api/v1/shipments?limit=50 500 33 - 3.129 ms
+2026-05-13 08:10:55 [info]: New PostgreSQL client connected
+2026-05-13 08:10:55 [error]: Database query error: relation "shipments" does not exist
+Query: 
+      SELECT
+        COUNT(*) total,
+        COUNT(*) FILTER (WHERE status='in_transit') in_transit,
+        COUNT(*) FILTER (WHERE status='delivered') delivered,
+        COUNT(*) FILTER (WHERE status='pending') pending,
+        COUNT(*) FILTER (WHERE status='failed') failed,
+        COUNT(*) FILTER (WHERE priority='critical') critical,
+        AVG(EXTRACT(EPOCH FROM (actual_delivery - scheduled_delivery))/3600) FILTER (WHERE actual_delivery IS NOT NULL AND scheduled_delivery IS NOT NULL) avg_delay_hours
+      FROM shipments WHERE deleted_at IS NULL
+2026-05-13 08:10:55 [error]: [GET /api/v1/shipments/stats/summary] error: relation "shipments" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/shipments.js:119:20
+2026-05-13 08:10:55 [info]: GET /api/v1/shipments/stats/summary 500 33 - 15.665 ms
+2026-05-13 08:11:07 [info]: New PostgreSQL client connected
+2026-05-13 08:11:07 [info]: GET /api/v1/convoys 200 1792 - 19.001 ms
+2026-05-13 08:11:07 [info]: GET /api/v1/convoys 304 - - 4.118 ms
+2026-05-13 08:11:07 [info]: New PostgreSQL client connected
+2026-05-13 08:11:07 [info]: GET /api/v1/ai/risk/5171c006-bc7c-45f1-9077-f2fb756d0baa 200 49 - 37.069 ms
+2026-05-13 08:11:08 [info]: GET /api/v1/ai/risk/65233672-1fe7-49d4-b696-fde926f5631c 200 53 - 2.814 ms
+2026-05-13 08:11:08 [info]: GET /api/v1/ai/risk/d2121a38-4c72-4859-980a-6874d3158254 200 53 - 3.128 ms
+2026-05-13 08:11:08 [info]: GET /api/v1/ai/risk/5171c006-bc7c-45f1-9077-f2fb756d0baa 304 - - 2.563 ms
+2026-05-13 08:11:08 [info]: GET /api/v1/ai/risk/65233672-1fe7-49d4-b696-fde926f5631c 304 - - 2.075 ms
+2026-05-13 08:11:08 [info]: GET /api/v1/ai/risk/d2121a38-4c72-4859-980a-6874d3158254 304 - - 6.228 ms
+2026-05-13 08:11:09 [info]: GET /api/v1/vehicles?convoy_id=d2121a38-4c72-4859-980a-6874d3158254&limit=20 200 9262 - 5.359 ms
+2026-05-13 08:11:09 [info]: GET /api/v1/alerts?limit=10&resolved=false 200 1223 - 3.697 ms
+2026-05-13 08:11:09 [info]: GET /api/v1/documents?convoy_id=d2121a38-4c72-4859-980a-6874d3158254 200 11 - 3.943 ms
+2026-05-13 08:11:09 [info]: New PostgreSQL client connected
+2026-05-13 08:11:09 [info]: GET /api/v1/ai/risk/d2121a38-4c72-4859-980a-6874d3158254 304 - - 25.634 ms
+2026-05-13 08:11:09 [info]: GET /api/v1/vehicles?convoy_id=d2121a38-4c72-4859-980a-6874d3158254&limit=20 304 - - 8.207 ms
+2026-05-13 08:11:09 [info]: GET /api/v1/alerts?limit=10&resolved=false 304 - - 4.291 ms
+2026-05-13 08:11:09 [info]: GET /api/v1/documents?convoy_id=d2121a38-4c72-4859-980a-6874d3158254 304 - - 2.979 ms
+2026-05-13 08:11:09 [info]: GET /api/v1/ai/risk/d2121a38-4c72-4859-980a-6874d3158254 304 - - 3.281 ms
+2026-05-13 08:11:09 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.023 ms
+2026-05-13 08:11:12 [info]: PATCH /api/v1/convoys/d2121a38-4c72-4859-980a-6874d3158254/status 200 556 - 31.763 ms
+2026-05-13 08:11:13 [info]: GET /api/v1/convoys 200 1817 - 3.641 ms
+2026-05-13 08:11:13 [info]: GET /api/v1/ai/risk/d2121a38-4c72-4859-980a-6874d3158254 304 - - 4.636 ms
+2026-05-13 08:11:13 [info]: GET /api/v1/ai/risk/5171c006-bc7c-45f1-9077-f2fb756d0baa 304 - - 3.358 ms
+2026-05-13 08:11:13 [info]: GET /api/v1/ai/risk/65233672-1fe7-49d4-b696-fde926f5631c 304 - - 2.972 ms
+2026-05-13 08:11:13 [info]: GET /api/v1/ai/risk/d2121a38-4c72-4859-980a-6874d3158254 304 - - 2.958 ms
+2026-05-13 08:11:13 [info]: GET /api/v1/ai/risk/5171c006-bc7c-45f1-9077-f2fb756d0baa 304 - - 6.231 ms
+2026-05-13 08:11:13 [info]: GET /api/v1/ai/risk/65233672-1fe7-49d4-b696-fde926f5631c 304 - - 7.811 ms
+2026-05-13 08:11:23 [info]: GET /api/v1/vehicles 200 9262 - 4.221 ms
+2026-05-13 08:11:24 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.426 ms
+2026-05-13 08:11:28 [info]: GET /api/v1/sensors/6f76c29b-876b-42d5-ac4e-d22ed1f5aba9/latest 200 13 - 3.604 ms
+2026-05-13 08:11:29 [info]: GET /api/v1/sensors/6f76c29b-876b-42d5-ac4e-d22ed1f5aba9/latest 304 - - 1.954 ms
+2026-05-13 08:11:32 [info]: GET /api/v1/sensors/95c4fb48-9f55-4c72-9ff1-c13062ceaa5e/latest 200 13 - 1.973 ms
+2026-05-13 08:11:37 [info]: GET /api/v1/vehicles?status=idle 200 3075 - 3.313 ms
+2026-05-13 08:11:39 [info]: GET /api/v1/vehicles?limit=100 304 - - 10.171 ms
+2026-05-13 08:11:40 [info]: GET /api/v1/vehicles?status=maintenance 200 1905 - 3.313 ms
+2026-05-13 08:11:43 [info]: GET /api/v1/vehicles?status=offline 200 681 - 2.977 ms
+2026-05-13 08:11:54 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.327 ms
+2026-05-13 08:11:59 [info]: GET /api/v1/vehicles?status=offline&region=Kenya 200 76 - 4.043 ms
+2026-05-13 08:12:02 [info]: GET /api/v1/vehicles?status=offline&region=Tanzania 200 681 - 2.428 ms
+2026-05-13 08:12:05 [info]: GET /api/v1/vehicles?status=offline&region=Mali 200 76 - 2.509 ms
+2026-05-13 08:12:07 [info]: GET /api/v1/vehicles?status=offline&region=Nigeria 200 76 - 2.399 ms
+2026-05-13 08:12:09 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.241 ms
+2026-05-13 08:12:10 [info]: GET /api/v1/vehicles?status=offline&region=Ethiopia 200 76 - 2.358 ms
+2026-05-13 08:12:12 [info]: GET /api/v1/vehicles?status=offline&region=Uganda 200 76 - 2.277 ms
+2026-05-13 08:12:14 [info]: GET /api/v1/vehicles?status=offline 200 681 - 2.308 ms
+2026-05-13 08:12:17 [info]: GET /api/v1/vehicles 304 - - 2.553 ms
+2026-05-13 08:12:19 [info]: GET /api/v1/vehicles?region=Kenya 200 2620 - 2.457 ms
+2026-05-13 08:12:21 [info]: GET /api/v1/vehicles?region=Tanzania 200 2507 - 2.968 ms
+2026-05-13 08:12:23 [info]: GET /api/v1/vehicles?region=Mali 200 2482 - 2.708 ms
+2026-05-13 08:12:24 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.662 ms
+2026-05-13 08:12:25 [info]: GET /api/v1/vehicles?region=Uganda 200 76 - 2.826 ms
+2026-05-13 08:12:28 [info]: GET /api/v1/vehicles?region=Sudan 200 76 - 2.482 ms
+2026-05-13 08:12:37 [info]: GET /api/v1/reports 200 164 - 2.943 ms
+2026-05-13 08:12:37 [info]: GET /api/v1/reports 304 - - 2.248 ms
+2026-05-13 08:12:39 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.636 ms
+2026-05-13 08:12:45 [info]: POST /api/v1/reports/generate 201 1088 - 18.142 ms
+2026-05-13 08:12:53 [info]: GET /api/v1/reports/cef75e91-ffe5-49c0-888d-c5c1b046526f 200 319 - 2.571 ms
+2026-05-13 08:12:54 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.718 ms
+2026-05-13 08:12:57 [info]: GET /api/v1/vehicles 304 - - 2.998 ms
+2026-05-13 08:13:00 [error]: Database query error: relation "invoices" does not exist
+Query: SELECT * FROM invoices WHERE 1=1  ORDER BY created_at DESC LIMIT $1 OFFSET $2
+2026-05-13 08:13:00 [error]: [GET /api/v1/finance/invoices] error: relation "invoices" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/finance.js:48:20
+2026-05-13 08:13:00 [info]: GET /api/v1/finance/invoices?limit=50 500 33 - 10.389 ms
+2026-05-13 08:13:00 [info]: New PostgreSQL client connected
+2026-05-13 08:13:00 [info]: New PostgreSQL client connected
+2026-05-13 08:13:00 [info]: New PostgreSQL client connected
+2026-05-13 08:13:00 [error]: Database query error: relation "expenses" does not exist
+Query: SELECT e.*, v.registration, d.name AS driver_name FROM expenses e
+       LEFT JOIN vehicles v ON v.id=e.vehicle_id LEFT JOIN drivers d ON d.id=e.driver_id
+       WHERE 1=1 ORDER BY e.expense_date DESC LIMIT $1
+2026-05-13 08:13:00 [error]: [GET /api/v1/finance/expenses] error: relation "expenses" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/finance.js:84:20
+2026-05-13 08:13:00 [info]: GET /api/v1/finance/expenses?limit=50 500 33 - 17.744 ms
+2026-05-13 08:13:00 [error]: Database query error: relation "invoices" does not exist
+Query: SELECT
+        COUNT(*) total_invoices,
+        SUM(total) FILTER (WHERE status='paid') revenue_collected,
+        SUM(total) FILTER (WHERE status='sent') revenue_pending,
+        SUM(total) FILTER (WHERE status='overdue') revenue_overdue,
+        COUNT(*) FILTER (WHERE status='overdue') overdue_count
+        FROM invoices
+2026-05-13 08:13:00 [error]: [GET /api/v1/finance/dashboard] error: relation "invoices" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async Promise.all (index 0)
+    at async /workspaces/Sonalit/backend/src/routes/finance.js:10:45
+2026-05-13 08:13:00 [info]: GET /api/v1/finance/dashboard 500 33 - 66.720 ms
+2026-05-13 08:13:00 [error]: Database query error: relation "trips" does not exist
+Query: 
+      SELECT
+        v.registration,
+        v.type,
+        v.region,
+        COUNT(t.id) trips,
+        SUM(t.distance_km) total_km,
+        SUM(t.cost_usd) total_cost,
+        SUM(e.amount) FILTER (WHERE e.vehicle_id = v.id) total_expenses,
+        SUM(i.total) FILTER (WHERE i.id IS NOT NULL) total_revenue,
+        ROUND((SUM(i.total) - SUM(t.cost_usd) - COALESCE(SUM(e.amount),0))::numeric, 2) profit
+      FROM vehicles v
+      LEFT JOIN trips t ON t.vehicle_id = v.id AND t.started_at > NOW() - INTERVAL '30 days'
+      LEFT JOIN expenses e ON e.vehicle_id = v.id AND e.expense_date > NOW() - INTERVAL '30 days'
+      LEFT JOIN shipments s ON s.vehicle_id = v.id
+      LEFT JOIN invoices i ON i.shipment_id = s.id AND i.status = 'paid'
+      WHERE v.deleted_at IS NULL
+      GROUP BY v.id, v.registration, v.type, v.region
+      ORDER BY profit DESC NULLS LAST
+      LIMIT 20
+    
+2026-05-13 08:13:00 [error]: [GET /api/v1/finance/profitability] error: relation "trips" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/finance.js:110:20
+2026-05-13 08:13:00 [info]: GET /api/v1/finance/profitability 500 33 - 56.258 ms
+2026-05-13 08:13:00 [info]: New PostgreSQL client connected
+2026-05-13 08:13:00 [info]: New PostgreSQL client connected
+2026-05-13 08:13:00 [error]: Database query error: relation "expenses" does not exist
+Query: SELECT
+        SUM(amount) total_expenses,
+        SUM(amount) FILTER (WHERE category='fuel') fuel_costs,
+        SUM(amount) FILTER (WHERE category='maintenance') maintenance_costs,
+        SUM(amount) FILTER (WHERE category='toll') toll_costs,
+        SUM(amount) FILTER (WHERE category='driver_allowance') allowances
+        FROM expenses WHERE expense_date > NOW() - INTERVAL '30 days'
+2026-05-13 08:13:00 [error]: Database query error: relation "trips" does not exist
+Query: SELECT
+        COUNT(*) total_trips,
+        SUM(distance_km) total_km,
+        SUM(fuel_used) total_fuel_used,
+        AVG(fuel_used/NULLIF(distance_km,0)*100) avg_fuel_per_100km,
+        SUM(cost_usd) total_trip_cost
+        FROM trips WHERE started_at > NOW() - INTERVAL '30 days'
+2026-05-13 08:13:00 [info]: New PostgreSQL client connected
+2026-05-13 08:13:00 [error]: Database query error: relation "invoices" does not exist
+Query: SELECT * FROM invoices WHERE 1=1  ORDER BY created_at DESC LIMIT $1 OFFSET $2
+2026-05-13 08:13:00 [error]: [GET /api/v1/finance/invoices] error: relation "invoices" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/finance.js:48:20
+2026-05-13 08:13:00 [info]: GET /api/v1/finance/invoices?limit=50 500 33 - 10.800 ms
+2026-05-13 08:13:00 [info]: New PostgreSQL client connected
+2026-05-13 08:13:00 [error]: Database query error: relation "expenses" does not exist
+Query: SELECT e.*, v.registration, d.name AS driver_name FROM expenses e
+       LEFT JOIN vehicles v ON v.id=e.vehicle_id LEFT JOIN drivers d ON d.id=e.driver_id
+       WHERE 1=1 ORDER BY e.expense_date DESC LIMIT $1
+2026-05-13 08:13:00 [error]: [GET /api/v1/finance/expenses] error: relation "expenses" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/finance.js:84:20
+2026-05-13 08:13:00 [info]: GET /api/v1/finance/expenses?limit=50 500 33 - 12.208 ms
+2026-05-13 08:13:00 [info]: New PostgreSQL client connected
+2026-05-13 08:13:00 [error]: Database query error: relation "invoices" does not exist
+Query: SELECT
+        COUNT(*) total_invoices,
+        SUM(total) FILTER (WHERE status='paid') revenue_collected,
+        SUM(total) FILTER (WHERE status='sent') revenue_pending,
+        SUM(total) FILTER (WHERE status='overdue') revenue_overdue,
+        COUNT(*) FILTER (WHERE status='overdue') overdue_count
+        FROM invoices
+2026-05-13 08:13:00 [error]: [GET /api/v1/finance/dashboard] error: relation "invoices" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async Promise.all (index 0)
+    at async /workspaces/Sonalit/backend/src/routes/finance.js:10:45
+2026-05-13 08:13:00 [info]: GET /api/v1/finance/dashboard 500 33 - 20.644 ms
+2026-05-13 08:13:00 [info]: New PostgreSQL client connected
+2026-05-13 08:13:00 [info]: New PostgreSQL client connected
+2026-05-13 08:13:00 [error]: Database query error: relation "expenses" does not exist
+Query: SELECT
+        SUM(amount) total_expenses,
+        SUM(amount) FILTER (WHERE category='fuel') fuel_costs,
+        SUM(amount) FILTER (WHERE category='maintenance') maintenance_costs,
+        SUM(amount) FILTER (WHERE category='toll') toll_costs,
+        SUM(amount) FILTER (WHERE category='driver_allowance') allowances
+        FROM expenses WHERE expense_date > NOW() - INTERVAL '30 days'
+2026-05-13 08:13:00 [error]: Database query error: relation "trips" does not exist
+Query: SELECT
+        COUNT(*) total_trips,
+        SUM(distance_km) total_km,
+        SUM(fuel_used) total_fuel_used,
+        AVG(fuel_used/NULLIF(distance_km,0)*100) avg_fuel_per_100km,
+        SUM(cost_usd) total_trip_cost
+        FROM trips WHERE started_at > NOW() - INTERVAL '30 days'
+2026-05-13 08:13:00 [info]: New PostgreSQL client connected
+2026-05-13 08:13:00 [error]: Database query error: relation "trips" does not exist
+Query: 
+      SELECT
+        v.registration,
+        v.type,
+        v.region,
+        COUNT(t.id) trips,
+        SUM(t.distance_km) total_km,
+        SUM(t.cost_usd) total_cost,
+        SUM(e.amount) FILTER (WHERE e.vehicle_id = v.id) total_expenses,
+        SUM(i.total) FILTER (WHERE i.id IS NOT NULL) total_revenue,
+        ROUND((SUM(i.total) - SUM(t.cost_usd) - COALESCE(SUM(e.amount),0))::numeric, 2) profit
+      FROM vehicles v
+      LEFT JOIN trips t ON t.vehicle_id = v.id AND t.started_at > NOW() - INTERVAL '30 days'
+      LEFT JOIN expenses e ON e.vehicle_id = v.id AND e.expense_date > NOW() - INTERVAL '30 days'
+      LEFT JOIN shipments s ON s.vehicle_id = v.id
+      LEFT JOIN invoices i ON i.shipment_id = s.id AND i.status = 'paid'
+      WHERE v.deleted_at IS NULL
+      GROUP BY v.id, v.registration, v.type, v.region
+      ORDER BY profit DESC NULLS LAST
+      LIMIT 20
+    
+2026-05-13 08:13:00 [error]: [GET /api/v1/finance/profitability] error: relation "trips" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/finance.js:110:20
+2026-05-13 08:13:00 [info]: GET /api/v1/finance/profitability 500 33 - 26.460 ms
+2026-05-13 08:13:09 [info]: New PostgreSQL client connected
+2026-05-13 08:13:09 [info]: GET /api/v1/vehicles?limit=100 304 - - 12.752 ms
+2026-05-13 08:13:24 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.044 ms
+2026-05-13 08:13:39 [info]: GET /api/v1/vehicles?limit=100 200 9263 - 3.221 ms
+2026-05-13 08:13:54 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.346 ms
+2026-05-13 08:14:09 [info]: GET /api/v1/vehicles?limit=100 200 9263 - 2.649 ms
+2026-05-13 08:14:21 [info]: GET /api/v1/alerts?limit=50&resolved=false 200 1223 - 4.849 ms
+2026-05-13 08:14:22 [info]: GET /api/v1/alerts?limit=50&resolved=false 304 - - 2.452 ms
+2026-05-13 08:14:24 [info]: GET /api/v1/incidents?limit=50 200 357 - 2.152 ms
+2026-05-13 08:14:25 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.654 ms
+2026-05-13 08:14:25 [info]: GET /api/v1/incidents?limit=50 304 - - 5.863 ms
+2026-05-13 08:14:39 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.724 ms
+2026-05-13 08:14:55 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.594 ms
+2026-05-13 08:15:09 [info]: GET /api/v1/vehicles?limit=100 200 9263 - 2.543 ms
+2026-05-13 08:15:24 [info]: GET /api/v1/vehicles?limit=100 304 - - 4.048 ms
+2026-05-13 08:15:33 [info]: GET /api/v1/vehicles?limit=100 200 9263 - 2.683 ms
+2026-05-13 08:15:33 [info]: GET /api/v1/geofences 304 - - 1.950 ms
+2026-05-13 08:15:39 [info]: GET /api/v1/vehicles?limit=100 304 - - 8.698 ms
+2026-05-13 08:15:48 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.404 ms
+2026-05-13 08:15:54 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.253 ms
+2026-05-13 08:16:01 [info]: GET /api/v1/gps?vehicle_id=24ad7382-17e1-45ef-b199-c3e08a5d2d14&limit=24 404 37 - 0.486 ms
+2026-05-13 08:16:01 [info]: GET /api/v1/sensors/24ad7382-17e1-45ef-b199-c3e08a5d2d14/latest 200 13 - 5.275 ms
+2026-05-13 08:16:01 [info]: GET /api/v1/alerts?vehicle_id=24ad7382-17e1-45ef-b199-c3e08a5d2d14&resolved=false&limit=5 200 1222 - 2.498 ms
+2026-05-13 08:16:03 [info]: GET /api/v1/vehicles?limit=100 200 9263 - 3.406 ms
+2026-05-13 08:16:09 [info]: GET /api/v1/vehicles?limit=100 304 - - 4.730 ms
+2026-05-13 08:16:18 [info]: GET /api/v1/vehicles?limit=100 304 - - 5.907 ms
+2026-05-13 08:16:24 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.456 ms
+2026-05-13 08:16:33 [info]: GET /api/v1/vehicles?limit=100 200 9263 - 3.559 ms
+2026-05-13 08:16:40 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.894 ms
+2026-05-13 08:16:48 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.264 ms
+2026-05-13 08:16:54 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.208 ms
+2026-05-13 08:17:03 [info]: GET /api/v1/vehicles?limit=100 200 9263 - 3.047 ms
+2026-05-13 08:17:09 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.519 ms
+2026-05-13 08:17:18 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.117 ms
+2026-05-13 08:17:20 [error]: Database query error: relation "drivers" does not exist
+Query: SELECT d.*, v.registration AS vehicle_registration, v.type AS vehicle_type
+       FROM drivers d LEFT JOIN vehicles v ON v.id = d.current_vehicle_id
+       WHERE d.deleted_at IS NULL
+       ORDER BY d.driver_score DESC, d.name
+       LIMIT $1 OFFSET $2
+2026-05-13 08:17:20 [error]: [GET /api/v1/drivers] error: relation "drivers" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/drivers.js:16:20
+2026-05-13 08:17:20 [info]: GET /api/v1/drivers?limit=50 500 33 - 5.522 ms
+2026-05-13 08:17:22 [info]: New PostgreSQL client connected
+2026-05-13 08:17:22 [info]: GET /api/v1/alerts?limit=50&resolved=false 304 - - 15.563 ms
+2026-05-13 08:17:22 [info]: GET /api/v1/alerts?limit=50&resolved=false 304 - - 2.384 ms
+2026-05-13 08:17:24 [info]: GET /api/v1/alerts?limit=200 200 1224 - 11.337 ms
+2026-05-13 08:17:24 [info]: New PostgreSQL client connected
+2026-05-13 08:17:24 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 40.557 ms
+2026-05-13 08:17:24 [info]: GET /api/v1/geofences 304 - - 2.757 ms
+2026-05-13 08:17:24 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.992 ms
+2026-05-13 08:17:24 [info]: GET /api/v1/alerts?limit=200 200 1224 - 7.385 ms
+2026-05-13 08:17:24 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 4.894 ms
+2026-05-13 08:17:24 [info]: GET /api/v1/vehicles?limit=100 304 - - 6.839 ms
+2026-05-13 08:17:24 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 4.677 ms
+2026-05-13 08:17:24 [info]: New PostgreSQL client connected
+2026-05-13 08:17:24 [info]: New PostgreSQL client connected
+2026-05-13 08:17:24 [info]: New PostgreSQL client connected
+2026-05-13 08:17:24 [info]: New PostgreSQL client connected
+2026-05-13 08:17:24 [info]: GET /api/v1/analytics/dashboard 200 118 - 28.605 ms
+2026-05-13 08:17:25 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 3.265 ms
+2026-05-13 08:17:25 [info]: GET /api/v1/analytics/dashboard 200 118 - 5.110 ms
+2026-05-13 08:17:33 [info]: GET /api/v1/vehicles?limit=100 200 9263 - 3.500 ms
+2026-05-13 08:17:39 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.605 ms
+2026-05-13 08:17:39 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.537 ms
+2026-05-13 08:17:48 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.467 ms
+2026-05-13 08:17:48 [info]: GET /api/v1/alerts?limit=50&resolved=false 304 - - 2.808 ms
+2026-05-13 08:17:48 [info]: GET /api/v1/alerts?limit=50&resolved=false 304 - - 3.062 ms
+2026-05-13 08:17:49 [info]: GET /api/v1/incidents?limit=50 304 - - 2.033 ms
+2026-05-13 08:17:50 [info]: GET /api/v1/incidents?limit=50 304 - - 6.233 ms
+2026-05-13 08:17:51 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 3.683 ms
+2026-05-13 08:17:51 [info]: GET /api/v1/analytics/dashboard 200 118 - 7.893 ms
+2026-05-13 08:17:51 [info]: GET /api/v1/alerts?limit=200 200 1224 - 8.042 ms
+2026-05-13 08:17:51 [info]: New PostgreSQL client connected
+2026-05-13 08:17:51 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 24.710 ms
+2026-05-13 08:17:51 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 5.154 ms
+2026-05-13 08:17:51 [info]: GET /api/v1/analytics/dashboard 304 - - 4.099 ms
+2026-05-13 08:17:51 [info]: GET /api/v1/alerts?limit=200 304 - - 3.603 ms
+2026-05-13 08:17:51 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 2.480 ms
+2026-05-13 08:17:54 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.714 ms
+2026-05-13 08:17:54 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.568 ms
+2026-05-13 08:17:56 [info]: GET /api/v1/reports 200 308 - 2.589 ms
+2026-05-13 08:17:56 [info]: GET /api/v1/reports 200 308 - 3.391 ms
+2026-05-13 08:18:03 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.638 ms
+2026-05-13 08:18:04 [info]: Socket disconnected: 8D9_hN47J6ppo_ZYAAAD
+2026-05-13 08:18:06 [info]: GET /api/v1/auth/me 304 - - 1.867 ms
+2026-05-13 08:18:06 [info]: GET /api/v1/auth/me 304 - - 1.818 ms
+2026-05-13 08:18:07 [info]: Socket: R7aBugnNGmlqyFneAAAF user=admin@fleetops.local
+2026-05-13 08:18:10 [info]: Socket disconnected: R7aBugnNGmlqyFneAAAF
+2026-05-13 08:18:32 [info]: GET /api/v1/auth/me 304 - - 2.474 ms
+2026-05-13 08:18:32 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 2.867 ms
+2026-05-13 08:18:33 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 7.044 ms
+2026-05-13 08:18:33 [info]: New PostgreSQL client connected
+2026-05-13 08:18:33 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 21.226 ms
+2026-05-13 08:18:33 [info]: GET /api/v1/auth/me 304 - - 2.358 ms
+2026-05-13 08:18:33 [info]: New PostgreSQL client connected
+2026-05-13 08:18:33 [info]: New PostgreSQL client connected
+2026-05-13 08:18:33 [info]: New PostgreSQL client connected
+2026-05-13 08:18:33 [info]: New PostgreSQL client connected
+2026-05-13 08:18:33 [info]: GET /api/v1/analytics/dashboard 200 118 - 25.465 ms
+2026-05-13 08:18:33 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 4.439 ms
+2026-05-13 08:18:33 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 3.476 ms
+2026-05-13 08:18:33 [info]: GET /api/v1/analytics/dashboard 304 - - 7.377 ms
+2026-05-13 08:18:33 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 3.194 ms
+2026-05-13 08:18:34 [info]: Socket: CbXUMiCv69OgW3eBAAAH user=admin@fleetops.local
+2026-05-13 08:18:38 [info]: Socket disconnected: CbXUMiCv69OgW3eBAAAH
+2026-05-13 08:18:38 [info]: GET /api/v1/auth/me 200 178 - 2.505 ms
+2026-05-13 08:18:39 [info]: GET /api/v1/auth/me 304 - - 2.552 ms
+2026-05-13 08:18:39 [info]: GET /api/v1/analytics/dashboard 304 - - 8.432 ms
+2026-05-13 08:18:39 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 13.230 ms
+2026-05-13 08:18:39 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 6.582 ms
+2026-05-13 08:18:39 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 2.355 ms
+2026-05-13 08:18:39 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 3.804 ms
+2026-05-13 08:18:39 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 6.549 ms
+2026-05-13 08:18:39 [info]: GET /api/v1/analytics/dashboard 304 - - 6.274 ms
+2026-05-13 08:18:39 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 9.318 ms
+2026-05-13 08:18:40 [info]: Socket: pdfTfjn-Kkutp4yeAAAJ user=admin@fleetops.local
+2026-05-13 08:18:40 [info]: GET /api/v1/vehicles?limit=200 304 - - 2.891 ms
+2026-05-13 08:18:41 [info]: GET /api/v1/vehicles?limit=200 304 - - 3.239 ms
+2026-05-13 08:18:41 [info]: GET /api/v1/geofences 304 - - 2.421 ms
+2026-05-13 08:18:42 [info]: Socket disconnected: pdfTfjn-Kkutp4yeAAAJ
+2026-05-13 08:18:42 [info]: GET /api/v1/alerts?limit=50&resolved=false 200 1223 - 2.537 ms
+2026-05-13 08:18:43 [info]: GET /api/v1/alerts?limit=50&resolved=false 304 - - 2.483 ms
+2026-05-13 08:19:10 [info]: GET /api/v1/auth/me 304 - - 2.972 ms
+2026-05-13 08:19:10 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 19.494 ms
+2026-05-13 08:19:10 [info]: New PostgreSQL client connected
+2026-05-13 08:19:10 [info]: New PostgreSQL client connected
+2026-05-13 08:19:10 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 49.954 ms
+2026-05-13 08:19:10 [info]: New PostgreSQL client connected
+2026-05-13 08:19:10 [info]: New PostgreSQL client connected
+2026-05-13 08:19:10 [info]: New PostgreSQL client connected
+2026-05-13 08:19:10 [info]: New PostgreSQL client connected
+2026-05-13 08:19:10 [info]: New PostgreSQL client connected
+2026-05-13 08:19:10 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 87.048 ms
+2026-05-13 08:19:10 [info]: GET /api/v1/analytics/dashboard 304 - - 67.695 ms
+2026-05-13 08:19:10 [info]: GET /api/v1/auth/me 304 - - 3.516 ms
+2026-05-13 08:19:10 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 2.835 ms
+2026-05-13 08:19:11 [info]: GET /api/v1/analytics/dashboard 304 - - 11.190 ms
+2026-05-13 08:19:11 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 10.039 ms
+2026-05-13 08:19:11 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 18.106 ms
+2026-05-13 08:19:12 [info]: Socket: 9YyTcqEoCKPWk5_sAAAL user=admin@fleetops.local
+2026-05-13 08:19:15 [info]: GET /api/v1/incidents 304 - - 7.041 ms
+2026-05-13 08:19:15 [info]: GET /api/v1/incidents 304 - - 2.388 ms
+2026-05-13 08:19:18 [info]: GET /api/v1/alerts?limit=200 304 - - 8.176 ms
+2026-05-13 08:19:18 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 11.463 ms
+2026-05-13 08:19:18 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 14.979 ms
+2026-05-13 08:19:18 [info]: GET /api/v1/analytics/dashboard 304 - - 19.722 ms
+2026-05-13 08:19:18 [info]: GET /api/v1/alerts?limit=200 304 - - 3.013 ms
+2026-05-13 08:19:18 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 4.510 ms
+2026-05-13 08:19:18 [info]: GET /api/v1/analytics/dashboard 304 - - 5.372 ms
+2026-05-13 08:19:18 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 15.622 ms
+2026-05-13 08:19:18 [info]: Socket disconnected: 9YyTcqEoCKPWk5_sAAAL
+2026-05-13 08:19:18 [info]: GET /api/v1/alerts?limit=50&resolved=false 304 - - 2.354 ms
+2026-05-13 08:19:18 [info]: GET /api/v1/alerts?limit=50&resolved=false 304 - - 3.109 ms
