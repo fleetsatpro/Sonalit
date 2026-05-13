@@ -1,82 +1,148 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect, Suspense, lazy } from 'react';
-import { Toaster } from 'react-hot-toast';
-import { useAuthStore } from './store';
-import Layout from './components/Layout';
-import ProtectedRoute from './components/ProtectedRoute';
-import { registerServiceWorker } from './services/offline';
+import { useState } from 'react';
+import TopBar    from './components/TopBar.jsx';
+import Sidebar   from './components/Sidebar.jsx';
+import ChatArea  from './components/ChatArea.jsx';
+import MetricsPanel from './components/MetricsPanel.jsx';
+import BottomNav from './components/BottomNav.jsx';
+import Settings  from './components/Settings.jsx';
 
-// Eager-loaded core pages
-import LoginPage from './pages/LoginPage';
-import DashboardPage from './pages/DashboardPage';
+const ENV_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY;
 
-// Lazy-loaded pages
-const FleetPage       = lazy(() => import('./pages/FleetPage'));
-const ConvoysPage     = lazy(() => import('./pages/ConvoysPage'));
-const GPSPage         = lazy(() => import('./pages/GPSPage'));
-const AlertsPage      = lazy(() => import('./pages/AlertsPage'));
-const IncidentsPage   = lazy(() => import('./pages/IncidentsPage'));
-const AnalyticsPage   = lazy(() => import('./pages/AnalyticsPage'));
-const ReportsPage     = lazy(() => import('./pages/ReportsPage'));
-const MessagesPage    = lazy(() => import('./pages/MessagesPage'));
-const SettingsPage    = lazy(() => import('./pages/SettingsPage'));
-const DevicesPage     = lazy(() => import('./pages/DevicesPage'));
-const RulesPage       = lazy(() => import('./pages/RulesPage'));
-const ShipmentsPage   = lazy(() => import('./pages/ShipmentsPage'));
-const DriversPage     = lazy(() => import('./pages/DriversPage'));
-const FinancePage     = lazy(() => import('./pages/FinancePage'));
-const MaintenancePage = lazy(() => import('./pages/MaintenancePage'));
+const PHASES = [
+  { n:1, l:'CORE',          c:'var(--green)' },
+  { n:2, l:'INTELLIGENCE',  c:'var(--cyan)' },
+  { n:3, l:'MARKET',        c:'var(--amber)' },
+  { n:4, l:'AUTONOMY',      c:'var(--orange)' },
+  { n:5, l:'ECOSYSTEM',     c:'var(--purple)' },
+  { n:6, l:'ANTICIPATION',  c:'var(--red)' },
+  { n:7, l:'SINGULARITY',   c:'#f43f5e' },
+];
 
-const Loader = () => (
-  <div className="flex items-center justify-center h-full">
-    <div className="w-10 h-10 border-2 border-gold/20 border-t-gold rounded-full animate-spin" />
-  </div>
-);
+function AuthGate({ onKey }) {
+  const [val, setVal] = useState('');
+  const [err, setErr] = useState('');
 
-function RequireAuth({ children }) {
+  const submit = () => {
+    const k = val.trim();
+    if (!k.startsWith('sk-ant-')) { setErr('Key must begin with sk-ant-'); return; }
+    onKey(k);
+  };
+
   return (
-    <ProtectedRoute>
-      <Layout>
-        <Suspense fallback={<Loader />}>{children}</Suspense>
-      </Layout>
-    </ProtectedRoute>
+    <div className="auth-wrap">
+      <div className="auth-box">
+        <div style={{ width:68, height:68, background:'var(--amber-glow)', border:'2px solid var(--amber)', borderRadius:14, display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <div style={{ width:32, height:32, background:'var(--amber)', clipPath:'polygon(50% 0%,100% 38%,82% 100%,18% 100%,0% 38%)' }} />
+        </div>
+
+        <div>
+          <div className="auth-title">SONA<span>LIT</span></div>
+          <div className="auth-sub">LOGISTICS INTELLIGENCE PLATFORM · SECURE ACCESS</div>
+        </div>
+
+        <div className="auth-phases">
+          {PHASES.map(p => (
+            <div key={p.n} className="auth-phase"
+              style={{ background:`${p.c}14`, border:`1px solid ${p.c}44`, color:p.c }}>
+              P{p.n} · {p.l}
+            </div>
+          ))}
+        </div>
+
+        <div className="auth-desc">
+          Enter your Anthropic API key to activate Sonalit AI —
+          35 operational domains, 7 production phases,
+          autonomous logistics intelligence running on the full Sonalit platform.
+        </div>
+
+        <div className="auth-form">
+          <input
+            className="auth-input"
+            type="password"
+            placeholder="sk-ant-api03-…"
+            value={val}
+            onChange={e => { setVal(e.target.value); setErr(''); }}
+            onKeyDown={e => e.key === 'Enter' && submit()}
+          />
+          {err && <div className="auth-err">⚠ {err}</div>}
+          <button className="auth-btn" onClick={submit}>
+            ACTIVATE SONALIT AI
+          </button>
+        </div>
+
+        <div className="auth-note">
+          Key used only for direct API calls · not stored · session only<br />
+          Get yours at{' '}
+          <a href="https://console.anthropic.com" target="_blank" rel="noreferrer">
+            console.anthropic.com
+          </a>
+          <br />
+          Or set <code style={{ color:'var(--amber)' }}>VITE_ANTHROPIC_API_KEY</code> in{' '}
+          <code style={{ color:'var(--amber)' }}>.env</code> to skip this screen
+        </div>
+      </div>
+    </div>
   );
 }
 
 export default function App() {
-  const { token, fetchMe } = useAuthStore();
-  useEffect(() => {
-    if (token) fetchMe();
-    registerServiceWorker();
-  }, []);
+  const [apiKey,        setApiKey]        = useState(ENV_KEY || '');
+  const [activeModule,  setActiveModule]  = useState('overview');
+  const [autonomyLevel, setAutonomyLevel] = useState(1);
+  const [userClass,     setUserClass]     = useState('operator');
+  const [mobileTab,     setMobileTab]     = useState('chat');
+
+  const needsKey = !apiKey || !apiKey.startsWith('sk-ant-');
+
+  const selectModule = (mod) => {
+    setActiveModule(mod);
+    setMobileTab('chat');
+  };
 
   return (
-    <BrowserRouter>
-      <Toaster position="top-right" toastOptions={{
-        style: { background:'#0D1321', color:'#e2e8f0', border:'1px solid rgba(255,255,255,0.08)', fontFamily:'Space Grotesk,sans-serif', fontSize:13 },
-        success: { iconTheme: { primary:'#22D3A0', secondary:'#0D1321' } },
-        error: { iconTheme: { primary:'#F25252', secondary:'#0D1321' } },
-      }} />
-      <Routes>
-        <Route path="/login"       element={<LoginPage />} />
-        <Route path="/"            element={<RequireAuth><DashboardPage /></RequireAuth>} />
-        <Route path="/fleet"       element={<RequireAuth><FleetPage /></RequireAuth>} />
-        <Route path="/convoys"     element={<RequireAuth><ConvoysPage /></RequireAuth>} />
-        <Route path="/shipments"   element={<RequireAuth><ShipmentsPage /></RequireAuth>} />
-        <Route path="/drivers"     element={<RequireAuth><DriversPage /></RequireAuth>} />
-        <Route path="/gps"         element={<RequireAuth><GPSPage /></RequireAuth>} />
-        <Route path="/alerts"      element={<RequireAuth><AlertsPage /></RequireAuth>} />
-        <Route path="/incidents"   element={<RequireAuth><IncidentsPage /></RequireAuth>} />
-        <Route path="/analytics"   element={<RequireAuth><AnalyticsPage /></RequireAuth>} />
-        <Route path="/reports"     element={<RequireAuth><ReportsPage /></RequireAuth>} />
-        <Route path="/maintenance" element={<RequireAuth><MaintenancePage /></RequireAuth>} />
-        <Route path="/finance"     element={<RequireAuth><FinancePage /></RequireAuth>} />
-        <Route path="/devices"     element={<RequireAuth><DevicesPage /></RequireAuth>} />
-        <Route path="/rules"       element={<RequireAuth><RulesPage /></RequireAuth>} />
-        <Route path="/messages"    element={<RequireAuth><MessagesPage /></RequireAuth>} />
-        <Route path="/settings"    element={<RequireAuth><SettingsPage /></RequireAuth>} />
-        <Route path="*"            element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+    <div className="app-shell">
+      <TopBar
+        incidents={2}
+        autonomyLevel={autonomyLevel}
+        setAutonomyLevel={setAutonomyLevel}
+        userClass={userClass}
+        setUserClass={setUserClass}
+      />
+
+      <div className="app-main">
+        {needsKey ? (
+          <AuthGate onKey={setApiKey} />
+        ) : (
+          <>
+            <Sidebar
+              activeModule={activeModule}
+              setActiveModule={selectModule}
+              mobileActive={mobileTab === 'modules'}
+            />
+            <ChatArea
+              apiKey={apiKey}
+              activeModule={activeModule}
+              userClass={userClass}
+              autonomyLevel={autonomyLevel}
+              mobileActive={mobileTab === 'chat'}
+            />
+            <MetricsPanel
+              mobileActive={mobileTab === 'metrics'}
+            />
+            <Settings
+              autonomyLevel={autonomyLevel}
+              setAutonomyLevel={setAutonomyLevel}
+              userClass={userClass}
+              setUserClass={setUserClass}
+              mobileActive={mobileTab === 'settings'}
+            />
+          </>
+        )}
+      </div>
+
+      {!needsKey && (
+        <BottomNav active={mobileTab} setActive={setMobileTab} />
+      )}
+    </div>
   );
 }
