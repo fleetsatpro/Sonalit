@@ -36,7 +36,7 @@ router.post('/dispatch', async (req, res) => {
       ).then(r => r.rows).catch(e => { logger.warn('vehicles query: ' + e.message); return []; }),
 
       query(`SELECT name, status, priority, region, route_origin, route_destination, risk_score,
-               estimated_arrival, vehicle_count
+               estimated_arrival
              FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20`
       ).then(r => r.rows).catch(e => { logger.warn('convoys query: ' + e.message); return []; }),
 
@@ -93,7 +93,7 @@ Instructions:
             'anthropic-version': '2023-06-01',
           },
           body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514',
+            model: 'claude-sonnet-4-5',
             max_tokens: 300,
             system: systemPrompt,
             messages: [

@@ -321,3 +321,83 @@ Query: SELECT id, email, name, role, status, password_hash FROM users WHERE emai
     at async /workspaces/Sonalit/backend/src/controllers/authController.js:19:18
 2026-05-13 12:11:46 [error]: Database query error: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
 Query: SELECT NOW() AS now
+2026-05-13 12:52:52 [error]: Database query error: relation "shipments" does not exist
+Query: SELECT s.*, c.name AS convoy_name, v.registration AS vehicle_reg, d.name AS driver_name
+       FROM shipments s
+       LEFT JOIN convoys c ON c.id = s.convoy_id
+       LEFT JOIN vehicles v ON v.id = s.vehicle_id
+       LEFT JOIN drivers d ON d.id = s.driver_id
+       WHERE s.deleted_at IS NULL
+       ORDER BY s.created_at DESC
+       LIMIT $1 OFFSET $2
+2026-05-13 12:52:52 [error]: [GET /api/v1/shipments] error: relation "shipments" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/shipments.js:26:20
+2026-05-13 12:52:52 [error]: Database query error: relation "shipments" does not exist
+Query: 
+      SELECT
+        COUNT(*) total,
+        COUNT(*) FILTER (WHERE status='in_transit') in_transit,
+        COUNT(*) FILTER (WHERE status='delivered') delivered,
+        COUNT(*) FILTER (WHERE status='pending') pending,
+        COUNT(*) FILTER (WHERE status='failed') failed,
+        COUNT(*) FILTER (WHERE priority='critical') critical,
+        AVG(EXTRACT(EPOCH FROM (actual_delivery - scheduled_delivery))/3600) FILTER (WHERE actual_delivery IS NOT NULL AND scheduled_delivery IS NOT NULL) avg_delay_hours
+      FROM shipments WHERE deleted_at IS NULL
+2026-05-13 12:52:52 [error]: [GET /api/v1/shipments/stats/summary] error: relation "shipments" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/shipments.js:119:20
+2026-05-13 12:53:01 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 12:53:15 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 13:15:27 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 13:16:14 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 13:16:21 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 13:16:32 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 13:16:43 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 14:50:51 [error]: Database query error: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+Query: SELECT NOW() AS now
+2026-05-13 15:15:41 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 15:15:54 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 15:15:59 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 15:16:16 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 15:18:55 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20

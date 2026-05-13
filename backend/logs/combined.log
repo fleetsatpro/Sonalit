@@ -2082,3 +2082,731 @@ Query: SELECT NOW() AS now
 2026-05-13 12:48:10 [info]: New PostgreSQL client connected
 2026-05-13 12:48:10 [info]: Login: admin@fleetops.local (admin)
 2026-05-13 12:48:10 [info]: POST /api/v1/auth/login 200 379 - 1052.648 ms
+2026-05-13 12:49:45 [info]: New PostgreSQL client connected
+2026-05-13 12:49:45 [info]: Login: admin@fleetops.local (admin)
+2026-05-13 12:49:45 [info]: POST /api/v1/auth/login 200 379 - 97.597 ms
+2026-05-13 12:49:57 [info]: GET /api/v1/auth/me 200 178 - 5.917 ms
+2026-05-13 12:49:58 [info]: GET /api/v1/auth/me 304 - - 3.756 ms
+2026-05-13 12:50:00 [info]: Socket: KE9hy6X80YysL_b3AAAB user=admin@fleetops.local
+2026-05-13 12:51:48 [info]: New PostgreSQL client connected
+2026-05-13 12:51:48 [info]: Login: admin@fleetops.local (admin)
+2026-05-13 12:51:48 [info]: POST /api/v1/auth/login 200 379 - 93.711 ms
+2026-05-13 12:51:51 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 36.973 ms
+2026-05-13 12:51:51 [info]: New PostgreSQL client connected
+2026-05-13 12:51:51 [info]: New PostgreSQL client connected
+2026-05-13 12:51:51 [info]: New PostgreSQL client connected
+2026-05-13 12:51:51 [info]: New PostgreSQL client connected
+2026-05-13 12:51:51 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 59.441 ms
+2026-05-13 12:51:51 [info]: New PostgreSQL client connected
+2026-05-13 12:51:51 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 85.216 ms
+2026-05-13 12:51:51 [info]: New PostgreSQL client connected
+2026-05-13 12:51:51 [info]: New PostgreSQL client connected
+2026-05-13 12:51:51 [info]: GET /api/v1/alerts?resolved=false&limit=5 200 1222 - 94.669 ms
+2026-05-13 12:51:51 [info]: New PostgreSQL client connected
+2026-05-13 12:51:51 [info]: GET /api/v1/analytics/dashboard 200 118 - 116.878 ms
+2026-05-13 12:51:51 [info]: GET /api/v1/convoys?status=active&limit=5 304 - - 4.473 ms
+2026-05-13 12:51:51 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 2.779 ms
+2026-05-13 12:51:51 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 3.399 ms
+2026-05-13 12:51:51 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 8.335 ms
+2026-05-13 12:51:51 [info]: GET /api/v1/analytics/dashboard 304 - - 7.266 ms
+2026-05-13 12:51:53 [info]: GET /api/v1/alerts?limit=50&resolved=false 200 1223 - 3.662 ms
+2026-05-13 12:51:54 [info]: GET /api/v1/alerts?limit=50&resolved=false 304 - - 2.763 ms
+2026-05-13 12:51:56 [info]: GET /api/v1/vehicles?limit=100 200 9263 - 29.026 ms
+2026-05-13 12:51:56 [info]: GET /api/v1/geofences 200 11 - 14.782 ms
+2026-05-13 12:51:56 [info]: Socket: AniL3SXNnv0X-JKvAAAD user=admin@fleetops.local
+2026-05-13 12:52:04 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 8.710 ms
+2026-05-13 12:52:04 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 12.402 ms
+2026-05-13 12:52:04 [info]: GET /api/v1/alerts?limit=200 200 1224 - 5.400 ms
+2026-05-13 12:52:04 [info]: GET /api/v1/analytics/dashboard 304 - - 6.695 ms
+2026-05-13 12:52:04 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 4.849 ms
+2026-05-13 12:52:04 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 6.117 ms
+2026-05-13 12:52:04 [info]: GET /api/v1/alerts?limit=200 304 - - 4.093 ms
+2026-05-13 12:52:04 [info]: GET /api/v1/analytics/dashboard 304 - - 5.505 ms
+2026-05-13 12:52:11 [info]: GET /api/v1/vehicles?limit=100 304 - - 4.258 ms
+2026-05-13 12:52:26 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.897 ms
+2026-05-13 12:52:41 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.270 ms
+2026-05-13 12:52:52 [error]: Database query error: relation "shipments" does not exist
+Query: SELECT s.*, c.name AS convoy_name, v.registration AS vehicle_reg, d.name AS driver_name
+       FROM shipments s
+       LEFT JOIN convoys c ON c.id = s.convoy_id
+       LEFT JOIN vehicles v ON v.id = s.vehicle_id
+       LEFT JOIN drivers d ON d.id = s.driver_id
+       WHERE s.deleted_at IS NULL
+       ORDER BY s.created_at DESC
+       LIMIT $1 OFFSET $2
+2026-05-13 12:52:52 [error]: [GET /api/v1/shipments] error: relation "shipments" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/shipments.js:26:20
+2026-05-13 12:52:52 [info]: GET /api/v1/shipments?limit=50 500 33 - 10.245 ms
+2026-05-13 12:52:52 [info]: New PostgreSQL client connected
+2026-05-13 12:52:52 [error]: Database query error: relation "shipments" does not exist
+Query: 
+      SELECT
+        COUNT(*) total,
+        COUNT(*) FILTER (WHERE status='in_transit') in_transit,
+        COUNT(*) FILTER (WHERE status='delivered') delivered,
+        COUNT(*) FILTER (WHERE status='pending') pending,
+        COUNT(*) FILTER (WHERE status='failed') failed,
+        COUNT(*) FILTER (WHERE priority='critical') critical,
+        AVG(EXTRACT(EPOCH FROM (actual_delivery - scheduled_delivery))/3600) FILTER (WHERE actual_delivery IS NOT NULL AND scheduled_delivery IS NOT NULL) avg_delay_hours
+      FROM shipments WHERE deleted_at IS NULL
+2026-05-13 12:52:52 [error]: [GET /api/v1/shipments/stats/summary] error: relation "shipments" does not exist
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/routes/shipments.js:119:20
+2026-05-13 12:52:52 [info]: GET /api/v1/shipments/stats/summary 500 33 - 11.416 ms
+2026-05-13 12:52:56 [info]: New PostgreSQL client connected
+2026-05-13 12:52:56 [info]: GET /api/v1/vehicles?limit=100 200 9263 - 12.787 ms
+2026-05-13 12:53:01 [info]: New PostgreSQL client connected
+2026-05-13 12:53:01 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 12:53:01 [warn]: convoys query: column "vehicle_count" does not exist
+2026-05-13 12:53:01 [info]: New PostgreSQL client connected
+2026-05-13 12:53:01 [info]: POST /api/v1/ai/dispatch 200 79 - 148.477 ms
+2026-05-13 12:53:11 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 3.827 ms
+2026-05-13 12:53:15 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 12:53:15 [warn]: convoys query: column "vehicle_count" does not exist
+2026-05-13 12:53:15 [info]: New PostgreSQL client connected
+2026-05-13 12:53:15 [info]: POST /api/v1/ai/dispatch 200 177 - 16.055 ms
+2026-05-13 12:53:26 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 4.125 ms
+2026-05-13 12:53:41 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.013 ms
+2026-05-13 12:53:56 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 3.122 ms
+2026-05-13 12:54:11 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.961 ms
+2026-05-13 12:54:26 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 2.878 ms
+2026-05-13 12:54:41 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.893 ms
+2026-05-13 12:54:56 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 2.966 ms
+2026-05-13 12:55:04 [info]: HEAD / 404 28 - 0.460 ms
+2026-05-13 12:55:04 [info]: GET / 404 27 - 0.392 ms
+2026-05-13 12:55:11 [info]: GET /api/v1/vehicles?limit=100 304 - - 5.195 ms
+2026-05-13 12:55:26 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 4.731 ms
+2026-05-13 12:55:41 [info]: GET /api/v1/vehicles?limit=100 304 - - 4.024 ms
+2026-05-13 12:55:56 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 2.903 ms
+2026-05-13 12:56:11 [info]: GET /api/v1/vehicles?limit=100 304 - - 4.005 ms
+2026-05-13 12:56:26 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 3.654 ms
+2026-05-13 12:56:41 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.951 ms
+2026-05-13 12:56:56 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 3.311 ms
+2026-05-13 12:57:11 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.711 ms
+2026-05-13 12:57:26 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 3.060 ms
+2026-05-13 12:57:41 [info]: GET /api/v1/vehicles?limit=100 304 - - 6.249 ms
+2026-05-13 12:57:56 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 4.034 ms
+2026-05-13 12:58:11 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.034 ms
+2026-05-13 12:58:26 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 3.299 ms
+2026-05-13 12:58:41 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.900 ms
+2026-05-13 12:58:56 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 2.735 ms
+2026-05-13 12:59:11 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.410 ms
+2026-05-13 12:59:26 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 3.338 ms
+2026-05-13 12:59:41 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.788 ms
+2026-05-13 12:59:56 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 2.805 ms
+2026-05-13 13:00:11 [info]: GET /api/v1/vehicles?limit=100 304 - - 3.478 ms
+2026-05-13 13:00:26 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 3.048 ms
+2026-05-13 13:00:41 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.869 ms
+2026-05-13 13:01:44 [info]: New PostgreSQL client connected
+2026-05-13 13:01:44 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 12.374 ms
+2026-05-13 13:02:44 [info]: New PostgreSQL client connected
+2026-05-13 13:02:44 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 11.605 ms
+2026-05-13 13:03:45 [info]: New PostgreSQL client connected
+2026-05-13 13:03:45 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 12.458 ms
+2026-05-13 13:04:45 [info]: New PostgreSQL client connected
+2026-05-13 13:04:45 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 11.274 ms
+2026-05-13 13:05:45 [info]: New PostgreSQL client connected
+2026-05-13 13:05:45 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 11.976 ms
+2026-05-13 13:06:45 [info]: New PostgreSQL client connected
+2026-05-13 13:06:45 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 12.320 ms
+2026-05-13 13:07:45 [info]: New PostgreSQL client connected
+2026-05-13 13:07:45 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 28.531 ms
+2026-05-13 13:08:44 [info]: New PostgreSQL client connected
+2026-05-13 13:08:44 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 12.871 ms
+2026-05-13 13:09:44 [info]: New PostgreSQL client connected
+2026-05-13 13:09:45 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 12.676 ms
+2026-05-13 13:10:45 [info]: New PostgreSQL client connected
+2026-05-13 13:10:45 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 12.055 ms
+2026-05-13 13:11:44 [info]: New PostgreSQL client connected
+2026-05-13 13:11:44 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 10.659 ms
+2026-05-13 13:12:45 [info]: New PostgreSQL client connected
+2026-05-13 13:12:45 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 10.953 ms
+2026-05-13 13:13:38 [info]: New PostgreSQL client connected
+2026-05-13 13:13:38 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 10.688 ms
+2026-05-13 13:13:41 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 3.443 ms
+2026-05-13 13:13:56 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.763 ms
+2026-05-13 13:14:11 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.955 ms
+2026-05-13 13:14:26 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 2.796 ms
+2026-05-13 13:14:42 [info]: GET /api/v1/vehicles?limit=100 304 - - 2.817 ms
+2026-05-13 13:15:24 [info]: New PostgreSQL client connected
+2026-05-13 13:15:24 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 24.997 ms
+2026-05-13 13:15:26 [info]: GET /api/v1/vehicles?limit=100 200 9743 - 3.810 ms
+2026-05-13 13:15:27 [info]: New PostgreSQL client connected
+2026-05-13 13:15:27 [info]: New PostgreSQL client connected
+2026-05-13 13:15:27 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 13:15:27 [warn]: convoys query: column "vehicle_count" does not exist
+2026-05-13 13:15:27 [info]: POST /api/v1/ai/dispatch 200 177 - 18.844 ms
+2026-05-13 13:15:41 [info]: GET /api/v1/vehicles?limit=100 304 - - 14.000 ms
+2026-05-13 13:15:53 [info]: Socket disconnected: AniL3SXNnv0X-JKvAAAD
+2026-05-13 13:16:05 [info]: GET /api/v1/auth/me 200 178 - 4.401 ms
+2026-05-13 13:16:05 [info]: GET /api/v1/convoys?status=active&limit=5 304 - - 9.697 ms
+2026-05-13 13:16:05 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 7.777 ms
+2026-05-13 13:16:05 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 5.189 ms
+2026-05-13 13:16:05 [info]: New PostgreSQL client connected
+2026-05-13 13:16:05 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 36.647 ms
+2026-05-13 13:16:05 [info]: New PostgreSQL client connected
+2026-05-13 13:16:05 [info]: New PostgreSQL client connected
+2026-05-13 13:16:05 [info]: New PostgreSQL client connected
+2026-05-13 13:16:05 [info]: New PostgreSQL client connected
+2026-05-13 13:16:05 [info]: GET /api/v1/analytics/dashboard 304 - - 27.176 ms
+2026-05-13 13:16:05 [info]: GET /api/v1/auth/me 304 - - 3.221 ms
+2026-05-13 13:16:05 [info]: GET /api/v1/convoys?status=active&limit=5 304 - - 3.843 ms
+2026-05-13 13:16:05 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 3.498 ms
+2026-05-13 13:16:05 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 2.939 ms
+2026-05-13 13:16:05 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 5.526 ms
+2026-05-13 13:16:05 [info]: GET /api/v1/analytics/dashboard 304 - - 4.176 ms
+2026-05-13 13:16:08 [info]: Socket: 5u3uOr81JOx35O13AAAF user=admin@fleetops.local
+2026-05-13 13:16:14 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 13:16:14 [warn]: convoys query: column "vehicle_count" does not exist
+2026-05-13 13:16:14 [info]: POST /api/v1/ai/dispatch 200 79 - 4.997 ms
+2026-05-13 13:16:21 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 13:16:21 [warn]: convoys query: column "vehicle_count" does not exist
+2026-05-13 13:16:21 [info]: POST /api/v1/ai/dispatch 200 103 - 3.675 ms
+2026-05-13 13:16:32 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 13:16:32 [warn]: convoys query: column "vehicle_count" does not exist
+2026-05-13 13:16:32 [info]: POST /api/v1/ai/dispatch 200 177 - 5.008 ms
+2026-05-13 13:16:35 [info]: GET /api/v1/convoys?status=active&limit=5 304 - - 3.857 ms
+2026-05-13 13:16:35 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 19.345 ms
+2026-05-13 13:16:35 [info]: New PostgreSQL client connected
+2026-05-13 13:16:35 [info]: New PostgreSQL client connected
+2026-05-13 13:16:35 [info]: New PostgreSQL client connected
+2026-05-13 13:16:35 [info]: New PostgreSQL client connected
+2026-05-13 13:16:35 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 47.640 ms
+2026-05-13 13:16:35 [info]: New PostgreSQL client connected
+2026-05-13 13:16:35 [info]: GET /api/v1/analytics/dashboard 304 - - 63.076 ms
+2026-05-13 13:16:43 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 13:16:43 [warn]: convoys query: column "vehicle_count" does not exist
+2026-05-13 13:16:43 [info]: POST /api/v1/ai/dispatch 200 93 - 3.728 ms
+2026-05-13 13:17:05 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 4.826 ms
+2026-05-13 13:17:05 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 6.135 ms
+2026-05-13 13:17:05 [info]: GET /api/v1/convoys?status=active&limit=5 304 - - 19.149 ms
+2026-05-13 13:17:05 [info]: New PostgreSQL client connected
+2026-05-13 13:17:05 [info]: New PostgreSQL client connected
+2026-05-13 13:17:05 [info]: New PostgreSQL client connected
+2026-05-13 13:17:05 [info]: New PostgreSQL client connected
+2026-05-13 13:17:05 [info]: New PostgreSQL client connected
+2026-05-13 13:17:05 [info]: GET /api/v1/analytics/dashboard 304 - - 61.220 ms
+2026-05-13 13:17:35 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 4.588 ms
+2026-05-13 13:17:35 [info]: GET /api/v1/analytics/dashboard 200 118 - 6.068 ms
+2026-05-13 13:17:35 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 3.888 ms
+2026-05-13 13:17:35 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 2.097 ms
+2026-05-13 13:18:05 [info]: GET /api/v1/analytics/dashboard 200 118 - 7.316 ms
+2026-05-13 13:18:05 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 4.074 ms
+2026-05-13 13:18:05 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 3.581 ms
+2026-05-13 13:18:05 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 2.587 ms
+2026-05-13 13:18:35 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 5.729 ms
+2026-05-13 13:18:35 [info]: New PostgreSQL client connected
+2026-05-13 13:18:35 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 29.141 ms
+2026-05-13 13:18:35 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 3.466 ms
+2026-05-13 13:18:35 [info]: New PostgreSQL client connected
+2026-05-13 13:18:35 [info]: New PostgreSQL client connected
+2026-05-13 13:18:35 [info]: New PostgreSQL client connected
+2026-05-13 13:18:35 [info]: New PostgreSQL client connected
+2026-05-13 13:18:35 [info]: GET /api/v1/analytics/dashboard 200 118 - 23.963 ms
+2026-05-13 13:19:05 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 8.752 ms
+2026-05-13 13:19:05 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 9.051 ms
+2026-05-13 13:19:05 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 1.893 ms
+2026-05-13 13:19:05 [info]: New PostgreSQL client connected
+2026-05-13 13:19:05 [info]: New PostgreSQL client connected
+2026-05-13 13:19:05 [info]: New PostgreSQL client connected
+2026-05-13 13:19:05 [info]: New PostgreSQL client connected
+2026-05-13 13:19:05 [info]: New PostgreSQL client connected
+2026-05-13 13:19:05 [info]: GET /api/v1/analytics/dashboard 200 118 - 28.918 ms
+2026-05-13 13:19:44 [info]: New PostgreSQL client connected
+2026-05-13 13:19:44 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 9.668 ms
+2026-05-13 13:19:44 [info]: New PostgreSQL client connected
+2026-05-13 13:19:44 [info]: New PostgreSQL client connected
+2026-05-13 13:19:44 [info]: New PostgreSQL client connected
+2026-05-13 13:19:44 [info]: New PostgreSQL client connected
+2026-05-13 13:19:44 [info]: New PostgreSQL client connected
+2026-05-13 13:19:44 [info]: New PostgreSQL client connected
+2026-05-13 13:19:44 [info]: GET /api/v1/analytics/dashboard 200 118 - 74.256 ms
+2026-05-13 13:19:44 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 47.044 ms
+2026-05-13 13:19:44 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 3.252 ms
+2026-05-13 13:20:44 [info]: New PostgreSQL client connected
+2026-05-13 13:20:44 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 14.173 ms
+2026-05-13 13:20:44 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 7.317 ms
+2026-05-13 13:20:44 [info]: New PostgreSQL client connected
+2026-05-13 13:20:45 [info]: New PostgreSQL client connected
+2026-05-13 13:20:45 [info]: New PostgreSQL client connected
+2026-05-13 13:20:45 [info]: New PostgreSQL client connected
+2026-05-13 13:20:45 [info]: New PostgreSQL client connected
+2026-05-13 13:20:45 [info]: GET /api/v1/analytics/dashboard 200 118 - 92.883 ms
+2026-05-13 13:20:45 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 3.435 ms
+2026-05-13 13:21:44 [info]: New PostgreSQL client connected
+2026-05-13 13:21:44 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 19.498 ms
+2026-05-13 13:21:44 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 4.649 ms
+2026-05-13 13:21:44 [info]: New PostgreSQL client connected
+2026-05-13 13:21:44 [info]: New PostgreSQL client connected
+2026-05-13 13:21:44 [info]: New PostgreSQL client connected
+2026-05-13 13:21:44 [info]: New PostgreSQL client connected
+2026-05-13 13:21:44 [info]: New PostgreSQL client connected
+2026-05-13 13:21:44 [info]: GET /api/v1/analytics/dashboard 200 118 - 31.617 ms
+2026-05-13 13:21:45 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 4.031 ms
+2026-05-13 13:22:44 [info]: New PostgreSQL client connected
+2026-05-13 13:22:44 [info]: New PostgreSQL client connected
+2026-05-13 13:22:44 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 16.183 ms
+2026-05-13 13:22:44 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 25.961 ms
+2026-05-13 13:22:44 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 9.653 ms
+2026-05-13 13:22:45 [info]: New PostgreSQL client connected
+2026-05-13 13:22:45 [info]: New PostgreSQL client connected
+2026-05-13 13:22:45 [info]: New PostgreSQL client connected
+2026-05-13 13:22:45 [info]: New PostgreSQL client connected
+2026-05-13 13:22:45 [info]: GET /api/v1/analytics/dashboard 200 118 - 56.721 ms
+2026-05-13 13:23:44 [info]: New PostgreSQL client connected
+2026-05-13 13:23:44 [info]: New PostgreSQL client connected
+2026-05-13 13:23:44 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 16.903 ms
+2026-05-13 13:23:44 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 24.875 ms
+2026-05-13 13:23:44 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 5.477 ms
+2026-05-13 13:23:44 [info]: New PostgreSQL client connected
+2026-05-13 13:23:44 [info]: New PostgreSQL client connected
+2026-05-13 13:23:44 [info]: New PostgreSQL client connected
+2026-05-13 13:23:44 [info]: New PostgreSQL client connected
+2026-05-13 13:23:44 [info]: GET /api/v1/analytics/dashboard 200 118 - 22.067 ms
+2026-05-13 13:24:44 [info]: New PostgreSQL client connected
+2026-05-13 13:24:44 [info]: New PostgreSQL client connected
+2026-05-13 13:24:44 [info]: New PostgreSQL client connected
+2026-05-13 13:24:44 [info]: New PostgreSQL client connected
+2026-05-13 13:24:44 [info]: New PostgreSQL client connected
+2026-05-13 13:24:44 [info]: New PostgreSQL client connected
+2026-05-13 13:24:44 [info]: New PostgreSQL client connected
+2026-05-13 13:24:44 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 105.007 ms
+2026-05-13 13:24:44 [info]: GET /api/v1/analytics/dashboard 200 118 - 123.112 ms
+2026-05-13 13:24:44 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 4.601 ms
+2026-05-13 13:24:44 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 4.643 ms
+2026-05-13 13:25:44 [info]: New PostgreSQL client connected
+2026-05-13 13:25:44 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 25.738 ms
+2026-05-13 13:25:44 [info]: New PostgreSQL client connected
+2026-05-13 13:25:44 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 27.517 ms
+2026-05-13 13:25:44 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 2.880 ms
+2026-05-13 13:25:45 [info]: New PostgreSQL client connected
+2026-05-13 13:25:45 [info]: New PostgreSQL client connected
+2026-05-13 13:25:45 [info]: New PostgreSQL client connected
+2026-05-13 13:25:45 [info]: New PostgreSQL client connected
+2026-05-13 13:25:45 [info]: GET /api/v1/analytics/dashboard 200 118 - 44.429 ms
+2026-05-13 13:26:44 [info]: New PostgreSQL client connected
+2026-05-13 13:26:44 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 29.084 ms
+2026-05-13 13:26:45 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 2.909 ms
+2026-05-13 13:26:45 [info]: New PostgreSQL client connected
+2026-05-13 13:26:45 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 5.166 ms
+2026-05-13 13:26:45 [info]: New PostgreSQL client connected
+2026-05-13 13:26:45 [info]: New PostgreSQL client connected
+2026-05-13 13:26:45 [info]: New PostgreSQL client connected
+2026-05-13 13:26:45 [info]: New PostgreSQL client connected
+2026-05-13 13:26:45 [info]: GET /api/v1/analytics/dashboard 200 118 - 50.496 ms
+2026-05-13 13:27:44 [info]: New PostgreSQL client connected
+2026-05-13 13:27:44 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 23.006 ms
+2026-05-13 13:27:44 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 7.153 ms
+2026-05-13 13:27:44 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 4.796 ms
+2026-05-13 13:27:45 [info]: New PostgreSQL client connected
+2026-05-13 13:27:45 [info]: New PostgreSQL client connected
+2026-05-13 13:27:45 [info]: New PostgreSQL client connected
+2026-05-13 13:27:45 [info]: New PostgreSQL client connected
+2026-05-13 13:27:45 [info]: New PostgreSQL client connected
+2026-05-13 13:27:45 [info]: GET /api/v1/analytics/dashboard 200 118 - 27.851 ms
+2026-05-13 13:28:45 [info]: New PostgreSQL client connected
+2026-05-13 13:28:45 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 17.900 ms
+2026-05-13 13:28:45 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 8.067 ms
+2026-05-13 13:28:45 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 13.713 ms
+2026-05-13 13:28:45 [info]: New PostgreSQL client connected
+2026-05-13 13:28:45 [info]: New PostgreSQL client connected
+2026-05-13 13:28:45 [info]: New PostgreSQL client connected
+2026-05-13 13:28:45 [info]: New PostgreSQL client connected
+2026-05-13 13:28:45 [info]: New PostgreSQL client connected
+2026-05-13 13:28:45 [info]: GET /api/v1/analytics/dashboard 200 118 - 102.712 ms
+2026-05-13 13:29:44 [info]: New PostgreSQL client connected
+2026-05-13 13:29:44 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 16.128 ms
+2026-05-13 13:29:44 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 3.399 ms
+2026-05-13 13:29:44 [info]: New PostgreSQL client connected
+2026-05-13 13:29:44 [info]: New PostgreSQL client connected
+2026-05-13 13:29:44 [info]: New PostgreSQL client connected
+2026-05-13 13:29:44 [info]: New PostgreSQL client connected
+2026-05-13 13:29:44 [info]: New PostgreSQL client connected
+2026-05-13 13:29:44 [info]: GET /api/v1/analytics/dashboard 200 118 - 43.490 ms
+2026-05-13 13:29:45 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 4.021 ms
+2026-05-13 13:30:44 [info]: New PostgreSQL client connected
+2026-05-13 13:30:44 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 12.253 ms
+2026-05-13 13:30:44 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 2.242 ms
+2026-05-13 13:30:44 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 4.515 ms
+2026-05-13 13:30:44 [info]: New PostgreSQL client connected
+2026-05-13 13:30:44 [info]: New PostgreSQL client connected
+2026-05-13 13:30:44 [info]: New PostgreSQL client connected
+2026-05-13 13:30:45 [info]: New PostgreSQL client connected
+2026-05-13 13:30:45 [info]: New PostgreSQL client connected
+2026-05-13 13:30:45 [info]: GET /api/v1/analytics/dashboard 200 118 - 47.790 ms
+2026-05-13 13:31:44 [info]: New PostgreSQL client connected
+2026-05-13 13:31:44 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 16.639 ms
+2026-05-13 13:31:44 [info]: New PostgreSQL client connected
+2026-05-13 13:31:44 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 26.400 ms
+2026-05-13 13:31:44 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 2.575 ms
+2026-05-13 13:31:44 [info]: New PostgreSQL client connected
+2026-05-13 13:31:44 [info]: New PostgreSQL client connected
+2026-05-13 13:31:44 [info]: New PostgreSQL client connected
+2026-05-13 13:31:44 [info]: New PostgreSQL client connected
+2026-05-13 13:31:44 [info]: GET /api/v1/analytics/dashboard 200 118 - 34.126 ms
+2026-05-13 13:32:44 [info]: New PostgreSQL client connected
+2026-05-13 13:32:44 [info]: New PostgreSQL client connected
+2026-05-13 13:32:44 [info]: New PostgreSQL client connected
+2026-05-13 13:32:44 [info]: New PostgreSQL client connected
+2026-05-13 13:32:44 [info]: New PostgreSQL client connected
+2026-05-13 13:32:44 [info]: New PostgreSQL client connected
+2026-05-13 13:32:44 [info]: GET /api/v1/analytics/dashboard 200 118 - 55.416 ms
+2026-05-13 13:32:44 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 4.562 ms
+2026-05-13 13:32:45 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 4.543 ms
+2026-05-13 13:32:45 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 2.009 ms
+2026-05-13 13:33:45 [info]: New PostgreSQL client connected
+2026-05-13 13:33:45 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 19.938 ms
+2026-05-13 13:33:45 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 5.022 ms
+2026-05-13 13:33:45 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 3.953 ms
+2026-05-13 13:33:45 [info]: New PostgreSQL client connected
+2026-05-13 13:33:45 [info]: New PostgreSQL client connected
+2026-05-13 13:33:45 [info]: New PostgreSQL client connected
+2026-05-13 13:33:45 [info]: New PostgreSQL client connected
+2026-05-13 13:33:45 [info]: New PostgreSQL client connected
+2026-05-13 13:33:45 [info]: GET /api/v1/analytics/dashboard 200 118 - 34.135 ms
+2026-05-13 13:34:44 [info]: New PostgreSQL client connected
+2026-05-13 13:34:44 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 18.856 ms
+2026-05-13 13:34:44 [info]: New PostgreSQL client connected
+2026-05-13 13:34:44 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 21.762 ms
+2026-05-13 13:34:44 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 3.284 ms
+2026-05-13 13:34:45 [info]: New PostgreSQL client connected
+2026-05-13 13:34:45 [info]: New PostgreSQL client connected
+2026-05-13 13:34:45 [info]: New PostgreSQL client connected
+2026-05-13 13:34:45 [info]: New PostgreSQL client connected
+2026-05-13 13:34:45 [info]: GET /api/v1/analytics/dashboard 200 118 - 24.623 ms
+2026-05-13 13:35:46 [info]: New PostgreSQL client connected
+2026-05-13 13:35:46 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 25.481 ms
+2026-05-13 13:35:46 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 4.372 ms
+2026-05-13 13:35:46 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 6.828 ms
+2026-05-13 13:35:46 [info]: New PostgreSQL client connected
+2026-05-13 13:35:46 [info]: New PostgreSQL client connected
+2026-05-13 13:35:46 [info]: New PostgreSQL client connected
+2026-05-13 13:35:46 [info]: New PostgreSQL client connected
+2026-05-13 13:35:46 [info]: New PostgreSQL client connected
+2026-05-13 13:35:46 [info]: GET /api/v1/analytics/dashboard 200 118 - 40.901 ms
+2026-05-13 13:36:45 [info]: New PostgreSQL client connected
+2026-05-13 13:36:45 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 17.262 ms
+2026-05-13 13:36:45 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 4.596 ms
+2026-05-13 13:36:45 [info]: New PostgreSQL client connected
+2026-05-13 13:36:45 [info]: New PostgreSQL client connected
+2026-05-13 13:36:45 [info]: New PostgreSQL client connected
+2026-05-13 13:36:45 [info]: New PostgreSQL client connected
+2026-05-13 13:36:45 [info]: New PostgreSQL client connected
+2026-05-13 13:36:45 [info]: GET /api/v1/analytics/dashboard 200 118 - 35.749 ms
+2026-05-13 13:36:45 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 3.908 ms
+2026-05-13 13:37:45 [info]: New PostgreSQL client connected
+2026-05-13 13:37:45 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 14.829 ms
+2026-05-13 13:37:45 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 3.477 ms
+2026-05-13 13:37:45 [info]: New PostgreSQL client connected
+2026-05-13 13:37:45 [info]: New PostgreSQL client connected
+2026-05-13 13:37:45 [info]: New PostgreSQL client connected
+2026-05-13 13:37:45 [info]: New PostgreSQL client connected
+2026-05-13 13:37:45 [info]: New PostgreSQL client connected
+2026-05-13 13:37:45 [info]: GET /api/v1/analytics/dashboard 200 118 - 29.878 ms
+2026-05-13 13:37:45 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 2.702 ms
+2026-05-13 13:38:45 [info]: New PostgreSQL client connected
+2026-05-13 13:38:45 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 22.324 ms
+2026-05-13 13:38:45 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 2.927 ms
+2026-05-13 13:38:45 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 2.685 ms
+2026-05-13 13:38:45 [info]: New PostgreSQL client connected
+2026-05-13 13:38:45 [info]: New PostgreSQL client connected
+2026-05-13 13:38:45 [info]: New PostgreSQL client connected
+2026-05-13 13:38:45 [info]: New PostgreSQL client connected
+2026-05-13 13:38:45 [info]: New PostgreSQL client connected
+2026-05-13 13:38:45 [info]: GET /api/v1/analytics/dashboard 200 118 - 30.707 ms
+2026-05-13 13:39:45 [info]: New PostgreSQL client connected
+2026-05-13 13:39:45 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 9.315 ms
+2026-05-13 13:39:45 [info]: New PostgreSQL client connected
+2026-05-13 13:39:45 [info]: New PostgreSQL client connected
+2026-05-13 13:39:45 [info]: New PostgreSQL client connected
+2026-05-13 13:39:45 [info]: New PostgreSQL client connected
+2026-05-13 13:39:45 [info]: New PostgreSQL client connected
+2026-05-13 13:39:45 [info]: GET /api/v1/analytics/dashboard 200 118 - 65.803 ms
+2026-05-13 13:39:45 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 16.414 ms
+2026-05-13 13:39:46 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 3.056 ms
+2026-05-13 13:40:45 [info]: New PostgreSQL client connected
+2026-05-13 13:40:45 [info]: New PostgreSQL client connected
+2026-05-13 13:40:45 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 34.842 ms
+2026-05-13 13:40:45 [info]: New PostgreSQL client connected
+2026-05-13 13:40:45 [info]: New PostgreSQL client connected
+2026-05-13 13:40:45 [info]: New PostgreSQL client connected
+2026-05-13 13:40:45 [info]: New PostgreSQL client connected
+2026-05-13 13:40:45 [info]: GET /api/v1/analytics/dashboard 200 118 - 81.306 ms
+2026-05-13 13:40:45 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 3.259 ms
+2026-05-13 13:40:45 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 10.472 ms
+2026-05-13 13:41:45 [info]: New PostgreSQL client connected
+2026-05-13 13:41:45 [info]: New PostgreSQL client connected
+2026-05-13 13:41:45 [info]: New PostgreSQL client connected
+2026-05-13 13:41:45 [info]: New PostgreSQL client connected
+2026-05-13 13:41:45 [info]: New PostgreSQL client connected
+2026-05-13 13:41:45 [info]: New PostgreSQL client connected
+2026-05-13 13:41:45 [info]: GET /api/v1/analytics/dashboard 200 118 - 49.914 ms
+2026-05-13 13:41:45 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 6.578 ms
+2026-05-13 13:41:45 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 6.350 ms
+2026-05-13 13:41:45 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 11.244 ms
+2026-05-13 13:42:43 [info]: Route loaded: /api/v1/drivers
+2026-05-13 13:42:43 [info]: Route loaded: /api/v1/shipments
+2026-05-13 13:42:43 [info]: Route loaded: /api/v1/finance
+2026-05-13 13:42:43 [info]: Route loaded: /api/v1/maintenance
+2026-05-13 13:42:43 [info]: Route loaded: /api/v1/riskzones
+2026-05-13 13:42:43 [warn]: Queues disabled — DISABLE_REDIS=true
+2026-05-13 13:42:43 [info]: FleetOps Enterprise v2.1 running on port 5000 [development]
+2026-05-13 14:13:28 [info]: Route loaded: /api/v1/drivers
+2026-05-13 14:13:28 [info]: Route loaded: /api/v1/shipments
+2026-05-13 14:13:28 [info]: Route loaded: /api/v1/finance
+2026-05-13 14:13:28 [info]: Route loaded: /api/v1/maintenance
+2026-05-13 14:13:28 [info]: Route loaded: /api/v1/riskzones
+2026-05-13 14:13:28 [warn]: Queues disabled — DISABLE_REDIS=true
+2026-05-13 14:13:28 [info]: FleetOps Enterprise v2.1 running on port 5000 [development]
+2026-05-13 14:50:19 [info]: Route loaded: /api/v1/drivers
+2026-05-13 14:50:19 [info]: Route loaded: /api/v1/shipments
+2026-05-13 14:50:19 [info]: Route loaded: /api/v1/finance
+2026-05-13 14:50:19 [info]: Route loaded: /api/v1/maintenance
+2026-05-13 14:50:19 [info]: Route loaded: /api/v1/riskzones
+2026-05-13 14:50:19 [warn]: Queues disabled — DISABLE_REDIS=true
+2026-05-13 14:50:19 [info]: FleetOps Enterprise v2.1 running on port 5000 [development]
+2026-05-13 14:50:49 [info]: Route loaded: /api/v1/drivers
+2026-05-13 14:50:49 [info]: Route loaded: /api/v1/shipments
+2026-05-13 14:50:49 [info]: Route loaded: /api/v1/finance
+2026-05-13 14:50:49 [info]: Route loaded: /api/v1/maintenance
+2026-05-13 14:50:49 [info]: Route loaded: /api/v1/riskzones
+2026-05-13 14:50:49 [warn]: Queues disabled — DISABLE_REDIS=true
+2026-05-13 14:50:49 [info]: FleetOps Enterprise v2.1 running on port 5000 [development]
+2026-05-13 14:50:51 [warn]: Redis disabled via DISABLE_REDIS=true. Queue workers will not start.
+2026-05-13 14:50:51 [error]: Database query error: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+Query: SELECT NOW() AS now
+2026-05-13 14:50:52 [info]: GET /health 503 78 - 30.332 ms
+2026-05-13 14:52:25 [info]: Route loaded: /api/v1/drivers
+2026-05-13 14:52:25 [info]: Route loaded: /api/v1/shipments
+2026-05-13 14:52:25 [info]: Route loaded: /api/v1/finance
+2026-05-13 14:52:25 [info]: Route loaded: /api/v1/maintenance
+2026-05-13 14:52:25 [info]: Route loaded: /api/v1/riskzones
+2026-05-13 14:52:25 [warn]: Queues disabled — DISABLE_REDIS=true
+2026-05-13 14:52:25 [info]: FleetOps Enterprise v2.1 running on port 5000 [development]
+2026-05-13 14:52:28 [warn]: Redis disabled via DISABLE_REDIS=true. Queue workers will not start.
+2026-05-13 14:52:28 [info]: New PostgreSQL client connected
+2026-05-13 14:52:28 [info]: GET /health 200 90 - 579.095 ms
+2026-05-13 14:53:13 [info]: Route loaded: /api/v1/drivers
+2026-05-13 14:53:13 [info]: Route loaded: /api/v1/shipments
+2026-05-13 14:53:13 [info]: Route loaded: /api/v1/finance
+2026-05-13 14:53:13 [info]: Route loaded: /api/v1/maintenance
+2026-05-13 14:53:13 [info]: Route loaded: /api/v1/riskzones
+2026-05-13 14:53:13 [warn]: Queues disabled — DISABLE_REDIS=true
+2026-05-13 14:53:13 [info]: FleetOps Enterprise v2.1 running on port 5000 [development]
+2026-05-13 14:54:50 [info]: New PostgreSQL client connected
+2026-05-13 14:54:50 [info]: Login: admin@fleetops.local (admin)
+2026-05-13 14:54:50 [info]: POST /api/v1/auth/login 200 379 - 434.863 ms
+2026-05-13 14:54:51 [info]: New PostgreSQL client connected
+2026-05-13 14:54:51 [info]: New PostgreSQL client connected
+2026-05-13 14:54:51 [info]: New PostgreSQL client connected
+2026-05-13 14:54:51 [info]: New PostgreSQL client connected
+2026-05-13 14:54:51 [info]: New PostgreSQL client connected
+2026-05-13 14:54:51 [info]: New PostgreSQL client connected
+2026-05-13 14:54:51 [info]: GET /api/v1/analytics/dashboard 304 - - 75.544 ms
+2026-05-13 14:54:51 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 49.223 ms
+2026-05-13 14:54:52 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 4.960 ms
+2026-05-13 14:54:52 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 6.533 ms
+2026-05-13 14:54:52 [info]: GET /api/v1/analytics/dashboard 304 - - 4.318 ms
+2026-05-13 14:54:52 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 8.559 ms
+2026-05-13 14:54:52 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 5.773 ms
+2026-05-13 14:54:52 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 3.500 ms
+2026-05-13 14:54:53 [info]: Socket: p_fKIVMRcrzK-84MAAAB user=admin@fleetops.local
+2026-05-13 14:54:59 [info]: GET /api/v1/vehicles 200 9742 - 4.464 ms
+2026-05-13 14:55:07 [info]: GET /api/v1/incidents 304 - - 4.154 ms
+2026-05-13 14:55:07 [info]: GET /api/v1/alerts?limit=200 304 - - 3.927 ms
+2026-05-13 14:55:07 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 6.136 ms
+2026-05-13 14:55:07 [info]: GET /api/v1/analytics/dashboard 304 - - 11.006 ms
+2026-05-13 14:55:07 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 2.516 ms
+2026-05-13 14:55:08 [info]: GET /api/v1/alerts?limit=200 304 - - 2.894 ms
+2026-05-13 14:55:08 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 3.171 ms
+2026-05-13 14:55:08 [info]: GET /api/v1/analytics/dashboard 304 - - 14.017 ms
+2026-05-13 14:55:08 [info]: GET /api/v1/incidents 304 - - 4.546 ms
+2026-05-13 14:55:08 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 2.866 ms
+2026-05-13 14:55:08 [info]: GET /api/v1/devices 200 11 - 6.134 ms
+2026-05-13 14:55:10 [info]: GET /api/v1/devices 304 - - 2.694 ms
+2026-05-13 14:55:11 [info]: GET /api/v1/rules 304 - - 2.359 ms
+2026-05-13 14:55:11 [info]: GET /api/v1/rules 304 - - 2.042 ms
+2026-05-13 14:55:14 [info]: GET /api/v1/reports 200 308 - 7.138 ms
+2026-05-13 14:55:14 [info]: GET /api/v1/reports 304 - - 2.110 ms
+2026-05-13 14:55:20 [info]: Socket disconnected: p_fKIVMRcrzK-84MAAAB
+2026-05-13 14:55:26 [info]: GET /api/v1/auth/me 200 178 - 4.082 ms
+2026-05-13 14:55:26 [info]: GET /api/v1/auth/me 200 178 - 4.044 ms
+2026-05-13 14:55:27 [info]: GET /api/v1/reports 304 - - 5.274 ms
+2026-05-13 14:55:27 [info]: GET /api/v1/reports 304 - - 2.385 ms
+2026-05-13 14:55:28 [info]: Socket: -0r3AvBb6FZi_cVtAAAD user=admin@fleetops.local
+2026-05-13 15:10:44 [info]: Route loaded: /api/v1/drivers
+2026-05-13 15:10:44 [info]: Route loaded: /api/v1/shipments
+2026-05-13 15:10:44 [info]: Route loaded: /api/v1/finance
+2026-05-13 15:10:44 [info]: Route loaded: /api/v1/maintenance
+2026-05-13 15:10:44 [info]: Route loaded: /api/v1/riskzones
+2026-05-13 15:10:44 [warn]: Queues disabled — DISABLE_REDIS=true
+2026-05-13 15:10:44 [info]: FleetOps Enterprise v2.1 running on port 5000 [development]
+2026-05-13 15:14:08 [info]: Route loaded: /api/v1/drivers
+2026-05-13 15:14:08 [info]: Route loaded: /api/v1/shipments
+2026-05-13 15:14:08 [info]: Route loaded: /api/v1/finance
+2026-05-13 15:14:08 [info]: Route loaded: /api/v1/maintenance
+2026-05-13 15:14:08 [info]: Route loaded: /api/v1/riskzones
+2026-05-13 15:14:08 [warn]: Queues disabled — DISABLE_REDIS=true
+2026-05-13 15:14:08 [info]: FleetOps Enterprise v2.1 running on port 5000 [development]
+2026-05-13 15:14:45 [warn]: Redis disabled via DISABLE_REDIS=true. Queue workers will not start.
+2026-05-13 15:14:45 [info]: New PostgreSQL client connected
+2026-05-13 15:14:45 [info]: GET /health 200 91 - 26.328 ms
+2026-05-13 15:15:10 [info]: Login: admin@fleetops.local (admin)
+2026-05-13 15:15:10 [info]: POST /api/v1/auth/login 200 379 - 102.309 ms
+2026-05-13 15:15:11 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 6.694 ms
+2026-05-13 15:15:11 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 10.234 ms
+2026-05-13 15:15:11 [info]: New PostgreSQL client connected
+2026-05-13 15:15:11 [info]: New PostgreSQL client connected
+2026-05-13 15:15:11 [info]: New PostgreSQL client connected
+2026-05-13 15:15:11 [info]: New PostgreSQL client connected
+2026-05-13 15:15:11 [info]: New PostgreSQL client connected
+2026-05-13 15:15:11 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 39.829 ms
+2026-05-13 15:15:11 [info]: New PostgreSQL client connected
+2026-05-13 15:15:11 [info]: GET /api/v1/analytics/dashboard 304 - - 46.499 ms
+2026-05-13 15:15:12 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 3.476 ms
+2026-05-13 15:15:12 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 3.037 ms
+2026-05-13 15:15:12 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 9.285 ms
+2026-05-13 15:15:12 [info]: GET /api/v1/analytics/dashboard 304 - - 3.961 ms
+2026-05-13 15:15:13 [info]: Socket: cdtPIq2zmNTMPF_3AAAB user=admin@fleetops.local
+2026-05-13 15:15:20 [info]: Socket disconnected: cdtPIq2zmNTMPF_3AAAB
+2026-05-13 15:15:26 [info]: GET /api/v1/auth/me 200 178 - 7.100 ms
+2026-05-13 15:15:26 [info]: GET /api/v1/auth/me 200 178 - 9.630 ms
+2026-05-13 15:15:27 [info]: Socket: xymZ9cg7dfRpeGp3AAAD user=admin@fleetops.local
+2026-05-13 15:15:29 [info]: GET /api/v1/analytics/dashboard 304 - - 5.029 ms
+2026-05-13 15:15:29 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 4.980 ms
+2026-05-13 15:15:29 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 3.841 ms
+2026-05-13 15:15:29 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 8.145 ms
+2026-05-13 15:15:29 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 8.616 ms
+2026-05-13 15:15:30 [info]: GET /api/v1/analytics/dashboard 304 - - 3.865 ms
+2026-05-13 15:15:30 [info]: GET /api/v1/convoys?status=active&limit=5 304 - - 3.950 ms
+2026-05-13 15:15:30 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 4.474 ms
+2026-05-13 15:15:30 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 3.216 ms
+2026-05-13 15:15:30 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 3.207 ms
+2026-05-13 15:15:41 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 15:15:41 [warn]: convoys query: column "vehicle_count" does not exist
+2026-05-13 15:15:42 [warn]: Anthropic returned 404
+2026-05-13 15:15:42 [info]: POST /api/v1/ai/dispatch 200 113 - 531.425 ms
+2026-05-13 15:15:54 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 15:15:54 [warn]: convoys query: column "vehicle_count" does not exist
+2026-05-13 15:15:54 [warn]: Anthropic returned 404
+2026-05-13 15:15:54 [info]: POST /api/v1/ai/dispatch 200 113 - 335.472 ms
+2026-05-13 15:15:59 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 15:15:59 [warn]: convoys query: column "vehicle_count" does not exist
+2026-05-13 15:15:59 [warn]: Anthropic returned 404
+2026-05-13 15:15:59 [info]: POST /api/v1/ai/dispatch 200 137 - 369.710 ms
+2026-05-13 15:15:59 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 10.580 ms
+2026-05-13 15:15:59 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 14.684 ms
+2026-05-13 15:15:59 [info]: GET /api/v1/convoys?status=active&limit=5 304 - - 14.228 ms
+2026-05-13 15:15:59 [info]: New PostgreSQL client connected
+2026-05-13 15:15:59 [info]: New PostgreSQL client connected
+2026-05-13 15:15:59 [info]: New PostgreSQL client connected
+2026-05-13 15:15:59 [info]: GET /api/v1/analytics/dashboard 304 - - 50.367 ms
+2026-05-13 15:16:16 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 15:16:16 [warn]: convoys query: column "vehicle_count" does not exist
+2026-05-13 15:16:16 [warn]: Anthropic returned 404
+2026-05-13 15:16:16 [info]: POST /api/v1/ai/dispatch 200 103 - 341.126 ms
+2026-05-13 15:16:29 [info]: GET /api/v1/convoys?status=active&limit=5 304 - - 9.549 ms
+2026-05-13 15:16:29 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 9.510 ms
+2026-05-13 15:16:29 [info]: New PostgreSQL client connected
+2026-05-13 15:16:29 [info]: GET /api/v1/analytics/dashboard 304 - - 20.805 ms
+2026-05-13 15:16:29 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 9.908 ms
+2026-05-13 15:17:00 [info]: New PostgreSQL client connected
+2026-05-13 15:17:00 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 32.108 ms
+2026-05-13 15:17:00 [info]: New PostgreSQL client connected
+2026-05-13 15:17:00 [info]: New PostgreSQL client connected
+2026-05-13 15:17:00 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 34.676 ms
+2026-05-13 15:17:00 [info]: New PostgreSQL client connected
+2026-05-13 15:17:00 [info]: New PostgreSQL client connected
+2026-05-13 15:17:00 [info]: New PostgreSQL client connected
+2026-05-13 15:17:00 [info]: New PostgreSQL client connected
+2026-05-13 15:17:00 [info]: GET /api/v1/convoys?status=active&limit=5 304 - - 50.042 ms
+2026-05-13 15:17:00 [info]: New PostgreSQL client connected
+2026-05-13 15:17:00 [info]: GET /api/v1/analytics/dashboard 304 - - 76.504 ms
+2026-05-13 15:17:31 [info]: New PostgreSQL client connected
+2026-05-13 15:17:31 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 16.937 ms
+2026-05-13 15:17:31 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 3.159 ms
+2026-05-13 15:17:31 [info]: New PostgreSQL client connected
+2026-05-13 15:17:31 [info]: New PostgreSQL client connected
+2026-05-13 15:17:31 [info]: New PostgreSQL client connected
+2026-05-13 15:17:31 [info]: New PostgreSQL client connected
+2026-05-13 15:17:31 [info]: New PostgreSQL client connected
+2026-05-13 15:17:31 [info]: GET /api/v1/analytics/dashboard 200 118 - 39.089 ms
+2026-05-13 15:17:31 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 7.049 ms
+2026-05-13 15:18:01 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 4.547 ms
+2026-05-13 15:18:01 [info]: GET /api/v1/analytics/dashboard 200 118 - 5.035 ms
+2026-05-13 15:18:01 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 2.810 ms
+2026-05-13 15:18:01 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 2.390 ms
+2026-05-13 15:18:30 [info]: GET /api/v1/analytics/dashboard 200 118 - 4.364 ms
+2026-05-13 15:18:30 [info]: GET /api/v1/analytics/convoy-metrics 200 2800 - 4.210 ms
+2026-05-13 15:18:31 [info]: GET /api/v1/analytics/fleet-utilization 200 358 - 2.931 ms
+2026-05-13 15:18:31 [info]: GET /api/v1/convoys?status=active&limit=5 200 75 - 2.931 ms
+2026-05-13 15:18:53 [info]: Route loaded: /api/v1/drivers
+2026-05-13 15:18:53 [info]: Route loaded: /api/v1/shipments
+2026-05-13 15:18:53 [info]: Route loaded: /api/v1/finance
+2026-05-13 15:18:53 [info]: Route loaded: /api/v1/maintenance
+2026-05-13 15:18:53 [info]: Route loaded: /api/v1/riskzones
+2026-05-13 15:18:53 [warn]: Queues disabled — DISABLE_REDIS=true
+2026-05-13 15:18:53 [info]: FleetOps Enterprise v2.1 running on port 5000 [development]
+2026-05-13 15:18:55 [info]: New PostgreSQL client connected
+2026-05-13 15:18:55 [info]: Login: admin@fleetops.local (admin)
+2026-05-13 15:18:55 [info]: POST /api/v1/auth/login 200 379 - 128.897 ms
+2026-05-13 15:18:55 [info]: New PostgreSQL client connected
+2026-05-13 15:18:55 [error]: Database query error: column "vehicle_count" does not exist
+Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
+               estimated_arrival, vehicle_count
+             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 15:18:55 [warn]: convoys query: column "vehicle_count" does not exist
+2026-05-13 15:18:55 [info]: New PostgreSQL client connected
+2026-05-13 15:18:56 [warn]: Anthropic returned 404
+2026-05-13 15:18:56 [info]: POST /api/v1/ai/dispatch 200 136 - 421.305 ms
+2026-05-13 15:21:18 [info]: Route loaded: /api/v1/drivers
+2026-05-13 15:21:18 [info]: Route loaded: /api/v1/shipments
+2026-05-13 15:21:18 [info]: Route loaded: /api/v1/finance
+2026-05-13 15:21:18 [info]: Route loaded: /api/v1/maintenance
+2026-05-13 15:21:18 [info]: Route loaded: /api/v1/riskzones
+2026-05-13 15:21:18 [warn]: Queues disabled — DISABLE_REDIS=true
+2026-05-13 15:21:18 [info]: FleetOps Enterprise v2.1 running on port 5000 [development]
+2026-05-13 15:26:18 [info]: New PostgreSQL client connected
+2026-05-13 15:26:18 [info]: Login: admin@fleetops.local (admin)
+2026-05-13 15:26:18 [info]: POST /api/v1/auth/login 200 379 - 155.477 ms
+2026-05-13 15:26:18 [info]: New PostgreSQL client connected
+2026-05-13 15:26:18 [info]: New PostgreSQL client connected
+2026-05-13 15:26:24 [info]: POST /api/v1/ai/dispatch 200 432 - 6708.043 ms
