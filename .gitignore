@@ -1,3 +1,5 @@
 .vercel
 .env*.local
 backend/.env
+backend/.env
+**/.env
