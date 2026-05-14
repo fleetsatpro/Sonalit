@@ -217,6 +217,7 @@ async function migrateEnterprise() {
         parts JSONB DEFAULT '[]',
         workshop VARCHAR(255),
         technician VARCHAR(255),
+        notes TEXT,
         scheduled_at TIMESTAMPTZ,
         started_at TIMESTAMPTZ,
         completed_at TIMESTAMPTZ,
@@ -307,6 +308,10 @@ async function migrateEnterprise() {
       ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS heading DECIMAL(6,2) DEFAULT 0;
       ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS altitude DECIMAL(8,2);
       ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS cargo_capacity_kg DECIMAL(8,2);
+
+      -- maintenance_records.notes is written by the PATCH /maintenance/:id route
+      -- but was missing from the original table definition.
+      ALTER TABLE maintenance_records ADD COLUMN IF NOT EXISTS notes TEXT;
     `);
 
     // ── Performance indexes ────────────────────────────────────────────

@@ -35,6 +35,19 @@ router.post('/', asyncHandler(async (req, res) => {
   res.status(202).json({ queued: true, jobId: job.id });
 }));
 
+// GET /gps?vehicle_id=&limit=  — query-param form used by the frontend
+router.get('/', asyncHandler(async (req, res) => {
+  const { vehicle_id } = req.query;
+  if (!vehicle_id) return res.status(400).json({ error: 'vehicle_id query parameter is required' });
+  const limit = Math.min(parseInt(req.query.limit) || 200, 500);
+  const result = await query(
+    'SELECT * FROM gps_logs WHERE vehicle_id = $1 ORDER BY timestamp DESC LIMIT $2',
+    [vehicle_id, limit]
+  );
+  res.json({ data: result.rows });
+}));
+
+// GET /gps/:vehicleId  — path-param form (legacy / IoT clients)
 router.get('/:vehicleId', asyncHandler(async (req, res) => {
   const result = await query(
     'SELECT * FROM gps_logs WHERE vehicle_id = $1 ORDER BY timestamp DESC LIMIT 200',
