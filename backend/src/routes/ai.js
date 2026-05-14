@@ -1,9 +1,12 @@
 const router = require('express').Router();
+const Anthropic = require('@anthropic-ai/sdk');
 const { authenticate } = require('../middleware/auth');
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
 
 router.use(authenticate);
+
+const MODEL = 'claude-opus-4-7';
 
 // Ensure vehicle columns exist (run once on first request)
 let columnsChecked = false;
@@ -16,218 +19,283 @@ async function ensureColumns() {
     await query(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS maintenance_score INTEGER DEFAULT 0`);
     await query(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS heading DECIMAL(6,2) DEFAULT 0`);
     await query(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS driver_name VARCHAR(255)`);
-  } catch(e) { logger.warn('ensureColumns: ' + e.message); }
+  } catch (e) { logger.warn('ensureColumns: ' + e.message); }
 }
 
+// ── System prompt (static — kept frozen so it caches across requests) ──────
+const SYSTEM_PROMPT = `You are the AI dispatch assistant for FleetOps Pro, an enterprise logistics command platform running security convoys across East and Central Africa (Kenya, DRC, Tanzania, Uganda, Mali).
+
+You have tools to query live fleet data and weather. Always use them — never guess fleet state or invent data.
+
+Guidelines:
+- Use query_vehicles / query_convoys / query_alerts for anything about fleet state. Pass filters when the user is specific (a region, a status, low fuel, etc.).
+- Use get_weather for weather questions — it covers any location worldwide, including a convoy route's origin or destination.
+- You may call multiple tools, and call a tool again with different filters if the first result isn't enough to answer.
+- Be concise and direct — 1-4 sentences. Cite specific vehicle registrations, convoy names, and numbers from the tool results.
+- Clearly flag critical situations: low fuel, offline vehicles, critical alerts, severe weather on a route.
+- You can answer questions about fleet operations and weather. You do NOT yet have live traffic, security-incident, or maritime data — if asked, say so briefly instead of guessing.`;
+
+// ── Tool definitions (static — cache together with the system prompt) ──────
+const TOOLS = [
+  {
+    name: 'query_vehicles',
+    description: 'Query the live vehicle fleet. Returns matching vehicles with registration, type, status, region, speed (km/h), fuel level (%), coordinates, driver, and last ping. Call with no filters for the whole fleet.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', enum: ['active', 'idle', 'maintenance', 'offline'], description: 'Filter by vehicle status' },
+        region: { type: 'string', description: 'Filter by region, e.g. Kenya, DRC, Tanzania, Uganda, Mali' },
+        low_fuel: { type: 'boolean', description: 'If true, only vehicles with fuel level below 25%' },
+        moving: { type: 'boolean', description: 'If true, only vehicles currently moving (speed > 2 km/h)' },
+      },
+    },
+  },
+  {
+    name: 'query_convoys',
+    description: 'Query convoy missions. Returns convoys with name, status, region, priority, route origin/destination, and timing. Call with no filters for all convoys.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', enum: ['planned', 'active', 'completed', 'aborted'] },
+        region: { type: 'string', description: 'Filter by region' },
+        priority: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] },
+      },
+    },
+  },
+  {
+    name: 'query_alerts',
+    description: 'Query operational alerts. Returns alerts with type, severity, message, affected vehicle, and timestamps. By default returns only unresolved alerts.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        severity: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] },
+        type: { type: 'string', description: 'Alert type, e.g. speed, geofence, mechanical, security, communication' },
+        include_resolved: { type: 'boolean', description: 'If true, also include already-resolved alerts' },
+      },
+    },
+  },
+  {
+    name: 'get_weather',
+    description: 'Get current conditions and a 3-day forecast for any location worldwide by name. Use for weather questions, including weather along a convoy route or at a vehicle location.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        location: { type: 'string', description: 'City or place name, e.g. Nairobi, Mombasa, Kinshasa, Bamako' },
+      },
+      required: ['location'],
+    },
+  },
+];
+
+// ── Tool implementations ───────────────────────────────────────────────────
+async function toolQueryVehicles(input) {
+  const filters = ['deleted_at IS NULL'];
+  const params = [];
+  if (input.status) { params.push(input.status); filters.push(`status = $${params.length}`); }
+  if (input.region) { params.push(input.region); filters.push(`region = $${params.length}`); }
+  if (input.low_fuel) filters.push('COALESCE(fuel_level, 85) < 25');
+  if (input.moving) filters.push('COALESCE(speed, 0) > 2');
+  const r = await query(
+    `SELECT registration, type, status, region,
+            COALESCE(fuel_level, 85) AS fuel_level, COALESCE(speed, 0) AS speed,
+            latitude, longitude, driver_name, last_ping
+     FROM vehicles WHERE ${filters.join(' AND ')}
+     ORDER BY registration LIMIT 60`,
+    params
+  );
+  return { count: r.rows.length, vehicles: r.rows };
+}
+
+async function toolQueryConvoys(input) {
+  const filters = ['deleted_at IS NULL'];
+  const params = [];
+  if (input.status) { params.push(input.status); filters.push(`status = $${params.length}`); }
+  if (input.region) { params.push(input.region); filters.push(`region = $${params.length}`); }
+  if (input.priority) { params.push(input.priority); filters.push(`priority = $${params.length}`); }
+  const r = await query(
+    `SELECT name, status, region, priority, route_origin, route_destination,
+            departure_time, estimated_arrival, arrival_time
+     FROM convoys WHERE ${filters.join(' AND ')}
+     ORDER BY created_at DESC LIMIT 40`,
+    params
+  );
+  return { count: r.rows.length, convoys: r.rows };
+}
+
+async function toolQueryAlerts(input) {
+  const filters = ['a.deleted_at IS NULL'];
+  const params = [];
+  if (!input.include_resolved) filters.push('a.resolved_at IS NULL');
+  if (input.severity) { params.push(input.severity); filters.push(`a.severity = $${params.length}`); }
+  if (input.type) { params.push(input.type); filters.push(`a.type = $${params.length}`); }
+  const r = await query(
+    `SELECT a.type, a.severity, a.message, a.created_at, a.acknowledged_at, a.resolved_at,
+            v.registration AS vehicle
+     FROM alerts a LEFT JOIN vehicles v ON v.id = a.vehicle_id
+     WHERE ${filters.join(' AND ')}
+     ORDER BY a.created_at DESC LIMIT 40`,
+    params
+  );
+  return { count: r.rows.length, alerts: r.rows };
+}
+
+// WMO weather interpretation codes (Open-Meteo)
+const WMO_CODES = {
+  0: 'clear sky', 1: 'mainly clear', 2: 'partly cloudy', 3: 'overcast',
+  45: 'fog', 48: 'depositing rime fog',
+  51: 'light drizzle', 53: 'moderate drizzle', 55: 'dense drizzle',
+  61: 'slight rain', 63: 'moderate rain', 65: 'heavy rain',
+  66: 'light freezing rain', 67: 'heavy freezing rain',
+  71: 'slight snow', 73: 'moderate snow', 75: 'heavy snow', 77: 'snow grains',
+  80: 'slight rain showers', 81: 'moderate rain showers', 82: 'violent rain showers',
+  85: 'slight snow showers', 86: 'heavy snow showers',
+  95: 'thunderstorm', 96: 'thunderstorm with slight hail', 99: 'thunderstorm with heavy hail',
+};
+
+async function toolGetWeather(input) {
+  const loc = (input.location || '').trim();
+  if (!loc) return { error: 'No location provided' };
+
+  // 1. Geocode the place name (Open-Meteo geocoding — free, no key)
+  const geoRes = await fetch(
+    `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(loc)}&count=1`,
+    { signal: AbortSignal.timeout(8000) }
+  );
+  if (!geoRes.ok) return { error: `Geocoding failed (HTTP ${geoRes.status})` };
+  const geo = await geoRes.json();
+  if (!geo.results || !geo.results.length) return { error: `Location "${loc}" not found` };
+  const g = geo.results[0];
+
+  // 2. Current conditions + 3-day forecast (Open-Meteo forecast — free, no key)
+  const fcRes = await fetch(
+    `https://api.open-meteo.com/v1/forecast?latitude=${g.latitude}&longitude=${g.longitude}` +
+    `&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m` +
+    `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max` +
+    `&forecast_days=3&timezone=auto`,
+    { signal: AbortSignal.timeout(8000) }
+  );
+  if (!fcRes.ok) return { error: `Forecast failed (HTTP ${fcRes.status})` };
+  const fc = await fcRes.json();
+  const cur = fc.current || {};
+  const daily = fc.daily || {};
+  const forecast = (daily.time || []).map((d, i) => ({
+    date: d,
+    conditions: WMO_CODES[daily.weather_code?.[i]] || 'unknown',
+    high_c: daily.temperature_2m_max?.[i],
+    low_c: daily.temperature_2m_min?.[i],
+    precip_chance_pct: daily.precipitation_probability_max?.[i],
+  }));
+
+  return {
+    location: [g.name, g.admin1, g.country].filter(Boolean).join(', '),
+    current: {
+      conditions: WMO_CODES[cur.weather_code] || 'unknown',
+      temperature_c: cur.temperature_2m,
+      humidity_pct: cur.relative_humidity_2m,
+      precipitation_mm: cur.precipitation,
+      wind_speed_kmh: cur.wind_speed_10m,
+    },
+    forecast,
+  };
+}
+
+async function runTool(name, input) {
+  switch (name) {
+    case 'query_vehicles': return toolQueryVehicles(input || {});
+    case 'query_convoys':  return toolQueryConvoys(input || {});
+    case 'query_alerts':   return toolQueryAlerts(input || {});
+    case 'get_weather':    return toolGetWeather(input || {});
+    default: return { error: `Unknown tool: ${name}` };
+  }
+}
+
+// ── POST /ai/dispatch — agentic tool-use loop ──────────────────────────────
 router.post('/dispatch', async (req, res) => {
   const { command, history = [] } = req.body;
-  if (!command?.trim()) return res.status(400).json({ error: 'command required' });
+  if (!command || !command.trim()) return res.status(400).json({ error: 'command required' });
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey || apiKey.length < 20) {
+    return res.json({
+      response: 'AI dispatch is not configured — set ANTHROPIC_API_KEY on the backend to enable it.',
+      actions: [],
+      source: 'unconfigured',
+    });
+  }
 
   try {
     await ensureColumns();
+    const client = new Anthropic({ apiKey });
 
-    const [vehicleRows, convoyRows, alertRows] = await Promise.all([
-      query(`SELECT registration, status, region, type,
-               COALESCE(fuel_level, 85) AS fuel_level,
-               COALESCE(speed, 0) AS speed,
-               COALESCE(maintenance_score, 0) AS maintenance_score,
-               latitude, longitude, last_ping
-             FROM vehicles WHERE deleted_at IS NULL LIMIT 50`
-      ).then(r => r.rows).catch(e => { logger.warn('vehicles query: ' + e.message); return []; }),
-
-      query(`SELECT name, status, priority, region, route_origin, route_destination, risk_score,
-               estimated_arrival
-             FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20`
-      ).then(r => r.rows).catch(e => { logger.warn('convoys query: ' + e.message); return []; }),
-
-      query(`SELECT type, severity, message, created_at FROM alerts
-             WHERE resolved_at IS NULL AND deleted_at IS NULL
-             ORDER BY created_at DESC LIMIT 15`
-      ).then(r => r.rows).catch(e => { logger.warn('alerts query: ' + e.message); return []; }),
-    ]);
-
-    const context = {
-      total_vehicles: vehicleRows.length,
-      active: vehicleRows.filter(v => v.status === 'active').length,
-      idle: vehicleRows.filter(v => v.status === 'idle').length,
-      offline: vehicleRows.filter(v => v.status === 'offline').length,
-      maintenance: vehicleRows.filter(v => v.status === 'maintenance').length,
-      low_fuel: vehicleRows.filter(v => parseFloat(v.fuel_level) < 25).map(v => v.registration),
-      moving: vehicleRows.filter(v => parseFloat(v.speed) > 2).length,
-      by_region: vehicleRows.reduce((acc, v) => { acc[v.region] = (acc[v.region] || 0) + 1; return acc; }, {}),
-      vehicles: vehicleRows,
-      convoys: convoyRows,
-      open_alerts: alertRows,
-      critical_alerts: alertRows.filter(a => a.severity === 'critical').length,
-    };
-
-    // ── Try Anthropic API ───────────────────────────────────────────
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (apiKey && apiKey.length > 20) {
-      try {
-        const systemPrompt = `You are the AI dispatch assistant for FleetOps Pro — an enterprise logistics command platform operating across East/Central Africa.
-
-Current fleet data:
-- ${context.total_vehicles} vehicles total: ${context.active} active, ${context.idle} idle, ${context.maintenance} maintenance, ${context.offline} offline
-- ${context.moving} vehicles currently moving
-- Low fuel vehicles: ${context.low_fuel.join(', ') || 'none'}
-- Regional breakdown: ${JSON.stringify(context.by_region)}
-- Active convoys: ${convoyRows.filter(c=>c.status==='active').length}
-- Open alerts: ${alertRows.length} (${context.critical_alerts} critical)
-
-Full vehicle list: ${JSON.stringify(vehicleRows.slice(0,20))}
-Convoys: ${JSON.stringify(convoyRows)}
-Recent alerts: ${JSON.stringify(alertRows.slice(0,8))}
-
-Instructions:
-- Be concise and direct — 1-3 sentences max
-- Use specific vehicle registrations and convoy names from the data
-- Flag critical situations clearly
-- If asked for actions, suggest practical next steps`;
-
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-          },
-          body: JSON.stringify({
-            model: 'claude-sonnet-4-6',
-            max_tokens: 300,
-            system: systemPrompt,
-            messages: [
-              ...history.slice(-6).map(h => ({ role: h.role, content: h.content })),
-              { role: 'user', content: command },
-            ],
-          }),
-          signal: AbortSignal.timeout(10000),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          const text = data.content?.[0]?.text || '';
-          return res.json({ response: text, actions: [], source: 'claude' });
-        }
-        logger.warn('Anthropic returned ' + response.status);
-      } catch (err) {
-        logger.warn('Anthropic error: ' + err.message + ' — using pattern matching');
-      }
-    }
-
-    // ── Pattern matching (rich fallback) ───────────────────────────
-    const q = command.toLowerCase().trim();
-
-    const matchers = [
-      // Fuel
-      [/(low fuel|critical fuel|fuel alert|fuel level)/,
-        () => context.low_fuel.length
-          ? `${context.low_fuel.length} vehicle${context.low_fuel.length>1?'s':''} below 25% fuel: ${context.low_fuel.join(', ')}. Dispatch refuelling immediately.`
-          : 'All vehicles have fuel above 25%. Fleet fuel levels nominal.'],
-
-      // Fleet status / summary
-      [/(fleet status|fleet summary|overview|how many vehicle|total vehicle)/,
-        () => `Fleet: ${context.total_vehicles} vehicles — ${context.active} active, ${context.idle} idle, ${context.maintenance} in maintenance, ${context.offline} offline. ${context.moving} currently moving.`],
-
-      // Active convoys
-      [/(active convoy|current convoy|convoy.*status|convoy.*now)/,
-        () => {
-          const active = convoyRows.filter(c => c.status === 'active');
-          if (!active.length) return 'No convoys are currently active.';
-          return `${active.length} active convoy${active.length>1?'s':''}: ${active.map(c => `${c.name} (${c.route_origin||'?'} → ${c.route_destination||'?'}, ${c.region})`).join(' | ')}.`;
-        }],
-
-      // Alerts
-      [/(alert|incident|emergency|critical)/,
-        () => {
-          if (!alertRows.length) return 'No open alerts. All systems normal.';
-          const crits = alertRows.filter(a => a.severity === 'critical');
-          let r = `${alertRows.length} open alert${alertRows.length>1?'s':''} — ${context.critical_alerts} critical.`;
-          if (crits.length) r += ` Critical: ${crits.map(a => a.message).slice(0,2).join('; ')}.`;
-          return r;
-        }],
-
-      // Offline vehicles
-      [/(offline|not responding|unreachable|lost contact)/,
-        () => {
-          const off = vehicleRows.filter(v => v.status === 'offline');
-          return off.length
-            ? `${off.length} vehicle${off.length>1?'s':''} offline: ${off.map(v => v.registration).join(', ')}. Verify communication and GPS units.`
-            : 'All vehicles are online and responding.';
-        }],
-
-      // Maintenance
-      [/(maintenance|service|repair|overdue|breakdown)/,
-        () => {
-          const due = vehicleRows.filter(v => v.status === 'maintenance');
-          const score = vehicleRows.filter(v => parseInt(v.maintenance_score) > 80);
-          let r = due.length ? `${due.length} vehicle${due.length>1?'s':''} currently in maintenance: ${due.map(v=>v.registration).join(', ')}.` : 'No vehicles in active maintenance.';
-          if (score.length) r += ` ${score.length} with high maintenance score (attention needed).`;
-          return r;
-        }],
-
-      // Moving / speed
-      [/(moving|speed|driving|on route|in transit)/,
-        () => {
-          const moving = vehicleRows.filter(v => parseFloat(v.speed) > 2);
-          const fastest = [...vehicleRows].sort((a,b) => parseFloat(b.speed)-parseFloat(a.speed))[0];
-          return moving.length
-            ? `${moving.length} vehicle${moving.length>1?'s':''} currently moving. Fastest: ${fastest?.registration} at ${parseFloat(fastest?.speed||0).toFixed(0)} km/h.`
-            : 'No vehicles currently in motion.';
-        }],
-
-      // Regional queries
-      [/\b(kenya|nairobi|mombasa)\b/,
-        () => {
-          const r = vehicleRows.filter(v => v.region === 'Kenya');
-          return `Kenya fleet: ${r.length} vehicles — ${r.filter(v=>v.status==='active').length} active, ${r.filter(v=>v.status==='idle').length} idle, ${r.filter(v=>v.status==='offline').length} offline.`;
-        }],
-      [/\b(drc|congo|kinshasa)\b/,
-        () => {
-          const r = vehicleRows.filter(v => v.region === 'DRC');
-          return `DRC fleet: ${r.length} vehicles — ${r.filter(v=>v.status==='active').length} active, ${r.filter(v=>v.status==='offline').length} offline.`;
-        }],
-      [/\b(tanzania|dar|dodoma)\b/,
-        () => {
-          const r = vehicleRows.filter(v => v.region === 'Tanzania');
-          return `Tanzania fleet: ${r.length} vehicles — ${r.filter(v=>v.status==='active').length} active.`;
-        }],
-      [/\b(mali|bamako)\b/,
-        () => {
-          const r = vehicleRows.filter(v => v.region === 'Mali');
-          return `Mali fleet: ${r.length} vehicles — ${r.filter(v=>v.status==='active').length} active.`;
-        }],
-
-      // Convoy count
-      [/(how many convoy|convoy count|all convoy)/,
-        () => {
-          const planned = convoyRows.filter(c=>c.status==='planned').length;
-          const active = convoyRows.filter(c=>c.status==='active').length;
-          return `${convoyRows.length} total convoys: ${active} active, ${planned} planned.`;
-        }],
-
-      // Help
-      [/(help|what can|commands|what do you)/,
-        () => `I can answer questions about: fleet status, active convoys, fuel levels, offline vehicles, maintenance, alerts, regional breakdowns, and specific vehicle or convoy details. ${!apiKey ? 'Add ANTHROPIC_API_KEY to .env for full natural language AI.' : 'Powered by Claude AI.'}`],
+    // Static system prompt + tools are the cacheable prefix; only the
+    // conversation (volatile) follows the cache breakpoint.
+    const messages = [
+      ...history.slice(-6)
+        .filter(h => h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string')
+        .map(h => ({ role: h.role, content: h.content })),
+      { role: 'user', content: command.trim() },
     ];
 
-    for (const [pattern, handler] of matchers) {
-      if (pattern.test(q)) {
-        return res.json({ response: handler(), actions: [], source: 'pattern' });
+    const toolsUsed = [];
+    let finalText = '';
+
+    for (let turn = 0; turn < 6; turn++) {
+      const response = await client.messages.create({
+        model: MODEL,
+        max_tokens: 8000,
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'medium' },
+        system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+        tools: TOOLS,
+        messages,
+      });
+
+      if (response.stop_reason === 'tool_use') {
+        messages.push({ role: 'assistant', content: response.content });
+        const toolResults = [];
+        for (const block of response.content) {
+          if (block.type !== 'tool_use') continue;
+          toolsUsed.push(block.name);
+          let result, isError = false;
+          try {
+            result = await runTool(block.name, block.input);
+          } catch (e) {
+            result = { error: e.message };
+            isError = true;
+            logger.warn(`AI tool ${block.name} failed: ${e.message}`);
+          }
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: JSON.stringify(result),
+            is_error: isError,
+          });
+        }
+        messages.push({ role: 'user', content: toolResults });
+        continue;
       }
+
+      // Terminal turn — collect the text answer
+      finalText = response.content
+        .filter(b => b.type === 'text')
+        .map(b => b.text)
+        .join('\n')
+        .trim();
+      break;
     }
 
-    // Default
-    const summary = `Fleet has ${context.total_vehicles} vehicles (${context.active} active), ${convoyRows.filter(c=>c.status==='active').length} active convoys, ${alertRows.length} open alerts.`;
-    res.json({
-      response: summary + (apiKey ? '' : ' Set ANTHROPIC_API_KEY in backend .env for full AI capabilities.'),
-      actions: [],
-      source: 'pattern',
+    return res.json({
+      response: finalText || 'I could not produce a response — please rephrase your request.',
+      actions: [...new Set(toolsUsed)],
+      source: 'claude',
     });
-
   } catch (err) {
     logger.error('AI dispatch error: ' + err.message);
-    res.status(500).json({ response: 'AI engine error. Please try again.', actions: [], source: 'error' });
+    return res.status(500).json({
+      response: 'AI engine error: ' + err.message,
+      actions: [],
+      source: 'error',
+    });
   }
 });
 
@@ -253,9 +321,9 @@ router.get('/risk/:convoyId', async (req, res, next) => {
     ]);
     const count = parseInt(alertCount.rows[0].count);
     const priority = convoy.rows[0]?.priority || 'medium';
-    const base = { critical:25, high:15, medium:5, low:0 }[priority] || 0;
+    const base = { critical: 25, high: 15, medium: 5, low: 0 }[priority] || 0;
     const score = Math.min(100, count * 12 + base);
-    const level = score>=70?'CRITICAL':score>=40?'HIGH':score>=20?'MEDIUM':'LOW';
+    const level = score >= 70 ? 'CRITICAL' : score >= 40 ? 'HIGH' : score >= 20 ? 'MEDIUM' : 'LOW';
     res.json({ data: { score, level, openAlerts: count } });
   } catch (err) { next(err); }
 });

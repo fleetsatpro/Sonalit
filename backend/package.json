@@ -17,6 +17,7 @@
     "worker:notification": "node src/workers/notificationWorker.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.96.0",
     "bcryptjs": "^2.4.3",
     "bullmq": "^1.62.0",
     "cors": "^2.8.5",
