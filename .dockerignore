@@ -1,0 +1,23 @@
+# Build context is the repo root, but the Dockerfile only builds backend/.
+# Exclude everything else to keep the image small, fast, and free of secrets.
+
+.git
+.gitignore
+README.md
+*.md
+*.py
+*.sh
+
+# Other workspaces — not part of the backend image
+frontend
+mlos-copilot
+sonalit-proxy
+public
+
+# Never ship these from backend/
+**/node_modules
+**/.env
+**/.env.*
+backend/logs
+backend/src/sonalit
+**/*.zip
