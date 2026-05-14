@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
-import { Maximize2, X, AlertTriangle, Activity, Truck } from 'lucide-react';
+import { Maximize2, X, AlertTriangle } from 'lucide-react';
 import { alertsAPI, analyticsAPI, vehiclesAPI } from '../services/api';
 import socketService from '../services/socket';
 

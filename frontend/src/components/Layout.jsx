@@ -1,11 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Truck, Route, MapPin, Bell, BarChart3,
-  MessageSquare, Settings, Shield, Cpu, Zap, FileText,
+  MessageSquare, Settings, Cpu, Zap, FileText,
   LogOut, ChevronLeft, ChevronRight, Menu, X, Package,
-  Users, DollarSign, Wrench, AlertTriangle, Search,
-  Radio, Activity, ChevronDown, Globe
+  Users, DollarSign, Wrench, AlertTriangle, Search
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore, useAlertStore } from '../store';

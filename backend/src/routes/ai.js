@@ -170,8 +170,9 @@ Instructions:
       [/(moving|speed|driving|on route|in transit)/,
         () => {
           const moving = vehicleRows.filter(v => parseFloat(v.speed) > 2);
+          const fastest = [...vehicleRows].sort((a,b) => parseFloat(b.speed)-parseFloat(a.speed))[0];
           return moving.length
-            ? `${moving.length} vehicle${moving.length>1?'s':''} currently moving. Fastest: ${vehicleRows.sort((a,b) => parseFloat(b.speed)-parseFloat(a.speed))[0]?.registration} at ${parseFloat(vehicleRows[0]?.speed||0).toFixed(0)} km/h.`
+            ? `${moving.length} vehicle${moving.length>1?'s':''} currently moving. Fastest: ${fastest?.registration} at ${parseFloat(fastest?.speed||0).toFixed(0)} km/h.`
             : 'No vehicles currently in motion.';
         }],
 

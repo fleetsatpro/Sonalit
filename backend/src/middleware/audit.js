@@ -14,33 +14,35 @@ const logger = require('../utils/logger');
  *   req.auditAfter  = object | null
  */
 function auditLog(tableName) {
-  return async (req, res, next) => {
-    // Patch res.json to intercept the response and write the audit log after it sends
+  return (req, res, next) => {
+    // Patch res.json to intercept the response and write the audit log after it sends.
+    // res.json stays synchronous and chainable — the audit write is fired off
+    // separately so it can never delay or crash the request.
     const originalJson = res.json.bind(res);
-    res.json = async function (body) {
-      originalJson(body);
+    res.json = function (body) {
+      const result = originalJson(body);
 
       // Only log successful mutations
       if (res.statusCode >= 200 && res.statusCode < 300 && req.auditAction) {
-        try {
-          await query(
-            `INSERT INTO audit_logs
-               (table_name, record_id, action, old_data, new_data, user_id, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-            [
-              tableName,
-              req.auditRecordId || null,
-              req.auditAction,
-              req.auditBefore ? JSON.stringify(req.auditBefore) : null,
-              req.auditAfter ? JSON.stringify(req.auditAfter) : null,
-              req.user?.id || null,
-            ]
-          );
-        } catch (err) {
+        query(
+          `INSERT INTO audit_logs
+             (table_name, record_id, action, old_data, new_data, user_id, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+          [
+            tableName,
+            req.auditRecordId || null,
+            req.auditAction,
+            req.auditBefore ? JSON.stringify(req.auditBefore) : null,
+            req.auditAfter ? JSON.stringify(req.auditAfter) : null,
+            req.user?.id || null,
+          ]
+        ).catch((err) => {
           // Audit failures must never crash the request
           logger.error(`Audit log write failed: ${err.message}`);
-        }
+        });
       }
+
+      return result;
     };
 
     next();

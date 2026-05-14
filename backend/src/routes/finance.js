@@ -107,24 +107,36 @@ router.post('/expenses', async (req, res, next) => {
 // GET /finance/profitability
 router.get('/profitability', async (req, res, next) => {
   try {
+    // Each table is pre-aggregated in its own subquery to avoid the
+    // cartesian-product row multiplication a flat multi-LEFT-JOIN would cause.
     const result = await query(`
       SELECT
         v.registration,
         v.type,
         v.region,
-        COUNT(t.id) trips,
-        SUM(t.distance_km) total_km,
-        SUM(t.cost_usd) total_cost,
-        SUM(e.amount) FILTER (WHERE e.vehicle_id = v.id) total_expenses,
-        SUM(i.total) FILTER (WHERE i.id IS NOT NULL) total_revenue,
-        ROUND((SUM(i.total) - SUM(t.cost_usd) - COALESCE(SUM(e.amount),0))::numeric, 2) profit
+        COALESCE(t.trips, 0) trips,
+        COALESCE(t.total_km, 0) total_km,
+        COALESCE(t.total_cost, 0) total_cost,
+        COALESCE(e.total_expenses, 0) total_expenses,
+        COALESCE(i.total_revenue, 0) total_revenue,
+        ROUND((COALESCE(i.total_revenue,0) - COALESCE(t.total_cost,0) - COALESCE(e.total_expenses,0))::numeric, 2) profit
       FROM vehicles v
-      LEFT JOIN trips t ON t.vehicle_id = v.id AND t.started_at > NOW() - INTERVAL '30 days'
-      LEFT JOIN expenses e ON e.vehicle_id = v.id AND e.expense_date > NOW() - INTERVAL '30 days'
-      LEFT JOIN shipments s ON s.vehicle_id = v.id
-      LEFT JOIN invoices i ON i.shipment_id = s.id AND i.status = 'paid'
+      LEFT JOIN (
+        SELECT vehicle_id, COUNT(*) trips, SUM(distance_km) total_km, SUM(cost_usd) total_cost
+        FROM trips WHERE started_at > NOW() - INTERVAL '30 days'
+        GROUP BY vehicle_id
+      ) t ON t.vehicle_id = v.id
+      LEFT JOIN (
+        SELECT vehicle_id, SUM(amount) total_expenses
+        FROM expenses WHERE expense_date > NOW() - INTERVAL '30 days'
+        GROUP BY vehicle_id
+      ) e ON e.vehicle_id = v.id
+      LEFT JOIN (
+        SELECT s.vehicle_id, SUM(i.total) total_revenue
+        FROM shipments s JOIN invoices i ON i.shipment_id = s.id AND i.status = 'paid'
+        GROUP BY s.vehicle_id
+      ) i ON i.vehicle_id = v.id
       WHERE v.deleted_at IS NULL
-      GROUP BY v.id, v.registration, v.type, v.region
       ORDER BY profit DESC NULLS LAST
       LIMIT 20
     `);

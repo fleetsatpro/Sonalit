@@ -43,10 +43,10 @@ function RequireAuth({ children }) {
 
 export default function App() {
   const { token, fetchMe } = useAuthStore();
+  useEffect(() => { registerServiceWorker(); }, []);
   useEffect(() => {
     if (token) { fetchMe(); socketService.connect(); }
-    registerServiceWorker();
-  }, []);
+  }, [token, fetchMe]);
 
   return (
     <BrowserRouter>

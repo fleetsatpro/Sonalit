@@ -143,14 +143,13 @@ const updateConvoyStatus = asyncHandler(async (req, res) => {
     });
   }
 
-  const extra = {};
-  if (value.status === 'active') extra.departure_time = 'NOW()';
-  if (value.status === 'completed' || value.status === 'aborted') extra.arrival_time = 'NOW()';
+  const setDeparture = value.status === 'active';
+  const setArrival = value.status === 'completed' || value.status === 'aborted';
 
   const result = await query(
     `UPDATE convoys SET status = $1, updated_at = NOW()
-     ${extra.departure_time ? ', departure_time = NOW()' : ''}
-     ${extra.arrival_time ? ', arrival_time = NOW()' : ''}
+     ${setDeparture ? ', departure_time = NOW()' : ''}
+     ${setArrival ? ', arrival_time = NOW()' : ''}
      WHERE id = $2 RETURNING *`,
     [value.status, req.params.id]
   );

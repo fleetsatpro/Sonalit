@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Wrench, Plus, X, AlertTriangle, CheckCircle2, Clock, TrendingUp, Filter, RefreshCw, Tool, ChevronRight } from 'lucide-react';
+import { Wrench, Plus, X, AlertTriangle, CheckCircle2, Clock, TrendingUp, Filter, RefreshCw, ChevronRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import { vehiclesAPI } from '../services/api';

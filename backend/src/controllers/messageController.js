@@ -64,17 +64,14 @@ const broadcast = asyncHandler(async (req, res) => {
   const { error, value } = schema.validate(req.body);
   if (error) return res.status(400).json({ error: error.message });
 
-  const channels = await query('SELECT id FROM channels');
-  const inserted = [];
-
-  for (const ch of channels.rows) {
-    const result = await query(
-      `INSERT INTO messages (channel_id, sender_id, content, created_at)
-       VALUES ($1, $2, $3, NOW()) RETURNING id`,
-      [ch.id, req.user.id, `[BROADCAST] ${value.content}`]
-    );
-    inserted.push(result.rows[0].id);
-  }
+  // Single atomic multi-row insert — one row per channel, all-or-nothing.
+  const result = await query(
+    `INSERT INTO messages (channel_id, sender_id, content, created_at)
+     SELECT id, $1, $2, NOW() FROM channels
+     RETURNING id`,
+    [req.user.id, `[BROADCAST] ${value.content}`]
+  );
+  const inserted = result.rows.map((r) => r.id);
 
   const io = req.app.get('io');
   if (io) {
@@ -88,7 +85,7 @@ const broadcast = asyncHandler(async (req, res) => {
     });
   }
 
-  res.json({ message: `Broadcast sent to ${channels.rows.length} channel(s)`, messageIds: inserted });
+  res.json({ message: `Broadcast sent to ${inserted.length} channel(s)`, messageIds: inserted });
 });
 
 module.exports = { getChannels, getChannelMessages, sendMessage, broadcast };
