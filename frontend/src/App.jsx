@@ -1,5 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect, Suspense, lazy } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { useEffect, Suspense, lazy, Component } from 'react';
 import { Toaster } from 'react-hot-toast';
 import { useAuthStore } from './store';
 import Layout from './components/Layout';
@@ -31,11 +31,50 @@ const Loader = () => (
   </div>
 );
 
+// Catches render errors in a page so one broken page shows a contained
+// message instead of white-screening the whole app.
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error, info) {
+    console.error('[ErrorBoundary]', error, info);
+  }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'60vh', padding:24, fontFamily:'monospace' }}>
+        <div style={{ maxWidth:480, textAlign:'center', background:'rgba(239,68,68,0.06)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:14, padding:'28px 32px' }}>
+          <div style={{ fontSize:28, marginBottom:8 }}>⚠</div>
+          <h2 style={{ color:'#ef4444', fontSize:14, letterSpacing:2, margin:'0 0 8px' }}>PAGE ERROR</h2>
+          <p style={{ color:'#94a3b8', fontSize:12, lineHeight:1.6, margin:'0 0 16px' }}>
+            Something went wrong rendering this page. The rest of the app still works — use the sidebar to go elsewhere.
+          </p>
+          <pre style={{ background:'rgba(0,0,0,0.3)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:8, padding:'10px 12px', fontSize:11, color:'#f87171', textAlign:'left', overflow:'auto', maxHeight:120, margin:'0 0 16px' }}>
+            {String(this.state.error?.message || this.state.error)}
+          </pre>
+          <button onClick={() => window.location.reload()} style={{ background:'#F0B429', color:'#0A0F1A', border:'none', borderRadius:8, padding:'8px 20px', fontSize:12, fontWeight:700, cursor:'pointer', letterSpacing:1 }}>
+            RELOAD
+          </button>
+        </div>
+      </div>
+    );
+  }
+}
+
 function RequireAuth({ children }) {
+  const location = useLocation();
   return (
     <ProtectedRoute>
       <Layout>
-        <Suspense fallback={<Loader />}>{children}</Suspense>
+        {/* key on pathname → boundary resets when navigating to another page */}
+        <ErrorBoundary key={location.pathname}>
+          <Suspense fallback={<Loader />}>{children}</Suspense>
+        </ErrorBoundary>
       </Layout>
     </ProtectedRoute>
   );
