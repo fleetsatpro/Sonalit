@@ -85,8 +85,9 @@ export default function AlertsPage() {
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    socketService.onAlert(() => { load(); fetchUnread(); });
-  }, []);
+    const unsub = socketService.onAlert(() => { load(); fetchUnread(); });
+    return unsub;
+  }, [load, fetchUnread]);
 
   // Load anomalies when tab changes
   useEffect(() => {

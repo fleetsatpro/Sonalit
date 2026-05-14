@@ -335,9 +335,10 @@ export default function DashboardPage() {
   useEffect(() => {
     loadData();
     fetchAlerts({ resolved: 'false', limit: 5 });
-    socketService.onVehicleUpdate((data) => setFeed(f => [{ type: 'gps', ...data, ts: new Date() }, ...f].slice(0, 30)));
-    socketService.onAlertNew((data) => setFeed(f => [{ type: 'alert', ...data, ts: new Date() }, ...f].slice(0, 30)));
-    socketService.onConvoyUpdate((data) => setFeed(f => [{ type: 'convoy', ...data, ts: new Date() }, ...f].slice(0, 30)));
+    const unsubVehicle = socketService.onVehicleUpdate((data) => setFeed(f => [{ type: 'gps', ...data, ts: new Date() }, ...f].slice(0, 30)));
+    const unsubAlert = socketService.onAlertNew((data) => setFeed(f => [{ type: 'alert', ...data, ts: new Date() }, ...f].slice(0, 30)));
+    const unsubConvoy = socketService.onConvoyUpdate((data) => setFeed(f => [{ type: 'convoy', ...data, ts: new Date() }, ...f].slice(0, 30)));
+    return () => { unsubVehicle(); unsubAlert(); unsubConvoy(); };
   }, []);
 
   useInterval(() => loadData(), 30000);

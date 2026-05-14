@@ -6,6 +6,7 @@ import api from '../services/api';
 import socketService from '../services/socket';
 import { Spinner } from '../components/UI';
 import { timeAgo, formatDate } from '../utils/helpers';
+import toast from 'react-hot-toast';
 
 const SC = { active:'#22D3A0', idle:'#94a3b8', maintenance:'#F59E0B', offline:'#ef4444' };
 const SR = { active:'rgba(34,211,160,0.15)', idle:'rgba(148,163,184,0.08)', maintenance:'rgba(245,158,11,0.15)', offline:'rgba(239,68,68,0.15)' };
@@ -54,6 +55,7 @@ export default function GPSPage() {
   const drawingRef    = useRef(false);
   const drawCircleRef = useRef(null);
   const alertMarkersRef = useRef({});
+  const pollRef       = useRef(null);
 
   const [vehicles,   setVehicles]   = useState([]);
   const [alerts,     setAlerts]     = useState([]);
@@ -112,15 +114,15 @@ export default function GPSPage() {
       loadGeofences(Lf);
       setLoading(false);
 
-      const iv = setInterval(() => loadVehicles(Lf, map), 15000);
-      return () => clearInterval(iv);
+      pollRef.current = setInterval(() => loadVehicles(Lf, map), 15000);
     });
+    return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
   }, []);
 
   // ── Socket live updates ────────────────────────────────────────────────
   useEffect(() => {
     socketService.connect();
-    socketService.onVehicleUpdate(data => {
+    const unsubVehicle = socketService.onVehicleUpdate(data => {
       setVehicles(prev => prev.map(v =>
         v.id === data.vehicleId ? { ...v, lat: data.lat, lng: data.lng, speed: data.speed || v.speed } : v
       ));
@@ -136,7 +138,7 @@ export default function GPSPage() {
       }, ...prev.slice(0, 49)]);
     });
 
-    socketService.onAlert(data => {
+    const unsubAlert = socketService.onAlert(data => {
       setAlerts(prev => [data, ...prev.slice(0, 19)]);
       setEvents(prev => [{
         id: Date.now(), time: new Date(), type: 'alert',
@@ -145,13 +147,15 @@ export default function GPSPage() {
       }, ...prev.slice(0, 49)]);
     });
 
-    socketService.onConvoyDeviation(data => {
+    const unsubDeviation = socketService.onConvoyDeviation(data => {
       setEvents(prev => [{
         id: Date.now(), time: new Date(), type: 'deviation',
         text: `Route deviation: ${data.deviationKm}km off route`,
         color: '#ef4444',
       }, ...prev.slice(0, 49)]);
     });
+
+    return () => { unsubVehicle(); unsubAlert(); unsubDeviation(); };
   }, []);
 
   const loadVehicles = useCallback(async (Lf, map) => {

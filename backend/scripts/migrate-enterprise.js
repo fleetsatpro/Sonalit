@@ -1,5 +1,5 @@
-require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
-const { pool } = require('../../src/config/database');
+require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
+const { pool } = require('../src/config/database');
 
 async function migrateEnterprise() {
   const client = await pool.connect();

@@ -28,13 +28,11 @@ function connect() {
 function disconnect() { if (socket) { socket.disconnect(); socket = null; } }
 function isConnected() { return socket?.connected === true; }
 
-const guard = (fn, name) => {
-  if (!socket) { console.warn(`[Socket] Cannot ${name} — not initialised`); return () => {}; }
-  return fn(socket);
-};
-
-const on  = (ev, cb) => { if (socket) socket.on(ev, cb); };
 const off = (ev, cb) => { if (socket) socket.off(ev, cb); };
+const on  = (ev, cb) => {
+  if (socket) socket.on(ev, cb);
+  return () => off(ev, cb);
+};
 const emit = (ev, d)  => { if (socket) socket.emit(ev, d); };
 
 // Typed subscriptions

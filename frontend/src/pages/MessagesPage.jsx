@@ -16,6 +16,10 @@ export default function MessagesPage() {
   const [sending, setSending] = useState(false);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const bottomRef = useRef(null);
+  const activeChannelRef = useRef(null);
+
+  // Keep a ref of the active channel so the socket callback reads the current value
+  useEffect(() => { activeChannelRef.current = activeChannel; }, [activeChannel]);
 
   useEffect(() => {
     messagesAPI.channels().then((r) => {
@@ -23,11 +27,11 @@ export default function MessagesPage() {
       if (r.data.data.length) setActiveChannel(r.data.data[0]);
     });
 
-    socketService.onMessageNew((data) => {
+    const unsub = socketService.onMessageNew((data) => {
       if (!data.isBroadcast) {
         setMessages((prev) => {
           // Only append if it belongs to current channel
-          if (data.channelId === activeChannel?.id) {
+          if (data.channelId === activeChannelRef.current?.id) {
             return [...prev, { id: Date.now(), channel_id: data.channelId, content: data.content, sender_name: data.senderName, created_at: new Date().toISOString() }];
           }
           return prev;
@@ -36,6 +40,7 @@ export default function MessagesPage() {
         toast(`📢 Broadcast: ${data.content}`, { duration: 8000, style: { background: '#0D1321', color: '#F0B429', border: '1px solid rgba(240,180,41,0.3)' } });
       }
     });
+    return unsub;
   }, []);
 
   useEffect(() => {

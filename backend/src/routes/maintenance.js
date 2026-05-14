@@ -49,6 +49,7 @@ router.patch('/:id', async (req, res, next) => {
        WHERE id=$6 RETURNING *`,
       [status, cost, completed_at, notes, technician, req.params.id]
     );
+    if (!result.rows.length) return res.status(404).json({ error: 'Maintenance record not found' });
     if (status === 'completed') {
       await query('UPDATE vehicles SET last_service_date=NOW(), maintenance_score=0 WHERE id=(SELECT vehicle_id FROM maintenance_records WHERE id=$1)', [req.params.id]);
     }

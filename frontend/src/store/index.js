@@ -136,9 +136,19 @@ export const useAlertStore = create((set) => ({
     }
   },
 
+  fetchUnread: async () => {
+    try {
+      const res = await alertsAPI.list({ limit: 100 });
+      const list = res.data.data || [];
+      set({ unreadCount: list.filter((a) => !a.acknowledged_at && !a.resolved_at).length });
+    } catch {
+      // non-critical — leave count unchanged
+    }
+  },
+
   addLiveAlert: (alert) => {
     set((s) => ({ alerts: [alert, ...s.alerts], unreadCount: s.unreadCount + 1 }));
-    toast.error(`🚨 ${alert.severity.toUpperCase()}: ${alert.message}`, { duration: 6000 });
+    toast.error(`🚨 ${alert.severity?.toUpperCase() || 'ALERT'}: ${alert.message}`, { duration: 6000 });
   },
 
   acknowledge: async (id) => {

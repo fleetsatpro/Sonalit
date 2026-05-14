@@ -32,12 +32,12 @@ export default function WarRoom() {
     const interval = setInterval(load, 15000);
     const rotator = setInterval(() => setRegionIdx(i => (i + 1) % REGIONS.length), 30000);
 
-    socketService.onAlert(() => load());
-    socketService.onVehicleUpdate((data) => {
+    const unsubAlert = socketService.onAlert(() => load());
+    const unsubVehicle = socketService.onVehicleUpdate((data) => {
       setVehicles(prev => prev.map(v => v.id === data.vehicleId ? { ...v, lat: data.lat, lng: data.lng, speed: data.speed } : v));
     });
 
-    return () => { clearInterval(interval); clearInterval(rotator); };
+    return () => { clearInterval(interval); clearInterval(rotator); unsubAlert(); unsubVehicle(); };
   }, [active, load]);
 
   useEffect(() => {
