@@ -13,7 +13,11 @@ function setIO(socketIO) { io = socketIO; }
 
 function getRedisConnection() {
   const url = new URL(process.env.REDIS_URL || 'redis://127.0.0.1:6379');
-  return { host: url.hostname, port: parseInt(url.port) || 6379 };
+  return {
+    host: url.hostname,
+    port: parseInt(url.port) || 6379,
+    password: url.password || process.env.REDIS_PASSWORD || undefined,
+  };
 }
 
 async function processGPS(job) {
