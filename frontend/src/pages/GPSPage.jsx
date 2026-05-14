@@ -1,7 +1,7 @@
 import 'leaflet/dist/leaflet.css';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
-import { vehiclesAPI, alertsAPI, geofenceAPI } from '../services/api';
+import { vehiclesAPI, alertsAPI, geofenceAPI, riskZoneAPI } from '../services/api';
 import api from '../services/api';
 import socketService from '../services/socket';
 import { Spinner } from '../components/UI';
@@ -49,8 +49,9 @@ export default function GPSPage() {
   const labelTile     = useRef(null);
   const markersMap    = useRef({});
   const trailsMap     = useRef({});
-  const geofenceLayer = useRef(null);
-  const heatLayer     = useRef(null);
+  const geofenceLayer  = useRef(null);
+  const riskZoneLayer  = useRef(null);
+  const heatLayer      = useRef(null);
   const leafletRef    = useRef(null);
   const drawingRef    = useRef(false);
   const drawCircleRef = useRef(null);
@@ -60,6 +61,8 @@ export default function GPSPage() {
   const [vehicles,   setVehicles]   = useState([]);
   const [alerts,     setAlerts]     = useState([]);
   const [geofences,  setGeofences]  = useState([]);
+  const [riskZones,  setRiskZones]  = useState([]);
+  const [showRisks,  setShowRisks]  = useState(true);
   const [events,     setEvents]     = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [region,     setRegion]     = useState('All');
@@ -98,6 +101,7 @@ export default function GPSPage() {
       Lf.control.zoom({ position:'bottomright' }).addTo(map);
 
       geofenceLayer.current = Lf.layerGroup().addTo(map);
+      riskZoneLayer.current = Lf.layerGroup().addTo(map);
 
       map.on('click', e => {
         if (!drawingRef.current) return;
@@ -112,6 +116,7 @@ export default function GPSPage() {
 
       loadVehicles(Lf, map);
       loadGeofences(Lf);
+      loadRiskZones(Lf);
       setLoading(false);
 
       pollRef.current = setInterval(() => loadVehicles(Lf, map), 15000);
@@ -156,6 +161,31 @@ export default function GPSPage() {
     });
 
     return () => { unsubVehicle(); unsubAlert(); unsubDeviation(); };
+  }, []);
+
+  // ── AI map-update event — refresh geofences + risk zones when AI creates them ──
+  useEffect(() => {
+    const handler = (e) => {
+      loadGeofences(leafletRef.current);
+      loadRiskZones(leafletRef.current);
+      const created = e.detail?.created || [];
+      created.forEach(item => {
+        if (item.type === 'geofence') {
+          toast.success(`Geofence created: ${item.name}`);
+          if (mapInst.current && item.lat && item.lng) {
+            mapInst.current.flyTo([item.lat, item.lng], 12, { animate: true, duration: 1 });
+          }
+        }
+        if (item.type === 'risk_zone') {
+          toast.error(`Risk zone marked: ${item.name} (${item.risk_level?.toUpperCase()})`);
+          if (mapInst.current && item.lat && item.lng) {
+            mapInst.current.flyTo([item.lat, item.lng], 11, { animate: true, duration: 1 });
+          }
+        }
+      });
+    };
+    window.addEventListener('ai-map-update', handler);
+    return () => window.removeEventListener('ai-map-update', handler);
   }, []);
 
   const loadVehicles = useCallback(async (Lf, map) => {
@@ -261,6 +291,31 @@ export default function GPSPage() {
           radius: f.radius || 500, color:'#F0B429', fillColor:'#F0B429', fillOpacity:.08, weight:1.5, dashArray:'6,4',
         }).bindTooltip(`<span style="font-family:monospace;font-size:11px;color:#F0B429">${f.name}</span>`, { permanent:false })
           .addTo(geofenceLayer.current);
+      });
+    } catch(e) {}
+  };
+
+  const RISK_COLORS = { critical: '#ef4444', high: '#F97316', medium: '#F0B429', low: '#94a3b8' };
+
+  const loadRiskZones = async (Lf) => {
+    try {
+      const r = await riskZoneAPI.list();
+      const zones = r.data.data || [];
+      setRiskZones(zones);
+      const Lfl = Lf || leafletRef.current;
+      if (!Lfl || !riskZoneLayer.current) return;
+      riskZoneLayer.current.clearLayers();
+      zones.forEach(z => {
+        if (!z.lat || !z.lng) return;
+        const color = RISK_COLORS[z.risk_level] || '#94a3b8';
+        const radius_m = (parseFloat(z.radius_km) || 5) * 1000;
+        Lfl.circle([z.lat, z.lng], {
+          radius: radius_m,
+          color, fillColor: color, fillOpacity: 0.07, weight: 1.5, dashArray: '4,6',
+        }).bindTooltip(
+          `<span style="font-family:monospace;font-size:11px;color:${color}">⚠ ${z.name}<br/>${(z.risk_level || '').toUpperCase()} · ${z.zone_type || ''}</span>`,
+          { permanent: false }
+        ).addTo(riskZoneLayer.current);
       });
     } catch(e) {}
   };
@@ -462,6 +517,13 @@ export default function GPSPage() {
             <div style={{ height:4 }} />
             <B onClick={() => setShowTrails(p=>!p)}    active={showTrails}             title="Vehicle trails">〰️</B>
             <B onClick={() => setShowAlerts(p=>!p)}    active={showAlerts}             title="Alert indicators">🔴</B>
+            <B onClick={() => {
+              const next = !showRisks;
+              setShowRisks(next);
+              if (riskZoneLayer.current) {
+                next ? riskZoneLayer.current.addTo(mapInst.current) : riskZoneLayer.current.remove();
+              }
+            }} active={showRisks} title="Risk zones">⚠</B>
             <div style={{ height:4 }} />
             <B onClick={drawMode?cancelDraw:enableDrawMode} active={drawMode}          title="Draw geofence">⬤</B>
           </div>

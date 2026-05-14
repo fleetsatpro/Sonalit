@@ -157,4 +157,10 @@ export const gpsAPI = {
   list: (p) => api.get('/gps', { params: p }),
 };
 
+export const riskZoneAPI = {
+  list:   (p)     => api.get('/riskzones', { params: p }),
+  create: (d)     => api.post('/riskzones', d),
+  remove: (id)    => api.delete(`/riskzones/${id}`),
+};
+
 export default api;

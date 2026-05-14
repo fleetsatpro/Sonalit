@@ -22,24 +22,54 @@ async function ensureColumns() {
   } catch (e) { logger.warn('ensureColumns: ' + e.message); }
 }
 
+// Ensure risk_zones table exists
+let riskZonesChecked = false;
+async function ensureRiskZones() {
+  if (riskZonesChecked) return;
+  riskZonesChecked = true;
+  try {
+    await query(`
+      CREATE TABLE IF NOT EXISTS risk_zones (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        risk_level VARCHAR(20) DEFAULT 'medium',
+        zone_type VARCHAR(50) DEFAULT 'general',
+        lat DECIMAL(10,7),
+        lng DECIMAL(10,7),
+        radius_km DECIMAL(8,2) DEFAULT 5,
+        active BOOLEAN DEFAULT true,
+        created_by INTEGER,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await query(`ALTER TABLE risk_zones ADD COLUMN IF NOT EXISTS zone_type VARCHAR(50) DEFAULT 'general'`);
+  } catch (e) { logger.warn('ensureRiskZones: ' + e.message); }
+}
+
 // ── System prompt (static — kept frozen so it caches across requests) ──────
 const SYSTEM_PROMPT = `You are the AI dispatch assistant for FleetOps Pro, an enterprise logistics command platform running security convoys across East and Central Africa (Kenya, DRC, Tanzania, Uganda, Mali).
 
-You have tools to query live fleet data and weather. Always use them — never guess fleet state or invent data.
+You have tools to query live fleet data, weather, road conditions, public holidays, and known risk zones — and you can create geofences and mark risk zones directly on the map. Always use the tools — never guess fleet state or invent data.
 
 Guidelines:
-- Use query_vehicles / query_convoys / query_alerts for anything about fleet state. Pass filters when the user is specific (a region, a status, low fuel, etc.).
-- Use get_weather for weather questions — it covers any location worldwide, including a convoy route's origin or destination.
-- You may call multiple tools, and call a tool again with different filters if the first result isn't enough to answer.
-- Be concise and direct — 1-4 sentences. Cite specific vehicle registrations, convoy names, and numbers from the tool results.
-- Clearly flag critical situations: low fuel, offline vehicles, critical alerts, severe weather on a route.
-- You can answer questions about fleet operations and weather. You do NOT yet have live traffic, security-incident, or maritime data — if asked, say so briefly instead of guessing.`;
+- Use query_vehicles / query_convoys / query_alerts for anything about fleet state. Pass filters when the user is specific (a region, status, low fuel, etc.).
+- Use get_weather for weather questions — covers any location worldwide.
+- Use check_holidays to look up public holidays for any country. This is critical for convoy timing, border crossing windows, and staffing — holidays cause border closures, reduced police escorts, and road congestion.
+- Use get_road_conditions to check for construction zones, road closures, and barriers near a location or along a route. Call it for both origin and destination on convoy routes.
+- Use query_risk_zones to surface internal records of banditry hotspots, conflict zones, strike zones, and high-risk corridors. Always check this when advising on route safety.
+- Use create_geofence when the user asks to "draw a geofence", "create a zone", "set a boundary", or "mark an area" around any location. Geocode it and create it immediately — never just describe it.
+- Use create_risk_zone when the user wants to flag a location as dangerous, mark a strike, roadblock, active incident, or high-risk area. Create it immediately.
+- For comprehensive navigation advisories: combine weather + road conditions + risk zones + active alerts + upcoming holidays. Give a rated assessment (SAFE / CAUTION / HIGH RISK / AVOID).
+- Be concise and direct — 1–4 sentences. Cite specific vehicle registrations, convoy names, zone names, and numbers from tool results.
+- Clearly flag critical situations: low fuel, offline vehicles, critical alerts, severe weather, active risk zones, road closures, and holidays affecting convoy timing.`;
 
 // ── Tool definitions (static — cache together with the system prompt) ──────
 const TOOLS = [
   {
     name: 'query_vehicles',
-    description: 'Query the live vehicle fleet. Returns matching vehicles with registration, type, status, region, speed (km/h), fuel level (%), coordinates, driver, and last ping. Call with no filters for the whole fleet.',
+    description: 'Query the live vehicle fleet. Returns matching vehicles with registration, type, status, region, speed (km/h), fuel level (%), coordinates, driver, and last ping.',
     input_schema: {
       type: 'object',
       properties: {
@@ -52,7 +82,7 @@ const TOOLS = [
   },
   {
     name: 'query_convoys',
-    description: 'Query convoy missions. Returns convoys with name, status, region, priority, route origin/destination, and timing. Call with no filters for all convoys.',
+    description: 'Query convoy missions. Returns convoys with name, status, region, priority, route origin/destination, and timing.',
     input_schema: {
       type: 'object',
       properties: {
@@ -69,20 +99,86 @@ const TOOLS = [
       type: 'object',
       properties: {
         severity: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] },
-        type: { type: 'string', description: 'Alert type, e.g. speed, geofence, mechanical, security, communication' },
+        type: { type: 'string', description: 'Alert type, e.g. speed, geofence, mechanical, security, communication, roadblock, construction' },
         include_resolved: { type: 'boolean', description: 'If true, also include already-resolved alerts' },
       },
     },
   },
   {
     name: 'get_weather',
-    description: 'Get current conditions and a 3-day forecast for any location worldwide by name. Use for weather questions, including weather along a convoy route or at a vehicle location.',
+    description: 'Get current conditions and a 3-day forecast for any location worldwide by name.',
     input_schema: {
       type: 'object',
       properties: {
         location: { type: 'string', description: 'City or place name, e.g. Nairobi, Mombasa, Kinshasa, Bamako' },
       },
       required: ['location'],
+    },
+  },
+  {
+    name: 'check_holidays',
+    description: 'Check upcoming public/national holidays for any country. Use this when planning convoy timing, border crossings, or staffing — holidays affect border operations, police escorts, and road traffic. Supports KE (Kenya), TZ (Tanzania), CD (DRC), UG (Uganda), NG (Nigeria), ZA (South Africa), ZM (Zambia), RW (Rwanda), ET (Ethiopia), GH (Ghana) and many others.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        country_code: { type: 'string', description: 'ISO 2-letter country code: KE, TZ, CD, UG, ML, NG, ZA, etc.' },
+        year: { type: 'number', description: 'Year to check (defaults to current year)' },
+      },
+      required: ['country_code'],
+    },
+  },
+  {
+    name: 'get_road_conditions',
+    description: 'Check for road construction zones, closures, and physical barriers near a location using OpenStreetMap data. Use this for both convoy origin and destination to flag any route hazards. Also returns weather context to assess trafficability.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        location: { type: 'string', description: 'City or place name to centre the search' },
+        radius_km: { type: 'number', description: 'Search radius in km (default 30, max 100)' },
+      },
+      required: ['location'],
+    },
+  },
+  {
+    name: 'query_risk_zones',
+    description: 'Query the internal database of known high-risk zones — banditry hotspots, conflict zones, strike areas, active roadblocks, and dangerous corridors. Always check this before advising on route safety.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        region: { type: 'string', description: 'Filter by region or country name (partial match)' },
+        risk_level: { type: 'string', enum: ['low', 'medium', 'high', 'critical'], description: 'Minimum risk level' },
+        zone_type: { type: 'string', description: 'Filter by type: security, construction, flood, banditry, conflict, police_checkpoint, strike, general' },
+      },
+    },
+  },
+  {
+    name: 'create_geofence',
+    description: 'Create a geofence zone on the map by geocoding a place name. Use when the user asks to draw a geofence, create a boundary, define a safe zone or exclusion zone around a location. Always create it — never just describe it.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Name for the geofence, e.g. "Nairobi CBD Perimeter" or "Depot Alpha Safe Zone"' },
+        location: { type: 'string', description: 'Place name to centre the geofence on' },
+        radius_m: { type: 'number', description: 'Radius in metres — use 500 for a checkpoint/building, 2000 for a town centre, 5000 for a city district, 20000 for a region (default 3000)' },
+        fence_type: { type: 'string', enum: ['safe_zone', 'exclusion_zone', 'checkpoint', 'depot', 'patrol_zone', 'general'], description: 'Type of geofence' },
+      },
+      required: ['name', 'location'],
+    },
+  },
+  {
+    name: 'create_risk_zone',
+    description: 'Mark a location as a high-risk zone in the system. Use when the user reports a security incident, roadblock, strike, dangerous area, or asks to flag a location. Always create it immediately.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Short name for the risk zone, e.g. "Garissa Banditry Zone" or "Mombasa Port Strike Area"' },
+        location: { type: 'string', description: 'Place name to geocode and centre the zone on' },
+        risk_level: { type: 'string', enum: ['low', 'medium', 'high', 'critical'], description: 'Risk severity level' },
+        zone_type: { type: 'string', enum: ['security', 'construction', 'flood', 'banditry', 'conflict', 'police_checkpoint', 'strike', 'general'], description: 'Nature of the risk' },
+        description: { type: 'string', description: 'Details about the hazard, e.g. "Armed robbery incidents reported on A109 near km 234"' },
+        radius_km: { type: 'number', description: 'Radius in km (default 5)' },
+      },
+      required: ['name', 'location', 'risk_level'],
     },
   },
 ];
@@ -152,59 +248,299 @@ const WMO_CODES = {
   95: 'thunderstorm', 96: 'thunderstorm with slight hail', 99: 'thunderstorm with heavy hail',
 };
 
+async function geocode(locationName) {
+  const res = await fetch(
+    `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(locationName)}&count=1`,
+    { signal: AbortSignal.timeout(8000) }
+  );
+  if (!res.ok) throw new Error(`Geocoding failed (HTTP ${res.status})`);
+  const data = await res.json();
+  if (!data.results?.length) throw new Error(`Location "${locationName}" not found`);
+  return data.results[0];
+}
+
 async function toolGetWeather(input) {
   const loc = (input.location || '').trim();
   if (!loc) return { error: 'No location provided' };
 
-  // 1. Geocode the place name (Open-Meteo geocoding — free, no key)
-  const geoRes = await fetch(
-    `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(loc)}&count=1`,
-    { signal: AbortSignal.timeout(8000) }
-  );
-  if (!geoRes.ok) return { error: `Geocoding failed (HTTP ${geoRes.status})` };
-  const geo = await geoRes.json();
-  if (!geo.results || !geo.results.length) return { error: `Location "${loc}" not found` };
-  const g = geo.results[0];
+  try {
+    const g = await geocode(loc);
+    const fcRes = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${g.latitude}&longitude=${g.longitude}` +
+      `&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m` +
+      `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max` +
+      `&forecast_days=3&timezone=auto`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (!fcRes.ok) return { error: `Forecast failed (HTTP ${fcRes.status})` };
+    const fc = await fcRes.json();
+    const cur = fc.current || {};
+    const daily = fc.daily || {};
+    const forecast = (daily.time || []).map((d, i) => ({
+      date: d,
+      conditions: WMO_CODES[daily.weather_code?.[i]] || 'unknown',
+      high_c: daily.temperature_2m_max?.[i],
+      low_c: daily.temperature_2m_min?.[i],
+      precip_chance_pct: daily.precipitation_probability_max?.[i],
+    }));
 
-  // 2. Current conditions + 3-day forecast (Open-Meteo forecast — free, no key)
-  const fcRes = await fetch(
-    `https://api.open-meteo.com/v1/forecast?latitude=${g.latitude}&longitude=${g.longitude}` +
-    `&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m` +
-    `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max` +
-    `&forecast_days=3&timezone=auto`,
-    { signal: AbortSignal.timeout(8000) }
-  );
-  if (!fcRes.ok) return { error: `Forecast failed (HTTP ${fcRes.status})` };
-  const fc = await fcRes.json();
-  const cur = fc.current || {};
-  const daily = fc.daily || {};
-  const forecast = (daily.time || []).map((d, i) => ({
-    date: d,
-    conditions: WMO_CODES[daily.weather_code?.[i]] || 'unknown',
-    high_c: daily.temperature_2m_max?.[i],
-    low_c: daily.temperature_2m_min?.[i],
-    precip_chance_pct: daily.precipitation_probability_max?.[i],
-  }));
-
-  return {
-    location: [g.name, g.admin1, g.country].filter(Boolean).join(', '),
-    current: {
-      conditions: WMO_CODES[cur.weather_code] || 'unknown',
-      temperature_c: cur.temperature_2m,
-      humidity_pct: cur.relative_humidity_2m,
-      precipitation_mm: cur.precipitation,
-      wind_speed_kmh: cur.wind_speed_10m,
-    },
-    forecast,
-  };
+    return {
+      location: [g.name, g.admin1, g.country].filter(Boolean).join(', '),
+      current: {
+        conditions: WMO_CODES[cur.weather_code] || 'unknown',
+        temperature_c: cur.temperature_2m,
+        humidity_pct: cur.relative_humidity_2m,
+        precipitation_mm: cur.precipitation,
+        wind_speed_kmh: cur.wind_speed_10m,
+      },
+      forecast,
+    };
+  } catch (e) {
+    return { error: e.message };
+  }
 }
 
-async function runTool(name, input) {
+async function toolCheckHolidays(input) {
+  const countryCode = (input.country_code || '').toUpperCase().trim();
+  const year = input.year || new Date().getFullYear();
+
+  if (!countryCode || countryCode.length !== 2) {
+    return { error: 'Provide a 2-letter ISO country code, e.g. KE, TZ, CD, UG, NG.' };
+  }
+
+  try {
+    const res = await fetch(
+      `https://date.nager.at/api/v3/PublicHolidays/${year}/${countryCode}`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (res.status === 404) return { error: `Country code "${countryCode}" not supported by the holiday database.` };
+    if (!res.ok) return { error: `Holiday API failed (HTTP ${res.status})` };
+
+    const holidays = await res.json();
+    if (!Array.isArray(holidays)) return { error: 'Unexpected response from holiday API' };
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const upcoming = holidays
+      .filter(h => new Date(h.date) >= today)
+      .slice(0, 12)
+      .map(h => ({
+        date: h.date,
+        name: h.localName || h.name,
+        national: h.national !== false,
+        days_away: Math.ceil((new Date(h.date) - today) / 86400000),
+      }));
+
+    const imminent = upcoming.filter(h => h.days_away <= 7);
+
+    return {
+      country_code: countryCode,
+      year,
+      total_holidays: holidays.length,
+      upcoming_count: upcoming.length,
+      imminent_7_days: imminent,
+      upcoming,
+    };
+  } catch (e) {
+    return { error: `Holiday lookup failed: ${e.message}` };
+  }
+}
+
+async function toolGetRoadConditions(input) {
+  const loc = (input.location || '').trim();
+  if (!loc) return { error: 'Location required' };
+  const radius_km = Math.min(Math.max(input.radius_km || 30, 5), 100);
+
+  try {
+    const g = await geocode(loc);
+    const locationLabel = [g.name, g.admin1, g.country].filter(Boolean).join(', ');
+    const radius_m = radius_km * 1000;
+
+    // Overpass query: construction zones, no-access roads, physical barriers
+    const overpassQuery = `
+[out:json][timeout:12];
+(
+  way["highway"="construction"](around:${radius_m},${g.latitude},${g.longitude});
+  way["access"="no"]["highway"~"^(primary|secondary|tertiary|trunk|motorway)$"](around:${radius_m},${g.latitude},${g.longitude});
+  node["barrier"~"^(gate|bollard|block|jersey_barrier|concrete_block)$"](around:${radius_m},${g.latitude},${g.longitude});
+  way["construction"~"."](around:${radius_m},${g.latitude},${g.longitude});
+);
+out body;
+>;
+out skel qt;
+    `.trim();
+
+    let roadData = { construction_zones: 0, road_closures: 0, barriers: 0, details: [], note: null };
+    try {
+      const ovRes = await fetch('https://overpass-api.de/api/interpreter', {
+        method: 'POST',
+        body: `data=${encodeURIComponent(overpassQuery)}`,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        signal: AbortSignal.timeout(12000),
+      });
+      if (ovRes.ok) {
+        const data = await ovRes.json();
+        const elements = data.elements || [];
+        const construction = elements.filter(e => e.tags?.highway === 'construction' || e.tags?.construction);
+        const closures = elements.filter(e => e.tags?.access === 'no');
+        const barriers = elements.filter(e => e.tags?.barrier);
+        roadData = {
+          construction_zones: construction.length,
+          road_closures: closures.length,
+          barriers: barriers.length,
+          details: elements.slice(0, 10).map(e => ({
+            type: e.type,
+            tags: e.tags ? Object.fromEntries(Object.entries(e.tags).slice(0, 6)) : {},
+          })),
+          note: null,
+        };
+      } else {
+        roadData.note = 'Road data service temporarily unavailable.';
+      }
+    } catch (_) {
+      roadData.note = 'Road condition query timed out — OSM data unavailable for this area.';
+    }
+
+    // Also get weather at this location for trafficability context
+    let weatherSummary = null;
+    try {
+      const fcRes = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${g.latitude}&longitude=${g.longitude}` +
+        `&current=weather_code,precipitation,wind_speed_10m&forecast_days=1&timezone=auto`,
+        { signal: AbortSignal.timeout(6000) }
+      );
+      if (fcRes.ok) {
+        const fc = await fcRes.json();
+        const cur = fc.current || {};
+        weatherSummary = {
+          conditions: WMO_CODES[cur.weather_code] || 'unknown',
+          precipitation_mm: cur.precipitation,
+          wind_speed_kmh: cur.wind_speed_10m,
+        };
+      }
+    } catch (_) {}
+
+    return {
+      location: locationLabel,
+      lat: g.latitude,
+      lng: g.longitude,
+      radius_km,
+      ...roadData,
+      current_weather: weatherSummary,
+    };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+async function toolQueryRiskZones(input) {
+  try {
+    const filters = ['active = true'];
+    const params = [];
+    if (input.region) {
+      params.push(`%${input.region}%`);
+      filters.push(`(name ILIKE $${params.length} OR description ILIKE $${params.length})`);
+    }
+    if (input.risk_level) {
+      params.push(input.risk_level);
+      filters.push(`risk_level = $${params.length}`);
+    }
+    if (input.zone_type) {
+      params.push(input.zone_type);
+      filters.push(`zone_type = $${params.length}`);
+    }
+    const r = await query(
+      `SELECT name, description, risk_level, zone_type, lat, lng, radius_km, created_at
+       FROM risk_zones WHERE ${filters.join(' AND ')}
+       ORDER BY CASE risk_level WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END
+       LIMIT 30`,
+      params
+    );
+    return { count: r.rows.length, risk_zones: r.rows };
+  } catch (e) {
+    return { error: `Risk zone query failed: ${e.message}`, count: 0, risk_zones: [] };
+  }
+}
+
+async function toolCreateGeofence(input, userId) {
+  const { name, location, radius_m = 3000, fence_type = 'general' } = input;
+  if (!name || !location) return { error: 'name and location are required' };
+
+  try {
+    const g = await geocode(location);
+    const coordinates = { lat: g.latitude, lng: g.longitude };
+    const region = g.admin1 || g.country || location;
+
+    const r = await query(
+      `INSERT INTO geofences (name, type, coordinates, radius, region)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, name, type, coordinates, radius, region, created_at`,
+      [name, 'circle', JSON.stringify(coordinates), radius_m, region]
+    );
+
+    const locationLabel = [g.name, g.admin1, g.country].filter(Boolean).join(', ');
+    return {
+      created: true,
+      geofence_id: r.rows[0].id,
+      name,
+      fence_type,
+      lat: g.latitude,
+      lng: g.longitude,
+      radius_m,
+      region,
+      location: locationLabel,
+      message: `Geofence "${name}" created at ${locationLabel}, radius ${radius_m}m.`,
+    };
+  } catch (e) {
+    return { error: `Failed to create geofence: ${e.message}` };
+  }
+}
+
+async function toolCreateRiskZone(input, userId) {
+  const { name, location, risk_level = 'high', zone_type = 'general', description = '', radius_km = 5 } = input;
+  if (!name || !location) return { error: 'name and location are required' };
+
+  try {
+    await ensureRiskZones();
+    const g = await geocode(location);
+    const desc = description || `${zone_type} risk zone near ${location}`;
+
+    const r = await query(
+      `INSERT INTO risk_zones (name, description, risk_level, zone_type, lat, lng, radius_km, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, name, risk_level, zone_type, lat, lng, radius_km`,
+      [name, desc, risk_level, zone_type, g.latitude, g.longitude, radius_km, userId || null]
+    );
+
+    const locationLabel = [g.name, g.admin1, g.country].filter(Boolean).join(', ');
+    return {
+      created: true,
+      risk_zone_id: r.rows[0].id,
+      name,
+      risk_level,
+      zone_type,
+      lat: g.latitude,
+      lng: g.longitude,
+      radius_km,
+      location: locationLabel,
+      message: `Risk zone "${name}" (${risk_level.toUpperCase()} — ${zone_type}) marked at ${locationLabel}, radius ${radius_km}km.`,
+    };
+  } catch (e) {
+    return { error: `Failed to create risk zone: ${e.message}` };
+  }
+}
+
+async function runTool(name, input, userId) {
   switch (name) {
-    case 'query_vehicles': return toolQueryVehicles(input || {});
-    case 'query_convoys':  return toolQueryConvoys(input || {});
-    case 'query_alerts':   return toolQueryAlerts(input || {});
-    case 'get_weather':    return toolGetWeather(input || {});
+    case 'query_vehicles':     return toolQueryVehicles(input || {});
+    case 'query_convoys':      return toolQueryConvoys(input || {});
+    case 'query_alerts':       return toolQueryAlerts(input || {});
+    case 'get_weather':        return toolGetWeather(input || {});
+    case 'check_holidays':     return toolCheckHolidays(input || {});
+    case 'get_road_conditions':return toolGetRoadConditions(input || {});
+    case 'query_risk_zones':   return toolQueryRiskZones(input || {});
+    case 'create_geofence':    return toolCreateGeofence(input || {}, userId);
+    case 'create_risk_zone':   return toolCreateRiskZone(input || {}, userId);
     default: return { error: `Unknown tool: ${name}` };
   }
 }
@@ -225,10 +561,10 @@ router.post('/dispatch', async (req, res) => {
 
   try {
     await ensureColumns();
+    await ensureRiskZones();
+    const userId = req.user?.id || null;
     const client = new Anthropic({ apiKey });
 
-    // Static system prompt + tools are the cacheable prefix; only the
-    // conversation (volatile) follows the cache breakpoint.
     const messages = [
       ...history.slice(-6)
         .filter(h => h && (h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string')
@@ -237,9 +573,10 @@ router.post('/dispatch', async (req, res) => {
     ];
 
     const toolsUsed = [];
+    const actionsCreated = [];
     let finalText = '';
 
-    for (let turn = 0; turn < 6; turn++) {
+    for (let turn = 0; turn < 8; turn++) {
       const response = await client.messages.create({
         model: MODEL,
         max_tokens: 8000,
@@ -258,7 +595,14 @@ router.post('/dispatch', async (req, res) => {
           toolsUsed.push(block.name);
           let result, isError = false;
           try {
-            result = await runTool(block.name, block.input);
+            result = await runTool(block.name, block.input, userId);
+            // Track map-mutating actions for frontend refresh
+            if (block.name === 'create_geofence' && result.created) {
+              actionsCreated.push({ type: 'geofence', ...result });
+            }
+            if (block.name === 'create_risk_zone' && result.created) {
+              actionsCreated.push({ type: 'risk_zone', ...result });
+            }
           } catch (e) {
             result = { error: e.message };
             isError = true;
@@ -275,7 +619,6 @@ router.post('/dispatch', async (req, res) => {
         continue;
       }
 
-      // Terminal turn — collect the text answer
       finalText = response.content
         .filter(b => b.type === 'text')
         .map(b => b.text)
@@ -287,6 +630,7 @@ router.post('/dispatch', async (req, res) => {
     return res.json({
       response: finalText || 'I could not produce a response — please rephrase your request.',
       actions: [...new Set(toolsUsed)],
+      created: actionsCreated,
       source: 'claude',
     });
   } catch (err) {

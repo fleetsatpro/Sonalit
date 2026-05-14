@@ -1,14 +1,20 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Terminal, Send, X, Zap, Clock, Loader, AlertTriangle, Truck, Navigation, Shield, Sparkles } from 'lucide-react';
+import { Terminal, Send, X, Zap, Clock, Loader, AlertTriangle, Truck, Navigation, Shield, Sparkles, MapPin, Calendar, TriangleAlert } from 'lucide-react';
 import api from '../services/api';
 
 const SUGGESTIONS = [
-  { text: 'Fleet status overview',         icon: Truck         },
-  { text: 'Show low fuel vehicles',        icon: Zap           },
-  { text: 'List critical alerts',          icon: AlertTriangle },
-  { text: 'Which vehicles are offline?',   icon: Navigation    },
-  { text: 'Active convoys status',         icon: Shield        },
-  { text: 'Vehicles needing maintenance',  icon: Clock         },
+  { text: 'Fleet status overview',                                         icon: Truck         },
+  { text: 'Show low fuel vehicles',                                        icon: Zap           },
+  { text: 'List critical alerts',                                          icon: AlertTriangle },
+  { text: 'Which vehicles are offline?',                                   icon: Navigation    },
+  { text: 'Active convoys status',                                         icon: Shield        },
+  { text: 'Vehicles needing maintenance',                                  icon: Clock         },
+  { text: 'Draw a geofence around Nairobi CBD, 3km radius',               icon: MapPin        },
+  { text: 'Check Kenya and Tanzania public holidays this month',           icon: Calendar      },
+  { text: 'Road conditions between Nairobi and Mombasa',                  icon: Navigation    },
+  { text: 'Show all high-risk zones and active security alerts',           icon: TriangleAlert },
+  { text: 'Mark Garissa as a critical banditry risk zone',                 icon: Shield        },
+  { text: 'Full navigation advisory for convoy route Kampala to Nairobi', icon: Sparkles      },
 ];
 
 const SOURCE_BADGE = {
@@ -60,9 +66,13 @@ export default function CommandBar() {
         command,
         history: history.slice(-6),
       });
-      const { response, actions = [], source = 'pattern' } = res.data;
+      const { response, actions = [], created = [], source = 'pattern' } = res.data;
       const aiMsg = { role: 'assistant', content: response, actions, source, id: Date.now() + 1 };
       setMessages(m => [...m, aiMsg]);
+      // If AI created geofences or risk zones, tell the map to refresh
+      if (created.length > 0) {
+        window.dispatchEvent(new CustomEvent('ai-map-update', { detail: { created } }));
+      }
       setHistory(h => [...h, { role: 'user', content: command }, { role: 'assistant', content: response }]);
     } catch (e) {
       const errMsg = e.response?.data?.error || e.message || 'Connection failed';
