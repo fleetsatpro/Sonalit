@@ -290,6 +290,14 @@ router.post('/dispatch', async (req, res) => {
       source: 'claude',
     });
   } catch (err) {
+    if (err instanceof Anthropic.AuthenticationError || err?.status === 401) {
+      logger.warn('AI dispatch: ANTHROPIC_API_KEY rejected by Anthropic (401)');
+      return res.json({
+        response: 'AI dispatch is misconfigured — the ANTHROPIC_API_KEY on the backend was rejected. Set a valid key (from console.anthropic.com) and redeploy.',
+        actions: [],
+        source: 'unconfigured',
+      });
+    }
     logger.error('AI dispatch error: ' + err.message);
     return res.status(500).json({
       response: 'AI engine error: ' + err.message,
