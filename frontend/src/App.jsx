@@ -8,22 +8,44 @@ import { registerServiceWorker } from './services/offline';
 import socketService from './services/socket';
 import LoginPage from './pages/LoginPage';
 
-const DashboardPage  = lazy(() => import('./pages/DashboardPage'));
-const FleetPage      = lazy(() => import('./pages/FleetPage'));
-const ConvoysPage    = lazy(() => import('./pages/ConvoysPage'));
-const GPSPage        = lazy(() => import('./pages/GPSPage'));
-const AlertsPage     = lazy(() => import('./pages/AlertsPage'));
-const IncidentsPage  = lazy(() => import('./pages/IncidentsPage'));
-const AnalyticsPage  = lazy(() => import('./pages/AnalyticsPage'));
-const ReportsPage    = lazy(() => import('./pages/ReportsPage'));
-const MessagesPage   = lazy(() => import('./pages/MessagesPage'));
-const SettingsPage   = lazy(() => import('./pages/SettingsPage'));
-const DevicesPage    = lazy(() => import('./pages/DevicesPage'));
-const RulesPage      = lazy(() => import('./pages/RulesPage'));
-const ShipmentsPage  = lazy(() => import('./pages/ShipmentsPage'));
-const DriversPage    = lazy(() => import('./pages/DriversPage'));
-const FinancePage    = lazy(() => import('./pages/FinancePage'));
-const MaintenancePage= lazy(() => import('./pages/MaintenancePage'));
+// A page is a separate hashed chunk. After a redeploy, an already-open tab
+// holds stale chunk hashes — navigating to a page then fails to fetch its
+// chunk and the lazy import throws. lazyWithReload catches that and does a
+// one-time full reload to pull the fresh index.html + current hashes.
+// The 60s window stops a genuinely-broken chunk from looping — after one
+// reload it falls through to the error boundary instead.
+function lazyWithReload(factory) {
+  return lazy(async () => {
+    try {
+      return await factory();
+    } catch (err) {
+      const last = Number(sessionStorage.getItem('chunkReloadAt') || 0);
+      if (Date.now() - last > 60000) {
+        sessionStorage.setItem('chunkReloadAt', String(Date.now()));
+        window.location.reload();
+        return new Promise(() => {}); // hang until the reload takes over
+      }
+      throw err;
+    }
+  });
+}
+
+const DashboardPage  = lazyWithReload(() => import('./pages/DashboardPage'));
+const FleetPage      = lazyWithReload(() => import('./pages/FleetPage'));
+const ConvoysPage    = lazyWithReload(() => import('./pages/ConvoysPage'));
+const GPSPage        = lazyWithReload(() => import('./pages/GPSPage'));
+const AlertsPage     = lazyWithReload(() => import('./pages/AlertsPage'));
+const IncidentsPage  = lazyWithReload(() => import('./pages/IncidentsPage'));
+const AnalyticsPage  = lazyWithReload(() => import('./pages/AnalyticsPage'));
+const ReportsPage    = lazyWithReload(() => import('./pages/ReportsPage'));
+const MessagesPage   = lazyWithReload(() => import('./pages/MessagesPage'));
+const SettingsPage   = lazyWithReload(() => import('./pages/SettingsPage'));
+const DevicesPage    = lazyWithReload(() => import('./pages/DevicesPage'));
+const RulesPage      = lazyWithReload(() => import('./pages/RulesPage'));
+const ShipmentsPage  = lazyWithReload(() => import('./pages/ShipmentsPage'));
+const DriversPage    = lazyWithReload(() => import('./pages/DriversPage'));
+const FinancePage    = lazyWithReload(() => import('./pages/FinancePage'));
+const MaintenancePage= lazyWithReload(() => import('./pages/MaintenancePage'));
 
 const Loader = () => (
   <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',background:'#080C14'}}>
