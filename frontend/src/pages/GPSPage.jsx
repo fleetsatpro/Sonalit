@@ -201,7 +201,7 @@ export default function GPSPage() {
             </div>
             <div style="font-size:10px;color:#64748b;line-height:1.8">
               <div>Type: <span style="color:#e2e8f0">${v.type}</span></div>
-              <div>Speed: <span style="color:${spColor};font-weight:700">${(v.speed||0).toFixed(0)} km/h</span></div>
+              <div>Speed: <span style="color:${spColor};font-weight:700">${parseFloat(v.speed||0).toFixed(0)} km/h</span></div>
               ${v.fuel_level != null ? `<div>Fuel: <span style="color:${fuelColor(v.fuel_level)};font-weight:700">${parseFloat(v.fuel_level).toFixed(0)}%</span></div>` : ''}
               <div>Driver: <span style="color:#e2e8f0">${v.driver_name || '—'}</span></div>
               <div>Region: <span style="color:#e2e8f0">${v.region}</span></div>
@@ -492,7 +492,7 @@ export default function GPSPage() {
                             <span style={{ fontSize:12, fontWeight:700, color:'#e2e8f0' }}>{v.registration}</span>
                           </div>
                           <div style={{ display:'flex', align:'center', gap:6 }}>
-                            <span style={{ fontSize:9, color:speedColor(v.speed), fontWeight:700 }}>{(v.speed||0).toFixed(0)}km/h</span>
+                            <span style={{ fontSize:9, color:speedColor(v.speed), fontWeight:700 }}>{parseFloat(v.speed||0).toFixed(0)}km/h</span>
                           </div>
                         </div>
                         <div style={{ fontSize:9, color:'#64748b', marginBottom:5 }}>{v.type} · {v.region}</div>
@@ -527,7 +527,7 @@ export default function GPSPage() {
                   {/* Live stats */}
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
                     {[
-                      ['SPEED', (selectedVehicle.speed||0).toFixed(0)+' km/h', speedColor(selectedVehicle.speed)],
+                      ['SPEED', parseFloat(selectedVehicle.speed||0).toFixed(0)+' km/h', speedColor(selectedVehicle.speed)],
                       ['FUEL', parseFloat(selectedVehicle.fuel_level||100).toFixed(0)+'%', fuelColor(selectedVehicle.fuel_level)],
                       ['STATUS', selectedVehicle.status?.toUpperCase(), SC[selectedVehicle.status]||'#94a3b8'],
                       ['REGION', selectedVehicle.region, '#94a3b8'],

@@ -1,6 +1,13 @@
 require('dotenv').config();
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
 const logger = require('../utils/logger');
+
+// pg returns NUMERIC/DECIMAL columns (type OID 1700) as strings to preserve
+// arbitrary precision. This app treats those columns (speed, fuel_level,
+// coordinates, monetary amounts) as numbers throughout the frontend, so parse
+// them as floats at the driver level — otherwise e.g. `vehicle.speed.toFixed()`
+// throws "not a function" because speed is the string "0.00".
+types.setTypeParser(1700, (v) => (v === null ? null : parseFloat(v)));
 
 if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL environment variable is required');
