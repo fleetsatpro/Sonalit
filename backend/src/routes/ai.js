@@ -153,14 +153,15 @@ const TOOLS = [
   },
   {
     name: 'create_geofence',
-    description: 'Create a geofence zone on the map by geocoding a place name. Use when the user asks to draw a geofence, create a boundary, define a safe zone or exclusion zone around a location. Always create it — never just describe it.',
+    description: 'Create a geofence zone on the map. Supports two modes: (1) Point geofence — geocodes a single place and draws a circle. (2) Route corridor geofence — provide both location (start) and route_end (end) to create a corridor covering the full route between two points, with auto-calculated radius. Use when the user says "draw a geofence around X" OR "geofence from A to B" OR "geofence on [road] from X to Y".',
     input_schema: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: 'Name for the geofence, e.g. "Nairobi CBD Perimeter" or "Depot Alpha Safe Zone"' },
-        location: { type: 'string', description: 'Place name to centre the geofence on' },
-        radius_m: { type: 'number', description: 'Radius in metres — use 500 for a checkpoint/building, 2000 for a town centre, 5000 for a city district, 20000 for a region (default 3000)' },
-        fence_type: { type: 'string', enum: ['safe_zone', 'exclusion_zone', 'checkpoint', 'depot', 'patrol_zone', 'general'], description: 'Type of geofence' },
+        name: { type: 'string', description: 'Name for the geofence, e.g. "Thika Road Corridor" or "Nairobi CBD Safe Zone"' },
+        location: { type: 'string', description: 'Place name (or route start point for a corridor)' },
+        route_end: { type: 'string', description: 'End point for a route corridor geofence, e.g. "Juja" for a Ngara-to-Juja corridor. Leave unset for a point geofence.' },
+        radius_m: { type: 'number', description: 'Radius in metres for a point geofence — 500 for a checkpoint, 2000 for a town centre, 5000 for a district (default 3000). Ignored for route corridors — auto-calculated.' },
+        fence_type: { type: 'string', enum: ['safe_zone', 'exclusion_zone', 'checkpoint', 'depot', 'patrol_zone', 'corridor', 'general'], description: 'Type of geofence' },
       },
       required: ['name', 'location'],
     },
@@ -257,6 +258,34 @@ async function geocode(locationName) {
   const data = await res.json();
   if (!data.results?.length) throw new Error(`Location "${locationName}" not found`);
   return data.results[0];
+}
+
+// Haversine distance in metres between two lat/lng points
+function haversineM(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Retry wrapper for Anthropic API calls — backs off on 529 Overloaded
+async function createMessageWithRetry(client, params, maxRetries = 3) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await client.messages.create(params);
+    } catch (err) {
+      const isOverloaded = err?.status === 529 || (err?.message || '').includes('Overloaded');
+      if (isOverloaded && attempt < maxRetries) {
+        const delay = (attempt + 1) * 2000; // 2s, 4s, 6s
+        logger.warn(`Anthropic 529 overloaded — retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
 }
 
 async function toolGetWeather(input) {
@@ -463,14 +492,32 @@ async function toolQueryRiskZones(input) {
 }
 
 async function toolCreateGeofence(input, userId) {
-  const { name, location, radius_m = 3000, fence_type = 'general' } = input;
+  const { name, location, route_end, fence_type = 'general' } = input;
   if (!name || !location) return { error: 'name and location are required' };
 
   try {
-    const g = await geocode(location);
-    const coordinates = { lat: g.latitude, lng: g.longitude };
-    const region = g.admin1 || g.country || location;
+    let lat, lng, radius_m, locationLabel, region;
 
+    if (route_end) {
+      // ── Route corridor mode: geocode both ends, use midpoint + half-distance radius ──
+      const [gStart, gEnd] = await Promise.all([geocode(location), geocode(route_end)]);
+      lat = (gStart.latitude + gEnd.latitude) / 2;
+      lng = (gStart.longitude + gEnd.longitude) / 2;
+      const distM = haversineM(gStart.latitude, gStart.longitude, gEnd.latitude, gEnd.longitude);
+      radius_m = Math.round(distM / 2) + 2000; // half-distance + 2km buffer
+      locationLabel = `${gStart.name} → ${gEnd.name}`;
+      region = gStart.admin1 || gStart.country || location;
+    } else {
+      // ── Point mode: single location ──
+      const g = await geocode(location);
+      lat = g.latitude;
+      lng = g.longitude;
+      radius_m = input.radius_m || 3000;
+      locationLabel = [g.name, g.admin1, g.country].filter(Boolean).join(', ');
+      region = g.admin1 || g.country || location;
+    }
+
+    const coordinates = { lat, lng };
     const r = await query(
       `INSERT INTO geofences (name, type, coordinates, radius, region)
        VALUES ($1, $2, $3, $4, $5)
@@ -478,18 +525,20 @@ async function toolCreateGeofence(input, userId) {
       [name, 'circle', JSON.stringify(coordinates), radius_m, region]
     );
 
-    const locationLabel = [g.name, g.admin1, g.country].filter(Boolean).join(', ');
     return {
       created: true,
       geofence_id: r.rows[0].id,
       name,
       fence_type,
-      lat: g.latitude,
-      lng: g.longitude,
+      lat,
+      lng,
       radius_m,
       region,
       location: locationLabel,
-      message: `Geofence "${name}" created at ${locationLabel}, radius ${radius_m}m.`,
+      is_corridor: !!route_end,
+      message: route_end
+        ? `Corridor geofence "${name}" created from ${locationLabel}, radius ${(radius_m / 1000).toFixed(1)}km.`
+        : `Geofence "${name}" created at ${locationLabel}, radius ${radius_m}m.`,
     };
   } catch (e) {
     return { error: `Failed to create geofence: ${e.message}` };
@@ -577,7 +626,7 @@ router.post('/dispatch', async (req, res) => {
     let finalText = '';
 
     for (let turn = 0; turn < 8; turn++) {
-      const response = await client.messages.create({
+      const response = await createMessageWithRetry(client, {
         model: MODEL,
         max_tokens: 8000,
         thinking: { type: 'adaptive' },
@@ -642,9 +691,18 @@ router.post('/dispatch', async (req, res) => {
         source: 'unconfigured',
       });
     }
+    const isOverloaded = err?.status === 529 || (err?.message || '').includes('Overloaded');
+    if (isOverloaded) {
+      logger.warn('AI dispatch: Anthropic API overloaded after retries');
+      return res.json({
+        response: 'The AI engine is temporarily overloaded — please try again in a few seconds.',
+        actions: [],
+        source: 'error',
+      });
+    }
     logger.error('AI dispatch error: ' + err.message);
-    return res.status(500).json({
-      response: 'AI engine error: ' + err.message,
+    return res.json({
+      response: 'AI engine error — please try again.',
       actions: [],
       source: 'error',
     });
