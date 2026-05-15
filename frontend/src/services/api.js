@@ -167,4 +167,16 @@ export const riskZoneAPI = {
   remove: (id)    => api.delete(`/riskzones/${id}`),
 };
 
+export const guardianAPI = {
+  devices:      (p)     => api.get('/guardian/devices', { params: p }),
+  device:       (id)    => api.get(`/guardian/devices/${id}`),
+  updateDevice: (id, d) => api.patch(`/guardian/devices/${id}`, d),
+  revokeDevice: (id)    => api.delete(`/guardian/devices/${id}`),
+  command:      (id, d) => api.post(`/guardian/devices/${id}/command`, d),
+  history:      (id, p) => api.get(`/guardian/devices/${id}/history`, { params: p }),
+  panic:        (p)     => api.get('/guardian/panic', { params: p }),
+  resolvePanic: (id)    => api.patch(`/guardian/panic/${id}/resolve`),
+  reports:      (p)     => api.get('/guardian/reports', { params: p }),
+};
+
 export default api;

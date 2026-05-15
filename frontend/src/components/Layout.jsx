@@ -4,7 +4,8 @@ import {
   LayoutDashboard, Truck, Route, MapPin, Bell, BarChart3,
   MessageSquare, Settings, Cpu, Zap, FileText,
   LogOut, ChevronLeft, ChevronRight, Menu, X, Package,
-  Users, DollarSign, Wrench, AlertTriangle, Search, Shield
+  Users, DollarSign, Wrench, AlertTriangle, Search, Shield,
+  Smartphone, AlertOctagon, FileWarning
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore, useAlertStore } from '../store';
@@ -37,6 +38,14 @@ const NAV = [
     label: 'SECURITY',
     items: [
       { to: '/geofences',   icon: Shield,          label: 'Geofences',      desc: 'Zone management'  },
+    ],
+  },
+  {
+    label: 'GUARDIAN',
+    items: [
+      { to: '/guardian',        icon: Smartphone,    label: 'Guardian Devices', desc: 'Field agent mgmt'  },
+      { to: '/panic-center',    icon: AlertOctagon,  label: 'Panic Center',     desc: 'Emergency SOS',   badge: 'panic' },
+      { to: '/incident-center', icon: FileWarning,   label: 'Incident Center',  desc: 'Field reports'    },
     ],
   },
   {
@@ -89,7 +98,8 @@ function NavItem({ item, collapsed, onClick }) {
   const location = useLocation();
   const { unreadCount } = useAlertStore?.() || {};
   const active = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to);
-  const badgeCount = item.badge ? (unreadCount || 0) : 0;
+  const badgeCount = item.badge === true ? (unreadCount || 0) : 0;
+  const isPanicBadge = item.badge === 'panic';
 
   return (
     <Link
@@ -117,6 +127,9 @@ function NavItem({ item, collapsed, onClick }) {
           <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-3.5 px-0.5 bg-danger rounded-full text-[7px] font-bold flex items-center justify-center text-white border border-navy-950">
             {badgeCount > 9 ? '9+' : badgeCount}
           </span>
+        )}
+        {isPanicBadge && (
+          <span className="absolute -top-1 -right-1 w-2 h-2 bg-danger rounded-full animate-pulse border border-navy-950" />
         )}
       </div>
 
