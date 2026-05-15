@@ -104,6 +104,25 @@ export default function GPSPage() {
   const [fuelHistory,  setFuelHistory]  = useState([]);
   const [sensorData,   setSensorData]   = useState(null);
   const [loadingDetail,setLoadingDetail]= useState(false);
+  const [mapViolation, setMapViolation]  = useState(null);
+  const [isMobile,     setIsMobile]      = useState(false);
+
+  // ── Mobile detection ──────────────────────────────────────────────────
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  // ── Inject flicker keyframe once ──────────────────────────────────────
+  useEffect(() => {
+    if (document.getElementById('gps-flicker-style')) return;
+    const style = document.createElement('style');
+    style.id = 'gps-flicker-style';
+    style.textContent = `@keyframes flickerRed { 0%,100%{opacity:0} 25%,75%{opacity:1} 50%{opacity:0.5} }`;
+    document.head.appendChild(style);
+  }, []);
 
   // ── Leaflet init ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -180,7 +199,12 @@ export default function GPSPage() {
       }, ...prev.slice(0, 49)]);
     });
 
-    return () => { unsubVehicle(); unsubAlert(); unsubDeviation(); };
+    const unsubViolation = socketService.on('geofence:violation', data => {
+      setMapViolation(data);
+      setTimeout(() => setMapViolation(null), 2000);
+    });
+
+    return () => { unsubVehicle(); unsubAlert(); unsubDeviation(); unsubViolation(); };
   }, []);
 
   // ── AI map-update event — refresh geofences + risk zones when AI creates them ──
@@ -449,7 +473,24 @@ export default function GPSPage() {
   );
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', height:'calc(100vh - 104px)', gap:10, fontFamily:'monospace' }}>
+    <div style={{ display:'flex', flexDirection:'column', height:'calc(100vh - 104px)', gap:10, fontFamily:'monospace', position:'relative' }}>
+
+      {/* Geofence violation flicker overlay */}
+      {mapViolation && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(239,68,68,0.15)',
+          pointerEvents: 'none', zIndex: 9000,
+          animation: 'flickerRed 0.4s ease-in-out 3',
+        }}>
+          <div style={{ position: 'absolute', top: 60, left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap' }}>
+            <div style={{ background: 'rgba(239,68,68,0.9)', backdropFilter: 'blur(8px)', borderRadius: 10, padding: '10px 20px', border: '1px solid rgba(239,68,68,0.5)', boxShadow: '0 0 30px rgba(239,68,68,0.4)' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', fontFamily: 'monospace', letterSpacing: 2 }}>
+                ⚠ GEOFENCE VIOLATION · {mapViolation.geofenceName || ''} · Vehicle {mapViolation.vehicleId}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
@@ -525,10 +566,10 @@ export default function GPSPage() {
       </div>
 
       {/* Map + Right Panel */}
-      <div style={{ display:'flex', gap:10, flex:1, minHeight:0 }}>
+      <div style={{ display:'flex', flexDirection: isMobile ? 'column' : 'row', gap:10, flex:1, minHeight:0 }}>
 
         {/* Map */}
-        <div style={{ flex:1, borderRadius:14, overflow:'hidden', border:'1px solid rgba(255,255,255,0.06)', position:'relative', background:'#0A0F1A' }}>
+        <div style={{ flex:1, borderRadius:14, overflow:'hidden', border:'1px solid rgba(255,255,255,0.06)', position:'relative', background:'#0A0F1A', ...(isMobile && rightPanel ? { height: 'calc(100% - 290px)', flex: 'none' } : {}) }}>
           {loading && (
             <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', zIndex:10, background:'#0A0F1A' }}>
               <div style={{ textAlign:'center' }}><Spinner /><p style={{ color:'#475569', fontSize:10, marginTop:8 }}>INITIALISING MAP…</p></div>
@@ -571,7 +612,17 @@ export default function GPSPage() {
 
         {/* Right panel */}
         {rightPanel && (
-          <div style={{ width:280, flexShrink:0, display:'flex', flexDirection:'column', background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.06)', borderRadius:14, overflow:'hidden' }}>
+          <div style={isMobile ? {
+            position: 'fixed', bottom: 0, left: 0, right: 0, height: 280, zIndex: 100,
+            display: 'flex', flexDirection: 'column',
+            background: 'rgba(8,12,20,0.97)', border: '1px solid rgba(255,255,255,0.08)',
+            borderTopLeftRadius: 14, borderTopRightRadius: 14, overflow: 'hidden',
+            backdropFilter: 'blur(12px)',
+          } : {
+            width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column',
+            background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)',
+            borderRadius: 14, overflow: 'hidden',
+          }}>
 
             {/* Fleet list */}
             {rightPanel === 'fleet' && (

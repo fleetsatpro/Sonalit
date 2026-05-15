@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { pool } = require('../config/database');
+const { pool, query } = require('../config/database');
 const { authenticate } = require('../middleware/auth');
 router.use(authenticate);
 
@@ -14,6 +14,20 @@ function parseLatLng(row) {
     } catch (_) {}
   }
   return { ...row, lat, lng };
+}
+
+async function ensureGeofenceActions() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS geofence_actions (
+      id               SERIAL PRIMARY KEY,
+      geofence_id      INTEGER REFERENCES geofences(id) ON DELETE CASCADE,
+      action_type      VARCHAR(50) NOT NULL,
+      recipient        VARCHAR(500),
+      message_template TEXT,
+      enabled          BOOLEAN DEFAULT true,
+      created_at       TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
 }
 
 router.get('/', async (req, res, next) => {
@@ -58,6 +72,53 @@ router.delete('/:id', async (req, res, next) => {
   try {
     await pool.query(`DELETE FROM geofences WHERE id=$1`, [req.params.id]);
     res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
+// ── Geofence Actions ──────────────────────────────────────────────────────────
+
+router.get('/:id/actions', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM geofence_actions WHERE geofence_id = $1 ORDER BY created_at`,
+      [req.params.id]
+    );
+    res.json({ data: rows });
+  } catch (err) { next(err); }
+});
+
+router.post('/:id/actions', async (req, res, next) => {
+  try {
+    await ensureGeofenceActions();
+    const { action_type, recipient, message_template } = req.body;
+    if (!action_type) return res.status(400).json({ error: 'action_type is required' });
+    const { rows } = await pool.query(
+      `INSERT INTO geofence_actions (action_type, recipient, message_template, geofence_id)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [action_type, recipient || null, message_template || null, req.params.id]
+    );
+    res.status(201).json({ data: rows[0] });
+  } catch (err) { next(err); }
+});
+
+router.delete('/:id/actions/:actionId', async (req, res, next) => {
+  try {
+    await pool.query(
+      `DELETE FROM geofence_actions WHERE id = $1 AND geofence_id = $2`,
+      [req.params.actionId, req.params.id]
+    );
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
+router.patch('/:id/actions/:actionId/toggle', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `UPDATE geofence_actions SET enabled = NOT enabled WHERE id = $1 AND geofence_id = $2 RETURNING *`,
+      [req.params.actionId, req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Action not found' });
+    res.json({ data: rows[0] });
   } catch (err) { next(err); }
 });
 

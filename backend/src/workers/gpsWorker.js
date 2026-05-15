@@ -135,6 +135,7 @@ async function processGPS(job) {
             const limitM = Math.round(fence.buffer_km * 1000);
             await alertQueue.add('geofence-alert', {
               vehicle_id,
+              geofence_id: fence.id,
               type: 'route_deviation',
               severity: distKm > fence.buffer_km * 4 ? 'critical' : 'high',
               message: `Vehicle ${vehicle_id} is ${distM}m off corridor "${fence.name}" (limit: ${limitM}m)`,

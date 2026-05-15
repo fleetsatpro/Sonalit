@@ -70,10 +70,14 @@ export const messagesAPI = {
 };
 
 export const geofenceAPI = {
-  list:   (p)     => api.get('/geofences', { params: p }),
-  create: (d)     => api.post('/geofences', d),
-  update: (id, d) => api.put(`/geofences/${id}`, d),
-  delete: (id)    => api.delete(`/geofences/${id}`),
+  list:         (p)       => api.get('/geofences', { params: p }),
+  create:       (d)       => api.post('/geofences', d),
+  update:       (id, d)   => api.put(`/geofences/${id}`, d),
+  delete:       (id)      => api.delete(`/geofences/${id}`),
+  listActions:  (id)      => api.get(`/geofences/${id}/actions`),
+  addAction:    (id, data) => api.post(`/geofences/${id}/actions`, data),
+  removeAction: (id, aId) => api.delete(`/geofences/${id}/actions/${aId}`),
+  toggleAction: (id, aId) => api.patch(`/geofences/${id}/actions/${aId}/toggle`),
 };
 
 export const deviceAPI = {

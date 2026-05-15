@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Truck, Route, MapPin, Bell, BarChart3,
   MessageSquare, Settings, Cpu, Zap, FileText,
   LogOut, ChevronLeft, ChevronRight, Menu, X, Package,
-  Users, DollarSign, Wrench, AlertTriangle, Search
+  Users, DollarSign, Wrench, AlertTriangle, Search, Shield
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore, useAlertStore } from '../store';
@@ -31,6 +31,12 @@ const NAV = [
       { to: '/incidents',  icon: AlertTriangle,   label: 'Incidents',      desc: 'Case management'  },
       { to: '/analytics',  icon: BarChart3,       label: 'Analytics',      desc: 'Performance data' },
       { to: '/reports',    icon: FileText,        label: 'Reports',        desc: 'Generated reports' },
+    ],
+  },
+  {
+    label: 'SECURITY',
+    items: [
+      { to: '/geofences',   icon: Shield,          label: 'Geofences',      desc: 'Zone management'  },
     ],
   },
   {
@@ -312,7 +318,7 @@ export default function Layout({ children }) {
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto">
-          <div className="p-4 lg:p-6 min-h-full">
+          <div className="p-4 lg:p-6 min-h-full pb-20 lg:pb-6">
             {children}
           </div>
         </main>

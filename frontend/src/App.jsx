@@ -46,6 +46,7 @@ const ShipmentsPage  = lazyWithReload(() => import('./pages/ShipmentsPage'));
 const DriversPage    = lazyWithReload(() => import('./pages/DriversPage'));
 const FinancePage    = lazyWithReload(() => import('./pages/FinancePage'));
 const MaintenancePage= lazyWithReload(() => import('./pages/MaintenancePage'));
+const GeofencesPage  = lazyWithReload(() => import('./pages/GeofencesPage'));
 
 const Loader = () => (
   <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',background:'#080C14'}}>
@@ -144,6 +145,7 @@ export default function App() {
         <Route path="/rules"       element={<RequireAuth><RulesPage /></RequireAuth>} />
         <Route path="/messages"    element={<RequireAuth><MessagesPage /></RequireAuth>} />
         <Route path="/settings"    element={<RequireAuth><SettingsPage /></RequireAuth>} />
+        <Route path="/geofences"   element={<RequireAuth><GeofencesPage /></RequireAuth>} />
         <Route path="*"            element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
