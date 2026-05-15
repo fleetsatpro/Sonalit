@@ -17,6 +17,7 @@ io.on("connection",s=>{
   logger.info("Socket: "+s.id+" user="+s.user?.email);
   s.on("subscribe:region",r=>s.join("region:"+r));
   s.on("subscribe:convoy",id=>s.join("convoy:"+id));
+  s.on("subscribe:device",id=>s.join("device:"+id));
   s.on("disconnect",()=>logger.info("Socket disconnected: "+s.id));
 });
 
@@ -40,7 +41,7 @@ app.get("/metrics",(req,res)=>{
 });
 
 // Core routes
-["auth","vehicles","convoys","alerts","messages","analytics","geofences","devices","incidents","rules","gps","sensors","ai","apikeys","reports","documents","webhooks"]
+["auth","vehicles","convoys","alerts","messages","analytics","geofences","devices","incidents","rules","gps","sensors","ai","apikeys","reports","documents","webhooks","guardian"]
   .forEach(r=>app.use("/api/v1/"+r,require("./routes/"+r)));
 
 // Enterprise routes
