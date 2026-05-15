@@ -8,6 +8,38 @@ const logger = require('../utils/logger');
 const SPEED_THRESHOLD = parseFloat(process.env.SPEED_ALERT_THRESHOLD) || 120;
 const GEOFENCE_KM = parseFloat(process.env.GEOFENCE_RADIUS_KM) || 5;
 
+// ── Corridor geofence cache (refreshed every 5 min) ───────────────────────
+let _corridorCache = null;
+let _corridorCacheTime = 0;
+
+async function getCorridorGeofences() {
+  if (_corridorCache && Date.now() - _corridorCacheTime < 300_000) return _corridorCache;
+  try {
+    const r = await query(
+      `SELECT id, name, coordinates FROM geofences WHERE type = 'corridor' AND COALESCE(active, true) = true`
+    );
+    _corridorCache = r.rows.flatMap(f => {
+      try {
+        const c = typeof f.coordinates === 'string' ? JSON.parse(f.coordinates) : f.coordinates;
+        if (!Array.isArray(c?.path) || c.path.length < 2) return [];
+        return [{ id: f.id, name: f.name, path: c.path, buffer_km: (c.buffer_m || 300) / 1000 }];
+      } catch (_) { return []; }
+    });
+    _corridorCacheTime = Date.now();
+  } catch (_) { _corridorCache = _corridorCache || []; }
+  return _corridorCache;
+}
+
+// Minimum distance from point to a multi-segment path, in km
+function minDistToPathKm(lat, lng, path) {
+  let min = Infinity;
+  for (let i = 0; i < path.length - 1; i++) {
+    const d = distanceToSegment(lat, lng, path[i][0], path[i][1], path[i + 1][0], path[i + 1][1]);
+    if (d < min) min = d;
+  }
+  return min === Infinity ? 0 : min;
+}
+
 let io = null;
 function setIO(socketIO) { io = socketIO; }
 
@@ -82,6 +114,37 @@ async function processGPS(job) {
         });
         logger.warn(`Geofence alert queued for vehicle ${vehicle_id}: ${deviation.toFixed(1)} km deviation`);
       }
+    }
+  }
+
+  // 6. Corridor geofence deviation check
+  if (alertQueue) {
+    try {
+      const corridors = await getCorridorGeofences();
+      for (const fence of corridors) {
+        const distKm = minDistToPathKm(lat, lng, fence.path);
+        if (distKm > fence.buffer_km) {
+          // Suppress duplicate: skip if unresolved deviation alert exists for this vehicle in last 30 min
+          const dup = await query(
+            `SELECT id FROM alerts WHERE vehicle_id = $1 AND type = 'route_deviation'
+             AND resolved_at IS NULL AND created_at > NOW() - INTERVAL '30 minutes' LIMIT 1`,
+            [vehicle_id]
+          );
+          if (!dup.rows.length) {
+            const distM = Math.round(distKm * 1000);
+            const limitM = Math.round(fence.buffer_km * 1000);
+            await alertQueue.add('geofence-alert', {
+              vehicle_id,
+              type: 'route_deviation',
+              severity: distKm > fence.buffer_km * 4 ? 'critical' : 'high',
+              message: `Vehicle ${vehicle_id} is ${distM}m off corridor "${fence.name}" (limit: ${limitM}m)`,
+            });
+            logger.warn(`Corridor deviation: vehicle=${vehicle_id} fence="${fence.name}" dist=${distM}m limit=${limitM}m`);
+          }
+        }
+      }
+    } catch (e) {
+      logger.warn('Corridor check error: ' + e.message);
     }
   }
 

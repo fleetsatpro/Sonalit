@@ -153,15 +153,16 @@ const TOOLS = [
   },
   {
     name: 'create_geofence',
-    description: 'Create a geofence zone on the map. Supports two modes: (1) Point geofence — geocodes a single place and draws a circle. (2) Route corridor geofence — provide both location (start) and route_end (end) to create a corridor covering the full route between two points, with auto-calculated radius. Use when the user says "draw a geofence around X" OR "geofence from A to B" OR "geofence on [road] from X to Y".',
+    description: 'Create a geofence zone on the map. Two modes: (1) Point — geocode a place and draw a circle. (2) Route corridor — provide location (start) AND route_end (end) to create a polygon corridor that follows the actual road geometry. Vehicles that stray more than buffer_m metres off the road trigger a deviation alert. Use for "draw a geofence around X", "geofence from A to B", or "geofence on Thika Road from Ngara to Juja".',
     input_schema: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: 'Name for the geofence, e.g. "Thika Road Corridor" or "Nairobi CBD Safe Zone"' },
-        location: { type: 'string', description: 'Place name (or route start point for a corridor)' },
-        route_end: { type: 'string', description: 'End point for a route corridor geofence, e.g. "Juja" for a Ngara-to-Juja corridor. Leave unset for a point geofence.' },
-        radius_m: { type: 'number', description: 'Radius in metres for a point geofence — 500 for a checkpoint, 2000 for a town centre, 5000 for a district (default 3000). Ignored for route corridors — auto-calculated.' },
-        fence_type: { type: 'string', enum: ['safe_zone', 'exclusion_zone', 'checkpoint', 'depot', 'patrol_zone', 'corridor', 'general'], description: 'Type of geofence' },
+        name: { type: 'string', description: 'Name, e.g. "Thika Road Corridor" or "Nairobi CBD Safe Zone"' },
+        location: { type: 'string', description: 'Place name or route start point' },
+        route_end: { type: 'string', description: 'Route end point for a corridor geofence, e.g. "Juja". Omit for a point geofence.' },
+        radius_m: { type: 'number', description: 'Radius in metres for a point geofence (default 3000). Ignored for corridors.' },
+        buffer_m: { type: 'number', description: 'Corridor half-width in metres — how far a vehicle can deviate before an alert fires (default 300).' },
+        fence_type: { type: 'string', enum: ['safe_zone', 'exclusion_zone', 'checkpoint', 'depot', 'patrol_zone', 'corridor', 'general'] },
       },
       required: ['name', 'location'],
     },
@@ -496,50 +497,95 @@ async function toolCreateGeofence(input, userId) {
   if (!name || !location) return { error: 'name and location are required' };
 
   try {
-    let lat, lng, radius_m, locationLabel, region;
-
     if (route_end) {
-      // ── Route corridor mode: geocode both ends, use midpoint + half-distance radius ──
+      // ── Route corridor mode: use OSRM for actual road geometry ──
       const [gStart, gEnd] = await Promise.all([geocode(location), geocode(route_end)]);
-      lat = (gStart.latitude + gEnd.latitude) / 2;
-      lng = (gStart.longitude + gEnd.longitude) / 2;
-      const distM = haversineM(gStart.latitude, gStart.longitude, gEnd.latitude, gEnd.longitude);
-      radius_m = Math.round(distM / 2) + 2000; // half-distance + 2km buffer
-      locationLabel = `${gStart.name} → ${gEnd.name}`;
-      region = gStart.admin1 || gStart.country || location;
+      const buffer_m = Math.max(50, Math.min(input.buffer_m || 300, 5000));
+
+      // Fetch road route from public OSRM (free, no key)
+      let path, distM;
+      try {
+        const osrmRes = await fetch(
+          `https://router.project-osrm.org/route/v1/driving/${gStart.longitude},${gStart.latitude};${gEnd.longitude},${gEnd.latitude}?overview=full&geometries=geojson`,
+          { signal: AbortSignal.timeout(12000) }
+        );
+        if (osrmRes.ok) {
+          const od = await osrmRes.json();
+          if (od.routes?.length) {
+            // OSRM returns [lng, lat] — convert to [lat, lng] for consistency
+            path = od.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+            distM = od.routes[0].distance;
+          }
+        }
+      } catch (_) {}
+
+      // Fallback: straight line if OSRM unavailable
+      if (!path || path.length < 2) {
+        path = [[gStart.latitude, gStart.longitude], [gEnd.latitude, gEnd.longitude]];
+        distM = haversineM(gStart.latitude, gStart.longitude, gEnd.latitude, gEnd.longitude);
+        logger.warn(`OSRM unavailable for corridor "${name}" — using straight-line fallback`);
+      }
+
+      // Midpoint for map fly-to
+      const mid = path[Math.floor(path.length / 2)];
+      const region = gStart.admin1 || gStart.country || location;
+      const locationLabel = `${gStart.name} → ${gEnd.name}`;
+      const approxRadius = Math.round(distM / 2) + buffer_m;
+
+      const coordinates = { lat: mid[0], lng: mid[1], type: 'corridor', path, buffer_m };
+
+      const r = await query(
+        `INSERT INTO geofences (name, type, coordinates, radius, region)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id`,
+        [name, 'corridor', JSON.stringify(coordinates), approxRadius, region]
+      );
+
+      return {
+        created: true,
+        geofence_id: r.rows[0].id,
+        name,
+        fence_type: 'corridor',
+        lat: mid[0],
+        lng: mid[1],
+        radius_m: approxRadius,
+        region,
+        location: locationLabel,
+        is_corridor: true,
+        path_points: path.length,
+        road_distance_km: (distM / 1000).toFixed(1),
+        buffer_m,
+        message: `Corridor geofence "${name}" created from ${locationLabel} — ${(distM / 1000).toFixed(1)} km road, ${path.length} waypoints, ${buffer_m}m deviation limit.`,
+      };
     } else {
-      // ── Point mode: single location ──
+      // ── Point mode: single location circle ──
       const g = await geocode(location);
-      lat = g.latitude;
-      lng = g.longitude;
-      radius_m = input.radius_m || 3000;
-      locationLabel = [g.name, g.admin1, g.country].filter(Boolean).join(', ');
-      region = g.admin1 || g.country || location;
+      const radius_m = input.radius_m || 3000;
+      const coordinates = { lat: g.latitude, lng: g.longitude };
+      const region = g.admin1 || g.country || location;
+
+      const r = await query(
+        `INSERT INTO geofences (name, type, coordinates, radius, region)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id`,
+        [name, 'circle', JSON.stringify(coordinates), radius_m, region]
+      );
+
+      const locationLabel = [g.name, g.admin1, g.country].filter(Boolean).join(', ');
+      return {
+        created: true,
+        geofence_id: r.rows[0].id,
+        name,
+        fence_type,
+        lat: g.latitude,
+        lng: g.longitude,
+        radius_m,
+        region,
+        location: locationLabel,
+        is_corridor: false,
+        message: `Geofence "${name}" created at ${locationLabel}, radius ${radius_m}m.`,
+      };
     }
-
-    const coordinates = { lat, lng };
-    const r = await query(
-      `INSERT INTO geofences (name, type, coordinates, radius, region)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, name, type, coordinates, radius, region, created_at`,
-      [name, 'circle', JSON.stringify(coordinates), radius_m, region]
-    );
-
-    return {
-      created: true,
-      geofence_id: r.rows[0].id,
-      name,
-      fence_type,
-      lat,
-      lng,
-      radius_m,
-      region,
-      location: locationLabel,
-      is_corridor: !!route_end,
-      message: route_end
-        ? `Corridor geofence "${name}" created from ${locationLabel}, radius ${(radius_m / 1000).toFixed(1)}km.`
-        : `Geofence "${name}" created at ${locationLabel}, radius ${radius_m}m.`,
-    };
   } catch (e) {
     return { error: `Failed to create geofence: ${e.message}` };
   }

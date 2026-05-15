@@ -9,6 +9,26 @@ import { timeAgo, formatDate } from '../utils/helpers';
 import toast from 'react-hot-toast';
 
 const SC = { active:'#22D3A0', idle:'#94a3b8', maintenance:'#F59E0B', offline:'#ef4444' };
+
+// Build a corridor polygon by offsetting a polyline ±bufferM metres either side
+function buildCorridorPolygon(path, bufferM) {
+  const left = [], right = [];
+  for (let i = 0; i < path.length; i++) {
+    const prev = path[Math.max(0, i - 1)];
+    const next = path[Math.min(path.length - 1, i + 1)];
+    const dlat = next[0] - prev[0];
+    const dlng = next[1] - prev[1];
+    const len = Math.sqrt(dlat * dlat + dlng * dlng);
+    if (len < 1e-10) continue;
+    const nx = -dlng / len;
+    const ny =  dlat / len;
+    const latPerM = 1 / 111320;
+    const lngPerM = 1 / (111320 * Math.cos(path[i][0] * Math.PI / 180));
+    left.push( [path[i][0] + nx * bufferM * latPerM, path[i][1] + ny * bufferM * lngPerM]);
+    right.push([path[i][0] - nx * bufferM * latPerM, path[i][1] - ny * bufferM * lngPerM]);
+  }
+  return [...left, ...right.reverse()];
+}
 const SR = { active:'rgba(34,211,160,0.15)', idle:'rgba(148,163,184,0.08)', maintenance:'rgba(245,158,11,0.15)', offline:'rgba(239,68,68,0.15)' };
 
 const TILE_LAYERS = {
@@ -286,11 +306,31 @@ export default function GPSPage() {
       if (!Lfl || !geofenceLayer.current) return;
       geofenceLayer.current.clearLayers();
       fences.forEach(f => {
-        if (!f.lat || !f.lng) return;
-        Lfl.circle([f.lat, f.lng], {
-          radius: f.radius || 500, color:'#F0B429', fillColor:'#F0B429', fillOpacity:.08, weight:1.5, dashArray:'6,4',
-        }).bindTooltip(`<span style="font-family:monospace;font-size:11px;color:#F0B429">${f.name}</span>`, { permanent:false })
-          .addTo(geofenceLayer.current);
+        const tip = `<span style="font-family:monospace;font-size:11px;color:#F0B429">${f.name}</span>`;
+        if (f.type === 'corridor') {
+          try {
+            const c = typeof f.coordinates === 'string' ? JSON.parse(f.coordinates) : f.coordinates;
+            const path = c?.path;
+            const buffer_m = c?.buffer_m || 300;
+            if (!path || path.length < 2) return;
+            // Centerline
+            Lfl.polyline(path, { color:'#F0B429', weight:2.5, opacity:0.85, dashArray:'10,5' })
+              .bindTooltip(tip, { permanent:false })
+              .addTo(geofenceLayer.current);
+            // Buffer polygon
+            const poly = buildCorridorPolygon(path, buffer_m);
+            if (poly.length >= 3) {
+              Lfl.polygon(poly, { color:'#F0B429', fillColor:'#F0B429', fillOpacity:0.07, weight:1, dashArray:'4,6' })
+                .addTo(geofenceLayer.current);
+            }
+          } catch(_) {}
+        } else {
+          if (!f.lat || !f.lng) return;
+          Lfl.circle([f.lat, f.lng], {
+            radius: f.radius || 500, color:'#F0B429', fillColor:'#F0B429', fillOpacity:.08, weight:1.5, dashArray:'6,4',
+          }).bindTooltip(tip, { permanent:false })
+            .addTo(geofenceLayer.current);
+        }
       });
     } catch(e) {}
   };
