@@ -382,7 +382,7 @@ function GeofenceCard({ fence, actionCount, onManageActions, onDelete }) {
           {isCorridor ? <Route size={16} color={T.amber} /> : <MapPin size={16} color={T.cyan} />}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, fontWeight: 800, color: T.text }}>{fence.name}</span>
             <TypeBadge type={fence.type} />
           </div>

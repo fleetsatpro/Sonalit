@@ -50,6 +50,10 @@ const GeofencesPage     = lazyWithReload(() => import('./pages/GeofencesPage'));
 const GuardianPage      = lazyWithReload(() => import('./pages/GuardianPage'));
 const PanicCenterPage   = lazyWithReload(() => import('./pages/PanicCenterPage'));
 const IncidentCenterPage= lazyWithReload(() => import('./pages/IncidentCenterPage'));
+const ExecutivePage      = lazyWithReload(() => import('./pages/ExecutivePage'));
+const RiskIntelPage      = lazyWithReload(() => import('./pages/RiskIntelPage'));
+const AIDecisionPage     = lazyWithReload(() => import('./pages/AIDecisionPage'));
+const CopilotPage        = lazyWithReload(() => import('./pages/CopilotPage'));
 
 const Loader = () => (
   <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',background:'#080C14'}}>
@@ -152,6 +156,10 @@ export default function App() {
         <Route path="/guardian"       element={<RequireAuth><GuardianPage /></RequireAuth>} />
         <Route path="/panic-center"   element={<RequireAuth><PanicCenterPage /></RequireAuth>} />
         <Route path="/incident-center"element={<RequireAuth><IncidentCenterPage /></RequireAuth>} />
+        <Route path="/executive"    element={<RequireAuth><ExecutivePage /></RequireAuth>} />
+        <Route path="/risk-intel"   element={<RequireAuth><RiskIntelPage /></RequireAuth>} />
+        <Route path="/ai-decisions" element={<RequireAuth><AIDecisionPage /></RequireAuth>} />
+        <Route path="/copilot"      element={<RequireAuth><CopilotPage /></RequireAuth>} />
         <Route path="*"               element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

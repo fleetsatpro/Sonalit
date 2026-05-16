@@ -5,7 +5,8 @@ import {
   MessageSquare, Settings, Cpu, Zap, FileText,
   LogOut, ChevronLeft, ChevronRight, Menu, X, Package,
   Users, DollarSign, Wrench, AlertTriangle, Search, Shield,
-  Smartphone, AlertOctagon, FileWarning, Home, Radio
+  Smartphone, AlertOctagon, FileWarning, Home, Radio,
+  Globe, Target, Brain,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore, useAlertStore } from '../store';
@@ -13,246 +14,609 @@ import CommandBar from './CommandBar';
 import WarRoom from './WarRoom';
 import OfflineBanner from './OfflineBanner';
 
+// ─── MLOS colour tokens ──────────────────────────────────────────────────────
+const C = {
+  bg:          '#060e1a',
+  panel:       '#0b1829',
+  surface:     '#0d2240',
+  cyan:        '#00d4ff',
+  blue:        '#0066ff',
+  border:      'rgba(0,212,255,0.10)',
+  borderFaint: 'rgba(0,212,255,0.08)',
+  muted:       '#4a7090',
+  light:       '#c8ddf0',
+  danger:      '#ff3b5c',
+  success:     '#00e5a0',
+};
+
+// ─── NAV definition ──────────────────────────────────────────────────────────
 const NAV = [
   {
-    label: 'OPERATIONS',
+    label: 'MOVEMENT',
     items: [
-      { to: '/',           icon: LayoutDashboard, label: 'Command Center', desc: 'Live overview'     },
-      { to: '/fleet',      icon: Truck,           label: 'Fleet',          desc: 'Vehicles & assets' },
-      { to: '/convoys',    icon: Route,           label: 'Convoys',        desc: 'Missions'          },
-      { to: '/shipments',  icon: Package,         label: 'Shipments',      desc: 'Cargo tracking'   },
-      { to: '/drivers',    icon: Users,           label: 'Drivers',        desc: 'Personnel'         },
-      { to: '/gps',        icon: MapPin,          label: 'GPS Track',      desc: 'Live positions'    },
+      { to: '/fleet',      icon: Truck,          label: 'Fleet',            desc: 'Vehicles & assets'   },
+      { to: '/convoys',    icon: Route,           label: 'Convoys',          desc: 'Active missions'     },
+      { to: '/shipments',  icon: Package,         label: 'Shipments',        desc: 'Cargo tracking'      },
+      { to: '/gps',        icon: MapPin,          label: 'Live Tracking',    desc: 'GPS positions'       },
+    ],
+  },
+  {
+    label: 'COMMERCIAL',
+    items: [
+      { to: '/drivers',    icon: Users,           label: 'Drivers',          desc: 'Personnel'           },
+      { to: '/finance',    icon: DollarSign,      label: 'Finance',          desc: 'Revenue & billing'   },
+      { to: '/shipments',  icon: Package,         label: 'Load Board',       desc: 'Available loads'     },
+      { to: '/reports',    icon: FileText,        label: 'Reports',          desc: 'Generated reports'   },
     ],
   },
   {
     label: 'INTELLIGENCE',
     items: [
-      { to: '/alerts',     icon: Bell,            label: 'Alerts',         desc: 'Active incidents', badge: true },
-      { to: '/incidents',  icon: AlertTriangle,   label: 'Incidents',      desc: 'Case management'  },
-      { to: '/analytics',  icon: BarChart3,       label: 'Analytics',      desc: 'Performance data' },
-      { to: '/reports',    icon: FileText,        label: 'Reports',        desc: 'Generated reports' },
+      { to: '/risk-intel',   icon: Globe,         label: 'Risk Intelligence', desc: 'Threat map'         },
+      { to: '/ai-decisions', icon: Cpu,           label: 'AI Decisions',      desc: 'Copilot engine'     },
+      { to: '/analytics',    icon: BarChart3,     label: 'Analytics',         desc: 'Performance data'   },
+      { to: '/geofences',    icon: Shield,        label: 'Geofences',         desc: 'Zone management'    },
     ],
   },
   {
-    label: 'SECURITY',
+    label: 'OPERATIONS',
     items: [
-      { to: '/geofences',   icon: Shield,          label: 'Geofences',      desc: 'Zone management'  },
+      { to: '/incidents',  icon: AlertTriangle,   label: 'Incidents',        desc: 'Case management'     },
+      { to: '/guardian',   icon: Smartphone,      label: 'Guardian Agents',  desc: 'Field devices'       },
+      { to: '/devices',    icon: Radio,           label: 'IoT Sensors',      desc: 'Device telemetry'    },
+      { to: '/maintenance',icon: Wrench,          label: 'Maintenance',      desc: 'Service records'     },
     ],
   },
   {
-    label: 'GUARDIAN',
+    label: 'SAFETY',
     items: [
-      { to: '/guardian',        icon: Smartphone,    label: 'Guardian Devices', desc: 'Field agent mgmt'  },
-      { to: '/panic-center',    icon: AlertOctagon,  label: 'Panic Center',     desc: 'Emergency SOS',   badge: 'panic' },
-      { to: '/incident-center', icon: FileWarning,   label: 'Incident Center',  desc: 'Field reports'    },
+      { to: '/panic-center',    icon: AlertOctagon, label: 'Panic Center',  desc: 'Emergency SOS',    badge: 'panic' },
+      { to: '/alerts',          icon: Bell,         label: 'Alerts',         desc: 'Active incidents', badge: true    },
+      { to: '/incident-center', icon: FileWarning,  label: 'Field Reports',  desc: 'Guardian reports'               },
+      { to: '/rules',           icon: Zap,          label: 'Rules Engine',   desc: 'Automation'                     },
     ],
   },
   {
-    label: 'MANAGEMENT',
+    label: 'COMMUNICATIONS',
     items: [
-      { to: '/maintenance', icon: Wrench,         label: 'Maintenance',    desc: 'Service records'  },
-      { to: '/finance',     icon: DollarSign,     label: 'Finance',        desc: 'Revenue & costs'  },
-      { to: '/devices',     icon: Cpu,            label: 'Devices',        desc: 'GPS hardware'     },
-      { to: '/rules',       icon: Zap,            label: 'Rules',          desc: 'Automation'       },
-      { to: '/messages',    icon: MessageSquare,  label: 'Messages',       desc: 'Comms channels'   },
-      { to: '/settings',    icon: Settings,       label: 'Settings',       desc: 'Configuration'    },
+      { to: '/messages',   icon: MessageSquare,   label: 'Messages',         desc: 'Comms channels'      },
+      { to: '/documents',  icon: FileText,        label: 'Documents',        desc: 'File management'     },
+    ],
+  },
+  {
+    label: 'COMMAND',
+    items: [
+      { to: '/',           icon: LayoutDashboard, label: 'Command Center',   desc: 'Global overview'     },
+      { to: '/executive',  icon: Target,          label: 'Executive Suite',  desc: 'Boardroom analytics' },
+      { to: '/copilot',    icon: Brain,           label: 'MLOS Copilot',     desc: 'AI assistant'        },
+      { to: '/settings',   icon: Settings,        label: 'Settings',         desc: 'Configuration'       },
     ],
   },
 ];
 
+// ─── LiveClock ───────────────────────────────────────────────────────────────
 function LiveClock() {
   const [t, setT] = useState(new Date());
-  useEffect(() => { const i = setInterval(() => setT(new Date()), 1000); return () => clearInterval(i); }, []);
+  useEffect(() => {
+    const i = setInterval(() => setT(new Date()), 1000);
+    return () => clearInterval(i);
+  }, []);
   return (
-    <div className="text-right select-none">
-      <p className="font-display text-sm font-bold text-slate-100 tabular-nums tracking-wider">
+    <div style={{ textAlign: 'right', userSelect: 'none' }}>
+      <p style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 12, fontWeight: 700, color: C.light, letterSpacing: '0.08em', lineHeight: 1 }}>
         {t.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
       </p>
-      <p className="text-[9px] font-mono text-slate-500 tracking-widest">
+      <p style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 8, color: C.muted, letterSpacing: '0.2em', marginTop: 2 }}>
         {t.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase()} · UTC
       </p>
     </div>
   );
 }
 
+// ─── SystemBadge ─────────────────────────────────────────────────────────────
 function SystemBadge({ alerts }) {
   const critical = alerts?.filter(a => a.severity === 'critical' && !a.resolved_at).length || 0;
   if (critical > 0) {
     return (
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-danger/10 border border-danger/25 rounded-xl">
-        <div className="w-1.5 h-1.5 rounded-full bg-danger animate-pulse" />
-        <span className="text-[9px] font-mono font-bold text-danger tracking-widest">{critical} CRITICAL</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: 'rgba(255,59,92,0.08)', border: `1px solid rgba(255,59,92,0.25)`, borderRadius: 4 }}>
+        <div style={{ width: 6, height: 6, borderRadius: '50%', background: C.danger, animation: 'pulse 2s infinite' }} />
+        <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 9, fontWeight: 700, color: C.danger, letterSpacing: '0.2em' }}>
+          {critical} CRITICAL
+        </span>
       </div>
     );
   }
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 bg-success/10 border border-success/20 rounded-xl">
-      <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-      <span className="text-[9px] font-mono font-bold text-success tracking-widest">ALL SYSTEMS NOMINAL</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: 'rgba(0,229,160,0.07)', border: `1px solid rgba(0,229,160,0.18)`, borderRadius: 4 }}>
+      <div style={{ width: 6, height: 6, borderRadius: '50%', background: C.success, animation: 'pulse 2s infinite' }} />
+      <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 9, fontWeight: 700, color: C.success, letterSpacing: '0.2em' }}>
+        ALL SYSTEMS NOMINAL
+      </span>
     </div>
   );
 }
 
+// ─── SessionIndicator ────────────────────────────────────────────────────────
+function SessionIndicator() {
+  const [latency, setLatency] = useState(null);
+  useEffect(() => {
+    const measure = async () => {
+      const t0 = performance.now();
+      try {
+        await fetch('/api/ping', { method: 'HEAD', cache: 'no-store' });
+      } catch {
+        // ignore fetch errors — latency stays null
+      }
+      setLatency(Math.round(performance.now() - t0));
+    };
+    measure();
+    const id = setInterval(measure, 30000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+      <div style={{ width: 6, height: 6, borderRadius: '50%', background: C.success, boxShadow: `0 0 6px ${C.success}`, flexShrink: 0 }} />
+      <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 9, color: C.success, letterSpacing: '0.15em' }}>
+        LIVE{latency !== null ? ` · ${latency}ms` : ''}
+      </span>
+    </div>
+  );
+}
+
+// ─── AlertBell ───────────────────────────────────────────────────────────────
+function AlertBell({ alerts }) {
+  const { unreadCount } = useAlertStore?.() || {};
+  const navigate = useNavigate();
+  const critical = alerts?.filter(a => a.severity === 'critical' && !a.resolved_at).length || 0;
+  const count = unreadCount || 0;
+  return (
+    <button
+      onClick={() => navigate('/alerts')}
+      style={{ position: 'relative', padding: 6, background: 'none', border: 'none', cursor: 'pointer', color: critical > 0 ? C.danger : C.muted, display: 'flex', alignItems: 'center' }}
+      title="Alerts"
+    >
+      <Bell size={16} />
+      {count > 0 && (
+        <span style={{
+          position: 'absolute', top: 2, right: 2,
+          minWidth: 14, height: 14, padding: '0 2px',
+          background: critical > 0 ? C.danger : '#f59e0b',
+          borderRadius: 7, fontSize: 7, fontWeight: 700,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: '#fff', border: `2px solid ${C.bg}`,
+          fontFamily: 'IBM Plex Mono, monospace',
+        }}>
+          {count > 9 ? '9+' : count}
+        </span>
+      )}
+    </button>
+  );
+}
+
+// ─── NavItem ─────────────────────────────────────────────────────────────────
 function NavItem({ item, collapsed, onClick }) {
   const location = useLocation();
   const { unreadCount } = useAlertStore?.() || {};
-  const active = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to);
+  const active = item.to === '/'
+    ? location.pathname === '/'
+    : location.pathname.startsWith(item.to);
+
   const badgeCount = item.badge === true ? (unreadCount || 0) : 0;
   const isPanicBadge = item.badge === 'panic';
+  const [hovered, setHovered] = useState(false);
+
+  const iconColor = active ? C.cyan : hovered ? C.light : C.muted;
+  const textColor = active ? C.cyan : hovered ? C.light : C.muted;
 
   return (
     <Link
       to={item.to}
       onClick={onClick}
       title={collapsed ? item.label : undefined}
-      className={`
-        group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium
-        transition-all duration-150 cursor-pointer select-none
-        ${active
-          ? 'bg-gradient-to-r from-gold/15 to-gold/5 border border-gold/25 text-gold shadow-sm'
-          : 'text-slate-500 hover:text-slate-200 hover:bg-white/[0.04] border border-transparent'}
-        ${collapsed ? 'justify-center' : ''}
-      `}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        gap: collapsed ? 0 : 10,
+        padding: collapsed ? '8px 0' : '8px 10px',
+        justifyContent: collapsed ? 'center' : 'flex-start',
+        borderRadius: 4,
+        textDecoration: 'none',
+        transition: 'background 0.15s, border-color 0.15s',
+        background: active
+          ? 'rgba(0,212,255,0.07)'
+          : hovered
+          ? 'rgba(0,212,255,0.04)'
+          : 'transparent',
+        border: `1px solid ${active ? 'rgba(0,212,255,0.15)' : 'transparent'}`,
+        cursor: 'pointer',
+        userSelect: 'none',
+      }}
     >
-      {/* Active indicator bar */}
+      {/* Active left-edge bar */}
       {active && (
-        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-gold rounded-r-full" />
+        <div style={{
+          position: 'absolute',
+          left: 0,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          width: 2,
+          height: 14,
+          background: C.cyan,
+          borderRadius: '0 2px 2px 0',
+          boxShadow: `0 0 8px ${C.cyan}`,
+        }} />
       )}
 
       {/* Icon */}
-      <div className={`relative flex-shrink-0 ${active ? 'text-gold' : 'text-slate-500 group-hover:text-slate-300'}`}>
-        <item.icon size={15} />
+      <div style={{ position: 'relative', flexShrink: 0, color: iconColor, display: 'flex', alignItems: 'center' }}>
+        <item.icon size={14} />
         {badgeCount > 0 && (
-          <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-3.5 px-0.5 bg-danger rounded-full text-[7px] font-bold flex items-center justify-center text-white border border-navy-950">
+          <span style={{
+            position: 'absolute', top: -6, right: -6,
+            minWidth: 13, height: 13, padding: '0 2px',
+            background: C.danger, borderRadius: 7,
+            fontSize: 7, fontWeight: 700,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#fff', border: `2px solid ${C.bg}`,
+            fontFamily: 'IBM Plex Mono, monospace',
+          }}>
             {badgeCount > 9 ? '9+' : badgeCount}
           </span>
         )}
         {isPanicBadge && (
-          <span className="absolute -top-1 -right-1 w-2 h-2 bg-danger rounded-full animate-pulse border border-navy-950" />
+          <span style={{
+            position: 'absolute', top: -4, right: -4,
+            width: 7, height: 7, background: C.danger,
+            borderRadius: '50%', border: `2px solid ${C.bg}`,
+            animation: 'pulse 1.5s infinite',
+          }} />
         )}
       </div>
 
       {/* Label + desc */}
       {!collapsed && (
-        <div className="flex-1 min-w-0">
-          <span className={`block font-semibold text-xs leading-none mb-0.5 ${active ? 'text-gold' : ''}`}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <span style={{
+            display: 'block',
+            fontFamily: 'Space Grotesk, sans-serif',
+            fontWeight: 500,
+            fontSize: 11,
+            lineHeight: 1,
+            marginBottom: 2,
+            color: textColor,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}>
             {item.label}
           </span>
-          <span className="block text-[9px] text-slate-600 leading-none truncate">{item.desc}</span>
+          <span style={{
+            display: 'block',
+            fontFamily: 'IBM Plex Mono, monospace',
+            fontSize: 9,
+            color: C.muted,
+            lineHeight: 1,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}>
+            {item.desc}
+          </span>
         </div>
       )}
     </Link>
   );
 }
 
+// ─── Sidebar ─────────────────────────────────────────────────────────────────
 function Sidebar({ collapsed, setCollapsed, mobile, onClose }) {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
-  const initials = (n) => (n || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-  const roleColor = { admin: 'text-gold', dispatcher: 'text-blue-400', operator: 'text-success', analyst: 'text-purple-400' };
+
+  const initials = (n) =>
+    (n || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+    toast.success('Signed out');
+  };
+
+  const sidebarWidth = mobile ? 240 : collapsed ? 52 : 220;
 
   return (
-    <div className={`
-      ${mobile ? 'w-72' : 'w-full'} h-full flex flex-col
-      bg-[#080C14] border-r border-white/[0.05]
-      ${!mobile ? 'relative' : ''}
-    `}>
+    <div style={{
+      width: sidebarWidth,
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      background: C.panel,
+      borderRight: `1px solid ${C.borderFaint}`,
+      position: 'relative',
+      flexShrink: 0,
+      transition: 'width 0.2s ease',
+    }}>
 
-      {/* Logo */}
-      <div className={`flex items-center gap-3 px-4 py-4 border-b border-white/[0.05] flex-shrink-0 ${collapsed && !mobile ? 'justify-center px-3' : ''}`}>
-        <div className="relative flex-shrink-0">
-          <div className="w-9 h-9 bg-gradient-to-br from-gold to-gold/60 rounded-xl flex items-center justify-center shadow-lg shadow-gold/20">
-            <span className="font-display text-navy-950 font-black text-base">F</span>
-          </div>
-          <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-success rounded-full border-2 border-[#080C14]" />
+      {/* ── Logo ── */}
+      <div style={{
+        padding: '16px 14px',
+        borderBottom: `1px solid ${C.borderFaint}`,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        flexShrink: 0,
+      }}>
+        {/* MLOS mark */}
+        <div style={{
+          width: 36, height: 36, flexShrink: 0,
+          background: 'linear-gradient(135deg, rgba(0,212,255,0.2), rgba(0,102,255,0.3))',
+          border: '1px solid rgba(0,212,255,0.4)',
+          borderRadius: 6,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 0 16px rgba(0,212,255,0.2)',
+        }}>
+          <span style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 15, color: C.cyan, letterSpacing: '-0.05em' }}>
+            M
+          </span>
         </div>
+
         {(!collapsed || mobile) && (
-          <div className="min-w-0">
-            <p className="font-display text-sm font-black text-gold tracking-[0.2em] leading-none">FLEETOPS</p>
-            <div className="flex items-center gap-1.5 mt-1">
-              <span className="text-[8px] font-mono text-slate-600 tracking-widest">ENTERPRISE</span>
-              <span className="text-[8px] font-mono text-slate-700">·</span>
-              <span className="text-[8px] font-mono text-slate-600">v2.1</span>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 11, color: C.cyan, letterSpacing: '0.2em', lineHeight: 1 }}>
+              MONSTER LOGISTICS
+            </div>
+            <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 8, color: C.muted, letterSpacing: '0.2em', marginTop: 3 }}>
+              OS · v2.1 · ENTERPRISE
             </div>
           </div>
         )}
+
+        {/* Mobile close */}
         {mobile && (
-          <button onClick={onClose} className="ml-auto p-1.5 text-slate-500 hover:text-white rounded-lg hover:bg-white/5">
+          <button onClick={onClose} style={{ marginLeft: 'auto', color: C.muted, background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center' }}>
             <X size={14} />
+          </button>
+        )}
+
+        {/* Desktop collapse toggle */}
+        {!mobile && (
+          <button onClick={() => setCollapsed(c => !c)} style={{ marginLeft: 'auto', color: C.muted, background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center' }}>
+            {collapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
           </button>
         )}
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-5">
+      {/* ── Nav ── */}
+      <nav style={{ flex: 1, overflowY: 'auto', padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: 16 }}>
         {NAV.map(section => (
           <div key={section.label}>
             {(!collapsed || mobile) && (
-              <p className="text-[8px] font-mono text-slate-700 tracking-[0.2em] px-3 mb-1.5 uppercase">
+              <p style={{
+                fontFamily: 'IBM Plex Mono, monospace',
+                fontSize: 9,
+                color: C.muted,
+                letterSpacing: '0.2em',
+                textTransform: 'uppercase',
+                padding: '0 10px',
+                marginBottom: 4,
+                lineHeight: 1,
+              }}>
                 {section.label}
               </p>
             )}
-            {collapsed && !mobile && <div className="h-px bg-white/[0.04] mx-2 mb-2" />}
-            <div className="space-y-0.5">
+            {collapsed && !mobile && (
+              <div style={{ height: 1, background: 'rgba(0,212,255,0.06)', margin: '0 4px 6px' }} />
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {section.items.map(item => (
-                <NavItem key={item.to} item={item} collapsed={collapsed && !mobile} onClick={onClose} />
+                <NavItem
+                  key={`${item.to}-${item.label}`}
+                  item={item}
+                  collapsed={collapsed && !mobile}
+                  onClick={onClose}
+                />
               ))}
             </div>
           </div>
         ))}
       </nav>
 
-      {/* User profile */}
-      <div className={`border-t border-white/[0.05] p-3 flex-shrink-0 ${collapsed && !mobile ? 'flex flex-col items-center gap-2' : ''}`}>
+      {/* ── User profile ── */}
+      <div style={{
+        borderTop: `1px solid ${C.borderFaint}`,
+        padding: '10px 8px',
+        flexShrink: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+        alignItems: collapsed && !mobile ? 'center' : 'stretch',
+      }}>
         {(!collapsed || mobile) ? (
-          <div className="flex items-center gap-3 px-2 py-2.5 rounded-xl bg-white/[0.02] border border-white/[0.04] mb-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-gold/30 to-gold/10 border border-gold/20 flex items-center justify-center flex-shrink-0">
-              <span className="text-[10px] font-bold font-mono text-gold">{initials(user?.name)}</span>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '8px 10px',
+            background: 'rgba(0,212,255,0.03)',
+            border: `1px solid rgba(0,212,255,0.08)`,
+            borderRadius: 4,
+          }}>
+            <div style={{
+              width: 30, height: 30, flexShrink: 0,
+              background: C.surface,
+              border: `1px solid ${C.cyan}`,
+              borderRadius: 4,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 10, fontWeight: 700, color: C.cyan }}>
+                {initials(user?.name)}
+              </span>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-slate-200 truncate leading-none mb-0.5">{user?.name || 'Admin'}</p>
-              <span className={`text-[9px] font-mono font-bold uppercase ${roleColor[user?.role] || 'text-slate-500'}`}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: 11, fontWeight: 500, color: C.light, lineHeight: 1, marginBottom: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {user?.name || 'Admin'}
+              </p>
+              <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 9, color: C.cyan, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
                 {user?.role || 'admin'}
               </span>
             </div>
           </div>
         ) : (
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-gold/30 to-gold/10 border border-gold/20 flex items-center justify-center mb-2">
-            <span className="text-[10px] font-bold font-mono text-gold">{initials(user?.name)}</span>
+          <div style={{
+            width: 30, height: 30,
+            background: C.surface,
+            border: `1px solid ${C.cyan}`,
+            borderRadius: 4,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 10, fontWeight: 700, color: C.cyan }}>
+              {initials(user?.name)}
+            </span>
           </div>
         )}
+
         <button
-          onClick={() => { logout(); navigate('/login'); toast.success('Signed out'); }}
-          className={`flex items-center gap-2.5 w-full px-3 py-2 rounded-xl text-[11px] font-medium
-            text-slate-600 hover:text-danger hover:bg-danger/5 border border-transparent
-            hover:border-danger/10 transition-all ${collapsed && !mobile ? 'justify-center' : ''}`}
+          onClick={handleLogout}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: collapsed && !mobile ? 'center' : 'flex-start',
+            gap: 8,
+            width: '100%',
+            padding: '7px 10px',
+            background: 'none',
+            border: '1px solid transparent',
+            borderRadius: 4,
+            cursor: 'pointer',
+            fontFamily: 'IBM Plex Mono, monospace',
+            fontSize: 10,
+            color: C.muted,
+            transition: 'color 0.15s, background 0.15s, border-color 0.15s',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.color = C.danger;
+            e.currentTarget.style.background = 'rgba(255,59,92,0.05)';
+            e.currentTarget.style.borderColor = 'rgba(255,59,92,0.15)';
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.color = C.muted;
+            e.currentTarget.style.background = 'none';
+            e.currentTarget.style.borderColor = 'transparent';
+          }}
         >
           <LogOut size={13} />
           {(!collapsed || mobile) && 'Sign out'}
         </button>
       </div>
-
-      {/* Collapse toggle — desktop only */}
-      {!mobile && (
-        <button
-          onClick={() => setCollapsed(c => !c)}
-          className="absolute -right-3.5 top-1/2 -translate-y-1/2 w-7 h-7 bg-[#0D1321] border border-white/10 rounded-full flex items-center justify-center text-slate-500 hover:text-gold hover:border-gold/30 transition-all z-20 shadow-xl"
-        >
-          {collapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
-        </button>
-      )}
     </div>
   );
 }
 
+// ─── Topbar ──────────────────────────────────────────────────────────────────
+function Topbar({ alerts, onMenuClick, pageTitle }) {
+  return (
+    <header style={{
+      flexShrink: 0,
+      height: 48,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '0 16px',
+      background: 'rgba(6,14,26,0.95)',
+      backdropFilter: 'blur(16px)',
+      WebkitBackdropFilter: 'blur(16px)',
+      borderBottom: `1px solid ${C.borderFaint}`,
+      zIndex: 10,
+      gap: 12,
+    }}>
+
+      {/* Left: hamburger (mobile) + breadcrumb */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+        <button
+          onClick={onMenuClick}
+          className="lg:hidden"
+          style={{ padding: 6, background: 'none', border: 'none', cursor: 'pointer', color: C.muted, display: 'flex', alignItems: 'center' }}
+        >
+          <Menu size={16} />
+        </button>
+
+        {/* Breadcrumb */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+          <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 10, color: C.muted, letterSpacing: '0.15em', flexShrink: 0 }}
+                className="hidden sm:block">
+            MLOS
+          </span>
+          <ChevronRight size={10} style={{ color: C.muted, flexShrink: 0 }} className="hidden sm:block" />
+          <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 10, fontWeight: 700, color: C.light, letterSpacing: '0.12em', textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {pageTitle}
+          </span>
+        </div>
+      </div>
+
+      {/* Center: Search bar */}
+      <div className="hidden md:flex" style={{ flex: '0 0 280px' }}>
+        <div style={{ position: 'relative', width: '100%' }}>
+          <Search size={11} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: C.muted, pointerEvents: 'none' }} />
+          <input
+            readOnly
+            onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }))}
+            placeholder="Search shipments, vehicles, drivers, alerts…"
+            style={{
+              width: '100%',
+              height: 30,
+              paddingLeft: 28,
+              paddingRight: 44,
+              background: 'rgba(13,34,64,0.8)',
+              border: `1px solid rgba(0,212,255,0.15)`,
+              borderRadius: 4,
+              fontFamily: 'IBM Plex Mono, monospace',
+              fontSize: 10,
+              color: C.muted,
+              outline: 'none',
+              cursor: 'pointer',
+              boxSizing: 'border-box',
+            }}
+          />
+          <kbd style={{
+            position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+            fontFamily: 'IBM Plex Mono, monospace', fontSize: 9,
+            background: 'rgba(0,212,255,0.06)', border: `1px solid rgba(0,212,255,0.12)`,
+            borderRadius: 3, padding: '1px 5px', color: C.muted,
+          }}>⌘K</kbd>
+        </div>
+      </div>
+
+      {/* Right: system badge + bell + session + clock */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+        <div className="hidden md:flex">
+          <SystemBadge alerts={alerts} />
+        </div>
+
+        <AlertBell alerts={alerts} />
+
+        <div style={{ borderLeft: `1px solid rgba(0,212,255,0.08)`, paddingLeft: 10 }} className="hidden sm:flex">
+          <SessionIndicator />
+        </div>
+
+        <div style={{ borderLeft: `1px solid rgba(0,212,255,0.08)`, paddingLeft: 10 }} className="hidden sm:block">
+          <LiveClock />
+        </div>
+      </div>
+    </header>
+  );
+}
+
+// ─── Layout (default export) ─────────────────────────────────────────────────
 export default function Layout({ children }) {
   const location = useLocation();
   const { alerts, unreadCount } = useAlertStore?.() || { alerts: [], unreadCount: 0 };
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Page title from path
+  // Derive page title from current path
   const pageTitle = (() => {
     const p = location.pathname;
     if (p === '/') return 'Command Center';
@@ -260,91 +624,74 @@ export default function Layout({ children }) {
   })();
 
   return (
-    <div className="flex h-screen bg-navy-950 overflow-hidden">
+    <div style={{ display: 'flex', height: '100vh', background: C.bg, overflow: 'hidden' }}>
 
-      {/* Mobile sidebar */}
+      {/* ── Mobile sidebar overlay ── */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-50 flex" onClick={() => setMobileOpen(false)}>
-          <div className="relative" onClick={e => e.stopPropagation()}>
-            <Sidebar collapsed={false} setCollapsed={() => {}} mobile onClose={() => setMobileOpen(false)} />
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex' }}
+          onClick={() => setMobileOpen(false)}
+        >
+          <div style={{ position: 'relative', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+            <Sidebar
+              collapsed={false}
+              setCollapsed={() => {}}
+              mobile
+              onClose={() => setMobileOpen(false)}
+            />
           </div>
-          <div className="flex-1 bg-black/60 backdrop-blur-sm" />
+          <div style={{ flex: 1, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} />
         </div>
       )}
 
-      {/* Desktop sidebar */}
-      <div className={`hidden lg:flex relative flex-shrink-0 transition-all duration-200 ${collapsed ? 'w-[60px]' : 'w-[220px]'}`}>
-        <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} mobile={false} onClose={() => {}} />
+      {/* ── Desktop sidebar ── */}
+      <div
+        className="hidden lg:flex"
+        style={{
+          width: collapsed ? 52 : 220,
+          flexShrink: 0,
+          transition: 'width 0.2s ease',
+          height: '100%',
+        }}
+      >
+        <Sidebar
+          collapsed={collapsed}
+          setCollapsed={setCollapsed}
+          mobile={false}
+          onClose={() => {}}
+        />
       </div>
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      {/* ── Main column ── */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
 
         {/* Offline banner */}
         <OfflineBanner />
 
-        {/* Top header */}
-        <header className="flex-shrink-0 h-14 flex items-center justify-between px-4 lg:px-6 bg-[#080C14]/90 backdrop-blur-md border-b border-white/[0.05] z-10">
-
-          {/* Left: hamburger + breadcrumb */}
-          <div className="flex items-center gap-3 min-w-0">
-            <button onClick={() => setMobileOpen(true)} className="lg:hidden p-2 text-slate-400 hover:text-white rounded-xl hover:bg-white/5 transition-colors flex-shrink-0">
-              <Menu size={16} />
-            </button>
-
-            {/* Breadcrumb */}
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="text-[10px] font-mono text-slate-600 hidden sm:block tracking-widest">FLEETOPS</span>
-              <ChevronRight size={10} className="text-slate-700 hidden sm:block flex-shrink-0" />
-              <span className="text-[11px] font-mono font-bold text-slate-300 uppercase tracking-widest truncate">
-                {pageTitle}
-              </span>
-            </div>
-          </div>
-
-          {/* Center: system status */}
-          <div className="hidden md:flex items-center">
-            <SystemBadge alerts={alerts} />
-          </div>
-
-          {/* Right: search hint + clock + alerts */}
-          <div className="flex items-center gap-3">
-            {/* Search hint */}
-            <button
-              className="hidden lg:flex items-center gap-2 px-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-xl text-[10px] font-mono text-slate-500 hover:text-slate-300 hover:border-white/10 transition-all"
-              onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }))}
-            >
-              <Search size={11} />
-              <span>Search…</span>
-              <kbd className="text-[9px] bg-white/5 px-1.5 py-0.5 rounded border border-white/10 text-slate-600">⌘K</kbd>
-            </button>
-
-            {/* Alert bell */}
-            <AlertBell alerts={alerts} />
-
-            {/* Clock */}
-            <div className="hidden sm:block border-l border-white/[0.06] pl-3">
-              <LiveClock />
-            </div>
-          </div>
-        </header>
+        {/* Topbar */}
+        <Topbar
+          alerts={alerts}
+          onMenuClick={() => setMobileOpen(true)}
+          pageTitle={pageTitle}
+        />
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto">
-          <div className="p-4 lg:p-6 min-h-full pb-20 lg:pb-6">
+        <main style={{ flex: 1, overflowY: 'auto' }}>
+          <div style={{ padding: '16px 24px', minHeight: '100%', paddingBottom: 80 }}
+               className="lg:pb-6">
             {children}
           </div>
         </main>
       </div>
 
-      {/* Mobile bottom navigation */}
+      {/* ── Mobile bottom navigation ── */}
       <nav className="mobile-bottom-nav lg:hidden">
         {[
-          { to: '/',          icon: Home,       label: 'HOME'     },
-          { to: '/gps',       icon: MapPin,      label: 'MAP'      },
-          { to: '/guardian',  icon: Smartphone,  label: 'GUARDIAN' },
-          { to: '/alerts',    icon: Bell,        label: 'ALERTS', danger: true },
-          { to: '/convoys',   icon: Route,       label: 'CONVOYS'  },
+          { to: '/',         icon: Home,       label: 'HOME'     },
+          { to: '/gps',      icon: MapPin,     label: 'MAP'      },
+          { to: '/guardian', icon: Smartphone, label: 'GUARDIAN' },
+          { to: '/alerts',   icon: Bell,       label: 'ALERTS',  danger: true },
+          { to: '/convoys',  icon: Route,      label: 'CONVOYS'  },
         ].map(({ to, icon: Icon, label, danger }) => {
           const active = to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
           const alertCount = danger ? (unreadCount || 0) : 0;
@@ -354,10 +701,18 @@ export default function Layout({ children }) {
               to={to}
               className={`mobile-nav-item ${active ? 'active' : ''} ${danger && !active ? 'nav-danger' : ''}`}
             >
-              <div className="relative">
+              <div style={{ position: 'relative' }}>
                 <Icon size={19} />
                 {alertCount > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-3.5 px-0.5 bg-danger rounded-full text-[7px] font-bold flex items-center justify-center text-white border border-navy-950">
+                  <span style={{
+                    position: 'absolute', top: -6, right: -6,
+                    minWidth: 13, height: 13, padding: '0 2px',
+                    background: C.danger, borderRadius: 7,
+                    fontSize: 7, fontWeight: 700,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: '#fff', border: `2px solid ${C.bg}`,
+                    fontFamily: 'IBM Plex Mono, monospace',
+                  }}>
                     {alertCount > 9 ? '9+' : alertCount}
                   </span>
                 )}
@@ -368,30 +723,9 @@ export default function Layout({ children }) {
         })}
       </nav>
 
-      {/* Global overlays */}
+      {/* ── Global overlays ── */}
       <CommandBar />
       <WarRoom />
     </div>
-  );
-}
-
-function AlertBell({ alerts }) {
-  const { unreadCount } = useAlertStore?.() || {};
-  const navigate = useNavigate();
-  const critical = alerts?.filter(a => a.severity === 'critical' && !a.resolved_at).length || 0;
-  const count = unreadCount || 0;
-
-  return (
-    <button
-      onClick={() => navigate('/alerts')}
-      className="relative p-2 text-slate-400 hover:text-white rounded-xl hover:bg-white/5 transition-colors"
-    >
-      <Bell size={16} className={critical > 0 ? 'text-danger' : ''} />
-      {count > 0 && (
-        <span className={`absolute top-1 right-1 min-w-[16px] h-4 px-0.5 rounded-full text-[8px] font-bold flex items-center justify-center text-white border-2 border-[#080C14] ${critical > 0 ? 'bg-danger' : 'bg-amber-500'}`}>
-          {count > 9 ? '9+' : count}
-        </span>
-      )}
-    </button>
   );
 }
