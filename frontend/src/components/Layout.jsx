@@ -325,7 +325,7 @@ function Sidebar({ collapsed, setCollapsed, mobile, onClose }) {
     toast.success('Signed out');
   };
 
-  const sidebarWidth = mobile ? 240 : collapsed ? 52 : 220;
+  const sidebarWidth = mobile ? '100%' : collapsed ? 52 : 220;
 
   return (
     <div style={{
@@ -628,11 +628,17 @@ export default function Layout({ children }) {
 
       {/* ── Mobile sidebar overlay ── */}
       {mobileOpen && (
-        <div
-          style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex' }}
-          onClick={() => setMobileOpen(false)}
-        >
-          <div style={{ position: 'relative', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+        <>
+          {/* Full-screen backdrop — tapping closes the drawer */}
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.85)' }}
+            onClick={() => setMobileOpen(false)}
+          />
+          {/* Drawer — slides in on top of backdrop */}
+          <div
+            style={{ position: 'fixed', top: 0, left: 0, bottom: 0, zIndex: 51, width: '82vw', maxWidth: 320 }}
+            onClick={e => e.stopPropagation()}
+          >
             <Sidebar
               collapsed={false}
               setCollapsed={() => {}}
@@ -640,8 +646,7 @@ export default function Layout({ children }) {
               onClose={() => setMobileOpen(false)}
             />
           </div>
-          <div style={{ flex: 1, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} />
-        </div>
+        </>
       )}
 
       {/* ── Desktop sidebar ── */}
