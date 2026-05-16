@@ -238,6 +238,9 @@ function DispatchModal({ open, onClose, onSuccess }) {
 // ── Mission Card ───────────────────────────────────────────────
 function MissionCard({ mission }) {
   const progress = mission.progress ?? 0;
+  const barColor = mission.status === 'delayed' ? '#F59E0B' : mission.status === 'incident' ? '#F25252' : '#F0B429';
+  const glowColor = mission.status === 'delayed' ? '#F59E0B' : mission.status === 'incident' ? '#F25252' : '#F0B429';
+
   return (
     <div className="px-5 py-4 border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] transition-colors">
       <div className="flex items-start justify-between gap-3 mb-2">
@@ -256,9 +259,15 @@ function MissionCard({ mission }) {
         </div>
       </div>
       <div className="flex items-center gap-3">
-        <div className="flex-1 h-1 bg-navy-800 rounded-full overflow-hidden">
-          <div className={`h-full rounded-full transition-all duration-700 ${mission.status === 'delayed' ? 'bg-amber-500' : mission.status === 'incident' ? 'bg-danger' : 'bg-gold'}`}
-            style={{ width: `${progress}%` }} />
+        <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)' }}>
+          <div
+            className="h-full rounded-full transition-all duration-700"
+            style={{
+              background: `linear-gradient(90deg, ${barColor}, transparent)`,
+              boxShadow: `0 0 8px ${glowColor}40`,
+              width: `${progress}%`,
+            }}
+          />
         </div>
         <span className="text-[10px] font-mono text-slate-600 w-8 text-right">{progress}%</span>
       </div>
@@ -267,14 +276,27 @@ function MissionCard({ mission }) {
 }
 
 // ── Quick Action Button ────────────────────────────────────────
-function QuickAction({ icon: Icon, label, color, onClick }) {
+function QuickAction({ icon: Icon, label, color, bg, onClick }) {
   return (
-    <button onClick={onClick}
-      className="flex flex-col items-center gap-2 p-4 bg-navy-800/60 border border-white/5 rounded-xl hover:border-white/10 hover:bg-navy-800 transition-all duration-150 group active:scale-95">
-      <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${color} group-hover:scale-110 transition-transform`}>
-        <Icon size={16} />
+    <button
+      onClick={onClick}
+      className="flex flex-col items-center gap-2.5 p-4 rounded-xl transition-all duration-150 group active:scale-95"
+      style={{ background: bg || 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)' }}
+      onMouseEnter={e => e.currentTarget.style.borderColor = color + '40'}
+      onMouseLeave={e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)'}
+    >
+      <div
+        className="w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110"
+        style={{ background: color + '15', border: `1px solid ${color}25` }}
+      >
+        <Icon size={18} style={{ color }} />
       </div>
-      <span className="text-[10px] font-mono text-slate-500 group-hover:text-slate-300 tracking-wider transition-colors text-center leading-tight">{label}</span>
+      <span
+        className="text-[9px] font-mono tracking-wider text-center leading-tight"
+        style={{ color: 'rgba(148,163,184,0.8)' }}
+      >
+        {label}
+      </span>
     </button>
   );
 }
@@ -345,6 +367,11 @@ export default function DashboardPage() {
 
   const showToast = (msg) => { setToast(msg); loadData(true); fetchAlerts({ resolved: 'false', limit: 5 }); };
 
+  // Compute threat level from open alerts
+  const threatLevel = kpis?.openAlerts > 10 ? 5 : kpis?.openAlerts > 5 ? 4 : kpis?.openAlerts > 2 ? 3 : kpis?.openAlerts > 0 ? 2 : 1;
+  const threatLabel = kpis?.openAlerts > 10 ? 'CRITICAL' : kpis?.openAlerts > 5 ? 'HIGH' : kpis?.openAlerts > 2 ? 'ELEVATED' : kpis?.openAlerts > 0 ? 'GUARDED' : 'CLEAR';
+  const threatColors = ['#22D3A0', '#22D3A0', '#F0B429', '#F0B429', '#F25252'];
+
   return (
     <div className="space-y-5 max-w-[1600px]">
       {toast && <Toast msg={toast} onDone={() => setToast('')} />}
@@ -356,21 +383,48 @@ export default function DashboardPage() {
       <DispatchModal   open={modal === 'dispatch'} onClose={() => setModal(null)} onSuccess={showToast} />
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className="text-[10px] font-mono text-slate-700 tracking-[0.2em]">FLEETOPS PRO</span>
-            <span className="text-slate-700">·</span>
-            <span className="text-[10px] font-mono text-slate-700 tracking-[0.2em]">COMMAND CENTER</span>
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+            <span className="text-[9px] font-mono text-slate-600 tracking-[0.25em] uppercase">FleetOps Pro · Command Center · Live</span>
           </div>
-          <h1 className="font-display text-xl font-bold text-slate-100 tracking-wider">Operational Overview</h1>
-          <p className="text-slate-500 text-xs font-mono mt-0.5">Live · Auto-refresh every 30s</p>
+          <h1 className="font-display text-2xl font-black text-slate-100 tracking-wider leading-none">
+            OPERATIONAL <span style={{ color: '#F0B429' }}>OVERVIEW</span>
+          </h1>
         </div>
-        <button onClick={() => loadData(true)}
-          className={`flex items-center gap-2 px-3 py-2 bg-navy-800/60 border border-white/[0.08] rounded-lg text-xs font-mono text-slate-500 hover:text-slate-300 transition-all ${refreshing ? 'opacity-50 pointer-events-none' : ''}`}>
-          <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
-          <span className="hidden sm:inline">REFRESH</span>
-        </button>
+
+        {/* Threat level + refresh row */}
+        <div className="flex items-center gap-4">
+          {/* Threat Level indicator */}
+          <div style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, padding: '8px 14px' }}>
+            <div className="text-[8px] font-mono text-slate-600 tracking-widest mb-1.5">THREAT LEVEL</div>
+            <div className="flex items-center gap-1.5">
+              {threatColors.map((c, i) => {
+                const active = i < threatLevel;
+                return (
+                  <div key={i} style={{
+                    width: 10, height: 10, borderRadius: 2,
+                    background: active ? c : 'rgba(255,255,255,0.08)',
+                    boxShadow: active ? `0 0 8px ${c}` : 'none',
+                    transition: 'all 0.4s',
+                  }} />
+                );
+              })}
+              <span className="text-[9px] font-mono text-slate-500 ml-1">{threatLabel}</span>
+            </div>
+          </div>
+
+          <button
+            onClick={() => loadData(true)}
+            disabled={refreshing}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-mono text-slate-500 hover:text-slate-300 transition-all disabled:opacity-40"
+            style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)' }}
+          >
+            <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
+            <span className="hidden sm:inline">REFRESH</span>
+          </button>
+        </div>
       </div>
 
       {/* KPIs */}
@@ -378,16 +432,45 @@ export default function DashboardPage() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">{[...Array(4)].map((_, i) => <SkeletonCard key={i} />)}</div>
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <KPICard label="Active Convoys"    value={kpis?.activeConvoys ?? '—'}               icon={Shield}    color="text-gold"    sub="missions in progress" />
-          <KPICard label="Fleet Utilisation" value={kpis ? `${kpis.fleetUtilisation}%` : '—'} icon={Truck}     color="text-success" sub={`${kpis?.activeVehicles ?? '—'} of ${kpis?.totalVehicles ?? '—'} vehicles`} />
-          <KPICard label="Open Alerts"       value={kpis?.openAlerts ?? '—'}                  icon={Bell}      color={kpis?.openAlerts > 0 ? 'text-danger' : 'text-slate-400'} sub="unresolved incidents" pulse={kpis?.openAlerts > 0} />
-          <KPICard label="On-Time Rate"      value={kpis ? `${kpis.onTimeRate}%` : '—'}       icon={TrendingUp} color="text-blue-400" sub="completed missions" />
+          <KPICard
+            label="Active Convoys"
+            value={kpis?.activeConvoys ?? '—'}
+            icon={Shield}
+            color="text-gold"
+            accentColor="#F0B429"
+            sub="missions in progress"
+          />
+          <KPICard
+            label="Fleet Utilisation"
+            value={kpis ? `${kpis.fleetUtilisation}%` : '—'}
+            icon={Truck}
+            color="text-success"
+            accentColor="#22D3A0"
+            sub={`${kpis?.activeVehicles ?? '—'} of ${kpis?.totalVehicles ?? '—'} vehicles`}
+          />
+          <KPICard
+            label="Open Alerts"
+            value={kpis?.openAlerts ?? '—'}
+            icon={Bell}
+            color={kpis?.openAlerts > 0 ? 'text-danger' : 'text-slate-400'}
+            accentColor={kpis?.openAlerts > 0 ? '#F25252' : '#475569'}
+            pulse={kpis?.openAlerts > 0}
+            sub="unresolved incidents"
+          />
+          <KPICard
+            label="On-Time Rate"
+            value={kpis ? `${kpis.onTimeRate}%` : '—'}
+            icon={TrendingUp}
+            color="text-blue-400"
+            accentColor="#60a5fa"
+            sub="completed missions"
+          />
         </div>
       )}
 
       {/* Charts row */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-        <Card header="Convoy Activity" className="xl:col-span-2" action={<span className="text-[10px] font-mono text-slate-600">LAST 14 DAYS</span>}>
+        <Card header="CONVOY ACTIVITY" accent="#F0B429" className="xl:col-span-2" action={<span className="text-[10px] font-mono text-slate-600">LAST 14 DAYS</span>}>
           <div className="px-4 pb-4 pt-2">
             {loading ? <div className="h-52 flex items-center justify-center"><Spinner /></div>
             : convoyMetrics.length ? (
@@ -411,24 +494,37 @@ export default function DashboardPage() {
           </div>
         </Card>
 
-        <Card header="Live Event Feed" action={<div className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" /><span className="text-[10px] font-mono text-success/70">LIVE</span></div>}>
-          <div className="divide-y divide-white/[0.04] max-h-[280px] overflow-y-auto">
+        <Card
+          header="LIVE EVENT FEED"
+          accent="#22D3A0"
+          action={
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+              <span className="text-[10px] font-mono text-success/70">LIVE</span>
+            </div>
+          }
+          className="xl:col-span-1"
+        >
+          <div className="terminal-feed max-h-[280px] overflow-y-auto">
             {feed.length === 0 ? (
-              <div className="px-4 py-10 text-center"><Radio size={20} className="mx-auto mb-2 text-slate-700" /><p className="text-xs text-slate-600 font-mono">AWAITING EVENTS…</p></div>
+              <div className="flex flex-col items-center justify-center py-12 gap-3">
+                <Radio size={22} className="text-slate-700" />
+                <p className="text-[10px] font-mono text-slate-700 tracking-widest">AWAITING EVENTS…</p>
+              </div>
             ) : feed.map((ev, i) => {
               const cfg = FEED_CONFIG[ev.type] || FEED_CONFIG.gps;
               const Icon = cfg.icon;
+              const ts = new Date(ev.ts);
+              const timeStr = ts.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
               return (
-                <div key={i} className="px-4 py-2.5 flex items-start gap-3 hover:bg-white/[0.02] transition-colors">
-                  <div className={`mt-0.5 w-5 h-5 rounded flex items-center justify-center flex-shrink-0 ${cfg.bg}`}><Icon size={10} className={cfg.color} /></div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[11px] text-slate-300 leading-snug">
-                      {ev.type === 'gps'    && `Vehicle ${truncate(ev.vehicleId, 8)} — ${ev.speed?.toFixed(0) ?? '?'} km/h`}
-                      {ev.type === 'alert'  && `${ev.severity?.toUpperCase()}: ${truncate(ev.message, 32)}`}
-                      {ev.type === 'convoy' && `${truncate(ev.convoyId, 8)} → ${ev.status}`}
-                    </p>
-                    <p className="text-[10px] text-slate-600 font-mono mt-0.5">{timeAgo(ev.ts)}</p>
-                  </div>
+                <div key={i} className="terminal-line">
+                  <span className="terminal-ts">{timeStr}</span>
+                  <Icon size={10} className={`flex-shrink-0 mt-0.5 ${cfg.color}`} />
+                  <span className="text-slate-400 flex-1 min-w-0 truncate">
+                    {ev.type === 'gps'    && `V/${String(ev.vehicleId || '').slice(-6).toUpperCase()} · ${ev.speed?.toFixed(0) ?? '?'}km/h`}
+                    {ev.type === 'alert'  && `${ev.severity?.toUpperCase()} · ${truncate(ev.message, 30)}`}
+                    {ev.type === 'convoy' && `CNV/${String(ev.convoyId || '').slice(-6).toUpperCase()} → ${ev.status}`}
+                  </span>
                 </div>
               );
             })}
@@ -438,7 +534,7 @@ export default function DashboardPage() {
 
       {/* Bottom row */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-        <Card header="Fleet by Region" action={<span className="text-[10px] font-mono text-slate-600">VEHICLES</span>}>
+        <Card header="FLEET BY REGION" accent="#60a5fa" action={<span className="text-[10px] font-mono text-slate-600">VEHICLES</span>}>
           <div className="px-4 pb-4 pt-2">
             {loading ? <div className="h-48 flex items-center justify-center"><Spinner /></div>
             : fleetUtil.length ? (
@@ -449,26 +545,41 @@ export default function DashboardPage() {
                   <YAxis tick={{ fill: '#475569', fontSize: 10 }} axisLine={false} tickLine={false} />
                   <Tooltip {...CHART_STYLE} />
                   <Legend wrapperStyle={{ fontSize: 10, color: '#64748b', paddingTop: 8 }} />
-                  <Bar dataKey="Active"      fill="#22D3A0" radius={[3,3,0,0]} />
-                  <Bar dataKey="Idle"        fill="#1e293b" radius={[3,3,0,0]} />
-                  <Bar dataKey="Maintenance" fill="#D97706" radius={[3,3,0,0]} />
+                  <Bar dataKey="Active"      fill="#22D3A0" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="Idle"        fill="#1e293b" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="Maintenance" fill="#F59E0B" radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : <EmptyState icon={Truck} title="No fleet data" />}
           </div>
         </Card>
 
-        <Card header="Active Missions" action={<a href="/convoys" className="text-[10px] font-mono text-gold/70 hover:text-gold flex items-center gap-1 transition-colors">VIEW ALL <ArrowUpRight size={10} /></a>}>
+        <Card
+          header="ACTIVE MISSIONS"
+          accent="#F0B429"
+          action={<a href="/convoys" className="text-[10px] font-mono text-gold/70 hover:text-gold flex items-center gap-1 transition-colors">VIEW ALL <ArrowUpRight size={10} /></a>}
+        >
           {loading ? <div className="p-4 space-y-3">{[...Array(3)].map((_, i) => <Skeleton key={i} lines={2} />)}</div>
-          : activeConvoys.length ? <div>{activeConvoys.slice(0,4).map(c => <MissionCard key={c.id} mission={c} />)}</div>
+          : activeConvoys.length ? <div>{activeConvoys.slice(0, 4).map(c => <MissionCard key={c.id} mission={c} />)}</div>
           : <EmptyState icon={Shield} title="No active missions" subtitle="Dispatch a convoy to see it here" action={<Button size="sm" onClick={() => setModal('dispatch')}>Dispatch Now</Button>} />}
         </Card>
 
         <div className="space-y-5">
-          <Card header="Recent Alerts" action={<span className="text-[10px] font-mono text-slate-600">{alerts.length} OPEN</span>}>
-            <div className="divide-y divide-white/[0.04]">
+          <Card
+            header="RECENT ALERTS"
+            accent="#F25252"
+            action={<span className="text-[10px] font-mono text-slate-600">{alerts.length} OPEN</span>}
+          >
+            <div>
               {alerts.slice(0, 4).map((a) => (
-                <div key={a.id} className="px-4 py-3 flex items-start gap-3 hover:bg-white/[0.02] transition-colors">
+                <div
+                  key={a.id}
+                  className="px-4 py-3 flex items-start gap-3 hover:bg-white/[0.015] transition-colors"
+                  style={{
+                    borderBottom: '1px solid rgba(255,255,255,0.03)',
+                    borderLeft: `2px solid ${a.severity === 'critical' ? '#F25252' : a.severity === 'high' ? '#F59E0B' : '#475569'}`,
+                  }}
+                >
                   <AlertTriangle size={12} className={`mt-0.5 flex-shrink-0 ${a.severity === 'critical' ? 'text-red-400' : 'text-amber-400'}`} />
                   <div className="flex-1 min-w-0">
                     <Badge severity={a.severity} dot>{a.severity?.toUpperCase()}</Badge>
@@ -477,16 +588,21 @@ export default function DashboardPage() {
                   </div>
                 </div>
               ))}
-              {alerts.length === 0 && <div className="px-4 py-8 text-center"><CheckCircle2 size={20} className="mx-auto mb-2 text-success/40" /><p className="text-xs text-slate-600 font-mono">ALL CLEAR</p></div>}
+              {alerts.length === 0 && (
+                <div className="px-4 py-8 text-center">
+                  <CheckCircle2 size={20} className="mx-auto mb-2 text-success/40" />
+                  <p className="text-xs text-slate-600 font-mono">ALL CLEAR</p>
+                </div>
+              )}
             </div>
           </Card>
 
-          <Card header="Quick Actions">
+          <Card header="QUICK ACTIONS" accent="#22D3A0">
             <div className="p-4 grid grid-cols-2 gap-2">
-              <QuickAction icon={Shield} label="NEW CONVOY"  color="bg-gold/10 text-gold"           onClick={() => setModal('convoy')} />
-              <QuickAction icon={Truck}  label="ADD VEHICLE" color="bg-blue-500/10 text-blue-400"   onClick={() => setModal('vehicle')} />
-              <QuickAction icon={Bell}   label="LOG ALERT"   color="bg-danger/10 text-danger"        onClick={() => setModal('alert')} />
-              <QuickAction icon={Target} label="DISPATCH"    color="bg-success/10 text-success"      onClick={() => setModal('dispatch')} />
+              <QuickAction icon={Shield} label="NEW CONVOY"  color="#F0B429" onClick={() => setModal('convoy')} />
+              <QuickAction icon={Truck}  label="ADD VEHICLE" color="#60a5fa" onClick={() => setModal('vehicle')} />
+              <QuickAction icon={Bell}   label="LOG ALERT"   color="#F25252" onClick={() => setModal('alert')} />
+              <QuickAction icon={Target} label="DISPATCH"    color="#22D3A0" onClick={() => setModal('dispatch')} />
             </div>
           </Card>
         </div>
