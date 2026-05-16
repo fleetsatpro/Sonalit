@@ -464,11 +464,12 @@ export default function GPSPage() {
 
   const B = ({ onClick, active, title, children }) => (
     <button onClick={onClick} title={title} style={{
-      background: active ? '#F0B429' : 'rgba(10,15,26,0.92)',
-      color: active ? '#0A0F1A' : '#94a3b8',
-      border: '1px solid ' + (active ? '#F0B429' : 'rgba(255,255,255,0.1)'),
-      borderRadius: 8, width: 34, height: 34, fontSize: 14, cursor: 'pointer',
+      background: active ? 'rgba(0,212,255,0.18)' : 'rgba(6,14,26,0.92)',
+      color: active ? '#00d4ff' : '#4a7090',
+      border: '1px solid ' + (active ? 'rgba(0,212,255,0.5)' : 'rgba(0,212,255,0.1)'),
+      borderRadius: 4, width: 42, height: 26, fontSize: 9, cursor: 'pointer',
       backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, letterSpacing: '0.08em',
     }}>{children}</button>
   );
 
@@ -592,21 +593,21 @@ export default function GPSPage() {
 
           {/* Map toolbar */}
           <div style={{ position:'absolute', top:10, right:10, zIndex:1000, display:'flex', flexDirection:'column', gap:5 }}>
-            <B onClick={() => switchTile('dark')}      active={tileMode==='dark'}      title="Dark map">🗺</B>
-            <B onClick={() => switchTile('satellite')} active={tileMode==='satellite'} title="Satellite">🛰</B>
-            <B onClick={() => switchTile('street')}    active={tileMode==='street'}    title="Street">🗾</B>
+            <B onClick={() => switchTile('dark')}      active={tileMode==='dark'}      title="Dark map">DARK</B>
+            <B onClick={() => switchTile('satellite')} active={tileMode==='satellite'} title="Satellite">SAT</B>
+            <B onClick={() => switchTile('street')}    active={tileMode==='street'}    title="Street">STR</B>
             <div style={{ height:4 }} />
-            <B onClick={() => setShowTrails(p=>!p)}    active={showTrails}             title="Vehicle trails">〰️</B>
-            <B onClick={() => setShowAlerts(p=>!p)}    active={showAlerts}             title="Alert indicators">🔴</B>
+            <B onClick={() => setShowTrails(p=>!p)}    active={showTrails}             title="Vehicle trails">TRAIL</B>
+            <B onClick={() => setShowAlerts(p=>!p)}    active={showAlerts}             title="Alert indicators">ALERTS</B>
             <B onClick={() => {
               const next = !showRisks;
               setShowRisks(next);
               if (riskZoneLayer.current) {
                 next ? riskZoneLayer.current.addTo(mapInst.current) : riskZoneLayer.current.remove();
               }
-            }} active={showRisks} title="Risk zones">⚠</B>
+            }} active={showRisks} title="Risk zones">RISK</B>
             <div style={{ height:4 }} />
-            <B onClick={drawMode?cancelDraw:enableDrawMode} active={drawMode}          title="Draw geofence">⬤</B>
+            <B onClick={drawMode?cancelDraw:enableDrawMode} active={drawMode}          title="Draw geofence">DRAW</B>
           </div>
         </div>
 

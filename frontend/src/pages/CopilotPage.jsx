@@ -26,7 +26,7 @@ const AGENT_KEYWORDS = {
 
 const GREETING = {
   id:'g0', role:'copilot',
-  text:"**Good morning.** I'm MLOS Copilot, your AI operations intelligence layer.\n\nI have full situational awareness across your fleet, shipments, and risk environment. Ask me anything — route status, driver HOS, risk alerts, P&L forecasts, or strategic recommendations.\n\n- 47 vehicles active across 3 regions\n- 2 approval-required decisions pending\n- 1 weather hazard on Narok–Bomet corridor",
+  text:"**Good morning.** I'm FleetOps Copilot, your AI operations intelligence layer.\n\nI have full situational awareness across your fleet, shipments, and risk environment. Ask me anything — route status, driver HOS, risk alerts, P&L forecasts, or strategic recommendations.\n\n- 47 vehicles active across 3 regions\n- 2 approval-required decisions pending\n- 1 weather hazard on Narok–Bomet corridor",
   reasoning:"Loaded fleet telemetry, analytics dashboard, and AI anomaly feed on initialisation. Greeted operator with current situational summary.",
   agents:[],
 };
@@ -86,7 +86,7 @@ function Message({ msg }) {
       <div style={{
         fontFamily:'IBM Plex Mono', fontSize:8, color:C.cyan,
         letterSpacing:'0.14em', marginBottom:5,
-      }}>⬡ MLOS COPILOT</div>
+      }}>⬡ FLEETOPS COPILOT</div>
       <div style={{
         background:C.panel, border:`1px solid rgba(0,212,255,0.1)`,
         borderRadius:'2px 12px 12px 12px', padding:'12px 16px',
@@ -199,7 +199,7 @@ export default function CopilotPage() {
           }}>⬡</div>
           <div>
             <div style={{ fontFamily:'Syne, sans-serif', fontSize:14, fontWeight:700, color:C.bright }}>
-              MLOS Copilot
+              FleetOps Copilot
             </div>
             <div style={{ fontFamily:'IBM Plex Mono', fontSize:8, color:C.success, letterSpacing:'0.12em' }}>
               ● ONLINE · AI OPERATIONS INTELLIGENCE
@@ -213,7 +213,7 @@ export default function CopilotPage() {
           {loading && (
             <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-start', marginBottom:14 }}>
               <div style={{ fontFamily:'IBM Plex Mono', fontSize:8, color:C.cyan, letterSpacing:'0.14em', marginBottom:5 }}>
-                ⬡ MLOS COPILOT
+                ⬡ FLEETOPS COPILOT
               </div>
               <div style={{
                 background:C.panel, border:`1px solid rgba(0,212,255,0.1)`,

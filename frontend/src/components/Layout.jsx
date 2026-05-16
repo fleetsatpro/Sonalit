@@ -88,7 +88,7 @@ const NAV = [
     items: [
       { to: '/',           icon: LayoutDashboard, label: 'Command Center',   desc: 'Global overview'     },
       { to: '/executive',  icon: Target,          label: 'Executive Suite',  desc: 'Boardroom analytics' },
-      { to: '/copilot',    icon: Brain,           label: 'MLOS Copilot',     desc: 'AI assistant'        },
+      { to: '/copilot',    icon: Brain,           label: 'Copilot',          desc: 'AI assistant'        },
       { to: '/settings',   icon: Settings,        label: 'Settings',         desc: 'Configuration'       },
     ],
   },
@@ -359,17 +359,17 @@ function Sidebar({ collapsed, setCollapsed, mobile, onClose }) {
           boxShadow: '0 0 16px rgba(0,212,255,0.2)',
         }}>
           <span style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 15, color: C.cyan, letterSpacing: '-0.05em' }}>
-            M
+            F
           </span>
         </div>
 
         {(!collapsed || mobile) && (
           <div style={{ minWidth: 0 }}>
             <div style={{ fontFamily: 'Syne, sans-serif', fontWeight: 800, fontSize: 11, color: C.cyan, letterSpacing: '0.2em', lineHeight: 1 }}>
-              MONSTER LOGISTICS
+              FLEETOPS
             </div>
             <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 8, color: C.muted, letterSpacing: '0.2em', marginTop: 3 }}>
-              OS · v2.1 · ENTERPRISE
+              PRO · v2.1 · ENTERPRISE
             </div>
           </div>
         )}
@@ -547,7 +547,7 @@ function Topbar({ alerts, onMenuClick, pageTitle }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
           <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 10, color: C.muted, letterSpacing: '0.15em', flexShrink: 0 }}
                 className="hidden sm:block">
-            MLOS
+            FLEETOPS
           </span>
           <ChevronRight size={10} style={{ color: C.muted, flexShrink: 0 }} className="hidden sm:block" />
           <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 10, fontWeight: 700, color: C.light, letterSpacing: '0.12em', textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
