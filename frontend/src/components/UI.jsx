@@ -20,12 +20,18 @@ export function Button({ children, variant = 'primary', size = 'md', loading, cl
   );
 }
 
-export function Card({ children, className = '', header, action, glow }) {
+export function Card({ children, className = '', header, action, glow, accent }) {
   return (
-    <div className={`bg-navy-900 border border-white/5 rounded-xl overflow-hidden transition-all duration-200 ${glow ? 'hover:border-gold/20 hover:shadow-lg hover:shadow-gold/5' : 'hover:border-white/10'} ${className}`}>
+    <div className={`overflow-hidden transition-all duration-200 ${glow ? 'card-glow' : 'card'} ${className}`}>
       {(header || action) && (
-        <div className="flex items-center justify-between px-5 py-4 border-b border-white/5">
-          <h3 className="font-semibold text-slate-200 font-display text-sm tracking-wide">{header}</h3>
+        <div
+          className="flex items-center justify-between px-5 py-4"
+          style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+        >
+          <div className="flex items-center gap-2.5">
+            {accent && <div className="w-1 h-4 rounded-full" style={{ background: accent }} />}
+            <h3 className="font-semibold text-slate-300 font-display text-sm tracking-wide">{header}</h3>
+          </div>
           {action}
         </div>
       )}
@@ -237,24 +243,52 @@ export function ConfirmDialog({ open, onClose, onConfirm, title, message, confir
   );
 }
 
-export function KPICard({ label, value, sub, icon: Icon, color = 'text-gold', trend, pulse }) {
+export function KPICard({ label, value, sub, icon: Icon, color = 'text-gold', trend, pulse, accentColor }) {
+  const accent = accentColor || (
+    color === 'text-gold' ? '#F0B429' :
+    color === 'text-success' ? '#22D3A0' :
+    color === 'text-danger' || color?.includes('danger') ? '#F25252' :
+    color === 'text-blue-400' ? '#60a5fa' : '#F0B429'
+  );
   return (
-    <Card className="p-5" glow>
-      <div className="flex items-start justify-between">
+    <div
+      className="card-glow p-5 overflow-hidden relative"
+      style={{ borderRadius: 16 }}
+    >
+      {/* top accent line */}
+      <div className="kpi-accent" style={{ background: `linear-gradient(90deg, ${accent}, transparent)` }} />
+
+      <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <p className="text-[10px] uppercase tracking-[0.15em] text-slate-500 font-mono mb-2">{label}</p>
-          <p className={`font-display text-3xl font-bold tabular-nums ${color} ${pulse ? 'animate-pulse' : ''}`}>{value ?? '—'}</p>
-          {sub && <p className="text-[11px] text-slate-500 mt-1.5 font-mono truncate">{sub}</p>}
+          <p className="text-[9px] uppercase tracking-[0.18em] text-slate-600 font-mono mb-2.5">{label}</p>
+          <p
+            className={`font-display text-3xl font-bold tabular-nums leading-none ${color} ${pulse ? 'animate-pulse' : ''}`}
+            style={pulse ? { textShadow: `0 0 20px ${accent}` } : {}}
+          >
+            {value ?? '—'}
+          </p>
+          {sub && <p className="text-[11px] text-slate-600 mt-2 font-mono truncate leading-snug">{sub}</p>}
         </div>
-        {Icon && <div className="p-3 bg-navy-800 rounded-xl border border-white/5 flex-shrink-0"><Icon size={18} className={color} /></div>}
+        {Icon && (
+          <div
+            className="flex-shrink-0 p-2.5 rounded-xl"
+            style={{
+              background: `${accent}12`,
+              border: `1px solid ${accent}22`,
+            }}
+          >
+            <Icon size={18} style={{ color: accent }} />
+          </div>
+        )}
       </div>
+
       {trend !== undefined && (
         <div className={`mt-3 flex items-center gap-1 text-xs font-mono ${trend >= 0 ? 'text-success' : 'text-danger'}`}>
-          {trend >= 0 ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-          {Math.abs(trend)}% vs last week
+          <span>{trend >= 0 ? '↑' : '↓'}</span>
+          <span>{Math.abs(trend)}% vs last week</span>
         </div>
       )}
-    </Card>
+    </div>
   );
 }
 

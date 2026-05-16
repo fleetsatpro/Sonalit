@@ -5,7 +5,7 @@ import {
   MessageSquare, Settings, Cpu, Zap, FileText,
   LogOut, ChevronLeft, ChevronRight, Menu, X, Package,
   Users, DollarSign, Wrench, AlertTriangle, Search, Shield,
-  Smartphone, AlertOctagon, FileWarning
+  Smartphone, AlertOctagon, FileWarning, Home, Radio
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore, useAlertStore } from '../store';
@@ -248,7 +248,7 @@ function Sidebar({ collapsed, setCollapsed, mobile, onClose }) {
 
 export default function Layout({ children }) {
   const location = useLocation();
-  const { alerts } = useAlertStore?.() || { alerts: [] };
+  const { alerts, unreadCount } = useAlertStore?.() || { alerts: [], unreadCount: 0 };
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -336,6 +336,37 @@ export default function Layout({ children }) {
           </div>
         </main>
       </div>
+
+      {/* Mobile bottom navigation */}
+      <nav className="mobile-bottom-nav lg:hidden">
+        {[
+          { to: '/',          icon: Home,       label: 'HOME'     },
+          { to: '/gps',       icon: MapPin,      label: 'MAP'      },
+          { to: '/guardian',  icon: Smartphone,  label: 'GUARDIAN' },
+          { to: '/alerts',    icon: Bell,        label: 'ALERTS', danger: true },
+          { to: '/convoys',   icon: Route,       label: 'CONVOYS'  },
+        ].map(({ to, icon: Icon, label, danger }) => {
+          const active = to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
+          const alertCount = danger ? (unreadCount || 0) : 0;
+          return (
+            <Link
+              key={to}
+              to={to}
+              className={`mobile-nav-item ${active ? 'active' : ''} ${danger && !active ? 'nav-danger' : ''}`}
+            >
+              <div className="relative">
+                <Icon size={19} />
+                {alertCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[14px] h-3.5 px-0.5 bg-danger rounded-full text-[7px] font-bold flex items-center justify-center text-white border border-navy-950">
+                    {alertCount > 9 ? '9+' : alertCount}
+                  </span>
+                )}
+              </div>
+              <span>{label}</span>
+            </Link>
+          );
+        })}
+      </nav>
 
       {/* Global overlays */}
       <CommandBar />
