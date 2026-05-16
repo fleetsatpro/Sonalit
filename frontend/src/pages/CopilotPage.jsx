@@ -134,7 +134,15 @@ export default function CopilotPage() {
   const [loading, setLoading]   = useState(false);
   const [agents, setAgents]     = useState([]);
   const [context, setContext]   = useState('General Fleet Operations');
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  const [showPanel, setShowPanel] = useState(false);
   const bottomRef = useRef(null);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior:'smooth' });
@@ -181,10 +189,10 @@ export default function CopilotPage() {
   }
 
   return (
-    <div style={{ display:'flex', height:'100%', background:C.bg, overflow:'hidden' }}>
+    <div style={{ display:'flex', height:'100%', background:C.bg, overflow:'hidden', position:'relative' }}>
 
-      {/* ── Chat Area (2/3) ── */}
-      <div style={{ flex:1, display:'flex', flexDirection:'column', borderRight:`1px solid ${C.cyanBd}` }}>
+      {/* ── Chat Area ── */}
+      <div style={{ flex:1, display:'flex', flexDirection:'column', borderRight: isMobile ? 'none' : `1px solid ${C.cyanBd}`, minWidth:0 }}>
 
         {/* Chat header */}
         <div style={{
@@ -195,9 +203,9 @@ export default function CopilotPage() {
             width:32, height:32, borderRadius:8,
             background:C.cyanBg, border:`1px solid ${C.cyanBd}`,
             display:'flex', alignItems:'center', justifyContent:'center',
-            fontSize:14,
+            fontSize:14, flexShrink:0,
           }}>⬡</div>
-          <div>
+          <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontFamily:'Syne, sans-serif', fontSize:14, fontWeight:700, color:C.bright }}>
               FleetOps Copilot
             </div>
@@ -205,6 +213,20 @@ export default function CopilotPage() {
               ● ONLINE · AI OPERATIONS INTELLIGENCE
             </div>
           </div>
+          {isMobile && (
+            <button
+              onClick={() => setShowPanel(o => !o)}
+              style={{
+                background: showPanel ? C.cyanBg : 'transparent',
+                border: `1px solid ${showPanel ? C.cyan : C.cyanBd}`,
+                borderRadius:6, padding:'5px 10px', cursor:'pointer',
+                fontFamily:'IBM Plex Mono', fontSize:9, color: showPanel ? C.cyan : C.muted,
+                letterSpacing:'0.1em', flexShrink:0,
+              }}
+            >
+              INFO
+            </button>
+          )}
         </div>
 
         {/* Messages */}
@@ -265,8 +287,17 @@ export default function CopilotPage() {
         </div>
       </div>
 
-      {/* ── Context Panel (1/3) ── */}
-      <div style={{ width:320, flexShrink:0, background:C.panel, overflowY:'auto', padding:'20px 16px' }}>
+      {/* ── Context Panel ── */}
+      {(!isMobile || showPanel) && (
+      <div style={isMobile ? {
+        position:'fixed', bottom:0, left:0, right:0, zIndex:300,
+        background:C.panel, borderTop:`1px solid ${C.cyanBd}`,
+        borderRadius:'14px 14px 0 0', overflowY:'auto',
+        maxHeight:'60vh', padding:'16px 16px 32px',
+        boxShadow:'0 -8px 40px rgba(0,0,0,0.6)',
+      } : {
+        width:320, flexShrink:0, background:C.panel, overflowY:'auto', padding:'20px 16px',
+      }}>
 
         {/* Active context */}
         <div style={{ marginBottom:24 }}>
@@ -354,6 +385,15 @@ export default function CopilotPage() {
           </div>
         </div>
       </div>
+      )}
+
+      {/* Mobile panel backdrop */}
+      {isMobile && showPanel && (
+        <div
+          onClick={() => setShowPanel(false)}
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:299 }}
+        />
+      )}
 
       <style>{`
         @keyframes blink {

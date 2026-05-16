@@ -118,7 +118,7 @@ export default function RiskIntelPage() {
   const mapRef   = useRef(null);
   const leafRef  = useRef(null);
   const [layers, setLayers] = useState({ theft:true, weather:true, conflict:true, sanctions:false, port:true, routes:true });
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(() => window.innerWidth >= 768);
 
   useEffect(() => {
     let map;
@@ -210,18 +210,17 @@ export default function RiskIntelPage() {
         <button
           onClick={() => setPanelOpen(o => !o)}
           style={{
-            position:'absolute', top:16, right: panelOpen ? 336 : 16, zIndex:1000,
+            position:'absolute', top:16, right:16, zIndex:1000,
             background:'rgba(6,14,26,0.88)', border:`1px solid ${C.cyanBd}`,
             borderRadius:6, padding:'6px 10px', cursor:'pointer',
             fontFamily:'IBM Plex Mono', fontSize:9, color:C.cyan, letterSpacing:'0.1em',
-            transition:'right 0.25s ease',
           }}
         >
           {panelOpen ? '▶ HIDE' : '◀ LAYERS'}
         </button>
       </div>
 
-      {/* ── Right Panel ── */}
+      {/* ── Right Panel — hidden on mobile by default, slide in on open ── */}
       <div style={{
         width: panelOpen ? 320 : 0, flexShrink:0, overflow:'hidden',
         transition:'width 0.25s ease',

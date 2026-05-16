@@ -383,6 +383,7 @@ export default function DashboardPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState('');
   const [modal, setModal] = useState(null); // 'convoy'|'vehicle'|'alert'|'dispatch'
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
   const { alerts, fetchAlerts } = useAlertStore();
 
   // Map refs
@@ -392,6 +393,13 @@ export default function DashboardPage() {
 
   // Inject CSS once
   useEffect(() => { injectDashCSS(); }, []);
+
+  // Track mobile
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   // ── Data loading ─────────────────────────────────────────────────────────────
   const loadData = useCallback(async (isRefresh = false) => {
@@ -519,11 +527,12 @@ export default function DashboardPage() {
      * height: calc(100vh - 48px) = full viewport minus topbar.
      */
     <div style={{
-      margin: '-16px -24px -80px',
-      height: 'calc(100vh - 48px)',
+      margin: isMobile ? '-16px -24px -80px' : '-16px -24px -80px',
+      height: isMobile ? 'auto' : 'calc(100vh - 48px)',
+      minHeight: isMobile ? 'calc(100vh - 48px)' : undefined,
       display: 'flex',
       flexDirection: 'column',
-      overflow: 'hidden',
+      overflow: isMobile ? 'auto' : 'hidden',
       background: C.bg,
     }} className="lg:!-mx-6 lg:!-mt-4 lg:!-mb-6">
 
@@ -613,10 +622,10 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Map + KPI row ────────────────────────────────────────────────────── */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: isMobile ? 'column' : 'row', overflow: isMobile ? 'auto' : 'hidden', position: 'relative' }}>
 
-        {/* Map pane — 60% */}
-        <div style={{ flex: '0 0 60%', position: 'relative', overflow: 'hidden' }}>
+        {/* Map pane — 60% desktop / 45vh mobile */}
+        <div style={isMobile ? { height: '45vh', flexShrink: 0, position: 'relative', overflow: 'hidden' } : { flex: '0 0 60%', position: 'relative', overflow: 'hidden' }}>
           {/* Leaflet container */}
           <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
 
@@ -703,15 +712,17 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ── KPI pane — 40% ────────────────────────────────────────────────── */}
+        {/* ── KPI pane — 40% desktop / full-width mobile ────────────────── */}
         <div style={{
-          width: '40%',
+          width: isMobile ? '100%' : '40%',
           flexShrink: 0,
           background: '#0b1829',
-          borderLeft: '1px solid rgba(0,212,255,0.1)',
+          borderLeft: isMobile ? 'none' : '1px solid rgba(0,212,255,0.1)',
+          borderTop: isMobile ? '1px solid rgba(0,212,255,0.1)' : 'none',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
+          minHeight: isMobile ? 'auto' : undefined,
         }}>
           {/* KPI panel header */}
           <div style={{
@@ -731,7 +742,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Scrollable KPI content */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+          <div style={{ flex: 1, overflowY: isMobile ? 'visible' : 'auto', padding: '12px' }}>
 
             {/* 6 KPI tiles — 2-col grid */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
