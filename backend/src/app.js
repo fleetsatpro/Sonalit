@@ -121,6 +121,21 @@ app.use("/api/v1/sync",(req,res)=>res.json({ok:true,processed:0}));
 app.use((req,res)=>res.status(404).json({error:req.method+" "+req.path+" not found"}));
 app.use(errorHandler);
 
+// Partition roller — runs daily at 02:00 UTC to create next month's partitions
+// and drop partitions older than the GDPR retention window.
+try {
+  const cron = require('node-cron');
+  const { run: rollPartitions } = require('../scripts/partition-roller');
+  cron.schedule('0 2 * * *', () => {
+    rollPartitions().catch(err => logger.error('Partition roller error: ' + err.message));
+  });
+  // Also run at startup so a fresh deploy doesn't wait until 02:00.
+  rollPartitions().catch(err => logger.warn('Partition roller startup run: ' + err.message));
+  logger.info('Partition roller scheduled (daily 02:00 UTC)');
+} catch (e) {
+  logger.warn('Partition roller not started: ' + e.message + ' — install node-cron');
+}
+
 const PORT=parseInt(process.env.PORT)||5000;
 createQueues();
 server.listen(PORT,()=>logger.info("FleetOps Enterprise v2.1 running on port "+PORT+" ["+( process.env.NODE_ENV||"development")+"]"));

@@ -1,6 +1,7 @@
 package com.fleetops.guardian;
 
 import android.app.*;
+import android.app.AlarmManager;
 import android.content.*;
 import android.location.*;
 import android.os.*;
@@ -95,9 +96,15 @@ public class GuardianService extends Service implements LocationListener {
         registerControlReceiver();
     }
 
+    // AlarmManager action constant for DMS (Task G)
+    static final String ACTION_DMS_ALARM = "com.fleetops.guardian.DMS_ALARM";
+
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         running = true;
+        // startForeground with type (API 29+) requires android:foregroundServiceType in
+        // AndroidManifest.xml. That attribute needs android-29+ SDK to compile;
+        // currently blocked on android-23 SDK platform. Use plain 2-arg form until resolved.
         startForeground(NOTIF_ID, buildNotification());
         startGps();
         crashDetector.start();
@@ -180,7 +187,7 @@ public class GuardianService extends Service implements LocationListener {
                         }
                         for (ApiClient.PendingCommand cmd : result.commands) {
                             commandHandler.handle(cmd.id, cmd.type, cmd.payload,
-                                cmd.issuedAt, cmd.signature);
+                                cmd.issuedAt, cmd.expiresAt, cmd.signature);
                         }
                         // Fetch config and update DMS interval if not user-customized
                         org.json.JSONObject config = ApiClient.fetchConfig(url, token);
@@ -282,29 +289,40 @@ public class GuardianService extends Service implements LocationListener {
 
     // ── Dead man's switch ─────────────────────────────────────────────────────
 
+    // ── AlarmManager-based DMS (Task G) ──────────────────────────────────────
+
+    private static final int DMS_ALARM_REQUEST_CODE = 9001;
+
+    private PendingIntent getDmsAlarmIntent() {
+        Intent i = new Intent(this, DmsAlarmReceiver.class);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
+        return PendingIntent.getBroadcast(this, DMS_ALARM_REQUEST_CODE, i, flags);
+    }
+
     void resetDmsTimer() {
-        handler.removeCallbacks(dmsTimeout);
+        AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+        if (am == null) return;
+
+        // Cancel any existing alarm
+        am.cancel(getDmsAlarmIntent());
+
         if (!prefs.isDmsEnabled()) {
             dmsDeadlineMs = 0;
             return;
         }
+
         dmsIntervalMs = prefs.getDmsIntervalMinutes() * 60_000L;
         dmsDeadlineMs = System.currentTimeMillis() + dmsIntervalMs;
-        handler.postDelayed(dmsTimeout, dmsIntervalMs);
+
+        // setExactAndAllowWhileIdle fires in Doze mode — essential for DMS correctness.
+        am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, dmsDeadlineMs, getDmsAlarmIntent());
+
         sendBroadcast(new Intent("com.fleetops.guardian.DMS_RESET")
             .putExtra("deadline", dmsDeadlineMs));
-        Log.i(TAG, "DMS reset: deadline in " + prefs.getDmsIntervalMinutes() + " min");
+        Log.i(TAG, "DMS alarm set: deadline in " + prefs.getDmsIntervalMinutes() + " min (AlarmManager)");
     }
 
-    private final Runnable dmsTimeout = new Runnable() {
-        @Override
-        public void run() {
-            Log.w(TAG, "DMS timeout — triggering silent panic");
-            triggerPanic("silent");
-            dmsDeadlineMs = 0;
-            sendBroadcast(new Intent("com.fleetops.guardian.DMS_FIRED"));
-        }
-    };
+    // dmsTimeout Runnable removed — AlarmManager fires DmsAlarmReceiver instead.
 
     // ── Notification ─────────────────────────────────────────────────────────
 

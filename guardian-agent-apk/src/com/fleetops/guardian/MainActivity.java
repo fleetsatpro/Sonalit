@@ -178,6 +178,18 @@ public class MainActivity extends Activity {
         updateConvoyBadge();
         if (prefs.isDmsEnabled()) scheduleCountdownUpdate();
         checkBatteryOptimization();
+        // Migrate plaintext panic PIN to hashed storage on first post-upgrade launch
+        prefs.migratePanicPin();
+        // Request POST_NOTIFICATIONS permission on Android 13+
+        requestNotificationPermission();
+    }
+
+    private void requestNotificationPermission() {
+        if (android.os.Build.VERSION.SDK_INT < 33) return;
+        // "android.permission.POST_NOTIFICATIONS" added in API 33
+        if (checkSelfPermission("android.permission.POST_NOTIFICATIONS")
+                == android.content.pm.PackageManager.PERMISSION_GRANTED) return;
+        requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 301);
     }
 
     @Override
@@ -231,10 +243,8 @@ public class MainActivity extends Activity {
 
     private void onPanicClick() {
         if (panicActive) {
-            // Require PIN to cancel if one is set
-            String pin = prefs.getPanicPin();
-            if (!pin.isEmpty()) {
-                showPinCancelDialog(pin);
+            if (prefs.hasPanicPin()) {
+                showPinCancelDialog();
             } else {
                 cancelPanic();
             }
@@ -243,7 +253,7 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void showPinCancelDialog(final String correctPin) {
+    private void showPinCancelDialog() {
         final EditText et = new EditText(this);
         et.setHint("Enter PIN to cancel SOS");
         et.setInputType(android.text.InputType.TYPE_CLASS_NUMBER |
@@ -258,7 +268,7 @@ public class MainActivity extends Activity {
             .setView(et)
             .setPositiveButton("CANCEL SOS", new DialogInterface.OnClickListener() {
                 @Override public void onClick(DialogInterface d, int w) {
-                    if (et.getText().toString().equals(correctPin)) {
+                    if (prefs.verifyPanicPin(et.getText().toString().trim())) {
                         cancelPanic();
                     } else {
                         Toast.makeText(MainActivity.this,
@@ -429,12 +439,42 @@ public class MainActivity extends Activity {
                     return;
                 }
                 Bitmap thumb = (Bitmap) raw;
-                ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                thumb.compress(Bitmap.CompressFormat.JPEG, 75, bos);
-                pendingPhotoBase64 = Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP);
-                if (currentReportPhotoStatus != null) {
-                    currentReportPhotoStatus.setText("Photo attached ✓");
+                // Resize to max 1600px on longest side
+                int w = thumb.getWidth(), h = thumb.getHeight();
+                if (w > 1600 || h > 1600) {
+                    float scale = 1600f / Math.max(w, h);
+                    thumb = Bitmap.createScaledBitmap(thumb, (int)(w*scale), (int)(h*scale), true);
                 }
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                thumb.compress(Bitmap.CompressFormat.JPEG, 80, bos);
+                final byte[] jpegBytes = bos.toByteArray();
+
+                if (currentReportPhotoStatus != null)
+                    currentReportPhotoStatus.setText("Uploading photo...");
+
+                // Attempt R2 upload on background thread; fall back to base64 on failure
+                final String serverUrl = prefs.getServerUrl();
+                final String token     = prefs.getToken();
+                new Thread(new Runnable() {
+                    @Override public void run() {
+                        final String url = ApiClient.uploadPhoto(serverUrl, token, jpegBytes);
+                        if (url != null) {
+                            // Store R2 URL — sendReport uses it directly as photo_url
+                            pendingPhotoBase64 = url;
+                        } else {
+                            // Fallback: base64 thumbnail
+                            pendingPhotoBase64 = Base64.encodeToString(jpegBytes, Base64.NO_WRAP);
+                        }
+                        runOnUiThread(new Runnable() {
+                            @Override public void run() {
+                                if (currentReportPhotoStatus != null) {
+                                    currentReportPhotoStatus.setText(
+                                        url != null ? "Photo uploaded ✓" : "Photo attached (inline) ✓");
+                                }
+                            }
+                        });
+                    }
+                }).start();
             } catch (Exception e) {
                 Toast.makeText(this, "Photo capture failed: " + e.getMessage(),
                     Toast.LENGTH_SHORT).show();

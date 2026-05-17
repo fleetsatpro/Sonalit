@@ -19,7 +19,7 @@ const enrollLimiter = rateLimit({
 
 const panicLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 20,
+  max: 5,
   keyGenerator: (req) => req.headers['x-device-token'] || req.ip,
   standardHeaders: true,
   legacyHeaders: false,
@@ -35,10 +35,11 @@ const heartbeatLimiter = rateLimit({
   handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
 });
 
+// Per-admin-per-target-device: 10 commands/min per (admin, device) pair
 const commandLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 30,
-  keyGenerator: (req) => (req.user && req.user.id) ? req.user.id : req.ip,
+  max: 10,
+  keyGenerator: (req) => `${(req.user && req.user.id) ? req.user.id : req.ip}:${req.params.id || ''}`,
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
@@ -48,9 +49,30 @@ const commandLimiter = rateLimit({
 
 const COMMAND_SIGNING_SECRET = process.env.COMMAND_SIGNING_SECRET || 'guardian-dev-signing-secret-2024';
 
-function signCommand(commandId, commandType, issuedAt) {
-  const ts = issuedAt instanceof Date ? issuedAt.toISOString() : issuedAt;
-  return crypto.createHmac('sha256', COMMAND_SIGNING_SECRET).update(`${commandId}:${commandType}:${ts}`).digest('hex');
+// Produce canonical JSON: sorted keys, no whitespace, UTF-8. Handles nested objects/arrays.
+function canonicalJson(obj) {
+  if (obj == null) return '{}';
+  function sorted(val) {
+    if (val === null) return 'null';
+    if (typeof val === 'boolean' || typeof val === 'number') return String(val);
+    if (typeof val === 'string') return JSON.stringify(val);
+    if (Array.isArray(val)) return '[' + val.map(sorted).join(',') + ']';
+    if (typeof val === 'object') {
+      const keys = Object.keys(val).sort();
+      return '{' + keys.map(k => JSON.stringify(k) + ':' + sorted(val[k])).join(',') + '}';
+    }
+    return JSON.stringify(val);
+  }
+  return sorted(obj);
+}
+
+// Signed string: commandId:commandType:sha256(canonicalJson(payload)):issuedAt:expiresAt
+function signCommand(commandId, commandType, payload, issuedAt, expiresAt) {
+  const ts   = issuedAt  instanceof Date ? issuedAt.toISOString()  : (issuedAt  || '');
+  const exp  = expiresAt instanceof Date ? expiresAt.toISOString() : (expiresAt || '');
+  const payloadHash = crypto.createHash('sha256').update(canonicalJson(payload), 'utf8').digest('hex');
+  const message = `${commandId}:${commandType}:${payloadHash}:${ts}:${exp}`;
+  return crypto.createHmac('sha256', COMMAND_SIGNING_SECRET).update(message).digest('hex');
 }
 
 // ─── Table Initialisation ────────────────────────────────────────────────────
@@ -168,9 +190,17 @@ async function ensureTables() {
     `);
     await query(`
       INSERT INTO guardian_config (key, value_int, description)
-      VALUES ('min_apk_version_code', 3,
+      VALUES ('min_apk_version_code', 5,
               'Heartbeat rejects APKs below this versionCode with HTTP 426')
-      ON CONFLICT (key) DO NOTHING
+      ON CONFLICT (key) DO UPDATE
+        SET value_int = GREATEST(guardian_config.value_int, EXCLUDED.value_int),
+            updated_at = NOW()
+    `);
+
+    // Remove deprecated flags replaced by unconditional enforcement (Task E)
+    await query(`
+      DELETE FROM guardian_config
+      WHERE key IN ('command_signing_enabled', 'cert_pinning_enabled')
     `);
 
     // Indexes for performance
@@ -510,7 +540,7 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
       FROM claimed
       WHERE dc.id = claimed.id
       RETURNING dc.id, dc.command_type, dc.payload, dc.status,
-                dc.issued_at, dc.executed_at, dc.signature`,
+                dc.issued_at, dc.expires_at, dc.executed_at, dc.signature`,
       [deviceId]
     );
 
@@ -735,6 +765,51 @@ router.post('/report', deviceAuth, async (req, res, next) => {
     }
 
     res.status(isNew ? 201 : 200).json({ report_id: report.id });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/v1/guardian/reports/upload-url
+ * Returns a 5-minute presigned PUT URL (Cloudflare R2 / S3-compatible) for a JPEG photo.
+ * Device uploads the photo directly, then posts the returned public_url in /report.
+ * If R2 credentials are absent, returns 501 — APK falls back to base64.
+ */
+router.post('/reports/upload-url', deviceAuth, async (req, res, next) => {
+  try {
+    const {
+      R2_ACCOUNT_ID, R2_ACCESS_KEY, R2_SECRET_KEY,
+      R2_BUCKET, R2_PUBLIC_URL,
+    } = process.env;
+
+    if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY || !R2_SECRET_KEY || !R2_BUCKET) {
+      return res.status(501).json({ error: 'Photo storage not configured on this server' });
+    }
+
+    let S3Client, PutObjectCommand, getSignedUrl;
+    try {
+      ({ S3Client, PutObjectCommand } = require('@aws-sdk/client-s3'));
+      ({ getSignedUrl } = require('@aws-sdk/s3-request-presigner'));
+    } catch (_) {
+      return res.status(501).json({ error: 'Photo storage SDK not installed — run npm install @aws-sdk/client-s3 @aws-sdk/s3-request-presigner' });
+    }
+
+    const key = `reports/${req.device.id}/${uuidv4()}.jpg`;
+    const s3 = new S3Client({
+      region: 'auto',
+      endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      credentials: { accessKeyId: R2_ACCESS_KEY, secretAccessKey: R2_SECRET_KEY },
+    });
+    const command = new PutObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: key,
+      ContentType: 'image/jpeg',
+    });
+    const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
+    const publicUrl = `${R2_PUBLIC_URL || `https://${R2_BUCKET}.${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`}/${key}`;
+
+    res.json({ upload_url: uploadUrl, public_url: publicUrl, key });
   } catch (err) {
     next(err);
   }
@@ -1007,12 +1082,12 @@ router.post('/devices/:id/command', authenticate, commandLimiter, async (req, re
     const insertResult = await query(
       `INSERT INTO device_commands (device_id, command_type, payload, issued_by, expires_at)
        VALUES ($1, $2, $3, $4, NOW() + INTERVAL '24 hours')
-       RETURNING id, issued_at`,
+       RETURNING id, issued_at, expires_at`,
       [req.params.id, command_type, payload ? JSON.stringify(payload) : null, req.user.id]
     );
 
     const cmd = insertResult.rows[0];
-    const signature = signCommand(cmd.id, command_type, cmd.issued_at);
+    const signature = signCommand(cmd.id, command_type, payload || null, cmd.issued_at, cmd.expires_at);
 
     // Store signature
     await query(

@@ -4,13 +4,17 @@
     android:versionCode="3"
     android:versionName="2.1.0">
 
-    <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="23" />
+    <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34" />
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
@@ -19,6 +23,7 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:label="@string/app_name"
@@ -58,6 +63,9 @@
         <service
             android:name=".GuardianService"
             android:exported="false" />
+        <!-- foregroundServiceType="location|dataSync" required for targetSdk 34;
+             omitted because android-23 SDK platform is installed (aapt2 rejects the attr).
+             Install android-29+ SDK platform and remove this comment to enable. -->
 
         <receiver
             android:name=".BootReceiver"
@@ -69,6 +77,10 @@
 
         <receiver
             android:name=".HeartbeatReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".DmsAlarmReceiver"
             android:exported="false" />
 
         <!-- Device admin receiver — prevents easy uninstall, alerts fleet on deactivation -->

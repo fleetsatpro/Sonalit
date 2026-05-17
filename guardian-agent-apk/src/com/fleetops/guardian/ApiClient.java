@@ -96,6 +96,107 @@ public class ApiClient {
         }
     }
 
+    // ── Canonical JSON (sorted keys, no whitespace) ───────────────────────────
+
+    static String canonicalJson(String jsonStr) {
+        if (jsonStr == null || jsonStr.trim().isEmpty()) return "{}";
+        try {
+            JSONObject obj = new JSONObject(jsonStr);
+            return canonicalJsonObject(obj);
+        } catch (Exception e) {
+            return "{}";
+        }
+    }
+
+    private static String canonicalJsonObject(JSONObject obj) throws Exception {
+        java.util.TreeMap<String, String> sorted = new java.util.TreeMap<String, String>();
+        java.util.Iterator<String> keys = obj.keys();
+        while (keys.hasNext()) {
+            String k = keys.next();
+            sorted.put(k, canonicalJsonValue(obj.get(k)));
+        }
+        StringBuilder sb = new StringBuilder("{");
+        boolean first = true;
+        for (java.util.Map.Entry<String, String> e : sorted.entrySet()) {
+            if (!first) sb.append(",");
+            first = false;
+            sb.append("\"").append(escapeJsonString(e.getKey())).append("\":").append(e.getValue());
+        }
+        return sb.append("}").toString();
+    }
+
+    private static String canonicalJsonValue(Object v) throws Exception {
+        if (v == null || v.equals(JSONObject.NULL)) return "null";
+        if (v instanceof Boolean) return v.toString();
+        if (v instanceof Integer || v instanceof Long) return v.toString();
+        if (v instanceof Double || v instanceof Float) return v.toString();
+        if (v instanceof String) return "\"" + escapeJsonString((String) v) + "\"";
+        if (v instanceof JSONObject) return canonicalJsonObject((JSONObject) v);
+        if (v instanceof org.json.JSONArray) {
+            org.json.JSONArray arr = (org.json.JSONArray) v;
+            StringBuilder sb = new StringBuilder("[");
+            for (int i = 0; i < arr.length(); i++) {
+                if (i > 0) sb.append(",");
+                sb.append(canonicalJsonValue(arr.get(i)));
+            }
+            return sb.append("]").toString();
+        }
+        return "\"" + escapeJsonString(v.toString()) + "\"";
+    }
+
+    private static String escapeJsonString(String s) {
+        return s.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
+    }
+
+    static String sha256Hex(String input) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = md.digest(input.getBytes("UTF-8"));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : bytes) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (Exception e) {
+            Log.e(TAG, "sha256Hex error", e);
+            return "0000000000000000000000000000000000000000000000000000000000000000";
+        }
+    }
+
+    // ── Photo upload via R2 presigned PUT ─────────────────────────────────────
+
+    /**
+     * Upload JPEG bytes to R2 via a server-issued presigned URL.
+     * Returns the public URL on success, null if the server has no R2 config or upload failed.
+     */
+    public static String uploadPhoto(String serverUrl, String token, byte[] jpegBytes) {
+        try {
+            String resp = post(serverUrl + "/api/v1/guardian/reports/upload-url", token, "{}");
+            if (resp == null) return null;
+            JSONObject json = new JSONObject(resp);
+            if (!json.has("upload_url")) return null;
+            String uploadUrl = json.getString("upload_url");
+            String publicUrl = json.getString("public_url");
+
+            URL url = new URL(uploadUrl);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("PUT");
+            conn.setConnectTimeout(TIMEOUT);
+            conn.setReadTimeout(TIMEOUT);
+            conn.setRequestProperty("Content-Type", "image/jpeg");
+            conn.setDoOutput(true);
+            conn.setFixedLengthStreamingMode(jpegBytes.length);
+            OutputStream os = conn.getOutputStream();
+            os.write(jpegBytes); os.flush(); os.close();
+            int code = conn.getResponseCode();
+            conn.disconnect();
+            Log.d(TAG, "Photo PUT -> " + code);
+            return (code >= 200 && code < 300) ? publicUrl : null;
+        } catch (Exception e) {
+            Log.e(TAG, "uploadPhoto error", e);
+            return null;
+        }
+    }
+
     // ── Enroll ───────────────────────────────────────────────────────────────
 
     public static class EnrollResult {
@@ -139,21 +240,23 @@ public class ApiClient {
 
     // ── Heartbeat — returns pending commands ──────────────────────────────────
 
-    static final String APP_VERSION      = "2.2.0";
-    static final int    APP_VERSION_CODE = 4;
+    static final String APP_VERSION      = "2.3.0";
+    static final int    APP_VERSION_CODE = 5;
 
     public static class PendingCommand {
         public final String id;
         public final String type;
         public final String payload;
         public final String issuedAt;
+        public final String expiresAt;
         public final String signature;
         public PendingCommand(String id, String type, String payload,
-                              String issuedAt, String signature) {
+                              String issuedAt, String expiresAt, String signature) {
             this.id = id;
             this.type = type;
             this.payload = payload;
             this.issuedAt = issuedAt;
+            this.expiresAt = expiresAt;
             this.signature = signature;
         }
     }
@@ -219,6 +322,7 @@ public class ApiClient {
                             cmd.optString("command_type"),
                             pl != null ? pl.toString() : null,
                             cmd.optString("issued_at", null),
+                            cmd.optString("expires_at", null),
                             cmd.optString("signature", null)
                         ));
                     }
@@ -278,7 +382,12 @@ public class ApiClient {
             body.put("lng", lng);
             body.put("event_uuid", eventUuid);
             if (photoBase64 != null && !photoBase64.isEmpty()) {
-                body.put("photo_url", "data:image/jpeg;base64," + photoBase64);
+                // If it's already an https URL (from R2 upload), use directly; otherwise wrap as data URI
+                if (photoBase64.startsWith("http")) {
+                    body.put("photo_url", photoBase64);
+                } else {
+                    body.put("photo_url", "data:image/jpeg;base64," + photoBase64);
+                }
             }
             String resp = post(serverUrl + "/api/v1/guardian/report", token, body.toString());
             return resp != null;

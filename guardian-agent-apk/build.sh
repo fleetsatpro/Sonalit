@@ -29,9 +29,10 @@ $AAPT2 link \
   -I "$ANDROID_JAR" \
   --java "$BUILD/gen" \
   --min-sdk-version 21 \
-  --target-sdk-version 23 \
-  --version-code 4 \
-  --version-name "2.2.0" \
+  --target-sdk-version 34 \
+  --version-code 5 \
+  --version-name "2.3.0" \
+  --warn-manifest-validation \
   "$BUILD"/compiled_res/*.flat
 
 echo "==> Compiling Java sources"

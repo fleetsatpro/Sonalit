@@ -23,27 +23,41 @@ public class CommandHandler {
     }
 
     public void handle(String commandId, String commandType, String payloadJson) {
-        handle(commandId, commandType, payloadJson, null, null);
+        handle(commandId, commandType, payloadJson, null, null, null);
     }
 
     public void handle(String commandId, String commandType, String payloadJson,
                        String issuedAt, String signature) {
+        handle(commandId, commandType, payloadJson, issuedAt, null, signature);
+    }
+
+    public void handle(String commandId, String commandType, String payloadJson,
+                       String issuedAt, String expiresAt, String signature) {
         Log.i(TAG, "cmd=" + commandType + " id=" + commandId);
 
-        // HMAC signature verification (if signature present and signing secret configured)
-        if (signature != null && !signature.isEmpty()) {
-            DevicePrefs prefs = new DevicePrefs(ctx);
-            String signingKey = prefs.getCommandSigningSecret();
-            if (signingKey != null && !signingKey.isEmpty()) {
-                String expected = ApiClient.hmacSha256(
-                    commandId + ":" + commandType + ":" + (issuedAt != null ? issuedAt : ""),
-                    signingKey);
-                if (!signature.equals(expected)) {
-                    Log.e(TAG, "Command signature mismatch for id=" + commandId + " — rejecting");
-                    listener.onHandled(commandId, false, "signature_mismatch");
-                    return;
-                }
-            }
+        // Mandatory HMAC verification (Task E: unconditional; Task B: new format includes payload + expiresAt)
+        DevicePrefs prefs = new DevicePrefs(ctx);
+        String signingKey = prefs.getCommandSigningSecret();
+        if (signingKey == null || signingKey.isEmpty()) {
+            Log.e(TAG, "No command signing key configured — rejecting cmd=" + commandId);
+            listener.onHandled(commandId, false, "no_signing_key");
+            return;
+        }
+        if (signature == null || signature.isEmpty()) {
+            Log.e(TAG, "Command has no signature — rejecting cmd=" + commandId);
+            listener.onHandled(commandId, false, "missing_signature");
+            return;
+        }
+        // Format: commandId:commandType:sha256(canonicalJson(payload)):issuedAt:expiresAt
+        String payloadHash = ApiClient.sha256Hex(ApiClient.canonicalJson(payloadJson));
+        String message = commandId + ":" + commandType + ":" + payloadHash + ":"
+                       + (issuedAt != null ? issuedAt : "") + ":"
+                       + (expiresAt != null ? expiresAt : "");
+        String expected = ApiClient.hmacSha256(message, signingKey);
+        if (!signature.equals(expected)) {
+            Log.e(TAG, "Command signature mismatch id=" + commandId + " — rejecting");
+            listener.onHandled(commandId, false, "signature_mismatch");
+            return;
         }
 
         try {

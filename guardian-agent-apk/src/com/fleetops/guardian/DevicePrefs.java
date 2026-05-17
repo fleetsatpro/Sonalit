@@ -146,10 +146,90 @@ public class DevicePrefs {
     public String getServerUrl()  { return prefs.getString(KEY_SERVER, ""); }
     public String getDeviceName() { return prefs.getString(KEY_NAME, "Guardian Device"); }
 
-    // ── Panic PIN ────────────────────────────────────────────────────────────
+    // ── Panic PIN (PBKDF2WithHmacSHA256, 120k iterations, 32-byte output) ───────
+    // Note: Argon2id requires API 33+ or external JAR; PBKDF2 is used instead.
 
-    public String getPanicPin()          { return prefs.getString(KEY_PANIC_PIN, ""); }
-    public void   setPanicPin(String pin){ prefs.edit().putString(KEY_PANIC_PIN, pin).apply(); }
+    private static final String KEY_PANIC_PIN_HASH = "panic_pin_hash";
+    private static final int    PBKDF2_ITERATIONS  = 120_000;
+    private static final int    PBKDF2_KEY_LEN     = 32;
+
+    /** Call once at startup to migrate any stored plaintext PIN to hashed form. */
+    public void migratePanicPin() {
+        String legacy = prefs.getString(KEY_PANIC_PIN, null);
+        if (legacy != null && !legacy.isEmpty()
+                && prefs.getString(KEY_PANIC_PIN_HASH, null) == null) {
+            setPanicPin(legacy);
+            prefs.edit().remove(KEY_PANIC_PIN).apply();
+            Log.i(TAG, "Panic PIN migrated to hashed storage");
+        }
+    }
+
+    private byte[] pbkdf2(String pin, byte[] salt) throws Exception {
+        javax.crypto.spec.PBEKeySpec spec = new javax.crypto.spec.PBEKeySpec(
+            pin.toCharArray(), salt, PBKDF2_ITERATIONS, PBKDF2_KEY_LEN * 8);
+        javax.crypto.SecretKeyFactory skf =
+            javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
+        return skf.generateSecret(spec).getEncoded();
+    }
+
+    private boolean constantTimeEqual(byte[] a, byte[] b) {
+        if (a.length != b.length) return false;
+        int diff = 0;
+        for (int i = 0; i < a.length; i++) diff |= (a[i] ^ b[i]);
+        return diff == 0;
+    }
+
+    public void setPanicPin(String pin) {
+        if (pin == null || pin.isEmpty()) {
+            prefs.edit().remove(KEY_PANIC_PIN_HASH).remove(KEY_PANIC_PIN).apply();
+            return;
+        }
+        try {
+            byte[] salt = new byte[16];
+            new java.security.SecureRandom().nextBytes(salt);
+            byte[] hash = pbkdf2(pin, salt);
+            String stored = "PBKDF2:"
+                + Base64.encodeToString(salt, Base64.NO_WRAP) + ":"
+                + Base64.encodeToString(hash, Base64.NO_WRAP);
+            prefs.edit()
+                .putString(KEY_PANIC_PIN_HASH, stored)
+                .remove(KEY_PANIC_PIN)
+                .apply();
+        } catch (Exception e) {
+            Log.e(TAG, "setPanicPin hash failed; storing plaintext as fallback", e);
+            prefs.edit().putString(KEY_PANIC_PIN, pin).apply();
+        }
+    }
+
+    public boolean hasPanicPin() {
+        return prefs.getString(KEY_PANIC_PIN_HASH, null) != null
+            || !prefs.getString(KEY_PANIC_PIN, "").isEmpty();
+    }
+
+    public boolean verifyPanicPin(String entered) {
+        if (entered == null || entered.isEmpty()) return false;
+        try {
+            String stored = prefs.getString(KEY_PANIC_PIN_HASH, null);
+            if (stored != null && stored.startsWith("PBKDF2:")) {
+                String[] parts = stored.split(":");
+                if (parts.length != 3) return false;
+                byte[] salt     = Base64.decode(parts[1], Base64.NO_WRAP);
+                byte[] expected = Base64.decode(parts[2], Base64.NO_WRAP);
+                byte[] computed = pbkdf2(entered, salt);
+                return constantTimeEqual(computed, expected);
+            }
+            // Legacy plaintext fallback (migrated next startup via migratePanicPin)
+            String legacy = prefs.getString(KEY_PANIC_PIN, "");
+            return !legacy.isEmpty() && legacy.equals(entered);
+        } catch (Exception e) {
+            Log.e(TAG, "verifyPanicPin error", e);
+            return false;
+        }
+    }
+
+    /** @deprecated Use verifyPanicPin() / hasPanicPin() instead. */
+    @Deprecated
+    public String getPanicPin() { return prefs.getString(KEY_PANIC_PIN, ""); }
 
     // ── Dead Man's Switch ────────────────────────────────────────────────────
 
