@@ -401,3 +401,17 @@ Query: SELECT name, status, priority, region, route_origin, route_destination, r
 Query: SELECT name, status, priority, region, route_origin, route_destination, risk_score,
                estimated_arrival, vehicle_count
              FROM convoys WHERE deleted_at IS NULL AND status != 'completed' LIMIT 20
+2026-05-13 18:54:42 [error]: Database query error: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+Query: SELECT id, email, name, role, status, password_hash FROM users WHERE email = $1 AND deleted_at IS NULL
+2026-05-13 18:54:42 [error]: [POST /api/v1/auth/login] Error: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/controllers/authController.js:19:18
+2026-05-13 18:54:44 [error]: Database query error: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+Query: SELECT id, email, name, role, status, password_hash FROM users WHERE email = $1 AND deleted_at IS NULL
+2026-05-13 18:54:44 [error]: [POST /api/v1/auth/login] Error: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/controllers/authController.js:19:18

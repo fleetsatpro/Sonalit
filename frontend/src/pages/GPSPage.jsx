@@ -5,6 +5,7 @@ import { vehiclesAPI, alertsAPI, geofenceAPI, riskZoneAPI } from '../services/ap
 import api from '../services/api';
 import socketService from '../services/socket';
 import { Spinner } from '../components/UI';
+import toast from 'react-hot-toast';
 import { timeAgo, formatDate } from '../utils/helpers';
 import toast from 'react-hot-toast';
 
@@ -127,7 +128,9 @@ export default function GPSPage() {
   // ── Leaflet init ───────────────────────────────────────────────────────
   useEffect(() => {
     if (mapInst.current || !mapRef.current) return;
+    let mounted = true;
     import('leaflet').then(L => {
+      if (!mounted) return;
       leafletRef.current = L.default || L;
       const Lf = leafletRef.current;
       delete Lf.Icon.Default.prototype._getIconUrl;
@@ -158,7 +161,21 @@ export default function GPSPage() {
       loadRiskZones(Lf);
       setLoading(false);
 
+<<<<<<< HEAD
       pollRef.current = setInterval(() => loadVehicles(Lf, map), 15000);
+=======
+      const iv = setInterval(() => loadVehicles(Lf, map), 15000);
+      return () => {
+        mounted = false;
+        clearInterval(iv);
+        try { mapInst.current?.remove(); } catch {}
+        mapInst.current = null;
+        Object.values(markersMap.current).forEach(m => { try { m.remove(); } catch {} });
+        markersMap.current = {};
+        Object.values(trailsMap.current).forEach(t => { try { t.line?.remove(); } catch {} });
+        trailsMap.current = {};
+      };
+>>>>>>> 7ab5513b (Setup Ruflo AI agent)
     });
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
   }, []);
@@ -166,7 +183,12 @@ export default function GPSPage() {
   // ── Socket live updates ────────────────────────────────────────────────
   useEffect(() => {
     socketService.connect();
+<<<<<<< HEAD
     const unsubVehicle = socketService.onVehicleUpdate(data => {
+=======
+    const unsubs = [];
+    socketService.onVehicleUpdate(data => {
+>>>>>>> 7ab5513b (Setup Ruflo AI agent)
       setVehicles(prev => prev.map(v =>
         v.id === data.vehicleId ? { ...v, lat: data.lat, lng: data.lng, speed: data.speed || v.speed } : v
       ));
@@ -198,6 +220,7 @@ export default function GPSPage() {
         color: '#ef4444',
       }, ...prev.slice(0, 49)]);
     });
+<<<<<<< HEAD
 
     const unsubViolation = socketService.on('geofence:violation', data => {
       setMapViolation(data);
@@ -230,12 +253,27 @@ export default function GPSPage() {
     };
     window.addEventListener('ai-map-update', handler);
     return () => window.removeEventListener('ai-map-update', handler);
+=======
+    // Cleanup function — remove all listeners on unmount
+    return () => {
+      socketService.off && socketService.off('vehicle:update');
+      socketService.off && socketService.off('alert:new');
+      socketService.off && socketService.off('convoy:deviation');
+    };
+>>>>>>> 7ab5513b (Setup Ruflo AI agent)
   }, []);
 
   const loadVehicles = useCallback(async (Lf, map) => {
     try {
       const r = await vehiclesAPI.list({ limit: 100 });
-      const vs = r.data.data || [];
+      const vs = (r.data.data || []).map(v => ({
+        ...v,
+        lat: parseFloat(v.lat ?? v.latitude ?? 0) || null,
+        lng: parseFloat(v.lng ?? v.longitude ?? 0) || null,
+        speed: parseFloat(v.speed ?? 0),
+        fuel_level: parseFloat(v.fuel_level ?? 85),
+        maintenance_score: parseInt(v.maintenance_score ?? 0),
+      }));
       setVehicles(vs);
 
       const Lfl = Lf || leafletRef.current;
@@ -423,7 +461,7 @@ export default function GPSPage() {
     setSavingFence(true);
     try {
       await geofenceAPI.create({ name: fenceName, lat: fenceCenter.lat, lng: fenceCenter.lng, radius: fenceRadius, type:'circle' });
-      toast && toast.success('Geofence saved');
+      toast.success('Geofence saved');
       setFenceName(''); setFenceCenter(null); setFenceRadius(null);
       setDrawMode(false); drawingRef.current = false;
       if (drawCircleRef.current) { drawCircleRef.current.remove(); drawCircleRef.current = null; }

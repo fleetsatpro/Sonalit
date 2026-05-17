@@ -2810,3 +2810,64 @@ Query: SELECT name, status, priority, region, route_origin, route_destination, r
 2026-05-13 15:26:18 [info]: New PostgreSQL client connected
 2026-05-13 15:26:18 [info]: New PostgreSQL client connected
 2026-05-13 15:26:24 [info]: POST /api/v1/ai/dispatch 200 432 - 6708.043 ms
+2026-05-13 15:43:25 [info]: HEAD / 404 28 - 0.863 ms
+2026-05-13 15:43:25 [info]: GET / 404 27 - 0.788 ms
+2026-05-13 16:03:36 [info]: New PostgreSQL client connected
+2026-05-13 16:03:36 [info]: Login: admin@fleetops.local (admin)
+2026-05-13 16:03:36 [info]: POST /api/v1/auth/login 200 379 - 112.924 ms
+2026-05-13 16:03:36 [info]: New PostgreSQL client connected
+2026-05-13 16:03:36 [info]: New PostgreSQL client connected
+2026-05-13 16:03:36 [info]: New PostgreSQL client connected
+2026-05-13 16:03:36 [info]: New PostgreSQL client connected
+2026-05-13 16:03:36 [info]: New PostgreSQL client connected
+2026-05-13 16:03:36 [info]: GET /api/v1/analytics/dashboard 304 - - 72.075 ms
+2026-05-13 16:03:36 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 6.573 ms
+2026-05-13 16:03:36 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 2.339 ms
+2026-05-13 16:03:36 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 3.681 ms
+2026-05-13 16:03:37 [info]: GET /api/v1/analytics/dashboard 304 - - 4.486 ms
+2026-05-13 16:03:37 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 3.149 ms
+2026-05-13 16:03:37 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 3.333 ms
+2026-05-13 16:03:37 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 6.153 ms
+2026-05-13 16:03:37 [info]: Socket: YQ8vOqQ-sNROthhEAAAB user=admin@fleetops.local
+2026-05-13 16:03:42 [info]: Socket disconnected: YQ8vOqQ-sNROthhEAAAB
+2026-05-13 16:04:00 [info]: GET /api/v1/auth/me 200 178 - 8.386 ms
+2026-05-13 16:04:00 [info]: GET /api/v1/auth/me 200 178 - 5.465 ms
+2026-05-13 16:04:01 [info]: Socket: UK7sa9jFZ0FQ02wLAAAD user=admin@fleetops.local
+2026-05-13 16:04:02 [info]: GET /api/v1/analytics/dashboard 304 - - 12.452 ms
+2026-05-13 16:04:02 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 7.296 ms
+2026-05-13 16:04:02 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 10.783 ms
+2026-05-13 16:04:02 [info]: GET /api/v1/convoys?status=active&limit=5 304 - - 8.870 ms
+2026-05-13 16:04:02 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 4.976 ms
+2026-05-13 16:04:02 [info]: GET /api/v1/analytics/dashboard 304 - - 7.325 ms
+2026-05-13 16:04:02 [info]: GET /api/v1/analytics/convoy-metrics 304 - - 10.076 ms
+2026-05-13 16:04:02 [info]: GET /api/v1/analytics/fleet-utilization 304 - - 5.504 ms
+2026-05-13 16:04:02 [info]: GET /api/v1/alerts?resolved=false&limit=5 304 - - 5.512 ms
+2026-05-13 16:04:03 [info]: GET /api/v1/convoys?status=active&limit=5 304 - - 3.041 ms
+2026-05-13 16:04:06 [warn]: Anthropic returned 401
+2026-05-13 16:04:06 [info]: POST /api/v1/ai/dispatch 200 79 - 322.085 ms
+2026-05-13 16:04:11 [info]: Socket disconnected: UK7sa9jFZ0FQ02wLAAAD
+2026-05-13 18:45:52 [info]: Route loaded: /api/v1/drivers
+2026-05-13 18:45:52 [info]: Route loaded: /api/v1/shipments
+2026-05-13 18:45:52 [info]: Route loaded: /api/v1/finance
+2026-05-13 18:45:52 [info]: Route loaded: /api/v1/maintenance
+2026-05-13 18:45:52 [info]: Route loaded: /api/v1/riskzones
+2026-05-13 18:45:52 [warn]: Queues disabled — DISABLE_REDIS=true
+2026-05-13 18:45:52 [info]: FleetOps Enterprise v2.1 running on port 5000 [development]
+2026-05-13 18:53:27 [info]: GET / 404 27 - 9.961 ms
+2026-05-13 18:53:28 [info]: GET /favicon.ico 404 38 - 0.716 ms
+2026-05-13 18:54:42 [error]: Database query error: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+Query: SELECT id, email, name, role, status, password_hash FROM users WHERE email = $1 AND deleted_at IS NULL
+2026-05-13 18:54:42 [error]: [POST /api/v1/auth/login] Error: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/controllers/authController.js:19:18
+2026-05-13 18:54:42 [info]: POST /api/v1/auth/login 500 33 - 14.082 ms
+2026-05-13 18:54:44 [error]: Database query error: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+Query: SELECT id, email, name, role, status, password_hash FROM users WHERE email = $1 AND deleted_at IS NULL
+2026-05-13 18:54:44 [error]: [POST /api/v1/auth/login] Error: SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string
+    at /workspaces/Sonalit/backend/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async query (/workspaces/Sonalit/backend/src/config/database.js:32:20)
+    at async /workspaces/Sonalit/backend/src/controllers/authController.js:19:18
+2026-05-13 18:54:44 [info]: POST /api/v1/auth/login 500 33 - 4.565 ms
