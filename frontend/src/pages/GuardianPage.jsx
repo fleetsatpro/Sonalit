@@ -300,16 +300,18 @@ function DeviceCard({ device, onCommand, onLocate, onRevoke }) {
   );
 }
 
+// id values must exactly match backend validCommandTypes enum
 const COMMANDS = [
-  { id: 'request_location',  icon: MapPin,        label: 'Request Location',  desc: 'Get current GPS fix' },
-  { id: 'start_live_track',  icon: Navigation,    label: 'Start Live Track',  desc: 'Begin continuous tracking' },
-  { id: 'stop_live_track',   icon: NavigationOff, label: 'Stop Live Track',   desc: 'End tracking session' },
-  { id: 'push_message',      icon: MessageSquare, label: 'Push Message',      desc: 'Send text to device', hasInput: true },
-  { id: 'lock_screen',       icon: Lock,          label: 'Lock Screen',       desc: 'Lock device screen' },
-  { id: 'trigger_siren',     icon: Volume2,       label: 'Trigger Siren',     desc: 'Sound alarm on device' },
-  { id: 'wipe_cache',        icon: Trash2,        label: 'Wipe Cache',        desc: 'Clear app cache' },
-  { id: 'restart_agent',     icon: RefreshCw,     label: 'Restart Agent',     desc: 'Restart Guardian app' },
-  { id: 'enable_lost_mode',  icon: ShieldAlert,   label: 'Enable Lost Mode',  desc: 'Full lockdown + beacon' },
+  { id: 'request_location',   icon: MapPin,        label: 'Request Location',   desc: 'Get current GPS fix' },
+  { id: 'start_live_tracking',icon: Navigation,    label: 'Start Live Track',   desc: 'Begin 5-second tracking' },
+  { id: 'stop_live_tracking', icon: NavigationOff, label: 'Stop Live Track',    desc: 'Return to normal interval' },
+  { id: 'push_message',       icon: MessageSquare, label: 'Push Message',       desc: 'Send text to device', hasInput: true },
+  { id: 'lock_screen',        icon: Lock,          label: 'Lock Screen',        desc: 'Lock device screen' },
+  { id: 'trigger_siren',      icon: Volume2,       label: 'Trigger Siren',      desc: 'Sound 10s alarm on device' },
+  { id: 'force_sync',         icon: RefreshCw,     label: 'Force Sync',         desc: 'Flush offline queue now' },
+  { id: 'wipe_cache',         icon: Trash2,        label: 'Wipe Cache',         desc: 'Clear app cache & restart' },
+  { id: 'restart_agent',      icon: RefreshCw,     label: 'Restart Agent',      desc: 'Restart Guardian service' },
+  { id: 'enable_lost_mode',   icon: ShieldAlert,   label: 'Enable Lost Mode',   desc: 'Full lockdown + beacon' },
 ];
 
 function CommandStatusChip({ status }) {
@@ -340,9 +342,15 @@ function CommandsPanel({ device, onClose }) {
 
   useEffect(() => {
     if (!device) return;
-    guardianAPI.history(device._id || device.id, { limit: 5, type: 'command' })
-      .then(r => setRecentCmds(r.data?.data || r.data?.commands || []))
-      .catch(() => {});
+    const devId = device._id || device.id;
+    guardianAPI.commands(devId, { limit: 10 })
+      .then(r => setRecentCmds(r.data?.commands || []))
+      .catch(() => {
+        // fallback: pull from device detail's recent_commands
+        guardianAPI.device(devId)
+          .then(r => setRecentCmds(r.data?.data?.recent_commands || r.data?.recent_commands || []))
+          .catch(() => {});
+      });
   }, [device]);
 
   async function sendCommand(cmd) {
@@ -350,20 +358,40 @@ function CommandsPanel({ device, onClose }) {
       setActiveInput(cmd.id);
       return;
     }
-    const payload = { command: cmd.id };
-    if (cmd.hasInput) payload.message = messageText;
+
+    // Build body matching backend schema: { command_type, payload }
+    const body = { command_type: cmd.id };
+    if (cmd.id === 'push_message') {
+      if (!messageText.trim()) {
+        toast.error('Enter a message to send');
+        return;
+      }
+      body.payload = { text: messageText.trim() };
+    } else if (cmd.id === 'trigger_siren') {
+      body.payload = { duration: 10 };
+    } else if (cmd.id === 'lock_screen' || cmd.id === 'enable_lost_mode') {
+      body.payload = { message: cmd.id === 'enable_lost_mode'
+        ? 'DEVICE REPORTED LOST — PLEASE RETURN TO FLEET MANAGER'
+        : 'DEVICE LOCKED BY FLEET MANAGER' };
+    }
 
     setSending(cmd.id);
     try {
-      await guardianAPI.command(device._id || device.id, payload);
+      const res = await guardianAPI.command(device._id || device.id, body);
+      const cmdId = res.data?.command_id;
       toast.success(`Command sent: ${cmd.label}`);
       setRecentCmds(prev => [{
-        command: cmd.id, label: cmd.label, status: 'sent', created_at: new Date().toISOString(),
-      }, ...prev.slice(0, 4)]);
+        id: cmdId,
+        command_type: cmd.id,
+        label: cmd.label,
+        status: 'pending',
+        issued_at: new Date().toISOString(),
+      }, ...prev.slice(0, 9)]);
       setActiveInput(null);
       setMessageText('');
-    } catch {
-      toast.error(`Failed to send command`);
+    } catch (err) {
+      const detail = err?.response?.data?.error || err?.message || 'Unknown error';
+      toast.error(`Command failed: ${detail}`);
     } finally {
       setSending(null);
     }
@@ -525,9 +553,12 @@ function CommandsPanel({ device, onClose }) {
                   }}>
                     <div>
                       <p style={{ fontSize: 11, fontWeight: 600, color: G.text, fontFamily: 'Space Grotesk, sans-serif' }}>
-                        {c.label || c.command}
+                        {c.label || (c.command_type || c.command || '').replace(/_/g, ' ')}
                       </p>
-                      <p style={{ fontSize: 9, color: G.low, fontFamily: 'IBM Plex Mono, monospace' }}>{fmtRelative(c.created_at)}</p>
+                      <p style={{ fontSize: 9, color: G.low, fontFamily: 'IBM Plex Mono, monospace' }}>
+                        {fmtRelative(c.issued_at || c.created_at)}
+                        {c.issued_by_name ? ` · ${c.issued_by_name}` : ''}
+                      </p>
                     </div>
                     <CommandStatusChip status={c.status} />
                   </div>

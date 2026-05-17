@@ -173,6 +173,7 @@ export const guardianAPI = {
   updateDevice: (id, d) => api.patch(`/guardian/devices/${id}`, d),
   revokeDevice: (id)    => api.delete(`/guardian/devices/${id}`),
   command:      (id, d) => api.post(`/guardian/devices/${id}/command`, d),
+  commands:     (id, p) => api.get(`/guardian/devices/${id}/commands`, { params: p }),
   history:      (id, p) => api.get(`/guardian/devices/${id}/history`, { params: p }),
   panic:        (p)     => api.get('/guardian/panic', { params: p }),
   resolvePanic: (id)    => api.patch(`/guardian/panic/${id}/resolve`),

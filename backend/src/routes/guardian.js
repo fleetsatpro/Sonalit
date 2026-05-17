@@ -715,6 +715,40 @@ router.post('/devices/:id/command', authenticate, async (req, res, next) => {
 });
 
 /**
+ * GET /api/v1/guardian/devices/:id/commands
+ * Recent command log for a device (newest first).
+ */
+router.get('/devices/:id/commands', authenticate, async (req, res, next) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+
+    const deviceCheck = await query(
+      `SELECT id FROM guardian_devices WHERE id = $1 AND deleted_at IS NULL`,
+      [req.params.id]
+    );
+    if (!deviceCheck.rows.length) {
+      return res.status(404).json({ error: 'Device not found' });
+    }
+
+    const result = await query(
+      `SELECT dc.id, dc.command_type, dc.payload, dc.status,
+              dc.result, dc.issued_at, dc.executed_at,
+              u.name AS issued_by_name
+       FROM device_commands dc
+       LEFT JOIN users u ON u.id = dc.issued_by
+       WHERE dc.device_id = $1
+       ORDER BY dc.issued_at DESC
+       LIMIT $2`,
+      [req.params.id, limit]
+    );
+
+    res.json({ commands: result.rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * GET /api/v1/guardian/devices/:id/history
  * Recent GPS trail (last 500 points, default 24 hours).
  */
