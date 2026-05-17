@@ -32,10 +32,11 @@ $AAPT2 link \
   --java "$BUILD/gen" \
   --min-sdk-version 21 \
   --target-sdk-version 34 \
-  --version-code 5 \
-  --version-name "2.3.0" \
   --warn-manifest-validation \
   "$BUILD"/compiled_res/*.flat
+# Note: --version-code / --version-name are NOT passed because aapt2 link silently
+# ignores them when the manifest already declares those attributes. Version is set
+# directly in AndroidManifest.xml (currently versionCode=5 / versionName=2.3.0).
 
 echo "==> Compiling Java sources"
 javac -source 8 -target 8 \
