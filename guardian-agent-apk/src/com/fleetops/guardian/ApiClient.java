@@ -7,12 +7,94 @@ import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyStore;
+import java.security.MessageDigest;
+import java.security.cert.Certificate;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.List;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 
 public class ApiClient {
     private static final String TAG     = "ApiClient";
     private static final int    TIMEOUT = 15_000;
+
+    /** Set this from DevicePrefs.getCertPinSha256() before making HTTPS calls. */
+    public static String pinnedSha256 = null;
+
+    // ── Certificate pinning ───────────────────────────────────────────────────
+
+    private static TrustManager[] createPinnedTrustManager() {
+        return new TrustManager[] {
+            new X509TrustManager() {
+                @Override
+                public void checkClientTrusted(X509Certificate[] chain, String authType)
+                        throws java.security.cert.CertificateException {}
+
+                @Override
+                public void checkServerTrusted(X509Certificate[] chain, String authType)
+                        throws java.security.cert.CertificateException {
+                    if (pinnedSha256 == null || pinnedSha256.isEmpty()) return;
+                    if (chain == null || chain.length == 0) {
+                        throw new java.security.cert.CertificateException("Empty certificate chain");
+                    }
+                    try {
+                        byte[] encoded = chain[0].getEncoded();
+                        MessageDigest md = MessageDigest.getInstance("SHA-256");
+                        byte[] digest = md.digest(encoded);
+                        StringBuilder sb = new StringBuilder();
+                        for (byte b : digest) sb.append(String.format("%02x", b));
+                        String actual = sb.toString();
+                        if (!actual.equalsIgnoreCase(pinnedSha256)) {
+                            throw new java.security.cert.CertificateException(
+                                "Certificate pin mismatch: expected " + pinnedSha256 + " got " + actual);
+                        }
+                    } catch (java.security.cert.CertificateException ce) {
+                        throw ce;
+                    } catch (Exception e) {
+                        throw new java.security.cert.CertificateException("Pin verification error: " + e.getMessage());
+                    }
+                }
+
+                @Override
+                public X509Certificate[] getAcceptedIssuers() {
+                    return new X509Certificate[0];
+                }
+            }
+        };
+    }
+
+    private static void applyPinning(HttpURLConnection conn) {
+        if (conn instanceof HttpsURLConnection) {
+            HttpsURLConnection httpsConn = (HttpsURLConnection) conn;
+            try {
+                SSLContext sslCtx = SSLContext.getInstance("TLS");
+                sslCtx.init(null, createPinnedTrustManager(), null);
+                httpsConn.setSSLSocketFactory(sslCtx.getSocketFactory());
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to apply certificate pinning: " + e.getMessage());
+            }
+        }
+    }
+
+    // ── HMAC-SHA256 utility ───────────────────────────────────────────────────
+
+    static String hmacSha256(String data, String key) {
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(key.getBytes("UTF-8"), "HmacSHA256"));
+            byte[] bytes = mac.doFinal(data.getBytes("UTF-8"));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : bytes) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (Exception e) {
+            Log.e(TAG, "hmacSha256 error", e);
+            return null;
+        }
+    }
 
     // ── Enroll ───────────────────────────────────────────────────────────────
 
@@ -26,6 +108,12 @@ public class ApiClient {
 
     public static EnrollResult enroll(String serverUrl, String orgToken,
                                       String deviceName, String imei) {
+        return enroll(serverUrl, orgToken, deviceName, imei, null);
+    }
+
+    public static EnrollResult enroll(String serverUrl, String orgToken,
+                                      String deviceName, String imei,
+                                      String enrollmentCode) {
         try {
             JSONObject body = new JSONObject();
             body.put("org_token", orgToken);
@@ -34,6 +122,9 @@ public class ApiClient {
             body.put("model", android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL);
             body.put("os_version", android.os.Build.VERSION.RELEASE);
             body.put("app_version", APP_VERSION);
+            if (enrollmentCode != null && !enrollmentCode.trim().isEmpty()) {
+                body.put("enrollment_code", enrollmentCode.trim().toUpperCase());
+            }
 
             String resp = post(serverUrl + "/api/v1/guardian/enroll", null, body.toString());
             if (resp == null) return new EnrollResult(null, "No response from server");
@@ -55,8 +146,15 @@ public class ApiClient {
         public final String id;
         public final String type;
         public final String payload;
-        public PendingCommand(String id, String type, String payload) {
-            this.id = id; this.type = type; this.payload = payload;
+        public final String issuedAt;
+        public final String signature;
+        public PendingCommand(String id, String type, String payload,
+                              String issuedAt, String signature) {
+            this.id = id;
+            this.type = type;
+            this.payload = payload;
+            this.issuedAt = issuedAt;
+            this.signature = signature;
         }
     }
 
@@ -75,14 +173,14 @@ public class ApiClient {
             this.upgradeRequired = true;
             this.minVersionCode  = minVersionCode;
             this.downloadUrl     = downloadUrl;
-            this.commands        = new ArrayList<>();
+            this.commands        = new ArrayList<PendingCommand>();
         }
     }
 
     public static HeartbeatResult heartbeat(String serverUrl, String token,
                                             double lat, double lng, float accuracy,
                                             float speed, int battery, String network) {
-        List<PendingCommand> commands = new ArrayList<>();
+        List<PendingCommand> commands = new ArrayList<PendingCommand>();
         try {
             JSONObject body = new JSONObject();
             body.put("lat", lat);
@@ -111,7 +209,9 @@ public class ApiClient {
                         commands.add(new PendingCommand(
                             cmd.optString("id"),
                             cmd.optString("command_type"),
-                            pl != null ? pl.toString() : null
+                            pl != null ? pl.toString() : null,
+                            cmd.optString("issued_at", null),
+                            cmd.optString("signature", null)
                         ));
                     }
                 }
@@ -120,6 +220,19 @@ public class ApiClient {
             Log.e(TAG, "heartbeat error", e);
         }
         return new HeartbeatResult(commands);
+    }
+
+    // ── Config fetch ──────────────────────────────────────────────────────────
+
+    public static JSONObject fetchConfig(String serverUrl, String token) {
+        try {
+            String resp = get(serverUrl + "/api/v1/guardian/config", token);
+            if (resp == null || resp.isEmpty()) return null;
+            return new JSONObject(resp);
+        } catch (Exception e) {
+            Log.e(TAG, "fetchConfig error", e);
+            return null;
+        }
     }
 
     // ── Panic ─────────────────────────────────────────────────────────────────
@@ -274,6 +387,7 @@ public class ApiClient {
     static RawResponse postRaw(String urlStr, String token, String body) throws Exception {
         URL url = new URL(urlStr);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        applyPinning(conn);
         conn.setRequestMethod("POST");
         conn.setConnectTimeout(TIMEOUT);
         conn.setReadTimeout(TIMEOUT);
@@ -297,13 +411,14 @@ public class ApiClient {
             result = sb.toString();
         }
         conn.disconnect();
-        Log.d(TAG, "POST " + urlStr + " → " + code);
+        Log.d(TAG, "POST " + urlStr + " -> " + code);
         return new RawResponse(code, result);
     }
 
     static String post(String urlStr, String token, String body) throws Exception {
         URL url = new URL(urlStr);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        applyPinning(conn);
         conn.setRequestMethod("POST");
         conn.setConnectTimeout(TIMEOUT);
         conn.setReadTimeout(TIMEOUT);
@@ -335,7 +450,37 @@ public class ApiClient {
         conn.disconnect();
 
         String result = sb.toString();
-        Log.d(TAG, "POST " + urlStr + " → " + code);
+        Log.d(TAG, "POST " + urlStr + " -> " + code);
+        return (code >= 200 && code < 300) ? result : null;
+    }
+
+    static String get(String urlStr, String token) throws Exception {
+        URL url = new URL(urlStr);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        applyPinning(conn);
+        conn.setRequestMethod("GET");
+        conn.setConnectTimeout(TIMEOUT);
+        conn.setReadTimeout(TIMEOUT);
+        conn.setRequestProperty("Accept", "application/json");
+        if (token != null && !token.isEmpty()) {
+            conn.setRequestProperty("X-Device-Token", token);
+        }
+
+        int code = conn.getResponseCode();
+        InputStream is = (code >= 200 && code < 300)
+            ? conn.getInputStream() : conn.getErrorStream();
+        if (is == null) return (code >= 200 && code < 300) ? "" : null;
+
+        BufferedReader br = new BufferedReader(
+            new InputStreamReader(is, StandardCharsets.UTF_8));
+        StringBuilder sb = new StringBuilder();
+        String line;
+        while ((line = br.readLine()) != null) sb.append(line);
+        br.close();
+        conn.disconnect();
+
+        String result = sb.toString();
+        Log.d(TAG, "GET " + urlStr + " -> " + code);
         return (code >= 200 && code < 300) ? result : null;
     }
 }

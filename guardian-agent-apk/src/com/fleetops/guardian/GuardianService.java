@@ -104,6 +104,8 @@ public class GuardianService extends Service implements LocationListener {
         scheduleHeartbeat();
         scheduleQueueRetry();
         if (prefs.isDmsEnabled()) resetDmsTimer();
+        // Initialize cert pinning from stored prefs
+        ApiClient.pinnedSha256 = prefs.getCertPinSha256();
         return START_STICKY;
     }
 
@@ -176,7 +178,16 @@ public class GuardianService extends Service implements LocationListener {
                             return;
                         }
                         for (ApiClient.PendingCommand cmd : result.commands) {
-                            commandHandler.handle(cmd.id, cmd.type, cmd.payload);
+                            commandHandler.handle(cmd.id, cmd.type, cmd.payload,
+                                cmd.issuedAt, cmd.signature);
+                        }
+                        // Fetch config and update DMS interval if not user-customized
+                        org.json.JSONObject config = ApiClient.fetchConfig(url, token);
+                        if (config != null && !prefs.isDmsIntervalCustomized()) {
+                            int serverInterval = config.optInt("dms_default_interval_minutes", 0);
+                            if (serverInterval > 0) {
+                                prefs.setDmsIntervalMinutes(serverInterval);
+                            }
                         }
                     } catch (Exception e) {
                         Log.e(TAG, "heartbeat error", e);

@@ -177,6 +177,7 @@ public class MainActivity extends Activity {
         updateMessageBadge();
         updateConvoyBadge();
         if (prefs.isDmsEnabled()) scheduleCountdownUpdate();
+        checkBatteryOptimization();
     }
 
     @Override
@@ -611,6 +612,39 @@ public class MainActivity extends Activity {
             }
         });
         b.show();
+    }
+
+    // ── Battery optimization onboarding (Task 4.8) ───────────────────────────
+
+    private void checkBatteryOptimization() {
+        if (android.os.Build.VERSION.SDK_INT < 23) return;
+        android.content.SharedPreferences sp =
+            getSharedPreferences("guardian_prefs", MODE_PRIVATE);
+        if (sp.getBoolean("battery_opt_shown", false)) return;
+        sp.edit().putBoolean("battery_opt_shown", true).apply();
+
+        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+        if (pm != null && pm.isIgnoringBatteryOptimizations(getPackageName())) return;
+
+        new AlertDialog.Builder(this)
+            .setTitle("Background Tracking")
+            .setMessage("Guardian must run continuously to track location and receive fleet commands.\n\n"
+                + "Please tap \"Allow\" and disable battery optimization for this app — otherwise "
+                + "Android may kill the tracking service when the screen is off.")
+            .setCancelable(false)
+            .setPositiveButton("Allow", new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface d, int w) {
+                    try {
+                        android.content.Intent i = new android.content.Intent(
+                            android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                        i.setData(android.net.Uri.parse("package:" + getPackageName()));
+                        startActivity(i);
+                    } catch (Exception ignored) {}
+                }
+            })
+            .setNegativeButton("Skip", null)
+            .show();
     }
 
     // ── Battery ───────────────────────────────────────────────────────────────

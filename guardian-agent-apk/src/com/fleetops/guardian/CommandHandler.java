@@ -23,7 +23,29 @@ public class CommandHandler {
     }
 
     public void handle(String commandId, String commandType, String payloadJson) {
+        handle(commandId, commandType, payloadJson, null, null);
+    }
+
+    public void handle(String commandId, String commandType, String payloadJson,
+                       String issuedAt, String signature) {
         Log.i(TAG, "cmd=" + commandType + " id=" + commandId);
+
+        // HMAC signature verification (if signature present and signing secret configured)
+        if (signature != null && !signature.isEmpty()) {
+            DevicePrefs prefs = new DevicePrefs(ctx);
+            String signingKey = prefs.getCommandSigningSecret();
+            if (signingKey != null && !signingKey.isEmpty()) {
+                String expected = ApiClient.hmacSha256(
+                    commandId + ":" + commandType + ":" + (issuedAt != null ? issuedAt : ""),
+                    signingKey);
+                if (!signature.equals(expected)) {
+                    Log.e(TAG, "Command signature mismatch for id=" + commandId + " — rejecting");
+                    listener.onHandled(commandId, false, "signature_mismatch");
+                    return;
+                }
+            }
+        }
+
         try {
             JSONObject p = (payloadJson != null && !payloadJson.isEmpty())
                 ? new JSONObject(payloadJson) : new JSONObject();
