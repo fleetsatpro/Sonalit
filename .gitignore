@@ -3,3 +3,4 @@
 backend/.env
 backend/.env
 **/.env
+guardian-agent/.gradle/
