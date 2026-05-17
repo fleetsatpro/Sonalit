@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="navy_950">#FF060E1A</color>
+    <color name="navy_900">#FF0B1829</color>
+    <color name="navy_800">#FF0D2240</color>
+    <color name="cyan">#FF00D4FF</color>
+    <color name="cyan_dim">#1A00D4FF</color>
+    <color name="success">#FF00FF88</color>
+    <color name="warning">#FFFFAA00</color>
+    <color name="danger">#FFFF3355</color>
+    <color name="muted">#FF4A7090</color>
+    <color name="body">#FFC8DDF0</color>
+    <color name="bright">#FFE8F4FF</color>
+    <color name="surface_border">#2600D4FF</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="black">#FF000000</color>
+</resources>
