@@ -3,6 +3,54 @@ const { query } = require('../config/database');
 const { authenticate } = require('../middleware/auth');
 const logger = require('../utils/logger');
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
+const rateLimit = require('express-rate-limit');
+
+// ─── Rate Limiters ────────────────────────────────────────────────────────────
+
+const enrollLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
+});
+
+const panicLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  keyGenerator: (req) => req.headers['x-device-token'] || req.ip,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
+});
+
+const heartbeatLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 6,
+  keyGenerator: (req) => req.headers['x-device-token'] || req.ip,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
+});
+
+const commandLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  keyGenerator: (req) => (req.user && req.user.id) ? req.user.id : req.ip,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
+});
+
+// ─── HMAC signing helper ──────────────────────────────────────────────────────
+
+const COMMAND_SIGNING_SECRET = process.env.COMMAND_SIGNING_SECRET || 'guardian-dev-signing-secret-2024';
+
+function signCommand(commandId, commandType, issuedAt) {
+  const ts = issuedAt instanceof Date ? issuedAt.toISOString() : issuedAt;
+  return crypto.createHmac('sha256', COMMAND_SIGNING_SECRET).update(`${commandId}:${commandType}:${ts}`).digest('hex');
+}
 
 // ─── Table Initialisation ────────────────────────────────────────────────────
 
@@ -133,14 +181,112 @@ async function ensureTables() {
     await query(`CREATE INDEX IF NOT EXISTS idx_panic_events_resolved ON panic_events(resolved_at)`);
     await query(`CREATE INDEX IF NOT EXISTS idx_field_reports_device_id ON field_reports(device_id)`);
 
+    // p2t5 — audit log table
+    await query(`
+      CREATE TABLE IF NOT EXISTS guardian_audit_log (
+        id          BIGSERIAL PRIMARY KEY,
+        actor_type  TEXT NOT NULL CHECK (actor_type IN ('admin','device','system')),
+        actor_id    UUID,
+        action      TEXT NOT NULL,
+        target_type TEXT,
+        target_id   UUID,
+        payload     JSONB,
+        ip_address  TEXT,
+        created_at  TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await query(`CREATE INDEX IF NOT EXISTS idx_audit_log_actor ON guardian_audit_log(actor_id, created_at DESC)`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_audit_log_target ON guardian_audit_log(target_type, target_id, created_at DESC)`);
+    await query(`CREATE INDEX IF NOT EXISTS idx_audit_log_action ON guardian_audit_log(action, created_at DESC)`);
+
+    // p3t1 — enrollment codes
+    await query(`
+      CREATE TABLE IF NOT EXISTS enrollment_codes (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        org_id     UUID,
+        code       TEXT NOT NULL UNIQUE,
+        used_at    TIMESTAMPTZ,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_by UUID,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    // p3t5 — DMS server-side config seed rows
+    await query(`
+      INSERT INTO guardian_config (key, value_int, description) VALUES
+        ('dms_default_interval_minutes', 60, 'Default dead-man switch interval in minutes'),
+        ('dms_max_interval_minutes', 480, 'Maximum allowed DMS interval')
+      ON CONFLICT (key) DO NOTHING
+    `);
+
+    // p3t6 — convoy codes
+    await query(`
+      CREATE TABLE IF NOT EXISTS convoy_codes (
+        code        TEXT PRIMARY KEY,
+        created_by  UUID REFERENCES users(id),
+        org_id      UUID,
+        max_members INT DEFAULT 50,
+        expires_at  TIMESTAMPTZ,
+        active      BOOLEAN DEFAULT true,
+        created_at  TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    // p3t7 — command signing: signature column
+    await query(`ALTER TABLE device_commands ADD COLUMN IF NOT EXISTS signature TEXT`);
+
     logger.info('Guardian tables initialised');
   } catch (err) {
     logger.error(`Guardian ensureTables error: ${err.message}`);
   }
 }
 
+// ─── Audit Log Helper ─────────────────────────────────────────────────────────
+
+/**
+ * Fire-and-forget audit log insert. Never throws — errors are caught and logged.
+ */
+function auditLog(actor_type, actor_id, action, target_type, target_id, payload, ip) {
+  query(
+    `INSERT INTO guardian_audit_log
+       (actor_type, actor_id, action, target_type, target_id, payload, ip_address)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [
+      actor_type,
+      actor_id || null,
+      action,
+      target_type || null,
+      target_id || null,
+      payload ? JSON.stringify(payload) : null,
+      ip || null,
+    ]
+  ).catch((err) => logger.error(`auditLog error: ${err.message}`));
+}
+
+// ─── Command Expiry Background Job ───────────────────────────────────────────
+
+async function runCommandExpiryJob() {
+  try {
+    const result = await query(
+      `UPDATE device_commands
+       SET status = 'expired'
+       WHERE status IN ('pending', 'sent') AND expires_at < NOW()`
+    );
+    if (result.rowCount > 0) {
+      logger.info(`Command expiry job: expired ${result.rowCount} commands`);
+    }
+  } catch (err) {
+    logger.error(`Command expiry job error: ${err.message}`);
+  }
+}
+
 // Run immediately on module load
-ensureTables();
+ensureTables().then(() => {
+  // Start command expiry job after tables are ready
+  runCommandExpiryJob();
+  setInterval(runCommandExpiryJob, 10 * 60 * 1000); // every 10 minutes
+});
 
 // ─── Device Auth Middleware ───────────────────────────────────────────────────
 
@@ -180,9 +326,9 @@ async function deviceAuth(req, res, next) {
  * POST /api/v1/guardian/enroll
  * Register a new device. Validates org_token against env GUARDIAN_ORG_TOKEN.
  */
-router.post('/enroll', async (req, res, next) => {
+router.post('/enroll', enrollLimiter, async (req, res, next) => {
   try {
-    const { name, imei, model, os_version, app_version, org_token } = req.body;
+    const { name, imei, model, os_version, app_version, org_token, enrollment_code } = req.body;
 
     if (!name) {
       return res.status(400).json({ error: 'name is required' });
@@ -197,6 +343,20 @@ router.post('/enroll', async (req, res, next) => {
       return res.status(403).json({ error: 'Invalid organisation token' });
     }
 
+    // Optional enrollment code validation (backward compat: skip if not provided)
+    let enrollmentCodeId = null;
+    if (enrollment_code && enrollment_code.trim()) {
+      const codeRow = await query(
+        `SELECT id FROM enrollment_codes
+         WHERE code = $1 AND used_at IS NULL AND expires_at > NOW()`,
+        [enrollment_code.trim().toUpperCase()]
+      );
+      if (!codeRow.rows.length) {
+        return res.status(403).json({ error: 'Invalid or expired enrollment code' });
+      }
+      enrollmentCodeId = codeRow.rows[0].id;
+    }
+
     const result = await query(
       `INSERT INTO guardian_devices (name, imei, model, os_version, app_version, status)
        VALUES ($1, $2, $3, $4, $5, 'pending')
@@ -205,7 +365,18 @@ router.post('/enroll', async (req, res, next) => {
     );
 
     const device = result.rows[0];
+
+    // Mark enrollment code used if one was provided
+    if (enrollmentCodeId) {
+      await query(
+        `UPDATE enrollment_codes SET used_at = NOW() WHERE id = $1`,
+        [enrollmentCodeId]
+      );
+    }
+
     logger.info(`Guardian device enrolled: ${device.id} name="${name}" imei=${imei}`);
+
+    auditLog('device', null, 'enroll', 'device', device.id, { name, imei }, req.ip);
 
     res.status(201).json({
       device_id: device.id,
@@ -221,7 +392,7 @@ router.post('/enroll', async (req, res, next) => {
  * POST /api/v1/guardian/heartbeat
  * Battery / health ping every 60 s. Returns queued commands.
  */
-router.post('/heartbeat', deviceAuth, async (req, res, next) => {
+router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) => {
   try {
     const {
       battery_level,
@@ -305,7 +476,8 @@ router.post('/heartbeat', deviceAuth, async (req, res, next) => {
       SET status = 'sent', sent_at = NOW()
       FROM claimed
       WHERE dc.id = claimed.id
-      RETURNING dc.*`,
+      RETURNING dc.id, dc.command_type, dc.payload, dc.status,
+                dc.issued_at, dc.executed_at, dc.signature`,
       [deviceId]
     );
 
@@ -379,7 +551,7 @@ router.post('/location', deviceAuth, async (req, res, next) => {
  * POST /api/v1/guardian/panic
  * Trigger SOS alert from device.
  */
-router.post('/panic', deviceAuth, async (req, res, next) => {
+router.post('/panic', deviceAuth, panicLimiter, async (req, res, next) => {
   try {
     const { mode, lat, lng, message } = req.body;
     // event_uuid is optional for backward compatibility; generate one server-side if omitted
@@ -582,7 +754,7 @@ router.post('/ack-command', deviceAuth, async (req, res, next) => {
  */
 router.get('/devices', authenticate, async (req, res, next) => {
   try {
-    const { status, search, limit = 50, offset = 0 } = req.query;
+    const { status, search, after, limit = 50, offset = 0 } = req.query;
 
     const filters = ['gd.deleted_at IS NULL'];
     const params = [];
@@ -596,6 +768,10 @@ router.get('/devices', authenticate, async (req, res, next) => {
       filters.push(
         `(gd.name ILIKE $${params.length} OR gd.imei ILIKE $${params.length} OR gd.model ILIKE $${params.length})`
       );
+    }
+    if (after) {
+      params.push(after);
+      filters.push(`gd.created_at < $${params.length}`);
     }
 
     params.push(parseInt(limit), parseInt(offset));
@@ -636,7 +812,16 @@ router.get('/devices', authenticate, async (req, res, next) => {
       params.slice(0, -2)
     );
 
-    res.json({ data: result.rows, total: parseInt(total.rows[0].count) });
+    const rows = result.rows;
+    const parsedLimit = parseInt(limit);
+    const next_cursor =
+      rows.length < parsedLimit
+        ? null
+        : rows[rows.length - 1].created_at instanceof Date
+        ? rows[rows.length - 1].created_at.toISOString()
+        : rows[rows.length - 1].created_at;
+
+    res.json({ data: rows, total: parseInt(total.rows[0].count), next_cursor });
   } catch (err) {
     next(err);
   }
@@ -719,6 +904,8 @@ router.patch('/devices/:id', authenticate, async (req, res, next) => {
       return res.status(404).json({ error: 'Device not found' });
     }
 
+    auditLog('admin', req.user.id, 'device_updated', 'device', req.params.id, req.body, req.ip);
+
     res.json({ data: result.rows[0] });
   } catch (err) {
     next(err);
@@ -743,6 +930,7 @@ router.delete('/devices/:id', authenticate, async (req, res, next) => {
       return res.status(404).json({ error: 'Device not found' });
     }
 
+    auditLog('admin', req.user.id, 'device_deleted', 'device', req.params.id, {}, req.ip);
     logger.info(`Guardian device soft-deleted: ${req.params.id} by user ${req.user.id}`);
     res.json({ ok: true });
   } catch (err) {
@@ -754,7 +942,7 @@ router.delete('/devices/:id', authenticate, async (req, res, next) => {
  * POST /api/v1/guardian/devices/:id/command
  * Send a remote command to a device.
  */
-router.post('/devices/:id/command', authenticate, async (req, res, next) => {
+router.post('/devices/:id/command', authenticate, commandLimiter, async (req, res, next) => {
   try {
     const { command_type, payload } = req.body;
 
@@ -778,14 +966,23 @@ router.post('/devices/:id/command', authenticate, async (req, res, next) => {
       return res.status(404).json({ error: 'Device not found' });
     }
 
-    const result = await query(
-      `INSERT INTO device_commands (device_id, command_type, payload, issued_by)
-       VALUES ($1, $2, $3, $4)
+    const insertResult = await query(
+      `INSERT INTO device_commands (device_id, command_type, payload, issued_by, expires_at)
+       VALUES ($1, $2, $3, $4, NOW() + INTERVAL '24 hours')
        RETURNING id, issued_at`,
       [req.params.id, command_type, payload ? JSON.stringify(payload) : null, req.user.id]
     );
 
-    const cmd = result.rows[0];
+    const cmd = insertResult.rows[0];
+    const signature = signCommand(cmd.id, command_type, cmd.issued_at);
+
+    // Store signature
+    await query(
+      `UPDATE device_commands SET signature = $1 WHERE id = $2`,
+      [signature, cmd.id]
+    );
+
+    auditLog('admin', req.user.id, 'command_issued', 'device', req.params.id, { command_type, payload }, req.ip);
 
     const io = req.app.get('io');
     if (io) {
@@ -795,12 +992,13 @@ router.post('/devices/:id/command', authenticate, async (req, res, next) => {
         payload: payload || null,
         command_id: cmd.id,
         issued_at: cmd.issued_at,
+        signature,
       });
     }
 
     logger.info(`Command issued: ${command_type} → device=${req.params.id} by user=${req.user.id}`);
 
-    res.status(201).json({ command_id: cmd.id });
+    res.status(201).json({ command_id: cmd.id, signature });
   } catch (err) {
     next(err);
   }
@@ -883,7 +1081,7 @@ router.get('/devices/:id/history', authenticate, async (req, res, next) => {
  */
 router.get('/panic', authenticate, async (req, res, next) => {
   try {
-    const { active_only, device_id, limit = 50, offset = 0 } = req.query;
+    const { active_only, device_id, after, limit = 50, offset = 0 } = req.query;
 
     const filters = [];
     const params = [];
@@ -893,7 +1091,11 @@ router.get('/panic', authenticate, async (req, res, next) => {
     }
     if (device_id) {
       params.push(device_id);
-      filters.push(`pe.device_id = $${params.length}`);
+      filters.push(`pe.device_id = ${params.length}`);
+    }
+    if (after) {
+      params.push(after);
+      filters.push(`pe.created_at < ${params.length}`);
     }
 
     params.push(parseInt(limit), parseInt(offset));
@@ -908,7 +1110,7 @@ router.get('/panic', authenticate, async (req, res, next) => {
        JOIN guardian_devices gd ON gd.id = pe.device_id
        ${whereClause}
        ORDER BY pe.created_at DESC
-       LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+       LIMIT ${limitIdx} OFFSET ${offsetIdx}`,
       params
     );
 
@@ -917,7 +1119,16 @@ router.get('/panic', authenticate, async (req, res, next) => {
       params.slice(0, -2)
     );
 
-    res.json({ data: result.rows, total: parseInt(total.rows[0].count) });
+    const panicRows = result.rows;
+    const panicLimit = parseInt(limit);
+    const next_cursor =
+      panicRows.length < panicLimit
+        ? null
+        : panicRows[panicRows.length - 1].created_at instanceof Date
+        ? panicRows[panicRows.length - 1].created_at.toISOString()
+        : panicRows[panicRows.length - 1].created_at;
+
+    res.json({ data: panicRows, total: parseInt(total.rows[0].count), next_cursor });
   } catch (err) {
     next(err);
   }
@@ -945,6 +1156,7 @@ router.patch('/panic/:id/resolve', authenticate, async (req, res, next) => {
 
     // Trigger on panic_events handles panic_active recomputation — no manual UPDATE needed
 
+    auditLog('admin', req.user.id, 'panic_resolved', 'panic_event', req.params.id, {}, req.ip);
     logger.info(`Panic resolved: ${req.params.id} by user=${req.user.id}`);
 
     res.json({ data: panicEvent });
@@ -959,22 +1171,26 @@ router.patch('/panic/:id/resolve', authenticate, async (req, res, next) => {
  */
 router.get('/reports', authenticate, async (req, res, next) => {
   try {
-    const { category, severity, device_id, limit = 50, offset = 0 } = req.query;
+    const { category, severity, device_id, after, limit = 50, offset = 0 } = req.query;
 
     const filters = [];
     const params = [];
 
     if (category) {
       params.push(category);
-      filters.push(`fr.category = $${params.length}`);
+      filters.push(`fr.category = ${params.length}`);
     }
     if (severity) {
       params.push(severity);
-      filters.push(`fr.severity = $${params.length}`);
+      filters.push(`fr.severity = ${params.length}`);
     }
     if (device_id) {
       params.push(device_id);
-      filters.push(`fr.device_id = $${params.length}`);
+      filters.push(`fr.device_id = ${params.length}`);
+    }
+    if (after) {
+      params.push(after);
+      filters.push(`fr.created_at < ${params.length}`);
     }
 
     params.push(parseInt(limit), parseInt(offset));
@@ -989,7 +1205,7 @@ router.get('/reports', authenticate, async (req, res, next) => {
        JOIN guardian_devices gd ON gd.id = fr.device_id
        ${whereClause}
        ORDER BY fr.created_at DESC
-       LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+       LIMIT ${limitIdx} OFFSET ${offsetIdx}`,
       params
     );
 
@@ -998,7 +1214,16 @@ router.get('/reports', authenticate, async (req, res, next) => {
       params.slice(0, -2)
     );
 
-    res.json({ data: result.rows, total: parseInt(total.rows[0].count) });
+    const reportRows = result.rows;
+    const reportLimit = parseInt(limit);
+    const next_cursor =
+      reportRows.length < reportLimit
+        ? null
+        : reportRows[reportRows.length - 1].created_at instanceof Date
+        ? reportRows[reportRows.length - 1].created_at.toISOString()
+        : reportRows[reportRows.length - 1].created_at;
+
+    res.json({ data: reportRows, total: parseInt(total.rows[0].count), next_cursor });
   } catch (err) {
     next(err);
   }
@@ -1037,6 +1262,29 @@ router.post('/convoy/join', deviceAuth, async (req, res, next) => {
       return res.status(400).json({ error: 'convoy_code is required (min 2 chars)' });
     }
     const code = convoy_code.trim().toUpperCase();
+
+    // Check convoy_codes table for managed codes (backward compat: legacy codes not in table are allowed)
+    const codeRow = await query(
+      `SELECT code, max_members, active, expires_at FROM convoy_codes WHERE code = $1`,
+      [code]
+    );
+
+    if (codeRow.rows.length > 0) {
+      const cc = codeRow.rows[0];
+      // Reject if inactive or expired
+      if (!cc.active || (cc.expires_at && new Date(cc.expires_at) < new Date())) {
+        return res.status(403).json({ error: 'convoy_code_invalid' });
+      }
+      // Check member count
+      const memberCount = await query(
+        `SELECT COUNT(*) FROM guardian_devices WHERE convoy_code = $1 AND deleted_at IS NULL`,
+        [code]
+      );
+      if (parseInt(memberCount.rows[0].count) >= cc.max_members) {
+        return res.status(403).json({ error: 'convoy_full' });
+      }
+    }
+
     await query(
       `UPDATE guardian_devices SET convoy_code = $2, updated_at = NOW() WHERE id = $1`,
       [req.device.id, code]
@@ -1118,6 +1366,164 @@ router.get('/convoys', authenticate, async (req, res, next) => {
        ORDER BY last_active DESC`
     );
     res.json({ convoys: result.rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Enrollment Codes ─────────────────────────────────────────────────────────
+
+/**
+ * POST /api/v1/guardian/enrollment-codes
+ * Generate a new enrollment code.
+ */
+router.post('/enrollment-codes', authenticate, async (req, res, next) => {
+  try {
+    const expiresInMinutes = Math.min(parseInt(req.body.expires_in_minutes) || 60, 1440);
+
+    // Generate 12-char alphanumeric code
+    const bytes = crypto.randomBytes(9);
+    const code = bytes.toString('base64').replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 12).padEnd(12, 'A');
+
+    const result = await query(
+      `INSERT INTO enrollment_codes (code, expires_at, created_by)
+       VALUES ($1, NOW() + ($2 || ' minutes')::INTERVAL, $3)
+       RETURNING id, code, expires_at`,
+      [code, expiresInMinutes, req.user.id]
+    );
+
+    const row = result.rows[0];
+    auditLog('admin', req.user.id, 'enrollment_code_created', 'enrollment_code', row.id,
+      { expires_in_minutes: expiresInMinutes }, req.ip);
+
+    res.status(201).json({ code: row.code, expires_at: row.expires_at, id: row.id });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/v1/guardian/enrollment-codes
+ * List all non-expired, unused codes.
+ */
+router.get('/enrollment-codes', authenticate, async (req, res, next) => {
+  try {
+    const result = await query(
+      `SELECT ec.id, ec.code, ec.expires_at, ec.created_at,
+              u.name AS created_by_name
+       FROM enrollment_codes ec
+       LEFT JOIN users u ON u.id = ec.created_by
+       WHERE ec.used_at IS NULL AND ec.expires_at > NOW()
+       ORDER BY ec.created_at DESC`
+    );
+    res.json({ data: result.rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Server Config ────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/v1/guardian/config
+ * Returns all guardian_config as key→value object. Device uses this on startup.
+ */
+router.get('/config', deviceAuth, async (req, res, next) => {
+  try {
+    const result = await query(`SELECT key, value_int, value_text FROM guardian_config`);
+    const config = {};
+    for (const row of result.rows) {
+      config[row.key] = row.value_int != null ? row.value_int : row.value_text;
+    }
+    res.json(config);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * PATCH /api/v1/guardian/config
+ * Update a guardian config value.
+ */
+router.patch('/config', authenticate, async (req, res, next) => {
+  try {
+    const { key, value_int, value_text } = req.body;
+
+    const allowlist = ['dms_default_interval_minutes', 'dms_max_interval_minutes', 'min_apk_version_code'];
+    if (!key || !allowlist.includes(key)) {
+      return res.status(400).json({ error: `key must be one of: ${allowlist.join(', ')}` });
+    }
+
+    const result = await query(
+      `INSERT INTO guardian_config (key, value_int, value_text, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (key) DO UPDATE
+         SET value_int = EXCLUDED.value_int,
+             value_text = EXCLUDED.value_text,
+             updated_at = NOW()
+       RETURNING key, value_int, value_text`,
+      [key, value_int != null ? value_int : null, value_text || null]
+    );
+
+    auditLog('admin', req.user.id, 'config_updated', 'config', null,
+      { key, value_int, value_text }, req.ip);
+
+    res.json({ data: result.rows[0] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Convoy Codes ─────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/v1/guardian/convoy-codes
+ * Generate a new convoy code.
+ */
+router.post('/convoy-codes', authenticate, async (req, res, next) => {
+  try {
+    const maxMembers = parseInt(req.body.max_members) || 50;
+    const expiresInHours = parseInt(req.body.expires_in_hours) || 24;
+
+    // Generate 6-char alphanumeric code
+    const bytes = crypto.randomBytes(5);
+    const code = bytes.toString('base64').replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 6).padEnd(6, 'A');
+
+    const result = await query(
+      `INSERT INTO convoy_codes (code, created_by, max_members, expires_at)
+       VALUES ($1, $2, $3, NOW() + ($4 || ' hours')::INTERVAL)
+       RETURNING code, expires_at`,
+      [code, req.user.id, maxMembers, expiresInHours]
+    );
+
+    const row = result.rows[0];
+    auditLog('admin', req.user.id, 'convoy_code_created', 'convoy_code', null,
+      { code: row.code, max_members: maxMembers, expires_in_hours: expiresInHours }, req.ip);
+
+    res.status(201).json({ code: row.code, expires_at: row.expires_at });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/v1/guardian/convoy-codes
+ * List all non-expired convoy codes.
+ */
+router.get('/convoy-codes', authenticate, async (req, res, next) => {
+  try {
+    const result = await query(
+      `SELECT cc.code, cc.max_members, cc.expires_at, cc.active, cc.created_at,
+              u.name AS created_by_name,
+              COUNT(gd.id) AS current_members
+       FROM convoy_codes cc
+       LEFT JOIN users u ON u.id = cc.created_by
+       LEFT JOIN guardian_devices gd ON gd.convoy_code = cc.code AND gd.deleted_at IS NULL
+       WHERE (cc.expires_at IS NULL OR cc.expires_at > NOW()) AND cc.active = true
+       GROUP BY cc.code, cc.max_members, cc.expires_at, cc.active, cc.created_at, u.name
+       ORDER BY cc.created_at DESC`
+    );
+    res.json({ data: result.rows });
   } catch (err) {
     next(err);
   }
