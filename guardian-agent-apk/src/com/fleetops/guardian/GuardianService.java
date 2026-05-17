@@ -114,6 +114,7 @@ public class GuardianService extends Service implements LocationListener {
         crashDetector.stop();
         try { locationManager.removeUpdates(this); } catch (Exception ignored) {}
         try { unregisterReceiver(controlReceiver); } catch (Exception ignored) {}
+        SirenController.getInstance(this).stop();
         super.onDestroy();
     }
 
@@ -207,7 +208,7 @@ public class GuardianService extends Service implements LocationListener {
                         for (OfflineQueue.Item item : items) {
                             boolean ok = replayItem(url, token, item);
                             if (ok) offlineQueue.markSent(item.id);
-                            else    offlineQueue.markAttempted(item.id);
+                            else    offlineQueue.markAttempted(item.id, item.type, item.createdAt);
                         }
                         broadcastQueueCount();
                     }
@@ -231,23 +232,26 @@ public class GuardianService extends Service implements LocationListener {
     }
 
     private void broadcastQueueCount() {
-        int count = offlineQueue.getPendingCount();
+        int count      = offlineQueue.getPendingCount();
+        int permFailed = offlineQueue.getFailedPermanentCount();
         sendBroadcast(new Intent("com.fleetops.guardian.QUEUE_COUNT")
-            .putExtra("count", count));
+            .putExtra("count", count)
+            .putExtra("failed_permanent", permFailed));
     }
 
     // ── Panic ─────────────────────────────────────────────────────────────────
 
     void triggerPanic(final String mode) {
-        final String url   = prefs.getServerUrl();
-        final String token = prefs.getToken();
-        final double lat   = lastLat;
-        final double lng   = lastLng;
+        final String url       = prefs.getServerUrl();
+        final String token     = prefs.getToken();
+        final double lat       = lastLat;
+        final double lng       = lastLng;
+        final String eventUuid = ApiClient.newEventUuid();
 
         new Thread(new Runnable() {
             @Override
             public void run() {
-                boolean ok = ApiClient.sendPanic(url, token, mode, lat, lng);
+                boolean ok = ApiClient.sendPanic(url, token, mode, lat, lng, eventUuid);
                 if (!ok) {
                     // Build offline payload
                     try {
@@ -255,6 +259,7 @@ public class GuardianService extends Service implements LocationListener {
                         body.put("mode", mode);
                         body.put("lat", lat);
                         body.put("lng", lng);
+                        body.put("event_uuid", eventUuid);
                         offlineQueue.enqueue("panic", body.toString());
                         broadcastQueueCount();
                     } catch (Exception ignored) {}

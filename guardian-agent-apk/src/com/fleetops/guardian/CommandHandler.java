@@ -4,11 +4,6 @@ import android.app.Notification;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
-import android.media.Ringtone;
-import android.media.RingtoneManager;
-import android.os.Handler;
-import android.os.Looper;
-import android.os.Vibrator;
 import android.util.Log;
 import org.json.JSONObject;
 
@@ -21,12 +16,6 @@ public class CommandHandler {
 
     private final Context  ctx;
     private final Listener listener;
-
-    // Class-level siren state so stop_siren can cancel it
-    private Ringtone  activeSiren    = null;
-    private Vibrator  activeVibrator = null;
-    private final Handler  sirenHandler   = new Handler(Looper.getMainLooper());
-    private Runnable  sirenStop      = null;
 
     public CommandHandler(Context ctx, Listener listener) {
         this.ctx = ctx;
@@ -66,52 +55,16 @@ public class CommandHandler {
         }
     }
 
-    private void stopActiveSiren() {
-        if (sirenStop != null) {
-            sirenHandler.removeCallbacks(sirenStop);
-            sirenStop = null;
-        }
-        if (activeSiren != null) {
-            try { activeSiren.stop(); } catch (Exception ignored) {}
-            activeSiren = null;
-        }
-        if (activeVibrator != null) {
-            try { activeVibrator.cancel(); } catch (Exception ignored) {}
-            activeVibrator = null;
-        }
-    }
-
     private void handleSiren(final String id, JSONObject p) {
         final int durationSec = p.optInt("duration", 10);
-
-        // Stop any already-running siren first
-        stopActiveSiren();
-
-        activeVibrator = (Vibrator) ctx.getSystemService(Context.VIBRATOR_SERVICE);
-        if (activeVibrator != null) {
-            long[] pattern = {0, 600, 200, 600, 200, 600, 200, 600};
-            activeVibrator.vibrate(pattern, 0); // repeat from index 0
-        }
-        try {
-            activeSiren = RingtoneManager.getRingtone(ctx,
-                RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM));
-            if (activeSiren != null) {
-                activeSiren.play();
-            }
-        } catch (Exception ignored) {}
-
-        sirenStop = new Runnable() {
-            @Override public void run() { stopActiveSiren(); }
-        };
-        sirenHandler.postDelayed(sirenStop, durationSec * 1000L);
-
+        SirenController.getInstance(ctx).start(ctx, durationSec * 1000);
         postNotification("REMOTE SIREN ACTIVATED",
             "Fleet manager triggered siren for " + durationSec + "s. Use Stop Siren to cancel.");
         listener.onHandled(id, true, "siren " + durationSec + "s");
     }
 
     private void handleStopSiren(String id) {
-        stopActiveSiren();
+        SirenController.getInstance(ctx).stop();
         postNotification("SIREN STOPPED", "Remote siren cancelled by fleet manager");
         listener.onHandled(id, true, "siren stopped");
     }

@@ -125,13 +125,15 @@ public class ApiClient {
     // ── Panic ─────────────────────────────────────────────────────────────────
 
     public static boolean sendPanic(String serverUrl, String token,
-                                    String mode, double lat, double lng) {
+                                    String mode, double lat, double lng,
+                                    String eventUuid) {
         if (mode == null || mode.isEmpty()) return true;
         try {
             JSONObject body = new JSONObject();
             body.put("mode", mode);
             body.put("lat", lat);
             body.put("lng", lng);
+            body.put("event_uuid", eventUuid);
             String resp = post(serverUrl + "/api/v1/guardian/panic", token, body.toString());
             return resp != null;
         } catch (Exception e) {
@@ -144,7 +146,8 @@ public class ApiClient {
 
     public static boolean sendReport(String serverUrl, String token,
                                      String displayCategory, String desc,
-                                     double lat, double lng, String photoBase64) {
+                                     double lat, double lng, String photoBase64,
+                                     String eventUuid) {
         try {
             JSONObject body = new JSONObject();
             body.put("category", mapCategory(displayCategory));
@@ -152,6 +155,7 @@ public class ApiClient {
             body.put("description", desc);
             body.put("lat", lat);
             body.put("lng", lng);
+            body.put("event_uuid", eventUuid);
             if (photoBase64 != null && !photoBase64.isEmpty()) {
                 body.put("photo_url", "data:image/jpeg;base64," + photoBase64);
             }
@@ -161,6 +165,12 @@ public class ApiClient {
             Log.e(TAG, "report error", e);
             return false;
         }
+    }
+
+    // ── UUID utility ──────────────────────────────────────────────────────────
+
+    public static String newEventUuid() {
+        return java.util.UUID.randomUUID().toString();
     }
 
     // ── Location (immediate post, used by request_location command) ──────────

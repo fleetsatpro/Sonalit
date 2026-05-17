@@ -65,9 +65,20 @@ public class MainActivity extends Activity {
         public void onReceive(Context ctx, Intent intent) {
             String action = intent.getAction();
             if ("com.fleetops.guardian.QUEUE_COUNT".equals(action)) {
-                int count = intent.getIntExtra("count", 0);
-                tvQueueBadge.setText(count > 0 ? "QUEUED: " + count : "");
-                tvQueueBadge.setVisibility(count > 0 ? View.VISIBLE : View.GONE);
+                int count      = intent.getIntExtra("count", 0);
+                int permFailed = intent.getIntExtra("failed_permanent", 0);
+                String badgeText;
+                if (count > 0 && permFailed > 0) {
+                    badgeText = "QUEUED: " + count + " | FAILED: " + permFailed;
+                } else if (permFailed > 0) {
+                    badgeText = "FAILED: " + permFailed;
+                } else if (count > 0) {
+                    badgeText = "QUEUED: " + count;
+                } else {
+                    badgeText = "";
+                }
+                tvQueueBadge.setText(badgeText);
+                tvQueueBadge.setVisibility((count > 0 || permFailed > 0) ? View.VISIBLE : View.GONE);
             } else if ("com.fleetops.guardian.MESSAGE".equals(action)) {
                 prefs.incrementUnread();
                 updateMessageBadge();
@@ -277,19 +288,22 @@ public class MainActivity extends Activity {
         tvPanicMode.setText("SOS ACTIVE — " + mode.toUpperCase());
         tvPanicMode.setTextColor(0xFFFF3355);
 
-        final double lat = currentLat;
-        final double lng = currentLng;
+        final double lat       = currentLat;
+        final double lng       = currentLng;
+        final String eventUuid = ApiClient.newEventUuid();
         new Thread(new Runnable() {
             @Override
             public void run() {
                 final boolean ok =
-                    ApiClient.sendPanic(prefs.getServerUrl(), prefs.getToken(), mode, lat, lng);
+                    ApiClient.sendPanic(prefs.getServerUrl(), prefs.getToken(),
+                        mode, lat, lng, eventUuid);
                 if (!ok) {
                     try {
                         org.json.JSONObject body = new org.json.JSONObject();
                         body.put("mode", mode);
                         body.put("lat", lat);
                         body.put("lng", lng);
+                        body.put("event_uuid", eventUuid);
                         new OfflineQueue(MainActivity.this)
                             .enqueue("panic", body.toString());
                     } catch (Exception ignored) {}
@@ -365,10 +379,11 @@ public class MainActivity extends Activity {
                             "Add a description", Toast.LENGTH_SHORT).show();
                         return;
                     }
-                    final String cat   = reportCats[chosen[0]];
-                    final double lat   = currentLat;
-                    final double lng   = currentLng;
-                    final String photo = pendingPhotoBase64;
+                    final String cat       = reportCats[chosen[0]];
+                    final double lat       = currentLat;
+                    final double lng       = currentLng;
+                    final String photo     = pendingPhotoBase64;
+                    final String eventUuid = ApiClient.newEventUuid();
                     pendingPhotoBase64 = null;
 
                     new Thread(new Runnable() {
@@ -376,7 +391,7 @@ public class MainActivity extends Activity {
                         public void run() {
                             final boolean ok = ApiClient.sendReport(
                                 prefs.getServerUrl(), prefs.getToken(),
-                                cat, desc, lat, lng, photo);
+                                cat, desc, lat, lng, photo, eventUuid);
                             runOnUiThread(new Runnable() {
                                 @Override
                                 public void run() {

@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { query } = require('../config/database');
 const { authenticate } = require('../middleware/auth');
 const logger = require('../utils/logger');
+const { v4: uuidv4 } = require('uuid');
 
 // ─── Table Initialisation ────────────────────────────────────────────────────
 
@@ -290,12 +291,21 @@ router.post('/heartbeat', deviceAuth, async (req, res, next) => {
       );
     }
 
-    // Fetch pending commands for this device
+    // Atomically claim and mark pending commands as 'sent' (FOR UPDATE SKIP LOCKED
+    // prevents duplicate delivery when multiple heartbeats arrive concurrently)
     const commands = await query(
-      `SELECT id, command_type, payload, issued_at
-       FROM device_commands
-       WHERE device_id = $1 AND status = 'pending'
-       ORDER BY issued_at ASC`,
+      `WITH claimed AS (
+        SELECT id FROM device_commands
+        WHERE device_id = $1 AND status = 'pending'
+        ORDER BY issued_at ASC
+        LIMIT 50
+        FOR UPDATE SKIP LOCKED
+      )
+      UPDATE device_commands dc
+      SET status = 'sent', sent_at = NOW()
+      FROM claimed
+      WHERE dc.id = claimed.id
+      RETURNING dc.*`,
       [deviceId]
     );
 
@@ -372,6 +382,8 @@ router.post('/location', deviceAuth, async (req, res, next) => {
 router.post('/panic', deviceAuth, async (req, res, next) => {
   try {
     const { mode, lat, lng, message } = req.body;
+    // event_uuid is optional for backward compatibility; generate one server-side if omitted
+    const event_uuid = req.body.event_uuid || uuidv4();
 
     const validModes = ['silent', 'loud', 'medical', 'security', 'hijack'];
     if (!mode || !validModes.includes(mode)) {
@@ -382,39 +394,55 @@ router.post('/panic', deviceAuth, async (req, res, next) => {
 
     const deviceId = req.device.id;
 
-    const result = await query(
-      `INSERT INTO panic_events (device_id, mode, lat, lng, message)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, created_at`,
-      [deviceId, mode, lat ?? null, lng ?? null, message || null]
+    // Step 1: attempt idempotent insert
+    const insertResult = await query(
+      `INSERT INTO panic_events (event_uuid, device_id, mode, lat, lng, message, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+       ON CONFLICT (event_uuid) DO NOTHING
+       RETURNING *`,
+      [event_uuid, deviceId, mode, lat ?? null, lng ?? null, message || null]
     );
 
-    const panicEvent = result.rows[0];
+    let panicEvent;
+    let isNew;
 
-    await query(
-      `UPDATE guardian_devices SET panic_active = true, updated_at = NOW() WHERE id = $1`,
-      [deviceId]
-    );
+    if (insertResult.rows.length > 0) {
+      // New insert
+      panicEvent = insertResult.rows[0];
+      isNew = true;
+    } else {
+      // Step 2: duplicate — fetch existing row
+      const existingResult = await query(
+        `SELECT * FROM panic_events WHERE event_uuid = $1`,
+        [event_uuid]
+      );
+      panicEvent = existingResult.rows[0];
+      isNew = false;
+    }
+
+    // Trigger handles panic_active — no manual UPDATE needed
 
     const payload = {
       panic_id: panicEvent.id,
+      event_uuid: panicEvent.event_uuid,
       device_id: deviceId,
       device_name: req.device.name,
-      mode,
-      lat: lat ?? null,
-      lng: lng ?? null,
-      message: message || null,
+      mode: panicEvent.mode,
+      lat: panicEvent.lat ?? null,
+      lng: panicEvent.lng ?? null,
+      message: panicEvent.message || null,
       created_at: panicEvent.created_at,
     };
 
-    const io = req.app.get('io');
-    if (io) {
-      io.emit('device:panic', payload);
+    if (isNew) {
+      const io = req.app.get('io');
+      if (io) {
+        io.emit('device:panic', payload);
+      }
+      logger.warn(`PANIC triggered: device=${deviceId} name="${req.device.name}" mode=${mode}`);
     }
 
-    logger.warn(`PANIC triggered: device=${deviceId} name="${req.device.name}" mode=${mode}`);
-
-    res.status(201).json(payload);
+    res.status(isNew ? 201 : 200).json(payload);
   } catch (err) {
     next(err);
   }
@@ -427,6 +455,8 @@ router.post('/panic', deviceAuth, async (req, res, next) => {
 router.post('/report', deviceAuth, async (req, res, next) => {
   try {
     const { category, severity = 'medium', description, lat, lng, photo_url } = req.body;
+    // event_uuid is optional for backward compatibility; generate one server-side if omitted
+    const event_uuid = req.body.event_uuid || uuidv4();
 
     const validCategories = [
       'suspicious', 'roadblock', 'theft', 'attack', 'accident',
@@ -440,11 +470,14 @@ router.post('/report', deviceAuth, async (req, res, next) => {
 
     const deviceId = req.device.id;
 
-    const result = await query(
-      `INSERT INTO field_reports (device_id, category, severity, description, lat, lng, photo_url)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, created_at`,
+    // Step 1: attempt idempotent insert
+    const insertResult = await query(
+      `INSERT INTO field_reports (event_uuid, device_id, category, severity, description, lat, lng, photo_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (event_uuid) DO NOTHING
+       RETURNING *`,
       [
+        event_uuid,
         deviceId,
         category,
         severity,
@@ -455,27 +488,44 @@ router.post('/report', deviceAuth, async (req, res, next) => {
       ]
     );
 
-    const report = result.rows[0];
+    let report;
+    let isNew;
 
-    const io = req.app.get('io');
-    if (io) {
-      io.emit('device:report', {
-        report_id: report.id,
-        device_id: deviceId,
-        device_name: req.device.name,
-        category,
-        severity,
-        description: description || null,
-        lat: lat ?? null,
-        lng: lng ?? null,
-        photo_url: photo_url || null,
-        created_at: report.created_at,
-      });
+    if (insertResult.rows.length > 0) {
+      // New insert
+      report = insertResult.rows[0];
+      isNew = true;
+    } else {
+      // Step 2: duplicate — fetch existing row
+      const existingResult = await query(
+        `SELECT * FROM field_reports WHERE event_uuid = $1`,
+        [event_uuid]
+      );
+      report = existingResult.rows[0];
+      isNew = false;
     }
 
-    logger.info(`Field report: device=${deviceId} category=${category} severity=${severity}`);
+    if (isNew) {
+      const io = req.app.get('io');
+      if (io) {
+        io.emit('device:report', {
+          report_id: report.id,
+          event_uuid: report.event_uuid,
+          device_id: deviceId,
+          device_name: req.device.name,
+          category: report.category,
+          severity: report.severity,
+          description: report.description || null,
+          lat: report.lat ?? null,
+          lng: report.lng ?? null,
+          photo_url: report.photo_url || null,
+          created_at: report.created_at,
+        });
+      }
+      logger.info(`Field report: device=${deviceId} category=${category} severity=${severity}`);
+    }
 
-    res.status(201).json({ report_id: report.id });
+    res.status(isNew ? 201 : 200).json({ report_id: report.id });
   } catch (err) {
     next(err);
   }
@@ -500,13 +550,21 @@ router.post('/ack-command', deviceAuth, async (req, res, next) => {
 
     const updated = await query(
       `UPDATE device_commands
-       SET status = $2, executed_at = NOW(), result = $3
-       WHERE id = $1 AND device_id = $4
+       SET status = $2, result = $3, executed_at = NOW()
+       WHERE id = $1 AND device_id = $4 AND status = 'sent'
        RETURNING id`,
       [command_id, status, cmdResult || null, deviceId]
     );
 
     if (!updated.rows.length) {
+      // Distinguish between "wrong state" and "not found"
+      const existing = await query(
+        `SELECT id, status FROM device_commands WHERE id = $1 AND device_id = $2`,
+        [command_id, deviceId]
+      );
+      if (existing.rows.length) {
+        return res.status(409).json({ error: 'command_not_in_sent_state' });
+      }
       return res.status(404).json({ error: 'Command not found for this device' });
     }
 
@@ -885,19 +943,7 @@ router.patch('/panic/:id/resolve', authenticate, async (req, res, next) => {
 
     const panicEvent = result.rows[0];
 
-    // Check if this device has any remaining unresolved panics
-    const remaining = await query(
-      `SELECT COUNT(*) FROM panic_events
-       WHERE device_id = $1 AND resolved_at IS NULL`,
-      [panicEvent.device_id]
-    );
-
-    if (parseInt(remaining.rows[0].count) === 0) {
-      await query(
-        `UPDATE guardian_devices SET panic_active = false, updated_at = NOW() WHERE id = $1`,
-        [panicEvent.device_id]
-      );
-    }
+    // Trigger on panic_events handles panic_active recomputation — no manual UPDATE needed
 
     logger.info(`Panic resolved: ${req.params.id} by user=${req.user.id}`);
 
