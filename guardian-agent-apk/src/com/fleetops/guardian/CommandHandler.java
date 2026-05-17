@@ -7,6 +7,7 @@ import android.content.Intent;
 import android.media.Ringtone;
 import android.media.RingtoneManager;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.Vibrator;
 import android.util.Log;
 import org.json.JSONObject;
@@ -21,6 +22,12 @@ public class CommandHandler {
     private final Context  ctx;
     private final Listener listener;
 
+    // Class-level siren state so stop_siren can cancel it
+    private Ringtone  activeSiren    = null;
+    private Vibrator  activeVibrator = null;
+    private final Handler  sirenHandler   = new Handler(Looper.getMainLooper());
+    private Runnable  sirenStop      = null;
+
     public CommandHandler(Context ctx, Listener listener) {
         this.ctx = ctx;
         this.listener = listener;
@@ -34,6 +41,8 @@ public class CommandHandler {
 
             if ("trigger_siren".equals(commandType)) {
                 handleSiren(commandId, p);
+            } else if ("stop_siren".equals(commandType)) {
+                handleStopSiren(commandId);
             } else if ("lock_screen".equals(commandType)) {
                 handleLockScreen(commandId, p);
             } else if ("push_message".equals(commandType)) {
@@ -59,26 +68,54 @@ public class CommandHandler {
         }
     }
 
+    private void stopActiveSiren() {
+        if (sirenStop != null) {
+            sirenHandler.removeCallbacks(sirenStop);
+            sirenStop = null;
+        }
+        if (activeSiren != null) {
+            try { activeSiren.stop(); } catch (Exception ignored) {}
+            activeSiren = null;
+        }
+        if (activeVibrator != null) {
+            try { activeVibrator.cancel(); } catch (Exception ignored) {}
+            activeVibrator = null;
+        }
+    }
+
     private void handleSiren(final String id, JSONObject p) {
         final int durationSec = p.optInt("duration", 10);
-        Vibrator v = (Vibrator) ctx.getSystemService(Context.VIBRATOR_SERVICE);
-        if (v != null) {
+
+        // Stop any already-running siren first
+        stopActiveSiren();
+
+        activeVibrator = (Vibrator) ctx.getSystemService(Context.VIBRATOR_SERVICE);
+        if (activeVibrator != null) {
             long[] pattern = {0, 600, 200, 600, 200, 600, 200, 600};
-            v.vibrate(pattern, -1);
+            activeVibrator.vibrate(pattern, 0); // repeat from index 0
         }
         try {
-            final Ringtone r = RingtoneManager.getRingtone(ctx,
+            activeSiren = RingtoneManager.getRingtone(ctx,
                 RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM));
-            if (r != null) {
-                r.play();
-                new Handler().postDelayed(new Runnable() {
-                    @Override public void run() { r.stop(); }
-                }, durationSec * 1000L);
+            if (activeSiren != null) {
+                activeSiren.play();
             }
         } catch (Exception ignored) {}
+
+        sirenStop = new Runnable() {
+            @Override public void run() { stopActiveSiren(); }
+        };
+        sirenHandler.postDelayed(sirenStop, durationSec * 1000L);
+
         postNotification("REMOTE SIREN ACTIVATED",
-            "Fleet manager triggered siren for " + durationSec + "s");
+            "Fleet manager triggered siren for " + durationSec + "s. Use Stop Siren to cancel.");
         listener.onHandled(id, true, "siren " + durationSec + "s");
+    }
+
+    private void handleStopSiren(String id) {
+        stopActiveSiren();
+        postNotification("SIREN STOPPED", "Remote siren cancelled by fleet manager");
+        listener.onHandled(id, true, "siren stopped");
     }
 
     private void handleLockScreen(String id, JSONObject p) {

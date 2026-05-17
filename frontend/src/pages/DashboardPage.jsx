@@ -4,7 +4,7 @@ import {
   Truck, Shield, Bell, Activity, AlertTriangle,
   Navigation, Target, RefreshCw, X, CheckCircle2,
 } from 'lucide-react';
-import { analyticsAPI, vehiclesAPI, convoysAPI, alertsAPI } from '../services/api';
+import { analyticsAPI, vehiclesAPI, convoysAPI, alertsAPI, guardianAPI } from '../services/api';
 import { useAlertStore } from '../store';
 import socketService from '../services/socket';
 import { Modal, Button, Input, Select, Spinner } from '../components/UI';
@@ -377,6 +377,7 @@ function DispatchModal({ open, onClose, onSuccess }) {
 // ── Main Dashboard ─────────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const [kpis, setKpis] = useState(null);
+  const [guardianStats, setGuardianStats] = useState({ activeDevices: 0, openPanics: 0 });
   const [activeConvoys, setActiveConvoys] = useState([]);
   const [feed, setFeed] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -405,12 +406,18 @@ export default function DashboardPage() {
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     try {
-      const [dash, convoys] = await Promise.all([
+      const [dash, convoys, gDevices, gPanics] = await Promise.all([
         analyticsAPI.dashboard(),
         convoysAPI.list({ status: 'active', limit: 5 }),
+        guardianAPI.devices({ status: 'active', limit: 1 }).catch(() => null),
+        guardianAPI.panic({ resolved: 'false', limit: 1 }).catch(() => null),
       ]);
       setKpis(dash.data.data);
       setActiveConvoys(convoys.data.data || []);
+      setGuardianStats({
+        activeDevices: gDevices?.data?.total ?? gDevices?.data?.data?.length ?? 0,
+        openPanics:    gPanics?.data?.total  ?? gPanics?.data?.data?.length  ?? 0,
+      });
     } catch (e) {
       console.error('Dashboard load error:', e);
     } finally { setLoading(false); setRefreshing(false); }
@@ -758,6 +765,8 @@ export default function DashboardPage() {
               <KPITile label="FLEET UTIL %"       value={kpis ? `${kpis.fleetUtilisation}%` : '—'}   color="#00d4ff" />
               <KPITile label="RISK SCORE"         value={kpis?.openAlerts > 10 ? 'HIGH' : kpis?.openAlerts > 3 ? 'MED' : 'LOW'} color={kpis?.openAlerts > 5 ? '#ff3355' : kpis?.openAlerts > 2 ? '#ffaa00' : '#00ff88'} />
               <KPITile label="VEHICLES ACTIVE"    value={kpis?.activeVehicles ?? '—'}                 color="#00d4ff" />
+              <KPITile label="GUARDIAN DEVICES"   value={guardianStats.activeDevices}                 color="#00d4ff" />
+              <KPITile label="OPEN PANICS"        value={guardianStats.openPanics}                    color={guardianStats.openPanics > 0 ? '#ff3355' : '#00ff88'} pulse={guardianStats.openPanics > 0} />
             </div>
 
             {/* Active Missions */}

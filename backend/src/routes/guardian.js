@@ -668,7 +668,7 @@ router.post('/devices/:id/command', authenticate, async (req, res, next) => {
 
     const validCommandTypes = [
       'force_sync', 'start_live_tracking', 'stop_live_tracking',
-      'lock_screen', 'trigger_siren', 'push_message', 'wipe_cache',
+      'lock_screen', 'trigger_siren', 'stop_siren', 'push_message', 'wipe_cache',
       'restart_agent', 'request_location', 'enable_lost_mode',
     ];
     if (!command_type || !validCommandTypes.includes(command_type)) {

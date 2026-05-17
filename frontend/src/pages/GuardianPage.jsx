@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import toast from 'react-hot-toast';
 import {
-  Smartphone, Battery, Signal, MapPin, Navigation, Lock, Volume2,
+  Smartphone, Battery, Signal, MapPin, Navigation, Lock, Volume2, VolumeX,
   Trash2, RefreshCw, ShieldAlert, MessageSquare, X, QrCode,
   Download, Plus, AlertOctagon, Clock, Wifi, WifiOff, ChevronRight,
   NavigationOff, Shield, User, Truck, Package
@@ -307,7 +307,8 @@ const COMMANDS = [
   { id: 'stop_live_tracking', icon: NavigationOff, label: 'Stop Live Track',    desc: 'Return to normal interval' },
   { id: 'push_message',       icon: MessageSquare, label: 'Push Message',       desc: 'Send text to device', hasInput: true },
   { id: 'lock_screen',        icon: Lock,          label: 'Lock Screen',        desc: 'Lock device screen' },
-  { id: 'trigger_siren',      icon: Volume2,       label: 'Trigger Siren',      desc: 'Sound 10s alarm on device' },
+  { id: 'trigger_siren',      icon: Volume2,       label: 'Trigger Siren',      desc: 'Sound alarm on device' },
+  { id: 'stop_siren',         icon: VolumeX,       label: 'Stop Siren',         desc: 'Cancel active alarm', danger: true },
   { id: 'force_sync',         icon: RefreshCw,     label: 'Force Sync',         desc: 'Flush offline queue now' },
   { id: 'wipe_cache',         icon: Trash2,        label: 'Wipe Cache',         desc: 'Clear app cache & restart' },
   { id: 'restart_agent',      icon: RefreshCw,     label: 'Restart Agent',      desc: 'Restart Guardian service' },
@@ -339,6 +340,7 @@ function CommandsPanel({ device, onClose }) {
   const [activeInput, setActiveInput] = useState(null);
   const [recentCmds, setRecentCmds] = useState([]);
   const [sending, setSending] = useState(null);
+  const [sirenActive, setSirenActive] = useState(false);
 
   useEffect(() => {
     if (!device) return;
@@ -380,6 +382,8 @@ function CommandsPanel({ device, onClose }) {
       const res = await guardianAPI.command(device._id || device.id, body);
       const cmdId = res.data?.command_id;
       toast.success(`Command sent: ${cmd.label}`);
+      if (cmd.id === 'trigger_siren') setSirenActive(true);
+      if (cmd.id === 'stop_siren')    setSirenActive(false);
       setRecentCmds(prev => [{
         id: cmdId,
         command_type: cmd.id,
@@ -458,6 +462,48 @@ function CommandsPanel({ device, onClose }) {
 
         {/* Scrollable body */}
         <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+          {/* Siren active banner */}
+          {sirenActive && (
+            <div style={{
+              background: 'rgba(239,68,68,0.12)',
+              border: '1px solid rgba(239,68,68,0.35)',
+              borderRadius: 10,
+              padding: '10px 14px',
+              marginBottom: 12,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{
+                  width: 8, height: 8, borderRadius: '50%',
+                  background: G.red, animation: 'pulse 0.8s infinite', flexShrink: 0,
+                }} />
+                <span style={{
+                  fontSize: 10, fontFamily: 'IBM Plex Mono, monospace',
+                  fontWeight: 700, color: G.red, letterSpacing: '0.1em',
+                }}>
+                  SIREN ACTIVE ON DEVICE
+                </span>
+              </div>
+              <button
+                onClick={() => sendCommand(COMMANDS.find(c => c.id === 'stop_siren'))}
+                disabled={sending === 'stop_siren'}
+                style={{
+                  background: G.red, border: 'none', borderRadius: 7,
+                  padding: '5px 12px', fontSize: 9, fontWeight: 800,
+                  color: '#fff', cursor: 'pointer', letterSpacing: '0.1em',
+                  fontFamily: 'IBM Plex Mono, monospace',
+                  opacity: sending === 'stop_siren' ? 0.6 : 1,
+                  display: 'flex', alignItems: 'center', gap: 4,
+                }}
+              >
+                <VolumeX size={10} /> STOP NOW
+              </button>
+            </div>
+          )}
+
           {/* Command grid */}
           <p style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: G.low, letterSpacing: '0.2em', marginBottom: 10, textTransform: 'uppercase' }}>
             Available Commands
@@ -466,6 +512,9 @@ function CommandsPanel({ device, onClose }) {
             {COMMANDS.map(cmd => {
               const Icon = cmd.icon;
               const isSending = sending === cmd.id;
+              const isDanger = cmd.danger;
+              const accentColor = isDanger ? G.red : G.gold;
+              const accentAlpha = isDanger ? 'rgba(239,68,68,' : 'rgba(240,180,41,';
               return (
                 <div key={cmd.id}>
                   <button
@@ -473,8 +522,12 @@ function CommandsPanel({ device, onClose }) {
                     disabled={isSending}
                     style={{
                       width: '100%',
-                      background: activeInput === cmd.id ? 'rgba(240,180,41,0.07)' : 'rgba(255,255,255,0.03)',
-                      border: `1px solid ${activeInput === cmd.id ? 'rgba(240,180,41,0.3)' : 'rgba(255,255,255,0.06)'}`,
+                      background: activeInput === cmd.id
+                        ? `${accentAlpha}0.07)`
+                        : isDanger ? `${accentAlpha}0.05)` : 'rgba(255,255,255,0.03)',
+                      border: `1px solid ${activeInput === cmd.id
+                        ? `${accentAlpha}0.3)`
+                        : isDanger ? `${accentAlpha}0.2)` : 'rgba(255,255,255,0.06)'}`,
                       borderRadius: 10,
                       padding: '12px 8px',
                       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
@@ -484,21 +537,21 @@ function CommandsPanel({ device, onClose }) {
                     }}
                     onMouseEnter={e => {
                       if (!isSending) {
-                        e.currentTarget.style.borderColor = 'rgba(240,180,41,0.3)';
-                        e.currentTarget.style.background = 'rgba(240,180,41,0.05)';
+                        e.currentTarget.style.borderColor = `${accentAlpha}0.35)`;
+                        e.currentTarget.style.background = `${accentAlpha}0.08)`;
                       }
                     }}
                     onMouseLeave={e => {
                       if (activeInput !== cmd.id) {
-                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)';
-                        e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+                        e.currentTarget.style.borderColor = isDanger ? `${accentAlpha}0.2)` : 'rgba(255,255,255,0.06)';
+                        e.currentTarget.style.background = isDanger ? `${accentAlpha}0.05)` : 'rgba(255,255,255,0.03)';
                       }
                     }}
                   >
-                    <Icon size={14} style={{ color: isSending ? G.muted : G.gold }} />
+                    <Icon size={14} style={{ color: isSending ? G.muted : accentColor }} />
                     <span style={{
                       fontSize: 9, fontWeight: 700,
-                      color: isSending ? G.muted : G.text,
+                      color: isSending ? G.muted : isDanger ? accentColor : G.text,
                       textAlign: 'center', lineHeight: 1.3,
                       fontFamily: 'IBM Plex Mono, monospace',
                       letterSpacing: '0.04em',
