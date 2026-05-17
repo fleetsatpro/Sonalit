@@ -7,7 +7,6 @@ import socketService from '../services/socket';
 import { Spinner } from '../components/UI';
 import toast from 'react-hot-toast';
 import { timeAgo, formatDate } from '../utils/helpers';
-import toast from 'react-hot-toast';
 
 const SC = { active:'#22D3A0', idle:'#94a3b8', maintenance:'#F59E0B', offline:'#ef4444' };
 
@@ -161,21 +160,7 @@ export default function GPSPage() {
       loadRiskZones(Lf);
       setLoading(false);
 
-<<<<<<< HEAD
       pollRef.current = setInterval(() => loadVehicles(Lf, map), 15000);
-=======
-      const iv = setInterval(() => loadVehicles(Lf, map), 15000);
-      return () => {
-        mounted = false;
-        clearInterval(iv);
-        try { mapInst.current?.remove(); } catch {}
-        mapInst.current = null;
-        Object.values(markersMap.current).forEach(m => { try { m.remove(); } catch {} });
-        markersMap.current = {};
-        Object.values(trailsMap.current).forEach(t => { try { t.line?.remove(); } catch {} });
-        trailsMap.current = {};
-      };
->>>>>>> 7ab5513b (Setup Ruflo AI agent)
     });
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
   }, []);
@@ -183,12 +168,7 @@ export default function GPSPage() {
   // ── Socket live updates ────────────────────────────────────────────────
   useEffect(() => {
     socketService.connect();
-<<<<<<< HEAD
     const unsubVehicle = socketService.onVehicleUpdate(data => {
-=======
-    const unsubs = [];
-    socketService.onVehicleUpdate(data => {
->>>>>>> 7ab5513b (Setup Ruflo AI agent)
       setVehicles(prev => prev.map(v =>
         v.id === data.vehicleId ? { ...v, lat: data.lat, lng: data.lng, speed: data.speed || v.speed } : v
       ));
@@ -220,7 +200,6 @@ export default function GPSPage() {
         color: '#ef4444',
       }, ...prev.slice(0, 49)]);
     });
-<<<<<<< HEAD
 
     const unsubViolation = socketService.on('geofence:violation', data => {
       setMapViolation(data);
@@ -253,14 +232,6 @@ export default function GPSPage() {
     };
     window.addEventListener('ai-map-update', handler);
     return () => window.removeEventListener('ai-map-update', handler);
-=======
-    // Cleanup function — remove all listeners on unmount
-    return () => {
-      socketService.off && socketService.off('vehicle:update');
-      socketService.off && socketService.off('alert:new');
-      socketService.off && socketService.off('convoy:deviation');
-    };
->>>>>>> 7ab5513b (Setup Ruflo AI agent)
   }, []);
 
   const loadVehicles = useCallback(async (Lf, map) => {
