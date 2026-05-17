@@ -886,4 +886,38 @@ router.get('/reports', authenticate, async (req, res, next) => {
   }
 });
 
+// ─── APK Download ─────────────────────────────────────────────────────────────
+// Serve the Guardian Agent APK. Configure via env:
+//   APK_FILE_PATH  — absolute path to a pre-built APK on the server
+//   APK_REDIRECT_URL — URL to redirect to (e.g. a GitHub release asset)
+
+router.get('/apk/download', (req, res) => {
+  const fs = require('fs');
+  const path = require('path');
+
+  // Option 1: redirect to an external URL (GitHub release, S3, etc.)
+  if (process.env.APK_REDIRECT_URL) {
+    return res.redirect(302, process.env.APK_REDIRECT_URL);
+  }
+
+  // Option 2: serve a local file
+  const apkPath = process.env.APK_FILE_PATH
+    || path.join(__dirname, '../../../../guardian-agent/app/build/outputs/apk/debug/app-debug.apk');
+
+  if (!fs.existsSync(apkPath)) {
+    return res.status(404).json({
+      error: 'APK not yet built',
+      message: 'The Guardian Agent APK must be compiled before it can be downloaded. Build it with: cd guardian-agent && ./gradlew assembleDebug',
+      apk_path: apkPath,
+      build_instructions: 'https://developer.android.com/studio',
+    });
+  }
+
+  const stat = fs.statSync(apkPath);
+  res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+  res.setHeader('Content-Disposition', 'attachment; filename="FleetOps-Guardian.apk"');
+  res.setHeader('Content-Length', stat.size);
+  fs.createReadStream(apkPath).pipe(res);
+});
+
 module.exports = router;

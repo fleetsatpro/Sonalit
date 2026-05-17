@@ -544,6 +544,25 @@ function CommandsPanel({ device, onClose }) {
 function EnrollmentModal({ onClose }) {
   const enrollmentUrl = `fleetops://enroll?token=${ORG_TOKEN}&server=${window.location.origin}`;
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(enrollmentUrl)}`;
+  const [apkStatus, setApkStatus] = useState('idle'); // idle | downloading | unavailable
+
+  async function handleDownloadApk() {
+    setApkStatus('downloading');
+    try {
+      const res = await fetch('/api/v1/guardian/apk/download', { method: 'HEAD' });
+      if (res.ok) {
+        const link = document.createElement('a');
+        link.href = '/api/v1/guardian/apk/download';
+        link.download = 'FleetOps-Guardian.apk';
+        link.click();
+        setApkStatus('idle');
+      } else {
+        setApkStatus('unavailable');
+      }
+    } catch {
+      setApkStatus('unavailable');
+    }
+  }
 
   return (
     <>
@@ -555,7 +574,7 @@ function EnrollmentModal({ onClose }) {
         position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
         background: '#0D1321', border: `1px solid ${G.border}`, borderRadius: 18,
         padding: 28, width: 'min(460px, calc(100vw - 32px))', zIndex: 301,
-        boxShadow: '0 30px 80px rgba(0,0,0,0.7)',
+        boxShadow: '0 30px 80px rgba(0,0,0,0.7)', maxHeight: '90vh', overflowY: 'auto',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
@@ -598,21 +617,43 @@ function EnrollmentModal({ onClose }) {
         </div>
 
         {/* Download APK */}
-        <a
-          href="/guardian-agent.apk"
-          download
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            background: G.gold, color: '#0A0F1A', borderRadius: 10, padding: '10px 0',
-            fontWeight: 700, fontSize: 12, letterSpacing: '0.08em', textDecoration: 'none',
-            marginBottom: 18, transition: 'opacity 0.15s',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.opacity = '0.85'; }}
-          onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
-        >
-          <Download size={14} />
-          DOWNLOAD APK
-        </a>
+        {apkStatus === 'unavailable' ? (
+          <div style={{
+            background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.25)',
+            borderRadius: 10, padding: '12px 14px', marginBottom: 18,
+          }}>
+            <p style={{ fontSize: 11, fontWeight: 700, color: G.red, marginBottom: 6 }}>APK not yet deployed</p>
+            <p style={{ fontSize: 10, color: G.muted, lineHeight: 1.6, marginBottom: 8 }}>
+              The Guardian Agent APK must be compiled from source and deployed to the server.
+            </p>
+            <p style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: '#64748b', lineHeight: 1.7 }}>
+              cd guardian-agent<br />
+              ./gradlew assembleDebug<br />
+              # Set APK_FILE_PATH env var on the server
+            </p>
+            <button
+              onClick={() => setApkStatus('idle')}
+              style={{ marginTop: 8, fontSize: 10, color: G.muted, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              Try again
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={handleDownloadApk}
+            disabled={apkStatus === 'downloading'}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%',
+              background: apkStatus === 'downloading' ? `${G.gold}80` : G.gold,
+              color: '#0A0F1A', borderRadius: 10, padding: '10px 0', border: 'none', cursor: apkStatus === 'downloading' ? 'wait' : 'pointer',
+              fontWeight: 700, fontSize: 12, letterSpacing: '0.08em',
+              marginBottom: 18, transition: 'opacity 0.15s', fontFamily: 'inherit',
+            }}
+          >
+            <Download size={14} />
+            {apkStatus === 'downloading' ? 'CHECKING...' : 'DOWNLOAD APK'}
+          </button>
+        )}
 
         {/* Instructions */}
         <div style={{ background: G.card, border: `1px solid ${G.border}`, borderRadius: 10, padding: '12px 14px' }}>
