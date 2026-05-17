@@ -201,10 +201,12 @@ public class ApiClient {
 
     public static class EnrollResult {
         public final String token;
-        public final String certPin; // SHA-256 of server TLS cert, may be null
+        public final String certPin;
+        public final String signingSecret;
         public final String error;
-        public EnrollResult(String token, String certPin, String error) {
-            this.token = token; this.certPin = certPin; this.error = error;
+        public EnrollResult(String token, String certPin, String signingSecret, String error) {
+            this.token = token; this.certPin = certPin;
+            this.signingSecret = signingSecret; this.error = error;
         }
     }
 
@@ -229,17 +231,19 @@ public class ApiClient {
             }
 
             String resp = post(serverUrl + "/api/v1/guardian/enroll", null, body.toString());
-            if (resp == null) return new EnrollResult(null, null, "No response from server");
+            if (resp == null) return new EnrollResult(null, null, null, "No response from server");
             JSONObject json = new JSONObject(resp);
             if (json.has("token")) {
                 String certPin = json.optString("cert_pin", null);
                 if ("null".equals(certPin)) certPin = null;
-                return new EnrollResult(json.getString("token"), certPin, null);
+                String signingSecret = json.optString("command_signing_secret", null);
+                if ("null".equals(signingSecret)) signingSecret = null;
+                return new EnrollResult(json.getString("token"), certPin, signingSecret, null);
             }
-            return new EnrollResult(null, null, json.optString("error", "Enrollment failed"));
+            return new EnrollResult(null, null, null, json.optString("error", "Enrollment failed"));
         } catch (Exception e) {
             Log.e(TAG, "enroll error", e);
-            return new EnrollResult(null, null, e.getMessage());
+            return new EnrollResult(null, null, null, e.getMessage());
         }
     }
 
@@ -271,17 +275,20 @@ public class ApiClient {
         public final int     minVersionCode;
         public final String  downloadUrl;
         public final List<PendingCommand> commands;
-        HeartbeatResult(List<PendingCommand> commands) {
+        public final String  signingSecret;
+        HeartbeatResult(List<PendingCommand> commands, String signingSecret) {
             this.upgradeRequired = false;
             this.minVersionCode  = 0;
             this.downloadUrl     = null;
             this.commands        = commands;
+            this.signingSecret   = signingSecret;
         }
         HeartbeatResult(int minVersionCode, String downloadUrl) {
             this.upgradeRequired = true;
             this.minVersionCode  = minVersionCode;
             this.downloadUrl     = downloadUrl;
             this.commands        = new ArrayList<PendingCommand>();
+            this.signingSecret   = null;
         }
     }
 
@@ -307,7 +314,7 @@ public class ApiClient {
             body.put("app_version_code", APP_VERSION_CODE);
             if (fcmToken != null && !fcmToken.isEmpty()) body.put("fcm_token", fcmToken);
             RawResponse raw = postRaw(serverUrl + "/api/v1/guardian/heartbeat", token, body.toString());
-            if (raw == null) return new HeartbeatResult(commands);
+            if (raw == null) return new HeartbeatResult(commands, null);
             if (raw.status == 426) {
                 JSONObject json = new JSONObject(raw.body);
                 return new HeartbeatResult(
@@ -332,11 +339,14 @@ public class ApiClient {
                         ));
                     }
                 }
+                String signingSecret = json.optString("command_signing_secret", null);
+                if ("null".equals(signingSecret)) signingSecret = null;
+                return new HeartbeatResult(commands, signingSecret);
             }
         } catch (Exception e) {
             Log.e(TAG, "heartbeat error", e);
         }
-        return new HeartbeatResult(commands);
+        return new HeartbeatResult(commands, null);
     }
 
     // ── Config fetch ──────────────────────────────────────────────────────────

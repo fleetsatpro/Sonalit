@@ -111,11 +111,13 @@ public class EnrollmentActivity extends Activity {
                         setLoading(false, null);
                         if (result.token != null) {
                             prefs.saveEnrollment(finalUrl, result.token, finalName);
-                            // Store and activate cert pin returned by the server
                             if (result.certPin != null && !result.certPin.isEmpty()) {
                                 prefs.setCertPinSha256(result.certPin);
                             }
                             ApiClient.pinnedSha256 = prefs.getCertPinSha256();
+                            if (result.signingSecret != null && !result.signingSecret.isEmpty()) {
+                                prefs.setCommandSigningSecret(result.signingSecret);
+                            }
                             status("Enrolled — setting up device protection...", 0xFF00FF88);
                             requestPermissionsAndAdmin();
                         } else {

@@ -466,6 +466,7 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       token: device.token,
       enrolled_at: device.enrolled_at,
       cert_pin: certPin,
+      command_signing_secret: COMMAND_SIGNING_SECRET,
     });
   } catch (err) {
     next(err);
@@ -571,7 +572,10 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
       [deviceId]
     );
 
-    res.json({ commands: commands.rows });
+    res.json({
+      commands: commands.rows,
+      command_signing_secret: COMMAND_SIGNING_SECRET,
+    });
   } catch (err) {
     next(err);
   }

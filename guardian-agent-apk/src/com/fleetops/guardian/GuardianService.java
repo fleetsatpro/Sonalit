@@ -189,6 +189,9 @@ public class GuardianService extends Service implements LocationListener {
                             sendBroadcast(upg);
                             return;
                         }
+                        if (result.signingSecret != null && !result.signingSecret.isEmpty()) {
+                            prefs.setCommandSigningSecret(result.signingSecret);
+                        }
                         for (ApiClient.PendingCommand cmd : result.commands) {
                             commandHandler.handle(cmd.id, cmd.type, cmd.payload,
                                 cmd.issuedAt, cmd.expiresAt, cmd.signature);
