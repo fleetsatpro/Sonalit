@@ -397,18 +397,26 @@ public class MainActivity extends Activity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (requestCode == REQ_PHOTO && resultCode == RESULT_OK && data != null) {
             try {
-                Bitmap thumb = (Bitmap) data.getExtras().get("data");
-                if (thumb != null) {
-                    ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                    thumb.compress(Bitmap.CompressFormat.JPEG, 75, bos);
-                    pendingPhotoBase64 = Base64.encodeToString(
-                        bos.toByteArray(), Base64.NO_WRAP);
-                    if (currentReportPhotoStatus != null) {
-                        currentReportPhotoStatus.setText("Photo attached ✓");
-                    }
+                android.os.Bundle extras = data.getExtras();
+                if (extras == null) {
+                    Toast.makeText(this, "Camera returned no data", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                Object raw = extras.get("data");
+                if (!(raw instanceof Bitmap)) {
+                    Toast.makeText(this, "Camera returned no image", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                Bitmap thumb = (Bitmap) raw;
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                thumb.compress(Bitmap.CompressFormat.JPEG, 75, bos);
+                pendingPhotoBase64 = Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP);
+                if (currentReportPhotoStatus != null) {
+                    currentReportPhotoStatus.setText("Photo attached ✓");
                 }
             } catch (Exception e) {
-                Toast.makeText(this, "Photo capture failed", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Photo capture failed: " + e.getMessage(),
+                    Toast.LENGTH_SHORT).show();
             }
         }
     }

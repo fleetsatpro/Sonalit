@@ -17,6 +17,10 @@ echo "==> Compiling resources"
 for f in "$SRC"/res/drawable/*.xml "$SRC"/res/layout/*.xml "$SRC"/res/values/*.xml; do
   $AAPT2 compile "$f" -o "$BUILD/compiled_res/"
 done
+# Compile raw XML resources (device_admin.xml, etc.)
+for f in "$SRC"/res/xml/*.xml; do
+  [ -f "$f" ] && $AAPT2 compile "$f" -o "$BUILD/compiled_res/"
+done
 
 echo "==> Linking resources"
 $AAPT2 link \
@@ -26,8 +30,8 @@ $AAPT2 link \
   --java "$BUILD/gen" \
   --min-sdk-version 21 \
   --target-sdk-version 23 \
-  --version-code 1 \
-  --version-name "1.0.0" \
+  --version-code 3 \
+  --version-name "2.1.0" \
   "$BUILD"/compiled_res/*.flat
 
 echo "==> Compiling Java sources"

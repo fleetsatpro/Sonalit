@@ -1,6 +1,7 @@
 package com.fleetops.guardian;
 
 import android.app.Activity;
+import android.app.admin.DevicePolicyManager;
 import android.content.*;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
@@ -10,7 +11,8 @@ import org.json.JSONObject;
 import com.fleetops.guardian.R;
 
 public class EnrollmentActivity extends Activity {
-    private static final int REQ_LOCATION = 101;
+    private static final int REQ_PERMISSIONS = 101;
+    private static final int REQ_ADMIN       = 102;
 
     private EditText   etServerUrl, etOrgToken, etDeviceName;
     private Button     btnEnroll, btnPaste;
@@ -24,7 +26,7 @@ public class EnrollmentActivity extends Activity {
         prefs = new DevicePrefs(this);
 
         if (prefs.isEnrolled()) {
-            requestLocationThenLaunch();
+            requestPermissionsAndAdmin();
             return;
         }
 
@@ -40,14 +42,13 @@ public class EnrollmentActivity extends Activity {
         btnEnroll.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { doEnroll(); }
         });
-
         btnPaste.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { pasteFromClipboard(); }
         });
     }
 
-    // Reads a JSON config string from clipboard:
-    // {"url":"https://...","token":"fleet-guardian-2024","name":"Driver 1"}
+    // ── Clipboard quick-enroll ────────────────────────────────────────────────
+
     private void pasteFromClipboard() {
         ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
         if (cm == null || !cm.hasPrimaryClip()) {
@@ -57,10 +58,7 @@ public class EnrollmentActivity extends Activity {
         ClipData.Item item = cm.getPrimaryClip().getItemAt(0);
         if (item == null) return;
         String text = item.getText() != null ? item.getText().toString().trim() : "";
-        if (text.isEmpty()) {
-            status("Clipboard is empty", 0xFFFF3355);
-            return;
-        }
+        if (text.isEmpty()) { status("Clipboard is empty", 0xFFFF3355); return; }
         try {
             JSONObject json = new JSONObject(text);
             String url   = json.optString("url", "");
@@ -74,6 +72,8 @@ public class EnrollmentActivity extends Activity {
             status("Clipboard doesn't contain a valid config JSON", 0xFFFF3355);
         }
     }
+
+    // ── Enrollment ────────────────────────────────────────────────────────────
 
     private void doEnroll() {
         String url   = etServerUrl.getText().toString().trim();
@@ -105,8 +105,8 @@ public class EnrollmentActivity extends Activity {
                         setLoading(false, null);
                         if (result.token != null) {
                             prefs.saveEnrollment(finalUrl, result.token, finalName);
-                            status("Enrolled — requesting location access", 0xFF00FF88);
-                            requestLocationThenLaunch();
+                            status("Enrolled — setting up device protection...", 0xFF00FF88);
+                            requestPermissionsAndAdmin();
                         } else {
                             status(result.error != null ? result.error : "Enrollment failed",
                                 0xFFFF3355);
@@ -117,23 +117,58 @@ public class EnrollmentActivity extends Activity {
         }).start();
     }
 
-    private void requestLocationThenLaunch() {
+    // ── Permission + Admin flow ───────────────────────────────────────────────
+
+    private void requestPermissionsAndAdmin() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            java.util.List<String> needed = new java.util.ArrayList<>();
             if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)
                     != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(
-                    new String[]{ android.Manifest.permission.ACCESS_FINE_LOCATION },
-                    REQ_LOCATION);
+                needed.add(android.Manifest.permission.ACCESS_FINE_LOCATION);
+            }
+            if (checkSelfPermission(android.Manifest.permission.CAMERA)
+                    != PackageManager.PERMISSION_GRANTED) {
+                needed.add(android.Manifest.permission.CAMERA);
+            }
+            if (!needed.isEmpty()) {
+                requestPermissions(needed.toArray(new String[0]), REQ_PERMISSIONS);
                 return;
             }
         }
-        launch();
+        requestDeviceAdmin();
     }
 
     @Override
     public void onRequestPermissionsResult(int code, String[] perms, int[] grants) {
-        launch();
+        // Continue regardless of result — request device admin next
+        requestDeviceAdmin();
     }
+
+    private void requestDeviceAdmin() {
+        DevicePolicyManager dpm =
+            (DevicePolicyManager) getSystemService(DEVICE_POLICY_SERVICE);
+        ComponentName admin = new ComponentName(this, GuardianAdminReceiver.class);
+        if (dpm != null && !dpm.isAdminActive(admin)) {
+            Intent intent = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
+            intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, admin);
+            intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                "FleetOps Guardian requires device administrator access to protect " +
+                "this device and prevent unauthorized removal by field personnel.");
+            startActivityForResult(intent, REQ_ADMIN);
+        } else {
+            launch();
+        }
+    }
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == REQ_ADMIN) {
+            // Launch regardless — admin activation is strongly recommended but not blocking
+            launch();
+        }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
     private String getDeviceId() {
         try {

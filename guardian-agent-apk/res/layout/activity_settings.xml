@@ -10,7 +10,6 @@
         android:orientation="vertical"
         android:padding="20dp">
 
-        <!-- Title -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -90,9 +89,9 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
+                android:text="Panic cancel PIN"
                 android:textColor="@color/body"
-                android:textSize="13sp"
-                android:text="Panic cancel PIN" />
+                android:textSize="13sp" />
 
             <TextView
                 android:id="@+id/tvDmsPin"
@@ -175,28 +174,81 @@
                 android:textColor="@color/muted"
                 android:background="@drawable/btn_outline"
                 android:textSize="11sp"
-                android:layout_marginLeft="6dp" />
+                android:layout_marginLeft="6dp"
+                android:visibility="gone" />
         </LinearLayout>
 
-        <!-- Danger zone -->
+        <!-- Device Protection -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="DANGER ZONE"
-            android:textColor="@color/danger"
+            android:text="DEVICE PROTECTION"
+            android:textColor="@color/muted"
             android:textSize="10sp"
             android:letterSpacing="0.2"
             android:layout_marginBottom="8dp" />
 
-        <Button
-            android:id="@+id/btnUnenroll"
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:text="UNENROLL DEVICE"
-            android:textColor="@color/danger"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@color/navy_card"
+            android:padding="16dp"
+            android:layout_marginBottom="4dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Device Admin"
+                android:textColor="@color/body"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tvAdminStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:text="Checking..." />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnActivateAdmin"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:text="ACTIVATE DEVICE PROTECTION"
+            android:textColor="@color/warning"
             android:background="@drawable/btn_outline"
-            android:textSize="12sp"
-            android:textStyle="bold" />
+            android:textSize="11sp"
+            android:layout_marginBottom="20dp"
+            android:visibility="gone" />
+
+        <!-- Fleet managed notice — replaces unenroll -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@color/navy_card"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="MANAGED DEVICE"
+                android:textColor="@color/muted"
+                android:textSize="10sp"
+                android:letterSpacing="0.2"
+                android:layout_marginBottom="6dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="This device is managed by FleetOps. Enrollment and removal can only be performed by your fleet administrator through the FleetOps dashboard."
+                android:textColor="@color/body"
+                android:textSize="12sp"
+                android:lineSpacingMultiplier="1.4" />
+        </LinearLayout>
 
     </LinearLayout>
 </ScrollView>
