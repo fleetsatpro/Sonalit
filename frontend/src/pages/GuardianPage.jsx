@@ -292,7 +292,7 @@ function DeviceCard({ device, onCommand, onLocate, onRevoke }) {
               e.currentTarget.style.borderColor = 'rgba(242,82,82,0.22)';
             }}
           >
-            REVOKE
+            REMOVE
           </button>
         </div>
       </div>
@@ -858,15 +858,14 @@ export default function GuardianPage() {
   }, []);
 
   async function handleRevoke(device) {
-    if (!window.confirm(`Revoke device "${device.name || device.device_id}"? This cannot be undone.`)) return;
+    const name = device.name || device.device_id || 'this device';
+    if (!window.confirm(`Remove "${name}" from the fleet? This will revoke its access and cannot be undone.`)) return;
     try {
       await guardianAPI.revokeDevice(device._id || device.id);
-      setDevices(prev => prev.map(d =>
-        (d._id || d.id) === (device._id || device.id) ? { ...d, status: 'revoked' } : d
-      ));
-      toast.success('Device revoked');
+      setDevices(prev => prev.filter(d => (d._id || d.id) !== (device._id || device.id)));
+      toast.success(`Device "${name}" removed`);
     } catch {
-      toast.error('Failed to revoke device');
+      toast.error('Failed to remove device');
     }
   }
 
