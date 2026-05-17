@@ -628,14 +628,14 @@ export default function Layout({ children }) {
       {/* ── Mobile sidebar overlay ── */}
       {mobileOpen && (
         <>
-          {/* Full-screen backdrop — tapping closes the drawer */}
+          {/* Full-screen backdrop — must be above Leaflet's highest z-index (600) */}
           <div
-            style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.85)' }}
+            style={{ position: 'fixed', inset: 0, zIndex: 9000, background: 'rgba(0,0,0,0.85)' }}
             onClick={() => setMobileOpen(false)}
           />
-          {/* Drawer — slides in on top of backdrop */}
+          {/* Drawer — above backdrop */}
           <div
-            style={{ position: 'fixed', top: 0, left: 0, bottom: 0, zIndex: 51, width: '82vw', maxWidth: 320 }}
+            style={{ position: 'fixed', top: 0, left: 0, bottom: 0, zIndex: 9001, width: '82vw', maxWidth: 320 }}
             onClick={e => e.stopPropagation()}
           >
             <Sidebar

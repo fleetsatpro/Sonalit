@@ -189,7 +189,7 @@ export default function RiskIntelPage() {
     <div style={{ display:'flex', height:'100%', background:C.bg, overflow:'hidden' }}>
 
       {/* ── Map ── */}
-      <div style={{ flex:1, position:'relative' }}>
+      <div style={{ flex:1, position:'relative', isolation:'isolate' }}>
         <div ref={mapRef} style={{ width:'100%', height:'100%' }} />
 
         {/* Map overlay header */}

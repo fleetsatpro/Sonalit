@@ -570,7 +570,7 @@ export default function GPSPage() {
       <div style={{ display:'flex', flexDirection: isMobile ? 'column' : 'row', gap:10, flex:1, minHeight:0 }}>
 
         {/* Map */}
-        <div style={{ flex:1, borderRadius:14, overflow:'hidden', border:'1px solid rgba(255,255,255,0.06)', position:'relative', background:'#0A0F1A', ...(isMobile && rightPanel ? { height: 'calc(100% - 290px)', flex: 'none' } : {}) }}>
+        <div style={{ flex:1, borderRadius:14, overflow:'hidden', border:'1px solid rgba(255,255,255,0.06)', position:'relative', background:'#0A0F1A', isolation:'isolate', ...(isMobile && rightPanel ? { height: 'calc(100% - 290px)', flex: 'none' } : {}) }}>
           {loading && (
             <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', zIndex:10, background:'#0A0F1A' }}>
               <div style={{ textAlign:'center' }}><Spinner /><p style={{ color:'#475569', fontSize:10, marginTop:8 }}>INITIALISING MAP…</p></div>

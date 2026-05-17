@@ -568,8 +568,9 @@ export default function DashboardPage() {
           </h1>
         </div>
 
-        {/* Right: threat level + refresh */}
+        {/* Right: threat level (mobile only — desktop shows it on the map) + refresh */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {isMobile && (
           <div style={{
             background: 'rgba(6,14,26,0.8)',
             border: '1px solid rgba(0,212,255,0.12)',
@@ -596,6 +597,7 @@ export default function DashboardPage() {
               </span>
             </div>
           </div>
+          )}
 
           <button
             onClick={() => loadData(true)}
@@ -625,7 +627,9 @@ export default function DashboardPage() {
       <div style={{ flex: 1, display: 'flex', flexDirection: isMobile ? 'column' : 'row', overflow: isMobile ? 'auto' : 'hidden', position: 'relative' }}>
 
         {/* Map pane — 60% desktop / 45vh mobile */}
-        <div style={isMobile ? { height: '45vh', flexShrink: 0, position: 'relative', overflow: 'hidden' } : { flex: '0 0 60%', position: 'relative', overflow: 'hidden' }}>
+        <div style={isMobile
+          ? { height: '45vh', flexShrink: 0, position: 'relative', overflow: 'hidden', isolation: 'isolate' }
+          : { flex: '0 0 60%', position: 'relative', overflow: 'hidden', isolation: 'isolate' }}>
           {/* Leaflet container */}
           <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
 
@@ -634,7 +638,8 @@ export default function DashboardPage() {
           {/* Top-left: threat + legend */}
           <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 1000, display: 'flex', flexDirection: 'column', gap: 8 }}>
 
-            {/* Threat level overlay */}
+            {/* Threat level overlay — desktop only; mobile header strip shows it */}
+            {!isMobile && (
             <div style={{
               background: 'rgba(6,14,26,0.9)',
               border: '1px solid rgba(0,212,255,0.15)',
@@ -662,6 +667,7 @@ export default function DashboardPage() {
                 </span>
               </div>
             </div>
+            )}
 
             {/* Asset status legend */}
             <div style={{
