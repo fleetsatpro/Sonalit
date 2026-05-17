@@ -24,7 +24,7 @@ public class ApiClient {
             String body = "{\"org_token\":\"" + esc(orgToken) + "\","
                 + "\"name\":\"" + esc(deviceName) + "\","
                 + "\"imei\":\"" + esc(imei) + "\","
-                + "\"model\":\"Android\","
+                + "\"model\":\"" + esc(android.os.Build.MODEL) + "\","
                 + "\"os_version\":\"" + esc(android.os.Build.VERSION.RELEASE) + "\","
                 + "\"app_version\":\"1.0.0\"}";
 
@@ -49,7 +49,7 @@ public class ApiClient {
                 + ",\"accuracy\":" + accuracy
                 + ",\"battery_level\":" + battery
                 + ",\"network_type\":\"" + esc(network) + "\""
-                + ",\"speed\":0,\"heading\":0,\"altitude\":0}";
+                + ",\"speed\":0}";
             String resp = post(serverUrl + "/api/v1/guardian/heartbeat", token, body);
             return resp != null;
         } catch (Exception e) {
@@ -58,7 +58,12 @@ public class ApiClient {
         }
     }
 
+    // mode must be one of: silent, loud, medical, security, hijack
+    // pass null or empty to cancel (just resolves locally — backend keeps the event record)
     public static boolean sendPanic(String serverUrl, String token, String mode) {
+        if (mode == null || mode.isEmpty() || mode.equals("cancel")) {
+            return true; // cancellation is UI-only; panic record stays in backend for audit
+        }
         try {
             String body = "{\"mode\":\"" + esc(mode) + "\",\"lat\":0,\"lng\":0}";
             String resp = post(serverUrl + "/api/v1/guardian/panic", token, body);
@@ -69,9 +74,12 @@ public class ApiClient {
         }
     }
 
-    public static boolean sendReport(String serverUrl, String token, String category, String desc) {
+    // category must match backend enum; this method maps display names to backend values
+    public static boolean sendReport(String serverUrl, String token, String displayCategory, String desc) {
         try {
+            String category = mapCategory(displayCategory);
             String body = "{\"category\":\"" + esc(category) + "\","
+                + "\"severity\":\"medium\","
                 + "\"description\":\"" + esc(desc) + "\","
                 + "\"lat\":0,\"lng\":0}";
             String resp = post(serverUrl + "/api/v1/guardian/report", token, body);
@@ -79,6 +87,21 @@ public class ApiClient {
         } catch (Exception e) {
             Log.e(TAG, "report error", e);
             return false;
+        }
+    }
+
+    // Maps user-visible category labels to the backend's valid enum values
+    private static String mapCategory(String display) {
+        if (display == null) return "accident";
+        switch (display) {
+            case "Accident / Incident": return "accident";
+            case "Roadblock / Hazard":  return "roadblock";
+            case "Vehicle Issue":       return "vehicle_issue";
+            case "Medical Emergency":   return "medical";
+            case "Suspicious Activity": return "suspicious";
+            case "Theft / Attack":      return "attack";
+            case "Checkpoint":          return "checkpoint";
+            default:                    return "accident";
         }
     }
 
@@ -90,8 +113,9 @@ public class ApiClient {
         conn.setReadTimeout(TIMEOUT);
         conn.setRequestProperty("Content-Type", "application/json");
         conn.setRequestProperty("Accept", "application/json");
+        // Backend deviceAuth middleware expects X-Device-Token header (not Authorization)
         if (token != null && !token.isEmpty()) {
-            conn.setRequestProperty("Authorization", "Bearer " + token);
+            conn.setRequestProperty("X-Device-Token", token);
         }
         conn.setDoOutput(true);
 

@@ -112,7 +112,7 @@ public class MainActivity extends Activity {
             @Override
             public void run() {
                 final boolean ok = ApiClient.sendPanic(
-                    prefs.getServerUrl(), prefs.getToken(), active ? mode : "cancel");
+                    prefs.getServerUrl(), prefs.getToken(), active ? mode : null);
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
@@ -126,7 +126,15 @@ public class MainActivity extends Activity {
     }
 
     private void showReportDialog() {
-        final String[] cats = {"Incident","Hazard","Vehicle Issue","Route Deviation","Other"};
+        final String[] cats = {
+            "Accident / Incident",
+            "Roadblock / Hazard",
+            "Vehicle Issue",
+            "Medical Emergency",
+            "Suspicious Activity",
+            "Theft / Attack",
+            "Checkpoint",
+        };
         final int[] chosen = {0};
         final EditText input = new EditText(this);
         input.setHint("Description...");
