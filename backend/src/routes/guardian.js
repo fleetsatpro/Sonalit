@@ -5,6 +5,7 @@ const logger = require('../utils/logger');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
+const { sendCommandPush, sendPanicAck } = require('../utils/fcm');
 
 // ─── Rate Limiters ────────────────────────────────────────────────────────────
 
@@ -406,6 +407,7 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
       lat,
       lng,
       speed,
+      fcm_token,
     } = req.body;
 
     const deviceId = req.device.id;
@@ -459,6 +461,14 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
          SET last_seen = NOW(), status = 'active', updated_at = NOW()
          WHERE id = $1`,
         [deviceId]
+      );
+    }
+
+    // Update FCM token if device sent one (Task 4.1)
+    if (fcm_token) {
+      await query(
+        `UPDATE guardian_devices SET fcm_token = $2, updated_at = NOW() WHERE id = $1`,
+        [deviceId, fcm_token]
       );
     }
 
@@ -612,6 +622,10 @@ router.post('/panic', deviceAuth, panicLimiter, async (req, res, next) => {
         io.emit('device:panic', payload);
       }
       logger.warn(`PANIC triggered: device=${deviceId} name="${req.device.name}" mode=${mode}`);
+      // FCM ack to device confirming SOS was received (Task 4.1, fire-and-forget)
+      if (req.device.fcm_token) {
+        sendPanicAck(req.device.fcm_token, panicEvent.id).catch(() => {});
+      }
     }
 
     res.status(isNew ? 201 : 200).json(payload);
@@ -957,14 +971,15 @@ router.post('/devices/:id/command', authenticate, commandLimiter, async (req, re
       });
     }
 
-    // Verify device exists
+    // Verify device exists and get FCM token
     const deviceCheck = await query(
-      `SELECT id FROM guardian_devices WHERE id = $1 AND deleted_at IS NULL`,
+      `SELECT id, fcm_token FROM guardian_devices WHERE id = $1 AND deleted_at IS NULL`,
       [req.params.id]
     );
     if (!deviceCheck.rows.length) {
       return res.status(404).json({ error: 'Device not found' });
     }
+    const deviceFcmToken = deviceCheck.rows[0].fcm_token;
 
     const insertResult = await query(
       `INSERT INTO device_commands (device_id, command_type, payload, issued_by, expires_at)
@@ -997,6 +1012,11 @@ router.post('/devices/:id/command', authenticate, commandLimiter, async (req, re
     }
 
     logger.info(`Command issued: ${command_type} → device=${req.params.id} by user=${req.user.id}`);
+
+    // FCM push to wake device immediately (fire-and-forget, Task 4.1)
+    if (deviceFcmToken) {
+      sendCommandPush(deviceFcmToken, command_type, cmd.id).catch(() => {});
+    }
 
     res.status(201).json({ command_id: cmd.id, signature });
   } catch (err) {
@@ -1561,6 +1581,92 @@ router.get('/apk/download', (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename="FleetOps-Guardian.apk"');
   res.setHeader('Content-Length', stat.size);
   fs.createReadStream(apkPath).pipe(res);
+});
+
+// ─── Batch Location Upload (Task 4.6) ────────────────────────────────────────
+
+/**
+ * POST /api/v1/guardian/location/batch
+ * Upload multiple GPS points at once (offline-collected history).
+ * Body: { points: [{lat, lng, altitude, heading, speed, accuracy, timestamp}] }
+ * Max points controlled by guardian_config.batch_location_max_points (default 500).
+ */
+router.post('/location/batch', deviceAuth, async (req, res, next) => {
+  try {
+    const { points } = req.body;
+    if (!Array.isArray(points) || points.length === 0) {
+      return res.status(400).json({ error: 'points must be a non-empty array' });
+    }
+
+    // Enforce max points from config
+    const cfgRow = await query(
+      `SELECT value_int FROM guardian_config WHERE key = 'batch_location_max_points'`
+    );
+    const maxPoints = cfgRow.rows[0]?.value_int ?? 500;
+    if (points.length > maxPoints) {
+      return res.status(400).json({
+        error: `Too many points. Max allowed: ${maxPoints}`,
+      });
+    }
+
+    const deviceId = req.device.id;
+    let accepted = 0;
+    let lastLat = null;
+    let lastLng = null;
+    let lastSpeed = null;
+
+    // Bulk insert using unnest for efficiency
+    const lats      = [];
+    const lngs      = [];
+    const alts      = [];
+    const headings  = [];
+    const speeds    = [];
+    const accuracies= [];
+    const timestamps= [];
+
+    for (const pt of points) {
+      if (pt.lat == null || pt.lng == null) continue;
+      lats.push(pt.lat);
+      lngs.push(pt.lng);
+      alts.push(pt.altitude ?? null);
+      headings.push(pt.heading ?? null);
+      speeds.push(pt.speed ?? null);
+      accuracies.push(pt.accuracy ?? null);
+      timestamps.push(pt.timestamp || null);
+      lastLat = pt.lat;
+      lastLng = pt.lng;
+      lastSpeed = pt.speed ?? null;
+      accepted++;
+    }
+
+    if (accepted === 0) {
+      return res.status(400).json({ error: 'No valid points (lat/lng required)' });
+    }
+
+    await query(
+      `INSERT INTO device_locations (device_id, lat, lng, altitude, heading, speed, accuracy, timestamp)
+       SELECT $1, unnest($2::decimal[]), unnest($3::decimal[]),
+              unnest($4::decimal[]), unnest($5::decimal[]),
+              unnest($6::decimal[]), unnest($7::decimal[]),
+              unnest($8::timestamptz[])`,
+      [deviceId, lats, lngs, alts, headings, speeds, accuracies, timestamps]
+    );
+
+    // Update last known position to the last point in the batch
+    if (lastLat != null) {
+      await query(
+        `UPDATE guardian_devices
+         SET last_lat = $2, last_lng = $3, last_speed = $4, last_seen = NOW(), updated_at = NOW()
+         WHERE id = $1`,
+        [deviceId, lastLat, lastLng, lastSpeed]
+      );
+    }
+
+    logger.info(`Batch location: device=${deviceId} accepted=${accepted}/${points.length}`);
+    res.json({ accepted, total: points.length });
+  } catch (err) {
+    next(err);
+  }
 });
 
 module.exports = router;
