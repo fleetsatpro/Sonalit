@@ -558,7 +558,7 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
     const commands = await query(
       `WITH claimed AS (
         SELECT id FROM device_commands
-        WHERE device_id = $1 AND status = 'pending'
+        WHERE device_id = $1 AND status = 'pending' AND signature IS NOT NULL
         ORDER BY issued_at ASC
         LIMIT 50
         FOR UPDATE SKIP LOCKED
@@ -1120,7 +1120,8 @@ router.post('/devices/:id/command', authenticate, commandLimiter, async (req, re
     const cmd = insertResult.rows[0];
     const signature = signCommand(cmd.id, command_type, payload || null, cmd.issued_at, cmd.expires_at);
 
-    // Store signature
+    // Signature is stored before any heartbeat can claim this command because the
+    // heartbeat claim query requires signature IS NOT NULL (see heartbeat handler).
     await query(
       `UPDATE device_commands SET signature = $1 WHERE id = $2`,
       [signature, cmd.id]

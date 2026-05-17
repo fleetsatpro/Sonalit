@@ -82,6 +82,8 @@ public class CommandHandler {
                 handleLiveTracking(commandId, false);
             } else if ("enable_lost_mode".equals(commandType)) {
                 handleLostMode(commandId, p);
+            } else if ("restart_agent".equals(commandType)) {
+                handleRestartAgent(commandId);
             } else {
                 listener.onHandled(commandId, false, "unknown: " + commandType);
             }
@@ -154,6 +156,18 @@ public class CommandHandler {
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         ctx.startActivity(i);
         listener.onHandled(id, true, "lost mode active");
+    }
+
+    private void handleRestartAgent(String id) {
+        listener.onHandled(id, true, "restarting");
+        // Delay restart by 500 ms to let the ACK send before the service dies
+        android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
+        h.postDelayed(new Runnable() {
+            @Override public void run() {
+                ctx.stopService(new Intent(ctx, GuardianService.class));
+                ctx.startService(new Intent(ctx, GuardianService.class));
+            }
+        }, 500);
     }
 
     private void postNotification(String title, String text) {
