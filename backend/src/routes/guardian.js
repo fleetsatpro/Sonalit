@@ -902,7 +902,7 @@ router.get('/apk/download', (req, res) => {
 
   // Option 2: serve a local file
   const apkPath = process.env.APK_FILE_PATH
-    || path.join(__dirname, '../../../../guardian-agent/app/build/outputs/apk/debug/app-debug.apk');
+    || path.join(__dirname, '../../static/guardian-agent.apk');
 
   if (!fs.existsSync(apkPath)) {
     return res.status(404).json({

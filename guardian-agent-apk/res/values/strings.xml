@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FleetOps Guardian</string>
+    <string name="enroll_title">ENROLL DEVICE</string>
+    <string name="server_url_hint">Server URL (e.g. https://api.fleetops.com)</string>
+    <string name="org_token_hint">Org Token (e.g. fleet-guardian-2024)</string>
+    <string name="device_name_hint">Device Name (optional)</string>
+    <string name="btn_enroll">ENROLL DEVICE</string>
+    <string name="btn_panic">PANIC / SOS</string>
+    <string name="btn_report">FIELD REPORT</string>
+    <string name="btn_unenroll">Unenroll</string>
+    <string name="status_tracking">TRACKING</string>
+    <string name="status_offline">OFFLINE</string>
+    <string name="notif_title">FleetOps Guardian Active</string>
+    <string name="notif_text">Tracking location — tap to open</string>
+    <string name="channel_id">guardian_tracking</string>
+    <string name="channel_name">Guardian Tracking</string>
+</resources>
