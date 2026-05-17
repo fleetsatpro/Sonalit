@@ -119,6 +119,8 @@ public class CommandHandler {
     private void handleMessage(String id, JSONObject p) {
         String title = p.optString("title", "Fleet Message");
         String text  = p.optString("text", p.optString("message", ""));
+        // Store message locally so the Messages button can display history
+        new DevicePrefs(ctx).addMessage(title, text);
         Intent b = new Intent("com.fleetops.guardian.MESSAGE");
         b.putExtra("title", title);
         b.putExtra("text", text);

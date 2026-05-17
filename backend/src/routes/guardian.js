@@ -701,6 +701,12 @@ router.post('/panic', deviceAuth, panicLimiter, async (req, res, next) => {
     };
 
     if (isNew) {
+      // Mark device panic_active so dashboard shows alert immediately on reload
+      await query(
+        `UPDATE guardian_devices SET panic_active = true, updated_at = NOW() WHERE id = $1`,
+        [deviceId]
+      );
+
       const io = req.app.get('io');
       if (io) {
         io.emit('device:panic', payload);
@@ -1304,7 +1310,16 @@ router.patch('/panic/:id/resolve', authenticate, async (req, res, next) => {
 
     const panicEvent = result.rows[0];
 
-    // Trigger on panic_events handles panic_active recomputation — no manual UPDATE needed
+    // Recompute panic_active: true only if unresolved panics remain for this device
+    await query(
+      `UPDATE guardian_devices
+       SET panic_active = EXISTS(
+         SELECT 1 FROM panic_events
+         WHERE device_id = $1 AND resolved_at IS NULL
+       ), updated_at = NOW()
+       WHERE id = $1`,
+      [panicEvent.device_id]
+    );
 
     auditLog('admin', req.user.id, 'panic_resolved', 'panic_event', req.params.id, {}, req.ip);
     logger.info(`Panic resolved: ${req.params.id} by user=${req.user.id}`);

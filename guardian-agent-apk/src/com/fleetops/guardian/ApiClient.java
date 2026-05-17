@@ -305,9 +305,12 @@ public class ApiClient {
         List<PendingCommand> commands = new ArrayList<PendingCommand>();
         try {
             JSONObject body = new JSONObject();
-            body.put("lat", lat);
-            body.put("lng", lng);
-            body.put("speed", speed);
+            // Only include location when we have a valid fix (non-zero)
+            if (lat != 0.0 || lng != 0.0) {
+                body.put("lat", lat);
+                body.put("lng", lng);
+                body.put("speed", speed);
+            }
             body.put("battery_level", battery);
             body.put("network_type", network);
             body.put("app_version", APP_VERSION);
@@ -371,8 +374,11 @@ public class ApiClient {
         try {
             JSONObject body = new JSONObject();
             body.put("mode", mode);
-            body.put("lat", lat);
-            body.put("lng", lng);
+            // Only include coordinates if we have a real GPS fix
+            if (lat != 0.0 || lng != 0.0) {
+                body.put("lat", lat);
+                body.put("lng", lng);
+            }
             body.put("event_uuid", eventUuid);
             String resp = post(serverUrl + "/api/v1/guardian/panic", token, body.toString());
             return resp != null;
