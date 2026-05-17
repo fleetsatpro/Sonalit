@@ -12,21 +12,41 @@ import com.fleetops.guardian.R;
 
 public class MainActivity extends Activity {
     private TextView tvDeviceName, tvGps, tvBattery, tvStatus, tvLastSync, tvPanicMode;
-    private Button btnPanic, btnReport;
+    private Button   btnPanic, btnReport;
     private DevicePrefs prefs;
-    private Handler handler;
-    private boolean panicActive = false;
+    private Handler  handler;
+    private boolean  panicActive = false;
+
+    // Last known GPS position — sent with panic and report events
+    private double currentLat = 0, currentLng = 0;
+
     private final String[] panicModes  = {"silent","loud","medical","security","hijack"};
     private final String[] panicLabels = {"Silent SOS","Loud Alarm","Medical Emergency","Security Threat","Hijack"};
     private String selectedMode = "silent";
 
+    // All backend-valid report categories with user-friendly display names
+    private final String[] reportCats = {
+        "Accident / Incident",
+        "Roadblock / Hazard",
+        "Suspicious Activity",
+        "Theft",
+        "Attack / Assault",
+        "Medical Emergency",
+        "Checkpoint",
+        "Delivery Issue",
+        "Vehicle Issue",
+    };
+
     private final BroadcastReceiver locationReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context ctx, Intent intent) {
-            double lat = intent.getDoubleExtra("lat", 0);
-            double lng = intent.getDoubleExtra("lng", 0);
-            float  acc = intent.getFloatExtra("accuracy", 0);
-            tvGps.setText(String.format("GPS: %.5f, %.5f (±%.0fm)", lat, lng, acc));
+            currentLat = intent.getDoubleExtra("lat", 0);
+            currentLng = intent.getDoubleExtra("lng", 0);
+            float acc  = intent.getFloatExtra("accuracy", 0);
+            float spd  = intent.getFloatExtra("speed", 0);
+            tvGps.setText(String.format(
+                "%.5f, %.5f  ±%.0fm  %.1fkm/h",
+                currentLat, currentLng, acc, spd * 3.6f));
         }
     };
 
@@ -107,18 +127,22 @@ public class MainActivity extends Activity {
             tvPanicMode.setText("Hold to choose mode");
             tvPanicMode.setTextColor(0xFF4A7090);
         }
-        final boolean active = panicActive;
+
+        if (!panicActive) return; // cancel is UI-only — panic event stays in backend log
+
+        final double lat = currentLat;
+        final double lng = currentLng;
         new Thread(new Runnable() {
             @Override
             public void run() {
                 final boolean ok = ApiClient.sendPanic(
-                    prefs.getServerUrl(), prefs.getToken(), active ? mode : null);
+                    prefs.getServerUrl(), prefs.getToken(), mode, lat, lng);
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
                         tvLastSync.setText(ok
-                            ? "Last sync: " + DateFormat.getTimeInstance().format(new Date())
-                            : "Sync failed");
+                            ? "Panic sent: " + DateFormat.getTimeInstance().format(new Date())
+                            : "Panic queued (offline)");
                     }
                 });
             }
@@ -126,15 +150,6 @@ public class MainActivity extends Activity {
     }
 
     private void showReportDialog() {
-        final String[] cats = {
-            "Accident / Incident",
-            "Roadblock / Hazard",
-            "Vehicle Issue",
-            "Medical Emergency",
-            "Suspicious Activity",
-            "Theft / Attack",
-            "Checkpoint",
-        };
         final int[] chosen = {0};
         final EditText input = new EditText(this);
         input.setHint("Description...");
@@ -144,7 +159,7 @@ public class MainActivity extends Activity {
 
         new AlertDialog.Builder(this)
             .setTitle("Field Report")
-            .setSingleChoiceItems(cats, 0, new DialogInterface.OnClickListener() {
+            .setSingleChoiceItems(reportCats, 0, new DialogInterface.OnClickListener() {
                 @Override public void onClick(DialogInterface d, int w) { chosen[0] = w; }
             })
             .setView(input)
@@ -156,18 +171,22 @@ public class MainActivity extends Activity {
                         Toast.makeText(MainActivity.this, "Add a description", Toast.LENGTH_SHORT).show();
                         return;
                     }
-                    final String cat = cats[chosen[0]];
+                    final String cat = reportCats[chosen[0]];
+                    final double lat = currentLat;
+                    final double lng = currentLng;
                     new Thread(new Runnable() {
                         @Override
                         public void run() {
                             final boolean ok = ApiClient.sendReport(
-                                prefs.getServerUrl(), prefs.getToken(), cat, desc);
+                                prefs.getServerUrl(), prefs.getToken(), cat, desc, lat, lng);
                             runOnUiThread(new Runnable() {
                                 @Override
                                 public void run() {
                                     Toast.makeText(MainActivity.this,
                                         ok ? "Report sent" : "Report queued (offline)",
                                         Toast.LENGTH_SHORT).show();
+                                    if (ok) tvLastSync.setText(
+                                        "Synced: " + DateFormat.getTimeInstance().format(new Date()));
                                 }
                             });
                         }

@@ -2,16 +2,19 @@ package com.fleetops.guardian;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.*;
 import com.fleetops.guardian.R;
 
 public class EnrollmentActivity extends Activity {
-    private EditText etServerUrl, etOrgToken, etDeviceName;
-    private Button btnEnroll;
+    private static final int REQ_LOCATION = 101;
+
+    private EditText  etServerUrl, etOrgToken, etDeviceName;
+    private Button    btnEnroll;
     private ProgressBar progressBar;
-    private TextView tvStatus;
+    private TextView  tvStatus;
     private DevicePrefs prefs;
 
     @Override
@@ -20,7 +23,7 @@ public class EnrollmentActivity extends Activity {
         prefs = new DevicePrefs(this);
 
         if (prefs.isEnrolled()) {
-            launch();
+            requestLocationThenLaunch();
             return;
         }
 
@@ -31,8 +34,6 @@ public class EnrollmentActivity extends Activity {
         btnEnroll    = (Button)      findViewById(R.id.btnEnroll);
         progressBar  = (ProgressBar) findViewById(R.id.progressBar);
         tvStatus     = (TextView)    findViewById(R.id.tvStatus);
-
-        etOrgToken.setText("fleet-guardian-2024");
 
         btnEnroll.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -45,21 +46,18 @@ public class EnrollmentActivity extends Activity {
         String token = etOrgToken.getText().toString().trim();
         String name  = etDeviceName.getText().toString().trim();
 
-        if (url.isEmpty()) {
-            status("Please enter server URL", 0xFFFF3355);
-            return;
-        }
-        if (token.isEmpty()) {
-            status("Please enter org token", 0xFFFF3355);
-            return;
-        }
-        if (url.endsWith("/")) url = url.substring(0, url.length() - 1);
-        if (name.isEmpty()) name = android.os.Build.MODEL;
+        if (url.isEmpty()) { status("Enter server URL", 0xFFFF3355); return; }
+        if (token.isEmpty()) { status("Enter org token", 0xFFFF3355); return; }
+
+        // Normalise trailing slashes
+        while (url.endsWith("/")) url = url.substring(0, url.length() - 1);
+        if (name.isEmpty()) name = android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL;
+        if (name.trim().isEmpty()) name = "Guardian Device";
 
         final String finalUrl   = url;
         final String finalToken = token;
         final String finalName  = name;
-        final String imei = getImei();
+        final String imei = getDeviceId();
 
         setLoading(true, "Enrolling...");
 
@@ -74,8 +72,8 @@ public class EnrollmentActivity extends Activity {
                         setLoading(false, null);
                         if (result.token != null) {
                             prefs.saveEnrollment(finalUrl, result.token, finalName);
-                            status("Enrolled successfully", 0xFF00FF88);
-                            launch();
+                            status("Enrolled — requesting location access", 0xFF00FF88);
+                            requestLocationThenLaunch();
                         } else {
                             status(result.error != null ? result.error : "Enrollment failed", 0xFFFF3355);
                         }
@@ -85,16 +83,37 @@ public class EnrollmentActivity extends Activity {
         }).start();
     }
 
-    private String getImei() {
-        try {
-            android.telephony.TelephonyManager tm =
-                (android.telephony.TelephonyManager) getSystemService(TELEPHONY_SERVICE);
-            if (tm != null) {
-                String id = tm.getDeviceId();
-                return id != null ? id : "";
+    // Request ACCESS_FINE_LOCATION before opening the main screen.
+    // Without it the GPS service throws SecurityException on Android 6+.
+    private void requestLocationThenLaunch() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                    != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(
+                    new String[]{ android.Manifest.permission.ACCESS_FINE_LOCATION },
+                    REQ_LOCATION);
+                return;
             }
-        } catch (Exception ignored) {}
-        return "";
+        }
+        launch();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int code, String[] perms, int[] grants) {
+        // Launch regardless of result — service handles SecurityException gracefully,
+        // but we need at least to get to MainActivity so the user sees the UI.
+        launch();
+    }
+
+    private String getDeviceId() {
+        // Use Android ID as stable device identifier (no permissions needed)
+        try {
+            String id = android.provider.Settings.Secure.getString(
+                getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
+            return id != null ? id : "";
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     private void setLoading(boolean loading, String msg) {

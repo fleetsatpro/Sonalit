@@ -8,17 +8,21 @@ import android.util.Log;
 import com.fleetops.guardian.R;
 
 public class GuardianService extends Service implements LocationListener {
-    private static final String TAG = "GuardianService";
-    private static final int    NOTIF_ID  = 1001;
-    private static final long   INTERVAL  = 30_000L;
+    private static final String TAG      = "GuardianService";
+    private static final int    NOTIF_ID = 1001;
+    private static final String CHANNEL  = "guardian_tracking";
+    private static final long   INTERVAL = 30_000L;
 
     private DevicePrefs     prefs;
     private LocationManager locationManager;
     private Handler         handler;
-    private double lastLat = 0, lastLng = 0;
-    private float  lastAcc = 0;
 
-    public static volatile boolean running = false;
+    // Shared state — read by MainActivity via broadcast
+    public static volatile double lastLat   = 0;
+    public static volatile double lastLng   = 0;
+    public static volatile float  lastAcc   = 0;
+    public static volatile float  lastSpeed = 0;
+    public static volatile boolean running  = false;
 
     @Override
     public void onCreate() {
@@ -26,6 +30,7 @@ public class GuardianService extends Service implements LocationListener {
         prefs           = new DevicePrefs(this);
         handler         = new Handler(Looper.getMainLooper());
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+        createNotificationChannel();
     }
 
     @Override
@@ -48,30 +53,58 @@ public class GuardianService extends Service implements LocationListener {
     @Override
     public IBinder onBind(Intent intent) { return null; }
 
+    // Create notification channel for Android 8+ using reflection so the code
+    // still compiles against API 23 but behaves correctly at runtime on API 26+.
+    private void createNotificationChannel() {
+        if (android.os.Build.VERSION.SDK_INT < 26) return;
+        try {
+            Class<?> channelClass = Class.forName("android.app.NotificationChannel");
+            Object channel = channelClass
+                .getConstructor(String.class, CharSequence.class, int.class)
+                .newInstance(CHANNEL, getString(R.string.channel_name), 2); // IMPORTANCE_LOW = 2
+            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            nm.getClass().getMethod("createNotificationChannel", channelClass).invoke(nm, channel);
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to create notification channel: " + e.getMessage());
+        }
+    }
+
     private Notification buildNotification() {
         Intent open = new Intent(this, MainActivity.class);
         open.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        PendingIntent pi = PendingIntent.getActivity(this, 0, open,
-            PendingIntent.FLAG_UPDATE_CURRENT);
-        return new Notification.Builder(this)
+
+        // FLAG_IMMUTABLE available since API 23 — prevents apps from modifying
+        // our PendingIntent, and required by Android 12+ for mutable/immutable clarity.
+        int piFlags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
+        PendingIntent pi = PendingIntent.getActivity(this, 0, open, piFlags);
+
+        Notification.Builder b = new Notification.Builder(this)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentTitle(getString(R.string.notif_title))
             .setContentText(getString(R.string.notif_text))
             .setContentIntent(pi)
-            .setOngoing(true)
-            .build();
+            .setOngoing(true);
+
+        // Set channel on Android 8+
+        if (android.os.Build.VERSION.SDK_INT >= 26) {
+            try {
+                b.getClass().getMethod("setChannelId", String.class).invoke(b, CHANNEL);
+            } catch (Exception ignored) {}
+        }
+
+        return b.build();
     }
 
     private void startGps() {
         try {
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER))
                 locationManager.requestLocationUpdates(
-                    LocationManager.GPS_PROVIDER, INTERVAL, 10f, this);
+                    LocationManager.GPS_PROVIDER, INTERVAL, 5f, this);
             if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER))
                 locationManager.requestLocationUpdates(
                     LocationManager.NETWORK_PROVIDER, INTERVAL, 10f, this);
         } catch (SecurityException e) {
-            Log.w(TAG, "GPS denied: " + e.getMessage());
+            Log.w(TAG, "GPS permission not granted: " + e.getMessage());
         }
     }
 
@@ -83,13 +116,14 @@ public class GuardianService extends Service implements LocationListener {
             final double lat   = lastLat;
             final double lng   = lastLng;
             final float  acc   = lastAcc;
+            final float  spd   = lastSpeed;
             final int    bat   = getBattery();
             final String net   = getNetwork();
             new Thread(new Runnable() {
                 @Override
                 public void run() {
                     try {
-                        ApiClient.heartbeat(url, token, lat, lng, acc, bat, net);
+                        ApiClient.heartbeat(url, token, lat, lng, acc, spd, bat, net);
                     } catch (Exception e) {
                         Log.e(TAG, "heartbeat error", e);
                     }
@@ -119,13 +153,16 @@ public class GuardianService extends Service implements LocationListener {
 
     @Override
     public void onLocationChanged(Location loc) {
-        lastLat = loc.getLatitude();
-        lastLng = loc.getLongitude();
-        lastAcc = loc.getAccuracy();
+        lastLat   = loc.getLatitude();
+        lastLng   = loc.getLongitude();
+        lastAcc   = loc.getAccuracy();
+        lastSpeed = loc.getSpeed();
+
         Intent b = new Intent("com.fleetops.guardian.LOCATION");
-        b.putExtra("lat", lastLat);
-        b.putExtra("lng", lastLng);
+        b.putExtra("lat",      lastLat);
+        b.putExtra("lng",      lastLng);
         b.putExtra("accuracy", lastAcc);
+        b.putExtra("speed",    lastSpeed);
         sendBroadcast(b);
     }
 
