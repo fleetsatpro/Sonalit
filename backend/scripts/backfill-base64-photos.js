@@ -60,13 +60,14 @@ async function run() {
 
     console.log(`[backfill-photos] Found ${rows.length} report(s) with base64 photos.`);
 
-    let { s3, PutObjectCommand, bucket, publicBase };
+    let r2;
     try {
-      ({ s3, PutObjectCommand, bucket, publicBase } = await getR2Client());
+      r2 = await getR2Client();
     } catch (e) {
       console.error('[backfill-photos] R2 not configured, skipping:', e.message);
       return;
     }
+    const { s3, PutObjectCommand, bucket, publicBase } = r2;
 
     let uploaded = 0;
     let failed = 0;
