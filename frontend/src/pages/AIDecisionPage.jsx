@@ -218,7 +218,7 @@ function DetailDrawer({ rec, onClose, onApprove, onDismiss }) {
     <div style={{
       width:'45%', flexShrink:0, background:C.panel,
       borderLeft:`1px solid ${C.cyanBd}`, display:'flex', flexDirection:'column',
-      overflowY:'auto',
+      overflowY:'auto', minWidth:0,
     }}>
       {/* Drawer header */}
       <div style={{
@@ -352,9 +352,16 @@ function Section({ label, color, children }) {
 }
 
 export default function AIDecisionPage() {
-  const [recs, setRecs]       = useState(MOCK_RECS);
+  const [recs, setRecs]         = useState(MOCK_RECS);
   const [selected, setSelected] = useState(null);
-  const [filter, setFilter]   = useState('all');
+  const [filter, setFilter]     = useState('all');
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   useEffect(() => {
     aiAPI.anomalies()
@@ -437,11 +444,11 @@ export default function AIDecisionPage() {
       </div>
 
       {/* ── Body ── */}
-      <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
+      <div style={{ flex:1, display:'flex', overflow:'hidden', position:'relative' }}>
 
         {/* Cards list */}
         <div style={{
-          width: selected ? '55%' : '100%', transition:'width 0.25s ease',
+          width: (selected && !isMobile) ? '55%' : '100%', transition:'width 0.25s ease',
           overflowY:'auto', padding:'16px 20px', display:'flex', flexDirection:'column', gap:12,
         }}>
           {visible.length === 0 && (
@@ -461,14 +468,30 @@ export default function AIDecisionPage() {
           ))}
         </div>
 
-        {/* Detail drawer */}
-        {selected && (
+        {/* Detail drawer — side panel on desktop, full-screen overlay on mobile */}
+        {selected && !isMobile && (
           <DetailDrawer
             rec={selected}
             onClose={() => setSelected(null)}
             onApprove={approve}
             onDismiss={dismiss}
           />
+        )}
+        {selected && isMobile && (
+          <>
+            <div
+              style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', zIndex:200 }}
+              onClick={() => setSelected(null)}
+            />
+            <div style={{ position:'fixed', inset:0, zIndex:201, overflowY:'auto', background:C.panel }}>
+              <DetailDrawer
+                rec={selected}
+                onClose={() => setSelected(null)}
+                onApprove={approve}
+                onDismiss={dismiss}
+              />
+            </div>
+          </>
         )}
       </div>
 

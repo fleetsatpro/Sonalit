@@ -80,7 +80,6 @@ const NAV = [
     label: 'COMMUNICATIONS',
     items: [
       { to: '/messages',   icon: MessageSquare,   label: 'Messages',         desc: 'Comms channels'      },
-      { to: '/documents',  icon: FileText,        label: 'Documents',        desc: 'File management'     },
     ],
   },
   {

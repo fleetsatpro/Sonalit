@@ -200,8 +200,15 @@ function EsgBar({ label, value, target, unit }) {
 }
 
 export default function ExecutivePage() {
-  const [kpis, setKpis] = useState(null);
+  const [kpis, setKpis]       = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   useEffect(() => {
     analyticsAPI.dashboard()
@@ -235,7 +242,7 @@ export default function ExecutivePage() {
       </div>
 
       {/* ── KPI Row ── */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:16, marginBottom:28 }}>
+      <div style={{ display:'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap:16, marginBottom:28 }}>
         <KpiTile label="REVENUE THIS MONTH"        value={revenue}    trend={8.3}   accent={C.cyan}    />
         <KpiTile label="ON-TIME DELIVERY RATE"     value={onTimeRate} trend={1.2}   accent={C.success} />
         <KpiTile label="NETWORK RESILIENCE SCORE"  value="87/100"     trend={2.1}   accent={C.blue}    />
@@ -243,7 +250,7 @@ export default function ExecutivePage() {
       </div>
 
       {/* ── Charts Row ── */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:28 }}>
+      <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap:16, marginBottom:28 }}>
 
         {/* P&L Forecast */}
         <div style={{ background:C.panel, border:`1px solid ${C.cyanBd}`, borderRadius:10, padding:'20px 22px' }}>
@@ -303,13 +310,13 @@ export default function ExecutivePage() {
         <div style={{ fontFamily:'IBM Plex Mono', fontSize:10, color:C.muted, letterSpacing:'0.18em', marginBottom:14 }}>
           STRATEGIC ALERTS
         </div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:14 }}>
+        <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3,1fr)', gap:14 }}>
           {ALERTS.map(a => <StrategicAlertCard key={a.id} alert={a} />)}
         </div>
       </div>
 
       {/* ── Bottom Row ── */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:16 }}>
+      <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap:16 }}>
 
         {/* Expansion Map placeholder */}
         <div style={{ background:C.panel, border:`1px solid ${C.cyanBd}`, borderRadius:10, padding:'20px 22px' }}>
