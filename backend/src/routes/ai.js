@@ -6,7 +6,6 @@ const logger = require('../utils/logger');
 
 router.use(authenticate);
 
-<<<<<<< HEAD
 const MODEL = 'claude-opus-4-7';
 
 // Ensure vehicle columns exist (run once on first request)
@@ -728,264 +727,8 @@ router.post('/dispatch', async (req, res) => {
       actions: [...new Set(toolsUsed)],
       created: actionsCreated,
       source: 'claude',
-=======
-// Column safety — run once at startup
-let columnsReady = false;
-async function ensureVehicleColumns() {
-  if (columnsReady) return;
-  columnsReady = true;
-  const cols = [
-    'fuel_level DECIMAL(5,2) DEFAULT 85',
-    'speed DECIMAL(6,2) DEFAULT 0',
-    'maintenance_score INTEGER DEFAULT 0',
-    'heading DECIMAL(6,2) DEFAULT 0',
-    'driver_name VARCHAR(255)',
-  ];
-  for (const col of cols) {
-    await query(`ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS ${col}`).catch(() => {});
-  }
-}
-
-// Rate limiting — max 30 AI calls per minute per user
-const aiCallLog = new Map();
-function checkRateLimit(userId) {
-  const now = Date.now();
-  const key = userId;
-  const calls = (aiCallLog.get(key) || []).filter(t => now - t < 60000);
-  if (calls.length >= 30) return false;
-  calls.push(now);
-  aiCallLog.set(key, calls);
-  return true;
-}
-
-// ── POST /ai/dispatch ──────────────────────────────────────────────────────
-router.post('/dispatch', async (req, res) => {
-  try {
-    // Input validation
-    const { command, history = [] } = req.body;
-    if (!command?.trim()) return res.status(400).json({ error: 'command required' });
-    if (typeof command !== 'string') return res.status(400).json({ error: 'invalid command' });
-    if (command.length > 500) return res.status(400).json({ error: 'command too long (max 500 chars)' });
-
-    // Rate limit
-    if (!checkRateLimit(req.user?.id || 'anon')) {
-      return res.status(429).json({ response: 'Too many requests. Please wait a moment.', source: 'error' });
-    }
-
-    await ensureVehicleColumns();
-
-    // Fetch live fleet data — all queries safe with COALESCE
-    const [vehicleRows, convoyRows, alertRows] = await Promise.all([
-      query(`
-        SELECT
-          registration, status, region, type,
-          COALESCE(latitude, 0)         AS lat,
-          COALESCE(longitude, 0)        AS lng,
-          COALESCE(fuel_level, 85)      AS fuel_level,
-          COALESCE(speed, 0)            AS speed,
-          COALESCE(maintenance_score,0) AS maintenance_score,
-          COALESCE(driver_name, '')     AS driver_name,
-          last_ping
-        FROM vehicles
-        WHERE deleted_at IS NULL
-        ORDER BY status, region
-        LIMIT 100
-      `).then(r => r.rows).catch(e => { logger.warn('AI vehicles: ' + e.message); return []; }),
-
-      query(`
-        SELECT name, status, priority, region,
-               route_origin, route_destination,
-               COALESCE(risk_score, 0) AS risk_score,
-               estimated_arrival
-        FROM convoys
-        WHERE deleted_at IS NULL AND status NOT IN ('completed','aborted')
-        ORDER BY status DESC, priority DESC
-        LIMIT 20
-      `).then(r => r.rows).catch(e => { logger.warn('AI convoys: ' + e.message); return []; }),
-
-      query(`
-        SELECT type, severity, message, created_at
-        FROM alerts
-        WHERE resolved_at IS NULL AND deleted_at IS NULL
-        ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 ELSE 3 END, created_at DESC
-        LIMIT 20
-      `).then(r => r.rows).catch(e => { logger.warn('AI alerts: ' + e.message); return []; }),
-    ]);
-
-    // Build context summary (token-safe — never send full JSON of 500 vehicles)
-    const byRegion = vehicleRows.reduce((acc, v) => {
-      acc[v.region] = acc[v.region] || { active:0, idle:0, maintenance:0, offline:0, total:0 };
-      acc[v.region][v.status] = (acc[v.region][v.status] || 0) + 1;
-      acc[v.region].total++;
-      return acc;
-    }, {});
-
-    const lowFuel    = vehicleRows.filter(v => parseFloat(v.fuel_level) < 25);
-    const critFuel   = vehicleRows.filter(v => parseFloat(v.fuel_level) < 10);
-    const offline    = vehicleRows.filter(v => v.status === 'offline');
-    const inMaint    = vehicleRows.filter(v => v.status === 'maintenance');
-    const moving     = vehicleRows.filter(v => parseFloat(v.speed) > 2);
-    const highRisk   = convoyRows.filter(c => parseInt(c.risk_score) >= 60);
-    const critAlerts = alertRows.filter(a => a.severity === 'critical');
-    const highAlerts = alertRows.filter(a => a.severity === 'high');
-
-    // ── Anthropic Claude ────────────────────────────────────────────────────
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (apiKey && apiKey.startsWith('sk-ant-')) {
-      try {
-        const systemPrompt = [
-          'You are FleetOps AI — the command intelligence for an enterprise logistics fleet across East/Central Africa.',
-          '',
-          '━━ LIVE FLEET SNAPSHOT ━━',
-          `Fleet: ${vehicleRows.length} vehicles | ${vehicleRows.filter(v=>v.status==='active').length} active | ${vehicleRows.filter(v=>v.status==='idle').length} idle | ${inMaint.length} maintenance | ${offline.length} OFFLINE`,
-          `Convoys: ${convoyRows.filter(c=>c.status==='active').length} active | ${convoyRows.filter(c=>c.status==='planned').length} planned`,
-          `Alerts: ${alertRows.length} open | ${critAlerts.length} CRITICAL | ${highAlerts.length} HIGH`,
-          `Fuel critical (<10%): ${critFuel.map(v=>v.registration).join(', ') || 'NONE'}`,
-          `Fuel low (<25%): ${lowFuel.map(v=>v.registration).join(', ') || 'NONE'}`,
-          `Moving: ${moving.length} vehicles`,
-          '',
-          '━━ BY REGION ━━',
-          Object.entries(byRegion).map(([r,s]) => `${r}: ${s.total} total (${s.active} active, ${s.offline} offline)`).join('\n'),
-          '',
-          '━━ VEHICLES (top 30) ━━',
-          vehicleRows.slice(0, 30).map(v =>
-            `${v.registration} | ${v.status} | ${v.region} | fuel:${parseFloat(v.fuel_level).toFixed(0)}% | speed:${parseFloat(v.speed).toFixed(0)}km/h${v.driver_name ? ' | driver:'+v.driver_name : ''}`
-          ).join('\n'),
-          '',
-          '━━ CONVOYS ━━',
-          convoyRows.map(c =>
-            `${c.name} | ${c.status} | ${c.priority} | ${c.route_origin||'?'}→${c.route_destination||'?'} | risk:${c.risk_score}`
-          ).join('\n'),
-          '',
-          '━━ OPEN ALERTS ━━',
-          alertRows.map(a => `[${a.severity.toUpperCase()}] ${a.message}`).join('\n'),
-          '',
-          '━━ YOUR RULES ━━',
-          '1. Be sharp and decisive — 1-4 sentences max. No padding.',
-          '2. Always name specific vehicles/convoys/regions from the data above.',
-          '3. Flag CRITICAL situations first with clear action steps.',
-          '4. Off-topic questions (weather, news, etc): "I only handle fleet operations."',
-          '5. If you lack data to answer, say so clearly and suggest what to check.',
-          '6. Recommend actions — don\'t just report numbers.',
-        ].join('\n');
-
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-          },
-          body: JSON.stringify({
-            model: 'claude-sonnet-4-5',
-            max_tokens: 400,
-            system: systemPrompt,
-            messages: [
-              ...history.slice(-6).map(h => ({ role: h.role, content: String(h.content).slice(0, 1000) })),
-              { role: 'user', content: command },
-            ],
-          }),
-          signal: AbortSignal.timeout(12000),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          const text = data.content?.[0]?.text || '';
-          return res.json({ response: text.trim(), actions: [], source: 'claude' });
-        }
-
-        const errBody = await response.text().catch(() => '');
-        logger.warn(`Anthropic ${response.status}: ${errBody.slice(0, 200)}`);
-      } catch (err) {
-        logger.warn('Anthropic timeout/error: ' + err.message);
-      }
-    }
-
-    // ── Pattern matching fallback ────────────────────────────────────────────
-    const q = command.toLowerCase();
-
-    const patterns = [
-      [/(fuel|refuel|tank)/,          () => {
-        if (critFuel.length) return `⚠ CRITICAL: ${critFuel.map(v=>v.registration).join(', ')} below 10% fuel — dispatch fuel trucks immediately. ${lowFuel.length - critFuel.length} more vehicles below 25%.`;
-        if (lowFuel.length) return `${lowFuel.length} vehicle${lowFuel.length>1?'s':''} below 25% fuel: ${lowFuel.map(v=>v.registration).join(', ')}. Schedule refuelling soon.`;
-        return 'All vehicles above 25% fuel. Fleet fuel levels nominal.';
-      }],
-      [/(fleet status|overview|summary|all vehicle)/,  () =>
-        `Fleet: ${vehicleRows.length} vehicles — ${vehicleRows.filter(v=>v.status==='active').length} active, ${vehicleRows.filter(v=>v.status==='idle').length} idle, ${inMaint.length} maintenance, ${offline.length} offline. ${moving.length} currently moving. ${critAlerts.length} critical alerts.`
-      ],
-      [/(convoy|mission|operation)/,  () => {
-        const active = convoyRows.filter(c => c.status === 'active');
-        if (!active.length) return 'No convoys currently active.';
-        const riskOnes = active.filter(c => parseInt(c.risk_score) >= 60);
-        let r = `${active.length} active convoy${active.length>1?'s':''}: ${active.map(c=>`${c.name} (${c.route_origin||'?'}→${c.route_destination||'?'})`).join(', ')}.`;
-        if (riskOnes.length) r += ` ⚠ ${riskOnes.map(c=>c.name).join(', ')} at high risk.`;
-        return r;
-      }],
-      [/(alert|emergency|critical|incident)/,  () => {
-        if (!alertRows.length) return 'No open alerts. All systems clear.';
-        let r = `${alertRows.length} open alert${alertRows.length>1?'s':''}: ${critAlerts.length} critical, ${highAlerts.length} high.`;
-        if (critAlerts.length) r += ` Critical: ${critAlerts.slice(0,2).map(a=>a.message).join('; ')}.`;
-        return r;
-      }],
-      [/(offline|down|unreachable|lost|contact)/,  () =>
-        offline.length
-          ? `${offline.length} vehicle${offline.length>1?'s':''} offline: ${offline.map(v=>v.registration).join(', ')}. Check GPS units and communication systems.`
-          : 'All vehicles online and responding.'
-      ],
-      [/(maintenance|service|repair|broken)/,  () =>
-        inMaint.length
-          ? `${inMaint.length} vehicle${inMaint.length>1?'s':''} in maintenance: ${inMaint.map(v=>v.registration).join(', ')}.`
-          : 'No vehicles currently in maintenance.'
-      ],
-      [/\b(kenya|nairobi|mombasa)\b/,  () => {
-        const r = vehicleRows.filter(v => v.region === 'Kenya');
-        return `Kenya: ${r.length} vehicles — ${r.filter(v=>v.status==='active').length} active, ${r.filter(v=>v.status==='offline').length} offline.`;
-      }],
-      [/\b(drc|congo|kinshasa)\b/,  () => {
-        const r = vehicleRows.filter(v => v.region === 'DRC');
-        return `DRC: ${r.length} vehicles — ${r.filter(v=>v.status==='active').length} active, ${r.filter(v=>v.status==='offline').length} offline.`;
-      }],
-      [/\b(tanzania|dar|dodoma)\b/,  () => {
-        const r = vehicleRows.filter(v => v.region === 'Tanzania');
-        return `Tanzania: ${r.length} vehicles — ${r.filter(v=>v.status==='active').length} active.`;
-      }],
-      [/\b(mali|bamako)\b/,  () => {
-        const r = vehicleRows.filter(v => v.region === 'Mali');
-        return `Mali: ${r.length} vehicles — ${r.filter(v=>v.status==='active').length} active.`;
-      }],
-      [/\b(uganda|kampala)\b/,  () => {
-        const r = vehicleRows.filter(v => v.region === 'Uganda');
-        return `Uganda: ${r.length} vehicles — ${r.filter(v=>v.status==='active').length} active.`;
-      }],
-      [/(move|moving|speed|fastest)/,  () => {
-        if (!moving.length) return 'No vehicles currently in motion.';
-        const fastest = [...vehicleRows].sort((a,b) => parseFloat(b.speed)-parseFloat(a.speed))[0];
-        return `${moving.length} vehicles moving. Fastest: ${fastest?.registration} at ${parseFloat(fastest?.speed||0).toFixed(0)} km/h.`;
-      }],
-      [/(risk|danger|threat|safe)/,  () => {
-        if (highRisk.length) return `${highRisk.length} high-risk convoy${highRisk.length>1?'s':''}: ${highRisk.map(c=>c.name).join(', ')}. ${critAlerts.length} critical alerts active.`;
-        return `No high-risk convoys detected. ${alertRows.length} open alerts.`;
-      }],
-      [/(help|what can|how|command)/,  () =>
-        'I can answer: fleet status, fuel levels, convoy status, alerts, offline vehicles, maintenance, regional breakdowns, speed/movement, and risk assessment. Add ANTHROPIC_API_KEY for full natural language.'
-      ],
-    ];
-
-    for (const [pattern, fn] of patterns) {
-      if (pattern.test(q)) return res.json({ response: fn(), actions: [], source: 'pattern' });
-    }
-
-    // Default response — always data-rich
-    const urgency = critAlerts.length > 0 ? ` ⚠ ${critAlerts.length} CRITICAL alerts need attention.` :
-                    highAlerts.length > 0 ? ` ${highAlerts.length} high-priority alerts open.` : '';
-    res.json({
-      response: `Fleet: ${vehicleRows.length} vehicles (${vehicleRows.filter(v=>v.status==='active').length} active), ${convoyRows.filter(c=>c.status==='active').length} active convoys, ${alertRows.length} open alerts.${urgency} What do you need?`,
-      actions: [],
-      source: 'pattern',
->>>>>>> 7ab5513b (Setup Ruflo AI agent)
     });
   } catch (err) {
-<<<<<<< HEAD
     if (err instanceof Anthropic.AuthenticationError || err?.status === 401) {
       logger.warn('AI dispatch: ANTHROPIC_API_KEY rejected by Anthropic (401)');
       return res.json({
@@ -1009,61 +752,37 @@ router.post('/dispatch', async (req, res) => {
       actions: [],
       source: 'error',
     });
-=======
-    logger.error('AI dispatch error: ' + err.message + '\n' + err.stack);
-    res.status(500).json({ response: 'AI engine encountered an error. Check backend logs.', source: 'error' });
->>>>>>> 7ab5513b (Setup Ruflo AI agent)
   }
 });
 
-// ── GET /ai/anomalies ──────────────────────────────────────────────────────
 router.get('/anomalies', async (req, res, next) => {
   try {
-    await ensureVehicleColumns();
+    await ensureColumns();
     const r = await query(`
-      SELECT a.id, a.type, a.severity, a.message, a.created_at,
-             v.registration, v.region
-      FROM alerts a
+      SELECT a.*, v.registration, v.region FROM alerts a
       LEFT JOIN vehicles v ON v.id = a.vehicle_id
       WHERE a.resolved_at IS NULL AND a.deleted_at IS NULL
-        AND a.type IN ('speed','route_deviation','geofence','mechanical')
-      ORDER BY CASE a.severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 ELSE 3 END, a.created_at DESC
-      LIMIT 50
+        AND a.type IN ('speed','route_deviation','geofence')
+      ORDER BY a.created_at DESC LIMIT 50
     `);
     res.json({ data: r.rows });
   } catch (err) { next(err); }
 });
 
-// ── GET /ai/risk/:convoyId ─────────────────────────────────────────────────
 router.get('/risk/:convoyId', async (req, res, next) => {
   try {
-    const { convoyId } = req.params;
-    if (!/^[0-9a-f-]{36}$/.test(convoyId)) return res.status(400).json({ error: 'invalid convoy id' });
-
-    const [alertRes, convoyRes] = await Promise.all([
-      query('SELECT COUNT(*) FROM alerts WHERE convoy_id=$1 AND resolved_at IS NULL AND deleted_at IS NULL', [convoyId]),
-      query('SELECT priority, COALESCE(risk_score,0) AS risk_score FROM convoys WHERE id=$1', [convoyId]),
+    const [alertCount, convoy] = await Promise.all([
+      query('SELECT COUNT(*) FROM alerts WHERE convoy_id=$1 AND resolved_at IS NULL AND deleted_at IS NULL', [req.params.convoyId]),
+      query('SELECT priority, COALESCE(risk_score,0) AS risk_score FROM convoys WHERE id=$1', [req.params.convoyId]),
     ]);
-<<<<<<< HEAD
-    const count = parseInt(alertCount.rows[0].count);
-    const priority = convoy.rows[0]?.priority || 'medium';
-    const base = { critical: 25, high: 15, medium: 5, low: 0 }[priority] || 0;
-    const score = Math.min(100, count * 12 + base);
-    const level = score >= 70 ? 'CRITICAL' : score >= 40 ? 'HIGH' : score >= 20 ? 'MEDIUM' : 'LOW';
-    res.json({ data: { score, level, openAlerts: count } });
-=======
-
-    if (!convoyRes.rows.length) return res.status(404).json({ error: 'Convoy not found' });
-
-    const count    = parseInt(alertRes.rows[0].count);
-    const priority = convoyRes.rows[0].priority || 'medium';
-    const dbScore  = parseInt(convoyRes.rows[0].risk_score);
-    const alertAdd = { critical:25, high:15, medium:5, low:0 }[priority] || 0;
+    if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
+    const count    = parseInt(alertCount.rows[0].count);
+    const priority = convoy.rows[0].priority || 'medium';
+    const dbScore  = parseInt(convoy.rows[0].risk_score);
+    const alertAdd = { critical: 25, high: 15, medium: 5, low: 0 }[priority] || 0;
     const score    = Math.min(100, Math.max(dbScore, count * 12 + alertAdd));
     const level    = score >= 70 ? 'CRITICAL' : score >= 40 ? 'HIGH' : score >= 20 ? 'MEDIUM' : 'LOW';
-
     res.json({ data: { score, level, openAlerts: count, priority } });
->>>>>>> 7ab5513b (Setup Ruflo AI agent)
   } catch (err) { next(err); }
 });
 
