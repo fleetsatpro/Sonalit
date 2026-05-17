@@ -1,22 +1,26 @@
 package com.fleetops.guardian;
 
 import android.util.Log;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
 public class ApiClient {
-    private static final String TAG = "ApiClient";
-    private static final int TIMEOUT = 15000;
+    private static final String TAG     = "ApiClient";
+    private static final int    TIMEOUT = 15_000;
+
+    // ── Enroll ───────────────────────────────────────────────────────────────
 
     public static class EnrollResult {
         public final String token;
         public final String error;
         public EnrollResult(String token, String error) {
-            this.token = token;
-            this.error = error;
+            this.token = token; this.error = error;
         }
     }
 
@@ -29,24 +33,34 @@ public class ApiClient {
             body.put("imei", imei);
             body.put("model", android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL);
             body.put("os_version", android.os.Build.VERSION.RELEASE);
-            body.put("app_version", "1.0.0");
+            body.put("app_version", "2.0.0");
 
             String resp = post(serverUrl + "/api/v1/guardian/enroll", null, body.toString());
             if (resp == null) return new EnrollResult(null, "No response from server");
-
             JSONObject json = new JSONObject(resp);
             if (json.has("token")) return new EnrollResult(json.getString("token"), null);
-            String error = json.optString("error", "Enrollment failed");
-            return new EnrollResult(null, error);
+            return new EnrollResult(null, json.optString("error", "Enrollment failed"));
         } catch (Exception e) {
             Log.e(TAG, "enroll error", e);
             return new EnrollResult(null, e.getMessage());
         }
     }
 
-    public static boolean heartbeat(String serverUrl, String token,
-                                    double lat, double lng, float accuracy,
-                                    float speed, int battery, String network) {
+    // ── Heartbeat — returns pending commands ──────────────────────────────────
+
+    public static class PendingCommand {
+        public final String id;
+        public final String type;
+        public final String payload;
+        public PendingCommand(String id, String type, String payload) {
+            this.id = id; this.type = type; this.payload = payload;
+        }
+    }
+
+    public static List<PendingCommand> heartbeat(String serverUrl, String token,
+                                                  double lat, double lng, float accuracy,
+                                                  float speed, int battery, String network) {
+        List<PendingCommand> commands = new ArrayList<>();
         try {
             JSONObject body = new JSONObject();
             body.put("lat", lat);
@@ -54,19 +68,34 @@ public class ApiClient {
             body.put("speed", speed);
             body.put("battery_level", battery);
             body.put("network_type", network);
+            body.put("app_version", "2.0.0");
             String resp = post(serverUrl + "/api/v1/guardian/heartbeat", token, body.toString());
-            return resp != null;
+            if (resp != null && !resp.isEmpty()) {
+                JSONObject json = new JSONObject(resp);
+                JSONArray arr = json.optJSONArray("commands");
+                if (arr != null) {
+                    for (int i = 0; i < arr.length(); i++) {
+                        JSONObject cmd = arr.getJSONObject(i);
+                        JSONObject pl  = cmd.optJSONObject("payload");
+                        commands.add(new PendingCommand(
+                            cmd.optString("id"),
+                            cmd.optString("command_type"),
+                            pl != null ? pl.toString() : null
+                        ));
+                    }
+                }
+            }
         } catch (Exception e) {
             Log.e(TAG, "heartbeat error", e);
-            return false;
         }
+        return commands;
     }
 
-    // mode must be one of: silent, loud, medical, security, hijack
-    // lat/lng should be the current GPS position (0,0 only as fallback)
+    // ── Panic ─────────────────────────────────────────────────────────────────
+
     public static boolean sendPanic(String serverUrl, String token,
                                     String mode, double lat, double lng) {
-        if (mode == null || mode.isEmpty()) return true; // cancel is UI-only
+        if (mode == null || mode.isEmpty()) return true;
         try {
             JSONObject body = new JSONObject();
             body.put("mode", mode);
@@ -80,9 +109,11 @@ public class ApiClient {
         }
     }
 
+    // ── Report ────────────────────────────────────────────────────────────────
+
     public static boolean sendReport(String serverUrl, String token,
                                      String displayCategory, String desc,
-                                     double lat, double lng) {
+                                     double lat, double lng, String photoBase64) {
         try {
             JSONObject body = new JSONObject();
             body.put("category", mapCategory(displayCategory));
@@ -90,6 +121,9 @@ public class ApiClient {
             body.put("description", desc);
             body.put("lat", lat);
             body.put("lng", lng);
+            if (photoBase64 != null && !photoBase64.isEmpty()) {
+                body.put("photo_url", "data:image/jpeg;base64," + photoBase64);
+            }
             String resp = post(serverUrl + "/api/v1/guardian/report", token, body.toString());
             return resp != null;
         } catch (Exception e) {
@@ -98,24 +132,78 @@ public class ApiClient {
         }
     }
 
-    // Maps user-visible labels to the backend's validated enum values
-    private static String mapCategory(String display) {
-        if (display == null) return "accident";
-        switch (display) {
-            case "Accident / Incident":  return "accident";
-            case "Roadblock / Hazard":   return "roadblock";
-            case "Suspicious Activity":  return "suspicious";
-            case "Theft":               return "theft";
-            case "Attack / Assault":    return "attack";
-            case "Medical Emergency":   return "medical";
-            case "Checkpoint":          return "checkpoint";
-            case "Delivery Issue":      return "delivery_issue";
-            case "Vehicle Issue":       return "vehicle_issue";
-            default:                    return "accident";
+    // ── Dead man's switch check-in ────────────────────────────────────────────
+
+    public static boolean checkin(String serverUrl, String token) {
+        try {
+            String resp = post(serverUrl + "/api/v1/guardian/checkin", token, "{}");
+            return resp != null;
+        } catch (Exception e) {
+            Log.e(TAG, "checkin error", e);
+            return false;
         }
     }
 
-    private static String post(String urlStr, String token, String body) throws Exception {
+    // ── Command ACK ───────────────────────────────────────────────────────────
+
+    public static boolean ackCommand(String serverUrl, String token,
+                                     String commandId, boolean success, String result) {
+        try {
+            JSONObject body = new JSONObject();
+            body.put("command_id", commandId);
+            body.put("status", success ? "executed" : "failed");
+            if (result != null) body.put("result", result);
+            String resp = post(serverUrl + "/api/v1/guardian/ack-command", token, body.toString());
+            return resp != null;
+        } catch (Exception e) {
+            Log.e(TAG, "ackCommand error", e);
+            return false;
+        }
+    }
+
+    // ── Convoy ────────────────────────────────────────────────────────────────
+
+    public static boolean joinConvoy(String serverUrl, String token, String convoyCode) {
+        try {
+            JSONObject body = new JSONObject();
+            body.put("convoy_code", convoyCode);
+            String resp = post(serverUrl + "/api/v1/guardian/convoy/join", token, body.toString());
+            return resp != null;
+        } catch (Exception e) {
+            Log.e(TAG, "joinConvoy error", e);
+            return false;
+        }
+    }
+
+    public static boolean leaveConvoy(String serverUrl, String token) {
+        try {
+            String resp = post(serverUrl + "/api/v1/guardian/convoy/leave", token, "{}");
+            return resp != null;
+        } catch (Exception e) {
+            Log.e(TAG, "leaveConvoy error", e);
+            return false;
+        }
+    }
+
+    // ── Category mapping ──────────────────────────────────────────────────────
+
+    private static String mapCategory(String display) {
+        if (display == null) return "accident";
+        if ("Accident / Incident".equals(display))  return "accident";
+        if ("Roadblock / Hazard".equals(display))   return "roadblock";
+        if ("Suspicious Activity".equals(display))  return "suspicious";
+        if ("Theft".equals(display))                return "theft";
+        if ("Attack / Assault".equals(display))     return "attack";
+        if ("Medical Emergency".equals(display))    return "medical";
+        if ("Checkpoint".equals(display))           return "checkpoint";
+        if ("Delivery Issue".equals(display))       return "delivery_issue";
+        if ("Vehicle Issue".equals(display))        return "vehicle_issue";
+        return "accident";
+    }
+
+    // ── HTTP ──────────────────────────────────────────────────────────────────
+
+    static String post(String urlStr, String token, String body) throws Exception {
         URL url = new URL(urlStr);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
@@ -123,7 +211,6 @@ public class ApiClient {
         conn.setReadTimeout(TIMEOUT);
         conn.setRequestProperty("Content-Type", "application/json");
         conn.setRequestProperty("Accept", "application/json");
-        // Backend deviceAuth middleware reads X-Device-Token header
         if (token != null && !token.isEmpty()) {
             conn.setRequestProperty("X-Device-Token", token);
         }
@@ -139,9 +226,10 @@ public class ApiClient {
         int code = conn.getResponseCode();
         InputStream is = (code >= 200 && code < 300)
             ? conn.getInputStream() : conn.getErrorStream();
-        if (is == null) return code >= 200 && code < 300 ? "" : null;
+        if (is == null) return (code >= 200 && code < 300) ? "" : null;
 
-        BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
+        BufferedReader br = new BufferedReader(
+            new InputStreamReader(is, StandardCharsets.UTF_8));
         StringBuilder sb = new StringBuilder();
         String line;
         while ((line = br.readLine()) != null) sb.append(line);
@@ -149,7 +237,7 @@ public class ApiClient {
         conn.disconnect();
 
         String result = sb.toString();
-        Log.d(TAG, "POST " + urlStr + " -> " + code + " " + result);
+        Log.d(TAG, "POST " + urlStr + " → " + code);
         return (code >= 200 && code < 300) ? result : null;
     }
 }

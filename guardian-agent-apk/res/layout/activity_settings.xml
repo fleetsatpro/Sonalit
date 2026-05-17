@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/navy">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <!-- Title -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="SETTINGS"
+            android:textColor="@color/cyan"
+            android:textSize="14sp"
+            android:letterSpacing="0.3"
+            android:layout_marginBottom="24dp" />
+
+        <!-- Dead Man's Switch -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="DEAD MAN'S SWITCH"
+            android:textColor="@color/muted"
+            android:textSize="10sp"
+            android:letterSpacing="0.2"
+            android:layout_marginBottom="8dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@color/navy_card"
+            android:padding="16dp"
+            android:layout_marginBottom="4dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Enable check-in timer"
+                android:textColor="@color/body"
+                android:textSize="13sp" />
+
+            <Switch
+                android:id="@+id/swDms"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@color/navy_card"
+            android:padding="16dp"
+            android:layout_marginBottom="4dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Check-in interval"
+                android:textColor="@color/body"
+                android:textSize="13sp" />
+
+            <Spinner
+                android:id="@+id/spinDmsInterval"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:spinnerMode="dropdown" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@color/navy_card"
+            android:padding="16dp"
+            android:layout_marginBottom="20dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textColor="@color/body"
+                android:textSize="13sp"
+                android:text="Panic cancel PIN" />
+
+            <TextView
+                android:id="@+id/tvDmsPin"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/muted"
+                android:textSize="12sp"
+                android:text="No PIN set" />
+
+            <Button
+                android:id="@+id/btnChangePin"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Change"
+                android:textColor="@color/cyan"
+                android:background="@color/transparent"
+                android:textSize="12sp"
+                android:layout_marginLeft="8dp" />
+        </LinearLayout>
+
+        <!-- Convoy -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="CONVOY"
+            android:textColor="@color/muted"
+            android:textSize="10sp"
+            android:letterSpacing="0.2"
+            android:layout_marginBottom="8dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@color/navy_card"
+            android:padding="16dp"
+            android:layout_marginBottom="4dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Current convoy"
+                android:textColor="@color/body"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tvConvoyCode"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/warning"
+                android:textSize="12sp"
+                android:text="Not in a convoy" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="24dp">
+
+            <Button
+                android:id="@+id/btnConvoyJoin"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_weight="1"
+                android:text="JOIN CONVOY"
+                android:textColor="@color/warning"
+                android:background="@drawable/btn_outline"
+                android:textSize="11sp"
+                android:layout_marginRight="6dp" />
+
+            <Button
+                android:id="@+id/btnConvoyLeave"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_weight="1"
+                android:text="LEAVE"
+                android:textColor="@color/muted"
+                android:background="@drawable/btn_outline"
+                android:textSize="11sp"
+                android:layout_marginLeft="6dp" />
+        </LinearLayout>
+
+        <!-- Danger zone -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="DANGER ZONE"
+            android:textColor="@color/danger"
+            android:textSize="10sp"
+            android:letterSpacing="0.2"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btnUnenroll"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="UNENROLL DEVICE"
+            android:textColor="@color/danger"
+            android:background="@drawable/btn_outline"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+    </LinearLayout>
+</ScrollView>

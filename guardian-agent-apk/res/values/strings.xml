@@ -15,4 +15,11 @@
     <string name="notif_text">Tracking location — tap to open</string>
     <string name="channel_id">guardian_tracking</string>
     <string name="channel_name">Guardian Tracking</string>
+    <string name="btn_checkin">CHECK IN</string>
+    <string name="btn_settings">SETTINGS</string>
+    <string name="btn_convoy">CONVOY</string>
+    <string name="btn_messages">MESSAGES</string>
+    <string name="dms_off">DMS: off</string>
+    <string name="settings_title">Settings</string>
+    <string name="lock_screen_default">DEVICE LOCKED BY FLEET MANAGER</string>
 </resources>

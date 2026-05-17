@@ -102,6 +102,10 @@ async function ensureTables() {
       )
     `);
 
+    // v2 columns — safe to run repeatedly
+    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS convoy_code TEXT`);
+    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS last_checkin_at TIMESTAMPTZ`);
+
     // Indexes for performance
     await query(`CREATE INDEX IF NOT EXISTS idx_device_locations_device_id ON device_locations(device_id)`);
     await query(`CREATE INDEX IF NOT EXISTS idx_device_locations_timestamp ON device_locations(timestamp DESC)`);
@@ -881,6 +885,125 @@ router.get('/reports', authenticate, async (req, res, next) => {
     );
 
     res.json({ data: result.rows, total: parseInt(total.rows[0].count) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Dead Man's Switch Check-in ───────────────────────────────────────────────
+
+/**
+ * POST /api/v1/guardian/checkin
+ * Reset the dead man's switch timer on the server side.
+ */
+router.post('/checkin', deviceAuth, async (req, res, next) => {
+  try {
+    await query(
+      `UPDATE guardian_devices
+       SET last_checkin_at = NOW(), last_seen = NOW(), updated_at = NOW()
+       WHERE id = $1`,
+      [req.device.id]
+    );
+    res.json({ ok: true, checkin_at: new Date().toISOString() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Convoy ───────────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/v1/guardian/convoy/join
+ * Device joins a convoy by code. Returns all members in the same convoy.
+ */
+router.post('/convoy/join', deviceAuth, async (req, res, next) => {
+  try {
+    const { convoy_code } = req.body;
+    if (!convoy_code || typeof convoy_code !== 'string' || convoy_code.trim().length < 2) {
+      return res.status(400).json({ error: 'convoy_code is required (min 2 chars)' });
+    }
+    const code = convoy_code.trim().toUpperCase();
+    await query(
+      `UPDATE guardian_devices SET convoy_code = $2, updated_at = NOW() WHERE id = $1`,
+      [req.device.id, code]
+    );
+    const members = await query(
+      `SELECT id, name, last_lat, last_lng, last_speed, last_seen, status
+       FROM guardian_devices
+       WHERE convoy_code = $1 AND deleted_at IS NULL
+       ORDER BY name`,
+      [code]
+    );
+    logger.info(`Device ${req.device.id} joined convoy ${code}`);
+    res.json({ ok: true, convoy_code: code, members: members.rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/v1/guardian/convoy/leave
+ * Device leaves its current convoy.
+ */
+router.post('/convoy/leave', deviceAuth, async (req, res, next) => {
+  try {
+    const code = req.device.convoy_code;
+    await query(
+      `UPDATE guardian_devices SET convoy_code = NULL, updated_at = NOW() WHERE id = $1`,
+      [req.device.id]
+    );
+    logger.info(`Device ${req.device.id} left convoy ${code}`);
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/v1/guardian/convoy
+ * Returns the current convoy members visible to this device.
+ */
+router.get('/convoy', deviceAuth, async (req, res, next) => {
+  try {
+    const code = req.device.convoy_code;
+    if (!code) {
+      return res.json({ in_convoy: false, convoy_code: null, members: [] });
+    }
+    const members = await query(
+      `SELECT id, name, last_lat, last_lng, last_speed, last_seen, status
+       FROM guardian_devices
+       WHERE convoy_code = $1 AND deleted_at IS NULL
+       ORDER BY name`,
+      [code]
+    );
+    res.json({ in_convoy: true, convoy_code: code, members: members.rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/v1/guardian/convoys
+ * Admin: list all active convoys and their member count.
+ */
+router.get('/convoys', authenticate, async (req, res, next) => {
+  try {
+    const result = await query(
+      `SELECT convoy_code,
+              COUNT(*)                          AS member_count,
+              MAX(last_seen)                    AS last_active,
+              json_agg(json_build_object(
+                'id', id, 'name', name,
+                'last_lat', last_lat, 'last_lng', last_lng,
+                'last_speed', last_speed, 'last_seen', last_seen,
+                'status', status
+              ) ORDER BY name)                  AS members
+       FROM guardian_devices
+       WHERE convoy_code IS NOT NULL AND deleted_at IS NULL
+       GROUP BY convoy_code
+       ORDER BY last_active DESC`
+    );
+    res.json({ convoys: result.rows });
   } catch (err) {
     next(err);
   }

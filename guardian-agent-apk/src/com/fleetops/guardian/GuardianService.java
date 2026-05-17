@@ -6,23 +6,57 @@ import android.location.*;
 import android.os.*;
 import android.util.Log;
 import com.fleetops.guardian.R;
+import java.util.List;
 
 public class GuardianService extends Service implements LocationListener {
-    private static final String TAG      = "GuardianService";
-    private static final int    NOTIF_ID = 1001;
-    private static final String CHANNEL  = "guardian_tracking";
-    private static final long   INTERVAL = 30_000L;
+    private static final String TAG        = "GuardianService";
+    private static final int    NOTIF_ID   = 1001;
+    private static final String CHANNEL    = "guardian_tracking";
+    private static final long   INTERVAL   = 30_000L;
+    private static final long   INTERVAL_FAST = 5_000L;
+    private static final long   QUEUE_RETRY_INTERVAL = 5 * 60_000L;
 
     private DevicePrefs     prefs;
     private LocationManager locationManager;
     private Handler         handler;
+    private OfflineQueue    offlineQueue;
+    private CrashDetector   crashDetector;
+    private CommandHandler  commandHandler;
 
     // Shared state — read by MainActivity via broadcast
-    public static volatile double lastLat   = 0;
-    public static volatile double lastLng   = 0;
-    public static volatile float  lastAcc   = 0;
-    public static volatile float  lastSpeed = 0;
-    public static volatile boolean running  = false;
+    public static volatile double  lastLat   = 0;
+    public static volatile double  lastLng   = 0;
+    public static volatile float   lastAcc   = 0;
+    public static volatile float   lastSpeed = 0;
+    public static volatile boolean running   = false;
+    public static volatile long    dmsDeadlineMs = 0; // epoch ms when DMS fires
+
+    private boolean fastTracking = false;
+    private long    dmsIntervalMs = 0;
+
+    // ── Broadcast receivers ───────────────────────────────────────────────────
+
+    private final BroadcastReceiver controlReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context ctx, Intent intent) {
+            String action = intent.getAction();
+            if ("com.fleetops.guardian.FORCE_HEARTBEAT".equals(action)) {
+                handler.post(heartbeat);
+            } else if ("com.fleetops.guardian.FORCE_SYNC".equals(action)) {
+                handler.post(queueRetry);
+            } else if ("com.fleetops.guardian.SET_TRACKING_RATE".equals(action)) {
+                boolean fast = intent.getBooleanExtra("fast", false);
+                setFastTracking(fast);
+            } else if ("com.fleetops.guardian.DMS_CHECKIN".equals(action)) {
+                resetDmsTimer();
+            } else if ("com.fleetops.guardian.PANIC".equals(action)) {
+                String mode = intent.getStringExtra("mode");
+                triggerPanic(mode);
+            }
+        }
+    };
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     @Override
     public void onCreate() {
@@ -30,7 +64,32 @@ public class GuardianService extends Service implements LocationListener {
         prefs           = new DevicePrefs(this);
         handler         = new Handler(Looper.getMainLooper());
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+        offlineQueue    = new OfflineQueue(this);
+
+        commandHandler = new CommandHandler(this, new CommandHandler.Listener() {
+            @Override
+            public void onHandled(final String cmdId, final boolean ok, final String result) {
+                new Thread(new Runnable() {
+                    @Override public void run() {
+                        ApiClient.ackCommand(
+                            prefs.getServerUrl(), prefs.getToken(), cmdId, ok, result);
+                    }
+                }).start();
+            }
+        });
+
+        crashDetector = new CrashDetector(this, new CrashDetector.Callback() {
+            @Override
+            public void onCrashDetected(float magnitude) {
+                Log.w(TAG, "Crash detected! magnitude=" + magnitude);
+                triggerPanic("medical");
+                sendBroadcast(new Intent("com.fleetops.guardian.CRASH_DETECTED")
+                    .putExtra("magnitude", magnitude));
+            }
+        });
+
         createNotificationChannel();
+        registerControlReceiver();
     }
 
     @Override
@@ -38,7 +97,10 @@ public class GuardianService extends Service implements LocationListener {
         running = true;
         startForeground(NOTIF_ID, buildNotification());
         startGps();
-        handler.postDelayed(heartbeat, INTERVAL);
+        crashDetector.start();
+        scheduleHeartbeat();
+        scheduleQueueRetry();
+        if (prefs.isDmsEnabled()) resetDmsTimer();
         return START_STICKY;
     }
 
@@ -46,66 +108,42 @@ public class GuardianService extends Service implements LocationListener {
     public void onDestroy() {
         running = false;
         handler.removeCallbacksAndMessages(null);
+        crashDetector.stop();
         try { locationManager.removeUpdates(this); } catch (Exception ignored) {}
+        try { unregisterReceiver(controlReceiver); } catch (Exception ignored) {}
         super.onDestroy();
     }
 
     @Override
     public IBinder onBind(Intent intent) { return null; }
 
-    // Create notification channel for Android 8+ using reflection so the code
-    // still compiles against API 23 but behaves correctly at runtime on API 26+.
-    private void createNotificationChannel() {
-        if (android.os.Build.VERSION.SDK_INT < 26) return;
-        try {
-            Class<?> channelClass = Class.forName("android.app.NotificationChannel");
-            Object channel = channelClass
-                .getConstructor(String.class, CharSequence.class, int.class)
-                .newInstance(CHANNEL, getString(R.string.channel_name), 2); // IMPORTANCE_LOW = 2
-            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-            nm.getClass().getMethod("createNotificationChannel", channelClass).invoke(nm, channel);
-        } catch (Exception e) {
-            Log.w(TAG, "Failed to create notification channel: " + e.getMessage());
-        }
-    }
-
-    private Notification buildNotification() {
-        Intent open = new Intent(this, MainActivity.class);
-        open.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
-
-        // FLAG_IMMUTABLE available since API 23 — prevents apps from modifying
-        // our PendingIntent, and required by Android 12+ for mutable/immutable clarity.
-        int piFlags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
-        PendingIntent pi = PendingIntent.getActivity(this, 0, open, piFlags);
-
-        Notification.Builder b = new Notification.Builder(this)
-            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-            .setContentTitle(getString(R.string.notif_title))
-            .setContentText(getString(R.string.notif_text))
-            .setContentIntent(pi)
-            .setOngoing(true);
-
-        // Set channel on Android 8+
-        if (android.os.Build.VERSION.SDK_INT >= 26) {
-            try {
-                b.getClass().getMethod("setChannelId", String.class).invoke(b, CHANNEL);
-            } catch (Exception ignored) {}
-        }
-
-        return b.build();
-    }
+    // ── GPS ───────────────────────────────────────────────────────────────────
 
     private void startGps() {
+        long interval = fastTracking ? INTERVAL_FAST : INTERVAL;
+        try { locationManager.removeUpdates(this); } catch (Exception ignored) {}
         try {
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER))
                 locationManager.requestLocationUpdates(
-                    LocationManager.GPS_PROVIDER, INTERVAL, 5f, this);
+                    LocationManager.GPS_PROVIDER, interval, 5f, this);
             if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER))
                 locationManager.requestLocationUpdates(
-                    LocationManager.NETWORK_PROVIDER, INTERVAL, 10f, this);
+                    LocationManager.NETWORK_PROVIDER, interval, 10f, this);
         } catch (SecurityException e) {
-            Log.w(TAG, "GPS permission not granted: " + e.getMessage());
+            Log.w(TAG, "GPS permission denied: " + e.getMessage());
         }
+    }
+
+    private void setFastTracking(boolean fast) {
+        fastTracking = fast;
+        startGps();
+        Log.i(TAG, "Tracking rate: " + (fast ? "FAST 5s" : "NORMAL 30s"));
+    }
+
+    // ── Heartbeat ─────────────────────────────────────────────────────────────
+
+    private void scheduleHeartbeat() {
+        handler.postDelayed(heartbeat, INTERVAL);
     }
 
     private final Runnable heartbeat = new Runnable() {
@@ -119,23 +157,181 @@ public class GuardianService extends Service implements LocationListener {
             final float  spd   = lastSpeed;
             final int    bat   = getBattery();
             final String net   = getNetwork();
+
             new Thread(new Runnable() {
                 @Override
                 public void run() {
                     try {
-                        ApiClient.heartbeat(url, token, lat, lng, acc, spd, bat, net);
+                        List<ApiClient.PendingCommand> cmds =
+                            ApiClient.heartbeat(url, token, lat, lng, acc, spd, bat, net);
+                        for (ApiClient.PendingCommand cmd : cmds) {
+                            commandHandler.handle(cmd.id, cmd.type, cmd.payload);
+                        }
                     } catch (Exception e) {
                         Log.e(TAG, "heartbeat error", e);
                     }
                 }
             }).start();
-            handler.postDelayed(this, INTERVAL);
+
+            long interval = fastTracking ? INTERVAL_FAST : INTERVAL;
+            handler.postDelayed(this, interval);
         }
     };
 
+    // ── Offline queue retry ───────────────────────────────────────────────────
+
+    private void scheduleQueueRetry() {
+        handler.postDelayed(queueRetry, QUEUE_RETRY_INTERVAL);
+    }
+
+    private final Runnable queueRetry = new Runnable() {
+        @Override
+        public void run() {
+            final String url   = prefs.getServerUrl();
+            final String token = prefs.getToken();
+            final List<OfflineQueue.Item> items = offlineQueue.getPending();
+            if (!items.isEmpty()) {
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        for (OfflineQueue.Item item : items) {
+                            boolean ok = replayItem(url, token, item);
+                            if (ok) offlineQueue.markSent(item.id);
+                            else    offlineQueue.markAttempted(item.id);
+                        }
+                        broadcastQueueCount();
+                    }
+                }).start();
+            }
+            handler.postDelayed(this, QUEUE_RETRY_INTERVAL);
+        }
+    };
+
+    private boolean replayItem(String url, String token, OfflineQueue.Item item) {
+        try {
+            String endpoint;
+            if ("panic".equals(item.type))      endpoint = "/api/v1/guardian/panic";
+            else if ("report".equals(item.type)) endpoint = "/api/v1/guardian/report";
+            else                                 return true; // drop unknown
+            String resp = ApiClient.post(url + endpoint, token, item.payload);
+            return resp != null;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void broadcastQueueCount() {
+        int count = offlineQueue.getPendingCount();
+        sendBroadcast(new Intent("com.fleetops.guardian.QUEUE_COUNT")
+            .putExtra("count", count));
+    }
+
+    // ── Panic ─────────────────────────────────────────────────────────────────
+
+    void triggerPanic(final String mode) {
+        final String url   = prefs.getServerUrl();
+        final String token = prefs.getToken();
+        final double lat   = lastLat;
+        final double lng   = lastLng;
+
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                boolean ok = ApiClient.sendPanic(url, token, mode, lat, lng);
+                if (!ok) {
+                    // Build offline payload
+                    try {
+                        org.json.JSONObject body = new org.json.JSONObject();
+                        body.put("mode", mode);
+                        body.put("lat", lat);
+                        body.put("lng", lng);
+                        offlineQueue.enqueue("panic", body.toString());
+                        broadcastQueueCount();
+                    } catch (Exception ignored) {}
+                }
+            }
+        }).start();
+    }
+
+    // ── Dead man's switch ─────────────────────────────────────────────────────
+
+    void resetDmsTimer() {
+        handler.removeCallbacks(dmsTimeout);
+        if (!prefs.isDmsEnabled()) {
+            dmsDeadlineMs = 0;
+            return;
+        }
+        dmsIntervalMs = prefs.getDmsIntervalMinutes() * 60_000L;
+        dmsDeadlineMs = System.currentTimeMillis() + dmsIntervalMs;
+        handler.postDelayed(dmsTimeout, dmsIntervalMs);
+        sendBroadcast(new Intent("com.fleetops.guardian.DMS_RESET")
+            .putExtra("deadline", dmsDeadlineMs));
+        Log.i(TAG, "DMS reset: deadline in " + prefs.getDmsIntervalMinutes() + " min");
+    }
+
+    private final Runnable dmsTimeout = new Runnable() {
+        @Override
+        public void run() {
+            Log.w(TAG, "DMS timeout — triggering silent panic");
+            triggerPanic("silent");
+            dmsDeadlineMs = 0;
+            sendBroadcast(new Intent("com.fleetops.guardian.DMS_FIRED"));
+        }
+    };
+
+    // ── Notification ─────────────────────────────────────────────────────────
+
+    private void createNotificationChannel() {
+        if (android.os.Build.VERSION.SDK_INT < 26) return;
+        try {
+            Class<?> cls = Class.forName("android.app.NotificationChannel");
+            Object ch = cls.getConstructor(String.class, CharSequence.class, int.class)
+                .newInstance(CHANNEL, getString(R.string.channel_name), 2);
+            NotificationManager nm =
+                (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            nm.getClass().getMethod("createNotificationChannel", cls).invoke(nm, ch);
+        } catch (Exception e) {
+            Log.w(TAG, "channel error: " + e.getMessage());
+        }
+    }
+
+    private Notification buildNotification() {
+        Intent open = new Intent(this, MainActivity.class);
+        open.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        int piFlags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
+        PendingIntent pi = PendingIntent.getActivity(this, 0, open, piFlags);
+
+        Notification.Builder b = new Notification.Builder(this)
+            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+            .setContentTitle(getString(R.string.notif_title))
+            .setContentText(getString(R.string.notif_text))
+            .setContentIntent(pi)
+            .setOngoing(true);
+
+        if (android.os.Build.VERSION.SDK_INT >= 26) {
+            try {
+                b.getClass().getMethod("setChannelId", String.class).invoke(b, CHANNEL);
+            } catch (Exception ignored) {}
+        }
+        return b.build();
+    }
+
+    // ── Receivers ─────────────────────────────────────────────────────────────
+
+    private void registerControlReceiver() {
+        IntentFilter f = new IntentFilter();
+        f.addAction("com.fleetops.guardian.FORCE_HEARTBEAT");
+        f.addAction("com.fleetops.guardian.FORCE_SYNC");
+        f.addAction("com.fleetops.guardian.SET_TRACKING_RATE");
+        f.addAction("com.fleetops.guardian.DMS_CHECKIN");
+        f.addAction("com.fleetops.guardian.PANIC");
+        registerReceiver(controlReceiver, f);
+    }
+
+    // ── System helpers ────────────────────────────────────────────────────────
+
     private int getBattery() {
-        Intent bat = registerReceiver(null,
-            new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+        Intent bat = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
         if (bat == null) return -1;
         int level = bat.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
         int scale = bat.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
@@ -150,6 +346,8 @@ public class GuardianService extends Service implements LocationListener {
         if (ni == null || !ni.isConnected()) return "none";
         return ni.getTypeName();
     }
+
+    // ── LocationListener ─────────────────────────────────────────────────────
 
     @Override
     public void onLocationChanged(Location loc) {
