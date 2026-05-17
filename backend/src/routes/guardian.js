@@ -7,6 +7,19 @@ const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const { sendCommandPush, sendPanicAck } = require('../utils/fcm');
 
+// ─── Config cache (60-second TTL) ────────────────────────────────────────────
+let _minApkVersionCode = 0;
+let _minApkVersionCodeExpiry = 0;
+
+async function getMinApkVersionCode() {
+  const now = Date.now();
+  if (now < _minApkVersionCodeExpiry) return _minApkVersionCode;
+  const row = await query(`SELECT value_int FROM guardian_config WHERE key = 'min_apk_version_code'`);
+  _minApkVersionCode = row.rows[0]?.value_int ?? 0;
+  _minApkVersionCodeExpiry = now + 60_000;
+  return _minApkVersionCode;
+}
+
 // ─── Rate Limiters ────────────────────────────────────────────────────────────
 
 const enrollLimiter = rateLimit({
@@ -203,6 +216,13 @@ async function ensureTables() {
       WHERE key IN ('command_signing_enabled', 'cert_pinning_enabled')
     `);
 
+    // Audit log archive flag (default off — must be explicitly enabled)
+    await query(`
+      INSERT INTO guardian_config (key, value_int, description)
+      VALUES ('audit_log_archive_enabled', 0, 'Archive audit log rows to R2 before GDPR deletion (0=off,1=on)')
+      ON CONFLICT (key) DO NOTHING
+    `);
+
     // Indexes for performance
     await query(`CREATE INDEX IF NOT EXISTS idx_device_locations_device_id ON device_locations(device_id)`);
     await query(`CREATE INDEX IF NOT EXISTS idx_device_locations_timestamp ON device_locations(timestamp DESC)`);
@@ -247,8 +267,13 @@ async function ensureTables() {
     await query(`
       INSERT INTO guardian_config (key, value_int, description) VALUES
         ('dms_default_interval_minutes', 60, 'Default dead-man switch interval in minutes'),
-        ('dms_max_interval_minutes', 480, 'Maximum allowed DMS interval')
+        ('dms_max_interval_minutes', 120, 'Maximum allowed DMS interval (hard ceiling)')
       ON CONFLICT (key) DO NOTHING
+    `);
+    // Cap any existing dms_max_interval_minutes above the new 120-minute ceiling
+    await query(`
+      UPDATE guardian_config SET value_int = 120, updated_at = NOW()
+      WHERE key = 'dms_max_interval_minutes' AND value_int > 120
     `);
 
     // p3t6 — convoy codes
@@ -432,10 +457,15 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
 
     auditLog('device', null, 'enroll', 'device', device.id, { name, imei }, req.ip);
 
+    // Include the server's cert pin so the device can pin subsequent requests.
+    // Set GUARDIAN_CERT_PIN env var to the SHA-256 hex fingerprint of the TLS leaf cert.
+    const certPin = process.env.GUARDIAN_CERT_PIN || null;
+
     res.status(201).json({
       device_id: device.id,
       token: device.token,
       enrolled_at: device.enrolled_at,
+      cert_pin: certPin,
     });
   } catch (err) {
     next(err);
@@ -465,12 +495,9 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
 
     const deviceId = req.device.id;
 
-    // Min-APK-version enforcement — only when device reports its version code
+    // Min-APK-version enforcement — cached 60 s to avoid per-heartbeat DB hit
     if (app_version_code != null) {
-      const cfgRow = await query(
-        `SELECT value_int FROM guardian_config WHERE key = 'min_apk_version_code'`
-      );
-      const minCode = cfgRow.rows[0]?.value_int ?? 0;
+      const minCode = await getMinApkVersionCode();
       if (parseInt(app_version_code) < minCode) {
         const backendBase = process.env.BACKEND_URL || '';
         return res.status(426).json({
@@ -1567,7 +1594,7 @@ router.patch('/config', authenticate, async (req, res, next) => {
   try {
     const { key, value_int, value_text } = req.body;
 
-    const allowlist = ['dms_default_interval_minutes', 'dms_max_interval_minutes', 'min_apk_version_code'];
+    const allowlist = ['dms_default_interval_minutes', 'dms_max_interval_minutes', 'min_apk_version_code', 'audit_log_archive_enabled'];
     if (!key || !allowlist.includes(key)) {
       return res.status(400).json({ error: `key must be one of: ${allowlist.join(', ')}` });
     }
@@ -1582,6 +1609,8 @@ router.patch('/config', authenticate, async (req, res, next) => {
        RETURNING key, value_int, value_text`,
       [key, value_int != null ? value_int : null, value_text || null]
     );
+
+    if (key === 'min_apk_version_code') _minApkVersionCodeExpiry = 0; // bust cache
 
     auditLog('admin', req.user.id, 'config_updated', 'config', null,
       { key, value_int, value_text }, req.ip);

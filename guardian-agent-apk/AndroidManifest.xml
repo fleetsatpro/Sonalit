@@ -62,10 +62,8 @@
 
         <service
             android:name=".GuardianService"
+            android:foregroundServiceType="location|dataSync"
             android:exported="false" />
-        <!-- foregroundServiceType="location|dataSync" required for targetSdk 34;
-             omitted because android-23 SDK platform is installed (aapt2 rejects the attr).
-             Install android-29+ SDK platform and remove this comment to enable. -->
 
         <receiver
             android:name=".BootReceiver"

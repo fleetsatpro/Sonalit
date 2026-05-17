@@ -136,6 +136,18 @@ try {
   logger.warn('Partition roller not started: ' + e.message + ' — install node-cron');
 }
 
+// Base64 photo backfill — runs daily at 03:00 UTC, migrates recent data-URI photos to R2.
+try {
+  const cron = require('node-cron');
+  const { run: backfillPhotos } = require('../scripts/backfill-base64-photos');
+  cron.schedule('0 3 * * *', () => {
+    backfillPhotos().catch(err => logger.error('Photo backfill error: ' + err.message));
+  });
+  logger.info('Photo backfill scheduled (daily 03:00 UTC)');
+} catch (e) {
+  logger.warn('Photo backfill not scheduled: ' + e.message);
+}
+
 const PORT=parseInt(process.env.PORT)||5000;
 createQueues();
 server.listen(PORT,()=>logger.info("FleetOps Enterprise v2.1 running on port "+PORT+" ["+( process.env.NODE_ENV||"development")+"]"));

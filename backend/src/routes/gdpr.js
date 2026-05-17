@@ -12,6 +12,9 @@ const { query } = require('../config/database');
 const { authenticate, authorize } = require('../middleware/auth');
 const logger = require('../utils/logger');
 const crypto = require('crypto');
+const zlib = require('zlib');
+const { promisify } = require('util');
+const gzip = promisify(zlib.gzip);
 
 // In-memory confirmation tokens (for DELETE /purge only): token → {device_id, exp}
 const purgeTokens = new Map();
@@ -122,24 +125,95 @@ router.delete('/purge/:device_id', authenticate, authorize('admin'), async (req,
 });
 
 /**
+ * Archive rows from guardian_audit_log that are about to be deleted.
+ * Writes a JSONL.GZ object to R2: audit-log-archive/YYYY-MM-DD.jsonl.gz
+ * Returns the R2 key on success, null if archiving is disabled or R2 is not configured.
+ */
+async function archiveAuditRows(rows) {
+  if (!rows.length) return null;
+  const {
+    R2_ACCOUNT_ID, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET,
+  } = process.env;
+  if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY || !R2_SECRET_KEY || !R2_BUCKET) {
+    logger.warn('gdpr: audit_log_archive_enabled but R2 env vars not set — skipping archive');
+    return null;
+  }
+  let S3Client, PutObjectCommand;
+  try {
+    ({ S3Client, PutObjectCommand } = require('@aws-sdk/client-s3'));
+  } catch (_) {
+    logger.warn('gdpr: @aws-sdk/client-s3 not installed — skipping archive');
+    return null;
+  }
+  const s3 = new S3Client({
+    region: 'auto',
+    endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId: R2_ACCESS_KEY, secretAccessKey: R2_SECRET_KEY },
+  });
+  const today = new Date().toISOString().slice(0, 10);
+  const key = `audit-log-archive/${today}.jsonl.gz`;
+  const jsonl = rows.map(r => JSON.stringify(r)).join('\n');
+  const compressed = await gzip(Buffer.from(jsonl, 'utf8'));
+  await s3.send(new PutObjectCommand({
+    Bucket: R2_BUCKET,
+    Key: key,
+    Body: compressed,
+    ContentType: 'application/gzip',
+    ContentEncoding: 'gzip',
+  }));
+  return key;
+}
+
+/**
  * POST /api/v1/gdpr/run-retention
  * Manually trigger the data retention cleanup. Returns counts of deleted rows.
  * Requires admin role.
  */
 router.post('/run-retention', authenticate, authorize('admin'), async (req, res, next) => {
   try {
-    const [loc, health, audit] = await Promise.all([
+    // Check if audit log archiving is enabled before deleting
+    let archiveKey = null;
+    let auditRowsToDelete = [];
+    try {
+      const flagRow = await query(
+        `SELECT value_int FROM guardian_config WHERE key = 'audit_log_archive_enabled'`
+      );
+      const archiveEnabled = (flagRow.rows[0]?.value_int ?? 0) === 1;
+      if (archiveEnabled) {
+        const toArchive = await query(
+          `SELECT * FROM guardian_audit_log WHERE created_at < NOW() - INTERVAL '365 days'`
+        );
+        auditRowsToDelete = toArchive.rows;
+        archiveKey = await archiveAuditRows(auditRowsToDelete);
+      }
+    } catch (e) {
+      logger.warn('gdpr: audit archive check failed: ' + e.message);
+    }
+
+    const [loc, health, audit, enrollCodes, convoyCodes] = await Promise.all([
       query(`DELETE FROM device_locations WHERE timestamp < NOW() - INTERVAL '90 days' RETURNING id`),
       query(`DELETE FROM device_health WHERE recorded_at < NOW() - INTERVAL '30 days' RETURNING id`),
-      // Only purge audit log if table exists
       query(`DELETE FROM guardian_audit_log WHERE created_at < NOW() - INTERVAL '365 days' RETURNING id`)
         .catch(() => ({ rows: [] })),
+      // Enrollment codes: used ones or expired > 30 days ago
+      query(`DELETE FROM enrollment_codes
+             WHERE used_at IS NOT NULL
+                OR expires_at < NOW() - INTERVAL '30 days'
+             RETURNING id`).catch(() => ({ rows: [] })),
+      // Convoy codes: deactivated and expired > 30 days ago
+      query(`DELETE FROM convoy_codes
+             WHERE active = false
+               AND expires_at < NOW() - INTERVAL '30 days'
+             RETURNING id`).catch(() => ({ rows: [] })),
     ]);
 
     const result = {
       device_locations_deleted: loc.rows.length,
       device_health_deleted: health.rows.length,
       audit_log_deleted: audit.rows.length,
+      enrollment_codes_deleted: enrollCodes.rows.length,
+      convoy_codes_deleted: convoyCodes.rows.length,
+      audit_archive_key: archiveKey,
       ran_at: new Date().toISOString(),
     };
 

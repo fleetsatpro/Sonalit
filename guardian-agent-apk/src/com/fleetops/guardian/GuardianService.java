@@ -3,6 +3,7 @@ package com.fleetops.guardian;
 import android.app.*;
 import android.app.AlarmManager;
 import android.content.*;
+import android.content.pm.ServiceInfo;
 import android.location.*;
 import android.os.*;
 import android.util.Log;
@@ -102,10 +103,13 @@ public class GuardianService extends Service implements LocationListener {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         running = true;
-        // startForeground with type (API 29+) requires android:foregroundServiceType in
-        // AndroidManifest.xml. That attribute needs android-29+ SDK to compile;
-        // currently blocked on android-23 SDK platform. Use plain 2-arg form until resolved.
-        startForeground(NOTIF_ID, buildNotification());
+        if (Build.VERSION.SDK_INT >= 29) {
+            startForeground(NOTIF_ID, buildNotification(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION |
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+        } else {
+            startForeground(NOTIF_ID, buildNotification());
+        }
         startGps();
         crashDetector.start();
         scheduleHeartbeat();

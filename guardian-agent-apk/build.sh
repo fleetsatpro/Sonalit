@@ -3,7 +3,9 @@ set -e
 
 SRC="$(cd "$(dirname "$0")" && pwd)"
 BUILD=/tmp/guardian-build
-ANDROID_JAR=/usr/lib/android-sdk/platforms/android-23/android.jar
+# android-29 jar (Robolectric android-all) provides foregroundServiceType attr missing in android-23
+ANDROID_JAR=/usr/lib/android-sdk/platforms/android-29/android.jar
+ANDROID_JAR_JAVAC=/usr/lib/android-sdk/platforms/android-29/android.jar
 AAPT2=/usr/lib/android-sdk/build-tools/29.0.3/aapt2
 DX=/usr/lib/android-sdk/build-tools/debian/dx
 ZIPALIGN=/usr/lib/android-sdk/build-tools/29.0.3/zipalign
@@ -37,7 +39,7 @@ $AAPT2 link \
 
 echo "==> Compiling Java sources"
 javac -source 8 -target 8 \
-  -classpath "$ANDROID_JAR" \
+  -classpath "$ANDROID_JAR_JAVAC" \
   -sourcepath "$SRC/src" \
   "$SRC"/src/com/fleetops/guardian/*.java \
   "$BUILD"/gen/com/fleetops/guardian/R.java \

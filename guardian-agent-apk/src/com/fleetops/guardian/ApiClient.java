@@ -201,9 +201,10 @@ public class ApiClient {
 
     public static class EnrollResult {
         public final String token;
+        public final String certPin; // SHA-256 of server TLS cert, may be null
         public final String error;
-        public EnrollResult(String token, String error) {
-            this.token = token; this.error = error;
+        public EnrollResult(String token, String certPin, String error) {
+            this.token = token; this.certPin = certPin; this.error = error;
         }
     }
 
@@ -228,13 +229,17 @@ public class ApiClient {
             }
 
             String resp = post(serverUrl + "/api/v1/guardian/enroll", null, body.toString());
-            if (resp == null) return new EnrollResult(null, "No response from server");
+            if (resp == null) return new EnrollResult(null, null, "No response from server");
             JSONObject json = new JSONObject(resp);
-            if (json.has("token")) return new EnrollResult(json.getString("token"), null);
-            return new EnrollResult(null, json.optString("error", "Enrollment failed"));
+            if (json.has("token")) {
+                String certPin = json.optString("cert_pin", null);
+                if ("null".equals(certPin)) certPin = null;
+                return new EnrollResult(json.getString("token"), certPin, null);
+            }
+            return new EnrollResult(null, null, json.optString("error", "Enrollment failed"));
         } catch (Exception e) {
             Log.e(TAG, "enroll error", e);
-            return new EnrollResult(null, e.getMessage());
+            return new EnrollResult(null, null, e.getMessage());
         }
     }
 
