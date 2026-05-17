@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import {
   Smartphone, Battery, Signal, MapPin, Navigation, Lock, Volume2, VolumeX,
@@ -339,20 +339,40 @@ function CommandsPanel({ device, onClose }) {
   const [activeInput, setActiveInput] = useState(null);
   const [recentCmds, setRecentCmds] = useState([]);
   const [sending, setSending] = useState(null);
-  const [sirenActive, setSirenActive] = useState(false);
 
+  const devId = device?._id || device?.id;
+
+  // Load commands and derive siren state from actual executed commands
+  const loadCmds = useCallback(async () => {
+    if (!devId) return;
+    try {
+      const r = await guardianAPI.commands(devId, { limit: 10 });
+      setRecentCmds(r.data?.commands || []);
+    } catch {
+      try {
+        const r = await guardianAPI.device(devId);
+        setRecentCmds(r.data?.data?.recent_commands || r.data?.recent_commands || []);
+      } catch { /* silent */ }
+    }
+  }, [devId]);
+
+  // Initial load + poll every 5 s while panel is open
   useEffect(() => {
     if (!device) return;
-    const devId = device._id || device.id;
-    guardianAPI.commands(devId, { limit: 10 })
-      .then(r => setRecentCmds(r.data?.commands || []))
-      .catch(() => {
-        // fallback: pull from device detail's recent_commands
-        guardianAPI.device(devId)
-          .then(r => setRecentCmds(r.data?.data?.recent_commands || r.data?.recent_commands || []))
-          .catch(() => {});
-      });
-  }, [device]);
+    loadCmds();
+    const timer = setInterval(loadCmds, 5000);
+    return () => clearInterval(timer);
+  }, [device, loadCmds]);
+
+  // Siren active = last executed siren command was trigger_siren
+  const sirenActive = useMemo(() => {
+    const sirenCmds = recentCmds.filter(c =>
+      c.command_type === 'trigger_siren' || c.command_type === 'stop_siren'
+    );
+    if (!sirenCmds.length) return false;
+    const last = sirenCmds[0];
+    return last.command_type === 'trigger_siren' && last.status === 'executed';
+  }, [recentCmds]);
 
   async function sendCommand(cmd) {
     if (cmd.hasInput && activeInput !== cmd.id) {
@@ -381,8 +401,6 @@ function CommandsPanel({ device, onClose }) {
       const res = await guardianAPI.command(device._id || device.id, body);
       const cmdId = res.data?.command_id;
       toast.success(`Command sent: ${cmd.label}`);
-      if (cmd.id === 'trigger_siren') setSirenActive(true);
-      if (cmd.id === 'stop_siren')    setSirenActive(false);
       setRecentCmds(prev => [{
         id: cmdId,
         command_type: cmd.id,
@@ -500,6 +518,36 @@ function CommandsPanel({ device, onClose }) {
               >
                 <VolumeX size={10} /> STOP NOW
               </button>
+            </div>
+          )}
+
+          {/* Upgrade needed notice: all recent cmds pending with no executed ones */}
+          {recentCmds.length > 0 &&
+           recentCmds.every(c => c.status === 'pending' || c.status === 'sent') && (
+            <div style={{
+              background: 'rgba(245,158,11,0.08)',
+              border: '1px solid rgba(245,158,11,0.25)',
+              borderRadius: 10, padding: '10px 14px', marginBottom: 12,
+            }}>
+              <p style={{ fontSize: 10, fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, color: '#F59E0B', margin: '0 0 4px', letterSpacing: '0.1em' }}>
+                COMMANDS NOT REACHING DEVICE
+              </p>
+              <p style={{ fontSize: 11, color: '#94a3b8', margin: '0 0 8px' }}>
+                Device may be running an outdated APK. Share the download link with the driver to update.
+              </p>
+              <a
+                href="/api/v1/guardian/apk/download"
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  display: 'inline-block', fontSize: 10, fontWeight: 700,
+                  fontFamily: 'IBM Plex Mono, monospace', color: '#F59E0B',
+                  background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)',
+                  borderRadius: 6, padding: '4px 10px', textDecoration: 'none', letterSpacing: '0.08em',
+                }}
+              >
+                DOWNLOAD APK v2.3.0
+              </a>
             </div>
           )}
 
