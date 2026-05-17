@@ -57,8 +57,6 @@ public class CommandHandler {
                 handleLiveTracking(commandId, false);
             } else if ("enable_lost_mode".equals(commandType)) {
                 handleLostMode(commandId, p);
-            } else if ("wipe_cache".equals(commandType)) {
-                handleWipeCache(commandId);
             } else {
                 listener.onHandled(commandId, false, "unknown: " + commandType);
             }
@@ -163,13 +161,6 @@ public class CommandHandler {
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         ctx.startActivity(i);
         listener.onHandled(id, true, "lost mode active");
-    }
-
-    private void handleWipeCache(String id) {
-        try {
-            android.os.Process.killProcess(android.os.Process.myPid());
-        } catch (Exception ignored) {}
-        listener.onHandled(id, true, "cache wiped");
     }
 
     private void postNotification(String title, String text) {

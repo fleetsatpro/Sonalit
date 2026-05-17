@@ -30,8 +30,8 @@ $AAPT2 link \
   --java "$BUILD/gen" \
   --min-sdk-version 21 \
   --target-sdk-version 23 \
-  --version-code 3 \
-  --version-name "2.1.0" \
+  --version-code 4 \
+  --version-name "2.2.0" \
   "$BUILD"/compiled_res/*.flat
 
 echo "==> Compiling Java sources"

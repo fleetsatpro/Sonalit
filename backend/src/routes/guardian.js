@@ -106,6 +106,23 @@ async function ensureTables() {
     await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS convoy_code TEXT`);
     await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS last_checkin_at TIMESTAMPTZ`);
 
+    // p1t1 — server-side config table (feature flags, version enforcement)
+    await query(`
+      CREATE TABLE IF NOT EXISTS guardian_config (
+        key         TEXT PRIMARY KEY,
+        value_int   INT,
+        value_text  TEXT,
+        description TEXT,
+        updated_at  TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await query(`
+      INSERT INTO guardian_config (key, value_int, description)
+      VALUES ('min_apk_version_code', 3,
+              'Heartbeat rejects APKs below this versionCode with HTTP 426')
+      ON CONFLICT (key) DO NOTHING
+    `);
+
     // Indexes for performance
     await query(`CREATE INDEX IF NOT EXISTS idx_device_locations_device_id ON device_locations(device_id)`);
     await query(`CREATE INDEX IF NOT EXISTS idx_device_locations_timestamp ON device_locations(timestamp DESC)`);
@@ -213,12 +230,29 @@ router.post('/heartbeat', deviceAuth, async (req, res, next) => {
       storage_free_mb,
       ram_free_mb,
       app_version,
+      app_version_code,
       lat,
       lng,
       speed,
     } = req.body;
 
     const deviceId = req.device.id;
+
+    // Min-APK-version enforcement — only when device reports its version code
+    if (app_version_code != null) {
+      const cfgRow = await query(
+        `SELECT value_int FROM guardian_config WHERE key = 'min_apk_version_code'`
+      );
+      const minCode = cfgRow.rows[0]?.value_int ?? 0;
+      if (parseInt(app_version_code) < minCode) {
+        const backendBase = process.env.BACKEND_URL || '';
+        return res.status(426).json({
+          error: 'upgrade_required',
+          min_version_code: minCode,
+          download_url: `${backendBase}/api/v1/guardian/apk/download`,
+        });
+      }
+    }
 
     // Upsert health record (delete old for device then insert, or use plain insert)
     await query(
@@ -668,7 +702,7 @@ router.post('/devices/:id/command', authenticate, async (req, res, next) => {
 
     const validCommandTypes = [
       'force_sync', 'start_live_tracking', 'stop_live_tracking',
-      'lock_screen', 'trigger_siren', 'stop_siren', 'push_message', 'wipe_cache',
+      'lock_screen', 'trigger_siren', 'stop_siren', 'push_message',
       'restart_agent', 'request_location', 'enable_lost_mode',
     ];
     if (!command_type || !validCommandTypes.includes(command_type)) {

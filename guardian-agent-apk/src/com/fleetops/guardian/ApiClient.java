@@ -33,7 +33,7 @@ public class ApiClient {
             body.put("imei", imei);
             body.put("model", android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL);
             body.put("os_version", android.os.Build.VERSION.RELEASE);
-            body.put("app_version", "2.0.0");
+            body.put("app_version", APP_VERSION);
 
             String resp = post(serverUrl + "/api/v1/guardian/enroll", null, body.toString());
             if (resp == null) return new EnrollResult(null, "No response from server");
@@ -48,6 +48,9 @@ public class ApiClient {
 
     // ── Heartbeat — returns pending commands ──────────────────────────────────
 
+    static final String APP_VERSION      = "2.2.0";
+    static final int    APP_VERSION_CODE = 4;
+
     public static class PendingCommand {
         public final String id;
         public final String type;
@@ -57,9 +60,28 @@ public class ApiClient {
         }
     }
 
-    public static List<PendingCommand> heartbeat(String serverUrl, String token,
-                                                  double lat, double lng, float accuracy,
-                                                  float speed, int battery, String network) {
+    public static class HeartbeatResult {
+        public final boolean upgradeRequired;
+        public final int     minVersionCode;
+        public final String  downloadUrl;
+        public final List<PendingCommand> commands;
+        HeartbeatResult(List<PendingCommand> commands) {
+            this.upgradeRequired = false;
+            this.minVersionCode  = 0;
+            this.downloadUrl     = null;
+            this.commands        = commands;
+        }
+        HeartbeatResult(int minVersionCode, String downloadUrl) {
+            this.upgradeRequired = true;
+            this.minVersionCode  = minVersionCode;
+            this.downloadUrl     = downloadUrl;
+            this.commands        = new ArrayList<>();
+        }
+    }
+
+    public static HeartbeatResult heartbeat(String serverUrl, String token,
+                                            double lat, double lng, float accuracy,
+                                            float speed, int battery, String network) {
         List<PendingCommand> commands = new ArrayList<>();
         try {
             JSONObject body = new JSONObject();
@@ -68,10 +90,19 @@ public class ApiClient {
             body.put("speed", speed);
             body.put("battery_level", battery);
             body.put("network_type", network);
-            body.put("app_version", "2.0.0");
-            String resp = post(serverUrl + "/api/v1/guardian/heartbeat", token, body.toString());
-            if (resp != null && !resp.isEmpty()) {
-                JSONObject json = new JSONObject(resp);
+            body.put("app_version", APP_VERSION);
+            body.put("app_version_code", APP_VERSION_CODE);
+            RawResponse raw = postRaw(serverUrl + "/api/v1/guardian/heartbeat", token, body.toString());
+            if (raw == null) return new HeartbeatResult(commands);
+            if (raw.status == 426) {
+                JSONObject json = new JSONObject(raw.body);
+                return new HeartbeatResult(
+                    json.optInt("min_version_code", 0),
+                    json.optString("download_url", serverUrl + "/api/v1/guardian/apk/download")
+                );
+            }
+            if (raw.status >= 200 && raw.status < 300 && raw.body != null && !raw.body.isEmpty()) {
+                JSONObject json = new JSONObject(raw.body);
                 JSONArray arr = json.optJSONArray("commands");
                 if (arr != null) {
                     for (int i = 0; i < arr.length(); i++) {
@@ -88,7 +119,7 @@ public class ApiClient {
         } catch (Exception e) {
             Log.e(TAG, "heartbeat error", e);
         }
-        return commands;
+        return new HeartbeatResult(commands);
     }
 
     // ── Panic ─────────────────────────────────────────────────────────────────
@@ -202,6 +233,42 @@ public class ApiClient {
     }
 
     // ── HTTP ──────────────────────────────────────────────────────────────────
+
+    static class RawResponse {
+        final int    status;
+        final String body;
+        RawResponse(int status, String body) { this.status = status; this.body = body; }
+    }
+
+    static RawResponse postRaw(String urlStr, String token, String body) throws Exception {
+        URL url = new URL(urlStr);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("POST");
+        conn.setConnectTimeout(TIMEOUT);
+        conn.setReadTimeout(TIMEOUT);
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setRequestProperty("Accept", "application/json");
+        if (token != null && !token.isEmpty()) conn.setRequestProperty("X-Device-Token", token);
+        conn.setDoOutput(true);
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        conn.setFixedLengthStreamingMode(bytes.length);
+        OutputStream os = conn.getOutputStream();
+        os.write(bytes); os.flush(); os.close();
+        int code = conn.getResponseCode();
+        InputStream is = (code < 400) ? conn.getInputStream() : conn.getErrorStream();
+        String result = "";
+        if (is != null) {
+            BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = br.readLine()) != null) sb.append(line);
+            br.close();
+            result = sb.toString();
+        }
+        conn.disconnect();
+        Log.d(TAG, "POST " + urlStr + " → " + code);
+        return new RawResponse(code, result);
+    }
 
     static String post(String urlStr, String token, String body) throws Exception {
         URL url = new URL(urlStr);

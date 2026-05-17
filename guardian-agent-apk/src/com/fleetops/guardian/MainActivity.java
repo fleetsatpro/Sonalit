@@ -88,6 +88,10 @@ public class MainActivity extends Activity {
                 btnPanic.setText("CANCEL");
                 tvPanicMode.setText("CRASH DETECTED — AUTO SOS");
                 tvPanicMode.setTextColor(0xFFFF3355);
+            } else if ("com.fleetops.guardian.UPGRADE_REQUIRED".equals(action)) {
+                showUpgradeRequired(
+                    intent.getIntExtra("min_version_code", 0),
+                    intent.getStringExtra("download_url"));
             }
         }
     };
@@ -177,6 +181,7 @@ public class MainActivity extends Activity {
         sf.addAction("com.fleetops.guardian.DMS_RESET");
         sf.addAction("com.fleetops.guardian.DMS_FIRED");
         sf.addAction("com.fleetops.guardian.CRASH_DETECTED");
+        sf.addAction("com.fleetops.guardian.UPGRADE_REQUIRED");
         registerReceiver(statusReceiver, sf);
     }
 
@@ -566,6 +571,31 @@ public class MainActivity extends Activity {
     private void showMessageBanner(String title, String text) {
         if (title == null || title.isEmpty()) title = "Fleet Message";
         Toast.makeText(this, title + ": " + text, Toast.LENGTH_LONG).show();
+    }
+
+    // ── Upgrade required blocking screen ─────────────────────────────────────
+
+    private void showUpgradeRequired(final int minVersionCode, final String downloadUrl) {
+        android.app.AlertDialog.Builder b = new android.app.AlertDialog.Builder(this);
+        b.setTitle("Update Required");
+        b.setMessage("This device is running Guardian v" + ApiClient.APP_VERSION_CODE
+            + " but the fleet requires v" + minVersionCode + " or newer.\n\n"
+            + "Please update the app to continue.");
+        b.setCancelable(false);
+        b.setPositiveButton("Download Update", new android.content.DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(android.content.DialogInterface d, int w) {
+                try {
+                    String url = (downloadUrl != null && !downloadUrl.isEmpty())
+                        ? downloadUrl : prefs.getServerUrl() + "/api/v1/guardian/apk/download";
+                    android.content.Intent i = new android.content.Intent(
+                        android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse(url));
+                    startActivity(i);
+                } catch (Exception ignored) {}
+            }
+        });
+        b.show();
     }
 
     // ── Battery ───────────────────────────────────────────────────────────────

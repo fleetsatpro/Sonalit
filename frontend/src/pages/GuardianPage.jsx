@@ -310,7 +310,6 @@ const COMMANDS = [
   { id: 'trigger_siren',      icon: Volume2,       label: 'Trigger Siren',      desc: 'Sound alarm on device' },
   { id: 'stop_siren',         icon: VolumeX,       label: 'Stop Siren',         desc: 'Cancel active alarm', danger: true },
   { id: 'force_sync',         icon: RefreshCw,     label: 'Force Sync',         desc: 'Flush offline queue now' },
-  { id: 'wipe_cache',         icon: Trash2,        label: 'Wipe Cache',         desc: 'Clear app cache & restart' },
   { id: 'restart_agent',      icon: RefreshCw,     label: 'Restart Agent',      desc: 'Restart Guardian service' },
   { id: 'enable_lost_mode',   icon: ShieldAlert,   label: 'Enable Lost Mode',   desc: 'Full lockdown + beacon' },
 ];

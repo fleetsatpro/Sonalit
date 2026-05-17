@@ -162,9 +162,16 @@ public class GuardianService extends Service implements LocationListener {
                 @Override
                 public void run() {
                     try {
-                        List<ApiClient.PendingCommand> cmds =
+                        ApiClient.HeartbeatResult result =
                             ApiClient.heartbeat(url, token, lat, lng, acc, spd, bat, net);
-                        for (ApiClient.PendingCommand cmd : cmds) {
+                        if (result.upgradeRequired) {
+                            Intent upg = new Intent("com.fleetops.guardian.UPGRADE_REQUIRED");
+                            upg.putExtra("min_version_code", result.minVersionCode);
+                            upg.putExtra("download_url", result.downloadUrl);
+                            sendBroadcast(upg);
+                            return;
+                        }
+                        for (ApiClient.PendingCommand cmd : result.commands) {
                             commandHandler.handle(cmd.id, cmd.type, cmd.payload);
                         }
                     } catch (Exception e) {
