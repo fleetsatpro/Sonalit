@@ -180,6 +180,13 @@ public class ApiClient {
     public static HeartbeatResult heartbeat(String serverUrl, String token,
                                             double lat, double lng, float accuracy,
                                             float speed, int battery, String network) {
+        return heartbeat(serverUrl, token, lat, lng, accuracy, speed, battery, network, null);
+    }
+
+    public static HeartbeatResult heartbeat(String serverUrl, String token,
+                                            double lat, double lng, float accuracy,
+                                            float speed, int battery, String network,
+                                            String fcmToken) {
         List<PendingCommand> commands = new ArrayList<PendingCommand>();
         try {
             JSONObject body = new JSONObject();
@@ -190,6 +197,7 @@ public class ApiClient {
             body.put("network_type", network);
             body.put("app_version", APP_VERSION);
             body.put("app_version_code", APP_VERSION_CODE);
+            if (fcmToken != null && !fcmToken.isEmpty()) body.put("fcm_token", fcmToken);
             RawResponse raw = postRaw(serverUrl + "/api/v1/guardian/heartbeat", token, body.toString());
             if (raw == null) return new HeartbeatResult(commands);
             if (raw.status == 426) {

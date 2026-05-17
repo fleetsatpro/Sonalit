@@ -26,8 +26,8 @@ io.on("connection",s=>{
 if(process.env.REDIS_URL){
   try{
     const{createAdapter}=require("@socket.io/redis-adapter");
-    const{createClient}=require("ioredis");
-    const pubClient=createClient(process.env.REDIS_URL);
+    const Redis=require("ioredis");
+    const pubClient=new Redis(process.env.REDIS_URL);
     const subClient=pubClient.duplicate();
     io.adapter(createAdapter(pubClient,subClient));
     logger.info("Socket.IO Redis adapter active");

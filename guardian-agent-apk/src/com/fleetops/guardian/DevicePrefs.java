@@ -188,4 +188,9 @@ public class DevicePrefs {
 
     public boolean isDmsIntervalCustomized()           { return prefs.getBoolean("dms_interval_customized", false); }
     public void    setDmsIntervalCustomized(boolean v) { prefs.edit().putBoolean("dms_interval_customized", v).apply(); }
+
+    // ── FCM push token ───────────────────────────────────────────────────────
+
+    public String getFcmToken()              { return prefs.getString("fcm_token", null); }
+    public void   setFcmToken(String token)  { prefs.edit().putString("fcm_token", token).apply(); }
 }

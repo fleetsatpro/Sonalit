@@ -155,21 +155,22 @@ public class GuardianService extends Service implements LocationListener {
     private final Runnable heartbeat = new Runnable() {
         @Override
         public void run() {
-            final String url   = prefs.getServerUrl();
-            final String token = prefs.getToken();
-            final double lat   = lastLat;
-            final double lng   = lastLng;
-            final float  acc   = lastAcc;
-            final float  spd   = lastSpeed;
-            final int    bat   = getBattery();
-            final String net   = getNetwork();
+            final String url     = prefs.getServerUrl();
+            final String token   = prefs.getToken();
+            final double lat     = lastLat;
+            final double lng     = lastLng;
+            final float  acc     = lastAcc;
+            final float  spd     = lastSpeed;
+            final int    bat     = getBattery();
+            final String net     = getNetwork();
+            final String fcmTok  = prefs.getFcmToken();
 
             new Thread(new Runnable() {
                 @Override
                 public void run() {
                     try {
                         ApiClient.HeartbeatResult result =
-                            ApiClient.heartbeat(url, token, lat, lng, acc, spd, bat, net);
+                            ApiClient.heartbeat(url, token, lat, lng, acc, spd, bat, net, fcmTok);
                         if (result.upgradeRequired) {
                             Intent upg = new Intent("com.fleetops.guardian.UPGRADE_REQUIRED");
                             upg.putExtra("min_version_code", result.minVersionCode);

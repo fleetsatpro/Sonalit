@@ -237,6 +237,29 @@ async function ensureTables() {
     // p3t7 — command signing: signature column
     await query(`ALTER TABLE device_commands ADD COLUMN IF NOT EXISTS signature TEXT`);
 
+    // p1t3 — command delivery timestamps
+    await query(`ALTER TABLE device_commands ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ`);
+
+    // p2t3 — command expiry
+    await query(`ALTER TABLE device_commands ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`);
+
+    // p1t5 — idempotency UUIDs for panic events and field reports
+    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS event_uuid UUID`);
+    await query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_panic_events_event_uuid
+        ON panic_events(event_uuid)
+        WHERE event_uuid IS NOT NULL
+    `);
+    await query(`ALTER TABLE field_reports ADD COLUMN IF NOT EXISTS event_uuid UUID`);
+    await query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_field_reports_event_uuid
+        ON field_reports(event_uuid)
+        WHERE event_uuid IS NOT NULL
+    `);
+
+    // p4t1 — FCM push token on device
+    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS fcm_token TEXT`);
+
     logger.info('Guardian tables initialised');
   } catch (err) {
     logger.error(`Guardian ensureTables error: ${err.message}`);
