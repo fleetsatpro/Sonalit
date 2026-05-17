@@ -137,8 +137,12 @@ public class CommandHandler {
     }
 
     private void handleRequestLocation(String id) {
-        ctx.sendBroadcast(new Intent("com.fleetops.guardian.FORCE_HEARTBEAT"));
-        listener.onHandled(id, true, "location requested");
+        // Broadcast to GuardianService to start a one-shot fresh GPS fix with a 15s timeout.
+        // ACK is deferred — GuardianService calls ackCommand() directly after the fix or timeout.
+        Intent req = new Intent("com.fleetops.guardian.REQUEST_FRESH_LOCATION");
+        req.putExtra("command_id", id);
+        ctx.sendBroadcast(req);
+        // Do NOT call listener.onHandled() here — ack is handled asynchronously.
     }
 
     private void handleForceSync(String id) {

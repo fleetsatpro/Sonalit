@@ -52,6 +52,9 @@ public class GuardianService extends Service implements LocationListener {
             } else if ("com.fleetops.guardian.PANIC".equals(action)) {
                 String mode = intent.getStringExtra("mode");
                 triggerPanic(mode);
+            } else if ("com.fleetops.guardian.REQUEST_FRESH_LOCATION".equals(action)) {
+                String cmdId = intent.getStringExtra("command_id");
+                requestFreshLocation(cmdId);
             }
         }
     };
@@ -332,6 +335,7 @@ public class GuardianService extends Service implements LocationListener {
         f.addAction("com.fleetops.guardian.SET_TRACKING_RATE");
         f.addAction("com.fleetops.guardian.DMS_CHECKIN");
         f.addAction("com.fleetops.guardian.PANIC");
+        f.addAction("com.fleetops.guardian.REQUEST_FRESH_LOCATION");
         registerReceiver(controlReceiver, f);
     }
 
@@ -352,6 +356,89 @@ public class GuardianService extends Service implements LocationListener {
         android.net.NetworkInfo ni = cm.getActiveNetworkInfo();
         if (ni == null || !ni.isConnected()) return "none";
         return ni.getTypeName();
+    }
+
+    // ── One-shot fresh location for request_location command ─────────────────
+
+    private static final long FRESH_LOCATION_TIMEOUT_MS = 15_000L;
+
+    private void requestFreshLocation(final String commandId) {
+        final String url   = prefs.getServerUrl();
+        final String token = prefs.getToken();
+
+        // Two-element arrays used so listener and timeout can reference each other.
+        final LocationListener[] listenerRef = new LocationListener[1];
+        final Runnable[]         timeoutRef  = new Runnable[1];
+
+        listenerRef[0] = new LocationListener() {
+            private volatile boolean done = false;
+            @Override
+            public void onLocationChanged(final Location loc) {
+                if (done) return;
+                done = true;
+                handler.removeCallbacks(timeoutRef[0]);
+                try { locationManager.removeUpdates(listenerRef[0]); } catch (Exception ignored) {}
+
+                // Update shared state so the next heartbeat uses this fresh fix
+                lastLat   = loc.getLatitude();
+                lastLng   = loc.getLongitude();
+                lastAcc   = loc.getAccuracy();
+                lastSpeed = loc.getSpeed();
+
+                new Thread(new Runnable() {
+                    @Override public void run() {
+                        ApiClient.sendLocation(url, token,
+                            loc.getLatitude(), loc.getLongitude(),
+                            loc.getAltitude(), loc.getBearing(),
+                            loc.getSpeed(),   loc.getAccuracy());
+                        ApiClient.ackCommand(url, token, commandId, true, "location_sent");
+                    }
+                }).start();
+                Log.i(TAG, "Fresh location fix obtained for cmd=" + commandId);
+            }
+            @Override public void onStatusChanged(String p, int s, Bundle e) {}
+            @Override public void onProviderEnabled(String p) {}
+            @Override public void onProviderDisabled(String p) {}
+        };
+
+        timeoutRef[0] = new Runnable() {
+            @Override public void run() {
+                try { locationManager.removeUpdates(listenerRef[0]); } catch (Exception ignored) {}
+                new Thread(new Runnable() {
+                    @Override public void run() {
+                        ApiClient.ackCommand(url, token, commandId, false, "no_gps_fix");
+                    }
+                }).start();
+                Log.w(TAG, "Fresh location timed out (15s) for cmd=" + commandId);
+            }
+        };
+
+        boolean registered = false;
+        try {
+            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                locationManager.requestSingleUpdate(
+                    LocationManager.GPS_PROVIDER, listenerRef[0], Looper.getMainLooper());
+                registered = true;
+            }
+            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                locationManager.requestSingleUpdate(
+                    LocationManager.NETWORK_PROVIDER, listenerRef[0], Looper.getMainLooper());
+                registered = true;
+            }
+        } catch (SecurityException e) {
+            Log.w(TAG, "Location permission denied for fresh fix: " + e.getMessage());
+        }
+
+        if (!registered) {
+            new Thread(new Runnable() {
+                @Override public void run() {
+                    ApiClient.ackCommand(url, token, commandId, false, "no_gps_fix");
+                }
+            }).start();
+            return;
+        }
+
+        handler.postDelayed(timeoutRef[0], FRESH_LOCATION_TIMEOUT_MS);
     }
 
     // ── LocationListener ─────────────────────────────────────────────────────

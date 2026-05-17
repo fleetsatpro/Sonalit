@@ -163,6 +163,27 @@ public class ApiClient {
         }
     }
 
+    // ── Location (immediate post, used by request_location command) ──────────
+
+    public static boolean sendLocation(String serverUrl, String token,
+                                       double lat, double lng, double altitude,
+                                       float bearing, float speed, float accuracy) {
+        try {
+            JSONObject body = new JSONObject();
+            body.put("lat", lat);
+            body.put("lng", lng);
+            body.put("altitude", altitude);
+            body.put("heading", bearing);
+            body.put("speed", speed);
+            body.put("accuracy", accuracy);
+            String resp = post(serverUrl + "/api/v1/guardian/location", token, body.toString());
+            return resp != null;
+        } catch (Exception e) {
+            Log.e(TAG, "sendLocation error", e);
+            return false;
+        }
+    }
+
     // ── Dead man's switch check-in ────────────────────────────────────────────
 
     public static boolean checkin(String serverUrl, String token) {
