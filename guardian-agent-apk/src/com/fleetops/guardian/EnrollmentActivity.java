@@ -14,7 +14,7 @@ public class EnrollmentActivity extends Activity {
     private static final int REQ_PERMISSIONS = 101;
     private static final int REQ_ADMIN       = 102;
 
-    private EditText   etServerUrl, etOrgToken, etDeviceName;
+    private EditText   etServerUrl, etOrgToken, etDeviceName, etEnrollmentCode;
     private Button     btnEnroll, btnPaste;
     private ProgressBar progressBar;
     private TextView   tvStatus;
@@ -31,13 +31,14 @@ public class EnrollmentActivity extends Activity {
         }
 
         setContentView(R.layout.activity_enrollment);
-        etServerUrl  = (EditText)    findViewById(R.id.etServerUrl);
-        etOrgToken   = (EditText)    findViewById(R.id.etOrgToken);
-        etDeviceName = (EditText)    findViewById(R.id.etDeviceName);
-        btnEnroll    = (Button)      findViewById(R.id.btnEnroll);
-        btnPaste     = (Button)      findViewById(R.id.btnPaste);
-        progressBar  = (ProgressBar) findViewById(R.id.progressBar);
-        tvStatus     = (TextView)    findViewById(R.id.tvStatus);
+        etServerUrl      = (EditText)    findViewById(R.id.etServerUrl);
+        etOrgToken       = (EditText)    findViewById(R.id.etOrgToken);
+        etDeviceName     = (EditText)    findViewById(R.id.etDeviceName);
+        etEnrollmentCode = (EditText)    findViewById(R.id.etEnrollmentCode);
+        btnEnroll        = (Button)      findViewById(R.id.btnEnroll);
+        btnPaste         = (Button)      findViewById(R.id.btnPaste);
+        progressBar      = (ProgressBar) findViewById(R.id.progressBar);
+        tvStatus         = (TextView)    findViewById(R.id.tvStatus);
 
         btnEnroll.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { doEnroll(); }
@@ -64,9 +65,11 @@ public class EnrollmentActivity extends Activity {
             String url   = json.optString("url", "");
             String token = json.optString("token", "");
             String name  = json.optString("name", "");
+            String code  = json.optString("enrollment_code", "");
             if (!url.isEmpty())   etServerUrl.setText(url);
             if (!token.isEmpty()) etOrgToken.setText(token);
             if (!name.isEmpty())  etDeviceName.setText(name);
+            if (!code.isEmpty() && etEnrollmentCode != null) etEnrollmentCode.setText(code);
             status("Config pasted — tap Enroll to continue", 0xFF00FF88);
         } catch (Exception e) {
             status("Clipboard doesn't contain a valid config JSON", 0xFFFF3355);
@@ -79,6 +82,8 @@ public class EnrollmentActivity extends Activity {
         String url   = etServerUrl.getText().toString().trim();
         String token = etOrgToken.getText().toString().trim();
         String name  = etDeviceName.getText().toString().trim();
+        String code  = (etEnrollmentCode != null)
+            ? etEnrollmentCode.getText().toString().trim() : "";
 
         if (url.isEmpty())   { status("Enter server URL", 0xFFFF3355); return; }
         if (token.isEmpty()) { status("Enter org token",  0xFFFF3355); return; }
@@ -90,6 +95,7 @@ public class EnrollmentActivity extends Activity {
         final String finalUrl   = url;
         final String finalToken = token;
         final String finalName  = name;
+        final String finalCode  = code.isEmpty() ? null : code;
         final String imei       = getDeviceId();
 
         setLoading(true, "Enrolling...");
@@ -98,13 +104,18 @@ public class EnrollmentActivity extends Activity {
             @Override
             public void run() {
                 final ApiClient.EnrollResult result =
-                    ApiClient.enroll(finalUrl, finalToken, finalName, imei);
+                    ApiClient.enroll(finalUrl, finalToken, finalName, imei, finalCode);
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
                         setLoading(false, null);
                         if (result.token != null) {
                             prefs.saveEnrollment(finalUrl, result.token, finalName);
+                            // Store and activate cert pin returned by the server
+                            if (result.certPin != null && !result.certPin.isEmpty()) {
+                                prefs.setCertPinSha256(result.certPin);
+                            }
+                            ApiClient.pinnedSha256 = prefs.getCertPinSha256();
                             status("Enrolled — setting up device protection...", 0xFF00FF88);
                             requestPermissionsAndAdmin();
                         } else {
@@ -121,7 +132,7 @@ public class EnrollmentActivity extends Activity {
 
     private void requestPermissionsAndAdmin() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-            java.util.List<String> needed = new java.util.ArrayList<>();
+            java.util.List<String> needed = new java.util.ArrayList<String>();
             if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)
                     != PackageManager.PERMISSION_GRANTED) {
                 needed.add(android.Manifest.permission.ACCESS_FINE_LOCATION);

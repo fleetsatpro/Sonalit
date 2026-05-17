@@ -17,9 +17,9 @@ public class SettingsActivity extends Activity {
     private TextView    tvDmsPin, tvConvoyCode, tvAdminStatus;
     private Button      btnChangePin, btnConvoyJoin, btnConvoyLeave, btnActivateAdmin;
 
-    private static final int[] DMS_INTERVALS_MIN = {5, 10, 15, 30, 60};
+    private static final int[] DMS_INTERVALS_MIN = {5, 10, 15, 30, 60, 90, 120};
     private static final String[] DMS_LABELS =
-        {"5 minutes", "10 minutes", "15 minutes", "30 minutes", "1 hour"};
+        {"5 minutes", "10 minutes", "15 minutes", "30 minutes", "1 hour", "90 minutes", "2 hours"};
 
     @Override
     protected void onCreate(Bundle saved) {

@@ -7,25 +7,215 @@ import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyStore;
+import java.security.MessageDigest;
+import java.security.cert.Certificate;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.List;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 
 public class ApiClient {
     private static final String TAG     = "ApiClient";
     private static final int    TIMEOUT = 15_000;
 
+    /** Set this from DevicePrefs.getCertPinSha256() before making HTTPS calls. */
+    public static String pinnedSha256 = null;
+
+    // ── Certificate pinning ───────────────────────────────────────────────────
+
+    private static TrustManager[] createPinnedTrustManager() {
+        return new TrustManager[] {
+            new X509TrustManager() {
+                @Override
+                public void checkClientTrusted(X509Certificate[] chain, String authType)
+                        throws java.security.cert.CertificateException {}
+
+                @Override
+                public void checkServerTrusted(X509Certificate[] chain, String authType)
+                        throws java.security.cert.CertificateException {
+                    if (pinnedSha256 == null || pinnedSha256.isEmpty()) return;
+                    if (chain == null || chain.length == 0) {
+                        throw new java.security.cert.CertificateException("Empty certificate chain");
+                    }
+                    try {
+                        byte[] encoded = chain[0].getEncoded();
+                        MessageDigest md = MessageDigest.getInstance("SHA-256");
+                        byte[] digest = md.digest(encoded);
+                        StringBuilder sb = new StringBuilder();
+                        for (byte b : digest) sb.append(String.format("%02x", b));
+                        String actual = sb.toString();
+                        if (!actual.equalsIgnoreCase(pinnedSha256)) {
+                            throw new java.security.cert.CertificateException(
+                                "Certificate pin mismatch: expected " + pinnedSha256 + " got " + actual);
+                        }
+                    } catch (java.security.cert.CertificateException ce) {
+                        throw ce;
+                    } catch (Exception e) {
+                        throw new java.security.cert.CertificateException("Pin verification error: " + e.getMessage());
+                    }
+                }
+
+                @Override
+                public X509Certificate[] getAcceptedIssuers() {
+                    return new X509Certificate[0];
+                }
+            }
+        };
+    }
+
+    private static void applyPinning(HttpURLConnection conn) {
+        if (conn instanceof HttpsURLConnection) {
+            HttpsURLConnection httpsConn = (HttpsURLConnection) conn;
+            try {
+                SSLContext sslCtx = SSLContext.getInstance("TLS");
+                sslCtx.init(null, createPinnedTrustManager(), null);
+                httpsConn.setSSLSocketFactory(sslCtx.getSocketFactory());
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to apply certificate pinning: " + e.getMessage());
+            }
+        }
+    }
+
+    // ── HMAC-SHA256 utility ───────────────────────────────────────────────────
+
+    static String hmacSha256(String data, String key) {
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(key.getBytes("UTF-8"), "HmacSHA256"));
+            byte[] bytes = mac.doFinal(data.getBytes("UTF-8"));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : bytes) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (Exception e) {
+            Log.e(TAG, "hmacSha256 error", e);
+            return null;
+        }
+    }
+
+    // ── Canonical JSON (sorted keys, no whitespace) ───────────────────────────
+
+    static String canonicalJson(String jsonStr) {
+        if (jsonStr == null || jsonStr.trim().isEmpty()) return "{}";
+        try {
+            JSONObject obj = new JSONObject(jsonStr);
+            return canonicalJsonObject(obj);
+        } catch (Exception e) {
+            return "{}";
+        }
+    }
+
+    private static String canonicalJsonObject(JSONObject obj) throws Exception {
+        java.util.TreeMap<String, String> sorted = new java.util.TreeMap<String, String>();
+        java.util.Iterator<String> keys = obj.keys();
+        while (keys.hasNext()) {
+            String k = keys.next();
+            sorted.put(k, canonicalJsonValue(obj.get(k)));
+        }
+        StringBuilder sb = new StringBuilder("{");
+        boolean first = true;
+        for (java.util.Map.Entry<String, String> e : sorted.entrySet()) {
+            if (!first) sb.append(",");
+            first = false;
+            sb.append("\"").append(escapeJsonString(e.getKey())).append("\":").append(e.getValue());
+        }
+        return sb.append("}").toString();
+    }
+
+    private static String canonicalJsonValue(Object v) throws Exception {
+        if (v == null || v.equals(JSONObject.NULL)) return "null";
+        if (v instanceof Boolean) return v.toString();
+        if (v instanceof Integer || v instanceof Long) return v.toString();
+        if (v instanceof Double || v instanceof Float) return v.toString();
+        if (v instanceof String) return "\"" + escapeJsonString((String) v) + "\"";
+        if (v instanceof JSONObject) return canonicalJsonObject((JSONObject) v);
+        if (v instanceof org.json.JSONArray) {
+            org.json.JSONArray arr = (org.json.JSONArray) v;
+            StringBuilder sb = new StringBuilder("[");
+            for (int i = 0; i < arr.length(); i++) {
+                if (i > 0) sb.append(",");
+                sb.append(canonicalJsonValue(arr.get(i)));
+            }
+            return sb.append("]").toString();
+        }
+        return "\"" + escapeJsonString(v.toString()) + "\"";
+    }
+
+    private static String escapeJsonString(String s) {
+        return s.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
+    }
+
+    static String sha256Hex(String input) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = md.digest(input.getBytes("UTF-8"));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : bytes) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (Exception e) {
+            Log.e(TAG, "sha256Hex error", e);
+            return "0000000000000000000000000000000000000000000000000000000000000000";
+        }
+    }
+
+    // ── Photo upload via R2 presigned PUT ─────────────────────────────────────
+
+    /**
+     * Upload JPEG bytes to R2 via a server-issued presigned URL.
+     * Returns the public URL on success, null if the server has no R2 config or upload failed.
+     */
+    public static String uploadPhoto(String serverUrl, String token, byte[] jpegBytes) {
+        try {
+            String resp = post(serverUrl + "/api/v1/guardian/reports/upload-url", token, "{}");
+            if (resp == null) return null;
+            JSONObject json = new JSONObject(resp);
+            if (!json.has("upload_url")) return null;
+            String uploadUrl = json.getString("upload_url");
+            String publicUrl = json.getString("public_url");
+
+            URL url = new URL(uploadUrl);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("PUT");
+            conn.setConnectTimeout(TIMEOUT);
+            conn.setReadTimeout(TIMEOUT);
+            conn.setRequestProperty("Content-Type", "image/jpeg");
+            conn.setDoOutput(true);
+            conn.setFixedLengthStreamingMode(jpegBytes.length);
+            OutputStream os = conn.getOutputStream();
+            os.write(jpegBytes); os.flush(); os.close();
+            int code = conn.getResponseCode();
+            conn.disconnect();
+            Log.d(TAG, "Photo PUT -> " + code);
+            return (code >= 200 && code < 300) ? publicUrl : null;
+        } catch (Exception e) {
+            Log.e(TAG, "uploadPhoto error", e);
+            return null;
+        }
+    }
+
     // ── Enroll ───────────────────────────────────────────────────────────────
 
     public static class EnrollResult {
         public final String token;
+        public final String certPin; // SHA-256 of server TLS cert, may be null
         public final String error;
-        public EnrollResult(String token, String error) {
-            this.token = token; this.error = error;
+        public EnrollResult(String token, String certPin, String error) {
+            this.token = token; this.certPin = certPin; this.error = error;
         }
     }
 
     public static EnrollResult enroll(String serverUrl, String orgToken,
                                       String deviceName, String imei) {
+        return enroll(serverUrl, orgToken, deviceName, imei, null);
+    }
+
+    public static EnrollResult enroll(String serverUrl, String orgToken,
+                                      String deviceName, String imei,
+                                      String enrollmentCode) {
         try {
             JSONObject body = new JSONObject();
             body.put("org_token", orgToken);
@@ -33,34 +223,79 @@ public class ApiClient {
             body.put("imei", imei);
             body.put("model", android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL);
             body.put("os_version", android.os.Build.VERSION.RELEASE);
-            body.put("app_version", "2.0.0");
+            body.put("app_version", APP_VERSION);
+            if (enrollmentCode != null && !enrollmentCode.trim().isEmpty()) {
+                body.put("enrollment_code", enrollmentCode.trim().toUpperCase());
+            }
 
             String resp = post(serverUrl + "/api/v1/guardian/enroll", null, body.toString());
-            if (resp == null) return new EnrollResult(null, "No response from server");
+            if (resp == null) return new EnrollResult(null, null, "No response from server");
             JSONObject json = new JSONObject(resp);
-            if (json.has("token")) return new EnrollResult(json.getString("token"), null);
-            return new EnrollResult(null, json.optString("error", "Enrollment failed"));
+            if (json.has("token")) {
+                String certPin = json.optString("cert_pin", null);
+                if ("null".equals(certPin)) certPin = null;
+                return new EnrollResult(json.getString("token"), certPin, null);
+            }
+            return new EnrollResult(null, null, json.optString("error", "Enrollment failed"));
         } catch (Exception e) {
             Log.e(TAG, "enroll error", e);
-            return new EnrollResult(null, e.getMessage());
+            return new EnrollResult(null, null, e.getMessage());
         }
     }
 
     // ── Heartbeat — returns pending commands ──────────────────────────────────
 
+    static final String APP_VERSION      = "2.3.0";
+    static final int    APP_VERSION_CODE = 5;
+
     public static class PendingCommand {
         public final String id;
         public final String type;
         public final String payload;
-        public PendingCommand(String id, String type, String payload) {
-            this.id = id; this.type = type; this.payload = payload;
+        public final String issuedAt;
+        public final String expiresAt;
+        public final String signature;
+        public PendingCommand(String id, String type, String payload,
+                              String issuedAt, String expiresAt, String signature) {
+            this.id = id;
+            this.type = type;
+            this.payload = payload;
+            this.issuedAt = issuedAt;
+            this.expiresAt = expiresAt;
+            this.signature = signature;
         }
     }
 
-    public static List<PendingCommand> heartbeat(String serverUrl, String token,
-                                                  double lat, double lng, float accuracy,
-                                                  float speed, int battery, String network) {
-        List<PendingCommand> commands = new ArrayList<>();
+    public static class HeartbeatResult {
+        public final boolean upgradeRequired;
+        public final int     minVersionCode;
+        public final String  downloadUrl;
+        public final List<PendingCommand> commands;
+        HeartbeatResult(List<PendingCommand> commands) {
+            this.upgradeRequired = false;
+            this.minVersionCode  = 0;
+            this.downloadUrl     = null;
+            this.commands        = commands;
+        }
+        HeartbeatResult(int minVersionCode, String downloadUrl) {
+            this.upgradeRequired = true;
+            this.minVersionCode  = minVersionCode;
+            this.downloadUrl     = downloadUrl;
+            this.commands        = new ArrayList<PendingCommand>();
+        }
+    }
+
+    public static HeartbeatResult heartbeat(String serverUrl, String token,
+                                            double lat, double lng, float accuracy,
+                                            float speed, int battery, String network) {
+        return heartbeat(serverUrl, token, lat, lng, accuracy, speed, battery, network, null);
+    }
+
+    public static HeartbeatResult heartbeat(String serverUrl, String token,
+                                            double lat, double lng, float accuracy,
+                                            float speed, int battery, String network,
+                                            String fcmToken) {
+        List<PendingCommand> commands = new ArrayList<PendingCommand>();
         try {
             JSONObject body = new JSONObject();
             body.put("lat", lat);
@@ -68,10 +303,20 @@ public class ApiClient {
             body.put("speed", speed);
             body.put("battery_level", battery);
             body.put("network_type", network);
-            body.put("app_version", "2.0.0");
-            String resp = post(serverUrl + "/api/v1/guardian/heartbeat", token, body.toString());
-            if (resp != null && !resp.isEmpty()) {
-                JSONObject json = new JSONObject(resp);
+            body.put("app_version", APP_VERSION);
+            body.put("app_version_code", APP_VERSION_CODE);
+            if (fcmToken != null && !fcmToken.isEmpty()) body.put("fcm_token", fcmToken);
+            RawResponse raw = postRaw(serverUrl + "/api/v1/guardian/heartbeat", token, body.toString());
+            if (raw == null) return new HeartbeatResult(commands);
+            if (raw.status == 426) {
+                JSONObject json = new JSONObject(raw.body);
+                return new HeartbeatResult(
+                    json.optInt("min_version_code", 0),
+                    json.optString("download_url", serverUrl + "/api/v1/guardian/apk/download")
+                );
+            }
+            if (raw.status >= 200 && raw.status < 300 && raw.body != null && !raw.body.isEmpty()) {
+                JSONObject json = new JSONObject(raw.body);
                 JSONArray arr = json.optJSONArray("commands");
                 if (arr != null) {
                     for (int i = 0; i < arr.length(); i++) {
@@ -80,7 +325,10 @@ public class ApiClient {
                         commands.add(new PendingCommand(
                             cmd.optString("id"),
                             cmd.optString("command_type"),
-                            pl != null ? pl.toString() : null
+                            pl != null ? pl.toString() : null,
+                            cmd.optString("issued_at", null),
+                            cmd.optString("expires_at", null),
+                            cmd.optString("signature", null)
                         ));
                     }
                 }
@@ -88,19 +336,34 @@ public class ApiClient {
         } catch (Exception e) {
             Log.e(TAG, "heartbeat error", e);
         }
-        return commands;
+        return new HeartbeatResult(commands);
+    }
+
+    // ── Config fetch ──────────────────────────────────────────────────────────
+
+    public static JSONObject fetchConfig(String serverUrl, String token) {
+        try {
+            String resp = get(serverUrl + "/api/v1/guardian/config", token);
+            if (resp == null || resp.isEmpty()) return null;
+            return new JSONObject(resp);
+        } catch (Exception e) {
+            Log.e(TAG, "fetchConfig error", e);
+            return null;
+        }
     }
 
     // ── Panic ─────────────────────────────────────────────────────────────────
 
     public static boolean sendPanic(String serverUrl, String token,
-                                    String mode, double lat, double lng) {
+                                    String mode, double lat, double lng,
+                                    String eventUuid) {
         if (mode == null || mode.isEmpty()) return true;
         try {
             JSONObject body = new JSONObject();
             body.put("mode", mode);
             body.put("lat", lat);
             body.put("lng", lng);
+            body.put("event_uuid", eventUuid);
             String resp = post(serverUrl + "/api/v1/guardian/panic", token, body.toString());
             return resp != null;
         } catch (Exception e) {
@@ -113,7 +376,8 @@ public class ApiClient {
 
     public static boolean sendReport(String serverUrl, String token,
                                      String displayCategory, String desc,
-                                     double lat, double lng, String photoBase64) {
+                                     double lat, double lng, String photoBase64,
+                                     String eventUuid) {
         try {
             JSONObject body = new JSONObject();
             body.put("category", mapCategory(displayCategory));
@@ -121,13 +385,46 @@ public class ApiClient {
             body.put("description", desc);
             body.put("lat", lat);
             body.put("lng", lng);
+            body.put("event_uuid", eventUuid);
             if (photoBase64 != null && !photoBase64.isEmpty()) {
-                body.put("photo_url", "data:image/jpeg;base64," + photoBase64);
+                // If it's already an https URL (from R2 upload), use directly; otherwise wrap as data URI
+                if (photoBase64.startsWith("http")) {
+                    body.put("photo_url", photoBase64);
+                } else {
+                    body.put("photo_url", "data:image/jpeg;base64," + photoBase64);
+                }
             }
             String resp = post(serverUrl + "/api/v1/guardian/report", token, body.toString());
             return resp != null;
         } catch (Exception e) {
             Log.e(TAG, "report error", e);
+            return false;
+        }
+    }
+
+    // ── UUID utility ──────────────────────────────────────────────────────────
+
+    public static String newEventUuid() {
+        return java.util.UUID.randomUUID().toString();
+    }
+
+    // ── Location (immediate post, used by request_location command) ──────────
+
+    public static boolean sendLocation(String serverUrl, String token,
+                                       double lat, double lng, double altitude,
+                                       float bearing, float speed, float accuracy) {
+        try {
+            JSONObject body = new JSONObject();
+            body.put("lat", lat);
+            body.put("lng", lng);
+            body.put("altitude", altitude);
+            body.put("heading", bearing);
+            body.put("speed", speed);
+            body.put("accuracy", accuracy);
+            String resp = post(serverUrl + "/api/v1/guardian/location", token, body.toString());
+            return resp != null;
+        } catch (Exception e) {
+            Log.e(TAG, "sendLocation error", e);
             return false;
         }
     }
@@ -203,9 +500,47 @@ public class ApiClient {
 
     // ── HTTP ──────────────────────────────────────────────────────────────────
 
+    static class RawResponse {
+        final int    status;
+        final String body;
+        RawResponse(int status, String body) { this.status = status; this.body = body; }
+    }
+
+    static RawResponse postRaw(String urlStr, String token, String body) throws Exception {
+        URL url = new URL(urlStr);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        applyPinning(conn);
+        conn.setRequestMethod("POST");
+        conn.setConnectTimeout(TIMEOUT);
+        conn.setReadTimeout(TIMEOUT);
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setRequestProperty("Accept", "application/json");
+        if (token != null && !token.isEmpty()) conn.setRequestProperty("X-Device-Token", token);
+        conn.setDoOutput(true);
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        conn.setFixedLengthStreamingMode(bytes.length);
+        OutputStream os = conn.getOutputStream();
+        os.write(bytes); os.flush(); os.close();
+        int code = conn.getResponseCode();
+        InputStream is = (code < 400) ? conn.getInputStream() : conn.getErrorStream();
+        String result = "";
+        if (is != null) {
+            BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = br.readLine()) != null) sb.append(line);
+            br.close();
+            result = sb.toString();
+        }
+        conn.disconnect();
+        Log.d(TAG, "POST " + urlStr + " -> " + code);
+        return new RawResponse(code, result);
+    }
+
     static String post(String urlStr, String token, String body) throws Exception {
         URL url = new URL(urlStr);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        applyPinning(conn);
         conn.setRequestMethod("POST");
         conn.setConnectTimeout(TIMEOUT);
         conn.setReadTimeout(TIMEOUT);
@@ -237,7 +572,37 @@ public class ApiClient {
         conn.disconnect();
 
         String result = sb.toString();
-        Log.d(TAG, "POST " + urlStr + " → " + code);
+        Log.d(TAG, "POST " + urlStr + " -> " + code);
+        return (code >= 200 && code < 300) ? result : null;
+    }
+
+    static String get(String urlStr, String token) throws Exception {
+        URL url = new URL(urlStr);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        applyPinning(conn);
+        conn.setRequestMethod("GET");
+        conn.setConnectTimeout(TIMEOUT);
+        conn.setReadTimeout(TIMEOUT);
+        conn.setRequestProperty("Accept", "application/json");
+        if (token != null && !token.isEmpty()) {
+            conn.setRequestProperty("X-Device-Token", token);
+        }
+
+        int code = conn.getResponseCode();
+        InputStream is = (code >= 200 && code < 300)
+            ? conn.getInputStream() : conn.getErrorStream();
+        if (is == null) return (code >= 200 && code < 300) ? "" : null;
+
+        BufferedReader br = new BufferedReader(
+            new InputStreamReader(is, StandardCharsets.UTF_8));
+        StringBuilder sb = new StringBuilder();
+        String line;
+        while ((line = br.readLine()) != null) sb.append(line);
+        br.close();
+        conn.disconnect();
+
+        String result = sb.toString();
+        Log.d(TAG, "GET " + urlStr + " -> " + code);
         return (code >= 200 && code < 300) ? result : null;
     }
 }

@@ -4,10 +4,6 @@ import android.app.Notification;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
-import android.media.Ringtone;
-import android.media.RingtoneManager;
-import android.os.Handler;
-import android.os.Vibrator;
 import android.util.Log;
 import org.json.JSONObject;
 
@@ -27,13 +23,51 @@ public class CommandHandler {
     }
 
     public void handle(String commandId, String commandType, String payloadJson) {
+        handle(commandId, commandType, payloadJson, null, null, null);
+    }
+
+    public void handle(String commandId, String commandType, String payloadJson,
+                       String issuedAt, String signature) {
+        handle(commandId, commandType, payloadJson, issuedAt, null, signature);
+    }
+
+    public void handle(String commandId, String commandType, String payloadJson,
+                       String issuedAt, String expiresAt, String signature) {
         Log.i(TAG, "cmd=" + commandType + " id=" + commandId);
+
+        // Mandatory HMAC verification (Task E: unconditional; Task B: new format includes payload + expiresAt)
+        DevicePrefs prefs = new DevicePrefs(ctx);
+        String signingKey = prefs.getCommandSigningSecret();
+        if (signingKey == null || signingKey.isEmpty()) {
+            Log.e(TAG, "No command signing key configured — rejecting cmd=" + commandId);
+            listener.onHandled(commandId, false, "no_signing_key");
+            return;
+        }
+        if (signature == null || signature.isEmpty()) {
+            Log.e(TAG, "Command has no signature — rejecting cmd=" + commandId);
+            listener.onHandled(commandId, false, "missing_signature");
+            return;
+        }
+        // Format: commandId:commandType:sha256(canonicalJson(payload)):issuedAt:expiresAt
+        String payloadHash = ApiClient.sha256Hex(ApiClient.canonicalJson(payloadJson));
+        String message = commandId + ":" + commandType + ":" + payloadHash + ":"
+                       + (issuedAt != null ? issuedAt : "") + ":"
+                       + (expiresAt != null ? expiresAt : "");
+        String expected = ApiClient.hmacSha256(message, signingKey);
+        if (!signature.equals(expected)) {
+            Log.e(TAG, "Command signature mismatch id=" + commandId + " — rejecting");
+            listener.onHandled(commandId, false, "signature_mismatch");
+            return;
+        }
+
         try {
             JSONObject p = (payloadJson != null && !payloadJson.isEmpty())
                 ? new JSONObject(payloadJson) : new JSONObject();
 
             if ("trigger_siren".equals(commandType)) {
                 handleSiren(commandId, p);
+            } else if ("stop_siren".equals(commandType)) {
+                handleStopSiren(commandId);
             } else if ("lock_screen".equals(commandType)) {
                 handleLockScreen(commandId, p);
             } else if ("push_message".equals(commandType)) {
@@ -48,8 +82,6 @@ public class CommandHandler {
                 handleLiveTracking(commandId, false);
             } else if ("enable_lost_mode".equals(commandType)) {
                 handleLostMode(commandId, p);
-            } else if ("wipe_cache".equals(commandType)) {
-                handleWipeCache(commandId);
             } else {
                 listener.onHandled(commandId, false, "unknown: " + commandType);
             }
@@ -61,24 +93,16 @@ public class CommandHandler {
 
     private void handleSiren(final String id, JSONObject p) {
         final int durationSec = p.optInt("duration", 10);
-        Vibrator v = (Vibrator) ctx.getSystemService(Context.VIBRATOR_SERVICE);
-        if (v != null) {
-            long[] pattern = {0, 600, 200, 600, 200, 600, 200, 600};
-            v.vibrate(pattern, -1);
-        }
-        try {
-            final Ringtone r = RingtoneManager.getRingtone(ctx,
-                RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM));
-            if (r != null) {
-                r.play();
-                new Handler().postDelayed(new Runnable() {
-                    @Override public void run() { r.stop(); }
-                }, durationSec * 1000L);
-            }
-        } catch (Exception ignored) {}
+        SirenController.getInstance(ctx).start(ctx, durationSec * 1000);
         postNotification("REMOTE SIREN ACTIVATED",
-            "Fleet manager triggered siren for " + durationSec + "s");
+            "Fleet manager triggered siren for " + durationSec + "s. Use Stop Siren to cancel.");
         listener.onHandled(id, true, "siren " + durationSec + "s");
+    }
+
+    private void handleStopSiren(String id) {
+        SirenController.getInstance(ctx).stop();
+        postNotification("SIREN STOPPED", "Remote siren cancelled by fleet manager");
+        listener.onHandled(id, true, "siren stopped");
     }
 
     private void handleLockScreen(String id, JSONObject p) {
@@ -102,8 +126,12 @@ public class CommandHandler {
     }
 
     private void handleRequestLocation(String id) {
-        ctx.sendBroadcast(new Intent("com.fleetops.guardian.FORCE_HEARTBEAT"));
-        listener.onHandled(id, true, "location requested");
+        // Broadcast to GuardianService to start a one-shot fresh GPS fix with a 15s timeout.
+        // ACK is deferred — GuardianService calls ackCommand() directly after the fix or timeout.
+        Intent req = new Intent("com.fleetops.guardian.REQUEST_FRESH_LOCATION");
+        req.putExtra("command_id", id);
+        ctx.sendBroadcast(req);
+        // Do NOT call listener.onHandled() here — ack is handled asynchronously.
     }
 
     private void handleForceSync(String id) {
@@ -126,13 +154,6 @@ public class CommandHandler {
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         ctx.startActivity(i);
         listener.onHandled(id, true, "lost mode active");
-    }
-
-    private void handleWipeCache(String id) {
-        try {
-            android.os.Process.killProcess(android.os.Process.myPid());
-        } catch (Exception ignored) {}
-        listener.onHandled(id, true, "cache wiped");
     }
 
     private void postNotification(String title, String text) {

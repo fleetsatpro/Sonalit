@@ -65,9 +65,20 @@ public class MainActivity extends Activity {
         public void onReceive(Context ctx, Intent intent) {
             String action = intent.getAction();
             if ("com.fleetops.guardian.QUEUE_COUNT".equals(action)) {
-                int count = intent.getIntExtra("count", 0);
-                tvQueueBadge.setText(count > 0 ? "QUEUED: " + count : "");
-                tvQueueBadge.setVisibility(count > 0 ? View.VISIBLE : View.GONE);
+                int count      = intent.getIntExtra("count", 0);
+                int permFailed = intent.getIntExtra("failed_permanent", 0);
+                String badgeText;
+                if (count > 0 && permFailed > 0) {
+                    badgeText = "QUEUED: " + count + " | FAILED: " + permFailed;
+                } else if (permFailed > 0) {
+                    badgeText = "FAILED: " + permFailed;
+                } else if (count > 0) {
+                    badgeText = "QUEUED: " + count;
+                } else {
+                    badgeText = "";
+                }
+                tvQueueBadge.setText(badgeText);
+                tvQueueBadge.setVisibility((count > 0 || permFailed > 0) ? View.VISIBLE : View.GONE);
             } else if ("com.fleetops.guardian.MESSAGE".equals(action)) {
                 prefs.incrementUnread();
                 updateMessageBadge();
@@ -88,6 +99,10 @@ public class MainActivity extends Activity {
                 btnPanic.setText("CANCEL");
                 tvPanicMode.setText("CRASH DETECTED — AUTO SOS");
                 tvPanicMode.setTextColor(0xFFFF3355);
+            } else if ("com.fleetops.guardian.UPGRADE_REQUIRED".equals(action)) {
+                showUpgradeRequired(
+                    intent.getIntExtra("min_version_code", 0),
+                    intent.getStringExtra("download_url"));
             }
         }
     };
@@ -162,6 +177,19 @@ public class MainActivity extends Activity {
         updateMessageBadge();
         updateConvoyBadge();
         if (prefs.isDmsEnabled()) scheduleCountdownUpdate();
+        checkBatteryOptimization();
+        // Migrate plaintext panic PIN to hashed storage on first post-upgrade launch
+        prefs.migratePanicPin();
+        // Request POST_NOTIFICATIONS permission on Android 13+
+        requestNotificationPermission();
+    }
+
+    private void requestNotificationPermission() {
+        if (android.os.Build.VERSION.SDK_INT < 33) return;
+        // "android.permission.POST_NOTIFICATIONS" added in API 33
+        if (checkSelfPermission("android.permission.POST_NOTIFICATIONS")
+                == android.content.pm.PackageManager.PERMISSION_GRANTED) return;
+        requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 301);
     }
 
     @Override
@@ -177,6 +205,7 @@ public class MainActivity extends Activity {
         sf.addAction("com.fleetops.guardian.DMS_RESET");
         sf.addAction("com.fleetops.guardian.DMS_FIRED");
         sf.addAction("com.fleetops.guardian.CRASH_DETECTED");
+        sf.addAction("com.fleetops.guardian.UPGRADE_REQUIRED");
         registerReceiver(statusReceiver, sf);
     }
 
@@ -214,10 +243,8 @@ public class MainActivity extends Activity {
 
     private void onPanicClick() {
         if (panicActive) {
-            // Require PIN to cancel if one is set
-            String pin = prefs.getPanicPin();
-            if (!pin.isEmpty()) {
-                showPinCancelDialog(pin);
+            if (prefs.hasPanicPin()) {
+                showPinCancelDialog();
             } else {
                 cancelPanic();
             }
@@ -226,7 +253,7 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void showPinCancelDialog(final String correctPin) {
+    private void showPinCancelDialog() {
         final EditText et = new EditText(this);
         et.setHint("Enter PIN to cancel SOS");
         et.setInputType(android.text.InputType.TYPE_CLASS_NUMBER |
@@ -241,7 +268,7 @@ public class MainActivity extends Activity {
             .setView(et)
             .setPositiveButton("CANCEL SOS", new DialogInterface.OnClickListener() {
                 @Override public void onClick(DialogInterface d, int w) {
-                    if (et.getText().toString().equals(correctPin)) {
+                    if (prefs.verifyPanicPin(et.getText().toString().trim())) {
                         cancelPanic();
                     } else {
                         Toast.makeText(MainActivity.this,
@@ -272,19 +299,22 @@ public class MainActivity extends Activity {
         tvPanicMode.setText("SOS ACTIVE — " + mode.toUpperCase());
         tvPanicMode.setTextColor(0xFFFF3355);
 
-        final double lat = currentLat;
-        final double lng = currentLng;
+        final double lat       = currentLat;
+        final double lng       = currentLng;
+        final String eventUuid = ApiClient.newEventUuid();
         new Thread(new Runnable() {
             @Override
             public void run() {
                 final boolean ok =
-                    ApiClient.sendPanic(prefs.getServerUrl(), prefs.getToken(), mode, lat, lng);
+                    ApiClient.sendPanic(prefs.getServerUrl(), prefs.getToken(),
+                        mode, lat, lng, eventUuid);
                 if (!ok) {
                     try {
                         org.json.JSONObject body = new org.json.JSONObject();
                         body.put("mode", mode);
                         body.put("lat", lat);
                         body.put("lng", lng);
+                        body.put("event_uuid", eventUuid);
                         new OfflineQueue(MainActivity.this)
                             .enqueue("panic", body.toString());
                     } catch (Exception ignored) {}
@@ -360,10 +390,11 @@ public class MainActivity extends Activity {
                             "Add a description", Toast.LENGTH_SHORT).show();
                         return;
                     }
-                    final String cat   = reportCats[chosen[0]];
-                    final double lat   = currentLat;
-                    final double lng   = currentLng;
-                    final String photo = pendingPhotoBase64;
+                    final String cat       = reportCats[chosen[0]];
+                    final double lat       = currentLat;
+                    final double lng       = currentLng;
+                    final String photo     = pendingPhotoBase64;
+                    final String eventUuid = ApiClient.newEventUuid();
                     pendingPhotoBase64 = null;
 
                     new Thread(new Runnable() {
@@ -371,7 +402,7 @@ public class MainActivity extends Activity {
                         public void run() {
                             final boolean ok = ApiClient.sendReport(
                                 prefs.getServerUrl(), prefs.getToken(),
-                                cat, desc, lat, lng, photo);
+                                cat, desc, lat, lng, photo, eventUuid);
                             runOnUiThread(new Runnable() {
                                 @Override
                                 public void run() {
@@ -408,12 +439,42 @@ public class MainActivity extends Activity {
                     return;
                 }
                 Bitmap thumb = (Bitmap) raw;
-                ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                thumb.compress(Bitmap.CompressFormat.JPEG, 75, bos);
-                pendingPhotoBase64 = Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP);
-                if (currentReportPhotoStatus != null) {
-                    currentReportPhotoStatus.setText("Photo attached ✓");
+                // Resize to max 1600px on longest side
+                int w = thumb.getWidth(), h = thumb.getHeight();
+                if (w > 1600 || h > 1600) {
+                    float scale = 1600f / Math.max(w, h);
+                    thumb = Bitmap.createScaledBitmap(thumb, (int)(w*scale), (int)(h*scale), true);
                 }
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                thumb.compress(Bitmap.CompressFormat.JPEG, 80, bos);
+                final byte[] jpegBytes = bos.toByteArray();
+
+                if (currentReportPhotoStatus != null)
+                    currentReportPhotoStatus.setText("Uploading photo...");
+
+                // Attempt R2 upload on background thread; fall back to base64 on failure
+                final String serverUrl = prefs.getServerUrl();
+                final String token     = prefs.getToken();
+                new Thread(new Runnable() {
+                    @Override public void run() {
+                        final String url = ApiClient.uploadPhoto(serverUrl, token, jpegBytes);
+                        if (url != null) {
+                            // Store R2 URL — sendReport uses it directly as photo_url
+                            pendingPhotoBase64 = url;
+                        } else {
+                            // Fallback: base64 thumbnail
+                            pendingPhotoBase64 = Base64.encodeToString(jpegBytes, Base64.NO_WRAP);
+                        }
+                        runOnUiThread(new Runnable() {
+                            @Override public void run() {
+                                if (currentReportPhotoStatus != null) {
+                                    currentReportPhotoStatus.setText(
+                                        url != null ? "Photo uploaded ✓" : "Photo attached (inline) ✓");
+                                }
+                            }
+                        });
+                    }
+                }).start();
             } catch (Exception e) {
                 Toast.makeText(this, "Photo capture failed: " + e.getMessage(),
                     Toast.LENGTH_SHORT).show();
@@ -566,6 +627,64 @@ public class MainActivity extends Activity {
     private void showMessageBanner(String title, String text) {
         if (title == null || title.isEmpty()) title = "Fleet Message";
         Toast.makeText(this, title + ": " + text, Toast.LENGTH_LONG).show();
+    }
+
+    // ── Upgrade required blocking screen ─────────────────────────────────────
+
+    private void showUpgradeRequired(final int minVersionCode, final String downloadUrl) {
+        android.app.AlertDialog.Builder b = new android.app.AlertDialog.Builder(this);
+        b.setTitle("Update Required");
+        b.setMessage("This device is running Guardian v" + ApiClient.APP_VERSION_CODE
+            + " but the fleet requires v" + minVersionCode + " or newer.\n\n"
+            + "Please update the app to continue.");
+        b.setCancelable(false);
+        b.setPositiveButton("Download Update", new android.content.DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(android.content.DialogInterface d, int w) {
+                try {
+                    String url = (downloadUrl != null && !downloadUrl.isEmpty())
+                        ? downloadUrl : prefs.getServerUrl() + "/api/v1/guardian/apk/download";
+                    android.content.Intent i = new android.content.Intent(
+                        android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse(url));
+                    startActivity(i);
+                } catch (Exception ignored) {}
+            }
+        });
+        b.show();
+    }
+
+    // ── Battery optimization onboarding (Task 4.8) ───────────────────────────
+
+    private void checkBatteryOptimization() {
+        if (android.os.Build.VERSION.SDK_INT < 23) return;
+        android.content.SharedPreferences sp =
+            getSharedPreferences("guardian_prefs", MODE_PRIVATE);
+        if (sp.getBoolean("battery_opt_shown", false)) return;
+        sp.edit().putBoolean("battery_opt_shown", true).apply();
+
+        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+        if (pm != null && pm.isIgnoringBatteryOptimizations(getPackageName())) return;
+
+        new AlertDialog.Builder(this)
+            .setTitle("Background Tracking")
+            .setMessage("Guardian must run continuously to track location and receive fleet commands.\n\n"
+                + "Please tap \"Allow\" and disable battery optimization for this app — otherwise "
+                + "Android may kill the tracking service when the screen is off.")
+            .setCancelable(false)
+            .setPositiveButton("Allow", new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface d, int w) {
+                    try {
+                        android.content.Intent i = new android.content.Intent(
+                            android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                        i.setData(android.net.Uri.parse("package:" + getPackageName()));
+                        startActivity(i);
+                    } catch (Exception ignored) {}
+                }
+            })
+            .setNegativeButton("Skip", null)
+            .show();
     }
 
     // ── Battery ───────────────────────────────────────────────────────────────

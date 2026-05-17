@@ -76,6 +76,19 @@
             android:inputType="text"
             android:padding="16dp"
             android:textSize="13sp"
+            android:layout_marginBottom="12dp" />
+
+        <EditText
+            android:id="@+id/etEnrollmentCode"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:hint="Enrollment Code (optional)"
+            android:textColor="@color/bright"
+            android:textColorHint="@color/muted"
+            android:background="@drawable/input_bg"
+            android:inputType="textCapCharacters"
+            android:padding="16dp"
+            android:textSize="13sp"
             android:layout_marginBottom="24dp" />
 
         <Button

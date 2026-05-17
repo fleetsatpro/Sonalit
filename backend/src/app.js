@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express=require("express"),http=require("http"),{Server}=require("socket.io"),helmet=require("helmet"),cors=require("cors"),rateLimit=require("express-rate-limit"),morgan=require("morgan"),jwt=require("jsonwebtoken");
 const logger=require("./utils/logger"),{errorHandler}=require("./middleware/error"),{setIO:gpsSetIO}=require("./workers/gpsWorker"),{setIO:alertSetIO}=require("./workers/alertWorker"),{createQueues}=require("./config/queue"),{healthCheck:dbHealth}=require("./config/database"),{healthCheck:redisHealth}=require("./config/redis");
+const requestId=require("./middleware/requestId");
 
 if(!process.env.JWT_SECRET||!process.env.DATABASE_URL) throw new Error("Missing required env vars: JWT_SECRET or DATABASE_URL");
 
@@ -21,28 +22,93 @@ io.on("connection",s=>{
   s.on("disconnect",()=>logger.info("Socket disconnected: "+s.id));
 });
 
+// Socket.IO Redis adapter — enables horizontal scaling across multiple backend pods (Task 5.5)
+if(process.env.REDIS_URL){
+  try{
+    const{createAdapter}=require("@socket.io/redis-adapter");
+    const Redis=require("ioredis");
+    const pubClient=new Redis(process.env.REDIS_URL);
+    const subClient=pubClient.duplicate();
+    io.adapter(createAdapter(pubClient,subClient));
+    logger.info("Socket.IO Redis adapter active");
+  }catch(e){logger.warn("Socket.IO Redis adapter failed: "+e.message+" — running without it");}
+}
+
 app.set("io",io);gpsSetIO(io);alertSetIO(io);
 
+app.use(requestId);
 app.use(helmet({contentSecurityPolicy:false}));
 app.use(cors({origin:true,credentials:true}));
 app.use(express.json({limit:"5mb"}));
 app.use(express.urlencoded({extended:true}));
-app.use(morgan("tiny",{stream:{write:m=>logger.info(m.trim())}}));
+app.use(morgan(":method :url :status :res[content-length] - :response-time ms reqId=:req[x-request-id]",{stream:{write:m=>logger.info(m.trim())}}));
 app.use(rateLimit({windowMs:900000,max:500,standardHeaders:true,legacyHeaders:false,validate:{xForwardedForHeader:false},message:{error:"Too many requests"}}));
 
 app.get("/health",async(req,res)=>{
-  try{const[db,redis]=await Promise.all([dbHealth(),redisHealth()]);
-    res.json({status:"ok",database:db?"ok":"error",redis,uptime:Math.floor(process.uptime()),version:"2.1.0-enterprise"});}
-  catch(e){res.status(503).json({error:e.message});}
+  try{
+    const[db,redis]=await Promise.all([dbHealth(),redisHealth()]);
+    const mem=process.memoryUsage();
+    const status=db?"ok":"degraded";
+    res.status(db?200:503).json({
+      status,
+      database:db?"ok":"error",
+      redis,
+      uptime_seconds:Math.floor(process.uptime()),
+      version:"2.1.0-enterprise",
+      memory:{heap_used_mb:Math.round(mem.heapUsed/1024/1024),heap_total_mb:Math.round(mem.heapTotal/1024/1024),rss_mb:Math.round(mem.rss/1024/1024)},
+      node_version:process.version,
+      pid:process.pid,
+      timestamp:new Date().toISOString()
+    });
+  }catch(e){res.status(503).json({status:"error",error:e.message});}
 });
-app.get("/metrics",(req,res)=>{
-  res.set("Content-Type","text/plain");
-  res.send("process_uptime_seconds "+Math.floor(process.uptime())+"\nprocess_heap_used_bytes "+process.memoryUsage().heapUsed);
+
+// Prometheus-compatible text metrics (Task 5.2)
+const {query:dbQuery}=require("./config/database");
+app.get("/metrics",async(req,res)=>{
+  try{
+    const mem=process.memoryUsage();
+    const uptime=Math.floor(process.uptime());
+    // Guardian-specific metrics
+    let guardianLines=[];
+    try{
+      const[devices,panics]=await Promise.all([
+        dbQuery("SELECT COUNT(*) AS n FROM guardian_devices WHERE deleted_at IS NULL AND status='active'"),
+        dbQuery("SELECT COUNT(*) AS n FROM panic_events WHERE resolved_at IS NULL")
+      ]);
+      guardianLines=[
+        "# HELP guardian_devices_active Active guardian devices",
+        "# TYPE guardian_devices_active gauge",
+        "guardian_devices_active "+devices.rows[0].n,
+        "# HELP guardian_panics_active Unresolved panic events",
+        "# TYPE guardian_panics_active gauge",
+        "guardian_panics_active "+panics.rows[0].n,
+      ];
+    }catch(_){}
+    const lines=[
+      "# HELP process_uptime_seconds Process uptime in seconds",
+      "# TYPE process_uptime_seconds counter",
+      "process_uptime_seconds "+uptime,
+      "# HELP process_heap_used_bytes V8 heap used",
+      "# TYPE process_heap_used_bytes gauge",
+      "process_heap_used_bytes "+mem.heapUsed,
+      "# HELP process_rss_bytes Resident set size",
+      "# TYPE process_rss_bytes gauge",
+      "process_rss_bytes "+mem.rss,
+      ...guardianLines,
+    ];
+    res.set("Content-Type","text/plain; version=0.0.4; charset=utf-8");
+    res.send(lines.join("\n")+"\n");
+  }catch(e){res.status(500).send("# error: "+e.message);}
 });
 
 // Core routes
 ["auth","vehicles","convoys","alerts","messages","analytics","geofences","devices","incidents","rules","gps","sensors","ai","apikeys","reports","documents","webhooks","guardian"]
   .forEach(r=>app.use("/api/v1/"+r,require("./routes/"+r)));
+
+// GDPR / Data Retention (Task 5.3)
+try{app.use("/api/v1/gdpr",require("./routes/gdpr"));logger.info("Route loaded: /api/v1/gdpr");}
+catch(e){logger.warn("GDPR route failed: "+e.message);}
 
 // Enterprise routes
 ["drivers","shipments","finance","maintenance","riskzones"]
@@ -54,6 +120,33 @@ app.get("/metrics",(req,res)=>{
 app.use("/api/v1/sync",(req,res)=>res.json({ok:true,processed:0}));
 app.use((req,res)=>res.status(404).json({error:req.method+" "+req.path+" not found"}));
 app.use(errorHandler);
+
+// Partition roller — runs daily at 02:00 UTC to create next month's partitions
+// and drop partitions older than the GDPR retention window.
+try {
+  const cron = require('node-cron');
+  const { run: rollPartitions } = require('../scripts/partition-roller');
+  cron.schedule('0 2 * * *', () => {
+    rollPartitions().catch(err => logger.error('Partition roller error: ' + err.message));
+  });
+  // Also run at startup so a fresh deploy doesn't wait until 02:00.
+  rollPartitions().catch(err => logger.warn('Partition roller startup run: ' + err.message));
+  logger.info('Partition roller scheduled (daily 02:00 UTC)');
+} catch (e) {
+  logger.warn('Partition roller not started: ' + e.message + ' — install node-cron');
+}
+
+// Base64 photo backfill — runs daily at 03:00 UTC, migrates recent data-URI photos to R2.
+try {
+  const cron = require('node-cron');
+  const { run: backfillPhotos } = require('../scripts/backfill-base64-photos');
+  cron.schedule('0 3 * * *', () => {
+    backfillPhotos().catch(err => logger.error('Photo backfill error: ' + err.message));
+  });
+  logger.info('Photo backfill scheduled (daily 03:00 UTC)');
+} catch (e) {
+  logger.warn('Photo backfill not scheduled: ' + e.message);
+}
 
 const PORT=parseInt(process.env.PORT)||5000;
 createQueues();

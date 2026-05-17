@@ -1,7 +1,9 @@
 package com.fleetops.guardian;
 
 import android.app.*;
+import android.app.AlarmManager;
 import android.content.*;
+import android.content.pm.ServiceInfo;
 import android.location.*;
 import android.os.*;
 import android.util.Log;
@@ -52,6 +54,9 @@ public class GuardianService extends Service implements LocationListener {
             } else if ("com.fleetops.guardian.PANIC".equals(action)) {
                 String mode = intent.getStringExtra("mode");
                 triggerPanic(mode);
+            } else if ("com.fleetops.guardian.REQUEST_FRESH_LOCATION".equals(action)) {
+                String cmdId = intent.getStringExtra("command_id");
+                requestFreshLocation(cmdId);
             }
         }
     };
@@ -92,15 +97,26 @@ public class GuardianService extends Service implements LocationListener {
         registerControlReceiver();
     }
 
+    // AlarmManager action constant for DMS (Task G)
+    static final String ACTION_DMS_ALARM = "com.fleetops.guardian.DMS_ALARM";
+
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         running = true;
-        startForeground(NOTIF_ID, buildNotification());
+        if (Build.VERSION.SDK_INT >= 29) {
+            startForeground(NOTIF_ID, buildNotification(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION |
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+        } else {
+            startForeground(NOTIF_ID, buildNotification());
+        }
         startGps();
         crashDetector.start();
         scheduleHeartbeat();
         scheduleQueueRetry();
         if (prefs.isDmsEnabled()) resetDmsTimer();
+        // Initialize cert pinning from stored prefs
+        ApiClient.pinnedSha256 = prefs.getCertPinSha256();
         return START_STICKY;
     }
 
@@ -111,6 +127,7 @@ public class GuardianService extends Service implements LocationListener {
         crashDetector.stop();
         try { locationManager.removeUpdates(this); } catch (Exception ignored) {}
         try { unregisterReceiver(controlReceiver); } catch (Exception ignored) {}
+        SirenController.getInstance(this).stop();
         super.onDestroy();
     }
 
@@ -149,23 +166,40 @@ public class GuardianService extends Service implements LocationListener {
     private final Runnable heartbeat = new Runnable() {
         @Override
         public void run() {
-            final String url   = prefs.getServerUrl();
-            final String token = prefs.getToken();
-            final double lat   = lastLat;
-            final double lng   = lastLng;
-            final float  acc   = lastAcc;
-            final float  spd   = lastSpeed;
-            final int    bat   = getBattery();
-            final String net   = getNetwork();
+            final String url     = prefs.getServerUrl();
+            final String token   = prefs.getToken();
+            final double lat     = lastLat;
+            final double lng     = lastLng;
+            final float  acc     = lastAcc;
+            final float  spd     = lastSpeed;
+            final int    bat     = getBattery();
+            final String net     = getNetwork();
+            final String fcmTok  = prefs.getFcmToken();
 
             new Thread(new Runnable() {
                 @Override
                 public void run() {
                     try {
-                        List<ApiClient.PendingCommand> cmds =
-                            ApiClient.heartbeat(url, token, lat, lng, acc, spd, bat, net);
-                        for (ApiClient.PendingCommand cmd : cmds) {
-                            commandHandler.handle(cmd.id, cmd.type, cmd.payload);
+                        ApiClient.HeartbeatResult result =
+                            ApiClient.heartbeat(url, token, lat, lng, acc, spd, bat, net, fcmTok);
+                        if (result.upgradeRequired) {
+                            Intent upg = new Intent("com.fleetops.guardian.UPGRADE_REQUIRED");
+                            upg.putExtra("min_version_code", result.minVersionCode);
+                            upg.putExtra("download_url", result.downloadUrl);
+                            sendBroadcast(upg);
+                            return;
+                        }
+                        for (ApiClient.PendingCommand cmd : result.commands) {
+                            commandHandler.handle(cmd.id, cmd.type, cmd.payload,
+                                cmd.issuedAt, cmd.expiresAt, cmd.signature);
+                        }
+                        // Fetch config and update DMS interval if not user-customized
+                        org.json.JSONObject config = ApiClient.fetchConfig(url, token);
+                        if (config != null && !prefs.isDmsIntervalCustomized()) {
+                            int serverInterval = config.optInt("dms_default_interval_minutes", 0);
+                            if (serverInterval > 0) {
+                                prefs.setDmsIntervalMinutes(serverInterval);
+                            }
                         }
                     } catch (Exception e) {
                         Log.e(TAG, "heartbeat error", e);
@@ -197,7 +231,7 @@ public class GuardianService extends Service implements LocationListener {
                         for (OfflineQueue.Item item : items) {
                             boolean ok = replayItem(url, token, item);
                             if (ok) offlineQueue.markSent(item.id);
-                            else    offlineQueue.markAttempted(item.id);
+                            else    offlineQueue.markAttempted(item.id, item.type, item.createdAt);
                         }
                         broadcastQueueCount();
                     }
@@ -221,23 +255,26 @@ public class GuardianService extends Service implements LocationListener {
     }
 
     private void broadcastQueueCount() {
-        int count = offlineQueue.getPendingCount();
+        int count      = offlineQueue.getPendingCount();
+        int permFailed = offlineQueue.getFailedPermanentCount();
         sendBroadcast(new Intent("com.fleetops.guardian.QUEUE_COUNT")
-            .putExtra("count", count));
+            .putExtra("count", count)
+            .putExtra("failed_permanent", permFailed));
     }
 
     // ── Panic ─────────────────────────────────────────────────────────────────
 
     void triggerPanic(final String mode) {
-        final String url   = prefs.getServerUrl();
-        final String token = prefs.getToken();
-        final double lat   = lastLat;
-        final double lng   = lastLng;
+        final String url       = prefs.getServerUrl();
+        final String token     = prefs.getToken();
+        final double lat       = lastLat;
+        final double lng       = lastLng;
+        final String eventUuid = ApiClient.newEventUuid();
 
         new Thread(new Runnable() {
             @Override
             public void run() {
-                boolean ok = ApiClient.sendPanic(url, token, mode, lat, lng);
+                boolean ok = ApiClient.sendPanic(url, token, mode, lat, lng, eventUuid);
                 if (!ok) {
                     // Build offline payload
                     try {
@@ -245,6 +282,7 @@ public class GuardianService extends Service implements LocationListener {
                         body.put("mode", mode);
                         body.put("lat", lat);
                         body.put("lng", lng);
+                        body.put("event_uuid", eventUuid);
                         offlineQueue.enqueue("panic", body.toString());
                         broadcastQueueCount();
                     } catch (Exception ignored) {}
@@ -255,29 +293,40 @@ public class GuardianService extends Service implements LocationListener {
 
     // ── Dead man's switch ─────────────────────────────────────────────────────
 
+    // ── AlarmManager-based DMS (Task G) ──────────────────────────────────────
+
+    private static final int DMS_ALARM_REQUEST_CODE = 9001;
+
+    private PendingIntent getDmsAlarmIntent() {
+        Intent i = new Intent(this, DmsAlarmReceiver.class);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
+        return PendingIntent.getBroadcast(this, DMS_ALARM_REQUEST_CODE, i, flags);
+    }
+
     void resetDmsTimer() {
-        handler.removeCallbacks(dmsTimeout);
+        AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+        if (am == null) return;
+
+        // Cancel any existing alarm
+        am.cancel(getDmsAlarmIntent());
+
         if (!prefs.isDmsEnabled()) {
             dmsDeadlineMs = 0;
             return;
         }
+
         dmsIntervalMs = prefs.getDmsIntervalMinutes() * 60_000L;
         dmsDeadlineMs = System.currentTimeMillis() + dmsIntervalMs;
-        handler.postDelayed(dmsTimeout, dmsIntervalMs);
+
+        // setExactAndAllowWhileIdle fires in Doze mode — essential for DMS correctness.
+        am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, dmsDeadlineMs, getDmsAlarmIntent());
+
         sendBroadcast(new Intent("com.fleetops.guardian.DMS_RESET")
             .putExtra("deadline", dmsDeadlineMs));
-        Log.i(TAG, "DMS reset: deadline in " + prefs.getDmsIntervalMinutes() + " min");
+        Log.i(TAG, "DMS alarm set: deadline in " + prefs.getDmsIntervalMinutes() + " min (AlarmManager)");
     }
 
-    private final Runnable dmsTimeout = new Runnable() {
-        @Override
-        public void run() {
-            Log.w(TAG, "DMS timeout — triggering silent panic");
-            triggerPanic("silent");
-            dmsDeadlineMs = 0;
-            sendBroadcast(new Intent("com.fleetops.guardian.DMS_FIRED"));
-        }
-    };
+    // dmsTimeout Runnable removed — AlarmManager fires DmsAlarmReceiver instead.
 
     // ── Notification ─────────────────────────────────────────────────────────
 
@@ -325,6 +374,7 @@ public class GuardianService extends Service implements LocationListener {
         f.addAction("com.fleetops.guardian.SET_TRACKING_RATE");
         f.addAction("com.fleetops.guardian.DMS_CHECKIN");
         f.addAction("com.fleetops.guardian.PANIC");
+        f.addAction("com.fleetops.guardian.REQUEST_FRESH_LOCATION");
         registerReceiver(controlReceiver, f);
     }
 
@@ -345,6 +395,89 @@ public class GuardianService extends Service implements LocationListener {
         android.net.NetworkInfo ni = cm.getActiveNetworkInfo();
         if (ni == null || !ni.isConnected()) return "none";
         return ni.getTypeName();
+    }
+
+    // ── One-shot fresh location for request_location command ─────────────────
+
+    private static final long FRESH_LOCATION_TIMEOUT_MS = 15_000L;
+
+    private void requestFreshLocation(final String commandId) {
+        final String url   = prefs.getServerUrl();
+        final String token = prefs.getToken();
+
+        // Two-element arrays used so listener and timeout can reference each other.
+        final LocationListener[] listenerRef = new LocationListener[1];
+        final Runnable[]         timeoutRef  = new Runnable[1];
+
+        listenerRef[0] = new LocationListener() {
+            private volatile boolean done = false;
+            @Override
+            public void onLocationChanged(final Location loc) {
+                if (done) return;
+                done = true;
+                handler.removeCallbacks(timeoutRef[0]);
+                try { locationManager.removeUpdates(listenerRef[0]); } catch (Exception ignored) {}
+
+                // Update shared state so the next heartbeat uses this fresh fix
+                lastLat   = loc.getLatitude();
+                lastLng   = loc.getLongitude();
+                lastAcc   = loc.getAccuracy();
+                lastSpeed = loc.getSpeed();
+
+                new Thread(new Runnable() {
+                    @Override public void run() {
+                        ApiClient.sendLocation(url, token,
+                            loc.getLatitude(), loc.getLongitude(),
+                            loc.getAltitude(), loc.getBearing(),
+                            loc.getSpeed(),   loc.getAccuracy());
+                        ApiClient.ackCommand(url, token, commandId, true, "location_sent");
+                    }
+                }).start();
+                Log.i(TAG, "Fresh location fix obtained for cmd=" + commandId);
+            }
+            @Override public void onStatusChanged(String p, int s, Bundle e) {}
+            @Override public void onProviderEnabled(String p) {}
+            @Override public void onProviderDisabled(String p) {}
+        };
+
+        timeoutRef[0] = new Runnable() {
+            @Override public void run() {
+                try { locationManager.removeUpdates(listenerRef[0]); } catch (Exception ignored) {}
+                new Thread(new Runnable() {
+                    @Override public void run() {
+                        ApiClient.ackCommand(url, token, commandId, false, "no_gps_fix");
+                    }
+                }).start();
+                Log.w(TAG, "Fresh location timed out (15s) for cmd=" + commandId);
+            }
+        };
+
+        boolean registered = false;
+        try {
+            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                locationManager.requestSingleUpdate(
+                    LocationManager.GPS_PROVIDER, listenerRef[0], Looper.getMainLooper());
+                registered = true;
+            }
+            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                locationManager.requestSingleUpdate(
+                    LocationManager.NETWORK_PROVIDER, listenerRef[0], Looper.getMainLooper());
+                registered = true;
+            }
+        } catch (SecurityException e) {
+            Log.w(TAG, "Location permission denied for fresh fix: " + e.getMessage());
+        }
+
+        if (!registered) {
+            new Thread(new Runnable() {
+                @Override public void run() {
+                    ApiClient.ackCommand(url, token, commandId, false, "no_gps_fix");
+                }
+            }).start();
+            return;
+        }
+
+        handler.postDelayed(timeoutRef[0], FRESH_LOCATION_TIMEOUT_MS);
     }
 
     // ── LocationListener ─────────────────────────────────────────────────────

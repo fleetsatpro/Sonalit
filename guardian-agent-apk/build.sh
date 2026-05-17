@@ -3,7 +3,9 @@ set -e
 
 SRC="$(cd "$(dirname "$0")" && pwd)"
 BUILD=/tmp/guardian-build
-ANDROID_JAR=/usr/lib/android-sdk/platforms/android-23/android.jar
+# android-29 jar (Robolectric android-all) provides foregroundServiceType attr missing in android-23
+ANDROID_JAR=/usr/lib/android-sdk/platforms/android-29/android.jar
+ANDROID_JAR_JAVAC=/usr/lib/android-sdk/platforms/android-29/android.jar
 AAPT2=/usr/lib/android-sdk/build-tools/29.0.3/aapt2
 DX=/usr/lib/android-sdk/build-tools/debian/dx
 ZIPALIGN=/usr/lib/android-sdk/build-tools/29.0.3/zipalign
@@ -29,14 +31,16 @@ $AAPT2 link \
   -I "$ANDROID_JAR" \
   --java "$BUILD/gen" \
   --min-sdk-version 21 \
-  --target-sdk-version 23 \
-  --version-code 3 \
-  --version-name "2.1.0" \
+  --target-sdk-version 34 \
+  --warn-manifest-validation \
   "$BUILD"/compiled_res/*.flat
+# Note: --version-code / --version-name are NOT passed because aapt2 link silently
+# ignores them when the manifest already declares those attributes. Version is set
+# directly in AndroidManifest.xml (currently versionCode=5 / versionName=2.3.0).
 
 echo "==> Compiling Java sources"
 javac -source 8 -target 8 \
-  -classpath "$ANDROID_JAR" \
+  -classpath "$ANDROID_JAR_JAVAC" \
   -sourcepath "$SRC/src" \
   "$SRC"/src/com/fleetops/guardian/*.java \
   "$BUILD"/gen/com/fleetops/guardian/R.java \
