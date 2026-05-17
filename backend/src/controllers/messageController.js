@@ -2,6 +2,38 @@ const Joi = require('joi');
 const { query } = require('../config/database');
 const { asyncHandler } = require('../middleware/error');
 
+async function ensureTables() {
+  await query(`
+    CREATE TABLE IF NOT EXISTS channels (
+      id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name       TEXT NOT NULL UNIQUE,
+      description TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await query(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      channel_id UUID NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+      sender_id  UUID NOT NULL,
+      content    TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS idx_messages_channel_id ON messages(channel_id)`);
+  // Seed default channels
+  await query(`
+    INSERT INTO channels (name, description) VALUES
+      ('general',    'General fleet communications'),
+      ('dispatch',   'Dispatch and routing updates'),
+      ('emergency',  'Emergency and incident alerts'),
+      ('logistics',  'Logistics and delivery coordination')
+    ON CONFLICT (name) DO NOTHING
+  `);
+}
+
+ensureTables().catch((err) => console.error('[messages] Schema setup error:', err.message));
+
 const getChannels = asyncHandler(async (req, res) => {
   const result = await query('SELECT * FROM channels ORDER BY name ASC');
   res.json({ data: result.rows });
