@@ -1240,11 +1240,11 @@ router.get('/panic', authenticate, async (req, res, next) => {
     }
     if (device_id) {
       params.push(device_id);
-      filters.push(`pe.device_id = ${params.length}`);
+      filters.push(`pe.device_id = $${params.length}`);
     }
     if (after) {
       params.push(after);
-      filters.push(`pe.created_at < ${params.length}`);
+      filters.push(`pe.created_at < $${params.length}`);
     }
 
     params.push(parseInt(limit), parseInt(offset));
@@ -1259,7 +1259,7 @@ router.get('/panic', authenticate, async (req, res, next) => {
        JOIN guardian_devices gd ON gd.id = pe.device_id
        ${whereClause}
        ORDER BY pe.created_at DESC
-       LIMIT ${limitIdx} OFFSET ${offsetIdx}`,
+       LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
       params
     );
 
@@ -1327,19 +1327,19 @@ router.get('/reports', authenticate, async (req, res, next) => {
 
     if (category) {
       params.push(category);
-      filters.push(`fr.category = ${params.length}`);
+      filters.push(`fr.category = $${params.length}`);
     }
     if (severity) {
       params.push(severity);
-      filters.push(`fr.severity = ${params.length}`);
+      filters.push(`fr.severity = $${params.length}`);
     }
     if (device_id) {
       params.push(device_id);
-      filters.push(`fr.device_id = ${params.length}`);
+      filters.push(`fr.device_id = $${params.length}`);
     }
     if (after) {
       params.push(after);
-      filters.push(`fr.created_at < ${params.length}`);
+      filters.push(`fr.created_at < $${params.length}`);
     }
 
     params.push(parseInt(limit), parseInt(offset));
@@ -1354,7 +1354,7 @@ router.get('/reports', authenticate, async (req, res, next) => {
        JOIN guardian_devices gd ON gd.id = fr.device_id
        ${whereClause}
        ORDER BY fr.created_at DESC
-       LIMIT ${limitIdx} OFFSET ${offsetIdx}`,
+       LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
       params
     );
 

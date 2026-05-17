@@ -135,6 +135,21 @@ function FieldReportCard({ report }) {
         </p>
       )}
 
+      {/* Photo */}
+      {report.photo_url && (
+        <a href={report.photo_url} target="_blank" rel="noreferrer" style={{ display: 'block', marginTop: 10, marginBottom: 2 }}>
+          <img
+            src={report.photo_url}
+            alt="Field report photo"
+            style={{
+              width: '100%', maxHeight: 180, objectFit: 'cover',
+              borderRadius: 8, border: `1px solid ${G.border}`, display: 'block',
+            }}
+            onError={e => { e.currentTarget.style.display = 'none'; }}
+          />
+        </a>
+      )}
+
       {/* GPS coords */}
       {(report.lat || report.latitude) && (report.lng || report.longitude) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 8 }}>
