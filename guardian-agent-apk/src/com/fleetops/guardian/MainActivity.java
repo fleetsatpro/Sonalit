@@ -407,10 +407,10 @@ public class MainActivity extends Activity {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                final boolean ok =
+                final int result =
                     ApiClient.sendPanic(prefs.getServerUrl(), prefs.getToken(),
                         mode, lat, lng, eventUuid);
-                if (!ok) {
+                if (result == ApiClient.SEND_QUEUE) {
                     try {
                         org.json.JSONObject body = new org.json.JSONObject();
                         body.put("mode", mode);
@@ -426,9 +426,13 @@ public class MainActivity extends Activity {
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
-                        tvLastSync.setText(ok
-                            ? "Panic sent: " + DateFormat.getTimeInstance().format(new Date())
-                            : "Panic queued (offline)");
+                        if (result == ApiClient.SEND_OK) {
+                            tvLastSync.setText("Panic sent: " + DateFormat.getTimeInstance().format(new Date()));
+                        } else if (result == ApiClient.SEND_REJECTED) {
+                            tvLastSync.setText("Panic rejected by server — check enrolment");
+                        } else {
+                            tvLastSync.setText("Panic queued (offline)");
+                        }
                     }
                 });
             }
@@ -504,17 +508,20 @@ public class MainActivity extends Activity {
                     new Thread(new Runnable() {
                         @Override
                         public void run() {
-                            final boolean ok = ApiClient.sendReport(
+                            final int result = ApiClient.sendReport(
                                 prefs.getServerUrl(), prefs.getToken(),
                                 cat, desc, lat, lng, photo, eventUuid);
                             runOnUiThread(new Runnable() {
                                 @Override
                                 public void run() {
-                                    Toast.makeText(MainActivity.this,
-                                        ok ? "Report sent" : "Report queued (offline)",
-                                        Toast.LENGTH_SHORT).show();
-                                    if (ok) tvLastSync.setText(
-                                        "Synced: " + DateFormat.getTimeInstance().format(new Date()));
+                                    if (result == ApiClient.SEND_OK) {
+                                        Toast.makeText(MainActivity.this, "Report sent", Toast.LENGTH_SHORT).show();
+                                        tvLastSync.setText("Synced: " + DateFormat.getTimeInstance().format(new Date()));
+                                    } else if (result == ApiClient.SEND_REJECTED) {
+                                        Toast.makeText(MainActivity.this, "Report rejected by server", Toast.LENGTH_SHORT).show();
+                                    } else {
+                                        Toast.makeText(MainActivity.this, "Report queued (offline)", Toast.LENGTH_SHORT).show();
+                                    }
                                 }
                             });
                         }

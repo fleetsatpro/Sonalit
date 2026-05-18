@@ -262,11 +262,19 @@ public class GuardianService extends Service implements LocationListener {
     private boolean replayItem(String url, String token, OfflineQueue.Item item) {
         try {
             String endpoint;
-            if ("panic".equals(item.type))      endpoint = "/api/v1/guardian/panic";
+            if ("panic".equals(item.type))       endpoint = "/api/v1/guardian/panic";
             else if ("report".equals(item.type)) endpoint = "/api/v1/guardian/report";
-            else                                 return true; // drop unknown
-            String resp = ApiClient.post(url + endpoint, token, item.payload);
-            return resp != null;
+            else                                 return true; // drop unknown type
+            ApiClient.RawResponse raw = ApiClient.postRaw(url + endpoint, token, item.payload);
+            if (raw == null) return false; // network error — retry
+            if (raw.status >= 200 && raw.status < 300) return true; // delivered
+            if (raw.status == 429) return false; // rate-limited — retry
+            if (raw.status >= 400 && raw.status < 500) {
+                // Server permanently rejected this payload; retrying will never work — drop it
+                Log.e(TAG, "Dropping queued " + item.type + ": server returned " + raw.status);
+                return true;
+            }
+            return false; // 5xx — retry
         } catch (Exception e) {
             return false;
         }
@@ -292,9 +300,9 @@ public class GuardianService extends Service implements LocationListener {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                boolean ok = ApiClient.sendPanic(url, token, mode, lat, lng, eventUuid);
-                if (!ok) {
-                    // Build offline payload
+                int result = ApiClient.sendPanic(url, token, mode, lat, lng, eventUuid);
+                if (result == ApiClient.SEND_QUEUE) {
+                    // Network error or rate-limited — queue for retry
                     try {
                         org.json.JSONObject body = new org.json.JSONObject();
                         body.put("mode", mode);

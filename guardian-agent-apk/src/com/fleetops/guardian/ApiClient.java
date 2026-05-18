@@ -367,33 +367,41 @@ public class ApiClient {
 
     // ── Panic ─────────────────────────────────────────────────────────────────
 
-    public static boolean sendPanic(String serverUrl, String token,
-                                    String mode, double lat, double lng,
-                                    String eventUuid) {
-        if (mode == null || mode.isEmpty()) return true;
+    /** Return values for sendPanic / sendReport. */
+    public static final int SEND_OK       =  0; // 2xx — delivered
+    public static final int SEND_QUEUE    = -1; // network error / 5xx / 429 — retry later
+    public static final int SEND_REJECTED = -2; // 4xx (not 429) — server refused, don't retry
+
+    public static int sendPanic(String serverUrl, String token,
+                                String mode, double lat, double lng,
+                                String eventUuid) {
+        if (mode == null || mode.isEmpty()) return SEND_OK;
         try {
             JSONObject body = new JSONObject();
             body.put("mode", mode);
-            // Only include coordinates if we have a real GPS fix
             if (lat != 0.0 || lng != 0.0) {
                 body.put("lat", lat);
                 body.put("lng", lng);
             }
             body.put("event_uuid", eventUuid);
-            String resp = post(serverUrl + "/api/v1/guardian/panic", token, body.toString());
-            return resp != null;
+            RawResponse raw = postRaw(serverUrl + "/api/v1/guardian/panic", token, body.toString());
+            if (raw == null) return SEND_QUEUE;
+            if (raw.status >= 200 && raw.status < 300) return SEND_OK;
+            if (raw.status == 429) return SEND_QUEUE; // rate-limited — retry after window
+            Log.e(TAG, "Panic rejected: HTTP " + raw.status + " " + raw.body);
+            return SEND_REJECTED; // 4xx — bad token, bad payload; retrying won't help
         } catch (Exception e) {
             Log.e(TAG, "panic error", e);
-            return false;
+            return SEND_QUEUE;
         }
     }
 
     // ── Report ────────────────────────────────────────────────────────────────
 
-    public static boolean sendReport(String serverUrl, String token,
-                                     String displayCategory, String desc,
-                                     double lat, double lng, String photoBase64,
-                                     String eventUuid) {
+    public static int sendReport(String serverUrl, String token,
+                                 String displayCategory, String desc,
+                                 double lat, double lng, String photoBase64,
+                                 String eventUuid) {
         try {
             JSONObject body = new JSONObject();
             body.put("category", mapCategory(displayCategory));
@@ -403,18 +411,21 @@ public class ApiClient {
             body.put("lng", lng);
             body.put("event_uuid", eventUuid);
             if (photoBase64 != null && !photoBase64.isEmpty()) {
-                // If it's already an https URL (from R2 upload), use directly; otherwise wrap as data URI
                 if (photoBase64.startsWith("http")) {
                     body.put("photo_url", photoBase64);
                 } else {
                     body.put("photo_url", "data:image/jpeg;base64," + photoBase64);
                 }
             }
-            String resp = post(serverUrl + "/api/v1/guardian/report", token, body.toString());
-            return resp != null;
+            RawResponse raw = postRaw(serverUrl + "/api/v1/guardian/report", token, body.toString());
+            if (raw == null) return SEND_QUEUE;
+            if (raw.status >= 200 && raw.status < 300) return SEND_OK;
+            if (raw.status == 429) return SEND_QUEUE;
+            Log.e(TAG, "Report rejected: HTTP " + raw.status + " " + raw.body);
+            return SEND_REJECTED;
         } catch (Exception e) {
             Log.e(TAG, "report error", e);
-            return false;
+            return SEND_QUEUE;
         }
     }
 
