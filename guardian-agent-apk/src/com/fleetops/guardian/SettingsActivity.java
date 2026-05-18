@@ -61,6 +61,7 @@ public class SettingsActivity extends Activity {
             @Override
             public void onItemSelected(AdapterView<?> p, View v, int pos, long id) {
                 prefs.setDmsIntervalMinutes(DMS_INTERVALS_MIN[pos]);
+                prefs.setDmsIntervalCustomized(true);
             }
             @Override public void onNothingSelected(AdapterView<?> p) {}
         });
@@ -96,13 +97,12 @@ public class SettingsActivity extends Activity {
     // ── PIN ───────────────────────────────────────────────────────────────────
 
     private void refreshPinDisplay() {
-        String pin = prefs.getPanicPin();
-        tvDmsPin.setText(pin.isEmpty() ? "No PIN set" : "****  (active)");
+        tvDmsPin.setText(prefs.hasPanicPin() ? "****  (active)" : "No PIN set");
     }
 
     private void showChangePinDialog() {
         final EditText et = new EditText(this);
-        et.setHint("4-digit PIN");
+        et.setHint("PIN (min 4 digits)");
         et.setInputType(android.text.InputType.TYPE_CLASS_NUMBER |
             android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD);
         et.setTextColor(0xFFE8F4FF);
@@ -111,19 +111,19 @@ public class SettingsActivity extends Activity {
 
         new AlertDialog.Builder(this)
             .setTitle("Set Panic Cancel PIN")
-            .setMessage("Enter a 4-digit PIN required to cancel an active SOS.")
+            .setMessage("Enter a PIN (4+ digits) required to cancel an active SOS.")
             .setView(et)
             .setPositiveButton("SET", new DialogInterface.OnClickListener() {
                 @Override public void onClick(DialogInterface d, int w) {
                     String pin = et.getText().toString().trim();
-                    if (pin.length() == 4 && pin.matches("\\d{4}")) {
+                    if (pin.length() >= 4 && pin.matches("\\d+")) {
                         prefs.setPanicPin(pin);
                         refreshPinDisplay();
                         Toast.makeText(SettingsActivity.this, "PIN updated",
                             Toast.LENGTH_SHORT).show();
                     } else {
                         Toast.makeText(SettingsActivity.this,
-                            "PIN must be exactly 4 digits", Toast.LENGTH_SHORT).show();
+                            "PIN must be at least 4 digits", Toast.LENGTH_SHORT).show();
                     }
                 }
             })

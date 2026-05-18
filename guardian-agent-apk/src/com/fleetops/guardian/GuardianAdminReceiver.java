@@ -23,8 +23,12 @@ public class GuardianAdminReceiver extends DeviceAdminReceiver {
                 try {
                     org.json.JSONObject body = new org.json.JSONObject();
                     body.put("mode", "security");
-                    body.put("lat", GuardianService.lastLat);
-                    body.put("lng", GuardianService.lastLng);
+                    double lat = GuardianService.lastLat;
+                    double lng = GuardianService.lastLng;
+                    if (lat != 0.0 || lng != 0.0) {
+                        body.put("lat", lat);
+                        body.put("lng", lng);
+                    }
                     ApiClient.post(
                         prefs.getServerUrl() + "/api/v1/guardian/panic",
                         prefs.getToken(),

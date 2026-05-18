@@ -5,12 +5,16 @@ import android.content.SharedPreferences;
 import android.util.Base64;
 import android.util.Log;
 import java.security.KeyStore;
+import java.util.ArrayList;
+import java.util.List;
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 public class DevicePrefs {
     private static final String TAG   = "DevicePrefs";
@@ -26,6 +30,8 @@ public class DevicePrefs {
     private static final String KEY_DMS_INTERVAL   = "dms_interval_min";
     private static final String KEY_CONVOY_CODE    = "convoy_code";
     private static final String KEY_UNREAD_MSGS    = "unread_messages";
+    private static final String KEY_MESSAGES       = "received_messages_v2";
+    private static final int    MAX_MESSAGES       = 50;
 
     private static final String KEY_ALIAS = "guardian_device_key";
     private static final String ENC_PREFIX = "ENC:";
@@ -273,4 +279,65 @@ public class DevicePrefs {
 
     public String getFcmToken()              { return prefs.getString("fcm_token", null); }
     public void   setFcmToken(String token)  { prefs.edit().putString("fcm_token", token).apply(); }
+
+    // ── Received messages (push_message command history) ─────────────────────
+
+    public static class ReceivedMessage {
+        public final String title;
+        public final String text;
+        public final long   timestamp;
+        public ReceivedMessage(String title, String text, long timestamp) {
+            this.title = title; this.text = text; this.timestamp = timestamp;
+        }
+    }
+
+    public void addMessage(String title, String text) {
+        try {
+            JSONArray arr = getMessagesJson();
+            JSONObject msg = new JSONObject();
+            msg.put("title", title != null ? title : "Fleet Message");
+            msg.put("text",  text  != null ? text  : "");
+            msg.put("ts",    System.currentTimeMillis());
+            arr.put(msg);
+            // Keep only the newest MAX_MESSAGES
+            while (arr.length() > MAX_MESSAGES) {
+                arr.remove(0);
+            }
+            prefs.edit().putString(KEY_MESSAGES, arr.toString()).apply();
+        } catch (Exception e) {
+            Log.e(TAG, "addMessage error", e);
+        }
+    }
+
+    public List<ReceivedMessage> getMessages() {
+        List<ReceivedMessage> list = new ArrayList<>();
+        try {
+            JSONArray arr = getMessagesJson();
+            // Return newest first (reverse order)
+            for (int i = arr.length() - 1; i >= 0; i--) {
+                JSONObject o = arr.getJSONObject(i);
+                list.add(new ReceivedMessage(
+                    o.optString("title", "Fleet Message"),
+                    o.optString("text", ""),
+                    o.optLong("ts", 0)
+                ));
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "getMessages error", e);
+        }
+        return list;
+    }
+
+    public void clearMessages() {
+        prefs.edit().remove(KEY_MESSAGES).apply();
+        clearUnread();
+    }
+
+    private JSONArray getMessagesJson() {
+        try {
+            String raw = prefs.getString(KEY_MESSAGES, null);
+            if (raw != null && !raw.isEmpty()) return new JSONArray(raw);
+        } catch (Exception ignored) {}
+        return new JSONArray();
+    }
 }

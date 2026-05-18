@@ -167,10 +167,7 @@ public class MainActivity extends Activity {
             @Override public void onClick(View v) { showConvoyDialog(); }
         });
         btnMessages.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) {
-                prefs.clearUnread();
-                updateMessageBadge();
-            }
+            @Override public void onClick(View v) { showMessages(); }
         });
 
         startBatteryUpdater();
@@ -182,6 +179,105 @@ public class MainActivity extends Activity {
         prefs.migratePanicPin();
         // Request POST_NOTIFICATIONS permission on Android 13+
         requestNotificationPermission();
+        // Request location permission if not yet granted
+        requestLocationPermission();
+    }
+
+    private void requestLocationPermission() {
+        if (android.os.Build.VERSION.SDK_INT < 23) return;
+        if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            // Fine location granted — also request background if on Android 10+
+            if (android.os.Build.VERSION.SDK_INT >= 29
+                    && checkSelfPermission("android.permission.ACCESS_BACKGROUND_LOCATION")
+                       != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{"android.permission.ACCESS_BACKGROUND_LOCATION"}, 302);
+            }
+            return;
+        }
+        requestPermissions(new String[]{
+            android.Manifest.permission.ACCESS_FINE_LOCATION,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION,
+        }, 302);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (requestCode == 302) {
+            boolean fineGranted = false;
+            for (int i = 0; i < permissions.length; i++) {
+                if (android.Manifest.permission.ACCESS_FINE_LOCATION.equals(permissions[i])
+                        && grantResults[i] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    fineGranted = true;
+                }
+            }
+            if (fineGranted) {
+                // Restart GPS now that permission was granted
+                startService(new Intent(this, GuardianService.class));
+            } else {
+                Toast.makeText(this,
+                    "Location permission denied — GPS tracking disabled",
+                    Toast.LENGTH_LONG).show();
+                tvGps.setText("NO LOCATION PERMISSION");
+            }
+        }
+    }
+
+    // ── Messages dialog ───────────────────────────────────────────────────────
+
+    private void showMessages() {
+        prefs.clearUnread();
+        updateMessageBadge();
+
+        java.util.List<DevicePrefs.ReceivedMessage> msgs = prefs.getMessages();
+
+        if (msgs.isEmpty()) {
+            new AlertDialog.Builder(this)
+                .setTitle("Fleet Messages")
+                .setMessage("No messages received yet.\n\nMessages sent from the fleet manager will appear here.")
+                .setPositiveButton("OK", null)
+                .show();
+            return;
+        }
+
+        // Build message list view
+        android.widget.ListView lv = new android.widget.ListView(this);
+        String[] items = new String[msgs.size()];
+        java.text.DateFormat df = java.text.DateFormat.getDateTimeInstance(
+            java.text.DateFormat.SHORT, java.text.DateFormat.SHORT);
+        for (int i = 0; i < msgs.size(); i++) {
+            DevicePrefs.ReceivedMessage m = msgs.get(i);
+            String time = m.timestamp > 0 ? df.format(new java.util.Date(m.timestamp)) : "";
+            items[i] = "[" + m.title + "] " + m.text + (time.isEmpty() ? "" : "\n" + time);
+        }
+        android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<String>(
+            this, android.R.layout.simple_list_item_1, items) {
+            @Override
+            public android.view.View getView(int pos, android.view.View cv, android.view.ViewGroup p) {
+                android.widget.TextView tv = (android.widget.TextView)
+                    super.getView(pos, cv, p);
+                tv.setTextColor(0xFFE8F4FF);
+                tv.setBackgroundColor(0xFF0D1321);
+                tv.setPadding(24, 16, 24, 16);
+                tv.setTextSize(12);
+                return tv;
+            }
+        };
+        lv.setAdapter(adapter);
+        lv.setBackgroundColor(0xFF0D1321);
+        lv.setDividerHeight(1);
+
+        new AlertDialog.Builder(this)
+            .setTitle("Fleet Messages (" + msgs.size() + ")")
+            .setView(lv)
+            .setPositiveButton("Close", null)
+            .setNeutralButton("Clear All", new DialogInterface.OnClickListener() {
+                @Override public void onClick(DialogInterface d, int w) {
+                    prefs.clearMessages();
+                    Toast.makeText(MainActivity.this, "Messages cleared", Toast.LENGTH_SHORT).show();
+                }
+            })
+            .show();
     }
 
     private void requestNotificationPermission() {
@@ -220,8 +316,14 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        if (event.getKeyCode() == KeyEvent.KEYCODE_VOLUME_DOWN &&
-                event.getAction() == KeyEvent.ACTION_DOWN) {
+        int code = event.getKeyCode();
+        // Block volume keys entirely while siren is active so the alarm cannot be silenced
+        // by the device holder. Both UP and DOWN are blocked to prevent any stream adjustment.
+        if (SirenController.getInstance(this).isRunning()
+                && (code == KeyEvent.KEYCODE_VOLUME_DOWN || code == KeyEvent.KEYCODE_VOLUME_UP)) {
+            return true;
+        }
+        if (code == KeyEvent.KEYCODE_VOLUME_DOWN && event.getAction() == KeyEvent.ACTION_DOWN) {
             long now = System.currentTimeMillis();
             if (volumeDownCount == 0 || now - firstVolumeDown > VOLUME_SOS_WINDOW_MS) {
                 volumeDownCount = 1;
@@ -312,8 +414,10 @@ public class MainActivity extends Activity {
                     try {
                         org.json.JSONObject body = new org.json.JSONObject();
                         body.put("mode", mode);
-                        body.put("lat", lat);
-                        body.put("lng", lng);
+                        if (lat != 0.0 || lng != 0.0) {
+                            body.put("lat", lat);
+                            body.put("lng", lng);
+                        }
                         body.put("event_uuid", eventUuid);
                         new OfflineQueue(MainActivity.this)
                             .enqueue("panic", body.toString());

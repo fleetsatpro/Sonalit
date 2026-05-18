@@ -117,6 +117,13 @@ public class GuardianService extends Service implements LocationListener {
         if (prefs.isDmsEnabled()) resetDmsTimer();
         // Initialize cert pinning from stored prefs
         ApiClient.pinnedSha256 = prefs.getCertPinSha256();
+        // DmsAlarmReceiver embeds this extra to guarantee panic fires even when the
+        // service was dead at alarm time (sendBroadcast to controlReceiver would race).
+        if (intent != null && intent.getBooleanExtra("dms_fired", false)) {
+            handler.postDelayed(new Runnable() {
+                @Override public void run() { triggerPanic("silent"); }
+            }, 200);
+        }
         return START_STICKY;
     }
 
@@ -283,8 +290,10 @@ public class GuardianService extends Service implements LocationListener {
                     try {
                         org.json.JSONObject body = new org.json.JSONObject();
                         body.put("mode", mode);
-                        body.put("lat", lat);
-                        body.put("lng", lng);
+                        if (lat != 0.0 || lng != 0.0) {
+                            body.put("lat", lat);
+                            body.put("lng", lng);
+                        }
                         body.put("event_uuid", eventUuid);
                         offlineQueue.enqueue("panic", body.toString());
                         broadcastQueueCount();

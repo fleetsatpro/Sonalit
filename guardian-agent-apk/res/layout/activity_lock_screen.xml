@@ -42,7 +42,7 @@
         android:id="@+id/etPin"
         android:layout_width="180dp"
         android:layout_height="56dp"
-        android:hint="PIN (min 6 digits)"
+        android:hint="PIN (min 4 digits)"
         android:textColor="@color/bright"
         android:textColorHint="@color/muted"
         android:background="@drawable/input_bg"

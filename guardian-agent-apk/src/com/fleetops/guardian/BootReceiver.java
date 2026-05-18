@@ -8,7 +8,12 @@ public class BootReceiver extends BroadcastReceiver {
         if (Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) {
             DevicePrefs prefs = new DevicePrefs(ctx);
             if (prefs.isEnrolled()) {
-                ctx.startService(new Intent(ctx, GuardianService.class));
+                Intent svc = new Intent(ctx, GuardianService.class);
+                if (android.os.Build.VERSION.SDK_INT >= 26) {
+                    ctx.startForegroundService(svc);
+                } else {
+                    ctx.startService(svc);
+                }
             }
         }
     }
