@@ -8,7 +8,7 @@ function gAudit(actor_id, action, target_type, target_id, payload, ip) {
   query(
     `INSERT INTO guardian_audit_log
        (actor_type, actor_id, action, target_type, target_id, payload, ip_address)
-     VALUES ('user',$1,$2,$3,$4,$5,$6)`,
+     VALUES ('admin',$1,$2,$3,$4,$5,$6)`,
     [actor_id || null, action, target_type || null, target_id || null,
       payload ? JSON.stringify(payload) : null, ip || null]
   ).catch((err) => logger.error(`gAudit error: ${err.message}`));

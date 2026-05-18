@@ -9,9 +9,11 @@ const steps = [
   'migrate.js',
   'migrate-extended.js',
   'migrate-enterprise.js',
+  'migrate-guardian-devices.js',   // must precede p1 (p1 FK-references guardian_devices)
   'migrate-guardian-cfo-p1.js',
   'migrate-guardian-cfo-p2.js',
   'migrate-guardian-cfo-p3.js',
+  'migrate-convoy-trucks-fix.js',  // drops NOT NULL on convoy_trucks.vehicle_id
   'migrate-roles.js',
   'migrate-enable-cfo.js',
 ];
@@ -48,5 +50,5 @@ const steps = [
   } else {
     console.log('[migrate-all] All migrations completed successfully');
   }
-  process.exit(0);
+  process.exit(failed > 0 ? 1 : 0);
 })();
