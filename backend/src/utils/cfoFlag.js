@@ -5,9 +5,10 @@ let cachedEnabled = null;
 let cacheExpiry = 0;
 
 async function isCfoModuleEnabled() {
-  // Env var override takes priority over DB — set CFO_MODULE_ENABLED=true in Railway variables
-  if (process.env.CFO_MODULE_ENABLED === 'true') return true;
-  if (process.env.CFO_MODULE_ENABLED === 'false') return false;
+  // Env var override — accepts true/1/yes (case-insensitive)
+  const env = (process.env.CFO_MODULE_ENABLED || '').trim().toLowerCase();
+  if (['true', '1', 'yes'].includes(env)) return true;
+  if (['false', '0', 'no'].includes(env)) return false;
 
   if (Date.now() < cacheExpiry && cachedEnabled !== null) return cachedEnabled;
   try {
