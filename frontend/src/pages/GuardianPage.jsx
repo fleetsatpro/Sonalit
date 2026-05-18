@@ -6,7 +6,7 @@ import {
   Download, Plus, AlertOctagon, Clock, Wifi, WifiOff, ChevronRight,
   NavigationOff, Shield, User, Truck, Package
 } from 'lucide-react';
-import { guardianAPI } from '../services/api';
+import api, { guardianAPI } from '../services/api';
 import socketService from '../services/socket';
 
 const G = {
@@ -812,6 +812,12 @@ export default function GuardianPage() {
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [showEnrollment, setShowEnrollment] = useState(false);
   const [filter, setFilter] = useState('all');
+  const [activeTab, setActiveTab] = useState('devices');
+  const [cfoUsers, setCfoUsers] = useState([]);
+  const [linkingId, setLinkingId] = useState(null);
+  const [showAddCfo, setShowAddCfo] = useState(false);
+  const [newCfo, setNewCfo] = useState({ name: '', email: '', password: '' });
+  const [savingCfo, setSavingCfo] = useState(false);
   const intervalRef = useRef(null);
 
   const loadDevices = useCallback(async () => {
@@ -885,6 +891,44 @@ export default function GuardianPage() {
     } else {
       toast('No location data yet — request location first', { icon: '📍' });
     }
+  }
+
+  const loadCfoUsers = useCallback(async () => {
+    try {
+      const r = await api.get('/auth/users', { params: { role: 'cfo', limit: 100 } });
+      setCfoUsers(r.data.data || []);
+    } catch {}
+  }, []);
+
+  useEffect(() => { loadCfoUsers(); }, []);
+
+  async function handleLinkDevice(deviceId, userId) {
+    try {
+      await guardianAPI.updateDevice(deviceId, { assignment_type: userId ? 'user' : null, assignment_id: userId || null });
+      setDevices(prev => prev.map(d => {
+        if ((d._id || d.id) !== deviceId) return d;
+        const user = cfoUsers.find(u => u.id === userId);
+        return { ...d, assignment_type: userId ? 'user' : null, assignment_id: userId || null, cfo_user_name: user?.name || user?.email || null };
+      }));
+      toast.success(userId ? 'Device linked to CFO' : 'Device unlinked');
+    } catch { toast.error('Failed to update device'); }
+    setLinkingId(null);
+  }
+
+  async function handleCreateCfo(e) {
+    e.preventDefault();
+    if (!newCfo.name || !newCfo.email || !newCfo.password) { toast.error('All fields required'); return; }
+    setSavingCfo(true);
+    try {
+      const r = await api.post('/auth/users', { ...newCfo, role: 'cfo' });
+      const created = r.data.data;
+      setCfoUsers(prev => [...prev, created]);
+      toast.success(`CFO user "${created.name}" created`);
+      setNewCfo({ name: '', email: '', password: '' });
+      setShowAddCfo(false);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to create CFO user');
+    } finally { setSavingCfo(false); }
   }
 
   const filtered = devices.filter(d => {
@@ -996,68 +1040,207 @@ export default function GuardianPage() {
         <StatCard label="Panic Active"  value={stats.panic} color="#F25252" glow={stats.panic > 0} />
       </div>
 
-      {/* Filter tabs */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 18, flexWrap: 'wrap' }}>
-        {[
-          { key: 'all',     label: 'ALL' },
-          { key: 'active',  label: 'ACTIVE' },
-          { key: 'pending', label: 'PENDING' },
-          { key: 'panic',   label: 'PANIC' },
-        ].map(f => (
-          <button
-            key={f.key}
-            onClick={() => setFilter(f.key)}
-            style={{
-              background: filter === f.key ? 'rgba(240,180,41,0.10)' : 'rgba(255,255,255,0.025)',
-              border: `1px solid ${filter === f.key ? 'rgba(240,180,41,0.35)' : 'rgba(255,255,255,0.07)'}`,
-              borderRadius: 8, padding: '5px 14px', fontSize: 10, fontWeight: 700,
-              color: filter === f.key ? G.gold : G.muted, cursor: 'pointer',
-              letterSpacing: '0.1em', transition: 'all 0.15s',
-              fontFamily: 'IBM Plex Mono, monospace',
-            }}
-          >
-            {f.label}
-            {f.key !== 'all' && (
-              <span style={{ marginLeft: 5, opacity: 0.6 }}>
-                ({f.key === 'active' ? stats.active : f.key === 'pending' ? stats.pending : stats.panic})
-              </span>
-            )}
-          </button>
+      {/* Main tab toggle */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+        {[['devices','DEVICES'],['officers','CFO OFFICERS']].map(([key, label]) => (
+          <button key={key} onClick={() => setActiveTab(key)} style={{
+            padding: '7px 16px', borderRadius: 8, border: '1px solid',
+            borderColor: activeTab === key ? 'rgba(240,180,41,0.4)' : 'rgba(255,255,255,0.07)',
+            background: activeTab === key ? 'rgba(240,180,41,0.1)' : 'rgba(255,255,255,0.02)',
+            color: activeTab === key ? G.gold : G.muted,
+            fontSize: 10, fontWeight: 700, fontFamily: 'IBM Plex Mono, monospace',
+            letterSpacing: '0.1em', cursor: 'pointer',
+          }}>{label}</button>
         ))}
       </div>
 
-      {/* Device grid */}
-      {loading ? (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <div style={{ width: 32, height: 32, border: `2px solid ${G.gold}30`, borderTopColor: G.gold, borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+      {/* CFO Officers tab */}
+      {activeTab === 'officers' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Add CFO User */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button onClick={() => setShowAddCfo(p => !p)} style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: 'rgba(34,211,160,0.08)', border: '1px solid rgba(34,211,160,0.25)',
+              borderRadius: 8, padding: '7px 14px', fontSize: 10, fontWeight: 700,
+              color: '#22D3A0', cursor: 'pointer', fontFamily: 'IBM Plex Mono, monospace',
+            }}><Plus size={11} /> ADD CFO USER</button>
+          </div>
+
+          {showAddCfo && (
+            <form onSubmit={handleCreateCfo} style={{
+              background: 'rgba(34,211,160,0.04)', border: '1px solid rgba(34,211,160,0.15)',
+              borderRadius: 12, padding: 16, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end',
+            }}>
+              <div style={{ flex: '1 1 160px' }}>
+                <div style={{ fontSize: 9, color: G.muted, letterSpacing: 2, marginBottom: 4, fontFamily: 'IBM Plex Mono, monospace' }}>FULL NAME *</div>
+                <input value={newCfo.name} onChange={e => setNewCfo(p => ({...p, name: e.target.value}))}
+                  placeholder="John Kimani" style={{ width: '100%', background: 'rgba(10,15,26,0.8)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: '#e2e8f0', outline: 'none', boxSizing: 'border-box' }} />
+              </div>
+              <div style={{ flex: '1 1 180px' }}>
+                <div style={{ fontSize: 9, color: G.muted, letterSpacing: 2, marginBottom: 4, fontFamily: 'IBM Plex Mono, monospace' }}>EMAIL *</div>
+                <input type="email" value={newCfo.email} onChange={e => setNewCfo(p => ({...p, email: e.target.value}))}
+                  placeholder="officer@fleet.com" style={{ width: '100%', background: 'rgba(10,15,26,0.8)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: '#e2e8f0', outline: 'none', boxSizing: 'border-box' }} />
+              </div>
+              <div style={{ flex: '1 1 140px' }}>
+                <div style={{ fontSize: 9, color: G.muted, letterSpacing: 2, marginBottom: 4, fontFamily: 'IBM Plex Mono, monospace' }}>PASSWORD *</div>
+                <input type="password" value={newCfo.password} onChange={e => setNewCfo(p => ({...p, password: e.target.value}))}
+                  placeholder="min 6 chars" style={{ width: '100%', background: 'rgba(10,15,26,0.8)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: '#e2e8f0', outline: 'none', boxSizing: 'border-box' }} />
+              </div>
+              <button type="submit" disabled={savingCfo} style={{
+                background: '#22D3A0', color: '#0A0F1A', border: 'none', borderRadius: 8,
+                padding: '7px 18px', fontSize: 11, fontWeight: 700, cursor: 'pointer', opacity: savingCfo ? 0.6 : 1,
+              }}>{savingCfo ? 'CREATING…' : 'CREATE'}</button>
+              <button type="button" onClick={() => setShowAddCfo(false)} style={{ background: 'none', border: 'none', color: G.muted, cursor: 'pointer', fontSize: 18 }}>✕</button>
+            </form>
+          )}
+
+          {/* Existing CFO users */}
+          {cfoUsers.length > 0 && (
+            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, overflow: 'hidden' }}>
+              <div style={{ padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: 9, color: G.muted, fontFamily: 'IBM Plex Mono, monospace', letterSpacing: 2 }}>
+                CFO USER ACCOUNTS ({cfoUsers.length})
+              </div>
+              {cfoUsers.map(u => (
+                <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                  <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(34,211,160,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#22D3A0' }}>
+                    {(u.name||u.email).slice(0,2).toUpperCase()}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0' }}>{u.name || '—'}</div>
+                    <div style={{ fontSize: 10, color: G.muted }}>{u.email}</div>
+                  </div>
+                  <span style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: '#22D3A0', background: 'rgba(34,211,160,0.08)', border: '1px solid rgba(34,211,160,0.2)', borderRadius: 6, padding: '2px 8px' }}>CFO</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Device ↔ CFO linking table */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12, overflow: 'auto' }}>
+            <div style={{ padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: 9, color: G.muted, fontFamily: 'IBM Plex Mono, monospace', letterSpacing: 2 }}>
+              DEVICE → CFO ASSIGNMENT
+            </div>
+            {devices.length === 0 ? (
+              <p style={{ padding: 24, textAlign: 'center', color: G.low, fontSize: 12 }}>No devices enrolled yet.</p>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                    {['DEVICE','IMEI','STATUS','LINKED CFO','ACTION'].map(h => (
+                      <th key={h} style={{ padding: '8px 16px', textAlign: 'left', fontSize: 9, color: G.low, fontFamily: 'IBM Plex Mono, monospace', letterSpacing: 2, fontWeight: 600 }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {devices.map(d => {
+                    const linkedUser = d.assignment_type === 'user' ? cfoUsers.find(u => u.id === d.assignment_id) : null;
+                    return (
+                      <tr key={d.id || d._id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                        <td style={{ padding: '10px 16px', color: '#cbd5e1', fontWeight: 600 }}>{d.name || 'Unnamed'}</td>
+                        <td style={{ padding: '10px 16px', color: G.muted, fontFamily: 'IBM Plex Mono, monospace', fontSize: 10 }}>{d.imei || '—'}</td>
+                        <td style={{ padding: '10px 16px' }}><StatusBadge status={d.status} /></td>
+                        <td style={{ padding: '10px 16px' }}>
+                          {linkedUser
+                            ? <span style={{ color: '#22D3A0', fontWeight: 600 }}>{linkedUser.name || linkedUser.email}</span>
+                            : <span style={{ color: G.low }}>—</span>
+                          }
+                        </td>
+                        <td style={{ padding: '10px 16px' }}>
+                          {linkingId === (d.id || d._id) ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <select defaultValue={d.assignment_type === 'user' ? d.assignment_id : ''} onChange={e => handleLinkDevice(d.id || d._id, e.target.value || null)}
+                                style={{ background: 'rgba(10,15,26,0.9)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 6, padding: '4px 8px', fontSize: 11, color: '#e2e8f0', outline: 'none' }}>
+                                <option value="">— unlink —</option>
+                                {cfoUsers.map(u => <option key={u.id} value={u.id}>{u.name || u.email}</option>)}
+                              </select>
+                              <button onClick={() => setLinkingId(null)} style={{ background: 'none', border: 'none', color: G.muted, cursor: 'pointer', fontSize: 14 }}>✕</button>
+                            </div>
+                          ) : (
+                            <button onClick={() => setLinkingId(d.id || d._id)} style={{
+                              background: linkedUser ? 'rgba(239,68,68,0.08)' : 'rgba(34,211,160,0.08)',
+                              border: `1px solid ${linkedUser ? 'rgba(239,68,68,0.2)' : 'rgba(34,211,160,0.2)'}`,
+                              borderRadius: 6, padding: '4px 10px', fontSize: 10, fontFamily: 'IBM Plex Mono, monospace',
+                              color: linkedUser ? '#ef4444' : '#22D3A0', cursor: 'pointer', fontWeight: 700,
+                            }}>{linkedUser ? 'CHANGE' : 'LINK CFO'}</button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
-      ) : filtered.length === 0 ? (
-        <div style={{
-          textAlign: 'center', padding: '60px 20px',
-          background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14,
-        }}>
-          <Smartphone size={32} style={{ color: G.low, margin: '0 auto 12px' }} />
-          <p style={{ fontSize: 14, fontWeight: 600, color: G.muted, marginBottom: 6 }}>No devices found</p>
-          <p style={{ fontSize: 12, color: G.low }}>
-            {filter === 'all' ? 'Enroll your first Guardian device to get started.' : `No ${filter} devices.`}
-          </p>
-        </div>
-      ) : (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))',
-          gap: 14,
-        }}>
-          {filtered.map(device => (
-            <DeviceCard
-              key={device._id || device.id || device.device_id}
-              device={device}
-              onCommand={setSelectedDevice}
-              onLocate={handleLocate}
-              onRevoke={handleRevoke}
-            />
-          ))}
-        </div>
+      )}
+
+      {/* Devices tab */}
+      {activeTab === 'devices' && (
+        <>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 18, flexWrap: 'wrap' }}>
+            {[
+              { key: 'all',     label: 'ALL' },
+              { key: 'active',  label: 'ACTIVE' },
+              { key: 'pending', label: 'PENDING' },
+              { key: 'panic',   label: 'PANIC' },
+            ].map(f => (
+              <button
+                key={f.key}
+                onClick={() => setFilter(f.key)}
+                style={{
+                  background: filter === f.key ? 'rgba(240,180,41,0.10)' : 'rgba(255,255,255,0.025)',
+                  border: `1px solid ${filter === f.key ? 'rgba(240,180,41,0.35)' : 'rgba(255,255,255,0.07)'}`,
+                  borderRadius: 8, padding: '5px 14px', fontSize: 10, fontWeight: 700,
+                  color: filter === f.key ? G.gold : G.muted, cursor: 'pointer',
+                  letterSpacing: '0.1em', transition: 'all 0.15s',
+                  fontFamily: 'IBM Plex Mono, monospace',
+                }}
+              >
+                {f.label}
+                {f.key !== 'all' && (
+                  <span style={{ marginLeft: 5, opacity: 0.6 }}>
+                    ({f.key === 'active' ? stats.active : f.key === 'pending' ? stats.pending : stats.panic})
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Device grid */}
+          {loading ? (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
+              <div style={{ width: 32, height: 32, border: `2px solid ${G.gold}30`, borderTopColor: G.gold, borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+            </div>
+          ) : filtered.length === 0 ? (
+            <div style={{
+              textAlign: 'center', padding: '60px 20px',
+              background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 14,
+            }}>
+              <Smartphone size={32} style={{ color: G.low, margin: '0 auto 12px' }} />
+              <p style={{ fontSize: 14, fontWeight: 600, color: G.muted, marginBottom: 6 }}>No devices found</p>
+              <p style={{ fontSize: 12, color: G.low }}>
+                {filter === 'all' ? 'Enroll your first Guardian device to get started.' : `No ${filter} devices.`}
+              </p>
+            </div>
+          ) : (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))',
+              gap: 14,
+            }}>
+              {filtered.map(device => (
+                <DeviceCard
+                  key={device._id || device.id || device.device_id}
+                  device={device}
+                  onCommand={setSelectedDevice}
+                  onLocate={handleLocate}
+                  onRevoke={handleRevoke}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {/* Commands Drawer */}

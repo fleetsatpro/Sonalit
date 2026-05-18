@@ -76,6 +76,7 @@ export default function GPSPage() {
   const drawingRef    = useRef(false);
   const drawCircleRef = useRef(null);
   const alertMarkersRef = useRef({});
+  const guardianMarkersRef = useRef({});
   const pollRef       = useRef(null);
 
   const [vehicles,   setVehicles]   = useState([]);
@@ -106,6 +107,8 @@ export default function GPSPage() {
   const [loadingDetail,setLoadingDetail]= useState(false);
   const [mapViolation, setMapViolation]  = useState(null);
   const [isMobile,     setIsMobile]      = useState(false);
+  const [guardianDevices, setGuardianDevices] = useState([]);
+  const [showCFO,      setShowCFO]       = useState(true);
 
   // ── Mobile detection ──────────────────────────────────────────────────
   useEffect(() => {
@@ -156,11 +159,12 @@ export default function GPSPage() {
       });
 
       loadVehicles(Lf, map);
+      loadGuardianDevices(Lf, map);
       loadGeofences(Lf);
       loadRiskZones(Lf);
       setLoading(false);
 
-      pollRef.current = setInterval(() => loadVehicles(Lf, map), 15000);
+      pollRef.current = setInterval(() => { loadVehicles(Lf, map); loadGuardianDevices(); }, 15000);
     });
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
   }, []);
@@ -306,6 +310,48 @@ export default function GPSPage() {
       if (showHeat) updateHeatmap(Lfl, mapI, vs);
     } catch(e) { console.error(e); }
   }, [alerts, showTrails, showHeat]);
+
+  const loadGuardianDevices = useCallback(async (Lf, map) => {
+    try {
+      const r = await api.get('/guardian/devices', { params: { status: 'active', limit: 100 } });
+      const devs = (r.data.data || []).filter(d => d.last_lat && d.last_lng);
+      setGuardianDevices(devs);
+      const Lfl = Lf || leafletRef.current;
+      const mapI = map || mapInst.current;
+      if (!Lfl || !mapI) return;
+      // Remove stale markers
+      const ids = new Set(devs.map(d => d.id));
+      Object.keys(guardianMarkersRef.current).forEach(id => {
+        if (!ids.has(id)) { guardianMarkersRef.current[id].remove(); delete guardianMarkersRef.current[id]; }
+      });
+      if (!showCFO) return;
+      devs.forEach(d => {
+        const cfoName = d.cfo_convoy_name ? ` · ${d.cfo_convoy_name}` : '';
+        const svgIcon = `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="16" cy="16" r="13" fill="rgba(34,211,160,0.15)" stroke="#22D3A0" stroke-width="1.5"/>
+        <circle cx="16" cy="12" r="4" fill="#22D3A0"/>
+        <path d="M8 24 Q8 18 16 18 Q24 18 24 24" fill="#22D3A0"/>
+      </svg>`;
+        const icon = Lfl.divIcon({ html: svgIcon, iconSize: [32,32], iconAnchor: [16,16], className: '' });
+        const popup = `<div style="background:#0D1321;border:1px solid rgba(34,211,160,0.2);border-radius:10px;padding:12px;min-width:160px;font-family:monospace">
+        <div style="color:#22D3A0;font-size:12px;font-weight:700;margin-bottom:6px">👤 ${d.name || d.imei || 'CFO Device'}</div>
+        <div style="font-size:10px;color:#64748b;line-height:1.8">
+          <div>IMEI: <span style="color:#e2e8f0">${d.imei || '—'}</span></div>
+          <div>Battery: <span style="color:#22D3A0">${d.battery_level || '?'}%</span></div>
+          ${cfoName ? `<div>Convoy: <span style="color:#F0B429">${d.cfo_convoy_name}</span></div>` : ''}
+          <div>Last seen: <span style="color:#e2e8f0">${d.last_seen ? new Date(d.last_seen).toLocaleTimeString() : '—'}</span></div>
+        </div>
+      </div>`;
+        if (guardianMarkersRef.current[d.id]) {
+          guardianMarkersRef.current[d.id].setLatLng([d.last_lat, d.last_lng]).bindPopup(popup);
+        } else {
+          const marker = Lfl.marker([d.last_lat, d.last_lng], { icon }).bindPopup(popup);
+          marker.addTo(mapI);
+          guardianMarkersRef.current[d.id] = marker;
+        }
+      });
+    } catch(e) { console.error('guardian devices', e); }
+  }, [showCFO]);
 
   const updateTrail = (Lf, vehicleId, lat, lng) => {
     if (!trailsMap.current[vehicleId]) trailsMap.current[vehicleId] = { pts:[], line:null };
@@ -462,6 +508,13 @@ export default function GPSPage() {
   }, [showTrails]);
 
   useEffect(() => {
+    if (!showCFO) {
+      Object.values(guardianMarkersRef.current).forEach(m => m.remove());
+      guardianMarkersRef.current = {};
+    }
+  }, [showCFO]);
+
+  useEffect(() => {
     if (mapInst.current && REGIONS[region]) {
       mapInst.current.flyTo(REGIONS[region].center, REGIONS[region].zoom, { animate:true, duration:.6 });
     }
@@ -528,7 +581,7 @@ export default function GPSPage() {
       </div>
 
       {/* Stats */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:6, flexShrink:0 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:6, flexShrink:0 }}>
         {[
           ['TOTAL',   vehicles.length, '#94a3b8'],
           ['ACTIVE',  vehicles.filter(v=>v.status==='active').length, '#22D3A0'],
@@ -536,6 +589,7 @@ export default function GPSPage() {
           ['MAINT',   vehicles.filter(v=>v.status==='maintenance').length, '#F59E0B'],
           ['MOVING',  vehicles.filter(v=>(v.speed||0)>2).length, '#F0B429'],
           ['OFFLINE', vehicles.filter(v=>v.status==='offline').length, '#ef4444'],
+          ['CFO',     guardianDevices.length, '#22D3A0'],
         ].map(([l,v,c]) => (
           <div key={l} style={{ background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.05)', borderRadius:10, padding:'8px 6px', textAlign:'center' }}>
             <div style={{ fontSize:20, fontWeight:800, color:c, lineHeight:1 }}>{v}</div>
@@ -617,6 +671,7 @@ export default function GPSPage() {
             }} active={showRisks} title="Risk zones">RISK</B>
             <div style={{ height:4 }} />
             <B onClick={drawMode?cancelDraw:enableDrawMode} active={drawMode}          title="Draw geofence">DRAW</B>
+            <B onClick={() => setShowCFO(p=>!p)} active={showCFO} title="CFO devices">CFO</B>
           </div>
         </div>
 

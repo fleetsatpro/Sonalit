@@ -4,6 +4,7 @@ const { authenticate, authorize } = require('../middleware/auth');
 const { auditLog } = require('../middleware/audit');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
 
@@ -38,6 +39,38 @@ router.get('/users', authenticate, authorize('admin', 'dispatcher'), async (req,
     res.json({ data: result.rows });
   } catch (err) {
     logger.error(`GET /auth/users error: ${err.message}`);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/v1/auth/users
+ * Admin-only. Creates a user account with specified role.
+ */
+const VALID_ROLES = ['admin', 'dispatcher', 'operator', 'analyst', 'driver', 'cfo'];
+
+router.post('/users', authenticate, authorize('admin'), async (req, res) => {
+  try {
+    const { name, email, password, role } = req.body;
+    if (!name || !email || !password || !role) {
+      return res.status(400).json({ error: 'name, email, password, and role are required' });
+    }
+    if (!VALID_ROLES.includes(role)) {
+      return res.status(400).json({ error: `role must be one of: ${VALID_ROLES.join(', ')}` });
+    }
+    const password_hash = await bcrypt.hash(password, 10);
+    const result = await query(
+      `INSERT INTO users (name, email, password_hash, role, status)
+       VALUES ($1, $2, $3, $4, 'active')
+       RETURNING id, email, name, role, status`,
+      [name, email, password_hash, role]
+    );
+    res.status(201).json({ data: result.rows[0] });
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Email already in use' });
+    }
+    logger.error(`POST /auth/users error: ${err.message}`);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
