@@ -197,6 +197,10 @@ public class GuardianService extends Service implements LocationListener {
                     try {
                         ApiClient.HeartbeatResult result =
                             ApiClient.heartbeat(url, token, lat, lng, acc, spd, bat, net, fcmTok);
+                        if (result.enrollmentExpired) {
+                            sendBroadcast(new Intent("com.fleetops.guardian.ENROLMENT_EXPIRED"));
+                            return;
+                        }
                         if (result.upgradeRequired) {
                             Intent upg = new Intent("com.fleetops.guardian.UPGRADE_REQUIRED");
                             upg.putExtra("min_version_code", result.minVersionCode);

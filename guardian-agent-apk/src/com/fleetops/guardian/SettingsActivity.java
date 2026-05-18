@@ -15,7 +15,7 @@ public class SettingsActivity extends Activity {
     private Switch      swDms;
     private Spinner     spinDmsInterval;
     private TextView    tvDmsPin, tvConvoyCode, tvAdminStatus;
-    private Button      btnChangePin, btnConvoyJoin, btnConvoyLeave, btnActivateAdmin;
+    private Button      btnChangePin, btnConvoyJoin, btnConvoyLeave, btnActivateAdmin, btnReenrol;
 
     private static final int[] DMS_INTERVALS_MIN = {5, 10, 15, 30, 60, 90, 120};
     private static final String[] DMS_LABELS =
@@ -36,6 +36,7 @@ public class SettingsActivity extends Activity {
         btnConvoyJoin   = (Button)   findViewById(R.id.btnConvoyJoin);
         btnConvoyLeave  = (Button)   findViewById(R.id.btnConvoyLeave);
         btnActivateAdmin= (Button)   findViewById(R.id.btnActivateAdmin);
+        btnReenrol      = (Button)   findViewById(R.id.btnReenrol);
 
         // DMS switch
         swDms.setChecked(prefs.isDmsEnabled());
@@ -92,6 +93,25 @@ public class SettingsActivity extends Activity {
         btnActivateAdmin.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { requestDeviceAdmin(); }
         });
+
+        btnReenrol.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { confirmReenrol(); }
+        });
+    }
+
+    private void confirmReenrol() {
+        new AlertDialog.Builder(this)
+            .setTitle("Re-enrol Device?")
+            .setMessage("This will clear the current enrollment and open the enrollment screen. You will need your fleet server URL and organisation token.")
+            .setPositiveButton("RE-ENROL", new DialogInterface.OnClickListener() {
+                @Override public void onClick(DialogInterface d, int w) {
+                    prefs.clearEnrollment();
+                    startActivity(new android.content.Intent(SettingsActivity.this, EnrollmentActivity.class));
+                    finish();
+                }
+            })
+            .setNegativeButton("Cancel", null)
+            .show();
     }
 
     // ── PIN ───────────────────────────────────────────────────────────────────

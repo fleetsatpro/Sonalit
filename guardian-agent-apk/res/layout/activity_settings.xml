@@ -224,13 +224,14 @@
             android:layout_marginBottom="20dp"
             android:visibility="gone" />
 
-        <!-- Fleet managed notice — replaces unenroll -->
+        <!-- Fleet managed notice -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:background="@color/navy_card"
-            android:padding="16dp">
+            android:padding="16dp"
+            android:layout_marginBottom="12dp">
 
             <TextView
                 android:layout_width="wrap_content"
@@ -249,6 +250,16 @@
                 android:textSize="12sp"
                 android:lineSpacingMultiplier="1.4" />
         </LinearLayout>
+
+        <Button
+            android:id="@+id/btnReenrol"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:text="RE-ENROL DEVICE"
+            android:textColor="@color/danger"
+            android:background="@drawable/btn_outline"
+            android:textSize="11sp"
+            android:layout_marginBottom="8dp" />
 
     </LinearLayout>
 </ScrollView>

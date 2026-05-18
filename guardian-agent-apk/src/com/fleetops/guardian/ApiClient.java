@@ -272,24 +272,36 @@ public class ApiClient {
 
     public static class HeartbeatResult {
         public final boolean upgradeRequired;
+        public final boolean enrollmentExpired;
         public final int     minVersionCode;
         public final String  downloadUrl;
         public final List<PendingCommand> commands;
         public final String  signingSecret;
         HeartbeatResult(List<PendingCommand> commands, String signingSecret) {
-            this.upgradeRequired = false;
-            this.minVersionCode  = 0;
-            this.downloadUrl     = null;
-            this.commands        = commands;
-            this.signingSecret   = signingSecret;
+            this.upgradeRequired   = false;
+            this.enrollmentExpired = false;
+            this.minVersionCode    = 0;
+            this.downloadUrl       = null;
+            this.commands          = commands;
+            this.signingSecret     = signingSecret;
         }
         HeartbeatResult(int minVersionCode, String downloadUrl) {
-            this.upgradeRequired = true;
-            this.minVersionCode  = minVersionCode;
-            this.downloadUrl     = downloadUrl;
-            this.commands        = new ArrayList<PendingCommand>();
-            this.signingSecret   = null;
+            this.upgradeRequired   = true;
+            this.enrollmentExpired = false;
+            this.minVersionCode    = minVersionCode;
+            this.downloadUrl       = downloadUrl;
+            this.commands          = new ArrayList<PendingCommand>();
+            this.signingSecret     = null;
         }
+        private HeartbeatResult(boolean expired) {
+            this.upgradeRequired   = false;
+            this.enrollmentExpired = expired;
+            this.minVersionCode    = 0;
+            this.downloadUrl       = null;
+            this.commands          = new ArrayList<PendingCommand>();
+            this.signingSecret     = null;
+        }
+        static HeartbeatResult expired() { return new HeartbeatResult(true); }
     }
 
     public static HeartbeatResult heartbeat(String serverUrl, String token,
@@ -318,6 +330,7 @@ public class ApiClient {
             if (fcmToken != null && !fcmToken.isEmpty()) body.put("fcm_token", fcmToken);
             RawResponse raw = postRaw(serverUrl + "/api/v1/guardian/heartbeat", token, body.toString());
             if (raw == null) return new HeartbeatResult(commands, null);
+            if (raw.status == 401 || raw.status == 403) return HeartbeatResult.expired();
             if (raw.status == 426) {
                 JSONObject json = new JSONObject(raw.body);
                 return new HeartbeatResult(

@@ -103,6 +103,10 @@ public class MainActivity extends Activity {
                 showUpgradeRequired(
                     intent.getIntExtra("min_version_code", 0),
                     intent.getStringExtra("download_url"));
+            } else if ("com.fleetops.guardian.ENROLMENT_EXPIRED".equals(action)) {
+                prefs.clearEnrollment();
+                startActivity(new Intent(MainActivity.this, EnrollmentActivity.class));
+                finish();
             }
         }
     };
@@ -302,6 +306,7 @@ public class MainActivity extends Activity {
         sf.addAction("com.fleetops.guardian.DMS_FIRED");
         sf.addAction("com.fleetops.guardian.CRASH_DETECTED");
         sf.addAction("com.fleetops.guardian.UPGRADE_REQUIRED");
+        sf.addAction("com.fleetops.guardian.ENROLMENT_EXPIRED");
         registerReceiver(statusReceiver, sf);
     }
 
