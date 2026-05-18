@@ -207,6 +207,25 @@ try {
 const PORT=parseInt(process.env.PORT)||5000;
 createQueues();
 server.listen(PORT,()=>logger.info("FleetOps Enterprise v2.1 running on port "+PORT+" ["+( process.env.NODE_ENV||"development")+"]"));
-process.on("SIGTERM",()=>server.close(()=>process.exit(0)));
-process.on("SIGINT",()=>server.close(()=>process.exit(0)));
+
+// Start BullMQ workers in-process when Redis is available (avoids needing a separate worker dyno)
+if(process.env.REDIS_URL && process.env.DISABLE_REDIS !== 'true'){
+  try{
+    const{startGPSWorker}=require('./workers/gpsWorker');
+    const{startAlertWorker}=require('./workers/alertWorker');
+    const{startNotificationWorker}=require('./workers/notificationWorker');
+    const{startConvoyReportWorker}=require('./workers/convoyReportWorker');
+    const workers=[startGPSWorker(),startAlertWorker(),startNotificationWorker(),...startConvoyReportWorker()];
+    logger.info(`Workers started in-process: ${workers.length} active`);
+    process.on("SIGTERM",async()=>{await Promise.all(workers.map(w=>w.close()));server.close(()=>process.exit(0));});
+    process.on("SIGINT",async()=>{await Promise.all(workers.map(w=>w.close()));server.close(()=>process.exit(0));});
+  }catch(e){
+    logger.warn('Worker startup failed: '+e.message+' — continuing without workers');
+    process.on("SIGTERM",()=>server.close(()=>process.exit(0)));
+    process.on("SIGINT",()=>server.close(()=>process.exit(0)));
+  }
+}else{
+  process.on("SIGTERM",()=>server.close(()=>process.exit(0)));
+  process.on("SIGINT",()=>server.close(()=>process.exit(0)));
+}
 module.exports={app,server,io};
