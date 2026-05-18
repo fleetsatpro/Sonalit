@@ -8,13 +8,13 @@ const REGIONS = ["Kenya","Tanzania","DRC","Mali","Nigeria","Ethiopia","Uganda","
 const PRIORITIES = ["low","medium","high","critical"];
 const POSITIONS = [1,2,3,4,5,6];
 
-const emptyTruck = () => ({ position: "", vehicle_id: "", driver_name: "", driver_phone: "", driver_license_no: "" });
+const emptyTruck = (pos = "") => ({ position: String(pos), vehicle_id: "", driver_name: "", driver_phone: "", driver_license_no: "" });
 const emptyCfo = () => ({ cfo_user_id: "", assigned_truck_positions: [] });
 
 export default function CfoConvoyForm({ onCreated, onCancel }) {
   const [vehicles, setVehicles] = useState([]);
   const [cfoUsers, setCfoUsers] = useState([]);
-  const [trucks, setTrucks] = useState([emptyTruck()]);
+  const [trucks, setTrucks] = useState([emptyTruck(1)]);
   const [cfos, setCfos] = useState([emptyCfo()]);
   const [meta, setMeta] = useState({
     name: "", region: "Kenya", priority: "high",
@@ -142,7 +142,11 @@ export default function CfoConvoyForm({ onCreated, onCancel }) {
         <div className="flex items-center justify-between">
           <p className="text-[10px] font-mono text-slate-400 uppercase tracking-widest flex items-center gap-1"><Truck size={11} /> TRUCKS (max 6)</p>
           {trucks.length < 6 && (
-            <button type="button" onClick={() => setTrucks(ts => [...ts, emptyTruck()])}
+            <button type="button" onClick={() => {
+                const used = trucks.map(t => Number(t.position)).filter(Boolean);
+                const next = POSITIONS.find(p => !used.includes(p)) || "";
+                setTrucks(ts => [...ts, emptyTruck(next)]);
+              }}
               className="text-[9px] font-mono text-gold hover:text-gold/70 flex items-center gap-1"><Plus size={10} />ADD</button>
           )}
         </div>
