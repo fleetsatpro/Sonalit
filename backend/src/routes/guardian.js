@@ -36,6 +36,7 @@ const panicLimiter = rateLimit({
   keyGenerator: (req) => req.headers['x-device-token'] || req.ip,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
   handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
 });
 
@@ -45,6 +46,7 @@ const heartbeatLimiter = rateLimit({
   keyGenerator: (req) => req.headers['x-device-token'] || req.ip,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
   handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
 });
 
@@ -664,7 +666,7 @@ router.post('/panic', deviceAuth, panicLimiter, async (req, res, next) => {
     const insertResult = await query(
       `INSERT INTO panic_events (event_uuid, device_id, mode, lat, lng, message, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, NOW())
-       ON CONFLICT (event_uuid) DO NOTHING
+       ON CONFLICT (event_uuid) WHERE event_uuid IS NOT NULL DO NOTHING
        RETURNING *`,
       [event_uuid, deviceId, mode, lat ?? null, lng ?? null, message || null]
     );
@@ -751,7 +753,7 @@ router.post('/report', deviceAuth, async (req, res, next) => {
     const insertResult = await query(
       `INSERT INTO field_reports (event_uuid, device_id, category, severity, description, lat, lng, photo_url)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       ON CONFLICT (event_uuid) DO NOTHING
+       ON CONFLICT (event_uuid) WHERE event_uuid IS NOT NULL DO NOTHING
        RETURNING *`,
       [
         event_uuid,
