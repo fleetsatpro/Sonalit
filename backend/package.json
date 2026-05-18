@@ -14,6 +14,7 @@
     "migrate:cfo-p2": "node scripts/migrate-guardian-cfo-p2.js",
     "migrate:cfo-p3": "node scripts/migrate-guardian-cfo-p3.js",
     "migrate:cfo": "node scripts/migrate-guardian-cfo-p1.js && node scripts/migrate-guardian-cfo-p2.js && node scripts/migrate-guardian-cfo-p3.js",
+    "migrate:enable-cfo": "node scripts/migrate-enable-cfo.js",
     "seed": "node scripts/seed.js",
     "workers": "node scripts/start-workers.js",
     "worker:gps": "node src/workers/gpsWorker.js",
