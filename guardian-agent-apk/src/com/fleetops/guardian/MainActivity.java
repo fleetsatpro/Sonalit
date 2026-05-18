@@ -408,8 +408,10 @@ public class MainActivity extends Activity {
                     try {
                         org.json.JSONObject body = new org.json.JSONObject();
                         body.put("mode", mode);
-                        body.put("lat", lat);
-                        body.put("lng", lng);
+                        if (lat != 0.0 || lng != 0.0) {
+                            body.put("lat", lat);
+                            body.put("lng", lng);
+                        }
                         body.put("event_uuid", eventUuid);
                         new OfflineQueue(MainActivity.this)
                             .enqueue("panic", body.toString());

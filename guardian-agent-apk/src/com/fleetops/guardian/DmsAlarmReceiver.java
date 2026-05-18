@@ -17,14 +17,20 @@ public class DmsAlarmReceiver extends BroadcastReceiver {
     public void onReceive(Context ctx, Intent intent) {
         Log.w(TAG, "DMS alarm fired — triggering silent panic");
 
-        // Ensure GuardianService is running so it can process the panic and ACK the server.
+        // Embed the DMS trigger in the service start intent so it is handled in
+        // onStartCommand whether the service was already running or just started.
+        // A separate sendBroadcast(PANIC) would be dropped if the service was dead
+        // because the controlReceiver registers in onCreate(), which may not have
+        // completed before the broadcast is dispatched.
         Intent svc = new Intent(ctx, GuardianService.class);
-        ctx.startService(svc);
+        svc.putExtra("dms_fired", true);
+        if (android.os.Build.VERSION.SDK_INT >= 26) {
+            ctx.startForegroundService(svc);
+        } else {
+            ctx.startService(svc);
+        }
 
-        // Also send the PANIC broadcast — handled by GuardianService.controlReceiver
-        // if the service is already alive, and by onStartCommand if it was just started.
-        ctx.sendBroadcast(new Intent("com.fleetops.guardian.PANIC")
-            .putExtra("mode", "silent")
-            .putExtra("source", "dms_alarm"));
+        // Update the UI immediately — MainActivity listens for this action.
+        ctx.sendBroadcast(new Intent("com.fleetops.guardian.DMS_FIRED"));
     }
 }

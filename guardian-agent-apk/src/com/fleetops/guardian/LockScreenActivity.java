@@ -62,8 +62,7 @@ public class LockScreenActivity extends Activity {
         }
 
         // PIN-protected dismiss
-        String storedPin = prefs.getPanicPin();
-        boolean hasPinConfigured = storedPin != null && storedPin.length() >= 6;
+        boolean hasPinConfigured = prefs.hasPanicPin();
 
         if (!hasPinConfigured) {
             // No PIN set — allow simple dismiss
@@ -162,13 +161,12 @@ public class LockScreenActivity extends Activity {
         if (etPin == null) return;
         String entered = etPin.getText().toString().trim();
 
-        if (entered.length() < 6) {
-            Toast.makeText(this, "PIN must be at least 6 digits", Toast.LENGTH_SHORT).show();
+        if (entered.length() < 4) {
+            Toast.makeText(this, "PIN must be at least 4 digits", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        String storedPin = prefs.getPanicPin();
-        if (entered.equals(storedPin)) {
+        if (prefs.verifyPanicPin(entered)) {
             // Correct PIN
             resetLockout();
             if (countdownTimer != null) countdownTimer.cancel();
