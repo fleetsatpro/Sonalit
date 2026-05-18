@@ -32,6 +32,8 @@ object RetrofitClient {
                     val response = chain.proceed(request)
                     // Only retry on server errors (5xx) that are transient
                     if (response.isSuccessful || response.code < 500) return response
+                    val body = response.peekBody(512).string()
+                    lastException = IOException("HTTP ${response.code}: $body")
                     response.close()
                 } catch (e: IOException) {
                     lastException = e

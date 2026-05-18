@@ -14,6 +14,10 @@ async function run() {
   try {
     console.log('[guardian-devices] Starting migration...');
 
+    // Ensure gen_random_uuid() is available (built-in on PG>=13; needs pgcrypto on PG<13)
+    await client.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto`);
+
+
     await client.query(`
       CREATE TABLE IF NOT EXISTS guardian_devices (
         id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
