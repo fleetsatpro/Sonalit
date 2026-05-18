@@ -2,39 +2,22 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Location Permissions -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
-
-    <!-- Network Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-
-    <!-- Service Permissions -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
-
-    <!-- Boot -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-
-    <!-- Device State -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.BATTERY_STATS" />
-
-    <!-- Enterprise / Self-Update -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.BIND_DEVICE_ADMIN" />
-
-    <!-- Notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
-    <!-- Vibrate for panic -->
     <uses-permission android:name="android.permission.VIBRATE" />
-
-    <!-- CFO photo capture -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
@@ -62,14 +45,14 @@
             </intent-filter>
         </activity>
 
-        <!-- Main operational screen -->
+        <!-- Main operational screen (HOME + CONVOY tabs) -->
         <activity
             android:name=".ui.main.MainActivity"
             android:exported="false"
             android:screenOrientation="portrait"
             android:launchMode="singleTop" />
 
-        <!-- CFO photo capture activity -->
+        <!-- CFO photo capture -->
         <activity
             android:name=".ui.cfo.CfoPhotoActivity"
             android:exported="false"
@@ -93,7 +76,7 @@
             </intent-filter>
         </receiver>
 
-        <!-- Device Admin Receiver for enterprise policy management -->
+        <!-- Device Admin Receiver -->
         <receiver
             android:name=".receiver.GuardianDeviceAdminReceiver"
             android:exported="true"
@@ -107,7 +90,18 @@
             </intent-filter>
         </receiver>
 
-        <!-- WorkManager initializer — disable default to use Hilt-provided -->
+        <!-- FileProvider for camera temp files -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- WorkManager -->
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"

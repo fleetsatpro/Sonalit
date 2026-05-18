@@ -1,5 +1,6 @@
 package com.fleetops.guardian.data.api
 
+import com.google.gson.annotations.SerializedName
 import retrofit2.Response
 import retrofit2.http.*
 
@@ -38,8 +39,6 @@ interface GuardianApiService {
         @Body body: AckRequest
     ): Response<Unit>
 
-    // ─── CFO Endpoints ────────────────────────────────────────────────────────
-
     @GET("guardian/cfo/context")
     suspend fun getCfoContext(
         @Header("X-Device-Token") token: String
@@ -58,7 +57,7 @@ interface GuardianApiService {
     ): Response<CfoPhotoCommitResponse>
 }
 
-// ─── Request / Response Data Classes ──────────────────────────────────────────
+// ─── Enrollment ───────────────────────────────────────────────────────────────
 
 data class EnrollRequest(
     val orgToken: String,
@@ -72,39 +71,43 @@ data class EnrollRequest(
 )
 
 data class EnrollResponse(
-    val deviceId: String,
-    val deviceToken: String,
-    val trackingMode: String,
-    val trackingIntervalSeconds: Int,
-    val serverTime: Long,
+    @SerializedName("device_id") val deviceId: String,
+    @SerializedName("device_token") val deviceToken: String,
+    @SerializedName("tracking_mode") val trackingMode: String,
+    @SerializedName("tracking_interval_seconds") val trackingIntervalSeconds: Int,
+    @SerializedName("server_time") val serverTime: Long,
     val message: String?
 )
 
+// ─── Heartbeat ────────────────────────────────────────────────────────────────
+
 data class HeartbeatRequest(
-    val deviceId: String,
+    @SerializedName("device_id") val deviceId: String,
     val timestamp: Long,
-    val batteryLevel: Int,
-    val batteryCharging: Boolean,
-    val signalStrength: Int,
-    val networkType: String,
-    val storageFreeM: Int,
-    val ramFreeM: Int,
+    @SerializedName("battery_level") val batteryLevel: Int,
+    @SerializedName("battery_charging") val batteryCharging: Boolean,
+    @SerializedName("signal_strength") val signalStrength: Int,
+    @SerializedName("network_type") val networkType: String,
+    @SerializedName("storage_free_m") val storageFreeM: Int,
+    @SerializedName("ram_free_m") val ramFreeM: Int,
     val latitude: Double?,
     val longitude: Double?,
-    val locationAge: Long?,
-    val appVersion: String
+    @SerializedName("location_age") val locationAge: Long?,
+    @SerializedName("app_version") val appVersion: String
 )
 
 data class HeartbeatResponse(
     val status: String,
-    val serverTime: Long,
+    @SerializedName("server_time") val serverTime: Long,
     val commands: List<CommandDto>?,
-    val newTrackingMode: String?,
-    val newTrackingIntervalSeconds: Int?
+    @SerializedName("new_tracking_mode") val newTrackingMode: String?,
+    @SerializedName("new_tracking_interval_seconds") val newTrackingIntervalSeconds: Int?
 )
 
+// ─── Location ─────────────────────────────────────────────────────────────────
+
 data class LocationRequest(
-    val deviceId: String,
+    @SerializedName("device_id") val deviceId: String,
     val latitude: Double,
     val longitude: Double,
     val altitude: Double?,
@@ -112,29 +115,33 @@ data class LocationRequest(
     val heading: Float?,
     val accuracy: Float?,
     val timestamp: Long,
-    val trackingMode: String
+    @SerializedName("tracking_mode") val trackingMode: String
 )
 
+// ─── Panic ────────────────────────────────────────────────────────────────────
+
 data class PanicRequest(
-    val deviceId: String,
-    val panicMode: String,
+    @SerializedName("device_id") val deviceId: String,
+    @SerializedName("panic_mode") val panicMode: String,
     val message: String?,
     val latitude: Double?,
     val longitude: Double?,
     val timestamp: Long,
-    val batteryLevel: Int,
-    val networkType: String
+    @SerializedName("battery_level") val batteryLevel: Int,
+    @SerializedName("network_type") val networkType: String
 )
 
 data class PanicResponse(
     val acknowledged: Boolean,
-    val incidentId: String?,
+    @SerializedName("incident_id") val incidentId: String?,
     val instructions: String?,
-    val callbackNumber: String?
+    @SerializedName("callback_number") val callbackNumber: String?
 )
 
+// ─── Field Report ─────────────────────────────────────────────────────────────
+
 data class ReportRequest(
-    val deviceId: String,
+    @SerializedName("device_id") val deviceId: String,
     val category: String,
     val description: String,
     val latitude: Double?,
@@ -144,43 +151,45 @@ data class ReportRequest(
 )
 
 data class ReportResponse(
-    val reportId: String,
+    @SerializedName("report_id") val reportId: String,
     val acknowledged: Boolean,
     val message: String?
 )
 
+// ─── Command ──────────────────────────────────────────────────────────────────
+
 data class AckRequest(
-    val deviceId: String,
-    val commandId: String,
+    @SerializedName("device_id") val deviceId: String,
+    @SerializedName("command_id") val commandId: String,
     val status: String,
     val timestamp: Long
 )
 
 data class CommandDto(
-    val commandId: String,
+    @SerializedName("command_id") val commandId: String,
     val type: String,
     val payload: Map<String, String>?,
-    val issuedAt: Long,
-    val expiresAt: Long?
+    @SerializedName("issued_at") val issuedAt: Long,
+    @SerializedName("expires_at") val expiresAt: Long?
 )
 
-// ─── CFO Data Classes ──────────────────────────────────────────────────────────
+// ─── CFO ──────────────────────────────────────────────────────────────────────
 
 data class CfoTruckDto(
     val id: String,
     val position: Int,
-    val vehicleId: String,
-    val driverName: String,
-    val driverPhone: String?
+    @SerializedName("vehicle_id") val vehicleId: String?,
+    @SerializedName("driver_name") val driverName: String,
+    @SerializedName("driver_phone") val driverPhone: String?
 )
 
 data class CfoPhotoDto(
     val id: String,
-    val convoyTruckId: String,
+    @SerializedName("convoy_truck_id") val convoyTruckId: String,
     val session: String,
-    val photoType: String,
-    val sealPosition: String?,
-    val takenAt: String
+    @SerializedName("photo_type") val photoType: String,
+    @SerializedName("seal_position") val sealPosition: String?,
+    @SerializedName("taken_at") val takenAt: String
 )
 
 data class CfoConvoyDto(
@@ -188,46 +197,46 @@ data class CfoConvoyDto(
     val name: String,
     val status: String,
     val timezone: String,
-    val startDate: String?,
-    val endDate: String?,
-    val sealCountPerTruck: Int
+    @SerializedName("start_date") val startDate: String?,
+    @SerializedName("end_date") val endDate: String?,
+    @SerializedName("seal_count_per_truck") val sealCountPerTruck: Int
 )
 
 data class CfoContextData(
     val convoy: CfoConvoyDto,
-    val cfoUserId: String,
-    val assignedTrucks: List<CfoTruckDto>,
-    val reportDate: String,
-    val photosToday: List<CfoPhotoDto>
+    @SerializedName("cfo_user_id") val cfoUserId: String,
+    @SerializedName("assigned_trucks") val assignedTrucks: List<CfoTruckDto>,
+    @SerializedName("report_date") val reportDate: String,
+    @SerializedName("photos_today") val photosToday: List<CfoPhotoDto>
 )
 
 data class CfoContextResponse(val data: CfoContextData)
 
 data class CfoPhotoUploadUrlRequest(
-    val convoyId: String,
-    val convoyTruckId: String,
+    @SerializedName("convoy_id") val convoyId: String,
+    @SerializedName("convoy_truck_id") val convoyTruckId: String,
     val session: String,
-    val photoType: String,
-    val sealPosition: String?,
-    val reportDate: String
+    @SerializedName("photo_type") val photoType: String,
+    @SerializedName("seal_position") val sealPosition: String?,
+    @SerializedName("report_date") val reportDate: String
 )
 
 data class CfoPhotoUploadUrlResponse(
-    val uploadUrl: String,
-    val publicUrl: String,
+    @SerializedName("upload_url") val uploadUrl: String,
+    @SerializedName("public_url") val publicUrl: String,
     val key: String
 )
 
 data class CfoPhotoCommitRequest(
-    val eventUuid: String,
-    val convoyId: String,
-    val convoyTruckId: String,
+    @SerializedName("event_uuid") val eventUuid: String,
+    @SerializedName("convoy_id") val convoyId: String,
+    @SerializedName("convoy_truck_id") val convoyTruckId: String,
     val session: String,
-    val photoType: String,
-    val sealPosition: String?,
-    val reportDate: String,
-    val photoUrl: String,
-    val takenAt: String,
+    @SerializedName("photo_type") val photoType: String,
+    @SerializedName("seal_position") val sealPosition: String?,
+    @SerializedName("report_date") val reportDate: String,
+    @SerializedName("photo_url") val photoUrl: String,
+    @SerializedName("taken_at") val takenAt: String,
     val lat: Double?,
     val lng: Double?,
     val notes: String?

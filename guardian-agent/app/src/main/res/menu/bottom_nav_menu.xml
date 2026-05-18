@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/tab_home"
+        android:icon="@drawable/ic_shield"
+        android:title="HOME" />
+    <item
+        android:id="@+id/tab_convoy"
+        android:icon="@drawable/ic_convoy"
+        android:title="CONVOY" />
+</menu>
