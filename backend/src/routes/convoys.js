@@ -1,8 +1,18 @@
 const router = require('express').Router();
+const rateLimit = require('express-rate-limit');
 const c = require('../controllers/convoyController');
 const cfo = require('../controllers/convoysCfoController');
 const { authenticate, authorize } = require('../middleware/auth');
 const { auditLog } = require('../middleware/audit');
+
+const convoyReportRegenerateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  keyGenerator: (req) => `${req.user?.id || req.ip}:${req.params.id || ''}`,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
+});
 
 router.use(authenticate);
 
@@ -35,6 +45,6 @@ router.delete('/:id/cfo-assignments/:assignmentId', authorize('admin', 'dispatch
 
 // Daily report admin (E5)
 router.get('/:id/reports', authorize('admin', 'dispatcher', 'analyst'), cfo.getConvoyReports);
-router.post('/:id/reports/:date/regenerate', authorize('admin', 'dispatcher'), cfo.regenerateReport);
+router.post('/:id/reports/:date/regenerate', authorize('admin', 'dispatcher'), convoyReportRegenerateLimiter, cfo.regenerateReport);
 
 module.exports = router;

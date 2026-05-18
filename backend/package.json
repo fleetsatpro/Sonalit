@@ -19,7 +19,8 @@
     "worker:gps": "node src/workers/gpsWorker.js",
     "worker:alert": "node src/workers/alertWorker.js",
     "worker:notification": "node src/workers/notificationWorker.js",
-    "worker:convoy-report": "node src/workers/convoyReportWorker.js"
+    "worker:convoy-report": "node src/workers/convoyReportWorker.js",
+    "test": "jest"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
@@ -47,9 +48,15 @@
     "winston": "^3.11.0"
   },
   "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.4",
     "nodemon": "^3.0.2"
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": ["**/tests/**/*.test.js"]
   }
 }
