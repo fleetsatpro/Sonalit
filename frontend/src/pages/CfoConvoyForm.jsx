@@ -9,11 +9,12 @@ const PRIORITIES = ["low","medium","high","critical"];
 const POSITIONS = [1,2,3,4,5,6];
 
 const emptyTruck = (pos = "") => ({ position: String(pos), vehicle_id: "", driver_name: "", driver_phone: "", driver_license_no: "" });
-const emptyCfo = () => ({ cfo_user_id: "", assigned_truck_positions: [] });
+const emptyCfo = () => ({ cfo_user_id: "", guardian_device_id: "", assigned_truck_positions: [] });
 
 export default function CfoConvoyForm({ onCreated, onCancel }) {
   const [vehicles, setVehicles] = useState([]);
   const [cfoUsers, setCfoUsers] = useState([]);
+  const [guardianDevices, setGuardianDevices] = useState([]);
   const [trucks, setTrucks] = useState([emptyTruck(1)]);
   const [cfos, setCfos] = useState([emptyCfo()]);
   const [meta, setMeta] = useState({
@@ -25,11 +26,8 @@ export default function CfoConvoyForm({ onCreated, onCancel }) {
 
   useEffect(() => {
     api.get("/vehicles", { params: { limit: 200 } }).then(r => setVehicles(r.data.data || [])).catch(() => {});
-    api.get("/auth/users", { params: { role: "cfo", limit: 100 } })
-      .catch(() => api.get("/devices", { params: { limit: 1 } })) // fallback to check auth
-      .catch(() => {});
-    // Fetch CFO users from users endpoint
-    api.get("/auth/users?role=cfo").then(r => setCfoUsers(r.data.data || [])).catch(() => {});
+    api.get("/auth/users", { params: { role: "cfo", limit: 100 } }).then(r => setCfoUsers(r.data.data || [])).catch(() => {});
+    api.get("/guardian/devices", { params: { status: "active", limit: 100 } }).then(r => setGuardianDevices(r.data.data || [])).catch(() => {});
   }, []);
 
   function updateTruck(i, field, val) {
@@ -77,6 +75,7 @@ export default function CfoConvoyForm({ onCreated, onCancel }) {
         trucks: trucks.map(t => ({ ...t, position: Number(t.position) })),
         cfos: cfos.map(c => ({
           cfo_user_id: c.cfo_user_id,
+          guardian_device_id: c.guardian_device_id || null,
           assigned_truck_positions: c.assigned_truck_positions,
         })),
       };
@@ -181,14 +180,32 @@ export default function CfoConvoyForm({ onCreated, onCancel }) {
             className="text-[9px] font-mono text-gold hover:text-gold/70 flex items-center gap-1"><Plus size={10} />ADD</button>
         </div>
         {cfos.map((c, i) => (
-          <div key={i} className="flex items-start gap-2">
-            <div className="flex-1 space-y-1">
-              <label className={label}>CFO User ID (UUID)</label>
-              <input value={c.cfo_user_id} onChange={e => updateCfo(i, "cfo_user_id", e.target.value)} className={field} placeholder="uuid-of-cfo-user" />
+          <div key={i} className="space-y-2 border border-white/[0.06] rounded-lg p-3">
+            <div className="flex items-start gap-2">
+              <div className="flex-1 space-y-1">
+                <label className={label}>Field Officer *</label>
+                <select value={c.cfo_user_id} onChange={e => updateCfo(i, "cfo_user_id", e.target.value)} className={field}>
+                  <option value="">— select CFO —</option>
+                  {cfoUsers.map(u => (
+                    <option key={u.id} value={u.id}>{u.name || u.email}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex-1 space-y-1">
+                <label className={label}>Guardian Device (optional)</label>
+                <select value={c.guardian_device_id} onChange={e => updateCfo(i, "guardian_device_id", e.target.value)} className={field}>
+                  <option value="">— link device —</option>
+                  {guardianDevices.map(d => (
+                    <option key={d.id} value={d.id}>{d.name || d.imei}</option>
+                  ))}
+                </select>
+              </div>
+              <button type="button" onClick={() => setCfos(cs => cs.filter((_,j) => j !== i))}
+                className="text-slate-600 hover:text-red-400 mt-6"><X size={12} /></button>
             </div>
-            <div className="flex-1 space-y-1">
-              <label className={label}>Assigned Truck Positions (tap to toggle)</label>
-              <div className="flex gap-1 mt-1">
+            <div className="space-y-1">
+              <label className={label}>Assigned Truck Positions</label>
+              <div className="flex gap-1">
                 {usedPositions.map(pos => (
                   <button key={pos} type="button"
                     onClick={() => toggleCfoPos(i, pos)}
@@ -201,8 +218,6 @@ export default function CfoConvoyForm({ onCreated, onCancel }) {
                 ))}
               </div>
             </div>
-            <button type="button" onClick={() => setCfos(cs => cs.filter((_,j) => j !== i))}
-              className="text-slate-600 hover:text-red-400 mt-6"><X size={12} /></button>
           </div>
         ))}
       </div>

@@ -78,6 +78,24 @@ async function requireCfoModule(res) {
   return true;
 }
 
+// Resolve cfo_user_id for a device — first by direct device link, then by user assignment
+async function resolveCfoUserId(device, convoy_id) {
+  const direct = await query(
+    `SELECT cfo_user_id FROM convoy_cfos WHERE guardian_device_id = $1 AND convoy_id = $2`,
+    [device.id, convoy_id]
+  );
+  if (direct.rows.length) return direct.rows[0].cfo_user_id;
+
+  if (device.assignment_type === 'user' && device.assignment_id) {
+    const byUser = await query(
+      `SELECT cfo_user_id FROM convoy_cfos WHERE cfo_user_id = $1 AND convoy_id = $2`,
+      [device.assignment_id, convoy_id]
+    );
+    if (byUser.rows.length) return byUser.rows[0].cfo_user_id;
+  }
+  return null;
+}
+
 // ─── C1: CFO Context ─────────────────────────────────────────────────────────
 
 /**
@@ -88,7 +106,7 @@ router.get('/context', deviceAuth, async (req, res, next) => {
   try {
     if (!await requireCfoModule(res)) return;
 
-    const assignmentResult = await query(
+    let assignmentResult = await query(
       `SELECT cc.convoy_id, cc.cfo_user_id, c.name, c.status, c.timezone,
               c.start_date, c.end_date, c.seal_count_per_truck
        FROM convoy_cfos cc
@@ -100,6 +118,30 @@ router.get('/context', deviceAuth, async (req, res, next) => {
        LIMIT 1`,
       [req.device.id]
     );
+
+    // Fallback: match by user assignment when device isn't linked yet
+    if (!assignmentResult.rows.length && req.device.assignment_type === 'user' && req.device.assignment_id) {
+      assignmentResult = await query(
+        `SELECT cc.convoy_id, cc.cfo_user_id, c.name, c.status, c.timezone,
+                c.start_date, c.end_date, c.seal_count_per_truck
+         FROM convoy_cfos cc
+         JOIN convoys c ON c.id = cc.convoy_id
+         WHERE cc.cfo_user_id = $1
+           AND c.status IN ('planned','active')
+           AND c.deleted_at IS NULL
+         ORDER BY c.start_date DESC
+         LIMIT 1`,
+        [req.device.assignment_id]
+      );
+      // Auto-link device so future lookups hit the fast path
+      if (assignmentResult.rows.length) {
+        query(
+          `UPDATE convoy_cfos SET guardian_device_id = $1
+           WHERE convoy_id = $2 AND cfo_user_id = $3 AND guardian_device_id IS NULL`,
+          [req.device.id, assignmentResult.rows[0].convoy_id, assignmentResult.rows[0].cfo_user_id]
+        ).catch((e) => logger.warn(`auto-link device failed: ${e.message}`));
+      }
+    }
 
     if (!assignmentResult.rows.length) {
       return res.status(404).json({ error: 'No active convoy assignment for this device' });
@@ -159,15 +201,13 @@ router.post('/photo-upload-url', deviceAuth, photoUploadLimiter, async (req, res
     if (photo_type === 'seal' && !seal_position) return res.status(400).json({ error: 'seal_position required for seal photos' });
     if (photo_type !== 'seal' && seal_position) return res.status(400).json({ error: 'seal_position only valid for seal photos' });
 
+    const cfoUserId = await resolveCfoUserId(req.device, convoy_id);
+    if (!cfoUserId) {
+      return res.status(403).json({ error: 'device_not_authorised_for_this_truck' });
+    }
     const auth = await query(
-      `SELECT ccta.id
-       FROM convoy_cfos cc
-       JOIN convoy_cfo_truck_assignments ccta
-         ON ccta.convoy_id = cc.convoy_id AND ccta.cfo_user_id = cc.cfo_user_id
-       WHERE cc.guardian_device_id = $1
-         AND cc.convoy_id = $2
-         AND ccta.convoy_truck_id = $3`,
-      [req.device.id, convoy_id, convoy_truck_id]
+      `SELECT id FROM convoy_cfo_truck_assignments WHERE convoy_id = $1 AND cfo_user_id = $2 AND convoy_truck_id = $3`,
+      [convoy_id, cfoUserId, convoy_truck_id]
     );
     if (!auth.rows.length) {
       return res.status(403).json({ error: 'device_not_authorised_for_this_truck' });
@@ -228,20 +268,17 @@ router.post('/photos', deviceAuth, async (req, res, next) => {
     if (!['front', 'rear', 'seal'].includes(photo_type)) return res.status(400).json({ error: 'photo_type must be front, rear, or seal' });
     if (photo_type === 'seal' && !seal_position) return res.status(400).json({ error: 'seal_position required for seal photos' });
 
+    const cfo_user_id = await resolveCfoUserId(req.device, convoy_id);
+    if (!cfo_user_id) {
+      return res.status(403).json({ error: 'device_not_authorised_for_this_truck' });
+    }
     const authResult = await query(
-      `SELECT cc.cfo_user_id
-       FROM convoy_cfos cc
-       JOIN convoy_cfo_truck_assignments ccta
-         ON ccta.convoy_id = cc.convoy_id AND ccta.cfo_user_id = cc.cfo_user_id
-       WHERE cc.guardian_device_id = $1
-         AND cc.convoy_id = $2
-         AND ccta.convoy_truck_id = $3`,
-      [req.device.id, convoy_id, convoy_truck_id]
+      `SELECT id FROM convoy_cfo_truck_assignments WHERE convoy_id = $1 AND cfo_user_id = $2 AND convoy_truck_id = $3`,
+      [convoy_id, cfo_user_id, convoy_truck_id]
     );
     if (!authResult.rows.length) {
       return res.status(403).json({ error: 'device_not_authorised_for_this_truck' });
     }
-    const cfo_user_id = authResult.rows[0].cfo_user_id;
 
     // C4: location mismatch — flag if photo GPS differs >2 km from device last known position
     let location_mismatch = false;
