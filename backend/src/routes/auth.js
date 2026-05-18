@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const { login, getCurrentUser, logout, changePassword } = require('../controllers/authController');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, authorize } = require('../middleware/auth');
 const { auditLog } = require('../middleware/audit');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
@@ -17,6 +17,31 @@ router.put('/change-password', authenticate, auditLog('users'), changePassword);
  * Exchange a refresh token for a new short-lived access JWT.
  * Refresh tokens are stored in the refresh_tokens table (created on first use).
  */
+/**
+ * GET /api/v1/auth/users
+ * Returns users filtered by role. Admin/dispatcher only.
+ */
+router.get('/users', authenticate, authorize('admin', 'dispatcher'), async (req, res) => {
+  try {
+    const { role, limit = 100, offset = 0 } = req.query;
+    const conditions = ['deleted_at IS NULL'];
+    const params = [];
+    if (role) {
+      params.push(role);
+      conditions.push(`role = $${params.length}`);
+    }
+    params.push(Number(limit), Number(offset));
+    const result = await query(
+      `SELECT id, email, name, role, status FROM users WHERE ${conditions.join(' AND ')} ORDER BY name LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+    res.json({ data: result.rows });
+  } catch (err) {
+    logger.error(`GET /auth/users error: ${err.message}`);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.post('/refresh', async (req, res) => {
   try {
     const { refresh_token } = req.body;
