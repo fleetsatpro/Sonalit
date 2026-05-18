@@ -84,7 +84,7 @@ class GuardianRepository @Inject constructor(
                 serverUrl = serverUrl,
                 orgToken = orgToken,
                 deviceName = deviceName,
-                trackingMode = response.trackingMode,
+                trackingMode = response.trackingMode ?: DevicePrefs.TrackingMode.NORMAL,
                 trackingIntervalSeconds = response.trackingIntervalSeconds
             )
 

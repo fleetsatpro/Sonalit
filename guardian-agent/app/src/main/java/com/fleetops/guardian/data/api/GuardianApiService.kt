@@ -60,22 +60,22 @@ interface GuardianApiService {
 // ─── Enrollment ───────────────────────────────────────────────────────────────
 
 data class EnrollRequest(
-    val orgToken: String,
-    val deviceName: String,
+    @SerializedName("org_token") val orgToken: String,
+    @SerializedName("name") val deviceName: String,
     val imei: String,
-    val androidId: String,
+    @SerializedName("android_id") val androidId: String,
     val manufacturer: String,
     val model: String,
-    val osVersion: String,
-    val appVersion: String
+    @SerializedName("os_version") val osVersion: String,
+    @SerializedName("app_version") val appVersion: String
 )
 
 data class EnrollResponse(
     @SerializedName("device_id") val deviceId: String,
-    @SerializedName("device_token") val deviceToken: String,
-    @SerializedName("tracking_mode") val trackingMode: String,
-    @SerializedName("tracking_interval_seconds") val trackingIntervalSeconds: Int,
-    @SerializedName("server_time") val serverTime: Long,
+    @SerializedName("token") val deviceToken: String,
+    @SerializedName("tracking_mode") val trackingMode: String? = null,
+    @SerializedName("tracking_interval_seconds") val trackingIntervalSeconds: Int = 60,
+    @SerializedName("server_time") val serverTime: Long? = null,
     val message: String?
 )
 
