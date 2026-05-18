@@ -2,6 +2,7 @@ require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') }
 const { startGPSWorker } = require('../src/workers/gpsWorker');
 const { startAlertWorker } = require('../src/workers/alertWorker');
 const { startNotificationWorker } = require('../src/workers/notificationWorker');
+const { startConvoyReportWorker } = require('../src/workers/convoyReportWorker');
 const { createQueues } = require('../src/config/queue');
 const logger = require('../src/utils/logger');
 
@@ -10,16 +11,14 @@ if (process.env.DISABLE_REDIS === 'true') {
   process.exit(0);
 }
 
-// Initialise the producer queues so workers can enqueue downstream jobs
-// (gpsWorker → alert queue, alertWorker → notification queue). Without this,
-// getQueues() returns nulls inside the worker process and the pipeline stops
-// after the first stage.
+// Initialise the producer queues so workers can enqueue downstream jobs.
 createQueues();
 
 const workers = [
   startGPSWorker(),
   startAlertWorker(),
   startNotificationWorker(),
+  ...startConvoyReportWorker(),
 ];
 
 logger.info(`✅ ${workers.length} workers running`);

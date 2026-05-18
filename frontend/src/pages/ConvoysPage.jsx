@@ -5,7 +5,7 @@ import { z } from "zod";
 import {
   Route, Plus, X, ChevronRight, Shield, FileText, AlertTriangle,
   Activity, Truck, Clock, MapPin, Users, TrendingUp, Radio,
-  CheckCircle, AlertCircle, Navigation, Fuel, Wrench, Eye
+  CheckCircle, AlertCircle, Navigation, Fuel, Wrench, Eye, RefreshCw
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useConvoyStore } from "../store";
@@ -13,6 +13,7 @@ import { convoysAPI, documentsAPI } from "../services/api";
 import api from "../services/api";
 import { Card, Button, Input, Spinner, EmptyState } from "../components/UI";
 import { formatDate } from "../utils/helpers";
+import CfoConvoyForm from "./CfoConvoyForm";
 
 const schema = z.object({
   name: z.string().min(3),
@@ -137,6 +138,7 @@ function ConvoyDetailPanel({ convoy, onClose, onRefresh }) {
   const [vehicles, setVehicles] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [docs, setDocs] = useState([]);
+  const [reports, setReports] = useState([]);
   const [loadingVehicles, setLoadingVehicles] = useState(false);
 
   useEffect(() => {
@@ -146,10 +148,12 @@ function ConvoyDetailPanel({ convoy, onClose, onRefresh }) {
       api.get("/vehicles", { params: { convoy_id: convoy.id, limit: 20 } }).catch(() => ({ data: { data: [] } })),
       api.get("/alerts", { params: { limit: 10, resolved: "false" } }).catch(() => ({ data: { data: [] } })),
       api.get("/documents", { params: { convoy_id: convoy.id } }).catch(() => ({ data: { data: [] } })),
-    ]).then(([v, a, d]) => {
+      convoysAPI.getReports(convoy.id).catch(() => ({ data: { data: [] } })),
+    ]).then(([v, a, d, r]) => {
       setVehicles(v.data.data || []);
       setAlerts((a.data.data || []).filter(al => al.convoy_id === convoy.id));
       setDocs(d.data.data || []);
+      setReports(r.data.data || []);
     }).finally(() => setLoadingVehicles(false));
   }, [convoy.id]);
 
@@ -166,6 +170,7 @@ function ConvoyDetailPanel({ convoy, onClose, onRefresh }) {
     { key: "vehicles", label: "Vehicles (" + vehicles.length + ")" },
     { key: "alerts",   label: "Alerts (" + alerts.length + ")" },
     { key: "docs",     label: "Docs (" + docs.length + ")" },
+    { key: "reports",  label: "Reports (" + reports.length + ")" },
   ];
 
   const STATUS_TRANSITIONS = {
@@ -353,6 +358,50 @@ function ConvoyDetailPanel({ convoy, onClose, onRefresh }) {
             </button>
           </div>
         )}
+
+        {tab === "reports" && (
+          <div className="space-y-2">
+            {reports.length === 0
+              ? <p className="text-center py-8 text-slate-600 text-sm">No CFO daily reports yet</p>
+              : reports.map(r => {
+                  const pct = r.required_photo_count > 0
+                    ? Math.round((r.received_photo_count / r.required_photo_count) * 100)
+                    : 0;
+                  const statusColor = { complete: "text-emerald-400", generated: "text-blue-400", failed: "text-red-400", partial: "text-amber-400" }[r.status] || "text-slate-400";
+                  return (
+                    <div key={r.id} className="bg-navy-800 rounded-xl p-3 border border-white/5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-mono text-slate-300">{r.report_date}</span>
+                        <span className={"text-[10px] font-mono font-bold " + statusColor}>{r.status.toUpperCase()}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 bg-navy-700 rounded-full overflow-hidden">
+                          <div className="h-full bg-gold rounded-full" style={{ width: pct + "%" }} />
+                        </div>
+                        <span className="text-[10px] text-slate-500 font-mono w-14 text-right">{r.received_photo_count}/{r.required_photo_count}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {r.pdf_url && (
+                          <a href={r.pdf_url} target="_blank" rel="noopener noreferrer"
+                            className="text-[10px] font-mono text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                            <FileText size={10} /> PDF
+                          </a>
+                        )}
+                        <button onClick={async () => {
+                          try {
+                            await convoysAPI.regenerateReport(convoy.id, r.report_date);
+                            toast.success("Regeneration queued");
+                          } catch { toast.error("Failed"); }
+                        }} className="text-[10px] font-mono text-slate-500 hover:text-slate-300 flex items-center gap-1 ml-auto">
+                          <RefreshCw size={9} /> REGENERATE
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+            }
+          </div>
+        )}
       </div>
     </div>
   );
@@ -361,6 +410,7 @@ function ConvoyDetailPanel({ convoy, onClose, onRefresh }) {
 export default function ConvoysPage() {
   const { convoys, loading, fetchConvoys, createConvoy } = useConvoyStore();
   const [showForm, setShowForm] = useState(false);
+  const [cfoMode, setCfoMode] = useState(false);
   const [selected, setSelected] = useState(null);
   const [view, setView] = useState("board"); // board | list
 
@@ -408,6 +458,12 @@ export default function ConvoysPage() {
             className="flex items-center gap-2 px-4 py-2.5 bg-gold/10 border border-gold/30 text-gold rounded-xl text-sm font-mono font-bold hover:bg-gold/20 transition-colors">
             {showForm ? <><X size={13} /> CANCEL</> : <><Plus size={13} /> NEW CONVOY</>}
           </button>
+          {showForm && (
+            <button type="button" onClick={() => setCfoMode(m => !m)}
+              className={"flex items-center gap-1.5 px-3 py-2.5 border rounded-xl text-xs font-mono font-bold transition-colors " +
+                (cfoMode ? "bg-blue-500/20 border-blue-500/40 text-blue-400" : "bg-white/5 border-white/10 text-slate-500 hover:text-slate-300")}>
+              <Truck size={11} />{cfoMode ? "CFO MODE ON" : "CFO MODE"}
+          </button>
         </div>
       </div>
 
@@ -427,7 +483,14 @@ export default function ConvoysPage() {
       </div>
 
       {/* Create form */}
-      {showForm && (
+      {showForm && cfoMode && (
+        <CfoConvoyForm
+          onCreated={(convoy) => { setShowForm(false); setCfoMode(false); fetchConvoys(); setSelected(convoy); }}
+          onCancel={() => { setShowForm(false); setCfoMode(false); }}
+        />
+      )}
+
+      {showForm && !cfoMode && (
         <div className="bg-navy-900 border border-white/[0.06] rounded-2xl p-5">
           <p className="text-[10px] font-mono text-slate-500 uppercase tracking-widest mb-4">CREATE CONVOY</p>
           <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">

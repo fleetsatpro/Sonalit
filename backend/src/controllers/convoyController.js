@@ -3,10 +3,11 @@ const { query } = require('../config/database');
 const { asyncHandler } = require('../middleware/error');
 
 const VALID_TRANSITIONS = {
-  planned: ['active'],
-  active: ['completed', 'aborted'],
+  planned: ['active', 'cancelled'],
+  active: ['completed', 'aborted', 'cancelled'],
   completed: [],
   aborted: [],
+  cancelled: [],
 };
 
 const convoySchema = Joi.object({
@@ -65,15 +66,40 @@ const getConvoy = asyncHandler(async (req, res) => {
   );
   if (!result.rows.length) return res.status(404).json({ error: 'Convoy not found' });
 
-  const vehicles = await query(
-    `SELECT v.*, ca.role AS assignment_role, ca.joined_at
-     FROM convoy_assignments ca
-     JOIN vehicles v ON v.id = ca.vehicle_id AND v.deleted_at IS NULL
-     WHERE ca.convoy_id = $1`,
-    [req.params.id]
-  );
+  const [vehicles, trucks, cfos, assignments] = await Promise.all([
+    query(
+      `SELECT v.*, ca.role AS assignment_role, ca.joined_at
+       FROM convoy_assignments ca
+       JOIN vehicles v ON v.id = ca.vehicle_id AND v.deleted_at IS NULL
+       WHERE ca.convoy_id = $1`,
+      [req.params.id]
+    ),
+    query(
+      `SELECT * FROM convoy_trucks WHERE convoy_id = $1 ORDER BY position`,
+      [req.params.id]
+    ),
+    query(
+      `SELECT cc.*, u.name AS cfo_name, u.email AS cfo_email
+       FROM convoy_cfos cc
+       JOIN users u ON u.id = cc.cfo_user_id
+       WHERE cc.convoy_id = $1`,
+      [req.params.id]
+    ),
+    query(
+      `SELECT * FROM convoy_cfo_truck_assignments WHERE convoy_id = $1`,
+      [req.params.id]
+    ),
+  ]);
 
-  res.json({ data: { ...result.rows[0], vehicles: vehicles.rows } });
+  res.json({
+    data: {
+      ...result.rows[0],
+      vehicles: vehicles.rows,
+      trucks: trucks.rows,
+      cfos: cfos.rows,
+      cfo_truck_assignments: assignments.rows,
+    },
+  });
 });
 
 const createConvoy = asyncHandler(async (req, res) => {
@@ -129,7 +155,7 @@ const updateConvoy = asyncHandler(async (req, res) => {
 });
 
 const updateConvoyStatus = asyncHandler(async (req, res) => {
-  const schema = Joi.object({ status: Joi.string().valid('planned', 'active', 'completed', 'aborted').required() });
+  const schema = Joi.object({ status: Joi.string().valid('planned', 'active', 'completed', 'aborted', 'cancelled').required() });
   const { error, value } = schema.validate(req.body);
   if (error) return res.status(400).json({ error: error.message });
 
@@ -144,7 +170,7 @@ const updateConvoyStatus = asyncHandler(async (req, res) => {
   }
 
   const setDeparture = value.status === 'active';
-  const setArrival = value.status === 'completed' || value.status === 'aborted';
+  const setArrival = value.status === 'completed' || value.status === 'aborted' || value.status === 'cancelled';
 
   const result = await query(
     `UPDATE convoys SET status = $1, updated_at = NOW()
@@ -155,7 +181,24 @@ const updateConvoyStatus = asyncHandler(async (req, res) => {
   );
 
   const io = req.app.get('io');
-  if (io) io.emit('convoy:update', { convoyId: req.params.id, status: value.status, updatedBy: req.user.id });
+  if (io) {
+    const eventMap = { active: 'convoy:activated', completed: 'convoy:completed', cancelled: 'convoy:cancelled', aborted: 'convoy:aborted' };
+    const eventName = eventMap[value.status] || 'convoy:update';
+    io.emit(eventName, { convoyId: req.params.id, status: value.status, updatedBy: req.user.id });
+  }
+
+  // D4: on completion, enqueue archive PDF generation
+  if (value.status === 'completed') {
+    try {
+      const { getQueues } = require('../config/queue');
+      const { convoyArchiveQueue } = getQueues();
+      if (convoyArchiveQueue) {
+        convoyArchiveQueue.add('generateArchive', { convoy_id: req.params.id },
+          { jobId: `archive:${req.params.id}`, removeOnComplete: { count: 100 } }
+        ).catch(() => {});
+      }
+    } catch {}
+  }
 
   req.auditAction = 'UPDATE';
   req.auditRecordId = req.params.id;

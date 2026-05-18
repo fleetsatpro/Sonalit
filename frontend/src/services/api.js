@@ -40,13 +40,23 @@ export const vehiclesAPI = {
 };
 
 export const convoysAPI = {
-  list:         (p)       => api.get('/convoys', { params: p }),
-  get:          (id)      => api.get(`/convoys/${id}`),
-  create:       (data)    => api.post('/convoys', data),
-  update:       (id, d)   => api.put(`/convoys/${id}`, d),
-  updateStatus: (id, s)   => api.patch(`/convoys/${id}/status`, { status: s }),
-  assign:       (id, ids) => api.post(`/convoys/${id}/assign`, { vehicleIds: ids }),
-  delete:       (id)      => api.delete(`/convoys/${id}`),
+  list:               (p)            => api.get('/convoys', { params: p }),
+  get:                (id)           => api.get(`/convoys/${id}`),
+  create:             (data)         => api.post('/convoys', data),
+  update:             (id, d)        => api.put(`/convoys/${id}`, d),
+  updateStatus:       (id, s)        => api.patch(`/convoys/${id}/status`, { status: s }),
+  assign:             (id, ids)      => api.post(`/convoys/${id}/assign`, { vehicleIds: ids }),
+  delete:             (id)           => api.delete(`/convoys/${id}`),
+  // CFO management
+  addTruck:           (id, d)        => api.post(`/convoys/${id}/trucks`, d),
+  removeTruck:        (id, tid)      => api.delete(`/convoys/${id}/trucks/${tid}`),
+  addCfo:             (id, d)        => api.post(`/convoys/${id}/cfos`, d),
+  removeCfo:          (id, cid)      => api.delete(`/convoys/${id}/cfos/${cid}`),
+  assignTruck:        (id, d)        => api.post(`/convoys/${id}/cfo-assignments`, d),
+  removeAssignment:   (id, aid)      => api.delete(`/convoys/${id}/cfo-assignments/${aid}`),
+  // Reports
+  getReports:         (id)           => api.get(`/convoys/${id}/reports`),
+  regenerateReport:   (id, date)     => api.post(`/convoys/${id}/reports/${date}/regenerate`),
 };
 
 export const alertsAPI = {

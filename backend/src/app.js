@@ -106,6 +106,10 @@ app.get("/metrics",async(req,res)=>{
 ["auth","vehicles","convoys","alerts","messages","analytics","geofences","devices","incidents","rules","gps","sensors","ai","apikeys","reports","documents","webhooks","guardian"]
   .forEach(r=>app.use("/api/v1/"+r,require("./routes/"+r)));
 
+// Guardian CFO device routes (Phase C)
+try{app.use("/api/v1/guardian/cfo",require("./routes/guardianCfo"));logger.info("Route loaded: /api/v1/guardian/cfo");}
+catch(e){logger.warn("Guardian CFO route failed: "+e.message);}
+
 // GDPR / Data Retention (Task 5.3)
 try{app.use("/api/v1/gdpr",require("./routes/gdpr"));logger.info("Route loaded: /api/v1/gdpr");}
 catch(e){logger.warn("GDPR route failed: "+e.message);}
@@ -146,6 +150,58 @@ try {
   logger.info('Photo backfill scheduled (daily 03:00 UTC)');
 } catch (e) {
   logger.warn('Photo backfill not scheduled: ' + e.message);
+}
+
+// D3: EOD finalization sweep — every 15 min, enqueues generateReport for completed
+// or past-deadline daily reports on active convoys.
+try {
+  const cron = require('node-cron');
+  cron.schedule('*/15 * * * *', async () => {
+    try {
+      const { isCfoModuleEnabled } = require('./utils/cfoFlag');
+      if (!await isCfoModuleEnabled()) return;
+
+      const { query: dbQuery } = require('./config/database');
+      const { getQueues } = require('./config/queue');
+      const { convoyReportQueue } = getQueues();
+      if (!convoyReportQueue) return;
+
+      // Find active convoys and their incomplete reports for dates that have passed
+      const result = await dbQuery(
+        `SELECT cdr.convoy_id, cdr.report_date::text, c.timezone
+         FROM convoy_daily_reports cdr
+         JOIN convoys c ON c.id = cdr.convoy_id
+         WHERE c.status = 'active'
+           AND c.deleted_at IS NULL
+           AND cdr.status IN ('complete', 'partial')
+           AND cdr.pdf_url IS NULL
+           AND (
+             cdr.report_date < CURRENT_DATE
+             OR (
+               cdr.report_date = CURRENT_DATE
+               AND NOW() AT TIME ZONE COALESCE(c.timezone,'UTC') > (cdr.report_date + INTERVAL '1 day')::timestamptz AT TIME ZONE COALESCE(c.timezone,'UTC')
+             )
+           )`,
+        []
+      );
+
+      for (const row of result.rows) {
+        await convoyReportQueue.add('generateReport', {
+          convoy_id: row.convoy_id,
+          report_date: row.report_date,
+        }, { jobId: `genReport:${row.convoy_id}:${row.report_date}`, removeOnComplete: { count: 200 } });
+      }
+
+      if (result.rows.length) {
+        logger.info(`EOD sweep: queued ${result.rows.length} generateReport jobs`);
+      }
+    } catch (err) {
+      logger.error('EOD finalization sweep error: ' + err.message);
+    }
+  });
+  logger.info('CFO EOD finalization sweep scheduled (*/15 * * * *)');
+} catch (e) {
+  logger.warn('CFO EOD sweep not scheduled: ' + e.message);
 }
 
 const PORT=parseInt(process.env.PORT)||5000;
