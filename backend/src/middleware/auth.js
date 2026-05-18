@@ -2,7 +2,7 @@ const jwt = require('jsonwebtoken');
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
 
-const ROLE_HIERARCHY = { admin: 4, dispatcher: 3, operator: 2, analyst: 1 };
+const ROLE_HIERARCHY = { admin: 4, dispatcher: 3, operator: 2, analyst: 1, cfo: 1 };
 
 /**
  * Verifies Bearer JWT and attaches req.user (full DB row).
