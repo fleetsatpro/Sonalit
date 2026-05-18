@@ -938,8 +938,7 @@ router.get('/devices', authenticate, async (req, res, next) => {
          gd.enrolled_at, gd.created_at,
          h.battery_level, h.battery_charging, h.signal_strength,
          h.network_type, h.storage_free_mb, h.ram_free_mb, h.recorded_at AS health_recorded_at,
-         COALESCE(pc.cnt, 0)::INT AS pending_commands,
-         cfo_conv.name AS cfo_convoy_name
+         COALESCE(pc.cnt, 0)::INT AS pending_commands
        FROM guardian_devices gd
        LEFT JOIN LATERAL (
          SELECT battery_level, battery_charging, signal_strength,
@@ -954,14 +953,6 @@ router.get('/devices', authenticate, async (req, res, next) => {
          FROM device_commands
          WHERE device_id = gd.id AND status = 'pending'
        ) pc ON true
-       LEFT JOIN LATERAL (
-         SELECT c.name
-         FROM convoy_cfos cc
-         JOIN convoys c ON c.id = cc.convoy_id
-         WHERE cc.guardian_device_id = gd.id
-           AND c.status = 'active' AND c.deleted_at IS NULL
-         LIMIT 1
-       ) cfo_conv ON true
        WHERE ${filters.join(' AND ')}
        ORDER BY gd.last_seen DESC NULLS LAST, gd.created_at DESC
        LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
@@ -974,6 +965,28 @@ router.get('/devices', authenticate, async (req, res, next) => {
     );
 
     const rows = result.rows;
+
+    // Attach active CFO convoy name per device — runs only if convoy_cfos table exists
+    if (rows.length > 0) {
+      try {
+        const deviceIds = rows.map(r => r.id);
+        const cfoRes = await query(
+          `SELECT cc.guardian_device_id, c.name
+           FROM convoy_cfos cc
+           JOIN convoys c ON c.id = cc.convoy_id
+           WHERE cc.guardian_device_id = ANY($1)
+             AND c.status = 'active' AND c.deleted_at IS NULL`,
+          [deviceIds]
+        );
+        const cfoMap = {};
+        for (const r of cfoRes.rows) cfoMap[r.guardian_device_id] = r.name;
+        for (const row of rows) row.cfo_convoy_name = cfoMap[row.id] || null;
+      } catch (_) {
+        // convoy_cfos table not yet migrated — skip gracefully
+        for (const row of rows) row.cfo_convoy_name = null;
+      }
+    }
+
     const parsedLimit = parseInt(limit);
     const next_cursor =
       rows.length < parsedLimit
