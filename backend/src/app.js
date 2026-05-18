@@ -208,6 +208,14 @@ const PORT=parseInt(process.env.PORT)||5000;
 createQueues();
 server.listen(PORT,()=>logger.info("FleetOps Enterprise v2.1 running on port "+PORT+" ["+( process.env.NODE_ENV||"development")+"]"));
 
+// Ensure CFO module flag is enabled in DB on every startup (idempotent)
+dbQuery(
+  `INSERT INTO guardian_config (key, value_int, updated_at)
+   VALUES ('cfo_module_enabled', 1, NOW())
+   ON CONFLICT (key) DO UPDATE SET value_int = 1, updated_at = NOW()`
+).then(() => logger.info('CFO module enabled in DB'))
+ .catch(e => logger.warn('CFO module DB flag skipped: ' + e.message));
+
 // Start BullMQ workers in-process when Redis is available (avoids needing a separate worker dyno)
 if(process.env.REDIS_URL && process.env.DISABLE_REDIS !== 'true'){
   try{
