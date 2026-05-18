@@ -464,6 +464,7 @@ export default function ConvoysPage() {
                 (cfoMode ? "bg-blue-500/20 border-blue-500/40 text-blue-400" : "bg-white/5 border-white/10 text-slate-500 hover:text-slate-300")}>
               <Truck size={11} />{cfoMode ? "CFO MODE ON" : "CFO MODE"}
           </button>
+          )}
         </div>
       </div>
 
