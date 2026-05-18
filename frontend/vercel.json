@@ -1,6 +1,6 @@
 {
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/api/:path*", "destination": "https://sonalit-production.up.railway.app/api/:path*" },
+    { "source": "/:path*", "destination": "/index.html" }
   ]
 }
