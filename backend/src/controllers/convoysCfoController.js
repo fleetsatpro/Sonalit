@@ -15,7 +15,7 @@ function gAudit(actor_id, action, target_type, target_id, payload, ip) {
 }
 
 const truckSchema = Joi.object({
-  vehicle_id: Joi.string().uuid().required(),
+  vehicle_id: Joi.string().uuid().allow('', null).optional(),
   driver_name: Joi.string().min(1).max(100).required(),
   driver_phone: Joi.string().max(30).allow('', null),
   driver_license_no: Joi.string().max(50).allow('', null),
@@ -32,7 +32,7 @@ const cfoInputSchema = Joi.object({
 
 const createSchema = Joi.object({
   name: Joi.string().min(3).max(100).required(),
-  region: Joi.string().valid('Kenya', 'DRC', 'Tanzania', 'Mali').required(),
+  region: Joi.string().valid('Kenya', 'DRC', 'Tanzania', 'Mali', 'Nigeria', 'Ethiopia', 'Uganda', 'Sudan').required(),
   priority: Joi.string().valid('low', 'medium', 'high', 'critical').required(),
   description: Joi.string().max(500).allow('', null),
   timezone: Joi.string().max(50).default('UTC'),
@@ -172,7 +172,7 @@ const addTruck = asyncHandler(async (req, res) => {
   if (!await isCfoModuleEnabled()) return res.status(403).json({ error: 'cfo_module_disabled' });
 
   const schema = Joi.object({
-    vehicle_id: Joi.string().uuid().required(),
+    vehicle_id: Joi.string().uuid().allow('', null).optional(),
     driver_name: Joi.string().min(1).max(100).required(),
     driver_phone: Joi.string().max(30).allow('', null),
     driver_license_no: Joi.string().max(50).allow('', null),
