@@ -37,6 +37,25 @@ interface GuardianApiService {
         @Header("X-Device-Token") token: String,
         @Body body: AckRequest
     ): Response<Unit>
+
+    // ─── CFO Endpoints ────────────────────────────────────────────────────────
+
+    @GET("guardian/cfo/context")
+    suspend fun getCfoContext(
+        @Header("X-Device-Token") token: String
+    ): CfoContextResponse
+
+    @POST("guardian/cfo/photo-upload-url")
+    suspend fun getCfoPhotoUploadUrl(
+        @Header("X-Device-Token") token: String,
+        @Body body: CfoPhotoUploadUrlRequest
+    ): CfoPhotoUploadUrlResponse
+
+    @POST("guardian/cfo/photos")
+    suspend fun commitCfoPhoto(
+        @Header("X-Device-Token") token: String,
+        @Body body: CfoPhotoCommitRequest
+    ): Response<CfoPhotoCommitResponse>
 }
 
 // ─── Request / Response Data Classes ──────────────────────────────────────────
@@ -139,8 +158,82 @@ data class AckRequest(
 
 data class CommandDto(
     val commandId: String,
-    val type: String,       // "lock_screen", "push_message", "update_config", "reboot", "wipe"
+    val type: String,
     val payload: Map<String, String>?,
     val issuedAt: Long,
     val expiresAt: Long?
+)
+
+// ─── CFO Data Classes ──────────────────────────────────────────────────────────
+
+data class CfoTruckDto(
+    val id: String,
+    val position: Int,
+    val vehicleId: String,
+    val driverName: String,
+    val driverPhone: String?
+)
+
+data class CfoPhotoDto(
+    val id: String,
+    val convoyTruckId: String,
+    val session: String,
+    val photoType: String,
+    val sealPosition: String?,
+    val takenAt: String
+)
+
+data class CfoConvoyDto(
+    val id: String,
+    val name: String,
+    val status: String,
+    val timezone: String,
+    val startDate: String?,
+    val endDate: String?,
+    val sealCountPerTruck: Int
+)
+
+data class CfoContextData(
+    val convoy: CfoConvoyDto,
+    val cfoUserId: String,
+    val assignedTrucks: List<CfoTruckDto>,
+    val reportDate: String,
+    val photosToday: List<CfoPhotoDto>
+)
+
+data class CfoContextResponse(val data: CfoContextData)
+
+data class CfoPhotoUploadUrlRequest(
+    val convoyId: String,
+    val convoyTruckId: String,
+    val session: String,
+    val photoType: String,
+    val sealPosition: String?,
+    val reportDate: String
+)
+
+data class CfoPhotoUploadUrlResponse(
+    val uploadUrl: String,
+    val publicUrl: String,
+    val key: String
+)
+
+data class CfoPhotoCommitRequest(
+    val eventUuid: String,
+    val convoyId: String,
+    val convoyTruckId: String,
+    val session: String,
+    val photoType: String,
+    val sealPosition: String?,
+    val reportDate: String,
+    val photoUrl: String,
+    val takenAt: String,
+    val lat: Double?,
+    val lng: Double?,
+    val notes: String?
+)
+
+data class CfoPhotoCommitResponse(
+    val data: Map<String, Any?>,
+    val duplicate: Boolean?
 )

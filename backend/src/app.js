@@ -106,6 +106,10 @@ app.get("/metrics",async(req,res)=>{
 ["auth","vehicles","convoys","alerts","messages","analytics","geofences","devices","incidents","rules","gps","sensors","ai","apikeys","reports","documents","webhooks","guardian"]
   .forEach(r=>app.use("/api/v1/"+r,require("./routes/"+r)));
 
+// Guardian CFO device routes (Phase C)
+try{app.use("/api/v1/guardian/cfo",require("./routes/guardianCfo"));logger.info("Route loaded: /api/v1/guardian/cfo");}
+catch(e){logger.warn("Guardian CFO route failed: "+e.message);}
+
 // GDPR / Data Retention (Task 5.3)
 try{app.use("/api/v1/gdpr",require("./routes/gdpr"));logger.info("Route loaded: /api/v1/gdpr");}
 catch(e){logger.warn("GDPR route failed: "+e.message);}
