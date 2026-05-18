@@ -96,6 +96,7 @@ function startNotificationWorker() {
 
   worker.on('completed', (job) => logger.info(`Notification job ${job.id} completed`));
   worker.on('failed', (job, err) => logger.error(`Notification job ${job?.id} failed: ${err.message}`));
+  worker.on('error', (err) => logger.error(`Notification worker error: ${err.message}`));
 
   logger.info('Notification worker started');
   return worker;
