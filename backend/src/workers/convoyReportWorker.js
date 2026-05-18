@@ -209,7 +209,9 @@ function startConvoyReportWorker() {
   }, { connection });
 
   reportWorker.on('failed', (job, err) => logger.error(`[convoyReport] job ${job?.id} failed: ${err.message}`));
+  reportWorker.on('error', (err) => logger.error(`[convoyReport] worker error: ${err.message}`));
   archiveWorker.on('failed', (job, err) => logger.error(`[convoyArchive] job ${job?.id} failed: ${err.message}`));
+  archiveWorker.on('error', (err) => logger.error(`[convoyArchive] worker error: ${err.message}`));
 
   logger.info('convoyReport + convoyArchive workers started');
   return [reportWorker, archiveWorker];

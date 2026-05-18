@@ -158,6 +158,7 @@ function startGPSWorker() {
 
   worker.on('completed', (job) => logger.info(`GPS job ${job.id} completed`));
   worker.on('failed', (job, err) => logger.error(`GPS job ${job?.id} failed: ${err.message}`));
+  worker.on('error', (err) => logger.error(`GPS worker error: ${err.message}`));
 
   logger.info('GPS worker started');
   return worker;

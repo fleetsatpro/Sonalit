@@ -222,6 +222,7 @@ function startAlertWorker() {
 
   worker.on('completed', (job) => logger.info(`Alert job ${job.id} completed`));
   worker.on('failed', (job, err) => logger.error(`Alert job ${job?.id} failed: ${err.message}`));
+  worker.on('error', (err) => logger.error(`Alert worker error: ${err.message}`));
 
   logger.info('Alert worker started');
   return worker;
