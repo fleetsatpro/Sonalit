@@ -24,6 +24,7 @@ public class GuardianService extends Service implements LocationListener {
     private OfflineQueue    offlineQueue;
     private CrashDetector   crashDetector;
     private CommandHandler  commandHandler;
+    private android.net.ConnectivityManager.NetworkCallback networkCallback;
 
     // Shared state — read by MainActivity via broadcast
     public static volatile double  lastLat   = 0;
@@ -95,6 +96,7 @@ public class GuardianService extends Service implements LocationListener {
 
         createNotificationChannel();
         registerControlReceiver();
+        registerNetworkCallback();
     }
 
     // AlarmManager action constant for DMS (Task G)
@@ -134,6 +136,12 @@ public class GuardianService extends Service implements LocationListener {
         crashDetector.stop();
         try { locationManager.removeUpdates(this); } catch (Exception ignored) {}
         try { unregisterReceiver(controlReceiver); } catch (Exception ignored) {}
+        if (networkCallback != null) {
+            try {
+                ((android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE))
+                    .unregisterNetworkCallback(networkCallback);
+            } catch (Exception ignored) {}
+        }
         SirenController.getInstance(this).stop();
         super.onDestroy();
     }
@@ -388,6 +396,32 @@ public class GuardianService extends Service implements LocationListener {
         f.addAction("com.fleetops.guardian.PANIC");
         f.addAction("com.fleetops.guardian.REQUEST_FRESH_LOCATION");
         registerReceiver(controlReceiver, f);
+    }
+
+    private void registerNetworkCallback() {
+        try {
+            android.net.ConnectivityManager cm =
+                (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            if (cm == null) return;
+            networkCallback = new android.net.ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(android.net.Network network) {
+                    // Cancel the scheduled retry and flush immediately now that we have connectivity
+                    handler.removeCallbacks(queueRetry);
+                    handler.postDelayed(queueRetry, 1000);
+                }
+            };
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                cm.registerDefaultNetworkCallback(networkCallback);
+            } else {
+                android.net.NetworkRequest req = new android.net.NetworkRequest.Builder()
+                    .addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .build();
+                cm.registerNetworkCallback(req, networkCallback);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "NetworkCallback registration failed: " + e.getMessage());
+        }
     }
 
     // ── System helpers ────────────────────────────────────────────────────────
