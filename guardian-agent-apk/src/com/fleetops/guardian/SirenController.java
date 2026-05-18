@@ -1,19 +1,17 @@
 package com.fleetops.guardian;
 
 import android.content.Context;
+import android.media.AudioManager;
 import android.media.Ringtone;
 import android.media.RingtoneManager;
-import android.os.Handler;
-import android.os.Looper;
 import android.os.Vibrator;
 
 public class SirenController {
     private static volatile SirenController instance;
 
-    private final Handler  handler = new Handler(Looper.getMainLooper());
     private Ringtone  activeRingtone = null;
     private Vibrator  activeVibrator = null;
-    private Runnable  stopTask       = null;
+    private boolean   running        = false;
 
     private SirenController() {}
 
@@ -24,6 +22,10 @@ public class SirenController {
             }
         }
         return instance;
+    }
+
+    public synchronized boolean isRunning() {
+        return running;
     }
 
     public synchronized void start(Context ctx, final int durationMs) {
@@ -37,15 +39,21 @@ public class SirenController {
         try {
             activeRingtone = RingtoneManager.getRingtone(ctx,
                 RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM));
-            if (activeRingtone != null) activeRingtone.play();
+            if (activeRingtone != null) {
+                // Force alarm volume to maximum so it cannot be silenced mid-alarm
+                AudioManager am = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
+                if (am != null) {
+                    am.setStreamVolume(
+                        AudioManager.STREAM_ALARM,
+                        am.getStreamMaxVolume(AudioManager.STREAM_ALARM),
+                        0);
+                }
+                activeRingtone.play();
+            }
         } catch (Exception ignored) {}
 
-        stopTask = new Runnable() {
-            @Override public void run() {
-                synchronized (SirenController.this) { stopLocked(); }
-            }
-        };
-        handler.postDelayed(stopTask, durationMs);
+        running = true;
+        // No auto-stop: siren runs until stop() is explicitly called via stop_siren command.
     }
 
     public synchronized void stop() {
@@ -53,7 +61,7 @@ public class SirenController {
     }
 
     private void stopLocked() {
-        if (stopTask != null) { handler.removeCallbacks(stopTask); stopTask = null; }
+        running = false;
         if (activeRingtone != null) {
             try { activeRingtone.stop(); } catch (Exception ignored) {}
             activeRingtone = null;

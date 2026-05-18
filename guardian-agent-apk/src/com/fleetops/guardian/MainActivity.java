@@ -316,8 +316,14 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        if (event.getKeyCode() == KeyEvent.KEYCODE_VOLUME_DOWN &&
-                event.getAction() == KeyEvent.ACTION_DOWN) {
+        int code = event.getKeyCode();
+        // Block volume keys entirely while siren is active so the alarm cannot be silenced
+        // by the device holder. Both UP and DOWN are blocked to prevent any stream adjustment.
+        if (SirenController.getInstance(this).isRunning()
+                && (code == KeyEvent.KEYCODE_VOLUME_DOWN || code == KeyEvent.KEYCODE_VOLUME_UP)) {
+            return true;
+        }
+        if (code == KeyEvent.KEYCODE_VOLUME_DOWN && event.getAction() == KeyEvent.ACTION_DOWN) {
             long now = System.currentTimeMillis();
             if (volumeDownCount == 0 || now - firstVolumeDown > VOLUME_SOS_WINDOW_MS) {
                 volumeDownCount = 1;
