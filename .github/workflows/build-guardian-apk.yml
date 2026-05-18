@@ -28,21 +28,14 @@ jobs:
       - name: Install build tools
         run: sdkmanager "build-tools;34.0.0" "platforms;android-34"
 
-      - name: Cache Gradle packages
-        uses: actions/cache@v4
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('guardian-agent/**/*.gradle*', 'guardian-agent/gradle-wrapper.properties') }}
-          restore-keys: gradle-
-
-      - name: Make gradlew executable
-        run: chmod +x guardian-agent/gradlew
+          gradle-version: "8.2"
 
       - name: Build debug APK
         working-directory: guardian-agent
-        run: ./gradlew assembleDebug --no-daemon
+        run: gradle assembleDebug --no-daemon
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
 
