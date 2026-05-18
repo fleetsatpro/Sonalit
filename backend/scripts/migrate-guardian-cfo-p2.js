@@ -44,13 +44,19 @@ async function run() {
 
     // seal photos require a seal_position; front/rear must NOT have one
     await client.query(`
-      ALTER TABLE convoy_truck_photos
-        ADD CONSTRAINT IF NOT EXISTS seal_position_consistency
-        CHECK (
-          (photo_type = 'seal' AND seal_position IS NOT NULL)
-          OR
-          (photo_type IN ('front','rear') AND seal_position IS NULL)
-        )
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'seal_position_consistency'
+        ) THEN
+          ALTER TABLE convoy_truck_photos
+            ADD CONSTRAINT seal_position_consistency
+            CHECK (
+              (photo_type = 'seal' AND seal_position IS NOT NULL)
+              OR
+              (photo_type IN ('front','rear') AND seal_position IS NULL)
+            );
+        END IF;
+      END $$
     `);
 
     // covering indexes
