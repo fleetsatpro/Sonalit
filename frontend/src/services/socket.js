@@ -45,6 +45,9 @@ const onAlertNew         = (cb) => on('alert:new', cb);
 const onAlert            = (cb) => on('alert:new', cb);   // alias
 const onMessageNew       = (cb) => on('message:new', cb);
 const onIncidentNew      = (cb) => on('incident:new', cb);
+const onDeviceLocation   = (cb) => on('device:location', cb);
+const onDevicePanic      = (cb) => on('device:panic', cb);
+const onDeviceReport     = (cb) => on('device:report', cb);
 
 export default {
   connect, disconnect, isConnected, on, off, emit,
@@ -52,4 +55,5 @@ export default {
   onVehicleUpdate, onConvoyUpdate, onConvoyDeviation, onConvoyETA,
   onAlertNew, onAlert,
   onMessageNew, onIncidentNew,
+  onDeviceLocation, onDevicePanic, onDeviceReport,
 };

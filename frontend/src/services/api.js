@@ -168,16 +168,19 @@ export const riskZoneAPI = {
 };
 
 export const guardianAPI = {
-  devices:      (p)     => api.get('/guardian/devices', { params: p }),
-  device:       (id)    => api.get(`/guardian/devices/${id}`),
-  updateDevice: (id, d) => api.patch(`/guardian/devices/${id}`, d),
-  revokeDevice: (id)    => api.delete(`/guardian/devices/${id}`),
-  command:      (id, d) => api.post(`/guardian/devices/${id}/command`, d),
-  commands:     (id, p) => api.get(`/guardian/devices/${id}/commands`, { params: p }),
-  history:      (id, p) => api.get(`/guardian/devices/${id}/history`, { params: p }),
-  panic:        (p)     => api.get('/guardian/panic', { params: p }),
-  resolvePanic: (id)    => api.patch(`/guardian/panic/${id}/resolve`),
-  reports:      (p)     => api.get('/guardian/reports', { params: p }),
+  devices:          (p)     => api.get('/guardian/devices', { params: p }),
+  device:           (id)    => api.get(`/guardian/devices/${id}`),
+  updateDevice:     (id, d) => api.patch(`/guardian/devices/${id}`, d),
+  revokeDevice:     (id)    => api.delete(`/guardian/devices/${id}`),
+  command:          (id, d) => api.post(`/guardian/devices/${id}/command`, d),
+  commands:         (id, p) => api.get(`/guardian/devices/${id}/commands`, { params: p }),
+  history:          (id, p) => api.get(`/guardian/devices/${id}/history`, { params: p }),
+  panic:            (p)     => api.get('/guardian/panic', { params: p }),
+  resolvePanic:     (id)    => api.patch(`/guardian/panic/${id}/resolve`),
+  reports:          (p)     => api.get('/guardian/reports', { params: p }),
+  guardianConvoys:  ()      => api.get('/guardian/convoys'),
+  convoyCodeCreate: (d)     => api.post('/guardian/convoy-codes', d),
+  convoyCodeList:   ()      => api.get('/guardian/convoy-codes'),
 };
 
 export default api;

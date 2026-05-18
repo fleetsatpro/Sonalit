@@ -1,10 +1,11 @@
 import 'leaflet/dist/leaflet.css';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import {
-  Truck, Shield, Bell, Activity, AlertTriangle,
+  Truck, Shield, Bell, AlertTriangle,
   Navigation, Target, RefreshCw, X, CheckCircle2,
+  FileText, MessageSquare, UserPlus,
 } from 'lucide-react';
-import { analyticsAPI, vehiclesAPI, convoysAPI, alertsAPI, guardianAPI } from '../services/api';
+import { analyticsAPI, vehiclesAPI, convoysAPI, alertsAPI, guardianAPI, messagesAPI } from '../services/api';
 import { useAlertStore } from '../store';
 import socketService from '../services/socket';
 import { Modal, Button, Input, Select, Spinner } from '../components/UI';
@@ -29,9 +30,12 @@ const C = {
 
 // ── Feed event config ──────────────────────────────────────────────────────────
 const FEED_CONFIG = {
-  gps:    { color: 'text-success', icon: Navigation },
-  alert:  { color: 'text-danger',  icon: AlertTriangle },
-  convoy: { color: 'text-gold',    icon: Shield },
+  gps:      { color: 'text-success', icon: Navigation },
+  alert:    { color: 'text-danger',  icon: AlertTriangle },
+  convoy:   { color: 'text-gold',    icon: Shield },
+  report:   { color: 'text-gold',    icon: FileText },
+  panic:    { color: 'text-danger',  icon: AlertTriangle },
+  location: { color: 'text-cyan',    icon: Navigation },
 };
 
 // ── Global dashboard CSS (injected once) ───────────────────────────────────────
@@ -146,6 +150,44 @@ function MissionCard({ mission }) {
           boxShadow: `0 0 6px ${statusColor}60`,
         }} />
       </div>
+    </div>
+  );
+}
+
+// ── FieldReportCard ────────────────────────────────────────────────────────────
+function FieldReportCard({ report }) {
+  const sevColor = report.severity === 'critical' ? '#ff3355'
+    : report.severity === 'high' ? '#ff8800'
+    : report.severity === 'medium' ? '#ffaa00'
+    : '#4a7090';
+  const ts = report.created_at
+    ? new Date(report.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    : '';
+  return (
+    <div style={{
+      padding: '7px 10px',
+      background: 'rgba(13,34,64,0.5)',
+      border: '1px solid rgba(0,212,255,0.08)',
+      borderRadius: 4,
+      marginBottom: 5,
+      borderLeft: `2px solid ${sevColor}`,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+        <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 10, fontWeight: 700, color: '#e8f4ff', textTransform: 'uppercase' }}>
+          {(report.category || 'unknown').replace(/_/g, ' ')}
+        </span>
+        <span style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: sevColor, textTransform: 'uppercase' }}>
+          {report.severity}
+        </span>
+      </div>
+      <div style={{ fontSize: 9, color: '#4a7090', fontFamily: 'IBM Plex Mono, monospace' }}>
+        {report.device_name || 'Unknown device'} · {ts}
+      </div>
+      {report.description && (
+        <div style={{ fontSize: 9, color: '#c8ddf0', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {report.description}
+        </div>
+      )}
     </div>
   );
 }
@@ -319,6 +361,119 @@ function LogAlertModal({ open, onClose, onSuccess }) {
   );
 }
 
+// ── Broadcast Modal ────────────────────────────────────────────────────────────
+function BroadcastModal({ open, onClose, onSuccess }) {
+  const [form, setForm] = useState({ content: '', severity: 'info' });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const submit = async () => {
+    if (!form.content.trim()) { setError('Message content is required'); return; }
+    setLoading(true); setError('');
+    try {
+      await messagesAPI.broadcast(form.content, form.severity);
+      onSuccess('Broadcast sent to all users');
+      onClose();
+      setForm({ content: '', severity: 'info' });
+    } catch (e) {
+      setError(e.response?.data?.error || 'Failed to send broadcast');
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Broadcast Message"
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button loading={loading} onClick={submit}>Send Broadcast</Button></>}>
+      {error && <div className="mb-4 px-3 py-2 bg-danger/10 border border-danger/20 rounded-lg text-xs text-danger">{error}</div>}
+      <div className="space-y-4">
+        <Select label="Severity" value={form.severity} onChange={e => setForm(f => ({ ...f, severity: e.target.value }))}>
+          <option value="info">Info</option>
+          <option value="warning">Warning</option>
+          <option value="critical">Critical</option>
+        </Select>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">Message</label>
+          <textarea
+            rows={4}
+            placeholder="Broadcast to all connected users..."
+            value={form.content}
+            onChange={e => setForm(f => ({ ...f, content: e.target.value }))}
+            className="bg-navy-800 border border-white/10 focus:border-gold/50 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 outline-none transition-colors resize-none"
+          />
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ── Convoy Code / Enrol Officers Modal ─────────────────────────────────────────
+function ConvoyCodeModal({ open, onClose }) {
+  const [form, setForm]   = useState({ max_members: 50, expires_in_hours: 24 });
+  const [code, setCode]   = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const reset = () => { setCode(null); setError(''); setForm({ max_members: 50, expires_in_hours: 24 }); };
+  const handleClose = () => { reset(); onClose(); };
+
+  const submit = async () => {
+    setLoading(true); setError('');
+    try {
+      const res = await guardianAPI.convoyCodeCreate({ max_members: form.max_members, expires_in_hours: form.expires_in_hours });
+      setCode(res.data);
+    } catch (e) {
+      setError(e.response?.data?.error || 'Failed to generate code');
+    } finally { setLoading(false); }
+  };
+
+  return (
+    <Modal open={open} onClose={handleClose} title="Enrol Field Officers"
+      footer={!code
+        ? <><Button variant="ghost" onClick={handleClose}>Cancel</Button><Button loading={loading} onClick={submit}>Generate Code</Button></>
+        : <><Button variant="ghost" onClick={reset}>New Code</Button><Button onClick={handleClose}>Done</Button></>
+      }>
+      {error && <div className="mb-4 px-3 py-2 bg-danger/10 border border-danger/20 rounded-lg text-xs text-danger">{error}</div>}
+      {!code ? (
+        <div className="space-y-4">
+          <p className="text-sm text-slate-400">
+            Generate a convoy code. Officers enter it in their Guardian app under <strong className="text-slate-300">Settings → Convoy → JOIN CONVOY</strong> to be tracked on this map.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Max Officers" type="number" value={form.max_members}
+              onChange={e => setForm(f => ({ ...f, max_members: parseInt(e.target.value) || 50 }))} />
+            <Select label="Expires In" value={form.expires_in_hours}
+              onChange={e => setForm(f => ({ ...f, expires_in_hours: parseInt(e.target.value) }))}>
+              <option value="1">1 hour</option>
+              <option value="4">4 hours</option>
+              <option value="12">12 hours</option>
+              <option value="24">24 hours</option>
+              <option value="72">3 days</option>
+              <option value="168">7 days</option>
+            </Select>
+          </div>
+        </div>
+      ) : (
+        <div style={{ textAlign: 'center', padding: '8px 0' }}>
+          <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 9, color: '#4a7090', letterSpacing: '0.2em', marginBottom: 10 }}>CONVOY CODE</div>
+          <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 38, fontWeight: 800, color: '#00d4ff', letterSpacing: '0.3em', marginBottom: 8 }}>
+            {code.code}
+          </div>
+          <div style={{ fontSize: 12, color: '#c8ddf0', marginBottom: 14 }}>
+            Expires {new Date(code.expires_at).toLocaleString()}
+          </div>
+          <div style={{
+            background: 'rgba(0,212,255,0.06)', border: '1px solid rgba(0,212,255,0.15)',
+            borderRadius: 6, padding: '10px 14px', fontSize: 12, color: '#4a7090', textAlign: 'left', lineHeight: 1.6,
+          }}>
+            Share this code with field officers. They enter it in the Guardian app under{' '}
+            <strong style={{ color: '#c8ddf0' }}>Settings → Convoy → JOIN CONVOY</strong>.
+            Once joined they appear on this map in real time.
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 // ── Dispatch Modal ─────────────────────────────────────────────────────────────
 function DispatchModal({ open, onClose, onSuccess }) {
   const [convoys, setConvoys] = useState([]);
@@ -379,11 +534,13 @@ export default function DashboardPage() {
   const [kpis, setKpis] = useState(null);
   const [guardianStats, setGuardianStats] = useState({ activeDevices: 0, openPanics: 0 });
   const [activeConvoys, setActiveConvoys] = useState([]);
+  const [fieldReports, setFieldReports] = useState([]);
+  const [fieldOfficers, setFieldOfficers] = useState([]);
   const [feed, setFeed] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState('');
-  const [modal, setModal] = useState(null); // 'convoy'|'vehicle'|'alert'|'dispatch'
+  const [modal, setModal] = useState(null); // 'convoy'|'vehicle'|'alert'|'dispatch'|'broadcast'|'enrol'
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
   const { alerts, fetchAlerts } = useAlertStore();
 
@@ -391,6 +548,7 @@ export default function DashboardPage() {
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const vehicleLayerRef = useRef(null);
+  const guardianLayerRef = useRef(null);
 
   // Inject CSS once
   useEffect(() => { injectDashCSS(); }, []);
@@ -406,11 +564,13 @@ export default function DashboardPage() {
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     try {
-      const [dash, convoys, gDevices, gPanics] = await Promise.all([
+      const [dash, convoys, gDevices, gPanics, gReports, gOfficers] = await Promise.all([
         analyticsAPI.dashboard(),
         convoysAPI.list({ status: 'active', limit: 5 }),
         guardianAPI.devices({ status: 'active', limit: 1 }).catch(() => null),
         guardianAPI.panic({ active_only: 'true', limit: 1 }).catch(() => null),
+        guardianAPI.reports({ limit: 5 }).catch(() => null),
+        guardianAPI.devices({ status: 'active', limit: 100 }).catch(() => null),
       ]);
       setKpis(dash.data.data);
       setActiveConvoys(convoys.data.data || []);
@@ -418,6 +578,8 @@ export default function DashboardPage() {
         activeDevices: gDevices?.data?.total ?? gDevices?.data?.data?.length ?? 0,
         openPanics:    gPanics?.data?.total  ?? gPanics?.data?.data?.length  ?? 0,
       });
+      setFieldReports(gReports?.data?.data || []);
+      setFieldOfficers((gOfficers?.data?.data || []).filter(d => d.last_lat && d.last_lng));
     } catch (e) {
       console.error('Dashboard load error:', e);
     } finally { setLoading(false); setRefreshing(false); }
@@ -429,15 +591,39 @@ export default function DashboardPage() {
     fetchAlerts({ resolved: 'false', limit: 5 });
 
     const unsubVehicle = socketService.onVehicleUpdate(data =>
-      setFeed(f => [{ type: 'gps',    ...data, ts: new Date() }, ...f].slice(0, 30))
+      setFeed(f => [{ type: 'gps', ...data, ts: new Date() }, ...f].slice(0, 30))
     );
-    const unsubAlert   = socketService.onAlertNew(data =>
-      setFeed(f => [{ type: 'alert',  ...data, ts: new Date() }, ...f].slice(0, 30))
+    const unsubAlert = socketService.onAlertNew(data =>
+      setFeed(f => [{ type: 'alert', ...data, ts: new Date() }, ...f].slice(0, 30))
     );
-    const unsubConvoy  = socketService.onConvoyUpdate(data =>
+    const unsubConvoy = socketService.onConvoyUpdate(data =>
       setFeed(f => [{ type: 'convoy', ...data, ts: new Date() }, ...f].slice(0, 30))
     );
-    return () => { unsubVehicle(); unsubAlert(); unsubConvoy(); };
+    const unsubReport = socketService.onDeviceReport(data => {
+      setFeed(f => [{ type: 'report', ...data, ts: new Date() }, ...f].slice(0, 30));
+      setFieldReports(prev => [{ ...data, created_at: data.created_at || new Date().toISOString() }, ...prev].slice(0, 5));
+    });
+    const unsubPanic = socketService.onDevicePanic(data => {
+      setFeed(f => [{ type: 'panic', ...data, ts: new Date() }, ...f].slice(0, 30));
+      setGuardianStats(s => ({ ...s, openPanics: s.openPanics + 1 }));
+    });
+    const unsubLoc = socketService.onDeviceLocation(data => {
+      setFieldOfficers(prev => {
+        const idx = prev.findIndex(d => d.id === data.device_id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = { ...next[idx], last_lat: data.lat, last_lng: data.lng, last_speed: data.speed };
+          return next;
+        }
+        return [...prev, {
+          id: data.device_id, name: data.name,
+          last_lat: data.lat, last_lng: data.lng,
+          last_speed: data.speed, status: 'active',
+        }];
+      });
+    });
+
+    return () => { unsubVehicle(); unsubAlert(); unsubConvoy(); unsubReport(); unsubPanic(); unsubLoc(); };
   }, []);
 
   useInterval(() => loadData(), 30000);
@@ -452,7 +638,6 @@ export default function DashboardPage() {
       if (!mounted || !mapRef.current || mapInstanceRef.current) return;
       const L = mod.default;
 
-      // Fix default icons
       delete L.Icon.Default.prototype._getIconUrl;
       L.Icon.Default.mergeOptions({ iconRetinaUrl: null, iconUrl: null, shadowUrl: null });
 
@@ -469,8 +654,9 @@ export default function DashboardPage() {
 
       L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-      vehicleLayerRef.current = L.layerGroup().addTo(map);
-      mapInstanceRef.current = map;
+      vehicleLayerRef.current  = L.layerGroup().addTo(map);
+      guardianLayerRef.current = L.layerGroup().addTo(map);
+      mapInstanceRef.current   = map;
     });
 
     return () => {
@@ -478,7 +664,8 @@ export default function DashboardPage() {
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
-        vehicleLayerRef.current = null;
+        vehicleLayerRef.current  = null;
+        guardianLayerRef.current = null;
       }
     };
   }, []);
@@ -492,9 +679,9 @@ export default function DashboardPage() {
 
       const positions = [
         { lat: -1.2921, lng: 36.8219, status: 'active',   id: 'V001' },
-        { lat: -4.0435, lng: 39.6682, status: 'delayed',   id: 'V002' },
-        { lat:  0.3476, lng: 32.5825, status: 'active',    id: 'V003' },
-        { lat: -6.7924, lng: 39.2083, status: 'incident',  id: 'V004' },
+        { lat: -4.0435, lng: 39.6682, status: 'delayed',  id: 'V002' },
+        { lat:  0.3476, lng: 32.5825, status: 'active',   id: 'V003' },
+        { lat: -6.7924, lng: 39.2083, status: 'incident', id: 'V004' },
       ];
 
       positions.forEach(({ lat, lng, status, id }) => {
@@ -521,6 +708,39 @@ export default function DashboardPage() {
     });
   }, [activeConvoys]);
 
+  // ── Update field officer markers ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!mapInstanceRef.current || !guardianLayerRef.current) return;
+    import('leaflet').then(mod => {
+      const L = mod.default;
+      guardianLayerRef.current.clearLayers();
+      fieldOfficers.forEach(d => {
+        if (!d.last_lat || !d.last_lng) return;
+        const isPanic = d.panic_active;
+        const color = isPanic ? '#ff3355' : '#00d4ff';
+        const icon = L.divIcon({
+          className: '',
+          html: `<div style="width:10px;height:10px;background:${color};border:2px solid rgba(0,0,0,0.5);box-shadow:0 0 8px ${color};position:relative;transform:rotate(45deg)">
+            <div style="position:absolute;inset:-4px;border:1.5px solid ${color};opacity:0.4;animation:ping 2s infinite"></div>
+          </div>`,
+          iconSize: [10, 10],
+          iconAnchor: [5, 5],
+        });
+        L.marker([d.last_lat, d.last_lng], { icon })
+          .bindPopup(
+            `<div style="background:#0b1829;color:#c8ddf0;border:1px solid rgba(0,212,255,0.2);border-radius:4px;padding:10px;font-family:'IBM Plex Mono',monospace;font-size:11px">
+              <strong style="color:#00d4ff">${d.name || d.id}</strong><br>
+              Field Officer${isPanic ? ' <span style="color:#ff3355">⚠ PANIC</span>' : ''}<br>
+              Speed: ${d.last_speed != null ? d.last_speed.toFixed(0) + ' km/h' : 'N/A'}<br>
+              ${d.last_seen ? 'Last seen: ' + new Date(d.last_seen).toLocaleTimeString('en-GB') : ''}
+            </div>`,
+            { className: 'mlos-popup' }
+          )
+          .addTo(guardianLayerRef.current);
+      });
+    });
+  }, [fieldOfficers]);
+
   // ── Derived threat values ────────────────────────────────────────────────────
   const threatLevel = kpis?.openAlerts > 10 ? 5 : kpis?.openAlerts > 5 ? 4 : kpis?.openAlerts > 2 ? 3 : kpis?.openAlerts > 0 ? 2 : 1;
   const threatLabel = kpis?.openAlerts > 10 ? 'CRITICAL' : kpis?.openAlerts > 5 ? 'HIGH' : kpis?.openAlerts > 2 ? 'ELEVATED' : kpis?.openAlerts > 0 ? 'GUARDED' : 'CLEAR';
@@ -528,11 +748,6 @@ export default function DashboardPage() {
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    /*
-     * Escape the Layout's padding: `padding: 16px 24px; paddingBottom: 80px` (mobile)
-     * and `lg:pb-6` (desktop). Use negative margins to bleed edge-to-edge.
-     * height: calc(100vh - 48px) = full viewport minus topbar.
-     */
     <div style={{
       margin: isMobile ? '-16px -24px -80px' : '-16px -24px -80px',
       height: isMobile ? 'auto' : 'calc(100vh - 48px)',
@@ -547,10 +762,12 @@ export default function DashboardPage() {
       {toast && <Toast msg={toast} onDone={() => setToast('')} />}
 
       {/* Modals */}
-      <NewConvoyModal  open={modal === 'convoy'}   onClose={() => setModal(null)} onSuccess={showToast} />
-      <AddVehicleModal open={modal === 'vehicle'}  onClose={() => setModal(null)} onSuccess={showToast} />
-      <LogAlertModal   open={modal === 'alert'}    onClose={() => setModal(null)} onSuccess={showToast} />
-      <DispatchModal   open={modal === 'dispatch'} onClose={() => setModal(null)} onSuccess={showToast} />
+      <NewConvoyModal   open={modal === 'convoy'}    onClose={() => setModal(null)} onSuccess={showToast} />
+      <AddVehicleModal  open={modal === 'vehicle'}   onClose={() => setModal(null)} onSuccess={showToast} />
+      <LogAlertModal    open={modal === 'alert'}     onClose={() => setModal(null)} onSuccess={showToast} />
+      <DispatchModal    open={modal === 'dispatch'}  onClose={() => setModal(null)} onSuccess={showToast} />
+      <BroadcastModal   open={modal === 'broadcast'} onClose={() => setModal(null)} onSuccess={showToast} />
+      <ConvoyCodeModal  open={modal === 'enrol'}     onClose={() => setModal(null)} />
 
       {/* ── Top header strip ────────────────────────────────────────────────── */}
       <div style={{
@@ -562,7 +779,6 @@ export default function DashboardPage() {
         justifyContent: 'space-between',
         background: 'rgba(6,14,26,0.5)',
       }}>
-        {/* Left: title */}
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
             <div className="live-dot" />
@@ -575,7 +791,6 @@ export default function DashboardPage() {
           </h1>
         </div>
 
-        {/* Right: threat level (mobile only — desktop shows it on the map) + refresh */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {isMobile && (
           <div style={{
@@ -637,7 +852,6 @@ export default function DashboardPage() {
         <div style={isMobile
           ? { height: '45vh', flexShrink: 0, position: 'relative', overflow: 'hidden', isolation: 'isolate' }
           : { flex: '0 0 60%', position: 'relative', overflow: 'hidden', isolation: 'isolate' }}>
-          {/* Leaflet container */}
           <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
 
           {/* ── Map overlays ─────────────────────────────────────────────── */}
@@ -645,7 +859,6 @@ export default function DashboardPage() {
           {/* Top-left: threat + legend */}
           <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 1000, display: 'flex', flexDirection: 'column', gap: 8 }}>
 
-            {/* Threat level overlay — desktop only; mobile header strip shows it */}
             {!isMobile && (
             <div style={{
               background: 'rgba(6,14,26,0.9)',
@@ -687,9 +900,18 @@ export default function DashboardPage() {
               <div style={{ fontSize: 8, fontFamily: 'IBM Plex Mono, monospace', color: '#4a7090', letterSpacing: '0.15em', marginBottom: 5 }}>
                 ASSET STATUS
               </div>
-              {[['#00ff88', 'ON TIME'], ['#ffaa00', 'DELAYED'], ['#ff3355', 'INCIDENT']].map(([c, l]) => (
+              {[
+                ['#00ff88', 'ON TIME'],
+                ['#ffaa00', 'DELAYED'],
+                ['#ff3355', 'INCIDENT'],
+                ['#00d4ff', 'FIELD OFFICER'],
+              ].map(([c, l]) => (
                 <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: c, boxShadow: `0 0 5px ${c}` }} />
+                  <div style={{
+                    width: 7, height: 7,
+                    background: c, boxShadow: `0 0 5px ${c}`,
+                    ...(l === 'FIELD OFFICER' ? { transform: 'rotate(45deg)', borderRadius: 0 } : { borderRadius: '50%' }),
+                  }} />
                   <span style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: '#c8ddf0' }}>{l}</span>
                 </div>
               ))}
@@ -720,7 +942,9 @@ export default function DashboardPage() {
                   boxShadow: '0 0 6px rgba(0,212,255,0.7)',
                 }} />
               </div>
-              <span style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: '#4a7090' }}>-72H</span>
+              <span style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: '#4a7090' }}>
+                {fieldOfficers.length > 0 ? `${fieldOfficers.length} OFFICER${fieldOfficers.length !== 1 ? 'S' : ''} TRACKED` : '-72H'}
+              </span>
             </div>
           </div>
         </div>
@@ -757,16 +981,40 @@ export default function DashboardPage() {
           {/* Scrollable KPI content */}
           <div style={{ flex: 1, overflowY: isMobile ? 'visible' : 'auto', padding: '12px' }}>
 
-            {/* 6 KPI tiles — 2-col grid */}
+            {/* KPI tiles — 2-col grid */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
               <KPITile label="ACTIVE SHIPMENTS"  value={kpis?.activeConvoys ?? '—'}                  color="#00d4ff" />
               <KPITile label="ON-TIME %"          value={kpis ? `${kpis.onTimeRate}%` : '—'}          color="#00ff88" />
               <KPITile label="OPEN INCIDENTS"     value={kpis?.openAlerts ?? '—'}                     color={kpis?.openAlerts > 0 ? '#ff3355' : '#00ff88'} pulse={kpis?.openAlerts > 0} />
               <KPITile label="FLEET UTIL %"       value={kpis ? `${kpis.fleetUtilisation}%` : '—'}   color="#00d4ff" />
-              <KPITile label="RISK SCORE"         value={kpis?.openAlerts > 10 ? 'HIGH' : kpis?.openAlerts > 3 ? 'MED' : 'LOW'} color={kpis?.openAlerts > 5 ? '#ff3355' : kpis?.openAlerts > 2 ? '#ffaa00' : '#00ff88'} />
               <KPITile label="VEHICLES ACTIVE"    value={kpis?.activeVehicles ?? '—'}                 color="#00d4ff" />
-              <KPITile label="GUARDIAN DEVICES"   value={guardianStats.activeDevices}                 color="#00d4ff" />
               <KPITile label="OPEN PANICS"        value={guardianStats.openPanics}                    color={guardianStats.openPanics > 0 ? '#ff3355' : '#00ff88'} pulse={guardianStats.openPanics > 0} />
+              <KPITile label="GUARDIAN DEVICES"   value={guardianStats.activeDevices}                 color="#00d4ff" />
+              <KPITile label="FIELD OFFICERS"     value={fieldOfficers.length}                        color={fieldOfficers.length > 0 ? '#00d4ff' : '#4a7090'} />
+            </div>
+
+            {/* Recent Field Reports */}
+            <div style={{ marginBottom: 12 }}>
+              <div style={{
+                fontFamily: 'IBM Plex Mono, monospace',
+                fontSize: 8,
+                color: '#4a7090',
+                letterSpacing: '0.18em',
+                marginBottom: 8,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}>
+                <span>RECENT FIELD REPORTS</span>
+                <a href="/incident-center" style={{ color: 'rgba(0,212,255,0.6)', textDecoration: 'none', fontSize: 8 }}>VIEW ALL →</a>
+              </div>
+              {fieldReports.length === 0 ? (
+                <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 11, color: '#4a7090', textAlign: 'center', padding: '12px 0' }}>
+                  NO RECENT REPORTS
+                </div>
+              ) : fieldReports.slice(0, 5).map((r, i) => (
+                <FieldReportCard key={r.id || i} report={r} />
+              ))}
             </div>
 
             {/* Active Missions */}
@@ -829,9 +1077,12 @@ export default function DashboardPage() {
                       <span className="terminal-ts">{ts}</span>
                       <Icon size={9} className={`flex-shrink-0 mt-0.5 ${cfg.color}`} />
                       <span style={{ color: '#c8ddf0', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {ev.type === 'gps'    && `V/${String(ev.vehicleId || '').slice(-5)} · ${ev.speed?.toFixed(0) || '?'}km/h`}
-                        {ev.type === 'alert'  && `${ev.severity?.toUpperCase()} · ${(ev.message || '').slice(0, 28)}`}
-                        {ev.type === 'convoy' && `CNV/${String(ev.convoyId || '').slice(-5)} → ${ev.status}`}
+                        {ev.type === 'gps'      && `V/${String(ev.vehicleId || '').slice(-5)} · ${ev.speed?.toFixed(0) || '?'}km/h`}
+                        {ev.type === 'alert'    && `${ev.severity?.toUpperCase()} · ${(ev.message || '').slice(0, 28)}`}
+                        {ev.type === 'convoy'   && `CNV/${String(ev.convoyId || '').slice(-5)} → ${ev.status}`}
+                        {ev.type === 'report'   && `RPT · ${(ev.category || '').toUpperCase().replace(/_/g, ' ')} · ${(ev.device_name || ev.name || '').slice(0, 14)}`}
+                        {ev.type === 'panic'    && `PANIC · ${(ev.mode || '').toUpperCase()} · ${(ev.device_name || ev.name || '').slice(0, 14)}`}
+                        {ev.type === 'location' && `OFFICER · ${(ev.name || '').slice(0, 12)} · ${ev.lat?.toFixed(3)},${ev.lng?.toFixed(3)}`}
                       </span>
                     </div>
                   );
@@ -846,10 +1097,12 @@ export default function DashboardPage() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
                 {[
-                  { icon: Shield, label: 'NEW CONVOY',  color: '#00d4ff', onClick: () => setModal('convoy')  },
-                  { icon: Truck,  label: 'ADD VEHICLE', color: '#0066ff', onClick: () => setModal('vehicle') },
-                  { icon: Bell,   label: 'LOG ALERT',   color: '#ff3355', onClick: () => setModal('alert')   },
-                  { icon: Target, label: 'DISPATCH',    color: '#00ff88', onClick: () => setModal('dispatch') },
+                  { icon: Shield,       label: 'NEW CONVOY',    color: '#00d4ff', onClick: () => setModal('convoy')    },
+                  { icon: Truck,        label: 'ADD VEHICLE',   color: '#0066ff', onClick: () => setModal('vehicle')   },
+                  { icon: Bell,         label: 'LOG ALERT',     color: '#ff3355', onClick: () => setModal('alert')     },
+                  { icon: Target,       label: 'DISPATCH',      color: '#00ff88', onClick: () => setModal('dispatch')  },
+                  { icon: MessageSquare,label: 'MESSAGE',        color: '#ffaa00', onClick: () => setModal('broadcast') },
+                  { icon: UserPlus,     label: 'ENROL OFFICERS',color: '#c084fc', onClick: () => setModal('enrol')     },
                 ].map(({ icon: Icon, label, color, onClick }) => (
                   <button
                     key={label}
@@ -899,7 +1152,6 @@ export default function DashboardPage() {
         alignItems: 'center',
         overflow: 'hidden',
       }}>
-        {/* Label */}
         <div style={{
           padding: '0 12px',
           flexShrink: 0,
@@ -915,7 +1167,6 @@ export default function DashboardPage() {
           </span>
         </div>
 
-        {/* Scrolling feed */}
         <div className="event-ticker" style={{ flex: 1, height: '100%', display: 'flex', alignItems: 'center', paddingLeft: 16 }}>
           <div className="event-ticker-inner">
             {feed.length === 0 ? (
@@ -924,13 +1175,20 @@ export default function DashboardPage() {
               </span>
             ) : (
               [...feed, ...feed].map((ev, i) => {
-                const dot = ev.type === 'alert' ? '#ff3355' : ev.type === 'convoy' ? '#00d4ff' : '#00ff88';
+                const dot = ev.type === 'alert' || ev.type === 'panic' ? '#ff3355'
+                  : ev.type === 'report' ? '#ffaa00'
+                  : ev.type === 'convoy' ? '#00d4ff'
+                  : ev.type === 'location' ? '#00d4ff'
+                  : '#00ff88';
                 return (
                   <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#c8ddf0', fontSize: 10 }}>
                     <span style={{ width: 5, height: 5, borderRadius: '50%', background: dot, flexShrink: 0, display: 'inline-block' }} />
-                    {ev.type === 'alert'  && `${ev.severity?.toUpperCase()}: ${(ev.message || '').slice(0, 40)}`}
-                    {ev.type === 'gps'    && `V/${String(ev.vehicleId || '').slice(-6).toUpperCase()} — ${ev.speed?.toFixed(0) || '?'}km/h`}
-                    {ev.type === 'convoy' && `CNV/${String(ev.convoyId || '').slice(-5).toUpperCase()} → ${ev.status?.toUpperCase()}`}
+                    {ev.type === 'alert'    && `${ev.severity?.toUpperCase()}: ${(ev.message || '').slice(0, 40)}`}
+                    {ev.type === 'gps'      && `V/${String(ev.vehicleId || '').slice(-6).toUpperCase()} — ${ev.speed?.toFixed(0) || '?'}km/h`}
+                    {ev.type === 'convoy'   && `CNV/${String(ev.convoyId || '').slice(-5).toUpperCase()} → ${ev.status?.toUpperCase()}`}
+                    {ev.type === 'report'   && `FIELD RPT — ${(ev.category || '').toUpperCase().replace(/_/g, ' ')}`}
+                    {ev.type === 'panic'    && `PANIC — ${(ev.mode || '').toUpperCase()}`}
+                    {ev.type === 'location' && `OFFICER — ${(ev.name || '').toUpperCase().slice(0, 12)}`}
                     <span style={{ color: '#4a7090', marginLeft: 8 }}>·</span>
                   </span>
                 );
@@ -939,7 +1197,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Latency badge */}
         <div style={{ padding: '0 12px', borderLeft: '1px solid rgba(0,212,255,0.1)', flexShrink: 0 }}>
           <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 9, color: '#4a7090' }}>847ms</span>
         </div>
