@@ -54,6 +54,7 @@ jobs:
           retention-days: 30
 
       - name: Create Release (on main push)
+        id: release
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
@@ -69,3 +70,42 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update APK_REDIRECT_URL on Railway
+        if: github.ref == 'refs/heads/main'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+          RAILWAY_ENVIRONMENT_ID: ${{ secrets.RAILWAY_ENVIRONMENT_ID }}
+          RAILWAY_SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
+        run: |
+          APK_URL="https://github.com/fleetsatpro/Sonalit/releases/download/guardian-agent-v${{ github.run_number }}/app-debug.apk"
+          echo "Setting APK_REDIRECT_URL → $APK_URL"
+
+          cat > /tmp/gql.json <<EOF
+          {
+            "query": "mutation variableUpsert(\$input: VariableUpsertInput!) { variableUpsert(input: \$input) }",
+            "variables": {
+              "input": {
+                "projectId": "$RAILWAY_PROJECT_ID",
+                "environmentId": "$RAILWAY_ENVIRONMENT_ID",
+                "serviceId": "$RAILWAY_SERVICE_ID",
+                "name": "APK_REDIRECT_URL",
+                "value": "$APK_URL"
+              }
+            }
+          }
+          EOF
+
+          RESPONSE=$(curl -sf -X POST https://backboard.railway.app/graphql/v2 \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d @/tmp/gql.json)
+
+          echo "Railway response: $RESPONSE"
+
+          # Fail loudly if Railway returned an error
+          if echo "$RESPONSE" | grep -q '"errors"'; then
+            echo "Railway API returned errors — check RAILWAY_* secrets"
+            exit 1
+          fi
