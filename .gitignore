@@ -1,0 +1,9 @@
+.vercel
+.env*.local
+backend/.env
+**/.env
+guardian-agent/.gradle/
+node_modules/
+**/node_modules/
+*.deb
+.claude-flow/

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sonalit</title>
+    <script>
+      window.onerror = function(msg, src, line, col, err) {
+        document.body.innerHTML = '<pre style="color:red;padding:20px;white-space:pre-wrap">' + msg + '\n' + src + ':' + line + '\n' + (err && err.stack ? err.stack : '') + '</pre>';
+      };
+      window.addEventListener('unhandledrejection', function(e) {
+        document.body.innerHTML = '<pre style="color:orange;padding:20px;white-space:pre-wrap">Unhandled Promise: ' + e.reason + '</pre>';
+      });
+    </script>
+  </head>
+  <body class="bg-navy-950">
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

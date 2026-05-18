@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/navy"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="28dp"
+        android:gravity="center_horizontal">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="FLEETOPS"
+            android:textColor="@color/cyan"
+            android:textSize="11sp"
+            android:letterSpacing="0.3"
+            android:layout_marginTop="48dp"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="GUARDIAN"
+            android:textColor="@color/bright"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Field Device Enrollment"
+            android:textColor="@color/muted"
+            android:textSize="13sp"
+            android:layout_marginBottom="40dp" />
+
+        <EditText
+            android:id="@+id/etServerUrl"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:hint="@string/server_url_hint"
+            android:textColor="@color/bright"
+            android:textColorHint="@color/muted"
+            android:background="@drawable/input_bg"
+            android:inputType="textUri"
+            android:padding="16dp"
+            android:textSize="13sp"
+            android:layout_marginBottom="12dp" />
+
+        <EditText
+            android:id="@+id/etOrgToken"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:hint="@string/org_token_hint"
+            android:textColor="@color/bright"
+            android:textColorHint="@color/muted"
+            android:background="@drawable/input_bg"
+            android:inputType="text"
+            android:padding="16dp"
+            android:textSize="13sp"
+            android:layout_marginBottom="12dp" />
+
+        <EditText
+            android:id="@+id/etDeviceName"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:hint="@string/device_name_hint"
+            android:textColor="@color/bright"
+            android:textColorHint="@color/muted"
+            android:background="@drawable/input_bg"
+            android:inputType="text"
+            android:padding="16dp"
+            android:textSize="13sp"
+            android:layout_marginBottom="12dp" />
+
+        <EditText
+            android:id="@+id/etEnrollmentCode"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:hint="Enrollment Code (optional)"
+            android:textColor="@color/bright"
+            android:textColorHint="@color/muted"
+            android:background="@drawable/input_bg"
+            android:inputType="textCapCharacters"
+            android:padding="16dp"
+            android:textSize="13sp"
+            android:layout_marginBottom="24dp" />
+
+        <Button
+            android:id="@+id/btnEnroll"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="@string/btn_enroll"
+            android:textColor="@color/navy_dark"
+            android:background="@drawable/btn_cyan"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.1"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btnPaste"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:text="PASTE CONFIG FROM CLIPBOARD"
+            android:textColor="@color/cyan"
+            android:background="@drawable/btn_outline"
+            android:textSize="11sp"
+            android:letterSpacing="0.1"
+            android:layout_marginBottom="16dp" />
+
+        <ProgressBar
+            android:id="@+id/progressBar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            android:layout_marginBottom="16dp" />
+
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textColor="@color/muted"
+            android:textSize="12sp"
+            android:gravity="center"
+            android:layout_marginBottom="16dp" />
+
+    </LinearLayout>
+</ScrollView>

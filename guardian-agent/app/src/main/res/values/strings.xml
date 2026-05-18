@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Guardian Agent</string>
+    <string name="enroll_title">Enroll Device</string>
+    <string name="label_server_url">Server URL</string>
+    <string name="label_org_token">Enrollment Token</string>
+    <string name="label_device_name">Device Name</string>
+    <string name="btn_enroll">ENROLL DEVICE</string>
+    <string name="btn_skip">SKIP (ALREADY ENROLLED)</string>
+    <string name="btn_panic">PANIC / SOS</string>
+    <string name="btn_report">FIELD REPORT</string>
+    <string name="status_online">Online</string>
+    <string name="status_offline">Offline</string>
+    <string name="tab_home">HOME</string>
+    <string name="tab_convoy">CONVOY</string>
+    <string name="channel_tracking_name">Location Tracking</string>
+    <string name="channel_tracking_desc">Continuous GPS tracking for fleet management</string>
+    <string name="channel_alerts_name">Alerts</string>
+    <string name="channel_alerts_desc">Incoming commands and alerts from fleet command</string>
+    <string name="notification_tracking_title">Guardian Active</string>
+    <string name="notification_tracking_text">Tracking location for fleet command</string>
+    <string name="no_convoy_assigned">No active convoy assigned to this device</string>
+    <string name="contact_admin">Contact your administrator to assign a convoy</string>
+    <string name="cfo_photos_complete">All photos complete</string>
+</resources>

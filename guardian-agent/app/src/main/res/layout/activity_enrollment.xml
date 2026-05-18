@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/navy_950"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="28dp"
+        android:gravity="center_horizontal">
+
+        <!-- Logo / Icon -->
+        <ImageView
+            android:layout_width="72dp"
+            android:layout_height="72dp"
+            android:layout_marginTop="40dp"
+            android:layout_marginBottom="8dp"
+            android:src="@drawable/ic_shield"
+            android:tint="@color/cyan"
+            android:contentDescription="Guardian logo" />
+
+        <!-- App title -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="GUARDIAN AGENT"
+            android:textColor="@color/bright"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.18"
+            android:fontFamily="sans-serif-medium"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Fleet Operations Field Device"
+            android:textColor="@color/muted"
+            android:textSize="12sp"
+            android:letterSpacing="0.08"
+            android:layout_marginBottom="36dp" />
+
+        <!-- Server URL -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Server URL"
+            style="@style/GuardianInputLayout"
+            android:layout_marginBottom="16dp">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etServerUrl"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textUri"
+                android:textColor="@color/bright"
+                android:textColorHint="@color/muted" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Org Token -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Organisation Token"
+            style="@style/GuardianInputLayout"
+            android:layout_marginBottom="16dp">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etOrgToken"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textVisiblePassword"
+                android:textColor="@color/bright"
+                android:textColorHint="@color/muted" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Device Name -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Device Name (optional)"
+            style="@style/GuardianInputLayout"
+            android:layout_marginBottom="28dp">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etDeviceName"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textCapWords"
+                android:textColor="@color/bright"
+                android:textColorHint="@color/muted" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Status text -->
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="13sp"
+            android:textAlignment="center"
+            android:visibility="gone"
+            android:layout_marginBottom="12dp"
+            android:paddingVertical="8dp" />
+
+        <!-- Progress bar -->
+        <ProgressBar
+            android:id="@+id/progressBar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            android:indeterminateTint="@color/cyan"
+            android:layout_marginBottom="12dp" />
+
+        <!-- Enroll button -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnEnroll"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="ENROLL DEVICE"
+            android:textSize="15sp"
+            android:letterSpacing="0.1"
+            android:backgroundTint="@color/cyan"
+            android:textColor="@color/navy_950"
+            app:cornerRadius="8dp"
+            android:layout_marginBottom="12dp" />
+
+        <!-- Skip button (shown only if already enrolled) -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSkip"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:text="SKIP — ALREADY ENROLLED"
+            android:textSize="12sp"
+            android:letterSpacing="0.08"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            app:strokeColor="@color/muted"
+            android:textColor="@color/muted"
+            app:cornerRadius="8dp"
+            android:visibility="gone"
+            android:layout_marginBottom="24dp" />
+
+    </LinearLayout>
+</ScrollView>

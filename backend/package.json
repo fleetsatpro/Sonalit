@@ -1,0 +1,69 @@
+{
+  "name": "fleetops-backend",
+  "version": "1.0.0",
+  "description": "FleetOps Pro — Backend API Server",
+  "main": "src/app.js",
+  "scripts": {
+    "prestart": "node scripts/migrate-all.js || true",
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js",
+    "migrate": "node scripts/migrate.js",
+    "migrate:extended": "node scripts/migrate-extended.js",
+    "migrate:enterprise": "node scripts/migrate-enterprise.js",
+    "migrate:all": "node scripts/migrate.js && node scripts/migrate-extended.js && node scripts/migrate-enterprise.js",
+    "migrate:cfo-p1": "node scripts/migrate-guardian-cfo-p1.js",
+    "migrate:cfo-p2": "node scripts/migrate-guardian-cfo-p2.js",
+    "migrate:cfo-p3": "node scripts/migrate-guardian-cfo-p3.js",
+    "migrate:cfo": "node scripts/migrate-guardian-cfo-p1.js && node scripts/migrate-guardian-cfo-p2.js && node scripts/migrate-guardian-cfo-p3.js",
+    "migrate:enable-cfo": "node scripts/migrate-enable-cfo.js",
+    "migrate:roles": "node scripts/migrate-roles.js",
+    "migrate:full": "node scripts/migrate-all.js",
+    "migrate:guardian-devices": "node scripts/migrate-guardian-devices.js",
+    "migrate:convoy-fix": "node scripts/migrate-convoy-trucks-fix.js",
+    "predeploy": "node scripts/migrate-all.js",
+    "seed": "node scripts/seed.js",
+    "workers": "node scripts/start-workers.js",
+    "worker:gps": "node src/workers/gpsWorker.js",
+    "worker:alert": "node src/workers/alertWorker.js",
+    "worker:notification": "node src/workers/notificationWorker.js",
+    "worker:convoy-report": "node src/workers/convoyReportWorker.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.96.0",
+    "@aws-sdk/client-s3": "^3.600.0",
+    "@aws-sdk/s3-request-presigner": "^3.600.0",
+    "@socket.io/redis-adapter": "^8.3.0",
+    "bcryptjs": "^2.4.3",
+    "bullmq": "^1.62.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "firebase-admin": "^13.10.0",
+    "helmet": "^7.1.0",
+    "ioredis": "^5.3.2",
+    "joi": "^17.11.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.7",
+    "pg": "^8.11.3",
+    "pdfkit": "^0.15.0",
+    "socket.io": "^4.7.2",
+    "uuid": "^9.0.0",
+    "winston": "^3.11.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.4",
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": ["**/tests/**/*.test.js"]
+  }
+}

@@ -1,0 +1,125 @@
+const router = require('express').Router();
+const { pool, query } = require('../config/database');
+const { authenticate } = require('../middleware/auth');
+router.use(authenticate);
+
+function parseLatLng(row) {
+  let lat = row.lat != null ? parseFloat(row.lat) : null;
+  let lng = row.lng != null ? parseFloat(row.lng) : null;
+  if ((!lat || !lng) && row.coordinates) {
+    try {
+      const c = typeof row.coordinates === 'string' ? JSON.parse(row.coordinates) : row.coordinates;
+      lat = parseFloat(c.lat || c.center?.lat || c.latitude) || null;
+      lng = parseFloat(c.lng || c.center?.lng || c.longitude) || null;
+    } catch (_) {}
+  }
+  return { ...row, lat, lng };
+}
+
+async function ensureGeofenceActions() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS geofence_actions (
+      id               SERIAL PRIMARY KEY,
+      geofence_id      INTEGER REFERENCES geofences(id) ON DELETE CASCADE,
+      action_type      VARCHAR(50) NOT NULL,
+      recipient        VARCHAR(500),
+      message_template TEXT,
+      enabled          BOOLEAN DEFAULT true,
+      created_at       TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+}
+
+router.get('/', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(`SELECT * FROM geofences ORDER BY created_at DESC`);
+    res.json({ data: rows.map(parseLatLng) });
+  } catch (err) { next(err); }
+});
+
+router.post('/', async (req, res, next) => {
+  try {
+    const { name, type = 'circle', radius, region } = req.body;
+    if (!name) return res.status(400).json({ error: 'Name is required' });
+    // Accept either coordinates:{...} or top-level lat/lng
+    let coordinates = req.body.coordinates;
+    const lat = req.body.lat;
+    const lng = req.body.lng;
+    if (!coordinates && lat != null && lng != null) {
+      coordinates = { lat: parseFloat(lat), lng: parseFloat(lng) };
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO geofences (name, type, coordinates, radius, region) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+      [name, type, JSON.stringify(coordinates), radius, region]
+    );
+    res.status(201).json({ data: parseLatLng(rows[0]) });
+  } catch (err) { next(err); }
+});
+
+router.put('/:id', async (req, res, next) => {
+  try {
+    const { name, active, coordinates, radius } = req.body;
+    const { rows } = await pool.query(
+      `UPDATE geofences SET name=COALESCE($1,name), active=COALESCE($2,active), coordinates=COALESCE($3,coordinates), radius=COALESCE($4,radius), updated_at=NOW() WHERE id=$5 RETURNING *`,
+      [name, active, coordinates ? JSON.stringify(coordinates) : null, radius, req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Geofence not found' });
+    res.json({ data: parseLatLng(rows[0]) });
+  } catch (err) { next(err); }
+});
+
+router.delete('/:id', async (req, res, next) => {
+  try {
+    await pool.query(`DELETE FROM geofences WHERE id=$1`, [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
+// ── Geofence Actions ──────────────────────────────────────────────────────────
+
+router.get('/:id/actions', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM geofence_actions WHERE geofence_id = $1 ORDER BY created_at`,
+      [req.params.id]
+    );
+    res.json({ data: rows });
+  } catch (err) { next(err); }
+});
+
+router.post('/:id/actions', async (req, res, next) => {
+  try {
+    await ensureGeofenceActions();
+    const { action_type, recipient, message_template } = req.body;
+    if (!action_type) return res.status(400).json({ error: 'action_type is required' });
+    const { rows } = await pool.query(
+      `INSERT INTO geofence_actions (action_type, recipient, message_template, geofence_id)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [action_type, recipient || null, message_template || null, req.params.id]
+    );
+    res.status(201).json({ data: rows[0] });
+  } catch (err) { next(err); }
+});
+
+router.delete('/:id/actions/:actionId', async (req, res, next) => {
+  try {
+    await pool.query(
+      `DELETE FROM geofence_actions WHERE id = $1 AND geofence_id = $2`,
+      [req.params.actionId, req.params.id]
+    );
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
+router.patch('/:id/actions/:actionId/toggle', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `UPDATE geofence_actions SET enabled = NOT enabled WHERE id = $1 AND geofence_id = $2 RETURNING *`,
+      [req.params.actionId, req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Action not found' });
+    res.json({ data: rows[0] });
+  } catch (err) { next(err); }
+});
+
+module.exports = router;

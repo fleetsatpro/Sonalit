@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:background="@color/navy_dark"
+    android:padding="40dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="FLEETOPS GUARDIAN"
+        android:textColor="@color/cyan"
+        android:textSize="12sp"
+        android:letterSpacing="0.3"
+        android:layout_marginBottom="32dp" />
+
+    <TextView
+        android:id="@+id/tvLockMessage"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="DEVICE LOCKED BY FLEET MANAGER"
+        android:textColor="@color/danger"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:layout_marginBottom="32dp" />
+
+    <TextView
+        android:id="@+id/tvPinHint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Enter PIN to dismiss"
+        android:textColor="@color/muted"
+        android:textSize="13sp"
+        android:gravity="center"
+        android:layout_marginBottom="12dp"
+        android:visibility="gone" />
+
+    <EditText
+        android:id="@+id/etPin"
+        android:layout_width="180dp"
+        android:layout_height="56dp"
+        android:hint="PIN (min 4 digits)"
+        android:textColor="@color/bright"
+        android:textColorHint="@color/muted"
+        android:background="@drawable/input_bg"
+        android:inputType="numberPassword"
+        android:padding="16dp"
+        android:textSize="16sp"
+        android:gravity="center"
+        android:layout_marginBottom="12dp"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/tvCountdown"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textColor="@color/danger"
+        android:textSize="14sp"
+        android:gravity="center"
+        android:layout_marginBottom="12dp"
+        android:visibility="gone" />
+
+    <Button
+        android:id="@+id/btnLockDismiss"
+        android:layout_width="200dp"
+        android:layout_height="52dp"
+        android:text="DISMISS"
+        android:textColor="@color/white"
+        android:background="@drawable/btn_outline"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+</LinearLayout>
