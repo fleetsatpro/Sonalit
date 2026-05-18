@@ -246,15 +246,20 @@ function ActivePanicCard({ panic, onResolve, onMap }) {
 }
 
 export default function PanicCenterPage() {
-  const [panics, setPanics] = useState([]);
+  const [activePanics, setActivePanics] = useState([]);
+  const [resolvedPanics, setResolvedPanics] = useState([]);
   const [loading, setLoading] = useState(true);
   const intervalRef = useRef(null);
 
   const load = useCallback(async () => {
     try {
-      const res = await guardianAPI.panic();
-      const all = res.data?.data || res.data?.panics || res.data || [];
-      setPanics(all);
+      const [activeRes, histRes] = await Promise.all([
+        guardianAPI.panic({ active_only: 'true' }),
+        guardianAPI.panic({ limit: 50 }),
+      ]);
+      setActivePanics(activeRes.data?.data || activeRes.data?.panics || []);
+      const all = histRes.data?.data || histRes.data?.panics || [];
+      setResolvedPanics(all.filter(p => p.resolved_at));
     } catch {
       // silent — don't spam toast on refresh
     } finally {
@@ -275,12 +280,15 @@ export default function PanicCenterPage() {
         device_id: data.device_id,
         device_name: data.device_name || data.device_id,
         mode: data.mode || data.panic_mode || 'security',
-        triggered_at: data.timestamp || new Date().toISOString(),
+        triggered_at: data.triggered_at || data.created_at || data.timestamp || new Date().toISOString(),
         lat: data.lat, lng: data.lng,
         battery_level: data.battery_level,
         resolved: false,
       };
-      setPanics(prev => [newPanic, ...prev]);
+      setActivePanics(prev => {
+        if (prev.some(p => (p._id || p.id) === (newPanic._id || newPanic.id))) return prev;
+        return [newPanic, ...prev];
+      });
       toast.error(`PANIC: ${newPanic.device_name} — ${(newPanic.mode || 'UNKNOWN').toUpperCase()}`, {
         icon: '🚨',
         duration: 10000,
@@ -296,11 +304,11 @@ export default function PanicCenterPage() {
     const id = panic._id || panic.id;
     try {
       await guardianAPI.resolvePanic(id);
-      setPanics(prev => prev.map(p =>
-        (p._id || p.id) === id
-          ? { ...p, resolved: true, resolved_at: new Date().toISOString() }
-          : p
-      ));
+      setActivePanics(prev => prev.filter(p => (p._id || p.id) !== id));
+      setResolvedPanics(prev => [
+        { ...panic, resolved: true, resolved_at: new Date().toISOString() },
+        ...prev,
+      ].slice(0, 50));
       toast.success('Panic resolved');
     } catch {
       toast.error('Failed to resolve panic');
@@ -310,9 +318,6 @@ export default function PanicCenterPage() {
   function handleMap(panic) {
     window.open(`https://maps.google.com/?q=${panic.lat},${panic.lng}`, '_blank');
   }
-
-  const activePanics = panics.filter(p => !p.resolved && !p.resolved_at);
-  const resolvedPanics = panics.filter(p => p.resolved || p.resolved_at).slice(0, 50);
 
   return (
     <div style={{ fontFamily: 'Space Grotesk, sans-serif' }}>

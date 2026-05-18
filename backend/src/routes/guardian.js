@@ -698,6 +698,7 @@ router.post('/panic', deviceAuth, panicLimiter, async (req, res, next) => {
       lng: panicEvent.lng ?? null,
       message: panicEvent.message || null,
       created_at: panicEvent.created_at,
+      triggered_at: panicEvent.created_at,
     };
 
     if (isNew) {

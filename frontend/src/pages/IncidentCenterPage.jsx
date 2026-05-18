@@ -226,7 +226,7 @@ function FieldReportsTab({ devices }) {
         device_name: data.device_name || data.device_id,
         description: data.description,
         lat: data.lat, lng: data.lng,
-        created_at: data.timestamp || new Date().toISOString(),
+        created_at: data.created_at || data.timestamp || new Date().toISOString(),
       };
       setReports(prev => [report, ...prev]);
       toast(`Field report: ${fmtCategoryLabel(data.category)}`, {

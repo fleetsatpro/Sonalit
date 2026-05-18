@@ -410,7 +410,7 @@ export default function DashboardPage() {
         analyticsAPI.dashboard(),
         convoysAPI.list({ status: 'active', limit: 5 }),
         guardianAPI.devices({ status: 'active', limit: 1 }).catch(() => null),
-        guardianAPI.panic({ resolved: 'false', limit: 1 }).catch(() => null),
+        guardianAPI.panic({ active_only: 'true', limit: 1 }).catch(() => null),
       ]);
       setKpis(dash.data.data);
       setActiveConvoys(convoys.data.data || []);
