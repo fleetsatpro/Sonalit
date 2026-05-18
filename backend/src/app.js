@@ -152,6 +152,58 @@ try {
   logger.warn('Photo backfill not scheduled: ' + e.message);
 }
 
+// D3: EOD finalization sweep — every 15 min, enqueues generateReport for completed
+// or past-deadline daily reports on active convoys.
+try {
+  const cron = require('node-cron');
+  cron.schedule('*/15 * * * *', async () => {
+    try {
+      const { isCfoModuleEnabled } = require('./utils/cfoFlag');
+      if (!await isCfoModuleEnabled()) return;
+
+      const { query: dbQuery } = require('./config/database');
+      const { getQueues } = require('./config/queue');
+      const { convoyReportQueue } = getQueues();
+      if (!convoyReportQueue) return;
+
+      // Find active convoys and their incomplete reports for dates that have passed
+      const result = await dbQuery(
+        `SELECT cdr.convoy_id, cdr.report_date::text, c.timezone
+         FROM convoy_daily_reports cdr
+         JOIN convoys c ON c.id = cdr.convoy_id
+         WHERE c.status = 'active'
+           AND c.deleted_at IS NULL
+           AND cdr.status IN ('complete', 'partial')
+           AND cdr.pdf_url IS NULL
+           AND (
+             cdr.report_date < CURRENT_DATE
+             OR (
+               cdr.report_date = CURRENT_DATE
+               AND NOW() AT TIME ZONE COALESCE(c.timezone,'UTC') > (cdr.report_date + INTERVAL '1 day')::timestamptz AT TIME ZONE COALESCE(c.timezone,'UTC')
+             )
+           )`,
+        []
+      );
+
+      for (const row of result.rows) {
+        await convoyReportQueue.add('generateReport', {
+          convoy_id: row.convoy_id,
+          report_date: row.report_date,
+        }, { jobId: `genReport:${row.convoy_id}:${row.report_date}`, removeOnComplete: { count: 200 } });
+      }
+
+      if (result.rows.length) {
+        logger.info(`EOD sweep: queued ${result.rows.length} generateReport jobs`);
+      }
+    } catch (err) {
+      logger.error('EOD finalization sweep error: ' + err.message);
+    }
+  });
+  logger.info('CFO EOD finalization sweep scheduled (*/15 * * * *)');
+} catch (e) {
+  logger.warn('CFO EOD sweep not scheduled: ' + e.message);
+}
+
 const PORT=parseInt(process.env.PORT)||5000;
 createQueues();
 server.listen(PORT,()=>logger.info("FleetOps Enterprise v2.1 running on port "+PORT+" ["+( process.env.NODE_ENV||"development")+"]"));

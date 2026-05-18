@@ -18,7 +18,8 @@
     "workers": "node scripts/start-workers.js",
     "worker:gps": "node src/workers/gpsWorker.js",
     "worker:alert": "node src/workers/alertWorker.js",
-    "worker:notification": "node src/workers/notificationWorker.js"
+    "worker:notification": "node src/workers/notificationWorker.js",
+    "worker:convoy-report": "node src/workers/convoyReportWorker.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
@@ -40,6 +41,7 @@
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.7",
     "pg": "^8.11.3",
+    "pdfkit": "^0.15.0",
     "socket.io": "^4.7.2",
     "uuid": "^9.0.0",
     "winston": "^3.11.0"

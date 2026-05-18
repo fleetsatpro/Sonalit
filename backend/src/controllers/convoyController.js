@@ -187,6 +187,19 @@ const updateConvoyStatus = asyncHandler(async (req, res) => {
     io.emit(eventName, { convoyId: req.params.id, status: value.status, updatedBy: req.user.id });
   }
 
+  // D4: on completion, enqueue archive PDF generation
+  if (value.status === 'completed') {
+    try {
+      const { getQueues } = require('../config/queue');
+      const { convoyArchiveQueue } = getQueues();
+      if (convoyArchiveQueue) {
+        convoyArchiveQueue.add('generateArchive', { convoy_id: req.params.id },
+          { jobId: `archive:${req.params.id}`, removeOnComplete: { count: 100 } }
+        ).catch(() => {});
+      }
+    } catch {}
+  }
+
   req.auditAction = 'UPDATE';
   req.auditRecordId = req.params.id;
   req.auditBefore = { status: currentStatus };
