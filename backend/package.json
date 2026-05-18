@@ -16,6 +16,7 @@
     "migrate:cfo": "node scripts/migrate-guardian-cfo-p1.js && node scripts/migrate-guardian-cfo-p2.js && node scripts/migrate-guardian-cfo-p3.js",
     "migrate:enable-cfo": "node scripts/migrate-enable-cfo.js",
     "migrate:roles": "node scripts/migrate-roles.js",
+    "migrate:full": "node scripts/migrate-all.js",
     "predeploy": "node scripts/migrate.js && node scripts/migrate-guardian-cfo-p1.js && node scripts/migrate-guardian-cfo-p2.js && node scripts/migrate-guardian-cfo-p3.js && node scripts/migrate-roles.js && node scripts/migrate-enable-cfo.js",
     "seed": "node scripts/seed.js",
     "workers": "node scripts/start-workers.js",
