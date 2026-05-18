@@ -198,6 +198,16 @@ function DeviceCard({ device, onCommand, onLocate, onRevoke }) {
           )}
         </div>
 
+        {/* CFO Convoy badge (E2) */}
+        {device.cfo_convoy_name && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 6, background: 'rgba(59,130,246,0.10)', border: '1px solid rgba(59,130,246,0.25)' }}>
+            <Truck size={9} style={{ color: '#60a5fa' }} />
+            <span style={{ fontSize: 9, color: '#60a5fa', fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, letterSpacing: '0.07em' }}>
+              CFO · {device.cfo_convoy_name}
+            </span>
+          </div>
+        )}
+
         {/* Assignment + Last seen row */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <AssignmentBadge device={device} />

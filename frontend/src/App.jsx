@@ -54,6 +54,7 @@ const ExecutivePage      = lazyWithReload(() => import('./pages/ExecutivePage'))
 const RiskIntelPage      = lazyWithReload(() => import('./pages/RiskIntelPage'));
 const AIDecisionPage     = lazyWithReload(() => import('./pages/AIDecisionPage'));
 const CopilotPage        = lazyWithReload(() => import('./pages/CopilotPage'));
+const FieldOfficersPage  = lazyWithReload(() => import('./pages/FieldOfficersPage'));
 
 const Loader = () => (
   <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',background:'#080C14'}}>
@@ -159,7 +160,8 @@ export default function App() {
         <Route path="/executive"    element={<RequireAuth><ExecutivePage /></RequireAuth>} />
         <Route path="/risk-intel"   element={<RequireAuth><RiskIntelPage /></RequireAuth>} />
         <Route path="/ai-decisions" element={<RequireAuth><AIDecisionPage /></RequireAuth>} />
-        <Route path="/copilot"      element={<RequireAuth><CopilotPage /></RequireAuth>} />
+        <Route path="/copilot"         element={<RequireAuth><CopilotPage /></RequireAuth>} />
+        <Route path="/field-officers" element={<RequireAuth><FieldOfficersPage /></RequireAuth>} />
         <Route path="*"               element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

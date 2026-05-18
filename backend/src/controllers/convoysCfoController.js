@@ -377,6 +377,55 @@ const removeAssignment = asyncHandler(async (req, res) => {
   res.json({ message: 'Assignment removed' });
 });
 
+// E5 — list daily reports for a convoy
+const getConvoyReports = asyncHandler(async (req, res) => {
+  const convoy = await query('SELECT id FROM convoys WHERE id = $1 AND deleted_at IS NULL', [req.params.id]);
+  if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
+
+  const result = await query(
+    `SELECT * FROM convoy_daily_reports
+     WHERE convoy_id = $1
+     ORDER BY report_date DESC`,
+    [req.params.id]
+  );
+  res.json({ data: result.rows });
+});
+
+// E5 — trigger PDF re-generation for a specific date
+const regenerateReport = asyncHandler(async (req, res) => {
+  const convoy = await query('SELECT id FROM convoys WHERE id = $1 AND deleted_at IS NULL', [req.params.id]);
+  if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
+
+  const { date } = req.params;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+
+  const report = await query(
+    'SELECT id FROM convoy_daily_reports WHERE convoy_id = $1 AND report_date = $2',
+    [req.params.id, date]
+  );
+  if (!report.rows.length) return res.status(404).json({ error: 'No report row for this date' });
+
+  // Reset to partial so the worker will regenerate it
+  await query(
+    `UPDATE convoy_daily_reports SET status = 'partial', pdf_url = NULL, generation_error = NULL, updated_at = NOW()
+     WHERE convoy_id = $1 AND report_date = $2`,
+    [req.params.id, date]
+  );
+
+  try {
+    const { getQueues } = require('../config/queue');
+    const { convoyReportQueue } = getQueues();
+    if (convoyReportQueue) {
+      await convoyReportQueue.add('generateReport', { convoy_id: req.params.id, report_date: date },
+        { removeOnComplete: { count: 200 } });
+    }
+  } catch {}
+
+  gAudit(req.user.id, 'convoy_report_regenerated', 'convoy_daily_report', report.rows[0].id,
+    { convoy_id: req.params.id, date }, req.ip);
+  res.json({ message: 'Report regeneration queued' });
+});
+
 module.exports = {
   createConvoyCfo,
   addTruck,
@@ -385,4 +434,6 @@ module.exports = {
   removeCfo,
   assignTruckToCfo,
   removeAssignment,
+  getConvoyReports,
+  regenerateReport,
 };
