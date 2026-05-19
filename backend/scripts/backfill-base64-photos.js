@@ -17,6 +17,7 @@ const { Pool } = require('pg');
 const { v4: uuidv4 } = require('uuid');
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+pool.on('error', (err) => console.error('[backfill-photos] pool error:', err.message));
 
 async function getR2Client() {
   const {
@@ -41,6 +42,10 @@ async function getR2Client() {
 }
 
 async function run() {
+  if (!process.env.DATABASE_URL) {
+    console.warn('[backfill-photos] DATABASE_URL not set — skipping');
+    return;
+  }
   let client;
   try {
     client = await pool.connect();
