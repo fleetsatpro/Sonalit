@@ -52,6 +52,11 @@ function validateCoverage(trucks, cfos) {
     return { error: 'duplicate_truck_position' };
   }
 
+  const cfoUserIds = new Set(cfos.map((c) => c.cfo_user_id));
+  if (cfoUserIds.size !== cfos.length) {
+    return { error: 'duplicate_cfo_user_id' };
+  }
+
   const positionToCfo = new Map();
   for (const cfo of cfos) {
     for (const pos of cfo.assigned_truck_positions) {
@@ -127,7 +132,7 @@ const createConvoyCfo = asyncHandler(async (req, res) => {
            (convoy_id, vehicle_id, driver_name, driver_phone, driver_license_no, position)
          VALUES ($1,$2,$3,$4,$5,$6)
          RETURNING id, position`,
-        [convoy.id, truck.vehicle_id, truck.driver_name,
+        [convoy.id, truck.vehicle_id || null, truck.driver_name,
           truck.driver_phone || null, truck.driver_license_no || null, truck.position]
       );
       positionToTruckId.set(truck.position, tr.rows[0].id);
@@ -160,6 +165,9 @@ const createConvoyCfo = asyncHandler(async (req, res) => {
     await client.query('ROLLBACK');
     if (err.message?.includes('convoy_truck_limit_exceeded')) {
       return res.status(422).json({ error: 'convoy_truck_limit_exceeded' });
+    }
+    if (err.message?.includes('cfo_truck_limit_exceeded')) {
+      return res.status(422).json({ error: 'cfo_truck_limit_exceeded' });
     }
     throw err;
   } finally {
@@ -194,7 +202,7 @@ const addTruck = asyncHandler(async (req, res) => {
          (convoy_id, vehicle_id, driver_name, driver_phone, driver_license_no, position)
        VALUES ($1,$2,$3,$4,$5,$6)
        RETURNING *`,
-      [req.params.id, value.vehicle_id, value.driver_name,
+      [req.params.id, value.vehicle_id || null, value.driver_name,
         value.driver_phone || null, value.driver_license_no || null, value.position]
     );
     gAudit(req.user.id, 'convoy_truck_added', 'convoy_truck', result.rows[0].id, { convoy_id: req.params.id }, req.ip);
