@@ -13,10 +13,10 @@ android {
         applicationId "com.fleetops.guardian"
         minSdk 26
         targetSdk 34
-        versionCode 7
-        versionName "3.0.0"
+        versionCode 8
+        versionName "3.0.1"
 
-        buildConfigField "String", "SERVER_URL", '"https://serene-ambition-production.up.railway.app/api/v1"'
+        buildConfigField "String", "SERVER_URL", '"https://sonalit-production.up.railway.app/api/v1"'
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
