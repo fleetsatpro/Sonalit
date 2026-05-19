@@ -2,11 +2,13 @@ package com.fleetops.guardian.ui.cfo
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.location.Location
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
+import android.util.Base64
 import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -29,6 +31,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
@@ -175,16 +178,31 @@ class CfoPhotoActivity : AppCompatActivity() {
                     )
                 )
 
-                val client = OkHttpClient()
-                val putResp = client.newCall(
-                    Request.Builder()
-                        .url(urlResp.uploadUrl)
-                        .put(file.asRequestBody("image/jpeg".toMediaType()))
-                        .build()
-                ).execute()
+                val photoUrl: String
+                if (urlResp.isSuccessful) {
+                    val body = urlResp.body()!!
+                    val client = OkHttpClient()
+                    val putResp = client.newCall(
+                        Request.Builder()
+                            .url(body.uploadUrl)
+                            .put(file.asRequestBody("image/jpeg".toMediaType()))
+                            .build()
+                    ).execute()
 
-                if (!putResp.isSuccessful) {
-                    setStatus("Upload failed: HTTP ${putResp.code}", R.color.danger)
+                    if (!putResp.isSuccessful) {
+                        setStatus("Upload failed: HTTP ${putResp.code}", R.color.danger)
+                        binding.btnCapture.isEnabled = true
+                        binding.uploadProgress.visibility = View.GONE
+                        return@launch
+                    }
+                    photoUrl = body.publicUrl
+                } else if (urlResp.code() == 501) {
+                    // Server has no cloud storage configured — embed photo as base64 data URI.
+                    // The backend backfill job will migrate it to R2 once credentials are set.
+                    setStatus("Saving photo locally...", R.color.body)
+                    photoUrl = encodeFileAsDataUri(file)
+                } else {
+                    setStatus("Upload error: HTTP ${urlResp.code()}", R.color.danger)
                     binding.btnCapture.isEnabled = true
                     binding.uploadProgress.visibility = View.GONE
                     return@launch
@@ -203,7 +221,7 @@ class CfoPhotoActivity : AppCompatActivity() {
                         photoType = photoType,
                         sealPosition = sealPosition,
                         reportDate = reportDate,
-                        photoUrl = urlResp.publicUrl,
+                        photoUrl = photoUrl,
                         takenAt = takenAt,
                         lat = location?.latitude,
                         lng = location?.longitude,
@@ -212,7 +230,7 @@ class CfoPhotoActivity : AppCompatActivity() {
                 )
 
                 binding.uploadProgress.visibility = View.GONE
-                setStatus("Photo uploaded successfully", R.color.success)
+                setStatus("Photo saved", R.color.success)
                 Toast.makeText(this@CfoPhotoActivity, "Photo saved", Toast.LENGTH_SHORT).show()
 
                 // Brief pause so user sees success, then allow next capture
@@ -227,6 +245,18 @@ class CfoPhotoActivity : AppCompatActivity() {
                 binding.btnCapture.isEnabled = true
             }
         }
+    }
+
+    /**
+     * Compresses the file to JPEG at reduced quality and returns a base64 data URI.
+     * Keeps the encoded size well under the server's 5 MB JSON body limit.
+     */
+    private fun encodeFileAsDataUri(file: File): String {
+        val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+        val out = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 50, out)
+        val encoded = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+        return "data:image/jpeg;base64,$encoded"
     }
 
     private fun setStatus(msg: String, colorRes: Int) {
