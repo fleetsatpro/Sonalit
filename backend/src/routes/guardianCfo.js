@@ -287,6 +287,24 @@ router.post('/photos', deviceAuth, async (req, res, next) => {
       location_mismatch = haversine(lat, lng, req.device.last_lat, req.device.last_lng) > 2;
     }
 
+    // Allow retakes: replace any existing photo occupying the same slot so the unique
+    // index (ux_truck_photo_front_rear / ux_truck_photo_seal) never fires a 409.
+    if (photo_type === 'seal') {
+      await query(
+        `DELETE FROM convoy_truck_photos
+         WHERE convoy_truck_id = $1 AND report_date = $2 AND session = $3
+           AND photo_type = 'seal' AND seal_position = $4`,
+        [convoy_truck_id, report_date, session, seal_position]
+      );
+    } else {
+      await query(
+        `DELETE FROM convoy_truck_photos
+         WHERE convoy_truck_id = $1 AND report_date = $2 AND session = $3
+           AND photo_type = $4`,
+        [convoy_truck_id, report_date, session, photo_type]
+      );
+    }
+
     const insertResult = await query(
       `INSERT INTO convoy_truck_photos
          (convoy_id, convoy_truck_id, cfo_user_id, guardian_device_id, session, photo_type,

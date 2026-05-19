@@ -9,6 +9,8 @@
  *   generateArchive — builds full-convoy archive PDF on convoy completion
  */
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
+const path = require('path');
+const fs = require('fs');
 const { Worker } = require('bullmq');
 const { pool, query } = require('../config/database');
 const { generateDailyReport, generateArchiveReport } = require('../utils/convoyPdfGenerator');
@@ -134,17 +136,22 @@ async function handleGenerateReport({ convoy_id, report_date }) {
   const pdfBuffer = await generateDailyReport(convoy, trucks, cfos, photos, report, report_date);
   const key = `reports/daily/${convoy_id}/${report_date}.pdf`;
 
-  let pdfUrl;
+  let pdfUrl = null;
+  let generationError = null;
   try {
     pdfUrl = await uploadToR2(key, pdfBuffer, 'application/pdf');
+    logger.info(`[convoyReport] PDF uploaded to R2: ${pdfUrl}`);
   } catch (uploadErr) {
-    await query(
-      `UPDATE convoy_daily_reports
-       SET status = 'failed', generation_error = $1, updated_at = NOW()
-       WHERE convoy_id = $2 AND report_date = $3`,
-      [uploadErr.message, convoy_id, report_date]
-    );
-    throw uploadErr;
+    logger.warn(`[convoyReport] R2 unavailable (${uploadErr.message}) — storing PDF locally`);
+    try {
+      const reportsDir = path.resolve(__dirname, '../../data/reports', convoy_id);
+      fs.mkdirSync(reportsDir, { recursive: true });
+      fs.writeFileSync(path.join(reportsDir, `${report_date}.pdf`), pdfBuffer);
+      logger.info(`[convoyReport] PDF saved locally for ${convoy_id}/${report_date}`);
+    } catch (fsErr) {
+      generationError = `R2: ${uploadErr.message}; local: ${fsErr.message}`;
+      logger.error(`[convoyReport] local PDF save also failed: ${fsErr.message}`);
+    }
   }
 
   const crypto = require('crypto');
@@ -152,11 +159,12 @@ async function handleGenerateReport({ convoy_id, report_date }) {
 
   await query(
     `UPDATE convoy_daily_reports
-     SET status = 'generated', pdf_url = $1, content_hash = $2, generated_at = NOW(), updated_at = NOW()
-     WHERE convoy_id = $3 AND report_date = $4`,
-    [pdfUrl, contentHash, convoy_id, report_date]
+     SET status = 'generated', pdf_url = $1, content_hash = $2,
+         generation_error = $3, generated_at = NOW(), updated_at = NOW()
+     WHERE convoy_id = $4 AND report_date = $5`,
+    [pdfUrl, contentHash, generationError, convoy_id, report_date]
   );
-  logger.info(`[convoyReport] PDF generated: ${pdfUrl}`);
+  logger.info(`[convoyReport] report marked generated for ${convoy_id}/${report_date}`);
 }
 
 async function handleGenerateArchive({ convoy_id }) {
