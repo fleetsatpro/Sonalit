@@ -1,16 +1,16 @@
 # ── Stage 1: dependencies ─────────────────────────────────────────────
-FROM node:20-alpine AS deps
+FROM node:20-slim AS deps
 WORKDIR /app
 COPY backend/package*.json ./
-RUN npm ci --omit=dev && echo "cache bust" && npm cache clean --force
+RUN npm ci --omit=dev
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────
-FROM node:20-alpine AS runtime
+FROM node:20-slim AS runtime
 WORKDIR /app
 
-RUN apk add --no-cache dumb-init && \
-    addgroup -S fleetops && \
-    adduser -S fleetops -G fleetops
+RUN apt-get update && apt-get install -y --no-install-recommends dumb-init && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd -r fleetops && useradd -r -g fleetops fleetops
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY backend/ .
