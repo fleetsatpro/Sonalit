@@ -10,11 +10,12 @@ const logger = require('../utils/logger');
 types.setTypeParser(1700, (v) => (v === null ? null : parseFloat(v)));
 
 if (!process.env.DATABASE_URL) {
-  throw new Error('DATABASE_URL environment variable is required');
+  // Log and continue — server starts degraded; /health will show database:error
+  require('../utils/logger').warn('DATABASE_URL not set — database queries will fail');
 }
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: process.env.DATABASE_URL || 'postgresql://invalid:invalid@localhost/invalid',
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
