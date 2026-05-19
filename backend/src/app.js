@@ -1,4 +1,14 @@
 require("dotenv").config();
+
+// Global safety net — catch any error that slips past individual handlers so the
+// server process never crashes unexpectedly. Logged at error level for visibility.
+process.on("uncaughtException",(err)=>{
+  try{require("./utils/logger").error("uncaughtException: "+err.message+"\n"+err.stack);}catch(_){console.error("uncaughtException:",err);}
+});
+process.on("unhandledRejection",(reason)=>{
+  try{require("./utils/logger").error("unhandledRejection: "+(reason instanceof Error?reason.message+"\n"+reason.stack:String(reason)));}catch(_){console.error("unhandledRejection:",reason);}
+});
+
 const express=require("express"),http=require("http"),{Server}=require("socket.io"),helmet=require("helmet"),cors=require("cors"),rateLimit=require("express-rate-limit"),morgan=require("morgan"),jwt=require("jsonwebtoken");
 const logger=require("./utils/logger"),{errorHandler}=require("./middleware/error"),{setIO:gpsSetIO}=require("./workers/gpsWorker"),{setIO:alertSetIO}=require("./workers/alertWorker"),{createQueues}=require("./config/queue"),{healthCheck:dbHealth}=require("./config/database"),{healthCheck:redisHealth}=require("./config/redis");
 const requestId=require("./middleware/requestId");
