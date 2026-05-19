@@ -19,6 +19,14 @@ function errorHandler(err, req, res, next) {
   if (err.code === '23503') {
     return res.status(400).json({ error: 'Referenced record does not exist' });
   }
+  // Postgres NOT NULL violation
+  if (err.code === '23502') {
+    return res.status(400).json({ error: 'Required field missing' });
+  }
+  // Postgres invalid input syntax (e.g. bad UUID, bad enum value)
+  if (err.code === '22P02') {
+    return res.status(400).json({ error: 'Invalid value format' });
+  }
   // Joi validation
   if (err.isJoi || err.name === 'ValidationError') {
     return res.status(400).json({ error: err.message });
