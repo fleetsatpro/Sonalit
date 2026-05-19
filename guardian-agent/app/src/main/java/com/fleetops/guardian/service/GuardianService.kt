@@ -8,6 +8,9 @@ import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
+import android.media.Ringtone
+import android.media.RingtoneManager
 import android.os.Binder
 import android.os.IBinder
 import android.os.Looper
@@ -20,6 +23,7 @@ import com.fleetops.guardian.R
 import com.fleetops.guardian.data.api.CommandDto
 import com.fleetops.guardian.data.prefs.DevicePrefs
 import com.fleetops.guardian.data.repository.GuardianRepository
+import com.fleetops.guardian.data.repository.PanicMode
 import com.fleetops.guardian.receiver.GuardianDeviceAdminReceiver
 import com.fleetops.guardian.ui.main.MainActivity
 import com.fleetops.guardian.util.batteryCharging
@@ -29,6 +33,7 @@ import com.fleetops.guardian.util.signalStrength
 import com.google.android.gms.location.*
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -64,6 +69,13 @@ class GuardianService : LifecycleService() {
     private val _lastCommandId = MutableStateFlow<String?>(null)
     val lastCommandId: StateFlow<String?> = _lastCommandId.asStateFlow()
 
+    private var sirenRingtone: Ringtone? = null
+    private var sirenJob: kotlinx.coroutines.Job? = null
+    private val _batteryAlertSent = MutableStateFlow(false)
+
+    private var lastKnownLat: Double? = null
+    private var lastKnownLng: Double? = null
+
     // Binder for activity binding
     inner class GuardianBinder : Binder() {
         fun getService(): GuardianService = this@GuardianService
@@ -90,6 +102,11 @@ class GuardianService : LifecycleService() {
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
+            ACTION_QUICK_PANIC -> {
+                lifecycleScope.launch {
+                    repository.triggerPanic(PanicMode.SILENT, "Quick panic via shortcut", lastKnownLat, lastKnownLng)
+                }
+            }
             else -> startLocationUpdates()
         }
         return START_STICKY
@@ -97,6 +114,7 @@ class GuardianService : LifecycleService() {
 
     override fun onDestroy() {
         stopLocationUpdates()
+        stopSiren()
         super.onDestroy()
     }
 
@@ -189,10 +207,26 @@ class GuardianService : LifecycleService() {
                 locationJob?.cancel()
                 locationJob = lifecycleScope.launch {
                     _isOnline.value = true
+                    lastKnownLat = location.latitude
+                    lastKnownLng = location.longitude
                     _batteryLevel.value = applicationContext.batteryLevel()
                     _batteryCharging.value = applicationContext.batteryCharging()
                     _signalStrength.value = applicationContext.signalStrength()
                     _networkType.value = applicationContext.networkType()
+                    val bat = _batteryLevel.value
+                    if (bat in 1..9 && !_batteryAlertSent.value) {
+                        _batteryAlertSent.value = true
+                        lifecycleScope.launch {
+                            repository.triggerPanic(
+                                mode = PanicMode.SILENT,
+                                message = "AUTO: Battery critical at ${bat}%",
+                                lat = location.latitude,
+                                lng = location.longitude
+                            )
+                        }
+                    } else if (bat >= 15) {
+                        _batteryAlertSent.value = false
+                    }
                     repository.sendLocation(
                         lat = location.latitude,
                         lng = location.longitude,
@@ -276,6 +310,16 @@ class GuardianService : LifecycleService() {
                     repository.ackCommand(command.commandId, "unsupported")
                     return
                 }
+                "trigger_siren" -> {
+                    val duration = command.payload?.get("duration")?.toIntOrNull() ?: 30
+                    triggerSiren(duration)
+                }
+                "stop_siren" -> stopSiren()
+                "start_live_tracking" -> devicePrefs.setTrackingMode(DevicePrefs.TrackingMode.LIVE)
+                "stop_live_tracking" -> devicePrefs.setTrackingMode(DevicePrefs.TrackingMode.NORMAL)
+                "force_sync" -> {
+                    lifecycleScope.launch { repository.syncPendingUploads() }
+                }
                 else -> {
                     Log.w(TAG, "Unknown command type: ${command.type}")
                     repository.ackCommand(command.commandId, "unknown_type")
@@ -343,9 +387,44 @@ class GuardianService : LifecycleService() {
         }
     }
 
+    private fun triggerSiren(durationSeconds: Int = 30) {
+        try {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            audioManager.setStreamVolume(
+                AudioManager.STREAM_ALARM,
+                audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM),
+                0
+            )
+            val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+            sirenRingtone?.stop()
+            sirenRingtone = RingtoneManager.getRingtone(applicationContext, alarmUri)?.apply {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) isLooping = true
+                play()
+            }
+            sirenJob?.cancel()
+            sirenJob = lifecycleScope.launch {
+                delay(durationSeconds.toLong() * 1000)
+                stopSiren()
+            }
+            Log.i(TAG, "Siren triggered for ${durationSeconds}s")
+        } catch (e: Exception) {
+            Log.e(TAG, "Siren failed: ${e.message}")
+        }
+    }
+
+    private fun stopSiren() {
+        sirenJob?.cancel()
+        sirenJob = null
+        sirenRingtone?.stop()
+        sirenRingtone = null
+        Log.i(TAG, "Siren stopped")
+    }
+
     companion object {
         private const val TAG = "GuardianService"
         const val ACTION_STOP = "com.fleetops.guardian.action.STOP_SERVICE"
+        const val ACTION_QUICK_PANIC = "com.fleetops.guardian.action.QUICK_PANIC"
 
         fun startService(context: Context) {
             val intent = Intent(context, GuardianService::class.java)

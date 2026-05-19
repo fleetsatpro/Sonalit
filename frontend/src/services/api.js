@@ -191,6 +191,10 @@ export const guardianAPI = {
   guardianConvoys:  ()      => api.get('/guardian/convoys'),
   convoyCodeCreate: (d)     => api.post('/guardian/convoy-codes', d),
   convoyCodeList:   ()      => api.get('/guardian/convoy-codes'),
+  linkCfo: (deviceId, cfoUserId) => api.patch(`/guardian/devices/${deviceId}`, {
+    assignment_type: cfoUserId ? 'user' : null,
+    assignment_id: cfoUserId || null,
+  }),
 };
 
 export default api;

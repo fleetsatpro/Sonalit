@@ -1060,23 +1060,26 @@ router.patch('/devices/:id', authenticate, async (req, res, next) => {
   try {
     const { assignment_type, assignment_id, status, name } = req.body;
 
-    const validAssignmentTypes = ['driver', 'officer', 'convoy', 'vehicle', 'asset'];
+    const validAssignmentTypes = ['driver', 'officer', 'convoy', 'vehicle', 'asset', 'user'];
     if (assignment_type && !validAssignmentTypes.includes(assignment_type)) {
       return res.status(400).json({
         error: `assignment_type must be one of: ${validAssignmentTypes.join(', ')}`,
       });
     }
 
+    // Detect explicit clear: assignment_type is present in body but falsy (null/empty)
+    const clearAssignment = 'assignment_type' in req.body && !assignment_type;
+
     const result = await query(
       `UPDATE guardian_devices
        SET name            = COALESCE($1, name),
            status          = COALESCE($2, status),
-           assignment_type = COALESCE($3, assignment_type),
-           assignment_id   = COALESCE($4::UUID, assignment_id),
+           assignment_type = CASE WHEN $6 THEN NULL ELSE COALESCE($3, assignment_type) END,
+           assignment_id   = CASE WHEN $6 THEN NULL ELSE COALESCE($4::UUID, assignment_id) END,
            updated_at      = NOW()
        WHERE id = $5 AND deleted_at IS NULL
        RETURNING *`,
-      [name || null, status || null, assignment_type || null, assignment_id || null, req.params.id]
+      [name || null, status || null, assignment_type || null, assignment_id || null, req.params.id, clearAssignment]
     );
 
     if (!result.rows.length) {
