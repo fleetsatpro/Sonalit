@@ -206,6 +206,21 @@ async function ensureTables() {
         WHERE android_id IS NOT NULL AND android_id <> 'unknown' AND deleted_at IS NULL
     `);
 
+    // One-time cleanup: soft-delete PENDING records where an ACTIVE record exists
+    // for the same name + model (catches duplicates created before hardware-ID dedup was added).
+    await query(`
+      UPDATE guardian_devices SET deleted_at = NOW()
+      WHERE status = 'pending' AND deleted_at IS NULL
+        AND EXISTS (
+          SELECT 1 FROM guardian_devices active
+          WHERE active.deleted_at IS NULL
+            AND active.status = 'active'
+            AND active.name = guardian_devices.name
+            AND (active.model = guardian_devices.model OR active.model IS NULL OR guardian_devices.model IS NULL)
+            AND active.id <> guardian_devices.id
+        )
+    `);
+
     // p1t1 — server-side config table (feature flags, version enforcement)
     await query(`
       CREATE TABLE IF NOT EXISTS guardian_config (
@@ -442,43 +457,80 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
     const safeImei = imei && imei !== 'unknown' ? imei : null;
     const safeAndroidId = android_id && android_id !== 'unknown' ? android_id : null;
 
+    let existingDev = null;
+
     if (safeImei || safeAndroidId) {
-      const existing = await query(
+      const r = await query(
         `SELECT id, token, status, enrolled_at FROM guardian_devices
          WHERE deleted_at IS NULL
            AND (
              ($1::TEXT IS NOT NULL AND imei = $1)
              OR ($2::TEXT IS NOT NULL AND android_id = $2)
            )
-         ORDER BY enrolled_at DESC
+         ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END, enrolled_at DESC
          LIMIT 1`,
         [safeImei, safeAndroidId]
       );
+      if (r.rows.length) existingDev = r.rows[0];
+    }
 
-      if (existing.rows.length) {
-        const dev = existing.rows[0];
-        if (dev.status === 'revoked' || dev.status === 'suspended') {
-          return res.status(403).json({ error: `Device is ${dev.status} — contact your administrator` });
-        }
-        // Re-enrollment: refresh metadata, keep token
+    // Legacy fallback: records enrolled before android_id tracking have both hardware IDs null.
+    // Match by name + model and backfill android_id so future lookups hit the fast path.
+    if (!existingDev && safeAndroidId) {
+      const r = await query(
+        `SELECT id, token, status, enrolled_at FROM guardian_devices
+         WHERE deleted_at IS NULL AND android_id IS NULL AND imei IS NULL
+           AND name = $1 AND (model = $2 OR $2 IS NULL)
+         ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END, enrolled_at DESC
+         LIMIT 1`,
+        [name, model || null]
+      );
+      if (r.rows.length) {
+        existingDev = r.rows[0];
+        // Backfill hardware IDs so the fast path works on every subsequent enrollment
         await query(
-          `UPDATE guardian_devices
-           SET name = $1, os_version = $2, app_version = $3,
-               manufacturer = $4, model = $5, updated_at = NOW()
-           WHERE id = $6`,
-          [name, os_version || null, app_version || null, manufacturer || null, model || null, dev.id]
+          `UPDATE guardian_devices SET android_id = $1, imei = $2, manufacturer = $3 WHERE id = $4`,
+          [safeAndroidId, safeImei, manufacturer || null, existingDev.id]
         );
-        logger.info(`Guardian re-enrollment: device ${dev.id} (IMEI ${safeImei || 'n/a'})`);
-        auditLog('device', dev.id, 're_enroll', 'device', dev.id, { name, imei }, req.ip);
-        const certPin = process.env.GUARDIAN_CERT_PIN || null;
-        return res.status(200).json({
-          device_id: dev.id,
-          token: dev.token,
-          enrolled_at: dev.enrolled_at,
-          cert_pin: certPin,
-          command_signing_secret: COMMAND_SIGNING_SECRET,
-        });
+        logger.info(`Guardian legacy device backfilled android_id: ${existingDev.id}`);
       }
+    }
+
+    if (existingDev) {
+      const dev = existingDev;
+      if (dev.status === 'revoked' || dev.status === 'suspended') {
+        return res.status(403).json({ error: `Device is ${dev.status} — contact your administrator` });
+      }
+      // Re-enrollment: refresh metadata, keep token
+      await query(
+        `UPDATE guardian_devices
+         SET name = $1, os_version = $2, app_version = $3,
+             manufacturer = $4, model = $5, updated_at = NOW()
+         WHERE id = $6`,
+        [name, os_version || null, app_version || null, manufacturer || null, model || null, dev.id]
+      );
+      // Soft-delete any other PENDING records for the same physical device
+      await query(
+        `UPDATE guardian_devices SET deleted_at = NOW()
+         WHERE id <> $1 AND status = 'pending' AND deleted_at IS NULL
+           AND (
+             ($2::TEXT IS NOT NULL AND imei = $2)
+             OR ($3::TEXT IS NOT NULL AND android_id = $3)
+             OR (android_id IS NULL AND imei IS NULL AND name = $4
+                 AND (model = $5 OR $5 IS NULL))
+           )`,
+        [dev.id, safeImei, safeAndroidId, name, model || null]
+      );
+      logger.info(`Guardian re-enrollment: device ${dev.id} (IMEI ${safeImei || 'n/a'})`);
+      auditLog('device', dev.id, 're_enroll', 'device', dev.id, { name, imei }, req.ip);
+      const certPin = process.env.GUARDIAN_CERT_PIN || null;
+      return res.status(200).json({
+        device_id: dev.id,
+        token: dev.token,
+        enrolled_at: dev.enrolled_at,
+        cert_pin: certPin,
+        command_signing_secret: COMMAND_SIGNING_SECRET,
+      });
     }
 
     // Optional enrollment code validation (backward compat: skip if not provided)
