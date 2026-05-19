@@ -211,7 +211,7 @@ class CfoPhotoActivity : AppCompatActivity() {
                 val takenAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault())
                     .apply { timeZone = TimeZone.getTimeZone("UTC") }.format(Date())
 
-                api.commitCfoPhoto(
+                val commitResp = api.commitCfoPhoto(
                     token,
                     CfoPhotoCommitRequest(
                         eventUuid = UUID.randomUUID().toString(),
@@ -228,6 +228,13 @@ class CfoPhotoActivity : AppCompatActivity() {
                         notes = null
                     )
                 )
+
+                if (!commitResp.isSuccessful) {
+                    setStatus("Failed to save photo: HTTP ${commitResp.code()}", R.color.danger)
+                    binding.btnCapture.isEnabled = true
+                    binding.uploadProgress.visibility = View.GONE
+                    return@launch
+                }
 
                 binding.uploadProgress.visibility = View.GONE
                 setStatus("Photo saved", R.color.success)
