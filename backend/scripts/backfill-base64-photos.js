@@ -3,10 +3,11 @@
 /**
  * backfill-base64-photos.js
  *
- * Finds field_reports whose photo_url is a base64 data URI (data:image/jpeg;base64,…),
- * uploads the image to R2, and replaces the column with the public HTTPS URL.
+ * Finds rows in field_reports and convoy_truck_photos whose photo_url is a
+ * base64 data URI (data:image/jpeg;base64,…), uploads the image to R2, and
+ * replaces the column with the public HTTPS URL.
  *
- * Scope: reports created in the last 7 days (older ones are too stale to matter).
+ * Scope: records created in the last 7 days (older ones are too stale to matter).
  *
  * Invocation:
  *   node scripts/backfill-base64-photos.js          (manual / Railway cron)
@@ -41,6 +42,36 @@ async function getR2Client() {
   return { s3, PutObjectCommand, bucket, publicBase };
 }
 
+async function migrateRows({ client, s3, PutObjectCommand, bucket, publicBase, rows, table, keyPrefix, updateSql }) {
+  let uploaded = 0;
+  let failed = 0;
+  for (const row of rows) {
+    try {
+      const match = row.photo_url.match(/^data:([^;]+);base64,(.+)$/s);
+      if (!match) {
+        console.warn(`[backfill-photos] ${table} ${row.id}: unexpected data URI format, skipping.`);
+        failed++;
+        continue;
+      }
+      const mimeType = match[1];
+      const ext = mimeType.includes('png') ? 'png' : 'jpg';
+      const imageBytes = Buffer.from(match[2], 'base64');
+
+      const key = `${keyPrefix(row)}/${uuidv4()}.${ext}`;
+      await s3.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: imageBytes, ContentType: mimeType }));
+
+      const publicUrl = `${publicBase}/${key}`;
+      await client.query(updateSql, [publicUrl, row.id]);
+      console.log(`[backfill-photos] ${table} ${row.id} → ${publicUrl}`);
+      uploaded++;
+    } catch (e) {
+      console.error(`[backfill-photos] ${table} ${row.id} failed: ${e.message}`);
+      failed++;
+    }
+  }
+  return { uploaded, failed };
+}
+
 async function run() {
   if (!process.env.DATABASE_URL) {
     console.warn('[backfill-photos] DATABASE_URL not set — skipping');
@@ -50,20 +81,29 @@ async function run() {
   try {
     client = await pool.connect();
 
-    const { rows } = await client.query(`
-      SELECT id, device_id, photo_url
-      FROM field_reports
-      WHERE photo_url LIKE 'data:%'
-        AND created_at > NOW() - INTERVAL '7 days'
-      ORDER BY created_at DESC
-    `);
+    const [reportRows, cfoRows] = await Promise.all([
+      client.query(`
+        SELECT id, device_id, photo_url
+        FROM field_reports
+        WHERE photo_url LIKE 'data:%'
+          AND created_at > NOW() - INTERVAL '7 days'
+        ORDER BY created_at DESC
+      `).then(r => r.rows),
+      client.query(`
+        SELECT id, guardian_device_id AS device_id, convoy_id, photo_url
+        FROM convoy_truck_photos
+        WHERE photo_url LIKE 'data:%'
+          AND created_at > NOW() - INTERVAL '7 days'
+        ORDER BY created_at DESC
+      `).then(r => r.rows),
+    ]);
 
-    if (rows.length === 0) {
+    const total = reportRows.length + cfoRows.length;
+    if (total === 0) {
       console.log('[backfill-photos] Nothing to migrate.');
       return;
     }
-
-    console.log(`[backfill-photos] Found ${rows.length} report(s) with base64 photos.`);
+    console.log(`[backfill-photos] Found ${reportRows.length} field report(s) and ${cfoRows.length} CFO photo(s) with base64 data.`);
 
     let r2;
     try {
@@ -74,45 +114,27 @@ async function run() {
     }
     const { s3, PutObjectCommand, bucket, publicBase } = r2;
 
-    let uploaded = 0;
-    let failed = 0;
+    const [rStats, cStats] = await Promise.all([
+      migrateRows({
+        client, s3, PutObjectCommand, bucket, publicBase,
+        rows: reportRows,
+        table: 'field_reports',
+        keyPrefix: row => `reports/${row.device_id}`,
+        updateSql: 'UPDATE field_reports SET photo_url = $1 WHERE id = $2',
+      }),
+      migrateRows({
+        client, s3, PutObjectCommand, bucket, publicBase,
+        rows: cfoRows,
+        table: 'convoy_truck_photos',
+        keyPrefix: row => `cfo/${row.convoy_id}/${row.device_id}`,
+        updateSql: 'UPDATE convoy_truck_photos SET photo_url = $1 WHERE id = $2',
+      }),
+    ]);
 
-    for (const row of rows) {
-      try {
-        const dataUri = row.photo_url;
-        // data:image/jpeg;base64,<bytes>
-        const match = dataUri.match(/^data:([^;]+);base64,(.+)$/s);
-        if (!match) {
-          console.warn(`[backfill-photos] Report ${row.id}: unexpected data URI format, skipping.`);
-          failed++;
-          continue;
-        }
-        const mimeType = match[1];
-        const ext = mimeType.includes('png') ? 'png' : 'jpg';
-        const imageBytes = Buffer.from(match[2], 'base64');
-
-        const key = `reports/${row.device_id}/${uuidv4()}.${ext}`;
-        await s3.send(new PutObjectCommand({
-          Bucket: bucket,
-          Key: key,
-          Body: imageBytes,
-          ContentType: mimeType,
-        }));
-
-        const publicUrl = `${publicBase}/${key}`;
-        await client.query(
-          `UPDATE field_reports SET photo_url = $1 WHERE id = $2`,
-          [publicUrl, row.id]
-        );
-        console.log(`[backfill-photos] Report ${row.id} → ${publicUrl}`);
-        uploaded++;
-      } catch (e) {
-        console.error(`[backfill-photos] Report ${row.id} failed: ${e.message}`);
-        failed++;
-      }
-    }
-
-    console.log(`[backfill-photos] Done. Uploaded: ${uploaded}, Failed: ${failed}`);
+    console.log(
+      `[backfill-photos] Done. field_reports: ${rStats.uploaded} uploaded, ${rStats.failed} failed. ` +
+      `convoy_truck_photos: ${cStats.uploaded} uploaded, ${cStats.failed} failed.`
+    );
   } catch (err) {
     console.error('[backfill-photos] Fatal error:', err.message);
     process.exitCode = 1;

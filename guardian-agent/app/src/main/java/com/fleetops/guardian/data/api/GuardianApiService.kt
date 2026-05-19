@@ -48,7 +48,7 @@ interface GuardianApiService {
     suspend fun getCfoPhotoUploadUrl(
         @Header("X-Device-Token") token: String,
         @Body body: CfoPhotoUploadUrlRequest
-    ): CfoPhotoUploadUrlResponse
+    ): Response<CfoPhotoUploadUrlResponse>
 
     @POST("guardian/cfo/photos")
     suspend fun commitCfoPhoto(
