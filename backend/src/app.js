@@ -65,7 +65,7 @@ app.get("/health",async(req,res)=>{
     const[db,redis]=await Promise.all([dbHealth(),redisHealth()]);
     const mem=process.memoryUsage();
     const status=db?"ok":"degraded";
-    res.status(db?200:503).json({
+    res.status(200).json({
       status,
       database:db?"ok":"error",
       redis,
