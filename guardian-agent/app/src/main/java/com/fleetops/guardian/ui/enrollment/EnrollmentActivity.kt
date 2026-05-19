@@ -1,6 +1,8 @@
 package com.fleetops.guardian.ui.enrollment
 
 import android.Manifest
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -16,6 +18,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.fleetops.guardian.BuildConfig
 import com.fleetops.guardian.databinding.ActivityEnrollmentBinding
+import com.fleetops.guardian.receiver.GuardianDeviceAdminReceiver
 import com.fleetops.guardian.service.GuardianService
 import com.fleetops.guardian.ui.main.MainActivity
 import dagger.hilt.android.AndroidEntryPoint
@@ -45,6 +48,10 @@ class EnrollmentActivity : AppCompatActivity() {
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { /* handled silently */ }
+
+    private val deviceAdminLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { navigateToMain() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -108,11 +115,9 @@ class EnrollmentActivity : AppCompatActivity() {
             is EnrollmentUiState.Success -> {
                 setLoading(false)
                 binding.tvStatus.visibility = View.VISIBLE
-                binding.tvStatus.text = "Enrollment successful!"
-                binding.tvStatus.setTextColor(
-                    ContextCompat.getColor(this, android.R.color.holo_green_light)
-                )
-                navigateToMain()
+                binding.tvStatus.text = "Enrollment successful! Activating security..."
+                binding.tvStatus.setTextColor(ContextCompat.getColor(this, android.R.color.holo_green_light))
+                requestDeviceAdmin()
             }
             is EnrollmentUiState.Error -> {
                 setLoading(false)
@@ -137,6 +142,21 @@ class EnrollmentActivity : AppCompatActivity() {
         GuardianService.startService(this)
         startActivity(Intent(this, MainActivity::class.java))
         finish()
+    }
+
+    private fun requestDeviceAdmin() {
+        val dpm = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val component = ComponentName(this, GuardianDeviceAdminReceiver::class.java)
+        if (dpm.isAdminActive(component)) {
+            navigateToMain()
+            return
+        }
+        val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+            putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, component)
+            putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                "Required to protect fleet data, prevent app removal, and enable remote device management.")
+        }
+        deviceAdminLauncher.launch(intent)
     }
 
     private fun requestRequiredPermissions() {

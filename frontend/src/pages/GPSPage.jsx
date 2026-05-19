@@ -313,7 +313,7 @@ export default function GPSPage() {
 
   const loadGuardianDevices = useCallback(async (Lf, map) => {
     try {
-      const r = await api.get('/guardian/devices', { params: { status: 'active', limit: 100 } });
+      const r = await api.get('/guardian/devices', { params: { limit: 200 } });
       const devs = (r.data.data || []).filter(d => d.last_lat && d.last_lng);
       setGuardianDevices(devs);
       const Lfl = Lf || leafletRef.current;
