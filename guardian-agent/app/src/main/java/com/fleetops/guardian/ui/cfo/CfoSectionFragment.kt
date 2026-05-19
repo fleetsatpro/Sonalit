@@ -16,6 +16,7 @@ import com.fleetops.guardian.data.prefs.DevicePrefs
 import com.fleetops.guardian.data.api.RetrofitClient
 import com.fleetops.guardian.databinding.FragmentCfoBinding
 import com.fleetops.guardian.databinding.ItemCfoTruckBinding
+import com.google.gson.Gson
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -53,23 +54,42 @@ class CfoSectionFragment : Fragment() {
     }
 
     private fun loadContext() {
-        showLoading()
         viewLifecycleOwner.lifecycleScope.launch {
+            val token = prefs.deviceToken()
+            if (token.isEmpty()) { showError("Device not enrolled — go to Settings to re-enroll"); return@launch }
+
+            // Show cached data immediately so the user isn't staring at a spinner
+            val cachedJson = prefs.convoyContextJson()
+            if (cachedJson != null) {
+                try {
+                    val cached = Gson().fromJson(cachedJson, CfoContextData::class.java)
+                    contextData = cached
+                    renderConvoy(cached)
+                } catch (_: Exception) {
+                    showLoading()
+                }
+            } else {
+                showLoading()
+            }
+
+            // Fetch fresh data in the background
             try {
-                val token = prefs.deviceToken()
-                if (token.isEmpty()) { showError("Device not enrolled — go to Settings to re-enroll"); return@launch }
                 val api = RetrofitClient.buildApiService(prefs.serverUrl())
                 val response = api.getCfoContext(token)
+                prefs.saveConvoyContext(Gson().toJson(response.data))
                 contextData = response.data
                 renderConvoy(response.data)
             } catch (e: Exception) {
-                val msg = when {
-                    e.message?.contains("404") == true -> "No active convoy assigned to this device.\nContact your administrator."
-                    e.message?.contains("403") == true -> "CFO module is not enabled on this server."
-                    e.message?.contains("401") == true -> "Device token invalid — please re-enroll."
-                    else -> "Failed to load convoy: ${e.message}"
+                if (cachedJson == null) {
+                    val msg = when {
+                        e.message?.contains("404") == true -> "No active convoy assigned to this device.\nContact your administrator."
+                        e.message?.contains("403") == true -> "CFO module is not enabled on this server."
+                        e.message?.contains("401") == true -> "Device token invalid — please re-enroll."
+                        else -> "Failed to load convoy: ${e.message}"
+                    }
+                    showError(msg)
                 }
-                showError(msg)
+                // Cached data is already displayed — swallow the error silently
             }
         }
     }

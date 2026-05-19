@@ -36,6 +36,7 @@ class DevicePrefs @Inject constructor(
         val LAST_LOCATION_LAT = doublePreferencesKey("last_location_lat")
         val LAST_LOCATION_LNG = doublePreferencesKey("last_location_lng")
         val LAST_LOCATION_AT = longPreferencesKey("last_location_at")
+        val CONVOY_CONTEXT_JSON = stringPreferencesKey("convoy_context_json")
     }
 
     // ─── Safe read helper ─────────────────────────────────────────────────────
@@ -126,6 +127,13 @@ class DevicePrefs @Inject constructor(
             prefs[Keys.LAST_LOCATION_LNG] = lng
             prefs[Keys.LAST_LOCATION_AT] = timestampMs
         }
+    }
+
+    suspend fun convoyContextJson(): String? =
+        safePrefsFlow.map { it[Keys.CONVOY_CONTEXT_JSON] }.first()
+
+    suspend fun saveConvoyContext(json: String) {
+        dataStore.edit { it[Keys.CONVOY_CONTEXT_JSON] = json }
     }
 
     suspend fun clearAll() {
