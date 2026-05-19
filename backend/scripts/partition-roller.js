@@ -15,6 +15,7 @@
 const { Pool } = require('pg');
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+pool.on('error', (err) => console.error('[roller] pool error:', err.message));
 
 const TABLES = ['device_locations', 'device_health'];
 
@@ -106,6 +107,10 @@ async function dropOldPartitions(client, retentionDays) {
 }
 
 async function run() {
+  if (!process.env.DATABASE_URL) {
+    console.warn('[roller] DATABASE_URL not set — skipping');
+    return;
+  }
   const client = await pool.connect();
   try {
     console.log('[roller] Starting partition maintenance...');
