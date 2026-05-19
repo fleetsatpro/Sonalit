@@ -3,7 +3,7 @@ const express=require("express"),http=require("http"),{Server}=require("socket.i
 const logger=require("./utils/logger"),{errorHandler}=require("./middleware/error"),{setIO:gpsSetIO}=require("./workers/gpsWorker"),{setIO:alertSetIO}=require("./workers/alertWorker"),{createQueues}=require("./config/queue"),{healthCheck:dbHealth}=require("./config/database"),{healthCheck:redisHealth}=require("./config/redis");
 const requestId=require("./middleware/requestId");
 
-if(!process.env.DATABASE_URL) throw new Error("Missing required env var: DATABASE_URL");
+if(!process.env.DATABASE_URL) logger.warn("DATABASE_URL not set — set it in Railway so the database works");
 if(!process.env.JWT_SECRET){
   process.env.JWT_SECRET = require('crypto').randomBytes(32).toString('hex');
   logger.warn("JWT_SECRET not set — generated a random one. Set JWT_SECRET in Railway to persist sessions across restarts.");
