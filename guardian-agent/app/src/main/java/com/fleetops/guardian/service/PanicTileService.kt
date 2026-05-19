@@ -2,6 +2,8 @@ package com.fleetops.guardian.service
 
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import androidx.annotation.RequiresApi
@@ -30,7 +32,11 @@ class PanicTileService : TileService() {
             it.state = Tile.STATE_ACTIVE
             it.label = "SOS SENT"
             it.updateTile()
-            postDelayed({ it.state = Tile.STATE_INACTIVE; it.label = "PANIC / SOS"; it.updateTile() }, 3000)
+            Handler(Looper.getMainLooper()).postDelayed({
+                it.state = Tile.STATE_INACTIVE
+                it.label = "PANIC / SOS"
+                it.updateTile()
+            }, 3000)
         }
     }
 }
