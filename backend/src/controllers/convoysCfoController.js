@@ -277,6 +277,25 @@ const addCfo = asyncHandler(async (req, res) => {
        RETURNING *`,
       [req.params.id, value.cfo_user_id, value.guardian_device_id || null]
     );
+
+    // Auto-link: if no device was supplied, find a guardian device whose assignment_id
+    // matches this CFO user and wire it up automatically
+    if (!value.guardian_device_id) {
+      query(
+        `UPDATE convoy_cfos
+         SET guardian_device_id = (
+           SELECT id FROM guardian_devices
+           WHERE assignment_id = $2
+             AND deleted_at IS NULL
+             AND status NOT IN ('revoked','suspended')
+           ORDER BY last_seen DESC NULLS LAST
+           LIMIT 1
+         )
+         WHERE id = $1 AND guardian_device_id IS NULL`,
+        [result.rows[0].id, value.cfo_user_id]
+      ).catch((e) => console.warn(`[convoy_cfos] auto-link on addCfo: ${e.message}`));
+    }
+
     gAudit(req.user.id, 'convoy_cfo_added', 'convoy_cfo', result.rows[0].id, { convoy_id: req.params.id }, req.ip);
     res.status(201).json({ data: result.rows[0] });
   } catch (err) {
@@ -434,6 +453,39 @@ const regenerateReport = asyncHandler(async (req, res) => {
   res.json({ message: 'Report regeneration queued' });
 });
 
+// B2b — link a guardian device to an existing CFO slot (works on any convoy status)
+const linkDevice = asyncHandler(async (req, res) => {
+  if (!await isCfoModuleEnabled()) return res.status(403).json({ error: 'cfo_module_disabled' });
+
+  const { device_id } = req.body;
+  if (!device_id || typeof device_id !== 'string') {
+    return res.status(400).json({ error: 'device_id is required' });
+  }
+
+  const cfoEntry = await query(
+    `SELECT cc.id FROM convoy_cfos cc
+     JOIN convoys c ON c.id = cc.convoy_id
+     WHERE cc.id = $1 AND cc.convoy_id = $2 AND c.deleted_at IS NULL`,
+    [req.params.cfoId, req.params.id]
+  );
+  if (!cfoEntry.rows.length) return res.status(404).json({ error: 'CFO slot not found in convoy' });
+
+  const device = await query(
+    `SELECT id FROM guardian_devices WHERE id = $1 AND deleted_at IS NULL`,
+    [device_id]
+  );
+  if (!device.rows.length) return res.status(404).json({ error: 'Guardian device not found' });
+
+  const result = await query(
+    `UPDATE convoy_cfos SET guardian_device_id = $1 WHERE id = $2 RETURNING *`,
+    [device_id, req.params.cfoId]
+  );
+
+  gAudit(req.user.id, 'convoy_cfo_device_linked', 'convoy_cfo', req.params.cfoId,
+    { convoy_id: req.params.id, device_id }, req.ip);
+  res.json({ data: result.rows[0] });
+});
+
 module.exports = {
   createConvoyCfo,
   addTruck,
@@ -444,4 +496,5 @@ module.exports = {
   removeAssignment,
   getConvoyReports,
   regenerateReport,
+  linkDevice,
 };
