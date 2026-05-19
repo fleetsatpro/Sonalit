@@ -3,13 +3,62 @@
  * Mounted at /api/v1/guardian/cfo
  */
 require('dotenv').config();
-const router = require('express').Router();
+const path = require('path');
+const fs = require('fs');
+const express = require('express');
+const router = express.Router();
 const rateLimit = require('express-rate-limit');
 const { v4: uuidv4 } = require('uuid');
 const { query } = require('../config/database');
 const { isCfoModuleEnabled } = require('../utils/cfoFlag');
 const { haversine } = require('../utils/haversine');
 const logger = require('../utils/logger');
+
+// Local photo storage — used when R2 credentials are not configured
+const photosDir = path.join(__dirname, '..', '..', 'static', 'photos');
+
+function isValidPhotoKey(key) {
+  return (
+    typeof key === 'string' &&
+    /^cfo\/[0-9a-f-]{36}\/\d{4}-\d{2}-\d{2}\/[0-9a-f-]{36}\/(sod|eod)\/[\w-]+\.jpg$/i.test(key)
+  );
+}
+
+// ─── Local Photo Upload (fallback when R2 not configured) ─────────────────────
+
+// PUT /photos/local/* — accepts raw JPEG, stores on-disk
+router.put(
+  '/photos/local/*',
+  express.raw({ type: 'image/jpeg', limit: '10mb' }),
+  async (req, res, next) => {
+    try {
+      const key = req.params[0];
+      if (!isValidPhotoKey(key)) return res.status(400).json({ error: 'invalid_photo_key' });
+      if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+        return res.status(400).json({ error: 'empty_body' });
+      }
+      const filePath = path.join(photosDir, key);
+      await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.promises.writeFile(filePath, req.body);
+      res.status(200).send('');
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// GET /photos/local/* — serves stored local photos
+router.get('/photos/local/*', (req, res, next) => {
+  const key = req.params[0];
+  if (!isValidPhotoKey(key)) return res.status(404).json({ error: 'not_found' });
+  const filePath = path.join(photosDir, key);
+  res.sendFile(filePath, (err) => {
+    if (err && !res.headersSent) {
+      if (err.code === 'ENOENT') return res.status(404).json({ error: 'photo_not_found' });
+      next(err);
+    }
+  });
+});
 
 // ─── Device Auth ─────────────────────────────────────────────────────────────
 
@@ -218,7 +267,13 @@ router.post('/photo-upload-url', deviceAuth, photoUploadLimiter, async (req, res
     } = process.env;
 
     if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY || !R2_SECRET_KEY || !R2_BUCKET) {
-      return res.status(501).json({ error: 'Photo storage not configured on this server' });
+      // Local-storage fallback — R2 not configured, store photos on this server
+      const sealSuffix = seal_position ? `_${seal_position}` : '';
+      const key = `cfo/${convoy_id}/${report_date}/${convoy_truck_id}/${session}/${photo_type}${sealSuffix}_${uuidv4()}.jpg`;
+      const baseUrl = process.env.PUBLIC_URL ||
+        `${req.protocol}://${req.get('host')}`;
+      const localUrl = `${baseUrl}/api/v1/guardian/cfo/photos/local/${key}`;
+      return res.json({ upload_url: localUrl, public_url: localUrl, key });
     }
 
     let S3Client, PutObjectCommand, getSignedUrl;
