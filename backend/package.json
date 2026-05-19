@@ -4,7 +4,6 @@
   "description": "FleetOps Pro — Backend API Server",
   "main": "src/app.js",
   "scripts": {
-    "prestart": "node scripts/migrate-all.js || true",
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
     "migrate": "node scripts/migrate.js",
