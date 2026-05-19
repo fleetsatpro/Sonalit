@@ -13,6 +13,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.fleetops.guardian.R
+import kotlinx.coroutines.flow.combine
 import com.fleetops.guardian.databinding.ActivityMainBinding
 import com.fleetops.guardian.service.GuardianService
 import com.fleetops.guardian.ui.cfo.CfoSectionFragment
@@ -96,6 +97,16 @@ class MainActivity : AppCompatActivity() {
                     svc.isOnline.collect { online ->
                         viewModel.updateServiceState(online, svc.trackingMode.value)
                     }
+                }
+                launch {
+                    combine(
+                        svc.batteryLevel,
+                        svc.batteryCharging,
+                        svc.signalStrength,
+                        svc.networkType
+                    ) { battery, charging, signal, netType ->
+                        viewModel.updateHardwareState(battery, charging, signal, netType)
+                    }.collect {}
                 }
             }
         }
