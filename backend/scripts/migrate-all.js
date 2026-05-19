@@ -5,6 +5,17 @@
  */
 require('dotenv').config();
 
+if (!process.env.DATABASE_URL) {
+  console.warn('[migrate-all] DATABASE_URL not set — skipping migrations');
+  process.exit(0);
+}
+
+// Hard 90-second deadline so a hung migration never blocks server startup.
+setTimeout(() => {
+  console.warn('[migrate-all] 90s timeout reached — forcing exit so server can start');
+  process.exit(0);
+}, 90_000).unref();
+
 const steps = [
   'migrate.js',
   'migrate-extended.js',
