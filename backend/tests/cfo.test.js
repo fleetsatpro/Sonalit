@@ -146,6 +146,23 @@ describe('Coverage validation', () => {
     expect(res.status).toBe(422);
     expect(res.body.error).toBe('invalid_position_in_cfo_assignment');
   });
+
+  test('422 when cfos array contains duplicate cfo_user_id', async () => {
+    const body = {
+      ...baseConvoy,
+      trucks: [
+        { vehicle_id: VID1, driver_name: 'Alice', position: 1 },
+        { vehicle_id: VID2, driver_name: 'Bob',   position: 2 },
+      ],
+      cfos: [
+        { cfo_user_id: CFOID, assigned_truck_positions: [1] },
+        { cfo_user_id: CFOID, assigned_truck_positions: [2] }, // same user, different entry
+      ],
+    };
+    const res = await request(app).post('/api/v1/convoys').send(body);
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe('duplicate_cfo_user_id');
+  });
 });
 
 // ─── Create CFO Convoy ────────────────────────────────────────────────────────
@@ -180,6 +197,51 @@ describe('Create CFO convoy', () => {
     const res = await request(app).post('/api/v1/convoys').send(validBody);
     expect(res.status).toBe(422);
     expect(res.body.error).toBe('cfo_user_wrong_role');
+  });
+
+  test('201 when vehicle_id is empty string (coerced to null, not sent as empty UUID)', async () => {
+    const convoyRow = { id: CID, name: validBody.name, status: 'planned' };
+    mockCQ
+      .mockResolvedValueOnce({})                                          // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: CFOID, role: 'cfo' }] })    // SELECT users
+      .mockResolvedValueOnce({ rows: [convoyRow] })                       // INSERT convoy
+      .mockResolvedValueOnce({ rows: [{ id: 'tr1', position: 1 }] })     // INSERT truck 1
+      .mockResolvedValueOnce({ rows: [{ id: 'tr2', position: 2 }] })     // INSERT truck 2
+      .mockResolvedValueOnce({ rows: [{ id: 'cf1' }] })                  // INSERT convoy_cfos
+      .mockResolvedValueOnce({ rows: [{ id: 'as1' }] })                  // INSERT assignment pos 1
+      .mockResolvedValueOnce({ rows: [{ id: 'as2' }] })                  // INSERT assignment pos 2
+      .mockResolvedValueOnce({});                                          // COMMIT
+
+    const body = {
+      ...validBody,
+      trucks: [
+        { vehicle_id: '', driver_name: 'Alice Driver', position: 1 },
+        { vehicle_id: VID2, driver_name: 'Bob Driver',  position: 2 },
+      ],
+    };
+    const res = await request(app).post('/api/v1/convoys').send(body);
+    expect(res.status).toBe(201);
+    // Verify empty string was coerced to null before the DB call
+    const truckInsertArgs = mockCQ.mock.calls[3][1]; // 4th query = first truck INSERT
+    expect(truckInsertArgs[1]).toBeNull();
+  });
+
+  test('422 when cfo_truck_limit trigger fires during convoy creation', async () => {
+    const limitErr = new Error('cfo_truck_limit_exceeded: a CFO may cover at most 2 trucks');
+    const convoyRow = { id: CID, name: validBody.name, status: 'planned' };
+    mockCQ
+      .mockResolvedValueOnce({})                                          // BEGIN
+      .mockResolvedValueOnce({ rows: [{ id: CFOID, role: 'cfo' }] })    // SELECT users
+      .mockResolvedValueOnce({ rows: [convoyRow] })                       // INSERT convoy
+      .mockResolvedValueOnce({ rows: [{ id: 'tr1', position: 1 }] })     // INSERT truck 1
+      .mockResolvedValueOnce({ rows: [{ id: 'tr2', position: 2 }] })     // INSERT truck 2
+      .mockResolvedValueOnce({ rows: [{ id: 'cf1' }] })                  // INSERT convoy_cfos
+      .mockRejectedValueOnce(limitErr)                                    // trigger fires on assignment
+      .mockResolvedValueOnce({});                                          // ROLLBACK
+
+    const res = await request(app).post('/api/v1/convoys').send(validBody);
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe('cfo_truck_limit_exceeded');
   });
 });
 
