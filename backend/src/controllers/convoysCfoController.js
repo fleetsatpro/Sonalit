@@ -1,3 +1,5 @@
+const path = require('path');
+const fs = require('fs');
 const Joi = require('joi');
 const { pool, query } = require('../config/database');
 const { asyncHandler } = require('../middleware/error');
@@ -486,6 +488,26 @@ const linkDevice = asyncHandler(async (req, res) => {
   res.json({ data: result.rows[0] });
 });
 
+// E5 — stream the generated PDF (R2 redirect or local fallback)
+const downloadReport = asyncHandler(async (req, res) => {
+  const { date } = req.params;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+  const convoy = await query('SELECT id FROM convoys WHERE id = $1 AND deleted_at IS NULL', [req.params.id]);
+  if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
+  const r = await query(
+    `SELECT pdf_url, status FROM convoy_daily_reports WHERE convoy_id = $1 AND report_date = $2`,
+    [req.params.id, date]
+  );
+  if (!r.rows.length) return res.status(404).json({ error: 'Report not found' });
+  if (r.rows[0].status !== 'generated') return res.status(422).json({ error: `Report status: ${r.rows[0].status}` });
+  if (r.rows[0].pdf_url?.startsWith('http')) return res.redirect(r.rows[0].pdf_url);
+  const filePath = path.resolve(__dirname, '../../data/reports', req.params.id, `${date}.pdf`);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'PDF not on server — please regenerate' });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="convoy-report-${date}.pdf"`);
+  fs.createReadStream(filePath).pipe(res);
+});
+
 module.exports = {
   createConvoyCfo,
   addTruck,
@@ -496,5 +518,6 @@ module.exports = {
   removeAssignment,
   getConvoyReports,
   regenerateReport,
+  downloadReport,
   linkDevice,
 };

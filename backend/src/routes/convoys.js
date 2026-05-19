@@ -47,5 +47,6 @@ router.delete('/:id/cfo-assignments/:assignmentId', authorize('admin', 'dispatch
 // Daily report admin (E5)
 router.get('/:id/reports', authorize('admin', 'dispatcher', 'analyst'), cfo.getConvoyReports);
 router.post('/:id/reports/:date/regenerate', authorize('admin', 'dispatcher'), convoyReportRegenerateLimiter, cfo.regenerateReport);
+router.get('/:id/reports/:date/download', authorize('admin', 'dispatcher', 'analyst'), cfo.downloadReport);
 
 module.exports = router;

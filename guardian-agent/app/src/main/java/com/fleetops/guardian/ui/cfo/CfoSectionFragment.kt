@@ -180,6 +180,7 @@ class CfoSectionFragment : Fragment() {
                     putExtra(CfoPhotoActivity.EXTRA_DRIVER_NAME, truck.driverName)
                     putExtra(CfoPhotoActivity.EXTRA_REPORT_DATE, data.reportDate)
                     putExtra(CfoPhotoActivity.EXTRA_SEAL_COUNT, sealCount)
+                    putExtra(CfoPhotoActivity.EXTRA_PHOTOS_TODAY, Gson().toJson(truckPhotos))
                 }
             )
         }
