@@ -49,6 +49,7 @@ class GuardianService : LifecycleService() {
     private var locationJob: Job? = null
 
     private val _trackingMode = MutableStateFlow(DevicePrefs.TrackingMode.NORMAL)
+    private var cachedTrackingInterval = DevicePrefs.DEFAULT_INTERVAL_SECONDS
     val trackingMode: StateFlow<String> = _trackingMode.asStateFlow()
 
     private val _isOnline = MutableStateFlow(false)
@@ -177,6 +178,14 @@ class GuardianService : LifecycleService() {
                 }
             }
         }
+        lifecycleScope.launch {
+            devicePrefs.trackingIntervalSecondsFlow.collect { interval ->
+                if (cachedTrackingInterval != interval) {
+                    cachedTrackingInterval = interval
+                    restartLocationUpdates()
+                }
+            }
+        }
     }
 
     // ─── Location Updates ─────────────────────────────────────────────────────
@@ -185,15 +194,7 @@ class GuardianService : LifecycleService() {
     private fun startLocationUpdates() {
         stopLocationUpdates()
 
-        val intervalSeconds = runCatching {
-            var interval = DevicePrefs.DEFAULT_INTERVAL_SECONDS
-            lifecycleScope.launch {
-                interval = devicePrefs.trackingIntervalSeconds()
-            }
-            interval
-        }.getOrDefault(DevicePrefs.DEFAULT_INTERVAL_SECONDS)
-
-        val intervalMs = computeIntervalMs(_trackingMode.value, intervalSeconds.toLong())
+        val intervalMs = computeIntervalMs(_trackingMode.value, cachedTrackingInterval.toLong())
 
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, intervalMs)
             .setMinUpdateIntervalMillis(intervalMs / 2)
@@ -300,14 +301,13 @@ class GuardianService : LifecycleService() {
                     devicePrefs.setTrackingMode(mode)
                 }
                 "reboot" -> {
-                    // Require device owner policy — log and ack
                     Log.w(TAG, "Reboot command received but requires device-owner policy")
-                    repository.ackCommand(command.commandId, "unsupported")
+                    repository.ackCommand(command.commandId, "failed")
                     return
                 }
                 "wipe" -> {
                     Log.w(TAG, "Wipe command received but requires device-owner policy")
-                    repository.ackCommand(command.commandId, "unsupported")
+                    repository.ackCommand(command.commandId, "failed")
                     return
                 }
                 "trigger_siren" -> {
@@ -322,14 +322,14 @@ class GuardianService : LifecycleService() {
                 }
                 else -> {
                     Log.w(TAG, "Unknown command type: ${command.type}")
-                    repository.ackCommand(command.commandId, "unknown_type")
+                    repository.ackCommand(command.commandId, "failed")
                     return
                 }
             }
             repository.ackCommand(command.commandId, "executed")
         } catch (e: Exception) {
             Log.e(TAG, "Error executing command ${command.commandId}", e)
-            repository.ackCommand(command.commandId, "error: ${e.message}")
+            repository.ackCommand(command.commandId, "failed")
         }
     }
 
