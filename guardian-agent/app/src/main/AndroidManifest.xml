@@ -43,6 +43,9 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
 
         <!-- Main operational screen (HOME + CONVOY tabs) -->
@@ -64,7 +67,22 @@
             android:name=".service.GuardianService"
             android:exported="false"
             android:foregroundServiceType="location"
-            android:stopWithTask="false" />
+            android:stopWithTask="false">
+            <intent-filter>
+                <action android:name="com.fleetops.guardian.action.QUICK_PANIC" />
+            </intent-filter>
+        </service>
+
+        <!-- Quick Settings Panic Tile (API 24+) -->
+        <service
+            android:name=".service.PanicTileService"
+            android:exported="true"
+            android:label="PANIC / SOS"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
 
         <!-- Boot Receiver -->
         <receiver

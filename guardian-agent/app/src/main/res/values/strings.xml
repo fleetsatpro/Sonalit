@@ -22,4 +22,6 @@
     <string name="no_convoy_assigned">No active convoy assigned to this device</string>
     <string name="contact_admin">Contact your administrator to assign a convoy</string>
     <string name="cfo_photos_complete">All photos complete</string>
+    <string name="shortcut_panic_short">SOS</string>
+    <string name="shortcut_panic_long">PANIC / SOS Emergency Alert</string>
 </resources>
