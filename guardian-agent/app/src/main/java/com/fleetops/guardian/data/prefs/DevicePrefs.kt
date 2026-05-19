@@ -36,6 +36,10 @@ class DevicePrefs @Inject constructor(
         val LAST_LOCATION_LAT = doublePreferencesKey("last_location_lat")
         val LAST_LOCATION_LNG = doublePreferencesKey("last_location_lng")
         val LAST_LOCATION_AT = longPreferencesKey("last_location_at")
+        val CONVOY_CONTEXT_JSON = stringPreferencesKey("convoy_context_json")
+        val CFO_USER_ID   = stringPreferencesKey("cfo_user_id")
+        val CFO_USER_NAME = stringPreferencesKey("cfo_user_name")
+        val CFO_EMAIL     = stringPreferencesKey("cfo_email")
     }
 
     // ─── Safe read helper ─────────────────────────────────────────────────────
@@ -76,6 +80,10 @@ class DevicePrefs @Inject constructor(
     suspend fun trackingMode(): String = trackingModeFlow.first()
     suspend fun trackingIntervalSeconds(): Int = trackingIntervalSecondsFlow.first()
     suspend fun deviceName(): String = deviceNameFlow.first()
+
+    suspend fun cfoUserId(): String?   = safePrefsFlow.map { it[Keys.CFO_USER_ID] }.first()
+    suspend fun cfoUserName(): String? = safePrefsFlow.map { it[Keys.CFO_USER_NAME] }.first()
+    suspend fun cfoEmail(): String?    = safePrefsFlow.map { it[Keys.CFO_EMAIL] }.first()
 
     // ─── Writers ──────────────────────────────────────────────────────────────
 
@@ -125,6 +133,29 @@ class DevicePrefs @Inject constructor(
             prefs[Keys.LAST_LOCATION_LAT] = lat
             prefs[Keys.LAST_LOCATION_LNG] = lng
             prefs[Keys.LAST_LOCATION_AT] = timestampMs
+        }
+    }
+
+    suspend fun convoyContextJson(): String? =
+        safePrefsFlow.map { it[Keys.CONVOY_CONTEXT_JSON] }.first()
+
+    suspend fun saveConvoyContext(json: String) {
+        dataStore.edit { it[Keys.CONVOY_CONTEXT_JSON] = json }
+    }
+
+    suspend fun saveCfoSession(userId: String, name: String, email: String) {
+        dataStore.edit { prefs ->
+            prefs[Keys.CFO_USER_ID]   = userId
+            prefs[Keys.CFO_USER_NAME] = name
+            prefs[Keys.CFO_EMAIL]     = email
+        }
+    }
+
+    suspend fun clearCfoSession() {
+        dataStore.edit { prefs ->
+            prefs.remove(Keys.CFO_USER_ID)
+            prefs.remove(Keys.CFO_USER_NAME)
+            prefs.remove(Keys.CFO_EMAIL)
         }
     }
 

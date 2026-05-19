@@ -105,8 +105,10 @@ function AssignmentBadge({ device }) {
   );
 }
 
-function DeviceCard({ device, onCommand, onLocate, onRevoke }) {
+function DeviceCard({ device, cfoUsers, onCommand, onLocate, onRevoke, onLinkCfo }) {
   const isPanic = device.panic_active;
+  const [showCfoSelect, setShowCfoSelect] = useState(false);
+  const linkedCfo = device.assignment_type === 'user' ? cfoUsers?.find(u => u.id === device.assignment_id) : null;
 
   return (
     <div
@@ -205,6 +207,72 @@ function DeviceCard({ device, onCommand, onLocate, onRevoke }) {
             <span style={{ fontSize: 9, color: '#60a5fa', fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, letterSpacing: '0.07em' }}>
               CFO · {device.cfo_convoy_name}
             </span>
+          </div>
+        )}
+
+        {/* CFO Account Link row */}
+        {cfoUsers !== undefined && onLinkCfo && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px',
+            borderRadius: 8, background: 'rgba(255,255,255,0.025)',
+            border: '1px solid rgba(255,255,255,0.05)',
+          }}>
+            <User size={10} style={{ color: '#22D3A0', flexShrink: 0 }} />
+            {linkedCfo ? (
+              <span style={{
+                fontSize: 10, color: '#22D3A0', flex: 1,
+                fontFamily: 'IBM Plex Mono, monospace',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {linkedCfo.name || linkedCfo.email}
+              </span>
+            ) : (
+              <span style={{ fontSize: 10, color: G.low, flex: 1, fontFamily: 'IBM Plex Mono, monospace' }}>
+                No CFO linked
+              </span>
+            )}
+            {showCfoSelect ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <select
+                  defaultValue={device.assignment_type === 'user' ? device.assignment_id : ''}
+                  onChange={e => {
+                    onLinkCfo(device._id || device.id, e.target.value || null);
+                    setShowCfoSelect(false);
+                  }}
+                  autoFocus
+                  style={{
+                    background: '#0D1321', border: '1px solid rgba(34,211,160,0.3)',
+                    borderRadius: 5, padding: '2px 6px', fontSize: 10, color: '#e2e8f0',
+                    outline: 'none', maxWidth: 130,
+                  }}
+                >
+                  <option value="">— unlink —</option>
+                  {cfoUsers.map(u => (
+                    <option key={u.id} value={u.id}>{u.name || u.email}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => setShowCfoSelect(false)}
+                  style={{ background: 'none', border: 'none', color: G.muted, cursor: 'pointer', padding: '0 2px', fontSize: 13, lineHeight: 1 }}
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowCfoSelect(true)}
+                style={{
+                  background: linkedCfo ? 'rgba(239,68,68,0.07)' : 'rgba(34,211,160,0.07)',
+                  border: `1px solid ${linkedCfo ? 'rgba(239,68,68,0.2)' : 'rgba(34,211,160,0.2)'}`,
+                  borderRadius: 5, padding: '2px 9px', fontSize: 9,
+                  fontFamily: 'IBM Plex Mono, monospace',
+                  color: linkedCfo ? '#ef4444' : '#22D3A0',
+                  cursor: 'pointer', fontWeight: 700, letterSpacing: '0.05em', flexShrink: 0,
+                }}
+              >
+                {linkedCfo ? 'CHANGE' : 'LINK'}
+              </button>
+            )}
           </div>
         )}
 
@@ -1233,9 +1301,11 @@ export default function GuardianPage() {
                 <DeviceCard
                   key={device._id || device.id || device.device_id}
                   device={device}
+                  cfoUsers={cfoUsers}
                   onCommand={setSelectedDevice}
                   onLocate={handleLocate}
                   onRevoke={handleRevoke}
+                  onLinkCfo={handleLinkDevice}
                 />
               ))}
             </div>

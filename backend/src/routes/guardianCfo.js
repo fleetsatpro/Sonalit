@@ -47,6 +47,15 @@ const photoUploadLimiter = rateLimit({
   message: { error: 'Too many photo uploads, slow down' },
 });
 
+const cfoLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  keyGenerator: (req) => req.device?.id || req.ip,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => res.status(429).json({ error: 'Too many login attempts — try again in 15 minutes' }),
+});
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function getConvoyDate(timezone) {
@@ -175,6 +184,97 @@ router.get('/context', deviceAuth, async (req, res, next) => {
         report_date: reportDate,
         photos_today: photosResult.rows,
       },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── C0: CFO Login ───────────────────────────────────────────────────────────
+
+/**
+ * POST /api/v1/guardian/cfo/login
+ * CFO officer authenticates with their Sonalit account from the Guardian device.
+ * Links the device to the user's account and restores all active convoy CFO slot
+ * assignments, making convoy data immediately available after a reinstall.
+ */
+router.post('/login', deviceAuth, cfoLoginLimiter, async (req, res, next) => {
+  try {
+    if (!await requireCfoModule(res)) return;
+
+    const { email, password } = req.body;
+
+    if (!email || typeof email !== 'string' || email.trim().length === 0) {
+      return res.status(400).json({ error: 'email is required' });
+    }
+    if (!password || typeof password !== 'string') {
+      return res.status(400).json({ error: 'password is required' });
+    }
+
+    const emailClean = email.trim().toLowerCase();
+
+    const userResult = await query(
+      `SELECT id, name, email, role, status, password_hash
+       FROM users WHERE LOWER(email) = $1 AND role = 'cfo'`,
+      [emailClean]
+    );
+
+    // Return same error for not-found and wrong-password to prevent email enumeration
+    if (!userResult.rows.length) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const user = userResult.rows[0];
+    if (user.status !== 'active') {
+      return res.status(403).json({ error: 'Account is not active' });
+    }
+
+    const bcrypt = require('bcryptjs');
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Link this device to the CFO user account
+    await query(
+      `UPDATE guardian_devices
+       SET assignment_id = $1, assignment_type = 'user', updated_at = NOW()
+       WHERE id = $2`,
+      [user.id, req.device.id]
+    );
+
+    // Restore convoy CFO slot assignments for this user — sets guardian_device_id
+    // on every active/planned convoy slot belonging to this user, provided the slot
+    // has no device yet, already points to this device, or the previously linked
+    // device is deleted/revoked (handles full device replacement).
+    await query(
+      `UPDATE convoy_cfos SET guardian_device_id = $1
+       WHERE cfo_user_id = $2
+         AND convoy_id IN (
+           SELECT id FROM convoys
+           WHERE status IN ('planned','active') AND deleted_at IS NULL
+         )
+         AND (
+           guardian_device_id IS NULL
+           OR guardian_device_id = $1
+           OR NOT EXISTS (
+             SELECT 1 FROM guardian_devices gd
+             WHERE gd.id = convoy_cfos.guardian_device_id
+               AND gd.deleted_at IS NULL
+               AND gd.status NOT IN ('revoked','suspended')
+           )
+         )`,
+      [req.device.id, user.id]
+    );
+
+    gAudit(req.device.id, 'cfo_login', 'user', user.id, { email: emailClean }, req.ip);
+    logger.info(`CFO login: device=${req.device.id} user=${user.id} email=${emailClean}`);
+
+    return res.json({
+      user_id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
     });
   } catch (err) {
     next(err);

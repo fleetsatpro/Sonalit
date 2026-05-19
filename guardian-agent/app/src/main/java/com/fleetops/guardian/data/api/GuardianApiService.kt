@@ -55,6 +55,12 @@ interface GuardianApiService {
         @Header("X-Device-Token") token: String,
         @Body body: CfoPhotoCommitRequest
     ): Response<CfoPhotoCommitResponse>
+
+    @POST("guardian/cfo/login")
+    suspend fun cfoLogin(
+        @Header("X-Device-Token") token: String,
+        @Body body: CfoLoginRequest
+    ): Response<CfoLoginResponse>
 }
 
 // ─── Enrollment ───────────────────────────────────────────────────────────────
@@ -245,4 +251,16 @@ data class CfoPhotoCommitRequest(
 data class CfoPhotoCommitResponse(
     val data: Map<String, Any?>,
     val duplicate: Boolean?
+)
+
+data class CfoLoginRequest(
+    val email: String,
+    val password: String
+)
+
+data class CfoLoginResponse(
+    @SerializedName("user_id") val userId: String,
+    val name: String,
+    val email: String,
+    val role: String
 )
