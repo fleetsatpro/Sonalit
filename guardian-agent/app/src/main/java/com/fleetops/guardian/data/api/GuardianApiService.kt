@@ -88,8 +88,8 @@ data class HeartbeatRequest(
     @SerializedName("battery_charging") val batteryCharging: Boolean,
     @SerializedName("signal_strength") val signalStrength: Int,
     @SerializedName("network_type") val networkType: String,
-    @SerializedName("storage_free_m") val storageFreeM: Int,
-    @SerializedName("ram_free_m") val ramFreeM: Int,
+    @SerializedName("storage_free_mb") val storageFreeM: Int,
+    @SerializedName("ram_free_mb") val ramFreeM: Int,
     val latitude: Double?,
     val longitude: Double?,
     @SerializedName("location_age") val locationAge: Long?,
@@ -122,7 +122,7 @@ data class LocationRequest(
 
 data class PanicRequest(
     @SerializedName("device_id") val deviceId: String,
-    @SerializedName("panic_mode") val panicMode: String,
+    @SerializedName("mode") val panicMode: String,
     val message: String?,
     val latitude: Double?,
     val longitude: Double?,
