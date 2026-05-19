@@ -30,8 +30,9 @@ object RetrofitClient {
             repeat(maxRetries) { attempt ->
                 try {
                     val response = chain.proceed(request)
-                    // Only retry on server errors (5xx) that are transient
-                    if (response.isSuccessful || response.code < 500) return response
+                    // Only retry on transient gateway errors; pass everything else back to Retrofit
+                    // so callers can inspect 4xx / 5xx status codes directly (e.g. 501 → base64 fallback).
+                    if (!TRANSIENT_CODES.contains(response.code)) return response
                     val body = response.peekBody(512).string()
                     lastException = IOException("HTTP ${response.code}: $body")
                     response.close()
@@ -50,6 +51,8 @@ object RetrofitClient {
 
         companion object {
             private const val INITIAL_BACKOFF_MS = 500L
+            // Only these codes indicate a transient infrastructure problem worth retrying.
+            private val TRANSIENT_CODES = setOf(502, 503, 504)
         }
     }
 
