@@ -885,11 +885,23 @@ export default function GuardianPage() {
     }
   }
 
-  function handleLocate(device) {
+  async function handleLocate(device) {
+    const deviceId = device._id || device.id;
     if (device.last_lat && device.last_lng) {
       window.open(`https://maps.google.com/?q=${device.last_lat},${device.last_lng}`, '_blank');
-    } else {
-      toast('No location data yet — request location first', { icon: '📍' });
+      return;
+    }
+    // No cached location — switch device to live tracking so it sends a fix within seconds
+    const toastId = `locate-${deviceId}`;
+    try {
+      await guardianAPI.command(deviceId, { command_type: 'start_live_tracking' });
+      toast('Live tracking enabled — location will appear on map shortly', {
+        id: toastId, icon: '📍', duration: 5000,
+      });
+    } catch {
+      toast('No location data yet — check device GPS permissions', {
+        id: toastId, icon: '📍', duration: 4000,
+      });
     }
   }
 
