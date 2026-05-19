@@ -86,7 +86,8 @@ async function resolveCfoUserId(device, convoy_id) {
   );
   if (direct.rows.length) return direct.rows[0].cfo_user_id;
 
-  if (device.assignment_type === 'user' && device.assignment_id) {
+  // Fallback: device has assignment_id pointing to a CFO user (any assignment_type accepted)
+  if (device.assignment_id) {
     const byUser = await query(
       `SELECT cfo_user_id FROM convoy_cfos WHERE cfo_user_id = $1 AND convoy_id = $2`,
       [device.assignment_id, convoy_id]
@@ -119,8 +120,9 @@ router.get('/context', deviceAuth, async (req, res, next) => {
       [req.device.id]
     );
 
-    // Fallback: match by user assignment when device isn't linked yet
-    if (!assignmentResult.rows.length && req.device.assignment_type === 'user' && req.device.assignment_id) {
+    // Fallback: device has assignment_id pointing to a CFO user (assignment_type check removed —
+    // UUIDs are specific enough and requiring 'user' type blocked legitimately enrolled devices)
+    if (!assignmentResult.rows.length && req.device.assignment_id) {
       assignmentResult = await query(
         `SELECT cc.convoy_id, cc.cfo_user_id, c.name, c.status, c.timezone,
                 c.start_date, c.end_date, c.seal_count_per_truck
@@ -133,7 +135,6 @@ router.get('/context', deviceAuth, async (req, res, next) => {
          LIMIT 1`,
         [req.device.assignment_id]
       );
-      // Auto-link device so future lookups hit the fast path
       if (assignmentResult.rows.length) {
         query(
           `UPDATE convoy_cfos SET guardian_device_id = $1
