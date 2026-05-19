@@ -33,6 +33,8 @@ if(process.env.REDIS_URL){
     const Redis=require("ioredis");
     const pubClient=new Redis(process.env.REDIS_URL);
     const subClient=pubClient.duplicate();
+    pubClient.on("error",(e)=>logger.warn("Socket.IO Redis pub error: "+e.message));
+    subClient.on("error",(e)=>logger.warn("Socket.IO Redis sub error: "+e.message));
     io.adapter(createAdapter(pubClient,subClient));
     logger.info("Socket.IO Redis adapter active");
   }catch(e){logger.warn("Socket.IO Redis adapter failed: "+e.message+" — running without it");}
