@@ -98,6 +98,15 @@ class MainViewModel @Inject constructor(
         )
     }
 
+    fun updateHardwareState(batteryLevel: Int, batteryCharging: Boolean, signalStrength: Int, networkType: String) {
+        _deviceStatus.value = _deviceStatus.value.copy(
+            batteryLevel = batteryLevel,
+            batteryCharging = batteryCharging,
+            signalStrength = signalStrength,
+            networkType = networkType
+        )
+    }
+
     // ─── Panic ────────────────────────────────────────────────────────────────
 
     fun triggerPanic(mode: PanicMode, message: String?) {

@@ -22,6 +22,10 @@ import com.fleetops.guardian.data.prefs.DevicePrefs
 import com.fleetops.guardian.data.repository.GuardianRepository
 import com.fleetops.guardian.receiver.GuardianDeviceAdminReceiver
 import com.fleetops.guardian.ui.main.MainActivity
+import com.fleetops.guardian.util.batteryCharging
+import com.fleetops.guardian.util.batteryLevel
+import com.fleetops.guardian.util.networkType
+import com.fleetops.guardian.util.signalStrength
 import com.google.android.gms.location.*
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
@@ -44,6 +48,18 @@ class GuardianService : LifecycleService() {
 
     private val _isOnline = MutableStateFlow(false)
     val isOnline: StateFlow<Boolean> = _isOnline.asStateFlow()
+
+    private val _batteryLevel = MutableStateFlow(-1)
+    val batteryLevel: StateFlow<Int> = _batteryLevel.asStateFlow()
+
+    private val _batteryCharging = MutableStateFlow(false)
+    val batteryCharging: StateFlow<Boolean> = _batteryCharging.asStateFlow()
+
+    private val _signalStrength = MutableStateFlow(0)
+    val signalStrength: StateFlow<Int> = _signalStrength.asStateFlow()
+
+    private val _networkType = MutableStateFlow("offline")
+    val networkType: StateFlow<String> = _networkType.asStateFlow()
 
     private val _lastCommandId = MutableStateFlow<String?>(null)
     val lastCommandId: StateFlow<String?> = _lastCommandId.asStateFlow()
@@ -173,6 +189,10 @@ class GuardianService : LifecycleService() {
                 locationJob?.cancel()
                 locationJob = lifecycleScope.launch {
                     _isOnline.value = true
+                    _batteryLevel.value = applicationContext.batteryLevel()
+                    _batteryCharging.value = applicationContext.batteryCharging()
+                    _signalStrength.value = applicationContext.signalStrength()
+                    _networkType.value = applicationContext.networkType()
                     repository.sendLocation(
                         lat = location.latitude,
                         lng = location.longitude,

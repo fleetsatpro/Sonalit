@@ -575,6 +575,8 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
     );
 
     res.json({
+      status: 'ok',
+      server_time: Date.now(),
       commands: commands.rows,
       command_signing_secret: COMMAND_SIGNING_SECRET,
     });
@@ -649,7 +651,9 @@ router.post('/location', deviceAuth, async (req, res, next) => {
  */
 router.post('/panic', deviceAuth, panicLimiter, async (req, res, next) => {
   try {
-    const { mode, lat, lng, message } = req.body;
+    const { lat, lng, message } = req.body;
+    // Accept both "mode" and "panic_mode" for backward compatibility with older APKs
+    const mode = req.body.mode || req.body.panic_mode;
     // event_uuid is optional for backward compatibility; generate one server-side if omitted
     const event_uuid = req.body.event_uuid || uuidv4();
 
@@ -740,6 +744,7 @@ router.post('/report', deviceAuth, async (req, res, next) => {
     const validCategories = [
       'suspicious', 'roadblock', 'theft', 'attack', 'accident',
       'medical', 'checkpoint', 'delivery_issue', 'vehicle_issue',
+      'road_hazard', 'route_change', 'cargo_issue', 'personnel_issue', 'other',
     ];
     if (!category || !validCategories.includes(category)) {
       return res.status(400).json({

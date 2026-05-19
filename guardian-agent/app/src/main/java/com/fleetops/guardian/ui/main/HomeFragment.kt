@@ -142,12 +142,13 @@ class HomeFragment : Fragment() {
     }
 
     private fun showReportDialog() {
-        val categories = arrayOf("Vehicle Issue", "Road Hazard", "Suspicious Activity", "Route Change", "Cargo Issue", "Personnel Issue", "Other")
-        var category = categories[0]
+        val categoryLabels = arrayOf("Vehicle Issue", "Road Hazard", "Suspicious Activity", "Route Change", "Cargo Issue", "Personnel Issue", "Other")
+        val categoryValues = arrayOf("vehicle_issue", "road_hazard", "suspicious", "route_change", "cargo_issue", "personnel_issue", "other")
+        var categoryValue = categoryValues[0]
         val spinner = Spinner(requireContext()).apply {
-            adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, categories)
+            adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, categoryLabels)
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { category = categories[pos] }
+                override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { categoryValue = categoryValues[pos] }
                 override fun onNothingSelected(p: AdapterView<*>?) {}
             }
         }
@@ -164,7 +165,7 @@ class HomeFragment : Fragment() {
         AlertDialog.Builder(requireContext())
             .setTitle("Submit Field Report")
             .setView(container)
-            .setPositiveButton("Submit") { d, _ -> d.dismiss(); viewModel.submitReport(category, descInput.text.toString().trim()) }
+            .setPositiveButton("Submit") { d, _ -> d.dismiss(); viewModel.submitReport(categoryValue, descInput.text.toString().trim()) }
             .setNegativeButton("Cancel") { d, _ -> d.dismiss() }
             .show()
     }
