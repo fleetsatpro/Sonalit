@@ -44,7 +44,7 @@ function approximateHexPolygon(lat: number, lon: number, radiusDeg = 0.025): num
       lat + radiusDeg * Math.sin(angle),
     ]);
   }
-  points.push(points[0]);
+  points.push(points[0]!);
   return points;
 }
 

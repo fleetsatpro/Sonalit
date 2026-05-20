@@ -154,7 +154,7 @@ export default function Geofences() {
           properties: { name: g.name, active: g.active },
           geometry: {
             type: 'Polygon' as const,
-            coordinates: [[...g.coordinates, g.coordinates[0]]],
+            coordinates: [[...g.coordinates, g.coordinates[0]!]],
           },
         }));
 

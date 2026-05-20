@@ -1,5 +1,5 @@
 import React from 'react';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, type SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useNavigate, useParams } from '@tanstack/react-router';
@@ -40,7 +40,7 @@ type DriverListResponse = { data: Driver[]; meta: { total: number; has_more: boo
 // Field component
 // ---------------------------------------------------------------------------
 
-function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }): React.ReactElement {
+function Field({ label, error, children }: { label: string; error?: string | undefined; children: React.ReactNode }): React.ReactElement {
   return (
     <div>
       <label className="block text-sm font-medium text-gray-300 mb-1">{label}</label>
@@ -136,6 +136,7 @@ export default function CfoConvoyForm(): React.ReactElement {
     formState: { errors },
   } = useForm<ConvoyForm>({
     resolver: zodResolver(convoyFormSchema),
+    defaultValues: { seal_count_per_truck: 0, vehicle_ids: [] as string[], driver_ids: [] as string[] },
     values: existing
       ? {
           name: existing.name,
@@ -143,11 +144,11 @@ export default function CfoConvoyForm(): React.ReactElement {
           start_date: existing.start_date,
           end_date: existing.end_date,
           seal_count_per_truck: existing.seal_count_per_truck,
-          vehicle_ids: [],
-          driver_ids: [],
-          notes: '',
+          vehicle_ids: [] as string[],
+          driver_ids: [] as string[],
+          notes: '' as string | undefined,
         }
-      : { seal_count_per_truck: 0, vehicle_ids: [], driver_ids: [] },
+      : undefined,
   });
 
   const mutation = useMutation<Convoy, Error, ConvoyForm>({
@@ -169,7 +170,7 @@ export default function CfoConvoyForm(): React.ReactElement {
     },
   });
 
-  const onSubmit = (values: ConvoyForm): void => {
+  const onSubmit: SubmitHandler<ConvoyForm> = (values) => {
     mutation.mutate(values);
   };
 

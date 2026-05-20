@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import Map, { Marker, NavigationControl, Popup } from 'react-map-gl/maplibre';
+import MapGL, { Marker, NavigationControl, Popup } from 'react-map-gl/maplibre';
 import { MapPin, Radio, Clock, Loader2 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { subscribe } from '../lib/centrifuge.js';
@@ -169,10 +169,10 @@ export default function GPS(): React.ReactElement {
   );
 
   const locationsList = Array.from(locations.values());
-  const initialViewState =
-    locationsList.length > 0
-      ? { longitude: locationsList[0].lng, latitude: locationsList[0].lat, zoom: 10 }
-      : { longitude: 3.389, latitude: 6.449, zoom: 5 };
+  const firstLoc = locationsList[0];
+  const initialViewState = firstLoc
+    ? { longitude: firstLoc.lng, latitude: firstLoc.lat, zoom: 10 }
+    : { longitude: 3.389, latitude: 6.449, zoom: 5 };
 
   return (
     <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
@@ -192,7 +192,7 @@ export default function GPS(): React.ReactElement {
           </div>
         )}
 
-        <Map
+        <MapGL
           initialViewState={initialViewState}
           mapStyle={MAP_STYLE}
           style={{ width: '100%', height: '100%' }}
@@ -234,7 +234,7 @@ export default function GPS(): React.ReactElement {
               </div>
             </Popup>
           )}
-        </Map>
+        </MapGL>
       </div>
 
       {/* Control panel */}

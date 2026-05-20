@@ -4,7 +4,6 @@ import { Link } from '@tanstack/react-router';
 import { Route, Plus, Pencil, Trash2, Loader2 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { subscribe } from '../lib/centrifuge.js';
-import { useAuthStore } from '../stores/auth.js';
 import type { Convoy, ConvoyStatus } from '@sonalit/contracts';
 
 // ---------------------------------------------------------------------------
@@ -43,7 +42,6 @@ function StatusBadge({ status }: { status: ConvoyStatus }): React.ReactElement {
 // ---------------------------------------------------------------------------
 
 export default function Convoys(): React.ReactElement {
-  const user = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
 
   const { data, isLoading, isError } = useQuery<ConvoyListResponse>({
