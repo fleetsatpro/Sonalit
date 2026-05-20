@@ -19,14 +19,16 @@ import { BASE_URL, DEFAULT_HEADERS, randomGPSFix, jitteredSleep, randomInt } fro
 export const options = {
   scenarios: {
     telemetry_batch: {
-      executor: 'ramping-vus',
-      startVUs: 0,
+      executor: 'ramping-arrival-rate',
+      startRate: 0,
+      timeUnit: '1s',
+      preAllocatedVUs: 2000,
+      maxVUs: 10000,
       stages: [
-        { duration: '10m', target: 5000 },
-        { duration: '20m', target: 5000 },
+        { duration: '5m',  target: 100000 },
+        { duration: '20m', target: 100000 },
         { duration: '5m',  target: 0 },
       ],
-      gracefulRampDown: '60s',
     },
   },
   thresholds: {

@@ -3,6 +3,7 @@ import { z } from 'zod';
 const ConfigSchema = z.object({
   PORT: z.coerce.number().default(4005),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('production'),
+  DATABASE_URL: z.string().url(),
   REDIS_CLUSTER_URL: z.string().default('redis://localhost:6379'),
   NATS_URL: z.string().default('nats://localhost:4222'),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error']).default('info'),

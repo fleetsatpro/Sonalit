@@ -8,7 +8,7 @@ spec:
     - list:
         elements:
           - service: auth-svc
-            port: "4000"
+            port: "4001"
           - service: fleet-svc
             port: "4002"
           - service: alerts-svc
@@ -16,7 +16,7 @@ spec:
           - service: convoy-svc
             port: "4004"
           - service: guardian-svc
-            port: "4005"
+            port: "4004"
           - service: media-svc
             port: "4006"
           - service: notification-svc
@@ -28,9 +28,9 @@ spec:
           - service: ai-copilot-svc
             port: "4010"
           - service: telemetry-ingest-svc
-            port: "4001"
+            port: "4005"
           - service: realtime-gateway-svc
-            port: "4011"
+            port: "4010"
   template:
     metadata:
       name: '{{service}}'

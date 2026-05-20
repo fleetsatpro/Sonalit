@@ -44,9 +44,10 @@ async function getVaultPublicKey(): Promise<string> {
   return keyEntry.public_key;
 }
 
-async function vaultSign(payload: string): Promise<string> {
+async function vaultSign(signingInput: string): Promise<string> {
   const { createHash } = await import('node:crypto');
-  const input = createHash('sha256').update(payload).digest('base64');
+  // SHA-256 hash of the ASCII bytes of "header.payload" — Vault signs the pre-hashed digest.
+  const hash = createHash('sha256').update(signingInput, 'ascii').digest('base64');
   const res = await fetch(
     `${config.VAULT_ADDR}/v1/transit/sign/${config.VAULT_TRANSIT_KEY}`,
     {
@@ -55,16 +56,18 @@ async function vaultSign(payload: string): Promise<string> {
         'X-Vault-Token': config.VAULT_TOKEN ?? '',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ input, hash_algorithm: 'sha2-256', prehashed: true }),
+      body: JSON.stringify({ input: hash, hash_algorithm: 'sha2-256', prehashed: true }),
+      signal: AbortSignal.timeout(5_000),
     },
   );
   if (!res.ok) throw new Error(`Vault sign failed: ${res.status}`);
   const body = await res.json() as VaultSignResponse;
-  // Vault signature format: vault:v1:<base64>  — extract the base64 part
+  // Vault signature format: vault:v1:<standard-base64>
+  // JWT signature must be base64url (no padding, - instead of +, _ instead of /).
   const parts = body.data.signature.split(':');
-  const sigB64 = parts[2];
-  if (!sigB64) throw new Error('Invalid Vault signature format');
-  return sigB64;
+  const sigB64Standard = parts[2];
+  if (!sigB64Standard) throw new Error('Invalid Vault signature format');
+  return Buffer.from(sigB64Standard, 'base64').toString('base64url');
 }
 
 function isVaultConfigured(): boolean {

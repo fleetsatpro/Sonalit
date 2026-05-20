@@ -14,8 +14,14 @@ export async function withOrgContext<T>(
 ): Promise<T> {
   const client = await pool.connect();
   try {
+    await client.query('BEGIN');
     await client.query(`SET LOCAL app.org_id = $1`, [orgId]);
-    return await fn(client);
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
   } finally {
     client.release();
   }

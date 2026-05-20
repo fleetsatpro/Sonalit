@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { context, propagation, trace } from '@opentelemetry/api';
 import { useAuthStore } from '../stores/auth.js';
 
 export const api = axios.create({
@@ -9,6 +10,17 @@ export const api = axios.create({
 api.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token;
   if (token) config.headers['Authorization'] = `Bearer ${token}`;
+
+  // Inject W3C traceparent/tracestate headers for distributed tracing.
+  const span = trace.getActiveSpan();
+  if (span) {
+    const carrier: Record<string, string> = {};
+    propagation.inject(context.active(), carrier);
+    for (const [key, value] of Object.entries(carrier)) {
+      config.headers[key] = value;
+    }
+  }
+
   return config;
 });
 

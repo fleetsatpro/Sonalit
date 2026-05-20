@@ -79,7 +79,7 @@ class MainViewModel @Inject constructor(
                 "command" -> {
                     val commandId = data["command_id"] ?: return@launch
                     runCatching {
-                        api.ackCommand(commandId = commandId)
+                        api.ackCommand(mapOf("command_id" to commandId))
                     }
                 }
                 "panic_ack" -> {
@@ -98,8 +98,9 @@ class MainViewModel @Inject constructor(
             runCatching {
                 api.panic(
                     PanicRequest(
-                        deviceId = prefs.getString("device_id", "") ?: "",
-                        source = "nav_button"
+                        device_id = prefs.getString("device_id", "") ?: "",
+                        lat = 0.0,
+                        lon = 0.0
                     )
                 )
             }.onFailure {

@@ -9,7 +9,10 @@ async function start(): Promise<void> {
   const app = Fastify({ logger: { level: config.LOG_LEVEL } });
   await app.register(healthRoutes);
   await app.register(analyticsRoutes);
-  app.setErrorHandler((err, _req, reply) => { void reply.code(500).send({ error: err.message }); });
+  app.setErrorHandler((err, _req, reply) => {
+    const status = (err as { statusCode?: number }).statusCode ?? 500;
+    void reply.code(status).send({ code: (err as { code?: string }).code ?? 'INTERNAL_ERROR', error: err.message });
+  });
   await app.listen({ port: config.PORT, host: '0.0.0.0' });
   app.log.info({ port: config.PORT }, 'analytics-svc listening');
   const shutdown = async (): Promise<void> => { await app.close(); await pool.end(); process.exit(0); };

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { pool, query } from '../db.js';
+import { config } from '../config.js';
 import { hashPassword, isPasswordPwned } from '../lib/password.js';
 import { signAccessToken, signRefreshToken } from '../lib/jwt.js';
 import { publishAudit } from '../lib/audit.js';
@@ -106,7 +107,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         user_id: userId,
         access_token: accessToken,
         refresh_token: refreshToken,
-        expires_in: 300,
+        expires_in: config.JWT_ACCESS_TTL_S,
         token_type: 'Bearer',
         family_id: familyId,
       });
