@@ -1,0 +1,874 @@
+openapi: 3.1.0
+info:
+  title: Sonalit Notification Service
+  version: 4.0.0
+  description: >
+    Multi-channel notification and webhook delivery service for Sonalit v4.
+    Supports push, SMS, email, and in-app notification channels via templates.
+    Provides webhook registration, delivery tracking, and retry management.
+  contact:
+    name: Sonalit Platform Team
+    email: platform@sonalit.io
+
+servers:
+  - url: https://api.sonalit.io
+    description: Production
+  - url: https://staging-api.sonalit.io
+    description: Staging
+
+tags:
+  - name: Notifications
+    description: Notification dispatch and delivery
+  - name: Templates
+    description: Notification template management
+  - name: Webhooks
+    description: Webhook endpoint management and delivery history
+  - name: Health
+    description: Service health and metrics
+
+security:
+  - BearerAuth: []
+
+paths:
+  /v4/notifications/send:
+    post:
+      operationId: sendNotification
+      tags: [Notifications]
+      summary: Send a notification
+      description: >
+        Dispatches a notification via the specified channel using a template.
+        Idempotency is enforced via the idempotency_key field in the request body
+        in addition to the required Idempotency-Key header.
+      security:
+        - BearerAuth: []
+      x-ratelimit-limit: 1000
+      x-ratelimit-window: 60s
+      x-ratelimit-scope: org
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendNotificationRequest'
+            example:
+              channel: push
+              recipient:
+                user_id: usr_01HZ2K9VBGJXYZ
+              template_id: tmpl_01HZ2K9VBGJXYZ
+              variables:
+                alert_title: Vehicle exited approved zone
+                device_name: Truck 7 Guardian
+                timestamp: "2024-06-01T08:30:00Z"
+              idempotency_key: 550e8400-e29b-41d4-a716-446655440000
+              priority: high
+              ttl_ms: 300000
+      responses:
+        '202':
+          description: Notification accepted for delivery
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SendNotificationResponse'
+              example:
+                notification_id: ntf_01HZ2K9VBGJXYZ
+                status: queued
+                queued_at: "2024-06-01T08:30:01Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Template not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: TEMPLATE_NOT_FOUND
+                message: The specified template_id does not exist
+                request_id: req_abc123
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/notifications/templates:
+    get:
+      operationId: listTemplates
+      tags: [Templates]
+      summary: List notification templates
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: channel
+          in: query
+          schema:
+            type: string
+            enum: [push, sms, email, in_app]
+          description: Filter by notification channel
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Paginated template list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      operationId: createTemplate
+      tags: [Templates]
+      summary: Create a notification template
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTemplateRequest'
+            example:
+              name: Alert Push Notification
+              channel: push
+              subject: "Alert: {{alert_title}}"
+              body: "{{device_name}} triggered an alert at {{timestamp}}"
+              variables:
+                - alert_title
+                - device_name
+                - timestamp
+      responses:
+        '201':
+          description: Template created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationTemplate'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Template with this name already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: TEMPLATE_CONFLICT
+                message: A template with this name already exists
+                request_id: req_abc123
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/notifications/templates/{id}:
+    patch:
+      operationId: updateTemplate
+      tags: [Templates]
+      summary: Update a notification template
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTemplateRequest'
+            example:
+              body: "URGENT: {{device_name}} triggered {{alert_title}} at {{timestamp}}"
+      responses:
+        '200':
+          description: Template updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationTemplate'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/webhooks:
+    get:
+      operationId: listWebhooks
+      tags: [Webhooks]
+      summary: List registered webhooks
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: enabled
+          in: query
+          schema:
+            type: boolean
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Paginated webhook list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      operationId: createWebhook
+      tags: [Webhooks]
+      summary: Register a webhook endpoint
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWebhookRequest'
+            example:
+              url: https://customer.example.com/webhooks/sonalit
+              events:
+                - alert.created
+                - alert.resolved
+                - incident.created
+                - panic.triggered
+              secret: wh_secret_abc123def456
+              enabled: true
+              description: Customer SIEM integration
+      responses:
+        '201':
+          description: Webhook registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/webhooks/{id}:
+    patch:
+      operationId: updateWebhook
+      tags: [Webhooks]
+      summary: Update a webhook endpoint
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWebhookRequest'
+            example:
+              enabled: false
+      responses:
+        '200':
+          description: Webhook updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      operationId: deleteWebhook
+      tags: [Webhooks]
+      summary: Delete a webhook endpoint
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204':
+          description: Webhook deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/webhooks/{id}/deliveries:
+    get:
+      operationId: listWebhookDeliveries
+      tags: [Webhooks]
+      summary: Get webhook delivery history
+      description: Returns delivery attempts for a webhook, including status codes and response bodies.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [success, failed, pending, retrying]
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Paginated delivery history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryListResponse'
+              example:
+                data:
+                  - delivery_id: wdl_01HZ2K9VBGJXYZ
+                    webhook_id: wh_01HZ2K9VBGJXYZ
+                    event: alert.created
+                    status: success
+                    http_status: 200
+                    attempt: 1
+                    response_body: '{"received":true}'
+                    delivered_at: "2024-06-01T08:30:02Z"
+                pagination:
+                  cursor: null
+                  limit: 50
+                  total: 1
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /healthz/live:
+    get:
+      operationId: healthLive
+      tags: [Health]
+      summary: Liveness probe
+      security: []
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              example:
+                status: ok
+
+  /healthz/ready:
+    get:
+      operationId: healthReady
+      tags: [Health]
+      summary: Readiness probe
+      security: []
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              example:
+                status: ok
+        '503':
+          description: Service not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              example:
+                status: degraded
+
+  /metrics:
+    get:
+      operationId: metrics
+      tags: [Health]
+      summary: Prometheus metrics
+      security: []
+      responses:
+        '200':
+          description: Prometheus metrics text
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: RS256-signed JWT issued by auth-svc.
+    DeviceToken:
+      type: apiKey
+      in: header
+      name: X-Device-Token
+      description: Device token issued at enrollment.
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+      description: Client-generated unique key to ensure idempotent processing.
+      example: 550e8400-e29b-41d4-a716-446655440000
+
+    ResourceId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Resource identifier
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message, request_id]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        request_id:
+          type: string
+
+    Pagination:
+      type: object
+      required: [cursor, limit]
+      properties:
+        cursor:
+          type: [string, 'null']
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+        total:
+          type: [integer, 'null']
+
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, error]
+
+    NotificationRecipient:
+      type: object
+      description: Target recipient for the notification (exactly one field required)
+      minProperties: 1
+      properties:
+        user_id:
+          type: string
+          description: Send to a registered Sonalit user
+        device_id:
+          type: string
+          description: Send to a specific device (push)
+        phone:
+          type: string
+          pattern: '^\+[1-9]\d{6,14}$'
+          description: E.164 phone number (SMS)
+        email:
+          type: string
+          format: email
+          description: Email address
+
+    SendNotificationRequest:
+      type: object
+      required: [channel, recipient, template_id, idempotency_key]
+      properties:
+        channel:
+          type: string
+          enum: [push, sms, email, in_app]
+        recipient:
+          $ref: '#/components/schemas/NotificationRecipient'
+        template_id:
+          type: string
+        variables:
+          type: object
+          additionalProperties:
+            type: string
+          description: Template variable substitutions
+        idempotency_key:
+          type: string
+          minLength: 8
+          maxLength: 128
+          description: Duplicate suppression key (independent of header)
+        priority:
+          type: string
+          enum: [critical, high, normal, low]
+          default: normal
+        ttl_ms:
+          type: integer
+          minimum: 0
+          maximum: 86400000
+          description: Time-to-live in milliseconds (0 = no TTL)
+          example: 300000
+
+    SendNotificationResponse:
+      type: object
+      required: [notification_id, status, queued_at]
+      properties:
+        notification_id:
+          type: string
+        status:
+          type: string
+          enum: [queued, sent, failed, duplicate]
+        queued_at:
+          type: string
+          format: date-time
+
+    NotificationTemplate:
+      type: object
+      required: [template_id, name, channel, body, created_at, updated_at]
+      properties:
+        template_id:
+          type: string
+        name:
+          type: string
+        channel:
+          type: string
+          enum: [push, sms, email, in_app]
+        subject:
+          type: [string, 'null']
+          description: Subject line for email channel (supports template variables)
+        body:
+          type: string
+          description: Message body with {{variable}} placeholders
+        variables:
+          type: array
+          items:
+            type: string
+          description: List of required variable names
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TemplateListResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationTemplate'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    CreateTemplateRequest:
+      type: object
+      required: [name, channel, body]
+      properties:
+        name:
+          type: string
+          maxLength: 200
+        channel:
+          type: string
+          enum: [push, sms, email, in_app]
+        subject:
+          type: [string, 'null']
+          maxLength: 200
+        body:
+          type: string
+          maxLength: 10000
+        variables:
+          type: array
+          items:
+            type: string
+          description: Declared template variable names for validation
+
+    UpdateTemplateRequest:
+      type: object
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          maxLength: 200
+        subject:
+          type: [string, 'null']
+          maxLength: 200
+        body:
+          type: string
+          maxLength: 10000
+        variables:
+          type: array
+          items:
+            type: string
+
+    Webhook:
+      type: object
+      required: [webhook_id, url, events, enabled, created_at, updated_at]
+      properties:
+        webhook_id:
+          type: string
+        url:
+          type: string
+          format: uri
+        events:
+          type: array
+          items:
+            type: string
+            enum: [alert.created, alert.acknowledged, alert.resolved, incident.created, incident.resolved, panic.triggered, device.enrolled, device.approved, device.suspended, convoy.started, convoy.completed]
+        enabled:
+          type: boolean
+        description:
+          type: [string, 'null']
+        last_delivery_at:
+          type: [string, 'null']
+          format: date-time
+        last_delivery_status:
+          type: [string, 'null']
+          enum: [success, failed, null]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    WebhookListResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Webhook'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    CreateWebhookRequest:
+      type: object
+      required: [url, events]
+      properties:
+        url:
+          type: string
+          format: uri
+          maxLength: 2048
+        events:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        secret:
+          type: string
+          minLength: 16
+          maxLength: 256
+          description: HMAC-SHA256 signing secret for payload verification
+        enabled:
+          type: boolean
+          default: true
+        description:
+          type: [string, 'null']
+          maxLength: 500
+
+    UpdateWebhookRequest:
+      type: object
+      minProperties: 1
+      properties:
+        url:
+          type: string
+          format: uri
+          maxLength: 2048
+        events:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        secret:
+          type: [string, 'null']
+          minLength: 16
+          maxLength: 256
+        enabled:
+          type: boolean
+        description:
+          type: [string, 'null']
+          maxLength: 500
+
+    WebhookDelivery:
+      type: object
+      required: [delivery_id, webhook_id, event, status, attempt, delivered_at]
+      properties:
+        delivery_id:
+          type: string
+        webhook_id:
+          type: string
+        event:
+          type: string
+        status:
+          type: string
+          enum: [success, failed, pending, retrying]
+        http_status:
+          type: [integer, 'null']
+          description: HTTP response status code from target server
+        attempt:
+          type: integer
+          minimum: 1
+          description: Delivery attempt number (1-indexed)
+        response_body:
+          type: [string, 'null']
+          maxLength: 1000
+          description: First 1000 chars of response body
+        error_message:
+          type: [string, 'null']
+        delivered_at:
+          type: string
+          format: date-time
+
+    DeliveryListResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebhookDelivery'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+  responses:
+    BadRequest:
+      description: Invalid request body or parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: BAD_REQUEST
+            message: Request validation failed
+            request_id: req_abc123
+
+    Unauthorized:
+      description: Missing or invalid authentication token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: UNAUTHORIZED
+            message: Authentication token is missing or invalid
+            request_id: req_abc123
+
+    Forbidden:
+      description: Authenticated but not authorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: FORBIDDEN
+            message: You do not have permission to access this resource
+            request_id: req_abc123
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: NOT_FOUND
+            message: The requested resource was not found
+            request_id: req_abc123
+
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: RATE_LIMITED
+            message: Too many requests. Please retry after the indicated period.
+            request_id: req_abc123
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: INTERNAL_ERROR
+            message: An unexpected error occurred
+            request_id: req_abc123

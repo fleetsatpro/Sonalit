@@ -1,0 +1,295 @@
+openapi: 3.1.0
+info:
+  title: Sonalit AI Copilot Service
+  version: 4.0.0
+servers:
+  - url: http://localhost:4010
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+security:
+  - bearerAuth: []
+paths:
+  /v4/ai/query:
+    post:
+      operationId: aiQuery
+      summary: Submit a one-shot AI query; streams response as SSE
+      tags:
+        - AI
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: x-org-id
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Organisation identifier
+        - name: x-user-id
+          in: header
+          required: false
+          schema:
+            type: string
+          description: User identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+                  minLength: 1
+                  maxLength: 4000
+                  description: The user's question or instruction
+                context:
+                  type: string
+                  maxLength: 8000
+                  description: Optional additional context prepended to the query
+              required:
+                - query
+      responses:
+        '200':
+          description: Server-Sent Events stream of AI response chunks
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  SSE stream. Each event is `data: <JSON>\n\n`.
+                  Chunk events: `{"chunk": "<text>"}`.
+                  Terminal event: `data: [DONE]`.
+                  Error events: `{"error": "<message>"}`.
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  issues:
+                    type: array
+                    items:
+                      type: object
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /v4/ai/copilot:
+    post:
+      operationId: aiCopilot
+      summary: Multi-turn copilot conversation; streams response as SSE
+      tags:
+        - AI
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: x-org-id
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Organisation identifier
+        - name: x-user-id
+          in: header
+          required: false
+          schema:
+            type: string
+          description: User identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+                  minLength: 1
+                  maxLength: 4000
+                  description: User message for this turn
+                session_id:
+                  type: string
+                  format: uuid
+                  description: Existing session UUID; omit to start a new session
+              required:
+                - message
+      responses:
+        '200':
+          description: Server-Sent Events stream of copilot response chunks
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  SSE stream. Each event is `data: <JSON>\n\n`.
+                  First event: `{"session_id": "<uuid>"}`.
+                  Chunk events: `{"chunk": "<text>"}`.
+                  Terminal event: `data: [DONE]`.
+                  Error events: `{"error": "<message>"}`.
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  issues:
+                    type: array
+                    items:
+                      type: object
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /v4/ai/decisions:
+    get:
+      operationId: listAiDecisions
+      summary: List stored AI decisions for an organisation
+      tags:
+        - AI
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: org_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Organisation UUID to filter decisions
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: Maximum number of records to return
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Number of records to skip
+      responses:
+        '200':
+          description: Paginated list of AI decisions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        org_id:
+                          type: string
+                          format: uuid
+                        user_id:
+                          type: string
+                        query:
+                          type: string
+                        response:
+                          type: string
+                        created_at:
+                          type: string
+                          format: date-time
+                  total:
+                    type: integer
+                    description: Total number of matching records
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+                required:
+                  - data
+                  - total
+                  - limit
+                  - offset
+        '400':
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  issues:
+                    type: array
+                    items:
+                      type: object
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string

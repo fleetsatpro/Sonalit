@@ -1,0 +1,63 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: sonalit-services
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - service: auth-svc
+            port: "4000"
+          - service: fleet-svc
+            port: "4002"
+          - service: alerts-svc
+            port: "4003"
+          - service: convoy-svc
+            port: "4004"
+          - service: guardian-svc
+            port: "4005"
+          - service: media-svc
+            port: "4006"
+          - service: notification-svc
+            port: "4007"
+          - service: analytics-svc
+            port: "4008"
+          - service: reports-svc
+            port: "4009"
+          - service: ai-copilot-svc
+            port: "4010"
+          - service: telemetry-ingest-svc
+            port: "4001"
+          - service: realtime-gateway-svc
+            port: "4011"
+  template:
+    metadata:
+      name: '{{service}}'
+      namespace: argocd
+    spec:
+      project: sonalit
+      source:
+        repoURL: https://github.com/fleetsatpro/sonalit
+        targetRevision: main
+        path: infra/helm/{{service}}
+        helm:
+          valueFiles:
+            - values.yaml
+            - values-prod.yaml
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: sonalit-prod
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - PrunePropagationPolicy=foreground
+        retry:
+          limit: 5
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m

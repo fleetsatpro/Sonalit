@@ -1,0 +1,14 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: centrifugo-pod-kill
+  namespace: sonalit-prod
+spec:
+  action: pod-kill
+  mode: one
+  selector:
+    namespaces: [sonalit-prod]
+    labelSelectors:
+      app.kubernetes.io/name: centrifugo
+  scheduler:
+    cron: "@every 45m"

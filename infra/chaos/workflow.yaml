@@ -1,0 +1,90 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Workflow
+metadata:
+  name: sonalit-chaos-day
+  namespace: sonalit-prod
+spec:
+  entry: chaos-sequence
+  templates:
+    - name: chaos-sequence
+      templateType: Serial
+      children:
+        - telemetry-kill-step
+        - pause-1
+        - auth-redis-step
+        - pause-2
+        - nats-kill-step
+        - pause-3
+        - timescaledb-step
+        - pause-4
+        - guardian-stress-step
+        - pause-5
+        - centrifugo-kill-step
+
+    - name: telemetry-kill-step
+      templateType: Task
+      task:
+        container:
+          name: apply
+          image: bitnami/kubectl:latest
+          command: [kubectl, apply, -f, /chaos/pod-kill-telemetry.yaml]
+
+    - name: auth-redis-step
+      templateType: Task
+      task:
+        container:
+          name: apply
+          image: bitnami/kubectl:latest
+          command: [kubectl, apply, -f, /chaos/network-partition-auth-redis.yaml]
+
+    - name: nats-kill-step
+      templateType: Task
+      task:
+        container:
+          name: apply
+          image: bitnami/kubectl:latest
+          command: [kubectl, apply, -f, /chaos/nats-node-kill.yaml]
+
+    - name: timescaledb-step
+      templateType: Task
+      task:
+        container:
+          name: apply
+          image: bitnami/kubectl:latest
+          command: [kubectl, apply, -f, /chaos/timescaledb-failover.yaml]
+
+    - name: guardian-stress-step
+      templateType: Task
+      task:
+        container:
+          name: apply
+          image: bitnami/kubectl:latest
+          command: [kubectl, apply, -f, /chaos/cpu-stress-guardian.yaml]
+
+    - name: centrifugo-kill-step
+      templateType: Task
+      task:
+        container:
+          name: apply
+          image: bitnami/kubectl:latest
+          command: [kubectl, apply, -f, /chaos/centrifugo-pod-kill.yaml]
+
+    - name: pause-1
+      templateType: Suspend
+      deadline: 5m
+
+    - name: pause-2
+      templateType: Suspend
+      deadline: 5m
+
+    - name: pause-3
+      templateType: Suspend
+      deadline: 5m
+
+    - name: pause-4
+      templateType: Suspend
+      deadline: 5m
+
+    - name: pause-5
+      templateType: Suspend
+      deadline: 5m

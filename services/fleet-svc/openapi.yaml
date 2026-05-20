@@ -1,0 +1,1555 @@
+openapi: 3.1.0
+info:
+  title: Sonalit Fleet Service
+  version: 4.0.0
+
+servers:
+  - url: http://localhost:4002
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  # ─────────────────────────────────────────────
+  # Vehicles
+  # ─────────────────────────────────────────────
+  /v4/vehicles:
+    get:
+      summary: List vehicles
+      operationId: listVehicles
+      tags: [Vehicles]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, inactive, maintenance, retired]
+        - name: search
+          in: query
+          schema: { type: string, maxLength: 200 }
+      responses:
+        '200':
+          description: Paginated list of vehicles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Vehicle'
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      summary: Create a vehicle
+      operationId: createVehicle
+      tags: [Vehicles]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plate, make, model, year, fuel_type]
+              properties:
+                plate: { type: string, minLength: 1, maxLength: 20 }
+                make: { type: string, minLength: 1, maxLength: 100 }
+                model: { type: string, minLength: 1, maxLength: 100 }
+                year: { type: integer, minimum: 1900, maximum: 2100 }
+                vin: { type: string, maxLength: 17 }
+                fuel_type:
+                  type: string
+                  enum: [petrol, diesel, electric, hybrid, cng, lpg]
+                status:
+                  type: string
+                  enum: [active, inactive, maintenance, retired]
+                  default: active
+      responses:
+        '201':
+          description: Vehicle created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vehicle'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/vehicles/{id}:
+    get:
+      summary: Get a vehicle
+      operationId: getVehicle
+      tags: [Vehicles]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Vehicle record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vehicle'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    patch:
+      summary: Update a vehicle
+      operationId: updateVehicle
+      tags: [Vehicles]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                plate: { type: string, minLength: 1, maxLength: 20 }
+                make: { type: string, minLength: 1, maxLength: 100 }
+                model: { type: string, minLength: 1, maxLength: 100 }
+                year: { type: integer, minimum: 1900, maximum: 2100 }
+                vin: { type: string, maxLength: 17 }
+                fuel_type:
+                  type: string
+                  enum: [petrol, diesel, electric, hybrid, cng, lpg]
+                status:
+                  type: string
+                  enum: [active, inactive, maintenance, retired]
+      responses:
+        '200':
+          description: Updated vehicle record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vehicle'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      summary: Soft-delete a vehicle
+      operationId: deleteVehicle
+      tags: [Vehicles]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '204':
+          description: Vehicle deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ─────────────────────────────────────────────
+  # Drivers
+  # ─────────────────────────────────────────────
+  /v4/drivers:
+    get:
+      summary: List drivers
+      operationId: listDrivers
+      tags: [Drivers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [on_duty, off_duty, suspended]
+        - name: search
+          in: query
+          schema: { type: string, maxLength: 200 }
+      responses:
+        '200':
+          description: Paginated list of drivers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Driver'
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      summary: Create a driver
+      operationId: createDriver
+      tags: [Drivers]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, license_number, license_expiry]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 200 }
+                email: { type: string, format: email, maxLength: 320 }
+                phone: { type: string, maxLength: 30 }
+                license_number: { type: string, minLength: 1, maxLength: 50 }
+                license_expiry: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+                status:
+                  type: string
+                  enum: [on_duty, off_duty, suspended]
+                  default: off_duty
+      responses:
+        '201':
+          description: Driver created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Driver'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/drivers/{id}:
+    get:
+      summary: Get a driver
+      operationId: getDriver
+      tags: [Drivers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Driver record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Driver'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    patch:
+      summary: Update a driver
+      operationId: updateDriver
+      tags: [Drivers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1, maxLength: 200 }
+                email: { type: string, format: email, maxLength: 320 }
+                phone: { type: string, maxLength: 30 }
+                license_number: { type: string, minLength: 1, maxLength: 50 }
+                license_expiry: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+                status:
+                  type: string
+                  enum: [on_duty, off_duty, suspended]
+      responses:
+        '200':
+          description: Updated driver record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Driver'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      summary: Soft-delete a driver
+      operationId: deleteDriver
+      tags: [Drivers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '204':
+          description: Driver deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ─────────────────────────────────────────────
+  # Geofences
+  # ─────────────────────────────────────────────
+  /v4/geofences:
+    get:
+      summary: List geofences
+      operationId: listGeofences
+      tags: [Geofences]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+        - name: active
+          in: query
+          schema: { type: string, enum: [true, false] }
+      responses:
+        '200':
+          description: Paginated list of geofences
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Geofence'
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      summary: Create a geofence
+      operationId: createGeofence
+      tags: [Geofences]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, geojson]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 200 }
+                type:
+                  type: string
+                  enum: [entry, exit, both]
+                  default: both
+                geojson:
+                  type: object
+                  required: [type, coordinates]
+                  properties:
+                    type: { type: string }
+                    coordinates: {}
+                active: { type: boolean, default: true }
+      responses:
+        '201':
+          description: Geofence created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Geofence'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/geofences/{id}:
+    get:
+      summary: Get a geofence
+      operationId: getGeofence
+      tags: [Geofences]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Geofence record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Geofence'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    patch:
+      summary: Update a geofence
+      operationId: updateGeofence
+      tags: [Geofences]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1, maxLength: 200 }
+                type:
+                  type: string
+                  enum: [entry, exit, both]
+                geojson:
+                  type: object
+                  properties:
+                    type: { type: string }
+                    coordinates: {}
+                active: { type: boolean }
+      responses:
+        '200':
+          description: Updated geofence record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Geofence'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      summary: Soft-delete a geofence
+      operationId: deleteGeofence
+      tags: [Geofences]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '204':
+          description: Geofence deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ─────────────────────────────────────────────
+  # Maintenance
+  # ─────────────────────────────────────────────
+  /v4/maintenance:
+    get:
+      summary: List maintenance records
+      operationId: listMaintenance
+      tags: [Maintenance]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [scheduled, in_progress, completed, overdue]
+        - name: vehicle_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Paginated list of maintenance records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MaintenanceRecord'
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      summary: Create a maintenance record
+      operationId: createMaintenance
+      tags: [Maintenance]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [vehicle_id, type, scheduled_date]
+              properties:
+                vehicle_id: { type: string, format: uuid }
+                type: { type: string, minLength: 1, maxLength: 100 }
+                scheduled_date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+                completed_date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+                status:
+                  type: string
+                  enum: [scheduled, in_progress, completed, overdue]
+                  default: scheduled
+                notes: { type: string, maxLength: 2000 }
+                cost: { type: number, minimum: 0 }
+      responses:
+        '201':
+          description: Maintenance record created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceRecord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/maintenance/{id}:
+    get:
+      summary: Get a maintenance record
+      operationId: getMaintenance
+      tags: [Maintenance]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Maintenance record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceRecord'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    patch:
+      summary: Update a maintenance record
+      operationId: updateMaintenance
+      tags: [Maintenance]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                vehicle_id: { type: string, format: uuid }
+                type: { type: string, minLength: 1, maxLength: 100 }
+                scheduled_date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+                completed_date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+                status:
+                  type: string
+                  enum: [scheduled, in_progress, completed, overdue]
+                notes: { type: string, maxLength: 2000 }
+                cost: { type: number, minimum: 0 }
+      responses:
+        '200':
+          description: Updated maintenance record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceRecord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      summary: Soft-delete a maintenance record
+      operationId: deleteMaintenance
+      tags: [Maintenance]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '204':
+          description: Maintenance record deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ─────────────────────────────────────────────
+  # Shipments
+  # ─────────────────────────────────────────────
+  /v4/shipments:
+    get:
+      summary: List shipments
+      operationId: listShipments
+      tags: [Shipments]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, assigned, in_transit, delivered, cancelled, failed]
+        - name: vehicle_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: driver_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Paginated list of shipments
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Shipment'
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      summary: Create a shipment
+      operationId: createShipment
+      tags: [Shipments]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [origin, destination, scheduled_at]
+              properties:
+                origin: { type: string, minLength: 1, maxLength: 500 }
+                destination: { type: string, minLength: 1, maxLength: 500 }
+                cargo_description: { type: string, maxLength: 2000 }
+                status:
+                  type: string
+                  enum: [pending, assigned, in_transit, delivered, cancelled, failed]
+                  default: pending
+                vehicle_id: { type: string, format: uuid }
+                driver_id: { type: string, format: uuid }
+                scheduled_at: { type: string, format: date-time }
+                delivered_at: { type: string, format: date-time }
+      responses:
+        '201':
+          description: Shipment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Shipment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/shipments/{id}:
+    get:
+      summary: Get a shipment
+      operationId: getShipment
+      tags: [Shipments]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Shipment record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Shipment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    patch:
+      summary: Update a shipment
+      operationId: updateShipment
+      tags: [Shipments]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                origin: { type: string, minLength: 1, maxLength: 500 }
+                destination: { type: string, minLength: 1, maxLength: 500 }
+                cargo_description: { type: string, maxLength: 2000 }
+                status:
+                  type: string
+                  enum: [pending, assigned, in_transit, delivered, cancelled, failed]
+                vehicle_id: { type: string, format: uuid }
+                driver_id: { type: string, format: uuid }
+                scheduled_at: { type: string, format: date-time }
+                delivered_at: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Updated shipment record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Shipment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      summary: Soft-delete a shipment
+      operationId: deleteShipment
+      tags: [Shipments]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '204':
+          description: Shipment deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ─────────────────────────────────────────────
+  # Messages
+  # ─────────────────────────────────────────────
+  /v4/messages/threads:
+    get:
+      summary: List message threads
+      operationId: listMessageThreads
+      tags: [Messages]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, maximum: 50 }
+      responses:
+        '200':
+          description: List of message threads
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, format: uuid }
+                        subject: { type: string }
+                        last_message_at: { type: string, format: date-time }
+                        participant_count: { type: integer }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/messages:
+    get:
+      summary: List messages in a thread
+      operationId: listMessages
+      tags: [Messages]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: thread_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, maximum: 50 }
+      responses:
+        '200':
+          description: List of messages in the thread
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, format: uuid }
+                        sender_id: { type: string, format: uuid }
+                        body: { type: string }
+                        created_at: { type: string, format: date-time }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      summary: Send a message
+      operationId: sendMessage
+      tags: [Messages]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                thread_id: { type: string, format: uuid }
+                to_user_id: { type: string, format: uuid }
+                body: { type: string, minLength: 1, maxLength: 10000 }
+      responses:
+        '201':
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string, format: uuid }
+                  thread_id: { type: string, format: uuid }
+                  created_at: { type: string, format: date-time }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ─────────────────────────────────────────────
+  # GPS
+  # ─────────────────────────────────────────────
+  /v4/gps/track:
+    get:
+      summary: Get latest GPS fixes per device
+      operationId: getGpsTrack
+      tags: [GPS]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: device_id
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 100, maximum: 500 }
+      responses:
+        '200':
+          description: Latest GPS position per device
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        device_id: { type: string }
+                        lat: { type: number }
+                        lon: { type: number }
+                        speed_kmh: { type: number }
+                        heading: { type: number }
+                        accuracy_m: { type: number }
+                        ts: { type: string, format: date-time }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ─────────────────────────────────────────────
+  # Risk Zones
+  # ─────────────────────────────────────────────
+  /v4/riskzones:
+    get:
+      summary: List risk zones
+      operationId: listRiskZones
+      tags: [RiskZones]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: risk_level
+          in: query
+          schema:
+            type: string
+            enum: [low, medium, high, critical]
+        - name: limit
+          in: query
+          schema: { type: integer, default: 200, maximum: 1000 }
+      responses:
+        '200':
+          description: List of risk zones
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RiskZone'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      summary: Create or upsert a risk zone
+      operationId: upsertRiskZone
+      tags: [RiskZones]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [h3_index, risk_level, center_lat, center_lon]
+              properties:
+                h3_index: { type: string, minLength: 10, maxLength: 20 }
+                risk_level:
+                  type: string
+                  enum: [low, medium, high, critical]
+                event_count: { type: integer, minimum: 0, default: 0 }
+                center_lat: { type: number, minimum: -90, maximum: 90 }
+                center_lon: { type: number, minimum: -180, maximum: 180 }
+      responses:
+        '201':
+          description: Risk zone created or updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskZone'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ─────────────────────────────────────────────
+  # Field Officers
+  # ─────────────────────────────────────────────
+  /v4/field-officers:
+    get:
+      summary: List field officers
+      operationId: listFieldOfficers
+      tags: [FieldOfficers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [available, busy, offline]
+      responses:
+        '200':
+          description: List of field officers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FieldOfficer'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      summary: Create a field officer
+      operationId: createFieldOfficer
+      tags: [FieldOfficers]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, badge_number, phone]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 255 }
+                badge_number: { type: string, minLength: 1, maxLength: 50 }
+                phone: { type: string, minLength: 1, maxLength: 30 }
+                assigned_zone: { type: string, maxLength: 255 }
+                status:
+                  type: string
+                  enum: [available, busy, offline]
+                  default: offline
+      responses:
+        '201':
+          description: Field officer created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FieldOfficer'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/field-officers/{id}:
+    get:
+      summary: Get a field officer
+      operationId: getFieldOfficer
+      tags: [FieldOfficers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Field officer record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FieldOfficer'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    patch:
+      summary: Update a field officer
+      operationId: updateFieldOfficer
+      tags: [FieldOfficers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, minLength: 1, maxLength: 255 }
+                badge_number: { type: string, minLength: 1, maxLength: 50 }
+                phone: { type: string, minLength: 1, maxLength: 30 }
+                assigned_zone: { type: string, maxLength: 255 }
+                status:
+                  type: string
+                  enum: [available, busy, offline]
+      responses:
+        '200':
+          description: Updated field officer record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FieldOfficer'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      summary: Soft-delete a field officer
+      operationId: deleteFieldOfficer
+      tags: [FieldOfficers]
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '204':
+          description: Field officer deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ─────────────────────────────────────────────
+  # Finance
+  # ─────────────────────────────────────────────
+  /v4/finance/summary:
+    get:
+      summary: Get monthly finance summary
+      operationId: getFinanceSummary
+      tags: [Finance]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: month
+          in: query
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}$'
+            example: '2026-05'
+      responses:
+        '200':
+          description: Finance summary grouped by category for the month
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  month: { type: string }
+                  summary:
+                    type: object
+                    additionalProperties: { type: number }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/finance/transactions:
+    get:
+      summary: List finance transactions
+      operationId: listFinanceTransactions
+      tags: [Finance]
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: month
+          in: query
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}$'
+            example: '2026-05'
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+      responses:
+        '200':
+          description: Paginated list of finance transactions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FinanceRecord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      summary: Create a finance transaction
+      operationId: createFinanceTransaction
+      tags: [Finance]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category, amount, transaction_date]
+              properties:
+                category:
+                  type: string
+                  enum: [fuel, maintenance, toll, insurance, salary, other]
+                amount: { type: number }
+                description: { type: string, maxLength: 500 }
+                vehicle_id: { type: string, format: uuid }
+                driver_id: { type: string, format: uuid }
+                transaction_date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+      responses:
+        '201':
+          description: Finance transaction created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinanceRecord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+# ─────────────────────────────────────────────
+# Reusable components
+# ─────────────────────────────────────────────
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    IdPath:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    BadRequest:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              code: { type: string }
+              message: { type: string }
+    Unauthorized:
+      description: Missing or invalid JWT
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              code: { type: string }
+              message: { type: string }
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              code: { type: string }
+              message: { type: string }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              code: { type: string }
+              message: { type: string }
+    Conflict:
+      description: Resource already exists
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              code: { type: string }
+              message: { type: string }
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              code: { type: string }
+              message: { type: string }
+
+  schemas:
+    Vehicle:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        org_id: { type: string, format: uuid }
+        plate: { type: string }
+        make: { type: string }
+        model: { type: string }
+        year: { type: integer }
+        vin: { type: string }
+        fuel_type: { type: string }
+        status: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        deleted_at: { type: string, format: date-time, nullable: true }
+
+    Driver:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        org_id: { type: string, format: uuid }
+        name: { type: string }
+        email: { type: string, format: email }
+        phone: { type: string, nullable: true }
+        license_number: { type: string }
+        license_expiry: { type: string }
+        status: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        deleted_at: { type: string, format: date-time, nullable: true }
+
+    Geofence:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        org_id: { type: string, format: uuid }
+        name: { type: string }
+        type: { type: string }
+        geojson: { type: object }
+        active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        deleted_at: { type: string, format: date-time, nullable: true }
+
+    MaintenanceRecord:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        org_id: { type: string, format: uuid }
+        vehicle_id: { type: string, format: uuid }
+        type: { type: string }
+        scheduled_date: { type: string }
+        completed_date: { type: string, nullable: true }
+        status: { type: string }
+        notes: { type: string, nullable: true }
+        cost: { type: number, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        deleted_at: { type: string, format: date-time, nullable: true }
+
+    Shipment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        org_id: { type: string, format: uuid }
+        shipment_number: { type: string }
+        origin: { type: string }
+        destination: { type: string }
+        cargo_description: { type: string, nullable: true }
+        status: { type: string }
+        vehicle_id: { type: string, format: uuid, nullable: true }
+        driver_id: { type: string, format: uuid, nullable: true }
+        scheduled_at: { type: string, format: date-time }
+        delivered_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        deleted_at: { type: string, format: date-time, nullable: true }
+
+    RiskZone:
+      type: object
+      properties:
+        h3_index: { type: string }
+        risk_level: { type: string }
+        event_count: { type: integer }
+        center_lat: { type: number }
+        center_lon: { type: number }
+        updated_at: { type: string, format: date-time }
+
+    FieldOfficer:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        org_id: { type: string, format: uuid }
+        name: { type: string }
+        badge_number: { type: string }
+        phone: { type: string }
+        assigned_zone: { type: string, nullable: true }
+        status: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        deleted_at: { type: string, format: date-time, nullable: true }
+
+    FinanceRecord:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        org_id: { type: string, format: uuid }
+        category: { type: string }
+        amount: { type: number }
+        description: { type: string, nullable: true }
+        vehicle_id: { type: string, format: uuid, nullable: true }
+        driver_id: { type: string, format: uuid, nullable: true }
+        transaction_date: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        deleted_at: { type: string, format: date-time, nullable: true }

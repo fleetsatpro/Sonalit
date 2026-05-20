@@ -1,0 +1,16 @@
+apiVersion: v2
+name: reports-svc
+description: Sonalit v4 Reports Service — async report generation and export
+type: application
+version: 4.0.0
+appVersion: "4.0.0"
+dependencies:
+  - name: sonalit-base
+    version: "4.0.0"
+    repository: "file://../_base"
+keywords:
+  - sonalit
+  - reports
+  - microservice
+maintainers:
+  - name: FleetSat Engineering

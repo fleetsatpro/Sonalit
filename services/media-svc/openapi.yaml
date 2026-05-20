@@ -1,0 +1,488 @@
+openapi: 3.1.0
+info:
+  title: Sonalit Media Service
+  version: 4.0.0
+servers:
+  - url: http://localhost:4006
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+security:
+  - bearerAuth: []
+paths:
+  /v4/media/photo-upload-url:
+    post:
+      operationId: createPhotoUploadUrl
+      summary: Request a presigned upload URL for a photo
+      tags:
+        - Photos
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: x-org-id
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Organisation identifier
+      responses:
+        '201':
+          description: Presigned upload URL created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  asset_id:
+                    type: string
+                    format: uuid
+                  upload_url:
+                    type: string
+                    format: uri
+                  expires_at:
+                    type: string
+                    format: date-time
+                required:
+                  - asset_id
+                  - upload_url
+                  - expires_at
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /v4/media/photos/commit:
+    post:
+      operationId: commitPhoto
+      summary: Commit a pending photo asset after upload
+      tags:
+        - Photos
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: x-org-id
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Organisation identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                asset_id:
+                  type: string
+                  format: uuid
+              required:
+                - asset_id
+      responses:
+        '200':
+          description: Asset committed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  org_id:
+                    type: string
+                  kind:
+                    type: string
+                    example: photo
+                  status:
+                    type: string
+                    example: committed
+                  r2_key:
+                    type: string
+                  url:
+                    type: string
+                    format: uri
+                  committed_at:
+                    type: string
+                    format: date-time
+                  created_at:
+                    type: string
+                    format: date-time
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '404':
+          description: Asset not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /v4/media/photos/{id}:
+    get:
+      operationId: getPhoto
+      summary: Retrieve a photo asset by ID
+      tags:
+        - Photos
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Asset UUID
+        - name: x-org-id
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Organisation identifier
+      responses:
+        '200':
+          description: Photo asset record
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  org_id:
+                    type: string
+                  kind:
+                    type: string
+                    example: photo
+                  status:
+                    type: string
+                  r2_key:
+                    type: string
+                  url:
+                    type: string
+                    format: uri
+                  committed_at:
+                    type: string
+                    format: date-time
+                  created_at:
+                    type: string
+                    format: date-time
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '404':
+          description: Asset not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /v4/documents:
+    get:
+      operationId: listDocuments
+      summary: List documents for an organisation
+      tags:
+        - Documents
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: x-org-id
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Organisation identifier
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: Page number (1-based)
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: Items per page
+      responses:
+        '200':
+          description: Paginated list of documents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        org_id:
+                          type: string
+                        name:
+                          type: string
+                        kind:
+                          type: string
+                        status:
+                          type: string
+                        r2_key:
+                          type: string
+                        size_bytes:
+                          type: integer
+                        created_at:
+                          type: string
+                          format: date-time
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+    post:
+      operationId: createDocument
+      summary: Create a document asset record
+      tags:
+        - Documents
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: x-org-id
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Organisation identifier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                kind:
+                  type: string
+                  minLength: 1
+                  maxLength: 50
+                r2_key:
+                  type: string
+                  minLength: 1
+                size_bytes:
+                  type: integer
+                  minimum: 0
+              required:
+                - name
+                - kind
+                - r2_key
+      responses:
+        '201':
+          description: Document created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  org_id:
+                    type: string
+                  name:
+                    type: string
+                  kind:
+                    type: string
+                  status:
+                    type: string
+                    example: committed
+                  r2_key:
+                    type: string
+                  size_bytes:
+                    type: integer
+                  created_at:
+                    type: string
+                    format: date-time
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /v4/documents/{id}:
+    delete:
+      operationId: deleteDocument
+      summary: Soft-delete a document by ID
+      tags:
+        - Documents
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Document asset UUID
+        - name: x-org-id
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Organisation identifier
+      responses:
+        '204':
+          description: Document deleted (no content)
+        '401':
+          description: Unauthorised
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '404':
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string

@@ -1,0 +1,17 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: DNSChaos
+metadata:
+  name: timescaledb-failover-sim
+  namespace: sonalit-prod
+spec:
+  action: random
+  mode: all
+  selector:
+    namespaces: [sonalit-prod]
+    labelSelectors:
+      chaos-mesh.org/inject-dns: "true"
+  patterns:
+    - timescaledb-primary.sonalit-prod.svc.cluster.local
+  duration: 60s
+  scheduler:
+    cron: "@every 4h"

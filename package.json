@@ -1,7 +1,59 @@
 {
+  "name": "sonalit",
+  "version": "4.0.0",
+  "private": true,
+  "description": "Sonalit v4 — multi-tenant fleet operations and convoy field-security platform",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "build": "pnpm -r build",
+    "build:contracts": "pnpm --filter @sonalit/contracts build",
+    "test": "pnpm -r test",
+    "test:unit": "pnpm -r --filter './services/**' --filter './packages/**' test:unit",
+    "test:integration": "pnpm -r --filter './services/**' test:integration",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,yaml,yml,md}\" --ignore-path .gitignore",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,yaml,yml,md}\" --ignore-path .gitignore",
+    "changeset": "changeset",
+    "changeset:version": "changeset version",
+    "changeset:publish": "changeset publish",
+    "docker:build": "pnpm -r docker:build",
+    "infra:init": "cd infra/terraform && terraform init",
+    "infra:plan": "cd infra/terraform && terraform plan",
+    "infra:apply": "cd infra/terraform && terraform apply",
+    "prepare": "husky"
+  },
   "devDependencies": {
-    "autoprefixer": "^10.5.0",
-    "postcss": "^8.5.14",
-    "tailwindcss": "^4.3.0"
-  }
+    "@changesets/cli": "^2.27.10",
+    "@commitlint/cli": "^19.6.1",
+    "@commitlint/config-conventional": "^19.6.0",
+    "@sonalit/eslint-config": "workspace:*",
+    "@sonalit/prettier-config": "workspace:*",
+    "@sonalit/tsconfig-base": "workspace:*",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.3.0",
+    "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "eslint --fix --max-warnings=0",
+      "prettier --write"
+    ],
+    "*.{json,yaml,yml,md}": [
+      "prettier --write"
+    ]
+  },
+  "commitlint": {
+    "extends": [
+      "@commitlint/config-conventional"
+    ]
+  },
+  "prettier": "@sonalit/prettier-config"
 }

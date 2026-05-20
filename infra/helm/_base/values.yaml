@@ -1,0 +1,176 @@
+# Sonalit base Helm chart default values.
+# Every service chart overrides these via its own values.yaml.
+
+replicaCount: 3
+
+image:
+  repository: ""
+  pullPolicy: IfNotPresent
+  tag: ""
+
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9090"
+  prometheus.io/path: "/metrics"
+  # SPIRE workload registration annotation (overridden per service)
+  spiffe.io/spiffeid: ""
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  readOnlyRootFilesystem: true
+
+service:
+  type: ClusterIP
+  port: 4000
+  metricsPort: 9090
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 65
+  targetMemoryUtilizationPercentage: 75
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+# Liveness / readiness / startup probes
+livenessProbe:
+  httpGet:
+    path: /healthz/live
+    port: 4000
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /healthz/ready
+    port: 4000
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  failureThreshold: 3
+
+startupProbe:
+  httpGet:
+    path: /healthz/ready
+    port: 4000
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  failureThreshold: 30
+
+# Vault Agent sidecar
+vault:
+  enabled: true
+  role: ""
+  secretPath: ""
+  annotations:
+    vault.hashicorp.com/agent-inject: "true"
+    vault.hashicorp.com/agent-inject-status: "update"
+    vault.hashicorp.com/role: ""
+
+# OpenTelemetry collector sidecar
+otel:
+  enabled: true
+  endpoint: "http://otel-collector.observability.svc.cluster.local:4317"
+
+# SPIRE workload registration (filled by service chart)
+spire:
+  enabled: true
+  trustDomain: "sonalit.internal"
+  workloadSelector: ""
+
+# Network policy — default deny all ingress; services open specific ports
+networkPolicy:
+  enabled: true
+  ingressRules: []
+  egressRules:
+    - ports:
+        - port: 5432   # Postgres
+        - port: 6379   # Redis
+        - port: 4222   # NATS
+        - port: 443    # External HTTPS (R2, FCM, etc.)
+        - port: 4317   # OTLP gRPC
+
+# Environment variables injected from Vault (filled by service chart)
+env: []
+
+# Extra volumes for Vault Agent, OTEL collector, temp fs
+extraVolumes:
+  - name: tmp
+    emptyDir: {}
+  - name: vault-secrets
+    emptyDir:
+      medium: Memory
+
+extraVolumeMounts:
+  - name: tmp
+    mountPath: /tmp
+  - name: vault-secrets
+    mountPath: /vault/secrets
+    readOnly: true
+
+# ServiceMonitor for Prometheus Operator
+serviceMonitor:
+  enabled: true
+  interval: "15s"
+  path: "/metrics"
+  namespace: ""
+  labels:
+    release: prometheus
+
+# Termination grace period (allow in-flight requests to drain)
+terminationGracePeriodSeconds: 30
+
+# Topology spread for multi-AZ
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels: {}
+
+# Priority class for hot-path services (overridden per service)
+priorityClassName: ""
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [""]
+          topologyKey: kubernetes.io/hostname

@@ -1,0 +1,18 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: auth-redis-partition
+  namespace: sonalit-prod
+spec:
+  action: partition
+  mode: all
+  selector:
+    namespaces: [sonalit-prod]
+    labelSelectors:
+      app.kubernetes.io/name: auth-svc
+  direction: both
+  externalTargets:
+    - redis-master.sonalit-prod.svc.cluster.local
+  duration: 30s
+  scheduler:
+    cron: "@every 2h"
