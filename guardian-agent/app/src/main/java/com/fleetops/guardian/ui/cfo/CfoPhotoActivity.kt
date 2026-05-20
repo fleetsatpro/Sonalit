@@ -24,6 +24,8 @@ import com.fleetops.guardian.databinding.ActivityCfoPhotoBinding
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.material.chip.Chip
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -48,6 +50,7 @@ class CfoPhotoActivity : AppCompatActivity() {
         const val EXTRA_DRIVER_NAME = "driver_name"
         const val EXTRA_REPORT_DATE = "report_date"
         const val EXTRA_SEAL_COUNT = "seal_count"
+        const val EXTRA_PHOTOS_TODAY = "photos_today"
     }
 
     @Inject lateinit var prefs: DevicePrefs
@@ -56,6 +59,7 @@ class CfoPhotoActivity : AppCompatActivity() {
     private lateinit var fusedLocation: FusedLocationProviderClient
     private var photoUri: Uri? = null
     private var photoFile: File? = null
+    private val existingPhotos = mutableListOf<CfoPhotoDto>()
 
     private val cameraLauncher = registerForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         if (ok) showPreviewAndUpload() else setStatus("Photo capture cancelled", R.color.warning)
@@ -79,6 +83,15 @@ class CfoPhotoActivity : AppCompatActivity() {
         val driverName = intent.getStringExtra(EXTRA_DRIVER_NAME) ?: ""
         val sealCount = intent.getIntExtra(EXTRA_SEAL_COUNT, 3)
 
+        // Deserialise photos already captured for this truck today
+        val photosJson = intent.getStringExtra(EXTRA_PHOTOS_TODAY)
+        if (!photosJson.isNullOrEmpty()) {
+            try {
+                val listType = object : TypeToken<List<CfoPhotoDto>>() {}.type
+                existingPhotos.addAll(Gson().fromJson(photosJson, listType))
+            } catch (_: Exception) {}
+        }
+
         setSupportActionBar(binding.toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         binding.toolbar.title = "Truck $position — Photos"
@@ -86,6 +99,9 @@ class CfoPhotoActivity : AppCompatActivity() {
         binding.toolbar.setNavigationOnClickListener { finish() }
 
         buildPhotoTypeChips(sealCount)
+
+        // Re-colour chips when session toggles between SOD and EOD
+        binding.chipGroupSession.setOnCheckedStateChangeListener { _, _ -> updateChipStates() }
 
         binding.btnCapture.setOnClickListener { checkPermissionsAndCapture() }
     }
@@ -96,18 +112,42 @@ class CfoPhotoActivity : AppCompatActivity() {
 
         types.forEachIndexed { index, type ->
             val chip = Chip(this).apply {
-                text = when {
-                    type == "front" -> "FRONT"
-                    type == "rear" -> "REAR"
-                    else -> "SEAL ${type.substringAfter("seal_")}"
-                }
                 tag = type
                 isCheckable = true
                 isChecked = index == 0
-                setChipBackgroundColorResource(R.color.chip_bg_selector)
-                setTextColor(ContextCompat.getColorStateList(this@CfoPhotoActivity, R.color.chip_text_selector))
             }
             binding.chipGroupType.addView(chip)
+        }
+        updateChipStates()
+    }
+
+    private fun updateChipStates() {
+        val session = if (binding.chipGroupSession.checkedChipId == R.id.chipSod) "sod" else "eod"
+        for (i in 0 until binding.chipGroupType.childCount) {
+            val chip = binding.chipGroupType.getChildAt(i) as? Chip ?: continue
+            val typeTag = chip.tag?.toString() ?: continue
+            val photoType = if (typeTag.startsWith("seal_")) "seal" else typeTag
+            val sealPos = if (typeTag.startsWith("seal_")) typeTag.substringAfter("seal_") else null
+
+            val label = when {
+                typeTag == "front" -> "FRONT"
+                typeTag == "rear" -> "REAR"
+                else -> "SEAL ${typeTag.substringAfter("seal_")}"
+            }
+
+            val done = existingPhotos.any { p ->
+                p.session == session && p.photoType == photoType &&
+                (sealPos == null || p.sealPosition == sealPos)
+            }
+
+            chip.text = if (done) "✓ $label" else label
+            if (done) {
+                chip.setChipBackgroundColorResource(R.color.success)
+                chip.setTextColor(ContextCompat.getColor(this, R.color.navy_950))
+            } else {
+                chip.setChipBackgroundColorResource(R.color.chip_bg_selector)
+                chip.setTextColor(ContextCompat.getColorStateList(this, R.color.chip_text_selector))
+            }
         }
     }
 
@@ -211,7 +251,7 @@ class CfoPhotoActivity : AppCompatActivity() {
                 val takenAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault())
                     .apply { timeZone = TimeZone.getTimeZone("UTC") }.format(Date())
 
-                api.commitCfoPhoto(
+                val commitResp = api.commitCfoPhoto(
                     token,
                     CfoPhotoCommitRequest(
                         eventUuid = UUID.randomUUID().toString(),
@@ -229,9 +269,31 @@ class CfoPhotoActivity : AppCompatActivity() {
                     )
                 )
 
+                if (!commitResp.isSuccessful) {
+                    setStatus("Failed to save photo: HTTP ${commitResp.code()}", R.color.danger)
+                    binding.btnCapture.isEnabled = true
+                    binding.uploadProgress.visibility = View.GONE
+                    return@launch
+                }
+
                 binding.uploadProgress.visibility = View.GONE
                 setStatus("Photo saved", R.color.success)
                 Toast.makeText(this@CfoPhotoActivity, "Photo saved", Toast.LENGTH_SHORT).show()
+
+                // Mark this slot as done in the local list and refresh chip colours immediately
+                existingPhotos.removeAll { p ->
+                    p.session == session && p.photoType == photoType &&
+                    (sealPosition == null || p.sealPosition == sealPosition)
+                }
+                existingPhotos.add(CfoPhotoDto(
+                    id = "",
+                    convoyTruckId = truckId,
+                    session = session,
+                    photoType = photoType,
+                    sealPosition = sealPosition,
+                    takenAt = takenAt
+                ))
+                updateChipStates()
 
                 // Brief pause so user sees success, then allow next capture
                 binding.btnCapture.postDelayed({

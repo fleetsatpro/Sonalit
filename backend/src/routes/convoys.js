@@ -38,6 +38,7 @@ router.delete('/:id/trucks/:truckId', authorize('admin', 'dispatcher'), cfo.remo
 // CFO user management (B2)
 router.post('/:id/cfos', authorize('admin', 'dispatcher'), cfo.addCfo);
 router.delete('/:id/cfos/:cfoId', authorize('admin', 'dispatcher'), cfo.removeCfo);
+router.patch('/:id/cfos/:cfoId/device', authorize('admin', 'dispatcher'), cfo.linkDevice);
 
 // CFO truck assignment management (B2)
 router.post('/:id/cfo-assignments', authorize('admin', 'dispatcher'), cfo.assignTruckToCfo);
@@ -46,5 +47,6 @@ router.delete('/:id/cfo-assignments/:assignmentId', authorize('admin', 'dispatch
 // Daily report admin (E5)
 router.get('/:id/reports', authorize('admin', 'dispatcher', 'analyst'), cfo.getConvoyReports);
 router.post('/:id/reports/:date/regenerate', authorize('admin', 'dispatcher'), convoyReportRegenerateLimiter, cfo.regenerateReport);
+router.get('/:id/reports/:date/download', authorize('admin', 'dispatcher', 'analyst'), cfo.downloadReport);
 
 module.exports = router;

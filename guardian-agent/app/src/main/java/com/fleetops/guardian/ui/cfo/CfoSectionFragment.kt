@@ -5,10 +5,11 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.view.inputmethod.EditorInfo
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.fleetops.guardian.R
 import com.fleetops.guardian.data.api.*
 import com.fleetops.guardian.data.prefs.DevicePrefs
@@ -38,30 +39,12 @@ class CfoSectionFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.btnRetry.setOnClickListener { loadContext() }
-        binding.btnCfoLogin.setOnClickListener { submitCfoLogin() }
-
-        binding.etCfoPassword.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_DONE) {
-                submitCfoLogin()
-                true
-            } else false
-        }
-
-        binding.btnSwitchAccount.setOnClickListener {
-            viewLifecycleOwner.lifecycleScope.launch {
-                prefs.clearCfoSession()
-                binding.etCfoEmail.text?.clear()
-                binding.etCfoPassword.text?.clear()
-                binding.tvCfoLoginError.visibility = View.GONE
-                showCfoLogin()
-            }
-        }
-
         loadContext()
     }
 
     override fun onResume() {
         super.onResume()
+        // Refresh on tab revisit so photo counts stay current
         loadContext()
     }
 
@@ -70,77 +53,10 @@ class CfoSectionFragment : Fragment() {
         _binding = null
     }
 
-    private fun showCfoLogin() {
-        binding.layoutLoading.visibility = View.GONE
-        binding.layoutError.visibility = View.GONE
-        binding.layoutContent.visibility = View.GONE
-        binding.layoutCfoLogin.visibility = View.VISIBLE
-        binding.btnCfoLogin.isEnabled = true
-    }
-
-    private fun submitCfoLogin() {
-        val email = binding.etCfoEmail.text?.toString()?.trim() ?: ""
-        val password = binding.etCfoPassword.text?.toString() ?: ""
-
-        if (email.isEmpty() || password.isEmpty()) {
-            binding.tvCfoLoginError.text = "Email and password are required"
-            binding.tvCfoLoginError.visibility = View.VISIBLE
-            return
-        }
-
-        viewLifecycleOwner.lifecycleScope.launch {
-            binding.btnCfoLogin.isEnabled = false
-            binding.tvCfoLoginError.visibility = View.GONE
-
-            try {
-                val token = prefs.deviceToken()
-                val api = RetrofitClient.buildApiService(prefs.serverUrl())
-                val resp = api.cfoLogin(token, CfoLoginRequest(email, password))
-
-                if (resp.isSuccessful && resp.body() != null) {
-                    val body = resp.body()!!
-                    prefs.saveCfoSession(body.userId, body.name, body.email)
-                    binding.layoutCfoLogin.visibility = View.GONE
-                    loadContext()
-                } else {
-                    val errMsg = when (resp.code()) {
-                        400  -> "Email and password are required"
-                        401  -> "Invalid email or password"
-                        403  -> "Account is not active — contact your administrator"
-                        429  -> "Too many attempts — try again in 15 minutes"
-                        else -> "Login failed (${resp.code()})"
-                    }
-                    binding.tvCfoLoginError.text = errMsg
-                    binding.tvCfoLoginError.visibility = View.VISIBLE
-                    binding.btnCfoLogin.isEnabled = true
-                }
-            } catch (e: Exception) {
-                binding.tvCfoLoginError.text = "Network error — check your connection"
-                binding.tvCfoLoginError.visibility = View.VISIBLE
-                binding.btnCfoLogin.isEnabled = true
-            }
-        }
-    }
-
     private fun loadContext() {
-        binding.layoutCfoLogin.visibility = View.GONE
-
         viewLifecycleOwner.lifecycleScope.launch {
             val token = prefs.deviceToken()
             if (token.isEmpty()) { showError("Device not enrolled — go to Settings to re-enroll"); return@launch }
-
-            val cfoUserId = prefs.cfoUserId()
-            if (cfoUserId.isNullOrEmpty()) {
-                showCfoLogin()
-                return@launch
-            }
-
-            // Show logged-in user name in the top banner
-            val displayName = prefs.cfoUserName()?.takeIf { it.isNotEmpty() } ?: prefs.cfoEmail() ?: ""
-            if (displayName.isNotEmpty()) {
-                binding.tvCfoUserName.text = displayName
-                binding.layoutCfoUser.visibility = View.VISIBLE
-            }
 
             // Show cached data immediately so the user isn't staring at a spinner
             val cachedJson = prefs.convoyContextJson()
@@ -173,20 +89,18 @@ class CfoSectionFragment : Fragment() {
                     }
                     showError(msg)
                 }
-                // If cache was shown, swallow the error silently
+                // Cached data is already displayed — swallow the error silently
             }
         }
     }
 
     private fun showLoading() {
-        binding.layoutCfoLogin.visibility = View.GONE
         binding.layoutLoading.visibility = View.VISIBLE
         binding.layoutError.visibility = View.GONE
         binding.layoutContent.visibility = View.GONE
     }
 
     private fun showError(msg: String) {
-        binding.layoutCfoLogin.visibility = View.GONE
         binding.layoutLoading.visibility = View.GONE
         binding.layoutError.visibility = View.VISIBLE
         binding.layoutContent.visibility = View.GONE
@@ -194,7 +108,6 @@ class CfoSectionFragment : Fragment() {
     }
 
     private fun renderConvoy(data: CfoContextData) {
-        binding.layoutCfoLogin.visibility = View.GONE
         binding.layoutLoading.visibility = View.GONE
         binding.layoutError.visibility = View.GONE
         binding.layoutContent.visibility = View.VISIBLE
@@ -203,9 +116,9 @@ class CfoSectionFragment : Fragment() {
         binding.tvConvoyName.text = convoy.name
         binding.chipConvoyStatus.text = convoy.status.uppercase()
         when (convoy.status) {
-            "active"  -> binding.chipConvoyStatus.setChipBackgroundColorResource(R.color.success)
+            "active" -> binding.chipConvoyStatus.setChipBackgroundColorResource(R.color.success)
             "planned" -> binding.chipConvoyStatus.setChipBackgroundColorResource(R.color.warning)
-            else      -> binding.chipConvoyStatus.setChipBackgroundColorResource(R.color.muted)
+            else -> binding.chipConvoyStatus.setChipBackgroundColorResource(R.color.muted)
         }
 
         binding.tvReportDate.text = "Report: ${data.reportDate}"
@@ -219,6 +132,7 @@ class CfoSectionFragment : Fragment() {
         val totalUploaded = data.photosToday.size
         binding.tvPhotoProgress.text = "$totalUploaded / $totalRequired photos"
 
+        // Build truck cards
         binding.truckListContainer.removeAllViews()
         val inflater = LayoutInflater.from(requireContext())
         for (truck in data.assignedTrucks) {

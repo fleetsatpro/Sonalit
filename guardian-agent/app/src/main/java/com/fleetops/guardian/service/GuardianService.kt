@@ -8,8 +8,9 @@ import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
 import android.media.AudioManager
-import android.media.Ringtone
+import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.os.Binder
 import android.os.IBinder
@@ -49,6 +50,7 @@ class GuardianService : LifecycleService() {
     private var locationJob: Job? = null
 
     private val _trackingMode = MutableStateFlow(DevicePrefs.TrackingMode.NORMAL)
+    private var cachedTrackingInterval = DevicePrefs.DEFAULT_INTERVAL_SECONDS
     val trackingMode: StateFlow<String> = _trackingMode.asStateFlow()
 
     private val _isOnline = MutableStateFlow(false)
@@ -69,7 +71,7 @@ class GuardianService : LifecycleService() {
     private val _lastCommandId = MutableStateFlow<String?>(null)
     val lastCommandId: StateFlow<String?> = _lastCommandId.asStateFlow()
 
-    private var sirenRingtone: Ringtone? = null
+    private var sirenPlayer: MediaPlayer? = null
     private var sirenJob: kotlinx.coroutines.Job? = null
     private val _batteryAlertSent = MutableStateFlow(false)
 
@@ -177,6 +179,14 @@ class GuardianService : LifecycleService() {
                 }
             }
         }
+        lifecycleScope.launch {
+            devicePrefs.trackingIntervalSecondsFlow.collect { interval ->
+                if (cachedTrackingInterval != interval) {
+                    cachedTrackingInterval = interval
+                    restartLocationUpdates()
+                }
+            }
+        }
     }
 
     // ─── Location Updates ─────────────────────────────────────────────────────
@@ -185,15 +195,7 @@ class GuardianService : LifecycleService() {
     private fun startLocationUpdates() {
         stopLocationUpdates()
 
-        val intervalSeconds = runCatching {
-            var interval = DevicePrefs.DEFAULT_INTERVAL_SECONDS
-            lifecycleScope.launch {
-                interval = devicePrefs.trackingIntervalSeconds()
-            }
-            interval
-        }.getOrDefault(DevicePrefs.DEFAULT_INTERVAL_SECONDS)
-
-        val intervalMs = computeIntervalMs(_trackingMode.value, intervalSeconds.toLong())
+        val intervalMs = computeIntervalMs(_trackingMode.value, cachedTrackingInterval.toLong())
 
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, intervalMs)
             .setMinUpdateIntervalMillis(intervalMs / 2)
@@ -300,14 +302,13 @@ class GuardianService : LifecycleService() {
                     devicePrefs.setTrackingMode(mode)
                 }
                 "reboot" -> {
-                    // Require device owner policy — log and ack
                     Log.w(TAG, "Reboot command received but requires device-owner policy")
-                    repository.ackCommand(command.commandId, "unsupported")
+                    repository.ackCommand(command.commandId, "failed")
                     return
                 }
                 "wipe" -> {
                     Log.w(TAG, "Wipe command received but requires device-owner policy")
-                    repository.ackCommand(command.commandId, "unsupported")
+                    repository.ackCommand(command.commandId, "failed")
                     return
                 }
                 "trigger_siren" -> {
@@ -322,14 +323,14 @@ class GuardianService : LifecycleService() {
                 }
                 else -> {
                     Log.w(TAG, "Unknown command type: ${command.type}")
-                    repository.ackCommand(command.commandId, "unknown_type")
+                    repository.ackCommand(command.commandId, "failed")
                     return
                 }
             }
             repository.ackCommand(command.commandId, "executed")
         } catch (e: Exception) {
             Log.e(TAG, "Error executing command ${command.commandId}", e)
-            repository.ackCommand(command.commandId, "error: ${e.message}")
+            repository.ackCommand(command.commandId, "failed")
         }
     }
 
@@ -397,11 +398,25 @@ class GuardianService : LifecycleService() {
             )
             val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
                 ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-            sirenRingtone?.stop()
-            sirenRingtone = RingtoneManager.getRingtone(applicationContext, alarmUri)?.apply {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) isLooping = true
-                play()
+                ?: run {
+                    Log.e(TAG, "No alarm or ringtone URI available")
+                    return
+                }
+
+            sirenPlayer?.apply { if (isPlaying) stop(); release() }
+            sirenPlayer = MediaPlayer().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                setDataSource(applicationContext, alarmUri)
+                isLooping = true
+                prepare()
+                start()
             }
+
             sirenJob?.cancel()
             sirenJob = lifecycleScope.launch {
                 delay(durationSeconds.toLong() * 1000)
@@ -416,8 +431,8 @@ class GuardianService : LifecycleService() {
     private fun stopSiren() {
         sirenJob?.cancel()
         sirenJob = null
-        sirenRingtone?.stop()
-        sirenRingtone = null
+        sirenPlayer?.apply { if (isPlaying) stop(); release() }
+        sirenPlayer = null
         Log.i(TAG, "Siren stopped")
     }
 
