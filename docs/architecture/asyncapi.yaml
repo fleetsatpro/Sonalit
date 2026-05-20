@@ -1,0 +1,880 @@
+asyncapi: '3.0.0'
+
+info:
+  title: Sonalit v4 Event Bus
+  version: 4.0.0
+  description: |
+    NATS JetStream AsyncAPI specification for all Sonalit v4 event subjects.
+
+    All payloads are JSON-serialised. Timestamps are ISO 8601 strings with timezone.
+    UUIDs are v4. Zod schemas in @sonalit/contracts are the authoritative source
+    of truth for all message shapes.
+
+    ## Transport
+    - **Broker**: NATS JetStream
+    - **Serialisation**: JSON (UTF-8)
+    - **Retention**: per-stream (see STREAM_CONFIG in events/subjects.ts)
+
+    ## Security
+    - Service-to-service: NATS NKey credentials
+    - Device-to-gateway: X-Device-Token (Argon2id-hashed, per-device)
+
+  contact:
+    name: Sonalit Engineering
+    url: https://sonalit.io
+
+defaultContentType: application/json
+
+servers:
+  production:
+    host: nats.sonalit.internal:4222
+    protocol: nats
+    description: Production NATS JetStream cluster
+    security:
+      - nkeyAuth: []
+
+  staging:
+    host: nats.staging.sonalit.internal:4222
+    protocol: nats
+    description: Staging NATS JetStream cluster
+    security:
+      - nkeyAuth: []
+
+channels:
+  telemetry.gps:
+    address: 'telemetry.gps.{orgId}.{deviceId}'
+    description: |
+      GPS fix batches published by Guardian devices via the telemetry gateway.
+      Each message is a GpsFixBatch (1-50 fixes). JetStream stream: TELEMETRY.
+    parameters:
+      orgId:
+        description: Organisation UUID
+      deviceId:
+        description: Guardian device UUID
+    messages:
+      gpsFixBatch:
+        $ref: '#/components/messages/GpsFixBatch'
+
+  events.panic:
+    address: 'events.panic.{orgId}'
+    description: |
+      Panic events triggered by CFO pressing the panic button on a Guardian device.
+      Published by the Guardian gateway service. JetStream stream: EVENTS.
+    parameters:
+      orgId:
+        description: Organisation UUID
+    messages:
+      panicEvent:
+        $ref: '#/components/messages/PanicEvent'
+
+  events.alert:
+    address: 'events.alert.{orgId}'
+    description: |
+      Alert events published by the Alert service on alert creation.
+      Consumed by notification dispatcher and dashboard WebSocket relay.
+      JetStream stream: EVENTS.
+    parameters:
+      orgId:
+        description: Organisation UUID
+    messages:
+      alertEvent:
+        $ref: '#/components/messages/AlertEvent'
+
+  events.geofence.breach:
+    address: 'events.geofence.breach.{orgId}'
+    description: |
+      Geofence entry/exit events published by the Geofence processor.
+      JetStream stream: EVENTS.
+    parameters:
+      orgId:
+        description: Organisation UUID
+    messages:
+      geofenceBreachEvent:
+        $ref: '#/components/messages/GeofenceBreachEvent'
+
+  commands:
+    address: 'commands.{deviceId}'
+    description: |
+      Device commands published by the Command service and consumed by the
+      Guardian gateway (delivered to device on next heartbeat).
+      JetStream stream: COMMANDS (memory storage, 1h TTL).
+    parameters:
+      deviceId:
+        description: Guardian device UUID
+    messages:
+      command:
+        $ref: '#/components/messages/Command'
+
+  audit:
+    address: 'audit.{service}'
+    description: |
+      Audit log write requests. The audit writer service appends id and prev_hash
+      before persisting. JetStream stream: AUDIT (file storage, 1y retention).
+    parameters:
+      service:
+        description: Originating service name
+    messages:
+      auditEvent:
+        $ref: '#/components/messages/AuditEvent'
+
+  notifications:
+    address: 'notifications.{channel}'
+    description: |
+      Outbound notification envelopes. Consumed by the notification dispatcher
+      which fans out to FCM, APNS, email, SMS, or webhooks.
+      JetStream stream: NOTIFICATIONS (24h TTL).
+    parameters:
+      channel:
+        description: Delivery channel (fcm|apns|email|sms|webhook|custom)
+    messages:
+      notificationEnvelope:
+        $ref: '#/components/messages/NotificationEnvelope'
+
+  convoy.updated:
+    address: 'convoy.updated.{orgId}'
+    description: |
+      Convoy entity published by the Convoy service on any mutation.
+      Consumers: dashboard relay, risk score calculator.
+      JetStream stream: CONVOY (90d retention).
+    parameters:
+      orgId:
+        description: Organisation UUID
+    messages:
+      convoyUpdated:
+        $ref: '#/components/messages/ConvoyUpdated'
+
+  media.committed:
+    address: 'media.committed.{orgId}'
+    description: |
+      CFO photo commit confirmation published by the Media service after an upload
+      is verified and committed to R2. JetStream stream: MEDIA (90d retention).
+    parameters:
+      orgId:
+        description: Organisation UUID
+    messages:
+      mediaCommitted:
+        $ref: '#/components/messages/MediaCommitted'
+
+operations:
+  publishGpsFixBatch:
+    action: send
+    channel:
+      $ref: '#/channels/telemetry.gps'
+    summary: Publish GPS fix batch from Guardian device
+    description: |
+      Published by the telemetry ingest gateway after validating the device token
+      and deduplicating fixes by seq_no. Downstream consumers include the
+      location tracker, geofence processor, and rollup aggregator.
+    messages:
+      - $ref: '#/channels/telemetry.gps/messages/gpsFixBatch'
+
+  consumeGpsFixBatch:
+    action: receive
+    channel:
+      $ref: '#/channels/telemetry.gps'
+    summary: Consume GPS fix batch
+    messages:
+      - $ref: '#/channels/telemetry.gps/messages/gpsFixBatch'
+
+  publishPanic:
+    action: send
+    channel:
+      $ref: '#/channels/events.panic'
+    summary: Publish panic event
+    messages:
+      - $ref: '#/channels/events.panic/messages/panicEvent'
+
+  consumePanic:
+    action: receive
+    channel:
+      $ref: '#/channels/events.panic'
+    summary: Consume panic event (alert creator, notification dispatcher)
+    messages:
+      - $ref: '#/channels/events.panic/messages/panicEvent'
+
+  publishAlert:
+    action: send
+    channel:
+      $ref: '#/channels/events.alert'
+    summary: Publish alert event
+    messages:
+      - $ref: '#/channels/events.alert/messages/alertEvent'
+
+  consumeAlert:
+    action: receive
+    channel:
+      $ref: '#/channels/events.alert'
+    summary: Consume alert event (notification dispatcher, dashboard relay)
+    messages:
+      - $ref: '#/channels/events.alert/messages/alertEvent'
+
+  publishGeofenceBreach:
+    action: send
+    channel:
+      $ref: '#/channels/events.geofence.breach'
+    summary: Publish geofence breach event
+    messages:
+      - $ref: '#/channels/events.geofence.breach/messages/geofenceBreachEvent'
+
+  consumeGeofenceBreach:
+    action: receive
+    channel:
+      $ref: '#/channels/events.geofence.breach'
+    summary: Consume geofence breach (alert creator)
+    messages:
+      - $ref: '#/channels/events.geofence.breach/messages/geofenceBreachEvent'
+
+  publishCommand:
+    action: send
+    channel:
+      $ref: '#/channels/commands'
+    summary: Publish device command
+    messages:
+      - $ref: '#/channels/commands/messages/command'
+
+  consumeCommand:
+    action: receive
+    channel:
+      $ref: '#/channels/commands'
+    summary: Consume device command (Guardian gateway delivers on next heartbeat)
+    messages:
+      - $ref: '#/channels/commands/messages/command'
+
+  publishAudit:
+    action: send
+    channel:
+      $ref: '#/channels/audit'
+    summary: Publish audit log write request
+    messages:
+      - $ref: '#/channels/audit/messages/auditEvent'
+
+  consumeAudit:
+    action: receive
+    channel:
+      $ref: '#/channels/audit'
+    summary: Consume audit event (audit writer service)
+    messages:
+      - $ref: '#/channels/audit/messages/auditEvent'
+
+  publishNotification:
+    action: send
+    channel:
+      $ref: '#/channels/notifications'
+    summary: Publish notification envelope
+    messages:
+      - $ref: '#/channels/notifications/messages/notificationEnvelope'
+
+  consumeNotification:
+    action: receive
+    channel:
+      $ref: '#/channels/notifications'
+    summary: Consume notification (dispatcher fan-out worker)
+    messages:
+      - $ref: '#/channels/notifications/messages/notificationEnvelope'
+
+  publishConvoyUpdated:
+    action: send
+    channel:
+      $ref: '#/channels/convoy.updated'
+    summary: Publish convoy update
+    messages:
+      - $ref: '#/channels/convoy.updated/messages/convoyUpdated'
+
+  consumeConvoyUpdated:
+    action: receive
+    channel:
+      $ref: '#/channels/convoy.updated'
+    summary: Consume convoy update (risk score calculator, dashboard relay)
+    messages:
+      - $ref: '#/channels/convoy.updated/messages/convoyUpdated'
+
+  publishMediaCommitted:
+    action: send
+    channel:
+      $ref: '#/channels/media.committed'
+    summary: Publish photo commit confirmation
+    messages:
+      - $ref: '#/channels/media.committed/messages/mediaCommitted'
+
+  consumeMediaCommitted:
+    action: receive
+    channel:
+      $ref: '#/channels/media.committed'
+    summary: Consume photo commit (report generator, audit writer)
+    messages:
+      - $ref: '#/channels/media.committed/messages/mediaCommitted'
+
+components:
+  securitySchemes:
+    nkeyAuth:
+      type: userPassword
+      description: |
+        NATS NKey seed authentication. Each service has a dedicated NKey credential
+        file. Devices use device tokens verified by the Guardian gateway.
+
+  messages:
+    GpsFixBatch:
+      name: GpsFixBatch
+      title: GPS Fix Batch
+      summary: Batch of GPS fixes from a Guardian device
+      description: |
+        Schema: GpsFixBatchSchema from @sonalit/contracts/schemas/telemetry.
+        Contains 1-50 GpsFix records. The device_id and org_id on the batch
+        must match those on each individual fix.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/GpsFixBatch'
+
+    PanicEvent:
+      name: PanicEvent
+      title: Panic Event
+      summary: Panic button triggered by CFO on a Guardian device
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/PanicEvent'
+
+    AlertEvent:
+      name: AlertEvent
+      title: Alert Event
+      summary: Alert created by the Alert service
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/Alert'
+
+    GeofenceBreachEvent:
+      name: GeofenceBreachEvent
+      title: Geofence Breach Event
+      summary: Device entered or exited a geofence
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/GeofenceBreachEvent'
+
+    Command:
+      name: Command
+      title: Device Command
+      summary: Command issued to a Guardian device
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/Command'
+
+    AuditEvent:
+      name: AuditEvent
+      title: Audit Log Write Request
+      summary: Audit event published by any service
+      description: |
+        Schema: AuditLogWriteSchema from @sonalit/contracts/schemas/audit.
+        id and prev_hash are added by the audit writer service.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AuditLogWrite'
+
+    NotificationEnvelope:
+      name: NotificationEnvelope
+      title: Notification Envelope
+      summary: Outbound notification for FCM, APNS, email, SMS, or webhook
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/NotificationEnvelope'
+
+    ConvoyUpdated:
+      name: ConvoyUpdated
+      title: Convoy Updated
+      summary: Full convoy entity after any mutation
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/Convoy'
+
+    MediaCommitted:
+      name: MediaCommitted
+      title: Media Committed
+      summary: CFO photo successfully committed to object storage
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CfoPhoto'
+
+  schemas:
+    # -------------------------------------------------------------------------
+    # All schemas below are described in prose that maps to the Zod types in
+    # @sonalit/contracts. The canonical schema source is TypeScript — this YAML
+    # serves as documentation and tooling target (e.g. AsyncAPI studio).
+    # -------------------------------------------------------------------------
+
+    Uuid:
+      type: string
+      format: uuid
+      description: UUID v4
+
+    IsoDateTime:
+      type: string
+      format: date-time
+      description: ISO 8601 datetime with timezone offset
+
+    IsoDate:
+      type: string
+      pattern: '^\d{4}-\d{2}-\d{2}$'
+      description: Date in YYYY-MM-DD format
+
+    Sha256Hex:
+      type: string
+      pattern: '^[0-9a-f]{64}$'
+      description: SHA-256 hash as 64-character lowercase hex string
+
+    LatLng:
+      type: object
+      required: [lat, lng]
+      properties:
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+        lng:
+          type: number
+          minimum: -180
+          maximum: 180
+
+    GeoJsonPolygon:
+      type: object
+      required: [type, coordinates]
+      properties:
+        type:
+          type: string
+          enum: [Polygon]
+        coordinates:
+          type: array
+          minItems: 1
+          items:
+            type: array
+            items:
+              type: array
+              minItems: 2
+              maxItems: 2
+              items:
+                type: number
+
+    GpsFix:
+      type: object
+      required:
+        - device_id
+        - org_id
+        - seq_no
+        - lat
+        - lng
+        - timestamp
+        - tracking_mode
+      properties:
+        device_id:
+          $ref: '#/components/schemas/Uuid'
+        org_id:
+          $ref: '#/components/schemas/Uuid'
+        seq_no:
+          type: integer
+          minimum: 0
+          description: Monotonic sequence number for deduplication
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+        lng:
+          type: number
+          minimum: -180
+          maximum: 180
+        altitude:
+          type: number
+          nullable: true
+        speed:
+          type: number
+          minimum: 0
+          nullable: true
+          description: Speed in m/s
+        heading:
+          type: number
+          minimum: 0
+          maximum: 360
+          nullable: true
+        accuracy:
+          type: number
+          minimum: 0
+          nullable: true
+          description: Horizontal accuracy in metres
+        timestamp:
+          $ref: '#/components/schemas/IsoDateTime'
+        tracking_mode:
+          type: string
+          enum: [normal, live, stealth, emergency]
+
+    GpsFixBatch:
+      type: object
+      required: [device_id, org_id, fixes]
+      properties:
+        device_id:
+          $ref: '#/components/schemas/Uuid'
+        org_id:
+          $ref: '#/components/schemas/Uuid'
+        fixes:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/GpsFix'
+
+    PanicEvent:
+      type: object
+      required:
+        - device_id
+        - org_id
+        - lat
+        - lng
+        - timestamp
+        - device_name
+        - assigned_user_id
+      properties:
+        device_id:
+          $ref: '#/components/schemas/Uuid'
+        org_id:
+          $ref: '#/components/schemas/Uuid'
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+        lng:
+          type: number
+          minimum: -180
+          maximum: 180
+        accuracy:
+          type: number
+          minimum: 0
+          nullable: true
+        note:
+          type: string
+          maxLength: 512
+          nullable: true
+        timestamp:
+          $ref: '#/components/schemas/IsoDateTime'
+        device_name:
+          type: string
+        assigned_user_id:
+          allOf:
+            - $ref: '#/components/schemas/Uuid'
+          nullable: true
+
+    Alert:
+      type: object
+      required:
+        - id
+        - org_id
+        - severity
+        - status
+        - type
+        - title
+        - body
+        - triggered_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        org_id:
+          $ref: '#/components/schemas/Uuid'
+        device_id:
+          allOf:
+            - $ref: '#/components/schemas/Uuid'
+          nullable: true
+        convoy_id:
+          allOf:
+            - $ref: '#/components/schemas/Uuid'
+          nullable: true
+        severity:
+          type: string
+          enum: [info, warning, critical]
+        status:
+          type: string
+          enum: [open, acknowledged, resolved]
+        type:
+          type: string
+          maxLength: 64
+        title:
+          type: string
+          maxLength: 256
+        body:
+          type: string
+          maxLength: 2048
+        lat:
+          type: number
+          nullable: true
+        lng:
+          type: number
+          nullable: true
+        triggered_at:
+          $ref: '#/components/schemas/IsoDateTime'
+        acknowledged_at:
+          allOf:
+            - $ref: '#/components/schemas/IsoDateTime'
+          nullable: true
+        resolved_at:
+          allOf:
+            - $ref: '#/components/schemas/IsoDateTime'
+          nullable: true
+        resolved_by:
+          allOf:
+            - $ref: '#/components/schemas/Uuid'
+          nullable: true
+
+    GeofenceBreachEvent:
+      type: object
+      required:
+        - geofence_id
+        - device_id
+        - org_id
+        - breach_type
+        - lat
+        - lng
+        - timestamp
+      properties:
+        geofence_id:
+          $ref: '#/components/schemas/Uuid'
+        device_id:
+          $ref: '#/components/schemas/Uuid'
+        org_id:
+          $ref: '#/components/schemas/Uuid'
+        breach_type:
+          type: string
+          enum: [entry, exit]
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+        lng:
+          type: number
+          minimum: -180
+          maximum: 180
+        timestamp:
+          $ref: '#/components/schemas/IsoDateTime'
+
+    Command:
+      type: object
+      required:
+        - id
+        - device_id
+        - type
+        - payload
+        - issued_at
+        - expires_at
+        - acked_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        device_id:
+          $ref: '#/components/schemas/Uuid'
+        type:
+          type: string
+          enum:
+            - CHANGE_MODE
+            - LOCKDOWN
+            - WIPE
+            - SEND_MESSAGE
+            - TAKE_PHOTO
+            - UPDATE_PINS
+        payload:
+          type: object
+          additionalProperties:
+            type: string
+        issued_at:
+          $ref: '#/components/schemas/IsoDateTime'
+        expires_at:
+          $ref: '#/components/schemas/IsoDateTime'
+        acked_at:
+          allOf:
+            - $ref: '#/components/schemas/IsoDateTime'
+          nullable: true
+
+    AuditLogWrite:
+      type: object
+      required:
+        - service
+        - action
+        - actor_type
+        - actor_id
+        - resource_type
+        - resource_id
+      properties:
+        service:
+          type: string
+          maxLength: 64
+        action:
+          type: string
+          maxLength: 128
+        actor_type:
+          type: string
+          enum: [user, device, system]
+        actor_id:
+          type: string
+          maxLength: 128
+        org_id:
+          allOf:
+            - $ref: '#/components/schemas/Uuid'
+          nullable: true
+        resource_type:
+          type: string
+          maxLength: 64
+        resource_id:
+          type: string
+          maxLength: 128
+        before_state:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+        after_state:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+        ip_address:
+          type: string
+          nullable: true
+        user_agent:
+          type: string
+          maxLength: 512
+          nullable: true
+
+    NotificationEnvelope:
+      type: object
+      required:
+        - id
+        - channel
+        - recipient
+        - body
+        - priority
+        - ttl_ms
+        - idempotency_key
+        - created_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        channel:
+          type: string
+          enum: [fcm, apns, email, sms, webhook, anthropic, r2_confirm, custom]
+        recipient:
+          type: string
+          description: FCM token, APNS token, email address, or phone number
+        title:
+          type: string
+          maxLength: 256
+          nullable: true
+        body:
+          type: string
+          maxLength: 4096
+        data:
+          type: object
+          additionalProperties:
+            type: string
+        priority:
+          type: string
+          enum: [normal, high]
+        ttl_ms:
+          type: integer
+          minimum: 1
+          nullable: true
+        idempotency_key:
+          type: string
+          maxLength: 256
+          nullable: true
+        created_at:
+          $ref: '#/components/schemas/IsoDateTime'
+
+    Convoy:
+      type: object
+      required:
+        - id
+        - org_id
+        - name
+        - status
+        - timezone
+        - start_date
+        - end_date
+        - seal_count_per_truck
+        - created_at
+        - updated_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        org_id:
+          $ref: '#/components/schemas/Uuid'
+        name:
+          type: string
+          maxLength: 256
+        status:
+          type: string
+          enum: [draft, planned, active, completed, cancelled]
+        timezone:
+          type: string
+          description: IANA timezone identifier
+        start_date:
+          $ref: '#/components/schemas/IsoDate'
+        end_date:
+          $ref: '#/components/schemas/IsoDate'
+        seal_count_per_truck:
+          type: integer
+          minimum: 0
+        created_at:
+          $ref: '#/components/schemas/IsoDateTime'
+        updated_at:
+          $ref: '#/components/schemas/IsoDateTime'
+
+    CfoPhoto:
+      type: object
+      required:
+        - id
+        - convoy_id
+        - convoy_truck_id
+        - cfo_user_id
+        - session
+        - photo_type
+        - report_date
+        - photo_url
+        - event_uuid
+        - lat
+        - lng
+        - taken_at
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        convoy_id:
+          $ref: '#/components/schemas/Uuid'
+        convoy_truck_id:
+          $ref: '#/components/schemas/Uuid'
+        cfo_user_id:
+          $ref: '#/components/schemas/Uuid'
+        session:
+          type: string
+          enum: [sod, eod]
+        photo_type:
+          type: string
+          enum: [front, rear, seal, cab, cargo, other]
+        seal_position:
+          type: integer
+          minimum: 1
+          nullable: true
+        report_date:
+          $ref: '#/components/schemas/IsoDate'
+        photo_url:
+          type: string
+          format: uri
+        event_uuid:
+          $ref: '#/components/schemas/Uuid'
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+        lng:
+          type: number
+          minimum: -180
+          maximum: 180
+        notes:
+          type: string
+          maxLength: 1024
+          nullable: true
+        taken_at:
+          $ref: '#/components/schemas/IsoDateTime'
+        committed_at:
+          allOf:
+            - $ref: '#/components/schemas/IsoDateTime'
+          nullable: true

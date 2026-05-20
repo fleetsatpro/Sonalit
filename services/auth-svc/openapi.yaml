@@ -1,0 +1,1409 @@
+openapi: 3.1.0
+info:
+  title: Sonalit Auth Service
+  version: 4.0.0
+  description: >
+    Authentication and authorization service for Sonalit v4. Handles email/password
+    login, WebAuthn passkeys, TOTP, JWT issuance/refresh/revocation, API key management,
+    and Merkle-proof audit log access.
+  contact:
+    name: Sonalit Platform Team
+    email: platform@sonalit.io
+
+servers:
+  - url: https://api.sonalit.io
+    description: Production
+  - url: https://staging-api.sonalit.io
+    description: Staging
+
+tags:
+  - name: Auth
+    description: Core authentication operations
+  - name: Profile
+    description: Current user profile management
+  - name: Passkeys
+    description: WebAuthn passkey registration and authentication
+  - name: TOTP
+    description: Time-based one-time password (2FA) management
+  - name: API Keys
+    description: API key lifecycle management
+  - name: Audit
+    description: Audit log Merkle proofs
+  - name: Health
+    description: Service health and metrics
+
+security:
+  - BearerAuth: []
+
+paths:
+  /v4/auth/login:
+    post:
+      operationId: authLogin
+      tags: [Auth]
+      summary: Login with email/password or passkey assertion
+      description: >
+        Authenticates a user with email + password credentials, or completes a
+        passkey assertion flow. On success returns a short-lived access token and
+        a long-lived refresh token. TOTP code required if 2FA is enabled.
+      security: []
+      x-ratelimit-limit: 20
+      x-ratelimit-window: 60s
+      x-ratelimit-scope: ip
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              password:
+                summary: Email/password login
+                value:
+                  email: alice@example.com
+                  password: "S3cur3P@ss!"
+              passwordWithTotp:
+                summary: Email/password + TOTP
+                value:
+                  email: alice@example.com
+                  password: "S3cur3P@ss!"
+                  totp_code: "123456"
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+              example:
+                access_token: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
+                refresh_token: rt_a1b2c3d4e5f6...
+                expires_in: 900
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Invalid credentials or TOTP code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_CREDENTIALS
+                message: Email or password is incorrect
+                request_id: req_abc123
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/auth/register:
+    post:
+      operationId: authRegister
+      tags: [Auth]
+      summary: Register a new user and organization
+      description: >
+        Creates a new operator account along with an associated organization.
+        Sends a verification email upon success.
+      security: []
+      x-ratelimit-limit: 5
+      x-ratelimit-window: 3600s
+      x-ratelimit-scope: ip
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            example:
+              email: alice@example.com
+              name: Alice Operator
+              password: "S3cur3P@ss!"
+              org_name: Acme Logistics
+      responses:
+        '201':
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+              example:
+                user_id: usr_01HZ2K9VBGJXYZ
+                message: Verification email sent to alice@example.com
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: EMAIL_CONFLICT
+                message: An account with this email already exists
+                request_id: req_abc123
+        '422':
+          description: Password rejected (HIBP breach detected)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: PASSWORD_BREACHED
+                message: This password has appeared in a known data breach. Please choose a different password.
+                request_id: req_abc123
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/auth/refresh:
+    post:
+      operationId: authRefresh
+      tags: [Auth]
+      summary: Refresh access token
+      description: >
+        Exchanges a valid refresh token for a new access token and rotated
+        refresh token. The old refresh token is immediately revoked.
+      security: []
+      x-ratelimit-limit: 60
+      x-ratelimit-window: 60s
+      x-ratelimit-scope: token
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+            example:
+              refresh_token: rt_a1b2c3d4e5f6...
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+              example:
+                access_token: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
+                refresh_token: rt_b2c3d4e5f6g7...
+                expires_in: 900
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Refresh token is invalid or revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_REFRESH_TOKEN
+                message: Refresh token is invalid or has been revoked
+                request_id: req_abc123
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/auth/logout:
+    post:
+      operationId: authLogout
+      tags: [Auth]
+      summary: Revoke refresh token and logout
+      description: >
+        Revokes the provided refresh token, invalidating the current session.
+        The access token remains valid until its natural expiry.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+            example:
+              refresh_token: rt_a1b2c3d4e5f6...
+      responses:
+        '204':
+          description: Logged out successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/auth/me:
+    get:
+      operationId: authGetMe
+      tags: [Profile]
+      summary: Get current user profile
+      description: Returns the authenticated operator's profile information.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+              example:
+                user_id: usr_01HZ2K9VBGJXYZ
+                email: alice@example.com
+                name: Alice Operator
+                org_id: org_01HZ2K9VBGJXYZ
+                totp_enabled: true
+                passkeys_count: 1
+                created_at: "2024-01-15T10:00:00Z"
+                updated_at: "2024-06-01T08:30:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    patch:
+      operationId: authUpdateMe
+      tags: [Profile]
+      summary: Update current user profile
+      description: >
+        Updates the authenticated user's name, email, or password.
+        Password updates trigger a HIBP breach check and invalidate all
+        existing refresh tokens.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+            examples:
+              updateName:
+                summary: Update display name
+                value:
+                  name: Alice A. Operator
+              updatePassword:
+                summary: Change password
+                value:
+                  current_password: "S3cur3P@ss!"
+                  new_password: "N3wS3cur3P@ss!"
+      responses:
+        '200':
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          description: Password rejected (HIBP breach detected or current password wrong)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: PASSWORD_BREACHED
+                message: This password has appeared in a known data breach
+                request_id: req_abc123
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/auth/passkeys/register/options:
+    post:
+      operationId: passkeyRegisterOptions
+      tags: [Passkeys]
+      summary: Get WebAuthn registration options
+      description: >
+        Generates PublicKeyCredentialCreationOptions for WebAuthn registration.
+        The returned challenge is stored server-side for 5 minutes.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasskeyRegisterOptionsRequest'
+            example:
+              authenticator_attachment: platform
+              display_name: Alice's MacBook
+      responses:
+        '200':
+          description: WebAuthn creation options
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasskeyCreationOptions'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/auth/passkeys/register/verify:
+    post:
+      operationId: passkeyRegisterVerify
+      tags: [Passkeys]
+      summary: Verify and store a new passkey
+      description: >
+        Verifies the WebAuthn attestation response and persists the credential.
+        A friendly name must be provided for key management.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasskeyRegisterVerifyRequest'
+      responses:
+        '201':
+          description: Passkey registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasskeyRecord'
+              example:
+                passkey_id: pk_01HZ2K9VBGJXYZ
+                name: Alice's MacBook
+                aaguid: adce0002-35bc-c60a-648b-0b25f1f05503
+                created_at: "2024-06-01T08:30:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          description: Attestation verification failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: ATTESTATION_FAILED
+                message: WebAuthn attestation could not be verified
+                request_id: req_abc123
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/auth/passkeys/authenticate/options:
+    post:
+      operationId: passkeyAuthOptions
+      tags: [Passkeys]
+      summary: Get WebAuthn authentication challenge
+      description: >
+        Generates PublicKeyCredentialRequestOptions for passkey authentication.
+        Email hint is optional; if omitted a discoverable-credential flow is used.
+      security: []
+      x-ratelimit-limit: 10
+      x-ratelimit-window: 60s
+      x-ratelimit-scope: ip
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasskeyAuthOptionsRequest'
+            example:
+              email: alice@example.com
+      responses:
+        '200':
+          description: WebAuthn request options
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasskeyRequestOptions'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/auth/passkeys/authenticate/verify:
+    post:
+      operationId: passkeyAuthVerify
+      tags: [Passkeys]
+      summary: Verify passkey assertion and issue tokens
+      description: >
+        Verifies the WebAuthn assertion response. On success issues access and
+        refresh tokens equivalent to a password login.
+      security: []
+      x-ratelimit-limit: 10
+      x-ratelimit-window: 60s
+      x-ratelimit-scope: ip
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasskeyAuthVerifyRequest'
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Assertion verification failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: ASSERTION_FAILED
+                message: WebAuthn assertion could not be verified
+                request_id: req_abc123
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/auth/totp/setup:
+    post:
+      operationId: totpSetup
+      tags: [TOTP]
+      summary: Generate TOTP secret and QR code
+      description: >
+        Generates a new TOTP secret and returns the provisioning URI and
+        base64-encoded QR code PNG. The secret is not activated until
+        /totp/verify is called.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: TOTP setup data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TotpSetupResponse'
+              example:
+                secret: JBSWY3DPEHPK3PXP
+                otpauth_uri: "otpauth://totp/Sonalit:alice%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Sonalit"
+                qr_code_base64: iVBORw0KGgoAAAANSUhEUgAA...
+                backup_codes:
+                  - 8a3f2b9c
+                  - 7d1e4a6f
+                  - 2c9b5e8d
+                  - 4f7a1c3e
+                  - 6b8d2f5a
+                  - 1e4c7b9f
+                  - 3a6f8e2d
+                  - 5c1b4d7a
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: TOTP already enabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: TOTP_ALREADY_ENABLED
+                message: TOTP is already enabled for this account
+                request_id: req_abc123
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/auth/totp/verify:
+    post:
+      operationId: totpVerify
+      tags: [TOTP]
+      summary: Enable TOTP by verifying the first code
+      description: >
+        Confirms the TOTP setup by verifying the first code from the authenticator app.
+        On success, TOTP becomes required on future logins.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TotpVerifyRequest'
+            example:
+              code: "123456"
+      responses:
+        '200':
+          description: TOTP enabled
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message]
+                properties:
+                  message:
+                    type: string
+              example:
+                message: TOTP successfully enabled
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Invalid TOTP code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_TOTP_CODE
+                message: The TOTP code is invalid or has expired
+                request_id: req_abc123
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/auth/totp/disable:
+    post:
+      operationId: totpDisable
+      tags: [TOTP]
+      summary: Disable TOTP
+      description: >
+        Disables TOTP on the account. Requires current password and a valid TOTP
+        code as confirmation.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TotpDisableRequest'
+            example:
+              current_password: "S3cur3P@ss!"
+              totp_code: "654321"
+      responses:
+        '200':
+          description: TOTP disabled
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message]
+                properties:
+                  message:
+                    type: string
+              example:
+                message: TOTP successfully disabled
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Invalid password or TOTP code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: INVALID_CREDENTIALS
+                message: Current password or TOTP code is incorrect
+                request_id: req_abc123
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/auth/api-keys:
+    get:
+      operationId: listApiKeys
+      tags: [API Keys]
+      summary: List API keys for current user
+      description: Returns all non-revoked API keys for the authenticated operator.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: API key list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ApiKeyRecord'
+              example:
+                data:
+                  - key_id: ak_01HZ2K9VBGJXYZ
+                    name: CI/CD Pipeline
+                    prefix: snlt_live_a1b2
+                    scopes: [read:fleet, write:alerts]
+                    last_used_at: "2024-06-01T07:00:00Z"
+                    expires_at: "2025-01-01T00:00:00Z"
+                    created_at: "2024-01-15T10:00:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      operationId: createApiKey
+      tags: [API Keys]
+      summary: Create a new API key
+      description: >
+        Creates a new API key. The full key value is returned only once in this
+        response and cannot be retrieved again.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApiKeyRequest'
+            example:
+              name: CI/CD Pipeline
+              scopes: [read:fleet, write:alerts]
+              expires_at: "2025-01-01T00:00:00Z"
+      responses:
+        '201':
+          description: API key created — store the key value now, it will not be shown again
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateApiKeyResponse'
+              example:
+                key: snlt_live_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6
+                key_id: ak_01HZ2K9VBGJXYZ
+                name: CI/CD Pipeline
+                prefix: snlt_live_a1b2
+                scopes: [read:fleet, write:alerts]
+                expires_at: "2025-01-01T00:00:00Z"
+                created_at: "2024-06-01T08:30:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/auth/api-keys/{key_id}:
+    delete:
+      operationId: revokeApiKey
+      tags: [API Keys]
+      summary: Revoke an API key
+      description: Permanently revokes the specified API key. This action cannot be undone.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: key_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: API key identifier
+          example: ak_01HZ2K9VBGJXYZ
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204':
+          description: API key revoked
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v4/audit/proof/{id}:
+    get:
+      operationId: getAuditProof
+      tags: [Audit]
+      summary: Get Merkle inclusion proof for an audit row
+      description: >
+        Returns the Merkle inclusion proof for the specified audit log entry,
+        allowing independent verification that the entry has not been tampered with.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Audit record identifier
+          example: aud_01HZ2K9VBGJXYZ
+      responses:
+        '200':
+          description: Merkle inclusion proof
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditProof'
+              example:
+                audit_id: aud_01HZ2K9VBGJXYZ
+                leaf_hash: "a3f2b9c8d7e6f5..."
+                root_hash: "1b2c3d4e5f6a7b..."
+                proof_path:
+                  - hash: "c4d5e6f7a8b9..."
+                    position: left
+                  - hash: "d5e6f7a8b9c0..."
+                    position: right
+                tree_size: 10240
+                timestamp: "2024-06-01T08:30:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /healthz/live:
+    get:
+      operationId: healthLive
+      tags: [Health]
+      summary: Liveness probe
+      description: Returns 200 if the process is alive.
+      security: []
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              example:
+                status: ok
+
+  /healthz/ready:
+    get:
+      operationId: healthReady
+      tags: [Health]
+      summary: Readiness probe
+      description: Returns 200 if the service is ready to accept traffic (DB, Redis connected).
+      security: []
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              example:
+                status: ok
+        '503':
+          description: Service not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              example:
+                status: degraded
+
+  /metrics:
+    get:
+      operationId: metrics
+      tags: [Health]
+      summary: Prometheus metrics
+      description: Exposes Prometheus-format metrics for scraping.
+      security: []
+      responses:
+        '200':
+          description: Prometheus metrics text
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: RS256-signed JWT issued by auth-svc. Include as `Authorization: Bearer <token>`.
+    DeviceToken:
+      type: apiKey
+      in: header
+      name: X-Device-Token
+      description: Device token issued at enrollment for guardian device endpoints.
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+      description: Client-generated unique key (UUID recommended) to ensure idempotent processing of mutating requests.
+      example: 550e8400-e29b-41d4-a716-446655440000
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message, request_id]
+      properties:
+        code:
+          type: string
+          description: Machine-readable error code
+          example: INVALID_CREDENTIALS
+        message:
+          type: string
+          description: Human-readable error description
+          example: Email or password is incorrect
+        request_id:
+          type: string
+          description: Unique request identifier for tracing
+          example: req_abc123
+
+    Pagination:
+      type: object
+      required: [cursor, limit]
+      properties:
+        cursor:
+          type: [string, 'null']
+          description: Opaque cursor for the next page; null if no more pages
+          example: eyJpZCI6IjAxSFoyS"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+          description: Number of items per page
+          example: 50
+        total:
+          type: [integer, 'null']
+          description: Total count if known; null for cursor-based pagination
+          example: 243
+
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, error]
+
+    TokenResponse:
+      type: object
+      required: [access_token, refresh_token, expires_in]
+      properties:
+        access_token:
+          type: string
+          description: Short-lived RS256 JWT
+        refresh_token:
+          type: string
+          description: Long-lived opaque token for token rotation
+        expires_in:
+          type: integer
+          description: Access token lifetime in seconds
+          example: 900
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 320
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+        totp_code:
+          type: string
+          pattern: '^\d{6}$'
+          description: Required if TOTP is enabled on the account
+
+    RegisterRequest:
+      type: object
+      required: [email, name, password, org_name]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 320
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        password:
+          type: string
+          minLength: 12
+          maxLength: 128
+        org_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+
+    RegisterResponse:
+      type: object
+      required: [user_id, message]
+      properties:
+        user_id:
+          type: string
+        message:
+          type: string
+
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+
+    LogoutRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+
+    UserProfile:
+      type: object
+      required: [user_id, email, name, org_id, totp_enabled, passkeys_count, created_at, updated_at]
+      properties:
+        user_id:
+          type: string
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        org_id:
+          type: string
+        totp_enabled:
+          type: boolean
+        passkeys_count:
+          type: integer
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    UpdateProfileRequest:
+      type: object
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        email:
+          type: string
+          format: email
+          maxLength: 320
+        current_password:
+          type: string
+          description: Required when changing password
+        new_password:
+          type: string
+          minLength: 12
+          maxLength: 128
+          description: New password; triggers HIBP check
+
+    PasskeyRegisterOptionsRequest:
+      type: object
+      properties:
+        authenticator_attachment:
+          type: string
+          enum: [platform, cross-platform]
+          default: platform
+        display_name:
+          type: string
+          maxLength: 100
+          description: User-friendly name for this passkey
+
+    PasskeyCreationOptions:
+      type: object
+      required: [challenge, rp, user, pubKeyCredParams, timeout, attestation]
+      properties:
+        challenge:
+          type: string
+          description: Base64url-encoded challenge
+        rp:
+          type: object
+          required: [id, name]
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        user:
+          type: object
+          required: [id, name, displayName]
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            displayName:
+              type: string
+        pubKeyCredParams:
+          type: array
+          items:
+            type: object
+            required: [type, alg]
+            properties:
+              type:
+                type: string
+              alg:
+                type: integer
+        timeout:
+          type: integer
+        attestation:
+          type: string
+          enum: [none, indirect, direct, enterprise]
+        excludeCredentials:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              type:
+                type: string
+
+    PasskeyRegisterVerifyRequest:
+      type: object
+      required: [credential, name]
+      properties:
+        credential:
+          type: object
+          required: [id, rawId, response, type]
+          description: PublicKeyCredential from navigator.credentials.create()
+          properties:
+            id:
+              type: string
+            rawId:
+              type: string
+            type:
+              type: string
+              enum: [public-key]
+            response:
+              type: object
+              required: [attestationObject, clientDataJSON]
+              properties:
+                attestationObject:
+                  type: string
+                clientDataJSON:
+                  type: string
+        name:
+          type: string
+          maxLength: 100
+          description: Friendly name for this passkey
+
+    PasskeyRecord:
+      type: object
+      required: [passkey_id, name, aaguid, created_at]
+      properties:
+        passkey_id:
+          type: string
+        name:
+          type: string
+        aaguid:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: [string, 'null']
+          format: date-time
+
+    PasskeyAuthOptionsRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          description: Optional email hint for non-discoverable credentials
+
+    PasskeyRequestOptions:
+      type: object
+      required: [challenge, timeout, rpId, allowCredentials, userVerification]
+      properties:
+        challenge:
+          type: string
+        timeout:
+          type: integer
+        rpId:
+          type: string
+        allowCredentials:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              type:
+                type: string
+        userVerification:
+          type: string
+          enum: [required, preferred, discouraged]
+
+    PasskeyAuthVerifyRequest:
+      type: object
+      required: [credential]
+      properties:
+        credential:
+          type: object
+          required: [id, rawId, response, type]
+          description: PublicKeyCredential from navigator.credentials.get()
+          properties:
+            id:
+              type: string
+            rawId:
+              type: string
+            type:
+              type: string
+              enum: [public-key]
+            response:
+              type: object
+              required: [authenticatorData, clientDataJSON, signature]
+              properties:
+                authenticatorData:
+                  type: string
+                clientDataJSON:
+                  type: string
+                signature:
+                  type: string
+                userHandle:
+                  type: [string, 'null']
+
+    TotpSetupResponse:
+      type: object
+      required: [secret, otpauth_uri, qr_code_base64, backup_codes]
+      properties:
+        secret:
+          type: string
+          description: Base32-encoded TOTP secret
+        otpauth_uri:
+          type: string
+          description: otpauth:// provisioning URI
+        qr_code_base64:
+          type: string
+          description: Base64-encoded QR code PNG image
+        backup_codes:
+          type: array
+          items:
+            type: string
+          minItems: 8
+          maxItems: 8
+          description: One-time backup codes for account recovery
+
+    TotpVerifyRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          pattern: '^\d{6}$'
+
+    TotpDisableRequest:
+      type: object
+      required: [current_password, totp_code]
+      properties:
+        current_password:
+          type: string
+        totp_code:
+          type: string
+          pattern: '^\d{6}$'
+
+    ApiKeyRecord:
+      type: object
+      required: [key_id, name, prefix, scopes, created_at]
+      properties:
+        key_id:
+          type: string
+        name:
+          type: string
+        prefix:
+          type: string
+          description: First 12 chars of the key for identification
+        scopes:
+          type: array
+          items:
+            type: string
+        last_used_at:
+          type: [string, 'null']
+          format: date-time
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    CreateApiKeyRequest:
+      type: object
+      required: [name, scopes]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        scopes:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+
+    CreateApiKeyResponse:
+      type: object
+      required: [key, key_id, name, prefix, scopes, created_at]
+      properties:
+        key:
+          type: string
+          description: Full API key value — shown only once
+        key_id:
+          type: string
+        name:
+          type: string
+        prefix:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    AuditProof:
+      type: object
+      required: [audit_id, leaf_hash, root_hash, proof_path, tree_size, timestamp]
+      properties:
+        audit_id:
+          type: string
+        leaf_hash:
+          type: string
+          description: SHA-256 hash of the audit record leaf node
+        root_hash:
+          type: string
+          description: SHA-256 Merkle root hash
+        proof_path:
+          type: array
+          items:
+            type: object
+            required: [hash, position]
+            properties:
+              hash:
+                type: string
+              position:
+                type: string
+                enum: [left, right]
+        tree_size:
+          type: integer
+          description: Total number of leaves in the tree at proof generation time
+        timestamp:
+          type: string
+          format: date-time
+
+  responses:
+    BadRequest:
+      description: Invalid request body or parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: BAD_REQUEST
+            message: Request validation failed
+            request_id: req_abc123
+
+    Unauthorized:
+      description: Missing or invalid authentication token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: UNAUTHORIZED
+            message: Authentication token is missing or invalid
+            request_id: req_abc123
+
+    Forbidden:
+      description: Authenticated but not authorized to access this resource
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: FORBIDDEN
+            message: You do not have permission to access this resource
+            request_id: req_abc123
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: NOT_FOUND
+            message: The requested resource was not found
+            request_id: req_abc123
+
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds until rate limit resets
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: RATE_LIMITED
+            message: Too many requests. Please retry after the indicated period.
+            request_id: req_abc123
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: INTERNAL_ERROR
+            message: An unexpected error occurred
+            request_id: req_abc123

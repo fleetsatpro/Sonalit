@@ -1,0 +1,110 @@
+image:
+  repository: ghcr.io/fleetsatpro/sonalit/guardian-svc
+  pullPolicy: IfNotPresent
+  tag: ""
+
+service:
+  type: ClusterIP
+  port: 4004
+  metricsPort: 9090
+
+resources:
+  requests:
+    cpu: "300m"
+    memory: "256Mi"
+  limits:
+    cpu: "2000m"
+    memory: "2Gi"
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 30
+  targetCPUUtilizationPercentage: 65
+  targetMemoryUtilizationPercentage: 75
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+priorityClassName: high-priority
+
+nodeSelector:
+  role: hotpath
+
+tolerations:
+  - key: role
+    operator: Equal
+    value: hotpath
+    effect: NoSchedule
+
+vault:
+  enabled: true
+  role: guardian-svc
+  secretPath: sonalit/data/guardian-svc
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9090"
+  prometheus.io/path: "/metrics"
+  spiffe.io/spiffeid: "spiffe://sonalit.internal/ns/sonalit-prod/sa/guardian-svc"
+
+livenessProbe:
+  httpGet:
+    path: /healthz/live
+    port: 4004
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /healthz/ready
+    port: 4004
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  failureThreshold: 3
+
+startupProbe:
+  httpGet:
+    path: /healthz/ready
+    port: 4004
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  failureThreshold: 30
+
+networkPolicy:
+  enabled: true
+  ingressRules:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: sonalit-prod
+  egressRules:
+    - ports:
+        - port: 5432
+        - port: 6379
+        - port: 4222
+        - port: 443
+        - port: 4317
+
+serviceMonitor:
+  enabled: true
+  interval: "15s"
+  path: "/metrics"
+  labels:
+    release: prometheus
+
+env:
+  - name: SERVICE_NAME
+    value: guardian-svc
+  - name: NATS_CONSUMER_GROUP
+    value: guardian-eval
+
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: guardian-svc
