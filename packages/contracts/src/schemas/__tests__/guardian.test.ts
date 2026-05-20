@@ -4,7 +4,6 @@ import {
   HeartbeatRequestSchema,
   CfoLoginRequestSchema,
   CommandSchema,
-  GuardianDeviceSchema,
   IntegrityVerdictSchema,
   PanicRequestSchema,
   AckRequestSchema,

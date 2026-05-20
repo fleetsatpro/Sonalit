@@ -175,7 +175,6 @@ describe('AuditLogWriteSchema', () => {
     const write = AuditLogWriteSchema.parse({
       ...validAuditLog,
     });
-    // @ts-expect-error — id is not in AuditLogWrite type
     expect((write as { id?: string }).id).toBeUndefined();
   });
 });
