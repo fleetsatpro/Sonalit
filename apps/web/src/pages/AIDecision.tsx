@@ -1,117 +1,209 @@
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Bot } from 'lucide-react';
 import { api } from '../lib/api.js';
+import { Bot, Send, Loader2, Clock } from 'lucide-react';
 
-type DecisionStatus = 'pending' | 'approved' | 'rejected' | 'overridden';
-
-type AIDecision = {
+interface PastDecision {
   id: string;
-  title: string;
-  description: string;
-  confidence: number;
-  recommendation: string;
-  status: DecisionStatus;
+  query: string;
+  response: string;
   created_at: string;
-  category: string;
-};
-
-const STATUS_STYLES: Record<DecisionStatus, string> = {
-  pending: 'bg-amber-900 text-amber-300',
-  approved: 'bg-green-900 text-green-300',
-  rejected: 'bg-red-900 text-red-300',
-  overridden: 'bg-slate-700 text-slate-300',
-};
-
-function ConfidenceMeter({ value }: { value: number }) {
-  const color = value >= 0.8 ? 'bg-green-500' : value >= 0.5 ? 'bg-amber-500' : 'bg-red-500';
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${value * 100}%` }} />
-      </div>
-      <span className="text-xs text-slate-400 w-10 text-right">{(value * 100).toFixed(0)}%</span>
-    </div>
-  );
 }
 
-export default function AIDecisionPage() {
-  const [activeCategory, setActiveCategory] = useState<string>('all');
+interface QueryPayload {
+  query: string;
+  context?: string;
+}
 
-  const { data, isLoading, isError } = useQuery<AIDecision[]>({
+const API_BASE = (import.meta.env['VITE_API_URL'] as string | undefined) ?? '/v4';
+
+export default function AIDecision() {
+  const [query, setQuery] = useState('');
+  const [context, setContext] = useState('');
+  const [streaming, setStreaming] = useState(false);
+  const [streamedText, setStreamedText] = useState('');
+  const abortRef = useRef<AbortController | null>(null);
+
+  const { data: decisions, isLoading, isError, refetch } = useQuery<PastDecision[]>({
     queryKey: ['ai-decisions'],
     queryFn: async () => {
-      const { data } = await api.get<AIDecision[]>('/ai/decisions');
-      return data;
+      const res = await api.get<PastDecision[]>('/ai/decisions', { params: { limit: 10 } });
+      return res.data;
     },
-    refetchInterval: 60_000,
   });
 
-  const categories = ['all', ...Array.from(new Set(data?.map((d) => d.category) ?? []))];
+  const handleSubmit = useCallback(async () => {
+    if (!query.trim() || streaming) return;
 
-  const filtered = activeCategory === 'all'
-    ? (data ?? [])
-    : (data ?? []).filter((d) => d.category === activeCategory);
+    const token = (await api.get('/auth/me').catch(() => null)) !== null
+      ? undefined
+      : undefined;
+
+    abortRef.current = new AbortController();
+    setStreaming(true);
+    setStreamedText('');
+
+    const payload: QueryPayload = { query: query.trim() };
+    if (context.trim()) payload.context = context.trim();
+
+    try {
+      const authHeader = (() => {
+        try {
+          const raw = localStorage.getItem('sonalit-auth');
+          if (!raw) return '';
+          const parsed = JSON.parse(raw) as { state?: { token?: string } };
+          return parsed.state?.token ? `Bearer ${parsed.state.token}` : '';
+        } catch {
+          return '';
+        }
+      })();
+
+      const response = await fetch(`${API_BASE}/ai/query`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authHeader ? { Authorization: authHeader } : {}),
+        },
+        body: JSON.stringify(payload),
+        signal: abortRef.current.signal,
+      });
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.body) throw new Error('No response body');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const chunk = line.slice(6);
+            if (chunk === '[DONE]') break;
+            try {
+              const parsed = JSON.parse(chunk) as { content?: string };
+              if (parsed.content) {
+                setStreamedText((prev) => prev + parsed.content);
+              }
+            } catch {
+              // plain text chunk
+              setStreamedText((prev) => prev + chunk);
+            }
+          }
+        }
+      }
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name !== 'AbortError') {
+        setStreamedText('Error: failed to get response. Please try again.');
+      }
+    } finally {
+      setStreaming(false);
+      abortRef.current = null;
+      refetch();
+    }
+  }, [query, context, streaming, refetch]);
+
+  const handleStop = () => {
+    abortRef.current?.abort();
+  };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <div className="flex items-center gap-2">
         <Bot size={20} className="text-blue-400" />
-        <h1 className="text-xl font-bold">AI Decisions</h1>
-        {data && <span className="text-sm text-slate-400">{data.filter((d) => d.status === 'pending').length} pending review</span>}
+        <h1 className="text-xl font-bold">AI Decision Support</h1>
       </div>
 
-      {isLoading && <div className="text-slate-400 text-sm py-12 text-center">Loading AI decisions…</div>}
-      {isError && <div className="text-red-400 text-sm py-12 text-center">Failed to load AI decisions.</div>}
+      {/* Query form */}
+      <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-3">
+        <div>
+          <label className="block text-xs text-slate-400 mb-1">Question</label>
+          <textarea
+            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none"
+            rows={3}
+            placeholder="Ask a question about fleet operations, incidents, risk analysis…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            disabled={streaming}
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-slate-400 mb-1">Context (optional)</label>
+          <textarea
+            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none"
+            rows={2}
+            placeholder="Additional context for the query…"
+            value={context}
+            onChange={(e) => setContext(e.target.value)}
+            disabled={streaming}
+          />
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={handleSubmit}
+            disabled={!query.trim() || streaming}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm font-medium"
+          >
+            {streaming ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+            {streaming ? 'Thinking…' : 'Ask AI'}
+          </button>
+          {streaming && (
+            <button
+              onClick={handleStop}
+              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-sm"
+            >
+              Stop
+            </button>
+          )}
+        </div>
+      </div>
 
-      {data && (
-        <>
-          <div className="flex gap-2 flex-wrap">
-            {categories.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setActiveCategory(cat)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${activeCategory === cat ? 'bg-blue-700 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
-              >
-                {cat}
-              </button>
-            ))}
+      {/* Streamed response */}
+      {(streamedText || streaming) && (
+        <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Bot size={16} className="text-blue-400" />
+            <span className="text-xs text-slate-400 uppercase font-medium">AI Response</span>
+            {streaming && <Loader2 size={12} className="animate-spin text-blue-400 ml-1" />}
           </div>
-
-          <div className="space-y-3">
-            {filtered.map((decision) => (
-              <div key={decision.id} className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs text-slate-500 uppercase">{decision.category}</span>
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_STYLES[decision.status]}`}>
-                        {decision.status}
-                      </span>
-                    </div>
-                    <h3 className="font-semibold text-white">{decision.title}</h3>
-                  </div>
-                  <span className="text-xs text-slate-500 shrink-0 ml-4">
-                    {new Date(decision.created_at).toLocaleString()}
-                  </span>
-                </div>
-                <p className="text-sm text-slate-400">{decision.description}</p>
-                <div className="bg-slate-800 rounded-lg p-3 text-sm text-slate-300">
-                  <span className="text-xs text-slate-500 block mb-1">Recommendation</span>
-                  {decision.recommendation}
-                </div>
-                <div>
-                  <span className="text-xs text-slate-500 block mb-1.5">Confidence</span>
-                  <ConfidenceMeter value={decision.confidence} />
-                </div>
-              </div>
-            ))}
-            {filtered.length === 0 && (
-              <div className="text-slate-400 text-sm py-12 text-center">No decisions in this category.</div>
-            )}
-          </div>
-        </>
+          <pre className="text-sm text-slate-100 whitespace-pre-wrap leading-relaxed font-sans">
+            {streamedText}
+            {streaming && <span className="inline-block w-1.5 h-4 bg-blue-400 ml-0.5 animate-pulse align-middle" />}
+          </pre>
+        </div>
       )}
+
+      {/* Past decisions */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <Clock size={16} className="text-slate-400" />
+          <h2 className="text-sm font-semibold text-slate-300">Recent Decisions</h2>
+        </div>
+        {isLoading && <div className="text-slate-400 text-sm">Loading past decisions…</div>}
+        {isError && <div className="text-red-400 text-sm">Failed to load past decisions.</div>}
+        <div className="space-y-3">
+          {decisions?.map((decision) => (
+            <div key={decision.id} className="bg-slate-800 border border-slate-700 rounded-lg p-4">
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <p className="text-sm font-medium text-slate-200">{decision.query}</p>
+                <span className="text-xs text-slate-500 shrink-0">
+                  {new Date(decision.created_at).toLocaleString()}
+                </span>
+              </div>
+              <p className="text-sm text-slate-400 line-clamp-3">{decision.response}</p>
+            </div>
+          ))}
+          {decisions?.length === 0 && (
+            <div className="text-slate-500 text-sm text-center py-4">No past decisions.</div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

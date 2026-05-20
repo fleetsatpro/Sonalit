@@ -1,49 +1,68 @@
 import { useQuery } from '@tanstack/react-query';
-import { BarChart2 } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { api } from '../lib/api.js';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from 'recharts';
+import { BarChart2, AlertTriangle, TrendingUp, Shield, Truck } from 'lucide-react';
 
-type KpiData = {
+interface ExecutiveSummary {
   fleet_utilization_pct: number;
   on_time_delivery_pct: number;
-  avg_fuel_efficiency_lper100km: number;
-  incident_rate_per_100trips: number;
-  revenue_per_vehicle: number;
-  currency: string;
-};
+  safety_score: number;
+  active_incidents: number;
+  weekly_trend: { date: string; utilization: number; on_time: number; safety: number }[];
+  top_alerts: { id: string; title: string; severity: string; created_at: string }[];
+}
 
-type TrendPoint = {
-  date: string;
-  utilization: number;
-  on_time: number;
-};
-
-type ExecutiveData = {
-  kpis: KpiData;
-  trend: TrendPoint[];
-};
-
-function KpiCard({ label, value, unit, target, good }: { label: string; value: number; unit: string; target: number; good: 'high' | 'low' }) {
-  const isGood = good === 'high' ? value >= target : value <= target;
+function KpiCard({
+  label,
+  value,
+  unit,
+  icon,
+  color,
+}: {
+  label: string;
+  value: string | number;
+  unit?: string;
+  icon: React.ReactNode;
+  color: string;
+}) {
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-      <p className="text-slate-400 text-sm">{label}</p>
-      <div className="flex items-baseline gap-1 mt-1">
-        <p className={`text-2xl font-bold ${isGood ? 'text-green-400' : 'text-red-400'}`}>{value.toFixed(1)}</p>
-        <span className="text-slate-500 text-sm">{unit}</span>
+    <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
+      <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${color}`}>
+        {icon}
       </div>
-      <p className="text-xs text-slate-600 mt-1">Target: {target}{unit}</p>
+      <p className="text-xs text-slate-400 mb-1">{label}</p>
+      <p className="text-2xl font-bold">
+        {value}
+        {unit && <span className="text-sm font-normal text-slate-400 ml-1">{unit}</span>}
+      </p>
     </div>
   );
 }
 
-export default function ExecutivePage() {
-  const { data, isLoading, isError } = useQuery<ExecutiveData>({
-    queryKey: ['executive', 'dashboard'],
+const SEVERITY_COLORS: Record<string, string> = {
+  low: 'bg-slate-600 text-slate-200',
+  medium: 'bg-yellow-700 text-yellow-100',
+  high: 'bg-orange-700 text-orange-100',
+  critical: 'bg-red-700 text-red-100',
+};
+
+export default function Executive() {
+  const { data, isLoading, isError } = useQuery<ExecutiveSummary>({
+    queryKey: ['analytics-executive-summary'],
     queryFn: async () => {
-      const { data } = await api.get<ExecutiveData>('/executive/dashboard');
-      return data;
+      const res = await api.get<ExecutiveSummary>('/analytics/executive-summary');
+      return res.data;
     },
+    refetchInterval: 60_000,
   });
 
   return (
@@ -53,32 +72,115 @@ export default function ExecutivePage() {
         <h1 className="text-xl font-bold">Executive Dashboard</h1>
       </div>
 
-      {isLoading && <div className="text-slate-400 text-sm py-12 text-center">Loading executive data…</div>}
-      {isError && <div className="text-red-400 text-sm py-12 text-center">Failed to load executive dashboard.</div>}
+      {isLoading && (
+        <div className="text-slate-400 text-sm py-12 text-center">Loading executive summary…</div>
+      )}
+      {isError && (
+        <div className="text-red-400 text-sm py-12 text-center">Failed to load executive summary.</div>
+      )}
 
       {data && (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-            <KpiCard label="Fleet Utilization" value={data.kpis.fleet_utilization_pct} unit="%" target={80} good="high" />
-            <KpiCard label="On-Time Delivery" value={data.kpis.on_time_delivery_pct} unit="%" target={90} good="high" />
-            <KpiCard label="Fuel Efficiency" value={data.kpis.avg_fuel_efficiency_lper100km} unit="L/100km" target={12} good="low" />
-            <KpiCard label="Incident Rate" value={data.kpis.incident_rate_per_100trips} unit="/100 trips" target={2} good="low" />
-            <KpiCard label={`Rev/Vehicle (${data.kpis.currency})`} value={data.kpis.revenue_per_vehicle} unit="" target={5000} good="high" />
+          {/* KPI Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <KpiCard
+              label="Fleet Utilization"
+              value={data.fleet_utilization_pct.toFixed(1)}
+              unit="%"
+              icon={<Truck size={20} />}
+              color="bg-blue-900 text-blue-400"
+            />
+            <KpiCard
+              label="On-Time Delivery"
+              value={data.on_time_delivery_pct.toFixed(1)}
+              unit="%"
+              icon={<TrendingUp size={20} />}
+              color="bg-green-900 text-green-400"
+            />
+            <KpiCard
+              label="Safety Score"
+              value={data.safety_score.toFixed(1)}
+              unit="/100"
+              icon={<Shield size={20} />}
+              color="bg-purple-900 text-purple-400"
+            />
+            <KpiCard
+              label="Active Incidents"
+              value={data.active_incidents}
+              icon={<AlertTriangle size={20} />}
+              color={data.active_incidents > 0 ? 'bg-red-900 text-red-400' : 'bg-slate-700 text-slate-400'}
+            />
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-            <h2 className="text-base font-semibold mb-4">30-Day Performance Trend</h2>
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={data.trend} margin={{ top: 4, right: 16, bottom: 4, left: 4 }}>
+          {/* Weekly Trend */}
+          <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
+            <h2 className="text-sm font-semibold text-slate-300 mb-4">Weekly Performance Trends</h2>
+            <ResponsiveContainer width="100%" height={240}>
+              <LineChart data={data.weekly_trend}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 11 }} />
-                <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} domain={[0, 100]} unit="%" />
-                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 8 }} />
-                <Legend />
-                <Line type="monotone" dataKey="utilization" name="Utilization %" stroke="#60a5fa" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="on_time" name="On-Time %" stroke="#34d399" strokeWidth={2} dot={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#94a3b8' }} />
+                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} domain={[0, 100]} unit="%" />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 6 }}
+                  labelStyle={{ color: '#e2e8f0' }}
+                />
+                <Legend wrapperStyle={{ fontSize: 12, color: '#94a3b8' }} />
+                <Line
+                  type="monotone"
+                  dataKey="utilization"
+                  stroke="#3b82f6"
+                  strokeWidth={2}
+                  dot={false}
+                  name="Fleet Utilization %"
+                />
+                <Line
+                  type="monotone"
+                  dataKey="on_time"
+                  stroke="#22c55e"
+                  strokeWidth={2}
+                  dot={false}
+                  name="On-Time Delivery %"
+                />
+                <Line
+                  type="monotone"
+                  dataKey="safety"
+                  stroke="#a855f7"
+                  strokeWidth={2}
+                  dot={false}
+                  name="Safety Score"
+                />
               </LineChart>
             </ResponsiveContainer>
+          </div>
+
+          {/* Top Alerts */}
+          <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
+            <h2 className="text-sm font-semibold text-slate-300 mb-3">Top 5 Alerts This Week</h2>
+            {data.top_alerts.length === 0 ? (
+              <p className="text-slate-500 text-sm">No alerts this week.</p>
+            ) : (
+              <div className="space-y-2">
+                {data.top_alerts.slice(0, 5).map((alert) => (
+                  <div
+                    key={alert.id}
+                    className="flex items-center justify-between py-2 border-b border-slate-700 last:border-0"
+                  >
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle size={14} className="text-orange-400 shrink-0" />
+                      <span className="text-sm">{alert.title}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${SEVERITY_COLORS[alert.severity] ?? 'bg-slate-600 text-slate-200'}`}>
+                        {alert.severity}
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        {new Date(alert.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </>
       )}

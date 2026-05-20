@@ -1,170 +1,384 @@
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { useMutation } from '@tanstack/react-query';
-import { Settings } from 'lucide-react';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../stores/auth.js';
-import { useUIStore } from '../stores/ui.js';
+import { Settings as SettingsIcon, Key, Shield, Copy, Trash2, Plus, X } from 'lucide-react';
 
-const profileSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
-  email: z.string().email('Invalid email'),
-});
+interface ApiKey {
+  id: string;
+  name: string;
+  scopes: string[];
+  expires_at: string | null;
+  created_at: string;
+  key_preview: string;
+}
 
-const passwordSchema = z.object({
-  current_password: z.string().min(1, 'Required'),
-  new_password: z.string().min(8, 'Minimum 8 characters'),
-  confirm_password: z.string().min(1, 'Required'),
-}).refine((d) => d.new_password === d.confirm_password, {
-  message: 'Passwords do not match',
-  path: ['confirm_password'],
-});
+interface TotpSetup {
+  qr_url: string;
+  secret: string;
+}
 
-type ProfileForm = z.infer<typeof profileSchema>;
-type PasswordForm = z.infer<typeof passwordSchema>;
+interface UpdateNamePayload {
+  name: string;
+}
 
-function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+interface ChangePasswordPayload {
+  old_password: string;
+  new_password: string;
+  confirm: string;
+}
+
+interface CreateApiKeyPayload {
+  name: string;
+  scopes: string[];
+  expires_at: string;
+}
+
+const AVAILABLE_SCOPES = ['read:fleet', 'write:fleet', 'read:incidents', 'write:incidents', 'read:reports', 'admin'];
+
+const INPUT_CLS = 'w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500';
+
+function SectionCard({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
-      <h2 className="font-semibold text-white">{title}</h2>
+    <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-4">
+      <div className="flex items-center gap-2 border-b border-slate-700 pb-3">
+        {icon}
+        <h2 className="font-semibold">{title}</h2>
+      </div>
       {children}
     </div>
   );
 }
 
-const INPUT_CLS = 'w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+function ProfileSection() {
+  const user = useAuthStore((s) => s.user);
+  const setAuth = useAuthStore((s) => s.setAuth);
+  const token = useAuthStore((s) => s.token);
+  const [name, setName] = useState(user?.name ?? '');
+  const [success, setSuccess] = useState(false);
 
-export default function SettingsPage() {
-  const { user } = useAuthStore();
-  const { theme, setTheme } = useUIStore();
-
-  const profileForm = useForm<ProfileForm>({
-    resolver: zodResolver(profileSchema),
-    values: user ? { name: user.name, email: user.email } : undefined,
-  });
-
-  const passwordForm = useForm<PasswordForm>({
-    resolver: zodResolver(passwordSchema),
-  });
-
-  const profileMutation = useMutation({
-    mutationFn: (data: ProfileForm) => api.patch('/auth/profile', data),
-    onSuccess: () => {
-      profileForm.reset(profileForm.getValues());
-    },
-    onError: () => {
-      profileForm.setError('root', { message: 'Failed to update profile.' });
-    },
-  });
-
-  const passwordMutation = useMutation({
-    mutationFn: (data: PasswordForm) => api.post('/auth/change-password', data),
-    onSuccess: () => {
-      passwordForm.reset();
-    },
-    onError: () => {
-      passwordForm.setError('root', { message: 'Failed to change password. Check your current password.' });
+  const mutation = useMutation({
+    mutationFn: (payload: UpdateNamePayload) =>
+      api.patch<typeof user>('/auth/me', payload),
+    onSuccess: (res) => {
+      if (res.data && token) setAuth(token, res.data);
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
     },
   });
 
   return (
+    <SectionCard title="Profile" icon={<SettingsIcon size={16} className="text-blue-400" />}>
+      <div className="space-y-3">
+        <div>
+          <label className="block text-xs text-slate-400 mb-1">Name</label>
+          <input
+            className={INPUT_CLS}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-slate-400 mb-1">Email (read-only)</label>
+          <input className={`${INPUT_CLS} opacity-50 cursor-not-allowed`} value={user?.email ?? ''} readOnly />
+        </div>
+        <div>
+          <label className="block text-xs text-slate-400 mb-1">Role</label>
+          <span className="inline-block px-2 py-0.5 bg-blue-800 text-blue-200 rounded text-xs font-medium">
+            {user?.role ?? '—'}
+          </span>
+        </div>
+        {mutation.isError && <p className="text-red-400 text-xs">Failed to update profile.</p>}
+        {success && <p className="text-green-400 text-xs">Profile updated.</p>}
+        <button
+          onClick={() => mutation.mutate({ name })}
+          disabled={mutation.isPending || !name.trim()}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm font-medium"
+        >
+          {mutation.isPending ? 'Saving…' : 'Save Profile'}
+        </button>
+      </div>
+    </SectionCard>
+  );
+}
+
+function ChangePasswordSection() {
+  const [form, setForm] = useState<ChangePasswordPayload>({ old_password: '', new_password: '', confirm: '' });
+  const [success, setSuccess] = useState(false);
+
+  const mutation = useMutation({
+    mutationFn: (payload: ChangePasswordPayload) =>
+      api.post('/auth/change-password', {
+        old_password: payload.old_password,
+        new_password: payload.new_password,
+      }),
+    onSuccess: () => {
+      setForm({ old_password: '', new_password: '', confirm: '' });
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    },
+  });
+
+  const mismatch = form.confirm.length > 0 && form.confirm !== form.new_password;
+
+  return (
+    <SectionCard title="Change Password" icon={<Shield size={16} className="text-blue-400" />}>
+      <div className="space-y-3">
+        {(['old_password', 'new_password', 'confirm'] as const).map((field) => (
+          <div key={field}>
+            <label className="block text-xs text-slate-400 mb-1 capitalize">
+              {field.replace(/_/g, ' ')}
+            </label>
+            <input
+              type="password"
+              className={INPUT_CLS}
+              value={form[field]}
+              onChange={(e) => setForm((f) => ({ ...f, [field]: e.target.value }))}
+            />
+          </div>
+        ))}
+        {mismatch && <p className="text-red-400 text-xs">Passwords do not match.</p>}
+        {mutation.isError && <p className="text-red-400 text-xs">Failed to change password.</p>}
+        {success && <p className="text-green-400 text-xs">Password changed successfully.</p>}
+        <button
+          onClick={() => mutation.mutate(form)}
+          disabled={mutation.isPending || mismatch || !form.old_password || !form.new_password}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm font-medium"
+        >
+          {mutation.isPending ? 'Updating…' : 'Change Password'}
+        </button>
+      </div>
+    </SectionCard>
+  );
+}
+
+function ApiKeysSection() {
+  const queryClient = useQueryClient();
+  const [showCreate, setShowCreate] = useState(false);
+  const [newKey, setNewKey] = useState<CreateApiKeyPayload>({ name: '', scopes: [], expires_at: '' });
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const { data: keys, isLoading } = useQuery<ApiKey[]>({
+    queryKey: ['api-keys'],
+    queryFn: async () => {
+      const res = await api.get<ApiKey[]>('/auth/api-keys');
+      return res.data;
+    },
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (payload: CreateApiKeyPayload) =>
+      api.post('/auth/api-keys', payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['api-keys'] });
+      setShowCreate(false);
+      setNewKey({ name: '', scopes: [], expires_at: '' });
+    },
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/auth/api-keys/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['api-keys'] }),
+  });
+
+  const toggleScope = (scope: string) => {
+    setNewKey((f) => ({
+      ...f,
+      scopes: f.scopes.includes(scope)
+        ? f.scopes.filter((s) => s !== scope)
+        : [...f.scopes, scope],
+    }));
+  };
+
+  const copyKey = (preview: string, id: string) => {
+    navigator.clipboard.writeText(preview).catch(() => null);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  return (
+    <SectionCard title="API Keys" icon={<Key size={16} className="text-blue-400" />}>
+      <div className="space-y-3">
+        {isLoading && <p className="text-slate-400 text-sm">Loading…</p>}
+        {keys?.map((k) => (
+          <div key={k.id} className="flex items-center justify-between bg-slate-900 rounded p-3">
+            <div>
+              <p className="text-sm font-medium">{k.name}</p>
+              <p className="text-xs font-mono text-slate-500">{k.key_preview}</p>
+              <div className="flex gap-1 flex-wrap mt-1">
+                {k.scopes.map((s) => (
+                  <span key={s} className="px-1.5 py-0.5 bg-slate-700 rounded text-xs text-slate-300">{s}</span>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-2 ml-3">
+              <button
+                onClick={() => copyKey(k.key_preview, k.id)}
+                className="p-1.5 text-slate-400 hover:text-white"
+                title="Copy"
+              >
+                <Copy size={14} />
+                {copiedId === k.id && <span className="sr-only">Copied!</span>}
+              </button>
+              <button
+                onClick={() => revokeMutation.mutate(k.id)}
+                disabled={revokeMutation.isPending}
+                className="p-1.5 text-slate-400 hover:text-red-400 disabled:opacity-50"
+                title="Revoke"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          </div>
+        ))}
+        {keys?.length === 0 && <p className="text-slate-500 text-sm">No API keys.</p>}
+
+        {showCreate ? (
+          <div className="bg-slate-900 rounded p-3 space-y-3">
+            <div className="flex justify-between">
+              <span className="text-sm font-medium">New API Key</span>
+              <button onClick={() => setShowCreate(false)}><X size={14} /></button>
+            </div>
+            <input
+              className={INPUT_CLS}
+              placeholder="Key name"
+              value={newKey.name}
+              onChange={(e) => setNewKey((f) => ({ ...f, name: e.target.value }))}
+            />
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Scopes</label>
+              <div className="flex flex-wrap gap-2">
+                {AVAILABLE_SCOPES.map((scope) => (
+                  <label key={scope} className="flex items-center gap-1 text-xs text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newKey.scopes.includes(scope)}
+                      onChange={() => toggleScope(scope)}
+                      className="w-3 h-3"
+                    />
+                    {scope}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Expiry (optional)</label>
+              <input
+                type="date"
+                className={INPUT_CLS}
+                value={newKey.expires_at}
+                onChange={(e) => setNewKey((f) => ({ ...f, expires_at: e.target.value }))}
+              />
+            </div>
+            {createMutation.isError && <p className="text-red-400 text-xs">Failed to create key.</p>}
+            <button
+              onClick={() => createMutation.mutate(newKey)}
+              disabled={createMutation.isPending || !newKey.name}
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm"
+            >
+              {createMutation.isPending ? 'Creating…' : 'Create Key'}
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-1 text-sm text-blue-400 hover:text-blue-300"
+          >
+            <Plus size={14} /> New API Key
+          </button>
+        )}
+      </div>
+    </SectionCard>
+  );
+}
+
+function TotpSection() {
+  const [showSetup, setShowSetup] = useState(false);
+  const [totpCode, setTotpCode] = useState('');
+  const [verified, setVerified] = useState(false);
+
+  const { data: setup, isLoading } = useQuery<TotpSetup>({
+    queryKey: ['totp-setup'],
+    queryFn: async () => {
+      const res = await api.get<TotpSetup>('/auth/totp/setup');
+      return res.data;
+    },
+    enabled: showSetup,
+  });
+
+  const verifyMutation = useMutation({
+    mutationFn: (code: string) => api.post('/auth/totp/verify', { code }),
+    onSuccess: () => {
+      setVerified(true);
+      setShowSetup(false);
+    },
+  });
+
+  return (
+    <SectionCard title="Two-Factor Authentication (TOTP)" icon={<Shield size={16} className="text-blue-400" />}>
+      {!showSetup ? (
+        <div>
+          {verified && <p className="text-green-400 text-sm mb-2">TOTP enabled successfully.</p>}
+          <button
+            onClick={() => setShowSetup(true)}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium"
+          >
+            Set Up Authenticator
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {isLoading && <p className="text-slate-400 text-sm">Loading QR code…</p>}
+          {setup && (
+            <>
+              <p className="text-xs text-slate-400">Scan this QR code with your authenticator app:</p>
+              <img src={setup.qr_url} alt="TOTP QR Code" className="w-40 h-40 bg-white rounded p-1" />
+              <p className="text-xs text-slate-500 font-mono break-all">Secret: {setup.secret}</p>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Enter verification code</label>
+                <input
+                  className={INPUT_CLS}
+                  placeholder="123456"
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value)}
+                  maxLength={6}
+                />
+              </div>
+              {verifyMutation.isError && <p className="text-red-400 text-xs">Invalid code. Try again.</p>}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => verifyMutation.mutate(totpCode)}
+                  disabled={verifyMutation.isPending || totpCode.length !== 6}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm font-medium"
+                >
+                  {verifyMutation.isPending ? 'Verifying…' : 'Verify'}
+                </button>
+                <button
+                  onClick={() => setShowSetup(false)}
+                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded text-sm"
+                >
+                  Cancel
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+export default function Settings() {
+  return (
     <div className="space-y-6 max-w-2xl">
       <div className="flex items-center gap-2">
-        <Settings size={20} className="text-blue-400" />
+        <SettingsIcon size={20} className="text-blue-400" />
         <h1 className="text-xl font-bold">Settings</h1>
       </div>
-
-      <SectionCard title="Profile">
-        <form
-          onSubmit={profileForm.handleSubmit((v) => profileMutation.mutate(v))}
-          className="space-y-4"
-        >
-          {profileForm.formState.errors.root && (
-            <p className="text-red-400 text-sm">{profileForm.formState.errors.root.message}</p>
-          )}
-          {profileMutation.isSuccess && (
-            <p className="text-green-400 text-sm">Profile updated successfully.</p>
-          )}
-          <div className="space-y-1">
-            <label className="block text-sm text-slate-300">Name</label>
-            <input {...profileForm.register('name')} className={INPUT_CLS} />
-            {profileForm.formState.errors.name && (
-              <p className="text-red-400 text-xs">{profileForm.formState.errors.name.message}</p>
-            )}
-          </div>
-          <div className="space-y-1">
-            <label className="block text-sm text-slate-300">Email</label>
-            <input type="email" {...profileForm.register('email')} className={INPUT_CLS} />
-            {profileForm.formState.errors.email && (
-              <p className="text-red-400 text-xs">{profileForm.formState.errors.email.message}</p>
-            )}
-          </div>
-          <div className="space-y-1">
-            <label className="block text-sm text-slate-300">Role</label>
-            <input value={user?.role ?? ''} disabled className={`${INPUT_CLS} opacity-50 cursor-not-allowed`} readOnly />
-          </div>
-          <button
-            type="submit"
-            disabled={profileMutation.isPending}
-            className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
-          >
-            {profileMutation.isPending ? 'Saving…' : 'Save Profile'}
-          </button>
-        </form>
-      </SectionCard>
-
-      <SectionCard title="Change Password">
-        <form
-          onSubmit={passwordForm.handleSubmit((v) => passwordMutation.mutate(v))}
-          className="space-y-4"
-        >
-          {passwordForm.formState.errors.root && (
-            <p className="text-red-400 text-sm">{passwordForm.formState.errors.root.message}</p>
-          )}
-          {passwordMutation.isSuccess && (
-            <p className="text-green-400 text-sm">Password changed successfully.</p>
-          )}
-          {(['current_password', 'new_password', 'confirm_password'] as const).map((field) => (
-            <div key={field} className="space-y-1">
-              <label className="block text-sm text-slate-300 capitalize">
-                {field.replace(/_/g, ' ')}
-              </label>
-              <input type="password" {...passwordForm.register(field)} className={INPUT_CLS} />
-              {passwordForm.formState.errors[field] && (
-                <p className="text-red-400 text-xs">{passwordForm.formState.errors[field]?.message}</p>
-              )}
-            </div>
-          ))}
-          <button
-            type="submit"
-            disabled={passwordMutation.isPending}
-            className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
-          >
-            {passwordMutation.isPending ? 'Updating…' : 'Update Password'}
-          </button>
-        </form>
-      </SectionCard>
-
-      <SectionCard title="Appearance">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-white">Theme</p>
-            <p className="text-xs text-slate-400">Choose between dark and light mode</p>
-          </div>
-          <div className="flex gap-2">
-            {(['dark', 'light'] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTheme(t)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-colors ${theme === t ? 'bg-blue-700 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-        </div>
-      </SectionCard>
+      <ProfileSection />
+      <ChangePasswordSection />
+      <ApiKeysSection />
+      <TotpSection />
     </div>
   );
 }
