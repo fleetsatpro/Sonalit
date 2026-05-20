@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { UuidSchema, IsoDateTimeSchema, TimestampsSchema } from './common.js';
+import { UuidSchema, TimestampsSchema } from './common.js';
 
 // ---------------------------------------------------------------------------
 // Enums
