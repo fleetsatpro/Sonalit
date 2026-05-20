@@ -1,0 +1,16 @@
+apiVersion: v2
+name: media-svc
+description: Sonalit v4 Media Service — photo/video upload and delivery via Cloudflare R2
+type: application
+version: 4.0.0
+appVersion: "4.0.0"
+dependencies:
+  - name: sonalit-base
+    version: "4.0.0"
+    repository: "file://../_base"
+keywords:
+  - sonalit
+  - media
+  - microservice
+maintainers:
+  - name: FleetSat Engineering

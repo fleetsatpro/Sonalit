@@ -1,9 +1,91 @@
-.vercel
-.env*.local
-backend/.env
-**/.env
-guardian-agent/.gradle/
+# Dependencies
 node_modules/
 **/node_modules/
+.pnpm-store/
+.pnpm-debug.log*
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.*
+**/.env
+.env*.local
+!.env.example
+!.env.test.example
+
+# Secrets (never commit)
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+vault-token
+kubeconfig
+.aws/
+.gcloud/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.iml
+.vscode/
+!.vscode/extensions.json
+*.swp
+*.swo
+
+# Test coverage & artifacts
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+
+# Android
+*.apk
+*.aab
+*.aar
+*.class
+*.dex
+local.properties
+.gradle/
+guardian-agent/.gradle/
+guardian-android/build/
+guardian-android/**/.cxx/
+
+# Terraform
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.backup
+infra/terraform/.terraform.lock.hcl
+
+# Helm
+infra/helm/**/charts/
+infra/helm/**/Chart.lock
+
+# Temporary
+tmp/
+temp/
+*.tmp
+*.bak
+
+# Deployment packages
 *.deb
+.vercel
 .claude-flow/
+
+# Legacy backend
+backend/.env

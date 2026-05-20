@@ -1,0 +1,13 @@
+apiVersion: v2
+name: sonalit-base
+description: Sonalit v4 shared Helm base chart — all services extend this
+type: library
+version: 4.0.0
+appVersion: "4.0.0"
+keywords:
+  - sonalit
+  - fleet
+  - microservice
+  - base
+maintainers:
+  - name: FleetSat Engineering

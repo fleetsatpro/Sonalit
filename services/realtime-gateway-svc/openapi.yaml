@@ -1,0 +1,278 @@
+openapi: 3.1.0
+info:
+  title: Sonalit Realtime Gateway Service
+  version: 4.0.0
+  description: >
+    Realtime WebSocket gateway service for Sonalit v4. Issues Centrifugo connect
+    JWTs for authenticated operators and devices, enabling live GPS tracking,
+    alert notifications, and command delivery over persistent WebSocket connections.
+  contact:
+    name: Sonalit Platform Team
+    email: platform@sonalit.io
+
+servers:
+  - url: https://api.sonalit.io
+    description: Production
+  - url: https://staging-api.sonalit.io
+    description: Staging
+
+tags:
+  - name: Connect
+    description: Centrifugo connection token issuance
+  - name: Health
+    description: Service health and metrics
+
+paths:
+  /v4/realtime/connect-token:
+    post:
+      operationId: issueConnectToken
+      tags: [Connect]
+      summary: Issue a Centrifugo connection JWT
+      description: >
+        Generates a signed Centrifugo connect JWT for the given user/org identity.
+        The client uses this token to establish a WebSocket connection to the
+        Centrifugo server. Tokens are short-lived (TTL configured per environment)
+        and scoped to the organization's channels.
+      security:
+        - BearerAuth: []
+      x-ratelimit-limit: 60
+      x-ratelimit-window: 60s
+      x-ratelimit-scope: user
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectTokenRequest'
+            example:
+              user_id: usr_01HZ2K9VBGJXYZ
+              org_id: org_01HZ2K9VBGJXYZ
+      responses:
+        '200':
+          description: Centrifugo connect JWT issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectTokenResponse'
+              example:
+                token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c3JfMDFIWjJLOVZCR0pYWVoiLCJleHAiOjE3MTcyNTU0MDB9.abc123
+                expires_in: 300
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Caller's user_id or org_id does not match JWT claims
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: FORBIDDEN
+                message: Requested user_id does not match authenticated principal
+                request_id: req_abc123
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /healthz/live:
+    get:
+      operationId: healthLive
+      tags: [Health]
+      summary: Liveness probe
+      security: []
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              example:
+                status: ok
+
+  /healthz/ready:
+    get:
+      operationId: healthReady
+      tags: [Health]
+      summary: Readiness probe
+      security: []
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              example:
+                status: ok
+        '503':
+          description: Service not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+              example:
+                status: degraded
+
+  /metrics:
+    get:
+      operationId: metrics
+      tags: [Health]
+      summary: Prometheus metrics
+      security: []
+      responses:
+        '200':
+          description: Prometheus metrics text
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: RS256-signed JWT issued by auth-svc.
+    DeviceToken:
+      type: apiKey
+      in: header
+      name: X-Device-Token
+      description: Device token issued at enrollment.
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+      description: Client-generated unique key to ensure idempotent processing.
+      example: 550e8400-e29b-41d4-a716-446655440000
+
+  schemas:
+    Error:
+      type: object
+      required: [code, message, request_id]
+      properties:
+        code:
+          type: string
+          example: UNAUTHORIZED
+        message:
+          type: string
+          example: Authentication token is missing or invalid
+        request_id:
+          type: string
+          example: req_abc123
+
+    Pagination:
+      type: object
+      required: [cursor, limit]
+      properties:
+        cursor:
+          type: [string, 'null']
+          example: eyJpZCI6IjAxSFoyS
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+          example: 50
+        total:
+          type: [integer, 'null']
+          example: null
+
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, error]
+
+    ConnectTokenRequest:
+      type: object
+      required: [user_id, org_id]
+      properties:
+        user_id:
+          type: string
+          description: The authenticated user's identifier
+          example: usr_01HZ2K9VBGJXYZ
+        org_id:
+          type: string
+          description: The organization identifier whose channels to subscribe
+          example: org_01HZ2K9VBGJXYZ
+
+    ConnectTokenResponse:
+      type: object
+      required: [token, expires_in]
+      properties:
+        token:
+          type: string
+          description: Centrifugo connect JWT — pass to centrifuge.connect()
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        expires_in:
+          type: integer
+          description: Token lifetime in seconds
+          example: 300
+
+  responses:
+    BadRequest:
+      description: Invalid request body or parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: BAD_REQUEST
+            message: Request validation failed
+            request_id: req_abc123
+
+    Unauthorized:
+      description: Missing or invalid authentication token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: UNAUTHORIZED
+            message: Authentication token is missing or invalid
+            request_id: req_abc123
+
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: RATE_LIMITED
+            message: Too many requests. Please retry after the indicated period.
+            request_id: req_abc123
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: INTERNAL_ERROR
+            message: An unexpected error occurred
+            request_id: req_abc123

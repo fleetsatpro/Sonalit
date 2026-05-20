@@ -71,6 +71,107 @@
             app:cornerRadius="8dp" />
     </LinearLayout>
 
+    <!-- CFO Login state -->
+    <ScrollView
+        android:id="@+id/layoutCfoLogin"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:paddingHorizontal="32dp"
+            android:paddingVertical="48dp">
+
+            <ImageView
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:src="@drawable/ic_shield"
+                android:tint="@color/gold"
+                android:layout_marginBottom="16dp"
+                android:contentDescription="CFO Login" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="CFO ACCOUNT LOGIN"
+                android:textColor="@color/bright"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.1"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Sign in with your Sonalit CFO credentials to sync your convoy assignments."
+                android:textColor="@color/muted"
+                android:textSize="12sp"
+                android:textAlignment="center"
+                android:lineSpacingMultiplier="1.4"
+                android:layout_marginBottom="28dp" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Email address"
+                android:layout_marginBottom="12dp"
+                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etCfoEmail"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="textEmailAddress"
+                    android:imeOptions="actionNext"
+                    android:textColor="@color/bright" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Password"
+                android:layout_marginBottom="8dp"
+                app:endIconMode="password_toggle"
+                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/etCfoPassword"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="textPassword"
+                    android:imeOptions="actionDone"
+                    android:textColor="@color/bright" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <TextView
+                android:id="@+id/tvCfoLoginError"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/danger"
+                android:textSize="12sp"
+                android:textAlignment="center"
+                android:layout_marginBottom="12dp"
+                android:visibility="gone" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCfoLogin"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:text="SIGN IN"
+                android:textSize="13sp"
+                android:letterSpacing="0.1"
+                android:backgroundTint="@color/cyan"
+                android:textColor="@color/navy_950"
+                app:cornerRadius="8dp" />
+
+        </LinearLayout>
+    </ScrollView>
+
     <!-- Content -->
     <LinearLayout
         android:id="@+id/layoutContent"
@@ -78,6 +179,51 @@
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:visibility="gone">
+
+        <!-- Logged-in CFO user banner -->
+        <LinearLayout
+            android:id="@+id/layoutCfoUser"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="20dp"
+            android:paddingVertical="8dp"
+            android:background="@color/navy_900"
+            android:visibility="gone">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:src="@drawable/ic_shield"
+                android:tint="@color/cyan"
+                android:layout_marginEnd="8dp"
+                android:contentDescription="Logged in user" />
+
+            <TextView
+                android:id="@+id/tvCfoUserName"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textColor="@color/bright"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:ellipsize="end"
+                android:maxLines="1" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnSwitchAccount"
+                android:layout_width="wrap_content"
+                android:layout_height="28dp"
+                android:text="SWITCH"
+                android:textSize="10sp"
+                android:letterSpacing="0.08"
+                android:backgroundTint="@color/navy_800"
+                android:textColor="@color/muted"
+                app:strokeColor="@color/surface_border"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                app:cornerRadius="6dp" />
+        </LinearLayout>
 
         <!-- Convoy header card -->
         <LinearLayout

@@ -1,0 +1,44 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "fleet": "Fleet",
+    "gps": "GPS Live",
+    "drivers": "Drivers",
+    "convoys": "Convoys",
+    "alerts": "Alerts",
+    "incidents": "Incidents",
+    "messages": "Messages",
+    "analytics": "Analytics",
+    "reports": "Reports",
+    "shipments": "Shipments",
+    "finance": "Finance",
+    "maintenance": "Maintenance",
+    "geofences": "Geofences",
+    "riskIntel": "Risk Intel",
+    "rules": "Rules",
+    "settings": "Settings"
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "An error occurred",
+    "noData": "No data",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "search": "Search",
+    "filter": "Filter",
+    "refresh": "Refresh",
+    "export": "Export"
+  },
+  "auth": {
+    "login": "Sign in",
+    "loginWithPasskey": "Sign in with Passkey",
+    "loginWithPassword": "Sign in with password",
+    "email": "Email",
+    "password": "Password",
+    "logout": "Sign out",
+    "unauthorized": "Session expired. Please sign in again."
+  }
+}

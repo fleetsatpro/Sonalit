@@ -1,0 +1,47 @@
+{
+  "name": "@sonalit/contracts",
+  "version": "4.0.0",
+  "private": true,
+  "description": "Sonalit v4 — Shared zod schemas, TypeScript types, and AsyncAPI specs for all services",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts",
+      "source": "./src/index.ts"
+    },
+    "./schemas/*": {
+      "import": "./dist/schemas/*.js",
+      "types": "./dist/schemas/*.d.ts",
+      "source": "./src/schemas/*.ts"
+    },
+    "./events/*": {
+      "import": "./dist/events/*.js",
+      "types": "./dist/events/*.d.ts",
+      "source": "./src/events/*.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "test:unit": "vitest run src",
+    "lint": "eslint src --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "generate:kotlin": "tsx scripts/generate-kotlin.ts",
+    "generate:openapi": "tsx scripts/generate-openapi.ts"
+  },
+  "dependencies": {
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@sonalit/eslint-config": "workspace:*",
+    "@sonalit/tsconfig-base": "workspace:*",
+    "@types/node": "^22.10.7",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
