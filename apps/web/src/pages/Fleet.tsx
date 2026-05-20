@@ -189,7 +189,7 @@ export default function Fleet(): React.ReactElement {
 
   const nextStatus = (current: VehicleStatus): VehicleStatus => {
     const cycle: VehicleStatus[] = ['active', 'inactive', 'maintenance'];
-    return cycle[(cycle.indexOf(current) + 1) % cycle.length];
+    return cycle[(cycle.indexOf(current) + 1) % cycle.length]!;
   };
 
   const totalPages = data ? Math.ceil(data.meta.total / PAGE_SIZE) : 1;

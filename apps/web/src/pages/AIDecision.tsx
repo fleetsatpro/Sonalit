@@ -35,10 +35,6 @@ export default function AIDecision() {
   const handleSubmit = useCallback(async () => {
     if (!query.trim() || streaming) return;
 
-    const token = (await api.get('/auth/me').catch(() => null)) !== null
-      ? undefined
-      : undefined;
-
     abortRef.current = new AbortController();
     setStreaming(true);
     setStreamedText('');
