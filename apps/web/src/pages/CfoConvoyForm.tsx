@@ -1,5 +1,5 @@
 import React from 'react';
-import { useForm, Controller, type SubmitHandler } from 'react-hook-form';
+import { useForm, Controller, type SubmitHandler, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useNavigate, useParams } from '@tanstack/react-router';
@@ -135,20 +135,22 @@ export default function CfoConvoyForm(): React.ReactElement {
     setError,
     formState: { errors },
   } = useForm<ConvoyForm>({
-    resolver: zodResolver(convoyFormSchema),
+    resolver: zodResolver(convoyFormSchema) as Resolver<ConvoyForm>,
     defaultValues: { seal_count_per_truck: 0, vehicle_ids: [] as string[], driver_ids: [] as string[] },
-    values: existing
+    ...(existing
       ? {
-          name: existing.name,
-          timezone: existing.timezone,
-          start_date: existing.start_date,
-          end_date: existing.end_date,
-          seal_count_per_truck: existing.seal_count_per_truck,
-          vehicle_ids: [] as string[],
-          driver_ids: [] as string[],
-          notes: '' as string | undefined,
+          values: {
+            name: existing.name,
+            timezone: existing.timezone,
+            start_date: existing.start_date,
+            end_date: existing.end_date,
+            seal_count_per_truck: existing.seal_count_per_truck,
+            vehicle_ids: [] as string[],
+            driver_ids: [] as string[],
+            notes: '' as string | undefined,
+          },
         }
-      : undefined,
+      : {}),
   });
 
   const mutation = useMutation<Convoy, Error, ConvoyForm>({
