@@ -24,7 +24,7 @@ function toBase62(bytes: Buffer): string {
 function generateApiKey(): { raw: string; prefix: string } {
   const bytes = randomBytes(32);
   const b62 = toBase62(bytes);
-  const raw = `sk_live_${b62}`;
+  const raw = `snlt_live_${b62}`;
   const prefix = raw.slice(0, 8);
   return { raw, prefix };
 }
