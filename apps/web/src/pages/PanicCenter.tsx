@@ -3,7 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import { subscribe } from '../lib/centrifuge.js';
 import { useAuthStore } from '../stores/auth.js';
-import Map, { Marker } from 'react-map-gl';
+import Map, { Marker } from 'react-map-gl/maplibre';
 import { AlertOctagon, MapPin, Send } from 'lucide-react';
 
 interface PanicEvent {

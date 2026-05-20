@@ -1,5 +1,6 @@
-import type { FastifyRequest, FastifyReply } from 'fastify';
+import { createHash } from 'node:crypto';
 import { verify } from '@node-rs/argon2';
+import type { FastifyRequest, FastifyReply } from 'fastify';
 import { query } from '../db.js';
 import { config } from '../config.js';
 
@@ -39,51 +40,57 @@ export async function deviceAuthHook(
     return;
   }
 
+  // O(1) indexed lookup via SHA-256 fast hash — avoids scanning all devices.
+  const lookupHash = createHash('sha256').update(token).digest('hex');
+
   const devices = await query<GuardianDeviceRow>(
     `SELECT id, org_id, status, assignment_type, assignment_id, token_hash, integrity_checked_at
      FROM guardian_devices
-     WHERE deleted_at IS NULL
-     ORDER BY created_at DESC
-     LIMIT 100`,
+     WHERE token_lookup_hash = $1 AND deleted_at IS NULL
+     LIMIT 1`,
+    [lookupHash],
   );
 
-  let matched: GuardianDeviceRow | null = null;
-  for (const device of devices) {
-    try {
-      const ok = await verify(device.token_hash, token);
-      if (ok) {
-        matched = device;
-        break;
-      }
-    } catch {
-      // continue to next device
-    }
-  }
-
-  if (!matched) {
+  const candidate = devices[0];
+  if (!candidate) {
     await reply.status(401).send({ code: 'AUTH_REQUIRED', message: 'Invalid device token' });
     return;
   }
 
-  if (matched.status === 'revoked' || matched.status === 'suspended') {
+  // Verify the full argon2id hash for the single matched candidate.
+  let tokenValid = false;
+  try {
+    tokenValid = await verify(candidate.token_hash, token);
+  } catch {
+    // argon2 error counts as invalid
+  }
+
+  if (!tokenValid) {
+    await reply.status(401).send({ code: 'AUTH_REQUIRED', message: 'Invalid device token' });
+    return;
+  }
+
+  if (candidate.status === 'revoked' || candidate.status === 'suspended') {
     await reply.status(401).send({
       code: 'DEVICE_INACTIVE',
-      message: `Device is ${matched.status}`,
+      message: `Device is ${candidate.status}`,
     });
     return;
   }
 
-  const integrityAgeSeconds = matched.integrity_checked_at
-    ? (Date.now() - matched.integrity_checked_at.getTime()) / 1000
+  const integrityAgeSeconds = candidate.integrity_checked_at
+    ? (Date.now() - new Date(candidate.integrity_checked_at).getTime()) / 1000
     : Infinity;
 
   request.device = {
-    id: matched.id,
-    org_id: matched.org_id,
-    status: matched.status,
-    assignment_type: matched.assignment_type,
-    assignment_id: matched.assignment_id,
-    integrity_checked_at: matched.integrity_checked_at,
+    id: candidate.id,
+    org_id: candidate.org_id,
+    status: candidate.status,
+    assignment_type: candidate.assignment_type,
+    assignment_id: candidate.assignment_id,
+    integrity_checked_at: candidate.integrity_checked_at
+      ? new Date(candidate.integrity_checked_at)
+      : null,
     integrityRefreshRequired: integrityAgeSeconds > config.PLAY_INTEGRITY_MAX_AGE_SECONDS,
   };
 }

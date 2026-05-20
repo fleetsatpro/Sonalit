@@ -115,6 +115,7 @@ export function requireRole(...roles: string[]) {
       const { ForbiddenError } = await import('../lib/errors.js');
       const err = new ForbiddenError(`Role '${user.role}' is not permitted`);
       await reply.status(err.statusCode).send({ code: err.code, message: err.message });
+      return;
     }
   };
 }

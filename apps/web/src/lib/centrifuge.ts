@@ -19,7 +19,7 @@ export function getCentrifuge(): Centrifuge {
 
 export function subscribe<T>(channel: string, handler: (data: T) => void): () => void {
   const c = getCentrifuge();
-  const sub = c.newSubscription(channel);
+  const sub = c.newSubscription(channel, { recoverable: true });
   sub.on('publication', (ctx: PublicationContext) => handler(ctx.data as T));
   sub.subscribe();
   return () => { sub.unsubscribe(); sub.removeAllListeners(); };

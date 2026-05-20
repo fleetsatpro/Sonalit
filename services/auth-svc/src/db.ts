@@ -8,14 +8,25 @@ export const pool = new Pool({
   connectionTimeoutMillis: 5_000,
 });
 
+pool.on('error', (_err: Error) => {
+  // errors forwarded to pino logger in index.ts
+});
+
 export async function withOrgContext<T>(
   orgId: string,
   fn: (client: PoolClient) => Promise<T>
 ): Promise<T> {
   const client = await pool.connect();
   try {
+    // SET LOCAL only takes effect inside an explicit transaction block.
+    await client.query('BEGIN');
     await client.query(`SET LOCAL app.org_id = $1`, [orgId]);
-    return await fn(client);
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
   } finally {
     client.release();
   }

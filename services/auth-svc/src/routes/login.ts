@@ -9,6 +9,7 @@ import { AuthError, ValidationError } from '../lib/errors.js';
 import { randomUUID, createHash } from 'node:crypto';
 import { redis } from '../redis.js';
 import * as OTPAuth from 'otpauth';
+import { config } from '../config.js';
 
 const LoginSchema = z.object({
   email: z.string().email(),
@@ -126,7 +127,7 @@ export async function loginRoutes(app: FastifyInstance): Promise<void> {
     return reply.status(200).send({
       access_token: accessToken,
       refresh_token: refreshToken,
-      expires_in: 300,
+      expires_in: config.JWT_ACCESS_TTL_S,
       token_type: 'Bearer',
       family_id: familyId,
     });

@@ -1,11 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { query } from '../db.js';
+import { pool, query } from '../db.js';
 import { verifyToken, signAccessToken, signRefreshToken } from '../lib/jwt.js';
 import { publishAudit } from '../lib/audit.js';
 import { tokenRefreshCounter } from '../lib/metrics.js';
 import { AuthError, ValidationError } from '../lib/errors.js';
 import { createHash } from 'node:crypto';
+import { config } from '../config.js';
 
 const RefreshSchema = z.object({
   refresh_token: z.string().min(1),
@@ -60,37 +61,79 @@ export async function refreshRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(err.statusCode).send({ code: err.code, message: err.message });
     }
 
-    const families = await query<TokenFamilyRow>(
-      `SELECT id, user_id, org_id, last_refresh_token_hash, refresh_count, revoked_at
-       FROM token_families WHERE id = $1 LIMIT 1`,
-      [familyId],
-    );
-    const family = families[0];
-
-    if (!family) {
-      tokenRefreshCounter.inc({ result: 'family_not_found' });
-      const err = new AuthError('Token family not found');
-      return reply.status(err.statusCode).send({ code: err.code, message: err.message });
-    }
-
-    if (family.revoked_at) {
-      tokenRefreshCounter.inc({ result: 'revoked' });
-      const err = new AuthError('Token family has been revoked');
-      return reply.status(err.statusCode).send({ code: err.code, message: err.message });
-    }
-
     const incomingHash = createHash('sha256').update(refresh_token).digest('hex');
 
-    if (incomingHash !== family.last_refresh_token_hash) {
-      // Token reuse detected — revoke entire family
-      await query(
-        `UPDATE token_families SET revoked_at = NOW() WHERE id = $1`,
+    // Atomic rotation: lock the family row, verify hash, issue new tokens, update hash — all in one transaction.
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const familyResult = await client.query<TokenFamilyRow>(
+        `SELECT id, user_id, org_id, last_refresh_token_hash, refresh_count, revoked_at
+         FROM token_families WHERE id = $1 FOR UPDATE`,
         [familyId],
       );
-      tokenRefreshCounter.inc({ result: 'reuse_detected' });
+      const family = familyResult.rows[0];
+
+      if (!family) {
+        await client.query('ROLLBACK');
+        tokenRefreshCounter.inc({ result: 'family_not_found' });
+        const err = new AuthError('Token family not found');
+        return reply.status(err.statusCode).send({ code: err.code, message: err.message });
+      }
+
+      if (family.revoked_at) {
+        await client.query('ROLLBACK');
+        tokenRefreshCounter.inc({ result: 'revoked' });
+        const err = new AuthError('Token family has been revoked');
+        return reply.status(err.statusCode).send({ code: err.code, message: err.message });
+      }
+
+      if (incomingHash !== family.last_refresh_token_hash) {
+        // Token reuse detected — revoke entire family inside the same transaction.
+        await client.query(
+          `UPDATE token_families SET revoked_at = NOW() WHERE id = $1`,
+          [familyId],
+        );
+        await client.query('COMMIT');
+        tokenRefreshCounter.inc({ result: 'reuse_detected' });
+        await publishAudit({
+          action: 'auth.token.reuse_detected',
+          actorType: 'system',
+          actorId: userId,
+          orgId,
+          resourceType: 'token_family',
+          resourceId: familyId,
+          ipAddress: ip,
+          userAgent: ua,
+        }).catch(() => undefined);
+        const err = new AuthError('Refresh token reuse detected — all sessions revoked');
+        return reply.status(err.statusCode).send({ code: 'TOKEN_REUSE', message: err.message });
+      }
+
+      const users = await query<UserRow>(
+        `SELECT role FROM users WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
+        [userId],
+      );
+      const role = users[0]?.role ?? 'operator';
+
+      const newAccessToken = await signAccessToken({ sub: userId, org_id: orgId, role });
+      const newRefreshToken = await signRefreshToken(familyId, userId, orgId);
+      const newRefreshHash = createHash('sha256').update(newRefreshToken).digest('hex');
+
+      await client.query(
+        `UPDATE token_families
+         SET last_refresh_token_hash = $1, refresh_count = refresh_count + 1, updated_at = NOW()
+         WHERE id = $2`,
+        [newRefreshHash, familyId],
+      );
+
+      await client.query('COMMIT');
+
+      tokenRefreshCounter.inc({ result: 'success' });
       await publishAudit({
-        action: 'auth.token.reuse_detected',
-        actorType: 'system',
+        action: 'auth.token.refreshed',
+        actorType: 'user',
         actorId: userId,
         orgId,
         resourceType: 'token_family',
@@ -98,45 +141,19 @@ export async function refreshRoutes(app: FastifyInstance): Promise<void> {
         ipAddress: ip,
         userAgent: ua,
       }).catch(() => undefined);
-      const err = new AuthError('Refresh token reuse detected — all sessions revoked');
-      return reply.status(err.statusCode).send({ code: 'TOKEN_REUSE', message: err.message });
+
+      return reply.status(200).send({
+        access_token: newAccessToken,
+        refresh_token: newRefreshToken,
+        expires_in: config.JWT_ACCESS_TTL_S,
+        token_type: 'Bearer',
+        family_id: familyId,
+      });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
-
-    const users = await query<UserRow>(
-      `SELECT role FROM users WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
-      [userId],
-    );
-    const role = users[0]?.role ?? 'operator';
-
-    const newAccessToken = await signAccessToken({ sub: userId, org_id: orgId, role });
-    const newRefreshToken = await signRefreshToken(familyId, userId, orgId);
-    const newRefreshHash = createHash('sha256').update(newRefreshToken).digest('hex');
-
-    await query(
-      `UPDATE token_families
-       SET last_refresh_token_hash = $1, refresh_count = refresh_count + 1
-       WHERE id = $2`,
-      [newRefreshHash, familyId],
-    );
-
-    tokenRefreshCounter.inc({ result: 'success' });
-    await publishAudit({
-      action: 'auth.token.refreshed',
-      actorType: 'user',
-      actorId: userId,
-      orgId,
-      resourceType: 'token_family',
-      resourceId: familyId,
-      ipAddress: ip,
-      userAgent: ua,
-    }).catch(() => undefined);
-
-    return reply.status(200).send({
-      access_token: newAccessToken,
-      refresh_token: newRefreshToken,
-      expires_in: 300,
-      token_type: 'Bearer',
-      family_id: familyId,
-    });
   });
 }

@@ -25,7 +25,6 @@ const CopilotSchema = z.object({
 });
 
 const DecisionsQuerySchema = z.object({
-  org_id: z.string().uuid(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -83,6 +82,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
         const stream = anthropic.messages.stream({
           model: MODEL,
           max_tokens: 2048,
+          system: 'You are Sonalit AI Copilot, an expert assistant for fleet operations. Help operators manage vehicles, drivers, convoys, and respond to alerts. Be concise, factual, and safety-focused.',
           messages: [
             {
               role: 'user',
@@ -145,6 +145,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
         const stream = anthropic.messages.stream({
           model: MODEL,
           max_tokens: 2048,
+          system: 'You are Sonalit AI Copilot, an expert assistant for fleet operations. Help operators manage vehicles, drivers, convoys, and respond to alerts. Be concise, factual, and safety-focused.',
           messages: history.map((m) => ({ role: m.role, content: m.content })),
         });
 
@@ -181,12 +182,17 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/v4/ai/decisions', async (req: FastifyRequest, reply: FastifyReply) => {
+    const org_id = (req.headers['x-org-id'] as string | undefined)?.trim();
+    if (!org_id) {
+      return reply.code(401).send({ error: 'x-org-id header required' });
+    }
+
     const parsed = DecisionsQuerySchema.safeParse(req.query);
     if (!parsed.success) {
       return reply.code(400).send({ error: 'Invalid query parameters', issues: parsed.error.issues });
     }
 
-    const { org_id, limit, offset } = parsed.data;
+    const { limit, offset } = parsed.data;
 
     const rows = await query<AiDecision>(
       `SELECT id, org_id, user_id, query, response, created_at
