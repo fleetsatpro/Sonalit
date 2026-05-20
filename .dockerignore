@@ -8,7 +8,12 @@ README.md
 *.py
 *.sh
 
-# Other workspaces — not part of the backend image
+# v4 monorepo workspaces — not part of the backend image
+apps
+packages
+services
+
+# Old workspaces — not part of the backend image
 frontend
 mlos-copilot
 sonalit-proxy
@@ -21,3 +26,5 @@ public
 backend/logs
 backend/src/sonalit
 **/*.zip
+pnpm-lock.yaml
+pnpm-workspace.yaml
