@@ -24,6 +24,8 @@
     "migrate:full": "node scripts/migrate-all.js",
     "migrate:guardian-devices": "node scripts/migrate-guardian-devices.js",
     "migrate:convoy-fix": "node scripts/migrate-convoy-trucks-fix.js",
+    "db:migrate": "node scripts/db-migrate.js",
+    "db:status": "node scripts/db-status.js",
     "predeploy": "node scripts/migrate-all.js",
     "seed": "node scripts/seed.js",
     "workers": "node scripts/start-workers.js",
