@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import 'maplibre-gl/dist/maplibre-gl.css';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import { subscribe } from '../lib/centrifuge.js';
