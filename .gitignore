@@ -36,6 +36,7 @@ logs/
 *.log
 npm-debug.log*
 pnpm-debug.log*
+nodemon/
 
 # OS
 .DS_Store
@@ -50,6 +51,7 @@ Thumbs.db
 *.swo
 .*.swp
 .*.swo
+*~
 
 # Test coverage & artifacts
 coverage/
@@ -91,10 +93,12 @@ temp/
 .claude-flow/
 
 # Zip archives (binary blobs — should not be committed)
-backend/mlos-copilot.zip
-backend/src/sonalit.zip
-backend/static/guardian-agent.apk
-backend/static/guardian-agent.apk.idsig
+*.zip
+!infra/**/*.zip
 
 # Legacy backend
 backend/.env
+
+# Accidental package-name directories (e.g. fleetops-backend@1.0.0, frontend/foo@2.1.0)
+/*@[0-9]*.[0-9]*.[0-9]*/
+/*/*@[0-9]*.[0-9]*.[0-9]*/
