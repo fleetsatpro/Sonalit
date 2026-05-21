@@ -72,8 +72,9 @@
   },
   "jest": {
     "testEnvironment": "node",
+    "roots": ["<rootDir>/tests"],
     "testMatch": [
-      "**/tests/**/*.test.js"
+      "**/*.test.js"
     ],
     "testTimeout": 30000
   }
