@@ -4,16 +4,14 @@ import { Link } from '@tanstack/react-router';
 import { Route, Plus, Pencil, Trash2, Loader2 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { subscribe } from '../lib/centrifuge.js';
+import { normalizeList, type NormalizedList } from '../lib/normalize.js';
 import type { Convoy, ConvoyStatus } from '@sonalit/contracts';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type ConvoyListResponse = {
-  data: Convoy[];
-  meta: { total: number; has_more: boolean; next_cursor: string | null };
-};
+type ConvoyListResponse = NormalizedList<Convoy>;
 
 type ConvoyStatusEvent = { convoy_id: string; status: ConvoyStatus };
 
@@ -47,8 +45,8 @@ export default function Convoys(): React.ReactElement {
   const { data, isLoading, isError } = useQuery<ConvoyListResponse>({
     queryKey: ['convoys'],
     queryFn: async () => {
-      const res = await api.get<ConvoyListResponse>('/convoys');
-      return res.data;
+      const res = await api.get('/convoys');
+      return normalizeList<Convoy>(res.data);
     },
   });
 
@@ -84,7 +82,7 @@ export default function Convoys(): React.ReactElement {
           <Route className="w-5 h-5 text-indigo-400" />
           <h1 className="text-xl font-bold text-white">Convoys</h1>
           {data && (
-            <span className="text-sm text-gray-400">{data.meta?.total ?? 0} total</span>
+            <span className="text-sm text-gray-400">{data.total ?? 0} total</span>
           )}
         </div>
         <Link

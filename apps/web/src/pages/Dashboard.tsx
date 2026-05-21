@@ -4,13 +4,13 @@ import { Truck, Users, Bell, Route, AlertTriangle, FileWarning } from 'lucide-re
 import { api } from '../lib/api.js';
 import { subscribe } from '../lib/centrifuge.js';
 import { useAuthStore } from '../stores/auth.js';
+import { normalizeList, type NormalizedList } from '../lib/normalize.js';
 import type { Alert, Incident } from '@sonalit/contracts';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type ListResponse<T> = { data: T[]; meta: { total: number; has_more: boolean; next_cursor: string | null } };
 type OrgEvent = { type: string; payload: unknown };
 
 // ---------------------------------------------------------------------------
@@ -94,56 +94,56 @@ export default function Dashboard(): React.ReactElement {
   const orgId = user?.org_id ?? '';
   const [liveVehicleCount, setLiveVehicleCount] = useState<number | null>(null);
 
-  const { data: activeVehicles, isLoading: lvLoading, isError: lvError } = useQuery<ListResponse<unknown>>({
+  const { data: activeVehicles, isLoading: lvLoading, isError: lvError } = useQuery<NormalizedList<unknown>>({
     queryKey: ['vehicles', 'count', 'active'],
     queryFn: async () => {
-      const res = await api.get<ListResponse<unknown>>('/vehicles', { params: { status: 'active', limit: 1 } });
-      return res.data;
+      const res = await api.get('/vehicles', { params: { status: 'active', limit: 1 } });
+      return normalizeList(res.data);
     },
     enabled: !!orgId,
   });
 
-  const { data: activeDrivers, isLoading: ldLoading, isError: ldError } = useQuery<ListResponse<unknown>>({
+  const { data: activeDrivers, isLoading: ldLoading, isError: ldError } = useQuery<NormalizedList<unknown>>({
     queryKey: ['drivers', 'count', 'active'],
     queryFn: async () => {
-      const res = await api.get<ListResponse<unknown>>('/drivers', { params: { status: 'active', limit: 1 } });
-      return res.data;
+      const res = await api.get('/drivers', { params: { status: 'active', limit: 1 } });
+      return normalizeList(res.data);
     },
     enabled: !!orgId,
   });
 
-  const { data: openAlerts, isLoading: laLoading, isError: laError } = useQuery<ListResponse<unknown>>({
+  const { data: openAlerts, isLoading: laLoading, isError: laError } = useQuery<NormalizedList<unknown>>({
     queryKey: ['alerts', 'count', 'open'],
     queryFn: async () => {
-      const res = await api.get<ListResponse<unknown>>('/alerts', { params: { status: 'open', limit: 1 } });
-      return res.data;
+      const res = await api.get('/alerts', { params: { status: 'open', limit: 1 } });
+      return normalizeList(res.data);
     },
     enabled: !!orgId,
   });
 
-  const { data: activeConvoys, isLoading: lcLoading, isError: lcError } = useQuery<ListResponse<unknown>>({
+  const { data: activeConvoys, isLoading: lcLoading, isError: lcError } = useQuery<NormalizedList<unknown>>({
     queryKey: ['convoys', 'count', 'active'],
     queryFn: async () => {
-      const res = await api.get<ListResponse<unknown>>('/convoys', { params: { status: 'active', limit: 1 } });
-      return res.data;
+      const res = await api.get('/convoys', { params: { status: 'active', limit: 1 } });
+      return normalizeList(res.data);
     },
     enabled: !!orgId,
   });
 
-  const { data: recentAlerts, isLoading: raLoading, isError: raError } = useQuery<ListResponse<Alert>>({
+  const { data: recentAlerts, isLoading: raLoading, isError: raError } = useQuery<NormalizedList<Alert>>({
     queryKey: ['alerts', 'recent'],
     queryFn: async () => {
-      const res = await api.get<ListResponse<Alert>>('/alerts', { params: { limit: 5 } });
-      return res.data;
+      const res = await api.get('/alerts', { params: { limit: 5 } });
+      return normalizeList<Alert>(res.data);
     },
     enabled: !!orgId,
   });
 
-  const { data: recentIncidents, isLoading: riLoading, isError: riError } = useQuery<ListResponse<Incident>>({
+  const { data: recentIncidents, isLoading: riLoading, isError: riError } = useQuery<NormalizedList<Incident>>({
     queryKey: ['incidents', 'recent'],
     queryFn: async () => {
-      const res = await api.get<ListResponse<Incident>>('/incidents', { params: { limit: 5 } });
-      return res.data;
+      const res = await api.get('/incidents', { params: { limit: 5 } });
+      return normalizeList<Incident>(res.data);
     },
     enabled: !!orgId,
   });
@@ -159,10 +159,10 @@ export default function Dashboard(): React.ReactElement {
   }, [orgId]);
 
   const stats = [
-    { label: 'Active Vehicles', value: activeVehicles?.meta?.total, icon: Truck, color: 'bg-indigo-600', isLoading: lvLoading, isError: lvError, liveOverride: liveVehicleCount },
-    { label: 'Active Drivers', value: activeDrivers?.meta?.total, icon: Users, color: 'bg-green-600', isLoading: ldLoading, isError: ldError },
-    { label: 'Open Alerts', value: openAlerts?.meta?.total, icon: Bell, color: 'bg-red-600', isLoading: laLoading, isError: laError },
-    { label: 'Ongoing Convoys', value: activeConvoys?.meta?.total, icon: Route, color: 'bg-amber-600', isLoading: lcLoading, isError: lcError },
+    { label: 'Active Vehicles', value: activeVehicles?.total, icon: Truck, color: 'bg-indigo-600', isLoading: lvLoading, isError: lvError, liveOverride: liveVehicleCount },
+    { label: 'Active Drivers', value: activeDrivers?.total, icon: Users, color: 'bg-green-600', isLoading: ldLoading, isError: ldError },
+    { label: 'Open Alerts', value: openAlerts?.total, icon: Bell, color: 'bg-red-600', isLoading: laLoading, isError: laError },
+    { label: 'Ongoing Convoys', value: activeConvoys?.total, icon: Route, color: 'bg-amber-600', isLoading: lcLoading, isError: lcError },
   ];
 
   return (

@@ -4,16 +4,14 @@ import { Bell, CheckCheck, Loader2, ChevronLeft, ChevronRight } from 'lucide-rea
 import { api } from '../lib/api.js';
 import { subscribe } from '../lib/centrifuge.js';
 import { useAuthStore } from '../stores/auth.js';
+import { normalizeList, type NormalizedList } from '../lib/normalize.js';
 import type { Alert, AlertSeverity, AlertStatus } from '@sonalit/contracts';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type AlertListResponse = {
-  data: Alert[];
-  meta: { total: number; has_more: boolean; next_cursor: string | null };
-};
+type AlertListResponse = NormalizedList<Alert>;
 
 type NewAlertEvent = { type: 'alert.new'; alert: Alert };
 
@@ -75,11 +73,7 @@ export default function Alerts(): React.ReactElement {
           status: statusFilter !== 'all' ? statusFilter : undefined,
         },
       });
-      const raw = res.data;
-      if (Array.isArray(raw)) {
-        return { data: raw, meta: { total: raw.length, has_more: false, next_cursor: null } };
-      }
-      return raw as AlertListResponse;
+      return normalizeList<Alert>(res.data);
     },
     enabled: !!orgId,
     placeholderData: (prev) => prev,
@@ -105,7 +99,7 @@ export default function Alerts(): React.ReactElement {
     },
   });
 
-  const totalPages = data?.meta?.total ? Math.ceil(data.meta.total / PAGE_SIZE) : 1;
+  const totalPages = data?.total ? Math.ceil(data.total / PAGE_SIZE) : 1;
   const openCount = data?.data.filter((a) => a.status === 'open').length ?? 0;
 
   return (

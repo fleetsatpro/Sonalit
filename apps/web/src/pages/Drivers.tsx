@@ -6,16 +6,14 @@ import { z } from 'zod';
 import { Users, Search, Plus, X, ChevronLeft, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../stores/auth.js';
+import { normalizeList, type NormalizedList } from '../lib/normalize.js';
 import type { Driver, DriverStatus } from '@sonalit/contracts';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type DriverListResponse = {
-  data: Driver[];
-  meta: { total: number; has_more: boolean; next_cursor: string | null };
-};
+type DriverListResponse = NormalizedList<Driver>;
 
 // ---------------------------------------------------------------------------
 // Form schema
@@ -152,19 +150,15 @@ export default function Drivers(): React.ReactElement {
   const { data, isLoading, isError } = useQuery<DriverListResponse>({
     queryKey: ['drivers', page, search],
     queryFn: async () => {
-      const res = await api.get<DriverListResponse | Driver[]>('/drivers', {
+      const res = await api.get('/drivers', {
         params: { page, limit: PAGE_SIZE, search: search || undefined },
       });
-      const raw = res.data;
-      if (Array.isArray(raw)) {
-        return { data: raw, meta: { total: raw.length, has_more: false, next_cursor: null } };
-      }
-      return raw as DriverListResponse;
+      return normalizeList<Driver>(res.data);
     },
     placeholderData: (prev) => prev,
   });
 
-  const totalPages = data?.meta?.total ? Math.ceil(data.meta.total / PAGE_SIZE) : 1;
+  const totalPages = data?.total ? Math.ceil(data.total / PAGE_SIZE) : 1;
 
   return (
     <div className="p-6 space-y-5">
@@ -172,7 +166,7 @@ export default function Drivers(): React.ReactElement {
         <div className="flex items-center gap-2">
           <Users className="w-5 h-5 text-indigo-400" />
           <h1 className="text-xl font-bold text-white">Drivers</h1>
-          {data && <span className="text-sm text-gray-400">{data.meta?.total ?? 0} total</span>}
+          {data && <span className="text-sm text-gray-400">{data.total ?? 0} total</span>}
         </div>
         <button
           type="button"
