@@ -22,7 +22,7 @@ type PasswordForm = z.infer<typeof passwordSchema>;
 // API types
 // ---------------------------------------------------------------------------
 
-type AuthResponse = { access_token: string; user: AuthUser };
+type AuthResponse = { token: string; user: AuthUser };
 type WebAuthnOptions = { challenge: string; [k: string]: unknown };
 
 // ---------------------------------------------------------------------------
@@ -69,7 +69,7 @@ export default function Login(): React.ReactElement {
       return res.data;
     },
     onSuccess: (data) => {
-      setAuth(data.access_token, data.user);
+      setAuth(data.token, data.user);
       void navigate({ to: '/' });
     },
   });
@@ -119,7 +119,7 @@ export default function Login(): React.ReactElement {
       return verifyRes.data;
     },
     onSuccess: (data) => {
-      setAuth(data.access_token, data.user);
+      setAuth(data.token, data.user);
       void navigate({ to: '/' });
     },
     onError: (err) => {
