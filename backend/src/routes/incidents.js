@@ -1,11 +1,12 @@
 const router = require('express').Router();
 const { query } = require('../config/database');
 const { authenticate } = require('../middleware/auth');
+const requireIdempotencyKey = require('../middleware/idempotency');
 router.use(authenticate);
 router.get('/', async (req, res, next) => {
   try { const db = req.db || query; const { rows } = await db(`SELECT * FROM incidents ORDER BY created_at DESC LIMIT 100`); res.json({ data: rows }); } catch (err) { next(err); }
 });
-router.post('/', async (req, res, next) => {
+router.post('/', requireIdempotencyKey, async (req, res, next) => {
   try { const db = req.db || query; const { convoy_id, title, description, severity = 'medium' } = req.body; if (!title) return res.status(400).json({ error: 'Title is required' }); const { rows } = await db(`INSERT INTO incidents (convoy_id, title, description, severity, status, org_id) VALUES ($1,$2,$3,$4,'open',$5) RETURNING *`, [convoy_id || null, title, description, severity, req.user.org_id || null]); res.status(201).json({ data: rows[0] }); } catch (err) { next(err); }
 });
 router.patch('/:id', async (req, res, next) => {

@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const { sendCommandPush, sendPanicAck } = require('../utils/fcm');
 const { publish } = require('../realtime/centrifugo');
+const requireIdempotencyKey = require('../middleware/idempotency');
 
 // ─── Integrity age thresholds per command type (T1.4) ────────────────────────
 const INTEGRITY_MAX_AGE = {
@@ -762,7 +763,7 @@ router.post('/location', deviceAuth, async (req, res, next) => {
  * POST /api/v1/guardian/panic
  * Trigger SOS alert from device.
  */
-router.post('/panic', deviceAuth, panicLimiter, async (req, res, next) => {
+router.post('/panic', deviceAuth, requireIdempotencyKey, panicLimiter, async (req, res, next) => {
   try {
     const { lat, lng, message } = req.body;
     // Accept both "mode" and "panic_mode" for backward compatibility with older APKs
@@ -850,6 +851,11 @@ router.post('/report', deviceAuth, async (req, res, next) => {
     const { category, severity = 'medium', description, lat, lng, photo_url } = req.body;
     // event_uuid is optional for backward compatibility; generate one server-side if omitted
     const event_uuid = req.body.event_uuid || uuidv4();
+
+    // T3.7: reject data URI photos — devices must upload to pre-signed URL first
+    if (photo_url && photo_url.startsWith('data:')) {
+      return res.status(400).json({ error: 'photo_url must be an HTTPS URL, not a data URI. Upload via pre-signed URL first.' });
+    }
 
     const validCategories = [
       'suspicious', 'roadblock', 'theft', 'attack', 'accident',
@@ -1231,7 +1237,7 @@ router.delete('/devices/:id', authenticate, async (req, res, next) => {
  * POST /api/v1/guardian/devices/:id/command
  * Send a remote command to a device.
  */
-router.post('/devices/:id/command', authenticate, commandLimiter, async (req, res, next) => {
+router.post('/devices/:id/command', authenticate, requireIdempotencyKey, commandLimiter, async (req, res, next) => {
   try {
     const { command_type, payload, nonce, issued_at: clientIssuedAt } = req.body;
 

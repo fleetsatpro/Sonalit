@@ -4,6 +4,7 @@ const c = require('../controllers/convoyController');
 const cfo = require('../controllers/convoysCfoController');
 const { authenticate, authorize } = require('../middleware/auth');
 const { auditLog } = require('../middleware/audit');
+const requireIdempotencyKey = require('../middleware/idempotency');
 
 const convoyReportRegenerateLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -18,7 +19,7 @@ router.use(authenticate);
 
 // Standard convoy routes
 router.get('/', c.getConvoys);
-router.post('/', authorize('admin', 'dispatcher'), auditLog('convoys'), (req, res, next) => {
+router.post('/', requireIdempotencyKey, authorize('admin', 'dispatcher'), auditLog('convoys'), (req, res, next) => {
   if (req.body.trucks !== undefined || req.body.cfos !== undefined) {
     return cfo.createConvoyCfo(req, res, next);
   }
