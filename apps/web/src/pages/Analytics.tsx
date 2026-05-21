@@ -98,12 +98,12 @@ export default function Analytics() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="flex items-center gap-2">
           <BarChart2 size={20} className="text-blue-400" />
           <h1 className="text-xl font-bold">Analytics</h1>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 sm:ml-auto">
           <div className="flex items-center gap-2">
             <label className="text-sm text-slate-400">From</label>
             <input

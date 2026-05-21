@@ -67,7 +67,7 @@ export default function Alerts(): React.ReactElement {
   const { data, isLoading, isError } = useQuery<AlertListResponse>({
     queryKey: ['alerts', page, severityFilter, statusFilter],
     queryFn: async () => {
-      const res = await api.get<AlertListResponse>('/alerts', {
+      const res = await api.get<AlertListResponse | Alert[]>('/alerts', {
         params: {
           page,
           limit: PAGE_SIZE,
@@ -75,7 +75,11 @@ export default function Alerts(): React.ReactElement {
           status: statusFilter !== 'all' ? statusFilter : undefined,
         },
       });
-      return res.data;
+      const raw = res.data;
+      if (Array.isArray(raw)) {
+        return { data: raw, meta: { total: raw.length, has_more: false, next_cursor: null } };
+      }
+      return raw as AlertListResponse;
     },
     enabled: !!orgId,
     placeholderData: (prev) => prev,
@@ -101,7 +105,7 @@ export default function Alerts(): React.ReactElement {
     },
   });
 
-  const totalPages = data ? Math.ceil(data.meta.total / PAGE_SIZE) : 1;
+  const totalPages = data?.meta?.total ? Math.ceil(data.meta.total / PAGE_SIZE) : 1;
   const openCount = data?.data.filter((a) => a.status === 'open').length ?? 0;
 
   return (

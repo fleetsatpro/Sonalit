@@ -84,7 +84,7 @@ export default function Convoys(): React.ReactElement {
           <Route className="w-5 h-5 text-indigo-400" />
           <h1 className="text-xl font-bold text-white">Convoys</h1>
           {data && (
-            <span className="text-sm text-gray-400">{data.meta.total} total</span>
+            <span className="text-sm text-gray-400">{data.meta?.total ?? 0} total</span>
           )}
         </div>
         <Link

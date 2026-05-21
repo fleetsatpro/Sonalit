@@ -159,10 +159,10 @@ export default function Dashboard(): React.ReactElement {
   }, [orgId]);
 
   const stats = [
-    { label: 'Active Vehicles', value: activeVehicles?.meta.total, icon: Truck, color: 'bg-indigo-600', isLoading: lvLoading, isError: lvError, liveOverride: liveVehicleCount },
-    { label: 'Active Drivers', value: activeDrivers?.meta.total, icon: Users, color: 'bg-green-600', isLoading: ldLoading, isError: ldError },
-    { label: 'Open Alerts', value: openAlerts?.meta.total, icon: Bell, color: 'bg-red-600', isLoading: laLoading, isError: laError },
-    { label: 'Ongoing Convoys', value: activeConvoys?.meta.total, icon: Route, color: 'bg-amber-600', isLoading: lcLoading, isError: lcError },
+    { label: 'Active Vehicles', value: activeVehicles?.meta?.total, icon: Truck, color: 'bg-indigo-600', isLoading: lvLoading, isError: lvError, liveOverride: liveVehicleCount },
+    { label: 'Active Drivers', value: activeDrivers?.meta?.total, icon: Users, color: 'bg-green-600', isLoading: ldLoading, isError: ldError },
+    { label: 'Open Alerts', value: openAlerts?.meta?.total, icon: Bell, color: 'bg-red-600', isLoading: laLoading, isError: laError },
+    { label: 'Ongoing Convoys', value: activeConvoys?.meta?.total, icon: Route, color: 'bg-amber-600', isLoading: lcLoading, isError: lcError },
   ];
 
   return (
@@ -192,10 +192,10 @@ export default function Dashboard(): React.ReactElement {
           {raError && <p className="text-red-400 text-sm">Failed to load alerts.</p>}
           {!raLoading && !raError && (
             <ul className="space-y-2">
-              {recentAlerts?.data.length === 0 && (
+              {(recentAlerts?.data?.length ?? 0) === 0 && (
                 <li className="text-gray-500 text-sm">No alerts</li>
               )}
-              {recentAlerts?.data.map((alert) => (
+              {recentAlerts?.data?.map((alert) => (
                 <li key={alert.id} className="flex items-center gap-3 bg-gray-800/50 rounded-lg px-3 py-2.5">
                   <SeverityBadge severity={alert.severity} />
                   <div className="min-w-0 flex-1">
@@ -224,10 +224,10 @@ export default function Dashboard(): React.ReactElement {
           {riError && <p className="text-red-400 text-sm">Failed to load incidents.</p>}
           {!riLoading && !riError && (
             <ul className="space-y-2">
-              {recentIncidents?.data.length === 0 && (
+              {(recentIncidents?.data?.length ?? 0) === 0 && (
                 <li className="text-gray-500 text-sm">No incidents</li>
               )}
-              {recentIncidents?.data.map((inc) => (
+              {recentIncidents?.data?.map((inc) => (
                 <li key={inc.id} className="flex items-center gap-3 bg-gray-800/50 rounded-lg px-3 py-2.5">
                   <PriorityBadge priority={inc.priority} />
                   <div className="min-w-0 flex-1">
