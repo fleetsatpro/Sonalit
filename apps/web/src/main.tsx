@@ -9,6 +9,14 @@ import { initOtel } from './lib/otel.js';
 
 initOtel();
 
+// Reload the page when a new service worker takes control so users always
+// get the latest cached assets instead of running stale JS.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    window.location.reload();
+  });
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { staleTime: 30_000, retry: 2 },
