@@ -1,11 +1,13 @@
 const jwt = require('jsonwebtoken');
 const { query } = require('../config/database');
+const { attachOrgDb } = require('../utils/orgScopedDb');
 const logger = require('../utils/logger');
 
 const ROLE_HIERARCHY = { admin: 4, dispatcher: 3, operator: 2, analyst: 1, cfo: 1 };
 
 /**
- * Verifies Bearer JWT and attaches req.user (full DB row).
+ * Verifies Bearer JWT and attaches req.user (full DB row including org_id).
+ * Also attaches req.db / req.dbTx for org-scoped queries (T1.1).
  */
 async function authenticate(req, res, next) {
   try {
@@ -23,8 +25,9 @@ async function authenticate(req, res, next) {
       return res.status(401).json({ error: message });
     }
 
+    // Include org_id so req.db can scope queries correctly (T1.1)
     const result = await query(
-      'SELECT id, email, name, role, status FROM users WHERE id = $1 AND deleted_at IS NULL',
+      'SELECT id, email, name, role, status, org_id FROM users WHERE id = $1 AND deleted_at IS NULL',
       [decoded.id]
     );
     if (!result.rows.length) {
@@ -37,7 +40,9 @@ async function authenticate(req, res, next) {
     }
 
     req.user = user;
-    next();
+
+    // Attach org-scoped DB helpers (no-op if org_id is null — legacy rows)
+    attachOrgDb(req, res, next);
   } catch (err) {
     logger.error(`authenticate middleware error: ${err.message}`);
     next(err);

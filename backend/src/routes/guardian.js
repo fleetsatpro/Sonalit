@@ -1,11 +1,20 @@
 const router = require('express').Router();
 const { query } = require('../config/database');
 const { authenticate } = require('../middleware/auth');
+const { requireFreshIntegrity } = require('../middleware/requireFreshIntegrity');
 const logger = require('../utils/logger');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const { sendCommandPush, sendPanicAck } = require('../utils/fcm');
+
+// ─── Integrity age thresholds per command type (T1.4) ────────────────────────
+const INTEGRITY_MAX_AGE = {
+  WIPE: 5,
+  LOCKDOWN: 15,
+  UPDATE_PINS: 15,
+  // All other commands default to 60 min (checked inline)
+};
 
 // ─── Config cache (60-second TTL) ────────────────────────────────────────────
 let _minApkVersionCode = 0;
@@ -1232,12 +1241,13 @@ router.delete('/devices/:id', authenticate, async (req, res, next) => {
  */
 router.post('/devices/:id/command', authenticate, commandLimiter, async (req, res, next) => {
   try {
-    const { command_type, payload } = req.body;
+    const { command_type, payload, nonce, issued_at: clientIssuedAt } = req.body;
 
     const validCommandTypes = [
       'force_sync', 'start_live_tracking', 'stop_live_tracking',
       'lock_screen', 'trigger_siren', 'stop_siren', 'push_message',
       'restart_agent', 'request_location', 'enable_lost_mode',
+      'WIPE', 'LOCKDOWN', 'UPDATE_PINS', 'CHANGE_MODE', 'SEND_MESSAGE', 'TAKE_PHOTO',
     ];
     if (!command_type || !validCommandTypes.includes(command_type)) {
       return res.status(400).json({
@@ -1245,52 +1255,79 @@ router.post('/devices/:id/command', authenticate, commandLimiter, async (req, re
       });
     }
 
-    // Verify device exists and get FCM token
+    // ── Replay protection (T1.3) ──────────────────────────────────────────────
+    if (!nonce || typeof nonce !== 'string' || nonce.length < 8) {
+      return res.status(400).json({ error: 'nonce is required (min 8 chars)' });
+    }
+    if (clientIssuedAt) {
+      const diff = Math.abs(Date.now() - new Date(clientIssuedAt).getTime());
+      if (diff > 5 * 60 * 1000) {
+        return res.status(400).json({ error: 'issued_at is outside 5-minute window', code: 'clock_skew' });
+      }
+    }
+
+    // Try device exists + get integrity state in one query
     const deviceCheck = await query(
-      `SELECT id, fcm_token FROM guardian_devices WHERE id = $1 AND deleted_at IS NULL`,
+      `SELECT id, fcm_token, last_integrity_verdict, last_integrity_verdict_at
+       FROM guardian_devices WHERE id = $1 AND deleted_at IS NULL`,
       [req.params.id]
     );
     if (!deviceCheck.rows.length) {
       return res.status(404).json({ error: 'Device not found' });
     }
-    const deviceFcmToken = deviceCheck.rows[0].fcm_token;
+    const device = deviceCheck.rows[0];
+
+    // ── Play Integrity gating (T1.4) ─────────────────────────────────────────
+    const destructiveMaxAge = INTEGRITY_MAX_AGE[command_type];
+    if (destructiveMaxAge !== undefined) {
+      const staleCutoff = new Date(Date.now() - destructiveMaxAge * 60 * 1000);
+      const isStale = !device.last_integrity_verdict_at || new Date(device.last_integrity_verdict_at) < staleCutoff;
+      const isBad = !device.last_integrity_verdict || device.last_integrity_verdict !== 'MEETS_DEVICE_INTEGRITY';
+      if (isStale || isBad) {
+        await query(
+          `INSERT INTO device_commands (device_id, command_type, payload, status) VALUES ($1, 'REQUEST_INTEGRITY', '{}', 'pending')`,
+          [device.id]
+        ).catch(() => {});
+        return res.status(412).json({ error: 'Device integrity verification required', code: 'integrity_required' });
+      }
+    }
+
+    // ── Deduplicate nonce (INSERT will fail on PK violation) ─────────────────
+    try {
+      await query(
+        `INSERT INTO guardian_command_nonces (device_id, nonce, seen_at) VALUES ($1, $2, NOW())`,
+        [device.id, nonce]
+      );
+    } catch (nonceErr) {
+      if (nonceErr.code === '23505') {
+        return res.status(409).json({ error: 'Duplicate command — nonce already seen', code: 'replay_detected' });
+      }
+      throw nonceErr;
+    }
 
     const insertResult = await query(
-      `INSERT INTO device_commands (device_id, command_type, payload, issued_by, expires_at)
-       VALUES ($1, $2, $3, $4, NOW() + INTERVAL '24 hours')
+      `INSERT INTO device_commands (device_id, command_type, payload, issued_by, nonce, issued_at, expires_at)
+       VALUES ($1, $2, $3, $4, $5, COALESCE($6::timestamptz, NOW()), NOW() + INTERVAL '24 hours')
        RETURNING id, issued_at, expires_at`,
-      [req.params.id, command_type, payload ? JSON.stringify(payload) : null, req.user.id]
+      [req.params.id, command_type, payload ? JSON.stringify(payload) : null, req.user.id, nonce, clientIssuedAt || null]
     );
 
     const cmd = insertResult.rows[0];
     const signature = signCommand(cmd.id, command_type, payload || null, cmd.issued_at, cmd.expires_at);
 
-    // Signature is stored before any heartbeat can claim this command because the
-    // heartbeat claim query requires signature IS NOT NULL (see heartbeat handler).
-    await query(
-      `UPDATE device_commands SET signature = $1 WHERE id = $2`,
-      [signature, cmd.id]
-    );
+    await query(`UPDATE device_commands SET signature = $1 WHERE id = $2`, [signature, cmd.id]);
 
-    auditLog('admin', req.user.id, 'command_issued', 'device', req.params.id, { command_type, payload }, req.ip);
+    auditLog('admin', req.user.id, 'command_issued', 'device', req.params.id, { command_type, payload, nonce }, req.ip);
 
     const io = req.app.get('io');
     if (io) {
-      io.emit('device:command', {
-        device_id: req.params.id,
-        command_type,
-        payload: payload || null,
-        command_id: cmd.id,
-        issued_at: cmd.issued_at,
-        signature,
-      });
+      io.emit('device:command', { device_id: req.params.id, command_type, payload: payload || null, command_id: cmd.id, issued_at: cmd.issued_at, signature });
     }
 
     logger.info(`Command issued: ${command_type} → device=${req.params.id} by user=${req.user.id}`);
 
-    // FCM push to wake device immediately (fire-and-forget, Task 4.1)
-    if (deviceFcmToken) {
-      sendCommandPush(deviceFcmToken, command_type, cmd.id).catch(() => {});
+    if (device.fcm_token) {
+      sendCommandPush(device.fcm_token, command_type, cmd.id).catch(() => {});
     }
 
     res.status(201).json({ command_id: cmd.id, signature });

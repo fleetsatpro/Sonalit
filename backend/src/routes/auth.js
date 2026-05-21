@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { login, getCurrentUser, logout, changePassword } = require('../controllers/authController');
+const { login, getCurrentUser, logout, changePassword, hashToken, COOKIE_OPTS, RT_COOKIE, ensureRefreshTable } = require('../controllers/authController');
 const { authenticate, authorize } = require('../middleware/auth');
 const { auditLog } = require('../middleware/audit');
 const jwt = require('jsonwebtoken');
@@ -13,15 +13,7 @@ router.get('/me', authenticate, getCurrentUser);
 router.post('/logout', authenticate, logout);
 router.put('/change-password', authenticate, auditLog('users'), changePassword);
 
-/**
- * POST /api/v1/auth/refresh
- * Exchange a refresh token for a new short-lived access JWT.
- * Refresh tokens are stored in the refresh_tokens table (created on first use).
- */
-/**
- * GET /api/v1/auth/users
- * Returns users filtered by role. Admin/dispatcher only.
- */
+// ─── GET /api/v1/auth/users ───────────────────────────────────────────────────
 router.get('/users', authenticate, authorize('admin', 'dispatcher'), async (req, res) => {
   try {
     const { role, limit = 100, offset = 0 } = req.query;
@@ -43,10 +35,7 @@ router.get('/users', authenticate, authorize('admin', 'dispatcher'), async (req,
   }
 });
 
-/**
- * POST /api/v1/auth/users
- * Admin-only. Creates a user account with specified role.
- */
+// ─── POST /api/v1/auth/users ──────────────────────────────────────────────────
 const VALID_ROLES = ['admin', 'dispatcher', 'operator', 'analyst', 'driver', 'cfo'];
 
 router.post('/users', authenticate, authorize('admin'), async (req, res) => {
@@ -75,35 +64,32 @@ router.post('/users', authenticate, authorize('admin'), async (req, res) => {
   }
 });
 
+// ─── POST /api/v1/auth/refresh ────────────────────────────────────────────────
+// Reads refresh token from httpOnly cookie (T1.2).
+// Infinite-loop guard: if the request itself is a refresh attempt and the cookie
+// is absent/invalid we return 401 immediately — the frontend interceptor must not
+// retry this endpoint on 401 (loop guard lives in apps/web/src/lib/api.ts).
 router.post('/refresh', async (req, res) => {
   try {
-    const { refresh_token } = req.body;
-    if (!refresh_token) {
-      return res.status(400).json({ error: 'refresh_token is required' });
+    await ensureRefreshTable();
+
+    const raw = req.cookies && req.cookies[RT_COOKIE];
+    if (!raw) {
+      return res.status(401).json({ error: 'No refresh token' });
     }
 
-    // Ensure table exists (idempotent)
-    await query(`
-      CREATE TABLE IF NOT EXISTS refresh_tokens (
-        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        token      TEXT NOT NULL UNIQUE,
-        expires_at TIMESTAMPTZ NOT NULL,
-        used_at    TIMESTAMPTZ,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `).catch(() => {}); // ignore if already exists and CREATE fails for any reason
-
+    const hash = hashToken(raw);
     const result = await query(
-      `SELECT rt.*, u.id AS uid, u.email, u.name, u.role, u.status
+      `SELECT rt.*, u.id AS uid, u.email, u.name, u.role, u.org_id, u.status
        FROM refresh_tokens rt
        JOIN users u ON u.id = rt.user_id
-       WHERE rt.token = $1 AND rt.used_at IS NULL AND rt.expires_at > NOW()
+       WHERE rt.token_hash = $1 AND rt.used_at IS NULL AND rt.expires_at > NOW()
          AND u.deleted_at IS NULL`,
-      [refresh_token]
+      [hash]
     );
 
     if (!result.rows.length) {
+      res.clearCookie(RT_COOKIE, { ...COOKIE_OPTS, maxAge: 0 });
       return res.status(401).json({ error: 'Invalid or expired refresh token' });
     }
 
@@ -112,18 +98,17 @@ router.post('/refresh', async (req, res) => {
       return res.status(403).json({ error: 'Account is not active' });
     }
 
-    // Rotate: mark old token used, issue new refresh token
-    await query(
-      `UPDATE refresh_tokens SET used_at = NOW() WHERE id = $1`,
-      [row.id]
-    );
+    // Rotate: mark old token used, issue new httpOnly cookie
+    await query('UPDATE refresh_tokens SET used_at = NOW() WHERE id = $1', [row.id]);
 
-    const newRefreshToken = crypto.randomBytes(40).toString('hex');
+    const newRaw = crypto.randomBytes(40).toString('hex');
+    const newHash = hashToken(newRaw);
     await query(
-      `INSERT INTO refresh_tokens (user_id, token, expires_at)
+      `INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
        VALUES ($1, $2, NOW() + INTERVAL '30 days')`,
-      [row.uid, newRefreshToken]
+      [row.uid, newHash]
     );
+    res.cookie(RT_COOKIE, newRaw, COOKIE_OPTS);
 
     const accessToken = jwt.sign(
       { id: row.uid, email: row.email, role: row.role },
@@ -132,7 +117,10 @@ router.post('/refresh', async (req, res) => {
     );
 
     logger.info(`Token refreshed for user ${row.email}`);
-    res.json({ token: accessToken, refresh_token: newRefreshToken });
+    res.json({
+      token: accessToken,
+      user: { id: row.uid, email: row.email, name: row.name, role: row.role, org_id: row.org_id },
+    });
   } catch (err) {
     logger.error(`Token refresh error: ${err.message}`);
     res.status(500).json({ error: 'Internal server error' });
