@@ -36,7 +36,9 @@ function errorHandler(err, req, res, next) {
   const message = status < 500 ? err.message : 'Internal server error';
 
   if (status >= 500) {
-    logger.error(`[${req.method} ${req.path}] ${err.stack}`);
+    // Include pg error code so Railway logs show the exact DB failure class
+    const pgCode = err.code ? ` [pg:${err.code}]` : '';
+    logger.error(`[${req.method} ${req.path}]${pgCode} ${err.stack}`);
   } else {
     logger.warn(`[${req.method} ${req.path}] ${status}: ${err.message}`);
   }

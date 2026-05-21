@@ -320,7 +320,26 @@ try {
 if (!process.env.GENERATE_OPENAPI) {
   const PORT = parseInt(process.env.PORT) || 5000;
   createQueues();
-  server.listen(PORT, () => logger.info("FleetOps Enterprise v2.1 running on port " + PORT + " [" + (process.env.NODE_ENV || "development") + "]"));
+  server.listen(PORT, () => {
+    logger.info("FleetOps Enterprise v2.1 running on port " + PORT + " [" + (process.env.NODE_ENV || "development") + "]");
+    // Startup schema check — logs missing tables/columns that cause 500s on login
+    dbQuery(`
+      SELECT
+        (SELECT COUNT(*) FROM information_schema.tables
+          WHERE table_name = 'refresh_tokens') AS has_refresh_tokens,
+        (SELECT COUNT(*) FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'org_id') AS has_org_id,
+        (SELECT COUNT(*) FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'deletion_requested_at') AS has_deletion_requested_at
+    `).then(r => {
+      const { has_refresh_tokens, has_org_id, has_deletion_requested_at } = r.rows[0];
+      if (has_refresh_tokens === '0') logger.error('SCHEMA MISSING: refresh_tokens table — login will 500');
+      if (has_org_id === '0') logger.error('SCHEMA MISSING: users.org_id column — login will 500');
+      if (has_deletion_requested_at === '0') logger.warn('SCHEMA MISSING: users.deletion_requested_at — GDPR cron will fail silently');
+      if (has_refresh_tokens !== '0' && has_org_id !== '0')
+        logger.info('Schema check OK: refresh_tokens ✓  users.org_id ✓');
+    }).catch(e => logger.warn('Startup schema check failed: ' + e.message));
+  });
 }
 
 if (!process.env.GENERATE_OPENAPI)
