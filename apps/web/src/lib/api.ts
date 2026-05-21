@@ -3,8 +3,7 @@ import { context, propagation, trace } from '@opentelemetry/api';
 import { useAuthStore } from '../stores/auth.js';
 
 const API_BASE =
-  import.meta.env['VITE_API_URL'] ??
-  'https://sonalit-production.up.railway.app/api/v1';
+  import.meta.env['VITE_API_URL'] ?? '/api/v1';
 
 export const api = axios.create({
   baseURL: API_BASE,
