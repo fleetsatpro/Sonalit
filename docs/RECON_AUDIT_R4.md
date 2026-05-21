@@ -180,8 +180,8 @@ Add `CORS_ORIGINS=https://app.sonalit.io` to the production environment. Track a
 | pool.query / RLS leaks | PASS | — |
 | CSRF coverage | PASS | — |
 | Rate-limit ordering | PASS | — |
-| CSP directives | PASS (gap: frame-ancestors) | Low |
-| GDPR retention cron | PARTIAL (no scheduled purge) | Medium — BL-010 |
-| Idempotency coverage | PASS (gap: vehicles/drivers) | Low |
+| CSP directives | FIXED — frame-ancestors 'none' added | — |
+| GDPR retention cron | FIXED — weekly purge cron added (app.js, BL-010) | — |
+| Idempotency coverage | PASS (gap: vehicles/drivers low-priority) | Low |
 | BullMQ retry config | PASS | — |
-| CORS origin | OPEN (origin: true) | Medium — BL-011 |
+| CORS origin | FIXED — explicit allowlist via CORS_ORIGINS env (BL-011) | — |

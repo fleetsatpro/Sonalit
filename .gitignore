@@ -32,6 +32,7 @@ kubeconfig
 
 # Logs
 logs/
+**/logs/
 *.log
 npm-debug.log*
 pnpm-debug.log*
@@ -47,6 +48,8 @@ Thumbs.db
 !.vscode/extensions.json
 *.swp
 *.swo
+.*.swp
+.*.swo
 
 # Test coverage & artifacts
 coverage/
@@ -86,6 +89,12 @@ temp/
 *.deb
 .vercel
 .claude-flow/
+
+# Zip archives (binary blobs — should not be committed)
+backend/mlos-copilot.zip
+backend/src/sonalit.zip
+backend/static/guardian-agent.apk
+backend/static/guardian-agent.apk.idsig
 
 # Legacy backend
 backend/.env

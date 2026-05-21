@@ -50,6 +50,7 @@ See `backend/.env.example` for the full list. Critical variables:
 | `SENTRY_RELEASE` | No | Release identifier for Sentry source maps (e.g. git SHA) |
 | `VITE_SENTRY_DSN` | No | Frontend error reporting; build-time env var |
 | `VITE_APP_VERSION` | No | Frontend release tag for Sentry |
+| `CORS_ORIGINS` | Yes (prod) | Comma-separated allowed origins e.g. `https://app.sonalit.io` |
 
 ## Workers
 
