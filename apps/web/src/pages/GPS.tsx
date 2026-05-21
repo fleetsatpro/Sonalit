@@ -42,7 +42,7 @@ type PopupInfo = DeviceLocation & { registration: string | null };
 // Helpers
 // ---------------------------------------------------------------------------
 
-const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
+const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 
 function formatSpeed(speed: number | null): string {
   if (speed === null) return '—';
