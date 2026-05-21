@@ -1,6 +1,7 @@
 import { createRouter, createRoute, createRootRoute, Outlet, redirect } from '@tanstack/react-router';
 import { useAuthStore } from './stores/auth.js';
 import Layout from './components/Layout.js';
+import { RootErrorComponent } from './components/ErrorBoundary.js';
 import LoginPage from './pages/Login.js';
 import DashboardPage from './pages/Dashboard.js';
 import FleetPage from './pages/Fleet.js';
@@ -29,7 +30,7 @@ import AIDecisionPage from './pages/AIDecision.js';
 import CopilotPage from './pages/Copilot.js';
 import SettingsPage from './pages/Settings.js';
 
-const rootRoute = createRootRoute({ component: Outlet });
+const rootRoute = createRootRoute({ component: Outlet, errorComponent: RootErrorComponent });
 
 const authRoute = createRoute({
   getParentRoute: () => rootRoute,

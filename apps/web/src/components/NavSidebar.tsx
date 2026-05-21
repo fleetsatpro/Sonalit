@@ -37,26 +37,48 @@ const NAV_ITEMS = [
 export default function NavSidebar() {
   const { sidebarOpen, toggleSidebar } = useUIStore();
   return (
-    <aside className={`fixed top-0 left-0 h-full bg-slate-900 border-r border-slate-800 flex flex-col z-30 transition-all duration-200 ${sidebarOpen ? 'w-64' : 'w-16'}`}>
-      <div className="flex items-center justify-between h-14 px-4 border-b border-slate-800">
-        {sidebarOpen && <span className="font-bold text-lg text-blue-400">Sonalit</span>}
-        <button onClick={toggleSidebar} className="p-1 rounded hover:bg-slate-800 ml-auto" aria-label="Toggle sidebar">
-          {sidebarOpen ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
-        </button>
-      </div>
-      <nav className="flex-1 overflow-y-auto py-2">
-        {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
-          <Link
-            key={to}
-            to={to}
-            className="flex items-center gap-3 px-4 py-2 text-sm text-slate-400 hover:text-white hover:bg-slate-800 transition-colors [&.active]:text-blue-400 [&.active]:bg-slate-800"
-            aria-label={label}
+    <>
+      {/* Mobile backdrop — tap to close */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 z-20 md:hidden"
+          onClick={toggleSidebar}
+          aria-hidden="true"
+        />
+      )}
+
+      <aside
+        className={`
+          fixed top-0 left-0 h-full bg-slate-900 border-r border-slate-800
+          flex flex-col z-30 transition-all duration-200
+          ${sidebarOpen ? 'w-64 translate-x-0' : '-translate-x-full md:translate-x-0 md:w-16'}
+        `}
+      >
+        <div className="flex items-center justify-between h-14 px-4 border-b border-slate-800 shrink-0">
+          {sidebarOpen && <span className="font-bold text-lg text-blue-400">Sonalit</span>}
+          <button
+            onClick={toggleSidebar}
+            className="p-1.5 rounded hover:bg-slate-800 ml-auto text-slate-400 hover:text-white"
+            aria-label="Toggle sidebar"
           >
-            <Icon size={18} className="shrink-0" />
-            {sidebarOpen && <span>{label}</span>}
-          </Link>
-        ))}
-      </nav>
-    </aside>
+            {sidebarOpen ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+          </button>
+        </div>
+        <nav className="flex-1 overflow-y-auto py-2">
+          {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
+            <Link
+              key={to}
+              to={to}
+              onClick={() => { if (window.innerWidth < 768) toggleSidebar(); }}
+              className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-400 hover:text-white hover:bg-slate-800 transition-colors [&.active]:text-blue-400 [&.active]:bg-slate-800/80"
+              aria-label={label}
+            >
+              <Icon size={18} className="shrink-0" />
+              {sidebarOpen && <span className="truncate">{label}</span>}
+            </Link>
+          ))}
+        </nav>
+      </aside>
+    </>
   );
 }

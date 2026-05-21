@@ -69,9 +69,9 @@ export default function IncidentCenter() {
   const selectedIncident = data?.find((i) => i.id === selectedId) ?? null;
 
   return (
-    <div className="flex h-full gap-0 -m-6">
+    <div className="flex flex-col md:flex-row h-full gap-0 -m-4 md:-m-6">
       {/* Left panel: active incident list */}
-      <div className="w-80 shrink-0 bg-slate-900 border-r border-slate-700 flex flex-col">
+      <div className="w-full md:w-80 shrink-0 bg-slate-900 border-b md:border-b-0 md:border-r border-slate-700 flex flex-col max-h-56 md:max-h-none overflow-y-auto">
         <div className="p-4 border-b border-slate-700">
           <div className="flex items-center gap-2">
             <AlertTriangle size={18} className="text-orange-400" />

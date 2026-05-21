@@ -90,7 +90,7 @@ export default function PanicCenter() {
     const unsub = subscribe<RawPanicEvent>(
       `org#${user.org_id}`,
       (raw) => {
-        if (!raw || !raw.driver_name) return;
+        if (!raw || !raw.driver_name || !raw.location?.lat || !raw.location?.lon) return;
         const event: PanicEvent = {
           id: raw.id ?? `${Date.now()}-${Math.random()}`,
           driver_name: raw.driver_name,
