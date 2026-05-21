@@ -42,18 +42,15 @@ process.on("unhandledRejection", (reason) => {
 
 const express = require("express");
 const http = require("http");
-const { Server } = require("socket.io");
 const helmet = require("helmet");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const rateLimit = require("express-rate-limit");
 const morgan = require("morgan");
-const jwt = require("jsonwebtoken");
 
 const logger = require("./utils/logger");
 const { errorHandler } = require("./middleware/error");
-const { setIO: gpsSetIO } = require("./workers/gpsWorker");
-const { setIO: alertSetIO } = require("./workers/alertWorker");
+const responseEnvelope = require("./middleware/responseEnvelope");
 const { createQueues } = require("./config/queue");
 const { healthCheck: dbHealth, query: dbQuery } = require("./config/database");
 const { healthCheck: redisHealth } = require("./config/redis");
@@ -68,41 +65,6 @@ if (!process.env.JWT_SECRET) {
 const app = express();
 const server = http.createServer(app);
 global._server = server;
-
-const io = new Server(server, { cors: { origin: true, credentials: true }, transports: ["websocket", "polling"] });
-
-io.use((socket, next) => {
-  const token = socket.handshake.auth && socket.handshake.auth.token;
-  if (!token) return next(new Error("Auth required"));
-  try { socket.user = jwt.verify(token, process.env.JWT_SECRET); next(); }
-  catch { next(new Error("Invalid token")); }
-});
-
-io.on("connection", s => {
-  logger.info("Socket: " + s.id + " user=" + s.user?.email);
-  s.on("subscribe:region", r => s.join("region:" + r));
-  s.on("subscribe:convoy", id => s.join("convoy:" + id));
-  s.on("subscribe:device", id => s.join("device:" + id));
-  s.on("disconnect", () => logger.info("Socket disconnected: " + s.id));
-});
-
-// Socket.IO Redis adapter for horizontal scaling
-if (process.env.REDIS_URL) {
-  try {
-    const { createAdapter } = require("@socket.io/redis-adapter");
-    const Redis = require("ioredis");
-    const pubClient = new Redis(process.env.REDIS_URL);
-    const subClient = pubClient.duplicate();
-    pubClient.on("error", e => logger.warn("Socket.IO Redis pub error: " + e.message));
-    subClient.on("error", e => logger.warn("Socket.IO Redis sub error: " + e.message));
-    io.adapter(createAdapter(pubClient, subClient));
-    logger.info("Socket.IO Redis adapter active");
-  } catch (e) { logger.warn("Socket.IO Redis adapter failed: " + e.message); }
-}
-
-app.set("io", io);
-gpsSetIO(io);
-alertSetIO(io);
 
 // ─── Middleware stack (order matters for security) ────────────────────────────
 app.use(requestId);
@@ -142,6 +104,7 @@ app.use("/api/v1/auth/refresh", authRefreshLimiter);
 
 // Body parser AFTER rate limit
 app.use(express.json({ limit: "64kb" }));
+app.use(responseEnvelope);
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan(":method :url :status :res[content-length] - :response-time ms reqId=:req[x-request-id]", { stream: { write: m => logger.info(m.trim()) } }));
 
@@ -194,7 +157,7 @@ app.get("/metrics", async (req, res) => {
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 ["auth", "vehicles", "convoys", "alerts", "messages", "analytics", "geofences", "devices",
-  "incidents", "rules", "gps", "sensors", "ai", "apikeys", "reports", "documents", "webhooks", "guardian"]
+  "incidents", "rules", "gps", "sensors", "ai", "apikeys", "reports", "documents", "webhooks", "guardian", "realtime"]
   .forEach(r => app.use("/api/v1/" + r, require("./routes/" + r)));
 
 try { app.use("/api/v1/guardian/cfo", require("./routes/guardianCfo")); logger.info("Route loaded: /api/v1/guardian/cfo"); }
@@ -289,4 +252,4 @@ if (process.env.REDIS_URL && process.env.DISABLE_REDIS !== "true") {
   process.on("SIGINT", () => shutdown(0));
 }
 
-module.exports = { app, server, io };
+module.exports = { app, server };

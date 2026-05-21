@@ -15,7 +15,7 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/api\.sonalit\.io\//,
+            urlPattern: ({ url }: { url: URL }) => url.pathname.startsWith('/api/'),
             handler: 'NetworkFirst',
             options: { cacheName: 'api-cache', expiration: { maxEntries: 200, maxAgeSeconds: 300 } },
           },
@@ -37,6 +37,12 @@ export default defineConfig({
       '@sonalit/contracts': path.resolve(__dirname, '../../packages/contracts/src/index.ts'),
     },
   },
-  server: { port: 3000, proxy: { '/v4': 'http://localhost:4000' } },
+  server: {
+    port: 3000,
+    proxy: {
+      '/api': { target: 'http://localhost:5000', changeOrigin: true },
+      '/realtime': { target: 'ws://localhost:8000', ws: true, changeOrigin: true },
+    },
+  },
   build: { sourcemap: true, rollupOptions: { output: { manualChunks: { vendor: ['react', 'react-dom'], router: ['@tanstack/react-router'], query: ['@tanstack/react-query'], maps: ['maplibre-gl', 'deck.gl'] } } } },
 });

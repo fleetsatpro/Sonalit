@@ -1,6 +1,7 @@
 const Joi = require('joi');
 const { query } = require('../config/database');
 const { asyncHandler } = require('../middleware/error');
+const { publish } = require('../realtime/centrifugo');
 
 const VALID_TRANSITIONS = {
   planned: ['active', 'cancelled'],
@@ -180,12 +181,8 @@ const updateConvoyStatus = asyncHandler(async (req, res) => {
     [value.status, req.params.id]
   );
 
-  const io = req.app.get('io');
-  if (io) {
-    const eventMap = { active: 'convoy:activated', completed: 'convoy:completed', cancelled: 'convoy:cancelled', aborted: 'convoy:aborted' };
-    const eventName = eventMap[value.status] || 'convoy:update';
-    io.emit(eventName, { convoyId: req.params.id, status: value.status, updatedBy: req.user.id });
-  }
+  const eventMap = { active: 'convoy:activated', completed: 'convoy:completed', cancelled: 'convoy:cancelled', aborted: 'convoy:aborted' };
+  publish(eventMap[value.status] || 'convoy:update', { convoyId: req.params.id, status: value.status, updatedBy: req.user.id });
 
   // D4: on completion, enqueue archive PDF generation
   if (value.status === 'completed') {

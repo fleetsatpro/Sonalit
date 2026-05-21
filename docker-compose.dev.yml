@@ -1,0 +1,33 @@
+services:
+  centrifugo:
+    image: centrifugo/centrifugo:v5
+    ports:
+      - "8000:8000"
+    environment:
+      CENTRIFUGO_TOKEN_HMAC_SECRET: ${CENTRIFUGO_TOKEN_HMAC_SECRET:-dev-secret-change-in-prod}
+      CENTRIFUGO_API_KEY: ${CENTRIFUGO_API_KEY:-dev-api-key-change-in-prod}
+      CENTRIFUGO_ADMIN: "false"
+      CENTRIFUGO_LOG_LEVEL: debug
+    command: centrifugo --port=8000
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: sonalit
+      POSTGRES_USER: sonalit
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev-password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
