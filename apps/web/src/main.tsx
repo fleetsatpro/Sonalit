@@ -6,11 +6,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import { router } from './router.js';
 import { initOtel } from './lib/otel.js';
+import { initSentry, Sentry } from './lib/sentry.js';
 import { useAuthStore } from './stores/auth.js';
 import OfflineGuard from './components/OfflineGuard.js';
 import UpdateAvailableToast from './components/UpdateAvailableToast.js';
 
 initOtel();
+initSentry();
 
 // T2.6: Guard against reload-loop — only reload when page is not actively used.
 // An unconditional reload on controllerchange causes a loop when the SW updates
@@ -47,12 +49,14 @@ async function mount() {
 
   ReactDOM.createRoot(rootEl!).render(
     <React.StrictMode>
-      <OfflineGuard>
-        <QueryClientProvider client={queryClient}>
-          <RouterProvider router={router} />
-        </QueryClientProvider>
-        <UpdateAvailableToast />
-      </OfflineGuard>
+      <Sentry.ErrorBoundary fallback={<p>An unexpected error occurred.</p>}>
+        <OfflineGuard>
+          <QueryClientProvider client={queryClient}>
+            <RouterProvider router={router} />
+          </QueryClientProvider>
+          <UpdateAvailableToast />
+        </OfflineGuard>
+      </Sentry.ErrorBoundary>
     </React.StrictMode>,
   );
 }

@@ -46,6 +46,10 @@ See `backend/.env.example` for the full list. Critical variables:
 | `CENTRIFUGO_API_KEY` | Yes (real-time) | HTTP API key for publish |
 | `CENTRIFUGO_TOKEN_HMAC_SECRET` | Yes (real-time) | WS connection JWT signing key |
 | `IMEI_PEPPER` | Yes | GDPR; never rotate without hash backfill |
+| `SENTRY_DSN` | No | Backend error reporting; omit to disable |
+| `SENTRY_RELEASE` | No | Release identifier for Sentry source maps (e.g. git SHA) |
+| `VITE_SENTRY_DSN` | No | Frontend error reporting; build-time env var |
+| `VITE_APP_VERSION` | No | Frontend release tag for Sentry |
 
 ## Workers
 

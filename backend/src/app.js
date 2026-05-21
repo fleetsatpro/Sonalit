@@ -1,4 +1,5 @@
 require("dotenv").config();
+const Sentry = require("./instrument");
 
 // ─── Graceful shutdown ────────────────────────────────────────────────────────
 // shutdown(code): stop accepting traffic, drain workers, close pool, then exit.
@@ -196,6 +197,7 @@ catch (e) { logger.warn("GDPR route failed: " + e.message); }
 
 app.use("/api/v1/sync", (req, res) => res.json({ ok: true, processed: 0 }));
 app.use((req, res) => res.status(404).json({ error: req.method + " " + req.path + " not found" }));
+if (process.env.SENTRY_DSN) Sentry.setupExpressErrorHandler(app);
 app.use(errorHandler);
 
 // ─── Cron jobs ────────────────────────────────────────────────────────────────
