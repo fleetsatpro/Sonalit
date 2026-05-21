@@ -170,8 +170,7 @@ export default function PanicCenter() {
         {/* Map */}
         <div className="rounded-lg overflow-hidden border border-slate-700 min-h-64">
           <Map
-            mapLib={import('maplibre-gl')}
-            mapStyle="https://demotiles.maplibre.org/style.json"
+            mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
             initialViewState={{
               longitude: mapCenter.lon,
               latitude: mapCenter.lat,
