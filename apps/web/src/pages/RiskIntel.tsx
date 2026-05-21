@@ -74,8 +74,9 @@ export default function RiskIntel() {
   const { data, isLoading, isError } = useQuery<RiskZone[]>({
     queryKey: ['riskzones', filters],
     queryFn: async () => {
-      const res = await api.get<RiskZone[]>('/riskzones', { params });
-      return res.data;
+      const res = await api.get<RiskZone[] | { data: RiskZone[] }>('/riskzones', { params });
+      const raw = res.data;
+      return Array.isArray(raw) ? raw : (raw?.data ?? []);
     },
   });
 
@@ -83,7 +84,7 @@ export default function RiskIntel() {
     if (!mapContainer.current || mapRef.current) return;
     mapRef.current = new maplibregl.Map({
       container: mapContainer.current,
-      style: 'https://demotiles.maplibre.org/style.json',
+      style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
       center: [36.817, -1.286],
       zoom: 8,
     });

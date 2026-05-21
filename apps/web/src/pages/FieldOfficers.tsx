@@ -108,8 +108,9 @@ export default function FieldOfficers() {
   const { data, isLoading, isError } = useQuery<FieldOfficer[]>({
     queryKey: ['field-officers'],
     queryFn: async () => {
-      const res = await api.get<FieldOfficer[]>('/field-officers');
-      return res.data;
+      const res = await api.get<FieldOfficer[] | { data: FieldOfficer[] }>('/field-officers');
+      const raw = res.data;
+      return Array.isArray(raw) ? raw : (raw?.data ?? []);
     },
   });
 

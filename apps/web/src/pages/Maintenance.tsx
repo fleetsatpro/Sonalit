@@ -127,15 +127,19 @@ export default function Maintenance() {
   const { data, isLoading, isError } = useQuery<PaginatedResponse<MaintenanceRecord>>({
     queryKey: ['maintenance', page],
     queryFn: async () => {
-      const res = await api.get<PaginatedResponse<MaintenanceRecord>>('/maintenance', {
+      const res = await api.get<PaginatedResponse<MaintenanceRecord> | MaintenanceRecord[]>('/maintenance', {
         params: { page, per_page: perPage },
       });
-      return res.data;
+      const raw = res.data;
+      if (Array.isArray(raw)) {
+        return { data: raw, total: raw.length, page: 1, per_page: perPage };
+      }
+      return raw as PaginatedResponse<MaintenanceRecord>;
     },
   });
 
-  const overdueCount = data?.data.filter(isOverdue).length ?? 0;
-  const totalPages = data ? Math.ceil(data.total / perPage) : 1;
+  const overdueCount = data?.data?.filter(isOverdue).length ?? 0;
+  const totalPages = data?.total ? Math.ceil(data.total / perPage) : 1;
 
   return (
     <div className="space-y-4">

@@ -121,14 +121,18 @@ export default function Shipments() {
   const { data, isLoading, isError } = useQuery<PaginatedResponse<Shipment>>({
     queryKey: ['shipments', page],
     queryFn: async () => {
-      const res = await api.get<PaginatedResponse<Shipment>>('/shipments', {
+      const res = await api.get<PaginatedResponse<Shipment> | Shipment[]>('/shipments', {
         params: { page, per_page: perPage },
       });
-      return res.data;
+      const raw = res.data;
+      if (Array.isArray(raw)) {
+        return { data: raw, total: raw.length, page: 1, per_page: perPage };
+      }
+      return raw as PaginatedResponse<Shipment>;
     },
   });
 
-  const totalPages = data ? Math.ceil(data.total / perPage) : 1;
+  const totalPages = data?.total ? Math.ceil(data.total / perPage) : 1;
 
   return (
     <div className="space-y-4">
@@ -137,7 +141,7 @@ export default function Shipments() {
           <Package size={20} className="text-blue-400" />
           <h1 className="text-xl font-bold">Shipments</h1>
           {data && (
-            <span className="text-slate-400 text-sm">({data.total} total)</span>
+            <span className="text-slate-400 text-sm">({data?.total ?? 0} total)</span>
           )}
         </div>
         <button

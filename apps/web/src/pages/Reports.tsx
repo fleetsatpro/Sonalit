@@ -123,8 +123,9 @@ export default function Reports() {
   const { data, isLoading, isError } = useQuery<Report[]>({
     queryKey: ['reports'],
     queryFn: async () => {
-      const res = await api.get<Report[]>('/reports');
-      return res.data;
+      const res = await api.get<Report[] | { data: Report[] }>('/reports');
+      const raw = res.data;
+      return Array.isArray(raw) ? raw : (raw?.data ?? []);
     },
     refetchInterval: (query) => {
       const reports = query.state.data;
