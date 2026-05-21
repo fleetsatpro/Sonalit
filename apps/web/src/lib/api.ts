@@ -2,8 +2,12 @@ import axios from 'axios';
 import { context, propagation, trace } from '@opentelemetry/api';
 import { useAuthStore } from '../stores/auth.js';
 
+const API_BASE =
+  import.meta.env['VITE_API_URL'] ??
+  'https://serene-ambition-production.up.railway.app/api/v1';
+
 export const api = axios.create({
-  baseURL: import.meta.env['VITE_API_URL'] ?? '/v4',
+  baseURL: API_BASE,
   timeout: 15_000,
 });
 
@@ -32,7 +36,7 @@ api.interceptors.response.use(
       original._retry = true;
       try {
         const { data } = await axios.post<{ access_token: string; user: import('../stores/auth.js').AuthUser }>(
-          `${import.meta.env['VITE_API_URL'] ?? '/v4'}/auth/refresh`,
+          `${API_BASE}/auth/refresh`,
           {},
           { withCredentials: true },
         );
