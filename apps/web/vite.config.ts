@@ -44,5 +44,18 @@ export default defineConfig({
       '/realtime': { target: 'ws://localhost:8000', ws: true, changeOrigin: true },
     },
   },
-  build: { sourcemap: true, rollupOptions: { output: { manualChunks: { vendor: ['react', 'react-dom'], router: ['@tanstack/react-router'], query: ['@tanstack/react-query'], maps: ['maplibre-gl', 'deck.gl'] } } } },
+  build: {
+    sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom'],
+          tanstack: ['@tanstack/react-router', '@tanstack/react-query'],
+          maps: ['maplibre-gl', 'deck.gl'],
+          crdt: ['yjs'],
+          forms: ['react-hook-form', 'zod'],
+        },
+      },
+    },
+  },
 });
