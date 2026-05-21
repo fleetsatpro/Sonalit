@@ -35,13 +35,13 @@ api.interceptors.response.use(
     if (err.response?.status === 401 && !original._retry) {
       original._retry = true;
       try {
-        const { data } = await axios.post<{ access_token: string; user: import('../stores/auth.js').AuthUser }>(
+        const { data } = await axios.post<{ token: string; user: import('../stores/auth.js').AuthUser }>(
           `${API_BASE}/auth/refresh`,
           {},
           { withCredentials: true },
         );
-        useAuthStore.getState().setAuth(data.access_token, data.user);
-        original.headers['Authorization'] = `Bearer ${data.access_token}`;
+        useAuthStore.getState().setAuth(data.token, data.user);
+        original.headers['Authorization'] = `Bearer ${data.token}`;
         return api(original);
       } catch {
         useAuthStore.getState().clearAuth();
