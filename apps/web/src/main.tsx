@@ -8,6 +8,7 @@ import { router } from './router.js';
 import { initOtel } from './lib/otel.js';
 import { useAuthStore } from './stores/auth.js';
 import OfflineGuard from './components/OfflineGuard.js';
+import UpdateAvailableToast from './components/UpdateAvailableToast.js';
 
 initOtel();
 
@@ -50,6 +51,7 @@ async function mount() {
         <QueryClientProvider client={queryClient}>
           <RouterProvider router={router} />
         </QueryClientProvider>
+        <UpdateAvailableToast />
       </OfflineGuard>
     </React.StrictMode>,
   );

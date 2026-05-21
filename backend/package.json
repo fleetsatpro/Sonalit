@@ -26,6 +26,7 @@
     "migrate:convoy-fix": "node scripts/migrate-convoy-trucks-fix.js",
     "db:migrate": "node scripts/db-migrate.js",
     "db:status": "node scripts/db-status.js",
+    "generate-openapi": "node scripts/generate-openapi.js",
     "predeploy": "node scripts/migrate-all.js",
     "seed": "node scripts/seed.js",
     "workers": "node scripts/start-workers.js",

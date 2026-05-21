@@ -34,6 +34,9 @@ export const HEADER_WEBHOOK_EVENT = 'X-Sonalit-Event' as const;
 /** API version negotiation — e.g. "2024-01-01". */
 export const HEADER_API_VERSION = 'X-Api-Version' as const;
 
+/** CSRF double-submit token — must match the value of the __Host-csrf cookie. */
+export const HEADER_CSRF_TOKEN = 'X-CSRF-Token' as const;
+
 // ---------------------------------------------------------------------------
 // Type map for header values (for use with typed fetch wrappers)
 // ---------------------------------------------------------------------------
@@ -44,6 +47,7 @@ export type SonalitRequestHeaders = {
   [HEADER_ORG_ID]?: string;
   [HEADER_REQUEST_ID]?: string;
   [HEADER_TRACE_ID]?: string;
+  [HEADER_CSRF_TOKEN]?: string;
   Authorization?: string;
   'Content-Type'?: string;
   Accept?: string;

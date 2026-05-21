@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { context, propagation, trace } from '@opentelemetry/api';
 import { useAuthStore, getAccessToken, setAccessToken } from '../stores/auth.js';
+import { getCsrfToken } from './csrf.js';
 
 const API_BASE = import.meta.env['VITE_API_BASE_URL'] ?? '/api/v1';
 
@@ -14,6 +15,13 @@ api.interceptors.request.use((config) => {
   // Access token lives in memory only — never in localStorage (T1.2)
   const token = getAccessToken();
   if (token) config.headers['Authorization'] = `Bearer ${token}`;
+
+  // Double-submit CSRF cookie — attach on state-changing methods (BL-001)
+  const method = (config.method ?? 'get').toLowerCase();
+  if (!['get', 'head', 'options'].includes(method)) {
+    const csrf = getCsrfToken();
+    if (csrf) config.headers['X-CSRF-Token'] = csrf;
+  }
 
   // W3C distributed tracing headers
   const span = trace.getActiveSpan();
