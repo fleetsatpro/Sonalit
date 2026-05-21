@@ -7,6 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const { sendCommandPush, sendPanicAck } = require('../utils/fcm');
+const { publish } = require('../realtime/centrifugo');
 
 // ─── Integrity age thresholds per command type (T1.4) ────────────────────────
 const INTEGRITY_MAX_AGE = {
@@ -739,20 +740,17 @@ router.post('/location', deviceAuth, async (req, res, next) => {
       [deviceId, lat, lng, speed ?? null]
     );
 
-    const io = req.app.get('io');
-    if (io) {
-      io.emit('device:location', {
-        device_id: deviceId,
-        name: req.device.name,
-        lat,
-        lng,
-        altitude: altitude ?? null,
-        heading: heading ?? null,
-        speed: speed ?? null,
-        accuracy: accuracy ?? null,
-        timestamp: result.rows[0].timestamp,
-      });
-    }
+    publish('device:location', {
+      device_id: deviceId,
+      name: req.device.name,
+      lat,
+      lng,
+      altitude: altitude ?? null,
+      heading: heading ?? null,
+      speed: speed ?? null,
+      accuracy: accuracy ?? null,
+      timestamp: result.rows[0].timestamp,
+    });
 
     res.json({ ok: true });
   } catch (err) {
@@ -829,10 +827,7 @@ router.post('/panic', deviceAuth, panicLimiter, async (req, res, next) => {
         [deviceId]
       );
 
-      const io = req.app.get('io');
-      if (io) {
-        io.emit('device:panic', payload);
-      }
+      publish('device:panic', payload);
       logger.warn(`PANIC triggered: device=${deviceId} name="${req.device.name}" mode=${mode}`);
       // FCM ack to device confirming SOS was received (Task 4.1, fire-and-forget)
       if (req.device.fcm_token) {
@@ -905,22 +900,19 @@ router.post('/report', deviceAuth, async (req, res, next) => {
     }
 
     if (isNew) {
-      const io = req.app.get('io');
-      if (io) {
-        io.emit('device:report', {
-          report_id: report.id,
-          event_uuid: report.event_uuid,
-          device_id: deviceId,
-          device_name: req.device.name,
-          category: report.category,
-          severity: report.severity,
-          description: report.description || null,
-          lat: report.lat ?? null,
-          lng: report.lng ?? null,
-          photo_url: report.photo_url || null,
-          created_at: report.created_at,
-        });
-      }
+      publish('device:report', {
+        report_id: report.id,
+        event_uuid: report.event_uuid,
+        device_id: deviceId,
+        device_name: req.device.name,
+        category: report.category,
+        severity: report.severity,
+        description: report.description || null,
+        lat: report.lat ?? null,
+        lng: report.lng ?? null,
+        photo_url: report.photo_url || null,
+        created_at: report.created_at,
+      });
       logger.info(`Field report: device=${deviceId} category=${category} severity=${severity}`);
     }
 
@@ -1319,10 +1311,7 @@ router.post('/devices/:id/command', authenticate, commandLimiter, async (req, re
 
     auditLog('admin', req.user.id, 'command_issued', 'device', req.params.id, { command_type, payload, nonce }, req.ip);
 
-    const io = req.app.get('io');
-    if (io) {
-      io.emit('device:command', { device_id: req.params.id, command_type, payload: payload || null, command_id: cmd.id, issued_at: cmd.issued_at, signature });
-    }
+    publish('device:command', { device_id: req.params.id, command_type, payload: payload || null, command_id: cmd.id, issued_at: cmd.issued_at, signature });
 
     logger.info(`Command issued: ${command_type} → device=${req.params.id} by user=${req.user.id}`);
 
