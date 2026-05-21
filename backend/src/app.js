@@ -1,4 +1,5 @@
 require("dotenv").config();
+const Sentry = require("./instrument");
 
 // ─── Graceful shutdown ────────────────────────────────────────────────────────
 // shutdown(code): stop accepting traffic, drain workers, close pool, then exit.
@@ -78,11 +79,15 @@ app.use(helmet({
       workerSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"], // Tailwind CSS requires this
       scriptSrc: ["'self'"],
+      frameAncestors: ["'none'"],
     },
   },
   strictTransportSecurity: { maxAge: 63072000, includeSubDomains: true, preload: true },
 }));
-app.use(cors({ origin: true, credentials: true }));
+const _corsOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
+  : ['http://localhost:3000', 'http://localhost:5173'];
+app.use(cors({ origin: _corsOrigins, credentials: true }));
 app.use(cookieParser());
 
 // ── Global IP rate-limit BEFORE body parsing so large-body attacks are blocked
@@ -196,6 +201,7 @@ catch (e) { logger.warn("GDPR route failed: " + e.message); }
 
 app.use("/api/v1/sync", (req, res) => res.json({ ok: true, processed: 0 }));
 app.use((req, res) => res.status(404).json({ error: req.method + " " + req.path + " not found" }));
+if (process.env.SENTRY_DSN) Sentry.setupExpressErrorHandler(app);
 app.use(errorHandler);
 
 // ─── Cron jobs ────────────────────────────────────────────────────────────────
@@ -277,6 +283,37 @@ try {
   });
   logger.info("CFO EOD finalization sweep scheduled (*/15 * * * *)");
 } catch (e) { logger.warn("CFO EOD sweep not scheduled: " + e.message); }
+
+// BL-010: GDPR scheduled purge — weekly at 04:00 UTC Sunday
+// Executes pending erasure requests older than 30 days.
+if (!process.env.GENERATE_OPENAPI)
+try {
+  const cron = require("node-cron");
+  cron.schedule("0 4 * * 0", async () => {
+    try {
+      const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const pending = await dbQuery(
+        `SELECT id FROM users WHERE deletion_requested_at IS NOT NULL AND deletion_requested_at < $1 LIMIT 100`,
+        [cutoff]
+      );
+      for (const { id } of pending.rows) {
+        await dbQuery(
+          `UPDATE users SET
+             email = 'deleted-' || id || '@purged.invalid',
+             name  = '[deleted]',
+             deletion_requested_at = NULL,
+             deleted_at = NOW()
+           WHERE id = $1 AND deleted_at IS NULL`,
+          [id]
+        );
+        await dbQuery(`DELETE FROM refresh_tokens WHERE user_id = $1`, [id]);
+        logger.info(`GDPR purge: anonymised user ${id}`);
+      }
+      if (pending.rows.length) logger.info(`GDPR weekly purge: processed ${pending.rows.length} user(s)`);
+    } catch (err) { logger.error("GDPR purge cron error: " + err.message); }
+  });
+  logger.info("GDPR weekly purge scheduled (Sundays 04:00 UTC, BL-010)");
+} catch (e) { logger.warn("GDPR purge cron not started: " + e.message); }
 
 // ─── Start server ─────────────────────────────────────────────────────────────
 // GENERATE_OPENAPI=1 skips server.listen so the script can introspect routes safely
