@@ -175,7 +175,7 @@ export default function GPS(): React.ReactElement {
     : { longitude: 3.389, latitude: 6.449, zoom: 5 };
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
+    <div className="flex flex-col md:flex-row h-[calc(100dvh-3.5rem)] overflow-hidden -m-4 md:-m-6">
       {/* Map */}
       <div className="flex-1 relative">
         {isLoading && (
@@ -238,7 +238,7 @@ export default function GPS(): React.ReactElement {
       </div>
 
       {/* Control panel */}
-      <aside className="w-72 bg-gray-900 border-l border-gray-800 flex flex-col overflow-hidden">
+      <aside className="w-full md:w-72 h-64 md:h-auto bg-gray-900 border-t md:border-t-0 md:border-l border-gray-800 flex flex-col overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-800 flex items-center gap-2">
           <Radio className="w-4 h-4 text-indigo-400" />
           <h2 className="text-white font-semibold text-sm">Live Devices</h2>

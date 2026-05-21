@@ -85,21 +85,21 @@ export default function Executive() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <KpiCard
               label="Fleet Utilization"
-              value={data.fleet_utilization_pct.toFixed(1)}
+              value={(data.fleet_utilization_pct ?? 0).toFixed(1)}
               unit="%"
               icon={<Truck size={20} />}
               color="bg-blue-900 text-blue-400"
             />
             <KpiCard
               label="On-Time Delivery"
-              value={data.on_time_delivery_pct.toFixed(1)}
+              value={(data.on_time_delivery_pct ?? 0).toFixed(1)}
               unit="%"
               icon={<TrendingUp size={20} />}
               color="bg-green-900 text-green-400"
             />
             <KpiCard
               label="Safety Score"
-              value={data.safety_score.toFixed(1)}
+              value={(data.safety_score ?? 0).toFixed(1)}
               unit="/100"
               icon={<Shield size={20} />}
               color="bg-purple-900 text-purple-400"

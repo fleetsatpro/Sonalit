@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import { subscribe } from '../lib/centrifuge.js';
@@ -167,8 +167,8 @@ export default function Incidents() {
   const { data, isLoading, isError } = useQuery<Incident[]>({
     queryKey: ['incidents'],
     queryFn: async () => {
-      const res = await api.get<Incident[]>('/incidents');
-      return res.data;
+      const res = await api.get<Incident[] | { data: Incident[] }>('/incidents');
+      return Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
     },
   });
 
@@ -215,7 +215,7 @@ export default function Incidents() {
       )}
 
       {data && (
-        <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
+        <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-900 text-slate-400 text-xs uppercase">
               <tr>
@@ -229,9 +229,8 @@ export default function Incidents() {
             </thead>
             <tbody>
               {data.map((incident) => (
-                <>
+                <React.Fragment key={incident.id}>
                   <tr
-                    key={incident.id}
                     className="border-t border-slate-700 hover:bg-slate-750 cursor-pointer"
                     onClick={() => toggleRow(incident.id)}
                   >
@@ -255,13 +254,13 @@ export default function Incidents() {
                     </td>
                   </tr>
                   {expandedId === incident.id && (
-                    <tr key={`${incident.id}-notes`} className="border-t border-slate-700">
+                    <tr className="border-t border-slate-700">
                       <td colSpan={6} className="p-0">
                         <NotesEditor incident={incident} />
                       </td>
                     </tr>
                   )}
-                </>
+                </React.Fragment>
               ))}
               {data.length === 0 && (
                 <tr>
