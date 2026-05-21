@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
+import { getAccessToken } from '../stores/auth.js';
 import { Bot, Send, Loader2, Clock } from 'lucide-react';
 
 interface PastDecision {
@@ -44,14 +45,8 @@ export default function AIDecision() {
 
     try {
       const authHeader = (() => {
-        try {
-          const raw = localStorage.getItem('sonalit-auth');
-          if (!raw) return '';
-          const parsed = JSON.parse(raw) as { state?: { token?: string } };
-          return parsed.state?.token ? `Bearer ${parsed.state.token}` : '';
-        } catch {
-          return '';
-        }
+        const token = getAccessToken();
+        return token ? `Bearer ${token}` : '';
       })();
 
       const response = await fetch(`${API_BASE}/ai/query`, {

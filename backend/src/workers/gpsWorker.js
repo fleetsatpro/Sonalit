@@ -40,8 +40,7 @@ function minDistToPathKm(lat, lng, path) {
   return min === Infinity ? 0 : min;
 }
 
-let io = null;
-function setIO(socketIO) { io = socketIO; }
+const { publish } = require('../realtime/centrifugo');
 
 function getRedisConnection() {
   const url = new URL(process.env.REDIS_URL || 'redis://127.0.0.1:6379');
@@ -68,7 +67,7 @@ async function processGPS(job) {
   );
 
   // 3. Broadcast live position
-  if (io) io.emit('vehicle:update', { vehicleId: vehicle_id, lat, lng, speed });
+  publish('vehicle:update', { vehicleId: vehicle_id, lat, lng, speed });
 
   const { alertQueue } = getQueues();
 
@@ -164,4 +163,4 @@ function startGPSWorker() {
   return worker;
 }
 
-module.exports = { startGPSWorker, setIO };
+module.exports = { startGPSWorker };

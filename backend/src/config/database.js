@@ -26,7 +26,9 @@ pool.on('error', (err) => {
   logger.error('Unexpected PostgreSQL pool error', err);
 });
 
-pool.on('connect', () => {
+pool.on('connect', (client) => {
+  // Prevent runaway queries from holding connections indefinitely
+  client.query("SET statement_timeout = '30s'").catch(() => {});
   logger.info('New PostgreSQL client connected');
 });
 

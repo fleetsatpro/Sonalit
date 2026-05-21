@@ -1,0 +1,80 @@
+Scope: 17 of 18 workspace projects
+apps/web test$ pnpm test:unit && pnpm test:e2e
+services/ai-copilot-svc test$ pnpm test:unit && pnpm test:integration
+services/alerts-svc test$ pnpm test:unit && pnpm test:integration
+services/analytics-svc test$ pnpm test:unit && pnpm test:integration
+services/alerts-svc test: > @sonalit/alerts-svc@4.0.0 test:unit /home/user/Sonalit/services/alerts-svc
+services/alerts-svc test: > vitest run src
+apps/web test: > @sonalit/web@4.0.0 test:unit /home/user/Sonalit/apps/web
+apps/web test: > vitest run src
+services/ai-copilot-svc test: > @sonalit/ai-copilot-svc@4.0.0 test:unit /home/user/Sonalit/services/ai-copilot-svc
+services/ai-copilot-svc test: > vitest run src
+services/analytics-svc test: > @sonalit/analytics-svc@4.0.0 test:unit /home/user/Sonalit/services/analytics-svc
+services/analytics-svc test: > vitest run src
+services/alerts-svc test:  RUN  v2.1.9 /home/user/Sonalit/services/alerts-svc
+services/ai-copilot-svc test:  RUN  v2.1.9 /home/user/Sonalit/services/ai-copilot-svc
+services/alerts-svc test: filter:  src
+services/alerts-svc test: include: **/*.{test,spec}.?(c|m)[jt]s?(x)
+services/alerts-svc test: exclude:  **/node_modules/**, **/dist/**, **/cypress/**, **/.{idea,git,cache,output,temp}/**, **/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*
+services/alerts-svc test: No test files found, exiting with code 1
+services/ai-copilot-svc test: filter:  src
+services/ai-copilot-svc test: include: **/*.{test,spec}.?(c|m)[jt]s?(x)
+services/ai-copilot-svc test: exclude:  **/node_modules/**, **/dist/**, **/cypress/**, **/.{idea,git,cache,output,temp}/**, **/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*
+services/ai-copilot-svc test: No test files found, exiting with code 1
+services/analytics-svc test:  RUN  v2.1.9 /home/user/Sonalit/services/analytics-svc
+services/analytics-svc test: filter:  src
+services/analytics-svc test: include: **/*.{test,spec}.?(c|m)[jt]s?(x)
+services/analytics-svc test: exclude:  **/node_modules/**, **/dist/**, **/cypress/**, **/.{idea,git,cache,output,temp}/**, **/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*
+services/analytics-svc test: No test files found, exiting with code 1
+services/alerts-svc test:  ELIFECYCLE  Command failed with exit code 1.
+services/ai-copilot-svc test:  ELIFECYCLE  Command failed with exit code 1.
+services/analytics-svc test:  ELIFECYCLE  Command failed with exit code 1.
+services/alerts-svc test: Failed
+/home/user/Sonalit/services/alerts-svc:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @sonalit/alerts-svc@4.0.0 test: `pnpm test:unit && pnpm test:integration`
+Exit status 1
+services/auth-svc test$ pnpm test:unit && pnpm test:integration
+services/ai-copilot-svc test: Failed
+Scope: 17 of 18 workspace projects
+apps/web test$ pnpm test:unit && pnpm test:e2e
+services/ai-copilot-svc test$ pnpm test:unit && pnpm test:integration
+services/alerts-svc test$ pnpm test:unit && pnpm test:integration
+services/analytics-svc test$ pnpm test:unit && pnpm test:integration
+services/ai-copilot-svc test: > @sonalit/ai-copilot-svc@4.0.0 test:unit /home/user/Sonalit/services/ai-copilot-svc
+services/ai-copilot-svc test: > vitest run src
+services/alerts-svc test: > @sonalit/alerts-svc@4.0.0 test:unit /home/user/Sonalit/services/alerts-svc
+services/alerts-svc test: > vitest run src
+services/analytics-svc test: > @sonalit/analytics-svc@4.0.0 test:unit /home/user/Sonalit/services/analytics-svc
+services/analytics-svc test: > vitest run src
+apps/web test: > @sonalit/web@4.0.0 test:unit /home/user/Sonalit/apps/web
+apps/web test: > vitest run src
+services/analytics-svc test:  RUN  v2.1.9 /home/user/Sonalit/services/analytics-svc
+services/analytics-svc test: filter:  src
+services/analytics-svc test: include: **/*.{test,spec}.?(c|m)[jt]s?(x)
+services/analytics-svc test: exclude:  **/node_modules/**, **/dist/**, **/cypress/**, **/.{idea,git,cache,output,temp}/**, **/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*
+services/analytics-svc test: No test files found, exiting with code 1
+services/ai-copilot-svc test:  RUN  v2.1.9 /home/user/Sonalit/services/ai-copilot-svc
+services/alerts-svc test:  RUN  v2.1.9 /home/user/Sonalit/services/alerts-svc
+services/ai-copilot-svc test: filter:  src
+services/ai-copilot-svc test: include: **/*.{test,spec}.?(c|m)[jt]s?(x)
+services/ai-copilot-svc test: exclude:  **/node_modules/**, **/dist/**, **/cypress/**, **/.{idea,git,cache,output,temp}/**, **/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*
+services/ai-copilot-svc test: No test files found, exiting with code 1
+services/analytics-svc test:  ELIFECYCLE  Command failed with exit code 1.
+services/alerts-svc test: filter:  src
+services/alerts-svc test: include: **/*.{test,spec}.?(c|m)[jt]s?(x)
+services/alerts-svc test: exclude:  **/node_modules/**, **/dist/**, **/cypress/**, **/.{idea,git,cache,output,temp}/**, **/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*
+services/alerts-svc test: No test files found, exiting with code 1
+services/ai-copilot-svc test:  ELIFECYCLE  Command failed with exit code 1.
+services/alerts-svc test:  ELIFECYCLE  Command failed with exit code 1.
+apps/web test:  RUN  v2.1.9 /home/user/Sonalit/apps/web
+services/analytics-svc test: Failed
+/home/user/Sonalit/services/analytics-svc:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @sonalit/analytics-svc@4.0.0 test: `pnpm test:unit && pnpm test:integration`
+Exit status 1
+services/auth-svc test$ pnpm test:unit && pnpm test:integration
+apps/web test: filter:  src
+apps/web test: include: **/*.{test,spec}.?(c|m)[jt]s?(x)
+apps/web test: exclude:  **/node_modules/**, **/dist/**, **/cypress/**, **/.{idea,git,cache,output,temp}/**, **/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*
+apps/web test: No test files found, exiting with code 1
+services/alerts-svc test: Failed
+services/convoy-svc test$ pnpm test:unit && pnpm test:integration

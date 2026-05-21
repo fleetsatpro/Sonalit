@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
-import { useAuthStore } from '../stores/auth.js';
+import { useAuthStore, getAccessToken } from '../stores/auth.js';
 import { Settings as SettingsIcon, Key, Shield, Copy, Trash2, Plus, X } from 'lucide-react';
 
 interface ApiKey {
@@ -53,7 +53,6 @@ function SectionCard({ title, icon, children }: { title: string; icon: React.Rea
 function ProfileSection() {
   const user = useAuthStore((s) => s.user);
   const setAuth = useAuthStore((s) => s.setAuth);
-  const token = useAuthStore((s) => s.token);
   const [name, setName] = useState(user?.name ?? '');
   const [success, setSuccess] = useState(false);
 
@@ -61,6 +60,7 @@ function ProfileSection() {
     mutationFn: (payload: UpdateNamePayload) =>
       api.patch<typeof user>('/auth/me', payload),
     onSuccess: (res) => {
+      const token = getAccessToken();
       if (res.data && token) setAuth(token, res.data);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);

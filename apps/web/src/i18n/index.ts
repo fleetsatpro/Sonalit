@@ -9,7 +9,15 @@ i18n
   .init({
     resources: { en: { translation: en } },
     fallbackLng: 'en',
+    returnEmptyString: false,
     interpolation: { escapeValue: false },
+    missingKeyHandler: (_lngs, _ns, key) => {
+      // Log missing keys in non-production; Sentry integration lives in T7.4
+      if (import.meta.env['MODE'] !== 'production') {
+        console.warn(`[i18n] missing key: "${key}"`);
+      }
+    },
+    saveMissing: true,
   });
 
 export default i18n;

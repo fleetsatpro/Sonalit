@@ -1,20 +1,28 @@
 import { Centrifuge, type PublicationContext } from 'centrifuge';
-import { useAuthStore } from '../stores/auth.js';
+import { api } from './api.js';
 
 let client: Centrifuge | null = null;
+
+async function fetchConnectionToken(): Promise<string> {
+  const { data } = await api.post<{ token: string }>('/realtime/token');
+  return data.token;
+}
 
 export function getCentrifuge(): Centrifuge {
   if (!client) {
     client = new Centrifuge(import.meta.env['VITE_CENTRIFUGO_URL'] ?? 'wss://rt.sonalit.io/connection/websocket', {
-      getToken: async () => {
-        const token = useAuthStore.getState().token;
-        if (!token) throw new Error('Not authenticated');
-        return token;
-      },
+      getToken: fetchConnectionToken,
     });
     client.connect();
   }
   return client;
+}
+
+export function disconnectCentrifuge(): void {
+  if (client) {
+    client.disconnect();
+    client = null;
+  }
 }
 
 export function subscribe<T>(channel: string, handler: (data: T) => void): () => void {

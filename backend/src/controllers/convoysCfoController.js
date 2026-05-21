@@ -5,6 +5,7 @@ const { pool, query } = require('../config/database');
 const { asyncHandler } = require('../middleware/error');
 const { isCfoModuleEnabled } = require('../utils/cfoFlag');
 const logger = require('../utils/logger');
+const { publish } = require('../realtime/centrifugo');
 
 function gAudit(actor_id, action, target_type, target_id, payload, ip) {
   query(
@@ -159,8 +160,7 @@ const createConvoyCfo = asyncHandler(async (req, res) => {
 
     gAudit(req.user.id, 'convoy_created', 'convoy', convoy.id, { name: convoy.name }, req.ip);
 
-    const io = req.app.get('io');
-    if (io) io.emit('convoy:created', { convoyId: convoy.id });
+    publish('convoy:created', { convoyId: convoy.id });
 
     res.status(201).json({ data: convoy });
   } catch (err) {

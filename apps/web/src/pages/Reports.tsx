@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
+import { subscribe } from '../lib/centrifuge.js';
+import { useAuthStore } from '../stores/auth.js';
 import { FileText, Download, Plus, X, RefreshCw } from 'lucide-react';
 
 type ReportStatus = 'pending' | 'ready' | 'failed';
@@ -119,6 +121,8 @@ function GenerateForm({ onClose }: { onClose: () => void }) {
 
 export default function Reports() {
   const [showForm, setShowForm] = useState(false);
+  const queryClient = useQueryClient();
+  const user = useAuthStore((s) => s.user);
 
   const { data, isLoading, isError } = useQuery<Report[]>({
     queryKey: ['reports'],
@@ -127,15 +131,17 @@ export default function Reports() {
       const raw = res.data;
       return Array.isArray(raw) ? raw : (raw?.data ?? []);
     },
-    refetchInterval: (query) => {
-      const reports = query.state.data;
-      if (!reports) return 10_000;
-      const hasPending = reports.some((r) => r.status === 'pending');
-      return hasPending ? 10_000 : false;
-    },
   });
 
-  const hasPending = data?.some((r) => r.status === 'pending') ?? false;
+  // T3.4: subscribe to Centrifugo for report-ready events; invalidate query on arrival.
+  useEffect(() => {
+    if (!user?.org_id) return;
+    const unsub = subscribe<{ convoy_id: string; report_date: string; pdf_url: string }>(
+      `convoy.report.ready.${user.org_id}`,
+      () => { queryClient.invalidateQueries({ queryKey: ['reports'] }); }
+    );
+    return unsub;
+  }, [user?.org_id, queryClient]);
 
   return (
     <div className="space-y-4">
@@ -143,12 +149,6 @@ export default function Reports() {
         <div className="flex items-center gap-2">
           <FileText size={20} className="text-blue-400" />
           <h1 className="text-xl font-bold">Reports</h1>
-          {hasPending && (
-            <div className="flex items-center gap-1 text-xs text-yellow-400">
-              <RefreshCw size={12} className="animate-spin" />
-              Polling for updates…
-            </div>
-          )}
         </div>
         <button
           onClick={() => setShowForm((v) => !v)}
