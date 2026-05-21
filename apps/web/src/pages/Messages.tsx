@@ -104,9 +104,9 @@ export default function Messages() {
   };
 
   return (
-    <div className="flex flex-col md:flex-row h-full -m-4 md:-m-6 bg-slate-950">
+    <div className="flex flex-col md:flex-row h-[calc(100dvh-3.5rem)] -m-4 md:-m-6 bg-slate-950 overflow-hidden">
       {/* Thread sidebar */}
-      <div className="w-full md:w-72 shrink-0 bg-slate-900 border-b md:border-b-0 md:border-r border-slate-700 flex flex-col max-h-48 md:max-h-none">
+      <div className="w-full md:w-72 shrink-0 bg-slate-900 border-b md:border-b-0 md:border-r border-slate-700 flex flex-col h-64 md:h-auto">
         <div className="p-4 border-b border-slate-700">
           <div className="flex items-center gap-2">
             <MessageSquare size={18} className="text-blue-400" />
