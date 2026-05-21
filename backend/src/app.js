@@ -112,11 +112,18 @@ app.use(morgan(":method :url :status :res[content-length] - :response-time ms re
 app.get("/health", async (req, res) => {
   try {
     const [db, redis] = await Promise.all([dbHealth(), redisHealth()]);
+    let partitions_ok = true;
+    try {
+      const ph = await dbQuery(`SELECT partitions_ok FROM partition_health WHERE partitions_ok = false LIMIT 1`);
+      if (ph.rows.length) partitions_ok = false;
+    } catch (_) {}
     const mem = process.memoryUsage();
-    res.status(200).json({
-      status: db ? "ok" : "degraded",
+    const status = (db && partitions_ok) ? "ok" : "degraded";
+    res.status(db ? 200 : 503).json({
+      status,
       database: db ? "ok" : "error",
       redis,
+      partitions_ok,
       uptime_seconds: Math.floor(process.uptime()),
       version: "2.1.0-enterprise",
       memory: { heap_used_mb: Math.round(mem.heapUsed / 1024 / 1024), heap_total_mb: Math.round(mem.heapTotal / 1024 / 1024), rss_mb: Math.round(mem.rss / 1024 / 1024) },
@@ -144,11 +151,25 @@ app.get("/metrics", async (req, res) => {
         "guardian_panics_active " + panics.rows[0].n,
       ];
     } catch (_) {}
+    let queueLines = [];
+    try {
+      const { getQueues } = require("./config/queue");
+      const queues = getQueues();
+      for (const [name, q] of Object.entries(queues)) {
+        if (!q) continue;
+        const dead = await q.getFailedCount();
+        queueLines.push(
+          `# HELP bullmq_dead_jobs Dead jobs in ${name} queue`, `# TYPE bullmq_dead_jobs gauge`,
+          `bullmq_dead_jobs{queue="${name}"} ${dead}`
+        );
+      }
+    } catch (_) {}
     const lines = [
       "# HELP process_uptime_seconds Process uptime", "# TYPE process_uptime_seconds counter", "process_uptime_seconds " + uptime,
       "# HELP process_heap_used_bytes V8 heap used", "# TYPE process_heap_used_bytes gauge", "process_heap_used_bytes " + mem.heapUsed,
       "# HELP process_rss_bytes Resident set size", "# TYPE process_rss_bytes gauge", "process_rss_bytes " + mem.rss,
       ...guardianLines,
+      ...queueLines,
     ];
     res.set("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
     res.send(lines.join("\n") + "\n");
@@ -157,7 +178,7 @@ app.get("/metrics", async (req, res) => {
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 ["auth", "vehicles", "convoys", "alerts", "messages", "analytics", "geofences", "devices",
-  "incidents", "rules", "gps", "sensors", "ai", "apikeys", "reports", "documents", "webhooks", "guardian", "realtime"]
+  "incidents", "rules", "gps", "sensors", "ai", "apikeys", "reports", "documents", "webhooks", "guardian", "realtime", "admin"]
   .forEach(r => app.use("/api/v1/" + r, require("./routes/" + r)));
 
 try { app.use("/api/v1/guardian/cfo", require("./routes/guardianCfo")); logger.info("Route loaded: /api/v1/guardian/cfo"); }
@@ -178,18 +199,38 @@ app.use(errorHandler);
 // ─── Cron jobs ────────────────────────────────────────────────────────────────
 try {
   const cron = require("node-cron");
-  const { run: rollPartitions } = require("../scripts/partition-roller");
-  cron.schedule("0 2 * * *", () => rollPartitions().catch(err => logger.error("Partition roller error: " + err.message)));
+  const PARTITION_TABLES = ["gps_logs", "audit_logs", "outbox"];
+  async function rollPartitions() {
+    for (const t of PARTITION_TABLES) {
+      try {
+        await dbQuery(`SELECT ensure_future_partitions($1, 3)`, [t]);
+        await dbQuery(
+          `INSERT INTO partition_health (table_name, checked_at, partitions_ok)
+           VALUES ($1, NOW(), true)
+           ON CONFLICT (table_name) DO UPDATE SET checked_at = NOW(), partitions_ok = true`,
+          [t]
+        );
+      } catch (err) {
+        logger.warn(`Partition roll failed for ${t}: ${err.message}`);
+        try {
+          await dbQuery(
+            `INSERT INTO partition_health (table_name, checked_at, partitions_ok)
+             VALUES ($1, NOW(), false)
+             ON CONFLICT (table_name) DO UPDATE SET checked_at = NOW(), partitions_ok = false`,
+            [t]
+          );
+        } catch (_) {}
+      }
+    }
+  }
+  cron.schedule("0 * * * *", () => rollPartitions().catch(err => logger.error("Partition roller error: " + err.message)));
   rollPartitions().catch(err => logger.warn("Partition roller startup run: " + err.message));
-  logger.info("Partition roller scheduled (daily 02:00 UTC)");
+  logger.info("Partition roller scheduled (hourly, T3.2)");
 } catch (e) { logger.warn("Partition roller not started: " + e.message); }
 
-try {
-  const cron = require("node-cron");
-  const { run: backfillPhotos } = require("../scripts/backfill-base64-photos");
-  cron.schedule("0 3 * * *", () => backfillPhotos().catch(err => logger.error("Photo backfill error: " + err.message)));
-  logger.info("Photo backfill scheduled (daily 03:00 UTC)");
-} catch (e) { logger.warn("Photo backfill not scheduled: " + e.message); }
+// T3.7: Photo backfill cron removed — data URI writes are now blocked at the
+// boundary and a DB CHECK constraint is in migration 008. Run the backfill
+// script manually (node scripts/backfill-base64-photos.js) if legacy rows remain.
 
 try {
   const cron = require("node-cron");
@@ -230,8 +271,9 @@ dbQuery(
    ON CONFLICT (key) DO UPDATE SET value_int = 1, updated_at = NOW()`
 ).then(() => logger.info("CFO module enabled in DB")).catch(e => logger.warn("CFO module DB flag skipped: " + e.message));
 
-// ─── Workers ──────────────────────────────────────────────────────────────────
-if (process.env.REDIS_URL && process.env.DISABLE_REDIS !== "true") {
+// ─── Workers (in-process only when ENABLE_INPROCESS_WORKERS=true, T3.1) ──────
+// In production, workers run as separate processes via worker.*.js entrypoints.
+if (process.env.ENABLE_INPROCESS_WORKERS === "true" && process.env.REDIS_URL && process.env.DISABLE_REDIS !== "true") {
   try {
     const { startGPSWorker } = require("./workers/gpsWorker");
     const { startAlertWorker } = require("./workers/alertWorker");
@@ -240,16 +282,14 @@ if (process.env.REDIS_URL && process.env.DISABLE_REDIS !== "true") {
     const workers = [startGPSWorker(), startAlertWorker(), startNotificationWorker(), ...startConvoyReportWorker()];
     global._workers = workers;
     logger.info(`Workers started in-process: ${workers.length} active`);
-    process.on("SIGTERM", () => shutdown(0));
-    process.on("SIGINT", () => shutdown(0));
   } catch (e) {
     logger.warn("Worker startup failed: " + e.message + " — continuing without workers");
-    process.on("SIGTERM", () => shutdown(0));
-    process.on("SIGINT", () => shutdown(0));
   }
-} else {
-  process.on("SIGTERM", () => shutdown(0));
-  process.on("SIGINT", () => shutdown(0));
+} else if (!process.env.ENABLE_INPROCESS_WORKERS || process.env.ENABLE_INPROCESS_WORKERS !== "true") {
+  logger.info("Workers not started in-process — run standalone worker processes (T3.1)");
 }
+
+process.on("SIGTERM", () => shutdown(0));
+process.on("SIGINT", () => shutdown(0));
 
 module.exports = { app, server };

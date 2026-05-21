@@ -13,6 +13,7 @@ const path = require('path');
 const fs = require('fs');
 const { Worker } = require('bullmq');
 const { pool, query } = require('../config/database');
+const { publish } = require('../realtime/centrifugo');
 const { generateDailyReport, generateArchiveReport } = require('../utils/convoyPdfGenerator');
 const logger = require('../utils/logger');
 
@@ -157,6 +158,9 @@ async function handleGenerateReport({ convoy_id, report_date }) {
   const crypto = require('crypto');
   const contentHash = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
 
+  const orgRow = await query(`SELECT org_id FROM convoys WHERE id = $1`, [convoy_id]);
+  const orgId = orgRow.rows[0]?.org_id || convoy_id;
+
   await query(
     `UPDATE convoy_daily_reports
      SET status = 'generated', pdf_url = $1, content_hash = $2,
@@ -164,6 +168,8 @@ async function handleGenerateReport({ convoy_id, report_date }) {
      WHERE convoy_id = $4 AND report_date = $5`,
     [pdfUrl, contentHash, generationError, convoy_id, report_date]
   );
+
+  publish(`convoy.report.ready.${orgId}`, { convoy_id, report_date, pdf_url: pdfUrl });
   logger.info(`[convoyReport] report marked generated for ${convoy_id}/${report_date}`);
 }
 
