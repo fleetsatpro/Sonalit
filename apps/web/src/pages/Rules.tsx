@@ -153,8 +153,9 @@ export default function Rules() {
   const { data, isLoading, isError } = useQuery<Rule[]>({
     queryKey: ['rules'],
     queryFn: async () => {
-      const res = await api.get<Rule[]>('/rules');
-      return res.data;
+      const res = await api.get<Rule[] | { data: Rule[] }>('/rules');
+      const raw = res.data;
+      return Array.isArray(raw) ? raw : (raw?.data ?? []);
     },
   });
 

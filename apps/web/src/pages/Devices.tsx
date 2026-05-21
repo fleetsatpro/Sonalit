@@ -76,8 +76,9 @@ export default function Devices() {
   const { data, isLoading, isError } = useQuery<Device[]>({
     queryKey: ['devices'],
     queryFn: async () => {
-      const res = await api.get<Device[]>('/devices');
-      return res.data;
+      const res = await api.get<Device[] | { data: Device[] }>('/devices');
+      const raw = res.data;
+      return Array.isArray(raw) ? raw : (raw?.data ?? []);
     },
     refetchInterval: 30_000,
   });
