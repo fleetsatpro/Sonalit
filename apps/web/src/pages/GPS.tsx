@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import 'maplibre-gl/dist/maplibre-gl.css';
 import { useQuery } from '@tanstack/react-query';
 import MapGL, { Marker, NavigationControl, Popup } from 'react-map-gl/maplibre';
 import { MapPin, Radio, Clock, Loader2 } from 'lucide-react';
