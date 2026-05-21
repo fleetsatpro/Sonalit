@@ -41,6 +41,13 @@ jobs:
           JWT_SECRET: ci-test-jwt-secret
           DATABASE_URL: ""
 
+      - name: OpenAPI drift check
+        run: node scripts/generate-openapi.js --check
+        working-directory: backend
+        env:
+          JWT_SECRET: ci-test-jwt-secret
+          DATABASE_URL: ""
+
       - name: Dependency audit
         run: pnpm --filter fleetops-backend audit --audit-level=high
         continue-on-error: true

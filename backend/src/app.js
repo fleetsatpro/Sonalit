@@ -55,6 +55,7 @@ const { createQueues } = require("./config/queue");
 const { healthCheck: dbHealth, query: dbQuery } = require("./config/database");
 const { healthCheck: redisHealth } = require("./config/redis");
 const requestId = require("./middleware/requestId");
+const csrf = require("./middleware/csrf");
 
 if (!process.env.DATABASE_URL) logger.warn("DATABASE_URL not set — set it in Railway so the database works");
 if (!process.env.JWT_SECRET) {
@@ -106,6 +107,7 @@ app.use("/api/v1/auth/refresh", authRefreshLimiter);
 app.use(express.json({ limit: "64kb" }));
 app.use(responseEnvelope);
 app.use(express.urlencoded({ extended: true }));
+app.use(csrf);
 app.use(morgan(":method :url :status :res[content-length] - :response-time ms reqId=:req[x-request-id]", { stream: { write: m => logger.info(m.trim()) } }));
 
 // ─── Health & metrics ─────────────────────────────────────────────────────────
@@ -197,6 +199,7 @@ app.use((req, res) => res.status(404).json({ error: req.method + " " + req.path 
 app.use(errorHandler);
 
 // ─── Cron jobs ────────────────────────────────────────────────────────────────
+if (!process.env.GENERATE_OPENAPI)
 try {
   const cron = require("node-cron");
   const PARTITION_TABLES = ["gps_logs", "audit_logs", "outbox"];
@@ -245,6 +248,7 @@ try {
 // boundary and a DB CHECK constraint is in migration 008. Run the backfill
 // script manually (node scripts/backfill-base64-photos.js) if legacy rows remain.
 
+if (!process.env.GENERATE_OPENAPI)
 try {
   const cron = require("node-cron");
   cron.schedule("*/15 * * * *", async () => {
@@ -275,14 +279,18 @@ try {
 } catch (e) { logger.warn("CFO EOD sweep not scheduled: " + e.message); }
 
 // ─── Start server ─────────────────────────────────────────────────────────────
-const PORT = parseInt(process.env.PORT) || 5000;
-createQueues();
-server.listen(PORT, () => logger.info("FleetOps Enterprise v2.1 running on port " + PORT + " [" + (process.env.NODE_ENV || "development") + "]"));
+// GENERATE_OPENAPI=1 skips server.listen so the script can introspect routes safely
+if (!process.env.GENERATE_OPENAPI) {
+  const PORT = parseInt(process.env.PORT) || 5000;
+  createQueues();
+  server.listen(PORT, () => logger.info("FleetOps Enterprise v2.1 running on port " + PORT + " [" + (process.env.NODE_ENV || "development") + "]"));
+}
 
-dbQuery(
-  `INSERT INTO guardian_config (key, value_int, updated_at) VALUES ('cfo_module_enabled', 1, NOW())
-   ON CONFLICT (key) DO UPDATE SET value_int = 1, updated_at = NOW()`
-).then(() => logger.info("CFO module enabled in DB")).catch(e => logger.warn("CFO module DB flag skipped: " + e.message));
+if (!process.env.GENERATE_OPENAPI)
+  dbQuery(
+    `INSERT INTO guardian_config (key, value_int, updated_at) VALUES ('cfo_module_enabled', 1, NOW())
+     ON CONFLICT (key) DO UPDATE SET value_int = 1, updated_at = NOW()`
+  ).then(() => logger.info("CFO module enabled in DB")).catch(e => logger.warn("CFO module DB flag skipped: " + e.message));
 
 // ─── Workers (in-process only when ENABLE_INPROCESS_WORKERS=true, T3.1) ──────
 // In production, workers run as separate processes via worker.*.js entrypoints.
