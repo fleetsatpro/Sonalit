@@ -2,8 +2,7 @@ import axios from 'axios';
 import { context, propagation, trace } from '@opentelemetry/api';
 import { useAuthStore } from '../stores/auth.js';
 
-const API_BASE =
-  import.meta.env['VITE_API_URL'] ?? '/api/v1';
+const API_BASE = '/api/v1';
 
 export const api = axios.create({
   baseURL: API_BASE,
