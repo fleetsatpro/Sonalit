@@ -7,6 +7,7 @@ import { RouterProvider } from '@tanstack/react-router';
 import { router } from './router.js';
 import { initOtel } from './lib/otel.js';
 import { useAuthStore } from './stores/auth.js';
+import OfflineGuard from './components/OfflineGuard.js';
 
 initOtel();
 
@@ -45,9 +46,11 @@ async function mount() {
 
   ReactDOM.createRoot(rootEl!).render(
     <React.StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>
+      <OfflineGuard>
+        <QueryClientProvider client={queryClient}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      </OfflineGuard>
     </React.StrictMode>,
   );
 }
