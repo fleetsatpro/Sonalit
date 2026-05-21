@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "pnpm --filter @sonalit/web... build",
   "outputDirectory": "apps/web/dist",
-  "installCommand": "pnpm install",
+  "installCommand": "pnpm install --frozen-lockfile",
   "framework": "vite",
   "rewrites": [
     { "source": "/((?!assets|icons|manifest|sw|workbox).*)", "destination": "/index.html" }
