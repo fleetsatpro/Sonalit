@@ -223,9 +223,22 @@ try {
       }
     }
   }
+  async function archiveOldPartitions() {
+    const { rows } = await dbQuery(`SELECT table_name, retain_months FROM partition_retention`).catch(() => ({ rows: [] }));
+    for (const { table_name, retain_months } of rows) {
+      try {
+        const r = await dbQuery(`SELECT drop_old_partitions($1, $2)`, [table_name, retain_months]);
+        const dropped = r.rows[0]?.drop_old_partitions ?? 0;
+        if (dropped > 0) logger.info(`Partition archival: dropped ${dropped} old partition(s) for ${table_name}`);
+      } catch (err) {
+        logger.warn(`Partition archival failed for ${table_name}: ${err.message}`);
+      }
+    }
+  }
   cron.schedule("0 * * * *", () => rollPartitions().catch(err => logger.error("Partition roller error: " + err.message)));
+  cron.schedule("0 3 * * *", () => archiveOldPartitions().catch(err => logger.error("Partition archival error: " + err.message)));
   rollPartitions().catch(err => logger.warn("Partition roller startup run: " + err.message));
-  logger.info("Partition roller scheduled (hourly, T3.2)");
+  logger.info("Partition roller scheduled (hourly, T3.2) + archival (daily 03:00, T6.5)");
 } catch (e) { logger.warn("Partition roller not started: " + e.message); }
 
 // T3.7: Photo backfill cron removed — data URI writes are now blocked at the

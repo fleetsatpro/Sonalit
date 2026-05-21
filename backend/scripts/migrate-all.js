@@ -27,6 +27,8 @@ const steps = [
   'migrate-convoy-trucks-fix.js',  // drops NOT NULL on convoy_trucks.vehicle_id
   'migrate-roles.js',
   'migrate-enable-cfo.js',
+  // T6.1: numbered SQL migrations applied via the sequential runner
+  'db-migrate.js',
 ];
 
 (async () => {
