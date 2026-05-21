@@ -18,22 +18,9 @@ const COOKIE_OPTS = {
   maxAge: REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000,
 };
 
-// Ensure refresh_tokens table exists (idempotent; runs once at startup)
-let _rtTableReady = false;
-async function ensureRefreshTable() {
-  if (_rtTableReady) return;
-  await query(`
-    CREATE TABLE IF NOT EXISTS refresh_tokens (
-      id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      token_hash TEXT NOT NULL UNIQUE,
-      expires_at TIMESTAMPTZ NOT NULL,
-      used_at    TIMESTAMPTZ,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )
-  `).catch(() => {});
-  _rtTableReady = true;
-}
+// refresh_tokens table is created by migration 20260521_014_refresh_tokens_and_gdpr_cols.sql
+// The runtime CREATE TABLE was removed — schema changes belong in migrations.
+async function ensureRefreshTable() { /* no-op — handled by migration */ }
 
 function hashToken(raw) {
   return crypto.createHash('sha256').update(raw).digest('hex');
