@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "claude/**"]
   pull_request:
     branches: ["main"]
 
@@ -29,5 +29,18 @@ jobs:
       - name: Build contracts
         run: pnpm --filter @sonalit/contracts build
 
+      - name: Typecheck web
+        run: pnpm --filter @sonalit/web typecheck
+
       - name: Build web
         run: pnpm --filter @sonalit/web build
+
+      - name: Backend unit tests
+        run: pnpm --filter fleetops-backend test
+        env:
+          JWT_SECRET: ci-test-jwt-secret
+          DATABASE_URL: ""
+
+      - name: Dependency audit
+        run: pnpm --filter fleetops-backend audit --audit-level=high
+        continue-on-error: true
