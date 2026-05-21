@@ -213,6 +213,30 @@ router.post('/login', deviceAuth, cfoLoginLimiter, async (req, res, next) => {
     }
 
     const emailClean = email.trim().toLowerCase();
+    const deviceId = req.device.id;
+
+    // ── Brute-force check (T1.5) ─────────────────────────────────────────────
+    await query(`
+      INSERT INTO cfo_login_attempts (device_id, attempts, window_start)
+      VALUES ($1, 0, NOW())
+      ON CONFLICT (device_id) DO NOTHING
+    `, [deviceId]).catch(() => {});
+
+    const attemptRow = await query(
+      `SELECT attempts, locked_until, window_start FROM cfo_login_attempts WHERE device_id = $1`,
+      [deviceId]
+    );
+    if (attemptRow.rows.length) {
+      const row = attemptRow.rows[0];
+      if (row.locked_until && new Date(row.locked_until) > new Date()) {
+        gAudit(deviceId, 'cfo_login_locked', null, null, { email: emailClean }, req.ip);
+        return res.status(423).json({ error: 'Account locked due to too many failed attempts', code: 'account_locked' });
+      }
+      // Reset window if older than 15 minutes
+      if (new Date(row.window_start) < new Date(Date.now() - 15 * 60 * 1000)) {
+        await query(`UPDATE cfo_login_attempts SET attempts=0, window_start=NOW(), locked_until=NULL WHERE device_id=$1`, [deviceId]).catch(() => {});
+      }
+    }
 
     const userResult = await query(
       `SELECT id, name, email, role, status, password_hash
@@ -220,8 +244,22 @@ router.post('/login', deviceAuth, cfoLoginLimiter, async (req, res, next) => {
       [emailClean]
     );
 
-    // Return same error for not-found and wrong-password to prevent email enumeration
-    if (!userResult.rows.length) {
+    // Constant-time comparison to prevent timing attacks + email enumeration
+    const bcrypt = require('bcryptjs');
+    const hashToCompare = userResult.rows[0]?.password_hash || '$2a$10$dummyhashtopreventtimingattacks00000000000';
+    const valid = userResult.rows.length > 0 && await bcrypt.compare(password, hashToCompare);
+
+    if (!userResult.rows.length || !valid) {
+      // Increment attempt counter
+      await query(`
+        UPDATE cfo_login_attempts
+        SET attempts = attempts + 1,
+            locked_until = CASE WHEN attempts + 1 >= 5
+              THEN NOW() + INTERVAL '15 minutes' * POWER(2, GREATEST(0, attempts - 4))
+              ELSE locked_until END
+        WHERE device_id = $1
+      `, [deviceId]).catch(() => {});
+      gAudit(deviceId, 'cfo_login_failed', null, null, { email: emailClean }, req.ip);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
@@ -230,53 +268,28 @@ router.post('/login', deviceAuth, cfoLoginLimiter, async (req, res, next) => {
       return res.status(403).json({ error: 'Account is not active' });
     }
 
-    const bcrypt = require('bcryptjs');
-    const valid = await bcrypt.compare(password, user.password_hash);
-    if (!valid) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
+    // Success — reset attempt counter
+    await query(`UPDATE cfo_login_attempts SET attempts=0, locked_until=NULL WHERE device_id=$1`, [deviceId]).catch(() => {});
 
-    // Link this device to the CFO user account
     await query(
-      `UPDATE guardian_devices
-       SET assignment_id = $1, assignment_type = 'user', updated_at = NOW()
-       WHERE id = $2`,
-      [user.id, req.device.id]
+      `UPDATE guardian_devices SET assignment_id = $1, assignment_type = 'user', updated_at = NOW() WHERE id = $2`,
+      [user.id, deviceId]
     );
 
-    // Restore convoy CFO slot assignments for this user — sets guardian_device_id
-    // on every active/planned convoy slot belonging to this user, provided the slot
-    // has no device yet, already points to this device, or the previously linked
-    // device is deleted/revoked (handles full device replacement).
     await query(
       `UPDATE convoy_cfos SET guardian_device_id = $1
        WHERE cfo_user_id = $2
-         AND convoy_id IN (
-           SELECT id FROM convoys
-           WHERE status IN ('planned','active') AND deleted_at IS NULL
-         )
-         AND (
-           guardian_device_id IS NULL
-           OR guardian_device_id = $1
-           OR NOT EXISTS (
-             SELECT 1 FROM guardian_devices gd
-             WHERE gd.id = convoy_cfos.guardian_device_id
-               AND gd.deleted_at IS NULL
-               AND gd.status NOT IN ('revoked','suspended')
-           )
-         )`,
-      [req.device.id, user.id]
+         AND convoy_id IN (SELECT id FROM convoys WHERE status IN ('planned','active') AND deleted_at IS NULL)
+         AND (guardian_device_id IS NULL OR guardian_device_id = $1
+           OR NOT EXISTS (SELECT 1 FROM guardian_devices gd WHERE gd.id = convoy_cfos.guardian_device_id
+             AND gd.deleted_at IS NULL AND gd.status NOT IN ('revoked','suspended')))`,
+      [deviceId, user.id]
     );
 
-    gAudit(req.device.id, 'cfo_login', 'user', user.id, { email: emailClean }, req.ip);
-    logger.info(`CFO login: device=${req.device.id} user=${user.id} email=${emailClean}`);
+    gAudit(deviceId, 'cfo_login', 'user', user.id, { email: emailClean }, req.ip);
+    logger.info(`CFO login: device=${deviceId} user=${user.id} email=${emailClean}`);
 
-    return res.json({
-      user_id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-    });
+    return res.json({ user_id: user.id, name: user.name, email: user.email, role: user.role });
   } catch (err) {
     next(err);
   }

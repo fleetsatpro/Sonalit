@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Bot, Send, User, Loader2 } from 'lucide-react';
+import { getAccessToken } from '../stores/auth.js';
 
 type Role = 'user' | 'assistant';
 
@@ -15,14 +16,7 @@ const API_BASE = '/api/v1';
 const SESSION_KEY = 'sonalit-copilot-session';
 
 function getAuthToken(): string {
-  try {
-    const raw = localStorage.getItem('sonalit-auth');
-    if (!raw) return '';
-    const parsed = JSON.parse(raw) as { state?: { token?: string } };
-    return parsed.state?.token ?? '';
-  } catch {
-    return '';
-  }
+  return getAccessToken() ?? '';
 }
 
 function getOrCreateSessionId(): string {

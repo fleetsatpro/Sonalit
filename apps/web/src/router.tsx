@@ -1,5 +1,5 @@
 import { createRouter, createRoute, createRootRoute, Outlet, redirect } from '@tanstack/react-router';
-import { useAuthStore } from './stores/auth.js';
+import { useAuthStore, getAccessToken } from './stores/auth.js';
 import Layout from './components/Layout.js';
 import { RootErrorComponent } from './components/ErrorBoundary.js';
 import LoginPage from './pages/Login.js';
@@ -36,7 +36,8 @@ const authRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: 'auth',
   beforeLoad: () => {
-    if (!useAuthStore.getState().token) throw redirect({ to: '/login' });
+    // Check in-memory access token first; fall back to persisted user (T1.2)
+    if (!getAccessToken() && !useAuthStore.getState().user) throw redirect({ to: '/login' });
   },
   component: Layout,
 });

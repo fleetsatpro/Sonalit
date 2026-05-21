@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { pool, query } = require('../config/database');
+const { query } = require('../config/database');
 const { authenticate } = require('../middleware/auth');
 router.use(authenticate);
 
@@ -17,7 +17,7 @@ function parseLatLng(row) {
 }
 
 async function ensureGeofenceActions() {
-  await pool.query(`
+  await query(`
     CREATE TABLE IF NOT EXISTS geofence_actions (
       id               SERIAL PRIMARY KEY,
       geofence_id      INTEGER REFERENCES geofences(id) ON DELETE CASCADE,
@@ -32,23 +32,24 @@ async function ensureGeofenceActions() {
 
 router.get('/', async (req, res, next) => {
   try {
-    const { rows } = await pool.query(`SELECT * FROM geofences ORDER BY created_at DESC`);
+    const db = req.db || query;
+    const { rows } = await db(`SELECT * FROM geofences ORDER BY created_at DESC`);
     res.json({ data: rows.map(parseLatLng) });
   } catch (err) { next(err); }
 });
 
 router.post('/', async (req, res, next) => {
   try {
+    const db = req.db || query;
     const { name, type = 'circle', radius, region } = req.body;
     if (!name) return res.status(400).json({ error: 'Name is required' });
-    // Accept either coordinates:{...} or top-level lat/lng
     let coordinates = req.body.coordinates;
     const lat = req.body.lat;
     const lng = req.body.lng;
     if (!coordinates && lat != null && lng != null) {
       coordinates = { lat: parseFloat(lat), lng: parseFloat(lng) };
     }
-    const { rows } = await pool.query(
+    const { rows } = await db(
       `INSERT INTO geofences (name, type, coordinates, radius, region) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
       [name, type, JSON.stringify(coordinates), radius, region]
     );
@@ -58,8 +59,9 @@ router.post('/', async (req, res, next) => {
 
 router.put('/:id', async (req, res, next) => {
   try {
+    const db = req.db || query;
     const { name, active, coordinates, radius } = req.body;
-    const { rows } = await pool.query(
+    const { rows } = await db(
       `UPDATE geofences SET name=COALESCE($1,name), active=COALESCE($2,active), coordinates=COALESCE($3,coordinates), radius=COALESCE($4,radius), updated_at=NOW() WHERE id=$5 RETURNING *`,
       [name, active, coordinates ? JSON.stringify(coordinates) : null, radius, req.params.id]
     );
@@ -70,19 +72,16 @@ router.put('/:id', async (req, res, next) => {
 
 router.delete('/:id', async (req, res, next) => {
   try {
-    await pool.query(`DELETE FROM geofences WHERE id=$1`, [req.params.id]);
+    const db = req.db || query;
+    await db(`DELETE FROM geofences WHERE id=$1`, [req.params.id]);
     res.json({ ok: true });
   } catch (err) { next(err); }
 });
 
-// ── Geofence Actions ──────────────────────────────────────────────────────────
-
 router.get('/:id/actions', async (req, res, next) => {
   try {
-    const { rows } = await pool.query(
-      `SELECT * FROM geofence_actions WHERE geofence_id = $1 ORDER BY created_at`,
-      [req.params.id]
-    );
+    const db = req.db || query;
+    const { rows } = await db(`SELECT * FROM geofence_actions WHERE geofence_id = $1 ORDER BY created_at`, [req.params.id]);
     res.json({ data: rows });
   } catch (err) { next(err); }
 });
@@ -90,11 +89,11 @@ router.get('/:id/actions', async (req, res, next) => {
 router.post('/:id/actions', async (req, res, next) => {
   try {
     await ensureGeofenceActions();
+    const db = req.db || query;
     const { action_type, recipient, message_template } = req.body;
     if (!action_type) return res.status(400).json({ error: 'action_type is required' });
-    const { rows } = await pool.query(
-      `INSERT INTO geofence_actions (action_type, recipient, message_template, geofence_id)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
+    const { rows } = await db(
+      `INSERT INTO geofence_actions (action_type, recipient, message_template, geofence_id) VALUES ($1, $2, $3, $4) RETURNING *`,
       [action_type, recipient || null, message_template || null, req.params.id]
     );
     res.status(201).json({ data: rows[0] });
@@ -103,17 +102,16 @@ router.post('/:id/actions', async (req, res, next) => {
 
 router.delete('/:id/actions/:actionId', async (req, res, next) => {
   try {
-    await pool.query(
-      `DELETE FROM geofence_actions WHERE id = $1 AND geofence_id = $2`,
-      [req.params.actionId, req.params.id]
-    );
+    const db = req.db || query;
+    await db(`DELETE FROM geofence_actions WHERE id = $1 AND geofence_id = $2`, [req.params.actionId, req.params.id]);
     res.json({ ok: true });
   } catch (err) { next(err); }
 });
 
 router.patch('/:id/actions/:actionId/toggle', async (req, res, next) => {
   try {
-    const { rows } = await pool.query(
+    const db = req.db || query;
+    const { rows } = await db(
       `UPDATE geofence_actions SET enabled = NOT enabled WHERE id = $1 AND geofence_id = $2 RETURNING *`,
       [req.params.actionId, req.params.id]
     );
