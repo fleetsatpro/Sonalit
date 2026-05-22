@@ -1,5 +1,18 @@
 -- T6.2: Composite index audit — add missing (org_id, col) indexes for hot-path queries
 
+-- Ensure org_id exists on tables that migration 001 may have skipped
+-- (001 is idempotent but may have been recorded before these additions were added)
+DO $$
+DECLARE default_org UUID := '00000000-0000-0000-0000-000000000001';
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='field_reports' AND column_name='org_id') THEN
+    EXECUTE format('ALTER TABLE field_reports ADD COLUMN org_id UUID NOT NULL DEFAULT %L', default_org::text);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='drivers' AND column_name='org_id') THEN
+    EXECUTE format('ALTER TABLE drivers ADD COLUMN org_id UUID NOT NULL DEFAULT %L', default_org::text);
+  END IF;
+END $$;
+
 -- guardian_devices: list filtered by org + status, ordered by last_seen
 CREATE INDEX IF NOT EXISTS idx_guardian_devices_org_status
   ON guardian_devices (org_id, status)
