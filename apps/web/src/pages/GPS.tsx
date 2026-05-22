@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useQuery } from '@tanstack/react-query';
 import MapGL, { Marker, NavigationControl, Popup } from 'react-map-gl/maplibre';
-import { MapPin, Radio, Clock, Loader2 } from 'lucide-react';
+import { MapPin, Radio, Clock, Loader2, Layers } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { subscribe } from '../lib/centrifuge.js';
 import { useAuthStore } from '../stores/auth.js';
@@ -43,7 +43,29 @@ type PopupInfo = DeviceLocation & { registration: string | null };
 // Helpers
 // ---------------------------------------------------------------------------
 
-const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+
+const SATELLITE_STYLE = {
+  version: 8 as const,
+  sources: {
+    'esri-imagery': {
+      type: 'raster' as const,
+      tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+      tileSize: 256,
+      maxzoom: 19,
+      attribution: '© Esri, Maxar, Earthstar Geographics',
+    },
+    'carto-labels': {
+      type: 'raster' as const,
+      tiles: ['https://basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png'],
+      tileSize: 256,
+    },
+  },
+  layers: [
+    { id: 'esri-imagery', type: 'raster' as const, source: 'esri-imagery' },
+    { id: 'carto-labels', type: 'raster' as const, source: 'carto-labels' },
+  ],
+};
 
 function formatSpeed(speed: number | null): string {
   if (speed === null) return '—';
@@ -107,6 +129,7 @@ export default function GPS(): React.ReactElement {
   const [locations, setLocations] = useState<Map<string, DeviceLocation>>(new Map());
   const [popup, setPopup] = useState<PopupInfo | null>(null);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+  const [isSatellite, setIsSatellite] = useState(false);
   // Keep stable ref for subscription callback
   const locationsRef = useRef(locations);
   locationsRef.current = locations;
@@ -193,9 +216,18 @@ export default function GPS(): React.ReactElement {
           </div>
         )}
 
+        {/* Map style toggle */}
+        <button
+          onClick={() => setIsSatellite((v) => !v)}
+          className="absolute bottom-4 left-4 z-10 flex items-center gap-1.5 bg-gray-900/90 hover:bg-gray-800 text-white text-xs font-medium px-3 py-2 rounded-lg border border-gray-700 shadow-lg transition-colors"
+        >
+          <Layers className="w-3.5 h-3.5" />
+          {isSatellite ? 'Dark' : 'Satellite'}
+        </button>
+
         <MapGL
           initialViewState={initialViewState}
-          mapStyle={MAP_STYLE}
+          mapStyle={isSatellite ? SATELLITE_STYLE : DARK_STYLE}
           style={{ width: '100%', height: '100%' }}
         >
           <NavigationControl position="top-right" />
@@ -208,10 +240,14 @@ export default function GPS(): React.ReactElement {
               anchor="center"
               onClick={() => handleMarkerClick(loc)}
             >
-              <div
-                className="w-4 h-4 rounded-full bg-indigo-500 border-2 border-white shadow-lg cursor-pointer hover:scale-125 transition-transform"
-                title={loc.device_id}
-              />
+              <div className="relative cursor-pointer" title={loc.device_id}>
+                <span className="absolute inset-0 rounded-full bg-indigo-400 opacity-60 animate-ping" />
+                <div
+                  className={`relative w-4 h-4 rounded-full border-2 border-white shadow-lg transition-transform hover:scale-125 ${
+                    selectedDeviceId === loc.device_id ? 'bg-green-400 scale-125' : 'bg-indigo-500'
+                  }`}
+                />
+              </div>
             </Marker>
           ))}
 
