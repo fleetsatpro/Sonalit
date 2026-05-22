@@ -57,7 +57,7 @@ router.post('/', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.put('/:id', async (req, res, next) => {
+async function updateGeofence(req, res, next) {
   try {
     const db = req.db || query;
     const { name, active, coordinates, radius } = req.body;
@@ -68,7 +68,10 @@ router.put('/:id', async (req, res, next) => {
     if (!rows[0]) return res.status(404).json({ error: 'Geofence not found' });
     res.json({ data: parseLatLng(rows[0]) });
   } catch (err) { next(err); }
-});
+}
+
+router.put('/:id', updateGeofence);
+router.patch('/:id', updateGeofence);
 
 router.delete('/:id', async (req, res, next) => {
   try {

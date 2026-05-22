@@ -17,6 +17,27 @@ type OrgEvent = { type: string; payload: unknown };
 // Stat card
 // ---------------------------------------------------------------------------
 
+function useCountUp(target: number, skip: boolean): number {
+  const [display, setDisplay] = useState(0);
+  const prev = useRef(0);
+  useEffect(() => {
+    if (skip) return;
+    const from = prev.current;
+    prev.current = target;
+    if (from === target) return;
+    const start = performance.now();
+    const duration = Math.min(600, Math.abs(target - from) * 40);
+    const raf = (now: number) => {
+      const t = Math.min((now - start) / duration, 1);
+      const ease = 1 - Math.pow(1 - t, 3);
+      setDisplay(Math.round(from + (target - from) * ease));
+      if (t < 1) requestAnimationFrame(raf);
+    };
+    requestAnimationFrame(raf);
+  }, [target, skip]);
+  return skip ? target : display;
+}
+
 function StatCard({
   label,
   value,
@@ -34,11 +55,18 @@ function StatCard({
   isError: boolean;
   liveOverride?: number | null;
 }): React.ReactElement {
-  const displayed = liveOverride !== null && liveOverride !== undefined ? liveOverride : (value ?? 0);
+  const raw = liveOverride !== null && liveOverride !== undefined ? liveOverride : (value ?? 0);
+  const animated = useCountUp(raw, isLoading || isError);
+  const isLive = liveOverride !== null && liveOverride !== undefined;
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 flex items-center gap-4">
-      <div className={`flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center ${color}`}>
+    <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 flex items-center gap-4 transition-shadow hover:shadow-lg hover:shadow-gray-950/50">
+      <div className={`relative flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center ${color}`}>
         <Icon className="w-6 h-6 text-white" />
+        {isLive && (
+          <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-gray-900">
+            <span className="absolute inset-0 rounded-full bg-green-400 animate-ping opacity-75" />
+          </span>
+        )}
       </div>
       <div>
         <p className="text-gray-400 text-sm">{label}</p>
@@ -47,7 +75,7 @@ function StatCard({
         ) : isError ? (
           <p className="text-red-400 text-sm">Error</p>
         ) : (
-          <p className="text-white text-2xl font-bold">{displayed}</p>
+          <p className="text-white text-2xl font-bold tabular-nums">{animated}</p>
         )}
       </div>
     </div>

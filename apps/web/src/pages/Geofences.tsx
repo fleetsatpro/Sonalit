@@ -112,8 +112,9 @@ export default function Geofences() {
   const { data, isLoading, isError } = useQuery<Geofence[]>({
     queryKey: ['geofences'],
     queryFn: async () => {
-      const res = await api.get<Geofence[]>('/geofences');
-      return res.data;
+      const res = await api.get<Geofence[] | { data: Geofence[] }>('/geofences');
+      const raw = res.data;
+      return Array.isArray(raw) ? raw : (raw?.data ?? []);
     },
   });
 
