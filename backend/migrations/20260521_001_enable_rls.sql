@@ -101,8 +101,6 @@ BEGIN
   END LOOP;
 END $$;
 
--- ── Audit chain index for concurrency fix (T1.6) ─────────────────────────────
-CREATE INDEX IF NOT EXISTS audit_log_org_id_id ON audit_logs (org_id, id DESC)
-  WHERE true; -- partial index created only if org_id column exists
+-- ── Audit chain index lives in 005_audit_chain_locking.sql (org_id added there) ─
 
 COMMIT;
