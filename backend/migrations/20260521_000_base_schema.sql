@@ -1,8 +1,19 @@
 -- Base schema: creates all core tables that migrations 001+ depend on.
 -- All DDL uses IF NOT EXISTS / CREATE OR REPLACE — safe to re-run.
 
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+-- Extensions: wrapped in DO blocks so permission errors don't abort the migration.
+-- gen_random_uuid() is built-in since PG 13; pgcrypto provides it on PG < 13.
+DO $ext$ BEGIN
+  CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'pgcrypto extension not available: %', SQLERRM;
+END $ext$;
+
+DO $ext2$ BEGIN
+  CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'uuid-ossp extension not available: %', SQLERRM;
+END $ext2$;
 
 -- ── Core tables ───────────────────────────────────────────────────────────────
 
