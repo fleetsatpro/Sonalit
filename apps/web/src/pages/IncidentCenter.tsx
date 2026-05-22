@@ -61,8 +61,9 @@ export default function IncidentCenter() {
   const { data, isLoading, isError } = useQuery<Incident[]>({
     queryKey: ['incidents', 'active'],
     queryFn: async () => {
-      const res = await api.get<Incident[]>('/incidents', { params: { status: 'active' } });
-      return res.data;
+      const res = await api.get<{ data: Incident[] } | Incident[]>('/incidents');
+      const raw = res.data;
+      return Array.isArray(raw) ? raw : (raw?.data ?? []);
     },
   });
 
