@@ -197,7 +197,7 @@ export default function Dashboard(): React.ReactElement {
     <div className="p-6 space-y-8">
       <h1 className="text-2xl font-bold text-white">Dashboard</h1>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
         {stats.map((s) => (
           <StatCard key={s.label} {...s} />
         ))}
@@ -228,7 +228,7 @@ export default function Dashboard(): React.ReactElement {
                   <SeverityBadge severity={alert.severity} />
                   <div className="min-w-0 flex-1">
                     <p className="text-white text-sm font-medium truncate">{alert.title}</p>
-                    <p className="text-gray-400 text-xs">{new Date(alert.triggered_at).toLocaleString()}</p>
+                    <p className="text-gray-400 text-xs">{alert.triggered_at ? new Date(alert.triggered_at).toLocaleString() : '—'}</p>
                   </div>
                 </li>
               ))}

@@ -50,8 +50,9 @@ const SATELLITE_STYLE = {
   sources: {
     'esri-imagery': {
       type: 'raster' as const,
-      tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+      tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
       tileSize: 256,
+      maxzoom: 19,
       attribution: '© Esri, Maxar, Earthstar Geographics',
     },
     'carto-labels': {
@@ -240,7 +241,6 @@ export default function GPS(): React.ReactElement {
               onClick={() => handleMarkerClick(loc)}
             >
               <div className="relative cursor-pointer" title={loc.device_id}>
-                {/* Pulsing ring for live devices */}
                 <span className="absolute inset-0 rounded-full bg-indigo-400 opacity-60 animate-ping" />
                 <div
                   className={`relative w-4 h-4 rounded-full border-2 border-white shadow-lg transition-transform hover:scale-125 ${
