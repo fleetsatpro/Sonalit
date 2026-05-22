@@ -85,8 +85,8 @@ export default function RiskIntel() {
     mapRef.current = new maplibregl.Map({
       container: mapContainer.current,
       style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
-      center: [36.817, -1.286],
-      zoom: 8,
+      center: [27.5, -11.5],
+      zoom: 5,
     });
     mapRef.current.addControl(new maplibregl.NavigationControl(), 'top-right');
     return () => { mapRef.current?.remove(); mapRef.current = null; };
@@ -136,8 +136,18 @@ export default function RiskIntel() {
       });
     };
 
-    if (map.loaded()) addLayers();
-    else map.once('load', addLayers);
+    const addLayersAndFit = () => {
+      addLayers();
+      // Fit bounds to actual zone locations
+      const bounds = new maplibregl.LngLatBounds();
+      (data ?? []).forEach((z) => {
+        if (z.center_lat != null && z.center_lon != null) bounds.extend([z.center_lon, z.center_lat]);
+      });
+      if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 60, maxZoom: 10, duration: 600 });
+    };
+
+    if (map.loaded()) addLayersAndFit();
+    else map.once('load', addLayersAndFit);
   }, [data]);
 
   const displayedZones = data

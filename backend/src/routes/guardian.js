@@ -1064,6 +1064,28 @@ router.post('/ack-command', deviceAuth, async (req, res, next) => {
 // ─── Admin Routes (JWT required) ──────────────────────────────────────────────
 
 /**
+ * GET /api/v1/guardian/commands
+ * Recent commands across all devices (admin view).
+ */
+router.get('/commands', authenticate, async (req, res, next) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const params = [limit];
+    const result = await query(
+      `SELECT dc.id, dc.device_id, dc.command_type, dc.status,
+              dc.issued_at, dc.executed_at, dc.result,
+              gd.name AS device_name
+       FROM device_commands dc
+       JOIN guardian_devices gd ON gd.id = dc.device_id
+       ORDER BY dc.issued_at DESC
+       LIMIT $1`,
+      params
+    );
+    res.json({ data: result.rows });
+  } catch (err) { next(err); }
+});
+
+/**
  * GET /api/v1/guardian/devices
  * List all guardian devices with last health, last location, pending command count.
  */

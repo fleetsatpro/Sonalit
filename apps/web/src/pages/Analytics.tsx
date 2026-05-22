@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import {
@@ -13,186 +12,172 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
-import { BarChart2, Activity, Fuel, MapPin, Clock } from 'lucide-react';
+import { BarChart2, Truck, AlertTriangle, CheckCircle, Activity } from 'lucide-react';
 
-interface GpsEvent {
-  time: string;
-  count: number;
+interface DashboardSummary {
+  activeConvoys: number;
+  openAlerts: number;
+  fleetUtilisation: number;
+  onTimeRate: number;
+  totalVehicles: number;
+  activeVehicles: number;
 }
 
-interface AlertByType {
-  type: string;
-  count: number;
+interface ConvoyMetricDay {
+  day: string;
+  completed: number;
+  on_time: number;
+  delayed: number;
+  aborted: number;
 }
 
-interface AnalyticsSummary {
-  total_distance_km: number;
-  active_hours: number;
-  fuel_events: number;
-  geofence_violations: number;
+interface FleetRegion {
+  region: string | null;
+  total: number;
+  active: number;
+  idle: number;
+  maintenance: number;
+  offline: number;
 }
 
 interface StatCardProps {
   label: string;
   value: string | number;
   icon: React.ReactNode;
-  unit?: string;
+  sub?: string | undefined;
 }
 
-function StatCard({ label, value, icon, unit }: StatCardProps) {
+function StatCard({ label, value, icon, sub }: StatCardProps) {
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 flex items-center gap-3">
-      <div className="w-10 h-10 rounded-lg bg-slate-700 flex items-center justify-center text-blue-400">
+    <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center gap-3">
+      <div className="w-10 h-10 rounded-xl bg-gray-800 flex items-center justify-center text-indigo-400 flex-shrink-0">
         {icon}
       </div>
       <div>
-        <p className="text-xs text-slate-400">{label}</p>
-        <p className="text-xl font-bold">
+        <p className="text-xs text-gray-400">{label}</p>
+        <p className="text-xl font-bold text-white">
           {value}
-          {unit && <span className="text-sm font-normal text-slate-400 ml-1">{unit}</span>}
+          {sub && <span className="text-sm font-normal text-gray-400 ml-1">{sub}</span>}
         </p>
       </div>
     </div>
   );
 }
 
-function formatDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
+function fmtDay(d: string) {
+  const date = new Date(d);
+  return `${date.getMonth() + 1}/${date.getDate()}`;
 }
 
 export default function Analytics() {
-  const today = new Date();
-  const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-
-  const [from, setFrom] = useState(formatDate(weekAgo));
-  const [to, setTo] = useState(formatDate(today));
-
-  const params = { from, to };
-
-  const { data: gpsEvents, isLoading: gpsLoading } = useQuery<GpsEvent[]>({
-    queryKey: ['analytics-gps', from, to],
+  const { data: summary, isLoading: summaryLoading } = useQuery<DashboardSummary>({
+    queryKey: ['analytics-dashboard'],
     queryFn: async () => {
-      const res = await api.get<GpsEvent[]>('/analytics/gps-events', { params });
-      return res.data;
+      const res = await api.get<{ data: DashboardSummary }>('/analytics/dashboard');
+      return res.data.data;
     },
-    enabled: !!from && !!to,
   });
 
-  const { data: alertsByType, isLoading: alertsLoading } = useQuery<AlertByType[]>({
-    queryKey: ['analytics-alerts', from, to],
+  const { data: convoyMetrics, isLoading: convoyLoading } = useQuery<ConvoyMetricDay[]>({
+    queryKey: ['analytics-convoy-metrics'],
     queryFn: async () => {
-      const res = await api.get<AlertByType[]>('/analytics/alerts-by-type', { params });
-      return res.data;
+      const res = await api.get<{ data: ConvoyMetricDay[] }>('/analytics/convoy-metrics');
+      return res.data.data ?? [];
     },
-    enabled: !!from && !!to,
   });
 
-  const { data: summary } = useQuery<AnalyticsSummary>({
-    queryKey: ['analytics-summary', from, to],
+  const { data: fleetRegions, isLoading: fleetLoading } = useQuery<FleetRegion[]>({
+    queryKey: ['analytics-fleet-utilization'],
     queryFn: async () => {
-      const res = await api.get<AnalyticsSummary>('/analytics/summary', { params });
-      return res.data;
+      const res = await api.get<{ data: FleetRegion[] }>('/analytics/fleet-utilization');
+      return res.data.data ?? [];
     },
-    enabled: !!from && !!to,
   });
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        <div className="flex items-center gap-2">
-          <BarChart2 size={20} className="text-blue-400" />
-          <h1 className="text-xl font-bold">Analytics</h1>
-        </div>
-        <div className="flex flex-wrap items-center gap-3 sm:ml-auto">
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-slate-400">From</label>
-            <input
-              type="date"
-              className="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-slate-400">To</label>
-            <input
-              type="date"
-              className="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-            />
-          </div>
-        </div>
+    <div className="p-6 space-y-6">
+      <div className="flex items-center gap-2">
+        <BarChart2 size={20} className="text-indigo-400" />
+        <h1 className="text-xl font-bold text-white">Analytics</h1>
       </div>
 
-      {/* Stats cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Summary stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <StatCard
-          label="Total Distance"
-          value={summary?.total_distance_km?.toLocaleString() ?? '—'}
-          unit="km"
-          icon={<MapPin size={18} />}
+          label="Active Convoys"
+          value={summaryLoading ? '—' : (summary?.activeConvoys ?? '—')}
+          icon={<Truck size={18} />}
         />
         <StatCard
-          label="Active Hours"
-          value={summary?.active_hours?.toLocaleString() ?? '—'}
-          unit="hrs"
-          icon={<Clock size={18} />}
+          label="Open Alerts"
+          value={summaryLoading ? '—' : (summary?.openAlerts ?? '—')}
+          icon={<AlertTriangle size={18} />}
         />
         <StatCard
-          label="Fuel Events"
-          value={summary?.fuel_events ?? '—'}
-          icon={<Fuel size={18} />}
-        />
-        <StatCard
-          label="Geofence Violations"
-          value={summary?.geofence_violations ?? '—'}
+          label="Fleet Utilisation"
+          value={summaryLoading ? '—' : `${summary?.fleetUtilisation ?? '—'}`}
+          sub="%"
           icon={<Activity size={18} />}
         />
+        <StatCard
+          label="On-Time Rate"
+          value={summaryLoading ? '—' : `${summary?.onTimeRate ?? '—'}`}
+          sub="%"
+          icon={<CheckCircle size={18} />}
+        />
+        <StatCard
+          label="Active Vehicles"
+          value={summaryLoading ? '—' : (summary?.activeVehicles ?? '—')}
+          sub={summary ? `/ ${summary.totalVehicles}` : undefined}
+          icon={<Truck size={18} />}
+        />
       </div>
 
-      {/* GPS Events Line Chart */}
-      <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
-        <h2 className="text-sm font-semibold text-slate-300 mb-4">GPS Events Over Time</h2>
-        {gpsLoading ? (
-          <div className="h-48 flex items-center justify-center text-slate-400 text-sm">
-            Loading…
-          </div>
+      {/* Convoy performance over last 30 days */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+        <h2 className="text-sm font-semibold text-white mb-4">Convoy Performance (Last 30 Days)</h2>
+        {convoyLoading ? (
+          <div className="h-48 flex items-center justify-center text-gray-400 text-sm">Loading…</div>
         ) : (
           <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={gpsEvents ?? []}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="time" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} />
+            <LineChart data={(convoyMetrics ?? []).map((d) => ({ ...d, day: fmtDay(d.day) }))}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+              <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#6b7280' }} interval={4} />
+              <YAxis tick={{ fontSize: 10, fill: '#6b7280' }} allowDecimals={false} />
               <Tooltip
-                contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 6 }}
-                labelStyle={{ color: '#e2e8f0' }}
+                contentStyle={{ backgroundColor: '#111827', border: '1px solid #1f2937', borderRadius: 6 }}
+                labelStyle={{ color: '#e5e7eb' }}
               />
-              <Legend wrapperStyle={{ fontSize: 12, color: '#94a3b8' }} />
-              <Line type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={2} dot={false} name="GPS Events" />
+              <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
+              <Line type="monotone" dataKey="completed" stroke="#6366f1" strokeWidth={2} dot={false} name="Completed" />
+              <Line type="monotone" dataKey="on_time" stroke="#22c55e" strokeWidth={2} dot={false} name="On Time" />
+              <Line type="monotone" dataKey="delayed" stroke="#f59e0b" strokeWidth={2} dot={false} name="Delayed" />
+              <Line type="monotone" dataKey="aborted" stroke="#ef4444" strokeWidth={2} dot={false} name="Aborted" />
             </LineChart>
           </ResponsiveContainer>
         )}
       </div>
 
-      {/* Alerts by Type Bar Chart */}
-      <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
-        <h2 className="text-sm font-semibold text-slate-300 mb-4">Alerts by Type</h2>
-        {alertsLoading ? (
-          <div className="h-48 flex items-center justify-center text-slate-400 text-sm">
-            Loading…
-          </div>
+      {/* Fleet utilization by region */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+        <h2 className="text-sm font-semibold text-white mb-4">Fleet Utilization by Region</h2>
+        {fleetLoading ? (
+          <div className="h-48 flex items-center justify-center text-gray-400 text-sm">Loading…</div>
         ) : (
           <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={alertsByType ?? []}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="type" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} />
+            <BarChart data={(fleetRegions ?? []).map((r) => ({ ...r, region: r.region ?? 'Unknown' }))}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+              <XAxis dataKey="region" tick={{ fontSize: 10, fill: '#6b7280' }} />
+              <YAxis tick={{ fontSize: 10, fill: '#6b7280' }} allowDecimals={false} />
               <Tooltip
-                contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 6 }}
-                labelStyle={{ color: '#e2e8f0' }}
+                contentStyle={{ backgroundColor: '#111827', border: '1px solid #1f2937', borderRadius: 6 }}
+                labelStyle={{ color: '#e5e7eb' }}
               />
-              <Bar dataKey="count" fill="#f59e0b" name="Alerts" radius={[4, 4, 0, 0]} />
+              <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />
+              <Bar dataKey="active" fill="#6366f1" name="Active" radius={[2, 2, 0, 0]} />
+              <Bar dataKey="idle" fill="#f59e0b" name="Idle" radius={[2, 2, 0, 0]} />
+              <Bar dataKey="maintenance" fill="#ef4444" name="Maintenance" radius={[2, 2, 0, 0]} />
+              <Bar dataKey="offline" fill="#374151" name="Offline" radius={[2, 2, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         )}

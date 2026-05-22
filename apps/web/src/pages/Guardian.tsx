@@ -5,62 +5,96 @@ import { useState } from 'react';
 
 interface GuardianDevice {
   id: string;
-  device_id: string;
-  vehicle_plate: string | null;
-  enrolled_at: string;
+  name: string;
+  model: string | null;
   status: string;
+  assignment_type: string | null;
+  last_seen: string | null;
+  enrolled_at: string;
+  pending_commands: number;
 }
 
-type CommandType = 'reboot' | 'lock' | 'wipe' | 'photo';
+type CommandType =
+  | 'request_location'
+  | 'force_sync'
+  | 'TAKE_PHOTO'
+  | 'lock_screen'
+  | 'trigger_siren'
+  | 'stop_siren'
+  | 'restart_agent'
+  | 'LOCKDOWN'
+  | 'WIPE';
 
-interface PendingCommand {
+interface DeviceCommand {
   id: string;
   device_id: string;
-  command_type: CommandType;
-  created_at: string;
-  ack: boolean;
-  ack_at: string | null;
+  device_name: string;
+  command_type: string;
+  status: string;
+  issued_at: string;
+  executed_at: string | null;
+  result: string | null;
 }
 
-interface IssueCommandPayload {
+interface IssueCommandForm {
   device_id: string;
   command_type: CommandType;
 }
 
-const COMMAND_COLORS: Record<CommandType, string> = {
-  reboot: 'bg-blue-800 text-blue-200',
-  lock: 'bg-yellow-800 text-yellow-200',
-  wipe: 'bg-red-800 text-red-200',
-  photo: 'bg-green-800 text-green-200',
+const STATUS_COLORS: Record<string, string> = {
+  pending:  'bg-yellow-900/60 text-yellow-300',
+  sent:     'bg-blue-900/60 text-blue-300',
+  executed: 'bg-green-900/60 text-green-300',
+  failed:   'bg-red-900/60 text-red-300',
+  expired:  'bg-gray-800 text-gray-400',
+};
+
+const COMMAND_LABELS: Record<CommandType, string> = {
+  request_location: 'Request Location',
+  force_sync:       'Force Sync',
+  TAKE_PHOTO:       'Capture Photo',
+  lock_screen:      'Lock Screen',
+  trigger_siren:    'Trigger Siren',
+  stop_siren:       'Stop Siren',
+  restart_agent:    'Restart Agent',
+  LOCKDOWN:         'Lockdown',
+  WIPE:             'Wipe Device',
 };
 
 export default function Guardian() {
   const queryClient = useQueryClient();
-  const [form, setForm] = useState<IssueCommandPayload>({
+  const [form, setForm] = useState<IssueCommandForm>({
     device_id: '',
-    command_type: 'reboot',
+    command_type: 'request_location',
   });
 
   const { data: devices, isLoading: devicesLoading, isError: devicesError } = useQuery<GuardianDevice[]>({
     queryKey: ['guardian-devices'],
     queryFn: async () => {
-      const res = await api.get<GuardianDevice[]>('/guardian/devices');
-      return res.data;
+      const res = await api.get<{ data: GuardianDevice[] } | GuardianDevice[]>('/guardian/devices');
+      const raw = res.data;
+      return Array.isArray(raw) ? raw : (raw?.data ?? []);
     },
   });
 
-  const { data: commands, isLoading: commandsLoading } = useQuery<PendingCommand[]>({
+  const { data: commands, isLoading: commandsLoading } = useQuery<DeviceCommand[]>({
     queryKey: ['guardian-commands'],
     queryFn: async () => {
-      const res = await api.get<PendingCommand[]>('/guardian/commands');
-      return res.data;
+      const res = await api.get<{ data: DeviceCommand[] }>('/guardian/commands', { params: { limit: 50 } });
+      return res.data?.data ?? [];
     },
     refetchInterval: 15_000,
   });
 
   const issueMutation = useMutation({
-    mutationFn: (payload: IssueCommandPayload) =>
-      api.post('/guardian/commands', payload),
+    mutationFn: (f: IssueCommandForm) => {
+      const nonce = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+      return api.post(
+        `/guardian/devices/${f.device_id}/command`,
+        { command_type: f.command_type, nonce },
+        { headers: { 'X-Idempotency-Key': crypto.randomUUID() } },
+      );
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['guardian-commands'] });
       setForm((f) => ({ ...f, device_id: '' }));
@@ -68,76 +102,81 @@ export default function Guardian() {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 space-y-6">
       <div className="flex items-center gap-2">
-        <Shield size={20} className="text-blue-400" />
-        <h1 className="text-xl font-bold">Guardian Management</h1>
+        <Shield size={20} className="text-indigo-400" />
+        <h1 className="text-xl font-bold text-white">Guardian Management</h1>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Enrolled Devices */}
-        <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-700 bg-slate-900">
-            <h2 className="text-sm font-semibold">Enrolled Devices</h2>
+        <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-800">
+            <h2 className="text-sm font-semibold text-white">Enrolled Devices</h2>
           </div>
-          {devicesLoading && (
-            <div className="p-4 text-slate-400 text-sm">Loading…</div>
-          )}
-          {devicesError && (
-            <div className="p-4 text-red-400 text-sm">Failed to load devices.</div>
-          )}
-          <div className="divide-y divide-slate-700">
+          {devicesLoading && <div className="p-4 text-gray-400 text-sm">Loading…</div>}
+          {devicesError && <div className="p-4 text-red-400 text-sm">Failed to load devices.</div>}
+          <div className="divide-y divide-gray-800">
             {devices?.map((d) => (
               <div key={d.id} className="px-4 py-3 flex justify-between items-center">
                 <div>
-                  <p className="text-sm font-mono font-medium">{d.device_id}</p>
-                  <p className="text-xs text-slate-500">
-                    {d.vehicle_plate ?? 'Unassigned'} · Enrolled {new Date(d.enrolled_at).toLocaleDateString()}
+                  <p className="text-sm font-medium text-white">{d.name}</p>
+                  <p className="text-xs text-gray-500">
+                    {d.model ?? 'Unknown model'} ·{' '}
+                    {d.last_seen ? `Last seen ${new Date(d.last_seen).toLocaleString()}` : 'Never seen'}
                   </p>
                 </div>
-                <span className="text-xs px-2 py-0.5 bg-green-800 text-green-200 rounded">{d.status}</span>
+                <div className="flex items-center gap-2">
+                  {d.pending_commands > 0 && (
+                    <span className="text-xs px-2 py-0.5 bg-yellow-900/60 text-yellow-300 rounded">
+                      {d.pending_commands} pending
+                    </span>
+                  )}
+                  <span className={`text-xs px-2 py-0.5 rounded ${STATUS_COLORS[d.status] ?? 'bg-gray-800 text-gray-400'}`}>
+                    {d.status}
+                  </span>
+                </div>
               </div>
             ))}
-            {devices?.length === 0 && (
-              <div className="p-6 text-center text-slate-500 text-sm">No enrolled devices.</div>
+            {!devicesLoading && devices?.length === 0 && (
+              <div className="p-6 text-center text-gray-500 text-sm">No enrolled devices.</div>
             )}
           </div>
         </div>
 
         {/* Issue Command */}
         <div className="space-y-4">
-          <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-3">
-              <Terminal size={16} className="text-blue-400" />
-              <h2 className="text-sm font-semibold">Issue Command</h2>
+              <Terminal size={16} className="text-indigo-400" />
+              <h2 className="text-sm font-semibold text-white">Issue Command</h2>
             </div>
             <div className="space-y-3">
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Device ID</label>
+                <label className="block text-xs text-gray-400 mb-1">Device</label>
                 <select
-                  className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
                   value={form.device_id}
                   onChange={(e) => setForm((f) => ({ ...f, device_id: e.target.value }))}
                 >
                   <option value="">Select device…</option>
                   {devices?.map((d) => (
-                    <option key={d.id} value={d.device_id}>
-                      {d.device_id}{d.vehicle_plate ? ` (${d.vehicle_plate})` : ''}
+                    <option key={d.id} value={d.id}>
+                      {d.name} ({d.status})
                     </option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Command</label>
+                <label className="block text-xs text-gray-400 mb-1">Command</label>
                 <select
-                  className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
                   value={form.command_type}
                   onChange={(e) => setForm((f) => ({ ...f, command_type: e.target.value as CommandType }))}
                 >
-                  <option value="reboot">Reboot</option>
-                  <option value="lock">Lock</option>
-                  <option value="wipe">Wipe</option>
-                  <option value="photo">Capture Photo</option>
+                  {(Object.entries(COMMAND_LABELS) as [CommandType, string][]).map(([v, label]) => (
+                    <option key={v} value={v}>{label}</option>
+                  ))}
                 </select>
               </div>
               {issueMutation.isError && (
@@ -149,50 +188,41 @@ export default function Guardian() {
               <button
                 onClick={() => issueMutation.mutate(form)}
                 disabled={issueMutation.isPending || !form.device_id}
-                className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm font-medium"
+                className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded text-sm font-medium text-white"
               >
                 {issueMutation.isPending ? 'Issuing…' : 'Issue Command'}
               </button>
             </div>
           </div>
 
-          {/* Pending Commands */}
-          <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-700 bg-slate-900 flex items-center gap-2">
-              <Clock size={14} className="text-slate-400" />
-              <h2 className="text-sm font-semibold">Command Queue</h2>
+          {/* Recent Commands */}
+          <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-800 flex items-center gap-2">
+              <Clock size={14} className="text-gray-400" />
+              <h2 className="text-sm font-semibold text-white">Command Queue</h2>
             </div>
-            {commandsLoading && (
-              <div className="p-4 text-slate-400 text-sm">Loading…</div>
-            )}
-            <div className="divide-y divide-slate-700 max-h-56 overflow-y-auto">
+            {commandsLoading && <div className="p-4 text-gray-400 text-sm">Loading…</div>}
+            <div className="divide-y divide-gray-800 max-h-60 overflow-y-auto">
               {commands?.map((cmd) => (
                 <div key={cmd.id} className="px-4 py-3 flex justify-between items-center">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${COMMAND_COLORS[cmd.command_type]}`}>
-                        {cmd.command_type}
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[cmd.status] ?? 'bg-gray-800 text-gray-400'}`}>
+                        {cmd.status}
                       </span>
-                      <span className="text-xs font-mono text-slate-300">{cmd.device_id}</span>
+                      <span className="text-xs text-gray-300">{cmd.command_type}</span>
                     </div>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {new Date(cmd.created_at).toLocaleString()}
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {cmd.device_name} · {new Date(cmd.issued_at).toLocaleString()}
                     </p>
                   </div>
-                  <div className="text-right">
-                    {cmd.ack ? (
-                      <span className="text-xs text-green-400">ACK'd</span>
-                    ) : (
-                      <span className="text-xs text-yellow-400">Pending</span>
-                    )}
-                    {cmd.ack_at && (
-                      <p className="text-xs text-slate-500">{new Date(cmd.ack_at).toLocaleTimeString()}</p>
-                    )}
-                  </div>
+                  {cmd.executed_at && (
+                    <p className="text-xs text-gray-500">{new Date(cmd.executed_at).toLocaleTimeString()}</p>
+                  )}
                 </div>
               ))}
-              {commands?.length === 0 && (
-                <div className="p-6 text-center text-slate-500 text-sm">No commands in queue.</div>
+              {!commandsLoading && commands?.length === 0 && (
+                <div className="p-6 text-center text-gray-500 text-sm">No commands in queue.</div>
               )}
             </div>
           </div>
