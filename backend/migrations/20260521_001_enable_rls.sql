@@ -69,6 +69,18 @@ BEGIN
   END IF;
   CREATE INDEX IF NOT EXISTS idx_panic_events_org ON panic_events(org_id);
 
+  -- drivers
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='drivers' AND column_name='org_id') THEN
+    EXECUTE format('ALTER TABLE drivers ADD COLUMN org_id UUID NOT NULL DEFAULT %L', default_org::text);
+  END IF;
+  CREATE INDEX IF NOT EXISTS idx_drivers_org ON drivers(org_id) WHERE deleted_at IS NULL;
+
+  -- field_reports
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='field_reports' AND column_name='org_id') THEN
+    EXECUTE format('ALTER TABLE field_reports ADD COLUMN org_id UUID NOT NULL DEFAULT %L', default_org::text);
+  END IF;
+  CREATE INDEX IF NOT EXISTS idx_field_reports_org ON field_reports(org_id);
+
 END $$;
 
 -- ── Enable Row-Level Security ─────────────────────────────────────────────────
