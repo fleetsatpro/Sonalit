@@ -322,22 +322,41 @@ if (!process.env.GENERATE_OPENAPI) {
   createQueues();
   server.listen(PORT, () => {
     logger.info("FleetOps Enterprise v2.1 running on port " + PORT + " [" + (process.env.NODE_ENV || "development") + "]");
-    // Startup schema check — logs missing tables/columns that cause 500s on login
+    // Startup schema check — every column touched by POST /auth/login
     dbQuery(`
       SELECT
         (SELECT COUNT(*) FROM information_schema.tables
           WHERE table_name = 'refresh_tokens') AS has_refresh_tokens,
+        (SELECT COUNT(*) FROM information_schema.tables
+          WHERE table_name = 'partition_health') AS has_partition_health,
+        (SELECT COUNT(*) FROM information_schema.routines
+          WHERE routine_name = 'ensure_future_partitions') AS has_partition_fn,
         (SELECT COUNT(*) FROM information_schema.columns
           WHERE table_name = 'users' AND column_name = 'org_id') AS has_org_id,
         (SELECT COUNT(*) FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'status') AS has_status,
+        (SELECT COUNT(*) FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'deleted_at') AS has_deleted_at,
+        (SELECT COUNT(*) FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'password_hash') AS has_password_hash,
+        (SELECT COUNT(*) FROM information_schema.columns
           WHERE table_name = 'users' AND column_name = 'deletion_requested_at') AS has_deletion_requested_at
     `).then(r => {
-      const { has_refresh_tokens, has_org_id, has_deletion_requested_at } = r.rows[0];
-      if (has_refresh_tokens === '0') logger.error('SCHEMA MISSING: refresh_tokens table — login will 500');
-      if (has_org_id === '0') logger.error('SCHEMA MISSING: users.org_id column — login will 500');
-      if (has_deletion_requested_at === '0') logger.warn('SCHEMA MISSING: users.deletion_requested_at — GDPR cron will fail silently');
-      if (has_refresh_tokens !== '0' && has_org_id !== '0')
-        logger.info('Schema check OK: refresh_tokens ✓  users.org_id ✓');
+      const c = r.rows[0];
+      const missing = [];
+      if (c.has_refresh_tokens    === '0') missing.push('refresh_tokens TABLE');
+      if (c.has_partition_health  === '0') missing.push('partition_health TABLE');
+      if (c.has_partition_fn      === '0') missing.push('ensure_future_partitions FUNCTION');
+      if (c.has_org_id            === '0') missing.push('users.org_id');
+      if (c.has_status            === '0') missing.push('users.status');
+      if (c.has_deleted_at        === '0') missing.push('users.deleted_at');
+      if (c.has_password_hash     === '0') missing.push('users.password_hash');
+      if (c.has_deletion_requested_at === '0') missing.push('users.deletion_requested_at (GDPR cron)');
+      if (missing.length) {
+        logger.error('SCHEMA MISSING — login will 500: ' + missing.join(', '));
+      } else {
+        logger.info('Schema check OK: all login-critical objects present');
+      }
     }).catch(e => logger.warn('Startup schema check failed: ' + e.message));
   });
 }
