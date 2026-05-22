@@ -41,7 +41,14 @@ async function run() {
         console.log(`[db-migrate] skip  ${file}`);
         continue;
       }
-      const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
+      const rawSql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
+      // Strip standalone transaction-control statements so the runner's
+      // BEGIN/COMMIT owns the transaction boundary. Preserves PL/pgSQL
+      // BEGIN/END blocks (which never end with a bare semicolon on that line).
+      const sql = rawSql
+        .split('\n')
+        .filter(line => !/^\s*(BEGIN|COMMIT|ROLLBACK)\s*;\s*$/i.test(line))
+        .join('\n');
       console.log(`[db-migrate] apply ${file}`);
       await client.query('BEGIN');
       try {

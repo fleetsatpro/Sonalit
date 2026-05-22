@@ -7,8 +7,14 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 // These paths authenticate via non-cookie means or are called by external systems
 const SKIP_PREFIXES = [
-  '/api/v1/guardian/',  // X-Device-Token auth
-  '/api/v1/webhooks/',  // Convoy / external webhook callbacks
+  // Pre-auth endpoints: no session exists yet, so there is nothing to forge.
+  // Login CSRF (forcing a victim to sign in as someone else) is a distinct,
+  // lower-severity class and does not require double-submit protection.
+  '/api/v1/auth/login',
+  '/api/v1/auth/register',
+  '/api/v1/auth/webauthn/',  // challenge fetch + assertion are pre-auth
+  '/api/v1/guardian/',       // X-Device-Token auth
+  '/api/v1/webhooks/',       // Convoy / external webhook callbacks
   '/health',
   '/metrics',
 ];
