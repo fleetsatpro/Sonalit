@@ -3,6 +3,7 @@ const Joi = require('joi');
 const { getQueues } = require('../config/queue');
 const { query } = require('../config/database');
 const { asyncHandler } = require('../middleware/error');
+const { authenticate } = require('../middleware/auth');
 
 const gpsSchema = Joi.object({
   vehicle_id: Joi.string().required(),
@@ -35,12 +36,34 @@ router.post('/', asyncHandler(async (req, res) => {
   res.status(202).json({ queued: true, jobId: job.id });
 }));
 
+// GET /gps/track — current live snapshot of all device positions for the org
+router.get('/track', authenticate, asyncHandler(async (req, res) => {
+  const result = await req.db(
+    `SELECT
+       gd.id::text                                                             AS device_id,
+       CASE WHEN gd.assignment_type = 'vehicle' THEN gd.assignment_id::text
+            ELSE NULL END                                                       AS vehicle_id,
+       gd.last_lat     AS lat,
+       gd.last_lng     AS lng,
+       gd.last_speed   AS speed,
+       NULL::numeric   AS heading,
+       gd.last_seen    AS timestamp
+     FROM guardian_devices gd
+     WHERE gd.last_lat IS NOT NULL
+       AND gd.last_lng IS NOT NULL
+       AND gd.deleted_at IS NULL
+     ORDER BY gd.last_seen DESC`,
+    []
+  );
+  res.json(result.rows);
+}));
+
 // GET /gps?vehicle_id=&limit=  — query-param form used by the frontend
-router.get('/', asyncHandler(async (req, res) => {
+router.get('/', authenticate, asyncHandler(async (req, res) => {
   const { vehicle_id } = req.query;
   if (!vehicle_id) return res.status(400).json({ error: 'vehicle_id query parameter is required' });
   const limit = Math.min(parseInt(req.query.limit) || 200, 500);
-  const result = await query(
+  const result = await req.db(
     'SELECT * FROM gps_logs WHERE vehicle_id = $1 ORDER BY timestamp DESC LIMIT $2',
     [vehicle_id, limit]
   );
@@ -48,8 +71,8 @@ router.get('/', asyncHandler(async (req, res) => {
 }));
 
 // GET /gps/:vehicleId  — path-param form (legacy / IoT clients)
-router.get('/:vehicleId', asyncHandler(async (req, res) => {
-  const result = await query(
+router.get('/:vehicleId', authenticate, asyncHandler(async (req, res) => {
+  const result = await req.db(
     'SELECT * FROM gps_logs WHERE vehicle_id = $1 ORDER BY timestamp DESC LIMIT 200',
     [req.params.vehicleId]
   );
