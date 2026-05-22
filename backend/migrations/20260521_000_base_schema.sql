@@ -716,10 +716,13 @@ CREATE TABLE IF NOT EXISTS reports (
 
 CREATE TABLE IF NOT EXISTS fuel_logs (
   id         BIGSERIAL   PRIMARY KEY,
-  vehicle_id UUID NOT NULL REFERENCES vehicles(id),
+  vehicle_id UUID REFERENCES vehicles(id),
   fuel_level DECIMAL(6,2),
   recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Belt-and-suspenders: ensure columns exist even if the table pre-existed with a partial schema.
+ALTER TABLE fuel_logs ADD COLUMN IF NOT EXISTS vehicle_id UUID REFERENCES vehicles(id);
+ALTER TABLE fuel_logs ADD COLUMN IF NOT EXISTS recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 CREATE INDEX IF NOT EXISTS idx_fuel_vehicle ON fuel_logs(vehicle_id, recorded_at DESC);
 
 CREATE TABLE IF NOT EXISTS outbox (

@@ -150,11 +150,9 @@ async function run() {
           try {
             await client.query(stmt);
           } catch (stmtErr) {
-            console.error(
-              `[db-migrate] FAILED stmt ${idx + 1}/${statements.length}` +
-              ` [pg:${stmtErr.code}]: ${stmtErr.message}`
-            );
-            console.error('[db-migrate] stmt text:', stmt.slice(0, 400));
+            console.error(`[db-migrate] FAILED stmt ${idx + 1}/${statements.length} pg:${stmtErr.code}`);
+            console.error(`[db-migrate] error: ${stmtErr.message}`);
+            console.error(`[db-migrate] stmt: ${stmt.slice(0, 400)}`);
             throw stmtErr;
           }
         }
