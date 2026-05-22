@@ -215,9 +215,9 @@ export default function RiskIntel() {
                       {zone.risk_level}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-slate-300">{zone.event_count.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-slate-300">{(zone.event_count ?? 0).toLocaleString()}</td>
                   <td className="px-4 py-3 text-slate-400 text-xs font-mono">
-                    {zone.center_lat.toFixed(4)}, {zone.center_lon.toFixed(4)}
+                    {zone.center_lat?.toFixed(4) ?? '—'}, {zone.center_lon?.toFixed(4) ?? '—'}
                   </td>
                 </tr>
               ))}

@@ -30,5 +30,5 @@ export function subscribe<T>(channel: string, handler: (data: T) => void): () =>
   const sub = c.newSubscription(channel, { recoverable: true });
   sub.on('publication', (ctx: PublicationContext) => handler(ctx.data as T));
   sub.subscribe();
-  return () => { sub.unsubscribe(); sub.removeAllListeners(); };
+  return () => { sub.unsubscribe(); sub.removeAllListeners(); c.removeSubscription(sub); };
 }
