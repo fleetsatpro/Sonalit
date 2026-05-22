@@ -22,6 +22,8 @@ const MIGRATIONS_DIR = path.resolve(__dirname, '../migrations');
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
+  connectionTimeoutMillis: 15000,
+  idleTimeoutMillis: 10000,
 });
 
 /**
@@ -177,7 +179,9 @@ async function run() {
   }
 }
 
-run().catch(err => {
+run().then(() => {
+  process.exit(0);
+}).catch(err => {
   console.error('[db-migrate] Fatal:', err.message);
   process.exit(1);
 });
