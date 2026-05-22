@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Bot, Send, User, Loader2 } from 'lucide-react';
-import { getAccessToken } from '../stores/auth.js';
+import { api } from '../lib/api.js';
 
 type Role = 'user' | 'assistant';
 
@@ -9,23 +9,17 @@ interface ChatMessage {
   role: Role;
   content: string;
   timestamp: number;
-  streaming?: boolean;
 }
 
-const API_BASE = '/api/v1';
-const SESSION_KEY = 'sonalit-copilot-session';
-
-function getAuthToken(): string {
-  return getAccessToken() ?? '';
+interface HistoryEntry {
+  role: Role;
+  content: string;
 }
 
-function getOrCreateSessionId(): string {
-  let sid = sessionStorage.getItem(SESSION_KEY);
-  if (!sid) {
-    sid = `sess-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    sessionStorage.setItem(SESSION_KEY, sid);
-  }
-  return sid;
+interface DispatchResponse {
+  response: string;
+  actions: string[];
+  source: string;
 }
 
 function ChatBubble({ message }: { message: ChatMessage }) {
@@ -44,17 +38,10 @@ function ChatBubble({ message }: { message: ChatMessage }) {
             : 'bg-slate-700 text-slate-100 rounded-tl-sm'
         }`}
       >
-        <p className="whitespace-pre-wrap leading-relaxed">
-          {message.content}
-          {message.streaming && (
-            <span className="inline-block w-1.5 h-4 bg-blue-400 ml-0.5 animate-pulse align-middle" />
-          )}
+        <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
+        <p className={`text-xs mt-1.5 ${isUser ? 'text-blue-300' : 'text-slate-500'} text-right`}>
+          {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </p>
-        {!message.streaming && (
-          <p className={`text-xs mt-1.5 ${isUser ? 'text-blue-300' : 'text-slate-500'} text-right`}>
-            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </p>
-        )}
       </div>
       {isUser && (
         <div className="w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center shrink-0 mt-1">
@@ -72,13 +59,19 @@ const INITIAL_MESSAGE: ChatMessage = {
   timestamp: Date.now(),
 };
 
+const SUGGESTIONS = [
+  'Which vehicles are overdue for maintenance?',
+  'Summarize incidents from this week',
+  'What is the current fleet utilization?',
+  'Show top safety risks',
+];
+
 export default function Copilot() {
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE]);
   const [input, setInput] = useState('');
-  const [isStreaming, setIsStreaming] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
-  const sessionId = useRef(getOrCreateSessionId());
+  const historyRef = useRef<HistoryEntry[]>([]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -86,7 +79,7 @@ export default function Copilot() {
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
-    if (!text || isStreaming) return;
+    if (!text || isLoading) return;
 
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -95,94 +88,47 @@ export default function Copilot() {
       timestamp: Date.now(),
     };
 
-    const assistantMsgId = `assistant-${Date.now()}`;
-    const assistantMsg: ChatMessage = {
-      id: assistantMsgId,
-      role: 'assistant',
-      content: '',
-      timestamp: Date.now(),
-      streaming: true,
-    };
-
-    setMessages((prev) => [...prev, userMsg, assistantMsg]);
+    setMessages((prev) => [...prev, userMsg]);
     setInput('');
-    setIsStreaming(true);
+    setIsLoading(true);
 
-    abortRef.current = new AbortController();
+    const history = historyRef.current.slice(-6);
 
     try {
-      const token = getAuthToken();
-      const response = await fetch(`${API_BASE}/ai/copilot`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ message: text, session_id: sessionId.current }),
-        signal: abortRef.current.signal,
+      const res = await api.post<DispatchResponse>('/ai/dispatch', {
+        command: text,
+        history,
       });
 
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      if (!response.body) throw new Error('No response body');
+      const responseText = res.data?.response ?? 'No response received.';
+      const assistantMsg: ChatMessage = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: responseText,
+        timestamp: Date.now(),
+      };
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
+      historyRef.current = [
+        ...historyRef.current,
+        { role: 'user' as Role, content: text },
+        { role: 'assistant' as Role, content: responseText },
+      ].slice(-12);
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const chunk = line.slice(6);
-            if (chunk === '[DONE]') break;
-            try {
-              const parsed = JSON.parse(chunk) as { content?: string };
-              if (parsed.content) {
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMsgId
-                      ? { ...m, content: m.content + parsed.content }
-                      : m,
-                  ),
-                );
-              }
-            } catch {
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantMsgId
-                    ? { ...m, content: m.content + chunk }
-                    : m,
-                ),
-              );
-            }
-          }
-        }
-      }
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name !== 'AbortError') {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantMsgId
-              ? { ...m, content: 'Sorry, I encountered an error. Please try again.' }
-              : m,
-          ),
-        );
-      }
+      setMessages((prev) => [...prev, assistantMsg]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `error-${Date.now()}`,
+          role: 'assistant',
+          content: 'Sorry, I encountered an error. Please try again.',
+          timestamp: Date.now(),
+        },
+      ]);
     } finally {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === assistantMsgId ? { ...m, streaming: false } : m,
-        ),
-      );
-      setIsStreaming(false);
-      abortRef.current = null;
+      setIsLoading(false);
     }
-  }, [input, isStreaming]);
+  }, [input, isLoading]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -191,29 +137,20 @@ export default function Copilot() {
     }
   };
 
-  const SUGGESTIONS = [
-    'Which vehicles are overdue for maintenance?',
-    'Summarize incidents from this week',
-    'What is the current fleet utilization?',
-    'Show top safety risks',
-  ];
-
   return (
     <div className="flex flex-col h-full -m-6 overflow-hidden">
-      {/* Header */}
       <div className="flex items-center gap-2 px-6 py-4 border-b border-slate-700 bg-slate-900 shrink-0">
         <Bot size={20} className="text-blue-400" />
         <h1 className="font-semibold">Sonalit Copilot</h1>
-        <span className="text-xs text-slate-500 ml-1">RAG-powered fleet assistant</span>
+        <span className="text-xs text-slate-500 ml-1">AI-powered fleet assistant</span>
       </div>
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
         {messages.map((m) => (
           <ChatBubble key={m.id} message={m} />
         ))}
 
-        {isStreaming && messages[messages.length - 1]?.content === '' && (
+        {isLoading && (
           <div className="flex gap-3 justify-start">
             <div className="w-8 h-8 rounded-full bg-blue-700 flex items-center justify-center shrink-0">
               <Loader2 size={14} className="animate-spin" />
@@ -249,7 +186,6 @@ export default function Copilot() {
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
       <div className="border-t border-slate-700 bg-slate-900 px-6 py-4 shrink-0">
         <div className="flex gap-3">
           <textarea
@@ -259,15 +195,15 @@ export default function Copilot() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={isStreaming}
+            disabled={isLoading}
           />
           <button
             onClick={handleSend}
-            disabled={!input.trim() || isStreaming}
+            disabled={!input.trim() || isLoading}
             className="p-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-xl transition-colors"
             aria-label="Send message"
           >
-            {isStreaming ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+            {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
           </button>
         </div>
       </div>

@@ -194,7 +194,7 @@ catch (e) { logger.warn("Guardian CFO route failed: " + e.message); }
 try { app.use("/api/v1/gdpr", require("./routes/gdpr")); logger.info("Route loaded: /api/v1/gdpr"); }
 catch (e) { logger.warn("GDPR route failed: " + e.message); }
 
-["drivers", "shipments", "finance", "maintenance", "riskzones"].forEach(r => {
+["drivers", "shipments", "finance", "maintenance", "riskzones", "field-officers"].forEach(r => {
   try { app.use("/api/v1/" + r, require("./routes/" + r)); logger.info("Route loaded: /api/v1/" + r); }
   catch (e) { logger.warn("Route not found: " + r + " — " + e.message); }
 });
