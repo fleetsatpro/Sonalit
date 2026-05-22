@@ -4,12 +4,9 @@
  * tracks applied files in schema_migrations table,
  * skips already-applied ones.
  *
- * Each migration runs in its own BEGIN/COMMIT. Standalone BEGIN;/COMMIT;/
- * ROLLBACK; lines are stripped before execution so the runner owns the
- * transaction boundary. PL/pgSQL BEGIN/END blocks are preserved (no `;`).
- *
- * Statements are split and executed one at a time so the exact failing
- * statement is logged with its pg error code.
+ * Each migration is split into individual statements (dollar-quote-aware)
+ * and executed one at a time inside a single transaction so we can log
+ * the exact failing statement with its pg error code.
  */
 require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
 const fs = require('fs');
@@ -28,71 +25,80 @@ const pool = new Pool({
 });
 
 /**
- * Split a SQL string into individual statements, respecting dollar-quoting
- * (used in PL/pgSQL function bodies) and single-quoted strings.
+ * Split SQL text into individual statements, correctly handling:
+ *   - Line comments  (-- ...)
+ *   - Single-quoted strings  ('...')  including '' escapes
+ *   - Dollar-quoted blocks  ($tag$...$tag$)  used by PL/pgSQL
+ *
+ * Uses an index-based scanner so there is no accumulation bug.
  */
 function splitStatements(sql) {
   const stmts = [];
-  let buf = '';
-  let inDollar = false;
-  let dollarTag = '';
-  let inSingleQuote = false;
+  const n = sql.length;
   let i = 0;
+  let stmtStart = 0;
 
-  while (i < sql.length) {
-    const ch = sql[i];
+  while (i < n) {
+    const c = sql[i];
 
-    // Single-quoted string toggle (handles escaped quotes via '')
-    if (!inDollar && ch === "'") {
-      inSingleQuote = !inSingleQuote;
-      buf += ch;
-      i++;
-      // Handle '' escape inside single-quoted string
-      if (inSingleQuote && sql[i] === "'") {
-        buf += sql[i++];
-        inSingleQuote = true; // still inside
+    // ── Line comment: skip to end of line ─────────────────────────────────
+    if (c === '-' && i + 1 < n && sql[i + 1] === '-') {
+      while (i < n && sql[i] !== '\n') i++;
+      continue;
+    }
+
+    // ── Single-quoted string ───────────────────────────────────────────────
+    if (c === "'") {
+      i++; // consume opening quote
+      while (i < n) {
+        if (sql[i] === "'" && i + 1 < n && sql[i + 1] === "'") {
+          i += 2; // escaped ''
+          continue;
+        }
+        if (sql[i] === "'") { i++; break; } // closing quote
+        i++;
       }
       continue;
     }
 
-    // Dollar-quote detection (only outside single-quoted strings)
-    if (!inSingleQuote && !inDollar && ch === '$') {
+    // ── Dollar-quoted block ────────────────────────────────────────────────
+    if (c === '$') {
+      // Scan for the closing '$' of the tag (e.g. $$ or $tag$)
       let j = i + 1;
-      while (j < sql.length && sql[j] !== '$' && sql[j] !== '\n') j++;
-      if (j < sql.length && sql[j] === '$') {
-        const tag = sql.slice(i, j + 1);
-        dollarTag = tag;
-        inDollar = true;
-        buf += tag;
-        i = j + 1;
+      while (j < n && sql[j] !== '$' && sql[j] !== '\n') j++;
+      if (j < n && sql[j] === '$') {
+        // Valid dollar-quote tag found
+        const tag = sql.slice(i, j + 1); // e.g. "$$" or "$ext$"
+        i = j + 1; // skip past opening tag
+        // Scan forward for the identical closing tag
+        while (i <= n - tag.length) {
+          if (sql.slice(i, i + tag.length) === tag) {
+            i += tag.length; // skip past closing tag
+            break;
+          }
+          i++;
+        }
         continue;
       }
+      // Not a dollar-quote (lone $ or $ followed by newline) — fall through
     }
 
-    // Dollar-quote end
-    if (inDollar && sql.slice(i, i + dollarTag.length) === dollarTag) {
-      buf += dollarTag;
-      i += dollarTag.length;
-      inDollar = false;
-      dollarTag = '';
-      continue;
-    }
-
-    // Statement boundary
-    if (!inDollar && !inSingleQuote && ch === ';') {
-      buf += ';';
-      const stmt = buf.trim();
+    // ── Statement boundary ─────────────────────────────────────────────────
+    if (c === ';') {
+      const stmt = sql.slice(stmtStart, i + 1).trim();
       if (stmt && stmt !== ';') stmts.push(stmt);
-      buf = '';
+      stmtStart = i + 1;
       i++;
       continue;
     }
 
-    buf += ch;
     i++;
   }
 
-  if (buf.trim()) stmts.push(buf.trim());
+  // Trailing content without a trailing semicolon
+  const tail = sql.slice(stmtStart).trim();
+  if (tail) stmts.push(tail);
+
   return stmts;
 }
 
@@ -122,20 +128,21 @@ async function run() {
       }
 
       const rawSql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
-      // Strip standalone transaction-control statements (BEGIN;/COMMIT;/ROLLBACK;)
-      // so the runner's own BEGIN/COMMIT owns the boundary. Preserves
-      // PL/pgSQL BEGIN blocks inside function bodies (those lack the semicolon).
+      // Strip standalone BEGIN;/COMMIT;/ROLLBACK; lines so the runner's own
+      // BEGIN/COMMIT owns the transaction. PL/pgSQL BEGIN blocks are preserved
+      // (they appear without a trailing semicolon on their own line).
       const cleanSql = rawSql
         .split('\n')
         .filter(line => !/^\s*(BEGIN|COMMIT|ROLLBACK)\s*;\s*$/i.test(line))
         .join('\n');
 
       const statements = splitStatements(cleanSql).filter(s => {
-        const stripped = s.replace(/--[^\n]*/g, '').trim();
-        return stripped && stripped !== ';';
+        // Drop statements that are entirely comments or whitespace
+        const code = s.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
+        return code && code !== ';';
       });
 
-      console.log(`[db-migrate] apply ${file} (${statements.length} statements)`);
+      console.log(`[db-migrate] apply ${file} (${statements.length} stmts)`);
       await client.query('BEGIN');
       try {
         for (let idx = 0; idx < statements.length; idx++) {
@@ -144,15 +151,16 @@ async function run() {
             await client.query(stmt);
           } catch (stmtErr) {
             console.error(
-              `[db-migrate] stmt ${idx + 1}/${statements.length} FAILED` +
-              ` [pg:${stmtErr.code}] ${stmtErr.message}`
+              `[db-migrate] FAILED stmt ${idx + 1}/${statements.length}` +
+              ` [pg:${stmtErr.code}]: ${stmtErr.message}`
             );
-            console.error('[db-migrate] failing stmt:', stmt.slice(0, 300));
+            console.error('[db-migrate] stmt text:', stmt.slice(0, 400));
             throw stmtErr;
           }
         }
         await client.query('INSERT INTO schema_migrations (filename) VALUES ($1)', [file]);
         await client.query('COMMIT');
+        console.log(`[db-migrate] done   ${file}`);
         ran++;
       } catch (err) {
         await client.query('ROLLBACK');
