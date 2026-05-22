@@ -46,7 +46,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_org_table
   ON audit_logs (org_id, table_name, created_at DESC)
   WHERE org_id IS NOT NULL;
 
--- idempotency_keys: PK is (key, org_id) which covers the lookup; add partial index for cleanup sweep
+-- idempotency_keys: PK is (key, org_id) which covers the lookup; add sort index for cleanup sweep
+-- (NOW() is not IMMUTABLE so cannot be used in a partial index predicate)
 CREATE INDEX IF NOT EXISTS idx_idempotency_active
-  ON idempotency_keys (org_id, expires_at)
-  WHERE expires_at > NOW() - INTERVAL '1 day';
+  ON idempotency_keys (org_id, expires_at);
