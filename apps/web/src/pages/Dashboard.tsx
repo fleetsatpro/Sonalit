@@ -46,6 +46,8 @@ function StatCard({
   isLoading,
   isError,
   liveOverride,
+  extraClass,
+  style,
 }: {
   label: string;
   value: number | undefined;
@@ -54,12 +56,17 @@ function StatCard({
   isLoading: boolean;
   isError: boolean;
   liveOverride?: number | null;
+  extraClass?: string | undefined;
+  style?: React.CSSProperties | undefined;
 }): React.ReactElement {
   const raw = liveOverride !== null && liveOverride !== undefined ? liveOverride : (value ?? 0);
   const animated = useCountUp(raw, isLoading || isError);
   const isLive = liveOverride !== null && liveOverride !== undefined;
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 flex items-center gap-4 transition-shadow hover:shadow-lg hover:shadow-gray-950/50">
+    <div
+      className={`bg-gray-900 border border-gray-800 rounded-xl p-5 flex items-center gap-4 transition-all duration-200 hover:shadow-lg hover:shadow-gray-950/50 hover:-translate-y-0.5 animate-fade-in-up${extraClass ? ' ' + extraClass : ''}`}
+      style={style}
+    >
       <div className={`relative flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center ${color}`}>
         <Icon className="w-6 h-6 text-white" />
         {isLive && (
@@ -189,23 +196,23 @@ export default function Dashboard(): React.ReactElement {
   const stats = [
     { label: 'Active Vehicles', value: activeVehicles?.total, icon: Truck, color: 'bg-indigo-600', isLoading: lvLoading, isError: lvError, liveOverride: liveVehicleCount },
     { label: 'Active Drivers', value: activeDrivers?.total, icon: Users, color: 'bg-green-600', isLoading: ldLoading, isError: ldError },
-    { label: 'Open Alerts', value: openAlerts?.total, icon: Bell, color: 'bg-red-600', isLoading: laLoading, isError: laError },
+    { label: 'Open Alerts', value: openAlerts?.total, icon: Bell, color: 'bg-red-600', isLoading: laLoading, isError: laError, extraClass: (openAlerts?.total ?? 0) > 0 ? 'animate-glow-red' : undefined },
     { label: 'Ongoing Convoys', value: activeConvoys?.total, icon: Route, color: 'bg-amber-600', isLoading: lcLoading, isError: lcError },
   ];
 
   return (
     <div className="p-6 space-y-8">
-      <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+      <h1 className="text-2xl font-bold text-white animate-fade-in">Dashboard</h1>
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        {stats.map((s) => (
-          <StatCard key={s.label} {...s} />
+        {stats.map((s, i) => (
+          <StatCard key={s.label} {...s} style={{ animationDelay: `${i * 80}ms` }} />
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Alerts */}
-        <section className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <section className="bg-gray-900 border border-gray-800 rounded-xl p-5 animate-fade-in-up" style={{ animationDelay: '320ms' }}>
           <div className="flex items-center gap-2 mb-4">
             <AlertTriangle className="w-5 h-5 text-amber-400" />
             <h2 className="text-lg font-semibold text-white">Recent Alerts</h2>
@@ -223,8 +230,8 @@ export default function Dashboard(): React.ReactElement {
               {(recentAlerts?.data?.length ?? 0) === 0 && (
                 <li className="text-gray-500 text-sm">No alerts</li>
               )}
-              {recentAlerts?.data?.map((alert) => (
-                <li key={alert.id} className="flex items-center gap-3 bg-gray-800/50 rounded-lg px-3 py-2.5">
+              {recentAlerts?.data?.map((alert, index) => (
+                <li key={alert.id} className="flex items-center gap-3 bg-gray-800/50 rounded-lg px-3 py-2.5 animate-slide-in-right" style={{ animationDelay: `${index * 60}ms` }}>
                   <SeverityBadge severity={alert.severity} />
                   <div className="min-w-0 flex-1">
                     <p className="text-white text-sm font-medium truncate">{alert.title}</p>
@@ -237,7 +244,7 @@ export default function Dashboard(): React.ReactElement {
         </section>
 
         {/* Recent Incidents */}
-        <section className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+        <section className="bg-gray-900 border border-gray-800 rounded-xl p-5 animate-fade-in-up" style={{ animationDelay: '400ms' }}>
           <div className="flex items-center gap-2 mb-4">
             <FileWarning className="w-5 h-5 text-red-400" />
             <h2 className="text-lg font-semibold text-white">Recent Incidents</h2>
@@ -255,8 +262,8 @@ export default function Dashboard(): React.ReactElement {
               {(recentIncidents?.data?.length ?? 0) === 0 && (
                 <li className="text-gray-500 text-sm">No incidents</li>
               )}
-              {recentIncidents?.data?.map((inc) => (
-                <li key={inc.id} className="flex items-center gap-3 bg-gray-800/50 rounded-lg px-3 py-2.5">
+              {recentIncidents?.data?.map((inc, index) => (
+                <li key={inc.id} className="flex items-center gap-3 bg-gray-800/50 rounded-lg px-3 py-2.5 animate-slide-in-right" style={{ animationDelay: `${index * 60}ms` }}>
                   <PriorityBadge priority={inc.priority} />
                   <div className="min-w-0 flex-1">
                     <p className="text-white text-sm font-medium truncate">{inc.title}</p>
