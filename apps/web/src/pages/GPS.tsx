@@ -48,22 +48,21 @@ const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.
 const SATELLITE_STYLE = {
   version: 8 as const,
   sources: {
-    'esri-imagery': {
+    'google-sat': {
       type: 'raster' as const,
-      tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+      tiles: [
+        'https://mt0.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+        'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+        'https://mt2.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+        'https://mt3.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+      ],
       tileSize: 256,
-      maxzoom: 19,
-      attribution: '© Esri, Maxar, Earthstar Geographics',
-    },
-    'carto-labels': {
-      type: 'raster' as const,
-      tiles: ['https://basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png'],
-      tileSize: 256,
+      maxzoom: 22,
+      attribution: '© 2024 Google',
     },
   },
   layers: [
-    { id: 'esri-imagery', type: 'raster' as const, source: 'esri-imagery' },
-    { id: 'carto-labels', type: 'raster' as const, source: 'carto-labels' },
+    { id: 'google-sat', type: 'raster' as const, source: 'google-sat' },
   ],
 };
 
@@ -96,7 +95,7 @@ function DevicePanelRow({
       type="button"
       onClick={onClick}
       className={`w-full text-left px-4 py-3 border-b border-gray-800 hover:bg-gray-800/60 transition-colors ${
-        isSelected ? 'bg-indigo-900/30 border-l-2 border-l-indigo-500' : ''
+        isSelected ? 'bg-orange-900/20 border-l-2 border-l-orange-500' : ''
       }`}
     >
       <div className="flex items-center justify-between">
@@ -241,7 +240,7 @@ export default function GPS(): React.ReactElement {
               onClick={() => handleMarkerClick(loc)}
             >
               <div className="relative cursor-pointer" title={loc.device_id}>
-                <span className="absolute inset-0 rounded-full bg-indigo-400 opacity-60 animate-ping" />
+                <span className="absolute inset-0 rounded-full bg-orange-400 opacity-50 animate-ping" />
                 <div
                   className={`relative w-4 h-4 rounded-full border-2 border-white shadow-lg transition-transform hover:scale-125 ${
                     selectedDeviceId === loc.device_id ? 'bg-green-400 scale-125' : 'bg-orange-500'

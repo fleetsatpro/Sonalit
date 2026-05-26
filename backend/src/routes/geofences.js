@@ -4,16 +4,24 @@ const { authenticate } = require('../middleware/auth');
 router.use(authenticate);
 
 function parseLatLng(row) {
+  // Normalize double-serialized JSON strings (JSON.stringify called twice)
+  let coordinates = row.coordinates;
+  if (typeof coordinates === 'string') {
+    try { coordinates = JSON.parse(coordinates); } catch (_) {}
+  }
+
   let lat = row.lat != null ? parseFloat(row.lat) : null;
   let lng = row.lng != null ? parseFloat(row.lng) : null;
-  if ((!lat || !lng) && row.coordinates) {
+  if ((!lat || !lng) && coordinates) {
     try {
-      const c = typeof row.coordinates === 'string' ? JSON.parse(row.coordinates) : row.coordinates;
-      lat = parseFloat(c.lat || c.center?.lat || c.latitude) || null;
-      lng = parseFloat(c.lng || c.center?.lng || c.longitude) || null;
+      const c = typeof coordinates === 'string' ? JSON.parse(coordinates) : coordinates;
+      if (c && !Array.isArray(c)) {
+        lat = parseFloat(c.lat || c.center?.lat || c.latitude) || null;
+        lng = parseFloat(c.lng || c.center?.lng || c.longitude) || null;
+      }
     } catch (_) {}
   }
-  return { ...row, lat, lng };
+  return { ...row, coordinates, lat, lng };
 }
 
 async function ensureGeofenceActions() {
