@@ -172,11 +172,11 @@ data class AckRequest(
 )
 
 data class CommandDto(
-    @SerializedName("command_id") val commandId: String,
-    val type: String,
+    @SerializedName("id") val commandId: String,
+    @SerializedName("command_type") val type: String,
     val payload: Map<String, String>?,
-    @SerializedName("issued_at") val issuedAt: Long,
-    @SerializedName("expires_at") val expiresAt: Long?
+    @SerializedName("issued_at") val issuedAt: String?,
+    @SerializedName("expires_at") val expiresAt: String?
 )
 
 // ─── CFO ──────────────────────────────────────────────────────────────────────

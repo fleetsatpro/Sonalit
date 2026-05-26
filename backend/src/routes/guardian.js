@@ -378,6 +378,30 @@ async function ensureTables() {
     // p4t1 — FCM push token on device
     await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS fcm_token TEXT`);
 
+    // p5t1 — nonce column for command replay protection
+    await query(`ALTER TABLE device_commands ADD COLUMN IF NOT EXISTS nonce TEXT`);
+
+    // p5t2 — nonce deduplication table (PRIMARY KEY enforces uniqueness per device)
+    await query(`
+      CREATE TABLE IF NOT EXISTS guardian_command_nonces (
+        device_id UUID NOT NULL REFERENCES guardian_devices(id),
+        nonce     TEXT NOT NULL,
+        seen_at   TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (device_id, nonce)
+      )
+    `);
+
+    // p5t3 — command lifecycle event log
+    await query(`
+      CREATE TABLE IF NOT EXISTS device_command_events (
+        id         BIGSERIAL PRIMARY KEY,
+        command_id UUID NOT NULL,
+        status     TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await query(`CREATE INDEX IF NOT EXISTS idx_device_command_events_command ON device_command_events(command_id)`);
+
     logger.info('Guardian tables initialised');
   } catch (err) {
     logger.error(`Guardian ensureTables error: ${err.message}`);
