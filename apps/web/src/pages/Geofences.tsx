@@ -66,7 +66,16 @@ function coordsToPoints(coords: unknown): number[][] | null {
   }
   if (coords !== null && typeof coords === 'object' && !Array.isArray(coords)) {
     const obj = coords as Record<string, unknown>;
+    // GeoJSON geometry: {type:'LineString', coordinates:[...]}
     if (Array.isArray(obj['coordinates'])) return coordsToPoints(obj['coordinates']);
+    // AI corridor format: {lat, lng, path:[[lat,lng],...], buffer_m, ...}
+    // OSRM stores path in lat-first order — swap to GeoJSON [lng,lat]
+    if (Array.isArray(obj['path'])) {
+      const pts = (obj['path'] as unknown[])
+        .map((p) => Array.isArray(p) ? [Number((p as unknown[])[1]), Number((p as unknown[])[0])] : null)
+        .filter((p): p is number[] => p !== null && p.length === 2);
+      return pts.length >= 2 ? pts : null;
+    }
     return null;
   }
   if (!Array.isArray(coords) || coords.length < 2) return null;
