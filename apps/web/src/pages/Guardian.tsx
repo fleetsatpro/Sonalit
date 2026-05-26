@@ -102,7 +102,7 @@ export default function Guardian() {
   });
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       <div className="flex items-center gap-2">
         <Shield size={20} className="text-orange-400" />
         <h1 className="text-xl font-bold text-white">Guardian Management</h1>

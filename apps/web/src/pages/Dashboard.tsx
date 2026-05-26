@@ -201,7 +201,7 @@ export default function Dashboard(): React.ReactElement {
   ];
 
   return (
-    <div className="p-6 space-y-8">
+    <div className="space-y-8">
       <h1 className="text-2xl font-bold text-white animate-fade-in">Dashboard</h1>
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">

@@ -83,7 +83,7 @@ function AddDriverForm({ onClose }: { onClose: () => void }): React.ReactElement
         </button>
       </div>
       <form onSubmit={handleSubmit(onSubmit)} noValidate>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-4">
           <div>
             <label className="block text-xs text-gray-400 mb-1">Full Name</label>
             <input {...register('name')} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
@@ -161,8 +161,8 @@ export default function Drivers(): React.ReactElement {
   const totalPages = data?.total ? Math.ceil(data.total / PAGE_SIZE) : 1;
 
   return (
-    <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Users className="w-5 h-5 text-orange-400" />
           <h1 className="text-xl font-bold text-white">Drivers</h1>

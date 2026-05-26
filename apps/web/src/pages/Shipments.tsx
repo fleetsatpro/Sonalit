@@ -85,7 +85,7 @@ function CreateForm({ onClose }: { onClose: () => void }) {
         <h3 className="font-semibold">New Shipment</h3>
         <button onClick={onClose}><X size={16} /></button>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {fields.map(({ key, label, type = 'text', placeholder }) => (
           <div key={key}>
             <label className="block text-xs text-slate-400 mb-1">{label}</label>
@@ -136,7 +136,7 @@ export default function Shipments() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Package size={20} className="text-orange-400" />
           <h1 className="text-xl font-bold">Shipments</h1>

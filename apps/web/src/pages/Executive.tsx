@@ -123,7 +123,7 @@ export default function Executive() {
       {summaryLoading ? (
         <div className="text-slate-400 text-sm py-12 text-center">Loading executive summary…</div>
       ) : summary ? (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <KpiCard
             label="Fleet Utilization"
             value={(summary.fleetUtilisation ?? 0).toFixed(1)}

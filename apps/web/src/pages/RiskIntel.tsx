@@ -158,12 +158,12 @@ export default function RiskIntel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Shield size={20} className="text-orange-400" />
           <h1 className="text-xl font-bold">Risk Intelligence</h1>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <select
             className="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-orange-500"
             value={filters.risk_level}

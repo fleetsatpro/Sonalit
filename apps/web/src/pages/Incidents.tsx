@@ -191,7 +191,7 @@ export default function Incidents() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <AlertTriangle size={20} className="text-orange-400" />
           <h1 className="text-xl font-bold">Incidents</h1>

@@ -103,8 +103,8 @@ export default function Alerts(): React.ReactElement {
   const openCount = data?.data.filter((a) => a.status === 'open').length ?? 0;
 
   return (
-    <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Bell className="w-5 h-5 text-amber-400" />
           <h1 className="text-xl font-bold text-white">Alerts</h1>

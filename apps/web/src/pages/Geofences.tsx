@@ -118,7 +118,7 @@ function CreateForm({ onClose }: { onClose: () => void }) {
         <button onClick={onClose} className="text-gray-400 hover:text-white"><X size={16} /></button>
       </div>
       <div className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-xs text-gray-400 mb-1">Name</label>
             <input
@@ -324,8 +324,8 @@ export default function Geofences() {
   }, [flyToGeofence]);
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center">
+    <div className="space-y-6">
+      <div className="flex justify-between items-center flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Map size={20} className="text-orange-400" />
           <h1 className="text-xl font-bold text-white">Geofences</h1>

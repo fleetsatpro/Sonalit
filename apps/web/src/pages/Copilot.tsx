@@ -211,7 +211,7 @@ export default function Copilot() {
   };
 
   return (
-    <div className="flex h-full -m-6 overflow-hidden">
+    <div className="flex h-full -m-4 md:-m-6 overflow-hidden">
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <div className="flex items-center gap-2 px-6 py-3 border-b border-gray-800 shrink-0" style={{ background: 'rgba(5,8,19,0.9)' }}>
           <Bot size={18} className="text-orange-400" />

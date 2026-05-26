@@ -95,14 +95,14 @@ export default function Analytics() {
   });
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       <div className="flex items-center gap-2">
         <BarChart2 size={20} className="text-orange-400" />
         <h1 className="text-xl font-bold text-white">Analytics</h1>
       </div>
 
       {/* Summary stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <StatCard
           label="Active Convoys"
           value={summaryLoading ? '—' : (summary?.activeConvoys ?? '—')}

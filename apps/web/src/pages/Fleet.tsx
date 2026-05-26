@@ -85,7 +85,7 @@ function AddVehicleForm({ onClose }: { onClose: () => void }): React.ReactElemen
         </button>
       </div>
       <form onSubmit={handleSubmit(onSubmit)} noValidate>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-4">
           {/* Registration */}
           <div>
             <label className="block text-xs text-gray-400 mb-1">Plate / Registration</label>
@@ -193,8 +193,8 @@ export default function Fleet(): React.ReactElement {
   const totalPages = data?.total ? Math.ceil(data.total / PAGE_SIZE) : 1;
 
   return (
-    <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Truck className="w-5 h-5 text-orange-400" />
           <h1 className="text-xl font-bold text-white">Fleet</h1>
