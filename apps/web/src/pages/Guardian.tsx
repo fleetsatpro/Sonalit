@@ -43,7 +43,7 @@ interface IssueCommandForm {
 
 const STATUS_COLORS: Record<string, string> = {
   pending:  'bg-yellow-900/60 text-yellow-300',
-  sent:     'bg-blue-900/60 text-blue-300',
+  sent:     'bg-blue-900/60 text-orange-300',
   executed: 'bg-green-900/60 text-green-300',
   failed:   'bg-red-900/60 text-red-300',
   expired:  'bg-gray-800 text-gray-400',
@@ -104,7 +104,7 @@ export default function Guardian() {
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center gap-2">
-        <Shield size={20} className="text-indigo-400" />
+        <Shield size={20} className="text-orange-400" />
         <h1 className="text-xl font-bold text-white">Guardian Management</h1>
       </div>
 
@@ -148,7 +148,7 @@ export default function Guardian() {
         <div className="space-y-4">
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-3">
-              <Terminal size={16} className="text-indigo-400" />
+              <Terminal size={16} className="text-orange-400" />
               <h2 className="text-sm font-semibold text-white">Issue Command</h2>
             </div>
             <div className="space-y-3">
@@ -188,7 +188,7 @@ export default function Guardian() {
               <button
                 onClick={() => issueMutation.mutate(form)}
                 disabled={issueMutation.isPending || !form.device_id}
-                className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded text-sm font-medium text-white"
+                className="w-full py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 rounded text-sm font-medium text-white"
               >
                 {issueMutation.isPending ? 'Issuing…' : 'Issue Command'}
               </button>

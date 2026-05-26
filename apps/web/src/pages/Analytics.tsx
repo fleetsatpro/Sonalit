@@ -50,7 +50,7 @@ interface StatCardProps {
 function StatCard({ label, value, icon, sub }: StatCardProps) {
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center gap-3">
-      <div className="w-10 h-10 rounded-xl bg-gray-800 flex items-center justify-center text-indigo-400 flex-shrink-0">
+      <div className="w-10 h-10 rounded-xl bg-gray-800 flex items-center justify-center text-orange-400 flex-shrink-0">
         {icon}
       </div>
       <div>
@@ -97,7 +97,7 @@ export default function Analytics() {
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center gap-2">
-        <BarChart2 size={20} className="text-indigo-400" />
+        <BarChart2 size={20} className="text-orange-400" />
         <h1 className="text-xl font-bold text-white">Analytics</h1>
       </div>
 

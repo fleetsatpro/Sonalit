@@ -86,7 +86,7 @@ export default function Messages() {
       <div className="w-full md:w-64 shrink-0 bg-gray-900 border-b md:border-b-0 md:border-r border-gray-800 flex flex-col h-48 md:h-auto">
         <div className="p-4 border-b border-gray-800">
           <div className="flex items-center gap-2">
-            <MessageSquare size={18} className="text-indigo-400" />
+            <MessageSquare size={18} className="text-orange-400" />
             <h2 className="font-bold text-white">Messages</h2>
           </div>
         </div>
@@ -154,7 +154,7 @@ export default function Messages() {
                         <p className="text-xs font-medium text-gray-400 mb-1">{msg.sender_name}</p>
                       )}
                       <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                      <p className={`text-xs mt-1 ${isMe ? 'text-indigo-300' : 'text-gray-500'}`}>
+                      <p className={`text-xs mt-1 ${isMe ? 'hover:text-orange-300' : 'text-gray-500'}`}>
                         {new Date(msg.created_at).toLocaleTimeString()}
                       </p>
                     </div>
@@ -180,7 +180,7 @@ export default function Messages() {
                 <button
                   onClick={handleSend}
                   disabled={!draft.trim() || sendMutation.isPending}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg flex items-center gap-2 text-sm font-medium text-white"
+                  className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 rounded-lg flex items-center gap-2 text-sm font-medium text-white"
                 >
                   <Send size={16} />
                 </button>

@@ -89,31 +89,31 @@ function AddVehicleForm({ onClose }: { onClose: () => void }): React.ReactElemen
           {/* Registration */}
           <div>
             <label className="block text-xs text-gray-400 mb-1">Plate / Registration</label>
-            <input {...register('registration')} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <input {...register('registration')} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
             {errors.registration && <p className="text-red-400 text-xs mt-0.5">{errors.registration.message}</p>}
           </div>
           {/* Make */}
           <div>
             <label className="block text-xs text-gray-400 mb-1">Make</label>
-            <input {...register('make')} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <input {...register('make')} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
             {errors.make && <p className="text-red-400 text-xs mt-0.5">{errors.make.message}</p>}
           </div>
           {/* Model */}
           <div>
             <label className="block text-xs text-gray-400 mb-1">Model</label>
-            <input {...register('model')} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <input {...register('model')} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
             {errors.model && <p className="text-red-400 text-xs mt-0.5">{errors.model.message}</p>}
           </div>
           {/* Year */}
           <div>
             <label className="block text-xs text-gray-400 mb-1">Year</label>
-            <input type="number" {...register('year')} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <input type="number" {...register('year')} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
             {errors.year && <p className="text-red-400 text-xs mt-0.5">{errors.year.message}</p>}
           </div>
           {/* Type */}
           <div>
             <label className="block text-xs text-gray-400 mb-1">Type</label>
-            <select {...register('type')} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <select {...register('type')} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500">
               {['truck','van','pickup','tanker','flatbed','refrigerated','armoured','other'].map((t) => (
                 <option key={t} value={t}>{t}</option>
               ))}
@@ -122,7 +122,7 @@ function AddVehicleForm({ onClose }: { onClose: () => void }): React.ReactElemen
           {/* VIN */}
           <div>
             <label className="block text-xs text-gray-400 mb-1">VIN (optional)</label>
-            <input {...register('vin')} maxLength={17} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <input {...register('vin')} maxLength={17} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-500" />
             {errors.vin && <p className="text-red-400 text-xs mt-0.5">{errors.vin.message}</p>}
           </div>
         </div>
@@ -138,7 +138,7 @@ function AddVehicleForm({ onClose }: { onClose: () => void }): React.ReactElemen
           <button
             type="submit"
             disabled={createMutation.isPending}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            className="flex items-center gap-2 bg-orange-600 hover:bg-orange-500 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
           >
             {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
             Create Vehicle
@@ -196,14 +196,14 @@ export default function Fleet(): React.ReactElement {
     <div className="p-6 space-y-5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Truck className="w-5 h-5 text-indigo-400" />
+          <Truck className="w-5 h-5 text-orange-400" />
           <h1 className="text-xl font-bold text-white">Fleet</h1>
           {data && <span className="text-sm text-gray-400">{data.total ?? 0} vehicles</span>}
         </div>
         <button
           type="button"
           onClick={() => setShowForm((v) => !v)}
-          className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-3 py-2 rounded-lg transition-colors"
+          className="flex items-center gap-1.5 bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-3 py-2 rounded-lg transition-colors"
         >
           <Plus className="w-4 h-4" />
           Add Vehicle
@@ -218,7 +218,7 @@ export default function Fleet(): React.ReactElement {
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           placeholder="Search plate or make…"
-          className="w-full pl-10 pr-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="w-full pl-10 pr-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500"
         />
       </div>
 
@@ -265,7 +265,7 @@ export default function Fleet(): React.ReactElement {
                         type="button"
                         onClick={() => toggleStatus.mutate({ id: v.id, status: nextStatus(v.status) })}
                         disabled={toggleStatus.isPending}
-                        className="text-xs text-indigo-400 hover:text-indigo-300 underline underline-offset-2 disabled:opacity-50"
+                        className="text-xs text-orange-400 hover:text-orange-300 underline underline-offset-2 disabled:opacity-50"
                       >
                         Set {nextStatus(v.status)}
                       </button>

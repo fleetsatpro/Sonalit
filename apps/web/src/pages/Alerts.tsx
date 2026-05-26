@@ -27,7 +27,7 @@ const SEVERITY_BADGE: Record<AlertSeverity, string> = {
 
 const STATUS_BADGE: Record<AlertStatus, string> = {
   open: 'bg-yellow-900/60 text-yellow-300 border-yellow-700',
-  acknowledged: 'bg-blue-900/60 text-blue-300 border-blue-700',
+  acknowledged: 'bg-blue-900/60 text-orange-300 border-blue-700',
   resolved: 'bg-green-900/60 text-green-300 border-green-700',
 };
 
@@ -123,7 +123,7 @@ export default function Alerts(): React.ReactElement {
           <select
             value={severityFilter}
             onChange={(e) => { setSeverityFilter(e.target.value as AlertSeverity | 'all'); setPage(1); }}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
           >
             <option value="all">All</option>
             <option value="critical">Critical</option>
@@ -136,7 +136,7 @@ export default function Alerts(): React.ReactElement {
           <select
             value={statusFilter}
             onChange={(e) => { setStatusFilter(e.target.value as AlertStatus | 'all'); setPage(1); }}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
           >
             <option value="all">All</option>
             <option value="open">Open</option>
@@ -206,7 +206,7 @@ export default function Alerts(): React.ReactElement {
                           type="button"
                           onClick={() => acknowledgeMutation.mutate(alert.id)}
                           disabled={acknowledgeMutation.isPending}
-                          className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 disabled:opacity-50 transition-colors"
+                          className="flex items-center gap-1 text-xs text-orange-400 hover:text-orange-300 disabled:opacity-50 transition-colors"
                           title="Acknowledge"
                         >
                           {acknowledgeMutation.isPending ? (

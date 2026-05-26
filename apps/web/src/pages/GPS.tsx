@@ -101,7 +101,7 @@ function DevicePanelRow({
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <MapPin className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0" />
+          <MapPin className="w-3.5 h-3.5 text-orange-400 flex-shrink-0" />
           <span className="text-white text-sm font-medium">
             {registration ?? loc.device_id.slice(0, 8)}
           </span>
@@ -244,7 +244,7 @@ export default function GPS(): React.ReactElement {
                 <span className="absolute inset-0 rounded-full bg-indigo-400 opacity-60 animate-ping" />
                 <div
                   className={`relative w-4 h-4 rounded-full border-2 border-white shadow-lg transition-transform hover:scale-125 ${
-                    selectedDeviceId === loc.device_id ? 'bg-green-400 scale-125' : 'bg-indigo-500'
+                    selectedDeviceId === loc.device_id ? 'bg-green-400 scale-125' : 'bg-orange-500'
                   }`}
                 />
               </div>
@@ -277,7 +277,7 @@ export default function GPS(): React.ReactElement {
       {/* Control panel */}
       <aside className="w-full md:w-72 h-64 md:h-auto bg-gray-900 border-t md:border-t-0 md:border-l border-gray-800 flex flex-col overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-800 flex items-center gap-2">
-          <Radio className="w-4 h-4 text-indigo-400" />
+          <Radio className="w-4 h-4 text-orange-400" />
           <h2 className="text-white font-semibold text-sm">Live Devices</h2>
           <span className="ml-auto text-xs text-gray-400 bg-gray-800 px-2 py-0.5 rounded-full">
             {locationsList.length}

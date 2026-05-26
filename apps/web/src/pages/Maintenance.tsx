@@ -71,7 +71,7 @@ function CreateForm({ onClose }: { onClose: () => void }) {
         <div>
           <label className="block text-xs text-slate-400 mb-1">Vehicle ID</label>
           <input
-            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
             placeholder="VEH-001"
             value={form.vehicle_id}
             onChange={(e) => setForm((f) => ({ ...f, vehicle_id: e.target.value }))}
@@ -80,7 +80,7 @@ function CreateForm({ onClose }: { onClose: () => void }) {
         <div>
           <label className="block text-xs text-slate-400 mb-1">Type</label>
           <input
-            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
             placeholder="Oil change, tire rotation…"
             value={form.type}
             onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
@@ -90,7 +90,7 @@ function CreateForm({ onClose }: { onClose: () => void }) {
           <label className="block text-xs text-slate-400 mb-1">Scheduled Date</label>
           <input
             type="date"
-            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
             value={form.scheduled_date}
             onChange={(e) => setForm((f) => ({ ...f, scheduled_date: e.target.value }))}
           />
@@ -98,7 +98,7 @@ function CreateForm({ onClose }: { onClose: () => void }) {
         <div>
           <label className="block text-xs text-slate-400 mb-1">Notes</label>
           <input
-            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
             placeholder="Optional notes…"
             value={form.notes}
             onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
@@ -111,7 +111,7 @@ function CreateForm({ onClose }: { onClose: () => void }) {
       <button
         onClick={() => mutation.mutate(form)}
         disabled={mutation.isPending || !form.vehicle_id || !form.type || !form.scheduled_date}
-        className="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm font-medium"
+        className="mt-3 px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 rounded text-sm font-medium"
       >
         {mutation.isPending ? 'Scheduling…' : 'Schedule'}
       </button>
@@ -145,7 +145,7 @@ export default function Maintenance() {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-2">
-          <Wrench size={20} className="text-blue-400" />
+          <Wrench size={20} className="text-orange-400" />
           <h1 className="text-xl font-bold">Maintenance</h1>
           {overdueCount > 0 && (
             <span className="px-2 py-0.5 rounded bg-red-900 text-red-300 text-xs font-bold">
@@ -155,7 +155,7 @@ export default function Maintenance() {
         </div>
         <button
           onClick={() => setShowForm((v) => !v)}
-          className="flex items-center gap-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium"
+          className="flex items-center gap-1 px-3 py-2 bg-orange-600 hover:bg-orange-700 rounded text-sm font-medium"
         >
           <Plus size={16} />
           Schedule Maintenance

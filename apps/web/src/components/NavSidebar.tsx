@@ -38,10 +38,9 @@ export default function NavSidebar() {
   const { sidebarOpen, toggleSidebar } = useUIStore();
   return (
     <>
-      {/* Mobile backdrop — tap to close */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/60 z-20 md:hidden"
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm z-20 md:hidden"
           onClick={toggleSidebar}
           aria-hidden="true"
         />
@@ -49,28 +48,44 @@ export default function NavSidebar() {
 
       <aside
         className={`
-          fixed top-0 left-0 h-full bg-slate-900 border-r border-slate-800
-          flex flex-col z-30 transition-all duration-200
+          fixed top-0 left-0 h-full flex flex-col z-30 transition-all duration-200
+          border-r border-white/[0.06]
           ${sidebarOpen ? 'w-64 translate-x-0' : '-translate-x-full md:translate-x-0 md:w-16'}
         `}
+        style={{ background: 'rgba(5,8,19,0.94)', backdropFilter: 'blur(24px)' }}
       >
-        <div className="flex items-center justify-between h-14 px-4 border-b border-slate-800 shrink-0">
-          {sidebarOpen && <span className="font-bold text-lg text-blue-400">Sonalit</span>}
+        {/* Brand */}
+        <div className="flex items-center justify-between h-14 px-4 border-b border-white/[0.06] shrink-0">
+          {sidebarOpen && (
+            <span
+              className="font-black text-xl tracking-wider uppercase select-none"
+              style={{
+                fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
+                background: 'linear-gradient(90deg, #ff9040, #f07020)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+              }}
+            >
+              SONALIT
+            </span>
+          )}
           <button
             onClick={toggleSidebar}
-            className="p-1.5 rounded hover:bg-slate-800 ml-auto text-slate-400 hover:text-white"
+            className="p-1.5 rounded transition-colors ml-auto text-gray-600 hover:text-orange-400"
             aria-label="Toggle sidebar"
           >
             {sidebarOpen ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
           </button>
         </div>
-        <nav className="flex-1 overflow-y-auto py-2">
+
+        {/* Nav links */}
+        <nav className="flex-1 overflow-y-auto py-2 scrollbar-thin">
           {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
             <Link
               key={to}
               to={to}
               onClick={() => { if (window.innerWidth < 768) toggleSidebar(); }}
-              className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-400 hover:text-white hover:bg-slate-800 transition-colors [&.active]:text-blue-400 [&.active]:bg-slate-800/80"
+              className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-500 hover:text-orange-300 transition-colors [&.active]:text-orange-400 [&.active]:border-l-2 [&.active]:border-orange-500/60 [&.active]:bg-orange-500/[0.06] [&.active]:pl-[14px]"
               aria-label={label}
             >
               <Icon size={18} className="shrink-0" />
@@ -78,6 +93,12 @@ export default function NavSidebar() {
             </Link>
           ))}
         </nav>
+
+        {/* Bottom accent line */}
+        <div
+          className="h-px mx-3 mb-3 rounded-full"
+          style={{ background: 'linear-gradient(90deg, transparent, rgba(240,112,32,0.5), transparent)' }}
+        />
       </aside>
     </>
   );

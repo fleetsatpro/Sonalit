@@ -69,7 +69,7 @@ export default function AIDecision() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2">
-        <Bot size={20} className="text-blue-400" />
+        <Bot size={20} className="text-orange-400" />
         <h1 className="text-xl font-bold">AI Decision Support</h1>
       </div>
 
@@ -77,7 +77,7 @@ export default function AIDecision() {
         <div>
           <label className="block text-xs text-slate-400 mb-1">Question</label>
           <textarea
-            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none"
+            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500 resize-none"
             rows={3}
             placeholder="Ask about fleet operations, incidents, risk analysis…"
             value={query}
@@ -89,7 +89,7 @@ export default function AIDecision() {
         <div>
           <label className="block text-xs text-slate-400 mb-1">Context (optional)</label>
           <textarea
-            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none"
+            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500 resize-none"
             rows={2}
             placeholder="Additional context…"
             value={context}
@@ -106,7 +106,7 @@ export default function AIDecision() {
         <button
           onClick={handleSubmit}
           disabled={!query.trim() || dispatchMutation.isPending}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm font-medium"
+          className="flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 rounded text-sm font-medium"
         >
           {dispatchMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
           {dispatchMutation.isPending ? 'Thinking…' : 'Ask AI'}
@@ -116,7 +116,7 @@ export default function AIDecision() {
       {lastResponse && (
         <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-3">
-            <Bot size={16} className="text-blue-400" />
+            <Bot size={16} className="text-orange-400" />
             <span className="text-xs text-slate-400 uppercase font-medium">AI Response</span>
           </div>
           <pre className="text-sm text-slate-100 whitespace-pre-wrap leading-relaxed font-sans">

@@ -71,7 +71,7 @@ function CreateForm({ onClose }: { onClose: () => void }) {
         <div>
           <label className="block text-xs text-slate-400 mb-1">Name</label>
           <input
-            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
             placeholder="Speed Alert"
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -80,7 +80,7 @@ function CreateForm({ onClose }: { onClose: () => void }) {
         <div>
           <label className="block text-xs text-slate-400 mb-1">Condition Type</label>
           <select
-            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
             value={form.condition_type}
             onChange={(e) => setForm((f) => ({ ...f, condition_type: e.target.value as ConditionType }))}
           >
@@ -93,7 +93,7 @@ function CreateForm({ onClose }: { onClose: () => void }) {
           <label className="block text-xs text-slate-400 mb-1">Threshold</label>
           <input
             type="number"
-            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
             placeholder="e.g. 120 for km/h"
             value={form.threshold}
             onChange={(e) => setForm((f) => ({ ...f, threshold: e.target.value }))}
@@ -102,7 +102,7 @@ function CreateForm({ onClose }: { onClose: () => void }) {
         <div>
           <label className="block text-xs text-slate-400 mb-1">Action Type</label>
           <select
-            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
             value={form.action_type}
             onChange={(e) => setForm((f) => ({ ...f, action_type: e.target.value as ActionType }))}
           >
@@ -113,7 +113,7 @@ function CreateForm({ onClose }: { onClose: () => void }) {
         <div className="col-span-2">
           <label className="block text-xs text-slate-400 mb-1">Description</label>
           <input
-            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
             placeholder="Brief description of this rule"
             value={form.description}
             onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
@@ -138,7 +138,7 @@ function CreateForm({ onClose }: { onClose: () => void }) {
       <button
         onClick={() => mutation.mutate(form)}
         disabled={mutation.isPending || !form.name}
-        className="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm font-medium"
+        className="mt-3 px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 rounded text-sm font-medium"
       >
         {mutation.isPending ? 'Creating…' : 'Create Rule'}
       </button>
@@ -169,7 +169,7 @@ export default function Rules() {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-2">
-          <BookOpen size={20} className="text-blue-400" />
+          <BookOpen size={20} className="text-orange-400" />
           <h1 className="text-xl font-bold">Rules</h1>
           {data && (
             <span className="text-slate-400 text-sm">
@@ -179,7 +179,7 @@ export default function Rules() {
         </div>
         <button
           onClick={() => setShowForm((v) => !v)}
-          className="flex items-center gap-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium"
+          className="flex items-center gap-1 px-3 py-2 bg-orange-600 hover:bg-orange-700 rounded text-sm font-medium"
         >
           <Plus size={16} />
           New Rule
@@ -234,7 +234,7 @@ export default function Rules() {
                       aria-label={rule.enabled ? 'Disable rule' : 'Enable rule'}
                     >
                       {rule.enabled
-                        ? <ToggleRight size={28} className="text-blue-400" />
+                        ? <ToggleRight size={28} className="text-orange-400" />
                         : <ToggleLeft size={28} />}
                     </button>
                   </td>

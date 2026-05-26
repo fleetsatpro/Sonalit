@@ -86,27 +86,27 @@ function AddDriverForm({ onClose }: { onClose: () => void }): React.ReactElement
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
           <div>
             <label className="block text-xs text-gray-400 mb-1">Full Name</label>
-            <input {...register('name')} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <input {...register('name')} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
             {errors.name && <p className="text-red-400 text-xs mt-0.5">{errors.name.message}</p>}
           </div>
           <div>
             <label className="block text-xs text-gray-400 mb-1">License Number</label>
-            <input {...register('license_number')} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <input {...register('license_number')} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-500" />
             {errors.license_number && <p className="text-red-400 text-xs mt-0.5">{errors.license_number.message}</p>}
           </div>
           <div>
             <label className="block text-xs text-gray-400 mb-1">License Expiry (YYYY-MM-DD)</label>
-            <input {...register('license_expiry')} placeholder="2027-12-31" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <input {...register('license_expiry')} placeholder="2027-12-31" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
             {errors.license_expiry && <p className="text-red-400 text-xs mt-0.5">{errors.license_expiry.message}</p>}
           </div>
           <div>
             <label className="block text-xs text-gray-400 mb-1">Email (optional)</label>
-            <input type="email" {...register('email')} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <input type="email" {...register('email')} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
             {errors.email && <p className="text-red-400 text-xs mt-0.5">{errors.email.message}</p>}
           </div>
           <div>
             <label className="block text-xs text-gray-400 mb-1">Phone (E.164, optional)</label>
-            <input {...register('phone')} placeholder="+2348012345678" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <input {...register('phone')} placeholder="+2348012345678" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-500" />
             {errors.phone && <p className="text-red-400 text-xs mt-0.5">{errors.phone.message}</p>}
           </div>
         </div>
@@ -122,7 +122,7 @@ function AddDriverForm({ onClose }: { onClose: () => void }): React.ReactElement
           <button
             type="submit"
             disabled={createMutation.isPending}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            className="flex items-center gap-2 bg-orange-600 hover:bg-orange-500 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
           >
             {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
             Add Driver
@@ -164,14 +164,14 @@ export default function Drivers(): React.ReactElement {
     <div className="p-6 space-y-5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Users className="w-5 h-5 text-indigo-400" />
+          <Users className="w-5 h-5 text-orange-400" />
           <h1 className="text-xl font-bold text-white">Drivers</h1>
           {data && <span className="text-sm text-gray-400">{data.total ?? 0} total</span>}
         </div>
         <button
           type="button"
           onClick={() => setShowForm((v) => !v)}
-          className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-3 py-2 rounded-lg transition-colors"
+          className="flex items-center gap-1.5 bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-3 py-2 rounded-lg transition-colors"
         >
           <Plus className="w-4 h-4" />
           Add Driver
@@ -186,7 +186,7 @@ export default function Drivers(): React.ReactElement {
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           placeholder="Search name or email…"
-          className="w-full pl-10 pr-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="w-full pl-10 pr-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500"
         />
       </div>
 

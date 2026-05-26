@@ -112,7 +112,7 @@ export default function Executive() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2">
-        <BarChart2 size={20} className="text-blue-400" />
+        <BarChart2 size={20} className="text-orange-400" />
         <h1 className="text-xl font-bold">Executive Dashboard</h1>
       </div>
 
@@ -129,7 +129,7 @@ export default function Executive() {
             value={(summary.fleetUtilisation ?? 0).toFixed(1)}
             unit="%"
             icon={<Activity size={20} />}
-            color="bg-blue-900 text-blue-400"
+            color="bg-blue-900 text-orange-400"
           />
           <KpiCard
             label="On-Time Rate"
@@ -142,7 +142,7 @@ export default function Executive() {
             label="Active Convoys"
             value={summary.activeConvoys}
             icon={<Truck size={20} />}
-            color="bg-indigo-900 text-indigo-400"
+            color="bg-indigo-900 text-orange-400"
           />
           <KpiCard
             label="Open Alerts"

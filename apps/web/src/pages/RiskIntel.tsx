@@ -160,12 +160,12 @@ export default function RiskIntel() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Shield size={20} className="text-blue-400" />
+          <Shield size={20} className="text-orange-400" />
           <h1 className="text-xl font-bold">Risk Intelligence</h1>
         </div>
         <div className="flex items-center gap-3">
           <select
-            className="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+            className="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-orange-500"
             value={filters.risk_level}
             onChange={(e) => setFilters((f) => ({ ...f, risk_level: e.target.value as FilterParams['risk_level'] }))}
           >
@@ -176,13 +176,13 @@ export default function RiskIntel() {
           </select>
           <input
             type="date"
-            className="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+            className="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-orange-500"
             value={filters.from}
             onChange={(e) => setFilters((f) => ({ ...f, from: e.target.value }))}
           />
           <input
             type="date"
-            className="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+            className="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-orange-500"
             value={filters.to}
             onChange={(e) => setFilters((f) => ({ ...f, to: e.target.value }))}
           />
