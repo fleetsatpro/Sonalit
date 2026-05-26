@@ -61,7 +61,17 @@ function circleRing(lat: number, lng: number, radiusMeters: number, steps = 64):
 }
 
 function coordsToPoints(coords: unknown): number[][] | null {
+  // Unwrap GeoJSON geometry objects: {type:'LineString',coordinates:[...]} or {coordinates:[...]}
+  if (coords !== null && typeof coords === 'object' && !Array.isArray(coords)) {
+    const obj = coords as Record<string, unknown>;
+    if (Array.isArray(obj['coordinates'])) return coordsToPoints(obj['coordinates']);
+    return null;
+  }
   if (!Array.isArray(coords) || coords.length < 2) return null;
+  // Unwrap GeoJSON polygon rings: [[[lng,lat],...]] → [[lng,lat],...]
+  if (Array.isArray(coords[0]) && Array.isArray((coords[0] as unknown[])[0])) {
+    return coordsToPoints(coords[0]);
+  }
   if (Array.isArray(coords[0])) {
     return (coords as unknown[][]).map((p) => [Number(p[0]), Number(p[1])]);
   }
@@ -72,9 +82,12 @@ function coordsToPoints(coords: unknown): number[][] | null {
   return null;
 }
 
-function isCorridorType(type: string): boolean {
-  const t = type.toLowerCase();
-  return t === 'corridor' || t === 'linear' || t === 'line' || t === 'linestring' || t === 'route';
+// Determine render geometry — prefer explicit type, fall back to point count
+function isCorridor(g: Geofence, pts: number[][]): boolean {
+  const t = (g.type ?? '').toLowerCase();
+  if (t === 'corridor' || t === 'linear' || t === 'line' || t === 'linestring' || t === 'route') return true;
+  // 2 points with no area = always a corridor/line
+  return pts.length === 2;
 }
 
 function CreateForm({ onClose }: { onClose: () => void }) {
@@ -207,8 +220,10 @@ export default function Geofences() {
         const pts = coordsToPoints(g.coordinates);
 
         if (!pts) {
-          // Circle fallback
-          if (g.lat != null && g.lng != null) {
+          // Only use circle fallback for explicit circle type or when no coordinate array exists
+          const t = (g.type ?? '').toLowerCase();
+          const useCircle = t === 'circle' || t === '' || t === 'entry' || t === 'exit' || t === 'both';
+          if (useCircle && g.lat != null && g.lng != null) {
             const ring = circleRing(g.lat, g.lng, g.radius ?? 5000);
             polyFeatures.push({ type: 'Feature', properties: { name: g.name, active: g.active }, geometry: { type: 'Polygon', coordinates: [ring] } });
             bounds.extend([g.lng, g.lat]);
@@ -216,12 +231,10 @@ export default function Geofences() {
           continue;
         }
 
-        if (isCorridorType(g.type ?? '') || pts.length < 3) {
-          // Corridor / linear geofence → LineString
+        if (isCorridor(g, pts)) {
           lineFeatures.push({ type: 'Feature', properties: { name: g.name, active: g.active }, geometry: { type: 'LineString', coordinates: pts } });
           for (const pt of pts) bounds.extend([pt[0]!, pt[1]!]);
         } else {
-          // Polygon geofence
           const first = pts[0]!;
           const last = pts[pts.length - 1]!;
           const ring = first[0] === last[0] && first[1] === last[1] ? pts : [...pts, first];
@@ -297,7 +310,7 @@ export default function Geofences() {
                 <tr key={g.id} className="border-t border-gray-800 hover:bg-gray-800/40">
                   <td className="px-4 py-3 font-medium text-white">{g.name}</td>
                   <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded text-xs capitalize ${isCorridorType(g.type ?? '') ? 'bg-amber-900/50 text-amber-300' : 'bg-gray-800 text-gray-300'}`}>
+                    <span className={`px-2 py-0.5 rounded text-xs capitalize ${isCorridor(g, coordsToPoints(g.coordinates) ?? []) ? 'bg-amber-900/50 text-amber-300' : 'bg-gray-800 text-gray-300'}`}>
                       {g.type ?? '—'}
                     </span>
                   </td>
