@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import maplibregl from 'maplibre-gl';
@@ -61,18 +61,24 @@ function circleRing(lat: number, lng: number, radiusMeters: number, steps = 64):
 }
 
 function coordsToPoints(coords: unknown): number[][] | null {
-  // JSON string stored as JSONB — double-serialized by some clients
   if (typeof coords === 'string') {
     try { return coordsToPoints(JSON.parse(coords)); } catch { return null; }
   }
-  // Unwrap GeoJSON geometry objects: {type:'LineString',coordinates:[...]}
   if (coords !== null && typeof coords === 'object' && !Array.isArray(coords)) {
     const obj = coords as Record<string, unknown>;
+    // GeoJSON geometry: {type:'LineString', coordinates:[...]}
     if (Array.isArray(obj['coordinates'])) return coordsToPoints(obj['coordinates']);
+    // AI corridor format: {lat, lng, path:[[lat,lng],...], buffer_m, ...}
+    // OSRM stores path in lat-first order — swap to GeoJSON [lng,lat]
+    if (Array.isArray(obj['path'])) {
+      const pts = (obj['path'] as unknown[])
+        .map((p) => Array.isArray(p) ? [Number((p as unknown[])[1]), Number((p as unknown[])[0])] : null)
+        .filter((p): p is number[] => p !== null && p.length === 2);
+      return pts.length >= 2 ? pts : null;
+    }
     return null;
   }
   if (!Array.isArray(coords) || coords.length < 2) return null;
-  // Unwrap GeoJSON polygon rings: [[[lng,lat],...]] → [[lng,lat],...]
   if (Array.isArray(coords[0]) && Array.isArray((coords[0] as unknown[])[0])) {
     return coordsToPoints(coords[0]);
   }
@@ -86,11 +92,9 @@ function coordsToPoints(coords: unknown): number[][] | null {
   return null;
 }
 
-// Determine render geometry — prefer explicit type, fall back to point count
 function isCorridor(g: Geofence, pts: number[][]): boolean {
   const t = (g.type ?? '').toLowerCase();
   if (t === 'corridor' || t === 'linear' || t === 'line' || t === 'linestring' || t === 'route') return true;
-  // 2 points with no area = always a corridor/line
   return pts.length === 2;
 }
 
@@ -162,11 +166,15 @@ function CreateForm({ onClose }: { onClose: () => void }) {
   );
 }
 
+const ALL_LAYERS = ['geofences-line-fill', 'geofences-line-outline', 'geofences-corridor-line', 'geofences-corridor-border', 'geofences-sel-poly', 'geofences-sel-line'];
+const ALL_SOURCES = ['geofences-polygons', 'geofences-corridors', 'geofences-selected'];
+
 export default function Geofences() {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [isSatellite, setIsSatellite] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data, isLoading, isError } = useQuery<Geofence[]>({
@@ -196,7 +204,6 @@ export default function Geofences() {
     return () => { mapRef.current?.remove(); mapRef.current = null; };
   }, []);
 
-  // Swap base style when satellite toggle changes
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -208,13 +215,8 @@ export default function Geofences() {
     if (!map || !data) return;
 
     const draw = () => {
-      // Clean up previous layers/sources
-      ['geofences-line-fill', 'geofences-line-outline', 'geofences-corridor-line', 'geofences-corridor-border'].forEach((l) => {
-        if (map.getLayer(l)) map.removeLayer(l);
-      });
-      ['geofences-polygons', 'geofences-corridors'].forEach((s) => {
-        if (map.getSource(s)) map.removeSource(s);
-      });
+      ALL_LAYERS.forEach((l) => { if (map.getLayer(l)) map.removeLayer(l); });
+      ALL_SOURCES.forEach((s) => { if (map.getSource(s)) map.removeSource(s); });
 
       const polyFeatures: GeoJSON.Feature<GeoJSON.Polygon>[] = [];
       const lineFeatures: GeoJSON.Feature<GeoJSON.LineString>[] = [];
@@ -227,12 +229,9 @@ export default function Geofences() {
           const t = (g.type ?? '').toLowerCase();
           if (g.lat != null && g.lng != null) {
             if (t === 'corridor' || t === 'linear' || t === 'line' || t === 'route') {
-              // Corridor with no parseable coordinates — render as a small circle placeholder
-              const ring = circleRing(g.lat, g.lng, 500);
-              lineFeatures.push({ type: 'Feature', properties: { name: g.name, active: g.active }, geometry: { type: 'LineString', coordinates: ring.slice(0, 2) } });
+              lineFeatures.push({ type: 'Feature', properties: { id: g.id }, geometry: { type: 'LineString', coordinates: circleRing(g.lat, g.lng, 500).slice(0, 2) } });
             } else {
-              const ring = circleRing(g.lat, g.lng, g.radius ?? 5000);
-              polyFeatures.push({ type: 'Feature', properties: { name: g.name, active: g.active }, geometry: { type: 'Polygon', coordinates: [ring] } });
+              polyFeatures.push({ type: 'Feature', properties: { id: g.id }, geometry: { type: 'Polygon', coordinates: [circleRing(g.lat, g.lng, g.radius ?? 5000)] } });
             }
             bounds.extend([g.lng, g.lat]);
           }
@@ -240,26 +239,28 @@ export default function Geofences() {
         }
 
         if (isCorridor(g, pts)) {
-          lineFeatures.push({ type: 'Feature', properties: { name: g.name, active: g.active }, geometry: { type: 'LineString', coordinates: pts } });
+          lineFeatures.push({ type: 'Feature', properties: { id: g.id }, geometry: { type: 'LineString', coordinates: pts } });
           for (const pt of pts) bounds.extend([pt[0]!, pt[1]!]);
         } else {
           const first = pts[0]!;
           const last = pts[pts.length - 1]!;
           const ring = first[0] === last[0] && first[1] === last[1] ? pts : [...pts, first];
-          polyFeatures.push({ type: 'Feature', properties: { name: g.name, active: g.active }, geometry: { type: 'Polygon', coordinates: [ring] } });
+          polyFeatures.push({ type: 'Feature', properties: { id: g.id }, geometry: { type: 'Polygon', coordinates: [ring] } });
           for (const pt of ring) bounds.extend([pt[0]!, pt[1]!]);
         }
       }
 
-      // Polygon layers
       map.addSource('geofences-polygons', { type: 'geojson', data: { type: 'FeatureCollection', features: polyFeatures } });
       map.addLayer({ id: 'geofences-line-fill', type: 'fill', source: 'geofences-polygons', paint: { 'fill-color': '#f07020', 'fill-opacity': 0.18 } });
       map.addLayer({ id: 'geofences-line-outline', type: 'line', source: 'geofences-polygons', paint: { 'line-color': '#f07020', 'line-width': 2 } });
 
-      // Corridor / linear layers
       map.addSource('geofences-corridors', { type: 'geojson', data: { type: 'FeatureCollection', features: lineFeatures } });
       map.addLayer({ id: 'geofences-corridor-border', type: 'line', source: 'geofences-corridors', paint: { 'line-color': '#ff9040', 'line-width': 10, 'line-opacity': 0.15 } });
       map.addLayer({ id: 'geofences-corridor-line', type: 'line', source: 'geofences-corridors', paint: { 'line-color': '#ff9040', 'line-width': 2.5, 'line-dasharray': [4, 2] } });
+
+      map.addSource('geofences-selected', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      map.addLayer({ id: 'geofences-sel-poly', type: 'fill', source: 'geofences-selected', filter: ['==', '$type', 'Polygon'], paint: { 'fill-color': '#ffffff', 'fill-opacity': 0.12 } });
+      map.addLayer({ id: 'geofences-sel-line', type: 'line', source: 'geofences-selected', paint: { 'line-color': '#ffffff', 'line-width': 3, 'line-dasharray': [3, 1.5] } });
 
       if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 60, maxZoom: 12, duration: 600 });
     };
@@ -269,6 +270,58 @@ export default function Geofences() {
     map.on('style.load', draw);
     return () => { map.off('style.load', draw); };
   }, [data]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map?.loaded()) return;
+    const source = map.getSource('geofences-selected') as maplibregl.GeoJSONSource | undefined;
+    if (!source) return;
+
+    if (!selectedId || !data) {
+      source.setData({ type: 'FeatureCollection', features: [] });
+      return;
+    }
+
+    const g = data.find((x) => x.id === selectedId);
+    if (!g) { source.setData({ type: 'FeatureCollection', features: [] }); return; }
+
+    const pts = coordsToPoints(g.coordinates);
+    const features: GeoJSON.Feature[] = [];
+
+    if (pts) {
+      if (isCorridor(g, pts)) {
+        features.push({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: pts } });
+      } else {
+        const first = pts[0]!;
+        const last = pts[pts.length - 1]!;
+        const ring = first[0] === last[0] && first[1] === last[1] ? pts : [...pts, first];
+        features.push({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [ring] } });
+      }
+    } else if (g.lat != null && g.lng != null) {
+      features.push({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [circleRing(g.lat, g.lng, g.radius ?? 5000)] } });
+    }
+
+    source.setData({ type: 'FeatureCollection', features });
+  }, [selectedId, data]);
+
+  const flyToGeofence = useCallback((g: Geofence) => {
+    const map = mapRef.current;
+    if (!map) return;
+    const pts = coordsToPoints(g.coordinates);
+    if (pts && pts.length > 0) {
+      const bounds = new maplibregl.LngLatBounds();
+      for (const pt of pts) bounds.extend([pt[0]!, pt[1]!]);
+      if (!bounds.isEmpty()) { map.fitBounds(bounds, { padding: 80, maxZoom: 14, duration: 800 }); return; }
+    }
+    if (g.lat != null && g.lng != null) {
+      map.flyTo({ center: [g.lng, g.lat], zoom: 13, duration: 800 });
+    }
+  }, []);
+
+  const handleRowClick = useCallback((g: Geofence) => {
+    setSelectedId((prev) => (prev === g.id ? null : g.id));
+    flyToGeofence(g);
+  }, [flyToGeofence]);
 
   return (
     <div className="p-6 space-y-6">
@@ -296,6 +349,11 @@ export default function Geofences() {
         >
           <Layers size={13} /> {isSatellite ? 'Dark' : 'Satellite'}
         </button>
+        {selectedId && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 bg-gray-900/90 border border-gray-700 text-gray-300 text-xs px-3 py-1.5 rounded-full pointer-events-none">
+            {data?.find((g) => g.id === selectedId)?.name} — click row again to deselect
+          </div>
+        )}
       </div>
 
       {isLoading && <div className="text-gray-400 text-sm text-center">Loading geofences…</div>}
@@ -314,27 +372,34 @@ export default function Geofences() {
               </tr>
             </thead>
             <tbody>
-              {data.map((g) => (
-                <tr key={g.id} className="border-t border-gray-800 hover:bg-gray-800/40">
-                  <td className="px-4 py-3 font-medium text-white">{g.name}</td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded text-xs capitalize ${isCorridor(g, coordsToPoints(g.coordinates) ?? []) ? 'bg-amber-900/50 text-amber-300' : 'bg-gray-800 text-gray-300'}`}>
-                      {g.type ?? '—'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-400 text-xs">{g.region ?? '—'}</td>
-                  <td className="px-4 py-3 text-gray-400">{g.created_at ? new Date(g.created_at).toLocaleDateString() : '—'}</td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => toggleMutation.mutate({ id: g.id, active: !g.active })}
-                      disabled={toggleMutation.isPending}
-                      className="text-gray-400 hover:text-white disabled:opacity-50"
-                    >
-                      {g.active ? <ToggleRight size={24} className="text-green-400" /> : <ToggleLeft size={24} />}
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {data.map((g) => {
+                const isSelected = g.id === selectedId;
+                return (
+                  <tr
+                    key={g.id}
+                    onClick={() => handleRowClick(g)}
+                    className={`border-t border-gray-800 cursor-pointer transition-colors ${isSelected ? 'bg-orange-900/20 border-l-2 border-l-orange-500' : 'hover:bg-gray-800/40'}`}
+                  >
+                    <td className={`px-4 py-3 font-medium ${isSelected ? 'text-orange-300' : 'text-white'}`}>{g.name}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded text-xs capitalize ${isCorridor(g, coordsToPoints(g.coordinates) ?? []) ? 'bg-amber-900/50 text-amber-300' : 'bg-gray-800 text-gray-300'}`}>
+                        {g.type ?? '—'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-400 text-xs">{g.region ?? '—'}</td>
+                    <td className="px-4 py-3 text-gray-400">{g.created_at ? new Date(g.created_at).toLocaleDateString() : '—'}</td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleMutation.mutate({ id: g.id, active: !g.active }); }}
+                        disabled={toggleMutation.isPending}
+                        className="text-gray-400 hover:text-white disabled:opacity-50"
+                      >
+                        {g.active ? <ToggleRight size={24} className="text-green-400" /> : <ToggleLeft size={24} />}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
               {data.length === 0 && (
                 <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">No geofences configured.</td></tr>
               )}

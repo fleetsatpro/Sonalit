@@ -60,11 +60,7 @@ function DrawPanel({ onClose }: { onClose: () => void }) {
 
   const createMutation = useMutation({
     mutationFn: () =>
-      api.post('/geofences', {
-        name,
-        type: 'both',
-        coordinates: points,
-      }),
+      api.post('/geofences', { name, type: 'both', coordinates: points }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['geofences'] });
       onClose();
@@ -97,7 +93,6 @@ function DrawPanel({ onClose }: { onClose: () => void }) {
     return () => { map.remove(); mapRef.current = null; };
   }, []);
 
-  // Sync drawn shape to map source
   useEffect(() => {
     const map = mapRef.current;
     if (!map?.loaded()) return;
@@ -185,7 +180,6 @@ export default function Copilot() {
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  // Auto-open draw panel when user mentions geofence drawing
   useEffect(() => {
     if (/draw.*(geofence|zone|area)|create.*(geofence|zone)/i.test(input)) setShowDraw(true);
   }, [input]);
@@ -204,7 +198,6 @@ export default function Copilot() {
       const assistantMsg: ChatMessage = { id: `assistant-${Date.now()}`, role: 'assistant', content: responseText, timestamp: Date.now() };
       historyRef.current = [...historyRef.current, { role: 'user' as Role, content: text }, { role: 'assistant' as Role, content: responseText }].slice(-12);
       setMessages((prev) => [...prev, assistantMsg]);
-      // If AI suggests drawing a geofence, open the panel
       if (/draw|map|geofence|zone/i.test(responseText) && /geofence|zone|area/i.test(text)) setShowDraw(true);
     } catch {
       setMessages((prev) => [...prev, { id: `error-${Date.now()}`, role: 'assistant', content: 'Sorry, I encountered an error. Please try again.', timestamp: Date.now() }]);
@@ -219,7 +212,6 @@ export default function Copilot() {
 
   return (
     <div className="flex h-full -m-6 overflow-hidden">
-      {/* Chat column */}
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <div className="flex items-center gap-2 px-6 py-3 border-b border-gray-800 shrink-0" style={{ background: 'rgba(5,8,19,0.9)' }}>
           <Bot size={18} className="text-orange-400" />
@@ -284,7 +276,6 @@ export default function Copilot() {
         </div>
       </div>
 
-      {/* Draw panel */}
       {showDraw && (
         <div className="w-80 shrink-0 flex flex-col overflow-hidden">
           <DrawPanel onClose={() => setShowDraw(false)} />
