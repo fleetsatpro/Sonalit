@@ -7,7 +7,7 @@ test.describe('Login page', () => {
 
   test('renders login form with platform title', async ({ page }) => {
     await expect(page).toHaveTitle(/Sonalit|Fleet/i);
-    await expect(page.getByText(/fleet operations/i)).toBeVisible();
+    await expect(page.getByText(/logistics dashboard/i)).toBeVisible();
   });
 
   test('password mode shows email and password inputs', async ({ page }) => {
