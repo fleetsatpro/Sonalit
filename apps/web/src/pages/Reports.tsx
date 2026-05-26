@@ -66,7 +66,7 @@ function GenerateForm({ onClose }: { onClose: () => void }) {
         <div>
           <label className="block text-xs text-slate-400 mb-1">Type</label>
           <select
-            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
             value={form.type}
             onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as ReportType }))}
           >
@@ -78,7 +78,7 @@ function GenerateForm({ onClose }: { onClose: () => void }) {
         <div>
           <label className="block text-xs text-slate-400 mb-1">Format</label>
           <select
-            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
             value={form.format}
             onChange={(e) => setForm((f) => ({ ...f, format: e.target.value as ReportFormat }))}
           >
@@ -90,7 +90,7 @@ function GenerateForm({ onClose }: { onClose: () => void }) {
           <label className="block text-xs text-slate-400 mb-1">From</label>
           <input
             type="date"
-            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
             value={form.from}
             onChange={(e) => setForm((f) => ({ ...f, from: e.target.value }))}
           />
@@ -99,7 +99,7 @@ function GenerateForm({ onClose }: { onClose: () => void }) {
           <label className="block text-xs text-slate-400 mb-1">To</label>
           <input
             type="date"
-            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
             value={form.to}
             onChange={(e) => setForm((f) => ({ ...f, to: e.target.value }))}
           />
@@ -111,7 +111,7 @@ function GenerateForm({ onClose }: { onClose: () => void }) {
       <button
         onClick={() => mutation.mutate(form)}
         disabled={mutation.isPending}
-        className="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm font-medium"
+        className="mt-3 px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 rounded text-sm font-medium"
       >
         {mutation.isPending ? 'Generating…' : 'Generate'}
       </button>
@@ -147,12 +147,12 @@ export default function Reports() {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-2">
-          <FileText size={20} className="text-blue-400" />
+          <FileText size={20} className="text-orange-400" />
           <h1 className="text-xl font-bold">Reports</h1>
         </div>
         <button
           onClick={() => setShowForm((v) => !v)}
-          className="flex items-center gap-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium"
+          className="flex items-center gap-1 px-3 py-2 bg-orange-600 hover:bg-orange-700 rounded text-sm font-medium"
         >
           <Plus size={16} />
           Generate Report
@@ -204,7 +204,7 @@ export default function Reports() {
                         href={report.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="flex items-center gap-1 text-blue-400 hover:text-blue-300 text-sm"
+                        className="flex items-center gap-1 text-orange-400 hover:text-orange-300 text-sm"
                       >
                         <Download size={14} />
                         Download

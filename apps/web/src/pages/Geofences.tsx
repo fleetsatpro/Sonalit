@@ -146,7 +146,7 @@ function CreateForm({ onClose }: { onClose: () => void }) {
         <button
           onClick={() => mutation.mutate(form)}
           disabled={mutation.isPending || !form.name || !form.coordinates_json}
-          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded text-sm font-medium text-white"
+          className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 rounded text-sm font-medium text-white"
         >
           {mutation.isPending ? 'Creating…' : 'Create Geofence'}
         </button>
@@ -251,13 +251,13 @@ export default function Geofences() {
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-2">
-          <Map size={20} className="text-indigo-400" />
+          <Map size={20} className="text-orange-400" />
           <h1 className="text-xl font-bold text-white">Geofences</h1>
           {data && <span className="text-gray-400 text-sm">({data.length} zones)</span>}
         </div>
         <button
           onClick={() => setShowForm((v) => !v)}
-          className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-sm font-medium text-white"
+          className="flex items-center gap-1.5 px-3 py-2 bg-orange-600 hover:bg-orange-700 rounded-lg text-sm font-medium text-white"
         >
           <Plus size={16} />
           Create Geofence

@@ -24,7 +24,7 @@ const SEVERITY_COLORS: Record<Severity, string> = {
 };
 
 const STATUS_COLORS: Record<IncidentStatus, string> = {
-  open: 'text-blue-400',
+  open: 'text-orange-400',
   investigating: 'text-purple-400',
   resolved: 'text-green-400',
   closed: 'text-slate-500',

@@ -20,7 +20,7 @@ export default function OfflineGuard({ children }: { children: React.ReactNode }
         <p className="text-slate-400 text-center max-w-sm">
           Check your internet connection. Cached pages are still available.
         </p>
-        <button onClick={() => window.location.reload()} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium">
+        <button onClick={() => window.location.reload()} className="px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded text-sm font-medium">
           Retry
         </button>
       </div>

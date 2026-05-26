@@ -39,7 +39,7 @@ function ChatBubble({ message }: { message: ChatMessage }) {
         }`}
       >
         <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
-        <p className={`text-xs mt-1.5 ${isUser ? 'text-blue-300' : 'text-slate-500'} text-right`}>
+        <p className={`text-xs mt-1.5 ${isUser ? 'text-orange-300' : 'text-slate-500'} text-right`}>
           {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </p>
       </div>
@@ -140,7 +140,7 @@ export default function Copilot() {
   return (
     <div className="flex flex-col h-full -m-6 overflow-hidden">
       <div className="flex items-center gap-2 px-6 py-4 border-b border-slate-700 bg-slate-900 shrink-0">
-        <Bot size={20} className="text-blue-400" />
+        <Bot size={20} className="text-orange-400" />
         <h1 className="font-semibold">Sonalit Copilot</h1>
         <span className="text-xs text-slate-500 ml-1">AI-powered fleet assistant</span>
       </div>
@@ -200,7 +200,7 @@ export default function Copilot() {
           <button
             onClick={handleSend}
             disabled={!input.trim() || isLoading}
-            className="p-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-xl transition-colors"
+            className="p-3 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 rounded-xl transition-colors"
             aria-label="Send message"
           >
             {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}

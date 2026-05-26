@@ -2,6 +2,32 @@
 @tailwind components;
 @tailwind utilities;
 
+body {
+  background: #050813;
+  color: #e2e8f0;
+}
+
+/* Thin scrollbar for the nav and content areas */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(240, 112, 32, 0.25);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(240, 112, 32, 0.5);
+}
+
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(240, 112, 32, 0.25) transparent;
+}
+
 @keyframes fade-in-up {
   from { opacity: 0; transform: translateY(16px); }
   to   { opacity: 1; transform: translateY(0); }

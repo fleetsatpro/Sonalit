@@ -39,7 +39,7 @@ export default function Devices() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <Cpu size={20} className="text-blue-400" />
+        <Cpu size={20} className="text-orange-400" />
         <h1 className="text-xl font-bold">Guardian Devices</h1>
         {data && (
           <div className="flex gap-3 text-xs ml-1">

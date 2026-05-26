@@ -73,7 +73,7 @@ function StatCard({
 }) {
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
-      <div className="w-9 h-9 rounded-lg bg-slate-700 flex items-center justify-center text-blue-400 mb-2">
+      <div className="w-9 h-9 rounded-lg bg-slate-700 flex items-center justify-center text-orange-400 mb-2">
         {icon}
       </div>
       <p className="text-xs text-slate-400 mb-1">{label}</p>

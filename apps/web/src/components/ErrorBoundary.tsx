@@ -22,7 +22,7 @@ export function RootErrorComponent({ error, reset }: { error: Error; reset: () =
         <div className="flex gap-2 justify-center">
           <button
             onClick={reset}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-500 rounded-lg text-sm font-medium transition-colors"
           >
             <RefreshCw size={14} />
             Reload

@@ -21,9 +21,9 @@ type ConvoyStatusEvent = { convoy_id: string; status: ConvoyStatus };
 
 const STATUS_STYLES: Record<ConvoyStatus, string> = {
   draft: 'bg-gray-800 text-gray-400 border-gray-600',
-  planned: 'bg-blue-900/60 text-blue-300 border-blue-700',
+  planned: 'bg-blue-900/60 text-orange-300 border-blue-700',
   active: 'bg-green-900/60 text-green-300 border-green-700',
-  completed: 'bg-indigo-900/60 text-indigo-300 border-indigo-700',
+  completed: 'bg-orange-900/60 text-orange-300 border-orange-700',
   cancelled: 'bg-red-900/60 text-red-300 border-red-700',
 };
 
@@ -79,7 +79,7 @@ export default function Convoys(): React.ReactElement {
     <div className="p-6 space-y-5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Route className="w-5 h-5 text-indigo-400" />
+          <Route className="w-5 h-5 text-orange-400" />
           <h1 className="text-xl font-bold text-white">Convoys</h1>
           {data && (
             <span className="text-sm text-gray-400">{data.total ?? 0} total</span>
@@ -87,7 +87,7 @@ export default function Convoys(): React.ReactElement {
         </div>
         <Link
           to="/convoys/new"
-          className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-medium text-white transition-colors"
+          className="flex items-center gap-1.5 px-3 py-2 bg-orange-600 hover:bg-orange-500 rounded-lg text-sm font-medium text-white transition-colors"
         >
           <Plus className="w-4 h-4" />
           New Convoy
@@ -138,7 +138,7 @@ export default function Convoys(): React.ReactElement {
                       <Link
                         to="/convoys/$id/edit"
                         params={{ id: convoy.id }}
-                        className="text-indigo-400 hover:text-indigo-300 transition-colors"
+                        className="text-orange-400 hover:text-orange-300 transition-colors"
                         title="Edit"
                       >
                         <Pencil className="w-4 h-4" />

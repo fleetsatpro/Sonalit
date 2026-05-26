@@ -36,7 +36,7 @@ interface CreateApiKeyPayload {
 
 const AVAILABLE_SCOPES = ['read:fleet', 'write:fleet', 'read:incidents', 'write:incidents', 'read:reports', 'admin'];
 
-const INPUT_CLS = 'w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500';
+const INPUT_CLS = 'w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500';
 
 function SectionCard({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -68,7 +68,7 @@ function ProfileSection() {
   });
 
   return (
-    <SectionCard title="Profile" icon={<SettingsIcon size={16} className="text-blue-400" />}>
+    <SectionCard title="Profile" icon={<SettingsIcon size={16} className="text-orange-400" />}>
       <div className="space-y-3">
         <div>
           <label className="block text-xs text-slate-400 mb-1">Name</label>
@@ -93,7 +93,7 @@ function ProfileSection() {
         <button
           onClick={() => mutation.mutate({ name })}
           disabled={mutation.isPending || !name.trim()}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm font-medium"
+          className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 rounded text-sm font-medium"
         >
           {mutation.isPending ? 'Saving…' : 'Save Profile'}
         </button>
@@ -122,7 +122,7 @@ function ChangePasswordSection() {
   const mismatch = form.confirm.length > 0 && form.confirm !== form.new_password;
 
   return (
-    <SectionCard title="Change Password" icon={<Shield size={16} className="text-blue-400" />}>
+    <SectionCard title="Change Password" icon={<Shield size={16} className="text-orange-400" />}>
       <div className="space-y-3">
         {(['old_password', 'new_password', 'confirm'] as const).map((field) => (
           <div key={field}>
@@ -143,7 +143,7 @@ function ChangePasswordSection() {
         <button
           onClick={() => mutation.mutate(form)}
           disabled={mutation.isPending || mismatch || !form.old_password || !form.new_password}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm font-medium"
+          className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 rounded text-sm font-medium"
         >
           {mutation.isPending ? 'Updating…' : 'Change Password'}
         </button>
@@ -197,7 +197,7 @@ function ApiKeysSection() {
   };
 
   return (
-    <SectionCard title="API Keys" icon={<Key size={16} className="text-blue-400" />}>
+    <SectionCard title="API Keys" icon={<Key size={16} className="text-orange-400" />}>
       <div className="space-y-3">
         {isLoading && <p className="text-slate-400 text-sm">Loading…</p>}
         {keys?.map((k) => (
@@ -274,7 +274,7 @@ function ApiKeysSection() {
             <button
               onClick={() => createMutation.mutate(newKey)}
               disabled={createMutation.isPending || !newKey.name}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm"
+              className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 rounded text-sm"
             >
               {createMutation.isPending ? 'Creating…' : 'Create Key'}
             </button>
@@ -282,7 +282,7 @@ function ApiKeysSection() {
         ) : (
           <button
             onClick={() => setShowCreate(true)}
-            className="flex items-center gap-1 text-sm text-blue-400 hover:text-blue-300"
+            className="flex items-center gap-1 text-sm text-orange-400 hover:text-orange-300"
           >
             <Plus size={14} /> New API Key
           </button>
@@ -315,13 +315,13 @@ function TotpSection() {
   });
 
   return (
-    <SectionCard title="Two-Factor Authentication (TOTP)" icon={<Shield size={16} className="text-blue-400" />}>
+    <SectionCard title="Two-Factor Authentication (TOTP)" icon={<Shield size={16} className="text-orange-400" />}>
       {!showSetup ? (
         <div>
           {verified && <p className="text-green-400 text-sm mb-2">TOTP enabled successfully.</p>}
           <button
             onClick={() => setShowSetup(true)}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium"
+            className="px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded text-sm font-medium"
           >
             Set Up Authenticator
           </button>
@@ -349,7 +349,7 @@ function TotpSection() {
                 <button
                   onClick={() => verifyMutation.mutate(totpCode)}
                   disabled={verifyMutation.isPending || totpCode.length !== 6}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm font-medium"
+                  className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 rounded text-sm font-medium"
                 >
                   {verifyMutation.isPending ? 'Verifying…' : 'Verify'}
                 </button>
@@ -372,7 +372,7 @@ export default function Settings() {
   return (
     <div className="space-y-6 max-w-2xl">
       <div className="flex items-center gap-2">
-        <SettingsIcon size={20} className="text-blue-400" />
+        <SettingsIcon size={20} className="text-orange-400" />
         <h1 className="text-xl font-bold">Settings</h1>
       </div>
       <ProfileSection />

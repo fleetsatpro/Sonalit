@@ -97,7 +97,7 @@ function SeverityBadge({ severity }: { severity: Alert['severity'] }): React.Rea
   const map: Record<Alert['severity'], string> = {
     critical: 'bg-red-900/60 text-red-300 border-red-700',
     warning: 'bg-yellow-900/60 text-yellow-300 border-yellow-700',
-    info: 'bg-blue-900/60 text-blue-300 border-blue-700',
+    info: 'bg-blue-900/60 text-orange-300 border-blue-700',
   };
   return (
     <span className={`text-xs font-medium px-2 py-0.5 rounded border ${map[severity]}`}>
@@ -112,7 +112,7 @@ function SeverityBadge({ severity }: { severity: Alert['severity'] }): React.Rea
 
 function PriorityBadge({ priority }: { priority: number }): React.ReactElement {
   const colors = ['', 'bg-red-900/60 text-red-300', 'bg-orange-900/60 text-orange-300',
-    'bg-yellow-900/60 text-yellow-300', 'bg-blue-900/60 text-blue-300', 'bg-gray-800 text-gray-400'];
+    'bg-yellow-900/60 text-yellow-300', 'bg-blue-900/60 text-orange-300', 'bg-gray-800 text-gray-400'];
   return (
     <span className={`text-xs font-medium px-2 py-0.5 rounded ${colors[priority] ?? colors[5]}`}>
       P{priority}
@@ -194,7 +194,7 @@ export default function Dashboard(): React.ReactElement {
   }, [orgId]);
 
   const stats = [
-    { label: 'Active Vehicles', value: activeVehicles?.total, icon: Truck, color: 'bg-indigo-600', isLoading: lvLoading, isError: lvError, liveOverride: liveVehicleCount },
+    { label: 'Active Vehicles', value: activeVehicles?.total, icon: Truck, color: 'bg-orange-600', isLoading: lvLoading, isError: lvError, liveOverride: liveVehicleCount },
     { label: 'Active Drivers', value: activeDrivers?.total, icon: Users, color: 'bg-green-600', isLoading: ldLoading, isError: ldError },
     { label: 'Open Alerts', value: openAlerts?.total, icon: Bell, color: 'bg-red-600', isLoading: laLoading, isError: laError, extraClass: (openAlerts?.total ?? 0) > 0 ? 'animate-glow-red' : undefined },
     { label: 'Ongoing Convoys', value: activeConvoys?.total, icon: Route, color: 'bg-amber-600', isLoading: lcLoading, isError: lcError },
