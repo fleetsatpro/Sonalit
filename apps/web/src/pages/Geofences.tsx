@@ -61,7 +61,11 @@ function circleRing(lat: number, lng: number, radiusMeters: number, steps = 64):
 }
 
 function coordsToPoints(coords: unknown): number[][] | null {
-  // Unwrap GeoJSON geometry objects: {type:'LineString',coordinates:[...]} or {coordinates:[...]}
+  // JSON string stored as JSONB — double-serialized by some clients
+  if (typeof coords === 'string') {
+    try { return coordsToPoints(JSON.parse(coords)); } catch { return null; }
+  }
+  // Unwrap GeoJSON geometry objects: {type:'LineString',coordinates:[...]}
   if (coords !== null && typeof coords === 'object' && !Array.isArray(coords)) {
     const obj = coords as Record<string, unknown>;
     if (Array.isArray(obj['coordinates'])) return coordsToPoints(obj['coordinates']);
@@ -220,12 +224,16 @@ export default function Geofences() {
         const pts = coordsToPoints(g.coordinates);
 
         if (!pts) {
-          // Only use circle fallback for explicit circle type or when no coordinate array exists
           const t = (g.type ?? '').toLowerCase();
-          const useCircle = t === 'circle' || t === '' || t === 'entry' || t === 'exit' || t === 'both';
-          if (useCircle && g.lat != null && g.lng != null) {
-            const ring = circleRing(g.lat, g.lng, g.radius ?? 5000);
-            polyFeatures.push({ type: 'Feature', properties: { name: g.name, active: g.active }, geometry: { type: 'Polygon', coordinates: [ring] } });
+          if (g.lat != null && g.lng != null) {
+            if (t === 'corridor' || t === 'linear' || t === 'line' || t === 'route') {
+              // Corridor with no parseable coordinates — render as a small circle placeholder
+              const ring = circleRing(g.lat, g.lng, 500);
+              lineFeatures.push({ type: 'Feature', properties: { name: g.name, active: g.active }, geometry: { type: 'LineString', coordinates: ring.slice(0, 2) } });
+            } else {
+              const ring = circleRing(g.lat, g.lng, g.radius ?? 5000);
+              polyFeatures.push({ type: 'Feature', properties: { name: g.name, active: g.active }, geometry: { type: 'Polygon', coordinates: [ring] } });
+            }
             bounds.extend([g.lng, g.lat]);
           }
           continue;
