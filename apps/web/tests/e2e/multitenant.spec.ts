@@ -82,6 +82,13 @@ async function mockRoutes(page: import('@playwright/test').Page) {
     }));
   }
 
+  // GPS track — initial position snapshot (array, not wrapped object)
+  await page.route('**/api/v1/gps/track', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([]),
+  }));
+
   // Realtime token — issued for Org A only
   await page.route('**/api/v1/realtime/token', route => route.fulfill({
     status: 200,
