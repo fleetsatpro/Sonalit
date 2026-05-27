@@ -47,7 +47,7 @@ async function seedAuth(page: import('@playwright/test').Page) {
 }
 
 async function mockGpsRoutes(page: import('@playwright/test').Page) {
-  await page.route('**/api/v1/vehicles**', route =>
+  await page.route(url => url.toString().includes('/api/v1/vehicles'), route =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
