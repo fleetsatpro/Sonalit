@@ -2,7 +2,7 @@ name: Build Guardian Agent APK
 
 on:
   push:
-    branches: [main, claude/enhance-navigation-features-0S2pp]
+    branches: [main, claude/enhance-navigation-features-0S2pp, claude/sonalit-remediation-qAnLk]
     paths:
       - 'guardian-agent/**'
   workflow_dispatch:
