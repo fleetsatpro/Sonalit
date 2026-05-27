@@ -182,7 +182,7 @@ const updateConvoyStatus = asyncHandler(async (req, res) => {
   );
 
   const eventMap = { active: 'convoy:activated', completed: 'convoy:completed', cancelled: 'convoy:cancelled', aborted: 'convoy:aborted' };
-  publish(eventMap[value.status] || 'convoy:update', { convoyId: req.params.id, status: value.status, updatedBy: req.user.id });
+  publish(`org#${req.user.org_id}`, { type: 'convoy.update', convoyId: req.params.id, status: value.status, updatedBy: req.user.id });
 
   // D4: on completion, enqueue archive PDF generation
   if (value.status === 'completed') {

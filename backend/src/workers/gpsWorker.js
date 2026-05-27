@@ -60,14 +60,27 @@ async function processGPS(job) {
     [vehicle_id, lat, lng, speed, timestamp]
   );
 
-  // 2. Update vehicle position
+  // 2. Update vehicle position and get org_id via active convoy
   await query(
     'UPDATE vehicles SET latitude=$1, longitude=$2, last_ping=$3, updated_at=NOW() WHERE id=$4',
     [lat, lng, new Date(timestamp), vehicle_id]
   );
 
-  // 3. Broadcast live position
-  publish('vehicle:update', { vehicleId: vehicle_id, lat, lng, speed });
+  // 3. Broadcast live position on org channel for real-time GPS page
+  const orgRes = await query(
+    `SELECT c.org_id FROM convoys c
+     JOIN convoy_trucks ct ON ct.convoy_id = c.id
+     WHERE ct.vehicle_id = $1 AND c.status = 'active' AND c.deleted_at IS NULL
+     LIMIT 1`,
+    [vehicle_id]
+  );
+  const orgId = orgRes.rows[0]?.org_id ?? null;
+  const gpsPayload = { type: 'location', device_id: vehicle_id, vehicle_id, lat, lng, speed };
+  if (orgId) {
+    publish(`org#${orgId}`, gpsPayload);
+  } else {
+    publish('vehicle:update', { vehicleId: vehicle_id, lat, lng, speed });
+  }
 
   const { alertQueue } = getQueues();
 

@@ -160,7 +160,7 @@ const createConvoyCfo = asyncHandler(async (req, res) => {
 
     gAudit(req.user.id, 'convoy_created', 'convoy', convoy.id, { name: convoy.name }, req.ip);
 
-    publish('convoy:created', { convoyId: convoy.id });
+    publish(`org#${req.user.org_id}`, { type: 'convoy.update', convoyId: convoy.id, status: 'planned' });
 
     res.status(201).json({ data: convoy });
   } catch (err) {

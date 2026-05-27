@@ -83,7 +83,7 @@ const sendMessage = asyncHandler(async (req, res) => {
 
   const message = { ...result.rows[0], sender_name: req.user.name, sender_role: req.user.role };
 
-  publish('message:new', { channelId: req.params.id, content: value.content, senderId: req.user.id, senderName: req.user.name });
+  publish(`org#${req.user.org_id}`, { type: 'message.new', channelId: req.params.id, content: value.content, senderId: req.user.id, senderName: req.user.name });
 
   res.status(201).json({ data: message });
 });
@@ -105,7 +105,8 @@ const broadcast = asyncHandler(async (req, res) => {
   );
   const inserted = result.rows.map((r) => r.id);
 
-  publish('message:new', {
+  publish(`org#${req.user.org_id}`, {
+    type: 'message.new',
     channelId: 'broadcast',
     content: value.content,
     severity: value.severity,

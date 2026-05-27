@@ -4,6 +4,7 @@ import { Link } from '@tanstack/react-router';
 import { Route, Plus, Pencil, Trash2, Loader2 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { subscribe } from '../lib/centrifuge.js';
+import { useAuthStore } from '../stores/auth.js';
 import { normalizeList, type NormalizedList } from '../lib/normalize.js';
 import type { Convoy, ConvoyStatus } from '@sonalit/contracts';
 
@@ -12,8 +13,6 @@ import type { Convoy, ConvoyStatus } from '@sonalit/contracts';
 // ---------------------------------------------------------------------------
 
 type ConvoyListResponse = NormalizedList<Convoy>;
-
-type ConvoyStatusEvent = { convoy_id: string; status: ConvoyStatus };
 
 // ---------------------------------------------------------------------------
 // Status badge
@@ -41,6 +40,7 @@ function StatusBadge({ status }: { status: ConvoyStatus }): React.ReactElement {
 
 export default function Convoys(): React.ReactElement {
   const queryClient = useQueryClient();
+  const orgId = useAuthStore((s) => s.user?.org_id);
 
   const { data, isLoading, isError } = useQuery<ConvoyListResponse>({
     queryKey: ['convoys'],
@@ -50,16 +50,15 @@ export default function Convoys(): React.ReactElement {
     },
   });
 
-  // Live status updates per convoy
+  // Live status updates — subscribe to org channel for convoy.update events
   useEffect(() => {
-    if (!data?.data) return;
-    const unsubscribers = data.data.map((convoy) =>
-      subscribe<ConvoyStatusEvent>(`convoy#${convoy.id}`, () => {
+    if (!orgId) return;
+    return subscribe<{ type?: string }>(`org#${orgId}`, (evt) => {
+      if (evt.type === 'convoy.update') {
         void queryClient.invalidateQueries({ queryKey: ['convoys'] });
-      }),
-    );
-    return () => { for (const unsub of unsubscribers) unsub(); };
-  }, [data?.data, queryClient]);
+      }
+    });
+  }, [orgId, queryClient]);
 
   const deleteMutation = useMutation<void, Error, string>({
     mutationFn: async (id) => {

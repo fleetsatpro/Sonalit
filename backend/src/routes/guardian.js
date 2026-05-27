@@ -806,7 +806,8 @@ router.post('/location', deviceAuth, locationLimiter, async (req, res, next) => 
       [deviceId, lat, lng, speed ?? null]
     );
 
-    publish('device:location', {
+    const locationPayload = {
+      type: 'location',
       device_id: deviceId,
       name: req.device.name,
       lat,
@@ -816,7 +817,12 @@ router.post('/location', deviceAuth, locationLimiter, async (req, res, next) => 
       speed: speed ?? null,
       accuracy: accuracy ?? null,
       timestamp: result.rows[0].timestamp,
-    });
+    };
+    if (req.device.org_id) {
+      publish(`org#${req.device.org_id}`, locationPayload);
+    } else {
+      publish('device:location', locationPayload);
+    }
 
     res.json({ ok: true });
   } catch (err) {
@@ -978,7 +984,9 @@ router.post('/report', deviceAuth, reportLimiter, async (req, res, next) => {
     }
 
     if (isNew) {
-      publish('device:report', {
+      const reportChannel = req.device.org_id ? `org#${req.device.org_id}` : 'device:report';
+      publish(reportChannel, {
+        type: 'device.report',
         report_id: report.id,
         event_uuid: report.event_uuid,
         device_id: deviceId,
@@ -1416,7 +1424,7 @@ router.post('/devices/:id/command', authenticate, requireIdempotencyKey, command
 
     auditLog('admin', req.user.id, 'command_issued', 'device', req.params.id, { command_type, payload, nonce }, req.ip);
 
-    publish('device:command', { device_id: req.params.id, command_type, payload: payload || null, command_id: cmd.id, issued_at: cmd.issued_at, signature });
+    publish(`org#${req.user.org_id}`, { type: 'device.command', device_id: req.params.id, command_type, payload: payload || null, command_id: cmd.id, issued_at: cmd.issued_at, signature });
 
     // T5.3: record issued event
     query(`INSERT INTO device_command_events (command_id, status) VALUES ($1, 'issued')`, [cmd.id]).catch(() => {});
