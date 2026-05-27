@@ -98,15 +98,25 @@ BEGIN
     'guardian_devices', 'panic_events'
   ] LOOP
     BEGIN
-      EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
-      -- Drop before recreate to keep idempotent
-      EXECUTE format('DROP POLICY IF EXISTS org_isolation ON %I', tbl);
-      EXECUTE format(
-        'CREATE POLICY org_isolation ON %I
-         USING (org_id = current_setting(''app.current_org_id'', true)::uuid)',
-        tbl
-      );
-      -- Superuser / migration role bypasses RLS automatically (BYPASSRLS privilege)
+      -- Only enable RLS and create org_isolation policy on tables that have org_id.
+      -- Tables without org_id (e.g. shipments, trips, invoices, expenses) are skipped
+      -- so that RLS is not enabled with no permissive policy (which would deny all rows).
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = tbl AND column_name = 'org_id'
+      ) THEN
+        EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
+        -- Drop before recreate to keep idempotent
+        EXECUTE format('DROP POLICY IF EXISTS org_isolation ON %I', tbl);
+        EXECUTE format(
+          'CREATE POLICY org_isolation ON %I
+           USING (org_id = current_setting(''app.current_org_id'', true)::uuid)',
+          tbl
+        );
+        -- Superuser / migration role bypasses RLS automatically (BYPASSRLS privilege)
+      ELSE
+        RAISE NOTICE 'Table % has no org_id — skipping RLS', tbl;
+      END IF;
     EXCEPTION WHEN undefined_table THEN
       RAISE NOTICE 'Table % not found — skipping RLS', tbl;
     END;
