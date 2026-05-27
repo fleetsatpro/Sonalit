@@ -18,11 +18,6 @@ import { test, expect } from '@playwright/test';
 const ORG_ID = 'aaaaaaaa-0000-0000-0000-000000000001';
 const USER = { id: 'user-gps-001', name: 'Fleet Admin', email: 'fleet@org-a.io', role: 'admin', org_id: ORG_ID };
 
-const MOCK_TOKEN =
-  'eyJhbGciOiJIUzI1NiJ9.' +
-  btoa(JSON.stringify({ sub: USER.id, org_id: ORG_ID, role: 'admin', exp: 9999999999 })).replace(/=/g, '') +
-  '.fake_sig';
-
 const NOW = new Date().toISOString();
 const STALE = new Date(Date.now() - 10 * 60 * 1000).toISOString(); // 10 min ago
 
@@ -46,11 +41,9 @@ const VEHICLES = [
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function seedAuth(page: import('@playwright/test').Page) {
-  await page.addInitScript(({ token, user }: { token: string; user: object }) => {
-    localStorage.setItem('auth-storage', JSON.stringify({
-      state: { accessToken: token, user, isAuthenticated: true }, version: 0,
-    }));
-  }, { token: MOCK_TOKEN, user: USER });
+  await page.addInitScript(({ user }: { user: object }) => {
+    localStorage.setItem('sonalit-auth', JSON.stringify({ state: { user }, version: 0 }));
+  }, { user: USER });
 }
 
 async function mockGpsRoutes(page: import('@playwright/test').Page) {
@@ -107,7 +100,7 @@ test.describe('GPS page — rendering', () => {
   });
 
   test('unauthenticated user is redirected to /login from /gps', async ({ page }) => {
-    await page.addInitScript(() => localStorage.removeItem('auth-storage'));
+    await page.addInitScript(() => localStorage.removeItem('sonalit-auth'));
     await page.goto('/gps');
     await expect(page).toHaveURL(/\/login/, { timeout: 5000 });
   });
@@ -124,7 +117,7 @@ test.describe('GPS page — org boundary', () => {
 
     const orgId = await page.evaluate(() => {
       try {
-        const stored = localStorage.getItem('auth-storage');
+        const stored = localStorage.getItem('sonalit-auth');
         if (!stored) return null;
         return JSON.parse(stored).state?.user?.org_id ?? null;
       } catch { return null; }

@@ -1,17 +1,14 @@
 import { test, expect } from '@playwright/test';
 
-const MOCK_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTEiLCJvcmdfaWQiOiJvcmctMSIsInJvbGUiOiJhZG1pbiIsImV4cCI6OTk5OTk5OTk5OX0.fake';
-
 const DEVICES = [
   { id: 'd1', name: 'Guardian Alpha', status: 'active', last_seen: new Date().toISOString(), battery_level: 85 },
   { id: 'd2', name: 'Guardian Beta', status: 'offline', last_seen: new Date(Date.now() - 3_600_000).toISOString(), battery_level: 20 },
 ];
 
 async function seedAuth(page: import('@playwright/test').Page) {
-  await page.addInitScript(({ token, user }: { token: string; user: object }) => {
-    const state = { state: { accessToken: token, user, isAuthenticated: true }, version: 0 };
-    localStorage.setItem('auth-storage', JSON.stringify(state));
-  }, { token: MOCK_TOKEN, user: { id: 'user-1', name: 'Admin', email: 'admin@test.io', role: 'admin', org_id: 'org-1' } });
+  await page.addInitScript(({ user }: { user: object }) => {
+    localStorage.setItem('sonalit-auth', JSON.stringify({ state: { user }, version: 0 }));
+  }, { user: { id: 'user-1', name: 'Admin', email: 'admin@test.io', role: 'admin', org_id: 'org-1' } });
 }
 
 test.describe('Guardian page', () => {
