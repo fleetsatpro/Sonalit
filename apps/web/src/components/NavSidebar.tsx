@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { useUIStore } from '../stores/ui.js';
 import {
   LayoutDashboard, Truck, MapPin, Users, Route, Bell, AlertTriangle,
-  MessageSquare, BarChart2, FileText, Package, DollarSign, Wrench,
+  MessageSquare, BarChart2, FileText, FileBarChart, Package, DollarSign, Wrench,
   Map, Shield, BookOpen, Settings, Cpu, Wifi, Bot, ChevronLeft,
   ChevronRight, Siren,
 } from 'lucide-react';
@@ -19,6 +19,7 @@ const NAV_ITEMS = [
   { to: '/messages', label: 'Messages', icon: MessageSquare },
   { to: '/analytics', label: 'Analytics', icon: BarChart2 },
   { to: '/reports', label: 'Reports', icon: FileText },
+  { to: '/convoy-reports', label: 'Convoy Reports', icon: FileBarChart },
   { to: '/shipments', label: 'Shipments', icon: Package },
   { to: '/finance', label: 'Finance', icon: DollarSign },
   { to: '/maintenance', label: 'Maintenance', icon: Wrench },

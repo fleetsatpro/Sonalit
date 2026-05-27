@@ -33,6 +33,7 @@ const panicCenterRoute = createRoute({ getParentRoute: () => authRoute, path: '/
 const messagesRoute = createRoute({ getParentRoute: () => authRoute, path: '/messages', component: lazyRouteComponent(() => import('./pages/Messages.js')) });
 const analyticsRoute = createRoute({ getParentRoute: () => authRoute, path: '/analytics', component: lazyRouteComponent(() => import('./pages/Analytics.js')) });
 const reportsRoute = createRoute({ getParentRoute: () => authRoute, path: '/reports', component: lazyRouteComponent(() => import('./pages/Reports.js')) });
+const convoyReportsRoute = createRoute({ getParentRoute: () => authRoute, path: '/convoy-reports', component: lazyRouteComponent(() => import('./pages/ConvoyReports.js')) });
 const shipmentsRoute = createRoute({ getParentRoute: () => authRoute, path: '/shipments', component: lazyRouteComponent(() => import('./pages/Shipments.js')) });
 const financeRoute = createRoute({ getParentRoute: () => authRoute, path: '/finance', component: lazyRouteComponent(() => import('./pages/Finance.js')) });
 const maintenanceRoute = createRoute({ getParentRoute: () => authRoute, path: '/maintenance', component: lazyRouteComponent(() => import('./pages/Maintenance.js')) });
@@ -55,7 +56,7 @@ const routeTree = rootRoute.addChildren([
     convoysRoute, convoyNewRoute, convoyEditRoute,
     driversRoute, alertsRoute, incidentsRoute,
     incidentCenterRoute, panicCenterRoute, messagesRoute,
-    analyticsRoute, reportsRoute, shipmentsRoute,
+    analyticsRoute, reportsRoute, convoyReportsRoute, shipmentsRoute,
     financeRoute, maintenanceRoute, geofencesRoute,
     riskIntelRoute, rulesRoute, fieldOfficersRoute,
     executiveRoute, devicesRoute, guardianRoute,

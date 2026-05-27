@@ -121,7 +121,7 @@ async function handleCheckProgress({ convoy_id, report_date }) {
   }
 }
 
-async function handleGenerateReport({ convoy_id, report_date }) {
+async function handleGenerateReport({ convoy_id, report_date, force }) {
   const { convoy, trucks, cfos, photos, report } = await fetchReportData(convoy_id, report_date);
   if (!convoy) throw new Error(`Convoy ${convoy_id} not found`);
   if (!report) {
@@ -129,7 +129,7 @@ async function handleGenerateReport({ convoy_id, report_date }) {
     await recountPhotos(convoy_id, report_date);
     return;
   }
-  if (report.status === 'generated') {
+  if (report.status === 'generated' && !force) {
     logger.info(`[convoyReport] ${convoy_id} ${report_date} already generated — skipping`);
     return;
   }
@@ -195,13 +195,39 @@ async function handleGenerateArchive({ convoy_id }) {
   const pdfBuffer = await generateArchiveReport(convoy, trucks.rows, cfos.rows, reports.rows, allPhotos.rows);
   const key = `reports/archive/${convoy_id}/archive.pdf`;
 
-  const pdfUrl = await uploadToR2(key, pdfBuffer, 'application/pdf');
+  let pdfUrl = null;
+  try {
+    pdfUrl = await uploadToR2(key, pdfBuffer, 'application/pdf');
+    logger.info(`[convoyArchive] Archive PDF uploaded to R2: ${pdfUrl}`);
+  } catch (uploadErr) {
+    logger.warn(`[convoyArchive] R2 unavailable (${uploadErr.message}) — saving locally`);
+    try {
+      const archiveDir = path.resolve(__dirname, '../../data/reports', convoy_id);
+      fs.mkdirSync(archiveDir, { recursive: true });
+      fs.writeFileSync(path.join(archiveDir, 'archive.pdf'), pdfBuffer);
+    } catch (fsErr) {
+      logger.error(`[convoyArchive] Local save also failed: ${fsErr.message}`);
+    }
+  }
 
   await query(
     `UPDATE convoys SET archive_pdf_url = $1, updated_at = NOW() WHERE id = $2`,
     [pdfUrl, convoy_id]
   );
-  logger.info(`[convoyArchive] Archive PDF generated: ${pdfUrl}`);
+  logger.info(`[convoyArchive] Archive report processed for ${convoy_id}`);
+}
+
+async function handleScheduledRecount() {
+  const active = await query(
+    `SELECT DISTINCT cdr.convoy_id, cdr.report_date
+     FROM convoy_daily_reports cdr
+     JOIN convoys c ON c.id = cdr.convoy_id
+     WHERE c.status = 'active' AND cdr.status IN ('pending','partial')
+       AND cdr.report_date >= CURRENT_DATE - INTERVAL '3 days'`,
+    []
+  );
+  logger.info(`[convoyReport] scheduledRecount: ${active.rows.length} reports to recheck`);
+  await Promise.allSettled(active.rows.map(r => recountPhotos(r.convoy_id, String(r.report_date).slice(0, 10))));
 }
 
 // ─── Worker Startup ───────────────────────────────────────────────────────────
@@ -213,6 +239,7 @@ function startConvoyReportWorker() {
     logger.info(`[convoyReport] job ${job.name} id=${job.id}`);
     if (job.name === 'checkProgress') return handleCheckProgress(job.data);
     if (job.name === 'generateReport') return handleGenerateReport(job.data);
+    if (job.name === 'scheduledRecount') return handleScheduledRecount();
     logger.warn(`[convoyReport] Unknown job name: ${job.name}`);
   }, { connection });
 

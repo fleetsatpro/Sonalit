@@ -46,6 +46,8 @@ router.post('/:id/cfo-assignments', authorize('admin', 'dispatcher'), cfo.assign
 router.delete('/:id/cfo-assignments/:assignmentId', authorize('admin', 'dispatcher'), cfo.removeAssignment);
 
 // Daily report admin (E5)
+// E5 — org-wide report overview (must come before /:id routes)
+router.get('/reports/overview', authorize('admin', 'dispatcher', 'analyst'), cfo.getConvoyReportsOverview);
 router.get('/:id/reports', authorize('admin', 'dispatcher', 'analyst'), cfo.getConvoyReports);
 router.post('/:id/reports/:date/regenerate', authorize('admin', 'dispatcher'), convoyReportRegenerateLimiter, cfo.regenerateReport);
 router.get('/:id/reports/:date/download', authorize('admin', 'dispatcher', 'analyst'), cfo.downloadReport);

@@ -406,18 +406,74 @@ const removeAssignment = asyncHandler(async (req, res) => {
   res.json({ message: 'Assignment removed' });
 });
 
-// E5 — list daily reports for a convoy
+// E5 — list daily reports for a convoy with per-truck photo breakdown
 const getConvoyReports = asyncHandler(async (req, res) => {
-  const convoy = await query('SELECT id FROM convoys WHERE id = $1 AND deleted_at IS NULL', [req.params.id]);
-  if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
-
-  const result = await query(
-    `SELECT * FROM convoy_daily_reports
-     WHERE convoy_id = $1
-     ORDER BY report_date DESC`,
+  const convoyRes = await query(
+    `SELECT c.*, c.archive_pdf_url FROM convoys c WHERE c.id = $1 AND c.deleted_at IS NULL`,
     [req.params.id]
   );
-  res.json({ data: result.rows });
+  if (!convoyRes.rows.length) return res.status(404).json({ error: 'Convoy not found' });
+  const convoy = convoyRes.rows[0];
+  const sealCount = convoy.seal_count_per_truck ?? 3;
+
+  const [trucksRes, cfosRes, reportsRes] = await Promise.all([
+    query('SELECT * FROM convoy_trucks WHERE convoy_id = $1 ORDER BY position', [req.params.id]),
+    query(
+      `SELECT cc.id AS convoy_cfo_id, cc.cfo_user_id, cc.guardian_device_id,
+              u.name AS cfo_name, u.email AS cfo_email
+       FROM convoy_cfos cc JOIN users u ON u.id = cc.cfo_user_id WHERE cc.convoy_id = $1`,
+      [req.params.id]
+    ),
+    query(
+      `SELECT * FROM convoy_daily_reports WHERE convoy_id = $1 ORDER BY report_date DESC`,
+      [req.params.id]
+    ),
+  ]);
+
+  const trucks = trucksRes.rows;
+  const reportDates = reportsRes.rows.map(r => String(r.report_date).slice(0, 10));
+  let allPhotos = [];
+  if (reportDates.length > 0) {
+    const photosRes = await query(
+      `SELECT convoy_truck_id, session, photo_type, seal_position,
+              uploaded_at, location_mismatch, report_date
+       FROM convoy_truck_photos WHERE convoy_id = $1 AND report_date = ANY($2::date[])`,
+      [req.params.id, reportDates]
+    );
+    allPhotos = photosRes.rows;
+  }
+
+  const buildSession = (photos, session) => ({
+    front: photos.some(p => p.session === session && p.photo_type === 'front'),
+    rear: photos.some(p => p.session === session && p.photo_type === 'rear'),
+    seals: Array.from({ length: sealCount }, (_, i) =>
+      photos.some(p => p.session === session && p.photo_type === 'seal' && String(p.seal_position) === String(i + 1))
+    ),
+  });
+
+  const dailyReports = reportsRes.rows.map(report => {
+    const dateStr = String(report.report_date).slice(0, 10);
+    const dayPhotos = allPhotos.filter(p => String(p.report_date).slice(0, 10) === dateStr);
+    return {
+      ...report,
+      location_mismatch_count: dayPhotos.filter(p => p.location_mismatch).length,
+      trucks: trucks.map(truck => {
+        const tp = dayPhotos.filter(p => p.convoy_truck_id === truck.id);
+        return {
+          convoy_truck_id: truck.id,
+          position: truck.position,
+          driver_name: truck.driver_name,
+          vehicle_id: truck.vehicle_id,
+          sod: buildSession(tp, 'sod'),
+          eod: buildSession(tp, 'eod'),
+          total_photos: tp.length,
+          required_photos: (2 + sealCount) * 2,
+        };
+      }),
+    };
+  });
+
+  res.json({ data: { convoy, trucks, cfos: cfosRes.rows, daily_reports: dailyReports } });
 });
 
 // E5 — trigger PDF re-generation for a specific date
@@ -508,6 +564,63 @@ const downloadReport = asyncHandler(async (req, res) => {
   fs.createReadStream(filePath).pipe(res);
 });
 
+// E5 — org-wide overview of all convoy report statuses
+const getConvoyReportsOverview = asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+  const convoysRes = await query(
+    `SELECT c.id, c.name, c.status, c.timezone, c.start_date, c.end_date,
+            c.seal_count_per_truck, c.archive_pdf_url,
+            (SELECT COUNT(*) FROM convoy_trucks ct WHERE ct.convoy_id = c.id)::int AS truck_count,
+            (SELECT COUNT(*) FROM convoy_cfos cc WHERE cc.convoy_id = c.id)::int AS cfo_count
+     FROM convoys c
+     WHERE c.org_id = $1 AND c.deleted_at IS NULL AND c.status IN ('planned','active','completed')
+     ORDER BY (c.status = 'active') DESC, c.start_date DESC LIMIT 50`,
+    [orgId]
+  );
+  if (!convoysRes.rows.length) return res.json({ data: [] });
+
+  const convoyIds = convoysRes.rows.map(c => c.id);
+  const [latestReports, mismatchCounts] = await Promise.all([
+    query(
+      `SELECT DISTINCT ON (convoy_id) convoy_id, report_date, status,
+              required_photo_count, received_photo_count, pdf_url, generated_at, generation_error
+       FROM convoy_daily_reports WHERE convoy_id = ANY($1)
+       ORDER BY convoy_id, report_date DESC`,
+      [convoyIds]
+    ),
+    query(
+      `SELECT convoy_id, report_date, COUNT(*)::int AS mismatch_count
+       FROM convoy_truck_photos WHERE convoy_id = ANY($1) AND location_mismatch = true
+       GROUP BY convoy_id, report_date`,
+      [convoyIds]
+    ),
+  ]);
+
+  const reportMap = new Map(latestReports.rows.map(r => [r.convoy_id, r]));
+  const mismatchMap = new Map(
+    mismatchCounts.rows.map(m => [`${m.convoy_id}:${String(m.report_date).slice(0, 10)}`, m.mismatch_count])
+  );
+
+  const data = convoysRes.rows.map(c => {
+    const report = reportMap.get(c.id);
+    const rDate = report ? String(report.report_date).slice(0, 10) : null;
+    return {
+      ...c,
+      latest_report: report ? {
+        report_date: rDate,
+        status: report.status,
+        required_photo_count: report.required_photo_count,
+        received_photo_count: report.received_photo_count,
+        pdf_url: report.pdf_url,
+        generated_at: report.generated_at,
+        generation_error: report.generation_error,
+        location_mismatch_count: mismatchMap.get(`${c.id}:${rDate}`) ?? 0,
+      } : null,
+    };
+  });
+  res.json({ data });
+});
+
 module.exports = {
   createConvoyCfo,
   addTruck,
@@ -520,4 +633,5 @@ module.exports = {
   regenerateReport,
   downloadReport,
   linkDevice,
+  getConvoyReportsOverview,
 };
