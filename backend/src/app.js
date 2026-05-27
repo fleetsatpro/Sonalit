@@ -205,7 +205,7 @@ if (process.env.SENTRY_DSN) Sentry.setupExpressErrorHandler(app);
 app.use(errorHandler);
 
 // ─── Cron jobs ────────────────────────────────────────────────────────────────
-if (!process.env.GENERATE_OPENAPI)
+if (!process.env.GENERATE_OPENAPI && process.env.NODE_ENV !== 'test')
 try {
   const cron = require("node-cron");
   const PARTITION_TABLES = ["gps_logs", "audit_logs", "outbox"];
@@ -254,7 +254,7 @@ try {
 // boundary and a DB CHECK constraint is in migration 008. Run the backfill
 // script manually (node scripts/backfill-base64-photos.js) if legacy rows remain.
 
-if (!process.env.GENERATE_OPENAPI)
+if (!process.env.GENERATE_OPENAPI && process.env.NODE_ENV !== 'test')
 try {
   const cron = require("node-cron");
   cron.schedule("*/15 * * * *", async () => {
@@ -286,7 +286,7 @@ try {
 
 // BL-010: GDPR scheduled purge — weekly at 04:00 UTC Sunday
 // Executes pending erasure requests older than 30 days.
-if (!process.env.GENERATE_OPENAPI)
+if (!process.env.GENERATE_OPENAPI && process.env.NODE_ENV !== 'test')
 try {
   const cron = require("node-cron");
   cron.schedule("0 4 * * 0", async () => {
@@ -317,7 +317,8 @@ try {
 
 // ─── Start server ─────────────────────────────────────────────────────────────
 // GENERATE_OPENAPI=1 skips server.listen so the script can introspect routes safely
-if (!process.env.GENERATE_OPENAPI) {
+// NODE_ENV=test skips listen/queues/cron so integration tests don't collide on port 5000
+if (!process.env.GENERATE_OPENAPI && process.env.NODE_ENV !== 'test') {
   const PORT = parseInt(process.env.PORT) || 5000;
   createQueues();
   server.listen(PORT, () => {

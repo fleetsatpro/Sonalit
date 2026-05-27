@@ -71,12 +71,13 @@ jobs:
           DATABASE_URL: postgresql://sonalit:sonalit@localhost:5432/sonalit_test
 
       - name: Backend integration tests
-        run: pnpm --filter fleetops-backend exec jest --testPathPattern=integration --no-coverage
+        run: pnpm --filter fleetops-backend exec jest --testPathPattern=integration --no-coverage --forceExit
         env:
           JWT_SECRET: ci-test-jwt-secret
           DATABASE_URL: postgresql://sonalit:sonalit@localhost:5432/sonalit_test
           REDIS_URL: redis://localhost:6379
           DISABLE_REDIS: "false"
+          NODE_ENV: test
 
       - name: OpenAPI drift check
         run: node scripts/generate-openapi.js --check

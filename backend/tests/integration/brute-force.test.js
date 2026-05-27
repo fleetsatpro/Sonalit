@@ -23,6 +23,11 @@ beforeAll(async () => {
   }
 });
 
+afterAll(async () => {
+  const { pool } = require('../../src/config/database');
+  await pool.end();
+});
+
 test('5 wrong attempts triggers 423 on 6th attempt', async () => {
   if (skip()) return;
 
