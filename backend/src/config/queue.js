@@ -44,6 +44,13 @@ function createQueues() {
   convoyArchiveQueue = new Queue('convoyArchive', { connection, defaultJobOptions });
   convoyArchiveQueue.on('error', onQueueError('convoyArchive'));
 
+  // Repeating job: recount partial/pending reports every 15 minutes while workers are running
+  convoyReportQueue.add(
+    'scheduledRecount',
+    {},
+    { repeat: { every: 15 * 60 * 1000 }, jobId: 'scheduledRecount', removeOnComplete: true, removeOnFail: false }
+  ).catch((err) => logger.warn(`scheduledRecount repeat registration failed: ${err.message}`));
+
   logger.info('BullMQ queues initialised: gps, alert, notification, convoyReport, convoyArchive');
 }
 

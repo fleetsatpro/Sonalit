@@ -228,7 +228,7 @@ router.get('/context', deviceAuth, async (req, res, next) => {
     const { convoy_id, cfo_user_id, ...convoyFields } = assignmentResult.rows[0];
     const reportDate = getConvoyDate(convoyFields.timezone);
 
-    const [trucksResult, photosResult] = await Promise.all([
+    const [trucksResult, photosResult, reportResult] = await Promise.all([
       query(
         `SELECT ct.*
          FROM convoy_cfo_truck_assignments ccta
@@ -243,7 +243,15 @@ router.get('/context', deviceAuth, async (req, res, next) => {
          WHERE convoy_id = $1 AND cfo_user_id = $2 AND report_date = $3`,
         [convoy_id, cfo_user_id, reportDate]
       ),
+      query(
+        `SELECT status, received_photo_count, required_photo_count, generated_at, pdf_url
+         FROM convoy_daily_reports
+         WHERE convoy_id = $1 AND report_date = $2`,
+        [convoy_id, reportDate]
+      ),
     ]);
+
+    const dailyReport = reportResult.rows[0] || null;
 
     res.json({
       data: {
@@ -252,6 +260,13 @@ router.get('/context', deviceAuth, async (req, res, next) => {
         assigned_trucks: trucksResult.rows,
         report_date: reportDate,
         photos_today: photosResult.rows,
+        daily_report: dailyReport ? {
+          status: dailyReport.status,
+          received_photo_count: dailyReport.received_photo_count,
+          required_photo_count: dailyReport.required_photo_count,
+          generated_at: dailyReport.generated_at,
+          pdf_url: dailyReport.pdf_url,
+        } : null,
       },
     });
   } catch (err) {
