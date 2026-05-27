@@ -42,19 +42,12 @@ const A_CONVOYS  = [{ id: ORG_A_CONVOY_ID, name: 'Alpha Route', org_id: ORG_A, s
 const A_DRIVERS  = [{ id: ORG_A_DRIVER_ID, name: 'Driver Alpha', org_id: ORG_A }];
 const A_ALERTS   = [{ id: ORG_A_ALERT_ID, type: 'speed', severity: 'high', org_id: ORG_A }];
 
-// JWT whose sub is org-A user only
-const MOCK_TOKEN_A = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' +
-  btoa(JSON.stringify({ sub: USER_A.id, org_id: ORG_A, role: 'admin', exp: 9999999999 })).replace(/=/g, '') +
-  '.fake_sig';
-
 // ─── Helper: seed auth as org-A ───────────────────────────────────────────────
 
 async function seedAuth(page: import('@playwright/test').Page) {
-  await page.addInitScript(({ token, user }: { token: string; user: object }) => {
-    localStorage.setItem('auth-storage', JSON.stringify({
-      state: { accessToken: token, user, isAuthenticated: true }, version: 0,
-    }));
-  }, { token: MOCK_TOKEN_A, user: USER_A });
+  await page.addInitScript(({ user }: { user: object }) => {
+    localStorage.setItem('sonalit-auth', JSON.stringify({ state: { user }, version: 0 }));
+  }, { user: USER_A });
 }
 
 // ─── Helper: wire all list + detail routes ────────────────────────────────────
@@ -181,6 +174,9 @@ test.describe('Multi-tenant isolation — cross-tenant mutations return 404 (not
   test.beforeEach(async ({ page }) => {
     await seedAuth(page);
     await mockRoutes(page);
+    // Navigate to establish http://localhost:3000 as base URL so relative fetch()
+    // calls resolve correctly and same-origin CORS rules apply.
+    await page.goto('/login');
   });
 
   test('PUT to Org B vehicle UUID returns 404', async ({ page }) => {
@@ -201,7 +197,7 @@ test.describe('Multi-tenant isolation — cross-tenant mutations return 404 (not
   });
 
   test('PATCH convoy status on Org B convoy returns 404', async ({ page }) => {
-    await page.route(`**/api/v1/convoys/${ORG_B_CONVOY_ID}/**`, route =>
+    await page.route(url => url.toString().includes(`/api/v1/convoys/${ORG_B_CONVOY_ID}/`), route =>
       route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'Not found' }) })
     );
 
@@ -289,7 +285,7 @@ test.describe('Multi-tenant isolation — Centrifugo connection JWT', () => {
     // The subscribe() call uses `org#${orgId}` where orgId comes from the auth store
     const pageOrgId = await page.evaluate(() => {
       try {
-        const stored = localStorage.getItem('auth-storage');
+        const stored = localStorage.getItem('sonalit-auth');
         if (!stored) return null;
         return JSON.parse(stored).state?.user?.org_id ?? null;
       } catch { return null; }
@@ -304,6 +300,8 @@ test.describe('Multi-tenant isolation — API key scoping', () => {
   test.beforeEach(async ({ page }) => {
     await seedAuth(page);
     await mockRoutes(page);
+    // Navigate to establish same-origin context for Authorization-header fetch calls.
+    await page.goto('/login');
   });
 
   test('org-A API key cannot read org-B vehicles', async ({ page }) => {
