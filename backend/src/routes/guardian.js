@@ -846,12 +846,14 @@ router.post('/panic', deviceAuth, requireIdempotencyKey, panicLimiter, async (re
     const deviceId = req.device.id;
 
     // Step 1: attempt idempotent insert
+    const orgId = req.device.org_id || null;
+
     const insertResult = await query(
-      `INSERT INTO panic_events (event_uuid, device_id, mode, lat, lng, message, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      `INSERT INTO panic_events (event_uuid, device_id, org_id, mode, lat, lng, message, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
        ON CONFLICT (event_uuid) WHERE event_uuid IS NOT NULL DO NOTHING
        RETURNING *`,
-      [event_uuid, deviceId, mode, lat ?? null, lng ?? null, message || null]
+      [event_uuid, deviceId, orgId, mode, lat ?? null, lng ?? null, message || null]
     );
 
     let panicEvent;
@@ -893,8 +895,13 @@ router.post('/panic', deviceAuth, requireIdempotencyKey, panicLimiter, async (re
         [deviceId]
       );
 
-      publish('device:panic', payload);
-      logger.warn(`PANIC triggered: device=${deviceId} name="${req.device.name}" mode=${mode}`);
+      const panicPublishPayload = { type: 'panic', ...payload };
+      if (orgId) {
+        publish(`org#${orgId}`, panicPublishPayload);
+      } else {
+        publish('device:panic', panicPublishPayload);
+      }
+      logger.warn(`PANIC triggered: device=${deviceId} name="${req.device.name}" mode=${mode} org=${orgId ?? 'unknown'}`);
       // FCM ack to device confirming SOS was received (Task 4.1, fire-and-forget)
       if (req.device.fcm_token) {
         sendPanicAck(req.device.fcm_token, panicEvent.id).catch(() => {});
@@ -1280,10 +1287,11 @@ router.patch('/devices/:id', authenticate, async (req, res, next) => {
            status          = COALESCE($2, status),
            assignment_type = CASE WHEN $6 THEN NULL ELSE COALESCE($3, assignment_type) END,
            assignment_id   = CASE WHEN $6 THEN NULL ELSE COALESCE($4::UUID, assignment_id) END,
+           org_id          = COALESCE(org_id, $7::UUID),
            updated_at      = NOW()
        WHERE id = $5 AND deleted_at IS NULL
        RETURNING *`,
-      [name || null, status || null, assignment_type || null, assignment_id || null, req.params.id, clearAssignment]
+      [name || null, status || null, assignment_type || null, assignment_id || null, req.params.id, clearAssignment, req.user.org_id || null]
     );
 
     if (!result.rows.length) {
@@ -1522,6 +1530,10 @@ router.get('/panic', authenticate, async (req, res, next) => {
     const filters = [];
     const params = [];
 
+    // Org scoping: prefer pe.org_id; fall back to device's org_id for older rows
+    params.push(req.user.org_id);
+    filters.push(`(pe.org_id = $${params.length} OR gd.org_id = $${params.length})`);
+
     if (active_only === 'true') {
       filters.push('pe.resolved_at IS NULL');
     }
@@ -1538,7 +1550,7 @@ router.get('/panic', authenticate, async (req, res, next) => {
     const limitIdx = params.length - 1;
     const offsetIdx = params.length;
 
-    const whereClause = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+    const whereClause = `WHERE ${filters.join(' AND ')}`;
 
     const result = await query(
       `SELECT pe.*, gd.name AS device_name, gd.model AS device_model
@@ -1551,7 +1563,7 @@ router.get('/panic', authenticate, async (req, res, next) => {
     );
 
     const total = await query(
-      `SELECT COUNT(*) FROM panic_events pe ${whereClause}`,
+      `SELECT COUNT(*) FROM panic_events pe JOIN guardian_devices gd ON gd.id = pe.device_id ${whereClause}`,
       params.slice(0, -2)
     );
 
