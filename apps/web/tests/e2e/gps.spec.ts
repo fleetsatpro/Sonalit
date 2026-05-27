@@ -71,8 +71,8 @@ async function mockGpsRoutes(page: import('@playwright/test').Page) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify([
-        { device_id: 'dev-0001-0000-0000-000000000001', vehicle_id: VEHICLES[0].id, lat: 6.5244, lng: 3.3792, speed: 60, heading: 90, timestamp: NOW },
-        { device_id: 'dev-0002-0000-0000-000000000002', vehicle_id: VEHICLES[1].id, lat: 6.4550, lng: 3.3841, speed: 0, heading: 0, timestamp: STALE },
+        { device_id: 'dev-0001-0000-0000-000000000001', vehicle_id: 'veh-0001-0000-0000-000000000001', lat: 6.5244, lng: 3.3792, speed: 60, heading: 90, timestamp: NOW },
+        { device_id: 'dev-0002-0000-0000-000000000002', vehicle_id: 'veh-0002-0000-0000-000000000002', lat: 6.4550, lng: 3.3841, speed: 0, heading: 0, timestamp: STALE },
       ]),
     })
   );
