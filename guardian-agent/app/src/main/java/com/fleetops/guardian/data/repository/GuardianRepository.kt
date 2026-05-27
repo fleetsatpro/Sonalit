@@ -18,6 +18,7 @@ import com.fleetops.guardian.util.ramFreeM
 import com.fleetops.guardian.util.signalStrength
 import com.fleetops.guardian.util.storageFreeM
 import com.google.gson.Gson
+import kotlinx.coroutines.channels.Channel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -46,8 +47,9 @@ class GuardianRepository @Inject constructor(
     private val gson: Gson
 ) {
 
-    // Command processors registered by the service layer
-    var onCommandReceived: (suspend (CommandDto) -> Unit)? = null
+    // Buffered channel — commands survive even when the service is not yet running.
+    // Capacity.BUFFERED gives a 64-element buffer; the service drains it on startup.
+    val commandChannel = Channel<CommandDto>(capacity = Channel.BUFFERED)
 
     // ─── Enrollment ───────────────────────────────────────────────────────────
 
@@ -130,13 +132,9 @@ class GuardianRepository @Inject constructor(
 
             devicePrefs.setLastHeartbeat(System.currentTimeMillis())
 
-            // Process any commands returned by server
+            // Buffer commands for the service to drain — trySend never blocks or throws
             response.commands?.forEach { command ->
-                try {
-                    onCommandReceived?.invoke(command)
-                } catch (e: Exception) {
-                    android.util.Log.e(TAG, "Error processing command ${command.commandId}", e)
-                }
+                commandChannel.trySend(command)
             }
 
             // Apply config changes if server updated them
