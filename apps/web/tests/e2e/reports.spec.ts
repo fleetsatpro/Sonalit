@@ -23,7 +23,7 @@ test.describe('Reports page', () => {
       })
     );
 
-    await page.route('**/api/v1/reports**', route =>
+    await page.route(url => url.toString().includes('/api/v1/reports'), route =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',

@@ -15,7 +15,7 @@ test.describe('Guardian page', () => {
   test.beforeEach(async ({ page }) => {
     await seedAuth(page);
 
-    await page.route('**/api/v1/guardian/devices**', route =>
+    await page.route(url => url.toString().includes('/api/v1/guardian/devices'), route =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -23,7 +23,7 @@ test.describe('Guardian page', () => {
       })
     );
 
-    await page.route('**/api/v1/guardian/panics**', route =>
+    await page.route(url => url.toString().includes('/api/v1/guardian/panics'), route =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -31,7 +31,7 @@ test.describe('Guardian page', () => {
       })
     );
 
-    await page.route('**/api/v1/guardian/commands**', route =>
+    await page.route(url => url.toString().includes('/api/v1/guardian/commands'), route =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
