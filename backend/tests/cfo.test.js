@@ -317,12 +317,15 @@ describe('Daily reports', () => {
   test('GET /:id/reports returns reports array', async () => {
     const rpt = { id: 'rpt1', convoy_id: CID, report_date: DATE, status: 'partial', required_photos: 12, received_photos: 8 };
     mockQuery
-      .mockResolvedValueOnce({ rows: [{ id: CID }] })
-      .mockResolvedValueOnce({ rows: [rpt] });
+      .mockResolvedValueOnce({ rows: [{ id: CID }] })  // convoy lookup
+      .mockResolvedValueOnce({ rows: [] })               // trucks (Promise.all)
+      .mockResolvedValueOnce({ rows: [] })               // cfos  (Promise.all)
+      .mockResolvedValueOnce({ rows: [rpt] })            // reports (Promise.all)
+      .mockResolvedValueOnce({ rows: [] });              // photos
     const res = await request(app).get(`/api/v1/convoys/${CID}/reports`);
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body.data)).toBe(true);
-    expect(res.body.data[0].report_date).toBe(DATE);
+    expect(Array.isArray(res.body.data.daily_reports)).toBe(true);
+    expect(res.body.data.daily_reports[0].report_date).toBe(DATE);
   });
 
   test('GET /:id/reports returns 404 for unknown convoy', async () => {
