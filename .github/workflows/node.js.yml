@@ -71,7 +71,7 @@ jobs:
           DATABASE_URL: postgresql://sonalit:sonalit@localhost:5432/sonalit_test
 
       - name: Backend integration tests
-        run: pnpm --filter fleetops-backend exec jest --testPathPattern=integration --no-coverage --forceExit
+        run: pnpm --filter fleetops-backend exec jest --testPathPattern=integration --no-coverage --runInBand --forceExit
         env:
           JWT_SECRET: ci-test-jwt-secret
           DATABASE_URL: postgresql://sonalit:sonalit@localhost:5432/sonalit_test

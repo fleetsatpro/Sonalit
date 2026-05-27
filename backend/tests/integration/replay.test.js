@@ -15,11 +15,6 @@ let adminToken = '';
 let testDeviceId = '';
 const nonce = `replay-test-nonce-${Date.now()}`;
 
-afterAll(async () => {
-  const { pool } = require('../../src/config/database');
-  await pool.end();
-});
-
 beforeAll(async () => {
   if (skip()) return;
   // Login as admin
