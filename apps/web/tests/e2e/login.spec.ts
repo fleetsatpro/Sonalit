@@ -11,14 +11,14 @@ test.describe('Login page', () => {
   });
 
   test('password mode shows email and password inputs', async ({ page }) => {
-    // Switch to password mode
-    await page.getByRole('button', { name: /password/i }).click();
+    // Switch to password mode — use exact match to avoid matching "Show password" and "Forgot password?"
+    await page.getByRole('button', { name: 'Password', exact: true }).click();
     await expect(page.getByLabel(/email/i)).toBeVisible();
     await expect(page.getByLabel(/password/i)).toBeVisible();
   });
 
   test('shows validation error for invalid email', async ({ page }) => {
-    await page.getByRole('button', { name: /password/i }).click();
+    await page.getByRole('button', { name: 'Password', exact: true }).click();
     await page.getByLabel(/email/i).fill('not-an-email');
     await page.getByLabel(/password/i).fill('anypass');
     await page.getByRole('button', { name: /sign in/i }).click();
@@ -44,7 +44,7 @@ test.describe('Login page', () => {
       })
     );
 
-    await page.getByRole('button', { name: /password/i }).click();
+    await page.getByRole('button', { name: 'Password', exact: true }).click();
     await page.getByLabel(/email/i).fill('admin@test.io');
     await page.getByLabel(/password/i).fill('password123');
     await page.getByRole('button', { name: /sign in/i }).click();
