@@ -15,6 +15,9 @@ async function withOrg(orgId, fn) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    // Switch to non-superuser role so RLS org_isolation policies are enforced
+    // even when the session connects as a PostgreSQL superuser.
+    await client.query('SET LOCAL ROLE sonalit_app');
     // SET LOCAL applies only within this transaction — safe with connection pooling
     await client.query('SELECT set_config($1, $2, true)', ['app.current_org_id', orgId]);
     const result = await fn(client);
