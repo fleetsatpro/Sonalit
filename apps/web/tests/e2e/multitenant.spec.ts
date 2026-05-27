@@ -60,22 +60,26 @@ async function seedAuth(page: import('@playwright/test').Page) {
 // ─── Helper: wire all list + detail routes ────────────────────────────────────
 
 async function mockRoutes(page: import('@playwright/test').Page) {
-  // List endpoints — always return Org A data only
+  // List endpoints — always return Org A data only.
+  // Use single trailing * (not **) so these patterns match the collection URL
+  // and query strings but NOT sub-paths like /{id}/status.  Playwright routes
+  // are FIFO, so a broad **-suffix pattern registered here would shadow the
+  // narrower per-test routes added later.
   const lists: [string, unknown[]][] = [
-    ['**/api/v1/vehicles**', A_VEHICLES],
-    ['**/api/v1/convoys**',  A_CONVOYS],
-    ['**/api/v1/drivers**',  A_DRIVERS],
-    ['**/api/v1/alerts**',   A_ALERTS],
-    ['**/api/v1/incidents**', []],
-    ['**/api/v1/devices**',  []],
-    ['**/api/v1/messages**', []],
-    ['**/api/v1/geofences**', []],
-    ['**/api/v1/riskzones**', []],
-    ['**/api/v1/maintenance**', []],
-    ['**/api/v1/shipments**', []],
-    ['**/api/v1/finance**',  []],
-    ['**/api/v1/reports**',  []],
-    ['**/api/v1/sensors**',  []],
+    ['**/api/v1/vehicles*', A_VEHICLES],
+    ['**/api/v1/convoys*',  A_CONVOYS],
+    ['**/api/v1/drivers*',  A_DRIVERS],
+    ['**/api/v1/alerts*',   A_ALERTS],
+    ['**/api/v1/incidents*', []],
+    ['**/api/v1/devices*',  []],
+    ['**/api/v1/messages*', []],
+    ['**/api/v1/geofences*', []],
+    ['**/api/v1/riskzones*', []],
+    ['**/api/v1/maintenance*', []],
+    ['**/api/v1/shipments*', []],
+    ['**/api/v1/finance*',  []],
+    ['**/api/v1/reports*',  []],
+    ['**/api/v1/sensors*',  []],
   ];
   for (const [pattern, data] of lists) {
     await page.route(pattern, route => route.fulfill({

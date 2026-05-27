@@ -3,8 +3,8 @@ import { test, expect } from '@playwright/test';
 const MOCK_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTEiLCJvcmdfaWQiOiJvcmctMSIsInJvbGUiOiJhZG1pbiIsImV4cCI6OTk5OTk5OTk5OX0.fake';
 
 const REPORTS = [
-  { id: 'r1', title: 'Weekly Fleet Summary', created_at: '2026-05-14T10:00:00Z', type: 'fleet' },
-  { id: 'r2', title: 'Incident Report Q1', created_at: '2026-04-01T09:00:00Z', type: 'incident' },
+  { id: 'r1', title: 'Weekly Fleet Summary', generated_at: '2026-05-14T10:00:00Z', type: 'fleet', status: 'ready', url: null },
+  { id: 'r2', title: 'Incident Report Q1',  generated_at: '2026-04-01T09:00:00Z', type: 'incident', status: 'ready', url: null },
 ];
 
 async function seedAuth(page: import('@playwright/test').Page) {
