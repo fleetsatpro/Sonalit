@@ -21,7 +21,7 @@ test.describe('Login page', () => {
     await page.getByRole('button', { name: 'Password', exact: true }).click();
     await page.getByLabel(/email/i).fill('not-an-email');
     await page.getByLabel(/password/i).fill('anypass');
-    await page.getByRole('button', { name: /sign in/i }).click();
+    await page.getByRole('button', { name: /access dashboard/i }).click();
     await expect(page.getByText(/valid email/i)).toBeVisible();
   });
 
@@ -47,7 +47,7 @@ test.describe('Login page', () => {
     await page.getByRole('button', { name: 'Password', exact: true }).click();
     await page.getByLabel(/email/i).fill('admin@test.io');
     await page.getByLabel(/password/i).fill('password123');
-    await page.getByRole('button', { name: /sign in/i }).click();
+    await page.getByRole('button', { name: /access dashboard/i }).click();
 
     // After login, should not be on /login any more
     await expect(page).not.toHaveURL(/\/login/);
