@@ -54,28 +54,27 @@ async function seedAuth(page: import('@playwright/test').Page) {
 
 async function mockRoutes(page: import('@playwright/test').Page) {
   // List endpoints — always return Org A data only.
-  // Use single trailing * (not **) so these patterns match the collection URL
-  // and query strings but NOT sub-paths like /{id}/status.  Playwright routes
-  // are FIFO, so a broad **-suffix pattern registered here would shadow the
-  // narrower per-test routes added later.
-  const lists: [string, unknown[]][] = [
-    ['**/api/v1/vehicles*', A_VEHICLES],
-    ['**/api/v1/convoys*',  A_CONVOYS],
-    ['**/api/v1/drivers*',  A_DRIVERS],
-    ['**/api/v1/alerts*',   A_ALERTS],
-    ['**/api/v1/incidents*', []],
-    ['**/api/v1/devices*',  []],
-    ['**/api/v1/messages*', []],
-    ['**/api/v1/geofences*', []],
-    ['**/api/v1/riskzones*', []],
-    ['**/api/v1/maintenance*', []],
-    ['**/api/v1/shipments*', []],
-    ['**/api/v1/finance*',  []],
-    ['**/api/v1/reports*',  []],
-    ['**/api/v1/sensors*',  []],
+  // URL predicates (url => ...) are used instead of glob strings for reliable
+  // matching across Playwright versions.  Per-test routes registered after
+  // beforeEach are checked first (LIFO), so narrow overrides always win.
+  const lists: [(url: URL) => boolean, unknown[]][] = [
+    [url => url.toString().includes('/api/v1/vehicles'),    A_VEHICLES],
+    [url => url.toString().includes('/api/v1/convoys'),     A_CONVOYS],
+    [url => url.toString().includes('/api/v1/drivers'),     A_DRIVERS],
+    [url => url.toString().includes('/api/v1/alerts'),      A_ALERTS],
+    [url => url.toString().includes('/api/v1/incidents'),   []],
+    [url => url.toString().includes('/api/v1/devices'),     []],
+    [url => url.toString().includes('/api/v1/messages'),    []],
+    [url => url.toString().includes('/api/v1/geofences'),   []],
+    [url => url.toString().includes('/api/v1/riskzones'),   []],
+    [url => url.toString().includes('/api/v1/maintenance'), []],
+    [url => url.toString().includes('/api/v1/shipments'),   []],
+    [url => url.toString().includes('/api/v1/finance'),     []],
+    [url => url.toString().includes('/api/v1/reports'),     []],
+    [url => url.toString().includes('/api/v1/sensors'),     []],
   ];
-  for (const [pattern, data] of lists) {
-    await page.route(pattern, route => route.fulfill({
+  for (const [predicate, data] of lists) {
+    await page.route(predicate, route => route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ data, meta: { total: data.length, limit: 50, offset: 0 } }),
@@ -83,14 +82,14 @@ async function mockRoutes(page: import('@playwright/test').Page) {
   }
 
   // GPS track — initial position snapshot (array, not wrapped object)
-  await page.route('**/api/v1/gps/track', route => route.fulfill({
+  await page.route(url => url.toString().includes('/api/v1/gps/track'), route => route.fulfill({
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify([]),
   }));
 
   // Realtime token — issued for Org A only
-  await page.route('**/api/v1/realtime/token', route => route.fulfill({
+  await page.route(url => url.toString().includes('/api/v1/realtime/token'), route => route.fulfill({
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify({
