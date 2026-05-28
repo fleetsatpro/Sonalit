@@ -131,6 +131,9 @@ test.describe('Multi-tenant isolation — cross-tenant detail reads return 404',
   test.beforeEach(async ({ page }) => {
     await seedAuth(page);
     await mockRoutes(page);
+    // Navigate to establish http://localhost:3000 as base URL so relative fetch()
+    // calls inside page.evaluate() resolve correctly (fetch('/path') fails from about:blank).
+    await page.goto('/login');
   });
 
   test('direct API call to Org B vehicle UUID returns 404, not 403', async ({ page }) => {
