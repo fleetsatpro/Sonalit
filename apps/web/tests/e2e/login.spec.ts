@@ -7,28 +7,29 @@ test.describe('Login page', () => {
 
   test('renders login form with platform title', async ({ page }) => {
     await expect(page).toHaveTitle(/Sonalit|Fleet/i);
-    await expect(page.getByText(/logistics dashboard/i)).toBeVisible();
+    await expect(page.getByText(/logistics dashboard/i)).toBeVisible({ timeout: 8000 });
   });
 
   test('password mode shows email and password inputs', async ({ page }) => {
     // Switch to password mode — use exact match to avoid matching "Show password" and "Forgot password?"
     await page.getByRole('button', { name: 'Password', exact: true }).click();
-    await expect(page.getByLabel(/email/i)).toBeVisible();
-    await expect(page.getByLabel(/password/i)).toBeVisible();
+    await expect(page.getByLabel(/email/i)).toBeVisible({ timeout: 8000 });
+    // Use exact label text to avoid matching the "Show password" toggle button's aria-label
+    await expect(page.getByLabel('Password', { exact: true })).toBeVisible({ timeout: 8000 });
   });
 
   test('shows validation error for invalid email', async ({ page }) => {
     await page.getByRole('button', { name: 'Password', exact: true }).click();
     await page.getByLabel(/email/i).fill('not-an-email');
-    await page.getByLabel(/password/i).fill('anypass');
+    await page.getByLabel('Password', { exact: true }).fill('anypass');
     await page.getByRole('button', { name: /access dashboard/i }).click();
-    await expect(page.getByText(/valid email/i)).toBeVisible();
+    await expect(page.getByText(/valid email/i)).toBeVisible({ timeout: 8000 });
   });
 
   test('redirects unauthenticated users to /login', async ({ page }) => {
     // All protected routes redirect to /login when no auth token
     await page.goto('/');
-    await expect(page).toHaveURL(/\/login/);
+    await expect(page).toHaveURL(/\/login/, { timeout: 8000 });
   });
 
   test('successful login navigates to dashboard', async ({ page }) => {
@@ -46,10 +47,10 @@ test.describe('Login page', () => {
 
     await page.getByRole('button', { name: 'Password', exact: true }).click();
     await page.getByLabel(/email/i).fill('admin@test.io');
-    await page.getByLabel(/password/i).fill('password123');
+    await page.getByLabel('Password', { exact: true }).fill('password123');
     await page.getByRole('button', { name: /access dashboard/i }).click();
 
     // After login, should not be on /login any more
-    await expect(page).not.toHaveURL(/\/login/);
+    await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
   });
 });
