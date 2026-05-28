@@ -42,8 +42,8 @@ test.describe('Guardian page', () => {
 
   test('guardian page renders device list', async ({ page }) => {
     await page.goto('/guardian');
-    await expect(page.getByText('Guardian Alpha')).toBeVisible({ timeout: 8000 });
-    await expect(page.getByText('Guardian Beta')).toBeVisible();
+    await expect(page.getByText('Guardian Alpha', { exact: true })).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('Guardian Beta', { exact: true })).toBeVisible();
   });
 
   test('shows active and offline device statuses', async ({ page }) => {
