@@ -253,7 +253,7 @@ test.describe('Multi-tenant isolation — Centrifugo connection JWT', () => {
   test('connection token sub claim matches Org A user, not Org B', async ({ page }) => {
     let capturedToken: string | null = null;
 
-    await page.route('**/api/v1/realtime/token', async route => {
+    await page.route(url => url.toString().includes('/api/v1/realtime/token'), async route => {
       const payload = btoa(JSON.stringify({ sub: USER_A.id, exp: 9999999999 })).replace(/=/g, '');
       const token = `eyJhbGciOiJIUzI1NiJ9.${payload}.fake`;
       capturedToken = token;
@@ -276,7 +276,7 @@ test.describe('Multi-tenant isolation — Centrifugo connection JWT', () => {
 
   test('frontend does not subscribe to cross-tenant Centrifugo channel', async ({ page }) => {
     // Intercept WebSocket to capture subscription attempts
-    await page.route('**/api/v1/realtime/token', route => route.fulfill({
+    await page.route(url => url.toString().includes('/api/v1/realtime/token'), route => route.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify({
         token: 'eyJhbGciOiJIUzI1NiJ9.' +

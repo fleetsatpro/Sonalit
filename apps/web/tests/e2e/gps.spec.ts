@@ -55,7 +55,7 @@ async function mockGpsRoutes(page: import('@playwright/test').Page) {
     })
   );
 
-  await page.route('**/api/v1/realtime/token', route =>
+  await page.route(url => url.toString().includes('/api/v1/realtime/token'), route =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -66,7 +66,7 @@ async function mockGpsRoutes(page: import('@playwright/test').Page) {
     })
   );
 
-  await page.route('**/api/v1/gps/track', route =>
+  await page.route(url => url.toString().includes('/api/v1/gps/track'), route =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -78,7 +78,7 @@ async function mockGpsRoutes(page: import('@playwright/test').Page) {
   );
 
   // GPS fix submission endpoint
-  await page.route('**/api/v1/gps/ingest', route => {
+  await page.route(url => url.toString().includes('/api/v1/gps/ingest'), route => {
     const method = route.request().method();
     if (method === 'POST') {
       return route.fulfill({
@@ -177,7 +177,7 @@ test.describe('GPS ingest — API contract', () => {
 
   test('invalid GPS fix POST (missing lat/lng) returns 422', async ({ page }) => {
     // Override the ingest route to simulate validation failure
-    await page.route('**/api/v1/gps/ingest', route =>
+    await page.route(url => url.toString().includes('/api/v1/gps/ingest'), route =>
       route.fulfill({
         status: 422,
         contentType: 'application/json',

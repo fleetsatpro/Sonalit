@@ -15,7 +15,7 @@ test.describe('Reports page', () => {
   test.beforeEach(async ({ page }) => {
     await seedAuth(page);
 
-    await page.route('**/api/v1/realtime/token', route =>
+    await page.route(url => url.toString().includes('/api/v1/realtime/token'), route =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',

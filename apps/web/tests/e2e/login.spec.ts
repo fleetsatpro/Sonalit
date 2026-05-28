@@ -34,7 +34,7 @@ test.describe('Login page', () => {
 
   test('successful login navigates to dashboard', async ({ page }) => {
     // Mock successful login response
-    await page.route('**/api/v1/auth/login', route =>
+    await page.route(url => url.toString().includes('/api/v1/auth/login'), route =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
