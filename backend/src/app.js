@@ -382,7 +382,7 @@ if (process.env.ENABLE_INPROCESS_WORKERS === "true" && process.env.REDIS_URL && 
   } catch (e) {
     logger.warn("Worker startup failed: " + e.message + " — continuing without workers");
   }
-} else if (!process.env.ENABLE_INPROCESS_WORKERS || process.env.ENABLE_INPROCESS_WORKERS !== "true") {
+} else if (process.env.NODE_ENV !== 'test' && !process.env.GENERATE_OPENAPI && (!process.env.ENABLE_INPROCESS_WORKERS || process.env.ENABLE_INPROCESS_WORKERS !== "true")) {
   logger.info("Workers not started in-process — run standalone worker processes (T3.1)");
 }
 

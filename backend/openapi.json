@@ -308,6 +308,16 @@
         }
       }
     },
+    "/api/v1/convoys/reports/overview": {
+      "get": {
+        "operationId": "get_api_v1_convoys_reports_overview",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/convoys/{id}/reports": {
       "get": {
         "operationId": "get_api_v1_convoys_id_reports",
@@ -491,6 +501,14 @@
           }
         }
       },
+      "patch": {
+        "operationId": "patch_api_v1_geofences_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
       "delete": {
         "operationId": "delete_api_v1_geofences_id",
         "responses": {
@@ -661,6 +679,16 @@
       },
       "get": {
         "operationId": "get_api_v1_gps",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/gps/track": {
+      "get": {
+        "operationId": "get_api_v1_gps_track",
         "responses": {
           "200": {
             "description": "OK"
@@ -905,6 +933,16 @@
     "/api/v1/guardian/ack-command": {
       "post": {
         "operationId": "post_api_v1_guardian_ack_command",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/commands": {
+      "get": {
+        "operationId": "get_api_v1_guardian_commands",
         "responses": {
           "200": {
             "description": "OK"
@@ -1441,6 +1479,34 @@
     "/api/v1/riskzones/{id}": {
       "delete": {
         "operationId": "delete_api_v1_riskzones_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field-officers/": {
+      "get": {
+        "operationId": "get_api_v1_field_officers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_field_officers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field-officers/{id}": {
+      "patch": {
+        "operationId": "patch_api_v1_field_officers_id",
         "responses": {
           "200": {
             "description": "OK"

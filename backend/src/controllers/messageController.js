@@ -33,7 +33,9 @@ async function ensureTables() {
   `);
 }
 
-ensureTables().catch((err) => console.error('[messages] Schema setup error:', err.message));
+if (process.env.NODE_ENV !== 'test') {
+  ensureTables().catch((err) => console.error('[messages] Schema setup error:', err.message));
+}
 
 const getChannels = asyncHandler(async (req, res) => {
   const result = await query('SELECT * FROM channels ORDER BY name ASC');
