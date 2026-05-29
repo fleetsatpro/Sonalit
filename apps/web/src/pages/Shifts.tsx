@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
-import { Calendar, Plus, XCircle, Clock, Users } from 'lucide-react';
+import { Calendar, Plus, XCircle, Clock, Users, ArrowRightLeft } from 'lucide-react';
+import VoiceNoteRecorder from '../components/VoiceNoteRecorder.js';
 
 interface Shift {
   id: string;
@@ -33,6 +34,9 @@ function fmtTime(t: string) {
 export default function ShiftsPage() {
   const [showNew, setShowNew] = useState(false);
   const [newShift, setNewShift] = useState({ start_time: '', end_time: '', role: 'driver', notes: '' });
+  const [handoverShift, setHandoverShift] = useState<Shift | null>(null);
+  const [handoverForm, setHandoverForm] = useState({ to_shift_id: '', odometer_km: '', fuel_level_pct: '', condition_notes: '', seal_intact: true });
+  const [voiceNoteId, setVoiceNoteId] = useState<string | null>(null);
   const qc = useQueryClient();
 
   const shiftsQ = useQuery<{ data: Shift[] }>({
@@ -57,6 +61,20 @@ export default function ShiftsPage() {
   const cancelMut = useMutation({
     mutationFn: (id: string) => api.delete(`/shifts/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['shifts'] }),
+  });
+
+  const handoverMut = useMutation({
+    mutationFn: ({ fromId, body }: { fromId: string; body: object }) =>
+      api.post(`/shifts/${fromId}/handover`, body, {
+        headers: { 'X-Idempotency-Key': `handover-${fromId}-${Date.now()}` },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['shifts'] });
+      qc.invalidateQueries({ queryKey: ['shifts-on-duty'] });
+      setHandoverShift(null);
+      setHandoverForm({ to_shift_id: '', odometer_km: '', fuel_level_pct: '', condition_notes: '', seal_intact: true });
+      setVoiceNoteId(null);
+    },
   });
 
   return (
@@ -117,7 +135,12 @@ export default function ShiftsPage() {
                       {s.status}
                     </span>
                   </td>
-                  <td className="p-3">
+                  <td className="p-3 flex items-center gap-3">
+                    {s.status === 'active' && (
+                      <button onClick={() => setHandoverShift(s)} className="flex items-center gap-1 text-xs text-orange-400 hover:text-orange-300">
+                        <ArrowRightLeft className="w-3 h-3" /> Handover
+                      </button>
+                    )}
                     {s.status === 'scheduled' && (
                       <button onClick={() => cancelMut.mutate(s.id)} className="text-xs text-red-400 hover:text-red-300">
                         Cancel
@@ -175,6 +198,73 @@ export default function ShiftsPage() {
               </button>
             </div>
             {createMut.isError && <p className="text-red-400 text-xs">Failed to create shift</p>}
+          </div>
+        </div>
+      )}
+
+      {/* Handover Modal */}
+      {handoverShift && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <ArrowRightLeft className="w-4 h-4 text-orange-400" /> Shift Handover
+              </h2>
+              <button onClick={() => setHandoverShift(null)} className="text-gray-400 hover:text-white">
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-400">
+              Handing over from: <span className="text-white">{handoverShift.driver_name ?? 'Unknown'}</span>
+            </p>
+            <div className="space-y-3">
+              <input
+                placeholder="Next Shift ID (UUID) *"
+                value={handoverForm.to_shift_id}
+                onChange={e => setHandoverForm(p => ({ ...p, to_shift_id: e.target.value }))}
+                className="w-full bg-gray-700 text-white px-3 py-2 rounded-lg text-sm font-mono"
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <input placeholder="Odometer (km)" type="number" value={handoverForm.odometer_km} onChange={e => setHandoverForm(p => ({ ...p, odometer_km: e.target.value }))} className="bg-gray-700 text-white px-3 py-2 rounded-lg text-sm" />
+                <input placeholder="Fuel level (%)" type="number" min="0" max="100" value={handoverForm.fuel_level_pct} onChange={e => setHandoverForm(p => ({ ...p, fuel_level_pct: e.target.value }))} className="bg-gray-700 text-white px-3 py-2 rounded-lg text-sm" />
+              </div>
+              <textarea placeholder="Condition notes" value={handoverForm.condition_notes} onChange={e => setHandoverForm(p => ({ ...p, condition_notes: e.target.value }))} className="w-full bg-gray-700 text-white px-3 py-2 rounded-lg text-sm h-16 resize-none" />
+              <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+                <input type="checkbox" checked={handoverForm.seal_intact} onChange={e => setHandoverForm(p => ({ ...p, seal_intact: e.target.checked }))} className="rounded" />
+                Seal intact
+              </label>
+              <div className="pt-1">
+                <p className="text-xs text-gray-400 mb-2">Voice note (optional)</p>
+                {handoverShift && (
+                  <VoiceNoteRecorder
+                    parentType="shift_handover"
+                    parentId={handoverShift.id}
+                    onCommitted={id => setVoiceNoteId(id)}
+                  />
+                )}
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setHandoverShift(null)} className="px-4 py-2 text-sm text-gray-400 hover:text-white">Cancel</button>
+              <button
+                onClick={() => handoverMut.mutate({
+                  fromId: handoverShift.id,
+                  body: {
+                    to_shift_id: handoverForm.to_shift_id,
+                    odometer_km: handoverForm.odometer_km ? parseFloat(handoverForm.odometer_km) : undefined,
+                    fuel_level_pct: handoverForm.fuel_level_pct ? parseInt(handoverForm.fuel_level_pct) : undefined,
+                    condition_notes: handoverForm.condition_notes || undefined,
+                    seal_intact: handoverForm.seal_intact,
+                    voice_note_id: voiceNoteId || undefined,
+                  },
+                })}
+                disabled={!handoverForm.to_shift_id || handoverMut.isPending}
+                className="px-4 py-2 text-sm bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white rounded-lg"
+              >
+                {handoverMut.isPending ? 'Submitting...' : 'Complete Handover'}
+              </button>
+            </div>
+            {handoverMut.isError && <p className="text-red-400 text-xs">Handover failed. Please try again.</p>}
           </div>
         </div>
       )}

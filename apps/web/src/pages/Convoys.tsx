@@ -1,12 +1,13 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Route, Plus, Pencil, Trash2, Loader2 } from 'lucide-react';
+import { Route, Plus, Pencil, Trash2, Loader2, Radio } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { subscribe } from '../lib/centrifuge.js';
 import { useAuthStore } from '../stores/auth.js';
 import { normalizeList, type NormalizedList } from '../lib/normalize.js';
 import type { Convoy, ConvoyStatus } from '@sonalit/contracts';
+import BroadcastPanel from '../components/BroadcastPanel.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,6 +42,7 @@ function StatusBadge({ status }: { status: ConvoyStatus }): React.ReactElement {
 export default function Convoys(): React.ReactElement {
   const queryClient = useQueryClient();
   const orgId = useAuthStore((s) => s.user?.org_id);
+  const [broadcastConvoy, setBroadcastConvoy] = useState<{ id: string; name: string } | null>(null);
 
   const { data, isLoading, isError } = useQuery<ConvoyListResponse>({
     queryKey: ['convoys'],
@@ -134,10 +136,20 @@ export default function Convoys(): React.ReactElement {
                   <td className="px-4 py-3 text-gray-400 text-xs">{convoy.timezone}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
+                      {convoy.status === 'active' && (
+                        <button
+                          type="button"
+                          onClick={() => setBroadcastConvoy({ id: convoy.id, name: convoy.name })}
+                          className="text-orange-400 hover:text-orange-300 transition-colors"
+                          title="Broadcast"
+                        >
+                          <Radio className="w-4 h-4" />
+                        </button>
+                      )}
                       <Link
                         to="/convoys/$id/edit"
                         params={{ id: convoy.id }}
-                        className="text-orange-400 hover:text-orange-300 transition-colors"
+                        className="text-blue-400 hover:text-blue-300 transition-colors"
                         title="Edit"
                       >
                         <Pencil className="w-4 h-4" />
@@ -158,6 +170,14 @@ export default function Convoys(): React.ReactElement {
             </tbody>
           </table>
         </div>
+      )}
+
+      {broadcastConvoy && (
+        <BroadcastPanel
+          convoyId={broadcastConvoy.id}
+          convoyName={broadcastConvoy.name}
+          onClose={() => setBroadcastConvoy(null)}
+        />
       )}
     </div>
   );
