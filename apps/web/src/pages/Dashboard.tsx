@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Truck, Users, Bell, Route, AlertTriangle, FileWarning } from 'lucide-react';
+import { Truck, Users, Bell, Route, AlertTriangle, FileWarning, ShieldAlert, Package } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
 import { api } from '../lib/api.js';
 import { subscribe } from '../lib/centrifuge.js';
 import { useAuthStore } from '../stores/auth.js';
@@ -174,6 +175,15 @@ export default function Dashboard(): React.ReactElement {
     enabled: !!orgId,
   });
 
+  const { data: routeAnalyses, isLoading: rraLoading, isError: rraError } = useQuery<{ total: number }>({
+    queryKey: ['route-analyses', 'count'],
+    queryFn: async () => {
+      const res = await api.get('/routes/analyses', { params: { limit: 1 } });
+      return { total: res.data.total ?? 0 };
+    },
+    enabled: !!orgId,
+  });
+
   const { data: recentIncidents, isLoading: riLoading, isError: riError } = useQuery<NormalizedList<Incident>>({
     queryKey: ['incidents', 'recent'],
     queryFn: async () => {
@@ -208,6 +218,30 @@ export default function Dashboard(): React.ReactElement {
         {stats.map((s, i) => (
           <StatCard key={s.label} {...s} style={{ animationDelay: `${i * 80}ms` }} />
         ))}
+      </div>
+
+      {/* Feature widgets row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Link to="/route-analysis" className="group bg-gray-900 border border-gray-800 hover:border-orange-700/50 rounded-xl p-4 flex items-center gap-4 transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 animate-fade-in-up" style={{ animationDelay: '400ms' }}>
+          <div className="w-10 h-10 rounded-xl bg-orange-600/20 flex items-center justify-center shrink-0 group-hover:bg-orange-600/30 transition-colors">
+            <ShieldAlert className="w-5 h-5 text-orange-400" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-white font-semibold text-sm">Route Safety</p>
+            <p className="text-gray-400 text-xs">
+              {rraLoading ? 'Loading…' : rraError ? 'Unavailable' : `${routeAnalyses?.total ?? 0} route analyses run`}
+            </p>
+          </div>
+        </Link>
+        <Link to="/cargo-portal" className="group bg-gray-900 border border-gray-800 hover:border-orange-700/50 rounded-xl p-4 flex items-center gap-4 transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 animate-fade-in-up" style={{ animationDelay: '480ms' }}>
+          <div className="w-10 h-10 rounded-xl bg-orange-600/20 flex items-center justify-center shrink-0 group-hover:bg-orange-600/30 transition-colors">
+            <Package className="w-5 h-5 text-orange-400" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-white font-semibold text-sm">Cargo Portal</p>
+            <p className="text-gray-400 text-xs">Issue & manage cargo owner tokens</p>
+          </div>
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
