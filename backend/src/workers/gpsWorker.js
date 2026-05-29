@@ -41,6 +41,7 @@ function minDistToPathKm(lat, lng, path) {
 }
 
 const { publish } = require('../realtime/centrifugo');
+const { evaluateVehiclePosition } = require('../utils/geofenceEngine');
 
 function getRedisConnection() {
   const url = new URL(process.env.REDIS_URL || 'redis://127.0.0.1:6379');
@@ -159,6 +160,12 @@ async function processGPS(job) {
     } catch (e) {
       logger.warn('Corridor check error: ' + e.message);
     }
+  }
+
+  // 7. Smart geofence + corridor evaluation (RULE C: withOrg inside evaluateVehiclePosition)
+  if (orgId) {
+    evaluateVehiclePosition(orgId, vehicle_id, null, convoyResult.rows[0]?.convoy_id ?? null, { lat, lng, speed })
+      .catch(err => logger.warn(`geofenceEngine error: ${err.message}`));
   }
 
   logger.info(`GPS processed: vehicle=${vehicle_id} lat=${lat} lng=${lng} speed=${speed}`);

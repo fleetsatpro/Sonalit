@@ -205,6 +205,9 @@ catch (e) { logger.warn("Routes route failed: " + e.message); }
 try { app.use("/api/v1/portal", require("./routes/portal")); logger.info("Route loaded: /api/v1/portal"); }
 catch (e) { logger.warn("Portal route failed: " + e.message); }
 
+try { app.use("/api/v1/convoys", require("./routes/corridors")); logger.info("Route loaded: /api/v1/convoys (corridors)"); }
+catch (e) { logger.warn("Corridors route failed: " + e.message); }
+
 app.use("/api/v1/sync", (req, res) => res.json({ ok: true, processed: 0 }));
 app.use((req, res) => res.status(404).json({ error: req.method + " " + req.path + " not found" }));
 if (process.env.SENTRY_DSN) Sentry.setupExpressErrorHandler(app);
