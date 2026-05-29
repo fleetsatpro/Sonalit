@@ -7,6 +7,7 @@ import { useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import { useAuthStore, type AuthUser } from '../stores/auth.js';
 import './Login.css';
+import './Login.enhancements.css';
 
 // ---------------------------------------------------------------------------
 // Schemas & types
@@ -161,9 +162,11 @@ export default function Login(): React.ReactElement {
   const [alert, setAlert] = useState<{ type: 'error' | 'success'; msg: string } | null>(null);
   const [, setFailCount] = useState(0);
   const [cooldownSecs, setCooldownSecs] = useState(0);
+  const [hudCoords, setHudCoords] = useState('6.5244°N · 3.3792°E');
 
   const logoTextRef = useRef<HTMLDivElement>(null);
   const logoLayerRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
 
   const { register, handleSubmit, formState: { errors }, watch } = useForm<PasswordForm>({
     resolver: zodResolver(passwordSchema),
@@ -173,6 +176,11 @@ export default function Login(): React.ReactElement {
   const emailVal = watch('email');
   const passVal  = watch('password');
   useEffect(() => { setAlert(null); }, [emailVal, passVal]);
+
+  // Password strength (0–5)
+  const STR_COLS = ['#ef4444', '#ff9040', '#f0c040', '#22ee88', '#00d4ff'] as const;
+  const strength = passVal ? Math.min(Math.floor(passVal.length / 4) + 1, 5) : 0;
+  const strCol   = strength > 0 ? STR_COLS[strength - 1] : STR_COLS[0];
 
   // Cooldown countdown
   useEffect(() => {
@@ -375,6 +383,44 @@ export default function Login(): React.ReactElement {
     return () => clearTimeout(delay);
   }, []);
 
+  // HUD coordinates cycling
+  useEffect(() => {
+    let t = 0;
+    const id = setInterval(() => {
+      t += 0.0015;
+      const lat = (6.5244 + Math.sin(t) * 0.003).toFixed(4);
+      const lng = (3.3792 + Math.cos(t) * 0.003).toFixed(4);
+      setHudCoords(`${lat}°N · ${lng}°E`);
+    }, 500);
+    return () => clearInterval(id);
+  }, []);
+
+  // 3-D mouse tilt on card (starts after card-in animation completes)
+  useEffect(() => {
+    const card = cardRef.current;
+    if (!card || window.matchMedia('(prefers-reduced-motion:reduce)').matches) return;
+    const onMove = (e: MouseEvent) => {
+      const r = card.getBoundingClientRect();
+      const dx = (e.clientX - (r.left + r.width * 0.5)) / (window.innerWidth * 0.5);
+      const dy = (e.clientY - (r.top + r.height * 0.5)) / (window.innerHeight * 0.5);
+      card.style.transform = `rotateX(${-dy * 7}deg) rotateY(${dx * 7}deg)`;
+      card.style.transition = 'transform .07s';
+    };
+    const onLeave = () => {
+      card.style.transform = 'rotateX(0deg) rotateY(0deg)';
+      card.style.transition = 'transform 1.2s ease';
+    };
+    const tid = setTimeout(() => {
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseleave', onLeave);
+    }, 1600);
+    return () => {
+      clearTimeout(tid);
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseleave', onLeave);
+    };
+  }, []);
+
   // ---------------------------------------------------------------------------
   // Auth mutations
   // ---------------------------------------------------------------------------
@@ -451,11 +497,17 @@ export default function Login(): React.ReactElement {
         <div className="logo-inner" dangerouslySetInnerHTML={{ __html: LOGO_INNER_HTML }} />
       </div>
 
+      {/* Aurora ambient blobs */}
+      <div className="login-aurora" aria-hidden="true" style={{ width: 520, height: 520, top: '-12%', left: '-8%', background: 'radial-gradient(circle, rgba(240,112,32,.28) 0%, transparent 70%)', animationDuration: '9s', animationDelay: '0s' }} />
+      <div className="login-aurora" aria-hidden="true" style={{ width: 420, height: 420, bottom: '2%', right: '-6%', background: 'radial-gradient(circle, rgba(0,212,255,.22) 0%, transparent 70%)', animationDuration: '11s', animationDelay: '-4s' }} />
+      <div className="login-aurora" aria-hidden="true" style={{ width: 340, height: 340, bottom: '30%', left: '4%', background: 'radial-gradient(circle, rgba(85,136,255,.18) 0%, transparent 70%)', animationDuration: '13s', animationDelay: '-7s' }} />
+
       <div className="vignette" aria-hidden="true" />
       <div className="scanline" aria-hidden="true" />
 
       <div className="card-wrap" role="main">
-        <div className="card" role="region" aria-label="Sign in to Sonalit">
+        <div className="card" ref={cardRef} role="region" aria-label="Sign in to Sonalit">
+          <div className="card-scan-line" aria-hidden="true" />
           <div className="ca ca-tl" aria-hidden="true" />
           <div className="ca ca-tr" aria-hidden="true" />
           <div className="ca ca-bl" aria-hidden="true" />
@@ -482,6 +534,18 @@ export default function Login(): React.ReactElement {
               <span>{alert.msg}</span>
             </div>
           )}
+
+          <div className="login-hud" aria-hidden="true">
+            <span className="hud-indicator" />
+            <span className="hud-status-text">AUTH · SECURE</span>
+            <span className="hud-coords-text">{hudCoords}</span>
+            <span className="hud-signal">
+              <span className="hud-signal-bar" style={{ height: 4, animationDelay: '0s' }} />
+              <span className="hud-signal-bar" style={{ height: 7, animationDelay: '.2s' }} />
+              <span className="hud-signal-bar" style={{ height: 10, animationDelay: '.4s' }} />
+              <span className="hud-signal-bar" style={{ height: 7, animationDelay: '.6s' }} />
+            </span>
+          </div>
 
           <div className="mode-tabs">
             <button className={`mode-tab${mode==='password'?' active':''}`} onClick={() => { setMode('password'); setAlert(null); }}>Password</button>
@@ -527,6 +591,14 @@ export default function Login(): React.ReactElement {
                     }
                   </button>
                 </div>
+                {passVal && (
+                  <div className="pw-strength-row" aria-hidden="true">
+                    {[0,1,2,3,4].map((i) => (
+                      <span key={i} className={`pw-str-seg${i < strength ? ' active' : ''}`}
+                        style={i < strength ? { '--str-col': strCol } as React.CSSProperties : undefined} />
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', margin:'-2px 0 16px' }}>
@@ -615,6 +687,20 @@ export default function Login(): React.ReactElement {
           <div className="card-footer">
             <p>Don't have an account? <button onClick={() => setAlert({ type: 'success', msg: 'Contact ops@sonalit.io to request access.' })}>Request access</button></p>
           </div>
+
+          {isSubmitting && (
+            <div className="bio-overlay" role="status" aria-label="Authenticating">
+              <span className="bio-label">Verifying Identity</span>
+              <div className="bio-rings" aria-hidden="true">
+                <div className="bio-ring bio-ring-a" />
+                <div className="bio-ring bio-ring-b" />
+                <div className="bio-ring bio-ring-c" />
+                <div className="bio-center" />
+              </div>
+              <span className="bio-phase-text">Authenticating…</span>
+              <span className="bio-sub-text">Please wait</span>
+            </div>
+          )}
         </div>
       </div>
 
