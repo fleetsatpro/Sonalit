@@ -31,6 +31,13 @@ export * from './schemas/shipment.js';
 export * from './schemas/route.js';
 export * from './schemas/portal.js';
 
+// S2 schemas
+export * from './schemas/fuel.js';
+export * from './schemas/broadcast.js';
+export * from './schemas/claim.js';
+export * from './schemas/roster.js';
+export * from './schemas/media.js';
+
 // Events
 export * from './events/subjects.js';
 
