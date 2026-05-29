@@ -27,15 +27,15 @@ router.get('/convoy', portalAuth, asyncHandler(async (req, res) => {
 
   const result = await req.db(
     `SELECT
-       c.id               AS convoy_id,
+       c.id                                          AS convoy_id,
        c.org_id,
-       c.reference,
+       COALESCE(c.reference, c.name)                AS reference,
        c.status,
-       c.origin,
-       c.destination,
-       c.departed_at,
+       COALESCE(c.origin, c.route_origin)           AS origin,
+       COALESCE(c.destination, c.route_destination) AS destination,
+       COALESCE(c.departed_at, c.departure_time)    AS departed_at,
        c.arrived_at,
-       c.estimated_arrival_at,
+       COALESCE(c.estimated_arrival_at, c.estimated_arrival) AS estimated_arrival_at,
        (SELECT COUNT(*) FROM convoy_vehicles cv WHERE cv.convoy_id = c.id) AS vehicle_count,
        (SELECT g.lat  FROM gps_logs g WHERE g.vehicle_id = ANY(
           SELECT cv2.vehicle_id FROM convoy_vehicles cv2 WHERE cv2.convoy_id = c.id)
@@ -69,8 +69,16 @@ router.get('/convoy/custody-pdf', portalAuth, asyncHandler(async (req, res) => {
   const { convoy_id } = req.portal;
 
   const convoyResult = await req.db(
-    `SELECT c.*, (SELECT COUNT(*) FROM convoy_vehicles cv WHERE cv.convoy_id = c.id) AS vehicle_count
-       FROM convoys c WHERE c.id = $1 AND c.deleted_at IS NULL`,
+    `SELECT
+       c.id, c.org_id, c.status, c.seal_intact,
+       COALESCE(c.reference, c.name)                AS reference,
+       COALESCE(c.origin, c.route_origin)           AS origin,
+       COALESCE(c.destination, c.route_destination) AS destination,
+       COALESCE(c.departed_at, c.departure_time)    AS departed_at,
+       c.arrived_at,
+       COALESCE(c.estimated_arrival_at, c.estimated_arrival) AS estimated_arrival_at,
+       (SELECT COUNT(*) FROM convoy_vehicles cv WHERE cv.convoy_id = c.id) AS vehicle_count
+     FROM convoys c WHERE c.id = $1 AND c.deleted_at IS NULL`,
     [convoy_id],
   );
   if (!convoyResult.rows.length) return res.status(404).json({ error: 'Convoy not found' });
