@@ -8,6 +8,9 @@ const logger = require('../utils/logger');
 const SPEED_THRESHOLD = parseFloat(process.env.SPEED_ALERT_THRESHOLD) || 120;
 const GEOFENCE_KM = parseFloat(process.env.GEOFENCE_RADIUS_KM) || 5;
 
+// ── Per-vehicle prev-fix cache for behaviour delta calculations ───────────
+const _prevFixCache = new Map(); // vehicleId → { lat, lng, speed, heading, timestamp }
+
 // ── Corridor geofence cache (refreshed every 5 min) ───────────────────────
 let _corridorCache = null;
 let _corridorCacheTime = 0;
@@ -42,6 +45,7 @@ function minDistToPathKm(lat, lng, path) {
 
 const { publish } = require('../realtime/centrifugo');
 const { evaluateVehiclePosition } = require('../utils/geofenceEngine');
+const { detectBehaviourEvents, storeBehaviourEvents } = require('../utils/behaviourDetector');
 
 function getRedisConnection() {
   const url = new URL(process.env.REDIS_URL || 'redis://127.0.0.1:6379');
@@ -53,7 +57,10 @@ function getRedisConnection() {
 }
 
 async function processGPS(job) {
-  const { vehicle_id, lat, lng, speed, timestamp } = job.data;
+  const { vehicle_id, lat, lng, speed, heading, timestamp } = job.data;
+  const currentFix = { lat, lng, speed: speed ?? 0, heading: heading ?? null, timestamp: timestamp ?? new Date().toISOString() };
+  const prevFix = _prevFixCache.get(vehicle_id) ?? null;
+  _prevFixCache.set(vehicle_id, currentFix);
 
   // 1. Store GPS log
   await query(
@@ -166,6 +173,17 @@ async function processGPS(job) {
   if (orgId) {
     evaluateVehiclePosition(orgId, vehicle_id, null, convoyResult.rows[0]?.convoy_id ?? null, { lat, lng, speed })
       .catch(err => logger.warn(`geofenceEngine error: ${err.message}`));
+  }
+
+  // 8. Driver behaviour scoring
+  if (orgId) {
+    const driverRes = await query(
+      `SELECT assigned_driver_id FROM vehicles WHERE id = $1`, [vehicle_id],
+    ).catch(() => ({ rows: [] }));
+    const driverId = driverRes.rows[0]?.assigned_driver_id ?? null;
+    detectBehaviourEvents(orgId, driverId, vehicle_id, currentFix, prevFix)
+      .then(events => storeBehaviourEvents(orgId, events))
+      .catch(err => logger.warn(`behaviourDetector error: ${err.message}`));
   }
 
   logger.info(`GPS processed: vehicle=${vehicle_id} lat=${lat} lng=${lng} speed=${speed}`);

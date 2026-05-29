@@ -10,7 +10,17 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
-import { BarChart2, AlertTriangle, TrendingUp, Truck, CheckCircle, Activity } from 'lucide-react';
+import { BarChart2, AlertTriangle, TrendingUp, Truck, CheckCircle, Activity, Fuel, Users, FileText, Shield } from 'lucide-react';
+
+interface SlaData {
+  days: number;
+  convoys: { completed: number; aborted: number; total: number; on_time_pct: number };
+  fuel: { total_fuel_cost: number; total_litres: number };
+  claims: { draft_claims: number; submitted_claims: number; total_claims: number };
+  anomalies: { open_anomalies: number; total_anomalies: number };
+  shifts: { active_shifts: number; no_shows: number };
+  behaviour: { behaviour_events: number; drivers_flagged: number };
+}
 
 interface DashboardSummary {
   activeConvoys: number;
@@ -105,6 +115,13 @@ export default function Executive() {
     },
   });
 
+  const { data: slaData } = useQuery<{ data: SlaData }>({
+    queryKey: ['analytics-sla'],
+    queryFn: () => api.get('/analytics/sla').then(r => r.data),
+    refetchInterval: 120_000,
+  });
+  const sla = slaData?.data;
+
   const trendData = (convoyMetrics ?? [])
     .slice(-7)
     .map((d) => ({ ...d, day: fmtDay(d.day) }));
@@ -158,6 +175,22 @@ export default function Executive() {
           />
         </div>
       ) : null}
+
+      {sla && (
+        <div className="space-y-2">
+          <h2 className="text-sm font-semibold text-slate-300">SLA Dashboard (Last {sla.days} days)</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <KpiCard label="On-Time Deliveries" value={`${sla.convoys.on_time_pct ?? 0}%`} icon={<TrendingUp size={18} />} color="bg-green-900 text-green-400" />
+            <KpiCard label="Fuel Spent" value={sla.fuel.total_litres != null ? `${Number(sla.fuel.total_litres).toFixed(0)} L` : '—'} icon={<Fuel size={18} />} color="bg-blue-900 text-blue-400" />
+            <KpiCard label="Open Anomalies" value={sla.anomalies.open_anomalies ?? 0} icon={<AlertTriangle size={18} />} color={Number(sla.anomalies.open_anomalies) > 0 ? 'bg-red-900 text-red-400' : 'bg-slate-700 text-slate-400'} />
+            <KpiCard label="Active Shifts" value={sla.shifts.active_shifts ?? 0} icon={<Users size={18} />} color="bg-indigo-900 text-indigo-400" />
+            <KpiCard label="Behaviour Events" value={sla.behaviour.behaviour_events ?? 0} icon={<Shield size={18} />} color={Number(sla.behaviour.behaviour_events) > 10 ? 'bg-orange-900 text-orange-400' : 'bg-slate-700 text-slate-400'} />
+            <KpiCard label="Drivers Flagged" value={sla.behaviour.drivers_flagged ?? 0} icon={<Users size={18} />} color={Number(sla.behaviour.drivers_flagged) > 0 ? 'bg-yellow-900 text-yellow-400' : 'bg-slate-700 text-slate-400'} />
+            <KpiCard label="Insurance Claims" value={sla.claims.total_claims ?? 0} icon={<FileText size={18} />} color="bg-purple-900 text-purple-400" />
+            <KpiCard label="Convoys Done" value={`${sla.convoys.completed ?? 0} / ${sla.convoys.total ?? 0}`} icon={<CheckCircle size={18} />} color="bg-teal-900 text-teal-400" />
+          </div>
+        </div>
+      )}
 
       <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
         <h2 className="text-sm font-semibold text-slate-300 mb-4">Convoy Performance (Last 7 Days)</h2>
