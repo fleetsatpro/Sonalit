@@ -37,6 +37,7 @@ const STATUS_STYLES: Record<VehicleStatus, string> = {
   active: 'bg-green-900/60 text-green-300 border-green-700',
   inactive: 'bg-gray-800 text-gray-400 border-gray-600',
   maintenance: 'bg-yellow-900/60 text-yellow-300 border-yellow-700',
+  retired: 'bg-red-900/60 text-red-400 border-red-700',
 };
 
 function StatusBadge({ status }: { status: VehicleStatus }): React.ReactElement {
