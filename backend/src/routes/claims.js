@@ -7,6 +7,7 @@ const Joi = require('joi');
 const { authenticate } = require('../middleware/auth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
+const { auditLog } = require('../middleware/audit');
 
 router.use(authenticate, attachOrgDb);
 
@@ -61,7 +62,7 @@ router.get('/claims', asyncHandler(async (req, res) => {
 }));
 
 // POST /claims
-router.post('/claims', asyncHandler(async (req, res) => {
+router.post('/claims', auditLog('insurance_claims'), asyncHandler(async (req, res) => {
   const idempotencyKey = req.headers['x-idempotency-key'];
   if (!idempotencyKey) return res.status(400).json({ error: 'X-Idempotency-Key header required' });
 
@@ -83,11 +84,14 @@ router.post('/claims', asyncHandler(async (req, res) => {
      value.estimated_value || null, value.currency, value.police_ref || null,
      value.witness_names || null, req.user.id],
   );
+  req.auditAction = 'CREATE';
+  req.auditRecordId = result.rows[0].id;
+  req.auditAfter = result.rows[0];
   res.status(201).json({ data: result.rows[0] });
 }));
 
 // PUT /claims/:id
-router.put('/claims/:id', asyncHandler(async (req, res) => {
+router.put('/claims/:id', auditLog('insurance_claims'), asyncHandler(async (req, res) => {
   const { error, value } = claimSchema.validate(req.body);
   if (error) return res.status(400).json({ error: error.message });
 
@@ -116,11 +120,14 @@ router.put('/claims/:id', asyncHandler(async (req, res) => {
      req.user.id, req.params.id],
   );
   if (!result.rows.length) return res.status(404).json({ error: 'Claim not found or not editable' });
+  req.auditAction = 'UPDATE';
+  req.auditRecordId = result.rows[0].id;
+  req.auditAfter = result.rows[0];
   res.json({ data: result.rows[0] });
 }));
 
 // PATCH /claims/:id/status — state machine
-router.patch('/claims/:id/status', asyncHandler(async (req, res) => {
+router.patch('/claims/:id/status', auditLog('insurance_claims'), asyncHandler(async (req, res) => {
   const { status, resolution_note } = req.body;
   if (!VALID_STATUSES.includes(status)) return res.status(400).json({ error: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}` });
 
@@ -149,11 +156,14 @@ router.patch('/claims/:id/status', asyncHandler(async (req, res) => {
       WHERE id = $4 RETURNING *`,
     [status, resolution_note || null, req.user.id, req.params.id],
   );
+  req.auditAction = 'UPDATE';
+  req.auditRecordId = result.rows[0].id;
+  req.auditAfter = result.rows[0];
   res.json({ data: result.rows[0] });
 }));
 
 // POST /claims/:id/generate-pdf — stub (PDF generation via claimPdfGenerator)
-router.post('/claims/:id/generate-pdf', asyncHandler(async (req, res) => {
+router.post('/claims/:id/generate-pdf', auditLog('insurance_claims'), asyncHandler(async (req, res) => {
   const claimRes = await req.db(`SELECT * FROM insurance_claims WHERE id = $1`, [req.params.id]);
   if (!claimRes.rows.length) return res.status(404).json({ error: 'Claim not found' });
 
@@ -163,6 +173,8 @@ router.post('/claims/:id/generate-pdf', asyncHandler(async (req, res) => {
     [req.params.id],
   );
 
+  req.auditAction = 'UPDATE';
+  req.auditRecordId = req.params.id;
   res.json({ ok: true, message: 'PDF generation queued', claim_id: req.params.id });
 }));
 

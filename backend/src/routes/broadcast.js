@@ -13,6 +13,7 @@ const { attachOrgDb } = require('../utils/orgScopedDb');
 const { withOrg } = require('../utils/orgScopedDb');
 const { sendWhatsAppMessage, verifyWebhookSignature } = require('../utils/whatsapp');
 const { asyncHandler } = require('../middleware/error');
+const { auditLog } = require('../middleware/audit');
 const logger = require('../utils/logger');
 
 // ─── WhatsApp webhook (no auth, no CSRF) ─────────────────────────────────────
@@ -64,7 +65,7 @@ const broadcastSchema = Joi.object({
 });
 
 // POST /convoys/:id/broadcast — send broadcast to all convoy drivers
-router.post('/convoys/:id/broadcast', asyncHandler(async (req, res) => {
+router.post('/convoys/:id/broadcast', auditLog('convoy_broadcasts'), asyncHandler(async (req, res) => {
   const idempotencyKey = req.headers['x-idempotency-key'];
   if (!idempotencyKey) return res.status(400).json({ error: 'X-Idempotency-Key header required' });
 
@@ -124,6 +125,9 @@ router.post('/convoys/:id/broadcast', asyncHandler(async (req, res) => {
     broadcast.status = 'sent';
   }
 
+  req.auditAction = 'CREATE';
+  req.auditRecordId = broadcast.id;
+  req.auditAfter = broadcast;
   res.status(201).json({ data: broadcast, recipients: drivers.length });
 }));
 
@@ -149,7 +153,7 @@ router.get('/canned-messages', asyncHandler(async (req, res) => {
   res.json({ data: result.rows });
 }));
 
-router.post('/canned-messages', asyncHandler(async (req, res) => {
+router.post('/canned-messages', auditLog('canned_messages'), asyncHandler(async (req, res) => {
   const schema = Joi.object({
     title: Joi.string().max(200).required(),
     body: Joi.string().min(1).max(4000).required(),
@@ -163,10 +167,13 @@ router.post('/canned-messages', asyncHandler(async (req, res) => {
      VALUES ((current_setting('app.current_org_id',true))::uuid, $1, $2, $3) RETURNING *`,
     [value.title, value.body, value.category],
   );
+  req.auditAction = 'CREATE';
+  req.auditRecordId = result.rows[0].id;
+  req.auditAfter = result.rows[0];
   res.status(201).json({ data: result.rows[0] });
 }));
 
-router.put('/canned-messages/:id', asyncHandler(async (req, res) => {
+router.put('/canned-messages/:id', auditLog('canned_messages'), asyncHandler(async (req, res) => {
   const schema = Joi.object({ title: Joi.string().max(200), body: Joi.string().max(4000), category: Joi.string().max(50), active: Joi.boolean() });
   const { error, value } = schema.validate(req.body);
   if (error) return res.status(400).json({ error: error.message });
@@ -178,11 +185,16 @@ router.put('/canned-messages/:id', asyncHandler(async (req, res) => {
     [value.title || null, value.body || null, value.category || null, value.active ?? null, req.params.id],
   );
   if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
+  req.auditAction = 'UPDATE';
+  req.auditRecordId = result.rows[0].id;
+  req.auditAfter = result.rows[0];
   res.json({ data: result.rows[0] });
 }));
 
-router.delete('/canned-messages/:id', asyncHandler(async (req, res) => {
+router.delete('/canned-messages/:id', auditLog('canned_messages'), asyncHandler(async (req, res) => {
   await req.db(`UPDATE canned_messages SET active = false, updated_at = NOW() WHERE id = $1`, [req.params.id]);
+  req.auditAction = 'DELETE';
+  req.auditRecordId = req.params.id;
   res.json({ ok: true });
 }));
 
@@ -193,7 +205,7 @@ router.get('/settings/whatsapp', asyncHandler(async (req, res) => {
   res.json({ data: result.rows[0] ?? null });
 }));
 
-router.put('/settings/whatsapp', asyncHandler(async (req, res) => {
+router.put('/settings/whatsapp', auditLog('whatsapp_config'), asyncHandler(async (req, res) => {
   const schema = Joi.object({
     phone_number_id: Joi.string().max(100),
     access_token: Joi.string().max(2000),
@@ -217,6 +229,7 @@ router.put('/settings/whatsapp', asyncHandler(async (req, res) => {
     [value.phone_number_id || null, value.access_token || null, value.verify_token || null,
      value.business_id || null, value.active ?? null],
   );
+  req.auditAction = 'UPDATE';
   res.json({ ok: true });
 }));
 

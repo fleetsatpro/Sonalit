@@ -7,6 +7,7 @@ const Joi = require('joi');
 const { authenticate } = require('../middleware/auth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
+const { auditLog } = require('../middleware/audit');
 
 router.use(authenticate, attachOrgDb);
 
@@ -79,7 +80,7 @@ router.get('/coverage', asyncHandler(async (req, res) => {
 }));
 
 // POST /shifts
-router.post('/', asyncHandler(async (req, res) => {
+router.post('/', auditLog('shifts'), asyncHandler(async (req, res) => {
   const idempotencyKey = req.headers['x-idempotency-key'];
   if (!idempotencyKey) return res.status(400).json({ error: 'X-Idempotency-Key header required' });
 
@@ -97,11 +98,14 @@ router.post('/', asyncHandler(async (req, res) => {
     [value.driver_id || null, value.vehicle_id || null, value.convoy_id || null,
      value.role, value.start_time, value.end_time, value.notes || null, req.user.id],
   );
+  req.auditAction = 'CREATE';
+  req.auditRecordId = result.rows[0].id;
+  req.auditAfter = result.rows[0];
   res.status(201).json({ data: result.rows[0] });
 }));
 
 // PUT /shifts/:id
-router.put('/:id', asyncHandler(async (req, res) => {
+router.put('/:id', auditLog('shifts'), asyncHandler(async (req, res) => {
   const { error, value } = shiftSchema.validate(req.body);
   if (error) return res.status(400).json({ error: error.message });
 
@@ -121,17 +125,22 @@ router.put('/:id', asyncHandler(async (req, res) => {
      value.role, value.start_time, value.end_time, value.notes || null, req.params.id],
   );
   if (!result.rows.length) return res.status(404).json({ error: 'Shift not found or not schedulable' });
+  req.auditAction = 'UPDATE';
+  req.auditRecordId = result.rows[0].id;
+  req.auditAfter = result.rows[0];
   res.json({ data: result.rows[0] });
 }));
 
 // DELETE /shifts/:id — cancel
-router.delete('/:id', asyncHandler(async (req, res) => {
+router.delete('/:id', auditLog('shifts'), asyncHandler(async (req, res) => {
   const result = await req.db(
     `UPDATE shifts SET status = 'cancelled', updated_at = NOW()
       WHERE id = $1 AND status IN ('scheduled') RETURNING id`,
     [req.params.id],
   );
   if (!result.rows.length) return res.status(404).json({ error: 'Shift not found or cannot cancel' });
+  req.auditAction = 'DELETE';
+  req.auditRecordId = result.rows[0].id;
   res.json({ ok: true });
 }));
 
@@ -145,7 +154,7 @@ const handoverSchema = Joi.object({
   voice_note_id: Joi.string().uuid(),
 });
 
-router.post('/:id/handover', asyncHandler(async (req, res) => {
+router.post('/:id/handover', auditLog('shift_handovers'), asyncHandler(async (req, res) => {
   const { error, value } = handoverSchema.validate(req.body);
   if (error) return res.status(400).json({ error: error.message });
 
@@ -171,6 +180,9 @@ router.post('/:id/handover', asyncHandler(async (req, res) => {
     [value.to_shift_id],
   );
 
+  req.auditAction = 'CREATE';
+  req.auditRecordId = result.rows[0].id;
+  req.auditAfter = result.rows[0];
   res.status(201).json({ data: result.rows[0] });
 }));
 
@@ -194,7 +206,7 @@ router.get('/:id/handover', asyncHandler(async (req, res) => {
 }));
 
 // PATCH /shifts/handovers/:handoverId/ack
-router.patch('/handovers/:handoverId/ack', asyncHandler(async (req, res) => {
+router.patch('/handovers/:handoverId/ack', auditLog('shift_handovers'), asyncHandler(async (req, res) => {
   const result = await req.db(
     `UPDATE shift_handovers
         SET ack_at = NOW(), ack_by = $1, updated_at = NOW()
@@ -203,6 +215,9 @@ router.patch('/handovers/:handoverId/ack', asyncHandler(async (req, res) => {
     [req.user.id, req.params.handoverId],
   );
   if (!result.rows.length) return res.status(404).json({ error: 'Handover not found or already acknowledged' });
+  req.auditAction = 'UPDATE';
+  req.auditRecordId = result.rows[0].id;
+  req.auditAfter = result.rows[0];
   res.json({ data: result.rows[0] });
 }));
 

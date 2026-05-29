@@ -16,10 +16,11 @@ const { attachOrgDb } = require('../utils/orgScopedDb');
 const { withOrg } = require('../utils/orgScopedDb');
 const { detectAnomalies } = require('../utils/fuelAnomalyDetector');
 const { asyncHandler } = require('../middleware/error');
+const { auditLog } = require('../middleware/audit');
 
 // ─── Webhook (no auth, HMAC-verified) ────────────────────────────────────────
 
-router.post('/webhook/fuel-card', asyncHandler(async (req, res) => {
+router.post('/webhook/fuel-card', auditLog('fuel_entries'), asyncHandler(async (req, res) => {
   const secret = process.env.FUEL_CARD_WEBHOOK_SECRET;
   if (!secret) return res.status(503).json({ error: 'Webhook not configured' });
 
@@ -71,6 +72,9 @@ router.post('/webhook/fuel-card', asyncHandler(async (req, res) => {
 
     if (result.rows.length) {
       const row = result.rows[0];
+      req.auditAction = 'CREATE';
+      req.auditRecordId = row.id;
+      req.auditAfter = row;
       const anomalies = await detectAnomalies(orgId, { ...entry, id: row.id });
       for (const a of anomalies) {
         await db.query(
@@ -134,7 +138,7 @@ router.get('/', asyncHandler(async (req, res) => {
 }));
 
 // POST /fuel — create fuel entry
-router.post('/', asyncHandler(async (req, res) => {
+router.post('/', auditLog('fuel_entries'), asyncHandler(async (req, res) => {
   const idempotencyKey = req.headers['x-idempotency-key'];
   if (!idempotencyKey) return res.status(400).json({ error: 'X-Idempotency-Key header required' });
 
@@ -155,6 +159,9 @@ router.post('/', asyncHandler(async (req, res) => {
   );
 
   const row = result.rows[0];
+  req.auditAction = 'CREATE';
+  req.auditRecordId = row.id;
+  req.auditAfter = row;
   const orgId = req.user.org_id;
   const anomalies = await detectAnomalies(orgId, { ...value, id: row.id, org_id: orgId });
   for (const a of anomalies) {
@@ -169,7 +176,7 @@ router.post('/', asyncHandler(async (req, res) => {
 }));
 
 // PUT /fuel/:id — update fuel entry
-router.put('/:id', asyncHandler(async (req, res) => {
+router.put('/:id', auditLog('fuel_entries'), asyncHandler(async (req, res) => {
   const { error, value } = fuelEntrySchema.validate(req.body);
   if (error) return res.status(400).json({ error: error.message });
 
@@ -188,15 +195,20 @@ router.put('/:id', asyncHandler(async (req, res) => {
      value.odometer_km || null, value.station_name || null, value.notes || null, req.params.id],
   );
   if (!result.rows.length) return res.status(404).json({ error: 'Fuel entry not found' });
+  req.auditAction = 'UPDATE';
+  req.auditRecordId = result.rows[0].id;
+  req.auditAfter = result.rows[0];
   res.json({ data: result.rows[0] });
 }));
 
 // DELETE /fuel/:id — soft delete
-router.delete('/:id', asyncHandler(async (req, res) => {
+router.delete('/:id', auditLog('fuel_entries'), asyncHandler(async (req, res) => {
   await req.db(
     `UPDATE fuel_entries SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL`,
     [req.params.id],
   );
+  req.auditAction = 'DELETE';
+  req.auditRecordId = req.params.id;
   res.json({ ok: true });
 }));
 
@@ -225,7 +237,7 @@ router.get('/anomalies', asyncHandler(async (req, res) => {
 }));
 
 // PATCH /fuel/anomalies/:id/resolve
-router.patch('/anomalies/:id/resolve', asyncHandler(async (req, res) => {
+router.patch('/anomalies/:id/resolve', auditLog('fuel_anomalies'), asyncHandler(async (req, res) => {
   const { resolution_note } = req.body;
   const result = await req.db(
     `UPDATE fuel_anomalies
@@ -235,6 +247,9 @@ router.patch('/anomalies/:id/resolve', asyncHandler(async (req, res) => {
     [req.user.id, resolution_note || null, req.params.id],
   );
   if (!result.rows.length) return res.status(404).json({ error: 'Anomaly not found' });
+  req.auditAction = 'UPDATE';
+  req.auditRecordId = result.rows[0].id;
+  req.auditAfter = result.rows[0];
   res.json({ data: result.rows[0] });
 }));
 
@@ -267,7 +282,7 @@ router.get('/stations', asyncHandler(async (req, res) => {
 }));
 
 // POST /fuel/stations
-router.post('/stations', asyncHandler(async (req, res) => {
+router.post('/stations', auditLog('approved_fuel_stations'), asyncHandler(async (req, res) => {
   const schema = Joi.object({
     name: Joi.string().max(200).required(),
     lat: Joi.number().min(-90).max(90).required(),
@@ -283,15 +298,20 @@ router.post('/stations', asyncHandler(async (req, res) => {
      RETURNING *`,
     [value.name, value.lat, value.lng, value.radius_km],
   );
+  req.auditAction = 'CREATE';
+  req.auditRecordId = result.rows[0].id;
+  req.auditAfter = result.rows[0];
   res.status(201).json({ data: result.rows[0] });
 }));
 
 // DELETE /fuel/stations/:id
-router.delete('/stations/:id', asyncHandler(async (req, res) => {
+router.delete('/stations/:id', auditLog('approved_fuel_stations'), asyncHandler(async (req, res) => {
   await req.db(
     `UPDATE approved_fuel_stations SET active = false, updated_at = NOW() WHERE id = $1`,
     [req.params.id],
   );
+  req.auditAction = 'DELETE';
+  req.auditRecordId = req.params.id;
   res.json({ ok: true });
 }));
 
