@@ -25,6 +25,7 @@ const NAV_ITEMS = [
   { to: '/maintenance', label: 'Maintenance', icon: Wrench },
   { to: '/geofences', label: 'Geofences', icon: Map },
   { to: '/risk-intel', label: 'Risk Intel', icon: Shield },
+  { to: '/route-analysis', label: 'Route Safety', icon: Route },
   { to: '/rules', label: 'Rules', icon: BookOpen },
   { to: '/field-officers', label: 'Field Officers', icon: Users },
   { to: '/executive', label: 'Executive', icon: BarChart2 },
