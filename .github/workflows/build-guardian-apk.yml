@@ -33,12 +33,13 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.2'
+
+      - name: Make gradlew executable
+        run: chmod +x guardian-agent/gradlew
 
       - name: Build debug APK
         working-directory: guardian-agent
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
