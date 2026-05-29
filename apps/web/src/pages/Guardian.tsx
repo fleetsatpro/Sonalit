@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import { Shield, Terminal, Clock } from 'lucide-react';
 import { useState } from 'react';
+import { DeadMansSwitchPanel } from '../components/DeadMansSwitchPanel.js';
 
 interface GuardianDevice {
   id: string;
@@ -67,6 +68,7 @@ export default function Guardian() {
     device_id: '',
     command_type: 'request_location',
   });
+  const [dmsDeviceId, setDmsDeviceId] = useState<string>('');
 
   const { data: devices, isLoading: devicesLoading, isError: devicesError } = useQuery<GuardianDevice[]>({
     queryKey: ['guardian-devices'],
@@ -193,6 +195,29 @@ export default function Guardian() {
                 {issueMutation.isPending ? 'Issuing…' : 'Issue Command'}
               </button>
             </div>
+          </div>
+
+          {/* Dead Man's Switch */}
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <div className="mb-3">
+              <label className="block text-xs text-gray-400 mb-1">Configure DMS for device</label>
+              <select
+                className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-orange-500"
+                value={dmsDeviceId}
+                onChange={(e) => setDmsDeviceId(e.target.value)}
+              >
+                <option value="">Select device…</option>
+                {devices?.map((d) => (
+                  <option key={d.id} value={d.id}>{d.name} ({d.status})</option>
+                ))}
+              </select>
+            </div>
+            {dmsDeviceId && (
+              <DeadMansSwitchPanel
+                deviceId={dmsDeviceId}
+                deviceName={devices?.find((d) => d.id === dmsDeviceId)?.name ?? dmsDeviceId}
+              />
+            )}
           </div>
 
           {/* Recent Commands */}
