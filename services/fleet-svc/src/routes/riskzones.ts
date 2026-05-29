@@ -20,7 +20,7 @@ const FilterSchema = z.object({
 });
 
 export const riskZonesRoutes: FastifyPluginAsync = async (app) => {
-  app.addHook('preHandler', requireAuth(app));
+  app.addHook('preHandler', requireAuth);
 
   app.get('/v4/riskzones', async (req, reply) => {
     const { org_id } = (req as typeof req & { user: { org_id: string } }).user;
@@ -31,7 +31,7 @@ export const riskZonesRoutes: FastifyPluginAsync = async (app) => {
       params.push(q.risk_level);
       riskFilter = `AND risk_level = $${params.length}`;
     }
-    const { rows } = await query(
+    const rows = await query(
       `SELECT h3_index, risk_level, event_count, center_lat, center_lon, updated_at
        FROM risk_zones
        WHERE org_id = $1 ${riskFilter}
@@ -45,7 +45,7 @@ export const riskZonesRoutes: FastifyPluginAsync = async (app) => {
   app.post('/v4/riskzones', async (req, reply) => {
     const { org_id } = (req as typeof req & { user: { org_id: string } }).user;
     const body = CreateRiskZoneSchema.parse(req.body);
-    const { rows: [row] } = await query(
+    const [row] = await query(
       `INSERT INTO risk_zones (id, org_id, h3_index, risk_level, event_count, center_lat, center_lon)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (org_id, h3_index)

@@ -2,9 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useForm, Controller, type SubmitHandler, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useNavigate, useParams } from '@tanstack/react-router';
+import { useNavigate, useParams, Link } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, AlertCircle, Route } from 'lucide-react';
+import { Loader2, AlertCircle, Route, ShieldAlert } from 'lucide-react';
 import Dexie from 'dexie';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../stores/auth.js';
@@ -219,9 +219,19 @@ export default function CfoConvoyForm(): React.ReactElement {
 
   return (
     <div className="p-6 max-w-2xl">
-      <div className="flex items-center gap-2 mb-6">
-        <Route className="w-5 h-5 text-orange-400" />
-        <h1 className="text-xl font-bold text-white">{isEdit ? 'Edit Convoy' : 'New Convoy'}</h1>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-2">
+          <Route className="w-5 h-5 text-orange-400" />
+          <h1 className="text-xl font-bold text-white">{isEdit ? 'Edit Convoy' : 'New Convoy'}</h1>
+        </div>
+        {isEdit && params.id && (
+          <Link
+            to="/route-analysis"
+            className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-orange-400 border border-white/10 hover:border-orange-500/40 rounded-lg px-3 py-1.5 transition-colors"
+          >
+            <ShieldAlert size={13} /> Route Safety Analysis
+          </Link>
+        )}
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-5">

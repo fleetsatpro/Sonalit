@@ -3,11 +3,19 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Users, Search, Plus, X, ChevronLeft, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
+import { Users, Search, Plus, X, ChevronLeft, ChevronRight, Loader2, AlertCircle, TrendingUp } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../stores/auth.js';
 import { normalizeList, type NormalizedList } from '../lib/normalize.js';
 import type { Driver, DriverStatus } from '@sonalit/contracts';
+
+interface DriverScore { driver_id: string; score: number; total_events: number; }
+
+function ScoreBadge({ score }: { score: number | undefined }) {
+  if (score == null) return <span className="text-gray-500 text-xs">—</span>;
+  const color = score >= 80 ? 'text-green-400' : score >= 60 ? 'text-yellow-400' : 'text-red-400';
+  return <span className={`font-mono font-bold text-sm ${color}`}>{Math.round(score)}</span>;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -158,6 +166,15 @@ export default function Drivers(): React.ReactElement {
     placeholderData: (prev) => prev,
   });
 
+  const { data: scoresData } = useQuery<{ data: DriverScore[] }>({
+    queryKey: ['driver-leaderboard'],
+    queryFn: () => api.get('/behaviour/leaderboard?limit=50').then(r => r.data),
+    staleTime: 60_000,
+  });
+  const scoreMap = new Map<string, number>(
+    (scoresData?.data ?? []).map(s => [s.driver_id, s.score]),
+  );
+
   const totalPages = data?.total ? Math.ceil(data.total / PAGE_SIZE) : 1;
 
   return (
@@ -211,12 +228,13 @@ export default function Drivers(): React.ReactElement {
                   <th className="px-4 py-3 text-left">License</th>
                   <th className="px-4 py-3 text-left">Expiry</th>
                   <th className="px-4 py-3 text-left">Status</th>
+                  <th className="px-4 py-3 text-right flex items-center justify-end gap-1"><TrendingUp className="w-3 h-3" /> Score</th>
                 </tr>
               </thead>
               <tbody>
                 {data.data.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-gray-500">
+                    <td colSpan={7} className="px-4 py-10 text-center text-gray-500">
                       No drivers found.
                     </td>
                   </tr>
@@ -230,6 +248,9 @@ export default function Drivers(): React.ReactElement {
                     <td className="px-4 py-3 text-gray-400 text-xs">{d.license_expiry}</td>
                     <td className="px-4 py-3">
                       <StatusBadge status={d.status} />
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <ScoreBadge score={scoreMap.get(d.id)} />
                     </td>
                   </tr>
                 ))}

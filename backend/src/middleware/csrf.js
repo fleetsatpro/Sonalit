@@ -13,8 +13,10 @@ const SKIP_PREFIXES = [
   '/api/v1/auth/login',
   '/api/v1/auth/register',
   '/api/v1/auth/webauthn/',  // challenge fetch + assertion are pre-auth
-  '/api/v1/guardian/',       // X-Device-Token auth
-  '/api/v1/webhooks/',       // Convoy / external webhook callbacks
+  '/api/v1/guardian/',          // X-Device-Token auth
+  '/api/v1/webhooks/',          // Convoy / external webhook callbacks
+  '/api/v1/fuel/webhook/',                 // Fuel-card webhook — HMAC-verified (RULE D)
+  '/api/v1/guardian/whatsapp/webhook',     // WhatsApp webhook — HMAC-verified (RULE D)
   '/health',
   '/metrics',
 ];

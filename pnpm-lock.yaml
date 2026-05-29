@@ -26,6 +26,9 @@ importers:
       '@sonalit/tsconfig-base':
         specifier: workspace:*
         version: link:packages/tsconfig-base
+      '@types/pg':
+        specifier: ^8.11.11
+        version: 8.20.0
       husky:
         specifier: ^9.1.7
         version: 9.1.7
@@ -14676,14 +14679,6 @@ snapshots:
       chai: 5.3.3
       tinyrainbow: 1.2.0
 
-  '@vitest/mocker@2.1.9(vite@5.4.21(@types/node@22.19.19)(terser@5.47.1))':
-    dependencies:
-      '@vitest/spy': 2.1.9
-      estree-walker: 3.0.3
-      magic-string: 0.30.21
-    optionalDependencies:
-      vite: 5.4.21(@types/node@22.19.19)(terser@5.47.1)
-
   '@vitest/mocker@2.1.9(vite@5.4.21(@types/node@24.12.4)(terser@5.47.1))':
     dependencies:
       '@vitest/spy': 2.1.9
@@ -20789,7 +20784,7 @@ snapshots:
   vitest@2.1.9(@types/node@22.19.19)(terser@5.47.1):
     dependencies:
       '@vitest/expect': 2.1.9
-      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@22.19.19)(terser@5.47.1))
+      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@24.12.4)(terser@5.47.1))
       '@vitest/pretty-format': 2.1.9
       '@vitest/runner': 2.1.9
       '@vitest/snapshot': 2.1.9

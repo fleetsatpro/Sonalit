@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Map, Plus, X, ToggleLeft, ToggleRight, Layers } from 'lucide-react';
+import { Map, Plus, X, ToggleLeft, ToggleRight, Layers, Activity } from 'lucide-react';
 
 const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 
@@ -175,7 +175,15 @@ export default function Geofences() {
   const [showForm, setShowForm] = useState(false);
   const [isSatellite, setIsSatellite] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'zones' | 'events'>('zones');
   const queryClient = useQueryClient();
+
+  const { data: eventsData } = useQuery<{ data: Array<{ id: string; event_type: string; geofence_name: string | null; vehicle_id: string | null; created_at: string; deviation_km: number | null }> }>({
+    queryKey: ['geofence-events'],
+    queryFn: () => api.get('/geofences/events', { params: { limit: 100 } }).then(r => r.data),
+    refetchInterval: 30_000,
+    enabled: activeTab === 'events',
+  });
 
   const { data, isLoading, isError } = useQuery<Geofence[]>({
     queryKey: ['geofences'],
@@ -331,46 +339,84 @@ export default function Geofences() {
           <h1 className="text-xl font-bold text-white">Geofences</h1>
           {data && <span className="text-gray-400 text-sm">({data.length} zones)</span>}
         </div>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="flex items-center gap-1.5 px-3 py-2 bg-orange-600 hover:bg-orange-500 rounded-lg text-sm font-medium text-white transition-colors"
-        >
-          <Plus size={16} /> Create Geofence
-        </button>
-      </div>
-
-      {showForm && <CreateForm onClose={() => setShowForm(false)} />}
-
-      <div className="rounded-xl overflow-hidden border border-gray-800 relative" style={{ height: 420 }}>
-        <div ref={mapContainer} className="w-full h-full" />
-        <button
-          onClick={() => setIsSatellite((v) => !v)}
-          className="absolute bottom-4 left-4 z-10 flex items-center gap-1.5 bg-gray-900/90 hover:bg-gray-800 text-white text-xs font-medium px-3 py-2 rounded-lg border border-gray-700 shadow-lg transition-colors"
-        >
-          <Layers size={13} /> {isSatellite ? 'Dark' : 'Satellite'}
-        </button>
-        {selectedId && (
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 bg-gray-900/90 border border-gray-700 text-gray-300 text-xs px-3 py-1.5 rounded-full pointer-events-none">
-            {data?.find((g) => g.id === selectedId)?.name} — click row again to deselect
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg border border-gray-700 overflow-hidden">
+            <button onClick={() => setActiveTab('zones')} className={`px-3 py-1.5 text-sm flex items-center gap-1.5 ${activeTab === 'zones' ? 'bg-orange-600 text-white' : 'text-gray-400 hover:text-white'}`}><Map size={13}/> Zones</button>
+            <button onClick={() => setActiveTab('events')} className={`px-3 py-1.5 text-sm flex items-center gap-1.5 ${activeTab === 'events' ? 'bg-orange-600 text-white' : 'text-gray-400 hover:text-white'}`}><Activity size={13}/> Events</button>
           </div>
-        )}
+          {activeTab === 'zones' && (
+            <button onClick={() => setShowForm((v) => !v)} className="flex items-center gap-1.5 px-3 py-2 bg-orange-600 hover:bg-orange-500 rounded-lg text-sm font-medium text-white transition-colors">
+              <Plus size={16} /> Create Geofence
+            </button>
+          )}
+        </div>
       </div>
 
-      {isLoading && <div className="text-gray-400 text-sm text-center">Loading geofences…</div>}
-      {isError && <div className="text-red-400 text-sm text-center">Failed to load geofences.</div>}
+      {showForm && activeTab === 'zones' && <CreateForm onClose={() => setShowForm(false)} />}
 
-      {data && (
+      {activeTab === 'events' && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-gray-950 text-gray-400 text-xs uppercase">
               <tr>
-                <th className="px-4 py-3 text-left">Name</th>
-                <th className="px-4 py-3 text-left">Type</th>
-                <th className="px-4 py-3 text-left">Region</th>
-                <th className="px-4 py-3 text-left">Created</th>
-                <th className="px-4 py-3 text-left">Active</th>
+                <th className="px-4 py-3 text-left">Event</th>
+                <th className="px-4 py-3 text-left">Geofence</th>
+                <th className="px-4 py-3 text-left">Vehicle</th>
+                <th className="px-4 py-3 text-left">Deviation</th>
+                <th className="px-4 py-3 text-left">Time</th>
               </tr>
             </thead>
+            <tbody>
+              {(eventsData?.data ?? []).map(ev => (
+                <tr key={ev.id} className="border-t border-gray-800 hover:bg-gray-800/40">
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-0.5 rounded text-xs ${ev.event_type === 'route_deviation' ? 'bg-red-900/50 text-red-300' : ev.event_type === 'enter' ? 'bg-green-900/50 text-green-300' : 'bg-gray-800 text-gray-300'}`}>{ev.event_type}</span>
+                  </td>
+                  <td className="px-4 py-3 text-gray-300">{ev.geofence_name ?? '—'}</td>
+                  <td className="px-4 py-3 text-gray-400 text-xs font-mono">{ev.vehicle_id ? ev.vehicle_id.slice(0, 8) : '—'}</td>
+                  <td className="px-4 py-3 text-gray-400">{ev.deviation_km != null ? `${ev.deviation_km.toFixed(2)} km` : '—'}</td>
+                  <td className="px-4 py-3 text-gray-500 text-xs">{new Date(ev.created_at).toLocaleString()}</td>
+                </tr>
+              ))}
+              {(eventsData?.data ?? []).length === 0 && (
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">No geofence events yet.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {activeTab === 'zones' && (<>
+        <div className="rounded-xl overflow-hidden border border-gray-800 relative" style={{ height: 420 }}>
+          <div ref={mapContainer} className="w-full h-full" />
+          <button
+            onClick={() => setIsSatellite((v) => !v)}
+            className="absolute bottom-4 left-4 z-10 flex items-center gap-1.5 bg-gray-900/90 hover:bg-gray-800 text-white text-xs font-medium px-3 py-2 rounded-lg border border-gray-700 shadow-lg transition-colors"
+          >
+            <Layers size={13} /> {isSatellite ? 'Dark' : 'Satellite'}
+          </button>
+          {selectedId && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 bg-gray-900/90 border border-gray-700 text-gray-300 text-xs px-3 py-1.5 rounded-full pointer-events-none">
+              {data?.find((g) => g.id === selectedId)?.name} — click row again to deselect
+            </div>
+          )}
+        </div>
+
+        {isLoading && <div className="text-gray-400 text-sm text-center">Loading geofences…</div>}
+        {isError && <div className="text-red-400 text-sm text-center">Failed to load geofences.</div>}
+
+        {data && (
+          <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-950 text-gray-400 text-xs uppercase">
+                <tr>
+                  <th className="px-4 py-3 text-left">Name</th>
+                  <th className="px-4 py-3 text-left">Type</th>
+                  <th className="px-4 py-3 text-left">Region</th>
+                  <th className="px-4 py-3 text-left">Created</th>
+                  <th className="px-4 py-3 text-left">Active</th>
+                </tr>
+              </thead>
             <tbody>
               {data.map((g) => {
                 const isSelected = g.id === selectedId;
@@ -400,13 +446,14 @@ export default function Geofences() {
                   </tr>
                 );
               })}
-              {data.length === 0 && (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">No geofences configured.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+                {data.length === 0 && (
+                  <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">No geofences configured.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </>)}
     </div>
   );
 }

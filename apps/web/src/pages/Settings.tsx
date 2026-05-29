@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import { useAuthStore, getAccessToken } from '../stores/auth.js';
-import { Settings as SettingsIcon, Key, Shield, Copy, Trash2, Plus, X } from 'lucide-react';
+import { Settings as SettingsIcon, Key, Shield, Copy, Trash2, Plus, X, MessageCircle } from 'lucide-react';
 
 interface ApiKey {
   id: string;
@@ -368,6 +368,64 @@ function TotpSection() {
   );
 }
 
+interface WhatsAppConfig {
+  phone_number_id: string | null;
+  business_id: string | null;
+  active: boolean;
+}
+
+function WhatsAppSection() {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({ phone_number_id: '', access_token: '', verify_token: '', business_id: '', active: false });
+  const [editing, setEditing] = useState(false);
+
+  const { data } = useQuery<{ data: WhatsAppConfig | null }>({
+    queryKey: ['whatsapp-config'],
+    queryFn: () => api.get('/settings/whatsapp').then(r => r.data),
+  });
+
+  const saveMut = useMutation({
+    mutationFn: (body: object) => api.put('/settings/whatsapp', body),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['whatsapp-config'] }); setEditing(false); },
+  });
+
+  const config = data?.data;
+
+  return (
+    <SectionCard title="WhatsApp Cloud API" icon={<MessageCircle size={16} className="text-green-400" />}>
+      {!editing ? (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-slate-300">{config?.phone_number_id ? `Phone ID: ${config.phone_number_id}` : 'Not configured'}</p>
+              <p className="text-xs text-slate-500">{config?.active ? '● Active' : '○ Inactive'}</p>
+            </div>
+            <button onClick={() => { setForm({ phone_number_id: config?.phone_number_id ?? '', access_token: '', verify_token: '', business_id: config?.business_id ?? '', active: config?.active ?? false }); setEditing(true); }} className="text-xs text-orange-400 hover:text-orange-300">Configure</button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <input placeholder="Phone Number ID" value={form.phone_number_id} onChange={e => setForm(p => ({ ...p, phone_number_id: e.target.value }))} className={INPUT_CLS} />
+          <input placeholder="Access Token (leave blank to keep existing)" type="password" value={form.access_token} onChange={e => setForm(p => ({ ...p, access_token: e.target.value }))} className={INPUT_CLS} />
+          <input placeholder="Webhook Verify Token" value={form.verify_token} onChange={e => setForm(p => ({ ...p, verify_token: e.target.value }))} className={INPUT_CLS} />
+          <input placeholder="Business ID (optional)" value={form.business_id} onChange={e => setForm(p => ({ ...p, business_id: e.target.value }))} className={INPUT_CLS} />
+          <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+            <input type="checkbox" checked={form.active} onChange={e => setForm(p => ({ ...p, active: e.target.checked }))} />
+            Enable WhatsApp broadcasts
+          </label>
+          <div className="flex gap-3 justify-end">
+            <button onClick={() => setEditing(false)} className="text-sm text-slate-400 hover:text-white">Cancel</button>
+            <button onClick={() => saveMut.mutate(form)} disabled={saveMut.isPending} className="text-sm bg-orange-600 hover:bg-orange-500 disabled:opacity-40 text-white px-4 py-1.5 rounded-lg">
+              {saveMut.isPending ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+          {saveMut.isError && <p className="text-red-400 text-xs">Failed to save WhatsApp config.</p>}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
 export default function Settings() {
   return (
     <div className="space-y-6 max-w-2xl">
@@ -379,6 +437,7 @@ export default function Settings() {
       <ChangePasswordSection />
       <ApiKeysSection />
       <TotpSection />
+      <WhatsAppSection />
     </div>
   );
 }
