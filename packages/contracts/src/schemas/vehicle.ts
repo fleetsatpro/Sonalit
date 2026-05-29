@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { UuidSchema, TimestampsSchema } from './common.js';
+import { UuidSchema, IsoDateSchema, IsoDateTimeSchema, TimestampsSchema } from './common.js';
 
 // ---------------------------------------------------------------------------
 // Enums
@@ -21,8 +21,33 @@ export const VehicleStatusSchema = z.enum([
   'active',
   'inactive',
   'maintenance',
+  'retired',
 ]);
 export type VehicleStatus = z.infer<typeof VehicleStatusSchema>;
+
+// ---------------------------------------------------------------------------
+// VehicleDocument
+// ---------------------------------------------------------------------------
+
+export const VehicleDocumentTypeSchema = z.enum([
+  'insurance',
+  'roadworthy',
+  'registration',
+  'permit',
+  'inspection',
+  'other',
+]);
+export type VehicleDocumentType = z.infer<typeof VehicleDocumentTypeSchema>;
+
+export const VehicleDocumentSchema = z.object({
+  id: UuidSchema,
+  type: VehicleDocumentTypeSchema,
+  label: z.string().min(1).max(128),
+  file_key: z.string().min(1).max(512),
+  expires_at: IsoDateSchema.nullable(),
+  uploaded_at: IsoDateTimeSchema,
+});
+export type VehicleDocument = z.infer<typeof VehicleDocumentSchema>;
 
 // ---------------------------------------------------------------------------
 // Vehicle
@@ -43,6 +68,11 @@ export const VehicleSchema = TimestampsSchema.extend({
   type: VehicleTypeSchema,
   status: VehicleStatusSchema,
   assigned_driver_id: UuidSchema.nullable(),
+  current_driver_id: UuidSchema.nullable(),
+  odometer_km: z.number().nonnegative().nullable(),
+  fuel_capacity_l: z.number().positive().nullable(),
+  utilisation_pct: z.number().min(0).max(100).nullable(),
+  documents: z.array(VehicleDocumentSchema),
 });
 export type Vehicle = z.infer<typeof VehicleSchema>;
 
@@ -81,6 +111,10 @@ export const UpdateVehicleInputSchema = z.object({
   type: VehicleTypeSchema.optional(),
   status: VehicleStatusSchema.optional(),
   assigned_driver_id: UuidSchema.nullable().optional(),
+  current_driver_id: UuidSchema.nullable().optional(),
+  odometer_km: z.number().nonnegative().nullable().optional(),
+  fuel_capacity_l: z.number().positive().nullable().optional(),
+  utilisation_pct: z.number().min(0).max(100).nullable().optional(),
 }).refine(
   (obj) => Object.values(obj).some((v) => v !== undefined),
   { message: 'At least one field must be provided for update' },

@@ -1,4 +1,4 @@
-import { connect, type NatsConnection, type JetStreamClient, type JetStreamManager, RetentionPolicy, StorageType, AckPolicy } from 'nats';
+import { connect, type NatsConnection, type JetStreamClient, type JetStreamManager, RetentionPolicy, StorageType } from 'nats';
 import { config } from './config.js';
 
 let nc: NatsConnection;

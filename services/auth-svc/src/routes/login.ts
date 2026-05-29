@@ -28,9 +28,6 @@ interface UserRow {
   totp_secret_enc: string | null;
 }
 
-interface FamilyRow {
-  id: string;
-}
 
 export async function loginRoutes(app: FastifyInstance): Promise<void> {
   app.post('/login', async (request, reply) => {

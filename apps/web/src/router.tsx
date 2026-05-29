@@ -47,10 +47,14 @@ const guardianRoute = createRoute({ getParentRoute: () => authRoute, path: '/gua
 const aiDecisionRoute = createRoute({ getParentRoute: () => authRoute, path: '/ai', component: lazyRouteComponent(() => import('./pages/AIDecision.js')) });
 const copilotRoute = createRoute({ getParentRoute: () => authRoute, path: '/copilot', component: lazyRouteComponent(() => import('./pages/Copilot.js')) });
 const settingsRoute = createRoute({ getParentRoute: () => authRoute, path: '/settings', component: lazyRouteComponent(() => import('./pages/Settings.js')) });
+const routeAnalysisRoute = createRoute({ getParentRoute: () => authRoute, path: '/route-analysis', component: lazyRouteComponent(() => import('./pages/RouteAnalysis.js')) });
+const cargoPortalRoute = createRoute({ getParentRoute: () => authRoute, path: '/cargo-portal', component: lazyRouteComponent(() => import('./pages/CargoPortal.js')) });
+const portalViewRoute = createRoute({ getParentRoute: () => rootRoute, path: '/portal-view', component: lazyRouteComponent(() => import('./pages/PortalView.js')) });
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
   notFoundRoute,
+  portalViewRoute,
   authRoute.addChildren([
     dashboardRoute, fleetRoute, gpsRoute,
     convoysRoute, convoyNewRoute, convoyEditRoute,
@@ -60,7 +64,7 @@ const routeTree = rootRoute.addChildren([
     financeRoute, maintenanceRoute, geofencesRoute,
     riskIntelRoute, rulesRoute, fieldOfficersRoute,
     executiveRoute, devicesRoute, guardianRoute,
-    aiDecisionRoute, copilotRoute, settingsRoute,
+    aiDecisionRoute, copilotRoute, settingsRoute, routeAnalysisRoute, cargoPortalRoute,
   ]),
 ]);
 

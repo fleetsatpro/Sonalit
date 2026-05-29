@@ -14,6 +14,7 @@ interface PanicEvent {
   device_name: string;
   device_model: string | null;
   mode: string;
+  trigger_type?: string;
   lat: number | null;
   lng: number | null;
   message: string | null;
@@ -75,9 +76,14 @@ function EventCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-1.5">
+          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             <AlertOctagon size={15} className={resolved ? 'text-gray-500' : 'text-red-400'} />
             <span className={`text-xs font-bold tracking-wider ${modeColor}`}>{modeLabel}</span>
+            {event.trigger_type && event.trigger_type !== 'manual' && (
+              <span className="text-xs px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-300 border border-amber-700/50">
+                {event.trigger_type.replace(/_/g, ' ')}
+              </span>
+            )}
             {resolved && (
               <span className="text-xs text-green-500 font-medium flex items-center gap-1">
                 <CheckCircle size={11} /> Resolved

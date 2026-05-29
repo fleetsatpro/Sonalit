@@ -87,6 +87,7 @@ tmp/
 temp/
 *.tmp
 *.bak
+*.timestamp-*.mjs
 
 # Deployment packages
 *.deb

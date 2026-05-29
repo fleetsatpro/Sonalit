@@ -37,6 +37,11 @@ class DevicePrefs @Inject constructor(
         val LAST_LOCATION_LNG = doublePreferencesKey("last_location_lng")
         val LAST_LOCATION_AT = longPreferencesKey("last_location_at")
         val CONVOY_CONTEXT_JSON = stringPreferencesKey("convoy_context_json")
+        // DMS
+        val DMS_ENABLED = booleanPreferencesKey("dms_enabled")
+        val DMS_TIMEOUT_MINUTES = intPreferencesKey("dms_timeout_minutes")
+        val DMS_LAST_CHECKIN_MS = longPreferencesKey("dms_last_checkin_ms")
+        val DMS_SUSPENDED_UNTIL_MS = longPreferencesKey("dms_suspended_until_ms")
     }
 
     // ─── Safe read helper ─────────────────────────────────────────────────────
@@ -134,6 +139,31 @@ class DevicePrefs @Inject constructor(
 
     suspend fun saveConvoyContext(json: String) {
         dataStore.edit { it[Keys.CONVOY_CONTEXT_JSON] = json }
+    }
+
+    suspend fun setDmsConfig(enabled: Boolean, timeoutMinutes: Int) {
+        dataStore.edit { prefs ->
+            prefs[Keys.DMS_ENABLED] = enabled
+            prefs[Keys.DMS_TIMEOUT_MINUTES] = timeoutMinutes
+        }
+    }
+
+    suspend fun setDmsLastCheckin(timestampMs: Long) {
+        dataStore.edit { it[Keys.DMS_LAST_CHECKIN_MS] = timestampMs }
+    }
+
+    suspend fun setDmsSuspendedUntil(timestampMs: Long) {
+        dataStore.edit { it[Keys.DMS_SUSPENDED_UNTIL_MS] = timestampMs }
+    }
+
+    suspend fun dmsPrefs(): com.fleetops.guardian.service.DmsPrefs {
+        val prefs = safePrefsFlow.first()
+        return com.fleetops.guardian.service.DmsPrefs(
+            enabled = prefs[Keys.DMS_ENABLED] ?: false,
+            timeoutMinutes = prefs[Keys.DMS_TIMEOUT_MINUTES] ?: 60,
+            lastCheckinMs = prefs[Keys.DMS_LAST_CHECKIN_MS] ?: 0L,
+            suspendedUntilMs = prefs[Keys.DMS_SUSPENDED_UNTIL_MS] ?: 0L,
+        )
     }
 
     suspend fun clearAll() {

@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const { query } = require('../config/database');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, authorize } = require('../middleware/auth');
 const { requireFreshIntegrity } = require('../middleware/requireFreshIntegrity');
 const logger = require('../utils/logger');
 const { v4: uuidv4 } = require('uuid');
@@ -1709,6 +1709,76 @@ router.post('/checkin', deviceAuth, async (req, res, next) => {
       [req.device.id]
     );
     res.json({ ok: true, checkin_at: new Date().toISOString() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Dead Man's Switch Admin ─────────────────────────────────────────────────
+
+/**
+ * GET /api/v1/guardian/devices/:id/dms
+ * Return the DMS configuration for a device.
+ */
+router.get('/devices/:id/dms', authenticate, async (req, res, next) => {
+  try {
+    const result = await query(
+      `SELECT id, dms_enabled, dms_timeout_minutes, dms_suspended_until, last_checkin_at
+       FROM guardian_devices
+       WHERE id = $1 AND deleted_at IS NULL`,
+      [req.params.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Device not found' });
+    res.json({ data: result.rows[0] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * PATCH /api/v1/guardian/devices/:id/dms
+ * Update DMS configuration for a device.
+ * Body: { dms_enabled?, dms_timeout_minutes?, suspend_minutes? }
+ * suspend_minutes > 0 sets dms_suspended_until = NOW() + interval; 0 clears it.
+ */
+router.patch('/devices/:id/dms', authenticate, authorize('admin', 'dispatcher'), async (req, res, next) => {
+  try {
+    const { dms_enabled, dms_timeout_minutes, suspend_minutes } = req.body;
+    const sets = [];
+    const values = [req.params.id];
+    let idx = 2;
+
+    if (typeof dms_enabled === 'boolean') {
+      sets.push(`dms_enabled = $${idx++}`);
+      values.push(dms_enabled);
+    }
+    if (dms_timeout_minutes !== undefined) {
+      if (dms_timeout_minutes !== null && (dms_timeout_minutes < 1 || dms_timeout_minutes > 1440)) {
+        return res.status(400).json({ error: 'dms_timeout_minutes must be 1–1440' });
+      }
+      sets.push(`dms_timeout_minutes = $${idx++}`);
+      values.push(dms_timeout_minutes);
+    }
+    if (suspend_minutes !== undefined) {
+      if (suspend_minutes === 0 || suspend_minutes === null) {
+        sets.push(`dms_suspended_until = NULL`);
+      } else {
+        sets.push(`dms_suspended_until = NOW() + ($${idx++} * INTERVAL '1 minute')`);
+        values.push(suspend_minutes);
+      }
+    }
+
+    if (sets.length === 0) return res.status(400).json({ error: 'No fields to update' });
+    sets.push('updated_at = NOW()');
+
+    const result = await query(
+      `UPDATE guardian_devices SET ${sets.join(', ')}
+       WHERE id = $1 AND deleted_at IS NULL
+       RETURNING id, dms_enabled, dms_timeout_minutes, dms_suspended_until, last_checkin_at`,
+      values
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Device not found' });
+    res.json({ data: result.rows[0] });
   } catch (err) {
     next(err);
   }

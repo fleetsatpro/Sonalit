@@ -473,6 +473,32 @@ class GuardianRepository @Inject constructor(
         }
     }
 
+    // ─── Dead Man's Switch ────────────────────────────────────────────────────
+
+    suspend fun dmsCheckin(): RepositoryResult<com.fleetops.guardian.data.api.DmsCheckinResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val token = devicePrefs.deviceToken()
+                val deviceId = devicePrefs.deviceId()
+                val serverUrl = devicePrefs.serverUrl()
+                val api = RetrofitClient.buildApiService(serverUrl)
+                val response = api.dmsCheckin(
+                    token,
+                    com.fleetops.guardian.data.api.DmsCheckinRequest(
+                        deviceId = deviceId,
+                        timestamp = System.currentTimeMillis(),
+                    )
+                )
+                if (response.isSuccessful && response.body() != null) {
+                    RepositoryResult.Success(response.body()!!)
+                } else {
+                    RepositoryResult.Error("HTTP ${response.code()}")
+                }
+            } catch (e: Exception) {
+                RepositoryResult.Error(e.message ?: "Unknown error", e)
+            }
+        }
+
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     @SuppressLint("MissingPermission", "HardwareIds")

@@ -61,7 +61,25 @@ interface GuardianApiService {
         @Header("X-Device-Token") token: String,
         @Body body: CfoLoginRequest
     ): Response<CfoLoginResponse>
+
+    @POST("guardian/checkin")
+    suspend fun dmsCheckin(
+        @Header("X-Device-Token") token: String,
+        @Body body: DmsCheckinRequest
+    ): Response<DmsCheckinResponse>
 }
+
+// ─── DMS ──────────────────────────────────────────────────────────────────────
+
+data class DmsCheckinRequest(
+    @SerializedName("device_id") val deviceId: String,
+    val timestamp: Long,
+)
+
+data class DmsCheckinResponse(
+    val ok: Boolean,
+    @SerializedName("checkin_at") val checkinAt: String,
+)
 
 // ─── Enrollment ───────────────────────────────────────────────────────────────
 
