@@ -81,9 +81,11 @@ test.describe('Cargo Owner Portal page', () => {
   test('modal has convoy selector, ref input, and ttl input', async ({ page }) => {
     await page.goto('/cargo-portal');
     await page.getByRole('button', { name: /Issue Token/i }).click();
-    await expect(page.getByText('Convoy')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('heading', { name: /Issue Portal Token/i })).toBeVisible({ timeout: 5000 });
+    // cargo owner ref input — placeholder is unique to the modal
     await expect(page.getByPlaceholder(/ACME Corp/i)).toBeVisible();
-    await expect(page.getByLabel(/Token validity/i)).toBeVisible();
+    // TTL number input — min=1 max=168 only on this input
+    await expect(page.locator('input[type="number"][min="1"][max="168"]')).toBeVisible();
   });
 
   test('modal can be cancelled', async ({ page }) => {
