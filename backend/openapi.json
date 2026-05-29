@@ -164,6 +164,16 @@
         }
       }
     },
+    "/api/v1/vehicles/{docId}": {
+      "delete": {
+        "operationId": "delete_api_v1_vehicles_docId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/convoys/": {
       "get": {
         "operationId": "get_api_v1_convoys",
@@ -1056,6 +1066,24 @@
         }
       }
     },
+    "/api/v1/guardian/devices/{id}/dms": {
+      "get": {
+        "operationId": "get_api_v1_guardian_devices_id_dms",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patch_api_v1_guardian_devices_id_dms",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/convoy/join": {
       "post": {
         "operationId": "post_api_v1_guardian_convoy_join",
@@ -1507,6 +1535,84 @@
     "/api/v1/field-officers/{id}": {
       "patch": {
         "operationId": "patch_api_v1_field_officers_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/routes/analyse": {
+      "post": {
+        "operationId": "post_api_v1_routes_analyse",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/routes/analyses": {
+      "get": {
+        "operationId": "get_api_v1_routes_analyses",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/routes/analyses/{id}": {
+      "get": {
+        "operationId": "get_api_v1_routes_analyses_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/convoy": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/convoy/custody-pdf": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_custody_pdf",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/tokens": {
+      "post": {
+        "operationId": "post_api_v1_portal_tokens",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "get": {
+        "operationId": "get_api_v1_portal_tokens",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/tokens/{id}": {
+      "delete": {
+        "operationId": "delete_api_v1_portal_tokens_id",
         "responses": {
           "200": {
             "description": "OK"

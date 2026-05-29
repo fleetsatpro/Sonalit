@@ -21,11 +21,8 @@ const { asyncHandler } = require('../middleware/error');
 
 // ─── Portal-token-authenticated routes ───────────────────────────────────────
 
-const portalRouter = require('express').Router();
-portalRouter.use(portalAuth);
-
 // GET /api/v1/portal/convoy
-portalRouter.get('/convoy', asyncHandler(async (req, res) => {
+router.get('/convoy', portalAuth, asyncHandler(async (req, res) => {
   const { convoy_id } = req.portal;
 
   const result = await req.db(
@@ -68,7 +65,7 @@ portalRouter.get('/convoy', asyncHandler(async (req, res) => {
 }));
 
 // GET /api/v1/portal/convoy/custody-pdf
-portalRouter.get('/convoy/custody-pdf', asyncHandler(async (req, res) => {
+router.get('/convoy/custody-pdf', portalAuth, asyncHandler(async (req, res) => {
   const { convoy_id } = req.portal;
 
   const convoyResult = await req.db(
@@ -78,7 +75,11 @@ portalRouter.get('/convoy/custody-pdf', asyncHandler(async (req, res) => {
   );
   if (!convoyResult.rows.length) return res.status(404).json({ error: 'Convoy not found' });
 
-  const convoy = { ...convoyResult.rows[0], vehicle_count: parseInt(convoyResult.rows[0].vehicle_count) || 0, cargo_owner_ref: req.portal.cargo_owner_ref };
+  const convoy = {
+    ...convoyResult.rows[0],
+    vehicle_count: parseInt(convoyResult.rows[0].vehicle_count) || 0,
+    cargo_owner_ref: req.portal.cargo_owner_ref,
+  };
 
   const posResult = await req.db(
     `SELECT g.lat, g.lng, g.recorded_at, g.speed_kmh, g.source
@@ -100,12 +101,7 @@ portalRouter.get('/convoy/custody-pdf', asyncHandler(async (req, res) => {
   res.end(pdfBuffer);
 }));
 
-router.use('/', portalRouter);
-
 // ─── Admin routes (JWT) ───────────────────────────────────────────────────────
-
-const adminRouter = require('express').Router();
-adminRouter.use(authenticate, attachOrgDb);
 
 const issueSchema = Joi.object({
   convoy_id: Joi.string().uuid().required(),
@@ -114,11 +110,10 @@ const issueSchema = Joi.object({
 });
 
 // POST /api/v1/portal/tokens — issue
-adminRouter.post('/tokens', authorize('admin', 'dispatcher'), asyncHandler(async (req, res) => {
+router.post('/tokens', authenticate, attachOrgDb, authorize('admin', 'dispatcher'), asyncHandler(async (req, res) => {
   const { error, value } = issueSchema.validate(req.body);
   if (error) return res.status(400).json({ error: error.message });
 
-  // Verify convoy belongs to this org
   const convoyCheck = await req.db(
     `SELECT id FROM convoys WHERE id = $1 AND deleted_at IS NULL`,
     [value.convoy_id],
@@ -148,7 +143,7 @@ adminRouter.post('/tokens', authorize('admin', 'dispatcher'), asyncHandler(async
 }));
 
 // GET /api/v1/portal/tokens?convoy_id=
-adminRouter.get('/tokens', authorize('admin', 'dispatcher', 'operator'), asyncHandler(async (req, res) => {
+router.get('/tokens', authenticate, attachOrgDb, authorize('admin', 'dispatcher', 'operator'), asyncHandler(async (req, res) => {
   const convoyId = req.query.convoy_id;
   if (!convoyId) return res.status(400).json({ error: 'convoy_id query param required' });
   if (!/^[0-9a-f-]{36}$/i.test(convoyId)) return res.status(400).json({ error: 'convoy_id must be a UUID' });
@@ -167,7 +162,7 @@ adminRouter.get('/tokens', authorize('admin', 'dispatcher', 'operator'), asyncHa
 }));
 
 // DELETE /api/v1/portal/tokens/:id — revoke
-adminRouter.delete('/tokens/:id', authorize('admin', 'dispatcher'), asyncHandler(async (req, res) => {
+router.delete('/tokens/:id', authenticate, attachOrgDb, authorize('admin', 'dispatcher'), asyncHandler(async (req, res) => {
   const result = await req.db(
     `UPDATE portal_tokens
         SET revoked_at = NOW()
@@ -178,7 +173,5 @@ adminRouter.delete('/tokens/:id', authorize('admin', 'dispatcher'), asyncHandler
   if (!result.rows.length) return res.status(404).json({ error: 'Token not found or already revoked' });
   res.json({ data: { id: result.rows[0].id, revoked: true } });
 }));
-
-router.use('/', adminRouter);
 
 module.exports = router;
