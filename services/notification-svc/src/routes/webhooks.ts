@@ -14,12 +14,6 @@ const WebhookSchema = z.object({
 const PATCHABLE_COLS = new Set(['url', 'events', 'active'] as const);
 type PatchableCol = 'url' | 'events' | 'active';
 
-function getOrgId(req: Parameters<FastifyPluginAsync>[0]['get'] extends (...args: infer A) => unknown ? A[0] : never): string {
-  // In production this header is injected by the API gateway from a verified JWT claim.
-  const orgId = (req.headers['x-org-id'] as string | undefined)?.trim();
-  if (!orgId) throw new AuthError('x-org-id header required');
-  return orgId;
-}
 
 export const webhooksRoutes: FastifyPluginAsync = async (app) => {
   app.get('/v4/webhooks', async (req, reply) => {

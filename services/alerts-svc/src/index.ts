@@ -7,27 +7,27 @@ import { config } from './config.js';
 import { pool } from './db.js';
 import { redis } from './redis.js';
 import { healthRoutes } from './routes/health.js';
-import { alertsRoutes } from './routes/alerts.js';
+import { alertRoutes } from './routes/alerts.js';
 import { rulesRoutes } from './routes/rules.js';
-import { incidentsRoutes } from './routes/incidents.js';
+import { incidentRoutes } from './routes/incidents.js';
 import { startGpsConsumer } from './consumers/gps.js';
 
 async function start(): Promise<void> {
   const app = Fastify({
-    logger: { level: config.LOG_LEVEL, transport: config.NODE_ENV === 'development' ? { target: 'pino-pretty' } : undefined },
+    logger: { level: config.LOG_LEVEL, ...(config.NODE_ENV === 'development' ? { transport: { target: 'pino-pretty' } } : {}) },
   });
   redis.on('error', (err: Error) => { app.log.error({ err }, 'Redis error'); });
   await app.register(cors, { origin: false });
   await app.register(helmet);
   await app.register(rateLimit, { max: 300, timeWindow: '1 minute' });
   await app.register(healthRoutes);
-  await app.register(alertsRoutes);
+  await app.register(alertRoutes);
   await app.register(rulesRoutes);
-  await app.register(incidentsRoutes);
+  await app.register(incidentRoutes);
   app.setErrorHandler((err, _req, reply) => {
     const status = (err as { statusCode?: number }).statusCode ?? 500;
     app.log.error({ err }, 'Request error');
-    void reply.code(status).send({ error: err.message ?? 'Internal server error' });
+    void reply.code(status).send({ error: (err as Error).message ?? 'Internal server error' });
   });
   await app.listen({ port: config.PORT, host: '0.0.0.0' });
   app.log.info({ port: config.PORT }, 'alerts-svc listening');

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { pool, query } from '../db.js';
+import { pool } from '../db.js';
 import { config } from '../config.js';
 import { hashPassword, isPasswordPwned } from '../lib/password.js';
 import { signAccessToken, signRefreshToken } from '../lib/jwt.js';
@@ -16,11 +16,6 @@ const RegisterSchema = z.object({
   org_name: z.string().min(1).max(256),
 });
 
-interface UserRow {
-  id: string;
-  org_id: string;
-  role: string;
-}
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.post('/register', async (request, reply) => {
