@@ -49,10 +49,12 @@ const copilotRoute = createRoute({ getParentRoute: () => authRoute, path: '/copi
 const settingsRoute = createRoute({ getParentRoute: () => authRoute, path: '/settings', component: lazyRouteComponent(() => import('./pages/Settings.js')) });
 const routeAnalysisRoute = createRoute({ getParentRoute: () => authRoute, path: '/route-analysis', component: lazyRouteComponent(() => import('./pages/RouteAnalysis.js')) });
 const cargoPortalRoute = createRoute({ getParentRoute: () => authRoute, path: '/cargo-portal', component: lazyRouteComponent(() => import('./pages/CargoPortal.js')) });
+const portalViewRoute = createRoute({ getParentRoute: () => rootRoute, path: '/portal-view', component: lazyRouteComponent(() => import('./pages/PortalView.js')) });
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
   notFoundRoute,
+  portalViewRoute,
   authRoute.addChildren([
     dashboardRoute, fleetRoute, gpsRoute,
     convoysRoute, convoyNewRoute, convoyEditRoute,

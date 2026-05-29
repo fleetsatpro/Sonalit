@@ -168,8 +168,8 @@ function IssueTokenModal({
   );
 }
 
-function NewTokenBanner({ token, convoyId, onDismiss }: { token: string; convoyId: string; onDismiss: () => void }): React.ReactElement {
-  const portalUrl = `${window.location.origin}/cargo-portal?token=${token}&convoy=${convoyId}`;
+function NewTokenBanner({ token, onDismiss }: { token: string; onDismiss: () => void }): React.ReactElement {
+  const portalUrl = `${window.location.origin}/portal-view?token=${token}`;
   return (
     <div className="rounded-xl border border-green-700 bg-green-900/20 p-4 mb-6">
       <div className="flex items-center gap-2 mb-2">
@@ -258,7 +258,6 @@ export default function CargoPortal(): React.ReactElement {
       {newToken && (
         <NewTokenBanner
           token={newToken.token}
-          convoyId={newToken.convoyId}
           onDismiss={() => setNewToken(null)}
         />
       )}

@@ -21,9 +21,11 @@ CREATE INDEX IF NOT EXISTS idx_portal_tokens_convoy
   ON portal_tokens(convoy_id)
   WHERE revoked_at IS NULL;
 
--- RLS
+-- RLS: ENABLE only (not FORCE). portalAuth does a pre-org-context token hash
+-- lookup as the table owner; FORCE ROW LEVEL SECURITY would block that when
+-- the app user is a non-superuser table owner. sonalit_app (non-owner) still
+-- has the policy applied automatically.
 ALTER TABLE portal_tokens ENABLE ROW LEVEL SECURITY;
-ALTER TABLE portal_tokens FORCE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS org_isolation ON portal_tokens;
 CREATE POLICY org_isolation ON portal_tokens

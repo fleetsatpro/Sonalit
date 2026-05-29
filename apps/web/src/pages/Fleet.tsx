@@ -72,7 +72,7 @@ export default function Fleet(): React.ReactElement {
 
   const toggleStatus = useMutation<Vehicle, Error, { id: string; status: VehicleStatus }>({
     mutationFn: async ({ id, status }) => {
-      const res = await api.patch<Vehicle>(`/vehicles/${id}`, { status });
+      const res = await api.patch<Vehicle>(`/vehicles/${id}/status`, { status });
       return res.data;
     },
     onSuccess: () => {
@@ -83,7 +83,7 @@ export default function Fleet(): React.ReactElement {
   const bulkStatus = useMutation<void, Error, VehicleStatus>({
     mutationFn: async (status) => {
       await Promise.all([...selectedIds].map((id) =>
-        api.patch(`/vehicles/${id}`, { status }),
+        api.patch(`/vehicles/${id}/status`, { status }),
       ));
     },
     onSuccess: () => {
