@@ -108,14 +108,10 @@ const authRefreshLimiter = rateLimit({ windowMs: 900_000, max: 30, standardHeade
 app.use("/api/v1/auth/login", authLoginLimiter);
 app.use("/api/v1/auth/refresh", authRefreshLimiter);
 
-// Body parser AFTER rate limit — verify callback captures raw body for webhook HMAC
-app.use(express.json({
-  limit: "64kb",
-  verify: (req, _res, buf) => { req.rawBody = buf; },
-}));
+// Body parser AFTER rate limit
+app.use(express.json({ limit: "64kb" }));
 app.use(responseEnvelope);
 app.use(express.urlencoded({ extended: true }));
-
 app.use(csrf);
 app.use(morgan(":method :url :status :res[content-length] - :response-time ms reqId=:req[x-request-id]", { stream: { write: m => logger.info(m.trim()) } }));
 
@@ -208,27 +204,6 @@ catch (e) { logger.warn("Routes route failed: " + e.message); }
 
 try { app.use("/api/v1/portal", require("./routes/portal")); logger.info("Route loaded: /api/v1/portal"); }
 catch (e) { logger.warn("Portal route failed: " + e.message); }
-
-try { app.use("/api/v1/convoys", require("./routes/corridors")); logger.info("Route loaded: /api/v1/convoys (corridors)"); }
-catch (e) { logger.warn("Corridors route failed: " + e.message); }
-
-try { app.use("/api/v1/fuel", require("./routes/fuel")); logger.info("Route loaded: /api/v1/fuel"); }
-catch (e) { logger.warn("Fuel route failed: " + e.message); }
-
-try { app.use("/api/v1/behaviour", require("./routes/behaviour")); logger.info("Route loaded: /api/v1/behaviour"); }
-catch (e) { logger.warn("Behaviour route failed: " + e.message); }
-
-try { app.use("/api/v1", require("./routes/broadcast")); logger.info("Route loaded: /api/v1 (broadcast)"); }
-catch (e) { logger.warn("Broadcast route failed: " + e.message); }
-
-try { app.use("/api/v1", require("./routes/claims")); logger.info("Route loaded: /api/v1 (claims)"); }
-catch (e) { logger.warn("Claims route failed: " + e.message); }
-
-try { app.use("/api/v1/shifts", require("./routes/shifts")); logger.info("Route loaded: /api/v1/shifts"); }
-catch (e) { logger.warn("Shifts route failed: " + e.message); }
-
-try { app.use("/api/v1/voice-notes", require("./routes/voiceNotes")); logger.info("Route loaded: /api/v1/voice-notes"); }
-catch (e) { logger.warn("VoiceNotes route failed: " + e.message); }
 
 app.use("/api/v1/sync", (req, res) => res.json({ ok: true, processed: 0 }));
 app.use((req, res) => res.status(404).json({ error: req.method + " " + req.path + " not found" }));

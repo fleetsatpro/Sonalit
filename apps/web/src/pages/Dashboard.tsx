@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Truck, Users, Bell, Route, AlertTriangle, FileWarning, ShieldAlert, Package, MapPin } from 'lucide-react';
+import { Truck, Users, Bell, Route, AlertTriangle, FileWarning, ShieldAlert, Package } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { api } from '../lib/api.js';
 import { subscribe } from '../lib/centrifuge.js';
@@ -184,15 +184,6 @@ export default function Dashboard(): React.ReactElement {
     enabled: !!orgId,
   });
 
-  const { data: deviationEvents } = useQuery<{ count: number }>({
-    queryKey: ['geofence-deviations', 'count'],
-    queryFn: async () => {
-      const res = await api.get('/geofences/events', { params: { event_type: 'route_deviation', limit: 50 } });
-      return { count: (res.data.data ?? []).length };
-    },
-    enabled: !!orgId,
-  });
-
   const { data: recentIncidents, isLoading: riLoading, isError: riError } = useQuery<NormalizedList<Incident>>({
     queryKey: ['incidents', 'recent'],
     queryFn: async () => {
@@ -230,7 +221,7 @@ export default function Dashboard(): React.ReactElement {
       </div>
 
       {/* Feature widgets row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Link to="/route-analysis" className="group bg-gray-900 border border-gray-800 hover:border-orange-700/50 rounded-xl p-4 flex items-center gap-4 transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 animate-fade-in-up" style={{ animationDelay: '400ms' }}>
           <div className="w-10 h-10 rounded-xl bg-orange-600/20 flex items-center justify-center shrink-0 group-hover:bg-orange-600/30 transition-colors">
             <ShieldAlert className="w-5 h-5 text-orange-400" />
@@ -249,19 +240,6 @@ export default function Dashboard(): React.ReactElement {
           <div className="min-w-0">
             <p className="text-white font-semibold text-sm">Cargo Portal</p>
             <p className="text-gray-400 text-xs">Issue & manage cargo owner tokens</p>
-          </div>
-        </Link>
-        <Link to="/geofences" className="group bg-gray-900 border border-gray-800 hover:border-orange-700/50 rounded-xl p-4 flex items-center gap-4 transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 animate-fade-in-up" style={{ animationDelay: '560ms' }}>
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors ${(deviationEvents?.count ?? 0) > 0 ? 'bg-red-600/20 group-hover:bg-red-600/30' : 'bg-orange-600/20 group-hover:bg-orange-600/30'}`}>
-            <MapPin className={`w-5 h-5 ${(deviationEvents?.count ?? 0) > 0 ? 'text-red-400' : 'text-orange-400'}`} />
-          </div>
-          <div className="min-w-0">
-            <p className="text-white font-semibold text-sm">Route Deviations</p>
-            <p className="text-gray-400 text-xs">
-              {(deviationEvents?.count ?? 0) > 0
-                ? `${deviationEvents?.count} recent deviation${deviationEvents?.count !== 1 ? 's' : ''}`
-                : 'No deviations detected'}
-            </p>
           </div>
         </Link>
       </div>
