@@ -65,6 +65,7 @@ jobs:
 
       - name: Update APK_REDIRECT_URL on Railway
         if: github.ref == 'refs/heads/main'
+        continue-on-error: true
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
