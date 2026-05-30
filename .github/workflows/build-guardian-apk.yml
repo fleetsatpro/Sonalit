@@ -27,14 +27,8 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept SDK licenses
-        run: yes | sdkmanager --licenses || true
-
-      - name: Install platform and build tools
-        run: sdkmanager "build-tools;34.0.0" "platforms;android-34"
+      # ubuntu-latest has Android SDK, build-tools;34.0.0, platforms;android-34
+      # and pre-accepted licenses at $ANDROID_HOME — no setup-android step needed.
 
       - name: Cache Gradle packages
         uses: actions/cache@v4
