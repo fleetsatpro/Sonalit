@@ -208,6 +208,9 @@ export default function CesiumLiveMap({
       if (existing) {
         (existing.position as Cesium.ConstantPositionProperty).setValue(pos);
         existing.point = makePoint(isSelected ? GREEN : ORANGE, isSelected ? 16 : 11);
+        if (existing.label) {
+          (existing.label.text as Cesium.ConstantProperty).setValue(label);
+        }
       } else {
         const entity = viewer.entities.add({
           id: loc.device_id,
@@ -239,7 +242,7 @@ export default function CesiumLiveMap({
         offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-50), 0),
       });
     }
-  }, [locations, selectedId]);
+  }, [locations, selectedId, vehicleMap]);
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>

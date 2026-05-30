@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState, lazy, Suspense } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { MapPin, Radio, Clock, Loader2 } from 'lucide-react';
 import { api } from '../lib/api.js';
@@ -115,8 +115,9 @@ export default function GPS(): React.ReactElement {
     enabled: !!orgId,
   });
 
-  const vehicleMap = new Map<string, string>(
-    vehiclesData?.data.map((v) => [v.id, v.registration]) ?? [],
+  const vehicleMap = useMemo(
+    () => new Map<string, string>(vehiclesData?.data.map((v) => [v.id, v.registration]) ?? []),
+    [vehiclesData],
   );
 
   const { isLoading, isError } = useQuery<DeviceLocation[]>({
