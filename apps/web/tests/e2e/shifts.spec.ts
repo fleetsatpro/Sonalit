@@ -12,7 +12,6 @@
 import { test, expect } from '@playwright/test';
 
 const ORG_A = 'aaaaaaaa-0000-0000-0000-000000000001';
-const ORG_B = 'bbbbbbbb-0000-0000-0000-000000000002';
 const USER_A = { id: 'user-a-001', name: 'Alice', email: 'alice@org-a.io', role: 'admin', org_id: ORG_A };
 
 const ORG_A_SHIFT_ID = 'shift-a01-0000-0000-000000000001';
