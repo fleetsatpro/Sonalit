@@ -1,5 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Package, Download, Loader2, AlertTriangle, MapPin, Clock, Truck } from 'lucide-react';
+import Map, { Source, Layer, Marker, NavigationControl } from 'react-map-gl/maplibre';
+import 'maplibre-gl/dist/maplibre-gl.css';
+
+interface TrailPoint {
+  lat: number;
+  lng: number;
+  recorded_at: string;
+}
 
 interface ConvoyView {
   convoy_id: string;
@@ -19,6 +27,19 @@ interface ConvoyView {
 }
 
 const API_BASE = (import.meta.env['VITE_API_BASE_URL'] as string | undefined) ?? '/api/v1';
+const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+
+const trailLineLayer = {
+  id: 'trail-line',
+  type: 'line',
+  source: 'trail',
+  paint: {
+    'line-color': '#ff9040',
+    'line-width': 2.5,
+    'line-opacity': 0.85,
+  },
+  layout: { 'line-cap': 'round' as const, 'line-join': 'round' as const },
+} as const;
 
 function fmt(val: string | null): string {
   if (!val) return '—';
@@ -44,6 +65,17 @@ export default function PortalView(): React.ReactElement {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [trail, setTrail] = useState<TrailPoint[]>([]);
+
+  const fetchTrail = useCallback(() => {
+    if (!token) return;
+    fetch(`${API_BASE}/portal/convoy/trail`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(res => res.ok ? res.json() as Promise<{ data: TrailPoint[] }> : Promise.reject())
+      .then(json => setTrail(json.data))
+      .catch(() => { /* trail is best-effort */ });
+  }, [token]);
 
   useEffect(() => {
     if (!token) {
@@ -61,10 +93,18 @@ export default function PortalView(): React.ReactElement {
         }
         return res.json() as Promise<{ data: ConvoyView }>;
       })
-      .then(json => setConvoy(json.data))
+      .then(json => { setConvoy(json.data); })
       .catch(err => setError((err as Error).message))
       .finally(() => setLoading(false));
   }, [token]);
+
+  // Fetch trail once convoy loads, then poll every 30s
+  useEffect(() => {
+    if (!convoy) return;
+    fetchTrail();
+    const id = setInterval(fetchTrail, 30_000);
+    return () => clearInterval(id);
+  }, [convoy, fetchTrail]);
 
   const downloadPdf = async () => {
     setPdfLoading(true);
@@ -200,6 +240,47 @@ export default function PortalView(): React.ReactElement {
                 <p className="text-xs text-white">{convoy.seal_intact == null ? '—' : convoy.seal_intact ? 'Intact' : 'Broken'}</p>
               </div>
             </div>
+
+            {/* GPS Trail Map */}
+            {(trail.length > 0 || convoy.last_known_lat) && (() => {
+              const last = trail.length > 0 ? trail[trail.length - 1] : null;
+              const centerLat = last?.lat ?? convoy.last_known_lat ?? 0;
+              const centerLng = last?.lng ?? convoy.last_known_lng ?? 0;
+              const geojson: GeoJSON.FeatureCollection = {
+                type: 'FeatureCollection',
+                features: trail.length >= 2 ? [{
+                  type: 'Feature',
+                  geometry: {
+                    type: 'LineString',
+                    coordinates: trail.map(p => [p.lng, p.lat]),
+                  },
+                  properties: {},
+                }] : [],
+              };
+              return (
+                <div className="rounded-xl overflow-hidden border border-white/[0.07]" style={{ height: 260 }}>
+                  <Map
+                    initialViewState={{ latitude: centerLat, longitude: centerLng, zoom: 10 }}
+                    mapStyle={MAP_STYLE}
+                    style={{ width: '100%', height: '100%' }}
+                    attributionControl={false}
+                  >
+                    <NavigationControl position="top-right" />
+                    <Source id="trail" type="geojson" data={geojson}>
+                      <Layer {...trailLineLayer} />
+                    </Source>
+                    {last && (
+                      <Marker latitude={last.lat} longitude={last.lng} anchor="center">
+                        <div className="relative">
+                          <span className="absolute inset-0 rounded-full bg-orange-400 opacity-50 animate-ping" />
+                          <div className="relative w-3.5 h-3.5 rounded-full bg-orange-500 border-2 border-white shadow-lg" />
+                        </div>
+                      </Marker>
+                    )}
+                  </Map>
+                </div>
+              );
+            })()}
 
             {/* PDF Download */}
             <button

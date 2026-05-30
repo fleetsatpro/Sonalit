@@ -64,6 +64,23 @@ router.get('/convoy', portalAuth, asyncHandler(async (req, res) => {
   });
 }));
 
+// GET /api/v1/portal/convoy/trail
+router.get('/convoy/trail', portalAuth, asyncHandler(async (req, res) => {
+  const { convoy_id } = req.portal;
+
+  const result = await req.db(
+    `SELECT g.lat, g.lng, g.timestamp AS recorded_at
+       FROM gps_logs g
+       JOIN convoy_trucks ct ON ct.vehicle_id = g.vehicle_id
+      WHERE ct.convoy_id = $1
+      ORDER BY g.timestamp ASC
+      LIMIT 500`,
+    [convoy_id],
+  );
+
+  res.json({ data: result.rows });
+}));
+
 // GET /api/v1/portal/convoy/custody-pdf
 router.get('/convoy/custody-pdf', portalAuth, asyncHandler(async (req, res) => {
   const { convoy_id } = req.portal;
