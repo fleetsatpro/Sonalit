@@ -82,14 +82,19 @@ test.describe('Broadcast — BroadcastPanel interactions', () => {
   });
 
   test('BroadcastPanel shows convoy name in header', async ({ page }) => {
-    await expect(page.getByText(ACTIVE_CONVOY.name)).toBeVisible({ timeout: 5000 });
+    // The convoy name appears in both the table row and the panel header (<p>).
+    // Scope to <p> to avoid strict-mode violation from the duplicate table cell.
+    await expect(page.locator('p').filter({ hasText: ACTIVE_CONVOY.name })).toBeVisible({ timeout: 5000 });
   });
 
   test('canned message dropdown populates from API', async ({ page }) => {
     const dropdown = page.locator('select').first();
     await expect(dropdown).toBeVisible({ timeout: 5000 });
-    await expect(page.getByText('ETA Update')).toBeVisible();
-    await expect(page.getByText('Stop Advised')).toBeVisible();
+    // <option> elements inside a closed <select> are always hidden in the DOM;
+    // verify via allInnerTexts() instead of toBeVisible().
+    const optionTexts = await dropdown.locator('option').allInnerTexts();
+    expect(optionTexts).toContain('ETA Update');
+    expect(optionTexts).toContain('Stop Advised');
   });
 
   test('selecting a canned message populates the textarea', async ({ page }) => {
