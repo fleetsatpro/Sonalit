@@ -67,7 +67,7 @@ async function mockCommonRoutes(page: import('@playwright/test').Page) {
   await page.route(url => url.toString().includes('/api/v1/shifts/coverage'), route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) })
   );
-  await page.route(url => url.toString().includes('/api/v1/shifts'), route =>
+  await page.route(url => url.toString().includes('/api/v1/shifts') && !url.toString().match(/on-duty|coverage|handover/), route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: ORG_A_SHIFTS }) })
   );
   await page.route(url => url.toString().includes('/api/v1/drivers'), route =>
@@ -87,7 +87,7 @@ test.describe('Shifts — list page', () => {
   test('shifts list renders driver names', async ({ page }) => {
     await page.goto('/shifts');
     await expect(page.getByText('James Mwangi')).toBeVisible({ timeout: 8000 });
-    await expect(page.getByText('Mary Wanjiru')).toBeVisible();
+    await expect(page.getByText('Mary Wanjiru')).toBeVisible({ timeout: 8000 });
   });
 
   test('shifts list renders vehicle registrations', async ({ page }) => {
@@ -104,7 +104,7 @@ test.describe('Shifts — list page', () => {
   test('shift status badges are displayed', async ({ page }) => {
     await page.goto('/shifts');
     await expect(page.getByText(/active/i).first()).toBeVisible({ timeout: 8000 });
-    await expect(page.getByText(/scheduled/i).first()).toBeVisible();
+    await expect(page.getByText(/scheduled/i).first()).toBeVisible({ timeout: 8000 });
   });
 });
 

@@ -70,7 +70,7 @@ async function mockCommonRoutes(page: import('@playwright/test').Page) {
   await page.route(url => url.toString().includes('/api/v1/fuel/anomalies'), route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: ORG_A_ANOMALIES }) })
   );
-  await page.route(url => url.toString().includes('/api/v1/fuel'), route =>
+  await page.route(url => url.toString().includes('/api/v1/fuel') && !url.toString().match(/anomalies|summary|stations/), route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: ORG_A_FUEL_ENTRIES }) })
   );
 }
