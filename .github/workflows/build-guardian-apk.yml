@@ -27,8 +27,8 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # ubuntu-latest has Android SDK, build-tools;34.0.0, platforms;android-34
-      # and pre-accepted licenses at $ANDROID_HOME — no setup-android step needed.
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Cache Gradle packages
         uses: actions/cache@v4
@@ -36,9 +36,9 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('guardian-agent/**/*.gradle*', 'guardian-agent/**/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-gradle-v2-${{ hashFiles('guardian-agent/**/*.gradle*', 'guardian-agent/**/gradle-wrapper.properties') }}
           restore-keys: |
-            ${{ runner.os }}-gradle-
+            ${{ runner.os }}-gradle-v2-
 
       - name: Build debug APK
         working-directory: guardian-agent
