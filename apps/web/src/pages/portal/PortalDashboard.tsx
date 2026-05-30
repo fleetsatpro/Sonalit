@@ -150,12 +150,20 @@ function ShipmentCard({ shipment }: { shipment: ShipmentSummary }): React.ReactE
           <SealBadge seal={shipment.seal_status} />
         </div>
 
-        <button
-          onClick={handleTrack}
-          className="shrink-0 text-xs font-semibold text-orange-400 hover:text-orange-300 transition-colors"
-        >
-          Track →
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/manifest', params: { convoy_id: shipment.convoy_id } })}
+            className="shrink-0 text-xs font-medium text-white/40 hover:text-white/70 transition-colors"
+          >
+            Manifest
+          </button>
+          <button
+            onClick={handleTrack}
+            className="shrink-0 text-xs font-semibold text-orange-400 hover:text-orange-300 transition-colors"
+          >
+            Track →
+          </button>
+        </div>
       </div>
     </div>
   );

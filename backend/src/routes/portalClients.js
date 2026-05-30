@@ -109,4 +109,113 @@ router.get('/clients', authenticate, attachOrgDb, authorize('admin', 'dispatcher
   res.json({ data: result.rows });
 }));
 
+// ── Cargo manifest ─────────────────────────────────────────────────────────────
+
+// GET /api/v1/portal/convoy/:convoy_id/manifest (clientAuth)
+router.get('/convoy/:convoy_id/manifest', clientAuth, asyncHandler(async (req, res) => {
+  const { org_id, convoy_ids, client_id } = req.client;
+  const { convoy_id } = req.params;
+
+  // §00: convoy must be in the client's link set
+  if (!convoy_ids.includes(convoy_id)) {
+    return res.status(403).json({ error: 'Not authorised for this convoy' });
+  }
+
+  const linkResult = await query(
+    `SELECT show_value FROM cargo_client_links
+     WHERE client_id = $1 AND convoy_id = $2 AND org_id = $3`,
+    [client_id, convoy_id, org_id],
+  );
+  const showValue = linkResult.rows[0]?.show_value ?? false;
+
+  const shipResult = await query(
+    `SELECT s.id AS shipment_id,
+            s.tracking_number AS reference,
+            s.cargo_description,
+            s.cargo_weight_kg AS total_weight_kg,
+            s.metadata->>'customs_ref' AS customs_ref
+     FROM shipments s
+     JOIN convoys c ON c.id = s.convoy_id
+    WHERE s.convoy_id = $1 AND c.org_id = $2 AND s.deleted_at IS NULL
+    ORDER BY s.created_at`,
+    [convoy_id, org_id],
+  );
+
+  const shipIds = shipResult.rows.map(r => r.shipment_id);
+  let itemRows = [];
+  if (shipIds.length > 0) {
+    const ph = shipIds.map((_, i) => `$${i + 2}`).join(',');
+    const itemResult = await query(
+      `SELECT id, shipment_id, description, quantity, weight_kg, value, currency, handling
+       FROM shipment_manifest_items
+      WHERE org_id = $1 AND shipment_id IN (${ph}) AND deleted_at IS NULL
+      ORDER BY shipment_id, created_at`,
+      [org_id, ...shipIds],
+    );
+    itemRows = itemResult.rows;
+  }
+
+  const byShipment = {};
+  for (const item of itemRows) {
+    if (!byShipment[item.shipment_id]) byShipment[item.shipment_id] = [];
+    byShipment[item.shipment_id].push({
+      id: item.id,
+      description: item.description,
+      quantity: parseInt(item.quantity),
+      weight_kg: item.weight_kg != null ? parseFloat(item.weight_kg) : null,
+      value: showValue && item.value != null ? parseFloat(item.value) : null,
+      currency: showValue ? item.currency : null,
+      handling: item.handling,
+    });
+  }
+
+  const data = shipResult.rows.map(r => {
+    const items = byShipment[r.shipment_id] ?? [];
+    let declared_value = null;
+    if (showValue && items.length > 0) {
+      const total = items.reduce((sum, it) => sum + (it.value ?? 0) * it.quantity, 0);
+      if (total > 0) declared_value = parseFloat(total.toFixed(2));
+    }
+    return {
+      shipment_id: r.shipment_id,
+      reference: r.reference,
+      cargo_description: r.cargo_description ?? null,
+      total_weight_kg: r.total_weight_kg != null ? parseFloat(r.total_weight_kg) : null,
+      declared_value,
+      customs_ref: r.customs_ref ?? null,
+      items,
+    };
+  });
+
+  res.json({ data, show_value: showValue });
+}));
+
+// POST /api/v1/portal/convoy/:convoy_id/shipments/:shipment_id/manifest-items (operator)
+router.post(
+  '/convoy/:convoy_id/shipments/:shipment_id/manifest-items',
+  authenticate, attachOrgDb, authorize('admin', 'dispatcher', 'operator'),
+  asyncHandler(async (req, res) => {
+    const { description, quantity, weight_kg, value, currency, handling } = req.body;
+    if (!description || !quantity) return res.status(400).json({ error: 'description and quantity required' });
+
+    // Verify the shipment belongs to this convoy + org before inserting
+    const check = await req.db(
+      `SELECT s.id FROM shipments s JOIN convoys c ON c.id = s.convoy_id
+       WHERE s.id = $1 AND s.convoy_id = $2 AND c.org_id = $3 AND s.deleted_at IS NULL`,
+      [req.params.shipment_id, req.params.convoy_id, req.user.org_id],
+    );
+    if (!check.rows.length) return res.status(404).json({ error: 'Shipment not found' });
+
+    const result = await req.db(
+      `INSERT INTO shipment_manifest_items
+         (org_id, shipment_id, description, quantity, weight_kg, value, currency, handling)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, shipment_id, description, quantity, weight_kg, value, currency, handling`,
+      [req.user.org_id, req.params.shipment_id, description, parseInt(quantity),
+       weight_kg ?? null, value ?? null, currency ?? null, handling ?? 'standard'],
+    );
+    res.status(201).json({ data: result.rows[0] });
+  }),
+);
+
 module.exports = router;

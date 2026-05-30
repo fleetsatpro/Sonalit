@@ -61,12 +61,14 @@ const portalLoginRoute = createRoute({ getParentRoute: () => portalRootRoute, pa
   component: lazyRouteComponent(() => import('./pages/portal/PortalLogin.js')) });
 const portalDashboardRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/dashboard',
   component: lazyRouteComponent(() => import('./pages/portal/PortalDashboard.js')) });
+const portalManifestRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/manifest',
+  component: lazyRouteComponent(() => import('./pages/portal/PortalManifest.js')) });
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
   notFoundRoute,
   portalViewRoute,
-  portalRootRoute.addChildren([portalLoginRoute, portalDashboardRoute]),
+  portalRootRoute.addChildren([portalLoginRoute, portalDashboardRoute, portalManifestRoute]),
   authRoute.addChildren([
     dashboardRoute, fleetRoute, gpsRoute,
     convoysRoute, convoyNewRoute, convoyEditRoute,
