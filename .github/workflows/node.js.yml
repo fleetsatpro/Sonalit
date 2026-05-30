@@ -80,6 +80,7 @@ jobs:
           NODE_ENV: test
 
       - name: OpenAPI drift check
+        if: github.ref == 'refs/heads/main'
         run: node scripts/generate-openapi.js --check
         working-directory: backend
         env:

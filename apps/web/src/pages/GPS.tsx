@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense, Component } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { MapPin, Radio, Clock, Loader2 } from 'lucide-react';
 import { api } from '../lib/api.js';
@@ -7,6 +7,24 @@ import { useAuthStore } from '../stores/auth.js';
 import type { Vehicle } from '@sonalit/contracts';
 
 const CesiumLiveMap = lazy(() => import('../components/CesiumLiveMap.js'));
+
+class MapErrorBoundary extends Component<{ children: React.ReactNode }, { failed: boolean }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { failed: false };
+  }
+  static getDerivedStateFromError(): { failed: boolean } { return { failed: true }; }
+  override render() {
+    if (this.state.failed) {
+      return (
+        <div className="flex items-center justify-center w-full h-full bg-gray-950 text-gray-500 text-sm">
+          3D map unavailable
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -181,21 +199,23 @@ export default function GPS(): React.ReactElement {
             Failed to load GPS tracks
           </div>
         )}
-        <Suspense
-          fallback={
-            <div className="flex items-center justify-center w-full h-full bg-gray-950 text-gray-500 text-sm gap-2">
-              <Loader2 className="w-5 h-5 animate-spin" /> Loading 3D map…
-            </div>
-          }
-        >
-          <CesiumLiveMap
-            locations={locationsList}
-            vehicleMap={vehicleMap}
-            selectedId={selectedDeviceId}
-            onSelect={handleSelect}
-            onDeselect={handleDeselect}
-          />
-        </Suspense>
+        <MapErrorBoundary>
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center w-full h-full bg-gray-950 text-gray-500 text-sm gap-2">
+                <Loader2 className="w-5 h-5 animate-spin" /> Loading 3D map…
+              </div>
+            }
+          >
+            <CesiumLiveMap
+              locations={locationsList}
+              vehicleMap={vehicleMap}
+              selectedId={selectedDeviceId}
+              onSelect={handleSelect}
+              onDeselect={handleDeselect}
+            />
+          </Suspense>
+        </MapErrorBoundary>
       </div>
 
       {/* Control panel */}
