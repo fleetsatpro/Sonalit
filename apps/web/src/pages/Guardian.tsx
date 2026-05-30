@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
-import { Shield, Terminal, Clock } from 'lucide-react';
+import { Shield, Terminal, Clock, UserCheck, X } from 'lucide-react';
 import { useState } from 'react';
 import { DeadMansSwitchPanel } from '../components/DeadMansSwitchPanel.js';
 
@@ -10,9 +10,20 @@ interface GuardianDevice {
   model: string | null;
   status: string;
   assignment_type: string | null;
+  assignment_id: string | null;
+  assigned_officer_name: string | null;
+  assigned_officer_badge: string | null;
   last_seen: string | null;
   enrolled_at: string;
   pending_commands: number;
+}
+
+interface FieldOfficer {
+  id: string;
+  name: string;
+  badge_number: string;
+  phone: string;
+  status: string;
 }
 
 type CommandType =
@@ -69,6 +80,8 @@ export default function Guardian() {
     command_type: 'request_location',
   });
   const [dmsDeviceId, setDmsDeviceId] = useState<string>('');
+  const [assigningDevice, setAssigningDevice] = useState<GuardianDevice | null>(null);
+  const [selectedOfficerId, setSelectedOfficerId] = useState<string>('');
 
   const { data: devices, isLoading: devicesLoading, isError: devicesError } = useQuery<GuardianDevice[]>({
     queryKey: ['guardian-devices'],
@@ -76,6 +89,27 @@ export default function Guardian() {
       const res = await api.get<{ data: GuardianDevice[] } | GuardianDevice[]>('/guardian/devices');
       const raw = res.data;
       return Array.isArray(raw) ? raw : (raw?.data ?? []);
+    },
+  });
+
+  const { data: officers } = useQuery<FieldOfficer[]>({
+    queryKey: ['field-officers'],
+    queryFn: async () => {
+      const res = await api.get<{ data: FieldOfficer[] }>('/field-officers');
+      return res.data?.data ?? [];
+    },
+  });
+
+  const assignMutation = useMutation({
+    mutationFn: ({ deviceId, officerId }: { deviceId: string; officerId: string | null }) =>
+      api.patch(`/guardian/devices/${deviceId}`, officerId
+        ? { assignment_type: 'officer', assignment_id: officerId }
+        : { assignment_type: null }
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['guardian-devices'] });
+      setAssigningDevice(null);
+      setSelectedOfficerId('');
     },
   });
 
@@ -127,6 +161,13 @@ export default function Guardian() {
                     {d.model ?? 'Unknown model'} ·{' '}
                     {d.last_seen ? `Last seen ${new Date(d.last_seen).toLocaleString()}` : 'Never seen'}
                   </p>
+                  {d.assigned_officer_name && (
+                    <p className="text-xs text-indigo-400 mt-0.5 flex items-center gap-1">
+                      <UserCheck size={11} />
+                      {d.assigned_officer_name}
+                      {d.assigned_officer_badge && ` · #${d.assigned_officer_badge}`}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   {d.pending_commands > 0 && (
@@ -137,6 +178,13 @@ export default function Guardian() {
                   <span className={`text-xs px-2 py-0.5 rounded ${STATUS_COLORS[d.status] ?? 'bg-gray-800 text-gray-400'}`}>
                     {d.status}
                   </span>
+                  <button
+                    title="Assign to officer"
+                    onClick={() => { setAssigningDevice(d); setSelectedOfficerId(d.assignment_id ?? ''); }}
+                    className="p-1 rounded hover:bg-gray-700 text-gray-400 hover:text-white"
+                  >
+                    <UserCheck size={14} />
+                  </button>
                 </div>
               </div>
             ))}
@@ -253,6 +301,55 @@ export default function Guardian() {
           </div>
         </div>
       </div>
+
+      {/* Assign Officer Modal */}
+      {assigningDevice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-sm mx-4 p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-white">Assign Officer — {assigningDevice.name}</h3>
+              <button onClick={() => setAssigningDevice(null)} className="text-gray-500 hover:text-white">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Field Officer</label>
+                <select
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                  value={selectedOfficerId}
+                  onChange={(e) => setSelectedOfficerId(e.target.value)}
+                >
+                  <option value="">— Unassigned —</option>
+                  {officers?.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name} · #{o.badge_number}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {assignMutation.isError && (
+                <p className="text-red-400 text-xs">Failed to update assignment.</p>
+              )}
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => setAssigningDevice(null)}
+                  className="flex-1 py-2 rounded bg-gray-800 hover:bg-gray-700 text-sm text-gray-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => assignMutation.mutate({ deviceId: assigningDevice.id, officerId: selectedOfficerId || null })}
+                  disabled={assignMutation.isPending}
+                  className="flex-1 py-2 rounded bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-sm font-medium text-white"
+                >
+                  {assignMutation.isPending ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

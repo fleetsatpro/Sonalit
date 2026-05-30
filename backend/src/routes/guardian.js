@@ -535,9 +535,9 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       if (r.rows.length) existingDev = r.rows[0];
     }
 
-    // Legacy fallback: records enrolled before android_id tracking have both hardware IDs null.
-    // Match by name + model and backfill android_id so future lookups hit the fast path.
-    if (!existingDev && safeAndroidId) {
+    // Legacy fallback: records enrolled before android_id tracking have both hardware IDs null,
+    // OR when a device reports unknown hardware IDs. Match by name + model.
+    if (!existingDev) {
       const r = await query(
         `SELECT id, token, status, enrolled_at FROM guardian_devices
          WHERE deleted_at IS NULL AND android_id IS NULL AND imei IS NULL
@@ -657,11 +657,12 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
       ram_free_mb,
       app_version,
       app_version_code,
-      lat,
-      lng,
-      speed,
       fcm_token,
     } = req.body;
+    // Accept both lat/lng (legacy) and latitude/longitude (Guardian APK field names)
+    const lat = req.body.lat ?? req.body.latitude ?? null;
+    const lng = req.body.lng ?? req.body.longitude ?? null;
+    const speed = req.body.speed ?? null;
 
     const deviceId = req.device.id;
 
@@ -1162,7 +1163,10 @@ router.get('/devices', authenticate, async (req, res, next) => {
          gd.enrolled_at, gd.created_at,
          h.battery_level, h.battery_charging, h.signal_strength,
          h.network_type, h.storage_free_mb, h.ram_free_mb, h.recorded_at AS health_recorded_at,
-         COALESCE(pc.cnt, 0)::INT AS pending_commands
+         COALESCE(pc.cnt, 0)::INT AS pending_commands,
+         CASE WHEN gd.assignment_type = 'officer' THEN fo.name ELSE NULL END AS assigned_officer_name,
+         CASE WHEN gd.assignment_type = 'officer' THEN fo.badge_number ELSE NULL END AS assigned_officer_badge,
+         CASE WHEN gd.assignment_type = 'officer' THEN fo.phone ELSE NULL END AS assigned_officer_phone
        FROM guardian_devices gd
        LEFT JOIN LATERAL (
          SELECT battery_level, battery_charging, signal_strength,
@@ -1177,6 +1181,7 @@ router.get('/devices', authenticate, async (req, res, next) => {
          FROM device_commands
          WHERE device_id = gd.id AND status = 'pending'
        ) pc ON true
+       LEFT JOIN field_officers fo ON fo.id = gd.assignment_id AND gd.assignment_type = 'officer'
        WHERE ${filters.join(' AND ')}
        ORDER BY gd.last_seen DESC NULLS LAST, gd.created_at DESC
        LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
@@ -1284,6 +1289,17 @@ router.patch('/devices/:id', authenticate, async (req, res, next) => {
       return res.status(400).json({
         error: `assignment_type must be one of: ${validAssignmentTypes.join(', ')}`,
       });
+    }
+
+    // When assigning to an officer, verify the officer exists in the same org
+    if (assignment_type === 'officer' && assignment_id) {
+      const officerCheck = await query(
+        `SELECT id FROM field_officers WHERE id = $1 AND (org_id = $2 OR org_id IS NULL)`,
+        [assignment_id, req.user.org_id || null]
+      );
+      if (!officerCheck.rows.length) {
+        return res.status(404).json({ error: 'Field officer not found' });
+      }
     }
 
     // Detect explicit clear: assignment_type is present in body but falsy (null/empty)
