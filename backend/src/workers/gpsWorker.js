@@ -76,7 +76,7 @@ async function processGPS(job) {
 
   // 3. Broadcast live position on org channel for real-time GPS page
   const orgRes = await query(
-    `SELECT c.org_id FROM convoys c
+    `SELECT c.org_id, c.id AS convoy_id FROM convoys c
      JOIN convoy_trucks ct ON ct.convoy_id = c.id
      WHERE ct.vehicle_id = $1 AND c.status = 'active' AND c.deleted_at IS NULL
      LIMIT 1`,
@@ -88,6 +88,17 @@ async function processGPS(job) {
     publish(`org#${orgId}`, gpsPayload);
   } else {
     publish('vehicle:update', { vehicleId: vehicle_id, lat, lng, speed });
+  }
+
+  // Also publish to portal channel so cargo owners see live updates
+  const convoyId = orgRes.rows[0]?.convoy_id ?? null;
+  if (convoyId) {
+    publish(`portal#${convoyId}`, {
+      type: 'position',
+      location: { lat, lng },
+      speed_kmh: speed,
+      ping_at: timestamp,
+    });
   }
 
   const { alertQueue } = getQueues();
