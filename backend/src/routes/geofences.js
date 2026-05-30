@@ -1,7 +1,10 @@
 const router = require('express').Router();
 const { query } = require('../config/database');
 const { authenticate } = require('../middleware/auth');
-router.use(authenticate);
+const { attachOrgDb } = require('../utils/orgScopedDb');
+const { invalidateGeofenceCache } = require('../utils/geofenceEngine');
+const { asyncHandler } = require('../middleware/error');
+router.use(authenticate, attachOrgDb);
 
 function parseLatLng(row) {
   // Normalize double-serialized JSON strings (JSON.stringify called twice)
@@ -58,9 +61,11 @@ router.post('/', async (req, res, next) => {
       coordinates = { lat: parseFloat(lat), lng: parseFloat(lng) };
     }
     const { rows } = await db(
-      `INSERT INTO geofences (name, type, coordinates, radius, region) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+      `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
+       VALUES ($1,$2,$3,$4,$5,(current_setting('app.current_org_id',true))::uuid) RETURNING *`,
       [name, type, JSON.stringify(coordinates), radius, region]
     );
+    invalidateGeofenceCache(req.user?.org_id);
     res.status(201).json({ data: parseLatLng(rows[0]) });
   } catch (err) { next(err); }
 });
@@ -130,5 +135,45 @@ router.patch('/:id/actions/:actionId/toggle', async (req, res, next) => {
     res.json({ data: rows[0] });
   } catch (err) { next(err); }
 });
+
+// ─── S2-F1: Geofence Events ───────────────────────────────────────────────────
+
+// GET /geofences/events — list recent geofence events for this org
+router.get('/events', asyncHandler(async (req, res) => {
+  const limit = Math.min(200, parseInt(req.query.limit) || 50);
+  const convoyId = req.query.convoy_id;
+  const eventType = req.query.event_type;
+
+  const filters = [], params = [];
+  if (convoyId) { params.push(convoyId); filters.push(`e.convoy_id = $${params.length}`); }
+  if (eventType) { params.push(eventType); filters.push(`e.event_type = $${params.length}`); }
+
+  params.push(limit);
+  const where = filters.length ? `AND ${filters.join(' AND ')}` : '';
+  const result = await req.db(
+    `SELECT e.*, g.name AS geofence_name
+       FROM geofence_events e
+       LEFT JOIN geofences g ON g.id = e.geofence_id
+      WHERE TRUE ${where}
+      ORDER BY e.created_at DESC
+      LIMIT $${params.length}`,
+    params,
+  );
+  res.json({ data: result.rows });
+}));
+
+// POST /geofences/:id/activate-corridor — mark a polygon geofence as corridor type
+router.post('/:id/activate-corridor', asyncHandler(async (req, res) => {
+  const { corridor_width_km = 2.0 } = req.body;
+  const result = await req.db(
+    `UPDATE geofences
+        SET type = 'corridor', corridor_width_km = $1, updated_at = NOW()
+      WHERE id = $2 RETURNING *`,
+    [corridor_width_km, req.params.id],
+  );
+  if (!result.rows.length) return res.status(404).json({ error: 'Geofence not found' });
+  invalidateGeofenceCache(req.user?.org_id);
+  res.json({ data: result.rows[0] });
+}));
 
 module.exports = router;

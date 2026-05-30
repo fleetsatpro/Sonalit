@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Truck, MapPin, Users, Route, Bell, AlertTriangle,
   MessageSquare, BarChart2, FileText, FileBarChart, Package, DollarSign, Wrench,
   Map, Shield, BookOpen, Settings, Cpu, Wifi, Bot, ChevronLeft,
-  ChevronRight, Siren,
+  ChevronRight, Siren, Fuel, Calendar, ClipboardList,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -23,6 +23,9 @@ const NAV_ITEMS = [
   { to: '/shipments', label: 'Shipments', icon: Package },
   { to: '/finance', label: 'Finance', icon: DollarSign },
   { to: '/maintenance', label: 'Maintenance', icon: Wrench },
+  { to: '/fuel', label: 'Fuel', icon: Fuel },
+  { to: '/claims', label: 'Claims', icon: ClipboardList },
+  { to: '/shifts', label: 'Shifts', icon: Calendar },
   { to: '/geofences', label: 'Geofences', icon: Map },
   { to: '/risk-intel', label: 'Risk Intel', icon: Shield },
   { to: '/route-analysis', label: 'Route Safety', icon: Route },

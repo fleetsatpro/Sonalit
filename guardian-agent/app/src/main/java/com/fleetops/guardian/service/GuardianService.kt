@@ -272,6 +272,24 @@ class GuardianService : LifecycleService() {
         startLocationUpdates()
     }
 
+    @SuppressLint("MissingPermission")
+    private fun requestOneShotLocation() {
+        fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+            if (location != null) {
+                lifecycleScope.launch {
+                    repository.sendLocation(
+                        lat = location.latitude,
+                        lng = location.longitude,
+                        altitude = if (location.hasAltitude()) location.altitude else null,
+                        speed = if (location.hasSpeed()) location.speed else null,
+                        heading = if (location.hasBearing()) location.bearing else null,
+                        accuracy = if (location.hasAccuracy()) location.accuracy else null
+                    )
+                }
+            }
+        }
+    }
+
     private fun computeIntervalMs(mode: String, defaultSeconds: Long): Long {
         val seconds = when (mode) {
             DevicePrefs.TrackingMode.LIVE -> 5L
@@ -332,6 +350,33 @@ class GuardianService : LifecycleService() {
                 "stop_live_tracking" -> devicePrefs.setTrackingMode(DevicePrefs.TrackingMode.NORMAL)
                 "force_sync" -> {
                     lifecycleScope.launch { repository.syncPendingUploads() }
+                }
+                "request_location" -> {
+                    val lat = lastKnownLat
+                    val lng = lastKnownLng
+                    if (lat != null && lng != null) {
+                        repository.sendLocation(lat, lng, null, null, null, null)
+                    } else {
+                        requestOneShotLocation()
+                    }
+                }
+                "restart_agent" -> {
+                    Log.i(TAG, "Restart command received — will restart after ack")
+                    lifecycleScope.launch {
+                        kotlinx.coroutines.delay(500)
+                        stopSelf()
+                    }
+                }
+                "LOCKDOWN", "lockdown" -> executeLockScreen(command)
+                "WIPE" -> {
+                    Log.w(TAG, "WIPE command received but requires device-owner policy")
+                    repository.ackCommand(command.commandId, "failed")
+                    return
+                }
+                "TAKE_PHOTO" -> {
+                    executePushMessage(command.copy(
+                        payload = mapOf("title" to "Action Required", "body" to "Please open the Guardian app and take the required photo.")
+                    ))
                 }
                 else -> {
                     Log.w(TAG, "Unknown command type: ${command.type}")
