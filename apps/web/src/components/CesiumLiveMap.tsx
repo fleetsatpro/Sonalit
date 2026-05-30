@@ -77,56 +77,65 @@ export default function CesiumLiveMap({
   const entitiesRef  = useRef<globalThis.Map<string, Cesium.Entity>>(new globalThis.Map());
   const handlerRef   = useRef<Cesium.ScreenSpaceEventHandler | null>(null);
   const [mapMode, setMapMode] = useState<MapMode>('map');
+  const [initFailed, setInitFailed] = useState(false);
 
   // ── Init viewer ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!containerRef.current) return;
 
-    Cesium.Ion.defaultAccessToken =
-      (import.meta.env['VITE_CESIUM_ION_TOKEN'] as string | undefined) ?? '';
+    let viewer: Cesium.Viewer | undefined;
+    let handler: Cesium.ScreenSpaceEventHandler | undefined;
 
-    const cartoProvider = new Cesium.UrlTemplateImageryProvider({
-      url: MAP_URL,
-      credit: new Cesium.Credit('© Carto, © OpenStreetMap contributors', false),
-      maximumLevel: 19,
-    });
+    try {
+      Cesium.Ion.defaultAccessToken =
+        (import.meta.env['VITE_CESIUM_ION_TOKEN'] as string | undefined) ?? '';
 
-    const viewer = new Cesium.Viewer(containerRef.current, {
-      baseLayer: new Cesium.ImageryLayer(cartoProvider),
-      terrainProvider: new Cesium.EllipsoidTerrainProvider(),
-      animation: false,
-      baseLayerPicker: false,
-      fullscreenButton: false,
-      geocoder: false,
-      homeButton: false,
-      infoBox: false,
-      sceneModePicker: false,
-      selectionIndicator: false,
-      timeline: false,
-      navigationHelpButton: false,
-      navigationInstructionsInitiallyVisible: false,
-      creditContainer: document.createElement('div'),
-    });
+      const cartoProvider = new Cesium.UrlTemplateImageryProvider({
+        url: MAP_URL,
+        credit: new Cesium.Credit('© Carto, © OpenStreetMap contributors', false),
+        maximumLevel: 19,
+      });
 
-    viewer.clock.shouldAnimate = true;
-    viewerRef.current = viewer;
+      viewer = new Cesium.Viewer(containerRef.current, {
+        baseLayer: new Cesium.ImageryLayer(cartoProvider),
+        terrainProvider: new Cesium.EllipsoidTerrainProvider(),
+        animation: false,
+        baseLayerPicker: false,
+        fullscreenButton: false,
+        geocoder: false,
+        homeButton: false,
+        infoBox: false,
+        sceneModePicker: false,
+        selectionIndicator: false,
+        timeline: false,
+        navigationHelpButton: false,
+        navigationInstructionsInitiallyVisible: false,
+        creditContainer: document.createElement('div'),
+      });
 
-    // Click handler — identify entity or deselect
-    const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
-    handler.setInputAction((click: Cesium.ScreenSpaceEventHandler.PositionedEvent) => {
-      const picked = viewer.scene.pick(click.position);
-      if (Cesium.defined(picked) && picked.id instanceof Cesium.Entity) {
-        onSelect(picked.id.id as string);
-      } else {
-        onDeselect();
-      }
-    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
-    handlerRef.current = handler;
+      viewer.clock.shouldAnimate = true;
+      viewerRef.current = viewer;
+
+      // Click handler — identify entity or deselect
+      handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+      handler.setInputAction((click: Cesium.ScreenSpaceEventHandler.PositionedEvent) => {
+        const picked = viewer!.scene.pick(click.position);
+        if (Cesium.defined(picked) && picked.id instanceof Cesium.Entity) {
+          onSelect(picked.id.id as string);
+        } else {
+          onDeselect();
+        }
+      }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+      handlerRef.current = handler;
+    } catch {
+      setInitFailed(true);
+      return;
+    }
 
     return () => {
-      handler.destroy();
+      handler?.destroy();
       entitiesRef.current.clear();
-      if (!viewer.isDestroyed()) viewer.destroy();
+      if (viewer && !viewer.isDestroyed()) viewer.destroy();
       viewerRef.current = null;
     };
     // onSelect/onDeselect are stable callbacks — intentionally not in deps
@@ -243,6 +252,14 @@ export default function CesiumLiveMap({
       });
     }
   }, [locations, selectedId, vehicleMap]);
+
+  if (initFailed) {
+    return (
+      <div className="flex items-center justify-center w-full h-full bg-gray-950 text-gray-500 text-sm">
+        3D map unavailable
+      </div>
+    );
+  }
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
