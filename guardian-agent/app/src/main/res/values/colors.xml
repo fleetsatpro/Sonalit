@@ -6,6 +6,7 @@
     <color name="cyan">#FF00D4FF</color>
     <color name="cyan_dim">#1A00D4FF</color>
     <color name="success">#FF00FF88</color>
+    <color name="danger">#FFFF3B30</color>
     <color name="warning">#FFFFAA00</color>
     <color name="gold">#FFFFD166</color>
     <color name="muted">#FF4A7090</color>
