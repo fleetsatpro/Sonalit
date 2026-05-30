@@ -11,7 +11,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
-import { Layers } from 'lucide-react';
+import { Map, Globe, Layers } from 'lucide-react';
 
 export interface DeviceLocation {
   device_id: string;
@@ -31,8 +31,15 @@ interface Props {
   onDeselect: () => void;
 }
 
-const OSM_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-const SAT_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+type MapMode = 'map' | 'satellite' | 'hybrid';
+
+const OSM_URL         = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+const SAT_URL         = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+const REF_ROADS_URL   = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}';
+const REF_PLACES_URL  = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
+
+const NEXT_MODE: Record<MapMode, MapMode> = { map: 'satellite', satellite: 'hybrid', hybrid: 'map' };
+const MODE_LABEL: Record<MapMode, string> = { map: 'Map', satellite: 'Satellite', hybrid: 'Hybrid' };
 
 const ORANGE = Cesium.Color.fromCssColorString('#ff9040');
 const GREEN  = Cesium.Color.fromCssColorString('#4ade80');
@@ -49,6 +56,12 @@ function makePoint(color: Cesium.Color, size: number): Cesium.PointGraphics {
   });
 }
 
+function ModeIcon({ mode }: { mode: MapMode }): React.ReactElement {
+  if (mode === 'satellite') return <Globe className="w-3.5 h-3.5" />;
+  if (mode === 'hybrid')    return <Layers className="w-3.5 h-3.5" />;
+  return <Map className="w-3.5 h-3.5" />;
+}
+
 export default function CesiumLiveMap({
   locations,
   vehicleMap,
@@ -58,9 +71,9 @@ export default function CesiumLiveMap({
 }: Props): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef    = useRef<Cesium.Viewer | null>(null);
-  const entitiesRef  = useRef<Map<string, Cesium.Entity>>(new Map());
+  const entitiesRef  = useRef<globalThis.Map<string, Cesium.Entity>>(new globalThis.Map());
   const handlerRef   = useRef<Cesium.ScreenSpaceEventHandler | null>(null);
-  const [isSatellite, setIsSatellite] = useState(false);
+  const [mapMode, setMapMode] = useState<MapMode>('map');
 
   // ── Init viewer ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -100,8 +113,7 @@ export default function CesiumLiveMap({
     handler.setInputAction((click: Cesium.ScreenSpaceEventHandler.PositionedEvent) => {
       const picked = viewer.scene.pick(click.position);
       if (Cesium.defined(picked) && picked.id instanceof Cesium.Entity) {
-        const id = picked.id.id as string;
-        onSelect(id);
+        onSelect(picked.id.id as string);
       } else {
         onDeselect();
       }
@@ -118,21 +130,51 @@ export default function CesiumLiveMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Satellite toggle ────────────────────────────────────────────────────────
+  // ── Layer switching ────────────────────────────────────────────────────────
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
 
-    const url = isSatellite ? SAT_URL : OSM_URL;
-    const credit = isSatellite
-      ? new Cesium.Credit('© Esri, DigitalGlobe', false)
-      : new Cesium.Credit('© OpenStreetMap contributors', false);
-
     viewer.imageryLayers.removeAll();
-    viewer.imageryLayers.addImageryProvider(
-      new Cesium.UrlTemplateImageryProvider({ url, credit, maximumLevel: 19 }),
-    );
-  }, [isSatellite]);
+
+    if (mapMode === 'map') {
+      viewer.imageryLayers.addImageryProvider(
+        new Cesium.UrlTemplateImageryProvider({
+          url: OSM_URL,
+          credit: new Cesium.Credit('© OpenStreetMap contributors', false),
+          maximumLevel: 19,
+        }),
+      );
+    } else {
+      // Satellite base — max level 23 for highest available resolution
+      viewer.imageryLayers.addImageryProvider(
+        new Cesium.UrlTemplateImageryProvider({
+          url: SAT_URL,
+          credit: new Cesium.Credit('© Esri, Maxar, Earthstar Geographics', false),
+          maximumLevel: 23,
+        }),
+      );
+
+      if (mapMode === 'hybrid') {
+        // Roads overlay
+        viewer.imageryLayers.addImageryProvider(
+          new Cesium.UrlTemplateImageryProvider({
+            url: REF_ROADS_URL,
+            credit: new Cesium.Credit('© Esri', false),
+            maximumLevel: 19,
+          }),
+        );
+        // Place names / boundaries overlay
+        viewer.imageryLayers.addImageryProvider(
+          new Cesium.UrlTemplateImageryProvider({
+            url: REF_PLACES_URL,
+            credit: new Cesium.Credit('© Esri', false),
+            maximumLevel: 19,
+          }),
+        );
+      }
+    }
+  }, [mapMode]);
 
   // ── Sync entities with locations ────────────────────────────────────────────
   useEffect(() => {
@@ -149,7 +191,7 @@ export default function CesiumLiveMap({
       }
     }
 
-    let needsFly = entitiesRef.current.size === 0 && locations.length > 0;
+    const needsFly = entitiesRef.current.size === 0 && locations.length > 0;
 
     for (const loc of locations) {
       const pos = Cesium.Cartesian3.fromDegrees(loc.lng, loc.lat, 0);
@@ -200,11 +242,12 @@ export default function CesiumLiveMap({
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
       <button
-        onClick={() => setIsSatellite(v => !v)}
+        onClick={() => setMapMode(m => NEXT_MODE[m])}
         className="absolute bottom-4 left-4 z-10 flex items-center gap-1.5 bg-gray-900/90 hover:bg-gray-800 text-white text-xs font-medium px-3 py-2 rounded-lg border border-gray-700 shadow-lg transition-colors"
+        title={`Switch to ${MODE_LABEL[NEXT_MODE[mapMode]]}`}
       >
-        <Layers className="w-3.5 h-3.5" />
-        {isSatellite ? 'Dark' : 'Satellite'}
+        <ModeIcon mode={mapMode} />
+        {MODE_LABEL[mapMode]}
       </button>
     </div>
   );
