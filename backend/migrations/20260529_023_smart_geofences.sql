@@ -5,7 +5,8 @@
 DO $$
 DECLARE default_org UUID;
 BEGIN
-  SELECT id INTO default_org FROM organizations LIMIT 1;
+  -- Derive a fallback org_id from existing convoy rows (no organizations table in this schema)
+  SELECT org_id INTO default_org FROM convoys LIMIT 1;
   IF default_org IS NULL THEN default_org := '00000000-0000-0000-0000-000000000001'; END IF;
 
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns
@@ -55,7 +56,7 @@ CREATE POLICY org_isolation ON geofences
 -- ── 4. geofence_events ────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS geofence_events (
   id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id        UUID        NOT NULL REFERENCES organizations(id),
+  org_id        UUID        NOT NULL,
   geofence_id   UUID        REFERENCES geofences(id),
   vehicle_id    UUID        REFERENCES vehicles(id),
   device_id     UUID        REFERENCES guardian_devices(id),
@@ -88,7 +89,7 @@ GRANT SELECT, INSERT ON geofence_events TO sonalit_app;
 -- ── 5. convoy_route_corridors ─────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS convoy_route_corridors (
   id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id     UUID        NOT NULL REFERENCES organizations(id),
+  org_id     UUID        NOT NULL,
   convoy_id  UUID        NOT NULL REFERENCES convoys(id) UNIQUE,
   route_line JSONB       NOT NULL,
   width_km   NUMERIC(4,1) NOT NULL DEFAULT 2.0,
