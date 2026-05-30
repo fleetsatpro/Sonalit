@@ -1582,6 +1582,16 @@
         }
       }
     },
+    "/api/v1/portal/convoy/trail": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_trail",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/portal/convoy/custody-pdf": {
       "get": {
         "operationId": "get_api_v1_portal_convoy_custody_pdf",
