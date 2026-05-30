@@ -39,13 +39,13 @@ router.get('/convoy', portalAuth, asyncHandler(async (req, res) => {
        (SELECT COUNT(*) FROM convoy_trucks ct WHERE ct.convoy_id = c.id) AS vehicle_count,
        (SELECT g.lat  FROM gps_logs g WHERE g.vehicle_id = ANY(
           SELECT ct2.vehicle_id FROM convoy_trucks ct2 WHERE ct2.convoy_id = c.id)
-          ORDER BY g.recorded_at DESC LIMIT 1) AS last_known_lat,
+          ORDER BY g.timestamp DESC LIMIT 1) AS last_known_lat,
        (SELECT g.lng  FROM gps_logs g WHERE g.vehicle_id = ANY(
           SELECT ct2.vehicle_id FROM convoy_trucks ct2 WHERE ct2.convoy_id = c.id)
-          ORDER BY g.recorded_at DESC LIMIT 1) AS last_known_lng,
-       (SELECT g.recorded_at FROM gps_logs g WHERE g.vehicle_id = ANY(
+          ORDER BY g.timestamp DESC LIMIT 1) AS last_known_lng,
+       (SELECT g.timestamp FROM gps_logs g WHERE g.vehicle_id = ANY(
           SELECT ct2.vehicle_id FROM convoy_trucks ct2 WHERE ct2.convoy_id = c.id)
-          ORDER BY g.recorded_at DESC LIMIT 1) AS last_location_at,
+          ORDER BY g.timestamp DESC LIMIT 1) AS last_location_at,
        c.seal_intact
      FROM convoys c
     WHERE c.id = $1 AND c.deleted_at IS NULL`,
@@ -90,11 +90,11 @@ router.get('/convoy/custody-pdf', portalAuth, asyncHandler(async (req, res) => {
   };
 
   const posResult = await req.db(
-    `SELECT g.lat, g.lng, g.recorded_at, g.speed_kmh, g.source
+    `SELECT g.lat, g.lng, g.timestamp AS recorded_at, g.speed AS speed_kmh, NULL::TEXT AS source
        FROM gps_logs g
        JOIN convoy_trucks ct ON ct.vehicle_id = g.vehicle_id
       WHERE ct.convoy_id = $1
-      ORDER BY g.recorded_at DESC
+      ORDER BY g.timestamp DESC
       LIMIT 200`,
     [convoy_id],
   );
