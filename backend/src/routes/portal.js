@@ -36,15 +36,15 @@ router.get('/convoy', portalAuth, asyncHandler(async (req, res) => {
        COALESCE(c.departed_at, c.departure_time)    AS departed_at,
        c.arrived_at,
        COALESCE(c.estimated_arrival_at, c.estimated_arrival) AS estimated_arrival_at,
-       (SELECT COUNT(*) FROM convoy_vehicles cv WHERE cv.convoy_id = c.id) AS vehicle_count,
+       (SELECT COUNT(*) FROM convoy_trucks ct WHERE ct.convoy_id = c.id) AS vehicle_count,
        (SELECT g.lat  FROM gps_logs g WHERE g.vehicle_id = ANY(
-          SELECT cv2.vehicle_id FROM convoy_vehicles cv2 WHERE cv2.convoy_id = c.id)
+          SELECT ct2.vehicle_id FROM convoy_trucks ct2 WHERE ct2.convoy_id = c.id)
           ORDER BY g.recorded_at DESC LIMIT 1) AS last_known_lat,
        (SELECT g.lng  FROM gps_logs g WHERE g.vehicle_id = ANY(
-          SELECT cv2.vehicle_id FROM convoy_vehicles cv2 WHERE cv2.convoy_id = c.id)
+          SELECT ct2.vehicle_id FROM convoy_trucks ct2 WHERE ct2.convoy_id = c.id)
           ORDER BY g.recorded_at DESC LIMIT 1) AS last_known_lng,
        (SELECT g.recorded_at FROM gps_logs g WHERE g.vehicle_id = ANY(
-          SELECT cv2.vehicle_id FROM convoy_vehicles cv2 WHERE cv2.convoy_id = c.id)
+          SELECT ct2.vehicle_id FROM convoy_trucks ct2 WHERE ct2.convoy_id = c.id)
           ORDER BY g.recorded_at DESC LIMIT 1) AS last_location_at,
        c.seal_intact
      FROM convoys c
@@ -77,7 +77,7 @@ router.get('/convoy/custody-pdf', portalAuth, asyncHandler(async (req, res) => {
        COALESCE(c.departed_at, c.departure_time)    AS departed_at,
        c.arrived_at,
        COALESCE(c.estimated_arrival_at, c.estimated_arrival) AS estimated_arrival_at,
-       (SELECT COUNT(*) FROM convoy_vehicles cv WHERE cv.convoy_id = c.id) AS vehicle_count
+       (SELECT COUNT(*) FROM convoy_trucks ct WHERE ct.convoy_id = c.id) AS vehicle_count
      FROM convoys c WHERE c.id = $1 AND c.deleted_at IS NULL`,
     [convoy_id],
   );
@@ -92,8 +92,8 @@ router.get('/convoy/custody-pdf', portalAuth, asyncHandler(async (req, res) => {
   const posResult = await req.db(
     `SELECT g.lat, g.lng, g.recorded_at, g.speed_kmh, g.source
        FROM gps_logs g
-       JOIN convoy_vehicles cv ON cv.vehicle_id = g.vehicle_id
-      WHERE cv.convoy_id = $1
+       JOIN convoy_trucks ct ON ct.vehicle_id = g.vehicle_id
+      WHERE ct.convoy_id = $1
       ORDER BY g.recorded_at DESC
       LIMIT 200`,
     [convoy_id],
