@@ -33,10 +33,13 @@ interface Props {
 
 type MapMode = 'map' | 'satellite' | 'hybrid';
 
-const OSM_URL         = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+// Carto Dark Matter — global coverage (no missing tiles), already in CSP
+const MAP_URL         = 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
 const SAT_URL         = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
-const REF_ROADS_URL   = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}';
+// Always applied over satellite — borders, country names, city labels
 const REF_PLACES_URL  = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
+// Extra detail layer added only in hybrid mode
+const REF_ROADS_URL   = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}';
 
 const NEXT_MODE: Record<MapMode, MapMode> = { map: 'satellite', satellite: 'hybrid', hybrid: 'map' };
 const MODE_LABEL: Record<MapMode, string> = { map: 'Map', satellite: 'Satellite', hybrid: 'Hybrid' };
@@ -82,14 +85,14 @@ export default function CesiumLiveMap({
     Cesium.Ion.defaultAccessToken =
       (import.meta.env['VITE_CESIUM_ION_TOKEN'] as string | undefined) ?? '';
 
-    const osmProvider = new Cesium.UrlTemplateImageryProvider({
-      url: OSM_URL,
-      credit: new Cesium.Credit('© OpenStreetMap contributors', false),
+    const cartoProvider = new Cesium.UrlTemplateImageryProvider({
+      url: MAP_URL,
+      credit: new Cesium.Credit('© Carto, © OpenStreetMap contributors', false),
       maximumLevel: 19,
     });
 
     const viewer = new Cesium.Viewer(containerRef.current, {
-      baseLayer: new Cesium.ImageryLayer(osmProvider),
+      baseLayer: new Cesium.ImageryLayer(cartoProvider),
       terrainProvider: new Cesium.EllipsoidTerrainProvider(),
       animation: false,
       baseLayerPicker: false,
@@ -138,15 +141,16 @@ export default function CesiumLiveMap({
     viewer.imageryLayers.removeAll();
 
     if (mapMode === 'map') {
+      // Carto Dark Matter — global coverage, no missing-tile gaps
       viewer.imageryLayers.addImageryProvider(
         new Cesium.UrlTemplateImageryProvider({
-          url: OSM_URL,
-          credit: new Cesium.Credit('© OpenStreetMap contributors', false),
+          url: MAP_URL,
+          credit: new Cesium.Credit('© Carto, © OpenStreetMap contributors', false),
           maximumLevel: 19,
         }),
       );
     } else {
-      // Satellite base — max level 23 for highest available resolution
+      // Satellite base at max resolution
       viewer.imageryLayers.addImageryProvider(
         new Cesium.UrlTemplateImageryProvider({
           url: SAT_URL,
@@ -154,9 +158,8 @@ export default function CesiumLiveMap({
           maximumLevel: 23,
         }),
       );
-
+      // Hybrid: add road network under the labels
       if (mapMode === 'hybrid') {
-        // Roads overlay
         viewer.imageryLayers.addImageryProvider(
           new Cesium.UrlTemplateImageryProvider({
             url: REF_ROADS_URL,
@@ -164,15 +167,15 @@ export default function CesiumLiveMap({
             maximumLevel: 19,
           }),
         );
-        // Place names / boundaries overlay
-        viewer.imageryLayers.addImageryProvider(
-          new Cesium.UrlTemplateImageryProvider({
-            url: REF_PLACES_URL,
-            credit: new Cesium.Credit('© Esri', false),
-            maximumLevel: 19,
-          }),
-        );
       }
+      // Always: borders, country/city labels on top of satellite
+      viewer.imageryLayers.addImageryProvider(
+        new Cesium.UrlTemplateImageryProvider({
+          url: REF_PLACES_URL,
+          credit: new Cesium.Credit('© Esri', false),
+          maximumLevel: 19,
+        }),
+      );
     }
   }, [mapMode]);
 
