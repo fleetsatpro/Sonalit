@@ -15,6 +15,7 @@ export default defineConfig({
         clientsClaim: true,
         cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        globIgnores: ['**/cesium/**', '**/Cesium.js'],
         runtimeCaching: [
           {
             urlPattern: ({ url }: { url: URL }) => url.pathname.startsWith('/api/'),
@@ -54,7 +55,6 @@ export default defineConfig({
           react: ['react', 'react-dom'],
           tanstack: ['@tanstack/react-router', '@tanstack/react-query'],
           maps: ['maplibre-gl', 'deck.gl'],
-          cesium: ['cesium'],
           crdt: ['yjs'],
           forms: ['react-hook-form', 'zod'],
         },
