@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, lazy, Suspense } from 'react';
 import { Package, Download, Loader2, AlertTriangle, MapPin, Clock, Truck } from 'lucide-react';
-import Map, { Source, Layer, Marker, NavigationControl } from 'react-map-gl/maplibre';
-import 'maplibre-gl/dist/maplibre-gl.css';
+
+const CesiumTrailMap = lazy(() => import('../components/CesiumTrailMap'));
 
 interface TrailPoint {
   lat: number;
@@ -27,19 +27,6 @@ interface ConvoyView {
 }
 
 const API_BASE = (import.meta.env['VITE_API_BASE_URL'] as string | undefined) ?? '/api/v1';
-const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
-
-const trailLineLayer = {
-  id: 'trail-line',
-  type: 'line',
-  source: 'trail',
-  paint: {
-    'line-color': '#ff9040',
-    'line-width': 2.5,
-    'line-opacity': 0.85,
-  },
-  layout: { 'line-cap': 'round' as const, 'line-join': 'round' as const },
-} as const;
 
 function fmt(val: string | null): string {
   if (!val) return '—';
@@ -241,46 +228,23 @@ export default function PortalView(): React.ReactElement {
               </div>
             </div>
 
-            {/* GPS Trail Map */}
-            {(trail.length > 0 || convoy.last_known_lat) && (() => {
-              const last = trail.length > 0 ? trail[trail.length - 1] : null;
-              const centerLat = last?.lat ?? convoy.last_known_lat ?? 0;
-              const centerLng = last?.lng ?? convoy.last_known_lng ?? 0;
-              const geojson: GeoJSON.FeatureCollection = {
-                type: 'FeatureCollection',
-                features: trail.length >= 2 ? [{
-                  type: 'Feature',
-                  geometry: {
-                    type: 'LineString',
-                    coordinates: trail.map(p => [p.lng, p.lat]),
-                  },
-                  properties: {},
-                }] : [],
-              };
-              return (
-                <div className="rounded-xl overflow-hidden border border-white/[0.07]" style={{ height: 260 }}>
-                  <Map
-                    initialViewState={{ latitude: centerLat, longitude: centerLng, zoom: 10 }}
-                    mapStyle={MAP_STYLE}
-                    style={{ width: '100%', height: '100%' }}
-                    attributionControl={false}
-                  >
-                    <NavigationControl position="top-right" />
-                    <Source id="trail" type="geojson" data={geojson}>
-                      <Layer {...trailLineLayer} />
-                    </Source>
-                    {last && (
-                      <Marker latitude={last.lat} longitude={last.lng} anchor="center">
-                        <div className="relative">
-                          <span className="absolute inset-0 rounded-full bg-orange-400 opacity-50 animate-ping" />
-                          <div className="relative w-3.5 h-3.5 rounded-full bg-orange-500 border-2 border-white shadow-lg" />
-                        </div>
-                      </Marker>
-                    )}
-                  </Map>
-                </div>
-              );
-            })()}
+            {/* 3D GPS Trail — CesiumJS globe */}
+            {(trail.length > 0 || convoy.last_known_lat) && (
+              <div
+                className="rounded-xl overflow-hidden border border-white/[0.07]"
+                style={{ height: 340 }}
+              >
+                <Suspense
+                  fallback={
+                    <div className="flex items-center justify-center h-full text-gray-500 text-sm gap-2">
+                      <Loader2 size={16} className="animate-spin" /> Loading 3D map…
+                    </div>
+                  }
+                >
+                  <CesiumTrailMap trail={trail} />
+                </Suspense>
+              </div>
+            )}
 
             {/* PDF Download */}
             <button

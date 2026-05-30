@@ -1,11 +1,13 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import cesium from 'vite-plugin-cesium';
 import path from 'path';
 
 export default defineConfig({
   plugins: [
     react(),
+    cesium(),
     VitePWA({
       registerType: 'autoUpdate',
       workbox: {
@@ -52,6 +54,7 @@ export default defineConfig({
           react: ['react', 'react-dom'],
           tanstack: ['@tanstack/react-router', '@tanstack/react-query'],
           maps: ['maplibre-gl', 'deck.gl'],
+          cesium: ['cesium'],
           crdt: ['yjs'],
           forms: ['react-hook-form', 'zod'],
         },
