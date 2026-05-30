@@ -453,4 +453,7 @@ router.get('/centrifuge-token', portalAuth, asyncHandler(async (req, res) => {
   res.json({ data: { token: cfToken } });
 }));
 
+// Tasks 4 & 5: client dashboard + client management endpoints
+router.use('/', require('./portalClients'));
+
 module.exports = router;

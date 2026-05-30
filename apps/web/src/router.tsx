@@ -54,10 +54,19 @@ const routeAnalysisRoute = createRoute({ getParentRoute: () => authRoute, path: 
 const cargoPortalRoute = createRoute({ getParentRoute: () => authRoute, path: '/cargo-portal', component: lazyRouteComponent(() => import('./pages/CargoPortal.js')) });
 const portalViewRoute = createRoute({ getParentRoute: () => rootRoute, path: '/portal-view', component: lazyRouteComponent(() => import('./pages/PortalView.js')) });
 
+// Portal client routes (no operator auth required)
+const portalRootRoute = createRoute({ getParentRoute: () => rootRoute, id: 'portal-root',
+  component: lazyRouteComponent(() => import('./pages/portal/PortalLayout.js')) });
+const portalLoginRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/login',
+  component: lazyRouteComponent(() => import('./pages/portal/PortalLogin.js')) });
+const portalDashboardRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/dashboard',
+  component: lazyRouteComponent(() => import('./pages/portal/PortalDashboard.js')) });
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   notFoundRoute,
   portalViewRoute,
+  portalRootRoute.addChildren([portalLoginRoute, portalDashboardRoute]),
   authRoute.addChildren([
     dashboardRoute, fleetRoute, gpsRoute,
     convoysRoute, convoyNewRoute, convoyEditRoute,
