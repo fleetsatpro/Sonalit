@@ -2,7 +2,7 @@
 
 CREATE TABLE IF NOT EXISTS proof_of_delivery (
   id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id         UUID         NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  org_id         UUID         NOT NULL,
   convoy_id      UUID         NOT NULL REFERENCES convoys(id) ON DELETE CASCADE,
   shipment_id    UUID         REFERENCES shipments(id) ON DELETE SET NULL,
   delivered_at   TIMESTAMPTZ  NOT NULL,

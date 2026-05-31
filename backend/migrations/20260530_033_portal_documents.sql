@@ -2,7 +2,7 @@
 
 CREATE TABLE IF NOT EXISTS portal_documents (
   id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id      UUID        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  org_id      UUID        NOT NULL,
   convoy_id   UUID        NOT NULL REFERENCES convoys(id) ON DELETE CASCADE,
   type        TEXT        NOT NULL
               CHECK (type IN ('custody_chain','proof_of_delivery','manifest','customs','insurance','seal_report')),
