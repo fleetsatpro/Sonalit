@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { AlertTriangle, Loader2, Package } from 'lucide-react';
+import { AlertTriangle, Bell, Loader2, Package } from 'lucide-react';
 
 const API_BASE = (import.meta.env['VITE_API_BASE_URL'] as string | undefined) ?? '/api/v1';
 
@@ -138,32 +138,63 @@ function ShipmentCard({ shipment }: { shipment: ShipmentSummary }): React.ReactE
         <span>Last ping: {agoText(shipment.last_ping_at)}</span>
       </div>
 
-      {/* Row 3: exceptions + seal + track button */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-3">
-          {shipment.exception_count > 0 && (
-            <span className="flex items-center gap-1 text-xs text-red-400 font-medium">
-              <span className="inline-block w-2 h-2 rounded-full bg-red-500 shrink-0" />
-              {shipment.exception_count} exception{shipment.exception_count !== 1 ? 's' : ''}
-            </span>
-          )}
-          <SealBadge seal={shipment.seal_status} />
-        </div>
+      {/* Row 3: seal badge */}
+      <div className="flex items-center gap-3">
+        {shipment.exception_count > 0 && (
+          <button
+            onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/exceptions', params: { convoy_id: shipment.convoy_id } })}
+            className="flex items-center gap-1 text-xs text-red-400 font-medium hover:text-red-300 transition-colors"
+          >
+            <span className="inline-block w-2 h-2 rounded-full bg-red-500 shrink-0" />
+            {shipment.exception_count} exception{shipment.exception_count !== 1 ? 's' : ''}
+          </button>
+        )}
+        <SealBadge seal={shipment.seal_status} />
+      </div>
 
-        <div className="flex items-center gap-3">
+      {/* Row 4: action links */}
+      <div className="flex items-center flex-wrap gap-3 pt-0.5 border-t border-white/[0.05]">
+        <button onClick={handleTrack} className="text-xs font-semibold text-orange-400 hover:text-orange-300 transition-colors">
+          Track →
+        </button>
+        <button
+          onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/manifest', params: { convoy_id: shipment.convoy_id } })}
+          className="text-xs text-white/40 hover:text-white/70 transition-colors"
+        >
+          Manifest
+        </button>
+        <button
+          onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/exceptions', params: { convoy_id: shipment.convoy_id } })}
+          className="text-xs text-white/40 hover:text-white/70 transition-colors"
+        >
+          Exceptions
+        </button>
+        {(shipment.status === 'completed' || shipment.status === 'cancelled') && (
           <button
-            onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/manifest', params: { convoy_id: shipment.convoy_id } })}
-            className="shrink-0 text-xs font-medium text-white/40 hover:text-white/70 transition-colors"
+            onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/pod', params: { convoy_id: shipment.convoy_id } })}
+            className="text-xs text-white/40 hover:text-white/70 transition-colors"
           >
-            Manifest
+            POD
           </button>
-          <button
-            onClick={handleTrack}
-            className="shrink-0 text-xs font-semibold text-orange-400 hover:text-orange-300 transition-colors"
-          >
-            Track →
-          </button>
-        </div>
+        )}
+        <button
+          onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/documents', params: { convoy_id: shipment.convoy_id } })}
+          className="text-xs text-white/40 hover:text-white/70 transition-colors"
+        >
+          Docs
+        </button>
+        <button
+          onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/sensors', params: { convoy_id: shipment.convoy_id } })}
+          className="text-xs text-white/40 hover:text-white/70 transition-colors"
+        >
+          Sensors
+        </button>
+        <button
+          onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/replay', params: { convoy_id: shipment.convoy_id } })}
+          className="text-xs text-white/40 hover:text-white/70 transition-colors"
+        >
+          Replay
+        </button>
       </div>
     </div>
   );
@@ -250,14 +281,23 @@ export default function PortalDashboard(): React.ReactElement {
           <span className="text-xs text-gray-500 ml-1">Cargo Portal</span>
         </div>
 
-        <button
-          onClick={() => void handleLogout()}
-          disabled={loggingOut}
-          className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white disabled:opacity-50 transition-colors px-3 py-1.5 rounded-lg border border-white/[0.06] hover:border-white/[0.15]"
-        >
-          {loggingOut ? <Loader2 size={12} className="animate-spin" /> : null}
-          Log out
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => void navigate({ to: '/portal/notifications' })}
+            className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white transition-colors px-3 py-1.5 rounded-lg border border-white/[0.06] hover:border-white/[0.15]"
+            aria-label="Notification settings"
+          >
+            <Bell size={13} />
+          </button>
+          <button
+            onClick={() => void handleLogout()}
+            disabled={loggingOut}
+            className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white disabled:opacity-50 transition-colors px-3 py-1.5 rounded-lg border border-white/[0.06] hover:border-white/[0.15]"
+          >
+            {loggingOut ? <Loader2 size={12} className="animate-spin" /> : null}
+            Log out
+          </button>
+        </div>
       </div>
 
       <div className="max-w-3xl mx-auto px-4 pt-6 pb-12">
