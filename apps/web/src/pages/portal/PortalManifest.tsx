@@ -29,7 +29,7 @@ interface ManifestResponse {
   show_value: boolean;
 }
 
-const CARD_STYLE: React.CSSProperties = { background: 'rgba(13,20,38,0.7)' };
+const CARD_STYLE: React.CSSProperties = { background: 'var(--p-surface)' };
 
 const HANDLING_LABELS: Record<string, string> = {
   standard: 'Standard',
@@ -99,7 +99,7 @@ export default function PortalManifest(): React.ReactElement {
   const totalWeight = allItems.reduce((sum, i) => sum + (i.weight_kg ?? 0) * i.quantity, 0) || null;
 
   return (
-    <div className="min-h-screen" style={{ background: '#050813' }}>
+    <div className="portal-root" style={{ background: 'var(--p-bg)' }}>
 
       {/* Header */}
       <div className="border-b border-white/[0.06] px-4 sm:px-6 py-4 flex items-center gap-3">
@@ -114,7 +114,7 @@ export default function PortalManifest(): React.ReactElement {
         <span
           className="font-black text-base tracking-wider uppercase"
           style={{
-            fontFamily: "'Barlow Condensed','Arial Narrow',sans-serif",
+            fontFamily: 'var(--p-sans)',
             background: 'linear-gradient(90deg,#ff9040,#f07020)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',

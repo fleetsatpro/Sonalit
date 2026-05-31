@@ -33,7 +33,7 @@ const ALL_CHANNELS: { key: NotifChannel; label: string }[] = [
   { key: 'whatsapp', label: 'WhatsApp' },
 ];
 
-const CARD: React.CSSProperties = { background: 'rgba(13,20,38,0.7)' };
+const CARD: React.CSSProperties = { background: 'var(--p-surface)' };
 
 function toggle<T>(arr: T[], item: T): T[] {
   return arr.includes(item) ? arr.filter(x => x !== item) : [...arr, item];
@@ -174,7 +174,7 @@ export default function PortalNotifications(): React.ReactElement {
   };
 
   return (
-    <div className="min-h-screen" style={{ background: '#050813' }}>
+    <div className="portal-root" style={{ background: 'var(--p-bg)' }}>
       <div className="border-b border-white/[0.06] px-4 sm:px-6 py-4 flex items-center gap-3">
         <button onClick={() => void navigate({ to: '/portal/dashboard' })} className="text-gray-400 hover:text-white transition-colors">
           <ArrowLeft size={18} />
@@ -182,7 +182,7 @@ export default function PortalNotifications(): React.ReactElement {
         <Package size={18} className="text-orange-400 shrink-0" />
         <span
           className="font-black text-base tracking-wider uppercase"
-          style={{ fontFamily: "'Barlow Condensed','Arial Narrow',sans-serif", background: 'linear-gradient(90deg,#ff9040,#f07020)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}
+          style={{ fontFamily: 'var(--p-sans)', background: 'linear-gradient(90deg,#ff9040,#f07020)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}
         >
           SONALIT
         </span>

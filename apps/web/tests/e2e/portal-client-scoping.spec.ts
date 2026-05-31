@@ -159,4 +159,89 @@ test.describe('§00 Portal Client Scoping', () => {
     // convoy-y reference should never appear
     await expect(page.getByText(CONVOY_Y)).not.toBeVisible({ timeout: 4000 });
   });
+
+  // V4 new routes
+
+  test('403 on unlinked convoy overview (track page) is surfaced as error', async ({ page }) => {
+    stubConvoyY403(page, 'overview');
+    await page.goto(`/portal/convoy/${CONVOY_Y}/track`);
+    await expect(page.locator('text=/not authorised|403|failed/i')).toBeVisible({ timeout: 8000 });
+  });
+
+  test('403 on unlinked convoy overview (convoy page) is surfaced as error', async ({ page }) => {
+    stubConvoyY403(page, 'overview');
+    await page.goto(`/portal/convoy/${CONVOY_Y}/convoy`);
+    await expect(page.locator('text=/not authorised|403|failed/i')).toBeVisible({ timeout: 8000 });
+  });
+
+  test('403 on unlinked convoy custody is surfaced as error', async ({ page }) => {
+    stubConvoyY403(page, 'custody');
+    await page.goto(`/portal/convoy/${CONVOY_Y}/custody`);
+    await expect(page.locator('text=/not authorised|403|failed/i')).toBeVisible({ timeout: 8000 });
+  });
+
+  test('custody page shows chain-valid banner when chain is intact', async ({ page }) => {
+    page.route(
+      url => url.toString().includes(`/api/v1/portal/convoy/${CONVOY_X}/custody`),
+      route => route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [{
+            event_id: 'ev-001',
+            seq: 0,
+            kind: 'departure',
+            location: 'Lagos Port',
+            timestamp: new Date().toISOString(),
+            officer: 'J. Adeyemi',
+            seal_intact: true,
+            hash: 'a'.repeat(64),
+            prev_hash: null,
+            verified: true,
+          }],
+          meta: { chain_valid: true, event_count: 1 },
+        }),
+      }),
+    );
+    await page.goto(`/portal/convoy/${CONVOY_X}/custody`);
+    await expect(page.locator('text=/Chain Valid/i')).toBeVisible({ timeout: 8000 });
+  });
+
+  test('co-load count shown but other consignment detail never visible on convoy page', async ({ page }) => {
+    page.route(
+      url => url.toString().includes(`/api/v1/portal/convoy/${CONVOY_X}/overview`),
+      route => route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: {
+            convoy_id: CONVOY_X,
+            org_id: 'org-001',
+            reference: 'CVY-001',
+            status: 'in_transit',
+            origin: 'Lagos',
+            destination: 'Abuja',
+            departed_at: null,
+            estimated_arrival_at: null,
+            arrived_at: null,
+            progress_pct: 42,
+            eta_confidence_low: null,
+            eta_confidence_high: null,
+            vehicles: [],
+            escorts: [],
+            coload_count: 3,
+            exception_count: 0,
+            seal_status: 'intact',
+            custody_events: [],
+            waypoints: [],
+          },
+        }),
+      }),
+    );
+    await page.goto(`/portal/convoy/${CONVOY_X}/convoy`);
+    // Co-load count visible
+    await expect(page.locator('text=/3 other secured consignment/i')).toBeVisible({ timeout: 8000 });
+    // No other client's data ever shown
+    await expect(page.locator('text=/manifest|value|owner/i')).not.toBeVisible({ timeout: 4000 });
+  });
 });

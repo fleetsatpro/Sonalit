@@ -249,3 +249,79 @@ export const ShipmentSummarySchema = z.object({
   current_location: LatLngSchema.nullable(),
 });
 export type ShipmentSummary = z.infer<typeof ShipmentSummarySchema>;
+
+// ---------------------------------------------------------------------------
+// V4 — ConsignmentVehicle (vehicle in a convoy, seen by cargo client)
+// ---------------------------------------------------------------------------
+
+export const ConsignmentVehicleSchema = z.object({
+  vehicle_id: UuidSchema,
+  registration: z.string().min(1).max(20),
+  make: z.string().max(64).nullable(),
+  model: z.string().max(64).nullable(),
+  type: z.string().max(64).nullable(),
+  driver_name: z.string().max(128).nullable(),
+  current_lat: z.number().min(-90).max(90).nullable(),
+  current_lng: z.number().min(-180).max(180).nullable(),
+  speed_kmh: z.number().nonnegative().nullable(),
+  heading_deg: z.number().min(0).max(360).nullable(),
+  last_ping_at: IsoDateTimeSchema.nullable(),
+  carries_my_cargo: z.boolean(),
+});
+export type ConsignmentVehicle = z.infer<typeof ConsignmentVehicleSchema>;
+
+// ---------------------------------------------------------------------------
+// V4 — ConvoyEscort (armed escort or reaction unit)
+// ---------------------------------------------------------------------------
+
+export const ConvoyEscortSchema = z.object({
+  escort_id: UuidSchema,
+  callsign: z.string().min(1).max(64),
+  role: z.enum(['armed_escort', 'reaction_unit', 'traffic_management', 'medic']),
+  company: z.string().max(128).nullable(),
+  vehicle_registration: z.string().max(20).nullable(),
+  current_lat: z.number().min(-90).max(90).nullable(),
+  current_lng: z.number().min(-180).max(180).nullable(),
+});
+export type ConvoyEscort = z.infer<typeof ConvoyEscortSchema>;
+
+// ---------------------------------------------------------------------------
+// V4 — PortalConvoyOverview (full convoy state for Deep Track view)
+// ---------------------------------------------------------------------------
+
+export const CustodyEventSchema = z.object({
+  event_id: UuidSchema,
+  seq: z.number().int().nonnegative(),
+  kind: z.enum(['departure', 'checkpoint', 'handoff', 'seal_check', 'arrival', 'exception']),
+  location: z.string().max(256).nullable(),
+  timestamp: IsoDateTimeSchema,
+  officer: z.string().max(128).nullable(),
+  seal_intact: z.boolean().nullable(),
+  hash: z.string().length(64),
+  prev_hash: z.string().length(64).nullable(),
+  verified: z.boolean(),
+});
+export type CustodyEvent = z.infer<typeof CustodyEventSchema>;
+
+export const PortalConvoyOverviewSchema = z.object({
+  convoy_id: UuidSchema,
+  org_id: UuidSchema,
+  reference: z.string().min(1).max(64),
+  status: PortalConvoyStatusSchema,
+  origin: z.string().min(1).max(256),
+  destination: z.string().min(1).max(256),
+  departed_at: IsoDateTimeSchema.nullable(),
+  estimated_arrival_at: IsoDateTimeSchema.nullable(),
+  arrived_at: IsoDateTimeSchema.nullable(),
+  progress_pct: z.number().min(0).max(100).nullable(),
+  eta_confidence_low: IsoDateTimeSchema.nullable(),
+  eta_confidence_high: IsoDateTimeSchema.nullable(),
+  vehicles: z.array(ConsignmentVehicleSchema),
+  escorts: z.array(ConvoyEscortSchema),
+  coload_count: z.number().int().nonnegative(),
+  exception_count: z.number().int().nonnegative(),
+  seal_status: z.enum(['intact', 'compromised', 'unverified']).nullable(),
+  custody_events: z.array(CustodyEventSchema),
+  waypoints: z.array(LatLngSchema),
+});
+export type PortalConvoyOverview = z.infer<typeof PortalConvoyOverviewSchema>;

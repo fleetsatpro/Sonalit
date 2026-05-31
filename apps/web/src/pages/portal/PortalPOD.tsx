@@ -18,7 +18,7 @@ interface POD {
   created_at: string;
 }
 
-const CARD: React.CSSProperties = { background: 'rgba(13,20,38,0.7)' };
+const CARD: React.CSSProperties = { background: 'var(--p-surface)' };
 
 function fmtDate(val: string): string {
   return new Date(val).toLocaleString('en-ZA', { dateStyle: 'long', timeStyle: 'short' });
@@ -34,7 +34,7 @@ function PortalHeader({ onBack }: { onBack: () => void }): React.ReactElement {
       <span
         className="font-black text-base tracking-wider uppercase"
         style={{
-          fontFamily: "'Barlow Condensed','Arial Narrow',sans-serif",
+          fontFamily: 'var(--p-sans)',
           background: 'linear-gradient(90deg,#ff9040,#f07020)',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent',
@@ -154,7 +154,7 @@ export default function PortalPOD(): React.ReactElement {
   }, [convoy_id, navigate]);
 
   return (
-    <div className="min-h-screen" style={{ background: '#050813' }}>
+    <div className="portal-root" style={{ background: 'var(--p-bg)' }}>
       <PortalHeader onBack={() => void navigate({ to: '/portal/dashboard' })} />
 
       <div className="max-w-2xl mx-auto px-4 pt-6 pb-12">
