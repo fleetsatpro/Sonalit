@@ -3,7 +3,7 @@
 
 CREATE TABLE IF NOT EXISTS shipment_manifest_items (
   id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id      UUID        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  org_id      UUID        NOT NULL,
   shipment_id UUID        NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
   description TEXT        NOT NULL CHECK (char_length(description) BETWEEN 1 AND 512),
   quantity    INTEGER     NOT NULL CHECK (quantity > 0),
