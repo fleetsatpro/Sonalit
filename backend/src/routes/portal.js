@@ -236,6 +236,8 @@ router.get('/convoy/location', portalAuth, asyncHandler(async (req, res) => {
     [convoy_id],
   );
   const route_line = corridorResult.rows[0]?.route_line ?? null;
+  const origin_coords      = route_line?.length >= 1 ? route_line[0] : null;
+  const destination_coords = route_line?.length >= 2 ? route_line[route_line.length - 1] : null;
 
   res.json({
     data: {
@@ -245,6 +247,8 @@ router.get('/convoy/location', portalAuth, asyncHandler(async (req, res) => {
       last_ping_at: latest ? latest.t : null,
       trail: trail.map(r => ({ lat: r.lat, lng: r.lng, t: r.t })),
       route_line,
+      origin_coords,
+      destination_coords,
     },
   });
 }));
@@ -418,7 +422,8 @@ router.get('/convoy/seals', portalAuth, asyncHandler(async (req, res) => {
     const photos = photoResult.rows;
     const sodCount = photos.filter(p => p.session === 'SOD').length;
     const eodCount = photos.filter(p => p.session === 'EOD').length;
-    if (photos.length === 0) anyUnverified = true;
+    // unverified if either session has no photos — both SOD and EOD required for 'intact'
+    if (sodCount === 0 || eodCount === 0) anyUnverified = true;
     return {
       truck_id: truck.id,
       position: truck.position,
@@ -447,5 +452,10 @@ router.get('/centrifuge-token', portalAuth, asyncHandler(async (req, res) => {
   );
   res.json({ data: { token: cfToken } });
 }));
+
+// Client dashboard + client management (F1)
+router.use('/', require('./portalClients'));
+// Convoy-data endpoints: POD, exceptions, notifications, documents, sensors, replay (F3–F7)
+router.use('/', require('./portalConvoy'));
 
 module.exports = router;

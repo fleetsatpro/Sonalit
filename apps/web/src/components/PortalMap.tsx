@@ -16,6 +16,12 @@ export interface PortalMapProps {
   destination: string;
   status: string;
   animatePosition?: boolean;
+  /** Explicit origin lat/lng — used when routeLine is absent */
+  originCoords?: LatLng | null;
+  /** Explicit destination lat/lng — used when routeLine is absent */
+  destinationCoords?: LatLng | null;
+  /** Convoy departed but no GPS received yet */
+  noSignal?: boolean;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -104,6 +110,7 @@ function geoSrc(map: maplibregl.Map, id: string) {
 export default function PortalMap({
   currentLocation, heading, trail, routeLine,
   origin, destination, status, animatePosition = true,
+  originCoords, destinationCoords, noSignal = false,
 }: PortalMapProps): React.ReactElement {
   const containerRef     = useRef<HTMLDivElement>(null);
   const mapRef           = useRef<maplibregl.Map | null>(null);
@@ -164,6 +171,23 @@ export default function PortalMap({
     if (!routeLine || routeLine.length < 2) {
       geoSrc(map, 'route').setData(EMPTY_LINE);
       geoSrc(map, 'route-traversed').setData(EMPTY_LINE);
+      // Fallback: place standalone markers using explicit coords when no route line
+      const oCoord = originCoords;
+      const dCoord = destinationCoords;
+      if (oCoord) {
+        const pop = new maplibregl.Popup({ offset: 10, closeButton: false }).setText(`Origin: ${origin}`);
+        originMarkerRef.current = new maplibregl.Marker({ element: mkCircleEl('#22c55e') })
+          .setLngLat([oCoord.lng, oCoord.lat]).setPopup(pop).addTo(map);
+      }
+      if (dCoord) {
+        const pop = new maplibregl.Popup({ offset: 10, closeButton: false }).setText(`Destination: ${destination}`);
+        destMarkerRef.current = new maplibregl.Marker({ element: mkDiamondEl('#f97316') })
+          .setLngLat([dCoord.lng, dCoord.lat]).setPopup(pop).addTo(map);
+      }
+      if (!initialFitRef.current && oCoord && dCoord) {
+        map.fitBounds(boundsOf([oCoord, dCoord]), { padding: 60, duration: 800 });
+        initialFitRef.current = true;
+      }
       return;
     }
 
@@ -187,7 +211,7 @@ export default function PortalMap({
       initialFitRef.current = true;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeLine, origin, destination]);
+  }, [routeLine, origin, destination, originCoords, destinationCoords]);
 
   // ── Vehicle marker + traversed split ────────────────────────────────────────
   useEffect(() => {
@@ -233,24 +257,27 @@ export default function PortalMap({
     geoSrc(map, 'trail').setData(trail.length >= 2 ? trailLine(trail) : EMPTY_LINE);
   }, [trail]);
 
-  const awaitingFix = status === 'not_started' || currentLocation === null;
+  const showOverlay = status === 'not_started' || currentLocation === null;
+  const overlayColor = noSignal ? '#f59e0b' : '#f97316';
+  const overlayBorder = noSignal ? 'rgba(245,158,11,0.45)' : 'rgba(249,115,22,0.35)';
+  const overlayText  = noSignal ? 'No signal since departure' : 'Awaiting first position';
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', background: '#060e1a' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-      {awaitingFix && (
+      {showOverlay && (
         <div style={{
           position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-          background: 'rgba(6,14,26,0.88)', border: '1px solid rgba(249,115,22,0.35)',
+          background: 'rgba(6,14,26,0.88)', border: `1px solid ${overlayBorder}`,
           borderRadius: 9999, padding: '8px 18px', display: 'flex', alignItems: 'center',
           gap: 8, pointerEvents: 'none', backdropFilter: 'blur(6px)',
         }}>
           <span style={{
-            width: 8, height: 8, borderRadius: '50%', background: '#f97316',
+            width: 8, height: 8, borderRadius: '50%', background: overlayColor,
             display: 'inline-block', animation: 'pvm-pulse 1.4s ease-in-out infinite', flexShrink: 0,
           }} />
-          <span style={{ color: '#cbd5e1', fontSize: 13, whiteSpace: 'nowrap', fontWeight: 500 }}>
-            Awaiting first position
+          <span style={{ color: noSignal ? '#fde68a' : '#cbd5e1', fontSize: 13, whiteSpace: 'nowrap', fontWeight: 500 }}>
+            {overlayText}
           </span>
         </div>
       )}
