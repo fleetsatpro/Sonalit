@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Loader2, Mail, Plus, Shield, Users } from 'lucide-react';
+import { CheckCircle2, Copy, Link, Loader2, Mail, Plus, Shield, Users } from 'lucide-react';
 import { api } from '../lib/api.js';
 
 interface CargoClient {
@@ -113,10 +113,23 @@ function LinkConvoyModal({ client, convoys, onClose, onLinked }: {
 function ClientRow({ client, convoys }: { client: CargoClient; convoys: Convoy[] }) {
   const [showLink, setShowLink] = useState(false);
   const [linkSent, setLinkSent] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [linkUrl, setLinkUrl] = useState<string | null>(null);
   const qc = useQueryClient();
   const sendLink = useMutation({
     mutationFn: () => api.post('/portal/auth/request-link', { email: client.email }),
     onSuccess: () => { setLinkSent(true); setTimeout(() => setLinkSent(false), 5000); },
+  });
+  const copyLink = useMutation({
+    mutationFn: () => api.post<{ data: { url: string } }>(`/portal/clients/${client.id}/magic-link`, {}),
+    onSuccess: (res) => {
+      const url = res.data.data.url;
+      setLinkUrl(url);
+      navigator.clipboard.writeText(url).then(() => {
+        setLinkCopied(true);
+        setTimeout(() => setLinkCopied(false), 4000);
+      });
+    },
   });
   return (
     <>
@@ -129,19 +142,38 @@ function ClientRow({ client, convoys }: { client: CargoClient; convoys: Convoy[]
           <p className="text-xs text-gray-500">{client.email}{client.company ? ` · ${client.company}` : ''}</p>
           <p className="text-xs text-gray-600 mt-0.5">Last login: {fmt(client.last_login_at)}</p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button onClick={() => setShowLink(true)}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg border border-white/10 text-xs text-gray-400 hover:text-orange-400 hover:border-orange-500/30 transition-all">
-            <Shield size={11} /> Link Convoy
-          </button>
-          <button onClick={() => sendLink.mutate()} disabled={sendLink.isPending || linkSent}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg border border-white/10 text-xs text-gray-400 hover:text-blue-400 hover:border-blue-500/30 transition-all disabled:opacity-50"
-            title="Send magic link email">
-            {linkSent ? <CheckCircle2 size={11} className="text-green-400" /> : <Mail size={11} />}
-            {linkSent ? 'Sent' : 'Send Link'}
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
+          <div className="flex items-center gap-1.5">
+            <button onClick={() => setShowLink(true)}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg border border-white/10 text-xs text-gray-400 hover:text-orange-400 hover:border-orange-500/30 transition-all">
+              <Shield size={11} /> Link Convoy
+            </button>
+            <button onClick={() => sendLink.mutate()} disabled={sendLink.isPending || linkSent}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg border border-white/10 text-xs text-gray-400 hover:text-blue-400 hover:border-blue-500/30 transition-all disabled:opacity-50"
+              title="Send magic link email">
+              {linkSent ? <CheckCircle2 size={11} className="text-green-400" /> : <Mail size={11} />}
+              {linkSent ? 'Sent' : 'Email'}
+            </button>
+          </div>
+          <button onClick={() => copyLink.mutate()} disabled={copyLink.isPending}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg border text-xs transition-all disabled:opacity-50 w-full justify-center"
+            style={linkCopied
+              ? { borderColor: 'rgba(34,197,94,0.4)', color: '#4ade80', background: 'rgba(34,197,94,0.08)' }
+              : { borderColor: 'rgba(249,115,22,0.3)', color: '#fb923c', background: 'rgba(249,115,22,0.08)' }}
+            title="Generate a portal login link you can copy and send via WhatsApp, SMS, etc.">
+            {copyLink.isPending ? <Loader2 size={11} className="animate-spin" /> :
+             linkCopied ? <CheckCircle2 size={11} /> : <Copy size={11} />}
+            {linkCopied ? 'Copied!' : 'Copy Login Link'}
           </button>
         </div>
       </div>
+      {/* Show the generated URL inline for manual sharing */}
+      {linkUrl && linkCopied && (
+        <div className="mx-5 mb-3 flex items-center gap-2 rounded-lg border border-orange-500/20 bg-orange-500/05 px-3 py-2">
+          <Link size={11} className="text-orange-400 shrink-0" />
+          <code className="flex-1 text-[10px] text-orange-200 break-all">{linkUrl}</code>
+        </div>
+      )}
       {showLink && (
         <LinkConvoyModal client={client} convoys={convoys} onClose={() => setShowLink(false)}
           onLinked={() => { setShowLink(false); void qc.invalidateQueries({ queryKey: ['portal-clients'] }); }} />

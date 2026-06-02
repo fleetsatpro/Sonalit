@@ -99,6 +99,34 @@ router.post('/clients/:id/links', authenticate, attachOrgDb, authorize('admin', 
   res.status(201).json({ data: result.rows[0] });
 }));
 
+// POST /api/v1/portal/clients/:id/magic-link — generate a magic-link URL (operator copies and sends manually)
+router.post('/clients/:id/magic-link', authenticate, attachOrgDb, authorize('admin', 'dispatcher'), asyncHandler(async (req, res) => {
+  // Verify client belongs to this org
+  const clientResult = await req.db(
+    `SELECT id, org_id, email FROM cargo_clients WHERE id = $1 AND deleted_at IS NULL`,
+    [req.params.id],
+  );
+  if (!clientResult.rows.length) return res.status(404).json({ error: 'Client not found' });
+
+  const { id: client_id, org_id, email } = clientResult.rows[0];
+
+  const crypto = require('crypto');
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+  await req.db(
+    `INSERT INTO client_magic_links (org_id, client_id, token_hash, expires_at)
+     VALUES ($1, $2, $3, $4)`,
+    [org_id, client_id, tokenHash, expiresAt],
+  );
+
+  const portalUrl = process.env.PORTAL_URL ?? `https://${req.hostname}`;
+  const url = `${portalUrl}/portal/login?token=${rawToken}`;
+
+  res.json({ data: { url, email, expires_at: expiresAt.toISOString() } });
+}));
+
 // GET /api/v1/portal/clients — list clients for the org
 router.get('/clients', authenticate, attachOrgDb, authorize('admin', 'dispatcher', 'operator'), asyncHandler(async (req, res) => {
   const result = await req.db(
