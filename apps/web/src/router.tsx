@@ -59,6 +59,8 @@ const portalRootRoute = createRoute({ getParentRoute: () => rootRoute, id: 'port
   component: lazyRouteComponent(() => import('./pages/portal/PortalLayout.js')) });
 const portalLoginRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/login',
   component: lazyRouteComponent(() => import('./pages/portal/PortalLogin.js')) });
+const portalVerifyRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/verify',
+  component: lazyRouteComponent(() => import('./pages/portal/PortalLogin.js')) });
 const portalDashboardRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/dashboard',
   component: lazyRouteComponent(() => import('./pages/portal/PortalDashboard.js')) });
 const portalManifestRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/manifest',
@@ -89,7 +91,7 @@ const routeTree = rootRoute.addChildren([
   notFoundRoute,
   portalViewRoute,
   portalRootRoute.addChildren([
-    portalLoginRoute, portalDashboardRoute, portalManifestRoute, portalPODRoute,
+    portalLoginRoute, portalVerifyRoute, portalDashboardRoute, portalManifestRoute, portalPODRoute,
     portalExceptionsRoute, portalNotificationsRoute, portalDocumentsRoute,
     portalSensorsRoute, portalReplayRoute,
     portalTrackRoute, portalConvoyRoute, portalCustodyRoute, portalSecurityRoute,
