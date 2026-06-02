@@ -1,314 +1,95 @@
-import React, { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Truck, Users, Bell, Route, AlertTriangle, FileWarning, ShieldAlert, Package } from 'lucide-react';
-import { Link } from '@tanstack/react-router';
 import { api } from '../lib/api.js';
-import { subscribe } from '../lib/centrifuge.js';
 import { useAuthStore } from '../stores/auth.js';
-import { normalizeList, type NormalizedList } from '../lib/normalize.js';
-import type { Alert, Incident } from '@sonalit/contracts';
+import { useDashboardStore } from '../stores/dashboardStore.js';
+import { useDashboardRealtime } from '../hooks/useDashboardRealtime.js';
+import '../styles/dashboard.css';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+import DashboardShell from '../components/layout/DashboardShell.js';
+import OpsSidebar from '../components/dashboard/OpsSidebar.js';
+import KPIStrip from '../components/dashboard/KPIStrip.js';
+import AlertCards from '../components/dashboard/AlertCards.js';
+import ConvoyTracker from '../components/dashboard/ConvoyTracker.js';
+import RouteRiskIntelligence from '../components/dashboard/RouteRiskIntelligence.js';
+import DriverBehavior from '../components/dashboard/DriverBehavior.js';
+import BorderCrossings from '../components/dashboard/BorderCrossings.js';
+import PerformanceChart from '../components/dashboard/PerformanceChart.js';
+import AIIntelligence from '../components/dashboard/AIIntelligence.js';
+import WeatherIntelligence from '../components/dashboard/WeatherIntelligence.js';
+import PanicCenter from '../components/dashboard/PanicCenter.js';
+import MissionTimeline from '../components/dashboard/MissionTimeline.js';
+import CommunicationsStatus from '../components/dashboard/CommunicationsStatus.js';
+import QuickActions from '../components/dashboard/QuickActions.js';
+import IncidentLog from '../components/dashboard/IncidentLog.js';
+import type { DashboardOverview } from '../stores/dashboardStore.js';
 
-type OrgEvent = { type: string; payload: unknown };
-
-// ---------------------------------------------------------------------------
-// Stat card
-// ---------------------------------------------------------------------------
-
-function useCountUp(target: number, skip: boolean): number {
-  const [display, setDisplay] = useState(0);
-  const prev = useRef(0);
-  useEffect(() => {
-    if (skip) return;
-    const from = prev.current;
-    prev.current = target;
-    if (from === target) return;
-    const start = performance.now();
-    const duration = Math.min(600, Math.abs(target - from) * 40);
-    const raf = (now: number) => {
-      const t = Math.min((now - start) / duration, 1);
-      const ease = 1 - Math.pow(1 - t, 3);
-      setDisplay(Math.round(from + (target - from) * ease));
-      if (t < 1) requestAnimationFrame(raf);
-    };
-    requestAnimationFrame(raf);
-  }, [target, skip]);
-  return skip ? target : display;
-}
-
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  color,
-  isLoading,
-  isError,
-  liveOverride,
-  extraClass,
-  style,
-}: {
-  label: string;
-  value: number | undefined;
-  icon: React.ElementType;
-  color: string;
-  isLoading: boolean;
-  isError: boolean;
-  liveOverride?: number | null;
-  extraClass?: string | undefined;
-  style?: React.CSSProperties | undefined;
-}): React.ReactElement {
-  const raw = liveOverride !== null && liveOverride !== undefined ? liveOverride : (value ?? 0);
-  const animated = useCountUp(raw, isLoading || isError);
-  const isLive = liveOverride !== null && liveOverride !== undefined;
-  return (
-    <div
-      className={`bg-gray-900 border border-gray-800 rounded-xl p-5 flex items-center gap-4 transition-all duration-200 hover:shadow-lg hover:shadow-gray-950/50 hover:-translate-y-0.5 animate-fade-in-up${extraClass ? ' ' + extraClass : ''}`}
-      style={style}
-    >
-      <div className={`relative flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center ${color}`}>
-        <Icon className="w-6 h-6 text-white" />
-        {isLive && (
-          <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-gray-900">
-            <span className="absolute inset-0 rounded-full bg-green-400 animate-ping opacity-75" />
-          </span>
-        )}
-      </div>
-      <div>
-        <p className="text-gray-400 text-sm">{label}</p>
-        {isLoading ? (
-          <div className="h-7 w-12 bg-gray-800 rounded animate-pulse mt-0.5" />
-        ) : isError ? (
-          <p className="text-red-400 text-sm">Error</p>
-        ) : (
-          <p className="text-white text-2xl font-bold tabular-nums">{animated}</p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Severity badge
-// ---------------------------------------------------------------------------
-
-function SeverityBadge({ severity }: { severity: Alert['severity'] }): React.ReactElement {
-  const map: Record<Alert['severity'], string> = {
-    critical: 'bg-red-900/60 text-red-300 border-red-700',
-    warning: 'bg-yellow-900/60 text-yellow-300 border-yellow-700',
-    info: 'bg-blue-900/60 text-orange-300 border-blue-700',
-  };
-  return (
-    <span className={`text-xs font-medium px-2 py-0.5 rounded border ${map[severity]}`}>
-      {severity}
-    </span>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Priority badge
-// ---------------------------------------------------------------------------
-
-function PriorityBadge({ priority }: { priority: number }): React.ReactElement {
-  const colors = ['', 'bg-red-900/60 text-red-300', 'bg-orange-900/60 text-orange-300',
-    'bg-yellow-900/60 text-yellow-300', 'bg-blue-900/60 text-orange-300', 'bg-gray-800 text-gray-400'];
-  return (
-    <span className={`text-xs font-medium px-2 py-0.5 rounded ${colors[priority] ?? colors[5]}`}>
-      P{priority}
-    </span>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Main page
-// ---------------------------------------------------------------------------
-
-export default function Dashboard(): React.ReactElement {
+export default function Dashboard() {
   const user = useAuthStore((s) => s.user);
-  const orgId = user?.org_id ?? '';
-  const [liveVehicleCount, setLiveVehicleCount] = useState<number | null>(null);
+  const { setOverview } = useDashboardStore.getState();
 
-  const { data: activeVehicles, isLoading: lvLoading, isError: lvError } = useQuery<NormalizedList<unknown>>({
-    queryKey: ['vehicles', 'count', 'active'],
+  // Fetch overview data
+  useQuery({
+    queryKey: ['dashboard-overview'],
     queryFn: async () => {
-      const res = await api.get('/vehicles', { params: { status: 'active', limit: 1 } });
-      return normalizeList(res.data);
+      try {
+        const r = await api.get<DashboardOverview>('/dashboard/overview');
+        setOverview(r.data);
+        return r.data;
+      } catch { return null; }
     },
-    enabled: !!orgId,
+    staleTime: 30000,
+    refetchInterval: 60000,
   });
 
-  const { data: activeDrivers, isLoading: ldLoading, isError: ldError } = useQuery<NormalizedList<unknown>>({
-    queryKey: ['drivers', 'count', 'active'],
-    queryFn: async () => {
-      const res = await api.get('/drivers', { params: { status: 'active', limit: 1 } });
-      return normalizeList(res.data);
-    },
-    enabled: !!orgId,
-  });
-
-  const { data: openAlerts, isLoading: laLoading, isError: laError } = useQuery<NormalizedList<unknown>>({
-    queryKey: ['alerts', 'count', 'open'],
-    queryFn: async () => {
-      const res = await api.get('/alerts', { params: { status: 'open', limit: 1 } });
-      return normalizeList(res.data);
-    },
-    enabled: !!orgId,
-  });
-
-  const { data: activeConvoys, isLoading: lcLoading, isError: lcError } = useQuery<NormalizedList<unknown>>({
-    queryKey: ['convoys', 'count', 'active'],
-    queryFn: async () => {
-      const res = await api.get('/convoys', { params: { status: 'active', limit: 1 } });
-      return normalizeList(res.data);
-    },
-    enabled: !!orgId,
-  });
-
-  const { data: recentAlerts, isLoading: raLoading, isError: raError } = useQuery<NormalizedList<Alert>>({
-    queryKey: ['alerts', 'recent'],
-    queryFn: async () => {
-      const res = await api.get('/alerts', { params: { limit: 5 } });
-      return normalizeList<Alert>(res.data);
-    },
-    enabled: !!orgId,
-  });
-
-  const { data: routeAnalyses, isLoading: rraLoading, isError: rraError } = useQuery<{ total: number }>({
-    queryKey: ['route-analyses', 'count'],
-    queryFn: async () => {
-      const res = await api.get('/routes/analyses', { params: { limit: 1 } });
-      return { total: res.data.total ?? 0 };
-    },
-    enabled: !!orgId,
-  });
-
-  const { data: recentIncidents, isLoading: riLoading, isError: riError } = useQuery<NormalizedList<Incident>>({
-    queryKey: ['incidents', 'recent'],
-    queryFn: async () => {
-      const res = await api.get('/incidents', { params: { limit: 5 } });
-      return normalizeList<Incident>(res.data);
-    },
-    enabled: !!orgId,
-  });
-
-  useEffect(() => {
-    if (!orgId) return;
-    return subscribe<OrgEvent>(`org#${orgId}`, (event) => {
-      if (event.type === 'vehicle.count') {
-        const p = event.payload as { count?: number };
-        if (typeof p.count === 'number') setLiveVehicleCount(p.count);
-      }
-    });
-  }, [orgId]);
-
-  const stats = [
-    { label: 'Active Vehicles', value: activeVehicles?.total, icon: Truck, color: 'bg-orange-600', isLoading: lvLoading, isError: lvError, liveOverride: liveVehicleCount },
-    { label: 'Active Drivers', value: activeDrivers?.total, icon: Users, color: 'bg-green-600', isLoading: ldLoading, isError: ldError },
-    { label: 'Open Alerts', value: openAlerts?.total, icon: Bell, color: 'bg-red-600', isLoading: laLoading, isError: laError, extraClass: (openAlerts?.total ?? 0) > 0 ? 'animate-glow-red' : undefined },
-    { label: 'Ongoing Convoys', value: activeConvoys?.total, icon: Route, color: 'bg-amber-600', isLoading: lcLoading, isError: lcError },
-  ];
+  // Wire realtime
+  useDashboardRealtime(user?.org_id ?? '');
 
   return (
-    <div className="space-y-8">
-      <h1 className="text-2xl font-bold text-white animate-fade-in">Dashboard</h1>
+    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--d-void)' }}>
+      <DashboardShell>
+        {/* §6 KPI Strip */}
+        <KPIStrip />
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        {stats.map((s, i) => (
-          <StatCard key={s.label} {...s} style={{ animationDelay: `${i * 80}ms` }} />
-        ))}
+        {/* §7 Alert Cards */}
+        <div style={{ padding: '16px 16px 0' }}>
+          <AlertCards />
+        </div>
+
+        {/* §8 Convoy Tracker */}
+        <div style={{ padding: '16px 16px 0' }}>
+          <ConvoyTracker />
+        </div>
+
+        {/* §9 Remaining sections — 2-col grid on desktop */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, padding: '16px 16px 0' }}>
+          <RouteRiskIntelligence />
+          <DriverBehavior />
+          <BorderCrossings />
+          <PanicCenter />
+          <AIIntelligence />
+          <QuickActions />
+        </div>
+
+        {/* Full-width sections */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '12px 16px 0' }}>
+          <MissionTimeline />
+          <WeatherIntelligence />
+          <PerformanceChart />
+          <CommunicationsStatus />
+          <IncidentLog />
+        </div>
+      </DashboardShell>
+
+      {/* Desktop ops sidebar */}
+      <div className='d-ops-sidebar-wrap' style={{ display: 'none', position: 'fixed', right: 0, top: 0, width: 'var(--d-sb-w)', zIndex: 100 }}>
+        <OpsSidebar />
       </div>
 
-      {/* Feature widgets row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Link to="/route-analysis" className="group bg-gray-900 border border-gray-800 hover:border-orange-700/50 rounded-xl p-4 flex items-center gap-4 transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 animate-fade-in-up" style={{ animationDelay: '400ms' }}>
-          <div className="w-10 h-10 rounded-xl bg-orange-600/20 flex items-center justify-center shrink-0 group-hover:bg-orange-600/30 transition-colors">
-            <ShieldAlert className="w-5 h-5 text-orange-400" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-white font-semibold text-sm">Route Safety</p>
-            <p className="text-gray-400 text-xs">
-              {rraLoading ? 'Loading…' : rraError ? 'Unavailable' : `${routeAnalyses?.total ?? 0} route analyses run`}
-            </p>
-          </div>
-        </Link>
-        <Link to="/cargo-portal" className="group bg-gray-900 border border-gray-800 hover:border-orange-700/50 rounded-xl p-4 flex items-center gap-4 transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 animate-fade-in-up" style={{ animationDelay: '480ms' }}>
-          <div className="w-10 h-10 rounded-xl bg-orange-600/20 flex items-center justify-center shrink-0 group-hover:bg-orange-600/30 transition-colors">
-            <Package className="w-5 h-5 text-orange-400" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-white font-semibold text-sm">Cargo Portal</p>
-            <p className="text-gray-400 text-xs">Issue & manage cargo owner tokens</p>
-          </div>
-        </Link>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Alerts */}
-        <section className="bg-gray-900 border border-gray-800 rounded-xl p-5 animate-fade-in-up" style={{ animationDelay: '320ms' }}>
-          <div className="flex items-center gap-2 mb-4">
-            <AlertTriangle className="w-5 h-5 text-amber-400" />
-            <h2 className="text-lg font-semibold text-white">Recent Alerts</h2>
-          </div>
-          {raLoading && (
-            <div className="space-y-2">
-              {Array.from({ length: 5 }, (_, i) => (
-                <div key={i} className="h-12 bg-gray-800 rounded-lg animate-pulse" />
-              ))}
-            </div>
-          )}
-          {raError && <p className="text-red-400 text-sm">Failed to load alerts.</p>}
-          {!raLoading && !raError && (
-            <ul className="space-y-2">
-              {(recentAlerts?.data?.length ?? 0) === 0 && (
-                <li className="text-gray-500 text-sm">No alerts</li>
-              )}
-              {recentAlerts?.data?.map((alert, index) => (
-                <li key={alert.id} className="flex items-center gap-3 bg-gray-800/50 rounded-lg px-3 py-2.5 animate-slide-in-right" style={{ animationDelay: `${index * 60}ms` }}>
-                  <SeverityBadge severity={alert.severity} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-white text-sm font-medium truncate">{alert.title}</p>
-                    <p className="text-gray-400 text-xs">{alert.triggered_at ? new Date(alert.triggered_at).toLocaleString() : '—'}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        {/* Recent Incidents */}
-        <section className="bg-gray-900 border border-gray-800 rounded-xl p-5 animate-fade-in-up" style={{ animationDelay: '400ms' }}>
-          <div className="flex items-center gap-2 mb-4">
-            <FileWarning className="w-5 h-5 text-red-400" />
-            <h2 className="text-lg font-semibold text-white">Recent Incidents</h2>
-          </div>
-          {riLoading && (
-            <div className="space-y-2">
-              {Array.from({ length: 5 }, (_, i) => (
-                <div key={i} className="h-12 bg-gray-800 rounded-lg animate-pulse" />
-              ))}
-            </div>
-          )}
-          {riError && <p className="text-red-400 text-sm">Failed to load incidents.</p>}
-          {!riLoading && !riError && (
-            <ul className="space-y-2">
-              {(recentIncidents?.data?.length ?? 0) === 0 && (
-                <li className="text-gray-500 text-sm">No incidents</li>
-              )}
-              {recentIncidents?.data?.map((inc, index) => (
-                <li key={inc.id} className="flex items-center gap-3 bg-gray-800/50 rounded-lg px-3 py-2.5 animate-slide-in-right" style={{ animationDelay: `${index * 60}ms` }}>
-                  <PriorityBadge priority={inc.priority} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-white text-sm font-medium truncate">{inc.title}</p>
-                    <p className="text-gray-400 text-xs capitalize">{inc.status}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
+      <style>{`
+        @media (min-width: 900px) {
+          .d-ops-sidebar-wrap { display: block !important; }
+        }
+      `}</style>
     </div>
   );
 }
