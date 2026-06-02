@@ -459,5 +459,7 @@ router.use('/', require('./portalClients'));
 router.use('/', require('./portalConvoy'));
 // Custody ledger: hash-chain events (F8)
 router.use('/', require('./portalCustody'));
+// Live security: sanitised incident feed + realtime (F9)
+router.use('/', require('./portalSecurity'));
 
 module.exports = router;

@@ -303,6 +303,11 @@ export default function PortalTrack(): React.ReactElement {
 
             {/* Quick nav */}
             <div className="mt-5 grid grid-cols-2 gap-3 portal-reveal portal-reveal-4">
+              <button onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/security', params: { convoy_id } })}
+                className="rounded-xl border py-3 text-sm font-semibold transition-all col-span-2 flex items-center justify-center gap-2"
+                style={{ background: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.30)', color: '#fca5a5' }}>
+                <Shield size={14} /> Live Security
+              </button>
               <button onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/convoy', params: { convoy_id } })}
                 className="rounded-xl border border-white/[0.07] py-3 text-sm text-white/50 hover:text-white/80 hover:border-orange-500/30 transition-all" style={{ background: 'var(--p-surface2)' }}>
                 Convoy View

@@ -287,6 +287,11 @@ export default function PortalConvoy(): React.ReactElement {
 
             {/* Nav links */}
             <div className="mt-5 flex flex-wrap gap-3 portal-reveal portal-reveal-5">
+              <button onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/security', params: { convoy_id } })}
+                className="flex items-center gap-1.5 text-xs font-semibold border px-3 py-2 rounded-lg transition-all"
+                style={{ color: '#fca5a5', borderColor: 'rgba(239,68,68,0.30)', background: 'rgba(239,68,68,0.08)' }}>
+                <Shield size={12} /> Live Security
+              </button>
               <button onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/exceptions', params: { convoy_id } })}
                 className="flex items-center gap-1.5 text-xs text-white/50 hover:text-red-400 border border-white/[0.07] hover:border-red-500/30 px-3 py-2 rounded-lg transition-all">
                 <AlertTriangle size={12} /> Exceptions

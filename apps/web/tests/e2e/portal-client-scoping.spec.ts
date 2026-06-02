@@ -244,4 +244,16 @@ test.describe('§00 Portal Client Scoping', () => {
     // No other client's data ever shown
     await expect(page.locator('text=/manifest|value|owner/i')).not.toBeVisible({ timeout: 4000 });
   });
+
+  test('403 on unlinked convoy security status is surfaced as error', async ({ page }) => {
+    stubConvoyY403(page, 'security');
+    await page.goto(`/portal/convoy/${CONVOY_Y}/security`);
+    await expect(page.locator('text=/not authorised|403|failed/i')).toBeVisible({ timeout: 8000 });
+  });
+
+  test('403 on unlinked convoy incidents is surfaced as error', async ({ page }) => {
+    stubConvoyY403(page, 'incidents');
+    await page.goto(`/portal/convoy/${CONVOY_Y}/security`);
+    await expect(page.locator('text=/not authorised|403|failed/i')).toBeVisible({ timeout: 8000 });
+  });
 });

@@ -325,3 +325,46 @@ export const PortalConvoyOverviewSchema = z.object({
   waypoints: z.array(LatLngSchema),
 });
 export type PortalConvoyOverview = z.infer<typeof PortalConvoyOverviewSchema>;
+
+// V4 — PortalSecurityStatus
+export const SecurityLevelSchema = z.enum(['secure', 'warning', 'critical']);
+export type SecurityLevel = z.infer<typeof SecurityLevelSchema>;
+
+export const PortalSecurityStatusSchema = z.object({
+  convoy_id: UuidSchema,
+  level: SecurityLevelSchema,
+  headline: z.string().min(1).max(128),
+  detail: z.string().min(1).max(256),
+  escort_active: z.boolean(),
+  seal_status: z.enum(['intact', 'compromised', 'unverified']).nullable(),
+  last_checkin_at: IsoDateTimeSchema.nullable(),
+});
+export type PortalSecurityStatus = z.infer<typeof PortalSecurityStatusSchema>;
+
+// V4 — PortalIncident (sanitised)
+export const PortalIncidentTypeSchema = z.enum(['deviation','unplanned_stop','sos','geofence','delay','seal']);
+export type PortalIncidentType = z.infer<typeof PortalIncidentTypeSchema>;
+
+export const PortalIncidentStatusSchema = z.enum(['detected','responding','resolved']);
+export type PortalIncidentStatus = z.infer<typeof PortalIncidentStatusSchema>;
+
+export const IncidentTimelineEventSchema = z.object({
+  at: IsoDateTimeSchema,
+  label: z.string().min(1).max(256),
+  phase: PortalIncidentStatusSchema,
+});
+export type IncidentTimelineEvent = z.infer<typeof IncidentTimelineEventSchema>;
+
+export const PortalIncidentSchema = z.object({
+  id: UuidSchema,
+  convoy_id: UuidSchema,
+  type: PortalIncidentTypeSchema,
+  severity: PortalExceptionSeveritySchema,
+  title: z.string().min(1).max(128),
+  summary: z.string().min(1).max(512),
+  status: PortalIncidentStatusSchema,
+  occurred_at: IsoDateTimeSchema,
+  resolved_at: IsoDateTimeSchema.nullable(),
+  timeline: z.array(IncidentTimelineEventSchema),
+});
+export type PortalIncident = z.infer<typeof PortalIncidentSchema>;
