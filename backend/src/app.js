@@ -202,6 +202,9 @@ catch (e) { logger.warn("GDPR route failed: " + e.message); }
 try { app.use("/api/v1/routes", require("./routes/routes")); logger.info("Route loaded: /api/v1/routes"); }
 catch (e) { logger.warn("Routes route failed: " + e.message); }
 
+try { app.use("/api/v1/portal/auth", require("./routes/portalAuth")); logger.info("Route loaded: /api/v1/portal/auth"); }
+catch(e) { logger.error("Route failed: /api/v1/portal/auth", e); }
+
 try { app.use("/api/v1/portal", require("./routes/portal")); logger.info("Route loaded: /api/v1/portal"); }
 catch (e) { logger.warn("Portal route failed: " + e.message); }
 

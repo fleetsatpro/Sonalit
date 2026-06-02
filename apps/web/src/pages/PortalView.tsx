@@ -32,6 +32,8 @@ interface LocationData {
   last_ping_at: string | null;
   trail: TrailPoint[];
   route_line: LatLng[] | null;
+  origin_coords: LatLng | null;
+  destination_coords: LatLng | null;
 }
 
 interface EtaData {
@@ -233,6 +235,12 @@ export default function PortalView(): React.ReactElement {
 
   const badge = convoy ? convoyBadge(convoy.status) : null;
 
+  // F0.2: departed but GPS silent > 30 min
+  const noSignal = !!convoy?.departed_at && !convoy?.arrived_at && (
+    !location?.last_ping_at ||
+    Date.now() - new Date(location.last_ping_at).getTime() > 30 * 60 * 1000
+  );
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -304,6 +312,15 @@ export default function PortalView(): React.ReactElement {
             </span>
           </div>
 
+          {/* F0.2: no-signal warning banner */}
+          {noSignal && (
+            <div className="flex items-center gap-2 rounded-xl border border-amber-700/50 bg-amber-900/20 px-4 py-3">
+              <AlertTriangle size={15} className="text-amber-400 shrink-0" />
+              <p className="text-amber-300 text-sm font-medium">No signal since departure</p>
+              <p className="text-amber-400/60 text-xs ml-auto">Last ping: {pingAgo}</p>
+            </div>
+          )}
+
           {/* Hero map */}
           <div
             className="rounded-xl overflow-hidden border border-white/[0.07]"
@@ -324,6 +341,9 @@ export default function PortalView(): React.ReactElement {
                 destination={convoy.destination ?? ''}
                 status={convoy.status}
                 animatePosition={!reducedMotion}
+                originCoords={location?.origin_coords ?? null}
+                destinationCoords={location?.destination_coords ?? null}
+                noSignal={noSignal}
               />
             </Suspense>
           </div>
