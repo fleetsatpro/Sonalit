@@ -1,10 +1,19 @@
-import { Outlet } from '@tanstack/react-router';
+import { Outlet, useRouterState } from '@tanstack/react-router';
+import { useEffect } from 'react';
 import NavSidebar from './NavSidebar.js';
 import TopBar from './TopBar.js';
 import { useUIStore } from '../stores/ui.js';
 
 export default function Layout() {
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
+  const setSidebarOpen = useUIStore((s) => s.setSidebarOpen);
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  // Close sidebar on every route change on mobile
+  useEffect(() => {
+    if (window.innerWidth < 768) setSidebarOpen(false);
+  }, [pathname, setSidebarOpen]);
+
   return (
     <div
       className="flex h-screen text-gray-100 overflow-hidden"

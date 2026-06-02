@@ -98,22 +98,26 @@ const TacticalMap = React.memo(function TacticalMap() {
     if (!mapContainer.current || mapRef.current) return;
     const map = new maplibregl.Map({
       container: mapContainer.current,
-      style: { version: 8, sources: {}, layers: [], glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf' },
+      // No glyphs URL — we only use raster tiles, no vector text labels
+      style: {
+        version: 8,
+        sources: {
+          carto: {
+            type: 'raster',
+            tiles: ['https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'],
+            tileSize: 256,
+            attribution: '© CartoDB',
+          },
+        },
+        layers: [{ id: 'carto-tiles', type: 'raster', source: 'carto', paint: { 'raster-opacity': 0.85 } }],
+      },
       center: EA_CENTER,
       zoom: EA_ZOOM,
       attributionControl: false,
     });
 
-    map.on('load', () => {
-      // Dark basemap via raster tiles
-      map.addSource('carto', {
-        type: 'raster',
-        tiles: ['https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'],
-        tileSize: 256,
-        attribution: '© CartoDB',
-      });
-      map.addLayer({ id: 'carto-tiles', type: 'raster', source: 'carto', paint: { 'raster-opacity': 0.85 } });
-    });
+    // Silence tile errors so a blocked CDN doesn't bubble to the console
+    map.on('error', () => {});
 
     mapRef.current = map;
     return () => { map.remove(); mapRef.current = null; };
