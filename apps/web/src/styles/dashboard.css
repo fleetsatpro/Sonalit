@@ -85,6 +85,21 @@
   to { transform: rotate(360deg); }
 }
 
+/* Alias so components can use d-radar or radar-turn interchangeably */
+@keyframes d-radar {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes d-reveal {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes d-sonar-ring {
+  0%   { transform: scale(1);    opacity: .5; }
+  100% { transform: scale(1.75); opacity: 0; }
+}
+
 @keyframes d-pulse-warn {
   0%,100% { opacity: 1; }
   50% { opacity: .4; }

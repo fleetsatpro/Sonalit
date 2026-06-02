@@ -116,8 +116,39 @@ const TacticalMap = React.memo(function TacticalMap() {
       attributionControl: false,
     });
 
-    // Silence tile errors so a blocked CDN doesn't bubble to the console
     map.on('error', () => {});
+
+    map.on('load', () => {
+      // Simplified East Africa country border polygons (Uganda, Kenya, Tanzania, Rwanda, Burundi)
+      map.addSource('ea-borders', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: [
+            { type: 'Feature', properties: { name: 'Uganda' }, geometry: { type: 'Polygon', coordinates: [[[29.6,4.2],[34.0,4.2],[34.0,3.3],[34.7,2.1],[34.0,1.1],[34.0,-1.1],[31.9,-1.1],[30.5,-1.1],[29.9,0.2],[29.6,1.5],[29.6,4.2]]] } },
+            { type: 'Feature', properties: { name: 'Kenya' }, geometry: { type: 'Polygon', coordinates: [[[34.0,4.2],[41.9,4.2],[41.9,3.5],[41.0,1.7],[40.0,0.2],[40.0,-1.7],[37.7,-2.5],[34.9,-1.1],[34.0,-1.1],[34.0,3.3],[34.0,4.2]]] } },
+            { type: 'Feature', properties: { name: 'Tanzania' }, geometry: { type: 'Polygon', coordinates: [[[29.6,-1.1],[34.9,-1.1],[37.7,-2.5],[40.0,-1.7],[40.4,-5.0],[39.2,-8.0],[37.5,-11.5],[34.5,-11.5],[32.0,-9.5],[30.7,-8.0],[29.5,-6.0],[29.5,-3.0],[29.6,-1.1]]] } },
+            { type: 'Feature', properties: { name: 'Rwanda' }, geometry: { type: 'Polygon', coordinates: [[[29.0,-1.1],[30.5,-1.1],[30.9,-2.3],[30.5,-2.9],[29.0,-2.9],[28.9,-2.4],[29.0,-1.1]]] } },
+            { type: 'Feature', properties: { name: 'Burundi' }, geometry: { type: 'Polygon', coordinates: [[[29.0,-2.9],[30.5,-2.9],[30.8,-4.0],[30.0,-4.5],[29.0,-4.4],[29.0,-2.9]]] } },
+          ],
+        },
+      });
+      map.addLayer({ id: 'ea-fill', type: 'fill', source: 'ea-borders', paint: { 'fill-color': 'rgba(0,255,204,0.04)', 'fill-opacity': 1 } });
+      map.addLayer({ id: 'ea-line', type: 'line', source: 'ea-borders', paint: { 'line-color': 'rgba(0,255,204,0.15)', 'line-width': 1.2 } });
+    });
+
+    // Re-project convoy markers whenever the map moves (pan / zoom)
+    map.on('move', () => {
+      const markers = mapContainer.current?.parentElement?.querySelectorAll('[id^="convoy-marker-"]');
+      markers?.forEach(el => {
+        const htmlEl = el as HTMLElement;
+        const lng = parseFloat(htmlEl.dataset['lng'] ?? '0');
+        const lat = parseFloat(htmlEl.dataset['lat'] ?? '0');
+        const projected = map.project([lng, lat]);
+        const heading = parseFloat(htmlEl.dataset['heading'] ?? '0');
+        htmlEl.style.transform = `translate(${projected.x}px, ${projected.y}px) rotate(${heading}deg)`;
+      });
+    });
 
     mapRef.current = map;
     return () => { map.remove(); mapRef.current = null; };
@@ -152,6 +183,7 @@ const TacticalMap = React.memo(function TacticalMap() {
         el.style.transform = `translate(${projected.x}px, ${projected.y}px) rotate(${pos.heading}deg)`;
         el.dataset['lng'] = String(lng);
         el.dataset['lat'] = String(lat);
+        el.dataset['heading'] = String(pos.heading);
 
         if (t < 1) markerRafRef.current.set(vehicleId, requestAnimationFrame(animate));
       };
