@@ -45,7 +45,8 @@ const WeatherIntelligence = React.memo(function WeatherIntelligence() {
       <SH />
       <div className='d-hscroll'>
         {(data ?? []).map((w, i) => {
-          const heavyRain = w.condition.toLowerCase().includes('rain') || (w.wind_kmh != null && w.wind_kmh > 50);
+          const cond = w.condition.toLowerCase();
+          const heavyRain = cond.includes('rain') || cond.includes('storm') || cond.includes('thunder') || cond.includes('blizzard');
           return (
             <div key={i} style={{
               flex: '0 0 120px', scrollSnapAlign: 'start',

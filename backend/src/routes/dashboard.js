@@ -12,24 +12,23 @@ const https = require('https');
 
 router.use(authenticate, attachOrgDb);
 
+// Returns { rows: [] } on any DB error so individual query failures don't crash endpoints
+const safeQuery = (db, sql, params) => db(sql, params).catch(() => ({ rows: [] }));
+
 // ── §2.1 Overview ──────────────────────────────────────────────────────────
 router.get('/overview', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
 
   const [threatR, kpiR, nextR, shiftR] = await Promise.all([
-    req.db(`
+    safeQuery(req.db, `
       SELECT
         COUNT(*) FILTER (WHERE type='sos' AND resolved_at IS NULL) AS sos_open,
         COUNT(*) FILTER (WHERE severity='critical' AND resolved_at IS NULL) AS crit_open,
         COUNT(*) FILTER (WHERE resolved_at IS NULL) AS alerts_open
       FROM alerts WHERE org_id=$1`, [orgId]),
 
-    req.db(`
+    safeQuery(req.db, `
       SELECT
-        (SELECT COUNT(*) FROM vehicles v JOIN gps_logs g ON g.vehicle_id=v.id
-          WHERE v.org_id=$1 AND v.deleted_at IS NULL
-            AND g.timestamp > NOW()-INTERVAL '5 minutes'
-          GROUP BY v.id HAVING COUNT(*)>0) AS _unused,
         (SELECT COUNT(DISTINCT v.id) FROM vehicles v JOIN gps_logs g ON g.vehicle_id=v.id
           WHERE v.org_id=$1 AND v.deleted_at IS NULL
             AND g.timestamp > NOW()-INTERVAL '5 minutes') AS vehicles_live,
@@ -45,7 +44,7 @@ router.get('/overview', asyncHandler(async (req, res) => {
         (SELECT COUNT(*) FROM vehicles WHERE org_id=$1 AND deleted_at IS NULL) AS guards_active
       `, [orgId]),
 
-    req.db(`
+    safeQuery(req.db, `
       SELECT id, COALESCE(name, reference) AS convoy_name,
              COALESCE(estimated_arrival_at, estimated_arrival) AS eta
       FROM convoys
@@ -54,7 +53,7 @@ router.get('/overview', asyncHandler(async (req, res) => {
       ORDER BY COALESCE(estimated_arrival_at, estimated_arrival) ASC
       LIMIT 1`, [orgId]),
 
-    req.db(`
+    safeQuery(req.db, `
       SELECT started_at FROM shifts
       WHERE org_id=$1 AND ended_at IS NULL
       ORDER BY started_at DESC LIMIT 1`, [orgId]),
@@ -223,82 +222,84 @@ router.get('/vehicles', asyncHandler(async (req, res) => {
 // ── §2.4 Alerts ────────────────────────────────────────────────────────────
 router.get('/alerts', asyncHandler(async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 10, 50);
-  const r = await req.db(`
-    SELECT id, severity, type, title, description AS summary,
-           convoy_id, created_at AS occurred_at, resolved_at IS NULL AS acknowledged_inv,
-           acknowledged_at IS NOT NULL AS acknowledged
-    FROM alerts WHERE org_id=$1 AND deleted_at IS NULL
-    ORDER BY
-      CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END,
-      created_at DESC
-    LIMIT $2`, [req.user.org_id, limit]);
+  try {
+    const r = await req.db(`
+      SELECT id, severity, type, title, description AS summary,
+             convoy_id, created_at AS occurred_at,
+             resolved_at IS NOT NULL AS acknowledged
+      FROM alerts WHERE org_id=$1
+      ORDER BY
+        CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END,
+        created_at DESC
+      LIMIT $2`, [req.user.org_id, limit]);
 
-  res.json({ data: r.rows.map(a => ({
-    id: a.id,
-    severity: a.severity,
-    type: a.type,
-    title: a.title,
-    summary: a.summary || '',
-    convoy_id: a.convoy_id || null,
-    occurred_at: new Date(a.occurred_at).toISOString(),
-    acknowledged: a.acknowledged,
-  })) });
+    res.json({ data: r.rows.map(a => ({
+      id: a.id,
+      severity: a.severity,
+      type: a.type,
+      title: a.title,
+      summary: a.summary || '',
+      convoy_id: a.convoy_id || null,
+      occurred_at: new Date(a.occurred_at).toISOString(),
+      acknowledged: a.acknowledged,
+    })) });
+  } catch (_) { res.json({ data: [] }); }
 }));
 
 // ── §2.5 Convoys ───────────────────────────────────────────────────────────
 router.get('/convoys', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
+  try {
+    const r = await req.db(`
+      SELECT c.id, COALESCE(c.name, c.reference) AS name, c.status,
+             COALESCE(c.origin, c.route_origin) AS origin,
+             COALESCE(c.destination, c.route_destination) AS destination,
+             COALESCE(c.estimated_arrival_at, c.estimated_arrival) AS eta,
+             (SELECT COUNT(*) FROM convoy_trucks WHERE convoy_id=c.id) AS truck_count
+      FROM convoys c
+      WHERE c.org_id=$1 AND c.status IN ('active','in_transit','delayed') AND c.deleted_at IS NULL
+      ORDER BY c.created_at DESC LIMIT 5`, [orgId]);
 
-  const r = await req.db(`
-    SELECT c.id, COALESCE(c.name, c.reference) AS name, c.status,
-           COALESCE(c.origin, c.route_origin) AS origin,
-           COALESCE(c.destination, c.route_destination) AS destination,
-           COALESCE(c.estimated_arrival_at, c.estimated_arrival) AS eta,
-           c.seal_intact,
-           (SELECT COUNT(*) FROM convoy_trucks WHERE convoy_id=c.id) AS truck_count
-    FROM convoys c
-    WHERE c.org_id=$1 AND c.status IN ('active','in_transit','delayed') AND c.deleted_at IS NULL
-    ORDER BY c.created_at DESC LIMIT 5`, [orgId]);
+    const convoyIds = r.rows.map(c => c.id);
+    let checkpoints = [];
+    if (convoyIds.length > 0) {
+      const ph = convoyIds.map((_, i) => `$${i+2}`).join(',');
+      const cpR = await safeQuery(req.db, `
+        SELECT cc.convoy_id, cc.name, cc.reached_at
+        FROM convoy_checkpoints cc
+        WHERE cc.convoy_id IN (${ph})
+        ORDER BY cc.convoy_id`, [orgId, ...convoyIds]);
+      checkpoints = cpR.rows;
+    }
 
-  const convoyIds = r.rows.map(c => c.id);
-  let checkpoints = [];
-  if (convoyIds.length > 0) {
-    const ph = convoyIds.map((_, i) => `$${i+2}`).join(',');
-    const cpR = await req.db(`
-      SELECT cc.convoy_id, cc.name, cc.status, cc.sequence_order, cc.reached_at
-      FROM convoy_checkpoints cc
-      WHERE cc.convoy_id IN (${ph}) AND cc.deleted_at IS NULL
-      ORDER BY cc.convoy_id, cc.sequence_order`, [orgId, ...convoyIds]);
-    checkpoints = cpR.rows;
-  }
+    const cpByConvoy = {};
+    for (const cp of checkpoints) {
+      if (!cpByConvoy[cp.convoy_id]) cpByConvoy[cp.convoy_id] = [];
+      cpByConvoy[cp.convoy_id].push(cp);
+    }
 
-  const cpByConvoy = {};
-  for (const cp of checkpoints) {
-    if (!cpByConvoy[cp.convoy_id]) cpByConvoy[cp.convoy_id] = [];
-    cpByConvoy[cp.convoy_id].push(cp);
-  }
-
-  res.json({ data: r.rows.map(c => ({
-    id: c.id,
-    name: c.name || c.id,
-    status: c.status,
-    origin: c.origin || null,
-    destination: c.destination || null,
-    eta: c.eta ? new Date(c.eta).toISOString() : null,
-    truck_count: parseInt(c.truck_count) || 0,
-    seal_intact: c.seal_intact,
-    checkpoints: (cpByConvoy[c.id] || []).map(cp => ({
-      name: cp.name,
-      status: cp.status || (cp.reached_at ? 'done' : 'pending'),
-      reached_at: cp.reached_at ? new Date(cp.reached_at).toISOString() : null,
-    })),
-  })) });
+    res.json({ data: r.rows.map(c => ({
+      id: c.id,
+      name: c.name || c.id,
+      status: c.status,
+      origin: c.origin || null,
+      destination: c.destination || null,
+      eta: c.eta ? new Date(c.eta).toISOString() : null,
+      truck_count: parseInt(c.truck_count) || 0,
+      seal_intact: null,
+      checkpoints: (cpByConvoy[c.id] || []).map(cp => ({
+        name: cp.name,
+        status: cp.reached_at ? 'done' : 'pending',
+        reached_at: cp.reached_at ? new Date(cp.reached_at).toISOString() : null,
+      })),
+    })) });
+  } catch (_) { res.json({ data: [] }); }
 }));
 
 // ── §2.6 Route Risk ────────────────────────────────────────────────────────
 router.get('/route-risk', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
-
+  try {
   const r = await req.db(`
     SELECT
       cor.id AS corridor_id,
@@ -333,12 +334,13 @@ router.get('/route-risk', asyncHandler(async (req, res) => {
       active_convoys: row.active_convoys || [],
     };
   }) });
+  } catch (_) { res.json({ data: [] }); }
 }));
 
 // ── §2.7 Drivers ───────────────────────────────────────────────────────────
 router.get('/drivers', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
-
+  try {
   const r = await req.db(`
     SELECT d.id, d.name, d.on_duty,
            ct.convoy_id,
@@ -375,12 +377,13 @@ router.get('/drivers', asyncHandler(async (req, res) => {
     const initials = d.name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
     return { id: d.id, name: d.name, initials, convoy_id: d.convoy_id || null, score, grade, flags, on_duty: d.on_duty ?? false };
   }) });
+  } catch (_) { res.json({ data: [] }); }
 }));
 
 // ── §2.8 Borders ───────────────────────────────────────────────────────────
 router.get('/borders', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
-
+  try {
   const r = await req.db(`
     SELECT g.id, g.name, g.metadata,
            ARRAY_AGG(DISTINCT COALESCE(con.name, con.reference)) FILTER (WHERE con.id IS NOT NULL) AS active_convoys,
@@ -408,13 +411,14 @@ router.get('/borders', asyncHandler(async (req, res) => {
     const status = activeConvoys.length > 2 ? 'busy' : activeConvoys.length > 0 ? 'clear' : 'clear';
     return { name: b.name, countries, status, queue_minutes: queueMins, active_convoys: activeConvoys, flag_emojis: flagEmojis };
   }) });
+  } catch (_) { res.json({ data: [] }); }
 }));
 
 // ── §2.9 Performance ───────────────────────────────────────────────────────
 router.get('/performance', asyncHandler(async (req, res) => {
   const days = Math.min(parseInt(req.query.days) || 14, 30);
   const orgId = req.user.org_id;
-
+  try {
   const r = await req.db(`
     SELECT
       date_trunc('day', COALESCE(actual_arrival, planned_arrival)) AS day,
@@ -441,6 +445,7 @@ router.get('/performance', asyncHandler(async (req, res) => {
   }
 
   res.json({ data: result });
+  } catch (_) { res.json({ data: [] }); }
 }));
 
 // ── §2.10 Predictions ──────────────────────────────────────────────────────
@@ -559,15 +564,15 @@ router.get('/weather', asyncHandler(async (req, res) => {
 // ── §2.12 Panic ────────────────────────────────────────────────────────────
 router.get('/panic', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
-
+  try {
   const [activeR, statsR, teamsR] = await Promise.all([
-    req.db(`SELECT id, vehicle_id, lat, lng, triggered_at FROM panic_events
+    safeQuery(req.db, `SELECT id, vehicle_id, lat, lng, triggered_at FROM panic_events
             WHERE org_id=$1 AND resolved_at IS NULL ORDER BY triggered_at DESC LIMIT 1`, [orgId]),
-    req.db(`SELECT
+    safeQuery(req.db, `SELECT
               AVG(EXTRACT(EPOCH FROM (resolved_at - triggered_at))) AS avg_response_s,
               MAX(triggered_at) AS last_event_at
             FROM panic_events WHERE org_id=$1 AND resolved_at IS NOT NULL`, [orgId]),
-    req.db(`SELECT name, type, COALESCE(eta_minutes, 0) AS eta_min, location, status
+    safeQuery(req.db, `SELECT name, type, COALESCE(eta_minutes, 0) AS eta_min, location, status
             FROM response_teams WHERE org_id=$1 AND active=true LIMIT 5`, [orgId]),
   ]);
 
@@ -593,17 +598,19 @@ router.get('/panic', asyncHandler(async (req, res) => {
       location: t.location || '', status: t.status || 'standby',
     })),
   });
+  } catch (_) {
+    res.json({ status: 'clear', active_event: null, response_time_avg_s: 0, last_event_days_ago: -1, response_teams: [] });
+  }
 }));
 
 // ── §2.13 Comms ────────────────────────────────────────────────────────────
 router.get('/comms', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
-
+  try {
   const r = await req.db(`
     SELECT v.id AS vehicle_id, v.registration,
            COUNT(g.id) FILTER (WHERE g.timestamp >= date_trunc('day', NOW())) AS ping_count_today,
-           MAX(g.timestamp) AS last_ping_at,
-           MAX(g.signal_quality) AS signal_quality
+           MAX(g.timestamp) AS last_ping_at
     FROM vehicles v
     LEFT JOIN gps_logs g ON g.vehicle_id=v.id
     WHERE v.org_id=$1 AND v.deleted_at IS NULL
@@ -621,6 +628,7 @@ router.get('/comms', asyncHandler(async (req, res) => {
     const status = secAgo < 30 ? 'live' : secAgo < 300 ? 'delayed' : secAgo < 900 ? 'weak' : 'offline';
     return { vehicle_id: row.vehicle_id, registration: row.registration, ping_count_today: pingCount, last_ping_at: lastPingAt, signal_bars: signalBars, network_type: networkType, status };
   }) });
+  } catch (_) { res.json({ data: [] }); }
 }));
 
 // ── §2.14 Timeline ─────────────────────────────────────────────────────────
@@ -630,18 +638,18 @@ router.get('/timeline', asyncHandler(async (req, res) => {
   const end = now + 24 * 3600 * 1000;
 
   const [arrivalsR, checkpointsR, shiftsR] = await Promise.all([
-    req.db(`SELECT id, COALESCE(name, reference) AS label,
+    safeQuery(req.db, `SELECT id, COALESCE(name, reference) AS label,
                COALESCE(estimated_arrival_at, estimated_arrival) AS time
             FROM convoys WHERE org_id=$1 AND status='active'
               AND COALESCE(estimated_arrival_at, estimated_arrival) BETWEEN NOW() AND NOW()+INTERVAL '24 hours'
             ORDER BY time LIMIT 10`, [orgId]),
-    req.db(`SELECT cc.convoy_id, cc.name AS label, cc.scheduled_at AS time
+    safeQuery(req.db, `SELECT cc.convoy_id, cc.name AS label, cc.scheduled_at AS time
             FROM convoy_checkpoints cc
             JOIN convoys c ON c.id=cc.convoy_id
             WHERE c.org_id=$1 AND cc.reached_at IS NULL
               AND cc.scheduled_at BETWEEN NOW() AND NOW()+INTERVAL '24 hours'
             ORDER BY cc.scheduled_at LIMIT 10`, [orgId]),
-    req.db(`SELECT 'Shift changeover' AS label, changeover_at AS time
+    safeQuery(req.db, `SELECT 'Shift changeover' AS label, changeover_at AS time
             FROM shifts WHERE org_id=$1 AND changeover_at BETWEEN NOW() AND NOW()+INTERVAL '24 hours'
             ORDER BY changeover_at LIMIT 3`, [orgId]),
   ]);
