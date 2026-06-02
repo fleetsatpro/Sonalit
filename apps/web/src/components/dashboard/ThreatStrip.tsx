@@ -39,20 +39,22 @@ const ThreatStrip = React.memo(function ThreatStrip() {
   const kpi = overview?.kpi;
 
   return (
-    <div style={{
-      position: 'sticky',
-      top: `calc(var(--d-top-h) + var(--d-tick-h))`,
-      zIndex: 180,
-      height: 'var(--d-str-h)',
-      background: style.bg,
-      borderBottom: `1px solid ${style.border}`,
-      display: 'flex',
-      alignItems: 'center',
-      gap: 4,
-      padding: '0 16px',
-      overflow: 'hidden',
-      animation: level === 'critical' ? 'd-crit 1.8s ease-in-out infinite' : 'none',
-    }}>
+    <div
+      data-level={level}
+      style={{
+        position: 'sticky',
+        top: `calc(var(--d-top-h) + var(--d-tick-h))`,
+        zIndex: 180,
+        height: 'var(--d-str-h)',
+        background: style.bg,
+        borderBottom: `1px solid ${style.border}`,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
+        padding: '0 16px',
+        overflow: 'hidden',
+        animation: level === 'critical' ? 'd-crit 1.8s ease-in-out infinite' : 'none',
+      }}>
       {/* Threat level */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 8, flexShrink: 0 }}>
         <div style={{

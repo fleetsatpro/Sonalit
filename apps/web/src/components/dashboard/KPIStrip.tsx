@@ -72,7 +72,7 @@ function KPICardComp({ card, value }: { card: KPICard; value: number }) {
       <div style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', fontWeight: 600, letterSpacing: '.12em', color: card.color, textTransform: 'uppercase' }}>
         {card.label}
       </div>
-      <div style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 800, fontSize: 36, color: 'var(--d-t1)', lineHeight: 1, letterSpacing: '-.01em' }}>
+      <div style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 800, fontSize: 42, color: 'var(--d-t1)', lineHeight: 1, letterSpacing: '-.01em' }}>
         {display}{card.unit && <span style={{ fontSize: 14, fontWeight: 600, opacity: .7, marginLeft: 2 }}>{card.unit}</span>}
       </div>
     </button>

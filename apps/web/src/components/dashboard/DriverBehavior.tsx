@@ -10,23 +10,46 @@ interface Driver {
   flags: string[]; on_duty: boolean;
 }
 
-const GRADE_COLOR = { excellent: 'var(--d-ok)', good: 'var(--d-sig)', monitor: 'var(--d-warn)', flagged: 'var(--d-fire)' };
+function scoreColor(score: number): string {
+  if (score >= 85) return 'var(--d-ok)';
+  if (score >= 70) return 'var(--d-sig)';
+  if (score >= 55) return 'var(--d-warn)';
+  return 'var(--d-fire)';
+}
 
-function ScoreBar({ score, grade }: { score: number; grade: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const color = GRADE_COLOR[grade as keyof typeof GRADE_COLOR] ?? 'var(--d-t3)';
+function ScoreBar({ score }: { score: number }) {
+  const barRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const color = scoreColor(score);
+
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    requestAnimationFrame(() => {
-      el.style.transition = 'width 1s ease';
-      el.style.width = `${score}%`;
-      el.style.background = color;
-    });
+    const container = containerRef.current;
+    const bar = barRef.current;
+    if (!container || !bar) return;
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            requestAnimationFrame(() => {
+              bar.style.transition = 'width 1s ease';
+              bar.style.width = `${score}%`;
+              bar.style.background = color;
+            });
+            io.unobserve(container);
+          }
+        });
+      },
+      { threshold: 0.1 }
+    );
+
+    io.observe(container);
+    return () => io.disconnect();
   }, [score, color]);
+
   return (
-    <div style={{ height: 4, background: 'var(--d-lift2)', borderRadius: 2, overflow: 'hidden', flex: 1 }}>
-      <div ref={ref} style={{ height: '100%', width: 0, borderRadius: 2 }} />
+    <div ref={containerRef} style={{ height: 4, background: 'var(--d-lift2)', borderRadius: 2, overflow: 'hidden', flex: 1 }}>
+      <div ref={barRef} style={{ height: '100%', width: 0, borderRadius: 2 }} />
     </div>
   );
 }
@@ -45,10 +68,17 @@ const DriverBehavior = React.memo(function DriverBehavior() {
       <SH />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {(data ?? []).map(d => {
-          const color = GRADE_COLOR[d.grade];
-          const flagged = d.grade === 'flagged';
+          const color = scoreColor(d.score);
+          const flagged = d.score < 65;
           return (
-            <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--d-rim)' }}>
+            <div
+              key={d.id}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '8px 0', borderBottom: '1px solid var(--d-rim)',
+                background: flagged ? 'rgba(255,68,34,.03)' : 'transparent',
+              }}
+            >
               <div style={{ position: 'relative', flexShrink: 0 }}>
                 <div style={{
                   width: 36, height: 36, borderRadius: '50%',
@@ -58,6 +88,7 @@ const DriverBehavior = React.memo(function DriverBehavior() {
                   fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 12,
                   color,
                 }}>{d.initials}</div>
+                {/* On-duty status dot */}
                 <div style={{
                   position: 'absolute', bottom: 0, right: 0,
                   width: 8, height: 8, borderRadius: '50%',
@@ -72,7 +103,7 @@ const DriverBehavior = React.memo(function DriverBehavior() {
                   <span style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, letterSpacing: '.08em', color, textTransform: 'uppercase' }}>{d.grade}</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <ScoreBar score={d.score} grade={d.grade} />
+                  <ScoreBar score={d.score} />
                   <span style={{ fontFamily: 'Orbitron, sans-serif', fontSize: 13, fontWeight: 700, color, flexShrink: 0 }}>{d.score}</span>
                 </div>
                 {d.flags.length > 0 && (
@@ -84,7 +115,9 @@ const DriverBehavior = React.memo(function DriverBehavior() {
             </div>
           );
         })}
-        {(!data || data.length === 0) && <div style={{ textAlign: 'center', color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace', fontSize: 12, padding: 16 }}>No driver data</div>}
+        {(!data || data.length === 0) && (
+          <div style={{ textAlign: 'center', color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace', fontSize: 12, padding: 16 }}>No driver data</div>
+        )}
       </div>
     </div>
   );
