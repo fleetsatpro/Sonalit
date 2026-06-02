@@ -6,9 +6,6 @@ const API_BASE = (import.meta.env['VITE_API_BASE_URL'] as string | undefined) ??
 
 type PageState = 'email' | 'sent' | 'verifying' | 'error';
 
-const CARD_STYLE: React.CSSProperties = {
-  background: 'rgba(13,20,38,0.7)',
-};
 
 export default function PortalLogin(): React.ReactElement {
   const navigate = useNavigate();
@@ -82,24 +79,19 @@ export default function PortalLogin(): React.ReactElement {
 
   return (
     <div
-      className="min-h-screen flex flex-col items-center justify-center px-4"
-      style={{ background: '#050813' }}
+      className="portal-root min-h-screen flex flex-col items-center justify-center px-4"
+      style={{ background: 'var(--p-bg)' }}
     >
       <div
-        className="w-full max-w-sm rounded-2xl border border-white/[0.07] p-8"
-        style={CARD_STYLE}
+        className="w-full max-w-sm rounded-2xl border border-white/[0.07] p-8 portal-reveal"
+        style={{ background: 'linear-gradient(145deg,var(--p-surface),var(--p-surface2))' }}
       >
         {/* Logo */}
         <div className="flex items-center gap-2 mb-8 justify-center">
           <Package size={20} className="text-orange-400 shrink-0" />
           <span
-            className="font-black text-lg tracking-wider uppercase"
-            style={{
-              fontFamily: "'Barlow Condensed','Arial Narrow',sans-serif",
-              background: 'linear-gradient(90deg,#ff9040,#f07020)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-            }}
+            className="font-black text-lg tracking-widest uppercase text-orange-400"
+            style={{ fontFamily: 'var(--p-sans)' }}
           >
             SONALIT
           </span>

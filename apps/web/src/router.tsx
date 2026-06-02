@@ -75,6 +75,14 @@ const portalSensorsRoute = createRoute({ getParentRoute: () => portalRootRoute, 
   component: lazyRouteComponent(() => import('./pages/portal/PortalSensors.js')) });
 const portalReplayRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/replay',
   component: lazyRouteComponent(() => import('./pages/portal/PortalReplay.js')) });
+const portalTrackRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/track',
+  component: lazyRouteComponent(() => import('./pages/portal/PortalTrack.js')) });
+const portalConvoyRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/convoy',
+  component: lazyRouteComponent(() => import('./pages/portal/PortalConvoy.js')) });
+const portalCustodyRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/custody',
+  component: lazyRouteComponent(() => import('./pages/portal/PortalCustody.js')) });
+const portalSecurityRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/security',
+  component: lazyRouteComponent(() => import('./pages/portal/PortalSecurity.js')) });
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
@@ -84,6 +92,7 @@ const routeTree = rootRoute.addChildren([
     portalLoginRoute, portalDashboardRoute, portalManifestRoute, portalPODRoute,
     portalExceptionsRoute, portalNotificationsRoute, portalDocumentsRoute,
     portalSensorsRoute, portalReplayRoute,
+    portalTrackRoute, portalConvoyRoute, portalCustodyRoute, portalSecurityRoute,
   ]),
   authRoute.addChildren([
     dashboardRoute, fleetRoute, gpsRoute,

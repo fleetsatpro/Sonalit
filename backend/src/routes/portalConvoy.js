@@ -276,4 +276,156 @@ router.get('/convoy/:convoy_id/replay', clientAuth, asyncHandler(async (req, res
   res.json({ data: points });
 }));
 
+// ── Convoy vehicles & crew (§5) ───────────────────────────────────────────────
+
+router.get('/convoy/:convoy_id/vehicles', clientAuth, asyncHandler(async (req, res) => {
+  if (!checkAccess(req.client, req.params.convoy_id, res)) return;
+  const { org_id } = req.client;
+
+  const result = await query(
+    `SELECT
+        ct.vehicle_id,
+        v.registration,
+        v.make,
+        v.model,
+        v.type,
+        d.name AS driver_name,
+        gl.lat  AS current_lat,
+        gl.lng  AS current_lng,
+        gl.speed AS speed_kmh,
+        gl.heading AS heading_deg,
+        gl.timestamp AS last_ping_at,
+        EXISTS (
+          SELECT 1 FROM cargo_client_links ccl
+          WHERE ccl.convoy_id = ct.convoy_id
+            AND ccl.org_id    = $2
+            AND ccl.client_id = $3
+            AND (ccl.shipment_id IS NULL OR ccl.shipment_id IN (
+              SELECT s.id FROM shipments s WHERE s.convoy_id = ct.convoy_id
+            ))
+        ) AS carries_my_cargo
+     FROM convoy_trucks ct
+     JOIN convoys c ON c.id = ct.convoy_id
+     JOIN vehicles v ON v.id = ct.vehicle_id
+     LEFT JOIN drivers d ON d.id = ct.driver_id
+     LEFT JOIN LATERAL (
+        SELECT lat, lng, speed, heading, timestamp
+        FROM gps_logs
+        WHERE vehicle_id = ct.vehicle_id
+        ORDER BY timestamp DESC
+        LIMIT 1
+     ) gl ON true
+    WHERE ct.convoy_id = $1 AND c.org_id = $2 AND ct.deleted_at IS NULL
+    ORDER BY v.registration ASC`,
+    [req.params.convoy_id, org_id, req.client.client_id],
+  );
+
+  const vehicles = result.rows.map(r => ({
+    vehicle_id: r.vehicle_id,
+    registration: r.registration,
+    make: r.make ?? null,
+    model: r.model ?? null,
+    type: r.type ?? null,
+    driver_name: r.driver_name ?? null,
+    current_lat: r.current_lat != null ? parseFloat(r.current_lat) : null,
+    current_lng: r.current_lng != null ? parseFloat(r.current_lng) : null,
+    speed_kmh: r.speed_kmh != null ? parseFloat(r.speed_kmh) : null,
+    heading_deg: r.heading_deg != null ? parseFloat(r.heading_deg) : null,
+    last_ping_at: r.last_ping_at ?? null,
+    carries_my_cargo: r.carries_my_cargo ?? false,
+  }));
+
+  res.json({ data: vehicles });
+}));
+
+// ── Convoy overview (§6) ──────────────────────────────────────────────────────
+
+router.get('/convoy/:convoy_id/overview', clientAuth, asyncHandler(async (req, res) => {
+  if (!checkAccess(req.client, req.params.convoy_id, res)) return;
+  const { org_id } = req.client;
+
+  const convoyRes = await query(
+    `SELECT c.id, c.reference, c.status, c.origin, c.destination,
+            c.departed_at, c.estimated_arrival_at, c.arrived_at,
+            (SELECT COUNT(*) FROM convoy_trucks ct WHERE ct.convoy_id = c.id AND ct.deleted_at IS NULL) AS vehicle_count,
+            (SELECT COUNT(DISTINCT ccl2.client_id) - 1
+             FROM cargo_client_links ccl2
+             WHERE ccl2.convoy_id = c.id AND ccl2.org_id = c.org_id
+            ) AS coload_count,
+            (SELECT COUNT(*) FROM alerts a WHERE a.convoy_id = c.id AND a.deleted_at IS NULL) AS exception_count
+     FROM convoys c
+    WHERE c.id = $1 AND c.org_id = $2 AND c.deleted_at IS NULL`,
+    [req.params.convoy_id, org_id],
+  );
+  if (!convoyRes.rows.length) return res.status(404).json({ error: 'Convoy not found' });
+  const c = convoyRes.rows[0];
+
+  const vehicleRes = await query(
+    `SELECT ct.vehicle_id, v.registration, v.make, v.model, v.type,
+            d.name AS driver_name,
+            gl.lat, gl.lng, gl.speed, gl.heading, gl.timestamp AS last_ping_at,
+            EXISTS (
+              SELECT 1 FROM cargo_client_links ccl
+              WHERE ccl.convoy_id = ct.convoy_id AND ccl.org_id = $2 AND ccl.client_id = $3
+            ) AS carries_my_cargo
+     FROM convoy_trucks ct
+     JOIN convoys cv ON cv.id = ct.convoy_id
+     JOIN vehicles v ON v.id = ct.vehicle_id
+     LEFT JOIN drivers d ON d.id = ct.driver_id
+     LEFT JOIN LATERAL (
+        SELECT lat, lng, speed, heading, timestamp
+        FROM gps_logs WHERE vehicle_id = ct.vehicle_id ORDER BY timestamp DESC LIMIT 1
+     ) gl ON true
+    WHERE ct.convoy_id = $1 AND cv.org_id = $2 AND ct.deleted_at IS NULL
+    ORDER BY v.registration ASC`,
+    [req.params.convoy_id, org_id, req.client.client_id],
+  );
+
+  const vehicles = vehicleRes.rows.map(r => ({
+    vehicle_id: r.vehicle_id,
+    registration: r.registration,
+    make: r.make ?? null,
+    model: r.model ?? null,
+    type: r.type ?? null,
+    driver_name: r.driver_name ?? null,
+    current_lat: r.lat != null ? parseFloat(r.lat) : null,
+    current_lng: r.lng != null ? parseFloat(r.lng) : null,
+    speed_kmh: r.speed != null ? parseFloat(r.speed) : null,
+    heading_deg: r.heading != null ? parseFloat(r.heading) : null,
+    last_ping_at: r.last_ping_at ?? null,
+    carries_my_cargo: r.carries_my_cargo ?? false,
+  }));
+
+  const progress = c.departed_at && c.estimated_arrival_at
+    ? Math.min(100, Math.max(0, Math.round(
+        (Date.now() - new Date(c.departed_at).getTime()) /
+        (new Date(c.estimated_arrival_at).getTime() - new Date(c.departed_at).getTime()) * 100
+      )))
+    : null;
+
+  res.json({
+    data: {
+      convoy_id: c.id,
+      org_id,
+      reference: c.reference,
+      status: c.status,
+      origin: c.origin,
+      destination: c.destination,
+      departed_at: c.departed_at ?? null,
+      estimated_arrival_at: c.estimated_arrival_at ?? null,
+      arrived_at: c.arrived_at ?? null,
+      progress_pct: progress,
+      eta_confidence_low: null,
+      eta_confidence_high: null,
+      vehicles,
+      escorts: [],
+      coload_count: Math.max(0, parseInt(c.coload_count) || 0),
+      exception_count: parseInt(c.exception_count) || 0,
+      seal_status: null,
+      custody_events: [],
+      waypoints: [],
+    },
+  });
+}));
+
 module.exports = router;

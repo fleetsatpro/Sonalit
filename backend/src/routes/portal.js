@@ -457,5 +457,9 @@ router.get('/centrifuge-token', portalAuth, asyncHandler(async (req, res) => {
 router.use('/', require('./portalClients'));
 // Convoy-data endpoints: POD, exceptions, notifications, documents, sensors, replay (F3–F7)
 router.use('/', require('./portalConvoy'));
+// Custody ledger: hash-chain events (F8)
+router.use('/', require('./portalCustody'));
+// Live security: sanitised incident feed + realtime (F9)
+router.use('/', require('./portalSecurity'));
 
 module.exports = router;
