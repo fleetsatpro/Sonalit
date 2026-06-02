@@ -9,12 +9,15 @@ interface ConvoyRow {
   id: string; name: string; status: string;
   origin: string | null; destination: string | null; eta: string | null;
   truck_count: number; seal_intact: boolean | null;
+  progress?: number | null;
   checkpoints: Checkpoint[];
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  active: 'var(--d-sig)', in_transit: 'var(--d-sig)', delayed: 'var(--d-warn)',
-  alert: 'var(--d-fire)', completed: 'var(--d-t3)', idle: 'var(--d-t3)',
+  active: 'var(--d-ok)', in_transit: 'var(--d-ok)',
+  delayed: 'var(--d-warn)',
+  alert: 'var(--d-fire)', blocked: 'var(--d-fire)',
+  planned: 'var(--d-t3)', completed: 'var(--d-t3)', idle: 'var(--d-t3)',
 };
 
 function CheckpointDot({ cp }: { cp: Checkpoint }) {
@@ -24,14 +27,24 @@ function CheckpointDot({ cp }: { cp: Checkpoint }) {
   const color = isAlert ? 'var(--d-fire)' : done ? 'var(--d-ok)' : isCurrent ? 'var(--d-sig)' : 'var(--d-lift2)';
 
   return (
-    <div title={cp.name} style={{
-      width: 10, height: 10, borderRadius: '50%',
-      background: color,
-      boxShadow: done ? `0 0 6px ${color}` : isCurrent ? `0 0 8px ${color}` : 'none',
-      animation: isCurrent ? 'd-sonar 2s ease-out infinite' : isAlert ? 'd-pfz 1.2s ease-in-out infinite' : 'none',
-      flexShrink: 0,
-      border: `1.5px solid ${done || isCurrent ? color : 'var(--d-rim2)'}`,
-    }} />
+    <div title={cp.name} style={{ position: 'relative', width: 10, height: 10, flexShrink: 0 }}>
+      {isCurrent && (
+        <div style={{
+          position: 'absolute', inset: -4,
+          borderRadius: '50%',
+          border: `1.5px solid ${color}`,
+          animation: 'd-sonar 1.6s ease-out infinite',
+          pointerEvents: 'none',
+        }} />
+      )}
+      <div style={{
+        width: 10, height: 10, borderRadius: '50%',
+        background: color,
+        boxShadow: done ? `0 0 6px ${color}` : isCurrent ? `0 0 8px ${color}` : 'none',
+        animation: isAlert ? 'd-pfz 1s infinite' : 'none',
+        border: `1.5px solid ${done || isCurrent ? color : 'var(--d-rim2)'}`,
+      }} />
+    </div>
   );
 }
 
@@ -78,6 +91,12 @@ function ConvoyRowComp({ convoy }: { convoy: ConvoyRow }) {
         <div style={{ fontSize: 11, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--d-t2)' }}>
           {convoy.origin ?? '—'} → {convoy.destination ?? '—'}
         </div>
+        {/* Progress bar */}
+        {convoy.progress != null && (
+          <div style={{ height: 3, background: 'var(--d-lift2)', borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${Math.min(100, Math.max(0, convoy.progress))}%`, background: 'var(--d-sig)', borderRadius: 2, transition: 'width .6s ease' }} />
+          </div>
+        )}
         {convoy.checkpoints.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             {convoy.checkpoints.map((cp, i) => (
@@ -92,8 +111,8 @@ function ConvoyRowComp({ convoy }: { convoy: ConvoyRow }) {
         )}
       </div>
 
-      {/* Expanded details */}
-      {expanded && (
+      {/* Expanded details — maxHeight transition */}
+      <div style={{ maxHeight: expanded ? '300px' : '0', overflow: 'hidden', transition: 'max-height .3s ease' }}>
         <div style={{ borderTop: '1px solid var(--d-rim)', padding: '10px 14px', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
           <Detail label='Trucks' value={convoy.truck_count.toString()} />
           <Detail label='Seal' value={convoy.seal_intact === true ? '✓ Intact' : convoy.seal_intact === false ? '✗ Compromised' : 'Unverified'}
@@ -103,7 +122,7 @@ function ConvoyRowComp({ convoy }: { convoy: ConvoyRow }) {
               color={cp.reached_at ? 'var(--d-ok)' : 'var(--d-t3)'} />
           ))}
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -125,8 +144,12 @@ const ConvoyTracker = React.memo(function ConvoyTracker() {
     queryKey: ['dashboard-convoys'],
     queryFn: async () => {
       const r = await api.get<{ data: ConvoyRow[] }>('/dashboard/convoys');
-      setConvoys(r.data.data ?? []);
-      return r.data.data ?? [];
+      const rows = r.data.data ?? [];
+      setConvoys(rows.map(c => ({
+        id: c.id, name: c.name, status: c.status,
+        ...(c.progress != null ? { progress: c.progress } : {}),
+      })));
+      return rows;
     },
     staleTime: 30000,
   });

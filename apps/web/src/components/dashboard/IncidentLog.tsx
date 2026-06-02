@@ -11,10 +11,20 @@ interface Incident {
 
 const SEV_COLOR: Record<string, string> = { critical: 'var(--d-fire)', high: 'var(--d-fire)', medium: 'var(--d-warn)', low: 'var(--d-ok)' };
 
+function elapsedStr(occurredAt: string): string {
+  const diffMs = Date.now() - new Date(occurredAt).getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `${diffH}h ago`;
+  return `${Math.floor(diffH / 24)}d ago`;
+}
+
 function IncidentRow({ inc }: { inc: Incident }) {
   const [expanded, setExpanded] = useState(false);
   const qc = useQueryClient();
   const color = SEV_COLOR[inc.severity] ?? 'var(--d-t3)';
+  const isCritical = inc.severity === 'critical';
 
   const resolveMut = useMutation({
     mutationFn: () => api.patch(`/incidents/${inc.id}`, { status: 'resolved' }),
@@ -29,14 +39,30 @@ function IncidentRow({ inc }: { inc: Incident }) {
   const timeStr = new Date(inc.occurred_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
 
   return (
-    <div style={{ background: 'var(--d-surf)', borderRadius: 8, marginBottom: 8, border: `1px solid ${color}22`, overflow: 'hidden' }}>
+    <div style={{
+      background: 'var(--d-surf)', borderRadius: 8, marginBottom: 8,
+      border: `1px solid ${color}22`, overflow: 'hidden',
+      borderLeft: isCritical ? '3px solid var(--d-fire)' : `1px solid ${color}22`,
+    }}>
       <button
         onClick={() => setExpanded(e => !e)}
         style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '10px 12px', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8 }}
       >
+        {/* Severity dot */}
+        <div style={{
+          width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0,
+          animation: isCritical ? 'd-pfz 0.8s infinite' : 'none',
+        }} />
+        {/* Severity badge */}
         <span style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, letterSpacing: '.1em', color, background: `${color}1a`, borderRadius: 4, padding: '2px 6px', textTransform: 'uppercase', flexShrink: 0 }}>{inc.severity}</span>
-        <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--d-t1)' }}>{inc.title}</span>
+        {/* Type label */}
+        <span style={{ fontSize: 10, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--d-t3)', flexShrink: 0, textTransform: 'uppercase', letterSpacing: '.06em' }}>{inc.type}</span>
+        {/* Description */}
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: 'var(--d-t1)', fontFamily: 'DM Sans, sans-serif' }}>{inc.title}</span>
+        {/* Time */}
         <span style={{ fontSize: 10, color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace', flexShrink: 0 }}>{timeStr}</span>
+        {/* Elapsed */}
+        <span style={{ fontSize: 10, fontFamily: 'Orbitron, sans-serif', color: 'var(--d-t3)', flexShrink: 0 }}>{elapsedStr(inc.occurred_at)}</span>
         <span style={{ color: 'var(--d-t3)', flexShrink: 0 }}>{expanded ? '▲' : '▼'}</span>
       </button>
       {expanded && (
@@ -93,7 +119,9 @@ const IncidentLog = React.memo(function IncidentLog() {
       <SH count={data?.length} />
       {(data ?? []).map(inc => <IncidentRow key={inc.id} inc={inc} />)}
       {(!data || data.length === 0) && (
-        <div style={{ textAlign: 'center', color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace', fontSize: 12, padding: 16 }}>No active incidents</div>
+        <div style={{ textAlign: 'center', color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace', fontSize: 12, padding: 16 }}>
+          🛡 No incidents
+        </div>
       )}
     </div>
   );

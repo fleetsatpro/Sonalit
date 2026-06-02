@@ -14,22 +14,23 @@ function barColor(pct: number | null): string {
 }
 
 const LazyBarChart = React.lazy(async () => {
-  const { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } = await import('recharts');
+  const { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, Cell } = await import('recharts');
   return {
     default: function ChartInner({ data }: { data: PerfDay[] }) {
       return (
         <ResponsiveContainer width='100%' height={160}>
-          <BarChart data={data} margin={{ top: 4, right: 0, left: -28, bottom: 0 }}>
+          <BarChart data={data} margin={{ top: 4, right: 0, left: -28, bottom: 0 }} style={{ background: 'var(--d-surf)', borderRadius: 8 }}>
+            <CartesianGrid strokeDasharray='3 3' stroke='var(--d-rim)' vertical={false} />
             <XAxis
               dataKey='label'
               tick={{ fill: 'var(--d-t3)', fontSize: 9, fontFamily: 'IBM Plex Mono, monospace' }}
               tickFormatter={(v: string) => v.slice(0, 3)}
-              axisLine={false} tickLine={false}
+              axisLine={{ stroke: 'var(--d-t3)' }} tickLine={false}
             />
             <YAxis
               domain={[0, 100]}
               tick={{ fill: 'var(--d-t3)', fontSize: 9, fontFamily: 'IBM Plex Mono, monospace' }}
-              axisLine={false} tickLine={false}
+              axisLine={{ stroke: 'var(--d-t3)' }} tickLine={false}
               tickFormatter={(v: number) => `${v}%`}
             />
             <Tooltip
@@ -37,7 +38,7 @@ const LazyBarChart = React.lazy(async () => {
               formatter={(v: number) => [`${v?.toFixed(0) ?? '—'}%`, 'On-Time']}
               labelStyle={{ color: 'var(--d-t2)' }}
             />
-            <Bar dataKey='on_time_pct' radius={[3, 3, 0, 0]} animationBegin={100} animationDuration={800}>
+            <Bar dataKey='on_time_pct' radius={[3, 3, 0, 0]} animationBegin={0} animationDuration={1400}>
               {data.map((entry, i) => (
                 <Cell key={i} fill={barColor(entry.on_time_pct)} />
               ))}
