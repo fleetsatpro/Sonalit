@@ -207,7 +207,7 @@ router.get('/vehicles', asyncHandler(async (req, res) => {
     WHERE v.org_id=$1 AND v.deleted_at IS NULL
     ORDER BY v.registration`, [orgId]);
 
-  res.json(r.rows.map(row => ({
+  res.json({ data: r.rows.map(row => ({
     id: row.id,
     registration: row.registration,
     convoy_id: row.convoy_id || null,
@@ -217,7 +217,7 @@ router.get('/vehicles', asyncHandler(async (req, res) => {
     engine_temp_c: row.engine_temp_c != null ? parseFloat(row.engine_temp_c) : null,
     gps_signal_pct: row.gps_signal_pct != null ? parseFloat(row.gps_signal_pct) : null,
     last_ping_at: row.last_ping_at ? new Date(row.last_ping_at).toISOString() : null,
-  })));
+  })) });
 }));
 
 // ── §2.4 Alerts ────────────────────────────────────────────────────────────
@@ -233,7 +233,7 @@ router.get('/alerts', asyncHandler(async (req, res) => {
       created_at DESC
     LIMIT $2`, [req.user.org_id, limit]);
 
-  res.json(r.rows.map(a => ({
+  res.json({ data: r.rows.map(a => ({
     id: a.id,
     severity: a.severity,
     type: a.type,
@@ -242,7 +242,7 @@ router.get('/alerts', asyncHandler(async (req, res) => {
     convoy_id: a.convoy_id || null,
     occurred_at: new Date(a.occurred_at).toISOString(),
     acknowledged: a.acknowledged,
-  })));
+  })) });
 }));
 
 // ── §2.5 Convoys ───────────────────────────────────────────────────────────
@@ -278,7 +278,7 @@ router.get('/convoys', asyncHandler(async (req, res) => {
     cpByConvoy[cp.convoy_id].push(cp);
   }
 
-  res.json(r.rows.map(c => ({
+  res.json({ data: r.rows.map(c => ({
     id: c.id,
     name: c.name || c.id,
     status: c.status,
@@ -292,7 +292,7 @@ router.get('/convoys', asyncHandler(async (req, res) => {
       status: cp.status || (cp.reached_at ? 'done' : 'pending'),
       reached_at: cp.reached_at ? new Date(cp.reached_at).toISOString() : null,
     })),
-  })));
+  })) });
 }));
 
 // ── §2.6 Route Risk ────────────────────────────────────────────────────────
@@ -319,7 +319,7 @@ router.get('/route-risk', asyncHandler(async (req, res) => {
     ORDER BY weighted_score DESC
     LIMIT 10`, [orgId]);
 
-  res.json(r.rows.map(row => {
+  res.json({ data: r.rows.map(row => {
     const score = parseInt(row.weighted_score) || 0;
     const normalised = Math.min(100, score * 10);
     const risk = normalised >= 70 ? 'high' : normalised >= 40 ? 'medium' : 'low';
@@ -332,7 +332,7 @@ router.get('/route-risk', asyncHandler(async (req, res) => {
       last_incident_summary: row.last_incident_summary || null,
       active_convoys: row.active_convoys || [],
     };
-  }));
+  }) });
 }));
 
 // ── §2.7 Drivers ───────────────────────────────────────────────────────────
@@ -360,7 +360,7 @@ router.get('/drivers', asyncHandler(async (req, res) => {
     ORDER BY d.name
     LIMIT 20`, [orgId]);
 
-  res.json(r.rows.map(d => {
+  res.json({ data: r.rows.map(d => {
     const sv = parseInt(d.speed_v) || 0;
     const bv = parseInt(d.brake_v) || 0;
     const fv = parseInt(d.fatigue_v) || 0;
@@ -374,7 +374,7 @@ router.get('/drivers', asyncHandler(async (req, res) => {
     ];
     const initials = d.name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
     return { id: d.id, name: d.name, initials, convoy_id: d.convoy_id || null, score, grade, flags, on_duty: d.on_duty ?? false };
-  }));
+  }) });
 }));
 
 // ── §2.8 Borders ───────────────────────────────────────────────────────────
@@ -399,7 +399,7 @@ router.get('/borders', asyncHandler(async (req, res) => {
     'Malawi': '🇲🇼', 'Zambia': '🇿🇲', 'Somalia': '🇸🇴',
   };
 
-  res.json(r.rows.map(b => {
+  res.json({ data: r.rows.map(b => {
     const meta = typeof b.metadata === 'object' && b.metadata ? b.metadata : {};
     const countries = (meta.countries || b.name).toString();
     const flagEmojis = countries.split(/[\/\-,]/).map(c => FLAG_MAP[c.trim()] || '').filter(Boolean).join(' ');
@@ -407,7 +407,7 @@ router.get('/borders', asyncHandler(async (req, res) => {
     const queueMins = meta.queue_minutes || null;
     const status = activeConvoys.length > 2 ? 'busy' : activeConvoys.length > 0 ? 'clear' : 'clear';
     return { name: b.name, countries, status, queue_minutes: queueMins, active_convoys: activeConvoys, flag_emojis: flagEmojis };
-  }));
+  }) });
 }));
 
 // ── §2.9 Performance ───────────────────────────────────────────────────────
@@ -440,7 +440,7 @@ router.get('/performance', asyncHandler(async (req, res) => {
     });
   }
 
-  res.json(result);
+  res.json({ data: result });
 }));
 
 // ── §2.10 Predictions ──────────────────────────────────────────────────────
@@ -508,7 +508,7 @@ router.get('/predictions', asyncHandler(async (req, res) => {
     });
   }
 
-  res.json(predictions);
+  res.json({ data: predictions });
 }));
 
 // ── §2.11 Weather ──────────────────────────────────────────────────────────
@@ -553,7 +553,7 @@ function fetchWeatherCity(city) {
 router.get('/weather', asyncHandler(async (req, res) => {
   const cities = ['Kampala', 'Jinja', 'Malaba', 'Eldoret', 'Nairobi', 'Mombasa'];
   const results = await Promise.all(cities.map(fetchWeatherCity));
-  res.json(results);
+  res.json({ data: results });
 }));
 
 // ── §2.12 Panic ────────────────────────────────────────────────────────────
@@ -610,16 +610,17 @@ router.get('/comms', asyncHandler(async (req, res) => {
     GROUP BY v.id, v.registration
     ORDER BY v.registration`, [orgId]);
 
-  res.json(r.rows.map(row => {
+  res.json({ data: r.rows.map(row => {
     const pingCount = parseInt(row.ping_count_today) || 0;
     const lastPingAt = row.last_ping_at ? new Date(row.last_ping_at).toISOString() : null;
     const secAgo = lastPingAt ? (Date.now() - new Date(lastPingAt).getTime()) / 1000 : 9999;
-    const pingsPerMin = pingCount / Math.max(1, (Date.now() - new Date().setHours(0,0,0,0)) / 60000);
+    const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+    const pingsPerMin = pingCount / Math.max(1, (Date.now() - midnight.getTime()) / 60000);
     const signalBars = pingsPerMin > 1 ? 5 : pingsPerMin > 0.5 ? 4 : pingsPerMin > 0.2 ? 3 : pingsPerMin > 0.067 ? 2 : 1;
     const networkType = signalBars >= 4 ? '4G' : signalBars === 3 ? '3G' : signalBars === 2 ? 'EDGE' : 'offline';
     const status = secAgo < 30 ? 'live' : secAgo < 300 ? 'delayed' : secAgo < 900 ? 'weak' : 'offline';
     return { vehicle_id: row.vehicle_id, registration: row.registration, ping_count_today: pingCount, last_ping_at: lastPingAt, signal_bars: signalBars, network_type: networkType, status };
-  }));
+  }) });
 }));
 
 // ── §2.14 Timeline ─────────────────────────────────────────────────────────
@@ -654,7 +655,7 @@ router.get('/timeline', asyncHandler(async (req, res) => {
     fraction: Math.max(0, Math.min(1, (new Date(e.time).getTime() - now) / (end - now))),
   })).sort((a, b) => a.fraction - b.fraction);
 
-  res.json(events);
+  res.json({ data: events });
 }));
 
 module.exports = router;

@@ -30,8 +30,8 @@ const WeatherIntelligence = React.memo(function WeatherIntelligence() {
     queryFn: async () => {
       const cached = loadCache();
       if (cached) return cached;
-      const r = await api.get<WeatherCity[]>('/dashboard/weather');
-      const result = Array.isArray(r.data) ? r.data : [];
+      const r = await api.get<{ data: WeatherCity[] }>('/dashboard/weather');
+      const result = r.data.data ?? [];
       saveCache(result);
       return result;
     },
