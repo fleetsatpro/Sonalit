@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Package, Plus, Trash2, Copy, Download, CheckCircle2,
-  Clock, AlertTriangle, Loader2, ExternalLink, RefreshCw,
+  Clock, AlertTriangle, Loader2, ExternalLink, RefreshCw, Users,
 } from 'lucide-react';
 import { api } from '../lib/api.js';
+import { CargoClientsPanel } from './CargoClientsPanel.js';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -199,6 +200,7 @@ function NewTokenBanner({ token, onDismiss }: { token: string; onDismiss: () => 
 
 export default function CargoPortal(): React.ReactElement {
   const qc = useQueryClient();
+  const [tab, setTab] = useState<'tokens' | 'clients'>('clients');
   const [selectedConvoy, setSelectedConvoy] = useState<string>('');
   const [showIssue, setShowIssue] = useState(false);
   const [newToken, setNewToken] = useState<{ token: string; convoyId: string } | null>(null);
@@ -245,14 +247,34 @@ export default function CargoPortal(): React.ReactElement {
             <p className="text-xs text-gray-500">Issue time-limited portal tokens for cargo owners to track their shipments</p>
           </div>
         </div>
-        <button
-          onClick={() => setShowIssue(true)}
-          disabled={convoys.length === 0}
-          className="flex items-center gap-2 rounded-lg bg-orange-600 hover:bg-orange-500 disabled:opacity-50 px-4 py-2 text-sm font-semibold text-white transition-colors"
-        >
-          <Plus size={15} /> Issue Token
+        {tab === 'tokens' && (
+          <button
+            onClick={() => setShowIssue(true)}
+            disabled={convoys.length === 0}
+            className="flex items-center gap-2 rounded-lg bg-orange-600 hover:bg-orange-500 disabled:opacity-50 px-4 py-2 text-sm font-semibold text-white transition-colors"
+          >
+            <Plus size={15} /> Issue Token
+          </button>
+        )}
+      </div>
+
+      {/* Tab selector */}
+      <div className="flex gap-1 mb-6 p-1 rounded-xl border border-white/[0.07]" style={{ background: 'rgba(13,20,38,0.5)', width: 'fit-content' }}>
+        <button onClick={() => setTab('clients')}
+          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${tab === 'clients' ? 'bg-orange-600 text-white' : 'text-gray-400 hover:text-white'}`}>
+          <Users size={13} /> V4 Clients
+        </button>
+        <button onClick={() => setTab('tokens')}
+          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${tab === 'tokens' ? 'bg-orange-600 text-white' : 'text-gray-400 hover:text-white'}`}>
+          <Package size={13} /> Legacy Tokens
         </button>
       </div>
+
+      {/* V4 Clients tab */}
+      {tab === 'clients' && <CargoClientsPanel convoys={convoys} />}
+
+      {/* Legacy tokens tab */}
+      {tab === 'tokens' && <>
 
       {/* New token banner */}
       {newToken && (
@@ -405,6 +427,8 @@ export default function CargoPortal(): React.ReactElement {
           onSuccess={handleIssued}
         />
       )}
+
+      </> /* end legacy tokens tab */}
     </div>
   );
 }

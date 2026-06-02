@@ -4,7 +4,7 @@ import { ArrowLeft, Shield } from 'lucide-react';
 import { PortalShell } from '../../components/portal/PortalPrimitives.js';
 import { SecurityStatusBar } from '../../components/portal/SecurityStatusBar.js';
 import { IncidentFeed } from '../../components/portal/IncidentFeed.js';
-import { subscribe } from '../../lib/centrifuge.js';
+import { subscribePortal as subscribe } from '../../lib/portalCentrifuge.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ShieldCheck, AlertTriangle } from 'lucide-react';
-import { subscribe } from '../../lib/centrifuge.js';
+import { subscribePortal as subscribe } from '../../lib/portalCentrifuge.js';
 import { relativeTime } from './PortalPrimitives.js';
 
 const API = (import.meta.env['VITE_API_BASE_URL'] as string | undefined) ?? '/api/v1';

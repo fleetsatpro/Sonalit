@@ -4,6 +4,7 @@
  * POST /api/v1/portal/auth/request-link  — send magic-link email
  * POST /api/v1/portal/auth/verify        — exchange token for session JWT
  * POST /api/v1/portal/auth/logout        — clear session cookie
+ * GET  /api/v1/portal/auth/rt-token      — Centrifugo connection token (clientAuth)
  */
 const router = require('express').Router();
 const crypto = require('crypto');
@@ -12,6 +13,7 @@ const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 const { query } = require('../config/database');
 const { asyncHandler } = require('../middleware/error');
+const { clientAuth } = require('../middleware/clientAuth');
 
 // Rate limit: 5 requests / 15 min / IP for magic-link requests
 const requestLinkLimiter = rateLimit({
@@ -58,7 +60,7 @@ router.post('/request-link', requestLinkLimiter, asyncHandler(async (req, res) =
     );
 
     const portalUrl = process.env.PORTAL_URL ?? 'https://app.sonalit.io';
-    const magicLink = `${portalUrl}/portal/verify?token=${rawToken}`;
+    const magicLink = `${portalUrl}/portal/login?token=${rawToken}`;
 
     const transporter = createTransporter();
     if (transporter) {
@@ -140,6 +142,18 @@ router.post('/verify', asyncHandler(async (req, res) => {
 router.post('/logout', asyncHandler(async (req, res) => {
   res.clearCookie('sonalit_client');
   res.json({ ok: true });
+}));
+
+// GET /portal/auth/rt-token — Centrifugo connection token for portal clients
+router.get('/rt-token', clientAuth, asyncHandler(async (req, res) => {
+  const secret = process.env.CENTRIFUGO_TOKEN_HMAC_SECRET;
+  if (!secret) return res.status(503).json({ error: 'Realtime not configured' });
+  const cfToken = jwt.sign(
+    { sub: `portal_client:${req.client.client_id}` },
+    secret,
+    { expiresIn: '1h', algorithm: 'HS256' },
+  );
+  res.json({ data: { token: cfToken } });
 }));
 
 module.exports = router;
