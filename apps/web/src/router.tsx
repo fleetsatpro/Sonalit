@@ -6,20 +6,30 @@ import LoginPage from './pages/Login.js';
 
 const rootRoute = createRootRoute({ component: Outlet, errorComponent: RootErrorComponent });
 
+const authCheck = () => {
+  if (!getAccessToken() && !useAuthStore.getState().user) throw redirect({ to: '/login' });
+};
+
+// Authenticated routes wrapped in the old NavSidebar + TopBar layout
 const authRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: 'auth',
-  beforeLoad: () => {
-    // Check in-memory access token first; fall back to persisted user (T1.2)
-    if (!getAccessToken() && !useAuthStore.getState().user) throw redirect({ to: '/login' });
-  },
+  beforeLoad: authCheck,
   component: Layout,
+});
+
+// Authenticated routes that render full-screen (no old sidebar/topbar)
+const authFullscreenRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: 'auth-fullscreen',
+  beforeLoad: authCheck,
+  component: Outlet,
 });
 
 const loginRoute = createRoute({ getParentRoute: () => rootRoute, path: '/login', component: LoginPage });
 const notFoundRoute = createRoute({ getParentRoute: () => rootRoute, path: '*', component: lazyRouteComponent(() => import('./pages/NotFound.js')) });
 
-const dashboardRoute = createRoute({ getParentRoute: () => authRoute, path: '/', component: lazyRouteComponent(() => import('./pages/Dashboard.js')) });
+const dashboardRoute = createRoute({ getParentRoute: () => authFullscreenRoute, path: '/', component: lazyRouteComponent(() => import('./pages/Dashboard.js')) });
 const fleetRoute = createRoute({ getParentRoute: () => authRoute, path: '/fleet', component: lazyRouteComponent(() => import('./pages/Fleet.js')) });
 const gpsRoute = createRoute({ getParentRoute: () => authRoute, path: '/gps', component: lazyRouteComponent(() => import('./pages/GPS.js')) });
 const convoysRoute = createRoute({ getParentRoute: () => authRoute, path: '/convoys', component: lazyRouteComponent(() => import('./pages/Convoys.js')) });
@@ -96,8 +106,11 @@ const routeTree = rootRoute.addChildren([
     portalSensorsRoute, portalReplayRoute,
     portalTrackRoute, portalConvoyRoute, portalCustodyRoute, portalSecurityRoute,
   ]),
+  authFullscreenRoute.addChildren([
+    dashboardRoute,
+  ]),
   authRoute.addChildren([
-    dashboardRoute, fleetRoute, gpsRoute,
+    fleetRoute, gpsRoute,
     convoysRoute, convoyNewRoute, convoyEditRoute,
     driversRoute, alertsRoute, incidentsRoute,
     incidentCenterRoute, panicCenterRoute, messagesRoute,
