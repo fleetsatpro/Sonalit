@@ -345,12 +345,18 @@ router.get('/convoy/:convoy_id/overview', clientAuth, asyncHandler(async (req, r
   const { org_id } = req.client;
 
   const convoyRes = await query(
-    `SELECT c.id, c.reference, c.status, c.origin, c.destination,
-            c.departed_at, c.estimated_arrival_at, c.arrived_at,
+    `SELECT c.id,
+            COALESCE(c.reference, c.name)                AS reference,
+            c.status,
+            COALESCE(c.origin, c.route_origin)           AS origin,
+            COALESCE(c.destination, c.route_destination) AS destination,
+            COALESCE(c.departed_at, c.departure_time)    AS departed_at,
+            COALESCE(c.estimated_arrival_at, c.estimated_arrival) AS estimated_arrival_at,
+            c.arrived_at,
             (SELECT COUNT(*) FROM convoy_trucks ct WHERE ct.convoy_id = c.id AND ct.deleted_at IS NULL) AS vehicle_count,
-            (SELECT COUNT(DISTINCT ccl2.client_id) - 1
+            (SELECT GREATEST(0, COUNT(DISTINCT ccl2.client_id) - 1)
              FROM cargo_client_links ccl2
-             WHERE ccl2.convoy_id = c.id AND ccl2.org_id = c.org_id
+             WHERE ccl2.convoy_id = c.id
             ) AS coload_count,
             (SELECT COUNT(*) FROM alerts a WHERE a.convoy_id = c.id AND a.resolved_at IS NULL) AS exception_count
      FROM convoys c
