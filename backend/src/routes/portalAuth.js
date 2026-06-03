@@ -25,14 +25,43 @@ const requestLinkLimiter = rateLimit({
   message: { error: 'Too many login attempts, please try again later.' },
 });
 
-function createTransporter() {
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER) return null;
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: parseInt(process.env.SMTP_PORT) || 587,
-    secure: false,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD },
-  });
+// Returns true if email was sent, false if no provider configured, throws on send failure.
+async function sendMagicLinkEmail(to, magicLink) {
+  const from = process.env.SMTP_FROM || 'SONALIT <noreply@sonalit.io>';
+  const subject = 'Your SONALIT portal login link';
+  const text = `Click the link below to log in to your SONALIT cargo portal.\nThis link expires in 15 minutes.\n\n${magicLink}\n\nIf you did not request this, ignore this email.`;
+
+  // ── Resend (preferred — just set RESEND_API_KEY) ──────────────────────────
+  if (process.env.RESEND_API_KEY) {
+    const resp = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ from, to: [to], subject, text }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(`Resend: ${err.message || resp.status}`);
+    }
+    return true;
+  }
+
+  // ── nodemailer SMTP fallback ───────────────────────────────────────────────
+  if (process.env.SMTP_HOST && process.env.SMTP_USER) {
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT) || 587,
+      secure: false,
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD },
+    });
+    await transporter.sendMail({ from, to, subject, text });
+    return true;
+  }
+
+  // No email provider configured
+  return false;
 }
 
 // POST /portal/auth/request-link
@@ -59,16 +88,17 @@ router.post('/request-link', requestLinkLimiter, asyncHandler(async (req, res) =
       [org_id, client_id, tokenHash, expiresAt],
     );
 
-    const portalUrl = process.env.PORTAL_URL ?? 'https://app.sonalit.io';
+    const portalUrl = process.env.PORTAL_URL ?? `https://${req.hostname}`;
     const magicLink = `${portalUrl}/portal/login?token=${rawToken}`;
 
-    const transporter = createTransporter();
-    if (transporter) {
-      await transporter.sendMail({
-        from: process.env.SMTP_FROM || 'noreply@sonalit.io',
-        to: email,
-        subject: 'Your SONALIT login link',
-        text: `Hello,\n\nClick the link below to log in to your SONALIT cargo portal. This link expires in 15 minutes.\n\n${magicLink}\n\nIf you did not request this, you can safely ignore this email.\n`,
+    const sent = await sendMagicLinkEmail(email, magicLink).catch(() => false);
+
+    if (!sent) {
+      // No email provider — return the link directly so it can be used immediately.
+      // In production, configure RESEND_API_KEY or SMTP_HOST to send real emails.
+      return res.json({
+        message: 'Email delivery not configured. Use the link below to log in.',
+        _link: magicLink,
       });
     }
   }
