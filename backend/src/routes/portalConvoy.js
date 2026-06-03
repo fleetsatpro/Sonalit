@@ -352,7 +352,7 @@ router.get('/convoy/:convoy_id/overview', clientAuth, asyncHandler(async (req, r
             COALESCE(c.departed_at, c.departure_time)    AS departed_at,
             COALESCE(c.estimated_arrival_at, c.estimated_arrival) AS estimated_arrival_at,
             c.arrived_at,
-            (SELECT COUNT(*) FROM convoy_trucks ct WHERE ct.convoy_id = c.id AND ct.deleted_at IS NULL) AS vehicle_count,
+            (SELECT COUNT(*) FROM convoy_trucks ct WHERE ct.convoy_id = c.id) AS vehicle_count,
             (SELECT GREATEST(0, COUNT(DISTINCT ccl2.client_id) - 1)
              FROM cargo_client_links ccl2
              WHERE ccl2.convoy_id = c.id
