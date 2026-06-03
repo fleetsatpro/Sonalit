@@ -1,0 +1,2050 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Sonalit Fleet API",
+    "version": "2.1.0",
+    "description": "Auto-generated from Express router introspection. Do not hand-edit — run generate-openapi.js."
+  },
+  "servers": [
+    {
+      "url": "/api/v1",
+      "description": "Current server"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "get_health",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "get_metrics",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "post_api_v1_auth_login",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "operationId": "get_api_v1_auth_me",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "post_api_v1_auth_logout",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/change-password": {
+      "put": {
+        "operationId": "put_api_v1_auth_change_password",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/users": {
+      "get": {
+        "operationId": "get_api_v1_auth_users",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_auth_users",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "operationId": "post_api_v1_auth_refresh",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/users/{id}": {
+      "get": {
+        "operationId": "get_api_v1_auth_users_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_auth_users_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_auth_users_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/users/{id}/roles": {
+      "put": {
+        "operationId": "put_api_v1_auth_users_id_roles",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/users/{id}/suspend": {
+      "patch": {
+        "operationId": "patch_api_v1_auth_users_id_suspend",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/users/{id}/unsuspend": {
+      "patch": {
+        "operationId": "patch_api_v1_auth_users_id_unsuspend",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/orgs": {
+      "get": {
+        "operationId": "get_api_v1_auth_orgs",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/orgs/{id}": {
+      "get": {
+        "operationId": "get_api_v1_auth_orgs_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_auth_orgs_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/alerts": {
+      "get": {
+        "operationId": "get_api_v1_alerts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/alerts/unread-count": {
+      "get": {
+        "operationId": "get_api_v1_alerts_unread_count",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/alerts/{id}": {
+      "get": {
+        "operationId": "get_api_v1_alerts_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/alerts/{id}/acknowledge": {
+      "patch": {
+        "operationId": "patch_api_v1_alerts_id_acknowledge",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/alerts/{id}/read": {
+      "patch": {
+        "operationId": "patch_api_v1_alerts_id_read",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/vehicles": {
+      "get": {
+        "operationId": "get_api_v1_vehicles",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_vehicles",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/vehicles/{id}": {
+      "get": {
+        "operationId": "get_api_v1_vehicles_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_vehicles_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_vehicles_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/vehicles/{id}/location": {
+      "get": {
+        "operationId": "get_api_v1_vehicles_id_location",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/vehicles/{id}/history": {
+      "get": {
+        "operationId": "get_api_v1_vehicles_id_history",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/vehicles/{id}/alerts": {
+      "get": {
+        "operationId": "get_api_v1_vehicles_id_alerts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/vehicles/{id}/assign-convoy": {
+      "post": {
+        "operationId": "post_api_v1_vehicles_id_assign_convoy",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/vehicles/{id}/remove-convoy": {
+      "post": {
+        "operationId": "post_api_v1_vehicles_id_remove_convoy",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/vehicles/{id}/reassign-driver": {
+      "patch": {
+        "operationId": "patch_api_v1_vehicles_id_reassign_driver",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoys": {
+      "get": {
+        "operationId": "get_api_v1_convoys",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_convoys",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoys/{id}": {
+      "get": {
+        "operationId": "get_api_v1_convoys_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_convoys_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_convoys_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoys/{id}/dispatch": {
+      "post": {
+        "operationId": "post_api_v1_convoys_id_dispatch",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoys/{id}/complete": {
+      "post": {
+        "operationId": "post_api_v1_convoys_id_complete",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoys/{id}/vehicles": {
+      "get": {
+        "operationId": "get_api_v1_convoys_id_vehicles",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/geofences": {
+      "get": {
+        "operationId": "get_api_v1_geofences",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_geofences",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/geofences/{id}": {
+      "get": {
+        "operationId": "get_api_v1_geofences_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_geofences_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_geofences_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/incidents": {
+      "get": {
+        "operationId": "get_api_v1_incidents",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_incidents",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/incidents/{id}": {
+      "get": {
+        "operationId": "get_api_v1_incidents_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_incidents_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_incidents_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/incidents/{id}/resolve": {
+      "post": {
+        "operationId": "post_api_v1_incidents_id_resolve",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/incidents/{id}/notes": {
+      "post": {
+        "operationId": "post_api_v1_incidents_id_notes",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/incidents/{id}/assign": {
+      "patch": {
+        "operationId": "patch_api_v1_incidents_id_assign",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/devices": {
+      "get": {
+        "operationId": "get_api_v1_devices",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_devices",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/devices/{id}": {
+      "get": {
+        "operationId": "get_api_v1_devices_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_devices_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_devices_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/devices/assign": {
+      "post": {
+        "operationId": "post_api_v1_devices_assign",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/devices/{id}/unassign": {
+      "post": {
+        "operationId": "post_api_v1_devices_id_unassign",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/devices/{id}/command": {
+      "post": {
+        "operationId": "post_api_v1_devices_id_command",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/devices/{id}/config": {
+      "get": {
+        "operationId": "get_api_v1_devices_id_config",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_devices_id_config",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/devices/bulk": {
+      "post": {
+        "operationId": "post_api_v1_devices_bulk",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/panic": {
+      "get": {
+        "operationId": "get_api_v1_panic",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/panic/{id}/resolve": {
+      "post": {
+        "operationId": "post_api_v1_panic_id_resolve",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics": {
+      "get": {
+        "operationId": "get_api_v1_analytics",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/kpi": {
+      "get": {
+        "operationId": "get_api_v1_analytics_kpi",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/trends": {
+      "get": {
+        "operationId": "get_api_v1_analytics_trends",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/heatmap": {
+      "get": {
+        "operationId": "get_api_v1_analytics_heatmap",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/drivers": {
+      "get": {
+        "operationId": "get_api_v1_analytics_drivers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/export": {
+      "get": {
+        "operationId": "get_api_v1_analytics_export",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/vehicle/{id}": {
+      "get": {
+        "operationId": "get_api_v1_analytics_vehicle_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/convoy/{id}": {
+      "get": {
+        "operationId": "get_api_v1_analytics_convoy_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/border-crossings": {
+      "get": {
+        "operationId": "get_api_v1_analytics_border_crossings",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/payload": {
+      "get": {
+        "operationId": "get_api_v1_analytics_payload",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/performance": {
+      "get": {
+        "operationId": "get_api_v1_analytics_performance",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/ai-insights": {
+      "get": {
+        "operationId": "get_api_v1_analytics_ai_insights",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/border-status": {
+      "get": {
+        "operationId": "get_api_v1_analytics_border_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/driver/{id}": {
+      "get": {
+        "operationId": "get_api_v1_analytics_driver_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/risk-zones": {
+      "get": {
+        "operationId": "get_api_v1_analytics_risk_zones",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/weather": {
+      "get": {
+        "operationId": "get_api_v1_analytics_weather",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/comms": {
+      "get": {
+        "operationId": "get_api_v1_analytics_comms",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/mission-timeline": {
+      "get": {
+        "operationId": "get_api_v1_analytics_mission_timeline",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/users/me": {
+      "get": {
+        "operationId": "get_api_v1_users_me",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_users_me",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/users/me/password": {
+      "put": {
+        "operationId": "put_api_v1_users_me_password",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/users/me/avatar": {
+      "post": {
+        "operationId": "post_api_v1_users_me_avatar",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/users/me/preferences": {
+      "get": {
+        "operationId": "get_api_v1_users_me_preferences",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_users_me_preferences",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/users/me/sessions": {
+      "get": {
+        "operationId": "get_api_v1_users_me_sessions",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/users/me/sessions/{sessionId}": {
+      "delete": {
+        "operationId": "delete_api_v1_users_me_sessions_sessionId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/users/me/two-factor": {
+      "post": {
+        "operationId": "post_api_v1_users_me_two_factor",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_users_me_two_factor",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/users/me/notifications": {
+      "get": {
+        "operationId": "get_api_v1_users_me_notifications",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/org": {
+      "get": {
+        "operationId": "get_api_v1_org",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_org",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/org/members": {
+      "get": {
+        "operationId": "get_api_v1_org_members",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/org/members/{id}": {
+      "delete": {
+        "operationId": "delete_api_v1_org_members_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/org/invite": {
+      "post": {
+        "operationId": "post_api_v1_org_invite",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/org/invites/{token}/accept": {
+      "post": {
+        "operationId": "post_api_v1_org_invites_token_accept",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/org/branding": {
+      "get": {
+        "operationId": "get_api_v1_org_branding",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_org_branding",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/org/subscription": {
+      "get": {
+        "operationId": "get_api_v1_org_subscription",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/org/usage": {
+      "get": {
+        "operationId": "get_api_v1_org_usage",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/org/audit-log": {
+      "get": {
+        "operationId": "get_api_v1_org_audit_log",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/org/settings": {
+      "get": {
+        "operationId": "get_api_v1_org_settings",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_org_settings",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian": {
+      "get": {
+        "operationId": "get_api_v1_guardian",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_guardian",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/{id}": {
+      "get": {
+        "operationId": "get_api_v1_guardian_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_guardian_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_guardian_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/{id}/checkins": {
+      "get": {
+        "operationId": "get_api_v1_guardian_id_checkins",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/{id}/panic": {
+      "post": {
+        "operationId": "post_api_v1_guardian_id_panic",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/{id}/resolve-panic": {
+      "post": {
+        "operationId": "post_api_v1_guardian_id_resolve_panic",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/{id}/location": {
+      "post": {
+        "operationId": "post_api_v1_guardian_id_location",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/cfo": {
+      "get": {
+        "operationId": "get_api_v1_guardian_cfo",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/gdpr": {
+      "get": {
+        "operationId": "get_api_v1_gdpr",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_gdpr",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/gdpr/export": {
+      "get": {
+        "operationId": "get_api_v1_gdpr_export",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/gdpr/consent": {
+      "get": {
+        "operationId": "get_api_v1_gdpr_consent",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_gdpr_consent",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/gdpr/processing-log": {
+      "get": {
+        "operationId": "get_api_v1_gdpr_processing_log",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/drivers": {
+      "get": {
+        "operationId": "get_api_v1_drivers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_drivers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/drivers/{id}": {
+      "get": {
+        "operationId": "get_api_v1_drivers_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_drivers_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_drivers_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/drivers/{id}/trips": {
+      "get": {
+        "operationId": "get_api_v1_drivers_id_trips",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/drivers/{id}/alerts": {
+      "get": {
+        "operationId": "get_api_v1_drivers_id_alerts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/drivers/{id}/behavior": {
+      "get": {
+        "operationId": "get_api_v1_drivers_id_behavior",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/drivers/{id}/assign-vehicle": {
+      "post": {
+        "operationId": "post_api_v1_drivers_id_assign_vehicle",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/shipments": {
+      "get": {
+        "operationId": "get_api_v1_shipments",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_shipments",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/shipments/{id}": {
+      "get": {
+        "operationId": "get_api_v1_shipments_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_shipments_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_shipments_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/shipments/{id}/status": {
+      "patch": {
+        "operationId": "patch_api_v1_shipments_id_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/shipments/{id}/assign-vehicle": {
+      "post": {
+        "operationId": "post_api_v1_shipments_id_assign_vehicle",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/finance": {
+      "get": {
+        "operationId": "get_api_v1_finance",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/finance/invoices": {
+      "get": {
+        "operationId": "get_api_v1_finance_invoices",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_finance_invoices",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/finance/invoices/{id}": {
+      "get": {
+        "operationId": "get_api_v1_finance_invoices_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_finance_invoices_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/finance/invoices/{id}/pay": {
+      "post": {
+        "operationId": "post_api_v1_finance_invoices_id_pay",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/finance/expenses": {
+      "get": {
+        "operationId": "get_api_v1_finance_expenses",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_finance_expenses",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/finance/expenses/{id}": {
+      "put": {
+        "operationId": "put_api_v1_finance_expenses_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_finance_expenses_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/finance/fuel": {
+      "get": {
+        "operationId": "get_api_v1_finance_fuel",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_finance_fuel",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/finance/reports": {
+      "get": {
+        "operationId": "get_api_v1_finance_reports",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/maintenance": {
+      "get": {
+        "operationId": "get_api_v1_maintenance",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_maintenance",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/maintenance/{id}": {
+      "get": {
+        "operationId": "get_api_v1_maintenance_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_maintenance_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_maintenance_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/maintenance/{id}/complete": {
+      "post": {
+        "operationId": "post_api_v1_maintenance_id_complete",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/maintenance/vehicle/{vehicleId}": {
+      "get": {
+        "operationId": "get_api_v1_maintenance_vehicle_vehicleId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/riskzones": {
+      "get": {
+        "operationId": "get_api_v1_riskzones",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_riskzones",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/riskzones/{id}": {
+      "get": {
+        "operationId": "get_api_v1_riskzones_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_riskzones_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_riskzones_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field-officers": {
+      "get": {
+        "operationId": "get_api_v1_field_officers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_field_officers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field-officers/{id}": {
+      "get": {
+        "operationId": "get_api_v1_field_officers_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_field_officers_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_field_officers_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field-officers/{id}/assign-convoy": {
+      "post": {
+        "operationId": "post_api_v1_field_officers_id_assign_convoy",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/routes": {
+      "get": {
+        "operationId": "get_api_v1_routes",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_routes",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/routes/{id}": {
+      "get": {
+        "operationId": "get_api_v1_routes_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_routes_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_routes_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/routes/{id}/waypoints": {
+      "get": {
+        "operationId": "get_api_v1_routes_id_waypoints",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_routes_id_waypoints",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/routes/{id}/assign-convoy": {
+      "post": {
+        "operationId": "post_api_v1_routes_id_assign_convoy",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/auth/login": {
+      "post": {
+        "operationId": "post_api_v1_portal_auth_login",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/auth/me": {
+      "get": {
+        "operationId": "get_api_v1_portal_auth_me",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/auth/refresh": {
+      "post": {
+        "operationId": "post_api_v1_portal_auth_refresh",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/auth/logout": {
+      "post": {
+        "operationId": "post_api_v1_portal_auth_logout",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/auth/register": {
+      "post": {
+        "operationId": "post_api_v1_portal_auth_register",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/auth/forgot-password": {
+      "post": {
+        "operationId": "post_api_v1_portal_auth_forgot_password",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/auth/reset-password": {
+      "post": {
+        "operationId": "post_api_v1_portal_auth_reset_password",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/auth/verify-email": {
+      "post": {
+        "operationId": "post_api_v1_portal_auth_verify_email",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/auth/resend-verification": {
+      "post": {
+        "operationId": "post_api_v1_portal_auth_resend_verification",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/shipments": {
+      "get": {
+        "operationId": "get_api_v1_portal_shipments",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/shipments/{id}": {
+      "get": {
+        "operationId": "get_api_v1_portal_shipments_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/shipments/{id}/track": {
+      "get": {
+        "operationId": "get_api_v1_portal_shipments_id_track",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/invoices": {
+      "get": {
+        "operationId": "get_api_v1_portal_invoices",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/invoices/{id}": {
+      "get": {
+        "operationId": "get_api_v1_portal_invoices_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/profile": {
+      "get": {
+        "operationId": "get_api_v1_portal_profile",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_portal_profile",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/notifications": {
+      "get": {
+        "operationId": "get_api_v1_portal_notifications",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/documents": {
+      "get": {
+        "operationId": "get_api_v1_portal_documents",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_portal_documents",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/documents/{id}": {
+      "get": {
+        "operationId": "get_api_v1_portal_documents_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_portal_documents_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/overview": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_overview",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/alerts": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_alerts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/convoys": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_convoys",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/vehicles": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_vehicles",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/risk-intelligence": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_risk_intelligence",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/driver-behavior": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_driver_behavior",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/border-crossings": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_border_crossings",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/performance": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_performance",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/weather": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_weather",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/ai-intelligence": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_ai_intelligence",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/panic": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_panic",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/comms": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_comms",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/timeline": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_timeline",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    }
+  }
+}
