@@ -10,7 +10,7 @@ const TOKENS = [
     convoy_id: 'conv-1',
     cargo_owner_ref: 'ACME Corp',
     issued_at: '2026-05-29T08:00:00.000Z',
-    expires_at: '2026-05-30T08:00:00.000Z',
+    expires_at: new Date(Date.now() + 30 * 24 * 3600_000).toISOString(),
     last_used_at: null,
     revoked_at: null,
     issued_by_name: 'Admin User',

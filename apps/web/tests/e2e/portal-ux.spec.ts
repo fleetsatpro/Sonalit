@@ -142,7 +142,7 @@ test.describe('Portal UX — Track page', () => {
     );
     await page.goto(`/portal/convoy/${CONVOY_X}/track`);
     await expect(page.getByText('Estimated Arrival')).toBeVisible({ timeout: 8000 });
-    await expect(page.getByText('Deep Track')).toBeVisible({ timeout: 4000 });
+    await expect(page.getByText('CVY-TRACK-001')).toBeVisible({ timeout: 4000 });
   });
 
   test('vehicles & crew card shows carrying-my-cargo label', async ({ page }) => {
@@ -179,7 +179,7 @@ test.describe('Portal UX — Track page', () => {
       }),
     );
     await page.goto(`/portal/convoy/${CONVOY_X}/track`);
-    await expect(page.getByText('YOUR CARGO')).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('YOUR CARGO', { exact: true })).toBeVisible({ timeout: 8000 });
   });
 
 });
