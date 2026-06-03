@@ -74,8 +74,8 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      connectSrc: ["'self'", "wss://rt.sonalit.io", "https://api.anthropic.com", "https://*.sentry.io"],
-      imgSrc: ["'self'", "data:", "https://*.r2.cloudflarestorage.com", "https://basemaps.cartocdn.com", "https://demotiles.maplibre.org"],
+      connectSrc: ["'self'", "wss://rt.sonalit.io", "https://api.anthropic.com", "https://*.sentry.io", "https://*.openstreetmap.org"],
+      imgSrc: ["'self'", "data:", "https://*.r2.cloudflarestorage.com", "https://basemaps.cartocdn.com", "https://demotiles.maplibre.org", "https://*.openstreetmap.org"],
       workerSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"], // Tailwind CSS requires this
       scriptSrc: ["'self'"],

@@ -13,6 +13,10 @@ const SKIP_PREFIXES = [
   '/api/v1/auth/login',
   '/api/v1/auth/register',
   '/api/v1/auth/webauthn/',  // challenge fetch + assertion are pre-auth
+  // Portal magic-link auth: one-time token sent to user's email IS the credential.
+  // The verify endpoint is called immediately on landing from an email link
+  // (no prior session = no CSRF cookie). Same pre-auth rationale as /auth/login.
+  '/api/v1/portal/auth/',
   '/api/v1/guardian/',          // X-Device-Token auth
   '/api/v1/webhooks/',          // Convoy / external webhook callbacks
   '/api/v1/fuel/webhook/',                 // Fuel-card webhook — HMAC-verified (RULE D)
