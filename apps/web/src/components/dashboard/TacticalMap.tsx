@@ -109,7 +109,7 @@ const TacticalMap = React.memo(function TacticalMap() {
             attribution: '© CartoDB',
           },
         },
-        layers: [{ id: 'carto-tiles', type: 'raster', source: 'carto', paint: { 'raster-opacity': 0.85 } }],
+        layers: [{ id: 'carto-tiles', type: 'raster', source: 'carto', paint: { 'raster-opacity': 1 } }],
       },
       center: EA_CENTER,
       zoom: EA_ZOOM,
@@ -175,28 +175,41 @@ const TacticalMap = React.memo(function TacticalMap() {
       <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', border: '1px solid var(--d-rim2)', marginBottom: 12 }}>
         <div ref={mapContainer} style={{ width: '100%', height: 252, background: 'var(--d-deep)' }} />
 
-        {/* SVG overlay */}
+        {/* Radar — own square SVG so rings stay circular on all screen widths */}
+        <div style={{ position: 'absolute', top: 8, left: 8, pointerEvents: 'none' }}>
+          <svg width={172} height={172} viewBox='0 0 172 172'>
+            {/* Rings */}
+            {[76, 57, 38, 19].map((r, i) => (
+              <circle key={r} cx={86} cy={86} r={r} fill='none' stroke='rgba(34,197,94,.16)' strokeWidth={1} strokeDasharray={i % 2 === 0 ? '4 4' : 'none'} />
+            ))}
+            {/* Crosshair axes */}
+            <line x1={10} y1={86} x2={162} y2={86} stroke='rgba(34,197,94,.09)' strokeWidth={0.5} />
+            <line x1={86} y1={10} x2={86} y2={162} stroke='rgba(34,197,94,.09)' strokeWidth={0.5} />
+            {/* Rotating sweep — clockwise; tail trails CCW behind the arm */}
+            <g>
+              <animateTransform attributeName='transform' type='rotate' from='0 86 86' to='360 86 86' dur='6s' repeatCount='indefinite' />
+              {/* 3×45° comet sectors, CCW of arm, decreasing opacity */}
+              {/* arm=north(86,10); 45°CCW=NW(32.3,32.3); 90°CCW=W(10,86); 135°CCW=SW(32.3,139.7) */}
+              <path d='M 86 86 L 86 10 A 76 76 0 0 0 32.3 32.3' fill='rgba(34,197,94,.14)' />
+              <path d='M 86 86 L 32.3 32.3 A 76 76 0 0 0 10 86' fill='rgba(34,197,94,.07)' />
+              <path d='M 86 86 L 10 86 A 76 76 0 0 0 32.3 139.7' fill='rgba(34,197,94,.03)' />
+              {/* Arm: glow layer then crisp line */}
+              <line x1={86} y1={86} x2={86} y2={10} stroke='rgba(34,197,94,.3)' strokeWidth={5} strokeLinecap='round' />
+              <line x1={86} y1={86} x2={86} y2={10} stroke='var(--d-sig)' strokeWidth={1.5} strokeLinecap='round' />
+            </g>
+            {/* Centre reticle */}
+            <circle cx={86} cy={86} r={3} fill='rgba(34,197,94,.85)' />
+            <line x1={81} y1={86} x2={91} y2={86} stroke='rgba(34,197,94,.6)' strokeWidth={1} />
+            <line x1={86} y1={81} x2={86} y2={91} stroke='rgba(34,197,94,.6)' strokeWidth={1} />
+          </svg>
+        </div>
+
+        {/* SVG overlay — alert zones + city labels, stretched to cover map */}
         <svg
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
           viewBox='0 0 720 252'
           preserveAspectRatio='none'
         >
-          {/* Radar */}
-          <g>
-            {[80, 60, 40, 20].map((r, i) => (
-              <circle key={r} cx={120} cy={126} r={r} fill='none' stroke='rgba(34,197,94,.07)' strokeWidth={1} strokeDasharray={i % 2 === 0 ? '4 4' : 'none'} />
-            ))}
-          </g>
-          <g className='radar-rotate' style={{ transformOrigin: '120px 126px', animation: 'radar-turn 8s linear infinite' }}>
-            <path d={`M 120 126 L ${120 + 80 * Math.cos(-Math.PI/2)} ${126 + 80 * Math.sin(-Math.PI/2)}`}
-              stroke='var(--d-sig)' strokeWidth={1.5} opacity={0.8} />
-            <path d={`M 120 126 L 120 ${126 - 80}`} fill='none' stroke='transparent' />
-            <path d='M 120 126 L 120 46 A 80 80 0 0 1 189.3 166' fill='rgba(34,197,94,.04)' />
-            <path d='M 120 126 L 189.3 166 A 80 80 0 0 1 50.7 166' fill='rgba(34,197,94,.02)' />
-          </g>
-          <line x1={116} y1={126} x2={124} y2={126} stroke='rgba(34,197,94,.4)' strokeWidth={1} />
-          <line x1={120} y1={122} x2={120} y2={130} stroke='rgba(34,197,94,.4)' strokeWidth={1} />
-
           {/* Alert zones */}
           {(mapData?.alert_zones ?? []).map((_zone, i) => (
             <g key={i}>
@@ -266,7 +279,7 @@ const TacticalMap = React.memo(function TacticalMap() {
         {/* Edge vignette */}
         <div style={{
           position: 'absolute', inset: 0, pointerEvents: 'none',
-          background: 'radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(0,0,0,.55))',
+          background: 'radial-gradient(ellipse at 50% 50%, transparent 65%, rgba(0,0,0,.28))',
         }} />
       </div>
 
