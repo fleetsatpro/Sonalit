@@ -19,7 +19,7 @@ const safeQuery = (db, sql, params) => db(sql, params).catch(() => ({ rows: [] }
 router.get('/overview', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
 
-  const [threatR, kpiR, nextR, shiftR] = await Promise.all([
+  const [threatR, kpiR, nextR, shiftR, panicR] = await Promise.all([
     safeQuery(req.db, `
       SELECT
         COUNT(*) FILTER (WHERE type='sos' AND resolved_at IS NULL) AS sos_open,
@@ -57,6 +57,10 @@ router.get('/overview', asyncHandler(async (req, res) => {
       SELECT started_at FROM shifts
       WHERE org_id=$1 AND ended_at IS NULL
       ORDER BY started_at DESC LIMIT 1`, [orgId]),
+
+    safeQuery(req.db, `
+      SELECT COUNT(*) AS panic_open
+      FROM panic_events WHERE org_id=$1 AND resolved_at IS NULL`, [orgId]),
   ]);
 
   // km_today: sum of GPS distance for active vehicles since midnight
@@ -82,7 +86,8 @@ router.get('/overview', asyncHandler(async (req, res) => {
   const sosOpen = parseInt(t.sos_open) || 0;
   const critOpen = parseInt(t.crit_open) || 0;
   const alertsOpen = parseInt(t.alerts_open) || 0;
-  const threatLevel = sosOpen > 0 ? 'critical' : critOpen > 0 ? 'elevated' : 'secure';
+  const panicOpen = parseInt(panicR.rows[0]?.panic_open) || 0;
+  const threatLevel = panicOpen > 0 || sosOpen > 0 ? 'critical' : critOpen > 0 ? 'elevated' : 'secure';
 
   const k = kpiR.rows[0];
 
@@ -103,7 +108,7 @@ router.get('/overview', asyncHandler(async (req, res) => {
   const shiftRow = shiftR.rows[0];
 
   res.json({
-    threat: { level: threatLevel, alerts_open: alertsOpen, incidents_active: parseInt(k.incidents_active)||0 },
+    threat: { level: threatLevel, alerts_open: alertsOpen + panicOpen, incidents_active: parseInt(k.incidents_active)||0 },
     kpi: {
       vehicles_live: parseInt(k.vehicles_live)||0,
       convoys_active: parseInt(k.convoys_active)||0,
@@ -123,46 +128,89 @@ router.get('/overview', asyncHandler(async (req, res) => {
 router.get('/map', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
 
-  const convoysR = await req.db(`
-    SELECT c.id, COALESCE(c.name, c.reference) AS name, c.status,
-           COALESCE(c.origin, c.route_origin) AS origin,
-           COALESCE(c.destination, c.route_destination) AS destination,
-           (SELECT g.lat FROM gps_logs g JOIN convoy_trucks ct ON ct.vehicle_id=g.vehicle_id
-             WHERE ct.convoy_id=c.id ORDER BY g.timestamp DESC LIMIT 1) AS lat,
-           (SELECT g.lng FROM gps_logs g JOIN convoy_trucks ct ON ct.vehicle_id=g.vehicle_id
-             WHERE ct.convoy_id=c.id ORDER BY g.timestamp DESC LIMIT 1) AS lng,
-           (SELECT g.heading FROM gps_logs g JOIN convoy_trucks ct ON ct.vehicle_id=g.vehicle_id
-             WHERE ct.convoy_id=c.id ORDER BY g.timestamp DESC LIMIT 1) AS heading
-    FROM convoys c
-    WHERE c.org_id=$1 AND c.status='active' AND c.deleted_at IS NULL
-    LIMIT 20`, [orgId]);
+  const [convoysR, alertZonesR, vehiclesR, geofencesR, riskzonesR] = await Promise.all([
+    safeQuery(req.db, `
+      SELECT c.id, COALESCE(c.name, c.reference) AS name, c.status,
+             (SELECT g.lat FROM gps_logs g JOIN convoy_trucks ct ON ct.vehicle_id=g.vehicle_id
+               WHERE ct.convoy_id=c.id ORDER BY g.timestamp DESC LIMIT 1) AS lat,
+             (SELECT g.lng FROM gps_logs g JOIN convoy_trucks ct ON ct.vehicle_id=g.vehicle_id
+               WHERE ct.convoy_id=c.id ORDER BY g.timestamp DESC LIMIT 1) AS lng,
+             (SELECT g.heading FROM gps_logs g JOIN convoy_trucks ct ON ct.vehicle_id=g.vehicle_id
+               WHERE ct.convoy_id=c.id ORDER BY g.timestamp DESC LIMIT 1) AS heading
+      FROM convoys c
+      WHERE c.org_id=$1 AND c.status='active' AND c.deleted_at IS NULL
+      LIMIT 20`, [orgId]),
 
-  const alertZonesR = await req.db(`
-    SELECT lat, lng, 2000 AS radius_m,
-           CASE WHEN severity='critical' THEN 'critical'
-                WHEN severity='high' THEN 'high' ELSE 'medium' END AS severity
-    FROM alerts WHERE org_id=$1 AND resolved_at IS NULL AND lat IS NOT NULL
-    LIMIT 10`, [orgId]);
+    safeQuery(req.db, `
+      SELECT lat, lng, 2000 AS radius_m,
+             CASE WHEN severity='critical' THEN 'critical' WHEN severity='high' THEN 'high' ELSE 'medium' END AS severity
+      FROM alerts WHERE org_id=$1 AND resolved_at IS NULL AND lat IS NOT NULL
+      LIMIT 10`, [orgId]),
 
-  const convoys = convoysR.rows.map((c, i) => ({
-    id: c.id,
-    name: c.name || `Convoy ${i+1}`,
-    status: c.status,
-    route_d: '',
-    progress: 0,
-    lat: c.lat ? parseFloat(c.lat) : null,
-    lng: c.lng ? parseFloat(c.lng) : null,
-    heading: c.heading ? parseFloat(c.heading) : 0,
-    color: c.status === 'alert' ? '#ff4422' : '#00ffcc',
-  }));
+    safeQuery(req.db, `
+      SELECT v.id, v.registration,
+             g.lat, g.lng, COALESCE(g.heading, 0) AS heading,
+             COALESCE(g.speed, 0) AS speed_kmh,
+             CASE
+               WHEN g.timestamp IS NULL OR g.timestamp < NOW()-INTERVAL '15 minutes' THEN 'offline'
+               WHEN a.id IS NOT NULL THEN 'alert'
+               WHEN g.speed > 2 THEN 'moving'
+               ELSE 'idle'
+             END AS status
+      FROM vehicles v
+      LEFT JOIN LATERAL (
+        SELECT lat, lng, heading, speed, timestamp FROM gps_logs
+        WHERE vehicle_id=v.id ORDER BY timestamp DESC LIMIT 1
+      ) g ON true
+      LEFT JOIN convoy_trucks ct ON ct.vehicle_id=v.id
+        AND ct.convoy_id IN (SELECT id FROM convoys WHERE org_id=$1 AND status='active')
+      LEFT JOIN LATERAL (
+        SELECT id FROM alerts WHERE convoy_id=ct.convoy_id AND resolved_at IS NULL LIMIT 1
+      ) a ON true
+      WHERE v.org_id=$1 AND v.deleted_at IS NULL AND g.lat IS NOT NULL
+      LIMIT 50`, [orgId]),
+
+    safeQuery(req.db, `
+      SELECT id::text, name, COALESCE(type,'circle') AS type,
+             lat, lng, COALESCE(radius, 1000) AS radius_m
+      FROM geofences
+      WHERE org_id=$1 AND lat IS NOT NULL AND lng IS NOT NULL AND deleted_at IS NULL
+      LIMIT 30`, [orgId]),
+
+    // risk_zones is global (no org_id) — use raw query
+    query(`
+      SELECT id::text, name, risk_level, lat, lng, COALESCE(radius_km, 5) AS radius_km
+      FROM risk_zones
+      WHERE active=true AND lat IS NOT NULL AND lng IS NOT NULL
+      LIMIT 20`).catch(() => ({ rows: [] })),
+  ]);
 
   res.json({
-    convoys,
+    convoys: convoysR.rows.map((c, i) => ({
+      id: c.id, name: c.name || `Convoy ${i+1}`, status: c.status,
+      lat: c.lat ? parseFloat(c.lat) : null,
+      lng: c.lng ? parseFloat(c.lng) : null,
+      heading: c.heading ? parseFloat(c.heading) : 0,
+      color: c.status === 'alert' ? '#ff4422' : '#00ffcc',
+    })),
     alert_zones: alertZonesR.rows.map(z => ({
-      lat: parseFloat(z.lat),
-      lng: parseFloat(z.lng),
-      radius_m: z.radius_m,
-      severity: z.severity,
+      lat: parseFloat(z.lat), lng: parseFloat(z.lng),
+      radius_m: z.radius_m, severity: z.severity,
+    })),
+    vehicles: vehiclesR.rows.map(v => ({
+      id: v.id, registration: v.registration, status: v.status,
+      lat: parseFloat(v.lat), lng: parseFloat(v.lng),
+      heading: parseFloat(v.heading), speed_kmh: parseFloat(v.speed_kmh),
+    })),
+    geofences: geofencesR.rows.map(g => ({
+      id: g.id, name: g.name, type: g.type,
+      lat: parseFloat(g.lat), lng: parseFloat(g.lng),
+      radius_m: parseFloat(g.radius_m),
+    })),
+    riskzones: riskzonesR.rows.map(r => ({
+      id: r.id, name: r.name, risk_level: r.risk_level,
+      lat: parseFloat(r.lat), lng: parseFloat(r.lng),
+      radius_km: parseFloat(r.radius_km),
     })),
   });
 }));
@@ -566,11 +614,11 @@ router.get('/panic', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
   try {
   const [activeR, statsR, teamsR] = await Promise.all([
-    safeQuery(req.db, `SELECT id, vehicle_id, lat, lng, triggered_at FROM panic_events
-            WHERE org_id=$1 AND resolved_at IS NULL ORDER BY triggered_at DESC LIMIT 1`, [orgId]),
+    safeQuery(req.db, `SELECT id, vehicle_id, lat, lng, created_at AS triggered_at FROM panic_events
+            WHERE org_id=$1 AND resolved_at IS NULL ORDER BY created_at DESC LIMIT 1`, [orgId]),
     safeQuery(req.db, `SELECT
-              AVG(EXTRACT(EPOCH FROM (resolved_at - triggered_at))) AS avg_response_s,
-              MAX(triggered_at) AS last_event_at
+              AVG(EXTRACT(EPOCH FROM (resolved_at - created_at))) AS avg_response_s,
+              MAX(created_at) AS last_event_at
             FROM panic_events WHERE org_id=$1 AND resolved_at IS NOT NULL`, [orgId]),
     safeQuery(req.db, `SELECT name, type, COALESCE(eta_minutes, 0) AS eta_min, location, status
             FROM response_teams WHERE org_id=$1 AND active=true LIMIT 5`, [orgId]),
