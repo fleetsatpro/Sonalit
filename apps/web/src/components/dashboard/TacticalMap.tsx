@@ -8,9 +8,10 @@ import { useDashboardStore } from '../../stores/dashboardStore.js';
 interface MapConvoy { id: string; name: string; status: string; lat: number | null; lng: number | null; heading: number; color: string }
 interface AlertZone { lat: number; lng: number; radius_m: number; severity: string }
 interface MapVehicle { id: string; registration: string; lat: number; lng: number; heading: number; status: string; speed_kmh: number }
+interface MapDevice { id: string; name: string; model?: string; assignment_type?: string; lat: number; lng: number; status: string; speed_kmh: number; panic_active: boolean; last_seen?: string | null }
 interface MapGeofence { id: string; name: string; type: string; lat: number; lng: number; radius_m: number }
 interface MapRiskZone { id: string; name: string; risk_level: string; lat: number; lng: number; radius_km: number }
-interface MapData { convoys: MapConvoy[]; alert_zones: AlertZone[]; vehicles?: MapVehicle[]; geofences?: MapGeofence[]; riskzones?: MapRiskZone[] }
+interface MapData { convoys: MapConvoy[]; alert_zones: AlertZone[]; vehicles?: MapVehicle[]; devices?: MapDevice[]; geofences?: MapGeofence[]; riskzones?: MapRiskZone[] }
 interface VehicleTelemetry { id: string; registration: string; convoy_id: string | null; status: string; speed_kmh: number; fuel_pct: number | null; engine_temp_c: number | null; gps_signal_pct: number | null; last_ping_at: string | null }
 
 const EA_CENTER: [number, number] = [35.5, 1.2];
@@ -32,9 +33,23 @@ function geoCircle(lat: number, lng: number, radiusKm: number, steps = 48): [num
   return pts;
 }
 
+// Status → color. Drives both vehicle and device markers.
+// alert/panic = red, warn = amber, moving = green, idle = gray, offline = dim gray
+const STATUS_COLOR_EXPR: maplibregl.ExpressionSpecification = [
+  'match', ['get', 'status'],
+  'panic',   '#ff1e1e',
+  'alert',   '#ff4422',
+  'warn',    '#ff9040',
+  'moving',  '#22c55e',
+  'idle',    '#888888',
+  'offline', '#444444',
+  '#666666',
+];
+
 function setupMapLayers(map: maplibregl.Map) {
   const empty: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
   map.addSource('sv-vehicles',  { type: 'geojson', data: empty });
+  map.addSource('sv-devices',   { type: 'geojson', data: empty });
   map.addSource('sv-geofences', { type: 'geojson', data: empty });
   map.addSource('sv-risk',      { type: 'geojson', data: empty });
   map.addSource('sv-alerts',    { type: 'geojson', data: empty });
@@ -53,15 +68,38 @@ function setupMapLayers(map: maplibregl.Map) {
   map.addLayer({ id: 'sv-geofences-line', type: 'line', source: 'sv-geofences', paint: {
     'line-color': '#00ffcc', 'line-width': 1, 'line-opacity': 0.35, 'line-dasharray': [6, 3],
   }});
+
+  // Vehicles: triangle-ish square markers
   map.addLayer({ id: 'sv-vehicles-glow', type: 'circle', source: 'sv-vehicles', paint: {
-    'circle-radius': 10,
-    'circle-color': ['case', ['==', ['get', 'status'], 'alert'], '#ff4422', '#22c55e'],
-    'circle-opacity': 0.15, 'circle-blur': 1,
+    'circle-radius': 14,
+    'circle-color': STATUS_COLOR_EXPR,
+    'circle-opacity': 0.18, 'circle-blur': 1,
   }});
   map.addLayer({ id: 'sv-vehicles-dot', type: 'circle', source: 'sv-vehicles', paint: {
+    'circle-radius': 7,
+    'circle-color': STATUS_COLOR_EXPR,
+    'circle-stroke-width': 2, 'circle-stroke-color': '#000000', 'circle-opacity': 0.95,
+  }});
+  map.addLayer({ id: 'sv-vehicles-label', type: 'symbol', source: 'sv-vehicles', layout: {
+    'text-field': ['get', 'registration'],
+    'text-size': 9, 'text-offset': [0, 1.4], 'text-anchor': 'top',
+    'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+    'text-allow-overlap': false, 'text-optional': true,
+  }, paint: {
+    'text-color': '#ffffff', 'text-halo-color': '#000000', 'text-halo-width': 1.5,
+  }});
+
+  // Devices: smaller, diamond-style halo to distinguish from vehicles
+  map.addLayer({ id: 'sv-devices-glow', type: 'circle', source: 'sv-devices', paint: {
+    'circle-radius': ['case', ['==', ['get', 'status'], 'panic'], 22, 10],
+    'circle-color': STATUS_COLOR_EXPR,
+    'circle-opacity': ['case', ['==', ['get', 'status'], 'panic'], 0.35, 0.15],
+    'circle-blur': 1,
+  }});
+  map.addLayer({ id: 'sv-devices-dot', type: 'circle', source: 'sv-devices', paint: {
     'circle-radius': 5,
-    'circle-color': ['case', ['==', ['get', 'status'], 'alert'], '#ff4422', ['==', ['get', 'status'], 'moving'], '#22c55e', '#666666'],
-    'circle-stroke-width': 1.5, 'circle-stroke-color': '#000000', 'circle-opacity': 0.9,
+    'circle-color': STATUS_COLOR_EXPR,
+    'circle-stroke-width': 1.5, 'circle-stroke-color': '#ffffff', 'circle-opacity': 0.95,
   }});
 }
 
@@ -74,6 +112,13 @@ function updateMapData(map: maplibregl.Map, data: MapData) {
     features: (data.vehicles ?? []).map(v => ({
       type: 'Feature', geometry: { type: 'Point', coordinates: [v.lng, v.lat] },
       properties: { id: v.id, registration: v.registration, status: v.status, speed_kmh: v.speed_kmh },
+    })),
+  });
+  setData('sv-devices', {
+    type: 'FeatureCollection',
+    features: (data.devices ?? []).map(d => ({
+      type: 'Feature', geometry: { type: 'Point', coordinates: [d.lng, d.lat] },
+      properties: { id: d.id, name: d.name, status: d.status, panic_active: d.panic_active },
     })),
   });
   setData('sv-geofences', {
@@ -248,10 +293,11 @@ const TacticalMap = React.memo(function TacticalMap() {
         <span style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 11, letterSpacing: '.12em', color: 'var(--d-t1)' }}>TACTICAL MAP</span>
         <span style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--d-t3)' }}>East Africa · Live</span>
         <div style={{ flex: 1 }} />
-        <LegendDot color='#22c55e' label='VEHICLE' />
-        <LegendDot color='#00ffcc' label='CONVOY' />
-        <LegendDot color='#00ffcc88' label='GEOFENCE' />
-        <LegendDot color='#ff4422' label='THREAT' />
+        <LegendDot color='#22c55e' label='OK' />
+        <LegendDot color='#ff9040' label='WARN' />
+        <LegendDot color='#ff4422' label='ALERT' />
+        <LegendDot color='#ff1e1e' label='PANIC' />
+        <LegendDot color='#888888' label='IDLE' />
         {/* Expand / collapse button */}
         <button
           onClick={() => setExpanded(v => !v)}

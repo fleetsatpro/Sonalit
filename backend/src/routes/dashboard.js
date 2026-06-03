@@ -128,7 +128,7 @@ router.get('/overview', asyncHandler(async (req, res) => {
 router.get('/map', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
 
-  const [convoysR, alertZonesR, vehiclesR, geofencesR, riskzonesR] = await Promise.all([
+  const [convoysR, alertZonesR, vehiclesR, geofencesR, riskzonesR, devicesR] = await Promise.all([
     safeQuery(req.db, `
       SELECT c.id, COALESCE(c.name, c.reference) AS name, c.status,
              (SELECT g.lat FROM gps_logs g JOIN convoy_trucks ct ON ct.vehicle_id=g.vehicle_id
@@ -149,11 +149,14 @@ router.get('/map', asyncHandler(async (req, res) => {
 
     safeQuery(req.db, `
       SELECT v.id, v.registration,
-             g.lat, g.lng, COALESCE(g.heading, 0) AS heading,
-             COALESCE(g.speed, 0) AS speed_kmh,
+             COALESCE(g.lat, v.latitude)   AS lat,
+             COALESCE(g.lng, v.longitude)  AS lng,
+             COALESCE(g.heading, v.heading, 0) AS heading,
+             COALESCE(g.speed, 0)          AS speed_kmh,
              CASE
+               WHEN a.severity = 'critical' OR a.severity = 'high' THEN 'alert'
+               WHEN a.id IS NOT NULL THEN 'warn'
                WHEN g.timestamp IS NULL OR g.timestamp < NOW()-INTERVAL '15 minutes' THEN 'offline'
-               WHEN a.id IS NOT NULL THEN 'alert'
                WHEN g.speed > 2 THEN 'moving'
                ELSE 'idle'
              END AS status
@@ -165,10 +168,14 @@ router.get('/map', asyncHandler(async (req, res) => {
       LEFT JOIN convoy_trucks ct ON ct.vehicle_id=v.id
         AND ct.convoy_id IN (SELECT id FROM convoys WHERE org_id=$1 AND status='active')
       LEFT JOIN LATERAL (
-        SELECT id FROM alerts WHERE convoy_id=ct.convoy_id AND resolved_at IS NULL LIMIT 1
+        SELECT id, severity FROM alerts
+        WHERE convoy_id=ct.convoy_id AND resolved_at IS NULL
+        ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END
+        LIMIT 1
       ) a ON true
-      WHERE v.org_id=$1 AND v.deleted_at IS NULL AND g.lat IS NOT NULL
-      LIMIT 50`, [orgId]),
+      WHERE v.org_id=$1 AND v.deleted_at IS NULL
+        AND COALESCE(g.lat, v.latitude) IS NOT NULL
+      LIMIT 100`, [orgId]),
 
     safeQuery(req.db, `
       SELECT id::text, name, COALESCE(type,'circle') AS type,
@@ -183,6 +190,29 @@ router.get('/map', asyncHandler(async (req, res) => {
       FROM risk_zones
       WHERE active=true AND lat IS NOT NULL AND lng IS NOT NULL
       LIMIT 20`).catch(() => ({ rows: [] })),
+
+    safeQuery(req.db, `
+      SELECT d.id, d.name, d.model, d.assignment_type,
+             d.last_lat AS lat, d.last_lng AS lng,
+             COALESCE(d.last_speed, 0) AS speed_kmh,
+             d.panic_active,
+             d.last_seen,
+             p.id AS panic_id,
+             CASE
+               WHEN d.panic_active = true OR p.id IS NOT NULL THEN 'panic'
+               WHEN d.last_seen IS NULL OR d.last_seen < NOW()-INTERVAL '15 minutes' THEN 'offline'
+               WHEN COALESCE(d.last_speed,0) > 2 THEN 'moving'
+               ELSE 'idle'
+             END AS status
+      FROM guardian_devices d
+      LEFT JOIN LATERAL (
+        SELECT id FROM panic_events
+        WHERE device_id = d.id AND resolved_at IS NULL
+        ORDER BY created_at DESC LIMIT 1
+      ) p ON true
+      WHERE d.org_id=$1 AND d.deleted_at IS NULL
+        AND d.last_lat IS NOT NULL AND d.last_lng IS NOT NULL
+      LIMIT 100`, [orgId]),
   ]);
 
   res.json({
@@ -211,6 +241,15 @@ router.get('/map', asyncHandler(async (req, res) => {
       id: r.id, name: r.name, risk_level: r.risk_level,
       lat: parseFloat(r.lat), lng: parseFloat(r.lng),
       radius_km: parseFloat(r.radius_km),
+    })),
+    devices: devicesR.rows.map(d => ({
+      id: d.id, name: d.name, model: d.model,
+      assignment_type: d.assignment_type,
+      lat: parseFloat(d.lat), lng: parseFloat(d.lng),
+      speed_kmh: parseFloat(d.speed_kmh),
+      status: d.status,
+      panic_active: d.panic_active === true || d.panic_id != null,
+      last_seen: d.last_seen,
     })),
   });
 }));
