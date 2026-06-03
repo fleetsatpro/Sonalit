@@ -42,13 +42,13 @@ const AIIntelligence = React.memo(function AIIntelligence() {
     <div className='d-section-reveal d-card' style={{ padding: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 3, height: 14, background: 'var(--d-sig)', borderRadius: 2 }} />
+          <div style={{ width: 3, height: 14, background: 'var(--d-orange)', borderRadius: 2 }} />
           <span style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 11, letterSpacing: '.12em', color: 'var(--d-t1)' }}>INTELLIGENCE ASSESSMENT</span>
         </div>
         <span style={{
           fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', fontWeight: 600,
-          letterSpacing: '.08em', color: 'var(--d-sig)',
-          background: 'var(--d-sg)', borderRadius: 4, padding: '3px 8px',
+          letterSpacing: '.08em', color: 'var(--d-orange)',
+          background: 'var(--d-og)', borderRadius: 4, padding: '3px 8px',
         }}>⬡ Sonalit AI</span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

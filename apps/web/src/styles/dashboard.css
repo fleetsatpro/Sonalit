@@ -14,12 +14,16 @@
   --d-rim2: rgba(255,255,255,.10);
   --d-rim3: rgba(255,255,255,.22);
   /* Signal / accent */
-  --d-sig: #00ffcc;
-  --d-sig2: #00ccaa;
-  --d-sig3: #008866;
-  --d-sg: rgba(0,255,204,.13);
-  --d-sg2: rgba(0,255,204,.07);
-  --d-sglow: rgba(0,255,204,.6);
+  --d-sig: #22c55e;
+  --d-sig2: #16a34a;
+  --d-sig3: #15803d;
+  --d-sg: rgba(34,197,94,.13);
+  --d-sg2: rgba(34,197,94,.07);
+  --d-sglow: rgba(34,197,94,.6);
+  /* Orange accent */
+  --d-orange: #f97316;
+  --d-og: rgba(249,115,22,.13);
+  --d-oglow: rgba(249,115,22,.6);
   /* Status */
   --d-fire: #ff4422;
   --d-fg: rgba(255,68,34,.15);
@@ -46,8 +50,8 @@
 /* ── Animations ─────────────────────────────────────────────────────────── */
 @keyframes d-glitch {
   0%,100% { text-shadow: none; transform: none; }
-  2% { text-shadow: -2px 0 #ff4422, 2px 0 #00ffcc; transform: skewX(-1deg); }
-  4% { text-shadow: 2px 0 #ff4422, -2px 0 #00ffcc; transform: skewX(1deg); }
+  2% { text-shadow: -2px 0 #ff4422, 2px 0 #22c55e; transform: skewX(-1deg); }
+  4% { text-shadow: 2px 0 #ff4422, -2px 0 #22c55e; transform: skewX(1deg); }
   6% { text-shadow: none; transform: none; }
   98% { text-shadow: none; transform: none; }
 }

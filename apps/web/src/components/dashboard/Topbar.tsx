@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Bell, Menu, Zap } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import NotificationPanel from '../layout/NotificationPanel.js';
 
@@ -51,10 +52,10 @@ const Topbar = React.memo(function Topbar({ onMenuOpen, onDispatch }: TopbarProp
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <button
           onClick={onMenuOpen}
-          style={{ background: 'none', border: 'none', color: 'var(--d-t2)', cursor: 'pointer', fontSize: 18, padding: 4 }}
+          style={{ background: 'none', border: 'none', color: 'var(--d-t2)', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center' }}
           className='d-desktop-hide'
           aria-label='Open menu'
-        >☰</button>
+        ><Menu size={20} strokeWidth={1.8} /></button>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <div style={{ position: 'relative', width: 8, height: 8 }}>
             <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--d-sig)', boxShadow: '0 0 6px var(--d-sglow)' }} />
@@ -76,7 +77,7 @@ const Topbar = React.memo(function Topbar({ onMenuOpen, onDispatch }: TopbarProp
         fontSize: 20,
         color: 'var(--d-sig)',
         letterSpacing: '.08em',
-        textShadow: '0 0 20px rgba(0,255,204,.5), 0 0 40px rgba(0,255,204,.2)',
+        textShadow: '0 0 20px rgba(34,197,94,.5), 0 0 40px rgba(34,197,94,.2)',
         userSelect: 'none',
       }}>
         {time}
@@ -87,10 +88,10 @@ const Topbar = React.memo(function Topbar({ onMenuOpen, onDispatch }: TopbarProp
         <div style={{ position: 'relative' }}>
           <button
             onClick={toggleBell}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, color: 'var(--d-t2)', fontSize: 18, position: 'relative' }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, color: 'var(--d-t2)', position: 'relative', display: 'flex', alignItems: 'center' }}
             aria-label='Notifications'
           >
-            🔔
+            <Bell size={18} strokeWidth={1.8} />
             {(alertCount ?? 0) > 0 && (
               <span style={{
                 position: 'absolute', top: 2, right: 2,
@@ -107,13 +108,13 @@ const Topbar = React.memo(function Topbar({ onMenuOpen, onDispatch }: TopbarProp
         <button
           onClick={onDispatch}
           style={{
-            background: 'var(--d-sg)', border: '1px solid var(--d-sig)',
+            background: 'var(--d-og)', border: '1px solid var(--d-orange)',
             borderRadius: 8, padding: '6px 12px',
-            color: 'var(--d-sig)', fontSize: 13, cursor: 'pointer',
+            color: 'var(--d-orange)', fontSize: 13, cursor: 'pointer',
             fontFamily: 'Orbitron, sans-serif', fontWeight: 700, letterSpacing: '.06em',
           }}
           aria-label='Quick dispatch'
-        >⚡ DISPATCH</button>
+        ><Zap size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />DISPATCH</button>
       </div>
 
       <style>{`
