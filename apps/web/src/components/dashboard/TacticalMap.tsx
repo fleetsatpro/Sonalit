@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useQuery } from '@tanstack/react-query';
@@ -151,6 +151,7 @@ const TacticalMap = React.memo(function TacticalMap() {
   const vehiclePositions = useDashboardStore((s) => s.vehiclePositions);
   const selectedVehicleId = useDashboardStore((s) => s.selectedVehicleId);
   const { setSelectedVehicle } = useDashboardStore.getState();
+  const [expanded, setExpanded] = useState(false);
 
   const { data: mapData } = useQuery<MapData>({
     queryKey: ['dashboard-map'],
@@ -226,10 +227,23 @@ const TacticalMap = React.memo(function TacticalMap() {
   const rc  = panicActive ? '255,30,30'  : '34,197,94';
   const sig = panicActive ? '#ff1e1e'    : 'var(--d-sig)';
 
+  // Resize map when container size changes (e.g. expand/collapse)
+  useEffect(() => {
+    if (mapRef.current) setTimeout(() => mapRef.current?.resize(), 50);
+  }, [expanded]);
+
+  // Escape key closes fullscreen
+  useEffect(() => {
+    if (!expanded) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setExpanded(false); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [expanded]);
+
   return (
-    <div style={{ padding: '16px 16px 0' }}>
+    <div style={expanded ? { position: 'fixed', inset: 0, zIndex: 500, background: 'var(--d-void)', display: 'flex', flexDirection: 'column', padding: 0 } : { padding: '16px 16px 0' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap', rowGap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap', rowGap: 6, ...(expanded && { padding: '12px 16px 0' }) }}>
         <div style={{ width: 3, height: 14, background: 'var(--d-orange)', borderRadius: 2, flexShrink: 0 }} />
         <span style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 11, letterSpacing: '.12em', color: 'var(--d-t1)' }}>TACTICAL MAP</span>
         <span style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--d-t3)' }}>East Africa · Live</span>
@@ -238,11 +252,19 @@ const TacticalMap = React.memo(function TacticalMap() {
         <LegendDot color='#00ffcc' label='CONVOY' />
         <LegendDot color='#00ffcc88' label='GEOFENCE' />
         <LegendDot color='#ff4422' label='THREAT' />
+        {/* Expand / collapse button */}
+        <button
+          onClick={() => setExpanded(v => !v)}
+          title={expanded ? 'Exit fullscreen' : 'Expand map'}
+          style={{ background: 'var(--d-lift2)', border: '1px solid var(--d-rim2)', borderRadius: 6, color: 'var(--d-t2)', cursor: 'pointer', padding: '4px 8px', fontSize: 10, fontFamily: 'IBM Plex Mono, monospace', letterSpacing: '.06em', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}
+        >
+          {expanded ? '⊠ EXIT' : '⊞ EXPAND'}
+        </button>
       </div>
 
       {/* Map container */}
-      <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', border: '1px solid var(--d-rim2)', marginBottom: 12 }}>
-        <div ref={mapContainer} style={{ width: '100%', height: 280, background: 'var(--d-deep)' }} />
+      <div style={{ position: 'relative', borderRadius: expanded ? 0 : 12, overflow: 'hidden', border: '1px solid var(--d-rim2)', marginBottom: expanded ? 0 : 12, flex: expanded ? 1 : undefined }}>
+        <div ref={mapContainer} style={{ width: '100%', height: expanded ? '100%' : 420, background: 'var(--d-deep)', ...(expanded && { position: 'absolute', inset: 0 }) }} />
 
         {/* Radar — own 160×160 square SVG so rings stay circular on all widths */}
         <div style={{ position: 'absolute', top: 8, left: 8, pointerEvents: 'none' }}>

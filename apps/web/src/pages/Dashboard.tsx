@@ -6,7 +6,6 @@ import { useDashboardRealtime } from '../hooks/useDashboardRealtime.js';
 import '../styles/dashboard.css';
 
 import DashboardShell from '../components/layout/DashboardShell.js';
-import OpsSidebar from '../components/dashboard/OpsSidebar.js';
 import KPIStrip from '../components/dashboard/KPIStrip.js';
 import AlertCards from '../components/dashboard/AlertCards.js';
 import ConvoyTracker from '../components/dashboard/ConvoyTracker.js';
@@ -78,15 +77,7 @@ export default function Dashboard() {
         </div>
       </DashboardShell>
 
-      {/* Desktop ops sidebar */}
-      <div className='d-ops-sidebar-wrap' style={{ display: 'none', position: 'fixed', right: 0, top: 0, width: 'var(--d-sb-w)', zIndex: 100 }}>
-        <OpsSidebar />
-      </div>
-
       <style>{`
-        @media (min-width: 900px) {
-          .d-ops-sidebar-wrap { display: block !important; }
-        }
         .d-grid-2col {
           display: grid;
           grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
