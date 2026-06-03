@@ -179,9 +179,20 @@ router.get('/map', asyncHandler(async (req, res) => {
 
     safeQuery(req.db, `
       SELECT id::text, name, COALESCE(type,'circle') AS type,
-             lat, lng, COALESCE(radius, 1000) AS radius_m
+             COALESCE(
+               (coordinates->>'lat')::numeric,
+               (coordinates->'center'->>'lat')::numeric,
+               (coordinates->>'latitude')::numeric
+             ) AS lat,
+             COALESCE(
+               (coordinates->>'lng')::numeric,
+               (coordinates->'center'->>'lng')::numeric,
+               (coordinates->>'longitude')::numeric
+             ) AS lng,
+             COALESCE(radius, 1000) AS radius_m
       FROM geofences
-      WHERE org_id=$1 AND lat IS NOT NULL AND lng IS NOT NULL AND deleted_at IS NULL
+      WHERE org_id=$1 AND active=true
+        AND coordinates IS NOT NULL
       LIMIT 30`, [orgId]),
 
     // risk_zones is global (no org_id) — use raw query
@@ -232,11 +243,13 @@ router.get('/map', asyncHandler(async (req, res) => {
       lat: parseFloat(v.lat), lng: parseFloat(v.lng),
       heading: parseFloat(v.heading), speed_kmh: parseFloat(v.speed_kmh),
     })),
-    geofences: geofencesR.rows.map(g => ({
-      id: g.id, name: g.name, type: g.type,
-      lat: parseFloat(g.lat), lng: parseFloat(g.lng),
-      radius_m: parseFloat(g.radius_m),
-    })),
+    geofences: geofencesR.rows
+      .filter(g => g.lat != null && g.lng != null)
+      .map(g => ({
+        id: g.id, name: g.name, type: g.type,
+        lat: parseFloat(g.lat), lng: parseFloat(g.lng),
+        radius_m: parseFloat(g.radius_m),
+      })),
     riskzones: riskzonesR.rows.map(r => ({
       id: r.id, name: r.name, risk_level: r.risk_level,
       lat: parseFloat(r.lat), lng: parseFloat(r.lng),
