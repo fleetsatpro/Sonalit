@@ -29,12 +29,17 @@ export function getPortalCentrifuge(): Centrifuge {
 
 export function subscribePortal<T>(channel: string, handler: (data: T) => void): () => void {
   const c = getPortalCentrifuge();
-  const sub = c.newSubscription(channel, { recoverable: true });
-  sub.on('publication', (ctx: PublicationContext) => handler(ctx.data as T));
-  sub.subscribe();
+  const existing = c.getSubscription(channel);
+  const sub = existing ?? c.newSubscription(channel, { recoverable: true });
+  const pubHandler = (ctx: PublicationContext) => handler(ctx.data as T);
+  sub.on('publication', pubHandler);
+  if (!existing) sub.subscribe();
   return () => {
-    sub.unsubscribe();
-    sub.removeAllListeners();
-    c.removeSubscription(sub);
+    sub.off('publication', pubHandler);
+    if (!existing) {
+      sub.unsubscribe();
+      sub.removeAllListeners();
+      c.removeSubscription(sub);
+    }
   };
 }
