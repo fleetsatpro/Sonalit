@@ -29,8 +29,8 @@ export default function PanicAlarm() {
       updatePanicState({
         id: pollData.active_event.id,
         status: 'active',
-        lat: pollData.active_event.lat ?? undefined,
-        lng: pollData.active_event.lng ?? undefined,
+        ...(pollData.active_event.lat != null && { lat: pollData.active_event.lat }),
+        ...(pollData.active_event.lng != null && { lng: pollData.active_event.lng }),
         triggered_at: pollData.active_event.triggered_at,
       });
     } else if (pollData.status === 'clear' && panicState?.status === 'active') {
@@ -64,7 +64,7 @@ export default function PanicAlarm() {
 
       let idx = 0;
       while (running) {
-        const [freq, ms] = pattern[idx % pattern.length];
+        const [freq, ms] = pattern[idx % pattern.length]!;
         idx++;
         if (!running || !ctx) break;
 

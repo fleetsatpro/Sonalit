@@ -3,7 +3,7 @@ import { subscribe } from '../lib/centrifuge.js';
 import { useDashboardStore } from '../stores/dashboardStore.js';
 import type { DashboardAlert, ConvoyUpdate, IncidentUpdate, PanicEvent } from '../stores/dashboardStore.js';
 
-// ── Message shapes from the backend (org#<id> channel) ───────────────────────
+// ── Message shapes from the backend (org#<id> channel) ─────────────────────
 
 interface LocationMsg {
   type: 'location';
@@ -100,8 +100,8 @@ export function useDashboardRealtime(orgId: string): void {
           const p: PanicEvent = {
             id: m.panic_id,
             status: 'active',
-            lat: m.lat ?? undefined,
-            lng: m.lng ?? undefined,
+            ...(m.lat != null && { lat: m.lat }),
+            ...(m.lng != null && { lng: m.lng }),
             triggered_at: m.triggered_at ?? m.created_at,
           };
           updatePanicState(p);
