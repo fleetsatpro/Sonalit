@@ -80,7 +80,7 @@ router.post('/request-link', requestLinkLimiter, asyncHandler(async (req, res) =
 
     const rawToken = crypto.randomBytes(32).toString('hex');
     const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
     await query(
       `INSERT INTO client_magic_links (org_id, client_id, token_hash, expires_at)

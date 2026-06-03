@@ -42,7 +42,7 @@ export default function PortalLogin(): React.ReactElement {
         return res.json();
       })
       .then(() => {
-        void navigate({ to: '/portal/dashboard' });
+        void navigate({ to: '/portal/dashboard', replace: true });
       })
       .catch((err: Error) => {
         setErrorMsg(err.message);
@@ -162,7 +162,7 @@ export default function PortalLogin(): React.ReactElement {
             </div>
             <h2 className="text-white text-lg font-bold mb-2">Check your inbox</h2>
             <p className="text-green-400 text-sm font-medium mb-1">{submittedEmail}</p>
-            <p className="text-white/40 text-xs">The link expires in 15 minutes.</p>
+            <p className="text-white/40 text-xs">The link expires in 1 hour.</p>
             <button
               onClick={() => { setPageState('email'); setEmail(''); }}
               className="mt-6 text-xs text-gray-500 hover:text-gray-400 transition-colors underline underline-offset-2"

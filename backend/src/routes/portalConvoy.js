@@ -289,7 +289,7 @@ router.get('/convoy/:convoy_id/vehicles', clientAuth, asyncHandler(async (req, r
         v.make,
         v.model,
         v.type,
-        d.name AS driver_name,
+        ct.driver_name,
         gl.lat  AS current_lat,
         gl.lng  AS current_lng,
         gl.speed AS speed_kmh,
@@ -307,7 +307,6 @@ router.get('/convoy/:convoy_id/vehicles', clientAuth, asyncHandler(async (req, r
      FROM convoy_trucks ct
      JOIN convoys c ON c.id = ct.convoy_id
      JOIN vehicles v ON v.id = ct.vehicle_id
-     LEFT JOIN drivers d ON d.id = ct.driver_id
      LEFT JOIN LATERAL (
         SELECT lat, lng, speed, heading, timestamp
         FROM gps_logs
@@ -315,7 +314,7 @@ router.get('/convoy/:convoy_id/vehicles', clientAuth, asyncHandler(async (req, r
         ORDER BY timestamp DESC
         LIMIT 1
      ) gl ON true
-    WHERE ct.convoy_id = $1 AND c.org_id = $2 AND ct.deleted_at IS NULL
+    WHERE ct.convoy_id = $1 AND c.org_id = $2
     ORDER BY v.registration ASC`,
     [req.params.convoy_id, org_id, req.client.client_id],
   );
@@ -368,7 +367,7 @@ router.get('/convoy/:convoy_id/overview', clientAuth, asyncHandler(async (req, r
 
   const vehicleRes = await query(
     `SELECT ct.vehicle_id, v.registration, v.make, v.model, v.type,
-            d.name AS driver_name,
+            ct.driver_name,
             gl.lat, gl.lng, gl.speed, gl.heading, gl.timestamp AS last_ping_at,
             EXISTS (
               SELECT 1 FROM cargo_client_links ccl
@@ -377,12 +376,11 @@ router.get('/convoy/:convoy_id/overview', clientAuth, asyncHandler(async (req, r
      FROM convoy_trucks ct
      JOIN convoys cv ON cv.id = ct.convoy_id
      JOIN vehicles v ON v.id = ct.vehicle_id
-     LEFT JOIN drivers d ON d.id = ct.driver_id
      LEFT JOIN LATERAL (
         SELECT lat, lng, speed, heading, timestamp
         FROM gps_logs WHERE vehicle_id = ct.vehicle_id ORDER BY timestamp DESC LIMIT 1
      ) gl ON true
-    WHERE ct.convoy_id = $1 AND cv.org_id = $2 AND ct.deleted_at IS NULL
+    WHERE ct.convoy_id = $1 AND cv.org_id = $2
     ORDER BY v.registration ASC`,
     [req.params.convoy_id, org_id, req.client.client_id],
   );
