@@ -6,6 +6,7 @@ import DispatchSheet from './DispatchSheet.js';
 import Topbar from '../dashboard/Topbar.js';
 import EventsTicker from '../dashboard/EventsTicker.js';
 import ThreatStrip from '../dashboard/ThreatStrip.js';
+import PanicAlarm from '../dashboard/PanicAlarm.js';
 
 const TacticalMap = lazy(() => import('../dashboard/TacticalMap.js'));
 
@@ -109,6 +110,9 @@ const DashboardShell = React.memo(function DashboardShell({ children }: Dashboar
 
       {/* Dispatch sheet */}
       <DispatchSheet open={dispatchOpen} onClose={closeDispatch} />
+
+      {/* Panic alarm — screen-edge flash + audio */}
+      <PanicAlarm />
 
       <style>{`
         @media (min-width: 900px) {

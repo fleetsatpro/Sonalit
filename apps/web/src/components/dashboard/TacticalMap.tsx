@@ -221,6 +221,10 @@ const TacticalMap = React.memo(function TacticalMap() {
   }, [vehiclePositions]);
 
   const selectedVehicle = vehicles?.find(v => v.id === selectedVehicleId) ?? vehicles?.[0] ?? null;
+  const panicActive = useDashboardStore((s) => s.panicState?.status === 'active');
+  // Radar color: red during panic, green normally
+  const rc  = panicActive ? '255,30,30'  : '34,197,94';
+  const sig = panicActive ? '#ff1e1e'    : 'var(--d-sig)';
 
   return (
     <div style={{ padding: '16px 16px 0' }}>
@@ -244,39 +248,39 @@ const TacticalMap = React.memo(function TacticalMap() {
         <div style={{ position: 'absolute', top: 8, left: 8, pointerEvents: 'none' }}>
           <svg width={160} height={160} viewBox='0 0 160 160'>
             {/* HUD corner brackets */}
-            <path d='M8 20 L8 8 L20 8' fill='none' stroke='rgba(34,197,94,.5)' strokeWidth={1.5} strokeLinecap='square' />
-            <path d='M140 8 L152 8 L152 20' fill='none' stroke='rgba(34,197,94,.5)' strokeWidth={1.5} strokeLinecap='square' />
-            <path d='M8 140 L8 152 L20 152' fill='none' stroke='rgba(34,197,94,.5)' strokeWidth={1.5} strokeLinecap='square' />
-            <path d='M140 152 L152 152 L152 140' fill='none' stroke='rgba(34,197,94,.5)' strokeWidth={1.5} strokeLinecap='square' />
+            <path d='M8 20 L8 8 L20 8' fill='none' stroke={`rgba(${rc},.5)`} strokeWidth={1.5} strokeLinecap='square' />
+            <path d='M140 8 L152 8 L152 20' fill='none' stroke={`rgba(${rc},.5)`} strokeWidth={1.5} strokeLinecap='square' />
+            <path d='M8 140 L8 152 L20 152' fill='none' stroke={`rgba(${rc},.5)`} strokeWidth={1.5} strokeLinecap='square' />
+            <path d='M140 152 L152 152 L152 140' fill='none' stroke={`rgba(${rc},.5)`} strokeWidth={1.5} strokeLinecap='square' />
             {/* Rings: outer solid, rest dashed */}
-            <circle cx={80} cy={80} r={68} fill='none' stroke='rgba(34,197,94,.22)' strokeWidth={1} />
-            <circle cx={80} cy={80} r={51} fill='none' stroke='rgba(34,197,94,.12)' strokeWidth={1} strokeDasharray='4 4' />
-            <circle cx={80} cy={80} r={34} fill='none' stroke='rgba(34,197,94,.10)' strokeWidth={1} strokeDasharray='4 4' />
-            <circle cx={80} cy={80} r={17} fill='none' stroke='rgba(34,197,94,.08)' strokeWidth={1} strokeDasharray='3 3' />
+            <circle cx={80} cy={80} r={68} fill='none' stroke={`rgba(${rc},.22)`} strokeWidth={1} />
+            <circle cx={80} cy={80} r={51} fill='none' stroke={`rgba(${rc},.12)`} strokeWidth={1} strokeDasharray='4 4' />
+            <circle cx={80} cy={80} r={34} fill='none' stroke={`rgba(${rc},.10)`} strokeWidth={1} strokeDasharray='4 4' />
+            <circle cx={80} cy={80} r={17} fill='none' stroke={`rgba(${rc},.08)`} strokeWidth={1} strokeDasharray='3 3' />
             {/* Crosshair axes */}
-            <line x1={12} y1={80} x2={148} y2={80} stroke='rgba(34,197,94,.08)' strokeWidth={0.5} />
-            <line x1={80} y1={12} x2={80} y2={148} stroke='rgba(34,197,94,.08)' strokeWidth={0.5} />
+            <line x1={12} y1={80} x2={148} y2={80} stroke={`rgba(${rc},.08)`} strokeWidth={0.5} />
+            <line x1={80} y1={12} x2={80} y2={148} stroke={`rgba(${rc},.08)`} strokeWidth={0.5} />
             {/* Cardinal labels */}
-            <text x={80} y={8}   textAnchor='middle' fill='rgba(34,197,94,.55)' fontSize={7} fontFamily='IBM Plex Mono, monospace' letterSpacing='.04em'>N</text>
-            <text x={80} y={158} textAnchor='middle' fill='rgba(34,197,94,.35)' fontSize={7} fontFamily='IBM Plex Mono, monospace' letterSpacing='.04em'>S</text>
-            <text x={155} y={83} textAnchor='start'  fill='rgba(34,197,94,.35)' fontSize={7} fontFamily='IBM Plex Mono, monospace' letterSpacing='.04em'>E</text>
-            <text x={4}   y={83} textAnchor='end'    fill='rgba(34,197,94,.35)' fontSize={7} fontFamily='IBM Plex Mono, monospace' letterSpacing='.04em'>W</text>
+            <text x={80} y={8}   textAnchor='middle' fill={`rgba(${rc},.55)`} fontSize={7} fontFamily='IBM Plex Mono, monospace' letterSpacing='.04em'>N</text>
+            <text x={80} y={158} textAnchor='middle' fill={`rgba(${rc},.35)`} fontSize={7} fontFamily='IBM Plex Mono, monospace' letterSpacing='.04em'>S</text>
+            <text x={155} y={83} textAnchor='start'  fill={`rgba(${rc},.35)`} fontSize={7} fontFamily='IBM Plex Mono, monospace' letterSpacing='.04em'>E</text>
+            <text x={4}   y={83} textAnchor='end'    fill={`rgba(${rc},.35)`} fontSize={7} fontFamily='IBM Plex Mono, monospace' letterSpacing='.04em'>W</text>
             {/* Rotating sweep group — CCW comet tail behind clockwise arm */}
             <g>
-              <animateTransform attributeName='transform' type='rotate' from='0 80 80' to='360 80 80' dur='6s' repeatCount='indefinite' />
+              <animateTransform attributeName='transform' type='rotate' from='0 80 80' to='360 80 80' dur={panicActive ? '2s' : '6s'} repeatCount='indefinite' />
               {/* arm=north(80,12); 45°CCW→NW(31.92,31.92); 90°CCW→W(12,80); 135°CCW→SW(31.92,128.08) */}
-              <path d='M 80 80 L 80 12 A 68 68 0 0 0 31.92 31.92' fill='rgba(34,197,94,.16)' />
-              <path d='M 80 80 L 31.92 31.92 A 68 68 0 0 0 12 80'      fill='rgba(34,197,94,.08)' />
-              <path d='M 80 80 L 12 80 A 68 68 0 0 0 31.92 128.08'  fill='rgba(34,197,94,.03)' />
+              <path d='M 80 80 L 80 12 A 68 68 0 0 0 31.92 31.92' fill={`rgba(${rc},.22)`} />
+              <path d='M 80 80 L 31.92 31.92 A 68 68 0 0 0 12 80'      fill={`rgba(${rc},.12)`} />
+              <path d='M 80 80 L 12 80 A 68 68 0 0 0 31.92 128.08'  fill={`rgba(${rc},.05)`} />
               {/* Arm: glow then crisp line */}
-              <line x1={80} y1={80} x2={80} y2={12} stroke='rgba(34,197,94,.28)' strokeWidth={5} strokeLinecap='round' />
-              <line x1={80} y1={80} x2={80} y2={12} stroke='var(--d-sig)' strokeWidth={1.5} strokeLinecap='round' />
+              <line x1={80} y1={80} x2={80} y2={12} stroke={`rgba(${rc},.38)`} strokeWidth={panicActive ? 8 : 5} strokeLinecap='round' />
+              <line x1={80} y1={80} x2={80} y2={12} stroke={sig} strokeWidth={1.5} strokeLinecap='round' />
             </g>
             {/* Centre reticle */}
-            <circle cx={80} cy={80} r={4} fill='none' stroke='rgba(34,197,94,.45)' strokeWidth={1} />
-            <circle cx={80} cy={80} r={2} fill='rgba(34,197,94,.9)' />
-            <line x1={76} y1={80} x2={84} y2={80} stroke='rgba(34,197,94,.65)' strokeWidth={1} />
-            <line x1={80} y1={76} x2={80} y2={84} stroke='rgba(34,197,94,.65)' strokeWidth={1} />
+            <circle cx={80} cy={80} r={4} fill='none' stroke={`rgba(${rc},.45)`} strokeWidth={1} />
+            <circle cx={80} cy={80} r={2} fill={`rgba(${rc},.9)`} />
+            <line x1={76} y1={80} x2={84} y2={80} stroke={`rgba(${rc},.65)`} strokeWidth={1} />
+            <line x1={80} y1={76} x2={80} y2={84} stroke={`rgba(${rc},.65)`} strokeWidth={1} />
           </svg>
         </div>
 
@@ -300,9 +304,9 @@ const TacticalMap = React.memo(function TacticalMap() {
         </div>
 
         {/* HUD grid overlay */}
-        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', backgroundImage: 'linear-gradient(rgba(34,197,94,.02) 1px, transparent 1px), linear-gradient(90deg, rgba(34,197,94,.02) 1px, transparent 1px)', backgroundSize: '30px 30px' }} />
+        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', backgroundImage: `linear-gradient(rgba(${rc},.02) 1px, transparent 1px), linear-gradient(90deg, rgba(${rc},.02) 1px, transparent 1px)`, backgroundSize: '30px 30px' }} />
         {/* Scanline */}
-        <div style={{ position: 'absolute', left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, rgba(34,197,94,.12), transparent)', animation: 'd-scanv 4s linear infinite', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', left: 0, right: 0, height: 2, background: `linear-gradient(90deg, transparent, rgba(${rc},.18), transparent)`, animation: `d-scanv ${panicActive ? '1.5s' : '4s'} linear infinite`, pointerEvents: 'none' }} />
         {/* Edge vignette */}
         <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: 'radial-gradient(ellipse at 50% 50%, transparent 65%, rgba(0,0,0,.28))' }} />
       </div>
