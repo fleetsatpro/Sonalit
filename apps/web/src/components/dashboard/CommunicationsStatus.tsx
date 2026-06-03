@@ -101,7 +101,7 @@ const CommunicationsStatus = React.memo(function CommunicationsStatus() {
 function SH() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-      <div style={{ width: 3, height: 14, background: 'var(--d-sig)', borderRadius: 2 }} />
+      <div style={{ width: 3, height: 14, background: 'var(--d-orange)', borderRadius: 2 }} />
       <span style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 11, letterSpacing: '.12em', color: 'var(--d-t1)' }}>COMMUNICATIONS STATUS</span>
     </div>
   );

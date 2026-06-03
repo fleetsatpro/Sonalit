@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from '@tanstack/react-router';
 
 const ACTIONS = [
-  { icon: '🚛', label: 'New Convoy',    path: '/convoys/new',      color: 'var(--d-sig)' },
+  { icon: '🚛', label: 'New Convoy',    path: '/convoys/new',      color: 'var(--d-orange)' },
   { icon: '🔔', label: 'Alerts',        path: '/alerts',            color: 'var(--d-fire)' },
   { icon: '📡', label: 'GPS Live',      path: '/gps',              color: 'var(--d-ok)' },
   { icon: '📦', label: 'Shipments',     path: '/shipments',        color: 'var(--d-sig2)' },
@@ -53,7 +53,7 @@ const QuickActions = React.memo(function QuickActions() {
 function SH() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-      <div style={{ width: 3, height: 14, background: 'var(--d-sig)', borderRadius: 2 }} />
+      <div style={{ width: 3, height: 14, background: 'var(--d-orange)', borderRadius: 2 }} />
       <span style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 11, letterSpacing: '.12em', color: 'var(--d-t1)' }}>QUICK ACTIONS</span>
     </div>
   );

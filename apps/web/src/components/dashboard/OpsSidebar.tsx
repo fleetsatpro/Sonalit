@@ -109,7 +109,7 @@ const OpsSidebar = React.memo(function OpsSidebar() {
       {/* Live feed */}
       <div style={{ padding: '16px 16px 0', borderBottom: '1px solid var(--d-rim2)', paddingBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-          <div style={{ width: 3, height: 12, background: 'var(--d-sig)', borderRadius: 2 }} />
+          <div style={{ width: 3, height: 12, background: 'var(--d-orange)', borderRadius: 2 }} />
           <span style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 10, letterSpacing: '.12em', color: 'var(--d-t1)' }}>LIVE OPS FEED</span>
           <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--d-sig)', animation: 'd-sonar 2s ease-out infinite', flexShrink: 0 }} />
         </div>

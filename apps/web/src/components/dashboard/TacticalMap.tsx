@@ -166,7 +166,7 @@ const TacticalMap = React.memo(function TacticalMap() {
   return (
     <div className='d-section-reveal' style={{ padding: '16px 16px 0' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-        <div style={{ width: 3, height: 14, background: 'var(--d-sig)', borderRadius: 2 }} />
+        <div style={{ width: 3, height: 14, background: 'var(--d-orange)', borderRadius: 2 }} />
         <span style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 11, letterSpacing: '.12em', color: 'var(--d-t1)' }}>TACTICAL MAP</span>
         <span style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--d-t3)' }}>East Africa · Live positioning</span>
       </div>
@@ -184,18 +184,18 @@ const TacticalMap = React.memo(function TacticalMap() {
           {/* Radar */}
           <g>
             {[80, 60, 40, 20].map((r, i) => (
-              <circle key={r} cx={120} cy={126} r={r} fill='none' stroke='rgba(0,255,204,.07)' strokeWidth={1} strokeDasharray={i % 2 === 0 ? '4 4' : 'none'} />
+              <circle key={r} cx={120} cy={126} r={r} fill='none' stroke='rgba(34,197,94,.07)' strokeWidth={1} strokeDasharray={i % 2 === 0 ? '4 4' : 'none'} />
             ))}
           </g>
           <g className='radar-rotate' style={{ transformOrigin: '120px 126px', animation: 'radar-turn 8s linear infinite' }}>
             <path d={`M 120 126 L ${120 + 80 * Math.cos(-Math.PI/2)} ${126 + 80 * Math.sin(-Math.PI/2)}`}
               stroke='var(--d-sig)' strokeWidth={1.5} opacity={0.8} />
             <path d={`M 120 126 L 120 ${126 - 80}`} fill='none' stroke='transparent' />
-            <path d='M 120 126 L 120 46 A 80 80 0 0 1 189.3 166' fill='rgba(0,255,204,.04)' />
-            <path d='M 120 126 L 189.3 166 A 80 80 0 0 1 50.7 166' fill='rgba(0,255,204,.02)' />
+            <path d='M 120 126 L 120 46 A 80 80 0 0 1 189.3 166' fill='rgba(34,197,94,.04)' />
+            <path d='M 120 126 L 189.3 166 A 80 80 0 0 1 50.7 166' fill='rgba(34,197,94,.02)' />
           </g>
-          <line x1={116} y1={126} x2={124} y2={126} stroke='rgba(0,255,204,.4)' strokeWidth={1} />
-          <line x1={120} y1={122} x2={120} y2={130} stroke='rgba(0,255,204,.4)' strokeWidth={1} />
+          <line x1={116} y1={126} x2={124} y2={126} stroke='rgba(34,197,94,.4)' strokeWidth={1} />
+          <line x1={120} y1={122} x2={120} y2={130} stroke='rgba(34,197,94,.4)' strokeWidth={1} />
 
           {/* Alert zones */}
           {(mapData?.alert_zones ?? []).map((_zone, i) => (
@@ -217,9 +217,9 @@ const TacticalMap = React.memo(function TacticalMap() {
             { name: 'Mombasa', x: 450, y: 205 }, { name: 'Kigali', x: 230, y: 170 },
           ].map(city => (
             <g key={city.name}>
-              <line x1={city.x - 4} y1={city.y} x2={city.x + 4} y2={city.y} stroke='rgba(0,255,204,.3)' strokeWidth={1} />
-              <line x1={city.x} y1={city.y - 4} x2={city.x} y2={city.y + 4} stroke='rgba(0,255,204,.3)' strokeWidth={1} />
-              <text x={city.x + 6} y={city.y - 4} fill='rgba(0,255,204,.5)' fontSize={8} fontFamily='IBM Plex Mono, monospace'>{city.name}</text>
+              <line x1={city.x - 4} y1={city.y} x2={city.x + 4} y2={city.y} stroke='rgba(34,197,94,.3)' strokeWidth={1} />
+              <line x1={city.x} y1={city.y - 4} x2={city.x} y2={city.y + 4} stroke='rgba(34,197,94,.3)' strokeWidth={1} />
+              <text x={city.x + 6} y={city.y - 4} fill='rgba(34,197,94,.5)' fontSize={8} fontFamily='IBM Plex Mono, monospace'>{city.name}</text>
             </g>
           ))}
         </svg>
@@ -251,14 +251,14 @@ const TacticalMap = React.memo(function TacticalMap() {
         {/* Grid overlay */}
         <div style={{
           position: 'absolute', inset: 0, pointerEvents: 'none',
-          backgroundImage: 'linear-gradient(rgba(0,255,204,.02) 1px, transparent 1px), linear-gradient(90deg, rgba(0,255,204,.02) 1px, transparent 1px)',
+          backgroundImage: 'linear-gradient(rgba(34,197,94,.02) 1px, transparent 1px), linear-gradient(90deg, rgba(34,197,94,.02) 1px, transparent 1px)',
           backgroundSize: '30px 30px',
         }} />
 
         {/* Scanline */}
         <div style={{
           position: 'absolute', left: 0, right: 0, height: 2,
-          background: 'linear-gradient(90deg, transparent, rgba(0,255,204,.15), transparent)',
+          background: 'linear-gradient(90deg, transparent, rgba(34,197,94,.15), transparent)',
           animation: 'd-scanv 4s linear infinite',
           pointerEvents: 'none',
         }} />

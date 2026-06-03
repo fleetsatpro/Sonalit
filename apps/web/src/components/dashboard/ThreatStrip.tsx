@@ -3,7 +3,7 @@ import { useDashboardStore } from '../../stores/dashboardStore.js';
 import type { ThreatLevel } from '../../stores/dashboardStore.js';
 
 const LEVEL_STYLE: Record<ThreatLevel, { bg: string; border: string; dot: string; label: string }> = {
-  secure:   { bg: 'rgba(0,255,204,.04)',   border: 'rgba(0,255,204,.18)',  dot: 'var(--d-sig)',  label: 'SECURE' },
+  secure:   { bg: 'rgba(34,197,94,.04)',   border: 'rgba(34,197,94,.18)',  dot: 'var(--d-sig)',  label: 'SECURE' },
   elevated: { bg: 'rgba(255,190,46,.06)',  border: 'rgba(255,190,46,.22)', dot: 'var(--d-warn)', label: 'ELEVATED' },
   critical: { bg: 'rgba(255,68,34,.08)',   border: 'rgba(255,68,34,.28)',  dot: 'var(--d-fire)', label: 'CRITICAL' },
 };

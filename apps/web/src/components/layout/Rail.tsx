@@ -70,7 +70,7 @@ const Rail = React.memo(function Rail({ onClose }: { onClose?: () => void }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
             width: 32, height: 32,
-            background: 'linear-gradient(135deg, var(--d-sig), var(--d-sig2))',
+            background: 'linear-gradient(135deg, #ff9040, #f07020)',
             clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)',
             flexShrink: 0,
           }} />
@@ -78,9 +78,10 @@ const Rail = React.memo(function Rail({ onClose }: { onClose?: () => void }) {
             fontFamily: 'Orbitron, sans-serif',
             fontWeight: 800,
             fontSize: 16,
-            color: 'var(--d-sig)',
+            background: 'linear-gradient(90deg, #ff9040, #f07020)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
             letterSpacing: '.12em',
-            animation: 'd-glitch 8s infinite',
           }}>SONALIT</span>
         </div>
         <div style={{ marginTop: 4, fontSize: 10, color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace', letterSpacing: '.06em' }}>
@@ -114,10 +115,10 @@ const Rail = React.memo(function Rail({ onClose }: { onClose?: () => void }) {
                     gap: 10,
                     padding: '9px 20px',
                     textDecoration: 'none',
-                    color: active ? 'var(--d-sig)' : 'var(--d-t2)',
-                    background: active ? 'linear-gradient(90deg, rgba(0,255,204,.08), transparent)' : 'transparent',
-                    borderLeft: active ? '3px solid var(--d-sig)' : '3px solid transparent',
-                    boxShadow: active ? 'inset 4px 0 12px rgba(0,255,204,.12)' : 'none',
+                    color: active ? 'var(--d-orange)' : 'var(--d-t2)',
+                    background: active ? 'linear-gradient(90deg, rgba(249,115,22,.08), transparent)' : 'transparent',
+                    borderLeft: active ? '3px solid var(--d-orange)' : '3px solid transparent',
+                    boxShadow: active ? 'inset 4px 0 12px rgba(249,115,22,.12)' : 'none',
                     fontSize: 13,
                     fontFamily: 'DM Sans, sans-serif',
                     fontWeight: active ? 600 : 400,
@@ -144,14 +145,14 @@ const Rail = React.memo(function Rail({ onClose }: { onClose?: () => void }) {
         <div style={{ position: 'relative', flexShrink: 0 }}>
           <div style={{
             width: 36, height: 36, borderRadius: '50%',
-            background: 'linear-gradient(135deg, var(--d-sig3), var(--d-sig))',
+            background: 'linear-gradient(135deg, #f07020, #ff9040)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 12,
-            color: 'var(--d-void)',
+            color: '#fff',
           }}>{initials}</div>
           <div style={{
             position: 'absolute', inset: -4, borderRadius: '50%',
-            border: '1.5px solid var(--d-sig)',
+            border: '1.5px solid var(--d-orange)',
             animation: 'd-sonar 2.5s ease-out infinite',
             opacity: 0,
           }} />
