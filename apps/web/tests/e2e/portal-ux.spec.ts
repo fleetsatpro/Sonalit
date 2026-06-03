@@ -99,7 +99,7 @@ test.describe('Portal UX — Command Center', () => {
 test.describe('Portal UX — Track page', () => {
 
   test('track page shows ETA ribbon and deep-track header', async ({ page }) => {
-    page.route(
+    await page.route(
       url => url.toString().includes(`/api/v1/portal/convoy/${CONVOY_X}/overview`),
       route => route.fulfill({
         status: 200,
@@ -146,7 +146,7 @@ test.describe('Portal UX — Track page', () => {
   });
 
   test('vehicles & crew card shows carrying-my-cargo label', async ({ page }) => {
-    page.route(
+    await page.route(
       url => url.toString().includes(`/api/v1/portal/convoy/${CONVOY_X}/overview`),
       route => route.fulfill({
         status: 200,

@@ -200,7 +200,7 @@ function NewTokenBanner({ token, onDismiss }: { token: string; onDismiss: () => 
 
 export default function CargoPortal(): React.ReactElement {
   const qc = useQueryClient();
-  const [tab, setTab] = useState<'tokens' | 'clients'>('clients');
+  const [tab, setTab] = useState<'tokens' | 'clients'>('tokens');
   const [selectedConvoy, setSelectedConvoy] = useState<string>('');
   const [showIssue, setShowIssue] = useState(false);
   const [newToken, setNewToken] = useState<{ token: string; convoyId: string } | null>(null);
