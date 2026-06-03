@@ -609,11 +609,11 @@ router.get('/panic', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
   try {
   const [activeR, statsR, teamsR] = await Promise.all([
-    safeQuery(req.db, `SELECT id, vehicle_id, lat, lng, triggered_at FROM panic_events
-            WHERE org_id=$1 AND resolved_at IS NULL ORDER BY triggered_at DESC LIMIT 1`, [orgId]),
+    safeQuery(req.db, `SELECT id, vehicle_id, lat, lng, created_at AS triggered_at FROM panic_events
+            WHERE org_id=$1 AND resolved_at IS NULL ORDER BY created_at DESC LIMIT 1`, [orgId]),
     safeQuery(req.db, `SELECT
-              AVG(EXTRACT(EPOCH FROM (resolved_at - triggered_at))) AS avg_response_s,
-              MAX(triggered_at) AS last_event_at
+              AVG(EXTRACT(EPOCH FROM (resolved_at - created_at))) AS avg_response_s,
+              MAX(created_at) AS last_event_at
             FROM panic_events WHERE org_id=$1 AND resolved_at IS NOT NULL`, [orgId]),
     safeQuery(req.db, `SELECT name, type, COALESCE(eta_minutes, 0) AS eta_min, location, status
             FROM response_teams WHERE org_id=$1 AND active=true LIMIT 5`, [orgId]),

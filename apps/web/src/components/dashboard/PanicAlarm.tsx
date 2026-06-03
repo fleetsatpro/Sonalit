@@ -1,8 +1,45 @@
 import { useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../../lib/api.js';
 import { useDashboardStore } from '../../stores/dashboardStore.js';
 
+interface PanicPollData {
+  status: 'clear' | 'active';
+  active_event: { id: string; vehicle_id: string; lat: number | null; lng: number | null; triggered_at: string } | null;
+}
+
 export default function PanicAlarm() {
+  // Real-time source: Centrifugo pushes (new events during this session)
   const panicState = useDashboardStore((s) => s.panicState);
+  const updatePanicState = useDashboardStore((s) => s.updatePanicState);
+
+  // REST source: existing active panics present when the page loads.
+  // Same query key as PanicCenter so React Query deduplicates the request.
+  const { data: pollData } = useQuery<PanicPollData>({
+    queryKey: ['dashboard-panic'],
+    queryFn: async () => { const r = await api.get<PanicPollData>('/dashboard/panic'); return r.data; },
+    staleTime: 15000,
+    refetchInterval: 15000,
+  });
+
+  // Seed the store from the REST poll so pre-existing panics activate the alarm
+  useEffect(() => {
+    if (!pollData) return;
+    if (pollData.status === 'active' && pollData.active_event) {
+      updatePanicState({
+        id: pollData.active_event.id,
+        status: 'active',
+        lat: pollData.active_event.lat ?? undefined,
+        lng: pollData.active_event.lng ?? undefined,
+        triggered_at: pollData.active_event.triggered_at,
+      });
+    } else if (pollData.status === 'clear' && panicState?.status === 'active') {
+      // Only clear if the store still thinks it's active — don't fight a newer realtime event
+      updatePanicState({ id: panicState.id, status: 'resolved', triggered_at: panicState.triggered_at });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pollData]);
+
   const isActive = panicState?.status === 'active';
   const stopRef = useRef<(() => void) | null>(null);
 
