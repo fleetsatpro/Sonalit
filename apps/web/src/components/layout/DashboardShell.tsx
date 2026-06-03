@@ -56,6 +56,9 @@ const DashboardShell = React.memo(function DashboardShell({ children }: Dashboar
           display: 'flex',
           flexDirection: 'column',
           minHeight: '100vh',
+          width: '100%',
+          minWidth: 0,
+          overflowX: 'clip',
           background: 'var(--d-void)',
           overscrollBehavior: 'contain',
         }}
@@ -67,8 +70,7 @@ const DashboardShell = React.memo(function DashboardShell({ children }: Dashboar
         <main
           ref={mainRef}
           style={{
-            flex: 1,
-            paddingBottom: 100,
+            paddingBottom: 88,
             overscrollBehavior: 'contain',
           }}
         >

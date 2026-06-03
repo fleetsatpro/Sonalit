@@ -45,7 +45,7 @@ export default function Dashboard() {
   useDashboardRealtime(user?.org_id ?? '');
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--d-void)' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--d-void)' }}>
       <DashboardShell>
         {/* §6 KPI Strip */}
         <KPIStrip />
