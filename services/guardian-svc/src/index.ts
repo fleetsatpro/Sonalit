@@ -13,7 +13,7 @@ async function start(): Promise<void> {
   await app.register(rateLimit, { max: 200, timeWindow: '1 minute', keyGenerator: (req) => req.ip });
   await app.register(healthRoutes);
   await app.register(guardianRoutes);
-  app.setErrorHandler((err, _req, reply) => { void reply.code((err as { statusCode?: number }).statusCode ?? 500).send({ error: err.message }); });
+  app.setErrorHandler((err, _req, reply) => { void reply.code((err as { statusCode?: number }).statusCode ?? 500).send({ error: (err as Error).message }); });
   await app.listen({ port: config.PORT, host: '0.0.0.0' });
   app.log.info({ port: config.PORT }, 'guardian-svc listening');
   const shutdown = async (): Promise<void> => { await app.close(); await redis.quit(); await pool.end(); process.exit(0); };

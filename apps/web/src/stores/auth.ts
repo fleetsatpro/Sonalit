@@ -10,20 +10,36 @@ export type AuthUser = {
 };
 
 type AuthState = {
-  token: string | null;
   user: AuthUser | null;
   setAuth: (token: string, user: AuthUser) => void;
   clearAuth: () => void;
 };
 
+// Access token lives in module scope only — never persisted to localStorage (T1.2)
+let _accessToken: string | null = null;
+
+export function getAccessToken(): string | null {
+  return _accessToken;
+}
+
+export function setAccessToken(token: string | null): void {
+  _accessToken = token;
+}
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
-      token: null,
       user: null,
-      setAuth: (token, user) => set({ token, user }),
-      clearAuth: () => set({ token: null, user: null }),
+      setAuth: (token: string, user: AuthUser) => {
+        _accessToken = token;
+        set({ user });
+      },
+      clearAuth: () => {
+        _accessToken = null;
+        set({ user: null });
+      },
     }),
-    { name: 'sonalit-auth', partialize: (s) => ({ token: s.token, user: s.user }) },
+    // Only persist user profile — never the token (T1.2)
+    { name: 'sonalit-auth', partialize: (s) => ({ user: s.user }) },
   ),
 );

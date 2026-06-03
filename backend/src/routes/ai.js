@@ -512,8 +512,8 @@ async function toolCreateGeofence(input, userId) {
         if (osrmRes.ok) {
           const od = await osrmRes.json();
           if (od.routes?.length) {
-            // OSRM returns [lng, lat] — convert to [lat, lng] for consistency
-            path = od.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+            // OSRM returns [lng, lat] — keep as GeoJSON [lng, lat]
+            path = od.routes[0].geometry.coordinates;
             distM = od.routes[0].distance;
           }
         }
@@ -521,18 +521,20 @@ async function toolCreateGeofence(input, userId) {
 
       // Fallback: straight line if OSRM unavailable
       if (!path || path.length < 2) {
-        path = [[gStart.latitude, gStart.longitude], [gEnd.latitude, gEnd.longitude]];
+        path = [[gStart.longitude, gStart.latitude], [gEnd.longitude, gEnd.latitude]];
         distM = haversineM(gStart.latitude, gStart.longitude, gEnd.latitude, gEnd.longitude);
         logger.warn(`OSRM unavailable for corridor "${name}" — using straight-line fallback`);
       }
 
-      // Midpoint for map fly-to
+      // Midpoint for map fly-to — path is [lng, lat] order
       const mid = path[Math.floor(path.length / 2)];
+      const midLng = mid[0], midLat = mid[1];
       const region = gStart.admin1 || gStart.country || location;
       const locationLabel = `${gStart.name} → ${gEnd.name}`;
       const approxRadius = Math.round(distM / 2) + buffer_m;
 
-      const coordinates = { lat: mid[0], lng: mid[1], type: 'corridor', path, buffer_m };
+      // Store coordinates as GeoJSON [lng,lat] array under 'coordinates' key
+      const coordinates = { lat: midLat, lng: midLng, type: 'corridor', coordinates: path, buffer_m };
 
       const r = await query(
         `INSERT INTO geofences (name, type, coordinates, radius, region)
@@ -546,8 +548,8 @@ async function toolCreateGeofence(input, userId) {
         geofence_id: r.rows[0].id,
         name,
         fence_type: 'corridor',
-        lat: mid[0],
-        lng: mid[1],
+        lat: midLat,
+        lng: midLng,
         radius_m: approxRadius,
         region,
         location: locationLabel,

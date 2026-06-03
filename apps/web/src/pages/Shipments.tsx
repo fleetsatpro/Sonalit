@@ -85,13 +85,13 @@ function CreateForm({ onClose }: { onClose: () => void }) {
         <h3 className="font-semibold">New Shipment</h3>
         <button onClick={onClose}><X size={16} /></button>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {fields.map(({ key, label, type = 'text', placeholder }) => (
           <div key={key}>
             <label className="block text-xs text-slate-400 mb-1">{label}</label>
             <input
               type={type}
-              className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+              className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
               placeholder={placeholder}
               value={form[key]}
               onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
@@ -105,7 +105,7 @@ function CreateForm({ onClose }: { onClose: () => void }) {
       <button
         onClick={() => mutation.mutate(form)}
         disabled={mutation.isPending || !form.origin || !form.destination}
-        className="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm font-medium"
+        className="mt-3 px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 rounded text-sm font-medium"
       >
         {mutation.isPending ? 'Creating…' : 'Create Shipment'}
       </button>
@@ -136,9 +136,9 @@ export default function Shipments() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <Package size={20} className="text-blue-400" />
+          <Package size={20} className="text-orange-400" />
           <h1 className="text-xl font-bold">Shipments</h1>
           {data && (
             <span className="text-slate-400 text-sm">({data?.total ?? 0} total)</span>
@@ -146,7 +146,7 @@ export default function Shipments() {
         </div>
         <button
           onClick={() => setShowForm((v) => !v)}
-          className="flex items-center gap-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium"
+          className="flex items-center gap-1 px-3 py-2 bg-orange-600 hover:bg-orange-700 rounded text-sm font-medium"
         >
           <Plus size={16} />
           New Shipment

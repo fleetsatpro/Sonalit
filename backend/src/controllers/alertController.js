@@ -1,6 +1,7 @@
 const Joi = require('joi');
 const { query } = require('../config/database');
 const { asyncHandler } = require('../middleware/error');
+const { publish } = require('../realtime/centrifugo');
 
 const alertSchema = Joi.object({
   vehicleId: Joi.string().uuid().required(),
@@ -55,8 +56,7 @@ const createAlert = asyncHandler(async (req, res) => {
     [value.vehicleId, value.convoyId || null, value.type, value.severity, value.message, req.user.id]
   );
 
-  const io = req.app.get('io');
-  if (io) io.emit('alert:new', { alertId: result.rows[0].id, vehicleId: value.vehicleId, type: value.type, severity: value.severity, message: value.message });
+  publish(`org#${req.user.org_id}`, { type: 'alert.new', alertId: result.rows[0].id, vehicleId: value.vehicleId, alertType: value.type, severity: value.severity, message: value.message });
 
   req.auditAction = 'INSERT';
   req.auditRecordId = result.rows[0].id;

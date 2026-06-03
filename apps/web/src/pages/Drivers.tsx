@@ -3,11 +3,19 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Users, Search, Plus, X, ChevronLeft, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
+import { Users, Search, Plus, X, ChevronLeft, ChevronRight, Loader2, AlertCircle, TrendingUp } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../stores/auth.js';
 import { normalizeList, type NormalizedList } from '../lib/normalize.js';
 import type { Driver, DriverStatus } from '@sonalit/contracts';
+
+interface DriverScore { driver_id: string; score: number; total_events: number; }
+
+function ScoreBadge({ score }: { score: number | undefined }) {
+  if (score == null) return <span className="text-gray-500 text-xs">—</span>;
+  const color = score >= 80 ? 'text-green-400' : score >= 60 ? 'text-yellow-400' : 'text-red-400';
+  return <span className={`font-mono font-bold text-sm ${color}`}>{Math.round(score)}</span>;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -83,30 +91,30 @@ function AddDriverForm({ onClose }: { onClose: () => void }): React.ReactElement
         </button>
       </div>
       <form onSubmit={handleSubmit(onSubmit)} noValidate>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-4">
           <div>
             <label className="block text-xs text-gray-400 mb-1">Full Name</label>
-            <input {...register('name')} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <input {...register('name')} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
             {errors.name && <p className="text-red-400 text-xs mt-0.5">{errors.name.message}</p>}
           </div>
           <div>
             <label className="block text-xs text-gray-400 mb-1">License Number</label>
-            <input {...register('license_number')} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <input {...register('license_number')} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-500" />
             {errors.license_number && <p className="text-red-400 text-xs mt-0.5">{errors.license_number.message}</p>}
           </div>
           <div>
             <label className="block text-xs text-gray-400 mb-1">License Expiry (YYYY-MM-DD)</label>
-            <input {...register('license_expiry')} placeholder="2027-12-31" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <input {...register('license_expiry')} placeholder="2027-12-31" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
             {errors.license_expiry && <p className="text-red-400 text-xs mt-0.5">{errors.license_expiry.message}</p>}
           </div>
           <div>
             <label className="block text-xs text-gray-400 mb-1">Email (optional)</label>
-            <input type="email" {...register('email')} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <input type="email" {...register('email')} className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
             {errors.email && <p className="text-red-400 text-xs mt-0.5">{errors.email.message}</p>}
           </div>
           <div>
             <label className="block text-xs text-gray-400 mb-1">Phone (E.164, optional)</label>
-            <input {...register('phone')} placeholder="+2348012345678" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <input {...register('phone')} placeholder="+2348012345678" className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-500" />
             {errors.phone && <p className="text-red-400 text-xs mt-0.5">{errors.phone.message}</p>}
           </div>
         </div>
@@ -122,7 +130,7 @@ function AddDriverForm({ onClose }: { onClose: () => void }): React.ReactElement
           <button
             type="submit"
             disabled={createMutation.isPending}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            className="flex items-center gap-2 bg-orange-600 hover:bg-orange-500 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
           >
             {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
             Add Driver
@@ -158,20 +166,29 @@ export default function Drivers(): React.ReactElement {
     placeholderData: (prev) => prev,
   });
 
+  const { data: scoresData } = useQuery<{ data: DriverScore[] }>({
+    queryKey: ['driver-leaderboard'],
+    queryFn: () => api.get('/behaviour/leaderboard?limit=50').then(r => r.data),
+    staleTime: 60_000,
+  });
+  const scoreMap = new Map<string, number>(
+    (scoresData?.data ?? []).map(s => [s.driver_id, s.score]),
+  );
+
   const totalPages = data?.total ? Math.ceil(data.total / PAGE_SIZE) : 1;
 
   return (
-    <div className="p-6 space-y-5">
-      <div className="flex items-center justify-between">
+    <div className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <Users className="w-5 h-5 text-indigo-400" />
+          <Users className="w-5 h-5 text-orange-400" />
           <h1 className="text-xl font-bold text-white">Drivers</h1>
           {data && <span className="text-sm text-gray-400">{data.total ?? 0} total</span>}
         </div>
         <button
           type="button"
           onClick={() => setShowForm((v) => !v)}
-          className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-3 py-2 rounded-lg transition-colors"
+          className="flex items-center gap-1.5 bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-3 py-2 rounded-lg transition-colors"
         >
           <Plus className="w-4 h-4" />
           Add Driver
@@ -186,7 +203,7 @@ export default function Drivers(): React.ReactElement {
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           placeholder="Search name or email…"
-          className="w-full pl-10 pr-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="w-full pl-10 pr-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500"
         />
       </div>
 
@@ -211,12 +228,13 @@ export default function Drivers(): React.ReactElement {
                   <th className="px-4 py-3 text-left">License</th>
                   <th className="px-4 py-3 text-left">Expiry</th>
                   <th className="px-4 py-3 text-left">Status</th>
+                  <th className="px-4 py-3 text-right flex items-center justify-end gap-1"><TrendingUp className="w-3 h-3" /> Score</th>
                 </tr>
               </thead>
               <tbody>
                 {data.data.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-gray-500">
+                    <td colSpan={7} className="px-4 py-10 text-center text-gray-500">
                       No drivers found.
                     </td>
                   </tr>
@@ -230,6 +248,9 @@ export default function Drivers(): React.ReactElement {
                     <td className="px-4 py-3 text-gray-400 text-xs">{d.license_expiry}</td>
                     <td className="px-4 py-3">
                       <StatusBadge status={d.status} />
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <ScoreBadge score={scoreMap.get(d.id)} />
                     </td>
                   </tr>
                 ))}

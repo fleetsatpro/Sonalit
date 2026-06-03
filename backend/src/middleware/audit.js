@@ -1,45 +1,69 @@
-const { query } = require('../config/database');
+const crypto = require('crypto');
+const { pool } = require('../config/database');
 const logger = require('../utils/logger');
 
 /**
  * auditLog(tableName) — middleware factory.
- * Captures the mutation (action, old data, new data) into audit_logs.
- * Attach AFTER the controller has written req.auditBefore (old snapshot)
- * and req.auditAfter (new snapshot).
- *
- * Controllers should set:
- *   req.auditAction = 'INSERT' | 'UPDATE' | 'DELETE'
- *   req.auditRecordId = uuid
- *   req.auditBefore = object | null
- *   req.auditAfter  = object | null
+ * Appends to audit_logs with a hash chain to detect tampering (T1.6).
+ * Uses SELECT … FOR UPDATE on the latest row to prevent concurrent chain corruption.
  */
 function auditLog(tableName) {
   return (req, res, next) => {
-    // Patch res.json to intercept the response and write the audit log after it sends.
-    // res.json stays synchronous and chainable — the audit write is fired off
-    // separately so it can never delay or crash the request.
     const originalJson = res.json.bind(res);
     res.json = function (body) {
       const result = originalJson(body);
 
-      // Only log successful mutations
       if (res.statusCode >= 200 && res.statusCode < 300 && req.auditAction) {
-        query(
-          `INSERT INTO audit_logs
-             (table_name, record_id, action, old_data, new_data, user_id, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-          [
-            tableName,
-            req.auditRecordId || null,
-            req.auditAction,
-            req.auditBefore ? JSON.stringify(req.auditBefore) : null,
-            req.auditAfter ? JSON.stringify(req.auditAfter) : null,
-            req.user?.id || null,
-          ]
-        ).catch((err) => {
-          // Audit failures must never crash the request
-          logger.error(`Audit log write failed: ${err.message}`);
+        const orgId = req.user?.org_id || null;
+        const userId = req.user?.id || null;
+        const payload = JSON.stringify({
+          table: tableName,
+          action: req.auditAction,
+          record_id: req.auditRecordId,
+          before: req.auditBefore,
+          after: req.auditAfter,
+          user_id: userId,
         });
+
+        (async () => {
+          const client = await pool.connect();
+          try {
+            await client.query('BEGIN');
+
+            // Lock the latest row for this org to prevent concurrent chain splits (T1.6)
+            const prev = await client.query(
+              `SELECT id, hash FROM audit_logs WHERE org_id = $1 ORDER BY id DESC LIMIT 1 FOR UPDATE`,
+              [orgId]
+            );
+            const prevHash = prev.rows[0]?.hash || null;
+            const newHash = crypto.createHash('sha256')
+              .update((prevHash || '') + payload)
+              .digest('hex');
+
+            await client.query(
+              `INSERT INTO audit_logs
+                 (table_name, record_id, action, old_data, new_data, user_id, org_id, hash, prev_hash, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
+              [
+                tableName,
+                req.auditRecordId || null,
+                req.auditAction,
+                req.auditBefore ? JSON.stringify(req.auditBefore) : null,
+                req.auditAfter ? JSON.stringify(req.auditAfter) : null,
+                userId,
+                orgId,
+                newHash,
+                prevHash,
+              ]
+            );
+            await client.query('COMMIT');
+          } catch (err) {
+            try { await client.query('ROLLBACK'); } catch (_) {}
+            logger.error(`Audit log write failed: ${err.message}`);
+          } finally {
+            client.release();
+          }
+        })();
       }
 
       return result;

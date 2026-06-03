@@ -24,7 +24,7 @@ const SEVERITY_COLORS: Record<Severity, string> = {
 };
 
 const STATUS_COLORS: Record<IncidentStatus, string> = {
-  open: 'text-blue-400',
+  open: 'text-orange-400',
   investigating: 'text-purple-400',
   resolved: 'text-green-400',
   closed: 'text-slate-500',
@@ -61,8 +61,9 @@ export default function IncidentCenter() {
   const { data, isLoading, isError } = useQuery<Incident[]>({
     queryKey: ['incidents', 'active'],
     queryFn: async () => {
-      const res = await api.get<Incident[]>('/incidents', { params: { status: 'active' } });
-      return res.data;
+      const res = await api.get<{ data: Incident[] } | Incident[]>('/incidents');
+      const raw = res.data;
+      return Array.isArray(raw) ? raw : (raw?.data ?? []);
     },
   });
 

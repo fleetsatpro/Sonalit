@@ -1,0 +1,21 @@
+#!/usr/bin/env sh
+# Husky v9 — no shim needed. Run under sh -e; use || true after grep to avoid
+# false exits when there are no matches (grep exits 1 on no match).
+
+blocked=$(git diff --cached --name-only --diff-filter=A | \
+  grep -E '(\.swp$|\.swo$|~$|\.tsbuildinfo$|^logs/|^nodemon/|@[0-9]+\.[0-9]+\.[0-9]+/|^\.\..env)' || true)
+if [ -n "$blocked" ]; then
+  echo "✖ Blocked files in commit:"
+  echo "$blocked"
+  echo "Add them to .gitignore or remove with: git rm --cached"
+  exit 1
+fi
+
+tracked_env=$(git diff --cached --name-only --diff-filter=A | \
+  grep -E '(\.env(\.|$))' | grep -v '\.example$' || true)
+if [ -n "$tracked_env" ]; then
+  echo "✖ Real .env file being committed:"
+  echo "$tracked_env"
+  echo "Refusing. Only .env.example files are allowed."
+  exit 1
+fi

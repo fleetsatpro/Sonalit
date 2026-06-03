@@ -2,16 +2,22 @@ name: Build Guardian Agent APK
 
 on:
   push:
-    branches: [main, claude/enhance-navigation-features-0S2pp]
-    paths:
-      - 'guardian-agent/**'
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      upload_only:
+        description: 'Upload artifact only — skip GitHub Release and Railway update'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
       - uses: actions/checkout@v4
 
@@ -27,19 +33,22 @@ jobs:
       - name: Accept SDK licenses
         run: yes | sdkmanager --licenses || true
 
-      - name: Install build tools
+      - name: Install platform and build tools
         run: sdkmanager "build-tools;34.0.0" "platforms;android-34"
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
         with:
-          gradle-version: "8.2"
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('guardian-agent/**/*.gradle*', 'guardian-agent/**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
 
       - name: Build debug APK
         working-directory: guardian-agent
-        run: gradle assembleDebug --no-daemon
-        env:
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -50,7 +59,7 @@ jobs:
 
       - name: Create Release (on main push)
         id: release
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && github.event.inputs.upload_only != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: guardian-agent-v${{ github.run_number }}
@@ -67,14 +76,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update APK_REDIRECT_URL on Railway
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && github.event.inputs.upload_only != 'true'
+        continue-on-error: true
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
           APK_URL="https://github.com/fleetsatpro/Sonalit/releases/download/guardian-agent-v${{ github.run_number }}/app-debug.apk"
           echo "Setting APK_REDIRECT_URL → $APK_URL"
 
-          # Step 1: discover project/environment/service IDs from the token
           DISCOVER=$(curl -sf -X POST https://backboard.railway.com/graphql/v2 \
             -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
@@ -86,7 +95,6 @@ jobs:
           SERVICE_ID=$(echo "$DISCOVER" | jq -r '.data.me.projects.edges[0].node.services.edges[0].node.id')
           ENV_ID=$(echo "$DISCOVER" | jq -r '[.data.me.projects.edges[0].node.environments.edges[] | select(.node.name == "production")] | .[0].node.id')
 
-          # Fall back to first environment if none named "production"
           if [ "$ENV_ID" = "null" ] || [ -z "$ENV_ID" ]; then
             ENV_ID=$(echo "$DISCOVER" | jq -r '.data.me.projects.edges[0].node.environments.edges[0].node.id')
           fi
@@ -100,7 +108,6 @@ jobs:
             exit 1
           fi
 
-          # Step 2: upsert the variable
           cat > /tmp/gql.json <<EOF
           {
             "query": "mutation variableUpsert(\$input: VariableUpsertInput!) { variableUpsert(input: \$input) }",

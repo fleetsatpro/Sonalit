@@ -79,7 +79,7 @@ function NotesEditor({ incident }: { incident: Incident }) {
     <div className="p-4 bg-slate-800 border-t border-slate-700">
       <p className="text-xs text-slate-400 mb-2">Collaborative Notes</p>
       <textarea
-        className="w-full bg-slate-900 text-slate-100 rounded p-2 text-sm border border-slate-600 focus:outline-none focus:border-blue-500 resize-none"
+        className="w-full bg-slate-900 text-slate-100 rounded p-2 text-sm border border-slate-600 focus:outline-none focus:border-orange-500 resize-none"
         rows={4}
         value={text}
         onChange={(e) => handleChange(e.target.value)}
@@ -88,7 +88,7 @@ function NotesEditor({ incident }: { incident: Incident }) {
       <button
         onClick={() => patchMutation.mutate(text)}
         disabled={patchMutation.isPending}
-        className="mt-2 px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm"
+        className="mt-2 px-3 py-1 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 rounded text-sm"
       >
         {patchMutation.isPending ? 'Saving…' : 'Save Notes'}
       </button>
@@ -121,20 +121,20 @@ function CreateIncidentForm({ onClose }: { onClose: () => void }) {
       </div>
       <div className="space-y-3">
         <input
-          className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+          className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
           placeholder="Title"
           value={form.title}
           onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
         />
         <textarea
-          className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500 resize-none"
+          className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500 resize-none"
           placeholder="Description"
           rows={3}
           value={form.description}
           onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
         />
         <select
-          className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+          className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
           value={form.severity}
           onChange={(e) => setForm((f) => ({ ...f, severity: e.target.value as Severity }))}
         >
@@ -149,7 +149,7 @@ function CreateIncidentForm({ onClose }: { onClose: () => void }) {
         <button
           onClick={() => mutation.mutate(form)}
           disabled={mutation.isPending || !form.title}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm font-medium"
+          className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 rounded text-sm font-medium"
         >
           {mutation.isPending ? 'Creating…' : 'Create Incident'}
         </button>
@@ -191,14 +191,14 @@ export default function Incidents() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <AlertTriangle size={20} className="text-orange-400" />
           <h1 className="text-xl font-bold">Incidents</h1>
         </div>
         <button
           onClick={() => setShowForm((v) => !v)}
-          className="flex items-center gap-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium"
+          className="flex items-center gap-1 px-3 py-2 bg-orange-600 hover:bg-orange-700 rounded text-sm font-medium"
         >
           <Plus size={16} />
           Create Incident

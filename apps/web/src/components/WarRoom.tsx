@@ -83,7 +83,7 @@ export default function WarRoom({ incidentId }: Props) {
   return (
     <div className="flex flex-col h-full gap-4">
       <div className="flex items-center gap-2 border-b border-slate-700 pb-3">
-        <Shield size={18} className="text-blue-400" />
+        <Shield size={18} className="text-orange-400" />
         <h2 className="font-bold text-lg">War Room</h2>
         <span className="text-xs text-slate-400 ml-2">Incident #{incidentId.slice(0, 8)}</span>
       </div>
@@ -95,7 +95,7 @@ export default function WarRoom({ incidentId }: Props) {
             key={action}
             onClick={() => actionMutation.mutate(action)}
             disabled={actionMutation.isPending}
-            className="px-3 py-1.5 bg-blue-700 hover:bg-blue-600 disabled:opacity-50 rounded text-sm font-medium capitalize"
+            className="px-3 py-1.5 bg-blue-700 hover:bg-orange-600 disabled:opacity-50 rounded text-sm font-medium capitalize"
           >
             {action.replace(/_/g, ' ')}
           </button>
@@ -146,7 +146,7 @@ export default function WarRoom({ incidentId }: Props) {
                 <span className="text-slate-500 shrink-0">
                   {new Date(entry.timestamp).toLocaleTimeString()}
                 </span>
-                <span className="text-blue-400 shrink-0 font-medium">{entry.actor}</span>
+                <span className="text-orange-400 shrink-0 font-medium">{entry.actor}</span>
                 <span className="text-slate-300 capitalize">{entry.action}</span>
               </div>
             ))

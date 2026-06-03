@@ -7,6 +7,7 @@ import androidx.work.*
 import com.fleetops.guardian.data.prefs.DevicePrefs
 import com.fleetops.guardian.data.repository.GuardianRepository
 import com.fleetops.guardian.data.repository.RepositoryResult
+import com.fleetops.guardian.service.GuardianService
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.util.concurrent.TimeUnit
@@ -31,6 +32,10 @@ class HeartbeatWorker @AssistedInject constructor(
         return when (val result = repository.sendHeartbeat()) {
             is RepositoryResult.Success -> {
                 Log.d(TAG, "Heartbeat success: status=${result.data.status}")
+                // If commands arrived, ensure the service is running to drain the channel
+                if (result.data.commands?.isNotEmpty() == true) {
+                    GuardianService.startService(applicationContext)
+                }
                 Result.success(
                     workDataOf(
                         KEY_HEARTBEAT_STATUS to result.data.status,

@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
+import { subscribe } from '../lib/centrifuge.js';
+import { useAuthStore } from '../stores/auth.js';
 import { FileText, Download, Plus, X, RefreshCw } from 'lucide-react';
 
 type ReportStatus = 'pending' | 'ready' | 'failed';
@@ -60,11 +62,11 @@ function GenerateForm({ onClose }: { onClose: () => void }) {
         <h3 className="font-semibold">Generate Report</h3>
         <button onClick={onClose}><X size={16} /></button>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-xs text-slate-400 mb-1">Type</label>
           <select
-            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
             value={form.type}
             onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as ReportType }))}
           >
@@ -76,7 +78,7 @@ function GenerateForm({ onClose }: { onClose: () => void }) {
         <div>
           <label className="block text-xs text-slate-400 mb-1">Format</label>
           <select
-            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
             value={form.format}
             onChange={(e) => setForm((f) => ({ ...f, format: e.target.value as ReportFormat }))}
           >
@@ -88,7 +90,7 @@ function GenerateForm({ onClose }: { onClose: () => void }) {
           <label className="block text-xs text-slate-400 mb-1">From</label>
           <input
             type="date"
-            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
             value={form.from}
             onChange={(e) => setForm((f) => ({ ...f, from: e.target.value }))}
           />
@@ -97,7 +99,7 @@ function GenerateForm({ onClose }: { onClose: () => void }) {
           <label className="block text-xs text-slate-400 mb-1">To</label>
           <input
             type="date"
-            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
             value={form.to}
             onChange={(e) => setForm((f) => ({ ...f, to: e.target.value }))}
           />
@@ -109,7 +111,7 @@ function GenerateForm({ onClose }: { onClose: () => void }) {
       <button
         onClick={() => mutation.mutate(form)}
         disabled={mutation.isPending}
-        className="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm font-medium"
+        className="mt-3 px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 rounded text-sm font-medium"
       >
         {mutation.isPending ? 'Generating…' : 'Generate'}
       </button>
@@ -119,6 +121,8 @@ function GenerateForm({ onClose }: { onClose: () => void }) {
 
 export default function Reports() {
   const [showForm, setShowForm] = useState(false);
+  const queryClient = useQueryClient();
+  const user = useAuthStore((s) => s.user);
 
   const { data, isLoading, isError } = useQuery<Report[]>({
     queryKey: ['reports'],
@@ -127,32 +131,28 @@ export default function Reports() {
       const raw = res.data;
       return Array.isArray(raw) ? raw : (raw?.data ?? []);
     },
-    refetchInterval: (query) => {
-      const reports = query.state.data;
-      if (!reports) return 10_000;
-      const hasPending = reports.some((r) => r.status === 'pending');
-      return hasPending ? 10_000 : false;
-    },
   });
 
-  const hasPending = data?.some((r) => r.status === 'pending') ?? false;
+  // T3.4: subscribe to Centrifugo for report-ready events; invalidate query on arrival.
+  useEffect(() => {
+    if (!user?.org_id) return;
+    const unsub = subscribe<{ convoy_id: string; report_date: string; pdf_url: string }>(
+      `convoy.report.ready.${user.org_id}`,
+      () => { queryClient.invalidateQueries({ queryKey: ['reports'] }); }
+    );
+    return unsub;
+  }, [user?.org_id, queryClient]);
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <FileText size={20} className="text-blue-400" />
+          <FileText size={20} className="text-orange-400" />
           <h1 className="text-xl font-bold">Reports</h1>
-          {hasPending && (
-            <div className="flex items-center gap-1 text-xs text-yellow-400">
-              <RefreshCw size={12} className="animate-spin" />
-              Polling for updates…
-            </div>
-          )}
         </div>
         <button
           onClick={() => setShowForm((v) => !v)}
-          className="flex items-center gap-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium"
+          className="flex items-center gap-1 px-3 py-2 bg-orange-600 hover:bg-orange-700 rounded text-sm font-medium"
         >
           <Plus size={16} />
           Generate Report
@@ -204,7 +204,7 @@ export default function Reports() {
                         href={report.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="flex items-center gap-1 text-blue-400 hover:text-blue-300 text-sm"
+                        className="flex items-center gap-1 text-orange-400 hover:text-orange-300 text-sm"
                       >
                         <Download size={14} />
                         Download

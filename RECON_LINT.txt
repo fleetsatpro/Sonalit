@@ -1,0 +1,30 @@
+Scope: 17 of 18 workspace projects
+packages/contracts lint$ eslint src --max-warnings=0
+packages/contracts lint: Oops! Something went wrong! :(
+packages/contracts lint: ESLint: 9.39.4
+packages/contracts lint: ESLint couldn't find an eslint.config.(js|mjs|cjs) file.
+packages/contracts lint: From ESLint v9.0.0, the default configuration file is now eslint.config.js.
+packages/contracts lint: If you are using a .eslintrc.* file, please follow the migration guide
+packages/contracts lint: to update your configuration file to the new format:
+packages/contracts lint: https://eslint.org/docs/latest/use/configure/migration-guide
+packages/contracts lint: If you still have problems after following the migration guide, please stop by
+packages/contracts lint: https://eslint.org/chat/help to chat with the team.
+packages/contracts lint: Failed
+/home/user/Sonalit/packages/contracts:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @sonalit/contracts@4.0.0 lint: `eslint src --max-warnings=0`
+Exit status 2
+Scope: 17 of 18 workspace projects
+packages/contracts lint$ eslint src --max-warnings=0
+packages/contracts lint: Oops! Something went wrong! :(
+packages/contracts lint: ESLint: 9.39.4
+packages/contracts lint: ESLint couldn't find an eslint.config.(js|mjs|cjs) file.
+packages/contracts lint: From ESLint v9.0.0, the default configuration file is now eslint.config.js.
+packages/contracts lint: If you are using a .eslintrc.* file, please follow the migration guide
+packages/contracts lint: to update your configuration file to the new format:
+packages/contracts lint: https://eslint.org/docs/latest/use/configure/migration-guide
+packages/contracts lint: If you still have problems after following the migration guide, please stop by
+packages/contracts lint: https://eslint.org/chat/help to chat with the team.
+packages/contracts lint: Failed
+/home/user/Sonalit/packages/contracts:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @sonalit/contracts@4.0.0 lint: `eslint src --max-warnings=0`
+Exit status 2

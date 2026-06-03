@@ -1,0 +1,177 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;800;900&family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+:root {
+  /* Backgrounds */
+  --d-void: #010407;
+  --d-carbon: #050910;
+  --d-deep: #080e18;
+  --d-well: #0c1522;
+  --d-surf: #101926;
+  --d-lift: #182030;
+  --d-lift2: #1e2a3e;
+  /* Borders */
+  --d-rim: rgba(255,255,255,.05);
+  --d-rim2: rgba(255,255,255,.10);
+  --d-rim3: rgba(255,255,255,.22);
+  /* Signal / accent */
+  --d-sig: #22c55e;
+  --d-sig2: #16a34a;
+  --d-sig3: #15803d;
+  --d-sg: rgba(34,197,94,.13);
+  --d-sg2: rgba(34,197,94,.07);
+  --d-sglow: rgba(34,197,94,.6);
+  /* Orange accent */
+  --d-orange: #f97316;
+  --d-og: rgba(249,115,22,.13);
+  --d-oglow: rgba(249,115,22,.6);
+  /* Status */
+  --d-fire: #ff4422;
+  --d-fg: rgba(255,68,34,.15);
+  --d-fglow: rgba(255,68,34,.55);
+  --d-warn: #ffbe2e;
+  --d-wg: rgba(255,190,46,.13);
+  --d-ok: #9dff3c;
+  --d-okg: rgba(157,255,60,.12);
+  --d-purple: #a855f7;
+  /* Text */
+  --d-t1: #edf3ff;
+  --d-t2: #8595b4;
+  --d-t3: #374c6a;
+  --d-t4: #1c2a3e;
+  /* Layout */
+  --d-nav-h: 68px;
+  --d-rail-w: 232px;
+  --d-sb-w: 294px;
+  --d-top-h: 52px;
+  --d-tick-h: 26px;
+  --d-str-h: 40px;
+}
+
+/* ── Animations ─────────────────────────────────────────────────────────── */
+@keyframes d-glitch {
+  0%,100% { text-shadow: none; transform: none; }
+  2% { text-shadow: -2px 0 #ff4422, 2px 0 #22c55e; transform: skewX(-1deg); }
+  4% { text-shadow: 2px 0 #ff4422, -2px 0 #22c55e; transform: skewX(1deg); }
+  6% { text-shadow: none; transform: none; }
+  98% { text-shadow: none; transform: none; }
+}
+
+@keyframes d-sonar {
+  0% { transform: scale(1); opacity: .7; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+
+@keyframes d-pfz {
+  0%,100% { box-shadow: 0 0 0 0 var(--d-fglow); }
+  50% { box-shadow: 0 0 18px 4px var(--d-fglow); }
+}
+
+@keyframes d-rflow {
+  to { stroke-dashoffset: -18; }
+}
+
+@keyframes d-scanv {
+  from { top: 0; }
+  to { top: 100%; }
+}
+
+@keyframes d-tick {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+@keyframes d-crit {
+  0%,100% { border-color: rgba(255,68,34,.28); box-shadow: none; }
+  50% { border-color: rgba(255,68,34,.6); box-shadow: 0 0 22px rgba(255,68,34,.25); }
+}
+
+@keyframes radar-turn {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes d-pulse-warn {
+  0%,100% { opacity: 1; }
+  50% { opacity: .4; }
+}
+
+@keyframes d-slide-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes d-count-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes d-bar-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+/* ── Reduced motion overrides ─────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+/* ── Shared dashboard utility classes ─────────────────────────────────── */
+.d-card {
+  background: var(--d-well);
+  border: 1px solid var(--d-rim2);
+  border-radius: 12px;
+}
+
+.d-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--d-t2);
+}
+
+.d-num {
+  font-family: 'Orbitron', sans-serif;
+  color: var(--d-t1);
+}
+
+.d-mono {
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.d-section-reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity .5s ease, transform .5s ease;
+}
+
+.d-section-reveal.vis {
+  opacity: 1;
+  transform: none;
+}
+
+/* ── Horizontal scroll containers ─────────────────────────────────────── */
+.d-hscroll {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--d-rim2) transparent;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior: contain;
+  padding-bottom: 4px;
+}
+
+.d-hscroll::-webkit-scrollbar { height: 4px; }
+.d-hscroll::-webkit-scrollbar-track { background: transparent; }
+.d-hscroll::-webkit-scrollbar-thumb { background: var(--d-rim2); border-radius: 2px; }
+
+/* ── Clip-corner card accent ─────────────────────────────────────────── */
+.d-clip {
+  clip-path: polygon(0 0, calc(100% - 13px) 0, 100% 13px, 100% 100%, 0 100%);
+}

@@ -1,255 +1,404 @@
 require("dotenv").config();
+const Sentry = require("./instrument");
 
-// Global safety net — catch any error that slips past individual handlers so the
-// server process never crashes unexpectedly. Logged at error level for visibility.
-process.on("uncaughtException",(err)=>{
-  try{require("./utils/logger").error("uncaughtException: "+err.message+"\n"+err.stack);}catch(_){console.error("uncaughtException:",err);}
+// ─── Graceful shutdown ────────────────────────────────────────────────────────
+// shutdown(code): stop accepting traffic, drain workers, close pool, then exit.
+// Hard-exits after 10 s if normal drain takes too long.
+let _shuttingDown = false;
+function shutdown(code) {
+  if (_shuttingDown) return;
+  _shuttingDown = true;
+  const log = (() => { try { return require("./utils/logger"); } catch (_) { return console; } })();
+  log.info(`Shutdown initiated (code=${code})`);
+
+  const hardExit = setTimeout(() => {
+    log.error("Hard-exit: drain timeout exceeded 10 s");
+    process.exit(code);
+  }, 10_000).unref();
+
+  (async () => {
+    try {
+      if (global._server) global._server.close();
+      const workers = global._workers || [];
+      await Promise.all(workers.map(w => w.close().catch(() => {})));
+      const { pool } = require("./config/database");
+      await pool.end().catch(() => {});
+      clearTimeout(hardExit);
+      process.exit(code);
+    } catch (err) {
+      log.error("Error during shutdown: " + err.message);
+      process.exit(code);
+    }
+  })();
+}
+
+process.on("uncaughtException", (err) => {
+  try { require("./utils/logger").fatal({ err }, "uncaughtException"); } catch (_) { console.error("uncaughtException:", err); }
+  shutdown(1);
 });
-process.on("unhandledRejection",(reason)=>{
-  try{require("./utils/logger").error("unhandledRejection: "+(reason instanceof Error?reason.message+"\n"+reason.stack:String(reason)));}catch(_){console.error("unhandledRejection:",reason);}
+process.on("unhandledRejection", (reason) => {
+  try { require("./utils/logger").fatal({ reason }, "unhandledRejection"); } catch (_) { console.error("unhandledRejection:", reason); }
+  shutdown(1);
 });
 
-const express=require("express"),http=require("http"),{Server}=require("socket.io"),helmet=require("helmet"),cors=require("cors"),rateLimit=require("express-rate-limit"),morgan=require("morgan"),jwt=require("jsonwebtoken");
-const logger=require("./utils/logger"),{errorHandler}=require("./middleware/error"),{setIO:gpsSetIO}=require("./workers/gpsWorker"),{setIO:alertSetIO}=require("./workers/alertWorker"),{createQueues}=require("./config/queue"),{healthCheck:dbHealth}=require("./config/database"),{healthCheck:redisHealth}=require("./config/redis");
-const requestId=require("./middleware/requestId");
+const express = require("express");
+const http = require("http");
+const helmet = require("helmet");
+const cors = require("cors");
+const cookieParser = require("cookie-parser");
+const rateLimit = require("express-rate-limit");
+const morgan = require("morgan");
 
-if(!process.env.DATABASE_URL) logger.warn("DATABASE_URL not set — set it in Railway so the database works");
-if(!process.env.JWT_SECRET){
-  process.env.JWT_SECRET = require('crypto').randomBytes(32).toString('hex');
+const logger = require("./utils/logger");
+const { errorHandler } = require("./middleware/error");
+const responseEnvelope = require("./middleware/responseEnvelope");
+const { createQueues } = require("./config/queue");
+const { healthCheck: dbHealth, query: dbQuery } = require("./config/database");
+const { healthCheck: redisHealth } = require("./config/redis");
+const requestId = require("./middleware/requestId");
+const csrf = require("./middleware/csrf");
+
+if (!process.env.DATABASE_URL) logger.warn("DATABASE_URL not set — set it in Railway so the database works");
+if (!process.env.JWT_SECRET) {
+  process.env.JWT_SECRET = require("crypto").randomBytes(32).toString("hex");
   logger.warn("JWT_SECRET not set — generated a random one. Set JWT_SECRET in Railway to persist sessions across restarts.");
 }
 
-const app=express(),server=http.createServer(app),io=new Server(server,{cors:{origin:true,credentials:true},transports:["websocket","polling"]});
+const app = express();
+const server = http.createServer(app);
+global._server = server;
 
-io.use((socket,next)=>{
-  const token=socket.handshake.auth&&socket.handshake.auth.token;
-  if(!token)return next(new Error("Auth required"));
-  try{socket.user=jwt.verify(token,process.env.JWT_SECRET);next();}
-  catch{next(new Error("Invalid token"));}
-});
-
-io.on("connection",s=>{
-  logger.info("Socket: "+s.id+" user="+s.user?.email);
-  s.on("subscribe:region",r=>s.join("region:"+r));
-  s.on("subscribe:convoy",id=>s.join("convoy:"+id));
-  s.on("subscribe:device",id=>s.join("device:"+id));
-  s.on("disconnect",()=>logger.info("Socket disconnected: "+s.id));
-});
-
-// Socket.IO Redis adapter — enables horizontal scaling across multiple backend pods (Task 5.5)
-if(process.env.REDIS_URL){
-  try{
-    const{createAdapter}=require("@socket.io/redis-adapter");
-    const Redis=require("ioredis");
-    const pubClient=new Redis(process.env.REDIS_URL);
-    const subClient=pubClient.duplicate();
-    pubClient.on("error",(e)=>logger.warn("Socket.IO Redis pub error: "+e.message));
-    subClient.on("error",(e)=>logger.warn("Socket.IO Redis sub error: "+e.message));
-    io.adapter(createAdapter(pubClient,subClient));
-    logger.info("Socket.IO Redis adapter active");
-  }catch(e){logger.warn("Socket.IO Redis adapter failed: "+e.message+" — running without it");}
-}
-
-app.set("io",io);gpsSetIO(io);alertSetIO(io);
-
+// ─── Middleware stack (order matters for security) ────────────────────────────
 app.use(requestId);
-app.use(helmet({contentSecurityPolicy:false}));
-app.use(cors({origin:true,credentials:true}));
-app.use(express.json({limit:"5mb"}));
-app.use(express.urlencoded({extended:true}));
-app.use(morgan(":method :url :status :res[content-length] - :response-time ms reqId=:req[x-request-id]",{stream:{write:m=>logger.info(m.trim())}}));
-app.use(rateLimit({windowMs:900000,max:500,standardHeaders:true,legacyHeaders:false,validate:{xForwardedForHeader:false},message:{error:"Too many requests"}}));
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      connectSrc: ["'self'", "wss://rt.sonalit.io", "https://api.anthropic.com", "https://*.sentry.io", "https://*.openstreetmap.org"],
+      imgSrc: ["'self'", "data:", "https://*.r2.cloudflarestorage.com", "https://basemaps.cartocdn.com", "https://demotiles.maplibre.org", "https://*.openstreetmap.org"],
+      workerSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"], // Tailwind CSS requires this
+      scriptSrc: ["'self'"],
+      frameAncestors: ["'none'"],
+    },
+  },
+  strictTransportSecurity: { maxAge: 63072000, includeSubDomains: true, preload: true },
+}));
+const _corsOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
+  : ['http://localhost:3000', 'http://localhost:5173'];
+app.use(cors({ origin: _corsOrigins, credentials: true }));
+app.use(cookieParser());
 
-app.get("/health",async(req,res)=>{
-  try{
-    const[db,redis]=await Promise.all([dbHealth(),redisHealth()]);
-    const mem=process.memoryUsage();
-    const status=db?"ok":"degraded";
-    res.status(200).json({
+// ── Global IP rate-limit BEFORE body parsing so large-body attacks are blocked
+// before consuming memory (T1.8)
+app.use(rateLimit({
+  windowMs: 900_000, // 15 min
+  max: 500,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
+  message: { error: "Too many requests" },
+}));
+
+// Per-route tighter limits mounted on specific paths (T1.8)
+const authLoginLimiter = rateLimit({ windowMs: 900_000, max: 10, standardHeaders: true, legacyHeaders: false, validate: { xForwardedForHeader: false }, message: { error: "Too many login attempts" } });
+const authRefreshLimiter = rateLimit({ windowMs: 900_000, max: 30, standardHeaders: true, legacyHeaders: false, validate: { xForwardedForHeader: false }, message: { error: "Too many refresh attempts" } });
+
+app.use("/api/v1/auth/login", authLoginLimiter);
+app.use("/api/v1/auth/refresh", authRefreshLimiter);
+
+// Body parser AFTER rate limit
+app.use(express.json({ limit: "64kb" }));
+app.use(responseEnvelope);
+app.use(express.urlencoded({ extended: true }));
+app.use(csrf);
+app.use(morgan(":method :url :status :res[content-length] - :response-time ms reqId=:req[x-request-id]", { stream: { write: m => logger.info(m.trim()) } }));
+
+// ─── Health & metrics ─────────────────────────────────────────────────────────
+app.get("/health", async (req, res) => {
+  try {
+    const [db, redis] = await Promise.all([dbHealth(), redisHealth()]);
+    let partitions_ok = true;
+    try {
+      const ph = await dbQuery(`SELECT partitions_ok FROM partition_health WHERE partitions_ok = false LIMIT 1`);
+      if (ph.rows.length) partitions_ok = false;
+    } catch (_) {}
+    const mem = process.memoryUsage();
+    const status = (db && partitions_ok) ? "ok" : "degraded";
+    res.status(db ? 200 : 503).json({
       status,
-      database:db?"ok":"error",
+      database: db ? "ok" : "error",
       redis,
-      uptime_seconds:Math.floor(process.uptime()),
-      version:"2.1.0-enterprise",
-      memory:{heap_used_mb:Math.round(mem.heapUsed/1024/1024),heap_total_mb:Math.round(mem.heapTotal/1024/1024),rss_mb:Math.round(mem.rss/1024/1024)},
-      node_version:process.version,
-      pid:process.pid,
-      timestamp:new Date().toISOString()
+      partitions_ok,
+      uptime_seconds: Math.floor(process.uptime()),
+      version: "2.1.0-enterprise",
+      memory: { heap_used_mb: Math.round(mem.heapUsed / 1024 / 1024), heap_total_mb: Math.round(mem.heapTotal / 1024 / 1024), rss_mb: Math.round(mem.rss / 1024 / 1024) },
+      node_version: process.version,
+      pid: process.pid,
+      timestamp: new Date().toISOString(),
     });
-  }catch(e){res.status(503).json({status:"error",error:e.message});}
+  } catch (e) { res.status(503).json({ status: "error", error: e.message }); }
 });
 
-// Prometheus-compatible text metrics (Task 5.2)
-const {query:dbQuery}=require("./config/database");
-app.get("/metrics",async(req,res)=>{
-  try{
-    const mem=process.memoryUsage();
-    const uptime=Math.floor(process.uptime());
-    // Guardian-specific metrics
-    let guardianLines=[];
-    try{
-      const[devices,panics]=await Promise.all([
+app.get("/metrics", async (req, res) => {
+  try {
+    const mem = process.memoryUsage();
+    const uptime = Math.floor(process.uptime());
+    let guardianLines = [];
+    try {
+      const [devices, panics] = await Promise.all([
         dbQuery("SELECT COUNT(*) AS n FROM guardian_devices WHERE deleted_at IS NULL AND status='active'"),
-        dbQuery("SELECT COUNT(*) AS n FROM panic_events WHERE resolved_at IS NULL")
+        dbQuery("SELECT COUNT(*) AS n FROM panic_events WHERE resolved_at IS NULL"),
       ]);
-      guardianLines=[
-        "# HELP guardian_devices_active Active guardian devices",
-        "# TYPE guardian_devices_active gauge",
-        "guardian_devices_active "+devices.rows[0].n,
-        "# HELP guardian_panics_active Unresolved panic events",
-        "# TYPE guardian_panics_active gauge",
-        "guardian_panics_active "+panics.rows[0].n,
+      guardianLines = [
+        "# HELP guardian_devices_active Active guardian devices", "# TYPE guardian_devices_active gauge",
+        "guardian_devices_active " + devices.rows[0].n,
+        "# HELP guardian_panics_active Unresolved panic events", "# TYPE guardian_panics_active gauge",
+        "guardian_panics_active " + panics.rows[0].n,
       ];
-    }catch(_){}
-    const lines=[
-      "# HELP process_uptime_seconds Process uptime in seconds",
-      "# TYPE process_uptime_seconds counter",
-      "process_uptime_seconds "+uptime,
-      "# HELP process_heap_used_bytes V8 heap used",
-      "# TYPE process_heap_used_bytes gauge",
-      "process_heap_used_bytes "+mem.heapUsed,
-      "# HELP process_rss_bytes Resident set size",
-      "# TYPE process_rss_bytes gauge",
-      "process_rss_bytes "+mem.rss,
+    } catch (_) {}
+    let queueLines = [];
+    try {
+      const { getQueues } = require("./config/queue");
+      const queues = getQueues();
+      for (const [name, q] of Object.entries(queues)) {
+        if (!q) continue;
+        const dead = await q.getFailedCount();
+        queueLines.push(
+          `# HELP bullmq_dead_jobs Dead jobs in ${name} queue`, `# TYPE bullmq_dead_jobs gauge`,
+          `bullmq_dead_jobs{queue="${name}"} ${dead}`
+        );
+      }
+    } catch (_) {}
+    const lines = [
+      "# HELP process_uptime_seconds Process uptime", "# TYPE process_uptime_seconds counter", "process_uptime_seconds " + uptime,
+      "# HELP process_heap_used_bytes V8 heap used", "# TYPE process_heap_used_bytes gauge", "process_heap_used_bytes " + mem.heapUsed,
+      "# HELP process_rss_bytes Resident set size", "# TYPE process_rss_bytes gauge", "process_rss_bytes " + mem.rss,
       ...guardianLines,
+      ...queueLines,
     ];
-    res.set("Content-Type","text/plain; version=0.0.4; charset=utf-8");
-    res.send(lines.join("\n")+"\n");
-  }catch(e){res.status(500).send("# error: "+e.message);}
+    res.set("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
+    res.send(lines.join("\n") + "\n");
+  } catch (e) { res.status(500).send("# error: " + e.message); }
 });
 
-// Core routes
-["auth","vehicles","convoys","alerts","messages","analytics","geofences","devices","incidents","rules","gps","sensors","ai","apikeys","reports","documents","webhooks","guardian"]
-  .forEach(r=>app.use("/api/v1/"+r,require("./routes/"+r)));
+// ─── Routes ───────────────────────────────────────────────────────────────────
+["auth", "vehicles", "convoys", "alerts", "messages", "analytics", "geofences", "devices",
+  "incidents", "rules", "gps", "sensors", "ai", "apikeys", "reports", "documents", "webhooks", "guardian", "realtime", "admin"]
+  .forEach(r => app.use("/api/v1/" + r, require("./routes/" + r)));
 
-// Guardian CFO device routes (Phase C)
-try{app.use("/api/v1/guardian/cfo",require("./routes/guardianCfo"));logger.info("Route loaded: /api/v1/guardian/cfo");}
-catch(e){logger.warn("Guardian CFO route failed: "+e.message);}
+try { app.use("/api/v1/guardian/cfo", require("./routes/guardianCfo")); logger.info("Route loaded: /api/v1/guardian/cfo"); }
+catch (e) { logger.warn("Guardian CFO route failed: " + e.message); }
 
-// GDPR / Data Retention (Task 5.3)
-try{app.use("/api/v1/gdpr",require("./routes/gdpr"));logger.info("Route loaded: /api/v1/gdpr");}
-catch(e){logger.warn("GDPR route failed: "+e.message);}
+try { app.use("/api/v1/gdpr", require("./routes/gdpr")); logger.info("Route loaded: /api/v1/gdpr"); }
+catch (e) { logger.warn("GDPR route failed: " + e.message); }
 
-// Enterprise routes
-["drivers","shipments","finance","maintenance","riskzones"]
-  .forEach(r=>{
-    try{app.use("/api/v1/"+r,require("./routes/"+r));logger.info("Route loaded: /api/v1/"+r);}
-    catch(e){logger.warn("Route not found: "+r+" — "+e.message);}
-  });
+["drivers", "shipments", "finance", "maintenance", "riskzones", "field-officers"].forEach(r => {
+  try { app.use("/api/v1/" + r, require("./routes/" + r)); logger.info("Route loaded: /api/v1/" + r); }
+  catch (e) { logger.warn("Route not found: " + r + " — " + e.message); }
+});
 
-app.use("/api/v1/sync",(req,res)=>res.json({ok:true,processed:0}));
-app.use((req,res)=>res.status(404).json({error:req.method+" "+req.path+" not found"}));
+try { app.use("/api/v1/routes", require("./routes/routes")); logger.info("Route loaded: /api/v1/routes"); }
+catch (e) { logger.warn("Routes route failed: " + e.message); }
+
+try { app.use("/api/v1/portal/auth", require("./routes/portalAuth")); logger.info("Route loaded: /api/v1/portal/auth"); }
+catch(e) { logger.error("Route failed: /api/v1/portal/auth", e); }
+
+try { app.use("/api/v1/portal", require("./routes/portal")); logger.info("Route loaded: /api/v1/portal"); }
+catch (e) { logger.warn("Portal route failed: " + e.message); }
+
+try { app.use("/api/v1/dashboard", require("./routes/dashboard")); logger.info("Route loaded: /api/v1/dashboard"); }
+catch (e) { logger.warn("Dashboard route failed: " + e.message); }
+
+app.use("/api/v1/sync", (req, res) => res.json({ ok: true, processed: 0 }));
+app.use((req, res) => res.status(404).json({ error: req.method + " " + req.path + " not found" }));
+if (process.env.SENTRY_DSN) Sentry.setupExpressErrorHandler(app);
 app.use(errorHandler);
 
-// Partition roller — runs daily at 02:00 UTC to create next month's partitions
-// and drop partitions older than the GDPR retention window.
+// ─── Cron jobs ────────────────────────────────────────────────────────────────
+if (!process.env.GENERATE_OPENAPI && process.env.NODE_ENV !== 'test')
 try {
-  const cron = require('node-cron');
-  const { run: rollPartitions } = require('../scripts/partition-roller');
-  cron.schedule('0 2 * * *', () => {
-    rollPartitions().catch(err => logger.error('Partition roller error: ' + err.message));
-  });
-  // Also run at startup so a fresh deploy doesn't wait until 02:00.
-  rollPartitions().catch(err => logger.warn('Partition roller startup run: ' + err.message));
-  logger.info('Partition roller scheduled (daily 02:00 UTC)');
-} catch (e) {
-  logger.warn('Partition roller not started: ' + e.message + ' — install node-cron');
-}
+  const cron = require("node-cron");
+  const PARTITION_TABLES = ["gps_logs", "audit_logs", "outbox"];
+  async function rollPartitions() {
+    for (const t of PARTITION_TABLES) {
+      try {
+        await dbQuery(`SELECT ensure_future_partitions($1, 3)`, [t]);
+        await dbQuery(
+          `INSERT INTO partition_health (table_name, checked_at, partitions_ok)
+           VALUES ($1, NOW(), true)
+           ON CONFLICT (table_name) DO UPDATE SET checked_at = NOW(), partitions_ok = true`,
+          [t]
+        );
+      } catch (err) {
+        logger.warn(`Partition roll failed for ${t}: ${err.message}`);
+        try {
+          await dbQuery(
+            `INSERT INTO partition_health (table_name, checked_at, partitions_ok)
+             VALUES ($1, NOW(), false)
+             ON CONFLICT (table_name) DO UPDATE SET checked_at = NOW(), partitions_ok = false`,
+            [t]
+          );
+        } catch (_) {}
+      }
+    }
+  }
+  async function archiveOldPartitions() {
+    const { rows } = await dbQuery(`SELECT table_name, retain_months FROM partition_retention`).catch(() => ({ rows: [] }));
+    for (const { table_name, retain_months } of rows) {
+      try {
+        const r = await dbQuery(`SELECT drop_old_partitions($1, $2)`, [table_name, retain_months]);
+        const dropped = r.rows[0]?.drop_old_partitions ?? 0;
+        if (dropped > 0) logger.info(`Partition archival: dropped ${dropped} old partition(s) for ${table_name}`);
+      } catch (err) {
+        logger.warn(`Partition archival failed for ${table_name}: ${err.message}`);
+      }
+    }
+  }
+  cron.schedule("0 * * * *", () => rollPartitions().catch(err => logger.error("Partition roller error: " + err.message)));
+  cron.schedule("0 3 * * *", () => archiveOldPartitions().catch(err => logger.error("Partition archival error: " + err.message)));
+  rollPartitions().catch(err => logger.warn("Partition roller startup run: " + err.message));
+  logger.info("Partition roller scheduled (hourly, T3.2) + archival (daily 03:00, T6.5)");
+} catch (e) { logger.warn("Partition roller not started: " + e.message); }
 
-// Base64 photo backfill — runs daily at 03:00 UTC, migrates recent data-URI photos to R2.
-try {
-  const cron = require('node-cron');
-  const { run: backfillPhotos } = require('../scripts/backfill-base64-photos');
-  cron.schedule('0 3 * * *', () => {
-    backfillPhotos().catch(err => logger.error('Photo backfill error: ' + err.message));
-  });
-  logger.info('Photo backfill scheduled (daily 03:00 UTC)');
-} catch (e) {
-  logger.warn('Photo backfill not scheduled: ' + e.message);
-}
+// T3.7: Photo backfill cron removed — data URI writes are now blocked at the
+// boundary and a DB CHECK constraint is in migration 008. Run the backfill
+// script manually (node scripts/backfill-base64-photos.js) if legacy rows remain.
 
-// D3: EOD finalization sweep — every 15 min, enqueues generateReport for completed
-// or past-deadline daily reports on active convoys.
+if (!process.env.GENERATE_OPENAPI && process.env.NODE_ENV !== 'test')
 try {
-  const cron = require('node-cron');
-  cron.schedule('*/15 * * * *', async () => {
+  const cron = require("node-cron");
+  cron.schedule("*/15 * * * *", async () => {
     try {
-      const { isCfoModuleEnabled } = require('./utils/cfoFlag');
+      const { isCfoModuleEnabled } = require("./utils/cfoFlag");
       if (!await isCfoModuleEnabled()) return;
-
-      const { query: dbQuery } = require('./config/database');
-      const { getQueues } = require('./config/queue');
+      const { getQueues } = require("./config/queue");
       const { convoyReportQueue } = getQueues();
       if (!convoyReportQueue) return;
-
-      // Find active convoys and their incomplete reports for dates that have passed
       const result = await dbQuery(
         `SELECT cdr.convoy_id, cdr.report_date::text, c.timezone
-         FROM convoy_daily_reports cdr
-         JOIN convoys c ON c.id = cdr.convoy_id
-         WHERE c.status = 'active'
-           AND c.deleted_at IS NULL
-           AND cdr.status IN ('complete', 'partial')
-           AND cdr.pdf_url IS NULL
-           AND (
-             cdr.report_date < CURRENT_DATE
-             OR (
-               cdr.report_date = CURRENT_DATE
-               AND NOW() AT TIME ZONE COALESCE(c.timezone,'UTC') > (cdr.report_date + INTERVAL '1 day')::timestamptz AT TIME ZONE COALESCE(c.timezone,'UTC')
-             )
-           )`,
+         FROM convoy_daily_reports cdr JOIN convoys c ON c.id = cdr.convoy_id
+         WHERE c.status = 'active' AND c.deleted_at IS NULL
+           AND cdr.status IN ('complete', 'partial') AND cdr.pdf_url IS NULL
+           AND (cdr.report_date < CURRENT_DATE
+             OR (cdr.report_date = CURRENT_DATE
+               AND NOW() AT TIME ZONE COALESCE(c.timezone,'UTC') > (cdr.report_date + INTERVAL '1 day')::timestamptz AT TIME ZONE COALESCE(c.timezone,'UTC')))`,
         []
       );
-
       for (const row of result.rows) {
-        await convoyReportQueue.add('generateReport', {
-          convoy_id: row.convoy_id,
-          report_date: row.report_date,
-        }, { jobId: `genReport:${row.convoy_id}:${row.report_date}`, removeOnComplete: { count: 200 } });
+        await convoyReportQueue.add("generateReport", { convoy_id: row.convoy_id, report_date: row.report_date },
+          { jobId: `genReport:${row.convoy_id}:${row.report_date}`, removeOnComplete: { count: 200 } });
       }
-
-      if (result.rows.length) {
-        logger.info(`EOD sweep: queued ${result.rows.length} generateReport jobs`);
-      }
-    } catch (err) {
-      logger.error('EOD finalization sweep error: ' + err.message);
-    }
+      if (result.rows.length) logger.info(`EOD sweep: queued ${result.rows.length} generateReport jobs`);
+    } catch (err) { logger.error("EOD finalization sweep error: " + err.message); }
   });
-  logger.info('CFO EOD finalization sweep scheduled (*/15 * * * *)');
-} catch (e) {
-  logger.warn('CFO EOD sweep not scheduled: ' + e.message);
+  logger.info("CFO EOD finalization sweep scheduled (*/15 * * * *)");
+} catch (e) { logger.warn("CFO EOD sweep not scheduled: " + e.message); }
+
+// BL-010: GDPR scheduled purge — weekly at 04:00 UTC Sunday
+// Executes pending erasure requests older than 30 days.
+if (!process.env.GENERATE_OPENAPI && process.env.NODE_ENV !== 'test')
+try {
+  const cron = require("node-cron");
+  cron.schedule("0 4 * * 0", async () => {
+    try {
+      const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const pending = await dbQuery(
+        `SELECT id FROM users WHERE deletion_requested_at IS NOT NULL AND deletion_requested_at < $1 LIMIT 100`,
+        [cutoff]
+      );
+      for (const { id } of pending.rows) {
+        await dbQuery(
+          `UPDATE users SET
+             email = 'deleted-' || id || '@purged.invalid',
+             name  = '[deleted]',
+             deletion_requested_at = NULL,
+             deleted_at = NOW()
+           WHERE id = $1 AND deleted_at IS NULL`,
+          [id]
+        );
+        await dbQuery(`DELETE FROM refresh_tokens WHERE user_id = $1`, [id]);
+        logger.info(`GDPR purge: anonymised user ${id}`);
+      }
+      if (pending.rows.length) logger.info(`GDPR weekly purge: processed ${pending.rows.length} user(s)`);
+    } catch (err) { logger.error("GDPR purge cron error: " + err.message); }
+  });
+  logger.info("GDPR weekly purge scheduled (Sundays 04:00 UTC, BL-010)");
+} catch (e) { logger.warn("GDPR purge cron not started: " + e.message); }
+
+// ─── Start server ─────────────────────────────────────────────────────────────
+// GENERATE_OPENAPI=1 skips server.listen so the script can introspect routes safely
+// NODE_ENV=test skips listen/queues/cron so integration tests don't collide on port 5000
+if (!process.env.GENERATE_OPENAPI && process.env.NODE_ENV !== 'test') {
+  const PORT = parseInt(process.env.PORT) || 5000;
+  createQueues();
+  server.listen(PORT, () => {
+    logger.info("FleetOps Enterprise v2.1 running on port " + PORT + " [" + (process.env.NODE_ENV || "development") + "]");
+    // Startup schema check — every column touched by POST /auth/login
+    dbQuery(`
+      SELECT
+        (SELECT COUNT(*) FROM information_schema.tables
+          WHERE table_name = 'refresh_tokens') AS has_refresh_tokens,
+        (SELECT COUNT(*) FROM information_schema.tables
+          WHERE table_name = 'partition_health') AS has_partition_health,
+        (SELECT COUNT(*) FROM information_schema.routines
+          WHERE routine_name = 'ensure_future_partitions') AS has_partition_fn,
+        (SELECT COUNT(*) FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'org_id') AS has_org_id,
+        (SELECT COUNT(*) FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'status') AS has_status,
+        (SELECT COUNT(*) FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'deleted_at') AS has_deleted_at,
+        (SELECT COUNT(*) FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'password_hash') AS has_password_hash,
+        (SELECT COUNT(*) FROM information_schema.columns
+          WHERE table_name = 'users' AND column_name = 'deletion_requested_at') AS has_deletion_requested_at
+    `).then(r => {
+      const c = r.rows[0];
+      const missing = [];
+      if (c.has_refresh_tokens    === '0') missing.push('refresh_tokens TABLE');
+      if (c.has_partition_health  === '0') missing.push('partition_health TABLE');
+      if (c.has_partition_fn      === '0') missing.push('ensure_future_partitions FUNCTION');
+      if (c.has_org_id            === '0') missing.push('users.org_id');
+      if (c.has_status            === '0') missing.push('users.status');
+      if (c.has_deleted_at        === '0') missing.push('users.deleted_at');
+      if (c.has_password_hash     === '0') missing.push('users.password_hash');
+      if (c.has_deletion_requested_at === '0') missing.push('users.deletion_requested_at (GDPR cron)');
+      if (missing.length) {
+        logger.error('SCHEMA MISSING — login will 500: ' + missing.join(', '));
+      } else {
+        logger.info('Schema check OK: all login-critical objects present');
+      }
+    }).catch(e => logger.warn('Startup schema check failed: ' + e.message));
+  });
 }
 
-const PORT=parseInt(process.env.PORT)||5000;
-createQueues();
-server.listen(PORT,()=>logger.info("FleetOps Enterprise v2.1 running on port "+PORT+" ["+( process.env.NODE_ENV||"development")+"]"));
+if (!process.env.GENERATE_OPENAPI)
+  dbQuery(
+    `INSERT INTO guardian_config (key, value_int, updated_at) VALUES ('cfo_module_enabled', 1, NOW())
+     ON CONFLICT (key) DO UPDATE SET value_int = 1, updated_at = NOW()`
+  ).then(() => logger.info("CFO module enabled in DB")).catch(e => logger.warn("CFO module DB flag skipped: " + e.message));
 
-// Ensure CFO module flag is enabled in DB on every startup (idempotent)
-dbQuery(
-  `INSERT INTO guardian_config (key, value_int, updated_at)
-   VALUES ('cfo_module_enabled', 1, NOW())
-   ON CONFLICT (key) DO UPDATE SET value_int = 1, updated_at = NOW()`
-).then(() => logger.info('CFO module enabled in DB'))
- .catch(e => logger.warn('CFO module DB flag skipped: ' + e.message));
-
-// Start BullMQ workers in-process when Redis is available (avoids needing a separate worker dyno)
-if(process.env.REDIS_URL && process.env.DISABLE_REDIS !== 'true'){
-  try{
-    const{startGPSWorker}=require('./workers/gpsWorker');
-    const{startAlertWorker}=require('./workers/alertWorker');
-    const{startNotificationWorker}=require('./workers/notificationWorker');
-    const{startConvoyReportWorker}=require('./workers/convoyReportWorker');
-    const workers=[startGPSWorker(),startAlertWorker(),startNotificationWorker(),...startConvoyReportWorker()];
+// ─── Workers (in-process only when ENABLE_INPROCESS_WORKERS=true, T3.1) ──────
+// In production, workers run as separate processes via worker.*.js entrypoints.
+if (process.env.ENABLE_INPROCESS_WORKERS === "true" && process.env.REDIS_URL && process.env.DISABLE_REDIS !== "true") {
+  try {
+    const { startGPSWorker } = require("./workers/gpsWorker");
+    const { startAlertWorker } = require("./workers/alertWorker");
+    const { startNotificationWorker } = require("./workers/notificationWorker");
+    const { startConvoyReportWorker } = require("./workers/convoyReportWorker");
+    const workers = [startGPSWorker(), startAlertWorker(), startNotificationWorker(), ...startConvoyReportWorker()];
+    global._workers = workers;
     logger.info(`Workers started in-process: ${workers.length} active`);
-    process.on("SIGTERM",async()=>{await Promise.all(workers.map(w=>w.close()));server.close(()=>process.exit(0));});
-    process.on("SIGINT",async()=>{await Promise.all(workers.map(w=>w.close()));server.close(()=>process.exit(0));});
-  }catch(e){
-    logger.warn('Worker startup failed: '+e.message+' — continuing without workers');
-    process.on("SIGTERM",()=>server.close(()=>process.exit(0)));
-    process.on("SIGINT",()=>server.close(()=>process.exit(0)));
+  } catch (e) {
+    logger.warn("Worker startup failed: " + e.message + " — continuing without workers");
   }
-}else{
-  process.on("SIGTERM",()=>server.close(()=>process.exit(0)));
-  process.on("SIGINT",()=>server.close(()=>process.exit(0)));
+} else if (process.env.NODE_ENV !== 'test' && !process.env.GENERATE_OPENAPI && (!process.env.ENABLE_INPROCESS_WORKERS || process.env.ENABLE_INPROCESS_WORKERS !== "true")) {
+  logger.info("Workers not started in-process — run standalone worker processes (T3.1)");
 }
-module.exports={app,server,io};
+
+process.on("SIGTERM", () => shutdown(0));
+process.on("SIGINT", () => shutdown(0));
+
+module.exports = { app, server };

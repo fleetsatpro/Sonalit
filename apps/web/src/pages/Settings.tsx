@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
-import { useAuthStore } from '../stores/auth.js';
-import { Settings as SettingsIcon, Key, Shield, Copy, Trash2, Plus, X } from 'lucide-react';
+import { useAuthStore, getAccessToken } from '../stores/auth.js';
+import { Settings as SettingsIcon, Key, Shield, Copy, Trash2, Plus, X, MessageCircle } from 'lucide-react';
 
 interface ApiKey {
   id: string;
@@ -36,7 +36,7 @@ interface CreateApiKeyPayload {
 
 const AVAILABLE_SCOPES = ['read:fleet', 'write:fleet', 'read:incidents', 'write:incidents', 'read:reports', 'admin'];
 
-const INPUT_CLS = 'w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500';
+const INPUT_CLS = 'w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500';
 
 function SectionCard({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -53,7 +53,6 @@ function SectionCard({ title, icon, children }: { title: string; icon: React.Rea
 function ProfileSection() {
   const user = useAuthStore((s) => s.user);
   const setAuth = useAuthStore((s) => s.setAuth);
-  const token = useAuthStore((s) => s.token);
   const [name, setName] = useState(user?.name ?? '');
   const [success, setSuccess] = useState(false);
 
@@ -61,6 +60,7 @@ function ProfileSection() {
     mutationFn: (payload: UpdateNamePayload) =>
       api.patch<typeof user>('/auth/me', payload),
     onSuccess: (res) => {
+      const token = getAccessToken();
       if (res.data && token) setAuth(token, res.data);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
@@ -68,7 +68,7 @@ function ProfileSection() {
   });
 
   return (
-    <SectionCard title="Profile" icon={<SettingsIcon size={16} className="text-blue-400" />}>
+    <SectionCard title="Profile" icon={<SettingsIcon size={16} className="text-orange-400" />}>
       <div className="space-y-3">
         <div>
           <label className="block text-xs text-slate-400 mb-1">Name</label>
@@ -93,7 +93,7 @@ function ProfileSection() {
         <button
           onClick={() => mutation.mutate({ name })}
           disabled={mutation.isPending || !name.trim()}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm font-medium"
+          className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 rounded text-sm font-medium"
         >
           {mutation.isPending ? 'Saving…' : 'Save Profile'}
         </button>
@@ -122,7 +122,7 @@ function ChangePasswordSection() {
   const mismatch = form.confirm.length > 0 && form.confirm !== form.new_password;
 
   return (
-    <SectionCard title="Change Password" icon={<Shield size={16} className="text-blue-400" />}>
+    <SectionCard title="Change Password" icon={<Shield size={16} className="text-orange-400" />}>
       <div className="space-y-3">
         {(['old_password', 'new_password', 'confirm'] as const).map((field) => (
           <div key={field}>
@@ -143,7 +143,7 @@ function ChangePasswordSection() {
         <button
           onClick={() => mutation.mutate(form)}
           disabled={mutation.isPending || mismatch || !form.old_password || !form.new_password}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm font-medium"
+          className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 rounded text-sm font-medium"
         >
           {mutation.isPending ? 'Updating…' : 'Change Password'}
         </button>
@@ -197,7 +197,7 @@ function ApiKeysSection() {
   };
 
   return (
-    <SectionCard title="API Keys" icon={<Key size={16} className="text-blue-400" />}>
+    <SectionCard title="API Keys" icon={<Key size={16} className="text-orange-400" />}>
       <div className="space-y-3">
         {isLoading && <p className="text-slate-400 text-sm">Loading…</p>}
         {keys?.map((k) => (
@@ -274,7 +274,7 @@ function ApiKeysSection() {
             <button
               onClick={() => createMutation.mutate(newKey)}
               disabled={createMutation.isPending || !newKey.name}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm"
+              className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 rounded text-sm"
             >
               {createMutation.isPending ? 'Creating…' : 'Create Key'}
             </button>
@@ -282,7 +282,7 @@ function ApiKeysSection() {
         ) : (
           <button
             onClick={() => setShowCreate(true)}
-            className="flex items-center gap-1 text-sm text-blue-400 hover:text-blue-300"
+            className="flex items-center gap-1 text-sm text-orange-400 hover:text-orange-300"
           >
             <Plus size={14} /> New API Key
           </button>
@@ -315,13 +315,13 @@ function TotpSection() {
   });
 
   return (
-    <SectionCard title="Two-Factor Authentication (TOTP)" icon={<Shield size={16} className="text-blue-400" />}>
+    <SectionCard title="Two-Factor Authentication (TOTP)" icon={<Shield size={16} className="text-orange-400" />}>
       {!showSetup ? (
         <div>
           {verified && <p className="text-green-400 text-sm mb-2">TOTP enabled successfully.</p>}
           <button
             onClick={() => setShowSetup(true)}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium"
+            className="px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded text-sm font-medium"
           >
             Set Up Authenticator
           </button>
@@ -349,7 +349,7 @@ function TotpSection() {
                 <button
                   onClick={() => verifyMutation.mutate(totpCode)}
                   disabled={verifyMutation.isPending || totpCode.length !== 6}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm font-medium"
+                  className="px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 rounded text-sm font-medium"
                 >
                   {verifyMutation.isPending ? 'Verifying…' : 'Verify'}
                 </button>
@@ -368,17 +368,76 @@ function TotpSection() {
   );
 }
 
+interface WhatsAppConfig {
+  phone_number_id: string | null;
+  business_id: string | null;
+  active: boolean;
+}
+
+function WhatsAppSection() {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({ phone_number_id: '', access_token: '', verify_token: '', business_id: '', active: false });
+  const [editing, setEditing] = useState(false);
+
+  const { data } = useQuery<{ data: WhatsAppConfig | null }>({
+    queryKey: ['whatsapp-config'],
+    queryFn: () => api.get('/settings/whatsapp').then(r => r.data),
+  });
+
+  const saveMut = useMutation({
+    mutationFn: (body: object) => api.put('/settings/whatsapp', body),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['whatsapp-config'] }); setEditing(false); },
+  });
+
+  const config = data?.data;
+
+  return (
+    <SectionCard title="WhatsApp Cloud API" icon={<MessageCircle size={16} className="text-green-400" />}>
+      {!editing ? (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-slate-300">{config?.phone_number_id ? `Phone ID: ${config.phone_number_id}` : 'Not configured'}</p>
+              <p className="text-xs text-slate-500">{config?.active ? '● Active' : '○ Inactive'}</p>
+            </div>
+            <button onClick={() => { setForm({ phone_number_id: config?.phone_number_id ?? '', access_token: '', verify_token: '', business_id: config?.business_id ?? '', active: config?.active ?? false }); setEditing(true); }} className="text-xs text-orange-400 hover:text-orange-300">Configure</button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <input placeholder="Phone Number ID" value={form.phone_number_id} onChange={e => setForm(p => ({ ...p, phone_number_id: e.target.value }))} className={INPUT_CLS} />
+          <input placeholder="Access Token (leave blank to keep existing)" type="password" value={form.access_token} onChange={e => setForm(p => ({ ...p, access_token: e.target.value }))} className={INPUT_CLS} />
+          <input placeholder="Webhook Verify Token" value={form.verify_token} onChange={e => setForm(p => ({ ...p, verify_token: e.target.value }))} className={INPUT_CLS} />
+          <input placeholder="Business ID (optional)" value={form.business_id} onChange={e => setForm(p => ({ ...p, business_id: e.target.value }))} className={INPUT_CLS} />
+          <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+            <input type="checkbox" checked={form.active} onChange={e => setForm(p => ({ ...p, active: e.target.checked }))} />
+            Enable WhatsApp broadcasts
+          </label>
+          <div className="flex gap-3 justify-end">
+            <button onClick={() => setEditing(false)} className="text-sm text-slate-400 hover:text-white">Cancel</button>
+            <button onClick={() => saveMut.mutate(form)} disabled={saveMut.isPending} className="text-sm bg-orange-600 hover:bg-orange-500 disabled:opacity-40 text-white px-4 py-1.5 rounded-lg">
+              {saveMut.isPending ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+          {saveMut.isError && <p className="text-red-400 text-xs">Failed to save WhatsApp config.</p>}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
 export default function Settings() {
   return (
     <div className="space-y-6 max-w-2xl">
       <div className="flex items-center gap-2">
-        <SettingsIcon size={20} className="text-blue-400" />
+        <SettingsIcon size={20} className="text-orange-400" />
         <h1 className="text-xl font-bold">Settings</h1>
       </div>
       <ProfileSection />
       <ChangePasswordSection />
       <ApiKeysSection />
       <TotpSection />
+      <WhatsAppSection />
     </div>
   );
 }

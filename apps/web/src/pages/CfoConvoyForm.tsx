@@ -1,13 +1,19 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useForm, Controller, type SubmitHandler, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useNavigate, useParams } from '@tanstack/react-router';
+import { useNavigate, useParams, Link } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, AlertCircle, Route } from 'lucide-react';
+import { Loader2, AlertCircle, Route, ShieldAlert } from 'lucide-react';
+import Dexie from 'dexie';
 import { api } from '../lib/api.js';
 import { useAuthStore } from '../stores/auth.js';
 import type { Convoy, Vehicle, Driver } from '@sonalit/contracts';
+
+const draftDb = new Dexie('sonalit-drafts');
+draftDb.version(1).stores({ drafts: 'key' });
+const draftsTable = (draftDb as Dexie & { drafts: Dexie.Table<{ key: string; data: unknown }, string> }).drafts;
+const DRAFT_KEY = 'cfo-convoy-form';
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -50,7 +56,7 @@ function Field({ label, error, children }: { label: string; error?: string | und
   );
 }
 
-const INPUT_CLS = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500';
+const INPUT_CLS = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500';
 
 // ---------------------------------------------------------------------------
 // Multi-select checkbox list
@@ -98,6 +104,7 @@ export default function CfoConvoyForm(): React.ReactElement {
   const user = useAuthStore((s) => s.user);
   const params = useParams({ strict: false }) as { id?: string };
   const isEdit = Boolean(params.id);
+  const [, setDraftRestored] = useState<boolean | null>(null);
 
   // Fetch existing convoy when editing
   const { data: existing, isLoading: existingLoading } = useQuery<Convoy>({
@@ -133,7 +140,9 @@ export default function CfoConvoyForm(): React.ReactElement {
     handleSubmit,
     control,
     setError,
-    formState: { errors },
+    reset,
+    watch,
+    formState: { errors, isDirty },
   } = useForm<ConvoyForm>({
     resolver: zodResolver(convoyFormSchema) as Resolver<ConvoyForm>,
     defaultValues: { seal_count_per_truck: 0, vehicle_ids: [] as string[], driver_ids: [] as string[] },
@@ -153,6 +162,29 @@ export default function CfoConvoyForm(): React.ReactElement {
       : {}),
   });
 
+  // T4.4: Draft persistence — restore on new form mount
+  const draftTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (isEdit) { setDraftRestored(false); return; }
+    draftsTable.get(DRAFT_KEY).then((row) => {
+      if (row && confirm('Restore unsaved draft?')) {
+        reset(row.data as ConvoyForm);
+        setDraftRestored(true);
+      } else {
+        setDraftRestored(false);
+      }
+    }).catch(() => setDraftRestored(false));
+  }, [isEdit, reset]);
+
+  const formValues = watch();
+  useEffect(() => {
+    if (!isDirty || isEdit) return;
+    draftTimerRef.current = setInterval(() => {
+      draftsTable.put({ key: DRAFT_KEY, data: formValues }).catch(() => {});
+    }, 2000);
+    return () => { if (draftTimerRef.current) clearInterval(draftTimerRef.current); };
+  }, [isDirty, isEdit, formValues]);
+
   const mutation = useMutation<Convoy, Error, ConvoyForm>({
     mutationFn: async (data) => {
       const payload = { ...data, org_id: user?.org_id };
@@ -165,6 +197,7 @@ export default function CfoConvoyForm(): React.ReactElement {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['convoys'] });
+      draftsTable.delete(DRAFT_KEY).catch(() => {});
       await navigate({ to: '/convoys' });
     },
     onError: (err) => {
@@ -186,9 +219,19 @@ export default function CfoConvoyForm(): React.ReactElement {
 
   return (
     <div className="p-6 max-w-2xl">
-      <div className="flex items-center gap-2 mb-6">
-        <Route className="w-5 h-5 text-indigo-400" />
-        <h1 className="text-xl font-bold text-white">{isEdit ? 'Edit Convoy' : 'New Convoy'}</h1>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-2">
+          <Route className="w-5 h-5 text-orange-400" />
+          <h1 className="text-xl font-bold text-white">{isEdit ? 'Edit Convoy' : 'New Convoy'}</h1>
+        </div>
+        {isEdit && params.id && (
+          <Link
+            to="/route-analysis"
+            className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-orange-400 border border-white/10 hover:border-orange-500/40 rounded-lg px-3 py-1.5 transition-colors"
+          >
+            <ShieldAlert size={13} /> Route Safety Analysis
+          </Link>
+        )}
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-5">
@@ -262,7 +305,7 @@ export default function CfoConvoyForm(): React.ReactElement {
           <button
             type="submit"
             disabled={mutation.isPending}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white font-medium px-5 py-2.5 rounded-lg text-sm transition-colors"
+            className="flex items-center gap-2 bg-orange-600 hover:bg-orange-500 disabled:opacity-60 text-white font-medium px-5 py-2.5 rounded-lg text-sm transition-colors"
           >
             {mutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
             {isEdit ? 'Update Convoy' : 'Create Convoy'}

@@ -25,10 +25,10 @@ function createQueues() {
   const connection = { host: url.hostname, port: parseInt(url.port) || 6379, password: url.password || process.env.REDIS_PASSWORD || undefined };
 
   const defaultJobOptions = {
-    attempts: parseInt(process.env.MAX_QUEUE_RETRIES) || 3,
-    backoff: { type: 'exponential', delay: 2000 },
+    attempts: 5,
+    backoff: { type: 'exponential', delay: 1000 },
     removeOnComplete: { count: 1000 },
-    removeOnFail: { count: 500 },
+    removeOnFail: false, // keep dead jobs for inspection (T3.6)
   };
 
   const onQueueError = (name) => (err) => logger.error(`Queue ${name} error: ${err.message}`);
@@ -37,15 +37,19 @@ function createQueues() {
   gpsQueue.on('error', onQueueError('gps'));
   alertQueue = new Queue('alert', { connection, defaultJobOptions });
   alertQueue.on('error', onQueueError('alert'));
-  notificationQueue = new Queue('notification', {
-    connection,
-    defaultJobOptions: { ...defaultJobOptions, attempts: 5 },
-  });
+  notificationQueue = new Queue('notification', { connection, defaultJobOptions });
   notificationQueue.on('error', onQueueError('notification'));
   convoyReportQueue = new Queue('convoyReport', { connection, defaultJobOptions });
   convoyReportQueue.on('error', onQueueError('convoyReport'));
   convoyArchiveQueue = new Queue('convoyArchive', { connection, defaultJobOptions });
   convoyArchiveQueue.on('error', onQueueError('convoyArchive'));
+
+  // Repeating job: recount partial/pending reports every 15 minutes while workers are running
+  convoyReportQueue.add(
+    'scheduledRecount',
+    {},
+    { repeat: { every: 15 * 60 * 1000 }, jobId: 'scheduledRecount', removeOnComplete: true, removeOnFail: false }
+  ).catch((err) => logger.warn(`scheduledRecount repeat registration failed: ${err.message}`));
 
   logger.info('BullMQ queues initialised: gps, alert, notification, convoyReport, convoyArchive');
 }

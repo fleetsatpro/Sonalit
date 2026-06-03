@@ -85,8 +85,8 @@ export default function RiskIntel() {
     mapRef.current = new maplibregl.Map({
       container: mapContainer.current,
       style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
-      center: [36.817, -1.286],
-      zoom: 8,
+      center: [27.5, -11.5],
+      zoom: 5,
     });
     mapRef.current.addControl(new maplibregl.NavigationControl(), 'top-right');
     return () => { mapRef.current?.remove(); mapRef.current = null; };
@@ -136,8 +136,18 @@ export default function RiskIntel() {
       });
     };
 
-    if (map.loaded()) addLayers();
-    else map.once('load', addLayers);
+    const addLayersAndFit = () => {
+      addLayers();
+      // Fit bounds to actual zone locations
+      const bounds = new maplibregl.LngLatBounds();
+      (data ?? []).forEach((z) => {
+        if (z.center_lat != null && z.center_lon != null) bounds.extend([z.center_lon, z.center_lat]);
+      });
+      if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 60, maxZoom: 10, duration: 600 });
+    };
+
+    if (map.loaded()) addLayersAndFit();
+    else map.once('load', addLayersAndFit);
   }, [data]);
 
   const displayedZones = data
@@ -148,14 +158,14 @@ export default function RiskIntel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <Shield size={20} className="text-blue-400" />
+          <Shield size={20} className="text-orange-400" />
           <h1 className="text-xl font-bold">Risk Intelligence</h1>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <select
-            className="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+            className="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-orange-500"
             value={filters.risk_level}
             onChange={(e) => setFilters((f) => ({ ...f, risk_level: e.target.value as FilterParams['risk_level'] }))}
           >
@@ -166,13 +176,13 @@ export default function RiskIntel() {
           </select>
           <input
             type="date"
-            className="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+            className="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-orange-500"
             value={filters.from}
             onChange={(e) => setFilters((f) => ({ ...f, from: e.target.value }))}
           />
           <input
             type="date"
-            className="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+            className="bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-orange-500"
             value={filters.to}
             onChange={(e) => setFilters((f) => ({ ...f, to: e.target.value }))}
           />
@@ -215,9 +225,9 @@ export default function RiskIntel() {
                       {zone.risk_level}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-slate-300">{zone.event_count.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-slate-300">{(zone.event_count ?? 0).toLocaleString()}</td>
                   <td className="px-4 py-3 text-slate-400 text-xs font-mono">
-                    {zone.center_lat.toFixed(4)}, {zone.center_lon.toFixed(4)}
+                    {zone.center_lat?.toFixed(4) ?? '—'}, {zone.center_lon?.toFixed(4) ?? '—'}
                   </td>
                 </tr>
               ))}

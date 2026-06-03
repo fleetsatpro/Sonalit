@@ -1,1 +1,0 @@
-const corsOriginFn = (origin, callback) => callback(null, true);

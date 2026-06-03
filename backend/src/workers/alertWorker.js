@@ -4,10 +4,9 @@ const { query } = require('../config/database');
 const { getQueues } = require('../config/queue');
 const logger = require('../utils/logger');
 
-const COOLDOWN_MINUTES = parseInt(process.env.ALERT_COOLDOWN_MINUTES) || 10;
+const { publish } = require('../realtime/centrifugo');
 
-let io = null;
-function setIO(socketIO) { io = socketIO; }
+const COOLDOWN_MINUTES = parseInt(process.env.ALERT_COOLDOWN_MINUTES) || 10;
 
 function getRedisConnection() {
   const url = new URL(process.env.REDIS_URL || 'redis://127.0.0.1:6379');
@@ -63,16 +62,22 @@ async function fireGeofenceActions(job, alert, type, severity, vehicle_id, messa
           .replace(/\{severity\}/g,  severity);
 
         if (action.action_type === 'map_alert') {
-          if (io) {
-            io.emit('geofence:violation', {
-              alertId:      alert.id,
-              geofenceName: resolvedName,
-              vehicleId:    vehicle_id,
-              severity,
-              lat:          job.data.lat,
-              lng:          job.data.lng,
-            });
-          }
+          // geofence_actions don't have org_id; use alert's channel derived from convoy
+          const geoOrgRes = await query(
+            `SELECT c.org_id FROM alerts a JOIN convoys c ON c.id = a.convoy_id WHERE a.id = $1 LIMIT 1`,
+            [alert.id]
+          );
+          const geoOrgId = geoOrgRes.rows[0]?.org_id ?? null;
+          publish(geoOrgId ? `org#${geoOrgId}` : 'geofence:violation', {
+            type: 'alert.new',
+            alertId:      alert.id,
+            geofenceName: resolvedName,
+            vehicleId:    vehicle_id,
+            alertType:    'geofence',
+            severity,
+            lat:          job.data.lat,
+            lng:          job.data.lng,
+          });
 
         } else if (action.action_type === 'sms') {
           if (process.env.AFRICASTALKING_API_KEY) {
@@ -201,9 +206,14 @@ async function processAlert(job) {
 
   const alert = result.rows[0];
 
-  if (io) {
-    io.emit('alert:new', { alertId: alert.id, vehicleId: vehicle_id, type, severity, message });
-  }
+  // Look up org_id via convoy so we can publish on the org channel
+  const orgRes = await query(
+    `SELECT org_id FROM convoys WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
+    [convoy_id || '00000000-0000-0000-0000-000000000000']
+  );
+  const orgId = orgRes.rows[0]?.org_id ?? null;
+  const alertChannel = orgId ? `org#${orgId}` : 'alert:new';
+  publish(alertChannel, { type: 'alert.new', alertId: alert.id, vehicleId: vehicle_id, alertType: type, severity, message });
 
   const { notificationQueue } = getQueues();
   if (notificationQueue && (severity === 'high' || severity === 'critical')) {
@@ -228,4 +238,4 @@ function startAlertWorker() {
   return worker;
 }
 
-module.exports = { startAlertWorker, setIO };
+module.exports = { startAlertWorker };

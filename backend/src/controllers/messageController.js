@@ -1,6 +1,7 @@
 const Joi = require('joi');
 const { query } = require('../config/database');
 const { asyncHandler } = require('../middleware/error');
+const { publish } = require('../realtime/centrifugo');
 
 async function ensureTables() {
   await query(`
@@ -32,7 +33,9 @@ async function ensureTables() {
   `);
 }
 
-ensureTables().catch((err) => console.error('[messages] Schema setup error:', err.message));
+if (process.env.NODE_ENV !== 'test') {
+  ensureTables().catch((err) => console.error('[messages] Schema setup error:', err.message));
+}
 
 const getChannels = asyncHandler(async (req, res) => {
   const result = await query('SELECT * FROM channels ORDER BY name ASC');
@@ -82,8 +85,7 @@ const sendMessage = asyncHandler(async (req, res) => {
 
   const message = { ...result.rows[0], sender_name: req.user.name, sender_role: req.user.role };
 
-  const io = req.app.get('io');
-  if (io) io.emit('message:new', { channelId: req.params.id, content: value.content, senderId: req.user.id, senderName: req.user.name });
+  publish(`org#${req.user.org_id}`, { type: 'message.new', channelId: req.params.id, content: value.content, senderId: req.user.id, senderName: req.user.name });
 
   res.status(201).json({ data: message });
 });
@@ -105,17 +107,15 @@ const broadcast = asyncHandler(async (req, res) => {
   );
   const inserted = result.rows.map((r) => r.id);
 
-  const io = req.app.get('io');
-  if (io) {
-    io.emit('message:new', {
-      channelId: 'broadcast',
-      content: value.content,
-      severity: value.severity,
-      senderId: req.user.id,
-      senderName: req.user.name,
-      isBroadcast: true,
-    });
-  }
+  publish(`org#${req.user.org_id}`, {
+    type: 'message.new',
+    channelId: 'broadcast',
+    content: value.content,
+    severity: value.severity,
+    senderId: req.user.id,
+    senderName: req.user.name,
+    isBroadcast: true,
+  });
 
   res.json({ message: `Broadcast sent to ${inserted.length} channel(s)`, messageIds: inserted });
 });

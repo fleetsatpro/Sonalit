@@ -61,7 +61,25 @@ interface GuardianApiService {
         @Header("X-Device-Token") token: String,
         @Body body: CfoLoginRequest
     ): Response<CfoLoginResponse>
+
+    @POST("guardian/checkin")
+    suspend fun dmsCheckin(
+        @Header("X-Device-Token") token: String,
+        @Body body: DmsCheckinRequest
+    ): Response<DmsCheckinResponse>
 }
+
+// ─── DMS ──────────────────────────────────────────────────────────────────────
+
+data class DmsCheckinRequest(
+    @SerializedName("device_id") val deviceId: String,
+    val timestamp: Long,
+)
+
+data class DmsCheckinResponse(
+    val ok: Boolean,
+    @SerializedName("checkin_at") val checkinAt: String,
+)
 
 // ─── Enrollment ───────────────────────────────────────────────────────────────
 
@@ -172,11 +190,11 @@ data class AckRequest(
 )
 
 data class CommandDto(
-    @SerializedName("command_id") val commandId: String,
-    val type: String,
+    @SerializedName("id") val commandId: String,
+    @SerializedName("command_type") val type: String,
     val payload: Map<String, String>?,
-    @SerializedName("issued_at") val issuedAt: Long,
-    @SerializedName("expires_at") val expiresAt: Long?
+    @SerializedName("issued_at") val issuedAt: String?,
+    @SerializedName("expires_at") val expiresAt: String?
 )
 
 // ─── CFO ──────────────────────────────────────────────────────────────────────
@@ -208,12 +226,21 @@ data class CfoConvoyDto(
     @SerializedName("seal_count_per_truck") val sealCountPerTruck: Int
 )
 
+data class CfoDailyReportDto(
+    val status: String,
+    @SerializedName("received_photo_count") val receivedPhotoCount: Int,
+    @SerializedName("required_photo_count") val requiredPhotoCount: Int,
+    @SerializedName("generated_at") val generatedAt: String?,
+    @SerializedName("pdf_url") val pdfUrl: String?
+)
+
 data class CfoContextData(
     val convoy: CfoConvoyDto,
     @SerializedName("cfo_user_id") val cfoUserId: String,
     @SerializedName("assigned_trucks") val assignedTrucks: List<CfoTruckDto>,
     @SerializedName("report_date") val reportDate: String,
-    @SerializedName("photos_today") val photosToday: List<CfoPhotoDto>
+    @SerializedName("photos_today") val photosToday: List<CfoPhotoDto>,
+    @SerializedName("daily_report") val dailyReport: CfoDailyReportDto?
 )
 
 data class CfoContextResponse(val data: CfoContextData)

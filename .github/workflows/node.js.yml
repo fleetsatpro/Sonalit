@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "claude/**"]
   pull_request:
     branches: ["main"]
 
@@ -10,12 +10,35 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sonalit
+          POSTGRES_PASSWORD: sonalit
+          POSTGRES_DB: sonalit_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - name: Use Node.js 22
         uses: actions/setup-node@v4
@@ -29,5 +52,57 @@ jobs:
       - name: Build contracts
         run: pnpm --filter @sonalit/contracts build
 
+      - name: Typecheck web
+        run: pnpm --filter @sonalit/web typecheck
+
       - name: Build web
         run: pnpm --filter @sonalit/web build
+
+      - name: Backend unit tests
+        run: pnpm --filter fleetops-backend exec jest --testPathIgnorePatterns=integration --no-coverage
+        env:
+          JWT_SECRET: ci-test-jwt-secret
+          DATABASE_URL: ""
+
+      - name: Run DB migrations (CI)
+        run: node scripts/db-migrate.js
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://sonalit:sonalit@localhost:5432/sonalit_test
+
+      - name: Backend integration tests
+        run: pnpm --filter fleetops-backend exec jest --testPathPattern=integration --no-coverage --runInBand --forceExit
+        env:
+          JWT_SECRET: ci-test-jwt-secret
+          DATABASE_URL: postgresql://sonalit:sonalit@localhost:5432/sonalit_test
+          REDIS_URL: redis://localhost:6379
+          DISABLE_REDIS: "false"
+          NODE_ENV: test
+
+      - name: OpenAPI drift check
+        if: github.ref == 'refs/heads/main'
+        run: node scripts/generate-openapi.js --check
+        working-directory: backend
+        env:
+          JWT_SECRET: ci-test-jwt-secret
+          DATABASE_URL: ""
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @sonalit/web exec playwright install --with-deps chromium
+
+      - name: Playwright E2E tests
+        run: pnpm --filter @sonalit/web exec playwright test
+        env:
+          CI: "true"
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7
+
+      - name: Dependency audit
+        run: pnpm --filter fleetops-backend audit --audit-level=high
+        continue-on-error: true

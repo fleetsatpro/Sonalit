@@ -32,9 +32,11 @@ kubeconfig
 
 # Logs
 logs/
+**/logs/
 *.log
 npm-debug.log*
 pnpm-debug.log*
+nodemon/
 
 # OS
 .DS_Store
@@ -47,6 +49,9 @@ Thumbs.db
 !.vscode/extensions.json
 *.swp
 *.swo
+.*.swp
+.*.swo
+*~
 
 # Test coverage & artifacts
 coverage/
@@ -56,6 +61,7 @@ test-results/
 
 # Android
 *.apk
+*.idsig
 *.aab
 *.aar
 *.class
@@ -81,11 +87,20 @@ tmp/
 temp/
 *.tmp
 *.bak
+*.timestamp-*.mjs
 
 # Deployment packages
 *.deb
 .vercel
 .claude-flow/
 
+# Zip archives (binary blobs — should not be committed)
+*.zip
+!infra/**/*.zip
+
 # Legacy backend
 backend/.env
+
+# Accidental package-name directories (e.g. fleetops-backend@1.0.0, frontend/foo@2.1.0)
+/*@[0-9]*.[0-9]*.[0-9]*/
+/*/*@[0-9]*.[0-9]*.[0-9]*/

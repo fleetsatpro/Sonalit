@@ -1,11 +1,22 @@
 const router = require('express').Router();
 const { query } = require('../config/database');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, authorize } = require('../middleware/auth');
+const { requireFreshIntegrity } = require('../middleware/requireFreshIntegrity');
 const logger = require('../utils/logger');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const { sendCommandPush, sendPanicAck } = require('../utils/fcm');
+const { publish } = require('../realtime/centrifugo');
+const requireIdempotencyKey = require('../middleware/idempotency');
+
+// ─── Integrity age thresholds per command type (T1.4) ────────────────────────
+const INTEGRITY_MAX_AGE = {
+  WIPE: 5,
+  LOCKDOWN: 15,
+  UPDATE_PINS: 15,
+  // All other commands default to 60 min (checked inline)
+};
 
 // ─── Config cache (60-second TTL) ────────────────────────────────────────────
 let _minApkVersionCode = 0;
@@ -30,10 +41,11 @@ const enrollLimiter = rateLimit({
   handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
 });
 
+// T5.1: rate-limit keys are device_id (set by deviceAuth) with IP as fallback
 const panicLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 5,
-  keyGenerator: (req) => req.headers['x-device-token'] || req.ip,
+  keyGenerator: (req) => (req.device && req.device.id) || req.headers['x-device-token'] || req.ip,
   standardHeaders: true,
   legacyHeaders: false,
   validate: { xForwardedForHeader: false },
@@ -43,7 +55,27 @@ const panicLimiter = rateLimit({
 const heartbeatLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 6,
-  keyGenerator: (req) => req.headers['x-device-token'] || req.ip,
+  keyGenerator: (req) => (req.device && req.device.id) || req.headers['x-device-token'] || req.ip,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
+  handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
+});
+
+const locationLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  keyGenerator: (req) => (req.device && req.device.id) || req.headers['x-device-token'] || req.ip,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
+  handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
+});
+
+const reportLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  keyGenerator: (req) => (req.device && req.device.id) || req.headers['x-device-token'] || req.ip,
   standardHeaders: true,
   legacyHeaders: false,
   validate: { xForwardedForHeader: false },
@@ -100,6 +132,7 @@ async function ensureTables() {
         token           UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
         name            TEXT NOT NULL,
         imei            TEXT,
+        imei_hash       TEXT,
         model           TEXT,
         os_version      TEXT,
         app_version     TEXT,
@@ -194,11 +227,11 @@ async function ensureTables() {
     await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS last_checkin_at TIMESTAMPTZ`);
     await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS android_id TEXT`);
     await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS manufacturer TEXT`);
-    // Partial unique index: prevents duplicate enrollment by IMEI (ignores null/'unknown')
+    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS imei_hash TEXT`);
     await query(`
-      CREATE UNIQUE INDEX IF NOT EXISTS uq_guardian_devices_imei
-        ON guardian_devices(imei)
-        WHERE imei IS NOT NULL AND imei <> 'unknown' AND deleted_at IS NULL
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_guardian_devices_imei_hash
+        ON guardian_devices(imei_hash)
+        WHERE imei_hash IS NOT NULL AND deleted_at IS NULL
     `);
     await query(`
       CREATE UNIQUE INDEX IF NOT EXISTS uq_guardian_devices_android_id
@@ -345,6 +378,30 @@ async function ensureTables() {
     // p4t1 — FCM push token on device
     await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS fcm_token TEXT`);
 
+    // p5t1 — nonce column for command replay protection
+    await query(`ALTER TABLE device_commands ADD COLUMN IF NOT EXISTS nonce TEXT`);
+
+    // p5t2 — nonce deduplication table (PRIMARY KEY enforces uniqueness per device)
+    await query(`
+      CREATE TABLE IF NOT EXISTS guardian_command_nonces (
+        device_id UUID NOT NULL REFERENCES guardian_devices(id),
+        nonce     TEXT NOT NULL,
+        seen_at   TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (device_id, nonce)
+      )
+    `);
+
+    // p5t3 — command lifecycle event log
+    await query(`
+      CREATE TABLE IF NOT EXISTS device_command_events (
+        id         BIGSERIAL PRIMARY KEY,
+        command_id UUID NOT NULL,
+        status     TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await query(`CREATE INDEX IF NOT EXISTS idx_device_command_events_command ON device_command_events(command_id)`);
+
     logger.info('Guardian tables initialised');
   } catch (err) {
     logger.error(`Guardian ensureTables error: ${err.message}`);
@@ -448,13 +505,17 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
 
     const expectedToken = process.env.GUARDIAN_ORG_TOKEN || 'fleet-guardian-2024';
     if (org_token !== expectedToken) {
-      logger.warn(`Guardian enroll rejected: bad org_token from IMEI ${imei}`);
+      logger.warn(`Guardian enroll rejected: bad org_token from device "${name}"`);
       return res.status(403).json({ error: 'Invalid organisation token' });
     }
 
     // Deduplication: if this hardware is already enrolled return its existing token.
-    // Match by IMEI first, then android_id (both ignore null/'unknown' values).
-    const safeImei = imei && imei !== 'unknown' ? imei : null;
+    // T5.5: hash IMEI with PEPPER — never store raw IMEI in persistent storage
+    const IMEI_PEPPER = process.env.IMEI_PEPPER || 'guardian-imei-pepper-dev';
+    const rawImei = imei && imei !== 'unknown' ? imei : null;
+    const safeImei = rawImei
+      ? crypto.createHash('sha256').update(rawImei + IMEI_PEPPER).digest('hex')
+      : null;
     const safeAndroidId = android_id && android_id !== 'unknown' ? android_id : null;
 
     let existingDev = null;
@@ -464,7 +525,7 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
         `SELECT id, token, status, enrolled_at FROM guardian_devices
          WHERE deleted_at IS NULL
            AND (
-             ($1::TEXT IS NOT NULL AND imei = $1)
+             ($1::TEXT IS NOT NULL AND imei_hash = $1)
              OR ($2::TEXT IS NOT NULL AND android_id = $2)
            )
          ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END, enrolled_at DESC
@@ -474,9 +535,9 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       if (r.rows.length) existingDev = r.rows[0];
     }
 
-    // Legacy fallback: records enrolled before android_id tracking have both hardware IDs null.
-    // Match by name + model and backfill android_id so future lookups hit the fast path.
-    if (!existingDev && safeAndroidId) {
+    // Legacy fallback: records enrolled before android_id tracking have both hardware IDs null,
+    // OR when a device reports unknown hardware IDs. Match by name + model.
+    if (!existingDev) {
       const r = await query(
         `SELECT id, token, status, enrolled_at FROM guardian_devices
          WHERE deleted_at IS NULL AND android_id IS NULL AND imei IS NULL
@@ -489,7 +550,7 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
         existingDev = r.rows[0];
         // Backfill hardware IDs so the fast path works on every subsequent enrollment
         await query(
-          `UPDATE guardian_devices SET android_id = $1, imei = $2, manufacturer = $3 WHERE id = $4`,
+          `UPDATE guardian_devices SET android_id = $1, imei_hash = $2, manufacturer = $3 WHERE id = $4`,
           [safeAndroidId, safeImei, manufacturer || null, existingDev.id]
         );
         logger.info(`Guardian legacy device backfilled android_id: ${existingDev.id}`);
@@ -514,15 +575,15 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
         `UPDATE guardian_devices SET deleted_at = NOW()
          WHERE id <> $1 AND status = 'pending' AND deleted_at IS NULL
            AND (
-             ($2::TEXT IS NOT NULL AND imei = $2)
+             ($2::TEXT IS NOT NULL AND imei_hash = $2)
              OR ($3::TEXT IS NOT NULL AND android_id = $3)
-             OR (android_id IS NULL AND imei IS NULL AND name = $4
+             OR (android_id IS NULL AND imei_hash IS NULL AND name = $4
                  AND (model = $5 OR $5 IS NULL))
            )`,
         [dev.id, safeImei, safeAndroidId, name, model || null]
       );
-      logger.info(`Guardian re-enrollment: device ${dev.id} (IMEI ${safeImei || 'n/a'})`);
-      auditLog('device', dev.id, 're_enroll', 'device', dev.id, { name, imei }, req.ip);
+      logger.info(`Guardian re-enrollment: device ${dev.id}`);
+      auditLog('device', dev.id, 're_enroll', 'device', dev.id, { name }, req.ip);
       const certPin = process.env.GUARDIAN_CERT_PIN || null;
       return res.status(200).json({
         device_id: dev.id,
@@ -549,7 +610,7 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
 
     const result = await query(
       `INSERT INTO guardian_devices
-         (name, imei, android_id, manufacturer, model, os_version, app_version, status)
+         (name, imei_hash, android_id, manufacturer, model, os_version, app_version, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
        RETURNING id, token, enrolled_at`,
       [name, safeImei, safeAndroidId, manufacturer || null, model || null, os_version || null, app_version || null]
@@ -564,8 +625,8 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       );
     }
 
-    logger.info(`Guardian device enrolled: ${device.id} name="${name}" imei=${imei}`);
-    auditLog('device', null, 'enroll', 'device', device.id, { name, imei, android_id }, req.ip);
+    logger.info(`Guardian device enrolled: ${device.id} name="${name}"`);
+    auditLog('device', null, 'enroll', 'device', device.id, { name, android_id }, req.ip);
 
     const certPin = process.env.GUARDIAN_CERT_PIN || null;
 
@@ -596,11 +657,12 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
       ram_free_mb,
       app_version,
       app_version_code,
-      lat,
-      lng,
-      speed,
       fcm_token,
     } = req.body;
+    // Accept both lat/lng (legacy) and latitude/longitude (Guardian APK field names)
+    const lat = req.body.lat ?? req.body.latitude ?? null;
+    const lng = req.body.lng ?? req.body.longitude ?? null;
+    const speed = req.body.speed ?? null;
 
     const deviceId = req.device.id;
 
@@ -680,11 +742,26 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
       [deviceId]
     );
 
+    // T5.4: include min_required_version so clients can proactively check
+    const minCode = await getMinApkVersionCode();
+    const forceUpdate = app_version_code != null && parseInt(app_version_code) < minCode;
+    const backendBase = process.env.BACKEND_URL || '';
+
+    // T5.3: mark commands as delivered
+    if (commands.rows.length) {
+      for (const cmd of commands.rows) {
+        query(`INSERT INTO device_command_events (command_id, status) VALUES ($1, 'delivered')`, [cmd.id]).catch(() => {});
+      }
+    }
+
     res.json({
       status: 'ok',
       server_time: Date.now(),
       commands: commands.rows,
       command_signing_secret: COMMAND_SIGNING_SECRET,
+      min_required_version: minCode,
+      force_update: forceUpdate,
+      ...(forceUpdate ? { download_url: `${backendBase}/api/v1/guardian/apk/download` } : {}),
     });
   } catch (err) {
     next(err);
@@ -695,7 +772,7 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
  * POST /api/v1/guardian/location
  * GPS position update from device.
  */
-router.post('/location', deviceAuth, async (req, res, next) => {
+router.post('/location', deviceAuth, locationLimiter, async (req, res, next) => {
   try {
     const { lat, lng, altitude, heading, speed, accuracy, timestamp } = req.body;
 
@@ -730,19 +807,22 @@ router.post('/location', deviceAuth, async (req, res, next) => {
       [deviceId, lat, lng, speed ?? null]
     );
 
-    const io = req.app.get('io');
-    if (io) {
-      io.emit('device:location', {
-        device_id: deviceId,
-        name: req.device.name,
-        lat,
-        lng,
-        altitude: altitude ?? null,
-        heading: heading ?? null,
-        speed: speed ?? null,
-        accuracy: accuracy ?? null,
-        timestamp: result.rows[0].timestamp,
-      });
+    const locationPayload = {
+      type: 'location',
+      device_id: deviceId,
+      name: req.device.name,
+      lat,
+      lng,
+      altitude: altitude ?? null,
+      heading: heading ?? null,
+      speed: speed ?? null,
+      accuracy: accuracy ?? null,
+      timestamp: result.rows[0].timestamp,
+    };
+    if (req.device.org_id) {
+      publish(`org#${req.device.org_id}`, locationPayload);
+    } else {
+      publish('device:location', locationPayload);
     }
 
     res.json({ ok: true });
@@ -755,7 +835,7 @@ router.post('/location', deviceAuth, async (req, res, next) => {
  * POST /api/v1/guardian/panic
  * Trigger SOS alert from device.
  */
-router.post('/panic', deviceAuth, panicLimiter, async (req, res, next) => {
+router.post('/panic', deviceAuth, requireIdempotencyKey, panicLimiter, async (req, res, next) => {
   try {
     const { lat, lng, message } = req.body;
     // Accept both "mode" and "panic_mode" for backward compatibility with older APKs
@@ -773,12 +853,14 @@ router.post('/panic', deviceAuth, panicLimiter, async (req, res, next) => {
     const deviceId = req.device.id;
 
     // Step 1: attempt idempotent insert
+    const orgId = req.device.org_id || null;
+
     const insertResult = await query(
-      `INSERT INTO panic_events (event_uuid, device_id, mode, lat, lng, message, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      `INSERT INTO panic_events (event_uuid, device_id, org_id, mode, lat, lng, message, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
        ON CONFLICT (event_uuid) WHERE event_uuid IS NOT NULL DO NOTHING
        RETURNING *`,
-      [event_uuid, deviceId, mode, lat ?? null, lng ?? null, message || null]
+      [event_uuid, deviceId, orgId, mode, lat ?? null, lng ?? null, message || null]
     );
 
     let panicEvent;
@@ -820,11 +902,13 @@ router.post('/panic', deviceAuth, panicLimiter, async (req, res, next) => {
         [deviceId]
       );
 
-      const io = req.app.get('io');
-      if (io) {
-        io.emit('device:panic', payload);
+      const panicPublishPayload = { type: 'panic', ...payload };
+      if (orgId) {
+        publish(`org#${orgId}`, panicPublishPayload);
+      } else {
+        publish('device:panic', panicPublishPayload);
       }
-      logger.warn(`PANIC triggered: device=${deviceId} name="${req.device.name}" mode=${mode}`);
+      logger.warn(`PANIC triggered: device=${deviceId} name="${req.device.name}" mode=${mode} org=${orgId ?? 'unknown'}`);
       // FCM ack to device confirming SOS was received (Task 4.1, fire-and-forget)
       if (req.device.fcm_token) {
         sendPanicAck(req.device.fcm_token, panicEvent.id).catch(() => {});
@@ -841,11 +925,16 @@ router.post('/panic', deviceAuth, panicLimiter, async (req, res, next) => {
  * POST /api/v1/guardian/report
  * Field incident report from device.
  */
-router.post('/report', deviceAuth, async (req, res, next) => {
+router.post('/report', deviceAuth, reportLimiter, async (req, res, next) => {
   try {
     const { category, severity = 'medium', description, lat, lng, photo_url } = req.body;
     // event_uuid is optional for backward compatibility; generate one server-side if omitted
     const event_uuid = req.body.event_uuid || uuidv4();
+
+    // T3.7: reject data URI photos — devices must upload to pre-signed URL first
+    if (photo_url && photo_url.startsWith('data:')) {
+      return res.status(400).json({ error: 'photo_url must be an HTTPS URL, not a data URI. Upload via pre-signed URL first.' });
+    }
 
     const validCategories = [
       'suspicious', 'roadblock', 'theft', 'attack', 'accident',
@@ -896,22 +985,21 @@ router.post('/report', deviceAuth, async (req, res, next) => {
     }
 
     if (isNew) {
-      const io = req.app.get('io');
-      if (io) {
-        io.emit('device:report', {
-          report_id: report.id,
-          event_uuid: report.event_uuid,
-          device_id: deviceId,
-          device_name: req.device.name,
-          category: report.category,
-          severity: report.severity,
-          description: report.description || null,
-          lat: report.lat ?? null,
-          lng: report.lng ?? null,
-          photo_url: report.photo_url || null,
-          created_at: report.created_at,
-        });
-      }
+      const reportChannel = req.device.org_id ? `org#${req.device.org_id}` : 'device:report';
+      publish(reportChannel, {
+        type: 'device.report',
+        report_id: report.id,
+        event_uuid: report.event_uuid,
+        device_id: deviceId,
+        device_name: req.device.name,
+        category: report.category,
+        severity: report.severity,
+        description: report.description || null,
+        lat: report.lat ?? null,
+        lng: report.lng ?? null,
+        photo_url: report.photo_url || null,
+        created_at: report.created_at,
+      });
       logger.info(`Field report: device=${deviceId} category=${category} severity=${severity}`);
     }
 
@@ -1003,6 +1091,10 @@ router.post('/ack-command', deviceAuth, async (req, res, next) => {
       return res.status(404).json({ error: 'Command not found for this device' });
     }
 
+    // T5.3: record acked/applied/failed event
+    const evtStatus = status === 'executed' ? 'applied' : 'failed';
+    query(`INSERT INTO device_command_events (command_id, status) VALUES ($1, $2)`, [command_id, evtStatus]).catch(() => {});
+
     res.json({ ok: true });
   } catch (err) {
     next(err);
@@ -1010,6 +1102,28 @@ router.post('/ack-command', deviceAuth, async (req, res, next) => {
 });
 
 // ─── Admin Routes (JWT required) ──────────────────────────────────────────────
+
+/**
+ * GET /api/v1/guardian/commands
+ * Recent commands across all devices (admin view).
+ */
+router.get('/commands', authenticate, async (req, res, next) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const params = [limit];
+    const result = await query(
+      `SELECT dc.id, dc.device_id, dc.command_type, dc.status,
+              dc.issued_at, dc.executed_at, dc.result,
+              gd.name AS device_name
+       FROM device_commands dc
+       JOIN guardian_devices gd ON gd.id = dc.device_id
+       ORDER BY dc.issued_at DESC
+       LIMIT $1`,
+      params
+    );
+    res.json({ data: result.rows });
+  } catch (err) { next(err); }
+});
 
 /**
  * GET /api/v1/guardian/devices
@@ -1029,7 +1143,7 @@ router.get('/devices', authenticate, async (req, res, next) => {
     if (search) {
       params.push(`%${search}%`);
       filters.push(
-        `(gd.name ILIKE $${params.length} OR gd.imei ILIKE $${params.length} OR gd.model ILIKE $${params.length})`
+        `(gd.name ILIKE $${params.length} OR gd.model ILIKE $${params.length})`
       );
     }
     if (after) {
@@ -1043,13 +1157,16 @@ router.get('/devices', authenticate, async (req, res, next) => {
 
     const result = await query(
       `SELECT
-         gd.id, gd.name, gd.imei, gd.model, gd.os_version, gd.app_version,
+         gd.id, gd.name, gd.model, gd.os_version, gd.app_version,
          gd.status, gd.assignment_type, gd.assignment_id,
          gd.panic_active, gd.last_seen, gd.last_lat, gd.last_lng, gd.last_speed,
          gd.enrolled_at, gd.created_at,
          h.battery_level, h.battery_charging, h.signal_strength,
          h.network_type, h.storage_free_mb, h.ram_free_mb, h.recorded_at AS health_recorded_at,
-         COALESCE(pc.cnt, 0)::INT AS pending_commands
+         COALESCE(pc.cnt, 0)::INT AS pending_commands,
+         CASE WHEN gd.assignment_type = 'officer' THEN fo.name ELSE NULL END AS assigned_officer_name,
+         CASE WHEN gd.assignment_type = 'officer' THEN fo.badge_number ELSE NULL END AS assigned_officer_badge,
+         CASE WHEN gd.assignment_type = 'officer' THEN fo.phone ELSE NULL END AS assigned_officer_phone
        FROM guardian_devices gd
        LEFT JOIN LATERAL (
          SELECT battery_level, battery_charging, signal_strength,
@@ -1064,6 +1181,7 @@ router.get('/devices', authenticate, async (req, res, next) => {
          FROM device_commands
          WHERE device_id = gd.id AND status = 'pending'
        ) pc ON true
+       LEFT JOIN field_officers fo ON fo.id = gd.assignment_id AND gd.assignment_type = 'officer'
        WHERE ${filters.join(' AND ')}
        ORDER BY gd.last_seen DESC NULLS LAST, gd.created_at DESC
        LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
@@ -1173,6 +1291,17 @@ router.patch('/devices/:id', authenticate, async (req, res, next) => {
       });
     }
 
+    // When assigning to an officer, verify the officer exists in the same org
+    if (assignment_type === 'officer' && assignment_id) {
+      const officerCheck = await query(
+        `SELECT id FROM field_officers WHERE id = $1 AND (org_id = $2 OR org_id IS NULL)`,
+        [assignment_id, req.user.org_id || null]
+      );
+      if (!officerCheck.rows.length) {
+        return res.status(404).json({ error: 'Field officer not found' });
+      }
+    }
+
     // Detect explicit clear: assignment_type is present in body but falsy (null/empty)
     const clearAssignment = 'assignment_type' in req.body && !assignment_type;
 
@@ -1182,10 +1311,11 @@ router.patch('/devices/:id', authenticate, async (req, res, next) => {
            status          = COALESCE($2, status),
            assignment_type = CASE WHEN $6 THEN NULL ELSE COALESCE($3, assignment_type) END,
            assignment_id   = CASE WHEN $6 THEN NULL ELSE COALESCE($4::UUID, assignment_id) END,
+           org_id          = COALESCE(org_id, $7::UUID),
            updated_at      = NOW()
        WHERE id = $5 AND deleted_at IS NULL
        RETURNING *`,
-      [name || null, status || null, assignment_type || null, assignment_id || null, req.params.id, clearAssignment]
+      [name || null, status || null, assignment_type || null, assignment_id || null, req.params.id, clearAssignment, req.user.org_id || null]
     );
 
     if (!result.rows.length) {
@@ -1230,14 +1360,15 @@ router.delete('/devices/:id', authenticate, async (req, res, next) => {
  * POST /api/v1/guardian/devices/:id/command
  * Send a remote command to a device.
  */
-router.post('/devices/:id/command', authenticate, commandLimiter, async (req, res, next) => {
+router.post('/devices/:id/command', authenticate, requireIdempotencyKey, commandLimiter, async (req, res, next) => {
   try {
-    const { command_type, payload } = req.body;
+    const { command_type, payload, nonce, issued_at: clientIssuedAt } = req.body;
 
     const validCommandTypes = [
       'force_sync', 'start_live_tracking', 'stop_live_tracking',
       'lock_screen', 'trigger_siren', 'stop_siren', 'push_message',
       'restart_agent', 'request_location', 'enable_lost_mode',
+      'WIPE', 'LOCKDOWN', 'UPDATE_PINS', 'CHANGE_MODE', 'SEND_MESSAGE', 'TAKE_PHOTO',
     ];
     if (!command_type || !validCommandTypes.includes(command_type)) {
       return res.status(400).json({
@@ -1245,52 +1376,79 @@ router.post('/devices/:id/command', authenticate, commandLimiter, async (req, re
       });
     }
 
-    // Verify device exists and get FCM token
+    // ── Replay protection (T1.3) ──────────────────────────────────────────────
+    if (!nonce || typeof nonce !== 'string' || nonce.length < 8) {
+      return res.status(400).json({ error: 'nonce is required (min 8 chars)' });
+    }
+    if (clientIssuedAt) {
+      const diff = Math.abs(Date.now() - new Date(clientIssuedAt).getTime());
+      if (diff > 5 * 60 * 1000) {
+        return res.status(400).json({ error: 'issued_at is outside 5-minute window', code: 'clock_skew' });
+      }
+    }
+
+    // Try device exists + get integrity state in one query
     const deviceCheck = await query(
-      `SELECT id, fcm_token FROM guardian_devices WHERE id = $1 AND deleted_at IS NULL`,
+      `SELECT id, fcm_token, last_integrity_verdict, last_integrity_verdict_at
+       FROM guardian_devices WHERE id = $1 AND deleted_at IS NULL`,
       [req.params.id]
     );
     if (!deviceCheck.rows.length) {
       return res.status(404).json({ error: 'Device not found' });
     }
-    const deviceFcmToken = deviceCheck.rows[0].fcm_token;
+    const device = deviceCheck.rows[0];
+
+    // ── Play Integrity gating (T1.4) ─────────────────────────────────────────
+    const destructiveMaxAge = INTEGRITY_MAX_AGE[command_type];
+    if (destructiveMaxAge !== undefined) {
+      const staleCutoff = new Date(Date.now() - destructiveMaxAge * 60 * 1000);
+      const isStale = !device.last_integrity_verdict_at || new Date(device.last_integrity_verdict_at) < staleCutoff;
+      const isBad = !device.last_integrity_verdict || device.last_integrity_verdict !== 'MEETS_DEVICE_INTEGRITY';
+      if (isStale || isBad) {
+        await query(
+          `INSERT INTO device_commands (device_id, command_type, payload, status) VALUES ($1, 'REQUEST_INTEGRITY', '{}', 'pending')`,
+          [device.id]
+        ).catch(() => {});
+        return res.status(412).json({ error: 'Device integrity verification required', code: 'integrity_required' });
+      }
+    }
+
+    // ── Deduplicate nonce (INSERT will fail on PK violation) ─────────────────
+    try {
+      await query(
+        `INSERT INTO guardian_command_nonces (device_id, nonce, seen_at) VALUES ($1, $2, NOW())`,
+        [device.id, nonce]
+      );
+    } catch (nonceErr) {
+      if (nonceErr.code === '23505') {
+        return res.status(409).json({ error: 'Duplicate command — nonce already seen', code: 'replay_detected' });
+      }
+      throw nonceErr;
+    }
 
     const insertResult = await query(
-      `INSERT INTO device_commands (device_id, command_type, payload, issued_by, expires_at)
-       VALUES ($1, $2, $3, $4, NOW() + INTERVAL '24 hours')
+      `INSERT INTO device_commands (device_id, command_type, payload, issued_by, nonce, issued_at, expires_at)
+       VALUES ($1, $2, $3, $4, $5, COALESCE($6::timestamptz, NOW()), NOW() + INTERVAL '24 hours')
        RETURNING id, issued_at, expires_at`,
-      [req.params.id, command_type, payload ? JSON.stringify(payload) : null, req.user.id]
+      [req.params.id, command_type, payload ? JSON.stringify(payload) : null, req.user.id, nonce, clientIssuedAt || null]
     );
 
     const cmd = insertResult.rows[0];
     const signature = signCommand(cmd.id, command_type, payload || null, cmd.issued_at, cmd.expires_at);
 
-    // Signature is stored before any heartbeat can claim this command because the
-    // heartbeat claim query requires signature IS NOT NULL (see heartbeat handler).
-    await query(
-      `UPDATE device_commands SET signature = $1 WHERE id = $2`,
-      [signature, cmd.id]
-    );
+    await query(`UPDATE device_commands SET signature = $1 WHERE id = $2`, [signature, cmd.id]);
 
-    auditLog('admin', req.user.id, 'command_issued', 'device', req.params.id, { command_type, payload }, req.ip);
+    auditLog('admin', req.user.id, 'command_issued', 'device', req.params.id, { command_type, payload, nonce }, req.ip);
 
-    const io = req.app.get('io');
-    if (io) {
-      io.emit('device:command', {
-        device_id: req.params.id,
-        command_type,
-        payload: payload || null,
-        command_id: cmd.id,
-        issued_at: cmd.issued_at,
-        signature,
-      });
-    }
+    publish(`org#${req.user.org_id}`, { type: 'device.command', device_id: req.params.id, command_type, payload: payload || null, command_id: cmd.id, issued_at: cmd.issued_at, signature });
+
+    // T5.3: record issued event
+    query(`INSERT INTO device_command_events (command_id, status) VALUES ($1, 'issued')`, [cmd.id]).catch(() => {});
 
     logger.info(`Command issued: ${command_type} → device=${req.params.id} by user=${req.user.id}`);
 
-    // FCM push to wake device immediately (fire-and-forget, Task 4.1)
-    if (deviceFcmToken) {
-      sendCommandPush(deviceFcmToken, command_type, cmd.id).catch(() => {});
+    if (device.fcm_token) {
+      sendCommandPush(device.fcm_token, command_type, cmd.id).catch(() => {});
     }
 
     res.status(201).json({ command_id: cmd.id, signature });
@@ -1331,6 +1489,21 @@ router.get('/devices/:id/commands', authenticate, async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+/**
+ * GET /api/v1/guardian/commands/:id/events
+ * Lifecycle event log for a specific command (admin). T5.3
+ */
+router.get('/commands/:id/events', authenticate, async (req, res, next) => {
+  try {
+    const { rows } = await query(
+      `SELECT id, status, occurred_at, detail FROM device_command_events
+       WHERE command_id = $1 ORDER BY occurred_at ASC`,
+      [req.params.id]
+    );
+    res.json({ data: rows });
+  } catch (err) { next(err); }
 });
 
 /**
@@ -1381,6 +1554,10 @@ router.get('/panic', authenticate, async (req, res, next) => {
     const filters = [];
     const params = [];
 
+    // Org scoping: prefer pe.org_id; fall back to device's org_id for older rows
+    params.push(req.user.org_id);
+    filters.push(`(pe.org_id = $${params.length} OR gd.org_id = $${params.length})`);
+
     if (active_only === 'true') {
       filters.push('pe.resolved_at IS NULL');
     }
@@ -1397,10 +1574,10 @@ router.get('/panic', authenticate, async (req, res, next) => {
     const limitIdx = params.length - 1;
     const offsetIdx = params.length;
 
-    const whereClause = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+    const whereClause = `WHERE ${filters.join(' AND ')}`;
 
     const result = await query(
-      `SELECT pe.*, gd.name AS device_name, gd.imei AS device_imei, gd.model AS device_model
+      `SELECT pe.*, gd.name AS device_name, gd.model AS device_model
        FROM panic_events pe
        JOIN guardian_devices gd ON gd.id = pe.device_id
        ${whereClause}
@@ -1410,7 +1587,7 @@ router.get('/panic', authenticate, async (req, res, next) => {
     );
 
     const total = await query(
-      `SELECT COUNT(*) FROM panic_events pe ${whereClause}`,
+      `SELECT COUNT(*) FROM panic_events pe JOIN guardian_devices gd ON gd.id = pe.device_id ${whereClause}`,
       params.slice(0, -2)
     );
 
@@ -1504,7 +1681,7 @@ router.get('/reports', authenticate, async (req, res, next) => {
     const whereClause = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
 
     const result = await query(
-      `SELECT fr.*, gd.name AS device_name, gd.imei AS device_imei
+      `SELECT fr.*, gd.name AS device_name
        FROM field_reports fr
        JOIN guardian_devices gd ON gd.id = fr.device_id
        ${whereClause}
@@ -1548,6 +1725,76 @@ router.post('/checkin', deviceAuth, async (req, res, next) => {
       [req.device.id]
     );
     res.json({ ok: true, checkin_at: new Date().toISOString() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Dead Man's Switch Admin ─────────────────────────────────────────────────
+
+/**
+ * GET /api/v1/guardian/devices/:id/dms
+ * Return the DMS configuration for a device.
+ */
+router.get('/devices/:id/dms', authenticate, async (req, res, next) => {
+  try {
+    const result = await query(
+      `SELECT id, dms_enabled, dms_timeout_minutes, dms_suspended_until, last_checkin_at
+       FROM guardian_devices
+       WHERE id = $1 AND deleted_at IS NULL`,
+      [req.params.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Device not found' });
+    res.json({ data: result.rows[0] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * PATCH /api/v1/guardian/devices/:id/dms
+ * Update DMS configuration for a device.
+ * Body: { dms_enabled?, dms_timeout_minutes?, suspend_minutes? }
+ * suspend_minutes > 0 sets dms_suspended_until = NOW() + interval; 0 clears it.
+ */
+router.patch('/devices/:id/dms', authenticate, authorize('admin', 'dispatcher'), async (req, res, next) => {
+  try {
+    const { dms_enabled, dms_timeout_minutes, suspend_minutes } = req.body;
+    const sets = [];
+    const values = [req.params.id];
+    let idx = 2;
+
+    if (typeof dms_enabled === 'boolean') {
+      sets.push(`dms_enabled = $${idx++}`);
+      values.push(dms_enabled);
+    }
+    if (dms_timeout_minutes !== undefined) {
+      if (dms_timeout_minutes !== null && (dms_timeout_minutes < 1 || dms_timeout_minutes > 1440)) {
+        return res.status(400).json({ error: 'dms_timeout_minutes must be 1–1440' });
+      }
+      sets.push(`dms_timeout_minutes = $${idx++}`);
+      values.push(dms_timeout_minutes);
+    }
+    if (suspend_minutes !== undefined) {
+      if (suspend_minutes === 0 || suspend_minutes === null) {
+        sets.push(`dms_suspended_until = NULL`);
+      } else {
+        sets.push(`dms_suspended_until = NOW() + ($${idx++} * INTERVAL '1 minute')`);
+        values.push(suspend_minutes);
+      }
+    }
+
+    if (sets.length === 0) return res.status(400).json({ error: 'No fields to update' });
+    sets.push('updated_at = NOW()');
+
+    const result = await query(
+      `UPDATE guardian_devices SET ${sets.join(', ')}
+       WHERE id = $1 AND deleted_at IS NULL
+       RETURNING id, dms_enabled, dms_timeout_minutes, dms_suspended_until, last_checkin_at`,
+      values
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Device not found' });
+    res.json({ data: result.rows[0] });
   } catch (err) {
     next(err);
   }

@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { GenericContainer, type StartedTestContainer } from 'testcontainers';
+import { GenericContainer, type StartedTestContainer, getContainerRuntimeClient } from 'testcontainers';
+
+const dockerAvailable = await getContainerRuntimeClient().then(() => true).catch(() => false);
 import { connect, type NatsConnection } from 'nats';
 
 // Override config before any module imports
@@ -31,7 +33,7 @@ const makeFixes = (count: number, offset = 0) =>
     timestamp: new Date(Date.now() + i * 1000).toISOString(),
   }));
 
-describe('ingest integration', () => {
+describe.skipIf(!dockerAvailable)('ingest integration', () => {
   beforeAll(async () => {
     redisContainer = await new GenericContainer('redis:7-alpine')
       .withExposedPorts(6379)

@@ -1,6 +1,7 @@
 const Joi = require('joi');
 const { query } = require('../config/database');
 const { asyncHandler } = require('../middleware/error');
+const { publish } = require('../realtime/centrifugo');
 
 const VALID_TRANSITIONS = {
   planned: ['active', 'cancelled'],
@@ -180,12 +181,8 @@ const updateConvoyStatus = asyncHandler(async (req, res) => {
     [value.status, req.params.id]
   );
 
-  const io = req.app.get('io');
-  if (io) {
-    const eventMap = { active: 'convoy:activated', completed: 'convoy:completed', cancelled: 'convoy:cancelled', aborted: 'convoy:aborted' };
-    const eventName = eventMap[value.status] || 'convoy:update';
-    io.emit(eventName, { convoyId: req.params.id, status: value.status, updatedBy: req.user.id });
-  }
+  const eventMap = { active: 'convoy:activated', completed: 'convoy:completed', cancelled: 'convoy:cancelled', aborted: 'convoy:aborted' };
+  publish(`org#${req.user.org_id}`, { type: 'convoy.update', convoyId: req.params.id, status: value.status, updatedBy: req.user.id });
 
   // D4: on completion, enqueue archive PDF generation
   if (value.status === 'completed') {
@@ -265,4 +262,54 @@ const getConvoyEvents = asyncHandler(async (req, res) => {
   res.json({ data: events });
 });
 
-module.exports = { getConvoys, getConvoy, createConvoy, updateConvoy, updateConvoyStatus, assignVehicles, deleteConvoy, getConvoyEvents };
+const PRIORITY_MAP = { standard: 'low', express: 'high', critical: 'critical' };
+
+const dispatchConvoy = asyncHandler(async (req, res) => {
+  const schema = Joi.object({
+    vehicle_id: Joi.string().uuid().required(),
+    driver_id: Joi.string().uuid().required(),
+    route_id: Joi.string().allow('', null).optional(),
+    priority: Joi.string().valid('standard', 'express', 'critical').required(),
+  });
+  const { error, value } = schema.validate(req.body);
+  if (error) return res.status(400).json({ error: error.message });
+
+  const vehicle = await query(
+    'SELECT registration, region FROM vehicles WHERE id = $1 AND deleted_at IS NULL',
+    [value.vehicle_id]
+  );
+  if (!vehicle.rows.length) return res.status(404).json({ error: 'Vehicle not found' });
+
+  const region = vehicle.rows[0].region || 'Kenya';
+  const name = `QD-${vehicle.rows[0].registration}-${Date.now().toString(36).toUpperCase()}`;
+  const mappedPriority = PRIORITY_MAP[value.priority];
+
+  const convoy = await query(
+    `INSERT INTO convoys
+       (name, region, priority, status, route_origin, route_destination, created_by, created_at, updated_at)
+     VALUES ($1,$2,$3,'active','Dispatch Point','In Transit',$4,NOW(),NOW())
+     RETURNING *`,
+    [name, region, mappedPriority, req.user.id]
+  );
+  const convoyId = convoy.rows[0].id;
+
+  await query(
+    `INSERT INTO convoy_assignments (convoy_id, vehicle_id, role, joined_at)
+     VALUES ($1,$2,'escort',NOW()) ON CONFLICT (convoy_id, vehicle_id) DO NOTHING`,
+    [convoyId, value.vehicle_id]
+  );
+  await query(
+    'UPDATE vehicles SET assigned_convoy_id = $1, updated_at = NOW() WHERE id = $2',
+    [convoyId, value.vehicle_id]
+  );
+
+  publish(`org#${req.user.org_id}`, { type: 'convoy.dispatched', convoyId, vehicleId: value.vehicle_id, dispatchedBy: req.user.id });
+
+  req.auditAction = 'INSERT';
+  req.auditRecordId = convoyId;
+  req.auditAfter = convoy.rows[0];
+
+  res.status(201).json({ data: convoy.rows[0] });
+});
+
+module.exports = { getConvoys, getConvoy, createConvoy, updateConvoy, updateConvoyStatus, assignVehicles, deleteConvoy, getConvoyEvents, dispatchConvoy };
