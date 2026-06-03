@@ -71,6 +71,14 @@
             android:foregroundServiceType="location|dataSync"
             android:exported="false" />
 
+        <service
+            android:name=".GuardianMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name=".BootReceiver"
             android:exported="true">
