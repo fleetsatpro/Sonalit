@@ -23,21 +23,31 @@ const DashboardShell = React.memo(function DashboardShell({ children }: Dashboar
   const openDispatch = useCallback(() => setDispatchOpen(true), []);
   const closeDispatch = useCallback(() => setDispatchOpen(false), []);
 
-  // IntersectionObserver for staggered section reveals
+  // IntersectionObserver for staggered section reveals.
+  // MutationObserver re-scans when lazy/async children add new elements.
   useEffect(() => {
-    const observer = new IntersectionObserver(
+    const io = new IntersectionObserver(
       (entries) => {
         entries.forEach(entry => {
           if (entry.isIntersecting) {
             (entry.target as HTMLElement).classList.add('vis');
+            io.unobserve(entry.target);
           }
         });
       },
       { threshold: 0.07 }
     );
-    const els = mainRef.current?.querySelectorAll('.d-section-reveal');
-    els?.forEach(el => observer.observe(el));
-    return () => observer.disconnect();
+
+    const observeNew = () => {
+      mainRef.current?.querySelectorAll('.d-section-reveal:not(.vis)').forEach(el => io.observe(el));
+    };
+
+    observeNew();
+
+    const mo = new MutationObserver(observeNew);
+    if (mainRef.current) mo.observe(mainRef.current, { childList: true, subtree: true });
+
+    return () => { io.disconnect(); mo.disconnect(); };
   }, []);
 
   return (

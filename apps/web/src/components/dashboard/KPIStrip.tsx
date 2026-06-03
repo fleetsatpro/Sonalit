@@ -105,7 +105,7 @@ const KPIStrip = React.memo(function KPIStrip() {
   };
 
   return (
-    <div className='d-hscroll d-section-reveal' style={{ padding: '16px 16px 0' }}>
+    <div className='d-hscroll' style={{ padding: '16px 16px 0' }}>
       {CARDS.map(card => (
         <KPICardComp key={card.key} card={card} value={values[card.key] ?? 0} />
       ))}

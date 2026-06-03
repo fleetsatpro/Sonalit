@@ -164,7 +164,7 @@ const TacticalMap = React.memo(function TacticalMap() {
   const selectedVehicle = vehicles?.find(v => v.id === selectedVehicleId) ?? vehicles?.[0] ?? null;
 
   return (
-    <div className='d-section-reveal' style={{ padding: '16px 16px 0' }}>
+    <div style={{ padding: '16px 16px 0' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
         <div style={{ width: 3, height: 14, background: 'var(--d-orange)', borderRadius: 2 }} />
         <span style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 11, letterSpacing: '.12em', color: 'var(--d-t1)' }}>TACTICAL MAP</span>
