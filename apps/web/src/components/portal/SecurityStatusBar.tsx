@@ -138,6 +138,7 @@ export function SecurityStatusBar({ convoyId, initialStatus = null }: Props): Re
   if (!status) return null;
 
   const cfg = LEVEL_CONFIG[status.level];
+  if (!cfg) return null;
   const { Icon } = cfg;
 
   return (

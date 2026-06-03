@@ -79,16 +79,6 @@ async function stubUnauthenticated(page: import('@playwright/test').Page) {
 
 test.describe('§00 Portal Client Scoping', () => {
 
-  test.beforeEach(async ({ page }) => {
-    // Catch-all: prevents any unstubbed portal endpoint from returning 401 and triggering a redirect.
-    // Per-test stubs registered after this (LIFO) take priority over the catch-all.
-    await page.route('**/api/v1/portal/**', route => route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ data: [] }),
-    }));
-  });
-
   test('unauthenticated client is redirected to /portal/login from dashboard', async ({ page }) => {
     await stubUnauthenticated(page);
     await page.goto('/portal/dashboard');
