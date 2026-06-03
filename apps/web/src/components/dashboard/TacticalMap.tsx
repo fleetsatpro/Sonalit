@@ -170,8 +170,8 @@ const TacticalMap = React.memo(function TacticalMap() {
       container: mapContainer.current,
       style: {
         version: 8,
-        sources: { carto: { type: 'raster', tiles: ['https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'], tileSize: 256, attribution: '© CartoDB' }},
-        layers: [{ id: 'carto-tiles', type: 'raster', source: 'carto', paint: { 'raster-opacity': 1 } }],
+        sources: { osm: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, attribution: '© OpenStreetMap contributors' }},
+        layers: [{ id: 'osm-tiles', type: 'raster', source: 'osm', paint: { 'raster-opacity': 1 } }],
       },
       center: EA_CENTER, zoom: EA_ZOOM, attributionControl: false,
     });
