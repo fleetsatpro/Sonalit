@@ -27,7 +27,7 @@ async function fetchAlerts(convoy_id, org_id) {
             a.acknowledged_at, a.resolved_at, a.created_at
      FROM alerts a
      JOIN convoys c ON c.id = a.convoy_id
-    WHERE a.convoy_id = $1 AND c.org_id = $2 AND a.deleted_at IS NULL
+    WHERE a.convoy_id = $1 AND c.org_id = $2 AND a.resolved_at IS NULL
     ORDER BY a.created_at DESC
     LIMIT 50`,
     [convoy_id, org_id],
@@ -78,7 +78,7 @@ router.post('/convoy/:convoy_id/incidents/:alert_id/acknowledge',
     const check = await req.db(
       `SELECT a.id, a.convoy_id, a.type, a.severity, a.acknowledged_at, a.resolved_at, a.created_at
        FROM alerts a JOIN convoys c ON c.id = a.convoy_id
-       WHERE a.id = $1 AND a.convoy_id = $2 AND c.org_id = $3 AND a.deleted_at IS NULL`,
+       WHERE a.id = $1 AND a.convoy_id = $2 AND c.org_id = $3 AND a.resolved_at IS NULL`,
       [req.params.alert_id, req.params.convoy_id, req.user.org_id],
     );
     if (!check.rows.length) return res.status(404).json({ error: 'Incident not found' });
@@ -105,7 +105,7 @@ router.post('/convoy/:convoy_id/incidents/:alert_id/resolve',
     const check = await req.db(
       `SELECT a.id, a.convoy_id, a.type, a.severity, a.acknowledged_at, a.resolved_at, a.created_at
        FROM alerts a JOIN convoys c ON c.id = a.convoy_id
-       WHERE a.id = $1 AND a.convoy_id = $2 AND c.org_id = $3 AND a.deleted_at IS NULL`,
+       WHERE a.id = $1 AND a.convoy_id = $2 AND c.org_id = $3 AND a.resolved_at IS NULL`,
       [req.params.alert_id, req.params.convoy_id, req.user.org_id],
     );
     if (!check.rows.length) return res.status(404).json({ error: 'Incident not found' });

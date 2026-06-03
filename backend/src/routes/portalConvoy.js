@@ -112,7 +112,7 @@ router.get('/convoy/:convoy_id/exceptions', clientAuth, asyncHandler(async (req,
     `SELECT a.id, a.type, a.severity, a.message, a.created_at AS occurred_at
      FROM alerts a
      JOIN convoys c ON c.id = a.convoy_id
-    WHERE a.convoy_id = $1 AND c.org_id = $2 AND a.deleted_at IS NULL
+    WHERE a.convoy_id = $1 AND c.org_id = $2
     ORDER BY a.created_at DESC LIMIT 100`,
     [req.params.convoy_id, org_id],
   );
@@ -352,7 +352,7 @@ router.get('/convoy/:convoy_id/overview', clientAuth, asyncHandler(async (req, r
              FROM cargo_client_links ccl2
              WHERE ccl2.convoy_id = c.id AND ccl2.org_id = c.org_id
             ) AS coload_count,
-            (SELECT COUNT(*) FROM alerts a WHERE a.convoy_id = c.id AND a.deleted_at IS NULL) AS exception_count
+            (SELECT COUNT(*) FROM alerts a WHERE a.convoy_id = c.id AND a.resolved_at IS NULL) AS exception_count
      FROM convoys c
     WHERE c.id = $1 AND c.org_id = $2 AND c.deleted_at IS NULL`,
     [req.params.convoy_id, org_id],
