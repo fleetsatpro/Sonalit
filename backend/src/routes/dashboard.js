@@ -19,7 +19,7 @@ const safeQuery = (db, sql, params) => db(sql, params).catch(() => ({ rows: [] }
 router.get('/overview', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
 
-  const [threatR, kpiR, nextR, shiftR] = await Promise.all([
+  const [threatR, kpiR, nextR, shiftR, panicR] = await Promise.all([
     safeQuery(req.db, `
       SELECT
         COUNT(*) FILTER (WHERE type='sos' AND resolved_at IS NULL) AS sos_open,
@@ -57,6 +57,10 @@ router.get('/overview', asyncHandler(async (req, res) => {
       SELECT started_at FROM shifts
       WHERE org_id=$1 AND ended_at IS NULL
       ORDER BY started_at DESC LIMIT 1`, [orgId]),
+
+    safeQuery(req.db, `
+      SELECT COUNT(*) AS panic_open
+      FROM panic_events WHERE org_id=$1 AND resolved_at IS NULL`, [orgId]),
   ]);
 
   // km_today: sum of GPS distance for active vehicles since midnight
@@ -82,7 +86,8 @@ router.get('/overview', asyncHandler(async (req, res) => {
   const sosOpen = parseInt(t.sos_open) || 0;
   const critOpen = parseInt(t.crit_open) || 0;
   const alertsOpen = parseInt(t.alerts_open) || 0;
-  const threatLevel = sosOpen > 0 ? 'critical' : critOpen > 0 ? 'elevated' : 'secure';
+  const panicOpen = parseInt(panicR.rows[0]?.panic_open) || 0;
+  const threatLevel = panicOpen > 0 || sosOpen > 0 ? 'critical' : critOpen > 0 ? 'elevated' : 'secure';
 
   const k = kpiR.rows[0];
 
@@ -103,7 +108,7 @@ router.get('/overview', asyncHandler(async (req, res) => {
   const shiftRow = shiftR.rows[0];
 
   res.json({
-    threat: { level: threatLevel, alerts_open: alertsOpen, incidents_active: parseInt(k.incidents_active)||0 },
+    threat: { level: threatLevel, alerts_open: alertsOpen + panicOpen, incidents_active: parseInt(k.incidents_active)||0 },
     kpi: {
       vehicles_live: parseInt(k.vehicles_live)||0,
       convoys_active: parseInt(k.convoys_active)||0,
