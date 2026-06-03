@@ -179,17 +179,7 @@ router.get('/map', asyncHandler(async (req, res) => {
 
     safeQuery(req.db, `
       SELECT id::text, name, COALESCE(type,'circle') AS type,
-             COALESCE(
-               (coordinates->>'lat')::numeric,
-               (coordinates->'center'->>'lat')::numeric,
-               (coordinates->>'latitude')::numeric
-             ) AS lat,
-             COALESCE(
-               (coordinates->>'lng')::numeric,
-               (coordinates->'center'->>'lng')::numeric,
-               (coordinates->>'longitude')::numeric
-             ) AS lng,
-             COALESCE(radius, 1000) AS radius_m
+             coordinates, COALESCE(radius, 1000) AS radius_m
       FROM geofences
       WHERE org_id=$1 AND active=true
         AND coordinates IS NOT NULL
@@ -243,13 +233,27 @@ router.get('/map', asyncHandler(async (req, res) => {
       lat: parseFloat(v.lat), lng: parseFloat(v.lng),
       heading: parseFloat(v.heading), speed_kmh: parseFloat(v.speed_kmh),
     })),
-    geofences: geofencesR.rows
-      .filter(g => g.lat != null && g.lng != null)
-      .map(g => ({
-        id: g.id, name: g.name, type: g.type,
-        lat: parseFloat(g.lat), lng: parseFloat(g.lng),
-        radius_m: parseFloat(g.radius_m),
-      })),
+    geofences: geofencesR.rows.map(g => {
+        const type = g.type || 'circle';
+        const coords = g.coordinates || {};
+        if (type === 'corridor') {
+          const path = coords.path;
+          if (!Array.isArray(path) || path.length < 2) return null;
+          const mid = path[Math.floor(path.length / 2)];
+          return {
+            id: g.id, name: g.name, type,
+            path,
+            buffer_m: typeof coords.buffer_m === 'number' ? coords.buffer_m : 300,
+            lat: mid ? parseFloat(mid[0]) : null,
+            lng: mid ? parseFloat(mid[1]) : null,
+            radius_m: parseFloat(g.radius_m),
+          };
+        }
+        const lat = coords.lat ?? coords.center?.lat ?? coords.latitude ?? null;
+        const lng = coords.lng ?? coords.center?.lng ?? coords.longitude ?? null;
+        if (lat == null || lng == null) return null;
+        return { id: g.id, name: g.name, type, lat: parseFloat(lat), lng: parseFloat(lng), radius_m: parseFloat(g.radius_m), path: null, buffer_m: null };
+      }).filter(Boolean),
     riskzones: riskzonesR.rows.map(r => ({
       id: r.id, name: r.name, risk_level: r.risk_level,
       lat: parseFloat(r.lat), lng: parseFloat(r.lng),

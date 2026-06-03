@@ -9,7 +9,7 @@ interface MapConvoy { id: string; name: string; status: string; lat: number | nu
 interface AlertZone { lat: number; lng: number; radius_m: number; severity: string }
 interface MapVehicle { id: string; registration: string; lat: number; lng: number; heading: number; status: string; speed_kmh: number }
 interface MapDevice { id: string; name: string; model?: string; assignment_type?: string; lat: number; lng: number; status: string; speed_kmh: number; panic_active: boolean; last_seen?: string | null }
-interface MapGeofence { id: string; name: string; type: string; lat: number; lng: number; radius_m: number }
+interface MapGeofence { id: string; name: string; type: string; lat: number | null; lng: number | null; radius_m: number; path?: [number, number][] | null; buffer_m?: number | null }
 interface MapRiskZone { id: string; name: string; risk_level: string; lat: number; lng: number; radius_km: number }
 interface MapData { convoys: MapConvoy[]; alert_zones: AlertZone[]; vehicles?: MapVehicle[]; devices?: MapDevice[]; geofences?: MapGeofence[]; riskzones?: MapRiskZone[] }
 interface VehicleTelemetry { id: string; registration: string; convoy_id: string | null; status: string; speed_kmh: number; fuel_pct: number | null; engine_temp_c: number | null; gps_signal_pct: number | null; last_ping_at: string | null }
@@ -84,12 +84,24 @@ function setupMapLayers(map: maplibregl.Map) {
   }});
   map.addLayer({ id: 'sv-alerts-fill', type: 'fill', source: 'sv-alerts', paint: { 'fill-color': '#ff4422', 'fill-opacity': 0.1 }});
   map.addLayer({ id: 'sv-alerts-line', type: 'line', source: 'sv-alerts', paint: { 'line-color': '#ff4422', 'line-width': 1.5, 'line-opacity': 0.6 }});
-  map.addLayer({ id: 'sv-geofences-fill', type: 'fill', source: 'sv-geofences', paint: {
-    'fill-color': '#00ffcc', 'fill-opacity': 0.14,
-  }});
-  map.addLayer({ id: 'sv-geofences-line', type: 'line', source: 'sv-geofences', paint: {
-    'line-color': '#00ffcc', 'line-width': 1.8, 'line-opacity': 0.85, 'line-dasharray': [6, 3],
-  }});
+  map.addLayer({ id: 'sv-geofences-fill', type: 'fill', source: 'sv-geofences',
+    filter: ['==', ['geometry-type'], 'Polygon'],
+    paint: { 'fill-color': '#00ffcc', 'fill-opacity': 0.14 },
+  });
+  map.addLayer({ id: 'sv-geofences-line', type: 'line', source: 'sv-geofences',
+    filter: ['==', ['geometry-type'], 'Polygon'],
+    paint: { 'line-color': '#00ffcc', 'line-width': 1.8, 'line-opacity': 0.85, 'line-dasharray': [6, 3] },
+  });
+  map.addLayer({ id: 'sv-geofences-corridor-bg', type: 'line', source: 'sv-geofences',
+    filter: ['==', ['geometry-type'], 'LineString'],
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': '#38bdf8', 'line-width': 12, 'line-opacity': 0.18 },
+  });
+  map.addLayer({ id: 'sv-geofences-corridor-line', type: 'line', source: 'sv-geofences',
+    filter: ['==', ['geometry-type'], 'LineString'],
+    layout: { 'line-cap': 'round' },
+    paint: { 'line-color': '#38bdf8', 'line-width': 2.5, 'line-opacity': 0.9, 'line-dasharray': [4, 2] },
+  });
   map.addLayer({ id: 'sv-geofences-label', type: 'symbol', source: 'sv-geofences', layout: {
     'text-field': ['get', 'name'],
     'text-size': 10, 'text-anchor': 'center',
@@ -154,10 +166,15 @@ function updateMapData(map: maplibregl.Map, data: MapData) {
   });
   setData('sv-geofences', {
     type: 'FeatureCollection',
-    features: (data.geofences ?? []).map(g => ({
-      type: 'Feature', geometry: { type: 'Polygon', coordinates: [geoCircle(g.lat, g.lng, g.radius_m / 1000)] },
-      properties: { id: g.id, name: g.name },
-    })),
+    features: (data.geofences ?? []).reduce<GeoJSON.Feature[]>((acc, g) => {
+      if (g.type === 'corridor' && Array.isArray(g.path) && g.path.length >= 2) {
+        const coords = g.path.map(([lat, lng]) => [lng ?? 0, lat ?? 0] as [number, number]);
+        acc.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: { id: g.id, name: g.name } });
+      } else if (g.lat != null && g.lng != null) {
+        acc.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [geoCircle(g.lat, g.lng, g.radius_m / 1000)] }, properties: { id: g.id, name: g.name } });
+      }
+      return acc;
+    }, []),
   });
   setData('sv-risk', {
     type: 'FeatureCollection',
