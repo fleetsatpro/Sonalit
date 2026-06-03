@@ -133,7 +133,7 @@ export default function ClaimsPage() {
 
       {showNew && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-lg space-y-4">
+          <div role="dialog" className="bg-gray-800 rounded-xl p-6 w-full max-w-lg space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold text-white">New Insurance Claim</h2>
               <button onClick={() => setShowNew(false)} className="text-gray-400 hover:text-white"><XCircle className="w-5 h-5" /></button>

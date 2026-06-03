@@ -17,7 +17,7 @@ import { expect, test } from '@playwright/test';
 const CONVOY_X = 'convoy-x-uuid-0000-0000-000000000001';
 
 function stubSecurity(page: import('@playwright/test').Page) {
-  page.route(
+  return page.route(
     url => url.toString().includes(`/api/v1/portal/convoy/${CONVOY_X}/security`),
     route => route.fulfill({
       status: 200,
@@ -38,7 +38,7 @@ function stubSecurity(page: import('@playwright/test').Page) {
 }
 
 function stubIncidents(page: import('@playwright/test').Page, incidents: object[]) {
-  page.route(
+  return page.route(
     url => url.toString().includes(`/api/v1/portal/convoy/${CONVOY_X}/incidents`),
     route => route.fulfill({
       status: 200,
@@ -66,39 +66,39 @@ const RAW_INTERNAL_INCIDENT = {
 test.describe('§00 Incident Sanitisation', () => {
 
   test('security page loads with status bar and incident feed', async ({ page }) => {
-    stubSecurity(page);
-    stubIncidents(page, [RAW_INTERNAL_INCIDENT]);
+    await stubSecurity(page);
+    await stubIncidents(page, [RAW_INTERNAL_INCIDENT]);
     await page.goto(`/portal/convoy/${CONVOY_X}/security`);
     await expect(page.getByText('Security alert — response engaged')).toBeVisible({ timeout: 8000 });
     await expect(page.getByText('Incident History')).toBeVisible({ timeout: 4000 });
   });
 
   test('raw message text is never rendered to DOM', async ({ page }) => {
-    stubSecurity(page);
-    stubIncidents(page, [RAW_INTERNAL_INCIDENT]);
+    await stubSecurity(page);
+    await stubIncidents(page, [RAW_INTERNAL_INCIDENT]);
     await page.goto(`/portal/convoy/${CONVOY_X}/security`);
     await expect(page.locator('text=/armed suspects|law enforcement|km 42|suspect vehicle/i'))
       .not.toBeVisible({ timeout: 8000 });
   });
 
   test('law enforcement / police language is never rendered', async ({ page }) => {
-    stubSecurity(page);
-    stubIncidents(page, [RAW_INTERNAL_INCIDENT]);
+    await stubSecurity(page);
+    await stubIncidents(page, [RAW_INTERNAL_INCIDENT]);
     await page.goto(`/portal/convoy/${CONVOY_X}/security`);
     await expect(page.locator('text=/police|saps|armed response unit|tactical/i'))
       .not.toBeVisible({ timeout: 8000 });
   });
 
   test('detected incident shows DETECTED phase chip', async ({ page }) => {
-    stubSecurity(page);
-    stubIncidents(page, [RAW_INTERNAL_INCIDENT]);
+    await stubSecurity(page);
+    await stubIncidents(page, [RAW_INTERNAL_INCIDENT]);
     await page.goto(`/portal/convoy/${CONVOY_X}/security`);
     await expect(page.getByText('DETECTED')).toBeVisible({ timeout: 8000 });
   });
 
   test('responding incident shows RESPONDING phase chip', async ({ page }) => {
-    stubSecurity(page);
-    stubIncidents(page, [{
+    await stubSecurity(page);
+    await stubIncidents(page, [{
       ...RAW_INTERNAL_INCIDENT,
       status: 'responding',
       timeline: [
@@ -111,8 +111,8 @@ test.describe('§00 Incident Sanitisation', () => {
   });
 
   test('resolved incident shows RESOLVED phase chip', async ({ page }) => {
-    stubSecurity(page);
-    stubIncidents(page, [{
+    await stubSecurity(page);
+    await stubIncidents(page, [{
       ...RAW_INTERNAL_INCIDENT,
       status: 'resolved',
       resolved_at: new Date().toISOString(),
@@ -127,14 +127,14 @@ test.describe('§00 Incident Sanitisation', () => {
   });
 
   test('empty incident list shows no-incident state (not a blank screen)', async ({ page }) => {
-    stubSecurity(page);
-    stubIncidents(page, []);
+    await stubSecurity(page);
+    await stubIncidents(page, []);
     await page.goto(`/portal/convoy/${CONVOY_X}/security`);
     await expect(page.getByText(/No incidents recorded/i)).toBeVisible({ timeout: 8000 });
   });
 
   test('status bar shows correct level colour class for secure convoy', async ({ page }) => {
-    page.route(
+    await page.route(
       url => url.toString().includes(`/api/v1/portal/convoy/${CONVOY_X}/security`),
       route => route.fulfill({
         status: 200,
@@ -152,14 +152,14 @@ test.describe('§00 Incident Sanitisation', () => {
         }),
       }),
     );
-    stubIncidents(page, []);
+    await stubIncidents(page, []);
     await page.goto(`/portal/convoy/${CONVOY_X}/security`);
     await expect(page.getByText('All secure')).toBeVisible({ timeout: 8000 });
   });
 
   test('privacy note is shown at the bottom of page', async ({ page }) => {
-    stubSecurity(page);
-    stubIncidents(page, []);
+    await stubSecurity(page);
+    await stubIncidents(page, []);
     await page.goto(`/portal/convoy/${CONVOY_X}/security`);
     await expect(page.getByText(/protect operational security/i)).toBeVisible({ timeout: 8000 });
   });

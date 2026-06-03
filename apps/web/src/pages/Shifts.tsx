@@ -97,11 +97,15 @@ export default function ShiftsPage() {
             <span className="text-green-400 font-medium text-sm">On Duty Now ({onDutyQ.data.data.length})</span>
           </div>
           <div className="flex flex-wrap gap-2">
-            {onDutyQ.data.data.map(s => (
-              <span key={s.id} className="bg-green-900/40 text-green-300 text-xs px-3 py-1 rounded-full">
-                {s.driver_name ?? 'Unknown'} {s.vehicle_reg ? `— ${s.vehicle_reg}` : ''}
-              </span>
-            ))}
+            {onDutyQ.data.data.map(s => {
+              const firstName = s.driver_name?.split(' ')[0] ?? 'Unknown';
+              const plate = s.vehicle_reg?.replace(/\s+/g, '') ?? '';
+              return (
+                <span key={s.id} className="bg-green-900/40 text-green-300 text-xs px-3 py-1 rounded-full">
+                  {firstName}{plate ? ` · ${plate}` : ''}
+                </span>
+              );
+            })}
           </div>
         </div>
       )}
@@ -159,7 +163,7 @@ export default function ShiftsPage() {
 
       {showNew && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md space-y-4">
+          <div role="dialog" className="bg-gray-800 rounded-xl p-6 w-full max-w-md space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold text-white flex items-center gap-2"><Clock className="w-4 h-4" /> Schedule Shift</h2>
               <button onClick={() => setShowNew(false)} className="text-gray-400 hover:text-white"><XCircle className="w-5 h-5" /></button>

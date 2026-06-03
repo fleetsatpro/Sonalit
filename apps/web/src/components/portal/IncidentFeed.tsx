@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { AlertTriangle, CheckCircle, Clock, Radio, ShieldAlert } from 'lucide-react';
 import { subscribePortal as subscribe } from '../../lib/portalCentrifuge.js';
 import { relativeTime } from './PortalPrimitives.js';
@@ -145,6 +146,7 @@ interface Props {
 }
 
 export function IncidentFeed({ convoyId, onLevelChange }: Props): React.ReactElement {
+  const navigate = useNavigate();
   const [incidents, setIncidents] = useState<PortalIncident[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -155,7 +157,7 @@ export function IncidentFeed({ convoyId, onLevelChange }: Props): React.ReactEle
     setErrorMsg(null);
     fetch(`${API}/portal/convoy/${encodeURIComponent(convoyId)}/incidents`, { credentials: 'include' })
       .then(async res => {
-        if (res.status === 401) { window.location.href = '/portal/login'; return null; }
+        if (res.status === 401) { void navigate({ to: '/portal/login' }); return null; }
         if (res.status === 403) { setErrorMsg('Not authorised for this convoy'); return null; }
         if (!res.ok) { setErrorMsg('Failed to load incidents'); return null; }
         return res.json() as Promise<{ data: PortalIncident[] }>;

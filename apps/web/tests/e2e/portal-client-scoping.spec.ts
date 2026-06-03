@@ -58,7 +58,7 @@ function stubConvoyX(page: import('@playwright/test').Page, endpoint: string) {
 
 /** Stub convoy-y endpoint as 403 (server-enforced §00) */
 function stubConvoyY403(page: import('@playwright/test').Page, endpoint: string) {
-  page.route(
+  return page.route(
     url => url.toString().includes(`/api/v1/portal/convoy/${CONVOY_Y}/${endpoint}`),
     route => route.fulfill({
       status: 403,
@@ -246,13 +246,15 @@ test.describe('§00 Portal Client Scoping', () => {
   });
 
   test('403 on unlinked convoy security status is surfaced as error', async ({ page }) => {
-    stubConvoyY403(page, 'security');
+    await stubConvoyY403(page, 'security');
+    await stubConvoyY403(page, 'incidents');
     await page.goto(`/portal/convoy/${CONVOY_Y}/security`);
     await expect(page.locator('text=/not authorised|403|failed/i')).toBeVisible({ timeout: 8000 });
   });
 
   test('403 on unlinked convoy incidents is surfaced as error', async ({ page }) => {
-    stubConvoyY403(page, 'incidents');
+    await stubConvoyY403(page, 'security');
+    await stubConvoyY403(page, 'incidents');
     await page.goto(`/portal/convoy/${CONVOY_Y}/security`);
     await expect(page.locator('text=/not authorised|403|failed/i')).toBeVisible({ timeout: 8000 });
   });

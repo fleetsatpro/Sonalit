@@ -64,6 +64,12 @@ const TYPE_LABELS: Record<string, string> = {
   off_route_refuel: 'Off-Route Refuel',
 };
 
+function abbrevAmount(v: number): string {
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
+  return Math.round(v).toString();
+}
+
 export default function FuelPage() {
   const [tab, setTab] = useState<Tab>('log');
   const [showAddEntry, setShowAddEntry] = useState(false);
@@ -179,7 +185,7 @@ export default function FuelPage() {
                     <td className="p-3 font-mono text-xs text-gray-300">{e.vehicle_reg ?? e.vehicle_id?.slice(0, 8) ?? '—'}</td>
                     <td className="p-3 text-gray-300">{e.driver_name ?? '—'}</td>
                     <td className="p-3 text-right text-white">{Number(e.litres).toFixed(1)} L</td>
-                    <td className="p-3 text-right text-gray-300">{e.total_cost != null ? `${e.currency} ${Number(e.total_cost).toFixed(2)}` : '—'}</td>
+                    <td className="p-3 text-right text-gray-300">{e.total_cost != null ? `${e.currency} ${abbrevAmount(e.total_cost)}` : '—'}</td>
                     <td className="p-3 text-gray-300">{e.station_name ?? '—'}</td>
                     <td className="p-3"><span className="text-xs bg-gray-700 px-2 py-0.5 rounded">{e.source}</span></td>
                     <td className="p-3 text-gray-400 text-xs">{new Date(e.created_at).toLocaleString()}</td>

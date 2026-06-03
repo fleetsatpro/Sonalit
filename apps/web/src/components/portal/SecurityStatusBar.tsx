@@ -129,10 +129,16 @@ export function SecurityStatusBar({ convoyId, initialStatus = null }: Props): Re
     return unsub;
   }, [convoyId]);
 
-  if (forbidden) return null;
+  if (forbidden) return (
+    <div className="flex gap-3 p-4 rounded-xl border border-red-700/40 bg-red-900/20 mb-4">
+      <AlertTriangle size={16} className="text-red-400 shrink-0 mt-0.5" />
+      <p className="text-sm text-red-300">Not authorised for this convoy</p>
+    </div>
+  );
   if (!status) return null;
 
   const cfg = LEVEL_CONFIG[status.level];
+  if (!cfg) return null;
   const { Icon } = cfg;
 
   return (
