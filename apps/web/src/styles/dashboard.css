@@ -159,13 +159,17 @@
   display: flex;
   gap: 12px;
   overflow-x: auto;
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--d-rim2) transparent;
   -webkit-overflow-scrolling: touch;
   scroll-snap-type: x mandatory;
   overscroll-behavior: contain;
+  padding-bottom: 4px;
 }
 
-.d-hscroll::-webkit-scrollbar { display: none; }
+.d-hscroll::-webkit-scrollbar { height: 4px; }
+.d-hscroll::-webkit-scrollbar-track { background: transparent; }
+.d-hscroll::-webkit-scrollbar-thumb { background: var(--d-rim2); border-radius: 2px; }
 
 /* ── Clip-corner card accent ─────────────────────────────────────────── */
 .d-clip {

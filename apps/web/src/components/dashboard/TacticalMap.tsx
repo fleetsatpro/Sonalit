@@ -33,6 +33,17 @@ function geoCircle(lat: number, lng: number, radiusKm: number, steps = 48): [num
   return pts;
 }
 
+const STREET_STYLE: maplibregl.StyleSpecification = {
+  version: 8,
+  sources: { osm: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, attribution: '© OpenStreetMap contributors' } },
+  layers: [{ id: 'osm-tiles', type: 'raster', source: 'osm' as const, paint: { 'raster-opacity': 1 } }],
+};
+const SAT_STYLE: maplibregl.StyleSpecification = {
+  version: 8,
+  sources: { sat: { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, attribution: '© Esri World Imagery' } },
+  layers: [{ id: 'sat-tiles', type: 'raster', source: 'sat' as const, paint: { 'raster-opacity': 1 } }],
+};
+
 // Status → color. Drives both vehicle and device markers.
 // alert/panic = red, warn = amber, moving = green, idle = gray, offline = dim gray
 const STATUS_COLOR_EXPR: maplibregl.ExpressionSpecification = [
@@ -197,6 +208,8 @@ const TacticalMap = React.memo(function TacticalMap() {
   const selectedVehicleId = useDashboardStore((s) => s.selectedVehicleId);
   const { setSelectedVehicle } = useDashboardStore.getState();
   const [expanded, setExpanded] = useState(false);
+  const [mapStyle, setMapStyle] = useState<'street' | 'satellite'>('street');
+  const currentDataRef = useRef<MapData | null>(null);
 
   const { data: mapData } = useQuery<MapData>({
     queryKey: ['dashboard-map'],
@@ -214,11 +227,7 @@ const TacticalMap = React.memo(function TacticalMap() {
     if (!mapContainer.current || mapRef.current) return;
     const map = new maplibregl.Map({
       container: mapContainer.current,
-      style: {
-        version: 8,
-        sources: { osm: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, attribution: '© OpenStreetMap contributors' }},
-        layers: [{ id: 'osm-tiles', type: 'raster', source: 'osm', paint: { 'raster-opacity': 1 } }],
-      },
+      style: STREET_STYLE,
       center: EA_CENTER, zoom: EA_ZOOM, attributionControl: false,
     });
     map.on('error', () => {});
@@ -233,12 +242,29 @@ const TacticalMap = React.memo(function TacticalMap() {
 
   useEffect(() => {
     if (!mapData) return;
+    currentDataRef.current = mapData;
     if (mapReadyRef.current && mapRef.current) {
       updateMapData(mapRef.current, mapData);
     } else {
       pendingDataRef.current = mapData;
     }
   }, [mapData]);
+
+  // Switch base map style between street and satellite
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const style = mapStyle === 'satellite' ? SAT_STYLE : STREET_STYLE;
+    mapReadyRef.current = false;
+    map.setStyle(style);
+    const onLoad = () => {
+      setupMapLayers(map);
+      mapReadyRef.current = true;
+      if (currentDataRef.current) updateMapData(map, currentDataRef.current);
+    };
+    map.once('style.load', onLoad);
+    return () => { map.off('style.load', onLoad); };
+  }, [mapStyle]);
 
   useEffect(() => {
     vehiclePositions.forEach((pos, vehicleId) => {
@@ -298,6 +324,14 @@ const TacticalMap = React.memo(function TacticalMap() {
         <LegendDot color='#ff4422' label='ALERT' />
         <LegendDot color='#ff1e1e' label='PANIC' />
         <LegendDot color='#888888' label='IDLE' />
+        {/* Layer switcher */}
+        <button
+          onClick={() => setMapStyle(s => s === 'street' ? 'satellite' : 'street')}
+          title={mapStyle === 'street' ? 'Switch to satellite view' : 'Switch to street view'}
+          style={{ background: mapStyle === 'satellite' ? 'rgba(249,115,22,.15)' : 'var(--d-lift2)', border: `1px solid ${mapStyle === 'satellite' ? 'var(--d-orange)' : 'var(--d-rim2)'}`, borderRadius: 6, color: mapStyle === 'satellite' ? 'var(--d-orange)' : 'var(--d-t2)', cursor: 'pointer', padding: '4px 8px', fontSize: 10, fontFamily: 'IBM Plex Mono, monospace', letterSpacing: '.06em', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}
+        >
+          {mapStyle === 'street' ? 'SAT' : 'STR'}
+        </button>
         {/* Expand / collapse button */}
         <button
           onClick={() => setExpanded(v => !v)}
@@ -381,7 +415,7 @@ const TacticalMap = React.memo(function TacticalMap() {
 
       {/* Vehicle chips */}
       {vehicles && vehicles.length > 0 && (
-        <div className='d-hscroll' style={{ marginBottom: 12, gap: 8 }}>
+        <div className='d-hscroll' style={{ marginBottom: 12, gap: 8, paddingBottom: 6 }}>
           {vehicles.map(v => (
             <button key={v.id} onClick={() => setSelectedVehicle(v.id === selectedVehicleId ? null : v.id)}
               style={{ flex: '0 0 auto', scrollSnapAlign: 'start', padding: '6px 12px', background: v.id === selectedVehicleId ? 'var(--d-sg)' : 'var(--d-well)', border: `1px solid ${v.id === selectedVehicleId ? 'var(--d-sig)' : 'var(--d-rim2)'}`, borderRadius: 6, cursor: 'pointer', color: v.id === selectedVehicleId ? 'var(--d-sig)' : 'var(--d-t2)', fontSize: 11, fontFamily: 'IBM Plex Mono, monospace' }}
