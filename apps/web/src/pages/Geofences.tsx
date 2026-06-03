@@ -127,7 +127,7 @@ export default function Geofences() {
     if (!mapContainer.current || mapRef.current) return;
     mapRef.current = new maplibregl.Map({
       container: mapContainer.current,
-      style: 'https://demotiles.maplibre.org/style.json',
+      style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
       center: [36.817, -1.286],
       zoom: 9,
     });
