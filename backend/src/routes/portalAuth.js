@@ -143,7 +143,7 @@ router.post('/verify', asyncHandler(async (req, res) => {
   );
   const convoy_ids = linksResult.rows.map(r => r.convoy_id);
 
-  const secret = process.env.CLIENT_JWT_SECRET;
+  const secret = process.env.CLIENT_JWT_SECRET ?? process.env.JWT_SECRET;
   if (!secret) return res.status(503).json({ error: 'Auth not configured' });
 
   const token = jwt.sign(

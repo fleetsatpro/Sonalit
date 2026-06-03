@@ -14,7 +14,7 @@ function clientAuth(req, res, next) {
     const token = fromCookie || fromHeader;
     if (!token) return res.status(401).json({ error: 'Not authenticated' });
 
-    const secret = process.env.CLIENT_JWT_SECRET;
+    const secret = process.env.CLIENT_JWT_SECRET ?? process.env.JWT_SECRET;
     if (!secret) return res.status(503).json({ error: 'Auth not configured' });
 
     const claims = jwt.verify(token, secret, { algorithms: ['HS256'] });
