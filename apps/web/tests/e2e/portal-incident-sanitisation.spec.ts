@@ -65,6 +65,16 @@ const RAW_INTERNAL_INCIDENT = {
 
 test.describe('§00 Incident Sanitisation', () => {
 
+  test.beforeEach(async ({ page }) => {
+    // Ensure no unstubbed portal endpoint leaks a 401 that would trigger a redirect.
+    // Specific stubs registered inside each test are added after this (LIFO), so they take priority.
+    await page.route('**/api/v1/portal/**', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: [] }),
+    }));
+  });
+
   test('security page loads with status bar and incident feed', async ({ page }) => {
     await stubSecurity(page);
     await stubIncidents(page, [RAW_INTERNAL_INCIDENT]);
