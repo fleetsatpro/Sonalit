@@ -179,7 +179,8 @@ router.get('/map', asyncHandler(async (req, res) => {
 
     safeQuery(req.db, `
       SELECT id::text, name, COALESCE(type,'circle') AS type,
-             coordinates, COALESCE(radius, 1000) AS radius_m
+             coordinates, COALESCE(radius, 1000) AS radius_m,
+             corridor_width_km
       FROM geofences
       WHERE org_id=$1 AND active=true
         AND coordinates IS NOT NULL
@@ -234,21 +235,35 @@ router.get('/map', asyncHandler(async (req, res) => {
       heading: parseFloat(v.heading), speed_kmh: parseFloat(v.speed_kmh),
     })),
     geofences: geofencesR.rows.map(g => {
-        const type = g.type || 'circle';
+        const type = (g.type || 'circle').toLowerCase();
         const coords = g.coordinates || {};
-        if (type === 'corridor') {
-          const path = coords.path;
-          if (!Array.isArray(path) || path.length < 2) return null;
+        const CORRIDOR_TYPES = ['corridor', 'linear', 'line', 'linestring', 'route'];
+
+        // Extract path in [[lat,lng],...] format from any known structure
+        let path = null;
+        let buffer_m = g.corridor_width_km ? g.corridor_width_km * 1000 : 300;
+        if (Array.isArray(coords.path) && coords.path.length >= 2) {
+          path = coords.path; // [[lat,lng],...] order
+          if (typeof coords.buffer_m === 'number') buffer_m = coords.buffer_m;
+        } else if (coords.type === 'LineString' && Array.isArray(coords.coordinates) && coords.coordinates.length >= 2) {
+          // GeoJSON LineString uses [lng,lat] — swap to [lat,lng]
+          path = coords.coordinates.map(([lng, lat]) => [lat, lng]);
+        } else if (Array.isArray(coords) && coords.length >= 2 && Array.isArray(coords[0])) {
+          path = coords; // assume [[lat,lng],...] already
+        }
+
+        if (CORRIDOR_TYPES.includes(type) || path) {
+          if (!path || path.length < 2) return null;
           const mid = path[Math.floor(path.length / 2)];
           return {
-            id: g.id, name: g.name, type,
-            path,
-            buffer_m: typeof coords.buffer_m === 'number' ? coords.buffer_m : 300,
+            id: g.id, name: g.name, type: 'corridor',
+            path, buffer_m,
             lat: mid ? parseFloat(mid[0]) : null,
             lng: mid ? parseFloat(mid[1]) : null,
             radius_m: parseFloat(g.radius_m),
           };
         }
+
         const lat = coords.lat ?? coords.center?.lat ?? coords.latitude ?? null;
         const lng = coords.lng ?? coords.center?.lng ?? coords.longitude ?? null;
         if (lat == null || lng == null) return null;
