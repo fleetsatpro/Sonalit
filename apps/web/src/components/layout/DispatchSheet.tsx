@@ -56,7 +56,7 @@ const DispatchSheet = React.memo(function DispatchSheet({ open, onClose }: Dispa
     <>
       <div onClick={onClose} style={{
         position: 'fixed', inset: 0, zIndex: 800,
-        background: 'rgba(0,0,0,.6)', backdropFilter: 'blur(6px)',
+        background: 'rgba(0,0,0,.35)',
         opacity: open ? 1 : 0, pointerEvents: open ? 'all' : 'none',
         transition: 'opacity .2s',
       }} />
@@ -68,10 +68,13 @@ const DispatchSheet = React.memo(function DispatchSheet({ open, onClose }: Dispa
         border: '1px solid var(--d-rim2)',
         borderBottom: 'none',
         borderRadius: '16px 16px 0 0',
-        padding: 24,
+        padding: '12px 24px 24px',
+        paddingBottom: 'max(24px, env(safe-area-inset-bottom))',
         zIndex: 900,
         transition: 'transform .3s cubic-bezier(.4,0,.2,1)',
       }}>
+        {/* Drag handle */}
+        <div style={{ width: 36, height: 4, background: 'var(--d-rim3)', borderRadius: 2, margin: '0 auto 16px' }} />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
             <div style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 14, color: 'var(--d-t1)', letterSpacing: '.08em' }}>QUICK DISPATCH</div>
@@ -107,14 +110,14 @@ const DispatchSheet = React.memo(function DispatchSheet({ open, onClose }: Dispa
                 style={{
                   flex: 1, padding: '9px 4px',
                   background: priority === p
-                    ? (p === 'critical' ? 'var(--d-fg)' : p === 'express' ? 'var(--d-wg)' : 'var(--d-sg)')
+                    ? (p === 'critical' ? 'var(--d-fg)' : p === 'express' ? 'var(--d-wg)' : 'var(--d-og)')
                     : 'var(--d-lift)',
                   border: `1px solid ${priority === p
-                    ? (p === 'critical' ? 'var(--d-fire)' : p === 'express' ? 'var(--d-warn)' : 'var(--d-sig)')
+                    ? (p === 'critical' ? 'var(--d-fire)' : p === 'express' ? 'var(--d-warn)' : 'var(--d-orange)')
                     : 'var(--d-rim2)'}`,
                   borderRadius: 8,
                   color: priority === p
-                    ? (p === 'critical' ? 'var(--d-fire)' : p === 'express' ? 'var(--d-warn)' : 'var(--d-sig)')
+                    ? (p === 'critical' ? 'var(--d-fire)' : p === 'express' ? 'var(--d-warn)' : 'var(--d-orange)')
                     : 'var(--d-t2)',
                   fontSize: 11, cursor: 'pointer', fontWeight: 600,
                   textTransform: 'uppercase', letterSpacing: '.06em',
@@ -129,10 +132,10 @@ const DispatchSheet = React.memo(function DispatchSheet({ open, onClose }: Dispa
             disabled={status === 'loading' || status === 'success'}
             style={{
               padding: '12px',
-              background: status === 'success' ? 'var(--d-okg)' : status === 'error' ? 'var(--d-fg)' : 'var(--d-sg)',
-              border: `1px solid ${status === 'success' ? 'var(--d-ok)' : status === 'error' ? 'var(--d-fire)' : 'var(--d-sig)'}`,
+              background: status === 'success' ? 'var(--d-sg)' : status === 'error' ? 'var(--d-fg)' : 'var(--d-og)',
+              border: `1px solid ${status === 'success' ? 'var(--d-sig)' : status === 'error' ? 'var(--d-fire)' : 'var(--d-orange)'}`,
               borderRadius: 8,
-              color: status === 'success' ? 'var(--d-ok)' : status === 'error' ? 'var(--d-fire)' : 'var(--d-sig)',
+              color: status === 'success' ? 'var(--d-sig)' : status === 'error' ? 'var(--d-fire)' : 'var(--d-orange)',
               fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 13,
               letterSpacing: '.1em', cursor: 'pointer',
             }}
