@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
 import DataError from './DataError.js';
+import CompactEmpty from './CompactEmpty.js';
 
 interface RouteRisk {
   corridor: string; origin: string; destination: string;
@@ -40,11 +41,16 @@ const RouteRiskIntelligence = React.memo(function RouteRiskIntelligence() {
 
   if (isError) return <DataError section='Route Risk' onRetry={refetch} />;
 
+  const rows = data ?? [];
+  if (rows.length === 0) {
+    return <CompactEmpty accent='var(--d-warn)' title='ROUTE RISK INTELLIGENCE' message='No corridors configured' />;
+  }
+
   return (
     <div className='d-section-reveal d-card' style={{ padding: 16 }}>
       <SH />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {(data ?? []).map((row, i) => {
+        {rows.map((row, i) => {
           const color = RISK_COLOR[row.risk];
           return (
             <div key={i} style={{ borderBottom: '1px solid var(--d-rim)', paddingBottom: 12 }}>
@@ -68,7 +74,6 @@ const RouteRiskIntelligence = React.memo(function RouteRiskIntelligence() {
             </div>
           );
         })}
-        {(!data || data.length === 0) && <Empty />}
       </div>
     </div>
   );
@@ -81,10 +86,6 @@ function SH() {
       <span style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 11, letterSpacing: '.12em', color: 'var(--d-t1)' }}>ROUTE RISK INTELLIGENCE</span>
     </div>
   );
-}
-
-function Empty() {
-  return <div style={{ textAlign: 'center', color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace', fontSize: 12, padding: 16 }}>No corridors configured</div>;
 }
 
 export default RouteRiskIntelligence;

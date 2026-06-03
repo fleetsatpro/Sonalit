@@ -347,8 +347,10 @@ const TacticalMap = React.memo(function TacticalMap() {
         <div ref={mapContainer} style={{ width: '100%', height: expanded ? '100%' : 420, background: 'var(--d-deep)', ...(expanded && { position: 'absolute', inset: 0 }) }} />
 
         {/* Radar — own 160×160 square SVG so rings stay circular on all widths */}
-        <div style={{ position: 'absolute', top: 8, left: 8, pointerEvents: 'none' }}>
-          <svg width={160} height={160} viewBox='0 0 160 160'>
+        <div style={{ position: 'absolute', top: 8, left: 8, pointerEvents: 'none', width: 160, height: 160 }}>
+          {/* Glass backdrop — keeps radar legible on bright satellite tiles */}
+          <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: 'radial-gradient(circle, rgba(0,0,0,.55) 60%, rgba(0,0,0,.15) 85%, transparent 100%)', backdropFilter: 'blur(2px)', WebkitBackdropFilter: 'blur(2px)' }} />
+          <svg width={160} height={160} viewBox='0 0 160 160' style={{ position: 'relative' }}>
             {/* HUD corner brackets */}
             <path d='M8 20 L8 8 L20 8' fill='none' stroke={`rgba(${rc},.5)`} strokeWidth={1.5} strokeLinecap='square' />
             <path d='M140 8 L152 8 L152 20' fill='none' stroke={`rgba(${rc},.5)`} strokeWidth={1.5} strokeLinecap='square' />
