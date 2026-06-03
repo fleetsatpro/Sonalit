@@ -35,13 +35,22 @@ function geoCircle(lat: number, lng: number, radiusKm: number, steps = 48): [num
 
 const STREET_STYLE: maplibregl.StyleSpecification = {
   version: 8,
+  glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
   sources: { osm: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, attribution: '© OpenStreetMap contributors' } },
   layers: [{ id: 'osm-tiles', type: 'raster', source: 'osm' as const, paint: { 'raster-opacity': 1 } }],
 };
+// Satellite imagery + Esri reference layer (place names, country/admin boundaries, major roads)
 const SAT_STYLE: maplibregl.StyleSpecification = {
   version: 8,
-  sources: { sat: { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, attribution: '© Esri World Imagery' } },
-  layers: [{ id: 'sat-tiles', type: 'raster', source: 'sat' as const, paint: { 'raster-opacity': 1 } }],
+  glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+  sources: {
+    sat: { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, attribution: '© Esri World Imagery' },
+    'sat-ref': { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, attribution: '© Esri Boundaries and Places' },
+  },
+  layers: [
+    { id: 'sat-tiles', type: 'raster', source: 'sat' as const, paint: { 'raster-opacity': 1 } },
+    { id: 'sat-ref-tiles', type: 'raster', source: 'sat-ref' as const, paint: { 'raster-opacity': 0.9 } },
+  ],
 };
 
 // Status → color. Drives both vehicle and device markers.
@@ -75,9 +84,20 @@ function setupMapLayers(map: maplibregl.Map) {
   }});
   map.addLayer({ id: 'sv-alerts-fill', type: 'fill', source: 'sv-alerts', paint: { 'fill-color': '#ff4422', 'fill-opacity': 0.1 }});
   map.addLayer({ id: 'sv-alerts-line', type: 'line', source: 'sv-alerts', paint: { 'line-color': '#ff4422', 'line-width': 1.5, 'line-opacity': 0.6 }});
-  map.addLayer({ id: 'sv-geofences-fill', type: 'fill', source: 'sv-geofences', paint: { 'fill-color': '#00ffcc', 'fill-opacity': 0.05 }});
+  map.addLayer({ id: 'sv-geofences-fill', type: 'fill', source: 'sv-geofences', paint: {
+    'fill-color': '#00ffcc', 'fill-opacity': 0.14,
+  }});
   map.addLayer({ id: 'sv-geofences-line', type: 'line', source: 'sv-geofences', paint: {
-    'line-color': '#00ffcc', 'line-width': 1, 'line-opacity': 0.35, 'line-dasharray': [6, 3],
+    'line-color': '#00ffcc', 'line-width': 1.8, 'line-opacity': 0.85, 'line-dasharray': [6, 3],
+  }});
+  map.addLayer({ id: 'sv-geofences-label', type: 'symbol', source: 'sv-geofences', layout: {
+    'text-field': ['get', 'name'],
+    'text-size': 10, 'text-anchor': 'center',
+    'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+    'text-allow-overlap': false, 'text-optional': true,
+    'symbol-placement': 'point',
+  }, paint: {
+    'text-color': '#00ffcc', 'text-halo-color': '#000000', 'text-halo-width': 1.5,
   }});
 
   // Vehicles: triangle-ish square markers
