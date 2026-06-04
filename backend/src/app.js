@@ -199,6 +199,9 @@ catch (e) { logger.warn("GDPR route failed: " + e.message); }
   catch (e) { logger.warn("Route not found: " + r + " — " + e.message); }
 });
 
+try { app.use("/api/v1/risk", require("./routes/risk")); logger.info("Route loaded: /api/v1/risk"); }
+catch (e) { logger.warn("Risk route failed: " + e.message); }
+
 try { app.use("/api/v1/routes", require("./routes/routes")); logger.info("Route loaded: /api/v1/routes"); }
 catch (e) { logger.warn("Routes route failed: " + e.message); }
 
