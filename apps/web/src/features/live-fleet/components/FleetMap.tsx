@@ -1,69 +1,104 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { api } from '../../../lib/api.js'
 import type { LiveVehicle, LiveStatus } from '../types/fleet.js'
 
+// CARTO dark matter via Fastly CDN — more stable than basemaps.cartocdn.com
 const DARK_STYLE: maplibregl.StyleSpecification = {
   version: 8,
   sources: {
     carto: {
       type: 'raster',
       tiles: [
-        'https://a.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}.png',
-        'https://b.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}.png',
-        'https://c.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}.png',
-        'https://d.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}.png',
+        'https://cartodb-basemaps-a.global.ssl.fastly.net/dark_matter/{z}/{x}/{y}.png',
+        'https://cartodb-basemaps-b.global.ssl.fastly.net/dark_matter/{z}/{x}/{y}.png',
+        'https://cartodb-basemaps-c.global.ssl.fastly.net/dark_matter/{z}/{x}/{y}.png',
+        'https://cartodb-basemaps-d.global.ssl.fastly.net/dark_matter/{z}/{x}/{y}.png',
       ],
       tileSize: 256,
       attribution: '© CARTO © OpenStreetMap contributors',
     },
   },
-  layers: [{ id: 'carto', type: 'raster', source: 'carto', paint: { 'raster-brightness-min': 0.05 } }],
+  layers: [{ id: 'carto', type: 'raster', source: 'carto' }],
 }
 
 const STATUS_COLOR: Record<LiveStatus, string> = {
   move: '#16c784', idle: '#f59e0b', stop: '#475569', offline: '#3e4252', sos: '#ef4444',
 }
-const STATUS_BG: Record<LiveStatus, string> = {
-  move: '#071b12', idle: '#1e1504', stop: '#0f1420', offline: '#0a0b10', sos: '#1a0505',
+
+interface Geofence {
+  id: string; name: string; type: string
+  coordinates: Record<string, unknown> | null
+  radius: number | null; lat: number | null; lng: number | null
+}
+
+type GeoFC = { type: 'FeatureCollection'; features: Array<{
+  type: 'Feature'
+  geometry: { type: 'Polygon'; coordinates: [number, number][][] }
+  properties: { id: string; name: string }
+}> }
+
+function circlePolygon(lat: number, lng: number, radiusM: number): [number, number][] {
+  const pts = 48
+  const coords: [number, number][] = []
+  for (let i = 0; i <= pts; i++) {
+    const a = (i / pts) * 2 * Math.PI
+    const dLat = (radiusM * Math.sin(a) / 6371000) * (180 / Math.PI)
+    const dLng = (radiusM * Math.cos(a) / 6371000) * (180 / Math.PI) / Math.cos(lat * Math.PI / 180)
+    coords.push([lng + dLng, lat + dLat])
+  }
+  return coords
+}
+
+function buildGeoFC(geofences: Geofence[]): GeoFC {
+  const features: GeoFC['features'] = []
+  for (const g of geofences) {
+    if (!g.lat || !g.lng) continue
+    const ring = circlePolygon(g.lat, g.lng, g.radius ?? 500)
+    features.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] }, properties: { id: g.id, name: g.name } })
+  }
+  return { type: 'FeatureCollection', features }
 }
 
 function makeEl(v: LiveVehicle): HTMLElement {
   const color = STATUS_COLOR[v.status]
-  const bg    = STATUS_BG[v.status]
-  const spd   = Math.round(v.speed_kmh)
-  const ping = v.status === 'move' || v.status === 'sos'
-    ? `<div style="position:absolute;inset:-5px;border-radius:14px;border:1px solid ${color}44;animation:lf-mping 2s ease-out infinite"></div>`
+  const spd = Math.round(v.speed_kmh)
+  const reg = v.registration.length > 10 ? v.registration.slice(0, 10) : v.registration
+  const label = v.status === 'sos' ? 'SOS' : v.status === 'move' ? `${spd}` : v.status === 'offline' ? 'OFF' : v.status.toUpperCase().slice(0, 4)
+
+  const pulse = (v.status === 'move' || v.status === 'idle')
+    ? `<div style="position:absolute;inset:-6px;border-radius:50%;border:1.5px solid ${color}55;animation:lf-mping 2.2s ease-out infinite;pointer-events:none"></div>`
     : ''
+  const sosBlink = v.status === 'sos'
+    ? `<div style="position:absolute;inset:-7px;border-radius:50%;border:2px solid ${color}88;animation:lf-sos-ring .65s ease-in-out infinite;pointer-events:none"></div>`
+    : ''
+
   const wrap = document.createElement('div')
   wrap.innerHTML = `
-    <div style="display:flex;flex-direction:column;align-items:center;pointer-events:none">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:3px;pointer-events:none">
       <div style="
-        width:34px;height:34px;border-radius:9px;
-        background:${bg};border:1.5px solid ${color}88;
-        display:flex;align-items:center;justify-content:center;
-        box-shadow:0 4px 16px rgba(0,0,0,.6);
         position:relative;overflow:visible;
+        width:22px;height:22px;border-radius:50%;
+        background:rgba(5,7,13,.92);
+        border:2px solid ${color};
+        display:flex;align-items:center;justify-content:center;
+        box-shadow:0 0 12px ${color}44,0 2px 8px rgba(0,0,0,.8);
         pointer-events:all;cursor:pointer;
-        ${v.status === 'sos' ? 'animation:lf-sos-marker .7s ease-in-out infinite' : ''}
+        ${v.status === 'sos' ? `animation:lf-sos-marker .65s ease-in-out infinite` : ''}
       ">
-        ${ping}
-        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2">
-          <rect x="1" y="3" width="15" height="13" rx="1"/>
-          <path d="M16 8h4l3 5v3h-7V8z"/>
-          <circle cx="5.5" cy="18.5" r="2.5"/>
-          <circle cx="18.5" cy="18.5" r="2.5"/>
-        </svg>
+        ${pulse}${sosBlink}
+        <div style="width:7px;height:7px;border-radius:50%;background:${color};box-shadow:0 0 5px ${color};pointer-events:none"></div>
       </div>
       <div style="
-        margin-top:3px;padding:2px 7px;
-        background:rgba(8,11,20,.9);border:1px solid rgba(255,255,255,.1);border-radius:4px;
-        display:flex;align-items:center;gap:5px;
-        font-family:JetBrains Mono,IBM Plex Mono,monospace;font-size:9px;font-weight:500;white-space:nowrap;
-        pointer-events:none;
+        display:flex;gap:3px;align-items:center;
+        background:rgba(5,7,13,.95);
+        border:1px solid ${color}44;border-radius:3px;
+        padding:1px 6px;pointer-events:none;white-space:nowrap;
       ">
-        <span style="color:#e8a830">${v.registration.slice(0,8)}</span>
-        <span style="color:${color};font-weight:600">${v.status === 'sos' ? 'SOS' : v.status === 'move' ? spd + ' km/h' : v.status.toUpperCase()}</span>
+        <span style="font-family:JetBrains Mono,IBM Plex Mono,monospace;font-size:9px;font-weight:700;color:#e8a830;letter-spacing:.02em">${reg}</span>
+        <span style="font-family:JetBrains Mono,IBM Plex Mono,monospace;font-size:8px;color:${color};font-weight:600">${v.status === 'move' ? label + ' km/h' : label}</span>
       </div>
     </div>`
   return wrap
@@ -80,6 +115,17 @@ export default function FleetMap({ vehicles, selectedId, onSelect }: Props) {
   const mapRef = useRef<maplibregl.Map | null>(null)
   const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
   const coordsRef = useRef<HTMLSpanElement>(null)
+  const [mapReady, setMapReady] = useState(false)
+
+  const { data: geofences } = useQuery<Geofence[]>({
+    queryKey: ['live-fleet-geofences'],
+    queryFn: async () => {
+      const r = await api.get<{ data: Geofence[] }>('/geofences')
+      return r.data.data ?? []
+    },
+    staleTime: 120_000,
+    refetchInterval: 120_000,
+  })
 
   // init map
   useEffect(() => {
@@ -91,24 +137,38 @@ export default function FleetMap({ vehicles, selectedId, onSelect }: Props) {
       zoom: 5,
       attributionControl: false,
     })
+    m.on('load', () => setMapReady(true))
     m.on('mousemove', e => {
       if (!coordsRef.current) return
       const { lat, lng } = e.lngLat
       coordsRef.current.textContent = `${Math.abs(lat).toFixed(4)}°${lat >= 0 ? 'N' : 'S'} ${Math.abs(lng).toFixed(4)}°${lng >= 0 ? 'E' : 'W'}`
     })
     mapRef.current = m
-    return () => { m.remove(); mapRef.current = null }
+    return () => { m.remove(); mapRef.current = null; setMapReady(false) }
   }, [])
+
+  // geofence overlay — amber fill + dashed border
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady || !geofences?.length) return
+    const fc = buildGeoFC(geofences)
+    const src = map.getSource('geofences') as maplibregl.GeoJSONSource | undefined
+    if (src) {
+      src.setData(fc as Parameters<typeof src.setData>[0])
+    } else {
+      map.addSource('geofences', { type: 'geojson', data: fc as Parameters<typeof map.addSource>[1] })
+      map.addLayer({ id: 'geofences-fill', type: 'fill', source: 'geofences', paint: { 'fill-color': '#e8a830', 'fill-opacity': 0.07 } })
+      map.addLayer({ id: 'geofences-line', type: 'line', source: 'geofences', paint: { 'line-color': '#e8a830', 'line-width': 1.5, 'line-opacity': 0.5, 'line-dasharray': [4, 3] } })
+    }
+  }, [mapReady, geofences])
 
   // sync markers
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-
     const positioned = vehicles.filter(v => v.lat != null && v.lng != null)
     const ids = new Set(positioned.map(v => v.id))
 
-    // remove stale
     for (const [id, marker] of markersRef.current) {
       if (!ids.has(id)) { marker.remove(); markersRef.current.delete(id) }
     }
@@ -117,19 +177,16 @@ export default function FleetMap({ vehicles, selectedId, onSelect }: Props) {
       const existing = markersRef.current.get(v.id)
       if (existing) {
         existing.setLngLat([v.lng!, v.lat!])
-        // update element
         const newEl = makeEl(v)
-        const inner = newEl.firstElementChild as HTMLElement | null
-        if (inner) {
-          const oldEl = existing.getElement()
-          oldEl.innerHTML = inner.outerHTML
-        }
+        const oldEl = existing.getElement()
+        oldEl.innerHTML = newEl.innerHTML
+        // re-attach click to the new inner element (first child of outer div)
+        const inner = oldEl.firstElementChild as HTMLElement | null
+        if (inner) inner.addEventListener('click', e => { e.stopPropagation(); onSelect(v) }, { once: true })
       } else {
         const el = makeEl(v)
         const inner = el.firstElementChild as HTMLElement | null
-        if (inner) {
-          inner.addEventListener('click', e => { e.stopPropagation(); onSelect(v) })
-        }
+        if (inner) inner.addEventListener('click', e => { e.stopPropagation(); onSelect(v) })
         const marker = new maplibregl.Marker({ element: el, anchor: 'top' })
           .setLngLat([v.lng!, v.lat!])
           .addTo(map)
@@ -143,19 +200,18 @@ export default function FleetMap({ vehicles, selectedId, onSelect }: Props) {
     const map = mapRef.current
     if (!map || !selectedId) return
     const v = vehicles.find(x => x.id === selectedId)
-    if (v?.lat != null) {
-      map.flyTo({ center: [v.lng!, v.lat!], zoom: Math.max(map.getZoom(), 9), duration: 700 })
-    }
+    if (v?.lat != null) map.flyTo({ center: [v.lng!, v.lat!], zoom: Math.max(map.getZoom(), 9), duration: 700 })
   }, [selectedId, vehicles])
 
-  // add inline keyframe CSS once
+  // inline keyframes
   useEffect(() => {
     if (document.getElementById('lf-map-styles')) return
     const s = document.createElement('style')
     s.id = 'lf-map-styles'
     s.textContent = `
-      @keyframes lf-mping{0%{transform:scale(1);opacity:.8}100%{transform:scale(1.8);opacity:0}}
-      @keyframes lf-sos-marker{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.5),0 4px 16px rgba(0,0,0,.6)}50%{box-shadow:0 0 0 8px rgba(239,68,68,0),0 4px 16px rgba(0,0,0,.6)}}
+      @keyframes lf-mping{0%{transform:scale(1);opacity:.7}100%{transform:scale(2.2);opacity:0}}
+      @keyframes lf-sos-ring{0%,100%{transform:scale(1);opacity:.8}50%{transform:scale(1.5);opacity:.2}}
+      @keyframes lf-sos-marker{0%,100%{box-shadow:0 0 12px #ef444466,0 2px 8px rgba(0,0,0,.8)}50%{box-shadow:0 0 24px #ef4444cc,0 2px 8px rgba(0,0,0,.8)}}
     `
     document.head.appendChild(s)
   }, [])
@@ -164,23 +220,31 @@ export default function FleetMap({ vehicles, selectedId, onSelect }: Props) {
     <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%', background: '#05070d' }} />
 
-      {/* zoom controls */}
+      {/* zoom + fit controls */}
       <div style={{ position: 'absolute', right: 14, top: 14, zIndex: 500, display: 'flex', flexDirection: 'column', gap: 4 }}>
         {[
           { label: '+', fn: () => mapRef.current?.zoomIn() },
           { label: '−', fn: () => mapRef.current?.zoomOut() },
-          { label: '⊕', fn: () => { const b = vehicles.filter(v => v.lat != null).map(v => [v.lng!, v.lat!] as [number,number]); if (b.length && mapRef.current) mapRef.current.fitBounds(b as any, { padding: 80, maxZoom: 8 }) } },
+          { label: '⊕', fn: () => { const b = vehicles.filter(v => v.lat != null).map(v => [v.lng!, v.lat!] as [number, number]); if (b.length && mapRef.current) mapRef.current.fitBounds(b as [number,number][], { padding: 80, maxZoom: 8 }) } },
         ].map(btn => (
-          <button key={btn.label} onClick={btn.fn} style={{ width: 34, height: 34, borderRadius: 7, background: 'rgba(8,11,20,.92)', border: '1px solid rgba(255,255,255,.11)', color: '#7a7e8a', fontFamily: 'IBM Plex Mono, monospace', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <button key={btn.label} onClick={btn.fn} style={{ width: 34, height: 34, borderRadius: 7, background: 'rgba(8,11,20,.92)', border: '1px solid rgba(255,255,255,.11)', color: '#7a7e8a', fontFamily: 'IBM Plex Mono,monospace', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             {btn.label}
           </button>
         ))}
       </div>
 
+      {/* geofence count badge */}
+      {(geofences?.length ?? 0) > 0 && (
+        <div style={{ position: 'absolute', right: 56, top: 14, zIndex: 500, background: 'rgba(8,11,20,.92)', border: '1px solid rgba(232,168,48,.25)', borderRadius: 5, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 5 }}>
+          <div style={{ width: 8, height: 8, borderRadius: 2, border: '1.5px dashed #e8a830', opacity: .7 }} />
+          <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 9, color: '#e8a830' }}>{geofences!.length} zones</span>
+        </div>
+      )}
+
       {/* coords */}
       <div style={{ position: 'absolute', bottom: 14, left: 14, zIndex: 500, background: 'rgba(8,11,20,.85)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 4, padding: '3px 10px', display: 'flex', alignItems: 'center', gap: 6 }}>
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#7a7e8a" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-        <span ref={coordsRef} style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 9, color: '#7a7e8a' }}>hover for coords</span>
+        <span ref={coordsRef} style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 9, color: '#7a7e8a' }}>hover for coords</span>
       </div>
     </div>
   )

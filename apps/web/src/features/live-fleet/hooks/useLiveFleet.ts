@@ -13,8 +13,8 @@ interface DashConvoy {
   id: string; name: string; origin: string | null; destination: string | null
 }
 interface GpsPos {
-  device_id: string; vehicle_id: string | null
-  lat: number; lng: number; speed: number | null; heading: number | null; timestamp: string
+  device_id: string; vehicle_id: string | null; name?: string | null
+  lat: number; lng: number; speed: number | null; heading: number | null; timestamp: string | null
 }
 
 function deriveStatus(speedKmh: number, secsAgo: number): LiveStatus {
@@ -146,7 +146,7 @@ export function useLiveFleet() {
         const dashV = pos.vehicle_id ? vehicleRegMap.get(pos.vehicle_id) : undefined
         const lv: LiveVehicle = {
           id: key,
-          registration: dashV?.registration ?? pos.vehicle_id?.slice(0, 8) ?? pos.device_id.slice(0, 8),
+          registration: pos.name || dashV?.registration || pos.vehicle_id?.slice(0, 8) || pos.device_id.slice(0, 8),
           convoy_id: null,
           convoy_name: null,
           status,
