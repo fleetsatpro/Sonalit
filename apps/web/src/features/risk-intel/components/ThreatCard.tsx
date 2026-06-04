@@ -53,14 +53,14 @@ export default function ThreatCard({ zone, active, onClick }: Props) {
         <div style={{ fontSize: 10, color: '#6e6c64', marginBottom: 4 }}>📍 {zone.region}</div>
         <div style={{ fontSize: 11, color: '#9a9890', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: 1.4, marginBottom: 6 }}>{zone.why}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          {zone.tags.slice(0, 2).map(t => (
+          {(zone.tags ?? []).slice(0, 2).map(t => (
             <span key={t} style={{ fontSize: 9, padding: '1px 6px', borderRadius: 10, background: 'rgba(255,255,255,.06)', color: '#9a9890' }}>{t}</span>
           ))}
           <span style={{ display: 'flex', alignItems: 'center', gap: 2, marginLeft: 'auto' }}>
             <VelocityIcon v={zone.velocity} />
             <span style={{ fontSize: 9, color: '#6e6c64' }}>{zone.velocity}</span>
           </span>
-          <Sparkline data={zone.week_data.length ? zone.week_data : [0,0,0,0,0,0,0]} color={color} />
+          <Sparkline data={(zone.week_data ?? []).length ? zone.week_data : [0,0,0,0,0,0,0]} color={color} />
         </div>
       </div>
       {/* Meta */}
