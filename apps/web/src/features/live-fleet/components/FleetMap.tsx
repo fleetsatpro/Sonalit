@@ -12,10 +12,10 @@ const DARK_STYLE: maplibregl.StyleSpecification = {
     carto: {
       type: 'raster',
       tiles: [
-        'https://cartodb-basemaps-a.global.ssl.fastly.net/dark_matter/{z}/{x}/{y}.png',
-        'https://cartodb-basemaps-b.global.ssl.fastly.net/dark_matter/{z}/{x}/{y}.png',
-        'https://cartodb-basemaps-c.global.ssl.fastly.net/dark_matter/{z}/{x}/{y}.png',
-        'https://cartodb-basemaps-d.global.ssl.fastly.net/dark_matter/{z}/{x}/{y}.png',
+        'https://a.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}.png',
+        'https://b.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}.png',
+        'https://c.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}.png',
+        'https://d.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}.png',
       ],
       tileSize: 256,
       attribution: '© CARTO © OpenStreetMap contributors',
@@ -152,11 +152,13 @@ export default function FleetMap({ vehicles, selectedId, onSelect }: Props) {
     const map = mapRef.current
     if (!map || !mapReady || !geofences?.length) return
     const fc = buildGeoFC(geofences)
-    const src = map.getSource('geofences') as maplibregl.GeoJSONSource | undefined
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const src = map.getSource('geofences') as any
     if (src) {
-      src.setData(fc as Parameters<typeof src.setData>[0])
+      src.setData(fc)
     } else {
-      map.addSource('geofences', { type: 'geojson', data: fc as Parameters<typeof map.addSource>[1] })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      map.addSource('geofences', { type: 'geojson', data: fc } as any)
       map.addLayer({ id: 'geofences-fill', type: 'fill', source: 'geofences', paint: { 'fill-color': '#e8a830', 'fill-opacity': 0.07 } })
       map.addLayer({ id: 'geofences-line', type: 'line', source: 'geofences', paint: { 'line-color': '#e8a830', 'line-width': 1.5, 'line-opacity': 0.5, 'line-dasharray': [4, 3] } })
     }
@@ -225,7 +227,7 @@ export default function FleetMap({ vehicles, selectedId, onSelect }: Props) {
         {[
           { label: '+', fn: () => mapRef.current?.zoomIn() },
           { label: '−', fn: () => mapRef.current?.zoomOut() },
-          { label: '⊕', fn: () => { const b = vehicles.filter(v => v.lat != null).map(v => [v.lng!, v.lat!] as [number, number]); if (b.length && mapRef.current) mapRef.current.fitBounds(b as [number,number][], { padding: 80, maxZoom: 8 }) } },
+          { label: '⊕', fn: () => { const p = vehicles.filter(v => v.lat != null); if (p.length && mapRef.current) { const lngs = p.map(v => v.lng!); const lats = p.map(v => v.lat!); mapRef.current.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: 80, maxZoom: 8 }) } } },
         ].map(btn => (
           <button key={btn.label} onClick={btn.fn} style={{ width: 34, height: 34, borderRadius: 7, background: 'rgba(8,11,20,.92)', border: '1px solid rgba(255,255,255,.11)', color: '#7a7e8a', fontFamily: 'IBM Plex Mono,monospace', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             {btn.label}
