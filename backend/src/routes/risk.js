@@ -135,7 +135,7 @@ router.post('/zones', asyncHandler(async (req, res) => {
       tags || null, map_lon || null, map_lat || null,
       confidence != null ? confidence : 70,
       velocity || 'stable',
-      lat, lng, radius_km || 5, zone_type || 'general',
+      lat, lng, radius_km || 5, zone_type || 'conflict',
       risk_level || level || 'medium',
       is_active !== false,
       req.user.id,
