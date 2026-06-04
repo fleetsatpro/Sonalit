@@ -1,0 +1,34 @@
+export type LiveStatus = 'move' | 'idle' | 'stop' | 'offline' | 'sos'
+
+export interface LiveVehicle {
+  id: string
+  registration: string
+  convoy_id: string | null
+  convoy_name: string | null
+  status: LiveStatus
+  lat: number | null
+  lng: number | null
+  speed_kmh: number
+  heading: number | null
+  last_ping_at: string | null
+  secondsAgo: number
+  panic_active: boolean
+  location_desc: string
+}
+
+export interface ConvoyGroup {
+  id: string
+  name: string
+  origin: string | null
+  destination: string | null
+  vehicles: LiveVehicle[]
+}
+
+export interface StatusCounts {
+  all: number
+  move: number
+  idle: number
+  stop: number
+  sos: number
+  offline: number
+}
