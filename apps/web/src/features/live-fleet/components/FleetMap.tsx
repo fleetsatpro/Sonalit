@@ -6,9 +6,19 @@ import type { LiveVehicle, LiveStatus } from '../types/fleet.js'
 const DARK_STYLE: maplibregl.StyleSpecification = {
   version: 8,
   sources: {
-    carto: { type: 'raster', tiles: ['https://a.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}.png'], tileSize: 256, attribution: '© CARTO © OpenStreetMap' },
+    carto: {
+      type: 'raster',
+      tiles: [
+        'https://a.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}.png',
+        'https://b.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}.png',
+        'https://c.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}.png',
+        'https://d.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}.png',
+      ],
+      tileSize: 256,
+      attribution: '© CARTO © OpenStreetMap contributors',
+    },
   },
-  layers: [{ id: 'carto', type: 'raster', source: 'carto' }],
+  layers: [{ id: 'carto', type: 'raster', source: 'carto', paint: { 'raster-brightness-min': 0.05 } }],
 }
 
 const STATUS_COLOR: Record<LiveStatus, string> = {
