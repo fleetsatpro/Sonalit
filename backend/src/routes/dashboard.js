@@ -182,7 +182,7 @@ router.get('/map', asyncHandler(async (req, res) => {
              coordinates, COALESCE(radius, 1000) AS radius_m,
              corridor_width_km
       FROM geofences
-      WHERE org_id=$1 AND active=true
+      WHERE org_id=$1 AND active IS NOT FALSE
         AND coordinates IS NOT NULL
       LIMIT 30`, [orgId]),
 

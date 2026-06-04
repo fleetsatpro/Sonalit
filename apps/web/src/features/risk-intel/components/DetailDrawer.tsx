@@ -8,19 +8,30 @@ import type { RiskZone } from '../types/risk.js'
 interface Props {
   zone: RiskZone | null
   onClose: () => void
+  isMobile?: boolean
 }
 
 const TABS = ['overview', 'analytics', 'convoys'] as const
 type Tab = typeof TABS[number]
 
-export default function DetailDrawer({ zone, onClose }: Props) {
+export default function DetailDrawer({ zone, onClose, isMobile = false }: Props) {
   const [tab, setTab] = useState<Tab>('overview')
   const { data: evData } = useZoneEvents(zone?.id ?? null)
   const events = evData?.events ?? []
 
   const visible = !!zone
 
-  const drawerStyle: React.CSSProperties = {
+  const drawerStyle: React.CSSProperties = isMobile ? {
+    position: 'fixed',
+    inset: 0,
+    background: '#0d1520',
+    zIndex: 60,
+    transform: visible ? 'translateY(0)' : 'translateY(100%)',
+    transition: 'transform .25s cubic-bezier(.4,0,.2,1)',
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+  } : {
     position: 'fixed',
     top: 0,
     right: 0,
