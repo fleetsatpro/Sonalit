@@ -15,7 +15,7 @@ interface Props {
   onZoneClick: (id: string) => void
 }
 
-const WORLD_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json'
+const WORLD_URL = '/countries-110m.json'
 
 export default function RiskMap({ zones, activeCont, activeZoneId, heatVisible, onZoneClick }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
