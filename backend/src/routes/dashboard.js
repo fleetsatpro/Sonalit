@@ -420,23 +420,21 @@ router.get('/route-risk', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
   try {
   const r = await req.db(`
-    SELECT
-      cor.id AS corridor_id,
-      cor.name AS corridor,
-      cor.origin, cor.destination,
-      COUNT(i.id) AS incident_count,
-      COUNT(i.id) FILTER (WHERE i.severity='critical') * 3 +
-        COUNT(i.id) FILTER (WHERE i.severity='high') * 2 +
-        COUNT(i.id) FILTER (WHERE i.severity='medium') AS weighted_score,
-      MAX(i.title) AS last_incident_summary,
-      ARRAY_AGG(DISTINCT COALESCE(con.name, con.reference)) FILTER (WHERE con.id IS NOT NULL) AS active_convoys
-    FROM corridors cor
-    LEFT JOIN incidents i ON i.corridor_id=cor.id
-      AND i.org_id=$1 AND i.occurred_at >= NOW()-INTERVAL '7 days'
-    LEFT JOIN convoys con ON con.corridor_id=cor.id AND con.org_id=$1 AND con.status='active'
-    WHERE cor.org_id=$1
-    GROUP BY cor.id, cor.name, cor.origin, cor.destination
-    ORDER BY weighted_score DESC
+    SELECT c.id AS corridor_id,
+      COALESCE(c.name, c.reference) AS corridor,
+      COALESCE(c.origin, c.route_origin) AS origin,
+      COALESCE(c.destination, c.route_destination) AS destination,
+      COUNT(DISTINCT rz.id) AS incident_count,
+      COALESCE(SUM(CASE rz.level WHEN 'high' THEN 3 WHEN 'medium' THEN 2 ELSE 1 END), 0) AS weighted_score,
+      MAX(rz.why) AS last_incident_summary,
+      ARRAY[]::text[] AS active_convoys
+    FROM convoys c
+    LEFT JOIN convoy_risk_zones crz ON crz.convoy_id = c.id
+    LEFT JOIN risk_zones rz ON rz.id = crz.zone_id AND rz.is_active = true
+    WHERE c.org_id = $1 AND c.deleted_at IS NULL
+      AND c.status NOT IN ('cancelled','archived')
+    GROUP BY c.id, c.name, c.reference, c.origin, c.route_origin, c.destination, c.route_destination
+    ORDER BY weighted_score DESC, c.created_at DESC
     LIMIT 10`, [orgId]);
 
   res.json({ data: r.rows.map(row => {
@@ -471,11 +469,11 @@ router.get('/drivers', asyncHandler(async (req, res) => {
       AND ct.convoy_id IN (SELECT id FROM convoys WHERE org_id=$1 AND status='active')
     LEFT JOIN LATERAL (
       SELECT
-        COUNT(*) FILTER (WHERE event_type='speed_violation') AS speed_violations,
-        COUNT(*) FILTER (WHERE event_type='harsh_braking') AS harsh_braking,
-        COUNT(*) FILTER (WHERE event_type='fatigue') AS fatigue_flags
-      FROM behaviour_events be
-      WHERE be.driver_id=d.id AND be.occurred_at >= NOW()-INTERVAL '7 days'
+        COUNT(*) FILTER (WHERE event_type='speeding') AS speed_violations,
+        COUNT(*) FILTER (WHERE event_type='hard_braking') AS harsh_braking,
+        COUNT(*) FILTER (WHERE event_type='fatigue_pattern') AS fatigue_flags
+      FROM driver_behaviour_events be
+      WHERE be.driver_id=d.user_id AND be.created_at >= NOW()-INTERVAL '7 days'
     ) be ON true
     WHERE d.org_id=$1 AND d.deleted_at IS NULL
     ORDER BY d.name
@@ -504,14 +502,14 @@ router.get('/borders', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
   try {
   const r = await req.db(`
-    SELECT g.id, g.name, g.metadata,
+    SELECT g.id, g.name, g.region,
            ARRAY_AGG(DISTINCT COALESCE(con.name, con.reference)) FILTER (WHERE con.id IS NOT NULL) AS active_convoys,
            MAX(ge.created_at) AS last_event_at
     FROM geofences g
     LEFT JOIN geofence_events ge ON ge.geofence_id=g.id AND ge.created_at >= NOW()-INTERVAL '24 hours'
     LEFT JOIN convoys con ON con.org_id=$1 AND con.status='active'
-    WHERE g.org_id=$1 AND g.type='border' AND g.deleted_at IS NULL
-    GROUP BY g.id, g.name, g.metadata
+    WHERE g.org_id=$1 AND g.type='border' AND g.active IS NOT FALSE
+    GROUP BY g.id, g.name, g.region
     ORDER BY g.name
     LIMIT 10`, [orgId]);
 
@@ -522,13 +520,11 @@ router.get('/borders', asyncHandler(async (req, res) => {
   };
 
   res.json({ data: r.rows.map(b => {
-    const meta = typeof b.metadata === 'object' && b.metadata ? b.metadata : {};
-    const countries = (meta.countries || b.name).toString();
+    const countries = (b.region || b.name).toString();
     const flagEmojis = countries.split(/[\/\-,]/).map(c => FLAG_MAP[c.trim()] || '').filter(Boolean).join(' ');
     const activeConvoys = b.active_convoys || [];
-    const queueMins = meta.queue_minutes || null;
     const status = activeConvoys.length > 2 ? 'busy' : activeConvoys.length > 0 ? 'clear' : 'clear';
-    return { name: b.name, countries, status, queue_minutes: queueMins, active_convoys: activeConvoys, flag_emojis: flagEmojis };
+    return { name: b.name, countries, status, queue_minutes: null, active_convoys: activeConvoys, flag_emojis: flagEmojis };
   }) });
   } catch (_) { res.json({ data: [] }); }
 }));
