@@ -110,8 +110,8 @@ export function useLiveFleet() {
     if (useDashboard) {
       for (const v of dashVehicles!) {
         const pos = positions.get(v.id)
-        const secsAgo = pos ? Math.floor((now - new Date(pos.timestamp).getTime()) / 1000) : 99999
-        const speedKmh = pos ? (pos.speed ?? 0) * 3.6 : v.speed_kmh
+        const secsAgo = pos?.timestamp ? Math.floor((now - new Date(pos.timestamp).getTime()) / 1000) : 99999
+        const speedKmh = pos ? (pos.speed ?? 0) : v.speed_kmh
         const status = deriveStatus(speedKmh, secsAgo)
         const lv: LiveVehicle = {
           id: v.id,
@@ -140,8 +140,8 @@ export function useLiveFleet() {
     } else {
       // Fallback: build from GPS positions directly (like old GPS.tsx)
       for (const [key, pos] of positions) {
-        const secsAgo = Math.floor((now - new Date(pos.timestamp).getTime()) / 1000)
-        const speedKmh = (pos.speed ?? 0) * 3.6
+        const secsAgo = pos.timestamp ? Math.floor((now - new Date(pos.timestamp).getTime()) / 1000) : 99999
+        const speedKmh = pos.speed ?? 0
         const status = deriveStatus(speedKmh, secsAgo)
         const dashV = pos.vehicle_id ? vehicleRegMap.get(pos.vehicle_id) : undefined
         const lv: LiveVehicle = {
