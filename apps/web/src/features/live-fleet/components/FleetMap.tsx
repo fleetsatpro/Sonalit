@@ -5,24 +5,8 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { api } from '../../../lib/api.js'
 import type { LiveVehicle, LiveStatus } from '../types/fleet.js'
 
-// CARTO dark matter via Fastly CDN — more stable than basemaps.cartocdn.com
-const DARK_STYLE: maplibregl.StyleSpecification = {
-  version: 8,
-  sources: {
-    carto: {
-      type: 'raster',
-      tiles: [
-        'https://a.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}.png',
-        'https://b.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}.png',
-        'https://c.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}.png',
-        'https://d.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}.png',
-      ],
-      tileSize: 256,
-      attribution: '© CARTO © OpenStreetMap contributors',
-    },
-  },
-  layers: [{ id: 'carto', type: 'raster', source: 'carto' }],
-}
+// CARTO dark-matter vector GL style — highest quality, crisp vector rendering
+const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
 
 const STATUS_COLOR: Record<LiveStatus, string> = {
   move: '#16c784', idle: '#f59e0b', stop: '#475569', offline: '#3e4252', sos: '#ef4444',
@@ -30,34 +14,59 @@ const STATUS_COLOR: Record<LiveStatus, string> = {
 
 interface Geofence {
   id: string; name: string; type: string
-  coordinates: Record<string, unknown> | null
+  coordinates: unknown
   radius: number | null; lat: number | null; lng: number | null
 }
 
-type GeoFC = { type: 'FeatureCollection'; features: Array<{
-  type: 'Feature'
-  geometry: { type: 'Polygon'; coordinates: [number, number][][] }
-  properties: { id: string; name: string }
-}> }
+type GeoRing = [number, number][]
+type GeoFC = {
+  type: 'FeatureCollection'
+  features: Array<{
+    type: 'Feature'
+    geometry: { type: 'Polygon'; coordinates: GeoRing[] }
+    properties: { id: string; name: string }
+  }>
+}
 
-function circlePolygon(lat: number, lng: number, radiusM: number): [number, number][] {
-  const pts = 48
-  const coords: [number, number][] = []
-  for (let i = 0; i <= pts; i++) {
-    const a = (i / pts) * 2 * Math.PI
-    const dLat = (radiusM * Math.sin(a) / 6371000) * (180 / Math.PI)
-    const dLng = (radiusM * Math.cos(a) / 6371000) * (180 / Math.PI) / Math.cos(lat * Math.PI / 180)
-    coords.push([lng + dLng, lat + dLat])
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractRing(coordinates: any): GeoRing | null {
+  if (!coordinates) return null
+  // Direct ring array: [[lng,lat], ...]
+  if (Array.isArray(coordinates) && coordinates.length > 0 && Array.isArray(coordinates[0])) {
+    return coordinates as GeoRing
   }
-  return coords
+  const type: string = coordinates.type
+  // GeoJSON Polygon
+  if (type === 'Polygon' && Array.isArray(coordinates.coordinates)) {
+    return (coordinates.coordinates[0] as GeoRing) ?? null
+  }
+  // GeoJSON MultiPolygon
+  if (type === 'MultiPolygon' && Array.isArray(coordinates.coordinates)) {
+    return (coordinates.coordinates[0]?.[0] as GeoRing) ?? null
+  }
+  // GeoJSON Feature
+  if (type === 'Feature' && coordinates.geometry) {
+    return extractRing(coordinates.geometry)
+  }
+  // GeoJSON FeatureCollection
+  if (type === 'FeatureCollection' && Array.isArray(coordinates.features)) {
+    for (const f of coordinates.features) {
+      const r = extractRing(f.geometry)
+      if (r) return r
+    }
+  }
+  return null
 }
 
 function buildGeoFC(geofences: Geofence[]): GeoFC {
   const features: GeoFC['features'] = []
   for (const g of geofences) {
-    if (!g.lat || !g.lng) continue
-    const ring = circlePolygon(g.lat, g.lng, g.radius ?? 500)
-    features.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] }, properties: { id: g.id, name: g.name } })
+    // Prefer real polygon coordinates over circle approximation
+    const ring = extractRing(g.coordinates)
+    if (ring?.length) {
+      features.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] }, properties: { id: g.id, name: g.name } })
+    }
+    // No circle fallback — if there's no polygon, skip the geofence
   }
   return { type: 'FeatureCollection', features }
 }
@@ -86,7 +95,7 @@ function makeEl(v: LiveVehicle): HTMLElement {
         display:flex;align-items:center;justify-content:center;
         box-shadow:0 0 12px ${color}44,0 2px 8px rgba(0,0,0,.8);
         pointer-events:all;cursor:pointer;
-        ${v.status === 'sos' ? `animation:lf-sos-marker .65s ease-in-out infinite` : ''}
+        ${v.status === 'sos' ? 'animation:lf-sos-marker .65s ease-in-out infinite' : ''}
       ">
         ${pulse}${sosBlink}
         <div style="width:7px;height:7px;border-radius:50%;background:${color};box-shadow:0 0 5px ${color};pointer-events:none"></div>
@@ -127,12 +136,12 @@ export default function FleetMap({ vehicles, selectedId, onSelect }: Props) {
     refetchInterval: 120_000,
   })
 
-  // init map
+  // init map with vector dark-matter style
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
     const m = new maplibregl.Map({
       container: containerRef.current,
-      style: DARK_STYLE,
+      style: MAP_STYLE,
       center: [35.5, 1.2],
       zoom: 5,
       attributionControl: false,
@@ -147,11 +156,12 @@ export default function FleetMap({ vehicles, selectedId, onSelect }: Props) {
     return () => { m.remove(); mapRef.current = null; setMapReady(false) }
   }, [])
 
-  // geofence overlay — amber fill + dashed border
+  // geofence overlay — polygon fill + dashed border
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady || !geofences?.length) return
     const fc = buildGeoFC(geofences)
+    if (!fc.features.length) return
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const src = map.getSource('geofences') as any
     if (src) {
@@ -159,12 +169,12 @@ export default function FleetMap({ vehicles, selectedId, onSelect }: Props) {
     } else {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       map.addSource('geofences', { type: 'geojson', data: fc } as any)
-      map.addLayer({ id: 'geofences-fill', type: 'fill', source: 'geofences', paint: { 'fill-color': '#e8a830', 'fill-opacity': 0.07 } })
-      map.addLayer({ id: 'geofences-line', type: 'line', source: 'geofences', paint: { 'line-color': '#e8a830', 'line-width': 1.5, 'line-opacity': 0.5, 'line-dasharray': [4, 3] } })
+      map.addLayer({ id: 'geofences-fill', type: 'fill', source: 'geofences', paint: { 'fill-color': '#e8a830', 'fill-opacity': 0.08 } })
+      map.addLayer({ id: 'geofences-line', type: 'line', source: 'geofences', paint: { 'line-color': '#e8a830', 'line-width': 1.5, 'line-opacity': 0.55, 'line-dasharray': [5, 3] } })
     }
   }, [mapReady, geofences])
 
-  // sync markers
+  // sync vehicle markers
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
@@ -182,7 +192,6 @@ export default function FleetMap({ vehicles, selectedId, onSelect }: Props) {
         const newEl = makeEl(v)
         const oldEl = existing.getElement()
         oldEl.innerHTML = newEl.innerHTML
-        // re-attach click to the new inner element (first child of outer div)
         const inner = oldEl.firstElementChild as HTMLElement | null
         if (inner) inner.addEventListener('click', e => { e.stopPropagation(); onSelect(v) }, { once: true })
       } else {
@@ -227,7 +236,13 @@ export default function FleetMap({ vehicles, selectedId, onSelect }: Props) {
         {[
           { label: '+', fn: () => mapRef.current?.zoomIn() },
           { label: '−', fn: () => mapRef.current?.zoomOut() },
-          { label: '⊕', fn: () => { const p = vehicles.filter(v => v.lat != null); if (p.length && mapRef.current) { const lngs = p.map(v => v.lng!); const lats = p.map(v => v.lat!); mapRef.current.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: 80, maxZoom: 8 }) } } },
+          { label: '⊕', fn: () => {
+            const p = vehicles.filter(v => v.lat != null)
+            if (p.length && mapRef.current) {
+              const lngs = p.map(v => v.lng!); const lats = p.map(v => v.lat!)
+              mapRef.current.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: 80, maxZoom: 8 })
+            }
+          }},
         ].map(btn => (
           <button key={btn.label} onClick={btn.fn} style={{ width: 34, height: 34, borderRadius: 7, background: 'rgba(8,11,20,.92)', border: '1px solid rgba(255,255,255,.11)', color: '#7a7e8a', fontFamily: 'IBM Plex Mono,monospace', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             {btn.label}
