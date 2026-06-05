@@ -1,14 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useForm, Controller, type SubmitHandler, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useNavigate, useParams, Link } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, AlertCircle, Route, ShieldAlert } from 'lucide-react';
+import { Loader2, AlertCircle, Route, ShieldAlert, MapPin } from 'lucide-react';
 import Dexie from 'dexie';
 import { api } from '../lib/api.js';
-import { useAuthStore } from '../stores/auth.js';
-import type { Convoy, Vehicle, Driver } from '@sonalit/contracts';
+import type { Vehicle } from '@sonalit/contracts';
 
 const draftDb = new Dexie('sonalit-drafts');
 draftDb.version(1).stores({ drafts: 'key' });
@@ -16,78 +15,78 @@ const draftsTable = (draftDb as Dexie & { drafts: Dexie.Table<{ key: string; dat
 const DRAFT_KEY = 'cfo-convoy-form';
 
 // ---------------------------------------------------------------------------
-// Schema
+// Schema — aligned with backend Joi convoy schema
 // ---------------------------------------------------------------------------
 
+const REGIONS = ['Kenya', 'DRC', 'Tanzania', 'Mali'] as const;
+const PRIORITIES = ['low', 'medium', 'high', 'critical'] as const;
+
 const convoyFormSchema = z.object({
-  name: z.string().min(1, 'Name is required').max(256),
-  timezone: z.string().min(1, 'Timezone is required'),
-  start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD'),
-  end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD'),
-  seal_count_per_truck: z.coerce.number().int().min(0).default(0),
-  vehicle_ids: z.array(z.string().uuid()).default([]),
-  driver_ids: z.array(z.string().uuid()).default([]),
-  notes: z.string().max(4096).optional(),
-}).refine((d) => d.end_date >= d.start_date, {
-  message: 'End date must be on or after start date',
-  path: ['end_date'],
+  name: z.string().min(3, 'At least 3 characters').max(100),
+  region: z.enum(REGIONS, { required_error: 'Select a region' }),
+  priority: z.enum(PRIORITIES, { required_error: 'Select a priority' }),
+  routeOrigin: z.string().min(1, 'Required').max(100),
+  routeDestination: z.string().min(1, 'Required').max(100),
+  departureTime: z.string().optional(),
+  estimatedArrival: z.string().optional(),
+  description: z.string().max(500).optional(),
+  vehicle_ids: z.array(z.string()).default([]),
 });
 
 type ConvoyForm = z.infer<typeof convoyFormSchema>;
+type RawConvoy = Record<string, unknown>;
+type VehicleListResponse = { data: Vehicle[] };
 
 // ---------------------------------------------------------------------------
-// Helper types
+// Field wrapper
 // ---------------------------------------------------------------------------
 
-type VehicleListResponse = { data: Vehicle[]; meta: { total: number; has_more: boolean; next_cursor: string | null } };
-type DriverListResponse = { data: Driver[]; meta: { total: number; has_more: boolean; next_cursor: string | null } };
-
-// ---------------------------------------------------------------------------
-// Field component
-// ---------------------------------------------------------------------------
-
-function Field({ label, error, children }: { label: string; error?: string | undefined; children: React.ReactNode }): React.ReactElement {
+function Field({ label, error, children }: { label: string; error?: string | undefined; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-300 mb-1">{label}</label>
+      <label className="block text-[10px] font-mono font-medium text-[#607890] mb-1.5 uppercase tracking-[.1em]">
+        {label}
+      </label>
       {children}
-      {error && <p className="text-red-400 text-xs mt-0.5">{error}</p>}
+      {error && <p className="text-red-400 text-xs mt-1 font-mono">{error}</p>}
     </div>
   );
 }
 
-const INPUT_CLS = 'w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500';
+const BASE_INPUT = [
+  'w-full bg-[#09101c] border border-[#122038] rounded-md px-3 py-2.5',
+  'text-white text-sm font-mono focus:outline-none focus:ring-1',
+  'focus:ring-orange-500 focus:border-orange-500 transition-colors',
+  'placeholder-[#304558]',
+].join(' ');
 
 // ---------------------------------------------------------------------------
-// Multi-select checkbox list
+// Checkbox list for multi-select
 // ---------------------------------------------------------------------------
 
-function MultiSelectList<T extends { id: string; label: string }>({
-  items,
-  value,
-  onChange,
-}: {
-  items: T[];
+function MultiSelectList({ items, value, onChange }: {
+  items: { id: string; label: string }[];
   value: string[];
   onChange: (v: string[]) => void;
-}): React.ReactElement {
-  const toggle = (id: string): void => {
+}) {
+  const toggle = (id: string) =>
     onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id]);
-  };
+
   return (
-    <div className="max-h-40 overflow-y-auto bg-gray-800 border border-gray-700 rounded-lg divide-y divide-gray-700">
+    <div className="max-h-44 overflow-y-auto bg-[#09101c] border border-[#122038] rounded-md divide-y divide-[#0c1424]">
       {items.length === 0 && (
-        <p className="text-gray-500 text-xs px-3 py-2">No items available</p>
+        <p className="text-[#304558] text-xs px-3 py-2.5 font-mono">No vehicles available</p>
       )}
       {items.map((item) => (
-        <label key={item.id} className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-gray-700/50 transition-colors">
+        <label key={item.id}
+          className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-orange-500/5 transition-colors select-none">
           <input
             type="checkbox"
             checked={value.includes(item.id)}
             onChange={() => toggle(item.id)}
-            className="accent-indigo-500"
+            className="accent-orange-500 w-3.5 h-3.5 flex-shrink-0"
           />
-          <span className="text-white text-sm">{item.label}</span>
+          <span className="text-gray-200 text-xs font-mono leading-snug">{item.label}</span>
         </label>
       ))}
     </div>
@@ -95,23 +94,20 @@ function MultiSelectList<T extends { id: string; label: string }>({
 }
 
 // ---------------------------------------------------------------------------
-// Main form page
+// Main form
 // ---------------------------------------------------------------------------
 
 export default function CfoConvoyForm(): React.ReactElement {
-  const navigate = useNavigate();
+  const navigate   = useNavigate();
   const queryClient = useQueryClient();
-  const user = useAuthStore((s) => s.user);
-  const params = useParams({ strict: false }) as { id?: string };
-  const isEdit = Boolean(params.id);
-  const [, setDraftRestored] = useState<boolean | null>(null);
+  const params     = useParams({ strict: false }) as { id?: string };
+  const isEdit     = Boolean(params.id);
 
-  // Fetch existing convoy when editing
-  const { data: existing, isLoading: existingLoading } = useQuery<Convoy>({
+  const { data: existing, isLoading: existingLoading } = useQuery<RawConvoy>({
     queryKey: ['convoys', params.id],
     queryFn: async () => {
-      const res = await api.get<Convoy>(`/convoys/${params.id}`);
-      return res.data;
+      const r = await api.get<{ data: RawConvoy }>(`/convoys/${params.id}`);
+      return (r.data as { data?: RawConvoy }).data ?? r.data as RawConvoy;
     },
     enabled: isEdit,
   });
@@ -119,81 +115,71 @@ export default function CfoConvoyForm(): React.ReactElement {
   const { data: vehiclesData } = useQuery<VehicleListResponse>({
     queryKey: ['vehicles', 'form'],
     queryFn: async () => {
-      const res = await api.get<VehicleListResponse>('/vehicles', { params: { limit: 200, status: 'active' } });
-      return res.data;
+      const r = await api.get<VehicleListResponse>('/vehicles', { params: { limit: 200, status: 'active' } });
+      return r.data;
     },
   });
 
-  const { data: driversData } = useQuery<DriverListResponse>({
-    queryKey: ['drivers', 'form'],
-    queryFn: async () => {
-      const res = await api.get<DriverListResponse>('/drivers', { params: { limit: 200, status: 'active' } });
-      return res.data;
-    },
-  });
-
-  const vehicleItems = vehiclesData?.data.map((v) => ({ id: v.id, label: `${v.registration} — ${v.make} ${v.model}` })) ?? [];
-  const driverItems = driversData?.data.map((d) => ({ id: d.id, label: `${d.name} (${d.license_number})` })) ?? [];
+  const vehicleItems = vehiclesData?.data.map((v) => ({
+    id: v.id,
+    label: `${v.registration}${v.make || v.model ? ` — ${[v.make, v.model].filter(Boolean).join(' ')}` : ''}`,
+  })) ?? [];
 
   const {
-    register,
-    handleSubmit,
-    control,
-    setError,
-    reset,
-    watch,
+    register, handleSubmit, control, setError, reset, watch,
     formState: { errors, isDirty },
   } = useForm<ConvoyForm>({
     resolver: zodResolver(convoyFormSchema) as Resolver<ConvoyForm>,
-    defaultValues: { seal_count_per_truck: 0, vehicle_ids: [] as string[], driver_ids: [] as string[] },
-    ...(existing
-      ? {
-          values: {
-            name: existing.name,
-            timezone: existing.timezone,
-            start_date: existing.start_date,
-            end_date: existing.end_date,
-            seal_count_per_truck: existing.seal_count_per_truck,
-            vehicle_ids: [] as string[],
-            driver_ids: [] as string[],
-            notes: '' as string | undefined,
-          },
-        }
-      : {}),
+    defaultValues: { vehicle_ids: [] },
+    ...(existing ? {
+      values: {
+        name: String(existing['name'] ?? ''),
+        region: (existing['region'] as typeof REGIONS[number]) ?? 'Kenya',
+        priority: (existing['priority'] as typeof PRIORITIES[number]) ?? 'medium',
+        routeOrigin: String(existing['route_origin'] ?? ''),
+        routeDestination: String(existing['route_destination'] ?? ''),
+        departureTime: existing['departure_time']
+          ? String(existing['departure_time']).slice(0, 16) : undefined,
+        estimatedArrival: existing['estimated_arrival']
+          ? String(existing['estimated_arrival']).slice(0, 16) : undefined,
+        description: String(existing['description'] ?? ''),
+        vehicle_ids: [],
+      },
+    } : {}),
   });
 
-  // T4.4: Draft persistence — restore on new form mount
-  const draftTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Draft persistence (new form only)
+  const draftTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => {
-    if (isEdit) { setDraftRestored(false); return; }
+    if (isEdit) return;
     draftsTable.get(DRAFT_KEY).then((row) => {
-      if (row && confirm('Restore unsaved draft?')) {
-        reset(row.data as ConvoyForm);
-        setDraftRestored(true);
-      } else {
-        setDraftRestored(false);
-      }
-    }).catch(() => setDraftRestored(false));
+      if (row && confirm('Restore unsaved draft?')) reset(row.data as ConvoyForm);
+    }).catch(() => {});
   }, [isEdit, reset]);
 
   const formValues = watch();
   useEffect(() => {
     if (!isDirty || isEdit) return;
-    draftTimerRef.current = setInterval(() => {
+    draftTimer.current = setInterval(() => {
       draftsTable.put({ key: DRAFT_KEY, data: formValues }).catch(() => {});
     }, 2000);
-    return () => { if (draftTimerRef.current) clearInterval(draftTimerRef.current); };
+    return () => { if (draftTimer.current) clearInterval(draftTimer.current); };
   }, [isDirty, isEdit, formValues]);
 
-  const mutation = useMutation<Convoy, Error, ConvoyForm>({
+  const mutation = useMutation<void, Error, ConvoyForm>({
     mutationFn: async (data) => {
-      const payload = { ...data, org_id: user?.org_id };
+      const { vehicle_ids, ...rest } = data;
+      let convoyId: string;
       if (isEdit) {
-        const res = await api.patch<Convoy>(`/convoys/${params.id}`, payload);
-        return res.data;
+        await api.put(`/convoys/${params.id}`, rest);
+        convoyId = params.id!;
+      } else {
+        const r = await api.post<{ data: { id: string } }>('/convoys', rest);
+        convoyId = r.data.data.id;
       }
-      const res = await api.post<Convoy>('/convoys', payload);
-      return res.data;
+      if (vehicle_ids.length) {
+        await api.post(`/convoys/${convoyId}/assign`, { vehicleIds: vehicle_ids }).catch(() => {});
+      }
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['convoys'] });
@@ -201,124 +187,160 @@ export default function CfoConvoyForm(): React.ReactElement {
       await navigate({ to: '/convoys' });
     },
     onError: (err) => {
-      setError('root', { message: err.message ?? 'Failed to save convoy.' });
+      type ApiErr = { response?: { data?: { error?: string } } };
+      const apiMsg = (err as unknown as ApiErr).response?.data?.error;
+      setError('root', { message: apiMsg ?? err.message ?? 'Failed to save convoy.' });
     },
   });
 
-  const onSubmit: SubmitHandler<ConvoyForm> = (values) => {
-    mutation.mutate(values);
-  };
+  const onSubmit: SubmitHandler<ConvoyForm> = (values) => mutation.mutate(values);
 
   if (isEdit && existingLoading) {
     return (
-      <div className="flex items-center justify-center py-20 text-gray-400">
-        <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading convoy…
+      <div className="flex items-center justify-center py-20 text-gray-400 font-mono text-sm">
+        <Loader2 className="w-4 h-4 animate-spin mr-2" /> Loading convoy…
       </div>
     );
   }
 
   return (
-    <div className="p-6 max-w-2xl">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2">
-          <Route className="w-5 h-5 text-orange-400" />
-          <h1 className="text-xl font-bold text-white">{isEdit ? 'Edit Convoy' : 'New Convoy'}</h1>
-        </div>
-        {isEdit && params.id && (
-          <Link
-            to="/route-analysis"
-            className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-orange-400 border border-white/10 hover:border-orange-500/40 rounded-lg px-3 py-1.5 transition-colors"
-          >
-            <ShieldAlert size={13} /> Route Safety Analysis
-          </Link>
-        )}
-      </div>
+    <div className="min-h-full bg-[#04070d] p-6">
+      <div className="max-w-2xl mx-auto">
 
-      <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-5">
-        {errors.root && (
-          <div className="flex items-center gap-2 bg-red-950 border border-red-800 rounded-lg px-4 py-3 text-red-400 text-sm">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-            {errors.root.message}
+        {/* Header */}
+        <div className="flex items-center justify-between mb-7">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center flex-shrink-0">
+              <Route className="w-4 h-4 text-orange-400" />
+            </div>
+            <div>
+              <h1 className="text-sm font-bold text-white tracking-wide font-mono uppercase">
+                {isEdit ? 'Edit Convoy' : 'New Convoy'}
+              </h1>
+              <p className="text-[10px] text-[#607890] font-mono uppercase tracking-widest mt-0.5">
+                {isEdit ? `ID ${params.id?.slice(0, 8)}…` : 'Fleet Operations Center'}
+              </p>
+            </div>
           </div>
-        )}
-
-        <Field label="Convoy Name" error={errors.name?.message}>
-          <input {...register('name')} className={INPUT_CLS} placeholder="Convoy Alpha — Lagos to Abuja" />
-        </Field>
-
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Start Date (YYYY-MM-DD)" error={errors.start_date?.message}>
-            <input {...register('start_date')} className={INPUT_CLS} placeholder="2026-06-01" />
-          </Field>
-          <Field label="End Date (YYYY-MM-DD)" error={errors.end_date?.message}>
-            <input {...register('end_date')} className={INPUT_CLS} placeholder="2026-06-03" />
-          </Field>
+          {isEdit && params.id && (
+            <Link to="/route-analysis"
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-orange-400 border border-white/10 hover:border-orange-500/30 rounded-lg px-3 py-1.5 transition-colors font-mono">
+              <ShieldAlert size={12} /> Route Safety
+            </Link>
+          )}
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Timezone (IANA)" error={errors.timezone?.message}>
-            <input {...register('timezone')} className={INPUT_CLS} placeholder="Africa/Lagos" />
-          </Field>
-          <Field label="Seals per Truck" error={errors.seal_count_per_truck?.message}>
-            <input type="number" min={0} {...register('seal_count_per_truck')} className={INPUT_CLS} />
-          </Field>
-        </div>
+        <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-3">
 
-        <Field label="Vehicles" error={errors.vehicle_ids?.message}>
-          <Controller
-            name="vehicle_ids"
-            control={control}
-            render={({ field }) => (
-              <MultiSelectList
-                items={vehicleItems}
-                value={field.value}
-                onChange={field.onChange}
+          {/* Root error */}
+          {errors.root && (
+            <div className="flex items-start gap-2.5 bg-red-950/50 border border-red-800/50 rounded-lg px-4 py-3 text-red-400 text-xs font-mono">
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+              {errors.root.message}
+            </div>
+          )}
+
+          {/* Identity */}
+          <Section label="Identity">
+            <Field label="Convoy Name" error={errors.name?.message}>
+              <input {...register('name')} className={BASE_INPUT} placeholder="KG-003 — Kampala to Goma" />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Region" error={errors.region?.message}>
+                <select {...register('region')} className={BASE_INPUT + ' cursor-pointer'}>
+                  <option value="">Select region…</option>
+                  {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </Field>
+              <Field label="Priority" error={errors.priority?.message}>
+                <select {...register('priority')} className={BASE_INPUT + ' cursor-pointer'}>
+                  <option value="">Select priority…</option>
+                  {PRIORITIES.map((p) => (
+                    <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+          </Section>
+
+          {/* Route */}
+          <Section label="Route">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Origin" error={errors.routeOrigin?.message}>
+                <div className="relative">
+                  <MapPin className="absolute left-2.5 top-[11px] w-3 h-3 text-[#304558]" />
+                  <input {...register('routeOrigin')} className={BASE_INPUT + ' pl-7'} placeholder="Kampala, UG" />
+                </div>
+              </Field>
+              <Field label="Destination" error={errors.routeDestination?.message}>
+                <div className="relative">
+                  <MapPin className="absolute left-2.5 top-[11px] w-3 h-3 text-orange-500/50" />
+                  <input {...register('routeDestination')} className={BASE_INPUT + ' pl-7'} placeholder="Goma, DRC" />
+                </div>
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Departure" error={errors.departureTime?.message}>
+                <input type="datetime-local" {...register('departureTime')}
+                  className={BASE_INPUT + ' [color-scheme:dark]'} />
+              </Field>
+              <Field label="ETA" error={errors.estimatedArrival?.message}>
+                <input type="datetime-local" {...register('estimatedArrival')}
+                  className={BASE_INPUT + ' [color-scheme:dark]'} />
+              </Field>
+            </div>
+          </Section>
+
+          {/* Assets */}
+          <Section label="Assets">
+            <Field label="Vehicles" error={errors.vehicle_ids?.message}>
+              <Controller
+                name="vehicle_ids"
+                control={control}
+                render={({ field }) => (
+                  <MultiSelectList items={vehicleItems} value={field.value} onChange={field.onChange} />
+                )}
               />
-            )}
-          />
-        </Field>
+            </Field>
+          </Section>
 
-        <Field label="Drivers" error={errors.driver_ids?.message}>
-          <Controller
-            name="driver_ids"
-            control={control}
-            render={({ field }) => (
-              <MultiSelectList
-                items={driverItems}
-                value={field.value}
-                onChange={field.onChange}
-              />
-            )}
-          />
-        </Field>
+          {/* Notes */}
+          <Section label="Notes">
+            <Field label="Description (optional)" error={errors.description?.message}>
+              <textarea {...register('description')} rows={3}
+                className={BASE_INPUT + ' resize-none'}
+                placeholder="Cargo details, security briefing, special instructions…" />
+            </Field>
+          </Section>
 
-        <Field label="Notes (optional)" error={errors.notes?.message}>
-          <textarea
-            {...register('notes')}
-            rows={3}
-            className={`${INPUT_CLS} resize-none`}
-            placeholder="Additional details…"
-          />
-        </Field>
+          {/* Actions */}
+          <div className="flex gap-3 pt-2">
+            <button type="submit" disabled={mutation.isPending}
+              className="flex items-center gap-2 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-mono font-semibold px-5 py-2.5 rounded-lg text-xs uppercase tracking-wider transition-colors min-w-[148px] justify-center">
+              {mutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              {isEdit ? 'Update Convoy' : 'Create Convoy'}
+            </button>
+            <button type="button" onClick={() => void navigate({ to: '/convoys' })}
+              className="px-5 py-2.5 bg-[#07090f] hover:bg-[#09101c] border border-[#122038] hover:border-[#1a2e4a] text-[#607890] hover:text-gray-300 rounded-lg text-xs font-mono font-semibold uppercase tracking-wider transition-colors">
+              Cancel
+            </button>
+          </div>
 
-        <div className="flex gap-3 pt-2">
-          <button
-            type="submit"
-            disabled={mutation.isPending}
-            className="flex items-center gap-2 bg-orange-600 hover:bg-orange-500 disabled:opacity-60 text-white font-medium px-5 py-2.5 rounded-lg text-sm transition-colors"
-          >
-            {mutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-            {isEdit ? 'Update Convoy' : 'Create Convoy'}
-          </button>
-          <button
-            type="button"
-            onClick={() => void navigate({ to: '/convoys' })}
-            className="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm font-medium transition-colors"
-          >
-            Cancel
-          </button>
-        </div>
-      </form>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Section card wrapper
+// ---------------------------------------------------------------------------
+
+function Section({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-[#07090f] border border-[#122038] rounded-xl p-4 space-y-3">
+      <p className="text-[9px] font-mono text-[#304558] uppercase tracking-[.16em] pb-1 border-b border-[#0c1424]">{label}</p>
+      {children}
     </div>
   );
 }
