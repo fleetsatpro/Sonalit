@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Route, Plus, Pencil, Trash2, Loader2, Radio } from 'lucide-react';
+import { Route, Plus, Pencil, Trash2, Loader2, Radio, Zap } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { subscribe } from '../lib/centrifuge.js';
 import { useAuthStore } from '../stores/auth.js';
@@ -43,6 +43,7 @@ export default function Convoys(): React.ReactElement {
   const queryClient = useQueryClient();
   const orgId = useAuthStore((s) => s.user?.org_id);
   const [broadcastConvoy, setBroadcastConvoy] = useState<{ id: string; name: string } | null>(null);
+  const [dispatchingId, setDispatchingId] = useState<string | null>(null);
 
   const { data, isLoading, isError } = useQuery<ConvoyListResponse>({
     queryKey: ['convoys'],
@@ -70,6 +71,22 @@ export default function Convoys(): React.ReactElement {
       void queryClient.invalidateQueries({ queryKey: ['convoys'] });
     },
   });
+
+  const dispatchMutation = useMutation<void, Error, string>({
+    mutationFn: async (id) => {
+      await api.patch(`/convoys/${id}/status`, { status: 'active' });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['convoys'] });
+    },
+    onSettled: () => setDispatchingId(null),
+  });
+
+  const handleDispatch = (id: string, name: string): void => {
+    if (!window.confirm(`Dispatch convoy "${name}"? This will mark it as active.`)) return;
+    setDispatchingId(id);
+    dispatchMutation.mutate(id);
+  };
 
   const handleDelete = (id: string, name: string): void => {
     if (!window.confirm(`Delete convoy "${name}"?`)) return;
@@ -136,6 +153,18 @@ export default function Convoys(): React.ReactElement {
                   <td className="px-4 py-3 text-gray-400 text-xs">{convoy.timezone}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
+                      {convoy.status === 'planned' && (
+                        <button
+                          type="button"
+                          onClick={() => handleDispatch(convoy.id, convoy.name)}
+                          disabled={dispatchingId === convoy.id}
+                          className="flex items-center gap-1 px-2 py-1 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 rounded text-xs font-bold text-white transition-colors"
+                          title="Dispatch convoy"
+                        >
+                          <Zap className="w-3 h-3" />
+                          {dispatchingId === convoy.id ? '…' : 'DISPATCH'}
+                        </button>
+                      )}
                       {convoy.status === 'active' && (
                         <button
                           type="button"
