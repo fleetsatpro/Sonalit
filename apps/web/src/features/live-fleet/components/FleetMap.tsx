@@ -60,21 +60,29 @@ function circlePolygon(lat: number, lng: number, radiusM: number): GeoRing {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractRing(c: any): GeoRing | null {
+function coordsToPoints(c: any): [number, number][] | null {
   if (!c) return null
-  if (Array.isArray(c) && Array.isArray(c[0])) return c as GeoRing
-  if (c.type === 'Polygon') return c.coordinates?.[0] ?? null
-  if (c.type === 'MultiPolygon') return c.coordinates?.[0]?.[0] ?? null
-  if (c.type === 'Feature') return extractRing(c.geometry)
-  if (c.type === 'FeatureCollection') { for (const f of c.features) { const r = extractRing(f.geometry); if (r) return r } }
-  return null
+  if (typeof c === 'string') { try { return coordsToPoints(JSON.parse(c)) } catch { return null } }
+  if (typeof c === 'object' && !Array.isArray(c)) {
+    if (Array.isArray(c.coordinates)) return coordsToPoints(c.coordinates)
+    // OSRM corridor: {path:[[lat,lng],...]} — swap axes to [lng,lat]
+    if (Array.isArray(c.path)) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pts = (c.path as any[]).map((p: any) => Array.isArray(p) ? [Number(p[1]), Number(p[0])] as [number, number] : null).filter((p): p is [number, number] => p !== null)
+      return pts.length >= 2 ? pts : null
+    }
+    return null
+  }
+  if (!Array.isArray(c) || c.length < 2) return null
+  if (Array.isArray(c[0]) && Array.isArray((c[0] as unknown[])[0])) return coordsToPoints(c[0])
+  if (Array.isArray(c[0])) return (c as number[][]).map(p => [Number(p[0]), Number(p[1])] as [number, number])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (c as any[]).map(p => [p.lng ?? p.longitude ?? 0, p.lat ?? p.latitude ?? 0] as [number, number])
 }
 
-function buildGeoFC(items: Geofence[]): GeoFC {
-  return { type: 'FeatureCollection', features: items.flatMap(g => {
-    const ring = extractRing(g.coordinates)
-    return ring?.length ? [{ type: 'Feature' as const, geometry: { type: 'Polygon' as const, coordinates: [ring] }, properties: { id: g.id, name: g.name } }] : []
-  })}
+function isCorridor(g: Geofence): boolean {
+  const t = (g.type ?? '').toLowerCase()
+  return t === 'corridor' || t === 'linear' || t === 'line' || t === 'linestring' || t === 'route'
 }
 
 function buildRiskFC(zones: RiskZone[]): GeoFC {
@@ -163,18 +171,44 @@ export default function FleetMap({ vehicles, selectedId, onSelect }: Props) {
     })
   }
 
-  // geofence overlay
+  // geofence overlay — polygon zones + corridor/linear routes
   useEffect(() => {
     const map = mapRef.current; if (!map || !mapReady) return
-    const fc = buildGeoFC(geofences ?? [])
+    const polyFeats: Array<{ type: 'Feature'; geometry: { type: 'Polygon'; coordinates: [number, number][][] }; properties: { id: string; name: string } }> = []
+    const lineFeats: Array<{ type: 'Feature'; geometry: { type: 'LineString'; coordinates: [number, number][] }; properties: { id: string; name: string } }> = []
+
+    for (const g of (geofences ?? [])) {
+      const pts = coordsToPoints(g.coordinates)
+      if (!pts?.length) continue
+      const props = { id: g.id, name: g.name }
+      if (isCorridor(g)) {
+        lineFeats.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: pts }, properties: props })
+      } else {
+        const first = pts[0]!; const last = pts[pts.length - 1]!
+        const ring = (first[0] === last[0] && first[1] === last[1]) ? pts : [...pts, first]
+        polyFeats.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] }, properties: props })
+      }
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const src = map.getSource('geofences') as any
-    if (src) { src.setData(fc); return }
-    if (!fc.features.length) return
+    const polySrc = map.getSource('gf-polys') as any
+    if (polySrc) { polySrc.setData({ type: 'FeatureCollection', features: polyFeats }) }
+    else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      map.addSource('gf-polys', { type: 'geojson', data: { type: 'FeatureCollection', features: polyFeats } } as any)
+      map.addLayer({ id: 'gf-poly-fill', type: 'fill', source: 'gf-polys', paint: { 'fill-color': '#22d3ee', 'fill-opacity': 0.12 } })
+      map.addLayer({ id: 'gf-poly-line', type: 'line', source: 'gf-polys', paint: { 'line-color': '#22d3ee', 'line-width': 2, 'line-opacity': 0.85, 'line-dasharray': [5, 3] } })
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    map.addSource('geofences', { type: 'geojson', data: fc } as any)
-    map.addLayer({ id: 'geofences-fill', type: 'fill', source: 'geofences', paint: { 'fill-color': '#22d3ee', 'fill-opacity': 0.12 } })
-    map.addLayer({ id: 'geofences-line', type: 'line', source: 'geofences', paint: { 'line-color': '#22d3ee', 'line-width': 2, 'line-opacity': 0.85, 'line-dasharray': [5, 3] } })
+    const lineSrc = map.getSource('gf-lines') as any
+    if (lineSrc) { lineSrc.setData({ type: 'FeatureCollection', features: lineFeats }) }
+    else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      map.addSource('gf-lines', { type: 'geojson', data: { type: 'FeatureCollection', features: lineFeats } } as any)
+      map.addLayer({ id: 'gf-line-buffer', type: 'line', source: 'gf-lines', paint: { 'line-color': '#22d3ee', 'line-width': 16, 'line-opacity': 0.12 } })
+      map.addLayer({ id: 'gf-line-center', type: 'line', source: 'gf-lines', paint: { 'line-color': '#22d3ee', 'line-width': 2.5, 'line-opacity': 0.9, 'line-dasharray': [6, 3] } })
+    }
   }, [mapReady, geofences])
 
   // risk zone overlay
