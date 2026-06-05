@@ -72,11 +72,7 @@ function extractRing(c: any): GeoRing | null {
 
 function buildGeoFC(items: Geofence[]): GeoFC {
   return { type: 'FeatureCollection', features: items.flatMap(g => {
-    let ring = extractRing(g.coordinates)
-    // circle-type geofences: radius stored in metres
-    if (!ring && g.lat != null && g.lng != null && g.radius != null && g.radius > 0) {
-      ring = circlePolygon(g.lat, g.lng, g.radius)
-    }
+    const ring = extractRing(g.coordinates)
     return ring?.length ? [{ type: 'Feature' as const, geometry: { type: 'Polygon' as const, coordinates: [ring] }, properties: { id: g.id, name: g.name } }] : []
   })}
 }
