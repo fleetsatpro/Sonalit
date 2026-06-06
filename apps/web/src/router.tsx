@@ -48,10 +48,7 @@ const reportsRoute = createRoute({ getParentRoute: () => authRoute, path: '/repo
 const convoyReportsRoute = createRoute({
   getParentRoute: () => authRoute,
   path: '/convoy-reports',
-  component: () => {
-    window.open('/convoy.html', 'convoyWindow', 'width=1400,height=900,left=100,top=50,resizable=yes,scrollbars=yes');
-    return <div className="flex items-center justify-center h-screen text-slate-400 text-sm">Opening new report system…</div>;
-  },
+  component: lazyRouteComponent(() => import('./pages/ConvoyReportsRedirect.js')),
 });
 
 const shipmentsRoute = createRoute({ getParentRoute: () => authRoute, path: '/shipments', component: lazyRouteComponent(() => import('./pages/Shipments.js')) });
