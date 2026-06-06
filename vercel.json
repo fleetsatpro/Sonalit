@@ -5,8 +5,9 @@
   "installCommand": "pnpm install --frozen-lockfile",
   "framework": "vite",
   "rewrites": [
+    { "source": "/convoy.html", "destination": "/convoy.html" },
     { "source": "/api/:path*", "destination": "https://sonalit-production.up.railway.app/api/:path*" },
-    { "source": "/((?!assets|icons|manifest|sw|workbox).*)", "destination": "/index.html" }
+    { "source": "/((?!assets|icons|manifest|sw|workbox|convoy\\.html).*)", "destination": "/index.html" }
   ],
   "headers": [
     {
