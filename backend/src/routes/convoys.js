@@ -5,6 +5,8 @@ const cfo = require('../controllers/convoysCfoController');
 const { authenticate, authorize } = require('../middleware/auth');
 const { auditLog } = require('../middleware/audit');
 const requireIdempotencyKey = require('../middleware/idempotency');
+const { query } = require('../config/database');
+const { asyncHandler } = require('../middleware/error');
 
 const convoyReportRegenerateLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -45,6 +47,17 @@ router.patch('/:id/cfos/:cfoId/device', authorize('admin', 'dispatcher'), cfo.li
 // CFO truck assignment management (B2)
 router.post('/:id/cfo-assignments', authorize('admin', 'dispatcher'), cfo.assignTruckToCfo);
 router.delete('/:id/cfo-assignments/:assignmentId', authorize('admin', 'dispatcher'), cfo.removeAssignment);
+
+// CFO user listing — users with role='cfo' in this org (must be before /:id routes)
+router.get('/cfo-users', authorize('admin', 'dispatcher'), asyncHandler(async (req, res) => {
+  const result = await query(
+    `SELECT id, name, email FROM users
+     WHERE org_id = $1 AND role = 'cfo' AND deleted_at IS NULL
+     ORDER BY name ASC`,
+    [req.user.org_id]
+  );
+  res.json({ data: result.rows });
+}));
 
 // Daily report admin (E5)
 // E5 — org-wide report overview (must come before /:id routes)
