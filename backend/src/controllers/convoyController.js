@@ -30,7 +30,7 @@ const getConvoys = asyncHandler(async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page) || 1);
   const limit = Math.min(100, parseInt(req.query.limit) || 20);
   const offset = (page - 1) * limit;
-  const filters = [], params = [];
+  const filters = [], params = [req.user.org_id];
 
   if (req.query.status) { params.push(req.query.status); filters.push(`c.status = $${params.length}`); }
   if (req.query.region) { params.push(req.query.region); filters.push(`c.region = $${params.length}`); }
@@ -38,7 +38,7 @@ const getConvoys = asyncHandler(async (req, res) => {
 
   const where = filters.length ? `AND ${filters.join(' AND ')}` : '';
 
-  const countResult = await query(`SELECT COUNT(*) FROM convoys c WHERE c.deleted_at IS NULL ${where}`, params);
+  const countResult = await query(`SELECT COUNT(*) FROM convoys c WHERE c.org_id = $1 AND c.deleted_at IS NULL ${where}`, params);
 
   params.push(limit, offset);
   const result = await query(
@@ -48,7 +48,7 @@ const getConvoys = asyncHandler(async (req, res) => {
      FROM convoys c
      LEFT JOIN users u ON u.id = c.created_by
      LEFT JOIN convoy_assignments ca ON ca.convoy_id = c.id
-     WHERE c.deleted_at IS NULL ${where}
+     WHERE c.org_id = $1 AND c.deleted_at IS NULL ${where}
      GROUP BY c.id, u.name
      ORDER BY c.created_at DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -62,8 +62,8 @@ const getConvoy = asyncHandler(async (req, res) => {
   const result = await query(
     `SELECT c.*, u.name AS created_by_name FROM convoys c
      LEFT JOIN users u ON u.id = c.created_by
-     WHERE c.id = $1 AND c.deleted_at IS NULL`,
-    [req.params.id]
+     WHERE c.id = $1 AND c.org_id = $2 AND c.deleted_at IS NULL`,
+    [req.params.id, req.user.org_id]
   );
   if (!result.rows.length) return res.status(404).json({ error: 'Convoy not found' });
 
@@ -110,12 +110,12 @@ const createConvoy = asyncHandler(async (req, res) => {
   const result = await query(
     `INSERT INTO convoys
        (name, region, priority, description, departure_time, estimated_arrival,
-        route_origin, route_destination, status, created_by, created_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'planned',$9,NOW(),NOW())
+        route_origin, route_destination, status, created_by, org_id, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'planned',$9,$10,NOW(),NOW())
      RETURNING *`,
     [value.name, value.region, value.priority, value.description || null,
      value.departureTime || null, value.estimatedArrival || null,
-     value.routeOrigin, value.routeDestination, req.user.id]
+     value.routeOrigin, value.routeDestination, req.user.id, req.user.org_id]
   );
 
   req.auditAction = 'INSERT';
@@ -126,7 +126,7 @@ const createConvoy = asyncHandler(async (req, res) => {
 });
 
 const updateConvoy = asyncHandler(async (req, res) => {
-  const before = await query('SELECT * FROM convoys WHERE id = $1 AND deleted_at IS NULL', [req.params.id]);
+  const before = await query('SELECT * FROM convoys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL', [req.params.id, req.user.org_id]);
   if (!before.rows.length) return res.status(404).json({ error: 'Convoy not found' });
 
   const { error, value } = convoySchema.fork(Object.keys(convoySchema.describe().keys), (f) => f.optional()).validate(req.body);
@@ -141,10 +141,10 @@ const updateConvoy = asyncHandler(async (req, res) => {
        route_origin = COALESCE($7, route_origin),
        route_destination = COALESCE($8, route_destination),
        updated_at = NOW()
-     WHERE id = $9 AND deleted_at IS NULL RETURNING *`,
+     WHERE id = $9 AND org_id = $10 AND deleted_at IS NULL RETURNING *`,
     [value.name, value.region, value.priority, value.description,
      value.departureTime, value.estimatedArrival, value.routeOrigin,
-     value.routeDestination, req.params.id]
+     value.routeDestination, req.params.id, req.user.org_id]
   );
 
   req.auditAction = 'UPDATE';
@@ -160,7 +160,7 @@ const updateConvoyStatus = asyncHandler(async (req, res) => {
   const { error, value } = schema.validate(req.body);
   if (error) return res.status(400).json({ error: error.message });
 
-  const current = await query('SELECT * FROM convoys WHERE id = $1 AND deleted_at IS NULL', [req.params.id]);
+  const current = await query('SELECT * FROM convoys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL', [req.params.id, req.user.org_id]);
   if (!current.rows.length) return res.status(404).json({ error: 'Convoy not found' });
 
   const currentStatus = current.rows[0].status;
