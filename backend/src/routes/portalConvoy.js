@@ -112,7 +112,7 @@ router.get('/convoy/:convoy_id/exceptions', clientAuth, asyncHandler(async (req,
     `SELECT a.id, a.type, a.severity, a.message, a.created_at AS occurred_at
      FROM alerts a
      JOIN convoys c ON c.id = a.convoy_id
-    WHERE a.convoy_id = $1 AND c.org_id = $2 AND a.deleted_at IS NULL
+    WHERE a.convoy_id = $1 AND c.org_id = $2
     ORDER BY a.created_at DESC LIMIT 100`,
     [req.params.convoy_id, org_id],
   );
@@ -289,7 +289,7 @@ router.get('/convoy/:convoy_id/vehicles', clientAuth, asyncHandler(async (req, r
         v.make,
         v.model,
         v.type,
-        d.name AS driver_name,
+        ct.driver_name,
         gl.lat  AS current_lat,
         gl.lng  AS current_lng,
         gl.speed AS speed_kmh,
@@ -307,7 +307,6 @@ router.get('/convoy/:convoy_id/vehicles', clientAuth, asyncHandler(async (req, r
      FROM convoy_trucks ct
      JOIN convoys c ON c.id = ct.convoy_id
      JOIN vehicles v ON v.id = ct.vehicle_id
-     LEFT JOIN drivers d ON d.id = ct.driver_id
      LEFT JOIN LATERAL (
         SELECT lat, lng, speed, heading, timestamp
         FROM gps_logs
@@ -315,7 +314,7 @@ router.get('/convoy/:convoy_id/vehicles', clientAuth, asyncHandler(async (req, r
         ORDER BY timestamp DESC
         LIMIT 1
      ) gl ON true
-    WHERE ct.convoy_id = $1 AND c.org_id = $2 AND ct.deleted_at IS NULL
+    WHERE ct.convoy_id = $1 AND c.org_id = $2
     ORDER BY v.registration ASC`,
     [req.params.convoy_id, org_id, req.client.client_id],
   );
@@ -345,14 +344,20 @@ router.get('/convoy/:convoy_id/overview', clientAuth, asyncHandler(async (req, r
   const { org_id } = req.client;
 
   const convoyRes = await query(
-    `SELECT c.id, c.reference, c.status, c.origin, c.destination,
-            c.departed_at, c.estimated_arrival_at, c.arrived_at,
-            (SELECT COUNT(*) FROM convoy_trucks ct WHERE ct.convoy_id = c.id AND ct.deleted_at IS NULL) AS vehicle_count,
-            (SELECT COUNT(DISTINCT ccl2.client_id) - 1
+    `SELECT c.id,
+            COALESCE(c.reference, c.name)                AS reference,
+            c.status,
+            COALESCE(c.origin, c.route_origin)           AS origin,
+            COALESCE(c.destination, c.route_destination) AS destination,
+            COALESCE(c.departed_at, c.departure_time)    AS departed_at,
+            COALESCE(c.estimated_arrival_at, c.estimated_arrival) AS estimated_arrival_at,
+            c.arrived_at,
+            (SELECT COUNT(*) FROM convoy_trucks ct WHERE ct.convoy_id = c.id) AS vehicle_count,
+            (SELECT GREATEST(0, COUNT(DISTINCT ccl2.client_id) - 1)
              FROM cargo_client_links ccl2
-             WHERE ccl2.convoy_id = c.id AND ccl2.org_id = c.org_id
+             WHERE ccl2.convoy_id = c.id
             ) AS coload_count,
-            (SELECT COUNT(*) FROM alerts a WHERE a.convoy_id = c.id AND a.deleted_at IS NULL) AS exception_count
+            (SELECT COUNT(*) FROM alerts a WHERE a.convoy_id = c.id AND a.resolved_at IS NULL) AS exception_count
      FROM convoys c
     WHERE c.id = $1 AND c.org_id = $2 AND c.deleted_at IS NULL`,
     [req.params.convoy_id, org_id],
@@ -362,7 +367,7 @@ router.get('/convoy/:convoy_id/overview', clientAuth, asyncHandler(async (req, r
 
   const vehicleRes = await query(
     `SELECT ct.vehicle_id, v.registration, v.make, v.model, v.type,
-            d.name AS driver_name,
+            ct.driver_name,
             gl.lat, gl.lng, gl.speed, gl.heading, gl.timestamp AS last_ping_at,
             EXISTS (
               SELECT 1 FROM cargo_client_links ccl
@@ -371,12 +376,11 @@ router.get('/convoy/:convoy_id/overview', clientAuth, asyncHandler(async (req, r
      FROM convoy_trucks ct
      JOIN convoys cv ON cv.id = ct.convoy_id
      JOIN vehicles v ON v.id = ct.vehicle_id
-     LEFT JOIN drivers d ON d.id = ct.driver_id
      LEFT JOIN LATERAL (
         SELECT lat, lng, speed, heading, timestamp
         FROM gps_logs WHERE vehicle_id = ct.vehicle_id ORDER BY timestamp DESC LIMIT 1
      ) gl ON true
-    WHERE ct.convoy_id = $1 AND cv.org_id = $2 AND ct.deleted_at IS NULL
+    WHERE ct.convoy_id = $1 AND cv.org_id = $2
     ORDER BY v.registration ASC`,
     [req.params.convoy_id, org_id, req.client.client_id],
   );

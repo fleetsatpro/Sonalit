@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { X, FileText, Plus, Trash2, Loader2, AlertCircle } from 'lucide-react';
+import { X, FileText, Plus, Trash2, Loader2, AlertCircle, User } from 'lucide-react';
 import { api } from '../lib/api.js';
-import type { Vehicle } from '@sonalit/contracts';
+import type { Vehicle, Driver } from '@sonalit/contracts';
 
 interface VehicleDocument {
   id: string;
@@ -125,6 +125,127 @@ function AddDocForm({ vehicleId, onDone }: AddDocFormProps): React.ReactElement 
   );
 }
 
+// ---------------------------------------------------------------------------
+// Driver section
+// ---------------------------------------------------------------------------
+
+// The /drivers endpoint may return extra fields not in the base Driver contract
+interface DriverListItem extends Driver {
+  employee_id?: string | null;
+  driver_score?: number | null;
+  current_vehicle_id?: string | null;
+}
+
+interface DriverSectionProps {
+  vehicle: Vehicle;
+}
+
+function DriverSection({ vehicle }: DriverSectionProps): React.ReactElement {
+  const queryClient = useQueryClient();
+
+  const { data: driversData, isLoading } = useQuery<{ data: DriverListItem[] }>({
+    queryKey: ['drivers', 'active'],
+    queryFn: () =>
+      api.get<{ data: DriverListItem[] }>('/drivers?status=active&limit=50').then((r) => r.data),
+  });
+
+  const drivers = driversData?.data ?? [];
+
+  // Vehicle uses assigned_driver_id in the contracts type
+  const currentDriverId = vehicle.assigned_driver_id ?? null;
+  const [selectedDriverId, setSelectedDriverId] = useState<string>(currentDriverId ?? '');
+
+  const assignMutation = useMutation({
+    mutationFn: (driverId: string | null) =>
+      api.put(`/vehicles/${vehicle.id}`, { driverId: driverId ?? null }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+      void queryClient.invalidateQueries({ queryKey: ['vehicleDocs', vehicle.id] });
+    },
+  });
+
+  const currentDriver = drivers.find((d) => d.id === currentDriverId) ?? null;
+
+  function driverLabel(d: DriverListItem): string {
+    if (d.employee_id) return `${d.name} (${d.employee_id})`;
+    return d.name;
+  }
+
+  return (
+    <div>
+      <h3 className="text-sm font-semibold text-white flex items-center gap-1.5 mb-2">
+        <User className="w-4 h-4 text-gray-400" /> Driver
+      </h3>
+
+      <div className="bg-gray-800 rounded-lg p-3 space-y-3">
+        {/* Current assignment */}
+        <div>
+          <p className="text-xs text-gray-500 mb-0.5">Currently assigned</p>
+          <div className="flex items-center gap-2">
+            {currentDriver ? (
+              <>
+                <span className="text-sm text-white">{currentDriver.name}</span>
+                {currentDriver.driver_score != null && (
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-orange-900/50 text-orange-300 font-medium">
+                    {currentDriver.driver_score}
+                  </span>
+                )}
+                {currentDriver.phone && (
+                  <span className="text-xs text-gray-400">{currentDriver.phone}</span>
+                )}
+              </>
+            ) : (
+              <span className="text-sm text-gray-500 italic">Unassigned</span>
+            )}
+          </div>
+        </div>
+
+        {/* Reassign */}
+        <div>
+          <label className="block text-xs text-gray-400 mb-0.5">Reassign driver</label>
+          <div className="flex gap-2">
+            <select
+              value={selectedDriverId}
+              onChange={(e) => setSelectedDriverId(e.target.value)}
+              disabled={isLoading}
+              className="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-white text-xs disabled:opacity-50"
+            >
+              <option value="">— Unassigned —</option>
+              {drivers.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {driverLabel(d)}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={assignMutation.isPending || selectedDriverId === (currentDriverId ?? '')}
+              onClick={() => assignMutation.mutate(selectedDriverId || null)}
+              className="flex items-center gap-1 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded transition-colors whitespace-nowrap"
+            >
+              {assignMutation.isPending && <Loader2 className="w-3 h-3 animate-spin" />}
+              Assign
+            </button>
+          </div>
+        </div>
+
+        {assignMutation.isError && (
+          <p className="text-red-400 text-xs flex items-center gap-1">
+            <AlertCircle className="w-3 h-3" /> {(assignMutation.error as Error).message}
+          </p>
+        )}
+        {assignMutation.isSuccess && (
+          <p className="text-green-400 text-xs">Driver updated.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main drawer
+// ---------------------------------------------------------------------------
+
 interface Props {
   vehicle: Vehicle | null;
   onClose: () => void;
@@ -151,6 +272,7 @@ export function VehicleDetailDrawer({ vehicle, onClose }: Props): React.ReactEle
   if (!vehicle) return null;
 
   const docs = docsData?.data ?? [];
+  const sealNumber = (vehicle as any).seal_number ?? '—';
 
   return (
     <>
@@ -167,6 +289,7 @@ export function VehicleDetailDrawer({ vehicle, onClose }: Props): React.ReactEle
         </div>
 
         <div className="p-5 space-y-5 flex-1">
+          {/* Stats grid */}
           <div className="grid grid-cols-2 gap-3">
             {[
               { label: 'Status', value: vehicle.status },
@@ -175,6 +298,7 @@ export function VehicleDetailDrawer({ vehicle, onClose }: Props): React.ReactEle
               { label: 'Fuel capacity', value: vehicle.fuel_capacity_l != null ? `${vehicle.fuel_capacity_l} L` : '—' },
               { label: 'Utilisation', value: vehicle.utilisation_pct != null ? `${vehicle.utilisation_pct}%` : '—' },
               { label: 'VIN', value: vehicle.vin ?? '—', mono: true },
+              { label: 'Seal No.', value: sealNumber, mono: true },
             ].map(({ label, value, mono }) => (
               <div key={label} className="bg-gray-800 rounded-lg p-3">
                 <p className="text-xs text-gray-500 mb-0.5">{label}</p>
@@ -183,6 +307,10 @@ export function VehicleDetailDrawer({ vehicle, onClose }: Props): React.ReactEle
             ))}
           </div>
 
+          {/* Driver section */}
+          <DriverSection vehicle={vehicle} />
+
+          {/* Documents */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-semibold text-white flex items-center gap-1.5">

@@ -128,7 +128,7 @@ router.get('/overview', asyncHandler(async (req, res) => {
 router.get('/map', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
 
-  const [convoysR, alertZonesR, vehiclesR, geofencesR, riskzonesR] = await Promise.all([
+  const [convoysR, alertZonesR, vehiclesR, geofencesR, riskzonesR, devicesR] = await Promise.all([
     safeQuery(req.db, `
       SELECT c.id, COALESCE(c.name, c.reference) AS name, c.status,
              (SELECT g.lat FROM gps_logs g JOIN convoy_trucks ct ON ct.vehicle_id=g.vehicle_id
@@ -149,11 +149,14 @@ router.get('/map', asyncHandler(async (req, res) => {
 
     safeQuery(req.db, `
       SELECT v.id, v.registration,
-             g.lat, g.lng, COALESCE(g.heading, 0) AS heading,
-             COALESCE(g.speed, 0) AS speed_kmh,
+             COALESCE(g.lat, v.latitude)   AS lat,
+             COALESCE(g.lng, v.longitude)  AS lng,
+             COALESCE(g.heading, v.heading, 0) AS heading,
+             COALESCE(g.speed, 0)          AS speed_kmh,
              CASE
+               WHEN a.severity = 'critical' OR a.severity = 'high' THEN 'alert'
+               WHEN a.id IS NOT NULL THEN 'warn'
                WHEN g.timestamp IS NULL OR g.timestamp < NOW()-INTERVAL '15 minutes' THEN 'offline'
-               WHEN a.id IS NOT NULL THEN 'alert'
                WHEN g.speed > 2 THEN 'moving'
                ELSE 'idle'
              END AS status
@@ -165,16 +168,22 @@ router.get('/map', asyncHandler(async (req, res) => {
       LEFT JOIN convoy_trucks ct ON ct.vehicle_id=v.id
         AND ct.convoy_id IN (SELECT id FROM convoys WHERE org_id=$1 AND status='active')
       LEFT JOIN LATERAL (
-        SELECT id FROM alerts WHERE convoy_id=ct.convoy_id AND resolved_at IS NULL LIMIT 1
+        SELECT id, severity FROM alerts
+        WHERE convoy_id=ct.convoy_id AND resolved_at IS NULL
+        ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END
+        LIMIT 1
       ) a ON true
-      WHERE v.org_id=$1 AND v.deleted_at IS NULL AND g.lat IS NOT NULL
-      LIMIT 50`, [orgId]),
+      WHERE v.org_id=$1 AND v.deleted_at IS NULL
+        AND COALESCE(g.lat, v.latitude) IS NOT NULL
+      LIMIT 100`, [orgId]),
 
     safeQuery(req.db, `
       SELECT id::text, name, COALESCE(type,'circle') AS type,
-             lat, lng, COALESCE(radius, 1000) AS radius_m
+             coordinates, COALESCE(radius, 1000) AS radius_m,
+             corridor_width_km
       FROM geofences
-      WHERE org_id=$1 AND lat IS NOT NULL AND lng IS NOT NULL AND deleted_at IS NULL
+      WHERE org_id=$1 AND active IS NOT FALSE
+        AND coordinates IS NOT NULL
       LIMIT 30`, [orgId]),
 
     // risk_zones is global (no org_id) — use raw query
@@ -183,6 +192,29 @@ router.get('/map', asyncHandler(async (req, res) => {
       FROM risk_zones
       WHERE active=true AND lat IS NOT NULL AND lng IS NOT NULL
       LIMIT 20`).catch(() => ({ rows: [] })),
+
+    safeQuery(req.db, `
+      SELECT d.id, d.name, d.model, d.assignment_type,
+             d.last_lat AS lat, d.last_lng AS lng,
+             COALESCE(d.last_speed, 0) AS speed_kmh,
+             d.panic_active,
+             d.last_seen,
+             p.id AS panic_id,
+             CASE
+               WHEN d.panic_active = true OR p.id IS NOT NULL THEN 'panic'
+               WHEN d.last_seen IS NULL OR d.last_seen < NOW()-INTERVAL '15 minutes' THEN 'offline'
+               WHEN COALESCE(d.last_speed,0) > 2 THEN 'moving'
+               ELSE 'idle'
+             END AS status
+      FROM guardian_devices d
+      LEFT JOIN LATERAL (
+        SELECT id FROM panic_events
+        WHERE device_id = d.id AND resolved_at IS NULL
+        ORDER BY created_at DESC LIMIT 1
+      ) p ON true
+      WHERE d.org_id=$1 AND d.deleted_at IS NULL
+        AND d.last_lat IS NOT NULL AND d.last_lng IS NOT NULL
+      LIMIT 100`, [orgId]),
   ]);
 
   res.json({
@@ -202,15 +234,54 @@ router.get('/map', asyncHandler(async (req, res) => {
       lat: parseFloat(v.lat), lng: parseFloat(v.lng),
       heading: parseFloat(v.heading), speed_kmh: parseFloat(v.speed_kmh),
     })),
-    geofences: geofencesR.rows.map(g => ({
-      id: g.id, name: g.name, type: g.type,
-      lat: parseFloat(g.lat), lng: parseFloat(g.lng),
-      radius_m: parseFloat(g.radius_m),
-    })),
+    geofences: geofencesR.rows.map(g => {
+        const type = (g.type || 'circle').toLowerCase();
+        const coords = g.coordinates || {};
+        const CORRIDOR_TYPES = ['corridor', 'linear', 'line', 'linestring', 'route'];
+
+        // Extract path in [[lat,lng],...] format from any known structure
+        let path = null;
+        let buffer_m = g.corridor_width_km ? g.corridor_width_km * 1000 : 300;
+        if (Array.isArray(coords.path) && coords.path.length >= 2) {
+          path = coords.path; // [[lat,lng],...] order
+          if (typeof coords.buffer_m === 'number') buffer_m = coords.buffer_m;
+        } else if (coords.type === 'LineString' && Array.isArray(coords.coordinates) && coords.coordinates.length >= 2) {
+          // GeoJSON LineString uses [lng,lat] — swap to [lat,lng]
+          path = coords.coordinates.map(([lng, lat]) => [lat, lng]);
+        } else if (Array.isArray(coords) && coords.length >= 2 && Array.isArray(coords[0])) {
+          path = coords; // assume [[lat,lng],...] already
+        }
+
+        if (CORRIDOR_TYPES.includes(type) || path) {
+          if (!path || path.length < 2) return null;
+          const mid = path[Math.floor(path.length / 2)];
+          return {
+            id: g.id, name: g.name, type: 'corridor',
+            path, buffer_m,
+            lat: mid ? parseFloat(mid[0]) : null,
+            lng: mid ? parseFloat(mid[1]) : null,
+            radius_m: parseFloat(g.radius_m),
+          };
+        }
+
+        const lat = coords.lat ?? coords.center?.lat ?? coords.latitude ?? null;
+        const lng = coords.lng ?? coords.center?.lng ?? coords.longitude ?? null;
+        if (lat == null || lng == null) return null;
+        return { id: g.id, name: g.name, type, lat: parseFloat(lat), lng: parseFloat(lng), radius_m: parseFloat(g.radius_m), path: null, buffer_m: null };
+      }).filter(Boolean),
     riskzones: riskzonesR.rows.map(r => ({
       id: r.id, name: r.name, risk_level: r.risk_level,
       lat: parseFloat(r.lat), lng: parseFloat(r.lng),
       radius_km: parseFloat(r.radius_km),
+    })),
+    devices: devicesR.rows.map(d => ({
+      id: d.id, name: d.name, model: d.model,
+      assignment_type: d.assignment_type,
+      lat: parseFloat(d.lat), lng: parseFloat(d.lng),
+      speed_kmh: parseFloat(d.speed_kmh),
+      status: d.status,
+      panic_active: d.panic_active === true || d.panic_id != null,
+      last_seen: d.last_seen,
     })),
   });
 }));
@@ -349,23 +420,21 @@ router.get('/route-risk', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
   try {
   const r = await req.db(`
-    SELECT
-      cor.id AS corridor_id,
-      cor.name AS corridor,
-      cor.origin, cor.destination,
-      COUNT(i.id) AS incident_count,
-      COUNT(i.id) FILTER (WHERE i.severity='critical') * 3 +
-        COUNT(i.id) FILTER (WHERE i.severity='high') * 2 +
-        COUNT(i.id) FILTER (WHERE i.severity='medium') AS weighted_score,
-      MAX(i.title) AS last_incident_summary,
-      ARRAY_AGG(DISTINCT COALESCE(con.name, con.reference)) FILTER (WHERE con.id IS NOT NULL) AS active_convoys
-    FROM corridors cor
-    LEFT JOIN incidents i ON i.corridor_id=cor.id
-      AND i.org_id=$1 AND i.occurred_at >= NOW()-INTERVAL '7 days'
-    LEFT JOIN convoys con ON con.corridor_id=cor.id AND con.org_id=$1 AND con.status='active'
-    WHERE cor.org_id=$1
-    GROUP BY cor.id, cor.name, cor.origin, cor.destination
-    ORDER BY weighted_score DESC
+    SELECT c.id AS corridor_id,
+      COALESCE(c.name, c.reference) AS corridor,
+      COALESCE(c.origin, c.route_origin) AS origin,
+      COALESCE(c.destination, c.route_destination) AS destination,
+      COUNT(DISTINCT rz.id) AS incident_count,
+      COALESCE(SUM(CASE rz.level WHEN 'high' THEN 3 WHEN 'medium' THEN 2 ELSE 1 END), 0) AS weighted_score,
+      MAX(rz.why) AS last_incident_summary,
+      ARRAY[]::text[] AS active_convoys
+    FROM convoys c
+    LEFT JOIN convoy_risk_zones crz ON crz.convoy_id = c.id
+    LEFT JOIN risk_zones rz ON rz.id = crz.zone_id AND rz.is_active = true
+    WHERE c.org_id = $1 AND c.deleted_at IS NULL
+      AND c.status NOT IN ('cancelled','archived')
+    GROUP BY c.id, c.name, c.reference, c.origin, c.route_origin, c.destination, c.route_destination
+    ORDER BY weighted_score DESC, c.created_at DESC
     LIMIT 10`, [orgId]);
 
   res.json({ data: r.rows.map(row => {
@@ -400,11 +469,11 @@ router.get('/drivers', asyncHandler(async (req, res) => {
       AND ct.convoy_id IN (SELECT id FROM convoys WHERE org_id=$1 AND status='active')
     LEFT JOIN LATERAL (
       SELECT
-        COUNT(*) FILTER (WHERE event_type='speed_violation') AS speed_violations,
-        COUNT(*) FILTER (WHERE event_type='harsh_braking') AS harsh_braking,
-        COUNT(*) FILTER (WHERE event_type='fatigue') AS fatigue_flags
-      FROM behaviour_events be
-      WHERE be.driver_id=d.id AND be.occurred_at >= NOW()-INTERVAL '7 days'
+        COUNT(*) FILTER (WHERE event_type='speeding') AS speed_violations,
+        COUNT(*) FILTER (WHERE event_type='hard_braking') AS harsh_braking,
+        COUNT(*) FILTER (WHERE event_type='fatigue_pattern') AS fatigue_flags
+      FROM driver_behaviour_events be
+      WHERE be.driver_id=d.user_id AND be.created_at >= NOW()-INTERVAL '7 days'
     ) be ON true
     WHERE d.org_id=$1 AND d.deleted_at IS NULL
     ORDER BY d.name
@@ -433,14 +502,14 @@ router.get('/borders', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
   try {
   const r = await req.db(`
-    SELECT g.id, g.name, g.metadata,
+    SELECT g.id, g.name, g.region,
            ARRAY_AGG(DISTINCT COALESCE(con.name, con.reference)) FILTER (WHERE con.id IS NOT NULL) AS active_convoys,
            MAX(ge.created_at) AS last_event_at
     FROM geofences g
     LEFT JOIN geofence_events ge ON ge.geofence_id=g.id AND ge.created_at >= NOW()-INTERVAL '24 hours'
     LEFT JOIN convoys con ON con.org_id=$1 AND con.status='active'
-    WHERE g.org_id=$1 AND g.type='border' AND g.deleted_at IS NULL
-    GROUP BY g.id, g.name, g.metadata
+    WHERE g.org_id=$1 AND g.type='border' AND g.active IS NOT FALSE
+    GROUP BY g.id, g.name, g.region
     ORDER BY g.name
     LIMIT 10`, [orgId]);
 
@@ -451,13 +520,11 @@ router.get('/borders', asyncHandler(async (req, res) => {
   };
 
   res.json({ data: r.rows.map(b => {
-    const meta = typeof b.metadata === 'object' && b.metadata ? b.metadata : {};
-    const countries = (meta.countries || b.name).toString();
+    const countries = (b.region || b.name).toString();
     const flagEmojis = countries.split(/[\/\-,]/).map(c => FLAG_MAP[c.trim()] || '').filter(Boolean).join(' ');
     const activeConvoys = b.active_convoys || [];
-    const queueMins = meta.queue_minutes || null;
     const status = activeConvoys.length > 2 ? 'busy' : activeConvoys.length > 0 ? 'clear' : 'clear';
-    return { name: b.name, countries, status, queue_minutes: queueMins, active_convoys: activeConvoys, flag_emojis: flagEmojis };
+    return { name: b.name, countries, status, queue_minutes: null, active_convoys: activeConvoys, flag_emojis: flagEmojis };
   }) });
   } catch (_) { res.json({ data: [] }); }
 }));

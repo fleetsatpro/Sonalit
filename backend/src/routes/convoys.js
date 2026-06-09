@@ -25,6 +25,7 @@ router.post('/', requireIdempotencyKey, authorize('admin', 'dispatcher'), auditL
   }
   return c.createConvoy(req, res, next);
 });
+router.post('/dispatch', authorize('admin', 'dispatcher'), auditLog('convoys'), c.dispatchConvoy);
 router.get('/:id', c.getConvoy);
 router.put('/:id', authorize('admin', 'dispatcher'), auditLog('convoys'), c.updateConvoy);
 router.patch('/:id/status', authorize('admin', 'dispatcher', 'operator'), auditLog('convoys'), c.updateConvoyStatus);

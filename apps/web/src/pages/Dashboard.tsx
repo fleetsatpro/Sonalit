@@ -6,7 +6,6 @@ import { useDashboardRealtime } from '../hooks/useDashboardRealtime.js';
 import '../styles/dashboard.css';
 
 import DashboardShell from '../components/layout/DashboardShell.js';
-import OpsSidebar from '../components/dashboard/OpsSidebar.js';
 import KPIStrip from '../components/dashboard/KPIStrip.js';
 import AlertCards from '../components/dashboard/AlertCards.js';
 import ConvoyTracker from '../components/dashboard/ConvoyTracker.js';
@@ -45,33 +44,31 @@ export default function Dashboard() {
   useDashboardRealtime(user?.org_id ?? '');
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--d-void)' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--d-void)' }}>
       <DashboardShell>
-        {/* §6 KPI Strip */}
+        {/* KPI Strip — full width, cards fill row */}
         <KPIStrip />
 
-        {/* §7 Alert Cards */}
-        <div style={{ padding: '16px 16px 0' }}>
+        {/* Main content — unified gutter */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '14px 16px 0' }}>
+
+          {/* Alert cards — only renders when there are alerts */}
           <AlertCards />
-        </div>
 
-        {/* §8 Convoy Tracker */}
-        <div style={{ padding: '16px 16px 0' }}>
+          {/* Convoy tracker — full width */}
           <ConvoyTracker />
-        </div>
 
-        {/* §9 Remaining sections — 2-col grid on desktop */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12, padding: '16px 16px 0' }}>
-          <RouteRiskIntelligence />
-          <DriverBehavior />
-          <BorderCrossings />
-          <PanicCenter />
-          <AIIntelligence />
-          <QuickActions />
-        </div>
+          {/* 2-col grid: secondary intel panels */}
+          <div className='d-grid-2col'>
+            <RouteRiskIntelligence />
+            <DriverBehavior />
+            <BorderCrossings />
+            <PanicCenter />
+            <AIIntelligence />
+            <QuickActions />
+          </div>
 
-        {/* Full-width sections */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '12px 16px 0' }}>
+          {/* Full-width data sections */}
           <MissionTimeline />
           <WeatherIntelligence />
           <PerformanceChart />
@@ -80,14 +77,11 @@ export default function Dashboard() {
         </div>
       </DashboardShell>
 
-      {/* Desktop ops sidebar */}
-      <div className='d-ops-sidebar-wrap' style={{ display: 'none', position: 'fixed', right: 0, top: 0, width: 'var(--d-sb-w)', zIndex: 100 }}>
-        <OpsSidebar />
-      </div>
-
       <style>{`
-        @media (min-width: 900px) {
-          .d-ops-sidebar-wrap { display: block !important; }
+        .d-grid-2col {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+          gap: 14px;
         }
       `}</style>
     </div>

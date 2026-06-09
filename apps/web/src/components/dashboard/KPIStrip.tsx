@@ -52,28 +52,28 @@ function KPICardComp({ card, value }: { card: KPICard; value: number }) {
       onClick={() => nav({ to: card.path })}
       className='d-clip'
       style={{
-        flex: '0 0 140px',
-        scrollSnapAlign: 'start',
+        flex: '1 1 140px',
         background: 'var(--d-well)',
         border: '1px solid var(--d-rim2)',
         borderTop: `3px solid ${card.color}`,
         boxShadow: `0 -2px 12px ${card.color}22`,
         borderRadius: 0,
         cursor: 'pointer',
-        padding: '14px 16px 12px',
+        padding: '16px 20px 14px',
         textAlign: 'left',
         display: 'flex',
         flexDirection: 'column',
-        gap: 4,
-        transition: 'border-color .2s',
+        gap: 6,
+        transition: 'border-color .2s, box-shadow .2s',
         clipPath: 'polygon(0 0, calc(100% - 13px) 0, 100% 13px, 100% 100%, 0 100%)',
+        minHeight: 96,
       }}
     >
-      <div style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', fontWeight: 600, letterSpacing: '.12em', color: card.color, textTransform: 'uppercase' }}>
+      <div style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', fontWeight: 600, letterSpacing: '.14em', color: card.color, textTransform: 'uppercase', opacity: 0.9 }}>
         {card.label}
       </div>
-      <div style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 800, fontSize: 36, color: 'var(--d-t1)', lineHeight: 1, letterSpacing: '-.01em' }}>
-        {display}{card.unit && <span style={{ fontSize: 14, fontWeight: 600, opacity: .7, marginLeft: 2 }}>{card.unit}</span>}
+      <div style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 800, fontSize: 40, color: 'var(--d-t1)', lineHeight: 1, letterSpacing: '-.02em' }}>
+        {display}{card.unit && <span style={{ fontSize: 16, fontWeight: 600, opacity: .65, marginLeft: 3 }}>{card.unit}</span>}
       </div>
     </button>
   );
@@ -84,10 +84,10 @@ const KPIStrip = React.memo(function KPIStrip() {
 
   if (!kpi) {
     return (
-      <div className='d-hscroll' style={{ padding: '0 16px', gap: 10 }}>
+      <div style={{ padding: '16px 16px 0', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         {CARDS.map(c => (
           <div key={c.key} className='d-clip' style={{
-            flex: '0 0 140px', height: 90,
+            flex: '1 1 140px', height: 96,
             background: 'var(--d-well)', border: '1px solid var(--d-rim)', borderRadius: 0,
             animation: 'd-pulse-warn 1.5s ease-in-out infinite',
           }} />
@@ -105,7 +105,7 @@ const KPIStrip = React.memo(function KPIStrip() {
   };
 
   return (
-    <div className='d-hscroll d-section-reveal' style={{ padding: '16px 16px 0' }}>
+    <div style={{ padding: '16px 16px 0', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
       {CARDS.map(card => (
         <KPICardComp key={card.key} card={card} value={values[card.key] ?? 0} />
       ))}

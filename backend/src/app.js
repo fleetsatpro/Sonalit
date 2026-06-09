@@ -74,8 +74,8 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      connectSrc: ["'self'", "wss://rt.sonalit.io", "https://api.anthropic.com", "https://*.sentry.io"],
-      imgSrc: ["'self'", "data:", "https://*.r2.cloudflarestorage.com", "https://basemaps.cartocdn.com", "https://demotiles.maplibre.org"],
+      connectSrc: ["'self'", "wss://rt.sonalit.io", "https://api.anthropic.com", "https://*.sentry.io", "https://*.openstreetmap.org"],
+      imgSrc: ["'self'", "data:", "https://*.r2.cloudflarestorage.com", "https://basemaps.cartocdn.com", "https://demotiles.maplibre.org", "https://*.openstreetmap.org"],
       workerSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"], // Tailwind CSS requires this
       scriptSrc: ["'self'"],
@@ -198,6 +198,9 @@ catch (e) { logger.warn("GDPR route failed: " + e.message); }
   try { app.use("/api/v1/" + r, require("./routes/" + r)); logger.info("Route loaded: /api/v1/" + r); }
   catch (e) { logger.warn("Route not found: " + r + " — " + e.message); }
 });
+
+try { app.use("/api/v1/risk", require("./routes/risk")); logger.info("Route loaded: /api/v1/risk"); }
+catch (e) { logger.warn("Risk route failed: " + e.message); }
 
 try { app.use("/api/v1/routes", require("./routes/routes")); logger.info("Route loaded: /api/v1/routes"); }
 catch (e) { logger.warn("Routes route failed: " + e.message); }

@@ -43,6 +43,7 @@ router.get('/track', authenticate, asyncHandler(async (req, res) => {
      SELECT
        v.id::text                         AS device_id,
        v.id::text                         AS vehicle_id,
+       COALESCE(v.registration, '')       AS name,
        v.latitude                         AS lat,
        v.longitude                        AS lng,
        gl.speed                           AS speed,
@@ -65,6 +66,7 @@ router.get('/track', authenticate, asyncHandler(async (req, res) => {
        gd.id::text                        AS device_id,
        CASE WHEN gd.assignment_type = 'vehicle'
             THEN gd.assignment_id::text ELSE NULL END AS vehicle_id,
+       COALESCE(gd.name, gd.id::text)     AS name,
        gd.last_lat                        AS lat,
        gd.last_lng                        AS lng,
        gd.last_speed                      AS speed,

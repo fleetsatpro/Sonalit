@@ -2,6 +2,7 @@ import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
 import DataError from './DataError.js';
+import CompactEmpty from './CompactEmpty.js';
 
 interface Border {
   name: string; countries: string; status: 'clear' | 'busy' | 'held';
@@ -19,11 +20,16 @@ const BorderCrossings = React.memo(function BorderCrossings() {
 
   if (isError) return <DataError section='Border Crossings' onRetry={refetch} />;
 
+  const borders = data ?? [];
+  if (borders.length === 0) {
+    return <CompactEmpty accent='var(--d-sig2)' title='BORDER CROSSINGS' message='No border crossing data' />;
+  }
+
   return (
     <div className='d-section-reveal d-card' style={{ padding: 16 }}>
       <SH />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {(data ?? []).map((b, i) => {
+        {borders.map((b, i) => {
           const color = STATUS_COLOR[b.status];
           return (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--d-rim)' }}>
@@ -50,9 +56,6 @@ const BorderCrossings = React.memo(function BorderCrossings() {
             </div>
           );
         })}
-        {(!data || data.length === 0) && (
-          <div style={{ textAlign: 'center', color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace', fontSize: 12, padding: 16 }}>No border crossing data</div>
-        )}
       </div>
     </div>
   );

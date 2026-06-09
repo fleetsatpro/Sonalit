@@ -57,7 +57,7 @@ const PanicCenter = React.memo(function PanicCenter() {
           </div>
 
           <div style={{ display: 'flex', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
-            <Stat label='Avg Response' value={data ? `${data.response_time_avg_s}s` : '—'} />
+            <Stat label='Avg Response' value={data ? fmtSeconds(data.response_time_avg_s) : '—'} />
             <Stat label='Teams Ready' value={data?.response_teams?.length?.toString() ?? '—'} />
             <Stat label='Last Event' value={(data?.last_event_days_ago ?? -1) >= 0 ? `${data!.last_event_days_ago}d ago` : 'Never'} />
           </div>
@@ -105,6 +105,12 @@ const PanicCenter = React.memo(function PanicCenter() {
     </div>
   );
 });
+
+function fmtSeconds(s: number): string {
+  if (!s || s <= 0 || s > 86400) return '—';
+  if (s < 60) return `${s}s`;
+  return `${Math.round(s / 60)}m`;
+}
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (

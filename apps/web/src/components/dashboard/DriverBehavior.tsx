@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
 import DataError from './DataError.js';
+import CompactEmpty from './CompactEmpty.js';
 
 interface Driver {
   id: string; name: string; initials: string;
@@ -40,11 +41,16 @@ const DriverBehavior = React.memo(function DriverBehavior() {
 
   if (isError) return <DataError section='Driver Behavior' onRetry={refetch} />;
 
+  const drivers = data ?? [];
+  if (drivers.length === 0) {
+    return <CompactEmpty accent='var(--d-ok)' title='DRIVER BEHAVIOR' message='No driver data' />;
+  }
+
   return (
     <div className='d-section-reveal d-card' style={{ padding: 16 }}>
       <SH />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {(data ?? []).map(d => {
+        {drivers.map(d => {
           const color = GRADE_COLOR[d.grade];
           const flagged = d.grade === 'flagged';
           return (
@@ -84,7 +90,6 @@ const DriverBehavior = React.memo(function DriverBehavior() {
             </div>
           );
         })}
-        {(!data || data.length === 0) && <div style={{ textAlign: 'center', color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace', fontSize: 12, padding: 16 }}>No driver data</div>}
       </div>
     </div>
   );

@@ -103,21 +103,12 @@ const AlertCards = React.memo(function AlertCards() {
 
   const handleAck = useCallback((id: string) => ackMut.mutate(id), [ackMut]);
 
-  if (isError) return <div style={{ padding: '0 16px' }}><DataError section='Alert Cards' onRetry={refetch} /></div>;
+  if (isError) return <DataError section='Alert Cards' onRetry={refetch} />;
 
-  if (storeAlerts.length === 0) {
-    return (
-      <div style={{ padding: '16px 16px 0' }}>
-        <SectionHeader label='ACTIVE ALERTS' />
-        <div style={{ padding: '24px', textAlign: 'center', color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace', fontSize: 12 }}>
-          ✓ No active alerts
-        </div>
-      </div>
-    );
-  }
+  if (storeAlerts.length === 0) return null;
 
   return (
-    <div className='d-section-reveal' style={{ padding: '16px 16px 0' }}>
+    <div className='d-section-reveal'>
       <SectionHeader label='ACTIVE ALERTS' count={storeAlerts.length} />
       <div className='d-hscroll' style={{ paddingBottom: 4 }}>
         {storeAlerts.map(a => <AlertCard key={a.id} alert={a} onAck={handleAck} />)}

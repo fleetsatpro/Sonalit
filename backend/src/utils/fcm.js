@@ -73,15 +73,27 @@ async function sendPush(fcmToken, title, body, data = {}) {
 }
 
 /**
- * Send command push notification to a device.
- * Called from the POST /devices/:id/command route after issuing a command.
+ * Send command push to a device — data-only so Android onMessageReceived
+ * fires even when the app is in background, triggering an immediate heartbeat.
  */
 async function sendCommandPush(fcmToken, commandType, commandId) {
-  return sendPush(fcmToken, 'Fleet Command', 'New command: ' + commandType, {
-    type: 'command',
-    command_type: commandType,
-    command_id: commandId,
-  });
+  if (!fcmToken) return false;
+  const app = getApp();
+  if (!app) return false;
+  try {
+    const admin = require('firebase-admin');
+    await admin.messaging(app).send({
+      token: fcmToken,
+      // No notification field — data-only wakes background onMessageReceived
+      data: { type: 'command', command_type: commandType, command_id: String(commandId) },
+      android: { priority: 'high' },
+    });
+    logger.info(`FCM command push sent to token=${fcmToken.slice(0, 8)}... type=${commandType}`);
+    return true;
+  } catch (err) {
+    logger.warn(`FCM command push failed: ${err.message}`);
+    return false;
+  }
 }
 
 /**

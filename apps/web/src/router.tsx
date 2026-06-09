@@ -43,7 +43,14 @@ const panicCenterRoute = createRoute({ getParentRoute: () => authRoute, path: '/
 const messagesRoute = createRoute({ getParentRoute: () => authRoute, path: '/messages', component: lazyRouteComponent(() => import('./pages/Messages.js')) });
 const analyticsRoute = createRoute({ getParentRoute: () => authRoute, path: '/analytics', component: lazyRouteComponent(() => import('./pages/Analytics.js')) });
 const reportsRoute = createRoute({ getParentRoute: () => authRoute, path: '/reports', component: lazyRouteComponent(() => import('./pages/Reports.js')) });
-const convoyReportsRoute = createRoute({ getParentRoute: () => authRoute, path: '/convoy-reports', component: lazyRouteComponent(() => import('./pages/ConvoyReports.js')) });
+
+// ─── New Convoy Reports route → opens the standalone dashboard ────────────────
+const convoyReportsRoute = createRoute({
+  getParentRoute: () => authRoute,
+  path: '/convoy-reports',
+  component: lazyRouteComponent(() => import('./pages/ConvoyReportsRedirect.js')),
+});
+
 const shipmentsRoute = createRoute({ getParentRoute: () => authRoute, path: '/shipments', component: lazyRouteComponent(() => import('./pages/Shipments.js')) });
 const financeRoute = createRoute({ getParentRoute: () => authRoute, path: '/finance', component: lazyRouteComponent(() => import('./pages/Finance.js')) });
 const maintenanceRoute = createRoute({ getParentRoute: () => authRoute, path: '/maintenance', component: lazyRouteComponent(() => import('./pages/Maintenance.js')) });
@@ -64,37 +71,22 @@ const routeAnalysisRoute = createRoute({ getParentRoute: () => authRoute, path: 
 const cargoPortalRoute = createRoute({ getParentRoute: () => authRoute, path: '/cargo-portal', component: lazyRouteComponent(() => import('./pages/CargoPortal.js')) });
 const portalViewRoute = createRoute({ getParentRoute: () => rootRoute, path: '/portal-view', component: lazyRouteComponent(() => import('./pages/PortalView.js')) });
 
-// Portal client routes (no operator auth required)
-const portalRootRoute = createRoute({ getParentRoute: () => rootRoute, id: 'portal-root',
-  component: lazyRouteComponent(() => import('./pages/portal/PortalLayout.js')) });
-const portalLoginRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/login',
-  component: lazyRouteComponent(() => import('./pages/portal/PortalLogin.js')) });
-const portalVerifyRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/verify',
-  component: lazyRouteComponent(() => import('./pages/portal/PortalLogin.js')) });
-const portalDashboardRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/dashboard',
-  component: lazyRouteComponent(() => import('./pages/portal/PortalDashboard.js')) });
-const portalManifestRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/manifest',
-  component: lazyRouteComponent(() => import('./pages/portal/PortalManifest.js')) });
-const portalPODRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/pod',
-  component: lazyRouteComponent(() => import('./pages/portal/PortalPOD.js')) });
-const portalExceptionsRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/exceptions',
-  component: lazyRouteComponent(() => import('./pages/portal/PortalExceptions.js')) });
-const portalNotificationsRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/notifications',
-  component: lazyRouteComponent(() => import('./pages/portal/PortalNotifications.js')) });
-const portalDocumentsRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/documents',
-  component: lazyRouteComponent(() => import('./pages/portal/PortalDocuments.js')) });
-const portalSensorsRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/sensors',
-  component: lazyRouteComponent(() => import('./pages/portal/PortalSensors.js')) });
-const portalReplayRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/replay',
-  component: lazyRouteComponent(() => import('./pages/portal/PortalReplay.js')) });
-const portalTrackRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/track',
-  component: lazyRouteComponent(() => import('./pages/portal/PortalTrack.js')) });
-const portalConvoyRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/convoy',
-  component: lazyRouteComponent(() => import('./pages/portal/PortalConvoy.js')) });
-const portalCustodyRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/custody',
-  component: lazyRouteComponent(() => import('./pages/portal/PortalCustody.js')) });
-const portalSecurityRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/security',
-  component: lazyRouteComponent(() => import('./pages/portal/PortalSecurity.js')) });
+// Portal client routes
+const portalRootRoute = createRoute({ getParentRoute: () => rootRoute, id: 'portal-root', component: lazyRouteComponent(() => import('./pages/portal/PortalLayout.js')) });
+const portalLoginRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/login', component: lazyRouteComponent(() => import('./pages/portal/PortalLogin.js')) });
+const portalVerifyRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/verify', component: lazyRouteComponent(() => import('./pages/portal/PortalLogin.js')) });
+const portalDashboardRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/dashboard', component: lazyRouteComponent(() => import('./pages/portal/PortalDashboard.js')) });
+const portalManifestRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/manifest', component: lazyRouteComponent(() => import('./pages/portal/PortalManifest.js')) });
+const portalPODRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/pod', component: lazyRouteComponent(() => import('./pages/portal/PortalPOD.js')) });
+const portalExceptionsRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/exceptions', component: lazyRouteComponent(() => import('./pages/portal/PortalExceptions.js')) });
+const portalNotificationsRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/notifications', component: lazyRouteComponent(() => import('./pages/portal/PortalNotifications.js')) });
+const portalDocumentsRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/documents', component: lazyRouteComponent(() => import('./pages/portal/PortalDocuments.js')) });
+const portalSensorsRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/sensors', component: lazyRouteComponent(() => import('./pages/portal/PortalSensors.js')) });
+const portalReplayRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/replay', component: lazyRouteComponent(() => import('./pages/portal/PortalReplay.js')) });
+const portalTrackRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/track', component: lazyRouteComponent(() => import('./pages/portal/PortalTrack.js')) });
+const portalConvoyRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/convoy', component: lazyRouteComponent(() => import('./pages/portal/PortalConvoy.js')) });
+const portalCustodyRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/custody', component: lazyRouteComponent(() => import('./pages/portal/PortalCustody.js')) });
+const portalSecurityRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/security', component: lazyRouteComponent(() => import('./pages/portal/PortalSecurity.js')) });
 
 const routeTree = rootRoute.addChildren([
   loginRoute,

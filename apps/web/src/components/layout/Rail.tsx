@@ -1,44 +1,54 @@
 import React from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
+import {
+  LayoutDashboard, MapPin, ShieldAlert, Siren,
+  Bell, AlertTriangle, Eye, Map,
+  Route, Truck, Users, Fuel, Wrench,
+  Package, Link2, BarChart2, DollarSign, Settings,
+  type LucideIcon,
+} from 'lucide-react';
 import { useAuthStore } from '../../stores/auth.js';
 
-const NAV_GROUPS = [
+interface NavItem { path: string; icon: LucideIcon; label: string }
+interface NavGroup { label: string; items: NavItem[] }
+
+const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Command',
     items: [
-      { path: '/', icon: '⬡', label: 'Command Center' },
-      { path: '/gps', icon: '📡', label: 'GPS Live' },
-      { path: '/incident-center', icon: '🛡', label: 'Incident Center' },
-      { path: '/panic-center', icon: '🚨', label: 'Panic Center' },
+      { path: '/',                icon: LayoutDashboard, label: 'Command Center' },
+      { path: '/gps',             icon: MapPin,          label: 'GPS Live' },
+      { path: '/incident-center', icon: ShieldAlert,     label: 'Incident Center' },
+      { path: '/panic-center',    icon: Siren,           label: 'Panic Center' },
     ],
   },
   {
     label: 'Security',
     items: [
-      { path: '/alerts', icon: '🔔', label: 'Alerts' },
-      { path: '/risk-intel', icon: '⚠', label: 'Risk Intel' },
-      { path: '/guardian', icon: '👁', label: 'Guardian AI' },
-      { path: '/geofences', icon: '📍', label: 'Geofences' },
+      { path: '/alerts',    icon: Bell,          label: 'Alerts' },
+      { path: '/risk-intel', icon: AlertTriangle, label: 'Risk Intel' },
+      { path: '/guardian',  icon: Eye,           label: 'Guardian AI' },
+      { path: '/geofences', icon: Map,           label: 'Geofences' },
     ],
   },
   {
     label: 'Fleet',
     items: [
-      { path: '/convoys', icon: '🚛', label: 'Convoys' },
-      { path: '/fleet', icon: '🚗', label: 'Fleet' },
-      { path: '/drivers', icon: '👤', label: 'Drivers' },
-      { path: '/fuel', icon: '⛽', label: 'Fuel' },
-      { path: '/maintenance', icon: '🔧', label: 'Maintenance' },
+      { path: '/convoys',     icon: Route, label: 'Convoys' },
+      { path: '/fleet',       icon: Truck, label: 'Fleet' },
+      { path: '/drivers',     icon: Users, label: 'Drivers' },
+      { path: '/fuel',        icon: Fuel,  label: 'Fuel' },
+      { path: '/maintenance', icon: Wrench, label: 'Maintenance' },
     ],
   },
   {
     label: 'Business',
     items: [
-      { path: '/shipments', icon: '📦', label: 'Shipments' },
-      { path: '/cargo-portal', icon: '🔗', label: 'Cargo Portal' },
-      { path: '/analytics', icon: '📊', label: 'Analytics' },
-      { path: '/finance', icon: '💰', label: 'Finance' },
-      { path: '/settings', icon: '⚙', label: 'Settings' },
+      { path: '/shipments',    icon: Package,    label: 'Shipments' },
+      { path: '/cargo-portal', icon: Link2,      label: 'Cargo Portal' },
+      { path: '/analytics',    icon: BarChart2,  label: 'Analytics' },
+      { path: '/finance',      icon: DollarSign, label: 'Finance' },
+      { path: '/settings',     icon: Settings,   label: 'Settings' },
     ],
   },
 ];
@@ -104,6 +114,7 @@ const Rail = React.memo(function Rail({ onClose }: { onClose?: () => void }) {
             }}>{group.label}</div>
             {group.items.map(item => {
               const active = currentPath === item.path || (item.path !== '/' && currentPath.startsWith(item.path));
+              const Icon = item.icon;
               return (
                 <Link
                   key={item.path}
@@ -125,7 +136,7 @@ const Rail = React.memo(function Rail({ onClose }: { onClose?: () => void }) {
                     transition: 'all .15s',
                   }}
                 >
-                  <span style={{ fontSize: 14, opacity: active ? 1 : .7 }}>{item.icon}</span>
+                  <Icon size={15} strokeWidth={active ? 2.2 : 1.6} style={{ flexShrink: 0, opacity: active ? 1 : 0.65 }} />
                   {item.label}
                 </Link>
               );

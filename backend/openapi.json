@@ -192,6 +192,16 @@
         }
       }
     },
+    "/api/v1/convoys/dispatch": {
+      "post": {
+        "operationId": "post_api_v1_convoys_dispatch",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/convoys/{id}": {
       "get": {
         "operationId": "get_api_v1_convoys_id",
@@ -1602,6 +1612,46 @@
         }
       }
     },
+    "/api/v1/portal/auth/request-link": {
+      "post": {
+        "operationId": "post_api_v1_portal_auth_request_link",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/auth/verify": {
+      "post": {
+        "operationId": "post_api_v1_portal_auth_verify",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/auth/logout": {
+      "post": {
+        "operationId": "post_api_v1_portal_auth_logout",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/auth/rt-token": {
+      "get": {
+        "operationId": "get_api_v1_portal_auth_rt_token",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/portal/convoy": {
       "get": {
         "operationId": "get_api_v1_portal_convoy",
@@ -1660,9 +1710,127 @@
         }
       }
     },
-    "/api/v1/convoys/{id}/corridor": {
+    "/api/v1/portal/convoy/location": {
       "get": {
-        "operationId": "get_api_v1_convoys_id_corridor",
+        "operationId": "get_api_v1_portal_convoy_location",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/convoy/eta": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_eta",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/convoy/checkpoints": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_checkpoints",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/convoy/seals": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_seals",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/centrifuge-token": {
+      "get": {
+        "operationId": "get_api_v1_portal_centrifuge_token",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/shipments": {
+      "get": {
+        "operationId": "get_api_v1_portal_shipments",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/clients": {
+      "post": {
+        "operationId": "post_api_v1_portal_clients",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "get": {
+        "operationId": "get_api_v1_portal_clients",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/clients/{id}/links": {
+      "post": {
+        "operationId": "post_api_v1_portal_clients_id_links",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/clients/{id}/magic-link": {
+      "post": {
+        "operationId": "post_api_v1_portal_clients_id_magic_link",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/convoy/{convoy_id}/manifest": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_convoy_id_manifest",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/convoy/{convoy_id}/shipments/{shipment_id}/manifest-items": {
+      "post": {
+        "operationId": "post_api_v1_portal_convoy_convoy_id_shipments_shipment_id_manifest_items",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/convoy/{convoy_id}/pod": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_convoy_id_pod",
         "responses": {
           "200": {
             "description": "OK"
@@ -1670,7 +1838,7 @@
         }
       },
       "post": {
-        "operationId": "post_api_v1_convoys_id_corridor",
+        "operationId": "post_api_v1_portal_convoy_convoy_id_pod",
         "responses": {
           "200": {
             "description": "OK"
@@ -1678,9 +1846,9 @@
         }
       }
     },
-    "/api/v1/convoys/{id}/corridor/deviations": {
+    "/api/v1/portal/?/convoy/{convoy_id}/exceptions": {
       "get": {
-        "operationId": "get_api_v1_convoys_id_corridor_deviations",
+        "operationId": "get_api_v1_portal_convoy_convoy_id_exceptions",
         "responses": {
           "200": {
             "description": "OK"
@@ -1688,257 +1856,9 @@
         }
       }
     },
-    "/api/v1/fuel/webhook/fuel-card": {
-      "post": {
-        "operationId": "post_api_v1_fuel_webhook_fuel_card",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/fuel/": {
+    "/api/v1/portal/?/notifications": {
       "get": {
-        "operationId": "get_api_v1_fuel",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      },
-      "post": {
-        "operationId": "post_api_v1_fuel",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/fuel/{id}": {
-      "put": {
-        "operationId": "put_api_v1_fuel_id",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      },
-      "delete": {
-        "operationId": "delete_api_v1_fuel_id",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/fuel/anomalies": {
-      "get": {
-        "operationId": "get_api_v1_fuel_anomalies",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/fuel/anomalies/{id}/resolve": {
-      "patch": {
-        "operationId": "patch_api_v1_fuel_anomalies_id_resolve",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/fuel/summary": {
-      "get": {
-        "operationId": "get_api_v1_fuel_summary",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/fuel/stations": {
-      "get": {
-        "operationId": "get_api_v1_fuel_stations",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      },
-      "post": {
-        "operationId": "post_api_v1_fuel_stations",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/fuel/stations/{id}": {
-      "delete": {
-        "operationId": "delete_api_v1_fuel_stations_id",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/fuel/vehicles/{vehicleId}": {
-      "get": {
-        "operationId": "get_api_v1_fuel_vehicles_vehicleId",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/fuel/convoys/{convoyId}": {
-      "get": {
-        "operationId": "get_api_v1_fuel_convoys_convoyId",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/behaviour/drivers/{id}/events": {
-      "get": {
-        "operationId": "get_api_v1_behaviour_drivers_id_events",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/behaviour/drivers/{id}/score": {
-      "get": {
-        "operationId": "get_api_v1_behaviour_drivers_id_score",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/behaviour/leaderboard": {
-      "get": {
-        "operationId": "get_api_v1_behaviour_leaderboard",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/behaviour/drivers/{id}/score/history": {
-      "get": {
-        "operationId": "get_api_v1_behaviour_drivers_id_score_history",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/behaviour/refresh": {
-      "post": {
-        "operationId": "post_api_v1_behaviour_refresh",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/guardian/whatsapp/webhook": {
-      "get": {
-        "operationId": "get_api_v1_guardian_whatsapp_webhook",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      },
-      "post": {
-        "operationId": "post_api_v1_guardian_whatsapp_webhook",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/convoys/{id}/broadcast": {
-      "post": {
-        "operationId": "post_api_v1_convoys_id_broadcast",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/convoys/{id}/broadcasts": {
-      "get": {
-        "operationId": "get_api_v1_convoys_id_broadcasts",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/canned-messages": {
-      "get": {
-        "operationId": "get_api_v1_canned_messages",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      },
-      "post": {
-        "operationId": "post_api_v1_canned_messages",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/canned-messages/{id}": {
-      "put": {
-        "operationId": "put_api_v1_canned_messages_id",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      },
-      "delete": {
-        "operationId": "delete_api_v1_canned_messages_id",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/settings/whatsapp": {
-      "get": {
-        "operationId": "get_api_v1_settings_whatsapp",
+        "operationId": "get_api_v1_portal_notifications",
         "responses": {
           "200": {
             "description": "OK"
@@ -1946,7 +1866,7 @@
         }
       },
       "put": {
-        "operationId": "put_api_v1_settings_whatsapp",
+        "operationId": "put_api_v1_portal_notifications",
         "responses": {
           "200": {
             "description": "OK"
@@ -1954,9 +1874,9 @@
         }
       }
     },
-    "/api/v1/claims": {
+    "/api/v1/portal/?/convoy/{convoy_id}/documents": {
       "get": {
-        "operationId": "get_api_v1_claims",
+        "operationId": "get_api_v1_portal_convoy_convoy_id_documents",
         "responses": {
           "200": {
             "description": "OK"
@@ -1964,7 +1884,7 @@
         }
       },
       "post": {
-        "operationId": "post_api_v1_claims",
+        "operationId": "post_api_v1_portal_convoy_convoy_id_documents",
         "responses": {
           "200": {
             "description": "OK"
@@ -1972,39 +1892,9 @@
         }
       }
     },
-    "/api/v1/claims/{id}": {
-      "put": {
-        "operationId": "put_api_v1_claims_id",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/claims/{id}/status": {
-      "patch": {
-        "operationId": "patch_api_v1_claims_id_status",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/claims/{id}/generate-pdf": {
-      "post": {
-        "operationId": "post_api_v1_claims_id_generate_pdf",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/claims/{id}/download": {
+    "/api/v1/portal/?/convoy/{convoy_id}/sensors": {
       "get": {
-        "operationId": "get_api_v1_claims_id_download",
+        "operationId": "get_api_v1_portal_convoy_convoy_id_sensors",
         "responses": {
           "200": {
             "description": "OK"
@@ -2012,9 +1902,9 @@
         }
       }
     },
-    "/api/v1/incidents/{incidentId}/claims": {
+    "/api/v1/portal/?/convoy/{convoy_id}/replay": {
       "get": {
-        "operationId": "get_api_v1_incidents_incidentId_claims",
+        "operationId": "get_api_v1_portal_convoy_convoy_id_replay",
         "responses": {
           "200": {
             "description": "OK"
@@ -2022,9 +1912,29 @@
         }
       }
     },
-    "/api/v1/shifts/": {
+    "/api/v1/portal/?/convoy/{convoy_id}/vehicles": {
       "get": {
-        "operationId": "get_api_v1_shifts",
+        "operationId": "get_api_v1_portal_convoy_convoy_id_vehicles",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/convoy/{convoy_id}/overview": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_convoy_id_overview",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/convoy/{convoy_id}/custody": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_convoy_id_custody",
         "responses": {
           "200": {
             "description": "OK"
@@ -2032,7 +1942,7 @@
         }
       },
       "post": {
-        "operationId": "post_api_v1_shifts",
+        "operationId": "post_api_v1_portal_convoy_convoy_id_custody",
         "responses": {
           "200": {
             "description": "OK"
@@ -2040,9 +1950,9 @@
         }
       }
     },
-    "/api/v1/shifts/on-duty": {
+    "/api/v1/portal/?/convoy/{convoy_id}/security": {
       "get": {
-        "operationId": "get_api_v1_shifts_on_duty",
+        "operationId": "get_api_v1_portal_convoy_convoy_id_security",
         "responses": {
           "200": {
             "description": "OK"
@@ -2050,9 +1960,9 @@
         }
       }
     },
-    "/api/v1/shifts/coverage": {
+    "/api/v1/portal/?/convoy/{convoy_id}/incidents": {
       "get": {
-        "operationId": "get_api_v1_shifts_coverage",
+        "operationId": "get_api_v1_portal_convoy_convoy_id_incidents",
         "responses": {
           "200": {
             "description": "OK"
@@ -2060,35 +1970,9 @@
         }
       }
     },
-    "/api/v1/shifts/{id}": {
-      "put": {
-        "operationId": "put_api_v1_shifts_id",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      },
-      "delete": {
-        "operationId": "delete_api_v1_shifts_id",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/shifts/{id}/handover": {
+    "/api/v1/portal/?/convoy/{convoy_id}/incidents/{alert_id}/acknowledge": {
       "post": {
-        "operationId": "post_api_v1_shifts_id_handover",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      },
-      "get": {
-        "operationId": "get_api_v1_shifts_id_handover",
+        "operationId": "post_api_v1_portal_convoy_convoy_id_incidents_alert_id_acknowledge",
         "responses": {
           "200": {
             "description": "OK"
@@ -2096,19 +1980,9 @@
         }
       }
     },
-    "/api/v1/shifts/handovers/{handoverId}/ack": {
-      "patch": {
-        "operationId": "patch_api_v1_shifts_handovers_handoverId_ack",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/voice-notes/upload-url": {
+    "/api/v1/portal/?/convoy/{convoy_id}/incidents/{alert_id}/resolve": {
       "post": {
-        "operationId": "post_api_v1_voice_notes_upload_url",
+        "operationId": "post_api_v1_portal_convoy_convoy_id_incidents_alert_id_resolve",
         "responses": {
           "200": {
             "description": "OK"
@@ -2116,19 +1990,9 @@
         }
       }
     },
-    "/api/v1/voice-notes/commit": {
-      "post": {
-        "operationId": "post_api_v1_voice_notes_commit",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/voice-notes/{parentType}/{parentId}": {
+    "/api/v1/dashboard/overview": {
       "get": {
-        "operationId": "get_api_v1_voice_notes_parentType_parentId",
+        "operationId": "get_api_v1_dashboard_overview",
         "responses": {
           "200": {
             "description": "OK"
@@ -2136,9 +2000,129 @@
         }
       }
     },
-    "/api/v1/voice-notes/{id}": {
-      "delete": {
-        "operationId": "delete_api_v1_voice_notes_id",
+    "/api/v1/dashboard/map": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_map",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/vehicles": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_vehicles",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/alerts": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_alerts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/convoys": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_convoys",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/route-risk": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_route_risk",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/drivers": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_drivers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/borders": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_borders",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/performance": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_performance",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/predictions": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_predictions",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/weather": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_weather",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/panic": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_panic",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/comms": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_comms",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/timeline": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_timeline",
         "responses": {
           "200": {
             "description": "OK"
