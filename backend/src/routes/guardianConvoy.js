@@ -1,6 +1,5 @@
 /**
- * Guardian Convoy App API
- * Mounted at /api/v1/guardian/convoy
+ * Guardian Convoy App API — Mounted at /api/v1/guardian/convoy
  * JWT-based auth (mobile app facing)
  */
 require('dotenv').config();
@@ -12,8 +11,6 @@ const { query } = require('../config/database');
 const { publish } = require('../realtime/centrifugo');
 const logger = require('../utils/logger');
 
-// ─── JWT Auth Middleware ──────────────────────────────────────────────────────
-
 async function jwtAuth(req, res, next) {
   try {
     const header = req.headers.authorization;
@@ -24,22 +21,15 @@ async function jwtAuth(req, res, next) {
     let payload;
     try {
       payload = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (err) {
+    } catch {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
-    req.cfo = {
-      id: payload.id,
-      org_id: payload.org_id,
-      name: payload.name,
-      convoy_id: payload.convoy_id,
-    };
+    req.cfo = { id: payload.id, org_id: payload.org_id, name: payload.name, convoy_id: payload.convoy_id };
     next();
   } catch (err) {
     next(err);
   }
 }
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function getR2Client() {
   const { R2_ACCOUNT_ID, R2_ACCESS_KEY, R2_SECRET_KEY } = process.env;
@@ -52,25 +42,19 @@ function getR2Client() {
   });
 }
 
-// ─── POST /login ──────────────────────────────────────────────────────────────
-
+// POST /login — no auth required
 router.post('/login', async (req, res, next) => {
   try {
     const { cfo_id, pin, convoy_id } = req.body;
-
-    if (!cfo_id || typeof cfo_id !== 'string' || !cfo_id.trim()) {
+    if (!cfo_id || typeof cfo_id !== 'string' || !cfo_id.trim())
       return res.status(400).json({ error: 'cfo_id is required' });
-    }
-    if (!pin || typeof pin !== 'string') {
+    if (!pin || typeof pin !== 'string')
       return res.status(400).json({ error: 'pin is required' });
-    }
-    if (!convoy_id || typeof convoy_id !== 'string' || !convoy_id.trim()) {
+    if (!convoy_id || typeof convoy_id !== 'string' || !convoy_id.trim())
       return res.status(400).json({ error: 'convoy_id is required' });
-    }
 
-    // Find user by employee_id or as CFO for this convoy — constant-time comparison
     const userResult = await query(
-      `SELECT u.id, u.name, u.email, u.org_id, u.status, u.password_hash, u.employee_id
+      `SELECT u.id, u.name, u.email, u.org_id, u.status, u.password_hash
        FROM users u
        WHERE (u.employee_id = $1 OR EXISTS (
          SELECT 1 FROM convoy_cfos cc WHERE cc.cfo_user_id = u.id AND cc.convoy_id::text = $2
@@ -84,65 +68,45 @@ router.post('/login', async (req, res, next) => {
     const hashToCompare = userResult.rows[0]?.password_hash || dummyHash;
     const valid = userResult.rows.length > 0 && await bcrypt.compare(pin, hashToCompare);
 
-    // Never reveal if CFO ID exists
-    if (!valid) {
-      return res.status(200).json({ success: false, error: 'Invalid credentials' });
-    }
+    if (!valid) return res.status(200).json({ success: false, error: 'Invalid credentials' });
 
     const user = userResult.rows[0];
-    if (user.status !== 'active') {
+    if (user.status !== 'active')
       return res.status(200).json({ success: false, error: 'Account is not active' });
-    }
 
-    // Fetch convoy data
     const convoyResult = await query(
       `SELECT id, name, status, route_origin, route_destination, org_id
-       FROM convoys
-       WHERE id::text = $1 AND deleted_at IS NULL
-       LIMIT 1`,
+       FROM convoys WHERE id::text = $1 AND deleted_at IS NULL LIMIT 1`,
       [convoy_id.trim()]
     );
-
-    if (!convoyResult.rows.length) {
+    if (!convoyResult.rows.length)
       return res.status(200).json({ success: false, error: 'Convoy not found' });
-    }
 
     const convoy = convoyResult.rows[0];
-
     const [trucksResult, sealsResult] = await Promise.all([
       query(
         `SELECT ct.id, ct.position, ct.driver_name, ct.driver_phone,
                 v.registration, v.make, v.model, v.color
-         FROM convoy_trucks ct
-         LEFT JOIN vehicles v ON v.id = ct.vehicle_id
-         WHERE ct.convoy_id = $1
-         ORDER BY ct.position`,
+         FROM convoy_trucks ct LEFT JOIN vehicles v ON v.id = ct.vehicle_id
+         WHERE ct.convoy_id = $1 ORDER BY ct.position`,
         [convoy.id]
       ),
       query(
-        `SELECT cs.id, cs.convoy_truck_id, cs.seal_position, cs.rfid_code,
-                cs.session, cs.status, cs.report_date
-         FROM convoy_seals cs
-         JOIN convoy_trucks ct ON ct.id = cs.convoy_truck_id
-         WHERE ct.convoy_id = $1
-           AND cs.report_date = CURRENT_DATE
+        `SELECT cs.id, cs.convoy_truck_id, cs.seal_position, cs.rfid_code, cs.session, cs.status
+         FROM convoy_seals cs JOIN convoy_trucks ct ON ct.id = cs.convoy_truck_id
+         WHERE ct.convoy_id = $1 AND cs.report_date = CURRENT_DATE
          ORDER BY cs.convoy_truck_id, cs.seal_position`,
         [convoy.id]
       ),
     ]);
 
-    const nameparts = user.name ? user.name.split(' ') : ['?'];
-    const initials = nameparts.length >= 2
-      ? (nameparts[0][0] + nameparts[nameparts.length - 1][0]).toUpperCase()
+    const nameParts = user.name ? user.name.split(' ') : ['?'];
+    const initials = nameParts.length >= 2
+      ? (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase()
       : (user.name || '?').slice(0, 2).toUpperCase();
 
     const token = jwt.sign(
-      {
-        id: user.id,
-        org_id: user.org_id || convoy.org_id,
-        name: user.name,
-        convoy_id: convoy.id,
-      },
+      { id: user.id, org_id: user.org_id || convoy.org_id, name: user.name, convoy_id: convoy.id },
       process.env.JWT_SECRET,
       { expiresIn: '12h' }
     );
@@ -164,26 +128,19 @@ router.post('/login', async (req, res, next) => {
   }
 });
 
-// ─── POST /photos/upload-url ──────────────────────────────────────────────────
-
+// POST /photos/upload-url — get presigned R2 PUT URL
 router.post('/photos/upload-url', jwtAuth, async (req, res, next) => {
   try {
     const { photo_type, convoy_id, phase, plate_number } = req.body;
-
-    if (!photo_type || typeof photo_type !== 'string') {
+    if (!photo_type || typeof photo_type !== 'string')
       return res.status(400).json({ error: 'photo_type is required' });
-    }
-    if (!convoy_id || typeof convoy_id !== 'string') {
+    if (!convoy_id || typeof convoy_id !== 'string')
       return res.status(400).json({ error: 'convoy_id is required' });
-    }
-    if (!phase || !['sod', 'eod'].includes(phase)) {
+    if (!phase || !['sod', 'eod'].includes(phase))
       return res.status(400).json({ error: 'phase must be sod or eod' });
-    }
 
     const { R2_BUCKET, R2_PUBLIC_URL, R2_ACCOUNT_ID } = process.env;
-    if (!R2_BUCKET) {
-      return res.status(501).json({ error: 'Photo storage not configured on this server' });
-    }
+    if (!R2_BUCKET) return res.status(501).json({ error: 'Photo storage not configured on this server' });
 
     let PutObjectCommand, getSignedUrl;
     try {
@@ -194,9 +151,7 @@ router.post('/photos/upload-url', jwtAuth, async (req, res, next) => {
     }
 
     const s3 = getR2Client();
-    if (!s3) {
-      return res.status(501).json({ error: 'Photo storage not configured on this server' });
-    }
+    if (!s3) return res.status(501).json({ error: 'Photo storage not configured on this server' });
 
     const photoId = uuidv4();
     const key = `convoy-app/${convoy_id}/${phase}/${photo_type}_${photoId}.jpg`;
@@ -210,24 +165,18 @@ router.post('/photos/upload-url', jwtAuth, async (req, res, next) => {
   }
 });
 
-// ─── POST /photos/commit ──────────────────────────────────────────────────────
-
+// POST /photos/commit — record committed photo in DB
 router.post('/photos/commit', jwtAuth, async (req, res, next) => {
   try {
     const { photo_id, photo_type, convoy_id, phase, lat, lng, accuracy, plate_number, timestamp } = req.body;
-
-    if (!photo_id || typeof photo_id !== 'string') {
+    if (!photo_id || typeof photo_id !== 'string')
       return res.status(400).json({ error: 'photo_id is required' });
-    }
-    if (!photo_type || typeof photo_type !== 'string') {
+    if (!photo_type || typeof photo_type !== 'string')
       return res.status(400).json({ error: 'photo_type is required' });
-    }
-    if (!convoy_id || typeof convoy_id !== 'string') {
+    if (!convoy_id || typeof convoy_id !== 'string')
       return res.status(400).json({ error: 'convoy_id is required' });
-    }
-    if (!phase || !['sod', 'eod'].includes(phase)) {
+    if (!phase || !['sod', 'eod'].includes(phase))
       return res.status(400).json({ error: 'phase must be sod or eod' });
-    }
 
     const { R2_BUCKET, R2_PUBLIC_URL, R2_ACCOUNT_ID } = process.env;
     const key = `convoy-app/${convoy_id}/${phase}/${photo_type}_${photo_id}.jpg`;
@@ -240,8 +189,7 @@ router.post('/photos/commit', jwtAuth, async (req, res, next) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        RETURNING id, r2_url`,
       [
-        photo_id, req.cfo.org_id, convoy_id, req.cfo.id, phase, photo_type,
-        key, r2Url,
+        photo_id, req.cfo.org_id, convoy_id, req.cfo.id, phase, photo_type, key, r2Url,
         lat != null ? lat : null, lng != null ? lng : null,
         accuracy != null ? parseInt(accuracy) : null,
         plate_number || null,
@@ -255,13 +203,9 @@ router.post('/photos/commit', jwtAuth, async (req, res, next) => {
   }
 });
 
-// ─── GET /convoys/:id/position ────────────────────────────────────────────────
-
+// GET /convoys/:id/position — latest GPS position for convoy vehicles
 router.get('/convoys/:id/position', jwtAuth, async (req, res, next) => {
   try {
-    const { id } = req.params;
-
-    // Get latest GPS from gps_logs for any vehicle in this convoy
     const result = await query(
       `SELECT gl.latitude AS lat, gl.longitude AS lng,
               NULL::float AS accuracy, gl.timestamp AS updated_at
@@ -271,33 +215,26 @@ router.get('/convoys/:id/position', jwtAuth, async (req, res, next) => {
        WHERE ca.convoy_id::text = $1
        ORDER BY gl.timestamp DESC
        LIMIT 1`,
-      [id]
+      [req.params.id]
     );
-
-    if (!result.rows.length) {
+    if (!result.rows.length)
       return res.status(404).json({ error: 'No GPS data found for this convoy' });
-    }
-
     return res.json(result.rows[0]);
   } catch (err) {
     next(err);
   }
 });
 
-// ─── GET /convoy-reports/:convoy_id ──────────────────────────────────────────
-
+// GET /convoy-reports/:convoy_id — get or create today's report
 router.get('/convoy-reports/:convoy_id', jwtAuth, async (req, res, next) => {
   try {
     const { convoy_id } = req.params;
-
-    // Get or create today's report for this cfo+convoy
     await query(
       `INSERT INTO convoy_reports (org_id, convoy_id, cfo_id, date, status)
-       VALUES ($1, $2, $3, CURRENT_DATE, 'in_progress')
+       VALUES ($1,$2,$3,CURRENT_DATE,'in_progress')
        ON CONFLICT (convoy_id, cfo_id, date) DO NOTHING`,
       [req.cfo.org_id, convoy_id, req.cfo.id]
     );
-
     const reportResult = await query(
       `SELECT r.*,
               (SELECT COUNT(*) FROM photo_uploads p
@@ -310,85 +247,56 @@ router.get('/convoy-reports/:convoy_id', jwtAuth, async (req, res, next) => {
        WHERE r.convoy_id = $1 AND r.cfo_id = $2 AND r.date = CURRENT_DATE`,
       [convoy_id, req.cfo.id]
     );
-
     return res.json(reportResult.rows[0]);
   } catch (err) {
     next(err);
   }
 });
 
-// ─── POST /convoy-reports/:id/arrival ─────────────────────────────────────────
-
+// POST /convoy-reports/:id/arrival — record arrival location
 router.post('/convoy-reports/:id/arrival', jwtAuth, async (req, res, next) => {
   try {
-    const { id } = req.params;
     const { lat, lng, accuracy, timestamp } = req.body;
-
-    if (lat == null || lng == null) {
+    if (lat == null || lng == null)
       return res.status(400).json({ error: 'lat and lng are required' });
-    }
 
     const result = await query(
       `UPDATE convoy_reports
-       SET arrival_at  = $1,
-           arrival_lat = $2,
-           arrival_lng = $3
-       WHERE id = $4 AND cfo_id = $5
-       RETURNING *`,
-      [
-        timestamp ? new Date(timestamp) : new Date(),
-        lat, lng, id, req.cfo.id,
-      ]
+       SET arrival_at = $1, arrival_lat = $2, arrival_lng = $3
+       WHERE id = $4 AND cfo_id = $5 RETURNING *`,
+      [timestamp ? new Date(timestamp) : new Date(), lat, lng, req.params.id, req.cfo.id]
     );
-
-    if (!result.rows.length) {
+    if (!result.rows.length)
       return res.status(404).json({ error: 'Report not found or not owned by this CFO' });
-    }
-
     return res.json(result.rows[0]);
   } catch (err) {
     next(err);
   }
 });
 
-// ─── POST /convoy-reports/:id/sod ─────────────────────────────────────────────
-
+// POST /convoy-reports/:id/sod — submit start-of-day report
 router.post('/convoy-reports/:id/sod', jwtAuth, async (req, res, next) => {
   try {
-    const { id } = req.params;
     const { photos, gps, submitted_at } = req.body;
-
-    // Check current status
     const check = await query(
       `SELECT status, convoy_id FROM convoy_reports WHERE id = $1 AND cfo_id = $2`,
-      [id, req.cfo.id]
+      [req.params.id, req.cfo.id]
     );
-    if (!check.rows.length) {
+    if (!check.rows.length)
       return res.status(404).json({ error: 'Report not found or not owned by this CFO' });
-    }
-    if (check.rows[0].status !== 'in_progress') {
+    if (check.rows[0].status !== 'in_progress')
       return res.status(409).json({ error: 'Report is not in in_progress status' });
-    }
 
     const result = await query(
-      `UPDATE convoy_reports
-       SET status = 'sod_complete',
-           sod_submitted_at = $1
-       WHERE id = $2 AND cfo_id = $3
-       RETURNING *`,
-      [submitted_at ? new Date(submitted_at) : new Date(), id, req.cfo.id]
+      `UPDATE convoy_reports SET status = 'sod_complete', sod_submitted_at = $1
+       WHERE id = $2 AND cfo_id = $3 RETURNING *`,
+      [submitted_at ? new Date(submitted_at) : new Date(), req.params.id, req.cfo.id]
     );
-
     const report = result.rows[0];
 
-    // Publish to Centrifugo
     publish(`convoy:${report.convoy_id}:report`, {
-      event: 'sod_submitted',
-      report_id: report.id,
-      convoy_id: report.convoy_id,
-      cfo_id: report.cfo_id,
-      status: report.status,
-      sod_submitted_at: report.sod_submitted_at,
+      event: 'sod_submitted', report_id: report.id, convoy_id: report.convoy_id,
+      cfo_id: report.cfo_id, status: report.status, sod_submitted_at: report.sod_submitted_at,
     }).catch((err) => logger.warn(`Centrifugo publish failed (sod): ${err.message}`));
 
     return res.json(report);
@@ -397,38 +305,26 @@ router.post('/convoy-reports/:id/sod', jwtAuth, async (req, res, next) => {
   }
 });
 
-// ─── POST /convoy-reports/:id/eod ─────────────────────────────────────────────
-
+// POST /convoy-reports/:id/eod — submit end-of-day report
 router.post('/convoy-reports/:id/eod', jwtAuth, async (req, res, next) => {
   try {
-    const { id } = req.params;
     const { photos, gps, submitted_at } = req.body;
-
     const check = await query(
       `SELECT status, convoy_id, arrival_at FROM convoy_reports WHERE id = $1 AND cfo_id = $2`,
-      [id, req.cfo.id]
+      [req.params.id, req.cfo.id]
     );
-    if (!check.rows.length) {
+    if (!check.rows.length)
       return res.status(404).json({ error: 'Report not found or not owned by this CFO' });
-    }
-
-    // arrival_at must be set before EOD
-    if (!check.rows[0].arrival_at) {
+    if (!check.rows[0].arrival_at)
       return res.status(422).json({ error: 'arrival_not_confirmed', detail: 'Arrival must be confirmed before submitting EOD' });
-    }
 
     const result = await query(
-      `UPDATE convoy_reports
-       SET status = 'eod_complete',
-           eod_submitted_at = $1
-       WHERE id = $2 AND cfo_id = $3
-       RETURNING *`,
-      [submitted_at ? new Date(submitted_at) : new Date(), id, req.cfo.id]
+      `UPDATE convoy_reports SET status = 'eod_complete', eod_submitted_at = $1
+       WHERE id = $2 AND cfo_id = $3 RETURNING *`,
+      [submitted_at ? new Date(submitted_at) : new Date(), req.params.id, req.cfo.id]
     );
-
     const report = result.rows[0];
 
-    // Enqueue PDF generation — handle gracefully if queue unavailable
     try {
       const { getQueues } = require('../config/queue');
       const queues = getQueues();
@@ -443,14 +339,9 @@ router.post('/convoy-reports/:id/eod', jwtAuth, async (req, res, next) => {
       logger.warn(`Queue unavailable for EOD PDF job: ${err.message}`);
     }
 
-    // Publish to Centrifugo
     publish(`convoy:${report.convoy_id}:report`, {
-      event: 'eod_submitted',
-      report_id: report.id,
-      convoy_id: report.convoy_id,
-      cfo_id: report.cfo_id,
-      status: report.status,
-      eod_submitted_at: report.eod_submitted_at,
+      event: 'eod_submitted', report_id: report.id, convoy_id: report.convoy_id,
+      cfo_id: report.cfo_id, status: report.status, eod_submitted_at: report.eod_submitted_at,
     }).catch((err) => logger.warn(`Centrifugo publish failed (eod): ${err.message}`));
 
     return res.json(report);
@@ -459,67 +350,43 @@ router.post('/convoy-reports/:id/eod', jwtAuth, async (req, res, next) => {
   }
 });
 
-// ─── POST /seal-verifications ─────────────────────────────────────────────────
-
+// POST /seal-verifications — record seal scan with optional tamper alert
 router.post('/seal-verifications', jwtAuth, async (req, res, next) => {
   try {
-    const { seal_id, convoy_id, phase, photo_id, status, lat, lng } = req.body;
-
-    if (!seal_id || typeof seal_id !== 'string') {
+    const { seal_id, convoy_id, phase, photo_id, status, lat, lng, vehicle_plate, position } = req.body;
+    if (!seal_id || typeof seal_id !== 'string')
       return res.status(400).json({ error: 'seal_id is required' });
-    }
-    if (!convoy_id || typeof convoy_id !== 'string') {
+    if (!convoy_id || typeof convoy_id !== 'string')
       return res.status(400).json({ error: 'convoy_id is required' });
-    }
-    if (!phase || !['sod', 'eod'].includes(phase)) {
+    if (!phase || !['sod', 'eod'].includes(phase))
       return res.status(400).json({ error: 'phase must be sod or eod' });
-    }
-    if (status && !['ok', 'tampered', 'missing'].includes(status)) {
+    if (status && !['ok', 'tampered', 'missing'].includes(status))
       return res.status(400).json({ error: 'status must be ok, tampered, or missing' });
-    }
 
-    // Look up report_id for today
     const reportResult = await query(
-      `SELECT id FROM convoy_reports
-       WHERE convoy_id = $1 AND cfo_id = $2 AND date = CURRENT_DATE`,
+      `SELECT id FROM convoy_reports WHERE convoy_id = $1 AND cfo_id = $2 AND date = CURRENT_DATE`,
       [convoy_id, req.cfo.id]
     );
-    const reportId = reportResult.rows[0]?.id || null;
 
     const insertResult = await query(
       `INSERT INTO seal_verifications
-         (org_id, report_id, seal_serial, vehicle_plate, position,
-          phase, photo_id, status, lat, lng)
+         (org_id, report_id, seal_serial, vehicle_plate, position, phase, photo_id, status, lat, lng)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
        RETURNING *`,
       [
-        req.cfo.org_id,
-        reportId,
-        seal_id,
-        req.body.vehicle_plate || '',
-        req.body.position || '',
-        phase,
-        photo_id || null,
-        status || 'ok',
-        lat != null ? lat : null,
-        lng != null ? lng : null,
+        req.cfo.org_id, reportResult.rows[0]?.id || null,
+        seal_id, vehicle_plate || '', position || '',
+        phase, photo_id || null, status || 'ok',
+        lat != null ? lat : null, lng != null ? lng : null,
       ]
     );
-
     const record = insertResult.rows[0];
 
-    // Synchronous alert for tampered seals — do NOT defer
     if (record.status === 'tampered') {
       await publish(`alert:${req.cfo.org_id}`, {
-        event: 'seal_tampered',
-        seal_verification_id: record.id,
-        seal_serial: record.seal_serial,
-        convoy_id,
-        cfo_id: req.cfo.id,
-        phase,
-        lat: record.lat,
-        lng: record.lng,
-        verified_at: record.verified_at,
+        event: 'seal_tampered', seal_verification_id: record.id,
+        seal_serial: record.seal_serial, convoy_id, cfo_id: req.cfo.id,
+        phase, lat: record.lat, lng: record.lng, verified_at: record.verified_at,
       });
     }
 
@@ -529,46 +396,31 @@ router.post('/seal-verifications', jwtAuth, async (req, res, next) => {
   }
 });
 
-// ─── POST /sos-events ─────────────────────────────────────────────────────────
-
+// POST /sos-events — fire SOS panic event
 router.post('/sos-events', jwtAuth, async (req, res, next) => {
   try {
     const { convoy_id, cfo_id, incident_type, lat, lng, accuracy, timestamp } = req.body;
-
-    if (!convoy_id || typeof convoy_id !== 'string') {
+    if (!convoy_id || typeof convoy_id !== 'string')
       return res.status(400).json({ error: 'convoy_id is required' });
-    }
 
     const result = await query(
       `INSERT INTO sos_events
          (org_id, convoy_id, cfo_id, incident_type, lat, lng, accuracy_m, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       RETURNING *`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
       [
-        req.cfo.org_id,
-        convoy_id,
-        cfo_id || req.cfo.id,
+        req.cfo.org_id, convoy_id, cfo_id || req.cfo.id,
         incident_type || 'unspecified',
-        lat != null ? lat : null,
-        lng != null ? lng : null,
+        lat != null ? lat : null, lng != null ? lng : null,
         accuracy != null ? parseInt(accuracy) : null,
         timestamp ? new Date(timestamp) : new Date(),
       ]
     );
-
     const event = result.rows[0];
 
-    // Synchronous publish to panic channel
     await publish(`panic:${req.cfo.org_id}`, {
-      event: 'sos',
-      sos_id: event.id,
-      convoy_id: event.convoy_id,
-      cfo_id: event.cfo_id,
-      incident_type: event.incident_type,
-      lat: event.lat,
-      lng: event.lng,
-      accuracy_m: event.accuracy_m,
-      created_at: event.created_at,
+      event: 'sos', sos_id: event.id, convoy_id: event.convoy_id,
+      cfo_id: event.cfo_id, incident_type: event.incident_type,
+      lat: event.lat, lng: event.lng, accuracy_m: event.accuracy_m, created_at: event.created_at,
     });
 
     return res.status(201).json(event);
@@ -577,8 +429,7 @@ router.post('/sos-events', jwtAuth, async (req, res, next) => {
   }
 });
 
-// ─── GET /history ─────────────────────────────────────────────────────────────
-
+// GET /history — past reports for this CFO, last 30
 router.get('/history', jwtAuth, async (req, res, next) => {
   try {
     const result = await query(
@@ -589,13 +440,9 @@ router.get('/history', jwtAuth, async (req, res, next) => {
               (SELECT COUNT(*) FROM photo_uploads p
                WHERE p.convoy_id = r.convoy_id AND p.cfo_id = r.cfo_id
                  AND p.phase = 'eod' AND p.timestamp::date = r.date) AS eod_photo_count
-       FROM convoy_reports r
-       WHERE r.cfo_id = $1
-       ORDER BY r.date DESC
-       LIMIT 30`,
+       FROM convoy_reports r WHERE r.cfo_id = $1 ORDER BY r.date DESC LIMIT 30`,
       [req.cfo.id]
     );
-
     return res.json({ reports: result.rows });
   } catch (err) {
     next(err);

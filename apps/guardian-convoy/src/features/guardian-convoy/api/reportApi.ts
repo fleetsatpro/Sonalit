@@ -1,8 +1,5 @@
 import axios from 'axios';
-import type { ConvoyReport, GPS, PhotoUpload } from '../types/ConvoyReport';
-
-// PhotoUpload imported for re-export / future use in composed calls
-export type { PhotoUpload };
+import type { ConvoyReport, GPS } from '../types/ConvoyReport';
 
 const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api/v1/guardian/convoy';
 
