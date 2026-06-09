@@ -3,6 +3,9 @@ name: Build Guardian Agent APK
 on:
   push:
     branches: [main]
+    paths:
+      - 'apps/guardian-android/**'
+      - '.github/workflows/build-guardian-apk.yml'
   workflow_dispatch:
     inputs:
       upload_only:
@@ -34,7 +37,12 @@ jobs:
         run: yes | sdkmanager --licenses || true
 
       - name: Install platform and build tools
-        run: sdkmanager "build-tools;34.0.0" "platforms;android-34"
+        run: sdkmanager "build-tools;34.0.0" "platforms;android-35"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
 
       - name: Cache Gradle packages
         uses: actions/cache@v4
@@ -42,19 +50,38 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('guardian-agent/**/*.gradle*', 'guardian-agent/**/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-gradle-${{ hashFiles('apps/guardian-android/**/*.gradle*', 'apps/guardian-android/**/gradle-wrapper.properties', 'apps/guardian-android/**/libs.versions.toml') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
 
+      - name: Write google-services.json
+        working-directory: apps/guardian-android/app
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            echo "$GOOGLE_SERVICES_JSON" > google-services.json
+            echo "Using production google-services.json from secret"
+          else
+            echo "Using placeholder google-services.json (FCM disabled)"
+          fi
+
+      - name: Generate Gradle wrapper
+        working-directory: apps/guardian-android
+        run: gradle wrapper --gradle-version=8.9 --distribution-type=bin
+
+      - name: Make gradlew executable
+        run: chmod +x apps/guardian-android/gradlew
+
       - name: Build debug APK
-        working-directory: guardian-agent
+        working-directory: apps/guardian-android
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: FleetOps-Guardian-debug
-          path: guardian-agent/app/build/outputs/apk/debug/app-debug.apk
+          name: SonalitGuardian-debug
+          path: apps/guardian-android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
 
       - name: Create Release (on main push)
@@ -62,14 +89,14 @@ jobs:
         if: github.ref == 'refs/heads/main' && github.event.inputs.upload_only != 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: guardian-agent-v${{ github.run_number }}
-          name: Guardian Agent v${{ github.run_number }}
+          tag_name: guardian-v${{ github.run_number }}
+          name: Sonalit Guardian v${{ github.run_number }}
           body: |
-            FleetOps Guardian Agent APK — auto-built from commit ${{ github.sha }}
+            Sonalit Guardian APK — auto-built from commit ${{ github.sha }}
 
-            **Install**: Download and open on an Android device (enable "Install unknown apps" in settings).
-            **Enroll**: Open the app, enter your server URL and org token from the Guardian page.
-          files: guardian-agent/app/build/outputs/apk/debug/app-debug.apk
+            **Install**: Download and open on an Android 10+ device (enable "Install unknown apps" in settings).
+            **Enroll**: Open the app, enter your server URL and org token from the Guardian page in the web dashboard.
+          files: apps/guardian-android/app/build/outputs/apk/debug/app-debug.apk
           draft: false
           prerelease: false
         env:
@@ -81,7 +108,7 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
-          APK_URL="https://github.com/fleetsatpro/Sonalit/releases/download/guardian-agent-v${{ github.run_number }}/app-debug.apk"
+          APK_URL="https://github.com/fleetsatpro/Sonalit/releases/download/guardian-v${{ github.run_number }}/app-debug.apk"
           echo "Setting APK_REDIRECT_URL → $APK_URL"
 
           DISCOVER=$(curl -sf -X POST https://backboard.railway.com/graphql/v2 \
@@ -98,10 +125,6 @@ jobs:
           if [ "$ENV_ID" = "null" ] || [ -z "$ENV_ID" ]; then
             ENV_ID=$(echo "$DISCOVER" | jq -r '.data.me.projects.edges[0].node.environments.edges[0].node.id')
           fi
-
-          echo "Project ID:     $PROJECT_ID"
-          echo "Service ID:     $SERVICE_ID"
-          echo "Environment ID: $ENV_ID"
 
           if [ "$PROJECT_ID" = "null" ] || [ -z "$PROJECT_ID" ]; then
             echo "ERROR: Could not discover Railway IDs — check RAILWAY_TOKEN secret"

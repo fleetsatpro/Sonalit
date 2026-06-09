@@ -55,6 +55,27 @@ async function mockGpsRoutes(page: import('@playwright/test').Page) {
     })
   );
 
+  // useLiveFleet fetches from /api/v1/dashboard/vehicles and /api/v1/dashboard/convoys
+  await page.route(url => url.toString().includes('/api/v1/dashboard/vehicles'), route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: VEHICLES.map(v => ({
+          id: v.id,
+          registration: v.registration,
+          convoy_id: null,
+          status: v.status,
+          speed_kmh: v.last_position.speed,
+          last_ping_at: v.last_position.recorded_at,
+        })),
+      }),
+    })
+  );
+  await page.route(url => url.toString().includes('/api/v1/dashboard/convoys'), route =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) })
+  );
+
   await page.route(url => url.toString().includes('/api/v1/realtime/token'), route =>
     route.fulfill({
       status: 200,
@@ -101,13 +122,13 @@ test.describe('GPS page — rendering', () => {
 
   test('GPS page loads and renders without crashing', async ({ page }) => {
     await page.goto('/gps');
-    await expect(page.getByRole('heading').first()).toBeVisible({ timeout: 8000 });
+    await expect(page.locator('text=LIVE FLEET').first()).toBeVisible({ timeout: 8000 });
   });
 
   test('GPS page renders vehicle registrations', async ({ page }) => {
     await page.goto('/gps');
     // At least one vehicle registration should be visible
-    await expect(page.getByText('GPS-001')).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('GPS-001').first()).toBeVisible({ timeout: 8000 });
   });
 
   test('unauthenticated user is redirected to /login from /gps', async ({ page }) => {
@@ -139,7 +160,7 @@ test.describe('GPS page — org boundary', () => {
 
   test('mocked vehicle list does not contain cross-tenant data', async ({ page }) => {
     await page.goto('/gps');
-    await expect(page.getByText('GPS-001')).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('GPS-001').first()).toBeVisible({ timeout: 8000 });
     // Cross-org vehicle must not appear
     await expect(page.getByText('CROSS-ORG')).not.toBeVisible();
   });

@@ -10,17 +10,14 @@ DO $$ BEGIN
     SELECT 1 FROM information_schema.columns
     WHERE table_name = 'risk_zones' AND column_name = 'org_id'
   ) THEN
-    ALTER TABLE risk_zones
-      ADD COLUMN org_id UUID DEFAULT (
-        SELECT org_id FROM convoys
-        WHERE org_id IS NOT NULL
-        ORDER BY created_at
-        LIMIT 1
-      );
-    -- Fall back to a sentinel UUID if no convoy rows exist yet
-    UPDATE risk_zones
-    SET org_id = '00000000-0000-0000-0000-000000000001'::uuid
-    WHERE org_id IS NULL;
+    ALTER TABLE risk_zones ADD COLUMN org_id UUID;
+    -- Backfill from convoys; sentinel UUID if no convoy rows exist
+    UPDATE risk_zones rz
+    SET org_id = COALESCE(
+      (SELECT c.org_id FROM convoys c WHERE c.org_id IS NOT NULL ORDER BY c.created_at LIMIT 1),
+      '00000000-0000-0000-0000-000000000001'::uuid
+    )
+    WHERE rz.org_id IS NULL;
   END IF;
 END $$;
 

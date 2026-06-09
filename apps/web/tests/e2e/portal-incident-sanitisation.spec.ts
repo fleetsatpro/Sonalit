@@ -69,7 +69,7 @@ test.describe('§00 Incident Sanitisation', () => {
     await stubSecurity(page);
     await stubIncidents(page, [RAW_INTERNAL_INCIDENT]);
     await page.goto(`/portal/convoy/${CONVOY_X}/security`);
-    await expect(page.getByText('Security alert — response engaged')).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('Security alert — response engaged').first()).toBeVisible({ timeout: 8000 });
     await expect(page.getByText('Incident History')).toBeVisible({ timeout: 4000 });
   });
 
@@ -107,7 +107,7 @@ test.describe('§00 Incident Sanitisation', () => {
       ],
     }]);
     await page.goto(`/portal/convoy/${CONVOY_X}/security`);
-    await expect(page.getByText('RESPONDING')).toBeVisible({ timeout: 8000 });
+    await expect(page.locator('span').filter({ hasText: /^RESPONDING$/ })).toBeVisible({ timeout: 8000 });
   });
 
   test('resolved incident shows RESOLVED phase chip', async ({ page }) => {
@@ -123,7 +123,7 @@ test.describe('§00 Incident Sanitisation', () => {
       ],
     }]);
     await page.goto(`/portal/convoy/${CONVOY_X}/security`);
-    await expect(page.getByText('RESOLVED')).toBeVisible({ timeout: 8000 });
+    await expect(page.locator('span').filter({ hasText: /^RESOLVED$/ })).toBeVisible({ timeout: 8000 });
   });
 
   test('empty incident list shows no-incident state (not a blank screen)', async ({ page }) => {
