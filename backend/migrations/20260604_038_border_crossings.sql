@@ -5,10 +5,7 @@ DO $$
 DECLARE
   _org UUID;
 BEGIN
-  SELECT org_id INTO _org FROM convoys LIMIT 1;
-  IF _org IS NULL THEN
-    SELECT id INTO _org FROM organizations LIMIT 1;
-  END IF;
+  SELECT org_id INTO _org FROM convoys WHERE org_id IS NOT NULL LIMIT 1;
   IF _org IS NULL THEN
     _org := '00000000-0000-0000-0000-000000000001';
   END IF;
