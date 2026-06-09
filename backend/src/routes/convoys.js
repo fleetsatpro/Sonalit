@@ -50,6 +50,7 @@ router.delete('/:id/cfo-assignments/:assignmentId', authorize('admin', 'dispatch
 // E5 — org-wide report overview (must come before /:id routes)
 router.get('/reports/overview', authorize('admin', 'dispatcher', 'analyst'), cfo.getConvoyReportsOverview);
 router.get('/:id/reports', authorize('admin', 'dispatcher', 'analyst'), cfo.getConvoyReports);
+router.get('/:id/reports/:date/detail', authorize('admin', 'dispatcher', 'analyst'), cfo.getConvoyReportDetail);
 router.post('/:id/reports/:date/regenerate', authorize('admin', 'dispatcher'), convoyReportRegenerateLimiter, cfo.regenerateReport);
 router.get('/:id/reports/:date/download', authorize('admin', 'dispatcher', 'analyst'), cfo.downloadReport);
 

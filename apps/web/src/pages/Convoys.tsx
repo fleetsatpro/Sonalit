@@ -249,6 +249,13 @@ export default function Convoys() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['convoys'] }),
   })
 
+  const [dispatchingId, setDispatchingId] = useState<string | null>(null)
+  const dispatchMutation = useMutation({
+    mutationFn: (id: string) => api.patch(`/convoys/${id}/status`, { status: 'active' }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['convoys'] }),
+    onSettled: () => setDispatchingId(null),
+  })
+
   const rows = useMemo(() => {
     const all: ConvoyRow[] = data?.data ?? []
     return all.filter(c => {
@@ -399,7 +406,15 @@ export default function Convoys() {
                       <td style={{ padding:'11px 14px', fontFamily:MN, fontSize:10, color:'#8a95a0' }}>{fmtDate(c.departure_time ?? c.start_date)}</td>
                       <td style={{ padding:'11px 14px', fontFamily:MN, fontSize:10, color:'#8a95a0' }}>{fmtTime(c.estimated_arrival ?? c.end_date)}</td>
                       <td style={{ padding:'11px 14px 11px 0' }}>
-                        <div style={{ display:'flex', gap:4 }} onClick={e => e.stopPropagation()}>
+                        <div style={{ display:'flex', gap:4, alignItems:'center' }} onClick={e => e.stopPropagation()}>
+                          {c.status === 'planned' && (
+                            <button
+                              onClick={() => { if (window.confirm(`Dispatch "${c.name}"? This will mark it active.`)) { setDispatchingId(c.id); dispatchMutation.mutate(c.id) } }}
+                              disabled={dispatchingId === c.id}
+                              style={{ height:24, padding:'0 8px', display:'flex', alignItems:'center', gap:4, borderRadius:2, background:'#f97316', border:'1px solid #f97316', cursor:'pointer', color:'#000', fontFamily:MN, fontSize:8, fontWeight:700, letterSpacing:'.1em', opacity: dispatchingId === c.id ? 0.5 : 1 }}>
+                              ⚡ {dispatchingId === c.id ? '…' : 'DISPATCH'}
+                            </button>
+                          )}
                           <Link to="/convoys/$id/edit" params={{ id: c.id }}
                             className="cnv-icobtn" style={{ width:24, height:24, display:'flex', alignItems:'center', justifyContent:'center', borderRadius:2, background:'#161b20', border:'1px solid rgba(255,255,255,.08)', cursor:'pointer', color:'#4e5a65', fontSize:11, textDecoration:'none' }}>✏</Link>
                           <button onClick={() => window.confirm(`Delete "${c.name}"?`) && deleteMutation.mutate(c.id)}
