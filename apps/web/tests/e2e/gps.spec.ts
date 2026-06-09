@@ -128,7 +128,7 @@ test.describe('GPS page — rendering', () => {
   test('GPS page renders vehicle registrations', async ({ page }) => {
     await page.goto('/gps');
     // At least one vehicle registration should be visible
-    await expect(page.getByText('GPS-001')).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('GPS-001').first()).toBeVisible({ timeout: 8000 });
   });
 
   test('unauthenticated user is redirected to /login from /gps', async ({ page }) => {
@@ -160,7 +160,7 @@ test.describe('GPS page — org boundary', () => {
 
   test('mocked vehicle list does not contain cross-tenant data', async ({ page }) => {
     await page.goto('/gps');
-    await expect(page.getByText('GPS-001')).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('GPS-001').first()).toBeVisible({ timeout: 8000 });
     // Cross-org vehicle must not appear
     await expect(page.getByText('CROSS-ORG')).not.toBeVisible();
   });
