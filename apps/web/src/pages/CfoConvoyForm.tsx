@@ -31,11 +31,13 @@ const convoyFormSchema = z.object({
   estimatedArrival: z.string().optional(),
   description: z.string().max(500).optional(),
   vehicle_ids: z.array(z.string()).default([]),
+  cfo_ids: z.array(z.string()).default([]),
 });
 
 type ConvoyForm = z.infer<typeof convoyFormSchema>;
 type RawConvoy = Record<string, unknown>;
 type VehicleListResponse = { data: Vehicle[] };
+type CfoUser = { id: string; name: string; email: string };
 
 // ---------------------------------------------------------------------------
 // Field wrapper
@@ -64,10 +66,11 @@ const BASE_INPUT = [
 // Checkbox list for multi-select
 // ---------------------------------------------------------------------------
 
-function MultiSelectList({ items, value, onChange }: {
+function MultiSelectList({ items, value, onChange, emptyLabel = 'No items available' }: {
   items: { id: string; label: string }[];
   value: string[];
   onChange: (v: string[]) => void;
+  emptyLabel?: string;
 }) {
   const toggle = (id: string) =>
     onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id]);
@@ -75,7 +78,7 @@ function MultiSelectList({ items, value, onChange }: {
   return (
     <div className="max-h-44 overflow-y-auto bg-[#09101c] border border-[#122038] rounded-md divide-y divide-[#0c1424]">
       {items.length === 0 && (
-        <p className="text-[#304558] text-xs px-3 py-2.5 font-mono">No vehicles available</p>
+        <p className="text-[#304558] text-xs px-3 py-2.5 font-mono">{emptyLabel}</p>
       )}
       {items.map((item) => (
         <label key={item.id}
@@ -120,9 +123,19 @@ export default function CfoConvoyForm(): React.ReactElement {
     },
   });
 
+  const { data: cfoUsersData } = useQuery<{ data: CfoUser[] }>({
+    queryKey: ['cfo-users'],
+    queryFn: async () => (await api.get<{ data: CfoUser[] }>('/convoys/cfo-users')).data,
+  });
+
   const vehicleItems = vehiclesData?.data.map((v) => ({
     id: v.id,
     label: `${v.registration}${v.make || v.model ? ` — ${[v.make, v.model].filter(Boolean).join(' ')}` : ''}`,
+  })) ?? [];
+
+  const cfoItems = cfoUsersData?.data.map((u) => ({
+    id: u.id,
+    label: `${u.name} — ${u.email}`,
   })) ?? [];
 
   const {
@@ -168,7 +181,7 @@ export default function CfoConvoyForm(): React.ReactElement {
 
   const mutation = useMutation<void, Error, ConvoyForm>({
     mutationFn: async (data) => {
-      const { vehicle_ids, ...rest } = data;
+      const { vehicle_ids, cfo_ids, ...rest } = data;
       let convoyId: string;
       if (isEdit) {
         await api.put(`/convoys/${params.id}`, rest);
@@ -179,6 +192,9 @@ export default function CfoConvoyForm(): React.ReactElement {
       }
       if (vehicle_ids.length) {
         await api.post(`/convoys/${convoyId}/assign`, { vehicleIds: vehicle_ids }).catch(() => {});
+      }
+      for (const cfo_user_id of cfo_ids) {
+        await api.post(`/convoys/${convoyId}/cfos`, { cfo_user_id }).catch(() => {});
       }
     },
     onSuccess: async () => {
@@ -302,6 +318,28 @@ export default function CfoConvoyForm(): React.ReactElement {
                   <MultiSelectList items={vehicleItems} value={field.value} onChange={field.onChange} />
                 )}
               />
+            </Field>
+          </Section>
+
+          {/* CFO Assignment */}
+          <Section label="CFO Assignment">
+            <Field label="Assign CFOs (Guardian App users)" error={undefined}>
+              <Controller
+                name="cfo_ids"
+                control={control}
+                render={({ field }) => (
+                  <MultiSelectList
+                    items={cfoItems.length ? cfoItems : []}
+                    value={field.value}
+                    onChange={field.onChange}
+                  />
+                )}
+              />
+              {cfoItems.length === 0 && (
+                <p className="text-[#304558] text-[10px] font-mono mt-1.5">
+                  No CFO users found. Add users with the CFO role in Settings.
+                </p>
+              )}
             </Field>
           </Section>
 
