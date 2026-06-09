@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { reportApi } from '../api/reportApi';
 import { useGPSStamp } from '../hooks/useGPSStamp';
 import type { AuthState, ConvoyReport } from '../types/ConvoyReport';

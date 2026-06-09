@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { uploadApi } from '../api/uploadApi';
 import { reportApi } from '../api/reportApi';
 import { useGPSStamp } from '../hooks/useGPSStamp';
@@ -105,8 +105,8 @@ export function SODUploadScreen({ navigate, auth }: SODUploadScreenProps) {
   const { gps, loading: gpsLoading } = useGPSStamp();
 
   if (!auth) return null;
-
-  const currentPlate = auth.convoy.trucks[0]?.plate ?? 'TRUCK-1';
+  const safeAuth = auth;
+  const currentPlate = safeAuth.convoy.trucks[0]?.plate ?? 'TRUCK-1';
 
   async function handleFileCapture(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -115,14 +115,13 @@ export function SODUploadScreen({ navigate, auth }: SODUploadScreenProps) {
     setUploading(true);
     setError(null);
     try {
-      const urlRes = await uploadApi.getUploadUrl(selectedType, auth.convoy.id, 'sod', currentPlate, auth.token);
+      const urlRes = await uploadApi.getUploadUrl(selectedType, safeAuth.convoy.id, 'sod', currentPlate, safeAuth.token);
       await uploadApi.uploadToR2(urlRes.upload_url, file);
       const committed = await uploadApi.commitPhoto(
-        urlRes.photo_id, selectedType, auth.convoy.id, 'sod',
-        gps.lat, gps.lng, gps.accuracy, currentPlate, auth.token,
+        urlRes.photo_id, selectedType, safeAuth.convoy.id, 'sod',
+        gps.lat, gps.lng, gps.accuracy, currentPlate, safeAuth.token,
       );
       setUploadedPhotos(prev => [...prev.filter(p => p.photo_type !== selectedType), committed]);
-      // Auto-advance to next type
       const idx = SOD_TYPES.findIndex(t => t.key === selectedType);
       if (idx < SOD_TYPES.length - 1) setSelectedType(SOD_TYPES[idx + 1].key);
     } catch {
@@ -139,8 +138,8 @@ export function SODUploadScreen({ navigate, auth }: SODUploadScreenProps) {
     setError(null);
     try {
       const photoIds = uploadedPhotos.map(p => p.photo_id);
-      const report = await reportApi.getReport(auth.convoy.id, auth.token);
-      await reportApi.submitSOD(report.id, photoIds, gps, auth.token);
+      const report = await reportApi.getReport(safeAuth.convoy.id, safeAuth.token);
+      await reportApi.submitSOD(report.id, photoIds, gps, safeAuth.token);
       setShowConfirm(true);
     } catch {
       setError('Submit failed. Please try again.');
