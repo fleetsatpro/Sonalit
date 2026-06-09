@@ -183,6 +183,7 @@ export default function CfoConvoyForm(): React.ReactElement {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['convoys'] });
+      void queryClient.invalidateQueries({ queryKey: ['convoy-reports-overview'] });
       draftsTable.delete(DRAFT_KEY).catch(() => {});
       await navigate({ to: '/convoys' });
     },

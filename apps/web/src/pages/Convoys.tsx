@@ -240,19 +240,28 @@ export default function Convoys() {
   useEffect(() => {
     if (!orgId) return
     return subscribe<{ type?: string }>(`org#${orgId}`, ev => {
-      if (ev.type === 'convoy.update') void qc.invalidateQueries({ queryKey: ['convoys'] })
+      if (ev.type === 'convoy.update') {
+        void qc.invalidateQueries({ queryKey: ['convoys'] })
+        void qc.invalidateQueries({ queryKey: ['convoy-reports-overview'] })
+      }
     })
   }, [orgId, qc])
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/convoys/${id}`),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['convoys'] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['convoys'] })
+      void qc.invalidateQueries({ queryKey: ['convoy-reports-overview'] })
+    },
   })
 
   const [dispatchingId, setDispatchingId] = useState<string | null>(null)
   const dispatchMutation = useMutation({
     mutationFn: (id: string) => api.patch(`/convoys/${id}/status`, { status: 'active' }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['convoys'] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['convoys'] })
+      void qc.invalidateQueries({ queryKey: ['convoy-reports-overview'] })
+    },
     onSettled: () => setDispatchingId(null),
   })
 

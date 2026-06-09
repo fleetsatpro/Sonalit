@@ -574,7 +574,7 @@ const getConvoyReportsOverview = asyncHandler(async (req, res) => {
             (SELECT COUNT(*) FROM convoy_cfos cc WHERE cc.convoy_id = c.id)::int AS cfo_count
      FROM convoys c
      WHERE c.org_id = $1 AND c.deleted_at IS NULL AND c.status IN ('planned','active','completed')
-     ORDER BY (c.status = 'active') DESC, c.start_date DESC LIMIT 50`,
+     ORDER BY (c.status = 'active') DESC, c.start_date DESC LIMIT 200`,
     [orgId]
   );
   if (!convoysRes.rows.length) return res.json({ data: [] });
