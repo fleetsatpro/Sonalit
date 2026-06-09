@@ -621,6 +621,96 @@ const getConvoyReportsOverview = asyncHandler(async (req, res) => {
   res.json({ data });
 });
 
+// ─── E6: Per-date Report Detail ──────────────────────────────────────────────
+
+async function getConvoyReportDetail(req, res, next) {
+  try {
+    const { id, date } = req.params;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    }
+
+    const { query } = require('../config/database');
+
+    const convoyRes = await query(
+      `SELECT id, name, status, start_date, end_date, timezone, seal_count_per_truck
+       FROM convoys WHERE id = $1 AND deleted_at IS NULL`,
+      [id]
+    );
+    if (!convoyRes.rows.length) return res.status(404).json({ error: 'Convoy not found' });
+
+    const [trucksRes, photosRes, sealsRes, waypointsRes, reportRes] = await Promise.all([
+      query(
+        `SELECT ct.id, ct.plate_number, ct.make, ct.model, ct.position,
+                u.name AS cfo_name, u.id AS cfo_user_id
+         FROM convoy_trucks ct
+         LEFT JOIN convoy_cfo_truck_assignments ccta
+               ON ccta.convoy_truck_id = ct.id AND ccta.convoy_id = $1
+         LEFT JOIN users u ON u.id = ccta.cfo_user_id
+         WHERE ct.convoy_id = $1
+         ORDER BY ct.position`,
+        [id]
+      ),
+      query(
+        `SELECT id, convoy_truck_id, session, photo_type, seal_position,
+                photo_url, taken_at, lat, lng, location_mismatch, notes
+         FROM convoy_truck_photos
+         WHERE convoy_id = $1 AND report_date = $2
+         ORDER BY convoy_truck_id, session, photo_type`,
+        [id, date]
+      ),
+      query(
+        `SELECT id, convoy_truck_id, seal_position, rfid_code, session,
+                status, photo_url, notes, scanned_at
+         FROM convoy_seals
+         WHERE convoy_id = $1 AND report_date = $2
+         ORDER BY convoy_truck_id, seal_position`,
+        [id, date]
+      ),
+      query(
+        `SELECT lat, lng, speed_kmh, heading, recorded_at
+         FROM convoy_waypoints
+         WHERE convoy_id = $1 AND recorded_at::date = $2::date
+         ORDER BY recorded_at
+         LIMIT 500`,
+        [id, date]
+      ),
+      query(
+        `SELECT status, received_photo_count, required_photo_count,
+                generated_at, pdf_url, generation_error
+         FROM convoy_daily_reports
+         WHERE convoy_id = $1 AND report_date = $2`,
+        [id, date]
+      ),
+    ]);
+
+    const photosByTruck = {};
+    for (const p of photosRes.rows) {
+      (photosByTruck[p.convoy_truck_id] = photosByTruck[p.convoy_truck_id] || []).push(p);
+    }
+    const sealsByTruck = {};
+    for (const s of sealsRes.rows) {
+      (sealsByTruck[s.convoy_truck_id] = sealsByTruck[s.convoy_truck_id] || []).push(s);
+    }
+
+    res.json({
+      data: {
+        convoy: convoyRes.rows[0],
+        report_date: date,
+        daily_report: reportRes.rows[0] || null,
+        trucks: trucksRes.rows.map(t => ({
+          ...t,
+          photos: photosByTruck[t.id] || [],
+          seals: sealsByTruck[t.id] || [],
+        })),
+        waypoints: waypointsRes.rows,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   createConvoyCfo,
   addTruck,
@@ -630,6 +720,7 @@ module.exports = {
   assignTruckToCfo,
   removeAssignment,
   getConvoyReports,
+  getConvoyReportDetail,
   regenerateReport,
   downloadReport,
   linkDevice,

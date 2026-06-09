@@ -4,6 +4,7 @@ import android.provider.Settings
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -11,10 +12,17 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 
 @Composable
-fun EnrollmentScreen(viewModel: EnrollmentViewModel = hiltViewModel()) {
+fun EnrollmentScreen(
+    onEnrolled: () -> Unit = {},
+    viewModel: EnrollmentViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
     var operatorCode by remember { mutableStateOf("") }
+
+    LaunchedEffect(state) {
+        if (state is EnrollUiState.Enrolled) onEnrolled()
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
