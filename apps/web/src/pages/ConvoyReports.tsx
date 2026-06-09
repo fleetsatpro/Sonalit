@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, AlertTriangle, ShieldCheck, TrendingUp, Truck } from 'lucide-react';
+import { useNavigate } from '@tanstack/react-router';
+import { Loader2, AlertTriangle, ShieldCheck, TrendingUp, Truck, ArrowLeft } from 'lucide-react';
 import { api } from '../lib/api.js';
 import ReportDoc, { type ReportDetail } from '../components/reports/ReportDoc.js';
 
@@ -143,6 +144,7 @@ function ConvoyCard({
 
 export default function ConvoyReports(): React.ReactElement {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterTab>('all');
@@ -195,6 +197,13 @@ export default function ConvoyReports(): React.ReactElement {
       {/* ── Sidebar ── */}
       <aside style={S.sidebar}>
         <div style={S.sidebarHeader}>
+          <button
+            onClick={() => void navigate({ to: '/convoys' })}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none',
+              color: '#4b5563', cursor: 'pointer', padding: 0, marginBottom: 10, fontSize: 11,
+              fontFamily: "'JetBrains Mono', monospace" }}>
+            <ArrowLeft size={11} /> Fleet Ops
+          </button>
           <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 16, color: '#f1f5f9',
             letterSpacing: '-0.01em' }}>
             Convoy Intelligence

@@ -44,11 +44,11 @@ const messagesRoute = createRoute({ getParentRoute: () => authRoute, path: '/mes
 const analyticsRoute = createRoute({ getParentRoute: () => authRoute, path: '/analytics', component: lazyRouteComponent(() => import('./pages/Analytics.js')) });
 const reportsRoute = createRoute({ getParentRoute: () => authRoute, path: '/reports', component: lazyRouteComponent(() => import('./pages/Reports.js')) });
 
-// ─── New Convoy Reports route → opens the standalone dashboard ────────────────
+// ─── Convoy Reports — fullscreen within app (no double sidebar) ───────────────
 const convoyReportsRoute = createRoute({
-  getParentRoute: () => authRoute,
+  getParentRoute: () => authFullscreenRoute,
   path: '/convoy-reports',
-  component: lazyRouteComponent(() => import('./pages/ConvoyReportsRedirect.js')),
+  component: lazyRouteComponent(() => import('./pages/ConvoyReports.js')),
 });
 
 const shipmentsRoute = createRoute({ getParentRoute: () => authRoute, path: '/shipments', component: lazyRouteComponent(() => import('./pages/Shipments.js')) });
@@ -99,14 +99,14 @@ const routeTree = rootRoute.addChildren([
     portalTrackRoute, portalConvoyRoute, portalCustodyRoute, portalSecurityRoute,
   ]),
   authFullscreenRoute.addChildren([
-    dashboardRoute,
+    dashboardRoute, convoyReportsRoute,
   ]),
   authRoute.addChildren([
     fleetRoute, gpsRoute,
     convoysRoute, convoyNewRoute, convoyEditRoute,
     driversRoute, alertsRoute, incidentsRoute,
     incidentCenterRoute, panicCenterRoute, messagesRoute,
-    analyticsRoute, reportsRoute, convoyReportsRoute, shipmentsRoute,
+    analyticsRoute, reportsRoute, shipmentsRoute,
     financeRoute, maintenanceRoute, fuelRoute, claimsRoute, shiftsRoute, geofencesRoute,
     riskIntelRoute, rulesRoute, fieldOfficersRoute,
     executiveRoute, devicesRoute, guardianRoute,
