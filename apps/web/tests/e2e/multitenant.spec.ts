@@ -123,7 +123,7 @@ test.describe('Multi-tenant isolation — list endpoints', () => {
   test('alerts list contains only Org A alerts', async ({ page }) => {
     await page.goto('/alerts');
     // Page must render without errors; org_id boundary is enforced by the mock
-    await expect(page.getByRole('heading').first()).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('REAL-TIME MONITORING')).toBeVisible({ timeout: 8000 });
   });
 });
 
