@@ -135,8 +135,9 @@ export function EODUploadScreen({ navigate, auth }: EODUploadScreenProps) {
       setUploadedPhotos(prev => [...prev.filter(p => p.photo_type !== selectedType), committed]);
       const idx = EOD_TYPES.findIndex(t => t.key === selectedType);
       if (idx < EOD_TYPES.length - 1) setSelectedType(EOD_TYPES[idx + 1].key);
-    } catch {
-      setError('Upload failed. Please retry.');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'Upload failed';
+      setError(`Upload failed: ${msg}`);
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
