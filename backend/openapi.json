@@ -1356,6 +1356,16 @@
         }
       }
     },
+    "/api/v1/guardian/convoy/photos/upload": {
+      "post": {
+        "operationId": "post_api_v1_guardian_convoy_photos_upload",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/convoy/photos/upload-url": {
       "post": {
         "operationId": "post_api_v1_guardian_convoy_photos_upload_url",
