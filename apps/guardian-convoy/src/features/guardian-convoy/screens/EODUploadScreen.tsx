@@ -126,10 +126,8 @@ export function EODUploadScreen({ navigate, auth }: EODUploadScreenProps) {
     setUploading(true);
     setError(null);
     try {
-      const urlRes = await uploadApi.getUploadUrl(selectedType, safeAuth.convoy.id, 'eod', currentPlate, safeAuth.token);
-      await uploadApi.uploadToR2(urlRes.upload_url, file);
-      const committed = await uploadApi.commitPhoto(
-        urlRes.photo_id, selectedType, safeAuth.convoy.id, 'eod',
+      const committed = await uploadApi.uploadPhoto(
+        file, selectedType, safeAuth.convoy.id, 'eod',
         gps.lat, gps.lng, gps.accuracy, currentPlate, safeAuth.token,
       );
       setUploadedPhotos(prev => [...prev.filter(p => p.photo_type !== selectedType), committed]);
