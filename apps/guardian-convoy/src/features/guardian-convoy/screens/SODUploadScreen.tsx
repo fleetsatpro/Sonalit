@@ -102,6 +102,7 @@ export function SODUploadScreen({ navigate, auth }: SODUploadScreenProps) {
   const [uploading, setUploading]           = useState(false);
   const [error, setError]                   = useState<string | null>(null);
   const [sodAlreadyDone, setSodAlreadyDone] = useState(false);
+  const [checkingStatus, setCheckingStatus] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { gps, loading: gpsLoading } = useGPSStamp();
 
@@ -111,7 +112,7 @@ export function SODUploadScreen({ navigate, auth }: SODUploadScreenProps) {
   React.useEffect(() => {
     reportApi.getReport(safeAuth.convoy.id, safeAuth.token).then(report => {
       if (report?.status && report.status !== 'in_progress') setSodAlreadyDone(true);
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setCheckingStatus(false));
   }, [safeAuth.convoy.id, safeAuth.token]);
 
   if (!auth) return null;
@@ -149,7 +150,13 @@ export function SODUploadScreen({ navigate, auth }: SODUploadScreenProps) {
       await reportApi.submitSOD(report.id, photoIds, gps, safeAuth.token);
       setShowConfirm(true);
     } catch (err: any) {
-      const msg = err?.response?.data?.error || err?.message || 'Submit failed';
+      const apiError = err?.response?.data?.error || '';
+      if (apiError === 'Report is not in in_progress status' || err?.response?.status === 409) {
+        setSodAlreadyDone(true);
+        navigate('eod');
+        return;
+      }
+      const msg = apiError || err?.message || 'Submit failed';
       setError(`Submit failed: ${msg}`);
     } finally {
       setSubmitting(false);
@@ -366,15 +373,16 @@ export function SODUploadScreen({ navigate, auth }: SODUploadScreenProps) {
           </div>
           <button
             onClick={sodAlreadyDone ? () => navigate('eod') : handleSubmitSOD}
-            disabled={submitting || (uploadedPhotos.length === 0 && !sodAlreadyDone)}
+            disabled={submitting || checkingStatus || (uploadedPhotos.length === 0 && !sodAlreadyDone)}
             style={{
-              background: sodAlreadyDone ? T.green : uploadedPhotos.length === 0 ? T.muted : T.lime,
+              background: checkingStatus ? T.muted : sodAlreadyDone ? T.green : uploadedPhotos.length === 0 ? T.muted : T.lime,
               color: T.void, border: 'none', borderRadius: 10,
-              padding: '14px 24px', cursor: (uploadedPhotos.length === 0 && !sodAlreadyDone) ? 'not-allowed' : 'pointer',
+              padding: '14px 24px',
+              cursor: (checkingStatus || (uploadedPhotos.length === 0 && !sodAlreadyDone)) ? 'not-allowed' : 'pointer',
               fontFamily: T.cond, fontSize: 16, fontWeight: 900, letterSpacing: 3,
             }}
           >
-            {submitting ? 'SUBMITTING…' : sodAlreadyDone ? 'GO TO EOD →' : 'SUBMIT SOD'}
+            {checkingStatus ? 'CHECKING…' : submitting ? 'SUBMITTING…' : sodAlreadyDone ? 'GO TO EOD →' : 'SUBMIT SOD'}
           </button>
         </div>
       </div>

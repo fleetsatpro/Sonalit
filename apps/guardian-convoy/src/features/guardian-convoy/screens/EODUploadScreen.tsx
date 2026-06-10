@@ -1,8 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { uploadApi } from '../api/uploadApi';
 import { reportApi } from '../api/reportApi';
 import { useGPSStamp } from '../hooks/useGPSStamp';
-import type { AuthState, PhotoType, PhotoUpload } from '../types/ConvoyReport';
+import type { AuthState, PhotoType, PhotoUpload, ConvoyReport } from '../types/ConvoyReport';
 
 const T = {
   void: '#060a08', deep: '#0c1410', surface: '#111d16',
@@ -97,12 +97,25 @@ export function EODUploadScreen({ navigate, auth }: EODUploadScreenProps) {
   const [submitting, setSubmitting]               = useState(false);
   const [showConfirm, setShowConfirm]             = useState(false);
   const [error, setError]                         = useState<string | null>(null);
+  const [report, setReport]                       = useState<ConvoyReport | null>(null);
+  const [handoverUrl, setHandoverUrl]             = useState<string | null>(null);
+  const [uploadingHandover, setUploadingHandover] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const handoverInputRef = useRef<HTMLInputElement>(null);
   const { gps, loading: gpsLoading } = useGPSStamp();
 
   if (!auth) return null;
   const safeAuth = auth;
   const currentPlate = safeAuth.convoy.trucks[0]?.plate ?? 'TRUCK-1';
+
+  const isCompleting = report?.convoy_status === 'completing';
+
+  useEffect(() => {
+    reportApi.getReport(safeAuth.convoy.id, safeAuth.token).then(r => {
+      setReport(r);
+      if (r.handover_form_url) setHandoverUrl(r.handover_form_url);
+    }).catch(() => {});
+  }, [safeAuth.convoy.id, safeAuth.token]);
 
   async function handleConfirmArrival() {
     if (!gps) { setError('GPS lock required to confirm arrival.'); return; }
@@ -139,6 +152,23 @@ export function EODUploadScreen({ navigate, auth }: EODUploadScreenProps) {
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  async function handleHandoverCapture(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !report) return;
+    setUploadingHandover(true);
+    setError(null);
+    try {
+      const result = await uploadApi.uploadHandoverForm(file, safeAuth.convoy.id, report.id, safeAuth.token);
+      setHandoverUrl(result.r2_url);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'Upload failed';
+      setError(`Handover upload failed: ${msg}`);
+    } finally {
+      setUploadingHandover(false);
+      if (handoverInputRef.current) handoverInputRef.current.value = '';
     }
   }
 
@@ -361,6 +391,59 @@ export function EODUploadScreen({ navigate, auth }: EODUploadScreenProps) {
           </div>
         </div>
 
+        {/* Handover form upload — shown only when convoy is in 'completing' state */}
+        {isCompleting && (
+          <div style={{
+            background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.3)',
+            borderRadius: 14, padding: '16px 18px', marginBottom: 14,
+          }}>
+            <div style={{ fontFamily: T.cond, fontSize: 13, fontWeight: 900, color: '#a855f7', letterSpacing: 2, marginBottom: 6 }}>
+              📋 HANDOVER FORM REQUIRED
+            </div>
+            <div style={{ fontFamily: T.mono, fontSize: 10, color: T.body, marginBottom: 14 }}>
+              This is the final day of the convoy. Upload the signed handover document before submitting EOD.
+            </div>
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              style={{ display: 'none' }}
+              ref={handoverInputRef}
+              onChange={handleHandoverCapture}
+            />
+            {handoverUrl ? (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                background: T.greenBg, border: `1px solid ${T.green}44`,
+                borderRadius: 8, padding: '10px 14px',
+              }}>
+                <span>✅</span>
+                <span style={{ fontFamily: T.cond, fontSize: 13, fontWeight: 700, color: T.green, letterSpacing: 1 }}>
+                  HANDOVER FORM UPLOADED
+                </span>
+                <button
+                  onClick={() => handoverInputRef.current?.click()}
+                  style={{ marginLeft: 'auto', background: 'transparent', border: `1px solid ${T.green}66`, borderRadius: 6, padding: '4px 10px', fontFamily: T.mono, fontSize: 9, color: T.green, cursor: 'pointer', letterSpacing: 1 }}
+                >
+                  REPLACE
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => handoverInputRef.current?.click()}
+                disabled={uploadingHandover}
+                style={{
+                  width: '100%', background: uploadingHandover ? T.muted : 'rgba(168,85,247,0.15)',
+                  border: '1.5px dashed rgba(168,85,247,0.5)', borderRadius: 10,
+                  padding: '14px 0', cursor: uploadingHandover ? 'not-allowed' : 'pointer',
+                  fontFamily: T.cond, fontSize: 14, fontWeight: 900, letterSpacing: 2, color: '#a855f7',
+                }}
+              >
+                {uploadingHandover ? '⏳ UPLOADING…' : '📎 TAP TO UPLOAD HANDOVER FORM'}
+              </button>
+            )}
+          </div>
+        )}
+
         {error && (
           <div style={{
             background: T.redBg, border: `1px solid ${T.red}55`,
@@ -377,16 +460,21 @@ export function EODUploadScreen({ navigate, auth }: EODUploadScreenProps) {
       }}>
         <button
           onClick={handleSubmitEOD}
-          disabled={submitting || !arrivalConfirmed || uploadedPhotos.length === 0}
+          disabled={submitting || !arrivalConfirmed || uploadedPhotos.length === 0 || (isCompleting && !handoverUrl)}
           style={{
             width: '100%',
-            background: !arrivalConfirmed ? T.muted : uploadedPhotos.length === 0 ? T.muted : T.orange,
+            background: !arrivalConfirmed ? T.muted
+              : uploadedPhotos.length === 0 ? T.muted
+              : (isCompleting && !handoverUrl) ? T.muted
+              : T.orange,
             color: T.void, border: 'none', borderRadius: 10,
-            padding: '15px 0', cursor: (!arrivalConfirmed || uploadedPhotos.length === 0) ? 'not-allowed' : 'pointer',
+            padding: '15px 0',
+            cursor: (!arrivalConfirmed || uploadedPhotos.length === 0 || (isCompleting && !handoverUrl)) ? 'not-allowed' : 'pointer',
             fontFamily: T.cond, fontSize: 16, fontWeight: 900, letterSpacing: 3,
           }}
         >
           {!arrivalConfirmed ? '⏳ ARRIVE AT DESTINATION FIRST'
+            : (isCompleting && !handoverUrl) ? '📋 UPLOAD HANDOVER FORM FIRST'
             : submitting ? 'SUBMITTING EOD…'
             : `SUBMIT EOD (${uploadedPhotos.length}/${EOD_TYPES.length})`}
         </button>

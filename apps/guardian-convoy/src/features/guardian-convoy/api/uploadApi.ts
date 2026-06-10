@@ -33,4 +33,21 @@ export const uploadApi = {
       })
       .then(r => ({ photo_id: r.data.photo_id, photo_type, r2_url: r.data.r2_url, phase }));
   },
+
+  uploadHandoverForm: (
+    file: File,
+    convoy_id: string,
+    report_id: string,
+    token: string
+  ): Promise<{ r2_url: string }> => {
+    const params = new URLSearchParams({ convoy_id, report_id });
+    return axios
+      .post(`${BASE}/handover/upload?${params}`, file, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': file.type || 'application/octet-stream',
+        },
+      })
+      .then(r => ({ r2_url: r.data.r2_url }));
+  },
 };

@@ -5,7 +5,8 @@ const { publish } = require('../realtime/centrifugo');
 
 const VALID_TRANSITIONS = {
   planned: ['active', 'cancelled'],
-  active: ['completed', 'aborted', 'cancelled'],
+  active: ['completing', 'completed', 'aborted', 'cancelled'],
+  completing: ['completed', 'aborted', 'cancelled'],
   completed: [],
   aborted: [],
   cancelled: [],
@@ -156,7 +157,7 @@ const updateConvoy = asyncHandler(async (req, res) => {
 });
 
 const updateConvoyStatus = asyncHandler(async (req, res) => {
-  const schema = Joi.object({ status: Joi.string().valid('planned', 'active', 'completed', 'aborted', 'cancelled').required() });
+  const schema = Joi.object({ status: Joi.string().valid('planned', 'active', 'completing', 'completed', 'aborted', 'cancelled').required() });
   const { error, value } = schema.validate(req.body);
   if (error) return res.status(400).json({ error: error.message });
 
@@ -181,7 +182,7 @@ const updateConvoyStatus = asyncHandler(async (req, res) => {
     [value.status, req.params.id]
   );
 
-  const eventMap = { active: 'convoy:activated', completed: 'convoy:completed', cancelled: 'convoy:cancelled', aborted: 'convoy:aborted' };
+  const eventMap = { active: 'convoy:activated', completing: 'convoy:completing', completed: 'convoy:completed', cancelled: 'convoy:cancelled', aborted: 'convoy:aborted' };
   publish(`org#${req.user.org_id}`, { type: 'convoy.update', convoyId: req.params.id, status: value.status, updatedBy: req.user.id });
 
   // D4: on completion, enqueue archive PDF generation

@@ -39,8 +39,9 @@ const STATUS_STYLE: Record<string, { bg: string; color: string; border: string }
   completed: { bg: 'rgba(0,212,255,.08)', color: '#00d4ff', border: 'rgba(0,212,255,.2)' },
   planned:   { bg: 'rgba(249,115,22,.08)', color: '#f97316', border: 'rgba(249,115,22,.2)' },
   draft:     { bg: 'rgba(255,255,255,.04)', color: '#8a95a0', border: 'rgba(255,255,255,.1)' },
-  cancelled: { bg: 'rgba(239,68,68,.08)', color: '#ef4444', border: 'rgba(239,68,68,.2)' },
-  delayed:   { bg: 'rgba(245,158,11,.08)', color: '#f59e0b', border: 'rgba(245,158,11,.2)' },
+  cancelled:  { bg: 'rgba(239,68,68,.08)', color: '#ef4444', border: 'rgba(239,68,68,.2)' },
+  delayed:    { bg: 'rgba(245,158,11,.08)', color: '#f59e0b', border: 'rgba(245,158,11,.2)' },
+  completing: { bg: 'rgba(168,85,247,.08)', color: '#a855f7', border: 'rgba(168,85,247,.2)' },
 }
 const statusStyle = (s: string) => STATUS_STYLE[s] ?? STATUS_STYLE['draft']!
 
@@ -96,7 +97,7 @@ function ProgressBar({ pct, status }: { pct: number; status: string }) {
 
 // ─── Detail Panel ─────────────────────────────────────────────────────────────
 
-function DetailPanel({ id, onClose, onBroadcast }: { id: string; onClose: () => void; onBroadcast: () => void }) {
+function DetailPanel({ id, onClose, onBroadcast, onEnd }: { id: string; onClose: () => void; onBroadcast: () => void; onEnd: () => void }) {
   const { data: raw } = useQuery<ConvoyDetail>({
     queryKey: ['convoy-detail', id],
     queryFn: async () => { const r = await api.get(`/convoys/${id}`); return r.data.data ?? r.data },
@@ -214,6 +215,11 @@ function DetailPanel({ id, onClose, onBroadcast }: { id: string; onClose: () => 
             📡 BROADCAST
           </button>
         )}
+        {c?.status === 'active' && (
+          <button onClick={onEnd} style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontFamily:MN, fontSize:9, letterSpacing:'.12em', padding:'7px 13px', borderRadius:3, border:'1px solid #a855f7', background:'transparent', color:'#a855f7', fontWeight:700, cursor:'pointer' }}>
+            🏁 END CONVOY
+          </button>
+        )}
       </div>
     </div>
   )
@@ -263,6 +269,17 @@ export default function Convoys() {
       void qc.invalidateQueries({ queryKey: ['convoy-reports-overview'] })
     },
     onSettled: () => setDispatchingId(null),
+  })
+
+  const [endingId, setEndingId] = useState<string | null>(null)
+  const endMutation = useMutation({
+    mutationFn: (id: string) => api.patch(`/convoys/${id}/status`, { status: 'completing' }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['convoys'] })
+      void qc.invalidateQueries({ queryKey: ['convoy-detail', endingId] })
+      void qc.invalidateQueries({ queryKey: ['convoy-reports-overview'] })
+    },
+    onSettled: () => setEndingId(null),
   })
 
   const rows = useMemo(() => {
@@ -453,7 +470,12 @@ export default function Convoys() {
             <div onClick={() => setSelId(null)} style={{ position:'absolute', inset:0, background:'rgba(0,0,0,.45)', zIndex:25 }} />
             <DetailPanel id={selId}
               onClose={() => setSelId(null)}
-              onBroadcast={() => { setBroadcastConvoy(selConvoy ? { id: selConvoy.id, name: selConvoy.name } : null); setSelId(null) }} />
+              onBroadcast={() => { setBroadcastConvoy(selConvoy ? { id: selConvoy.id, name: selConvoy.name } : null); setSelId(null) }}
+              onEnd={() => {
+                if (!selId || !window.confirm('Mark this convoy as completing? CFOs will be asked to submit a handover form on their final EOD.')) return
+                setEndingId(selId)
+                endMutation.mutate(selId)
+              }} />
           </>
         )}
       </div>

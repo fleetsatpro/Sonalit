@@ -45,12 +45,14 @@ export interface ConvoyReport {
   cfo_id: string;
   date: string;
   status: 'in_progress' | 'sod_complete' | 'eod_complete';
+  convoy_status?: string;
   sod_submitted_at: string | null;
   eod_submitted_at: string | null;
   arrival_at: string | null;
   arrival_lat: number | null;
   arrival_lng: number | null;
   pdf_url: string | null;
+  handover_form_url?: string | null;
 }
 
 export type PhotoType =
@@ -63,7 +65,8 @@ export type PhotoType =
   | 'seals_eod'
   | 'offload_docs'
   | 'delivery_point'
-  | 'receiver_signature';
+  | 'receiver_signature'
+  | 'handover_form';
 
 export type Phase = 'sod' | 'eod';
 
