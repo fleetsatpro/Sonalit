@@ -149,15 +149,16 @@ export function LoginScreen({ navigate, onLogin }: LoginScreenProps) {
       <form onSubmit={handleSubmit} style={{ width: '100%', maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div>
           <label style={{ fontFamily: T.cond, fontSize: 11, fontWeight: 700, color: T.sub, letterSpacing: 2, display: 'block', marginBottom: 6 }}>
-            CFO ID
+            EMAIL OR CFO ID
           </label>
           <input
             value={cfoId}
             onChange={e => setCfoId(e.target.value)}
             onFocus={() => setFocusField('cfoId')}
             onBlur={() => setFocusField(null)}
-            placeholder="e.g. CFO-00124"
-            autoCapitalize="characters"
+            placeholder="your@email.com or CFO-001"
+            autoCapitalize="none"
+            inputMode="email"
             style={fieldStyle('cfoId')}
           />
         </div>
@@ -186,8 +187,8 @@ export function LoginScreen({ navigate, onLogin }: LoginScreenProps) {
             onChange={e => setConvoyId(e.target.value)}
             onFocus={() => setFocusField('convoyId')}
             onBlur={() => setFocusField(null)}
-            placeholder="e.g. CNV-2026-0041"
-            autoCapitalize="characters"
+            placeholder="Convoy name or ID"
+            autoCapitalize="none"
             style={fieldStyle('convoyId')}
           />
         </div>
