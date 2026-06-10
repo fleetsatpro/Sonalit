@@ -4,7 +4,7 @@ const config: CapacitorConfig = {
   appId: 'io.sonalit.guardian.convoy',
   appName: 'Guardian Convoy',
   webDir: 'dist',
-  android: { minSdkVersion: 24, backgroundColor: '#060a08' },
+  android: { backgroundColor: '#060a08' },
   plugins: {
     Camera: { permissions: ['camera'] },
     Geolocation: { permissions: ['location'] },

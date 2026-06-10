@@ -15,7 +15,7 @@ export default defineConfig({
         clientsClaim: true,
         cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        globIgnores: ['**/cesium/**', '**/Cesium.js'],
+        globIgnores: ['**/cesium/**', '**/Cesium.js', 'convoy.html', 'convoy-assets/**'],
         runtimeCaching: [
           {
             urlPattern: ({ url }: { url: URL }) => url.pathname.startsWith('/api/'),

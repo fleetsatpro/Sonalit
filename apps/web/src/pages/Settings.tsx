@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import { useAuthStore, getAccessToken } from '../stores/auth.js';
 import { Settings as SettingsIcon, Key, Shield, Copy, Trash2, Plus, X, MessageCircle } from 'lucide-react';
+import { GuardianConvoySettings } from '../components/GuardianConvoySettings.js';
 
 interface ApiKey {
   id: string;
@@ -438,6 +439,7 @@ export default function Settings() {
       <ApiKeysSection />
       <TotpSection />
       <WhatsAppSection />
+      <GuardianConvoySettings />
     </div>
   );
 }

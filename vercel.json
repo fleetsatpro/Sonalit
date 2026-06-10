@@ -1,13 +1,13 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "pnpm --filter @sonalit/web... build",
+  "buildCommand": "sh scripts/vercel-build.sh",
   "outputDirectory": "apps/web/dist",
   "installCommand": "pnpm install --frozen-lockfile",
   "framework": "vite",
   "rewrites": [
     { "source": "/convoy.html", "destination": "/convoy.html" },
     { "source": "/api/:path*", "destination": "https://sonalit-production.up.railway.app/api/:path*" },
-    { "source": "/((?!assets|icons|manifest|sw|workbox|convoy\\.html).*)", "destination": "/index.html" }
+    { "source": "/((?!assets|convoy-assets|icons|manifest|sw|workbox|convoy\\.html).*)", "destination": "/index.html" }
   ],
   "headers": [
     {
@@ -17,7 +17,13 @@
       ]
     },
     {
-      "source": "/((?!assets/).*)",
+      "source": "/convoy-assets/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/((?!assets/|convoy-assets/).*)",
       "headers": [
         { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate" }
       ]
