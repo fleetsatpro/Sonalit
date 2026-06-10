@@ -140,8 +140,9 @@ export function SODUploadScreen({ navigate, auth }: SODUploadScreenProps) {
       const report = await reportApi.getReport(safeAuth.convoy.id, safeAuth.token);
       await reportApi.submitSOD(report.id, photoIds, gps, safeAuth.token);
       setShowConfirm(true);
-    } catch {
-      setError('Submit failed. Please try again.');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'Submit failed';
+      setError(`Submit failed: ${msg}`);
     } finally {
       setSubmitting(false);
     }

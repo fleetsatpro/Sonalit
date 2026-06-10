@@ -17,7 +17,7 @@ export const reportApi = {
   getReport: (convoy_id: string, token: string): Promise<ConvoyReport> =>
     axios
       .get(`${BASE}/convoy-reports/${convoy_id}`, { headers: headers(token) })
-      .then(r => r.data.data),
+      .then(r => r.data),
 
   submitArrival: (report_id: string, gps: GPS, token: string) =>
     axios
@@ -31,7 +31,7 @@ export const reportApi = {
         },
         { headers: headers(token) }
       )
-      .then(r => r.data.data),
+      .then(r => r.data),
 
   submitSOD: (report_id: string, photos: string[], gps: GPS, token: string) =>
     axios
@@ -40,7 +40,7 @@ export const reportApi = {
         { photos, gps, submitted_at: new Date().toISOString() },
         { headers: headers(token) }
       )
-      .then(r => r.data.data),
+      .then(r => r.data),
 
   submitEOD: (report_id: string, photos: string[], gps: GPS, token: string) =>
     axios
@@ -49,10 +49,10 @@ export const reportApi = {
         { photos, gps, submitted_at: new Date().toISOString() },
         { headers: headers(token) }
       )
-      .then(r => r.data.data),
+      .then(r => r.data),
 
   getHistory: (token: string): Promise<ConvoyReport[]> =>
     axios
       .get(`${BASE}/history`, { headers: headers(token) })
-      .then(r => r.data.data),
+      .then(r => r.data.reports),
 };
