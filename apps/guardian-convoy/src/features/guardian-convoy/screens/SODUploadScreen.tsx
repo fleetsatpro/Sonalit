@@ -124,8 +124,9 @@ export function SODUploadScreen({ navigate, auth }: SODUploadScreenProps) {
       setUploadedPhotos(prev => [...prev.filter(p => p.photo_type !== selectedType), committed]);
       const idx = SOD_TYPES.findIndex(t => t.key === selectedType);
       if (idx < SOD_TYPES.length - 1) setSelectedType(SOD_TYPES[idx + 1].key);
-    } catch {
-      setError('Upload failed. Please try again.');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'Upload failed';
+      setError(`Upload failed: ${msg}`);
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
