@@ -64,6 +64,74 @@ router.post('/users', authenticate, authorize('admin'), async (req, res) => {
   }
 });
 
+// ─── GET /api/v1/auth/cfo-assignments ────────────────────────────────────────
+// CFO users with their current convoy assignment (most recent active)
+router.get('/cfo-assignments', authenticate, authorize('admin', 'dispatcher'), async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT DISTINCT ON (u.id)
+         u.id, u.name, u.email, u.status,
+         cc.id AS assignment_id,
+         c.id   AS convoy_id,
+         c.name AS convoy_name,
+         c.status AS convoy_status
+       FROM users u
+       LEFT JOIN convoy_cfos cc ON cc.cfo_user_id = u.id
+       LEFT JOIN convoys c ON c.id = cc.convoy_id AND c.deleted_at IS NULL
+       WHERE u.role = 'cfo' AND u.deleted_at IS NULL AND u.org_id = $1
+       ORDER BY u.id, c.created_at DESC NULLS LAST`,
+      [req.user.org_id]
+    );
+    res.json({ data: result.rows });
+  } catch (err) {
+    logger.error(`GET /auth/cfo-assignments error: ${err.message}`);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── PATCH /api/v1/auth/users/:id ────────────────────────────────────────────
+router.patch('/users/:id', authenticate, authorize('admin'), async (req, res) => {
+  try {
+    const { name, password } = req.body;
+    const updates = [];
+    const params = [];
+    if (name) { params.push(name.trim()); updates.push(`name = $${params.length}`); }
+    if (password) {
+      const hash = await bcrypt.hash(password, 10);
+      params.push(hash);
+      updates.push(`password_hash = $${params.length}`);
+    }
+    if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
+    params.push(req.params.id, req.user.org_id);
+    const result = await query(
+      `UPDATE users SET ${updates.join(', ')} WHERE id = $${params.length - 1} AND org_id = $${params.length} AND deleted_at IS NULL
+       RETURNING id, email, name, role, status`,
+      params
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'User not found' });
+    res.json({ data: result.rows[0] });
+  } catch (err) {
+    logger.error(`PATCH /auth/users/:id error: ${err.message}`);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── DELETE /api/v1/auth/users/:id ───────────────────────────────────────────
+router.delete('/users/:id', authenticate, authorize('admin'), async (req, res) => {
+  try {
+    const result = await query(
+      `UPDATE users SET deleted_at = NOW(), status = 'inactive'
+       WHERE id = $1 AND deleted_at IS NULL AND org_id = $2 RETURNING id`,
+      [req.params.id, req.user.org_id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'User not found' });
+    res.status(204).end();
+  } catch (err) {
+    logger.error(`DELETE /auth/users/:id error: ${err.message}`);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ─── POST /api/v1/auth/refresh ────────────────────────────────────────────────
 // Reads refresh token from httpOnly cookie (T1.2).
 // Infinite-loop guard: if the request itself is a refresh attempt and the cookie
