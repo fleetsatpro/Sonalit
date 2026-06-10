@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "pnpm --filter @sonalit/web... build && (cd apps/guardian-convoy && npm ci && npm run build) && cp apps/guardian-convoy/dist/index.html apps/web/dist/convoy.html && cp -r apps/guardian-convoy/dist/assets apps/web/dist/convoy-assets",
+  "buildCommand": "pnpm --filter @sonalit/web... build && (cd apps/guardian-convoy && npm ci && npm run build) && cp apps/guardian-convoy/dist/index.html apps/web/dist/convoy.html && mkdir -p apps/web/dist/convoy-assets && cp -r apps/guardian-convoy/dist/assets apps/web/dist/convoy-assets/assets",
   "outputDirectory": "apps/web/dist",
   "installCommand": "pnpm install --frozen-lockfile",
   "framework": "vite",
