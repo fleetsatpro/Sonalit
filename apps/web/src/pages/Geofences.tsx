@@ -99,7 +99,7 @@ export default function Geofences(){
   const kpi=useMemo(()=>({
     threat:threats.length?Math.max(...threats.map(t=>({critical:100,high:80,medium:55,warning:40}[t.sev]||40))):42,
     assets:activeVehicles.length,
-    geofences:corridors.length+geofences.length+customZones.length,
+    geofences:geofences.length+customZones.length,
     anomalies:alerts.filter(a=>!a.vehicle_id||['speed','route_deviation','geofence'].includes(a.type)).length,
   }),[threats,activeVehicles,corridors,geofences,customZones,alerts])
 
@@ -399,8 +399,8 @@ export default function Geofences(){
                 <button onClick={()=>showToast(`Advisory issued for: ${t.title}`)} style={S({flexShrink:0,height:22,padding:'0 8px',borderRadius:4,background:'rgba(0,200,255,0.07)',border:`1px solid ${BDACC}`,color:CYAN,fontFamily:"'JetBrains Mono',monospace",fontSize:8,letterSpacing:'0.06em',textTransform:'uppercase',cursor:'pointer'})}>Manage</button>
               </div>
             ))}
-            {secH('Geofence Registry',geofences.length+corridors.length+customZones.length)}
-            {[...corridors.map(c=>({name:c.name,type:'corridor',risk:c.risk,id:c.id})),...geofences.map(g=>({name:g.name,type:g.type||'zone',risk:'medium',id:g.id})),...customZones.map(z=>({name:z.name,type:'custom',risk:z.risk,id:z.id}))].slice(0,16).map(g=>(
+            {secH('Geofence Registry',geofences.length+customZones.length)}
+            {[...geofences.map(g=>({name:g.name,type:g.type||'zone',risk:'medium',id:g.id})),...customZones.map(z=>({name:z.name,type:'custom',risk:z.risk,id:z.id}))].map(g=>(
               <div key={g.id} onClick={()=>{const c=corridors.find(x=>x.id===g.id);if(c){setSelCorridorId(g.id);setCorridorPanelOpen(true)}}} style={S({display:'flex',alignItems:'center',padding:'7px 10px',borderRadius:4,background:RAISED,border:`1px solid ${BD}`,marginBottom:4,cursor:'pointer'})}>
                 <span style={S({flex:1,fontSize:11,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'})}>{g.name}</span>
                 <span style={S({fontFamily:"'JetBrains Mono',monospace",fontSize:8,color:MUTED,margin:'0 8px'})}>{g.type}</span>

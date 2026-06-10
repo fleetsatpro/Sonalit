@@ -1,0 +1,106 @@
+name: Build Guardian Convoy APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/guardian-convoy/**'
+      - '.github/workflows/build-guardian-convoy-apk.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/guardian-convoy/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/guardian-convoy
+        run: npm ci
+
+      - name: Build web assets
+        working-directory: apps/guardian-convoy
+        run: npm run build
+
+      - name: Add Android platform
+        working-directory: apps/guardian-convoy
+        run: npx cap add android
+
+      - name: Sync web assets into Android
+        working-directory: apps/guardian-convoy
+        run: npx cap sync android
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept SDK licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Install platform and build tools
+        run: sdkmanager "build-tools;34.0.0" "platforms;android-35"
+
+      - name: Set local.properties
+        working-directory: apps/guardian-convoy/android
+        run: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+          # Ensure minimum SDK version is set to 24 (Android 7.0)
+          if [ -f variables.gradle ]; then
+            sed -i 's/minSdkVersion = [0-9]*/minSdkVersion = 24/' variables.gradle
+          fi
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-convoy-gradle-${{ hashFiles('apps/guardian-convoy/android/**/*.gradle*', 'apps/guardian-convoy/android/**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-convoy-gradle-
+
+      - name: Make gradlew executable
+        run: chmod +x apps/guardian-convoy/android/gradlew
+
+      - name: Build debug APK
+        working-directory: apps/guardian-convoy/android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GuardianConvoy-debug
+          path: apps/guardian-convoy/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: convoy-v${{ github.run_number }}
+          name: Sonalit Guardian Convoy v${{ github.run_number }}
+          body: |
+            Sonalit Guardian Convoy APK — auto-built from commit ${{ github.sha }}
+
+            **Install**: Download and open on an Android 10+ device (enable "Install unknown apps" in settings).
+            **Login**: Enter your backend URL and CFO credentials provided by your operations manager.
+          files: apps/guardian-convoy/android/app/build/outputs/apk/debug/app-debug.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
