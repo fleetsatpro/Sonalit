@@ -367,7 +367,7 @@ router.get('/convoy-reports/:convoy_id', jwtAuth, async (req, res, next) => {
                WHERE p.convoy_id = r.convoy_id AND p.cfo_id = r.cfo_id
                  AND p.phase = 'eod' AND p.timestamp::date = r.date) AS eod_photo_count
        FROM convoy_reports r
-       JOIN convoys c ON c.id = r.convoy_id
+       JOIN convoys c ON c.id::text = r.convoy_id
        WHERE r.convoy_id = $1 AND r.cfo_id = $2 AND r.date = CURRENT_DATE`,
       [convoy_id, req.cfo.id]
     );
