@@ -70,7 +70,7 @@ router.post('/login', async (req, res, next) => {
     const userResult = await query(
       `SELECT u.id, u.name, u.email, u.org_id, u.status, u.password_hash
        FROM users u
-       WHERE (u.employee_id = $1 OR LOWER(u.email) = LOWER($1))
+       WHERE LOWER(u.email) = LOWER($1)
          AND EXISTS (
            SELECT 1 FROM convoy_cfos cc WHERE cc.cfo_user_id = u.id AND cc.convoy_id = $2
          )
