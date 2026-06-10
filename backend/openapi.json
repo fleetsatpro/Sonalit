@@ -90,6 +90,34 @@
         }
       }
     },
+    "/api/v1/auth/cfo-assignments": {
+      "get": {
+        "operationId": "get_api_v1_auth_cfo_assignments",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/users/{id}": {
+      "patch": {
+        "operationId": "patch_api_v1_auth_users_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_auth_users_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/auth/refresh": {
       "post": {
         "operationId": "post_api_v1_auth_refresh",
