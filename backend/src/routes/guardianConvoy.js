@@ -53,15 +53,30 @@ router.post('/login', async (req, res, next) => {
     if (!convoy_id || typeof convoy_id !== 'string' || !convoy_id.trim())
       return res.status(400).json({ error: 'convoy_id is required' });
 
+    // Resolve convoy by UUID or name (case-insensitive)
+    const convoyResult = await query(
+      `SELECT id, name, status, route_origin, route_destination, org_id
+       FROM convoys
+       WHERE (id::text = $1 OR LOWER(name) = LOWER($1))
+         AND deleted_at IS NULL
+       LIMIT 1`,
+      [convoy_id.trim()]
+    );
+    if (!convoyResult.rows.length)
+      return res.status(200).json({ success: false, error: 'Convoy not found' });
+
+    const convoy = convoyResult.rows[0];
+
     const userResult = await query(
       `SELECT u.id, u.name, u.email, u.org_id, u.status, u.password_hash
        FROM users u
-       WHERE (u.employee_id = $1 OR EXISTS (
-         SELECT 1 FROM convoy_cfos cc WHERE cc.cfo_user_id = u.id AND cc.convoy_id::text = $2
-       ))
+       WHERE (u.employee_id = $1 OR LOWER(u.email) = LOWER($1))
+         AND EXISTS (
+           SELECT 1 FROM convoy_cfos cc WHERE cc.cfo_user_id = u.id AND cc.convoy_id = $2
+         )
          AND u.deleted_at IS NULL
        LIMIT 1`,
-      [cfo_id.trim(), convoy_id.trim()]
+      [cfo_id.trim(), convoy.id]
     );
 
     const dummyHash = '$2a$10$dummyhashtopreventtimingattacks00000000000';
@@ -73,14 +88,6 @@ router.post('/login', async (req, res, next) => {
     const user = userResult.rows[0];
     if (user.status !== 'active')
       return res.status(200).json({ success: false, error: 'Account is not active' });
-
-    const convoyResult = await query(
-      `SELECT id, name, status, route_origin, route_destination, org_id
-       FROM convoys WHERE id::text = $1 AND deleted_at IS NULL LIMIT 1`,
-      [convoy_id.trim()]
-    );
-    if (!convoyResult.rows.length)
-      return res.status(200).json({ success: false, error: 'Convoy not found' });
 
     const convoy = convoyResult.rows[0];
     const [trucksResult, sealsResult] = await Promise.all([
