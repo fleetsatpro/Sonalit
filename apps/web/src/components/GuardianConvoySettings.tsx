@@ -93,12 +93,13 @@ export function GuardianConvoySettings() {
 
   const assignMut = useMutation({
     mutationFn: ({ convoyId, userId }: { convoyId: string; userId: string }) =>
-      api.post(`/convoys/${convoyId}/cfos`, { cfo_ids: [userId] }),
+      api.post(`/convoys/${convoyId}/cfos`, { cfo_user_id: userId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['cfo-assignments'] });
       setAssignFor(null);
       setSelectedConvoy('');
     },
+    onError: (e: any) => alert(e?.response?.data?.error ?? 'Assignment failed'),
   });
 
   return (
