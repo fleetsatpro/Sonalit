@@ -89,7 +89,6 @@ router.post('/login', async (req, res, next) => {
     if (user.status !== 'active')
       return res.status(200).json({ success: false, error: 'Account is not active' });
 
-    const convoy = convoyResult.rows[0];
     const [trucksResult, sealsResult] = await Promise.all([
       query(
         `SELECT ct.id, ct.position, ct.driver_name, ct.driver_phone,
