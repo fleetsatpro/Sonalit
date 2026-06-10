@@ -151,8 +151,9 @@ export function EODUploadScreen({ navigate, auth }: EODUploadScreenProps) {
       const report = await reportApi.getReport(safeAuth.convoy.id, safeAuth.token);
       await reportApi.submitEOD(report.id, photoIds, gps, safeAuth.token);
       setShowConfirm(true);
-    } catch {
-      setError('EOD submission failed. Please retry.');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'EOD submission failed';
+      setError(`Submit failed: ${msg}`);
     } finally {
       setSubmitting(false);
     }
