@@ -263,7 +263,8 @@ const addCfo = asyncHandler(async (req, res) => {
     [req.params.id]
   );
   if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
-  if (convoy.rows[0].status !== 'planned') return res.status(422).json({ error: 'convoy_not_in_planned_status' });
+  if (!['planned', 'active'].includes(convoy.rows[0].status))
+    return res.status(422).json({ error: 'convoy_not_in_planned_status' });
 
   const user = await query(
     'SELECT id, role FROM users WHERE id = $1 AND deleted_at IS NULL',
