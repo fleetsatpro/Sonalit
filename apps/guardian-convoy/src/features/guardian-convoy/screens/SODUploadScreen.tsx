@@ -101,12 +101,20 @@ export function SODUploadScreen({ navigate, auth }: SODUploadScreenProps) {
   const [showConfirm, setShowConfirm]       = useState(false);
   const [uploading, setUploading]           = useState(false);
   const [error, setError]                   = useState<string | null>(null);
+  const [sodAlreadyDone, setSodAlreadyDone] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { gps, loading: gpsLoading } = useGPSStamp();
 
-  if (!auth) return null;
-  const safeAuth = auth;
+  const safeAuth = auth!;
   const currentPlate = safeAuth.convoy.trucks[0]?.plate ?? 'TRUCK-1';
+
+  React.useEffect(() => {
+    reportApi.getReport(safeAuth.convoy.id, safeAuth.token).then(report => {
+      if (report?.status && report.status !== 'in_progress') setSodAlreadyDone(true);
+    }).catch(() => {});
+  }, [safeAuth.convoy.id, safeAuth.token]);
+
+  if (!auth) return null;
 
   async function handleFileCapture(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -115,17 +123,16 @@ export function SODUploadScreen({ navigate, auth }: SODUploadScreenProps) {
     setUploading(true);
     setError(null);
     try {
-      const urlRes = await uploadApi.getUploadUrl(selectedType, safeAuth.convoy.id, 'sod', currentPlate, safeAuth.token);
-      await uploadApi.uploadToR2(urlRes.upload_url, file);
-      const committed = await uploadApi.commitPhoto(
-        urlRes.photo_id, selectedType, safeAuth.convoy.id, 'sod',
+      const committed = await uploadApi.uploadPhoto(
+        file, selectedType, safeAuth.convoy.id, 'sod',
         gps.lat, gps.lng, gps.accuracy, currentPlate, safeAuth.token,
       );
       setUploadedPhotos(prev => [...prev.filter(p => p.photo_type !== selectedType), committed]);
       const idx = SOD_TYPES.findIndex(t => t.key === selectedType);
       if (idx < SOD_TYPES.length - 1) setSelectedType(SOD_TYPES[idx + 1].key);
-    } catch {
-      setError('Upload failed. Please try again.');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'Upload failed';
+      setError(`Upload failed: ${msg}`);
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -141,8 +148,9 @@ export function SODUploadScreen({ navigate, auth }: SODUploadScreenProps) {
       const report = await reportApi.getReport(safeAuth.convoy.id, safeAuth.token);
       await reportApi.submitSOD(report.id, photoIds, gps, safeAuth.token);
       setShowConfirm(true);
-    } catch {
-      setError('Submit failed. Please try again.');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'Submit failed';
+      setError(`Submit failed: ${msg}`);
     } finally {
       setSubmitting(false);
     }
@@ -178,6 +186,32 @@ export function SODUploadScreen({ navigate, auth }: SODUploadScreenProps) {
           fontFamily: T.cond, fontSize: 12, fontWeight: 700, color: T.lime, letterSpacing: 2,
         }}>SOD</div>
       </div>
+
+      {sodAlreadyDone && (
+        <div style={{
+          background: T.greenBg, border: `1px solid ${T.green}44`,
+          margin: '12px 16px 0', borderRadius: 12, padding: '14px 16px',
+          display: 'flex', alignItems: 'center', gap: 12,
+        }}>
+          <span style={{ fontSize: 20 }}>✅</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: T.cond, fontSize: 14, fontWeight: 900, color: T.green, letterSpacing: 1 }}>
+              SOD ALREADY SUBMITTED TODAY
+            </div>
+            <div style={{ fontFamily: T.mono, fontSize: 10, color: T.body, marginTop: 2 }}>
+              Start-of-day report was submitted for this convoy
+            </div>
+          </div>
+          <button
+            onClick={() => navigate('eod')}
+            style={{
+              background: T.green, color: T.void, border: 'none', borderRadius: 8,
+              padding: '8px 14px', fontFamily: T.cond, fontSize: 13, fontWeight: 900,
+              letterSpacing: 1, cursor: 'pointer', whiteSpace: 'nowrap',
+            }}
+          >GO TO EOD</button>
+        </div>
+      )}
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 16px 100px' }}>
 
@@ -331,16 +365,16 @@ export function SODUploadScreen({ navigate, auth }: SODUploadScreenProps) {
             <div>{!gps ? 'Waiting for GPS…' : 'GPS ready'}</div>
           </div>
           <button
-            onClick={handleSubmitSOD}
-            disabled={submitting || uploadedPhotos.length === 0}
+            onClick={sodAlreadyDone ? () => navigate('eod') : handleSubmitSOD}
+            disabled={submitting || (uploadedPhotos.length === 0 && !sodAlreadyDone)}
             style={{
-              background: uploadedPhotos.length === 0 ? T.muted : T.lime,
+              background: sodAlreadyDone ? T.green : uploadedPhotos.length === 0 ? T.muted : T.lime,
               color: T.void, border: 'none', borderRadius: 10,
-              padding: '14px 24px', cursor: uploadedPhotos.length === 0 ? 'not-allowed' : 'pointer',
+              padding: '14px 24px', cursor: (uploadedPhotos.length === 0 && !sodAlreadyDone) ? 'not-allowed' : 'pointer',
               fontFamily: T.cond, fontSize: 16, fontWeight: 900, letterSpacing: 3,
             }}
           >
-            {submitting ? 'SUBMITTING…' : 'SUBMIT SOD'}
+            {submitting ? 'SUBMITTING…' : sodAlreadyDone ? 'GO TO EOD →' : 'SUBMIT SOD'}
           </button>
         </div>
       </div>

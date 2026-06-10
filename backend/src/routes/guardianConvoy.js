@@ -209,6 +209,59 @@ router.post('/photos/commit', jwtAuth, async (req, res, next) => {
   }
 });
 
+// POST /handover/upload — upload handover form document for final EOD report
+router.post(
+  '/handover/upload',
+  jwtAuth,
+  require('express').raw({ type: ['image/*', 'application/pdf', 'application/octet-stream'], limit: '20mb' }),
+  async (req, res, next) => {
+    try {
+      const { convoy_id, report_id } = req.query;
+      if (!convoy_id || typeof convoy_id !== 'string')
+        return res.status(400).json({ error: 'convoy_id is required' });
+      if (!report_id || typeof report_id !== 'string')
+        return res.status(400).json({ error: 'report_id is required' });
+      if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0)
+        return res.status(400).json({ error: 'Request body must be document binary data' });
+
+      const { R2_BUCKET, R2_PUBLIC_URL, R2_ACCOUNT_ID } = process.env;
+      if (!R2_BUCKET) return res.status(501).json({ error: 'Storage not configured on this server' });
+
+      let PutObjectCommand;
+      try {
+        ({ PutObjectCommand } = require('@aws-sdk/client-s3'));
+      } catch {
+        return res.status(501).json({ error: 'Storage SDK not installed' });
+      }
+
+      const s3 = getR2Client();
+      if (!s3) return res.status(501).json({ error: 'Storage credentials not configured' });
+
+      const isPdf = req.headers['content-type']?.includes('pdf');
+      const ext = isPdf ? 'pdf' : 'jpg';
+      const key = `convoy-app/${convoy_id}/handover/handover_${report_id}.${ext}`;
+      await s3.send(new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: key,
+        Body: req.body,
+        ContentType: isPdf ? 'application/pdf' : 'image/jpeg',
+      }));
+
+      const r2Url = `${R2_PUBLIC_URL || `https://${R2_BUCKET}.${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`}/${key}`;
+
+      await query(
+        `UPDATE convoy_reports SET handover_form_key = $1, handover_form_url = $2
+         WHERE id = $3 AND cfo_id = $4`,
+        [key, r2Url, report_id, req.cfo.id]
+      );
+
+      return res.status(201).json({ r2_url: r2Url });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 // GET /convoys/:id/position — latest GPS position for convoy vehicles
 router.get('/convoys/:id/position', jwtAuth, async (req, res, next) => {
   try {
@@ -243,6 +296,7 @@ router.get('/convoy-reports/:convoy_id', jwtAuth, async (req, res, next) => {
     );
     const reportResult = await query(
       `SELECT r.*,
+              c.status AS convoy_status,
               (SELECT COUNT(*) FROM photo_uploads p
                WHERE p.convoy_id = r.convoy_id AND p.cfo_id = r.cfo_id
                  AND p.phase = 'sod' AND p.timestamp::date = r.date) AS sod_photo_count,
@@ -250,6 +304,7 @@ router.get('/convoy-reports/:convoy_id', jwtAuth, async (req, res, next) => {
                WHERE p.convoy_id = r.convoy_id AND p.cfo_id = r.cfo_id
                  AND p.phase = 'eod' AND p.timestamp::date = r.date) AS eod_photo_count
        FROM convoy_reports r
+       JOIN convoys c ON c.id = r.convoy_id
        WHERE r.convoy_id = $1 AND r.cfo_id = $2 AND r.date = CURRENT_DATE`,
       [convoy_id, req.cfo.id]
     );

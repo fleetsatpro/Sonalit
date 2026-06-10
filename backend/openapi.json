@@ -1348,6 +1348,16 @@
         }
       }
     },
+    "/api/v1/guardian/convoy/handover/upload": {
+      "post": {
+        "operationId": "post_api_v1_guardian_convoy_handover_upload",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/convoy/convoys/{id}/position": {
       "get": {
         "operationId": "get_api_v1_guardian_convoy_convoys_id_position",

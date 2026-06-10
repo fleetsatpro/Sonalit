@@ -4,30 +4,8 @@ import type { PhotoType, Phase, PhotoUpload } from '../types/ConvoyReport';
 const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api/v1/guardian/convoy';
 
 export const uploadApi = {
-  getUploadUrl: (
-    photo_type: PhotoType,
-    convoy_id: string,
-    phase: Phase,
-    plate_number: string,
-    token: string
-  ) =>
-    axios
-      .post(
-        `${BASE}/photos/upload-url`,
-        { photo_type, convoy_id, phase, plate_number },
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
-      .then(r => r.data),
-
-  uploadToR2: (upload_url: string, blob: Blob) =>
-    fetch(upload_url, {
-      method: 'PUT',
-      body: blob,
-      headers: { 'Content-Type': 'image/jpeg' },
-    }),
-
-  commitPhoto: (
-    photo_id: string,
+  uploadPhoto: (
+    file: File,
     photo_type: PhotoType,
     convoy_id: string,
     phase: Phase,
@@ -36,22 +14,40 @@ export const uploadApi = {
     accuracy: number,
     plate_number: string,
     token: string
-  ): Promise<PhotoUpload> =>
-    axios
-      .post(
-        `${BASE}/photos/commit`,
-        {
-          photo_id,
-          photo_type,
-          convoy_id,
-          phase,
-          lat,
-          lng,
-          accuracy,
-          plate_number,
-          timestamp: new Date().toISOString(),
+  ): Promise<PhotoUpload> => {
+    const params = new URLSearchParams({
+      photo_type,
+      convoy_id,
+      phase,
+      plate_number,
+      lat: String(lat),
+      lng: String(lng),
+      accuracy: String(Math.round(accuracy)),
+    });
+    return axios
+      .post(`${BASE}/photos/upload?${params}`, file, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': file.type || 'image/jpeg',
         },
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
-      .then(r => r.data.data),
+      })
+      .then(r => ({ photo_id: r.data.photo_id, photo_type, r2_url: r.data.r2_url, phase }));
+  },
+
+  uploadHandoverForm: (
+    file: File,
+    convoy_id: string,
+    report_id: string,
+    token: string
+  ): Promise<{ r2_url: string }> => {
+    const params = new URLSearchParams({ convoy_id, report_id });
+    return axios
+      .post(`${BASE}/handover/upload?${params}`, file, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': file.type || 'application/octet-stream',
+        },
+      })
+      .then(r => ({ r2_url: r.data.r2_url }));
+  },
 };
