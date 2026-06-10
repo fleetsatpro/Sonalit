@@ -134,6 +134,69 @@ router.post('/login', async (req, res, next) => {
   }
 });
 
+// POST /photos/upload — accept binary, upload to R2 server-side (avoids browser CORS)
+router.post(
+  '/photos/upload',
+  jwtAuth,
+  require('express').raw({ type: ['image/*', 'application/octet-stream'], limit: '20mb' }),
+  async (req, res, next) => {
+    try {
+      const { photo_type, convoy_id, phase, plate_number, lat, lng, accuracy } = req.query;
+      if (!photo_type || typeof photo_type !== 'string')
+        return res.status(400).json({ error: 'photo_type is required' });
+      if (!convoy_id || typeof convoy_id !== 'string')
+        return res.status(400).json({ error: 'convoy_id is required' });
+      if (!phase || !['sod', 'eod'].includes(phase))
+        return res.status(400).json({ error: 'phase must be sod or eod' });
+      if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0)
+        return res.status(400).json({ error: 'Request body must be image binary data' });
+
+      const { R2_BUCKET, R2_PUBLIC_URL, R2_ACCOUNT_ID } = process.env;
+      if (!R2_BUCKET) return res.status(501).json({ error: 'Photo storage not configured on this server' });
+
+      let PutObjectCommand;
+      try {
+        ({ PutObjectCommand } = require('@aws-sdk/client-s3'));
+      } catch {
+        return res.status(501).json({ error: 'Photo storage SDK not installed' });
+      }
+
+      const s3 = getR2Client();
+      if (!s3) return res.status(501).json({ error: 'Photo storage credentials not configured' });
+
+      const photoId = uuidv4();
+      const key = `convoy-app/${convoy_id}/${phase}/${photo_type}_${photoId}.jpg`;
+      await s3.send(new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: key,
+        Body: req.body,
+        ContentType: 'image/jpeg',
+      }));
+
+      const r2Url = `${R2_PUBLIC_URL || `https://${R2_BUCKET}.${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`}/${key}`;
+
+      const result = await query(
+        `INSERT INTO photo_uploads
+           (id, org_id, convoy_id, cfo_id, phase, photo_type, r2_key, r2_url,
+            lat, lng, accuracy_m, plate_number, timestamp)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+         RETURNING id, r2_url`,
+        [
+          photoId, req.cfo.org_id, convoy_id, req.cfo.id, phase, photo_type, key, r2Url,
+          lat != null ? parseFloat(lat) : null,
+          lng != null ? parseFloat(lng) : null,
+          accuracy != null ? parseInt(accuracy) : null,
+          plate_number || null,
+        ]
+      );
+
+      return res.status(201).json({ photo_id: result.rows[0].id, r2_url: result.rows[0].r2_url });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 // POST /photos/upload-url — get presigned R2 PUT URL
 router.post('/photos/upload-url', jwtAuth, async (req, res, next) => {
   try {

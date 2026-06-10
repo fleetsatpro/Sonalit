@@ -91,14 +91,14 @@ export function SealRegisterScreen({ navigate, auth }: SealRegisterScreenProps) 
     const capturedSealId = activeSealId;
     setUploading(capturedSealId);
     try {
-      const urlRes = await uploadApi.getUploadUrl(
-        'cargo_seal', safeAuth.convoy.id, 'sod', seal.vehicle_plate, safeAuth.token,
+      const uploaded = await uploadApi.uploadPhoto(
+        file, 'cargo_seal', safeAuth.convoy.id, 'sod',
+        gps.lat, gps.lng, gps.accuracy, seal.vehicle_plate, safeAuth.token,
       );
-      await uploadApi.uploadToR2(urlRes.upload_url, file);
 
       await sealApi.submitVerification(
         capturedSealId, safeAuth.convoy.id, 'sod',
-        urlRes.photo_id, 'ok',
+        uploaded.photo_id, 'ok',
         gps.lat, gps.lng, safeAuth.token,
       );
       setSealStatuses(prev => ({ ...prev, [capturedSealId]: 'ok' }));
