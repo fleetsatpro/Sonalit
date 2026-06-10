@@ -143,7 +143,7 @@ export default function CfoConvoyForm(): React.ReactElement {
     formState: { errors, isDirty },
   } = useForm<ConvoyForm>({
     resolver: zodResolver(convoyFormSchema) as Resolver<ConvoyForm>,
-    defaultValues: { vehicle_ids: [] },
+    defaultValues: { vehicle_ids: [], cfo_ids: [] },
     ...(existing ? {
       values: {
         name: String(existing['name'] ?? ''),
