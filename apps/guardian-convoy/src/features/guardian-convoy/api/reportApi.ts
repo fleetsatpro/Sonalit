@@ -9,7 +9,10 @@ function headers(token: string) {
 
 export const reportApi = {
   login: (cfo_id: string, pin: string, convoy_id: string) =>
-    axios.post(`${BASE}/login`, { cfo_id, pin, convoy_id }).then(r => r.data),
+    axios.post(`${BASE}/login`, { cfo_id, pin, convoy_id }).then(r => {
+      if (!r.data.success) throw new Error(r.data.error || 'Authentication failed');
+      return r.data;
+    }),
 
   getReport: (convoy_id: string, token: string): Promise<ConvoyReport> =>
     axios
