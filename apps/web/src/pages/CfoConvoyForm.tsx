@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { useForm, Controller, type SubmitHandler, type Resolver } from 'react-hook-form';
+import { useForm, Controller, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useNavigate, useParams, Link } from '@tanstack/react-router';
@@ -143,7 +143,7 @@ export default function CfoConvoyForm(): React.ReactElement {
     formState: { errors, isDirty },
   } = useForm<ConvoyForm>({
     resolver: zodResolver(convoyFormSchema) as Resolver<ConvoyForm>,
-    defaultValues: { vehicle_ids: [] },
+    defaultValues: { vehicle_ids: [], cfo_ids: [] },
     ...(existing ? {
       values: {
         name: String(existing['name'] ?? ''),
@@ -157,6 +157,7 @@ export default function CfoConvoyForm(): React.ReactElement {
           ? String(existing['estimated_arrival']).slice(0, 16) : undefined,
         description: String(existing['description'] ?? ''),
         vehicle_ids: [],
+        cfo_ids: [],
       },
     } : {}),
   });
@@ -210,7 +211,8 @@ export default function CfoConvoyForm(): React.ReactElement {
     },
   });
 
-  const onSubmit: SubmitHandler<ConvoyForm> = (values) => mutation.mutate(values);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const onSubmit = (values: ConvoyForm) => mutation.mutate(values);
 
   if (isEdit && existingLoading) {
     return (

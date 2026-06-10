@@ -191,6 +191,9 @@ app.get("/metrics", async (req, res) => {
 try { app.use("/api/v1/guardian/cfo", require("./routes/guardianCfo")); logger.info("Route loaded: /api/v1/guardian/cfo"); }
 catch (e) { logger.warn("Guardian CFO route failed: " + e.message); }
 
+try { app.use("/api/v1/guardian/convoy", require("./routes/guardianConvoy")); logger.info("Route loaded: /api/v1/guardian/convoy"); }
+catch (err) { logger.error("Failed to load route /api/v1/guardian/convoy: " + err.message); }
+
 try { app.use("/api/v1/gdpr", require("./routes/gdpr")); logger.info("Route loaded: /api/v1/gdpr"); }
 catch (e) { logger.warn("GDPR route failed: " + e.message); }
 
