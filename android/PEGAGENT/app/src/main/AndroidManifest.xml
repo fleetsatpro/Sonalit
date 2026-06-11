@@ -52,6 +52,18 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:requestLegacyExternalStorage="true">
 
+        <!-- Disable Firebase auto-init — Firebase config (google-services.json)
+             is optional; without it the SDK must not try to initialize itself -->
+        <meta-data
+            android:name="firebase_messaging_auto_init_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="firebase_analytics_collection_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="firebase_crashlytics_collection_enabled"
+            android:value="false" />
+
         <!-- Main Activity -->
         <activity
             android:name=".ui.MainActivity"
