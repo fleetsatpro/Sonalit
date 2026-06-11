@@ -56,6 +56,18 @@ export interface DailyReportMeta {
   generation_error?: string;
 }
 
+export interface CfoUpload {
+  id: string;
+  photo_type: string;
+  photo_url: string;
+  session: 'sod' | 'eod';
+  plate_number: string;
+  lat?: number;
+  lng?: number;
+  taken_at: string;
+  cfo_name?: string;
+}
+
 export interface ReportDetail {
   convoy: {
     id: string;
@@ -70,6 +82,7 @@ export interface ReportDetail {
   daily_report: DailyReportMeta | null;
   trucks: TruckRecord[];
   waypoints: WaypointRecord[];
+  cfo_uploads?: CfoUpload[];
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -184,6 +197,55 @@ function TruckBlock({ truck, session }: { truck: TruckRecord; session: 'sod' | '
         </div>
       </div>
     </div>
+  );
+}
+
+const CFO_PHOTO_LABELS: Record<string, string> = {
+  vehicle_front: 'Vehicle Front', cargo_seal: 'Cargo Seal', cargo_interior: 'Cargo Interior',
+  cfo_identity: 'CFO Identity', tyres_under: 'Tyres & Under', vehicle_arrival: 'Vehicle Arrival',
+  seals_eod: 'Seals EOD', offload_docs: 'Offload Docs', delivery_point: 'Delivery Point',
+  receiver_signature: 'Receiver Signature', handover_form: 'Handover Form',
+};
+
+function CfoUploadsSection({ uploads }: { uploads: CfoUpload[] }) {
+  const bySession = { sod: uploads.filter(u => u.session === 'sod'), eod: uploads.filter(u => u.session === 'eod') };
+  return (
+    <>
+      {(['sod', 'eod'] as const).map(phase => {
+        const photos = bySession[phase];
+        if (!photos.length) return null;
+        return (
+          <div key={phase} style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#6b7280', letterSpacing: '0.1em',
+              textTransform: 'uppercase', fontFamily: 'JetBrains Mono, monospace', marginBottom: 10 }}>
+              {phase === 'sod' ? 'Start of Day' : 'End of Day'}
+              {photos[0]?.cfo_name && <span style={{ fontWeight: 400, marginLeft: 8 }}>— {photos[0].cfo_name}</span>}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+              {photos.map(p => (
+                <div key={p.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <a href={p.photo_url} target="_blank" rel="noopener noreferrer"
+                    style={{ display: 'block', aspectRatio: '4/3', background: '#f3f4f6',
+                      borderRadius: 4, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+                    <img src={p.photo_url} alt={p.photo_type}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </a>
+                  <span style={{ fontSize: 8, color: '#6b7280', textTransform: 'uppercase',
+                    letterSpacing: '0.05em', fontFamily: 'JetBrains Mono, monospace' }}>
+                    {CFO_PHOTO_LABELS[p.photo_type] ?? p.photo_type}
+                  </span>
+                  {p.lat && p.lng && (
+                    <span style={{ fontSize: 7, color: '#9ca3af', fontFamily: 'JetBrains Mono, monospace' }}>
+                      {p.lat.toFixed(4)}, {p.lng.toFixed(4)}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </>
   );
 }
 
@@ -356,15 +418,26 @@ export default function ReportDoc({
         </Section>
       )}
 
-      {/* C — SOD */}
-      <Section label="C — Start of Day (SOD)">
-        {detail.trucks.map(t => <TruckBlock key={t.id} truck={t} session="sod" />)}
-      </Section>
+      {/* C — CFO App Photos (Guardian Convoy app) */}
+      {detail.cfo_uploads && detail.cfo_uploads.length > 0 && (
+        <Section label="C — CFO App Photos">
+          <CfoUploadsSection uploads={detail.cfo_uploads} />
+        </Section>
+      )}
 
-      {/* D — EOD */}
-      <Section label="D — End of Day (EOD)">
-        {detail.trucks.map(t => <TruckBlock key={t.id} truck={t} session="eod" />)}
-      </Section>
+      {/* D — SOD (legacy device photos) */}
+      {detail.trucks.some(t => t.photos.some(p => p.session === 'sod')) && (
+        <Section label="D — Start of Day (SOD)">
+          {detail.trucks.map(t => <TruckBlock key={t.id} truck={t} session="sod" />)}
+        </Section>
+      )}
+
+      {/* E — EOD (legacy device photos) */}
+      {detail.trucks.some(t => t.photos.some(p => p.session === 'eod')) && (
+        <Section label="E — End of Day (EOD)">
+          {detail.trucks.map(t => <TruckBlock key={t.id} truck={t} session="eod" />)}
+        </Section>
+      )}
 
       {/* E — Summary */}
       <Section label="E — Summary & Certification">

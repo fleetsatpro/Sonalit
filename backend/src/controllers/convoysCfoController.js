@@ -574,14 +574,15 @@ const getConvoyReportsOverview = asyncHandler(async (req, res) => {
             (SELECT COUNT(*) FROM convoy_trucks ct WHERE ct.convoy_id = c.id)::int AS truck_count,
             (SELECT COUNT(*) FROM convoy_cfos cc WHERE cc.convoy_id = c.id)::int AS cfo_count
      FROM convoys c
-     WHERE c.org_id = $1 AND c.deleted_at IS NULL AND c.status IN ('planned','active','completed')
+     WHERE c.org_id = $1 AND c.deleted_at IS NULL
+       AND c.status IN ('planned','active','completing','completed')
      ORDER BY (c.status = 'active') DESC, c.start_date DESC LIMIT 200`,
     [orgId]
   );
   if (!convoysRes.rows.length) return res.json({ data: [] });
 
   const convoyIds = convoysRes.rows.map(c => c.id);
-  const [latestReports, mismatchCounts] = await Promise.all([
+  const [latestReports, mismatchCounts, cfoAppReports] = await Promise.all([
     query(
       `SELECT DISTINCT ON (convoy_id) convoy_id, report_date, status,
               required_photo_count, received_photo_count, pdf_url, generated_at, generation_error
@@ -595,27 +596,42 @@ const getConvoyReportsOverview = asyncHandler(async (req, res) => {
        GROUP BY convoy_id, report_date`,
       [convoyIds]
     ),
+    // Guardian Convoy app reports (newer system using convoy_reports + photo_uploads)
+    query(
+      `SELECT DISTINCT ON (cr.convoy_id)
+              cr.convoy_id, cr.date AS report_date, cr.status,
+              (SELECT COUNT(*)::int FROM photo_uploads pu
+               WHERE pu.convoy_id = cr.convoy_id AND pu.timestamp::date = cr.date) AS received_photo_count,
+              10 AS required_photo_count
+       FROM convoy_reports cr
+       WHERE cr.convoy_id = ANY($1::text[])
+       ORDER BY cr.convoy_id, cr.date DESC`,
+      [convoyIds]
+    ),
   ]);
 
-  const reportMap = new Map(latestReports.rows.map(r => [r.convoy_id, r]));
+  const reportMap = new Map(latestReports.rows.map(r => [String(r.convoy_id), r]));
+  const cfoReportMap = new Map(cfoAppReports.rows.map(r => [String(r.convoy_id), r]));
   const mismatchMap = new Map(
     mismatchCounts.rows.map(m => [`${m.convoy_id}:${String(m.report_date).slice(0, 10)}`, m.mismatch_count])
   );
 
   const data = convoysRes.rows.map(c => {
-    const report = reportMap.get(c.id);
-    const rDate = report ? String(report.report_date).slice(0, 10) : null;
+    const report = reportMap.get(String(c.id)) ?? null;
+    const cfoReport = cfoReportMap.get(String(c.id)) ?? null;
+    const effective = report ?? cfoReport;
+    const rDate = effective ? String(effective.report_date).slice(0, 10) : null;
     return {
       ...c,
-      latest_report: report ? {
+      latest_report: effective ? {
         report_date: rDate,
-        status: report.status,
-        required_photo_count: report.required_photo_count,
-        received_photo_count: report.received_photo_count,
-        pdf_url: report.pdf_url,
-        generated_at: report.generated_at,
-        generation_error: report.generation_error,
-        location_mismatch_count: mismatchMap.get(`${c.id}:${rDate}`) ?? 0,
+        status: effective.status,
+        required_photo_count: effective.required_photo_count,
+        received_photo_count: effective.received_photo_count,
+        pdf_url: report?.pdf_url ?? null,
+        generated_at: report?.generated_at ?? null,
+        generation_error: report?.generation_error ?? null,
+        location_mismatch_count: rDate ? (mismatchMap.get(`${c.id}:${rDate}`) ?? 0) : 0,
       } : null,
     };
   });
@@ -640,7 +656,7 @@ async function getConvoyReportDetail(req, res, next) {
     );
     if (!convoyRes.rows.length) return res.status(404).json({ error: 'Convoy not found' });
 
-    const [trucksRes, photosRes, sealsRes, waypointsRes, reportRes] = await Promise.all([
+    const [trucksRes, photosRes, sealsRes, waypointsRes, reportRes, cfoUploadsRes, cfoReportRes] = await Promise.all([
       query(
         `SELECT ct.id, ct.plate_number, ct.make, ct.model, ct.position,
                 u.name AS cfo_name, u.id AS cfo_user_id
@@ -683,6 +699,26 @@ async function getConvoyReportDetail(req, res, next) {
          WHERE convoy_id = $1 AND report_date = $2`,
         [id, date]
       ),
+      // Guardian Convoy app photos
+      query(
+        `SELECT pu.photo_id AS id, pu.photo_type, pu.r2_url AS photo_url,
+                pu.phase AS session, pu.plate_number, pu.lat, pu.lng,
+                pu.timestamp AS taken_at, u.name AS cfo_name
+         FROM photo_uploads pu
+         LEFT JOIN users u ON u.id = pu.cfo_id
+         WHERE pu.convoy_id = $1 AND pu.timestamp::date = $2::date
+         ORDER BY pu.timestamp`,
+        [id, date]
+      ),
+      // Guardian Convoy app report status
+      query(
+        `SELECT cr.status, cr.sod_submitted_at, cr.eod_submitted_at, cr.handover_form_url,
+                u.name AS cfo_name
+         FROM convoy_reports cr
+         LEFT JOIN users u ON u.id = cr.cfo_id
+         WHERE cr.convoy_id = $1 AND cr.date = $2::date`,
+        [id, date]
+      ),
     ]);
 
     const photosByTruck = {};
@@ -694,17 +730,32 @@ async function getConvoyReportDetail(req, res, next) {
       (sealsByTruck[s.convoy_truck_id] = sealsByTruck[s.convoy_truck_id] || []).push(s);
     }
 
+    // Synthesize daily_report from CFO app data when no PDF report exists yet
+    let dailyReport = reportRes.rows[0] || null;
+    if (!dailyReport && cfoReportRes.rows.length) {
+      const cr = cfoReportRes.rows[0];
+      dailyReport = {
+        status: cr.status,
+        received_photo_count: cfoUploadsRes.rows.length,
+        required_photo_count: 10,
+        generated_at: null,
+        pdf_url: null,
+        generation_error: null,
+      };
+    }
+
     res.json({
       data: {
         convoy: convoyRes.rows[0],
         report_date: date,
-        daily_report: reportRes.rows[0] || null,
+        daily_report: dailyReport,
         trucks: trucksRes.rows.map(t => ({
           ...t,
           photos: photosByTruck[t.id] || [],
           seals: sealsByTruck[t.id] || [],
         })),
         waypoints: waypointsRes.rows,
+        cfo_uploads: cfoUploadsRes.rows,
       },
     });
   } catch (err) {
