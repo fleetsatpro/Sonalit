@@ -48,7 +48,7 @@ jobs:
           fi
 
       - name: Write keystore
-        working-directory: android/PEGAGENT
+        working-directory: android/PEGAGENT/app
         env:
           KEYSTORE_B64: ${{ secrets.PEGAGENT_KEYSTORE_BASE64 }}
         run: |
