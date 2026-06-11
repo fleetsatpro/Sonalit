@@ -76,3 +76,38 @@ export interface PhotoUpload {
   photo_type: PhotoType;
   phase: Phase;
 }
+
+export interface DayPlanWaypoint {
+  id: string;
+  seq: number;
+  label: string;
+  lat: number;
+  lng: number;
+  radius_m: number;
+  reached_at: string | null;
+  reached_lat: number | null;
+  reached_lng: number | null;
+}
+
+export interface DayPlan {
+  id: string;
+  convoy_id: string;
+  cfo_id: string;
+  date: string;
+  start_label: string | null;
+  start_lat: number | null;
+  start_lng: number | null;
+  night_park_label: string;
+  night_park_lat: number | null;
+  night_park_lng: number | null;
+  modified_at: string | null;
+  modified_reason: string | null;
+  waypoints: DayPlanWaypoint[];
+}
+
+export interface NewWaypoint {
+  label: string;
+  lat: number;
+  lng: number;
+  radius_m?: number;
+}

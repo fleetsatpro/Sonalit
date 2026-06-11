@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { reportApi } from '../api/reportApi';
+import { dayPlanApi } from '../api/dayPlanApi';
 import { useGPSStamp } from '../hooks/useGPSStamp';
-import type { AuthState, ConvoyReport } from '../types/ConvoyReport';
+import type { AuthState, ConvoyReport, DayPlan } from '../types/ConvoyReport';
 
 const T = {
   void: '#060a08', deep: '#0c1410', surface: '#111d16',
@@ -73,6 +74,7 @@ function GPSBlock({ gps, loading, error }: { gps: any; loading: boolean; error: 
 
 export function HomeScreen({ navigate, auth }: HomeScreenProps) {
   const [report, setReport]   = useState<ConvoyReport | null>(null);
+  const [dayPlan, setDayPlan] = useState<DayPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const { gps, loading: gpsLoading, error: gpsError } = useGPSStamp();
 
@@ -82,11 +84,25 @@ export function HomeScreen({ navigate, auth }: HomeScreenProps) {
       .then(setReport)
       .catch(() => setReport(null))
       .finally(() => setLoading(false));
+    dayPlanApi.getToday(auth.convoy.id, auth.token)
+      .then(setDayPlan)
+      .catch(() => {});
   }, [auth]);
 
   if (!auth) return null;
 
+  const reachedWaypoints = dayPlan?.waypoints.filter(w => w.reached_at).length ?? 0;
+
   const checklist: ChecklistItem[] = [
+    {
+      key: 'dayplan',
+      label: 'DAY PLAN SET',
+      sub: dayPlan
+        ? `Night park: ${dayPlan.night_park_label}${dayPlan.waypoints.length ? ` · ${reachedWaypoints}/${dayPlan.waypoints.length} waypoints` : ''}`
+        : 'Set start, night park & waypoints',
+      done: !!dayPlan,
+      screen: 'dayplan',
+    },
     {
       key: 'sod',
       label: 'START-OF-DAY UPLOAD',
@@ -126,7 +142,7 @@ export function HomeScreen({ navigate, auth }: HomeScreenProps) {
   ];
 
   const completedCount = checklist.filter(c => c.done).length;
-  const progress = Math.round((completedCount / 5) * 100);
+  const progress = Math.round((completedCount / checklist.length) * 100);
 
   const statusLabel = loading ? 'LOADING…'
     : report?.status === 'eod_complete' ? 'COMPLETE'

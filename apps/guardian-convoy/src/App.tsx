@@ -7,8 +7,10 @@ import { EODUploadScreen } from './features/guardian-convoy/screens/EODUploadScr
 import { SealRegisterScreen } from './features/guardian-convoy/screens/SealRegisterScreen';
 import { SOSScreen } from './features/guardian-convoy/screens/SOSScreen';
 import { HistoryScreen } from './features/guardian-convoy/screens/HistoryScreen';
+import { DayPlanScreen } from './features/guardian-convoy/screens/DayPlanScreen';
+import { WaypointPrompt } from './features/guardian-convoy/components/WaypointPrompt';
 
-export type ScreenName = 'login' | 'home' | 'sod' | 'eod' | 'seals' | 'sos' | 'history';
+export type ScreenName = 'login' | 'home' | 'sod' | 'eod' | 'seals' | 'sos' | 'history' | 'dayplan';
 
 export default function App() {
   const [screen, setScreen] = useState<ScreenName>('login');
@@ -46,6 +48,8 @@ export default function App() {
         return <SOSScreen {...sharedProps} />;
       case 'history':
         return <HistoryScreen {...sharedProps} />;
+      case 'dayplan':
+        return <DayPlanScreen {...sharedProps} />;
       default:
         return <HomeScreen {...sharedProps} />;
     }
@@ -54,6 +58,7 @@ export default function App() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#060a08' }}>
       {renderScreen()}
+      {auth && screen !== 'login' && <WaypointPrompt auth={auth} />}
     </div>
   );
 }
