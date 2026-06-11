@@ -16,6 +16,8 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 
@@ -29,6 +31,15 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvStatus, tvBadge, tvOrgId, tvDeviceId, tvLog;
     private Button btnSos, btnEnroll;
     private LinearLayout enrollLayout, mainLayout;
+
+    private final ActivityResultLauncher<Intent> qrLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(),
+            result -> {
+                if (result.getResultCode() == RESULT_OK) {
+                    refreshStatus();
+                    restartCommandService();
+                }
+            });
 
     private final BroadcastReceiver forceCheckinReceiver = new BroadcastReceiver() {
         @Override
@@ -119,6 +130,28 @@ public class MainActivity extends AppCompatActivity {
         enrollTitle.setTextSize(14f);
         enrollTitle.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         enrollLayout.addView(enrollTitle);
+
+        // QR scan button — primary enrollment path
+        Button btnScanQr = new Button(this);
+        btnScanQr.setText("⬛ SCAN QR CODE");
+        btnScanQr.setBackgroundColor(Color.parseColor("#1d4ed8"));
+        btnScanQr.setTextColor(Color.WHITE);
+        btnScanQr.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        btnScanQr.setPadding(0, 24, 0, 24);
+        LinearLayout.LayoutParams qrParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        qrParams.setMargins(0, 16, 0, 8);
+        btnScanQr.setLayoutParams(qrParams);
+        btnScanQr.setOnClickListener(v ->
+                qrLauncher.launch(new Intent(this, ScanQrActivity.class)));
+        enrollLayout.addView(btnScanQr);
+
+        TextView orLabel = new TextView(this);
+        orLabel.setText("— or enter manually —");
+        orLabel.setTextColor(Color.parseColor("#6b7280"));
+        orLabel.setTextSize(10f);
+        orLabel.setPadding(0, 8, 0, 4);
+        enrollLayout.addView(orLabel);
 
         EditText etServer = makeInput("Server URL (e.g. https://api.sonalit.com)");
         EditText etOrg    = makeInput("Organization ID");
