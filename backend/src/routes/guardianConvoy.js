@@ -574,3 +574,4 @@ router.get('/history', jwtAuth, async (req, res, next) => {
 });
 
 module.exports = router;
+module.exports.jwtAuth = jwtAuth;

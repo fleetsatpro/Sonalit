@@ -114,6 +114,7 @@ export function EODUploadScreen({ navigate, auth }: EODUploadScreenProps) {
     reportApi.getReport(safeAuth.convoy.id, safeAuth.token).then(r => {
       setReport(r);
       if (r.handover_form_url) setHandoverUrl(r.handover_form_url);
+      if (r.arrival_at) setArrivalConfirmed(true);
     }).catch(() => {});
   }, [safeAuth.convoy.id, safeAuth.token]);
 
