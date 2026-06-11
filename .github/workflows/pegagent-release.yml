@@ -70,7 +70,7 @@ jobs:
       - name: Build release APK
         working-directory: android/PEGAGENT
         env:
-          KEYSTORE_PATH: pegagent-release.keystore
+          KEYSTORE_PATH: ${{ github.workspace }}/android/PEGAGENT/app/pegagent-release.keystore
           KEYSTORE_PASSWORD: ${{ secrets.PEGAGENT_KEYSTORE_PASSWORD }}
           KEY_ALIAS: pegagent
           KEY_PASSWORD: ${{ secrets.PEGAGENT_KEY_PASSWORD }}
@@ -80,11 +80,7 @@ jobs:
             -x lintVitalAnalyzeRelease \
             -x lintVitalReportRelease \
             -x generateReleaseLintVitalReportModel \
-            --no-daemon \
-            -Pandroid.injected.signing.store.file=$KEYSTORE_PATH \
-            -Pandroid.injected.signing.store.password=$KEYSTORE_PASSWORD \
-            -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
-            -Pandroid.injected.signing.key.password=$KEY_PASSWORD
+            --no-daemon
 
       - name: Rename APK
         run: |
