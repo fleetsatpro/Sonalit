@@ -344,8 +344,9 @@ describe('Daily reports', () => {
 
   test('POST /:id/reports/:date/regenerate returns 404 when no report row exists', async () => {
     mockQuery
-      .mockResolvedValueOnce({ rows: [{ id: CID }] })
-      .mockResolvedValueOnce({ rows: [] });
+      .mockResolvedValueOnce({ rows: [{ id: CID }] })   // convoy check
+      .mockResolvedValueOnce({ rows: [] })                // no report row
+      .mockResolvedValueOnce({ rows: [{ n: 0 }] });      // cfoCount = 0 → 404
     const res = await request(app)
       .post(`/api/v1/convoys/${CID}/reports/${DATE}/regenerate`);
     expect(res.status).toBe(404);
