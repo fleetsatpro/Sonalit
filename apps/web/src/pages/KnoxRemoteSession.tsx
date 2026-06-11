@@ -14,9 +14,12 @@ interface Telemetry { battery_pct?: number; signal_pct?: number; gps_locked?: bo
 interface SessionLog { type: string; label: string; ts: string; }
 interface Recording { started_at: string; duration_secs?: number; presigned_url?: string; }
 
-const TURN_CONFIG = {
-  iceServers: [{ urls: (import.meta.env['VITE_TURN_URL'] as string) || 'stun:stun.l.google.com:19302', username: import.meta.env['VITE_TURN_USERNAME'] as string | undefined, credential: import.meta.env['VITE_TURN_CREDENTIAL'] as string | undefined }],
+const TURN_SERVER: RTCIceServer = {
+  urls: (import.meta.env['VITE_TURN_URL'] as string | undefined) ?? 'stun:stun.l.google.com:19302',
+  ...(import.meta.env['VITE_TURN_USERNAME'] ? { username: import.meta.env['VITE_TURN_USERNAME'] as string } : {}),
+  ...(import.meta.env['VITE_TURN_CREDENTIAL'] ? { credential: import.meta.env['VITE_TURN_CREDENTIAL'] as string } : {}),
 };
+const TURN_CONFIG: RTCConfiguration = { iceServers: [TURN_SERVER] };
 
 export default function KnoxRemoteSession() {
   const navigate = useNavigate();
