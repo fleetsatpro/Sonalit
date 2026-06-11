@@ -674,7 +674,7 @@ async function getConvoyReportDetail(req, res, next) {
     );
     if (!convoyRes.rows.length) return res.status(404).json({ error: 'Convoy not found' });
 
-    const [trucksRes, photosRes, sealsRes, waypointsRes, reportRes, cfoUploadsRes, cfoReportRes] = await Promise.all([
+    const [trucksRes, photosRes, sealsRes, waypointsRes, reportRes] = await Promise.all([
       query(
         `SELECT ct.id, ct.plate_number, ct.make, ct.model, ct.position,
                 u.name AS cfo_name, u.id AS cfo_user_id
@@ -717,27 +717,44 @@ async function getConvoyReportDetail(req, res, next) {
          WHERE convoy_id = $1 AND report_date = $2`,
         [id, date]
       ),
-      // Guardian Convoy app photos
-      query(
-        `SELECT pu.id, pu.photo_type, pu.r2_url AS photo_url,
-                pu.phase AS session, pu.plate_number, pu.lat, pu.lng,
-                pu.timestamp AS taken_at, u.name AS cfo_name
-         FROM photo_uploads pu
-         LEFT JOIN users u ON u.id::text = pu.cfo_id
-         WHERE pu.convoy_id = $1::text AND pu.timestamp::date = $2::date
-         ORDER BY pu.timestamp`,
-        [id, date]
-      ),
-      // Guardian Convoy app report status
-      query(
-        `SELECT cr.status, cr.sod_submitted_at, cr.eod_submitted_at, cr.handover_form_url,
-                u.name AS cfo_name
-         FROM convoy_reports cr
-         LEFT JOIN users u ON u.id::text = cr.cfo_id
-         WHERE cr.convoy_id = $1::text AND cr.date = $2::date`,
-        [id, date]
-      ),
     ]);
+
+    // CFO-app tables use FORCE RLS — run separately so any failure degrades
+    // gracefully to empty arrays rather than 500ing the whole endpoint
+    const { withOrg } = require('../utils/orgScopedDb');
+    const orgId = req.user?.org_id;
+    let cfoUploadsRows = [], cfoReportRows = [];
+    if (orgId) {
+      try {
+        [cfoUploadsRows, cfoReportRows] = await withOrg(orgId, async (client) => {
+          const [u, r] = await Promise.all([
+            client.query(
+              `SELECT pu.id, pu.photo_type, pu.r2_url AS photo_url,
+                      pu.phase AS session, pu.plate_number, pu.lat, pu.lng,
+                      pu.timestamp AS taken_at, u.name AS cfo_name
+               FROM photo_uploads pu
+               LEFT JOIN users u ON u.id::text = pu.cfo_id
+               WHERE pu.convoy_id = $1::text AND pu.timestamp::date = $2::date
+               ORDER BY pu.timestamp`,
+              [id, date]
+            ),
+            client.query(
+              `SELECT cr.status, cr.sod_submitted_at, cr.eod_submitted_at, cr.handover_form_url,
+                      u.name AS cfo_name
+               FROM convoy_reports cr
+               LEFT JOIN users u ON u.id::text = cr.cfo_id
+               WHERE cr.convoy_id = $1::text AND cr.date = $2::date`,
+              [id, date]
+            ),
+          ]);
+          return [u.rows, r.rows];
+        });
+      } catch (cfoErr) {
+        logger.error(`getConvoyReportDetail: CFO-app queries failed (non-fatal): ${cfoErr.message}`);
+      }
+    }
+    const cfoUploadsRes = { rows: cfoUploadsRows };
+    const cfoReportRes = { rows: cfoReportRows };
 
     const photosByTruck = {};
     for (const p of photosRes.rows) {
