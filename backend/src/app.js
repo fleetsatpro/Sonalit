@@ -205,6 +205,12 @@ catch (e) { logger.warn("GDPR route failed: " + e.message); }
   catch (e) { logger.warn("Route not found: " + r + " — " + e.message); }
 });
 
+try { app.use("/api/v1/guardian", require("./routes/guardian-ops")); logger.info("Route loaded: guardian-ops"); }
+catch (e) { logger.warn("guardian-ops route failed: " + e.message); }
+
+try { app.use("/api/v1/guardian", require("./routes/guardian-knox")); logger.info("Route loaded: guardian-knox"); }
+catch (e) { logger.warn("guardian-knox route failed: " + e.message); }
+
 try { app.use("/api/v1/risk", require("./routes/risk")); logger.info("Route loaded: /api/v1/risk"); }
 catch (e) { logger.warn("Risk route failed: " + e.message); }
 
@@ -398,6 +404,11 @@ if (process.env.ENABLE_INPROCESS_WORKERS === "true" && process.env.REDIS_URL && 
     const { startNotificationWorker } = require("./workers/notificationWorker");
     const { startConvoyReportWorker } = require("./workers/convoyReportWorker");
     const workers = [startGPSWorker(), startAlertWorker(), startNotificationWorker(), ...startConvoyReportWorker()];
+    try {
+      const { startGuardianWorkers } = require("./workers/worker.guardian");
+      const guardianWorkers = startGuardianWorkers();
+      workers.push(...guardianWorkers);
+    } catch(e) { logger.warn("Guardian workers not started: " + e.message); }
     global._workers = workers;
     logger.info(`Workers started in-process: ${workers.length} active`);
   } catch (e) {

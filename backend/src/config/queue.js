@@ -8,6 +8,8 @@ let alertQueue = null;
 let notificationQueue = null;
 let convoyReportQueue = null;
 let convoyArchiveQueue = null;
+let deviceQueue = null;
+let knoxQueue = null;
 
 function getConnection() {
   const redis = getRedis();
@@ -51,11 +53,23 @@ function createQueues() {
     { repeat: { every: 15 * 60 * 1000 }, jobId: 'scheduledRecount', removeOnComplete: true, removeOnFail: false }
   ).catch((err) => logger.warn(`scheduledRecount repeat registration failed: ${err.message}`));
 
-  logger.info('BullMQ queues initialised: gps, alert, notification, convoyReport, convoyArchive');
+  deviceQueue = new Queue('device', { connection, defaultJobOptions });
+  deviceQueue.on('error', onQueueError('device'));
+  knoxQueue = new Queue('knox', { connection, defaultJobOptions });
+  knoxQueue.on('error', onQueueError('knox'));
+
+  // Repeatable job: heartbeat check every 2 minutes
+  deviceQueue.add('device:heartbeat_check', {}, {
+    repeat: { every: 2 * 60 * 1000 },
+    jobId: 'device:heartbeat_check',
+    removeOnComplete: true,
+  }).catch(err => logger.warn(`heartbeat_check repeat failed: ${err.message}`));
+
+  logger.info('BullMQ queues initialised: gps, alert, notification, convoyReport, convoyArchive, device, knox');
 }
 
 function getQueues() {
-  return { gpsQueue, alertQueue, notificationQueue, convoyReportQueue, convoyArchiveQueue };
+  return { gpsQueue, alertQueue, notificationQueue, convoyReportQueue, convoyArchiveQueue, deviceQueue, knoxQueue };
 }
 
 module.exports = { createQueues, getQueues };

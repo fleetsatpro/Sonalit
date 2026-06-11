@@ -47,8 +47,10 @@ const DriversPage    = lazyWithReload(() => import('./pages/DriversPage'));
 const FinancePage    = lazyWithReload(() => import('./pages/FinancePage'));
 const MaintenancePage= lazyWithReload(() => import('./pages/MaintenancePage'));
 const GeofencesPage     = lazyWithReload(() => import('./pages/GeofencesPage'));
-const GuardianPage      = lazyWithReload(() => import('./pages/GuardianPage'));
-const PanicCenterPage   = lazyWithReload(() => import('./pages/PanicCenterPage'));
+const GuardianPage            = lazyWithReload(() => import('./pages/GuardianPage')); // kept for backwards compat
+const GuardianManagementPage  = lazyWithReload(() => import('./pages/GuardianManagementPage'));
+const KnoxRemoteSessionPage   = lazyWithReload(() => import('./pages/KnoxRemoteSessionPage'));
+const PanicCenterPage         = lazyWithReload(() => import('./pages/PanicCenterPage'));
 const IncidentCenterPage= lazyWithReload(() => import('./pages/IncidentCenterPage'));
 const ExecutivePage      = lazyWithReload(() => import('./pages/ExecutivePage'));
 const RiskIntelPage      = lazyWithReload(() => import('./pages/RiskIntelPage'));
@@ -154,14 +156,16 @@ export default function App() {
         <Route path="/messages"    element={<RequireAuth><MessagesPage /></RequireAuth>} />
         <Route path="/settings"    element={<RequireAuth><SettingsPage /></RequireAuth>} />
         <Route path="/geofences"      element={<RequireAuth><GeofencesPage /></RequireAuth>} />
-        <Route path="/guardian"       element={<RequireAuth><GuardianPage /></RequireAuth>} />
+        <Route path="/guardian"       element={<RequireAuth><GuardianManagementPage /></RequireAuth>} />
         <Route path="/panic-center"   element={<RequireAuth><PanicCenterPage /></RequireAuth>} />
         <Route path="/incident-center"element={<RequireAuth><IncidentCenterPage /></RequireAuth>} />
         <Route path="/executive"    element={<RequireAuth><ExecutivePage /></RequireAuth>} />
         <Route path="/risk-intel"   element={<RequireAuth><RiskIntelPage /></RequireAuth>} />
         <Route path="/ai-decisions" element={<RequireAuth><AIDecisionPage /></RequireAuth>} />
         <Route path="/copilot"         element={<RequireAuth><CopilotPage /></RequireAuth>} />
-        <Route path="/field-officers" element={<RequireAuth><FieldOfficersPage /></RequireAuth>} />
+        <Route path="/field-officers"                         element={<RequireAuth><FieldOfficersPage /></RequireAuth>} />
+        <Route path="/field-officers/:officerId"             element={<RequireAuth><FieldOfficersPage /></RequireAuth>} />
+        <Route path="/guardian/devices/:deviceId/remote"     element={<RequireAuth><KnoxRemoteSessionPage /></RequireAuth>} />
         <Route path="*"               element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
