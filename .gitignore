@@ -101,6 +101,11 @@ temp/
 # Legacy backend
 backend/.env
 
+# Legacy JS duplicates of .ts/.tsx source files — Vite cannot parse JSX in .js files
+apps/web/src/**/*.js
+apps/web/tests/**/*.spec.js
+packages/contracts/src/**/*.js
+
 # Accidental package-name directories (e.g. fleetops-backend@1.0.0, frontend/foo@2.1.0)
 /*@[0-9]*.[0-9]*.[0-9]*/
 /*/*@[0-9]*.[0-9]*.[0-9]*/
