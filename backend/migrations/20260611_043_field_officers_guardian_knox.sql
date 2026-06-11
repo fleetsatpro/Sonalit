@@ -188,24 +188,35 @@ BEGIN
 END $$;
 
 -- ============================================================
--- 7. CREATE TABLE device_commands (idempotent)
+-- 7. ALTER device_commands — add columns missing from base schema
+--    (table already exists from 20260521_000_base_schema.sql)
 -- ============================================================
 
-CREATE TABLE IF NOT EXISTS device_commands (
-  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id     UUID NOT NULL,
-  device_id  UUID NOT NULL REFERENCES guardian_devices(id) ON DELETE CASCADE,
-  command    TEXT NOT NULL,
-  status     TEXT NOT NULL DEFAULT 'pending'
-             CHECK (status IN ('pending', 'sent', 'executed', 'expired', 'failed', 'cancelled')),
-  payload    JSONB NOT NULL DEFAULT '{}',
-  ttl_hours  INTEGER NOT NULL DEFAULT 6,
-  issued_by  UUID REFERENCES users(id) ON DELETE SET NULL,
-  expires_at TIMESTAMPTZ,
-  acked_at   TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+ALTER TABLE device_commands
+  ADD COLUMN IF NOT EXISTS org_id     UUID,
+  ADD COLUMN IF NOT EXISTS command    TEXT,
+  ADD COLUMN IF NOT EXISTS ttl_hours  INTEGER NOT NULL DEFAULT 6,
+  ADD COLUMN IF NOT EXISTS payload    JSONB NOT NULL DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS acked_at   TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+-- Extend status check to cover full lifecycle (drop old constraint first if present)
+DO $$
+DECLARE r RECORD;
+BEGIN
+  FOR r IN
+    SELECT conname FROM pg_constraint
+    WHERE conrelid = 'device_commands'::regclass AND contype = 'c'
+      AND pg_get_constraintdef(oid) LIKE '%status%'
+  LOOP
+    EXECUTE format('ALTER TABLE device_commands DROP CONSTRAINT IF EXISTS %I', r.conname);
+  END LOOP;
+END $$;
+
+ALTER TABLE device_commands
+  ADD CONSTRAINT device_commands_status_check
+  CHECK (status IN ('pending', 'sent', 'executed', 'expired', 'failed', 'cancelled'));
 
 CREATE INDEX IF NOT EXISTS idx_dc_device_status ON device_commands(device_id, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_dc_org            ON device_commands(org_id, created_at DESC);
