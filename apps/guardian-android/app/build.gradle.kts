@@ -134,9 +134,6 @@ dependencies {
     // Accompanist
     implementation(libs.accompanist.permissions)
 
-    // Centrifugo
-    implementation(libs.centrifugo.client)
-
     // Security
     implementation(libs.encrypted.prefs)
 
