@@ -15,7 +15,6 @@ play-integrity = "1.4.0"
 camerax = "1.4.1"
 coil = "2.7.0"
 accompanist = "0.36.0"
-centrifugo = "0.2.0"
 nav-compose = "2.8.5"
 lifecycle = "2.8.7"
 activity-compose = "1.9.3"
@@ -82,9 +81,6 @@ coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coi
 
 # Accompanist
 accompanist-permissions = { group = "com.google.accompanist", name = "accompanist-permissions", version.ref = "accompanist" }
-
-# Centrifugo
-centrifugo-client = { group = "io.github.centrifugal", name = "centrifuge-android", version.ref = "centrifugo" }
 
 # Security
 encrypted-prefs = { group = "androidx.security", name = "security-crypto", version.ref = "encrypted-prefs" }
