@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { MapPin, ChevronRight } from 'lucide-react';
+import type { CSSProperties } from 'react';
+import { MapPin, ChevronRight, X } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { subscribe } from '../lib/centrifuge.js';
 import { useAuthStore } from '../stores/auth.js';
@@ -17,7 +18,7 @@ const STATUS_ORDER: Record<string, number> = { sos: 0, on_mission: 1, available:
 
 interface FieldOfficer {
   id: string; name: string; badge_number?: string; badge?: string; phone?: string;
-  zone?: string; route?: string; rank?: string; status: string;
+  zone?: string; assigned_zone?: string; route?: string; rank?: string; status: string;
   gps_lat?: number; gps_lng?: number; gps_locked?: boolean;
   battery_pct?: number; signal_pct?: number;
   missions_total?: number; checkin_rate?: number; sos_events_total?: number; seals_verified?: number;
@@ -66,6 +67,115 @@ function HealthBars({ battery, signal, gpsLocked }: { battery?: number | undefin
   );
 }
 
+const OVERLAY: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 };
+const MBOX: CSSProperties = { background: C.surf, border: `1px solid ${C.border}`, borderRadius: 8, padding: 20, width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto' };
+
+function ModalHeader({ title, onClose }: { title: string; onClose: () => void }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <span style={{ fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 800, fontSize: 16, color: C.gold, letterSpacing: '0.08em' }}>{title}</span>
+      <button onClick={onClose} style={{ background: 'none', border: 'none', color: C.sub, cursor: 'pointer', padding: 4 }}><X size={16} /></button>
+    </div>
+  );
+}
+
+const INPUT_S: CSSProperties = { width: '100%', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, padding: '7px 10px', fontSize: 11, color: C.txt, outline: 'none', fontFamily: 'Inter, sans-serif', boxSizing: 'border-box' };
+
+function EnrollOfficerModal({ onClose, onEnrolled }: { onClose: () => void; onEnrolled: () => void }) {
+  const [form, setForm] = useState({ name: '', badge_number: '', phone: '', assigned_zone: '', status: 'offline' });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setForm(f => ({ ...f, [k]: e.target.value }));
+
+  async function submit() {
+    if (!form.name.trim() || !form.badge_number.trim() || !form.phone.trim()) {
+      setErr('Name, badge number and phone are required');
+      return;
+    }
+    setSaving(true); setErr('');
+    try {
+      await api.post('/field-officers', { ...form, assigned_zone: form.assigned_zone || undefined });
+      onEnrolled();
+      onClose();
+    } catch (ex: unknown) {
+      const msg = ex && typeof ex === 'object' && 'response' in ex
+        ? (ex as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+      setErr(msg || 'Failed to enroll officer — try again');
+    } finally { setSaving(false); }
+  }
+
+  const field = (label: string, key: string, placeholder?: string) => (
+    <div style={{ marginBottom: 10 }}>
+      <label style={{ display: 'block', fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700, fontSize: 10, color: C.sub, letterSpacing: '0.08em', marginBottom: 4 }}>{label}</label>
+      <input value={(form as Record<string, string>)[key]} onChange={set(key)} placeholder={placeholder}
+        style={INPUT_S} />
+    </div>
+  );
+
+  return (
+    <div style={OVERLAY} onClick={onClose}>
+      <div style={MBOX} onClick={e => e.stopPropagation()}>
+        <ModalHeader title="ENROLL FIELD OFFICER" onClose={onClose} />
+        {field('FULL NAME *', 'name', 'e.g. John Mwangi')}
+        {field('BADGE NUMBER *', 'badge_number', 'e.g. KPS-2024-001')}
+        {field('PHONE *', 'phone', 'e.g. +254712345678')}
+        {field('ASSIGNED ZONE', 'assigned_zone', 'e.g. Westlands Sector 3')}
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ display: 'block', fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700, fontSize: 10, color: C.sub, letterSpacing: '0.08em', marginBottom: 4 }}>INITIAL STATUS</label>
+          <select value={form.status} onChange={set('status')} style={{ ...INPUT_S, color: C.txt }}>
+            <option value="offline">Offline</option>
+            <option value="available">Available</option>
+          </select>
+        </div>
+        {err && <div style={{ color: C.red, fontSize: 10, fontFamily: 'JetBrains Mono, monospace', marginBottom: 10 }}>{err}</div>}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={onClose} style={{ flex: 1, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, padding: 9, color: C.mid, fontSize: 11, fontFamily: 'JetBrains Mono, monospace', cursor: 'pointer' }}>CANCEL</button>
+          <button onClick={submit} disabled={saving}
+            style={{ flex: 2, background: saving ? C.dim : C.gold, border: 'none', borderRadius: 4, padding: 9, fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 800, fontSize: 13, letterSpacing: '0.08em', color: saving ? C.sub : '#000', cursor: saving ? 'not-allowed' : 'pointer' }}>
+            {saving ? 'ENROLLING…' : 'ENROLL OFFICER'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AssignZoneModal({ officer, onClose, onSaved }: { officer: FieldOfficer; onClose: () => void; onSaved: () => void }) {
+  const [zone, setZone] = useState(officer.assigned_zone || officer.zone || '');
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await api.patch(`/field-officers/${officer.id}`, { assigned_zone: zone });
+      onSaved(); onClose();
+    } catch { } finally { setSaving(false); }
+  }
+
+  return (
+    <div style={OVERLAY} onClick={onClose}>
+      <div style={{ ...MBOX, maxWidth: 360 }} onClick={e => e.stopPropagation()}>
+        <ModalHeader title="ASSIGN ZONE" onClose={onClose} />
+        <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: C.sub, marginBottom: 12 }}>
+          Officer: {officer.name} · {officer.badge_number || officer.badge || '—'}
+        </div>
+        <input value={zone} onChange={e => setZone(e.target.value)} placeholder="e.g. Westlands Sector 3"
+          style={{ ...INPUT_S, marginBottom: 12 }} />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={onClose} style={{ flex: 1, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, padding: 8, color: C.mid, fontSize: 11, fontFamily: 'JetBrains Mono, monospace', cursor: 'pointer' }}>CANCEL</button>
+          <button onClick={save} disabled={saving}
+            style={{ flex: 2, background: C.gold, border: 'none', borderRadius: 4, padding: 8, fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 800, fontSize: 13, letterSpacing: '0.08em', color: '#000', cursor: 'pointer' }}>
+            {saving ? 'SAVING…' : 'SAVE ZONE'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SosStrip({ officers }: { officers: FieldOfficer[] }) {
   const sos = officers.filter(o => o.status === 'sos');
   if (!sos.length) return null;
@@ -79,7 +189,8 @@ function SosStrip({ officers }: { officers: FieldOfficer[] }) {
       {top.gps_lat != null && <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: C.mid }}>{Number(top.gps_lat).toFixed(4)}, {Number(top.gps_lng).toFixed(4)}</span>}
       {top.battery_pct != null && <span style={{ color: C.amber, fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }}>BAT {top.battery_pct}%</span>}
       <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-        <button style={{ background: C.red, color: '#fff', border: 'none', borderRadius: 4, padding: '4px 12px', fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'JetBrains Mono, monospace' }}>CALL NOW</button>
+        <button onClick={() => top.phone && (window.location.href = `tel:${top.phone}`)}
+          style={{ background: C.red, color: '#fff', border: 'none', borderRadius: 4, padding: '4px 12px', fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'JetBrains Mono, monospace' }}>CALL NOW</button>
         <button style={{ background: 'rgba(239,68,68,0.15)', color: C.red, border: `1px solid ${C.red}40`, borderRadius: 4, padding: '4px 12px', fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'JetBrains Mono, monospace' }}>DISPATCH</button>
       </div>
       {sos.length > 1 && <span style={{ fontSize: 10, color: C.red, fontFamily: 'JetBrains Mono, monospace' }}>+{sos.length - 1} more</span>}
@@ -99,9 +210,9 @@ function ExpandedRow({ officer }: { officer: FieldOfficer }) {
   return (
     <tr>
       <td colSpan={8} style={{ background: C.panel, padding: '12px 16px', borderBottom: `1px solid ${C.border}` }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
           {[
-            ['PROFILE', [['Badge', badge], ['Phone', officer.phone || '—'], ['Zone', officer.zone || '—'], ['Route', officer.route || '—'], ['Rank', officer.rank || '—']]],
+            ['PROFILE', [['Badge', badge], ['Phone', officer.phone || '—'], ['Zone', officer.assigned_zone || officer.zone || '—'], ['Route', officer.route || '—'], ['Rank', officer.rank || '—']]],
             ['DEVICE', [['Model', officer.device_model || '—'], ['IMEI', imei], ['App Ver', officer.app_version || '—'], ['Android', officer.android_version || '—'], ['Knox', officer.knox_version || '—']]],
             ['PERFORMANCE', [['Missions', String(officer.missions_total ?? '—')], ['Check-in Rate', officer.checkin_rate != null ? `${officer.checkin_rate}%` : '—'], ['SOS Events', String(officer.sos_events_total ?? 0)], ['Seals Verified', String(officer.seals_verified ?? 0)], ['Shift Start', officer.shift_start ? fmtRel(officer.shift_start) : '—']]],
           ].map(([title, rows]) => (
@@ -137,10 +248,30 @@ function ExpandedRow({ officer }: { officer: FieldOfficer }) {
 
 const ACTION_MAP: Record<string, [string, string, boolean][]> = {
   sos:        [['CALL NOW', C.red, true], ['TRACK', C.amber, false], ['DISPATCH', C.gold, false]],
-  on_mission: [['TRACK LIVE', C.gold, false], ['MESSAGE', C.blue, false], ['REPORT', C.mid, false]],
+  on_mission: [['TRACK LIVE', C.gold, false], ['MESSAGE', C.blue, false], ['PROFILE', C.mid, false]],
   available:  [['ASSIGN', C.gold, false], ['MESSAGE', C.blue, false], ['PROFILE', C.mid, false]],
   offline:    [['PING', C.amber, false], ['MESSAGE', C.blue, false], ['PROFILE', C.mid, false]],
 };
+
+function OfficerActions({ officer, onAssign, onExpand }: { officer: FieldOfficer; onAssign: (o: FieldOfficer) => void; onExpand: () => void }) {
+  function handle(label: string) {
+    if (label === 'CALL NOW') { if (officer.phone) window.location.href = `tel:${officer.phone}`; return; }
+    if (label === 'MESSAGE') { if (officer.phone) window.location.href = `sms:${officer.phone}`; return; }
+    if (label === 'ASSIGN') { onAssign(officer); return; }
+    onExpand();
+  }
+  const actions: [string, string, boolean][] = ACTION_MAP[officer.status] ?? ACTION_MAP['offline'] ?? [];
+  return (
+    <div style={{ display: 'flex', gap: 4 }}>
+      {actions.map(([label, color, primary]) => (
+        <button key={label} onClick={() => handle(label)}
+          style={{ background: primary ? color : `${color}18`, border: `1px solid ${primary ? color : color + '40'}`, borderRadius: 3, padding: '3px 7px', fontSize: 9, fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: primary ? '#fff' : color, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export default function FieldOfficers() {
   const user = useAuthStore(s => s.user);
@@ -149,6 +280,8 @@ export default function FieldOfficers() {
   const [filters, setFilters] = useState({ status: '', search: '' });
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [liveEvents, setLiveEvents] = useState<{ label: string; ts: string }[]>([]);
+  const [showEnroll, setShowEnroll] = useState(false);
+  const [assignOfficer, setAssignOfficer] = useState<FieldOfficer | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -190,7 +323,7 @@ export default function FieldOfficers() {
             {officers.length} OFFICERS · {officers.filter(o => o.status === 'available').length} AVAILABLE · {officers.filter(o => o.status === 'sos').length} SOS
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {([['AVAILABLE', C.green], ['ON MISSION', C.amber], ['SOS', C.red], ['OFFLINE', C.dim]] as [string, string][]).map(([label, color]) => {
             const count = officers.filter(o => o.status === label.toLowerCase().replace(' ', '_')).length;
             return (
@@ -200,6 +333,10 @@ export default function FieldOfficers() {
               </div>
             );
           })}
+          <button onClick={() => setShowEnroll(true)}
+            style={{ background: `${C.gold}18`, border: `1px solid ${C.gold}50`, borderRadius: 4, padding: '7px 14px', color: C.gold, fontSize: 11, fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700, letterSpacing: '0.08em', cursor: 'pointer' }}>
+            + ENROLL OFFICER
+          </button>
         </div>
       </div>
 
@@ -242,7 +379,6 @@ export default function FieldOfficers() {
                 <tbody>
                   {filtered.map(o => {
                     const exp = expandedId === o.id;
-                    const actions: [string, string, boolean][] = ACTION_MAP[o.status] ?? ACTION_MAP['offline'] ?? [];
                     return (
                       <>
                         <tr key={o.id} style={{ borderBottom: `1px solid ${C.border}`, background: exp ? C.panel : 'transparent', cursor: 'pointer' }}
@@ -253,7 +389,7 @@ export default function FieldOfficers() {
                             <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: C.sub }}>{o.badge_number || o.badge || '—'}</div>
                           </td>
                           <td style={{ padding: '8px 10px' }}><StatusPill status={o.status} /></td>
-                          <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: C.mid }}>{o.zone || '—'}</td>
+                          <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: C.mid }}>{o.assigned_zone || o.zone || '—'}</td>
                           <td style={{ padding: '8px 10px' }}>
                             {o.gps_lat != null
                               ? <><div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: C.txt }}>{Number(o.gps_lat).toFixed(4)}, {Number(o.gps_lng).toFixed(4)}</div><div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: C.sub }}>{fmtRel(o.last_gps_at || o.last_seen_at)}</div></>
@@ -262,13 +398,7 @@ export default function FieldOfficers() {
                           <td style={{ padding: '8px 10px' }}><HealthBars battery={o.battery_pct} signal={o.signal_pct} gpsLocked={o.gps_locked} /></td>
                           <td style={{ padding: '8px 10px', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, fontWeight: 700, color: C.blue }}>{o.missions_total ?? 0}</td>
                           <td style={{ padding: '8px 10px' }} onClick={e => e.stopPropagation()}>
-                            <div style={{ display: 'flex', gap: 4 }}>
-                              {actions.map(([label, color, primary]) => (
-                                <button key={label} style={{ background: primary ? color : `${color}18`, border: `1px solid ${primary ? color : color + '40'}`, borderRadius: 3, padding: '3px 7px', fontSize: 9, fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: primary ? '#fff' : color, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                                  {label}
-                                </button>
-                              ))}
-                            </div>
+                            <OfficerActions officer={o} onAssign={setAssignOfficer} onExpand={() => setExpandedId(prev => prev === o.id ? null : o.id)} />
                           </td>
                         </tr>
                         {exp && <ExpandedRow key={`exp-${o.id}`} officer={o} />}
@@ -315,6 +445,9 @@ export default function FieldOfficers() {
           </div>
         </div>
       </div>
+
+      {showEnroll && <EnrollOfficerModal onClose={() => setShowEnroll(false)} onEnrolled={load} />}
+      {assignOfficer && <AssignZoneModal officer={assignOfficer} onClose={() => setAssignOfficer(null)} onSaved={load} />}
     </div>
   );
 }
