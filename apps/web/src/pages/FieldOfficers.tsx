@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { MapPin, ChevronRight, AlertOctagon } from 'lucide-react';
+import { MapPin, ChevronRight } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { subscribe } from '../lib/centrifuge.js';
 import { useAuthStore } from '../stores/auth.js';
@@ -46,7 +46,7 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
-function HealthBars({ battery, signal, gpsLocked }: { battery?: number; signal?: number; gpsLocked?: boolean }) {
+function HealthBars({ battery, signal, gpsLocked }: { battery?: number | undefined; signal?: number | undefined; gpsLocked?: boolean | undefined }) {
   const bars = [
     { label: 'BAT', val: battery ?? 0, color: (battery ?? 0) < 20 ? C.red : (battery ?? 0) < 50 ? C.amber : C.green },
     { label: 'SIG', val: signal ?? 0, color: (signal ?? 0) < 30 ? C.red : C.green },
@@ -69,7 +69,7 @@ function HealthBars({ battery, signal, gpsLocked }: { battery?: number; signal?:
 function SosStrip({ officers }: { officers: FieldOfficer[] }) {
   const sos = officers.filter(o => o.status === 'sos');
   if (!sos.length) return null;
-  const top = sos[0];
+  const top = sos[0]!;
   return (
     <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 6, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
       <div style={{ width: 8, height: 8, borderRadius: '50%', background: C.red, animation: 'sosPulse 1s infinite', flexShrink: 0 }} />
@@ -242,8 +242,7 @@ export default function FieldOfficers() {
                 <tbody>
                   {filtered.map(o => {
                     const exp = expandedId === o.id;
-                    const sc = STATUS_COLOR[o.status] || C.sub;
-                    const actions = ACTION_MAP[o.status] || ACTION_MAP['offline'];
+                    const actions: [string, string, boolean][] = ACTION_MAP[o.status] ?? ACTION_MAP['offline'] ?? [];
                     return (
                       <>
                         <tr key={o.id} style={{ borderBottom: `1px solid ${C.border}`, background: exp ? C.panel : 'transparent', cursor: 'pointer' }}

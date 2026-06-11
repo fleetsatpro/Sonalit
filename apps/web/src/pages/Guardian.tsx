@@ -40,7 +40,7 @@ function StatusPill({ status }: { status: string }) {
   return <span style={{ background: `${c}20`, border: `1px solid ${c}50`, borderRadius: 3, padding: '2px 7px', fontSize: 9, fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: c, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{status}</span>;
 }
 
-function HealthBars({ battery, signal }: { battery?: number; signal?: number }) {
+function HealthBars({ battery, signal }: { battery?: number | undefined; signal?: number | undefined }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 3, width: 60 }}>
       {([['BAT', battery ?? 0, (battery ?? 0) < 20 ? C.red : (battery ?? 0) < 50 ? C.amber : C.green], ['SIG', signal ?? 0, (signal ?? 0) < 30 ? C.red : C.green]] as [string, number, string][]).map(([label, val, color]) => (
