@@ -53,18 +53,6 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:requestLegacyExternalStorage="true">
 
-        <!-- Disable Firebase auto-init — Firebase config (google-services.json)
-             is optional; without it the SDK must not try to initialize itself -->
-        <meta-data
-            android:name="firebase_messaging_auto_init_enabled"
-            android:value="false" />
-        <meta-data
-            android:name="firebase_analytics_collection_enabled"
-            android:value="false" />
-        <meta-data
-            android:name="firebase_crashlytics_collection_enabled"
-            android:value="false" />
-
         <!-- Main Activity -->
         <activity
             android:name=".ui.MainActivity"
@@ -96,14 +84,10 @@
             android:exported="false"
             android:foregroundServiceType="location" />
 
-        <!-- FCM message handler -->
+        <!-- FCM message handler (stub — Firebase disabled until google-services.json is configured) -->
         <service
             android:name=".services.PegFcmService"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.google.firebase.MESSAGING_EVENT" />
-            </intent-filter>
-        </service>
+            android:exported="false" />
 
         <!-- Knox remote session screen share service -->
         <service
