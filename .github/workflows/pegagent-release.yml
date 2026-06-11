@@ -1,0 +1,143 @@
+name: PEGAGENT APK Build & Release
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'android/PEGAGENT/**'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag (e.g. v1.0.1)'
+        required: false
+        default: ''
+
+jobs:
+  build-and-release:
+    name: Build Signed APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Write google-services.json
+        working-directory: android/PEGAGENT/app
+        run: |
+          echo "${{ secrets.PEGAGENT_GOOGLE_SERVICES_JSON }}" | base64 --decode > google-services.json
+
+      - name: Write keystore
+        working-directory: android/PEGAGENT
+        run: |
+          echo "${{ secrets.PEGAGENT_KEYSTORE_BASE64 }}" | base64 --decode > pegagent-release.keystore
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('android/PEGAGENT/**/*.gradle*', 'android/PEGAGENT/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+
+      - name: Grant gradlew permission
+        working-directory: android/PEGAGENT
+        run: chmod +x gradlew
+
+      - name: Build release APK
+        working-directory: android/PEGAGENT
+        env:
+          KEYSTORE_PATH: pegagent-release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.PEGAGENT_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: pegagent
+          KEY_PASSWORD: ${{ secrets.PEGAGENT_KEY_PASSWORD }}
+        run: |
+          ./gradlew assembleRelease \
+            -x lintVitalRelease \
+            -x lintVitalAnalyzeRelease \
+            -x lintVitalReportRelease \
+            -x generateReleaseLintVitalReportModel \
+            --no-daemon \
+            -Pandroid.injected.signing.store.file=$KEYSTORE_PATH \
+            -Pandroid.injected.signing.store.password=$KEYSTORE_PASSWORD \
+            -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
+            -Pandroid.injected.signing.key.password=$KEY_PASSWORD
+
+      - name: Rename APK
+        run: |
+          mkdir -p dist
+          cp android/PEGAGENT/app/build/outputs/apk/release/app-release.apk dist/PEGAGENT.apk
+          echo "APK_PATH=dist/PEGAGENT.apk" >> $GITHUB_ENV
+          echo "APK_SIZE=$(du -sh dist/PEGAGENT.apk | cut -f1)" >> $GITHUB_ENV
+
+      - name: Get version info
+        id: version
+        run: |
+          VERSION=$(grep 'versionName' android/PEGAGENT/app/build.gradle | grep -o '"[^"]*"' | tr -d '"' | head -1)
+          BUILD_NUM=$(grep 'versionCode' android/PEGAGENT/app/build.gradle | grep -o '[0-9]*' | head -1)
+          TAG="${{ github.event.inputs.release_tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="v${VERSION}-build${BUILD_NUM}-$(date +'%Y%m%d%H%M')"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "BUILD_NUM=$BUILD_NUM" >> $GITHUB_OUTPUT
+          echo "TAG=$TAG" >> $GITHUB_OUTPUT
+          echo "COMMIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.TAG }}
+          name: "PEGAGENT ${{ steps.version.outputs.VERSION }} (Build ${{ steps.version.outputs.BUILD_NUM }})"
+          body: |
+            ## PEGAGENT Android Agent
+            **Version:** ${{ steps.version.outputs.VERSION }}
+            **Build:** ${{ steps.version.outputs.BUILD_NUM }}
+            **Commit:** ${{ steps.version.outputs.COMMIT_SHA }}
+            **Size:** ${{ env.APK_SIZE }}
+
+            ### Installation
+            ```bash
+            # Install APK
+            adb install PEGAGENT.apk
+
+            # Set as Device Owner (required for MDM/Knox features)
+            adb shell dpm set-device-owner com.sonalit.pegagent/.services.PegDeviceAdminReceiver
+            ```
+
+            ### Commands supported
+            `request_location` · `trigger_siren` · `lock_screen` · `force_checkin`
+            `restart_app` · `clear_app_data` · `remote_wipe` · `knox:start_session`
+            `knox:end_session` · `inject_touch` · `inject_key` · `ping`
+
+            ### What's new
+            - Full replacement of Guardian Agent
+            - Centrifugo WebSocket command channel (primary)
+            - FCM push fallback
+            - HTTP poll fallback (5s interval when WS down)
+            - Knox Device Owner MDM — lock, wipe, screen share
+            - Nanosecond command latency logging
+            - 30s telemetry heartbeat (battery, signal, GPS, CPU, RAM)
+          files: dist/PEGAGENT.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update PEGAGENT_LATEST_VERSION on Railway
+        if: success()
+        run: |
+          curl -s -X POST \
+            -H "Authorization: Bearer ${{ secrets.RAILWAY_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\":\"mutation { variableUpsert(input: { projectId: \\\"${{ secrets.RAILWAY_PROJECT_ID }}\\\", environmentId: \\\"${{ secrets.RAILWAY_ENVIRONMENT_ID }}\\\", name: \\\"PEGAGENT_LATEST_VERSION\\\", value: \\\"${{ steps.version.outputs.VERSION }}\\\" }) }\"}" \
+            https://backboard.railway.app/graphql/v2 || true

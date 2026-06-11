@@ -4,6 +4,7 @@ const { authenticate } = require('../middleware/auth');
 const { publish } = require('../realtime/centrifugo');
 const { getQueues } = require('../config/queue');
 const logger = require('../utils/logger');
+const jwt = require('jsonwebtoken');
 
 router.use(authenticate);
 
@@ -348,6 +349,102 @@ router.put('/alert-rules/:ruleId', async (req, res, next) => {
     );
     if (!rows[0]) return res.status(404).json({ error: 'Rule not found' });
     res.json({ data: rows[0] });
+  } catch (err) { next(err); }
+});
+
+// POST /commands/:commandId/ack — PEGAGENT reports command execution result
+router.post('/commands/:commandId/ack', async (req, res, next) => {
+  try {
+    const orgId = req.user.org_id;
+    const { status, acked_at, latency_ms, device_id } = req.body;
+    const validStatuses = ['executed', 'failed', 'expired'];
+    if (!status || !validStatuses.includes(status)) {
+      return res.status(400).json({ error: 'status must be one of: executed, failed, expired' });
+    }
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SET LOCAL app.current_org_id = $1', [orgId]);
+      const { rows } = await client.query(
+        `UPDATE device_commands SET
+           status     = $1,
+           acked_at   = COALESCE(to_timestamp($2::bigint / 1000.0), NOW()),
+           latency_ms = $3,
+           updated_at = NOW()
+         WHERE id = $4 AND org_id = $5
+         RETURNING id, status, device_id`,
+        [status, acked_at || null, latency_ms || null, req.params.commandId, orgId]
+      );
+      await client.query('COMMIT');
+      if (!rows[0]) return res.status(404).json({ error: 'Command not found' });
+      publish(`org:${orgId}:activity`, {
+        type: 'command_acked',
+        command_id: req.params.commandId,
+        device_id: rows[0].device_id,
+        status,
+        latency_ms: latency_ms || null,
+        ts: Date.now(),
+      }).catch(e => logger.warn(`Centrifugo publish failed: ${e.message}`));
+      res.json({ ok: true });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally { client.release(); }
+  } catch (err) { next(err); }
+});
+
+// GET /devices/:deviceId/commands/pending — PEGAGENT HTTP fallback poll
+router.get('/devices/:deviceId/commands/pending', async (req, res, next) => {
+  try {
+    const orgId = req.user.org_id;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SET LOCAL app.current_org_id = $1', [orgId]);
+      const { rows } = await client.query(
+        `SELECT id, command, payload, issued_at, ttl_hours
+         FROM device_commands
+         WHERE device_id = $1
+           AND org_id    = $2
+           AND status    = 'pending'
+           AND issued_at + (ttl_hours || ' hours')::interval > NOW()
+         ORDER BY issued_at ASC
+         LIMIT 20`,
+        [req.params.deviceId, orgId]
+      );
+      await client.query('COMMIT');
+      res.json(rows);
+    } finally { client.release(); }
+  } catch (err) { next(err); }
+});
+
+// POST /devices/:deviceId/ws-token — issue Centrifugo connection JWT for PEGAGENT
+router.post('/devices/:deviceId/ws-token', async (req, res, next) => {
+  try {
+    const secret = process.env.CENTRIFUGO_TOKEN_HMAC_SECRET;
+    if (!secret) return res.status(503).json({ error: 'Realtime not configured' });
+    const orgId = req.user.org_id;
+    const deviceId = req.params.deviceId;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SET LOCAL app.current_org_id = $1', [orgId]);
+      const { rows } = await client.query(
+        `SELECT id FROM guardian_devices WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
+        [deviceId, orgId]
+      );
+      await client.query('COMMIT');
+      if (!rows[0]) return res.status(404).json({ error: 'Device not found' });
+    } finally { client.release(); }
+    const token = jwt.sign(
+      {
+        sub: deviceId,
+        info: { device_id: deviceId, org_id: orgId, type: 'pegagent' },
+      },
+      secret,
+      { expiresIn: '24h', algorithm: 'HS256' }
+    );
+    res.json({ token });
   } catch (err) { next(err); }
 });
 

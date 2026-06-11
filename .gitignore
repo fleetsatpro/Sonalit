@@ -71,6 +71,8 @@ local.properties
 guardian-agent/.gradle/
 guardian-android/build/
 guardian-android/**/.cxx/
+android/PEGAGENT/app/google-services.json
+android/PEGAGENT/pegagent-release.keystore
 
 # Terraform
 infra/terraform/.terraform/
