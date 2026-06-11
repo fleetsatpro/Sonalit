@@ -136,9 +136,36 @@ jobs:
 
       - name: Update PEGAGENT_LATEST_VERSION on Railway
         if: success()
+        continue-on-error: true
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
-          curl -s -X POST \
-            -H "Authorization: Bearer ${{ secrets.RAILWAY_API_TOKEN }}" \
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "RAILWAY_TOKEN not set — skipping Railway update"
+            exit 0
+          fi
+
+          VERSION="${{ steps.version.outputs.VERSION }}"
+
+          # Auto-discover project and environment IDs
+          DISCOVER=$(curl -sf -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{\"query\":\"mutation { variableUpsert(input: { projectId: \\\"${{ secrets.RAILWAY_PROJECT_ID }}\\\", environmentId: \\\"${{ secrets.RAILWAY_ENVIRONMENT_ID }}\\\", name: \\\"PEGAGENT_LATEST_VERSION\\\", value: \\\"${{ steps.version.outputs.VERSION }}\\\" }) }\"}" \
-            https://backboard.railway.app/graphql/v2 || true
+            -d '{"query":"{ me { projects { edges { node { id name environments { edges { node { id name } } } } } } } }"}')
+
+          PROJECT_ID=$(echo "$DISCOVER" | jq -r '.data.me.projects.edges[0].node.id')
+          ENV_ID=$(echo "$DISCOVER" | jq -r '[.data.me.projects.edges[0].node.environments.edges[] | select(.node.name == "production")] | .[0].node.id')
+          if [ "$ENV_ID" = "null" ] || [ -z "$ENV_ID" ]; then
+            ENV_ID=$(echo "$DISCOVER" | jq -r '.data.me.projects.edges[0].node.environments.edges[0].node.id')
+          fi
+
+          if [ "$PROJECT_ID" = "null" ] || [ -z "$PROJECT_ID" ]; then
+            echo "Could not discover Railway project ID"
+            exit 0
+          fi
+
+          curl -s -X POST https://backboard.railway.app/graphql/v2 \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\":\"mutation { variableUpsert(input: { projectId: \\\"$PROJECT_ID\\\", environmentId: \\\"$ENV_ID\\\", name: \\\"PEGAGENT_LATEST_VERSION\\\", value: \\\"$VERSION\\\" }) }\"}"
+          echo "Railway PEGAGENT_LATEST_VERSION → $VERSION"
