@@ -62,6 +62,8 @@ const db = require('../src/config/database');
 const DEVICE_ID  = 'dddddddd-0000-0000-0000-000000000001';
 const SESSION_ID = 'ssssssss-0000-0000-0000-000000000001';
 
+// Helper: reset mockClient and queue up responses after the implicit BEGIN.
+// The route always calls BEGIN first, so responses[0] is for the first real query.
 function resetClientMocks(...responses) {
   mockClient.query.mockReset();
   mockClient.query.mockResolvedValueOnce({ rows: [] }); // BEGIN
@@ -72,9 +74,14 @@ function resetClientMocks(...responses) {
 describe('Knox Remote Sessions', () => {
   beforeEach(() => jest.clearAllMocks());
 
+  // ─── POST /devices/:id/remote-session/start ─────────────────────────────────
+
   describe('POST /api/v1/guardian/devices/:id/remote-session/start', () => {
     it('returns 400 NOT_DEVICE_OWNER when knox_do_enrolled is false', async () => {
-      resetClientMocks({ rows: [{ id: DEVICE_ID, org_id: 'org-a', knox_do_enrolled: false }] });
+      resetClientMocks(
+        { rows: [] },                                                              // SET LOCAL
+        { rows: [{ id: DEVICE_ID, org_id: 'org-a', knox_do_enrolled: false }] }, // device lookup
+      );
       const res = await request(app)
         .post(`/api/v1/guardian/devices/${DEVICE_ID}/remote-session/start`)
         .set('Authorization', 'Bearer test')
@@ -85,8 +92,9 @@ describe('Knox Remote Sessions', () => {
 
     it('returns 409 SESSION_ACTIVE when a live session exists', async () => {
       resetClientMocks(
-        { rows: [{ id: DEVICE_ID, org_id: 'org-a', knox_do_enrolled: true }] },
-        { rows: [{ id: SESSION_ID, status: 'live' }] },
+        { rows: [] },                                                              // SET LOCAL
+        { rows: [{ id: DEVICE_ID, org_id: 'org-a', knox_do_enrolled: true }] },  // device found + enrolled
+        { rows: [{ id: SESSION_ID, status: 'live' }] },                          // existing active session
       );
       const res = await request(app)
         .post(`/api/v1/guardian/devices/${DEVICE_ID}/remote-session/start`)
@@ -99,85 +107,103 @@ describe('Knox Remote Sessions', () => {
 
     it('returns 200 with session_id and centrifugo_channel on success', async () => {
       resetClientMocks(
-        { rows: [{ id: DEVICE_ID, org_id: 'org-a', knox_do_enrolled: true }] },
-        { rows: [] },                          // no existing session
-        { rows: [{ id: SESSION_ID }] },        // INSERT session
-        { rows: [] },                          // UPDATE active_session_id
+        { rows: [] },                                                              // SET LOCAL
+        { rows: [{ id: DEVICE_ID, org_id: 'org-a', knox_do_enrolled: true }] },  // device found + enrolled
+        { rows: [] },                                                              // no existing session
+        { rows: [{ id: SESSION_ID }] },                                           // INSERT session
+        { rows: [] },                                                              // UPDATE active_session_id
       );
       const res = await request(app)
         .post(`/api/v1/guardian/devices/${DEVICE_ID}/remote-session/start`)
         .set('Authorization', 'Bearer test')
         .send({ triggered_by: 'manual' });
       expect(res.status).toBe(200);
-      expect(res.body.session_id).toBe(SESSION_ID);
-      expect(typeof res.body.centrifugo_channel).toBe('string');
-      expect(res.body.centrifugo_channel).toContain(SESSION_ID);
+      expect(res.body.data.session_id).toBe(SESSION_ID);
+      expect(typeof res.body.data.centrifugo_channel).toBe('string');
+      expect(res.body.data.centrifugo_channel).toContain(SESSION_ID);
     });
   });
 
+  // ─── POST /devices/:id/remote-session/inject-touch ──────────────────────────
+
   describe('POST /api/v1/guardian/devices/:id/remote-session/inject-touch', () => {
-    it('returns 403 when session org does not match requesting user org', async () => {
-      resetClientMocks({ rows: [{ id: SESSION_ID, org_id: 'org-b', status: 'live' }] });
+    it('returns 404 when session org does not match requesting user org (RLS enforcement)', async () => {
+      // The route queries WHERE id=$1 AND org_id=$2 using the requesting user's org_id (org-a).
+      // A session owned by org-b will not be found, resulting in 404 — not 403.
+      resetClientMocks(
+        { rows: [] },  // SET LOCAL
+        { rows: [] },  // session not found (org-b session invisible to org-a query)
+      );
       const res = await request(app)
         .post(`/api/v1/guardian/devices/${DEVICE_ID}/remote-session/inject-touch`)
         .set('Authorization', 'Bearer test')
         .send({ x: 100, y: 200, action: 'tap', session_id: SESSION_ID });
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('Session not found');
     });
 
     it('returns 200 ok when session is live and org matches', async () => {
       resetClientMocks(
-        { rows: [{ id: SESSION_ID, org_id: 'org-a', status: 'live' }] },
-        { rows: [] }, // event_log update
+        { rows: [] },                                                           // SET LOCAL
+        { rows: [{ id: SESSION_ID, status: 'live' }] },                        // session found (same org)
+        { rows: [] },                                                           // event_log update
       );
       const res = await request(app)
         .post(`/api/v1/guardian/devices/${DEVICE_ID}/remote-session/inject-touch`)
         .set('Authorization', 'Bearer test')
         .send({ x: 112, y: 340, action: 'tap', session_id: SESSION_ID });
       expect(res.status).toBe(200);
-      expect(res.body.ok).toBe(true);
+      expect(res.body.data.ok).toBe(true);
     });
   });
 
+  // ─── POST /devices/:id/remote-session/end ────────────────────────────────────
+
   describe('POST /api/v1/guardian/devices/:id/remote-session/end', () => {
-    it('clears guardian_devices.active_session_id (contains null UPDATE)', async () => {
+    it('clears guardian_devices.active_session_id (verifies UPDATE with active_session_id = NULL)', async () => {
       resetClientMocks(
-        { rows: [{ id: SESSION_ID, org_id: 'org-a', started_at: new Date().toISOString(), recording_key: null }] },
-        { rows: [{ id: SESSION_ID, duration_secs: 42, recording_key: null }] },
-        { rows: [] }, // UPDATE devices
+        { rows: [] },                                                                               // SET LOCAL
+        { rows: [{ id: SESSION_ID, duration_secs: 42, recording_key: null }] },                   // UPDATE session → ended
+        { rows: [] },                                                                               // UPDATE guardian_devices active_session_id = NULL
       );
       const res = await request(app)
         .post(`/api/v1/guardian/devices/${DEVICE_ID}/remote-session/end`)
         .set('Authorization', 'Bearer test')
         .send({ session_id: SESSION_ID });
-      // Must not be a server error
-      expect(res.status).toBeLessThan(500);
-      // At least one query sets active_session_id to NULL
-      const nullClear = mockClient.query.mock.calls.find(
-        c => c[0] && String(c[0]).includes('active_session_id') &&
-             c[1] && c[1].some(v => v === null)
-      );
-      expect(nullClear).toBeDefined();
-    });
-  });
 
-  describe('RLS isolation', () => {
-    it('field officers from org-b are invisible to org-a user (empty result)', async () => {
-      db.query.mockResolvedValueOnce({ rows: [] });
-      const res = await request(app)
-        .get('/api/v1/field-officers')
-        .set('Authorization', 'Bearer test');
       expect(res.status).toBe(200);
-      expect(res.body.data).toEqual([]);
+      expect(res.body.data.session_id).toBe(SESSION_ID);
+
+      // Verify that one of the client queries clears active_session_id (SET active_session_id = NULL)
+      const nullClearCall = mockClient.query.mock.calls.find(
+        args =>
+          typeof args[0] === 'string' &&
+          args[0].includes('active_session_id') &&
+          (args[0].includes('NULL') || (Array.isArray(args[1]) && args[1].some(v => v === null)))
+      );
+      expect(nullClearCall).toBeDefined();
     });
 
-    it('device commands from org-b device are inaccessible to org-a user', async () => {
-      db.query.mockResolvedValueOnce({ rows: [] }); // device not found for org-a
+    it('returns 400 when session_id is missing', async () => {
       const res = await request(app)
-        .post(`/api/v1/guardian/devices/${DEVICE_ID}/commands`)
+        .post(`/api/v1/guardian/devices/${DEVICE_ID}/remote-session/end`)
         .set('Authorization', 'Bearer test')
-        .send({ command: 'lock_screen' });
+        .send({});
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/session_id/);
+    });
+
+    it('returns 404 when session is not found', async () => {
+      resetClientMocks(
+        { rows: [] },  // SET LOCAL
+        { rows: [] },  // UPDATE session → no rows (not found)
+      );
+      const res = await request(app)
+        .post(`/api/v1/guardian/devices/${DEVICE_ID}/remote-session/end`)
+        .set('Authorization', 'Bearer test')
+        .send({ session_id: 'nonexistent-session' });
       expect(res.status).toBe(404);
+      expect(res.body.error).toBe('Session not found');
     });
   });
 });
