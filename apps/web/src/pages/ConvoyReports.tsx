@@ -154,7 +154,7 @@ export default function ConvoyReports(): React.ReactElement {
     queryFn: async () => (await api.get('/convoys/reports/overview')).data,
   });
 
-  const { data: detail, isLoading: detailLoading } = useQuery<{ data: ReportDetail }>({
+  const { data: detail, isLoading: detailLoading, isError: detailError } = useQuery<{ data: ReportDetail }>({
     queryKey: ['convoy-report-detail', selectedId, selectedDate],
     queryFn: async () => (await api.get(`/convoys/${selectedId}/reports/${selectedDate}/detail`)).data,
     enabled: !!(selectedId && selectedDate),
@@ -286,6 +286,13 @@ export default function ConvoyReports(): React.ReactElement {
         {selectedId && !detailLoading && !selectedDate && (
           <div style={{ ...S.emptyViewer, height: '40vh', color: '#6b7280' }}>
             <span style={{ fontSize: 13 }}>No report available for this convoy yet.</span>
+          </div>
+        )}
+
+        {selectedId && selectedDate && detailError && !detailLoading && (
+          <div style={{ ...S.emptyViewer, height: '40vh', color: '#ef4444', gap: 8 }}>
+            <AlertTriangle size={28} style={{ opacity: 0.7 }} />
+            <span style={{ fontSize: 13 }}>Failed to load report. Try again or check server logs.</span>
           </div>
         )}
 

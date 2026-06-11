@@ -485,18 +485,36 @@ const regenerateReport = asyncHandler(async (req, res) => {
   const { date } = req.params;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
 
-  const report = await query(
+  let report = await query(
     'SELECT id FROM convoy_daily_reports WHERE convoy_id = $1 AND report_date = $2',
     [req.params.id, date]
   );
-  if (!report.rows.length) return res.status(404).json({ error: 'No report row for this date' });
 
-  // Reset to partial so the worker will regenerate it
-  await query(
-    `UPDATE convoy_daily_reports SET status = 'partial', pdf_url = NULL, generation_error = NULL, updated_at = NOW()
-     WHERE convoy_id = $1 AND report_date = $2`,
-    [req.params.id, date]
-  );
+  if (!report.rows.length) {
+    // No legacy row — check if CFO app data exists for this date and auto-create
+    const cfoCount = await query(
+      `SELECT COUNT(*)::int AS n FROM photo_uploads WHERE convoy_id = $1::text AND timestamp::date = $2::date`,
+      [req.params.id, date]
+    );
+    if (!cfoCount.rows[0].n) return res.status(404).json({ error: 'No report data for this date' });
+
+    report = await query(
+      `INSERT INTO convoy_daily_reports
+         (convoy_id, report_date, status, received_photo_count, required_photo_count, created_at, updated_at)
+       VALUES ($1::uuid, $2, 'partial', $3, 10, NOW(), NOW())
+       ON CONFLICT (convoy_id, report_date) DO UPDATE
+         SET status = 'partial', received_photo_count = $3, updated_at = NOW()
+       RETURNING id`,
+      [req.params.id, date, cfoCount.rows[0].n]
+    );
+  } else {
+    // Reset existing row to partial so the worker will regenerate it
+    await query(
+      `UPDATE convoy_daily_reports SET status = 'partial', pdf_url = NULL, generation_error = NULL, updated_at = NOW()
+       WHERE convoy_id = $1 AND report_date = $2`,
+      [req.params.id, date]
+    );
+  }
 
   try {
     const { getQueues } = require('../config/queue');
@@ -701,12 +719,12 @@ async function getConvoyReportDetail(req, res, next) {
       ),
       // Guardian Convoy app photos
       query(
-        `SELECT pu.photo_id AS id, pu.photo_type, pu.r2_url AS photo_url,
+        `SELECT pu.id, pu.photo_type, pu.r2_url AS photo_url,
                 pu.phase AS session, pu.plate_number, pu.lat, pu.lng,
                 pu.timestamp AS taken_at, u.name AS cfo_name
          FROM photo_uploads pu
-         LEFT JOIN users u ON u.id = pu.cfo_id
-         WHERE pu.convoy_id = $1 AND pu.timestamp::date = $2::date
+         LEFT JOIN users u ON u.id::text = pu.cfo_id
+         WHERE pu.convoy_id = $1::text AND pu.timestamp::date = $2::date
          ORDER BY pu.timestamp`,
         [id, date]
       ),

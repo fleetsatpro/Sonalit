@@ -218,7 +218,7 @@ function mismatchSection(doc, photos) {
 /**
  * Generate a daily report PDF for one convoy+date.
  */
-async function generateDailyReport(convoy, trucks, cfos, photos, report, reportDate) {
+async function generateDailyReport(convoy, trucks, cfos, photos, report, reportDate, cfoPhotos = []) {
   const generatedAt = new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
   const sealCount = convoy.seal_count_per_truck ?? 3;
   const completePct = report.required_photo_count > 0
@@ -365,6 +365,53 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
         });
       });
     });
+
+    // ── CFO App Photos page ──────────────────────────────────────────────────
+    if (cfoPhotos.length > 0) {
+      addPage(doc);
+      pageNum++;
+      pageHeader(doc, convoy, reportDate);
+      pageFooter(doc, pageNum, generatedAt);
+
+      sectionTitle(doc, `CFO App Photos (${cfoPhotos.length} uploaded)`);
+
+      const rh = 16;
+      const cols = [M, M + 60, M + 140, M + 240, M + 320, M + 400];
+      const colW = [56, 76, 96, 76, 76, 115];
+      const hdrs = ['Phase', 'Type', 'Plate', 'Lat', 'Lng', 'Time (UTC)'];
+      doc.rect(M, doc.y, CW, rh).fill(C.navy);
+      hdrs.forEach((h, i) => {
+        doc.fill(C.white).fontSize(7.5).font('Helvetica-Bold')
+          .text(h, cols[i] + 2, doc.y - rh + 4, { width: colW[i] });
+      });
+      doc.y += 2;
+
+      cfoPhotos.forEach((p, i) => {
+        if (doc.y + rh > PH - 60) {
+          addPage(doc);
+          pageNum++;
+          pageHeader(doc, convoy, reportDate);
+          pageFooter(doc, pageNum, generatedAt);
+          doc.y += 4;
+        }
+        if (i % 2 === 0) doc.rect(M, doc.y, CW, rh).fill(C.stripe);
+        const rowY = doc.y;
+        const takenAt = p.taken_at ? new Date(p.taken_at).toISOString().replace('T', ' ').slice(0, 16) : '—';
+        [
+          p.session?.toUpperCase() || '—',
+          p.photo_type || '—',
+          p.plate_number || '—',
+          p.lat != null ? String(parseFloat(p.lat).toFixed(4)) : '—',
+          p.lng != null ? String(parseFloat(p.lng).toFixed(4)) : '—',
+          takenAt,
+        ].forEach((v, j) => {
+          doc.fill(j === 0 ? (p.session === 'sod' ? C.green : C.accent) : C.text)
+            .fontSize(8).font(j === 0 ? 'Helvetica-Bold' : 'Helvetica')
+            .text(String(v), cols[j] + 2, rowY + 4, { width: colW[j] });
+        });
+        doc.y = rowY + rh;
+      });
+    }
   });
 }
 
