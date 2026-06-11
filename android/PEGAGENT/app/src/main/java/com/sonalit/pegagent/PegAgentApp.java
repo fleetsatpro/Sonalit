@@ -35,12 +35,16 @@ public class PegAgentApp extends Application {
         // Create notification channels
         createNotificationChannels();
 
-        // Start core command service immediately
-        Intent cmdService = new Intent(this, PegCommandService.class);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(cmdService);
-        } else {
-            startService(cmdService);
+        // Start core command service
+        try {
+            Intent cmdService = new Intent(this, PegCommandService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(cmdService);
+            } else {
+                startService(cmdService);
+            }
+        } catch (Throwable t) {
+            Timber.e(t, "Failed to start PegCommandService (non-fatal — UI will still show)");
         }
 
         Timber.i("PEGAGENT started. Device: %s | Org: %s",

@@ -26,9 +26,15 @@ public class SecureStore {
                     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             );
             Timber.d("SecureStore initialized");
-        } catch (Exception e) {
-            Timber.e(e, "SecureStore init failed, falling back to plain prefs");
-            prefs = ctx.getSharedPreferences(PREFS_NAME + "_plain", Context.MODE_PRIVATE);
+        } catch (Throwable t) {
+            // Catch Throwable (not just Exception) — Keystore can throw Error subclasses
+            // (e.g. InternalError, VerifyError) on some devices/ROMs.
+            Timber.e(t, "SecureStore init failed, falling back to plain prefs");
+            try {
+                prefs = ctx.getSharedPreferences(PREFS_NAME + "_plain", Context.MODE_PRIVATE);
+            } catch (Throwable t2) {
+                Timber.e(t2, "Plain prefs fallback also failed — SecureStore unavailable");
+            }
         }
     }
 

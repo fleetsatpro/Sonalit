@@ -14,9 +14,8 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
 
-import androidx.core.app.ActivityCompat;
-
 import androidx.annotation.Nullable;
+import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
 
 import com.google.gson.Gson;
@@ -42,8 +41,8 @@ import timber.log.Timber;
  */
 public class PegCommandService extends Service {
 
-    private static final int NOTIF_ID     = 1001;
-    private static final int POLL_DELAY   = (int) PegConfig.CMD_POLL_INTERVAL_MS;
+    private static final int NOTIF_ID   = 1001;
+    private static final int POLL_DELAY = (int) PegConfig.CMD_POLL_INTERVAL_MS;
 
     private PegApiClient api;
     private PegWebSocketClient wsClient;
@@ -59,57 +58,69 @@ public class PegCommandService extends Service {
         super.onCreate();
         Timber.i("PegCommandService created");
 
-        // Acquire partial wake lock - keeps CPU alive for WebSocket even when screen off
-        PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
-        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "pegagent:command_service");
-        wakeLock.acquire();
+        // WakeLock — 30 min timeout prevents indefinite hold on OEM battery restrictions
+        try {
+            PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+            if (pm != null) {
+                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "pegagent:command_service");
+                wakeLock.acquire(30 * 60 * 1000L);
+            }
+        } catch (Throwable t) {
+            Timber.e(t, "WakeLock init failed (non-fatal)");
+        }
 
-        // Init components
-        api            = new PegApiClient(this);
-        wsClient       = new PegWebSocketClient(this);
-        commandExecutor = new CommandExecutor(this, api);
-        telemetry       = new TelemetryEngine(this, api);
+        // Init networking and command components. Wrapped so that any failure (e.g.
+        // missing Play Services, Keystore error) does NOT prevent startForeground()
+        // from being called in onStartCommand() — an uncaught exception here would
+        // cause ForegroundServiceDidNotStartInTimeException and crash the app.
+        try {
+            api             = new PegApiClient(this);
+            wsClient        = new PegWebSocketClient(this);
+            commandExecutor = new CommandExecutor(this, api);
+            telemetry       = new TelemetryEngine(this, api);
+            wsClient.setCommandExecutor(commandExecutor);
+        } catch (Throwable t) {
+            Timber.e(t, "Component init failed — service will run in degraded mode");
+        }
 
-        wsClient.setCommandExecutor(commandExecutor);
         pollHandler = new Handler(Looper.getMainLooper());
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        // Android 14+ enforces that location permission is GRANTED before a foreground
-        // service of type "location" can call startForeground(). Use dataSync as the
-        // initial type and promote to location once the user grants permission.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            boolean hasLocation =
-                    ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                            == PackageManager.PERMISSION_GRANTED
-                    || ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
-                            == PackageManager.PERMISSION_GRANTED;
-            int fgsType = hasLocation
-                    ? ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
-                    : ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC;
-            startForeground(NOTIF_ID, buildNotification("Connected — monitoring active"), fgsType);
-        } else {
-            startForeground(NOTIF_ID, buildNotification("Connected — monitoring active"));
+        // startForeground() MUST be called before any other work — Android 8+ kills the
+        // process if this isn't done within 5 seconds of startForegroundService().
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                boolean hasLocation =
+                        ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                                == PackageManager.PERMISSION_GRANTED
+                        || ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+                                == PackageManager.PERMISSION_GRANTED;
+                int fgsType = hasLocation
+                        ? ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+                        : ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC;
+                startForeground(NOTIF_ID, buildNotification("Connected — monitoring active"), fgsType);
+            } else {
+                startForeground(NOTIF_ID, buildNotification("Connected — monitoring active"));
+            }
+        } catch (Throwable t) {
+            Timber.e(t, "startForeground failed — attempting fallback");
+            try {
+                startForeground(NOTIF_ID, buildNotification("Agent starting..."));
+            } catch (Throwable t2) {
+                Timber.e(t2, "startForeground fallback also failed");
+            }
         }
 
-        // Start WebSocket
-        wsClient.connect();
-
-        // Start telemetry heartbeat
-        telemetry.start();
-
-        // Start fallback polling in case WebSocket drops
-        startFallbackPoll();
+        if (wsClient != null) wsClient.connect();
+        if (telemetry != null) telemetry.start();
+        if (pollHandler != null) startFallbackPoll();
 
         Timber.i("PegCommandService started");
-        return START_STICKY; // OS will restart if killed
+        return START_STICKY;
     }
 
-    /**
-     * Fallback HTTP polling when WebSocket is down.
-     * Runs every CMD_POLL_INTERVAL_MS (5s) but skips if WS is connected.
-     */
     private void startFallbackPoll() {
         if (polling) return;
         polling = true;
@@ -119,7 +130,7 @@ public class PegCommandService extends Service {
     private final Runnable pollRunnable = new Runnable() {
         @Override
         public void run() {
-            if (!wsClient.isConnected()) {
+            if (wsClient != null && api != null && !wsClient.isConnected()) {
                 Timber.d("WS down, polling for commands");
                 api.pollCommands(json -> {
                     try {
@@ -127,7 +138,7 @@ public class PegCommandService extends Service {
                         if (cmds != null) {
                             for (JsonElement el : cmds) {
                                 PegCommand cmd = gson.fromJson(el, PegCommand.class);
-                                commandExecutor.execute(cmd);
+                                if (commandExecutor != null) commandExecutor.execute(cmd);
                             }
                         }
                     } catch (Exception e) {
@@ -135,7 +146,7 @@ public class PegCommandService extends Service {
                     }
                 });
             }
-            pollHandler.postDelayed(this, POLL_DELAY);
+            if (pollHandler != null) pollHandler.postDelayed(this, POLL_DELAY);
         }
     };
 
@@ -157,7 +168,7 @@ public class PegCommandService extends Service {
 
     public void updateNotification(String status) {
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        nm.notify(NOTIF_ID, buildNotification(status));
+        if (nm != null) nm.notify(NOTIF_ID, buildNotification(status));
     }
 
     @Override
@@ -165,11 +176,11 @@ public class PegCommandService extends Service {
         super.onDestroy();
         Timber.w("PegCommandService destroyed - will restart via START_STICKY");
 
-        if (wsClient != null)       wsClient.disconnect();
-        if (telemetry != null)      telemetry.stop();
+        if (wsClient != null)        wsClient.disconnect();
+        if (telemetry != null)       telemetry.stop();
         if (commandExecutor != null) commandExecutor.shutdown();
-        if (api != null)            api.shutdown();
-        if (pollHandler != null)    pollHandler.removeCallbacksAndMessages(null);
+        if (api != null)             api.shutdown();
+        if (pollHandler != null)     pollHandler.removeCallbacksAndMessages(null);
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
     }
 
