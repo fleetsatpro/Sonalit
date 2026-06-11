@@ -733,8 +733,8 @@ async function getConvoyReportDetail(req, res, next) {
         `SELECT cr.status, cr.sod_submitted_at, cr.eod_submitted_at, cr.handover_form_url,
                 u.name AS cfo_name
          FROM convoy_reports cr
-         LEFT JOIN users u ON u.id = cr.cfo_id
-         WHERE cr.convoy_id = $1 AND cr.date = $2::date`,
+         LEFT JOIN users u ON u.id::text = cr.cfo_id
+         WHERE cr.convoy_id = $1::text AND cr.date = $2::date`,
         [id, date]
       ),
     ]);
