@@ -64,15 +64,6 @@ function HealthBars({ battery, signal }: { battery?: number | undefined; signal?
   );
 }
 
-const CMD_MAP: Record<string, 'locate' | 'lock' | 'wipe' | 'photo' | 'reboot'> = {
-  request_location: 'locate',
-  trigger_siren: 'photo',
-  lock_screen: 'lock',
-  force_checkin: 'locate',
-  restart_app: 'reboot',
-  remote_wipe: 'wipe',
-};
-
 const COMMANDS = [
   { id: 'request_location', label: 'Request Location', desc: 'Get current GPS fix', color: C.gold },
   { id: 'trigger_siren', label: 'Capture Photo', desc: 'Take device photo/alert', color: C.red, confirm: true },
@@ -154,7 +145,7 @@ function LinkOfficerModal({ device, onClose, onLinked }: { device: GuardianDevic
     if (!selOfficer) return;
     setSaving(true); setErr('');
     try {
-      await api.patch(`/guardian/devices/${device.id}`, { assignment_type: 'field_officer', assignment_id: selOfficer });
+      await api.patch(`/field-officers/${selOfficer}`, { device_id: device.id });
       onLinked(); onClose();
     } catch {
       setErr('Failed to link — try again');
@@ -302,8 +293,7 @@ function CommandTerminal({ devices }: { devices: GuardianDevice[] }) {
     if (cmd.confirm && !window.confirm(`Execute "${cmd.label}" on this device?`)) return;
     setSending(true); setMsg(null);
     try {
-      const command_type = CMD_MAP[cmd.id] ?? 'locate';
-      await api.post('/guardian/commands', { device_id: selDevice, command_type });
+      await api.post(`/guardian/devices/${selDevice}/commands`, { command: cmd.id, confirm: cmd.dangerous === true });
       setMsg({ text: `✓ Command issued: ${cmd.label}`, ok: true });
       setSelCmd(null);
     } catch (ex: unknown) {
