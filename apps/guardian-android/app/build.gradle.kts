@@ -21,7 +21,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("String", "API_BASE_URL", "\"https://api.sonalit.io/v4\"")
+        buildConfigField("String", "API_BASE_URL", "\"https://sonalit-production.up.railway.app/api/v1\"")
         buildConfigField("String", "CENTRIFUGO_URL", "\"wss://centrifugo.sonalit.io/connection/websocket\"")
     }
 
@@ -33,12 +33,12 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            buildConfigField("String", "API_BASE_URL", "\"https://api.sonalit.io/v4\"")
+            buildConfigField("String", "API_BASE_URL", "\"https://sonalit-production.up.railway.app/api/v1\"")
         }
         debug {
             applicationIdSuffix = ".debug"
             isDebuggable = true
-            buildConfigField("String", "API_BASE_URL", "\"https://api-staging.sonalit.io/v4\"")
+            buildConfigField("String", "API_BASE_URL", "\"https://sonalit-production.up.railway.app/api/v1\"")
         }
     }
 
