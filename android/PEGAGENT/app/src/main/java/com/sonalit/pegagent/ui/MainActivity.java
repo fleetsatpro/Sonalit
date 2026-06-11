@@ -61,11 +61,10 @@ public class MainActivity extends AppCompatActivity {
         // Update display
         refreshStatus();
 
-        // Register force-checkin receiver
-        registerReceiver(forceCheckinReceiver,
+        // Register force-checkin receiver — ContextCompat handles API 31+ flag requirement
+        androidx.core.content.ContextCompat.registerReceiver(this, forceCheckinReceiver,
                 new IntentFilter("com.sonalit.pegagent.ACTION_FORCE_CHECKIN"),
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                        ? Context.RECEIVER_NOT_EXPORTED : 0);
+                androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);
     }
 
     private void buildUI() {

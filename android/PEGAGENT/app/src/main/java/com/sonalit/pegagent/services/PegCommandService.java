@@ -1,14 +1,20 @@
 package com.sonalit.pegagent.services;
 
+import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ServiceInfo;
+import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
+
+import androidx.core.app.ActivityCompat;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
@@ -70,7 +76,22 @@ public class PegCommandService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        startForeground(NOTIF_ID, buildNotification("Connected — monitoring active"));
+        // Android 14+ enforces that location permission is GRANTED before a foreground
+        // service of type "location" can call startForeground(). Use dataSync as the
+        // initial type and promote to location once the user grants permission.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            boolean hasLocation =
+                    ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                            == PackageManager.PERMISSION_GRANTED
+                    || ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+                            == PackageManager.PERMISSION_GRANTED;
+            int fgsType = hasLocation
+                    ? ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+                    : ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC;
+            startForeground(NOTIF_ID, buildNotification("Connected — monitoring active"), fgsType);
+        } else {
+            startForeground(NOTIF_ID, buildNotification("Connected — monitoring active"));
+        }
 
         // Start WebSocket
         wsClient.connect();
