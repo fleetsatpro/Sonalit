@@ -312,6 +312,27 @@ router.get('/alert-rules', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /devices/:id/approve — approve pending enrollment
+router.post('/devices/:id/approve', async (req, res, next) => {
+  try {
+    const orgId = req.user.org_id;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SET LOCAL app.current_org_id = $1', [orgId]);
+      const { rows } = await client.query(
+        `UPDATE guardian_devices SET status = 'enrolled', updated_at = NOW()
+         WHERE id = $1 AND org_id = $2 AND status = 'pending' AND deleted_at IS NULL
+         RETURNING id, status`,
+        [req.params.id, orgId]
+      );
+      await client.query('COMMIT');
+      if (!rows[0]) return res.status(404).json({ error: 'Device not found or not in pending state' });
+      res.json({ data: rows[0] });
+    } finally { client.release(); }
+  } catch (err) { next(err); }
+});
+
 // PUT /alert-rules/:ruleId
 router.put('/alert-rules/:ruleId', async (req, res, next) => {
   try {

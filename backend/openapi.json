@@ -1102,6 +1102,14 @@
             "description": "OK"
           }
         }
+      },
+      "post": {
+        "operationId": "post_api_v1_guardian_devices_id_commands",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
       }
     },
     "/api/v1/guardian/commands/{id}/events": {
@@ -1476,6 +1484,46 @@
         }
       }
     },
+    "/api/v1/guardian/convoy/day-plan/{convoy_id}": {
+      "get": {
+        "operationId": "get_api_v1_guardian_convoy_day_plan_convoy_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/convoy/day-plan": {
+      "post": {
+        "operationId": "post_api_v1_guardian_convoy_day_plan",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/convoy/day-plan/{id}": {
+      "patch": {
+        "operationId": "patch_api_v1_guardian_convoy_day_plan_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/convoy/day-plan/{id}/waypoints/{wpId}/reach": {
+      "post": {
+        "operationId": "post_api_v1_guardian_convoy_day_plan_id_waypoints_wpId_reach",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/gdpr/export/{device_id}": {
       "get": {
         "operationId": "get_api_v1_gdpr_export_device_id",
@@ -1753,6 +1801,222 @@
     "/api/v1/field-officers/{id}": {
       "patch": {
         "operationId": "patch_api_v1_field_officers_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "get": {
+        "operationId": "get_api_v1_field_officers_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_field_officers_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field-officers/{id}/activity": {
+      "get": {
+        "operationId": "get_api_v1_field_officers_id_activity",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field-officers/{id}/assign-convoy": {
+      "post": {
+        "operationId": "post_api_v1_field_officers_id_assign_convoy",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field-officers/{id}/unassign-convoy": {
+      "delete": {
+        "operationId": "delete_api_v1_field_officers_id_unassign_convoy",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field-officers/{id}/ping-device": {
+      "post": {
+        "operationId": "post_api_v1_field_officers_id_ping_device",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/telemetry": {
+      "patch": {
+        "operationId": "patch_api_v1_guardian_devices_id_telemetry",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/command-history": {
+      "get": {
+        "operationId": "get_api_v1_guardian_devices_id_command_history",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/commands/broadcast": {
+      "post": {
+        "operationId": "post_api_v1_guardian_commands_broadcast",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/command-queue": {
+      "get": {
+        "operationId": "get_api_v1_guardian_command_queue",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/command-queue/{commandId}": {
+      "delete": {
+        "operationId": "delete_api_v1_guardian_command_queue_commandId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/alert-rules": {
+      "get": {
+        "operationId": "get_api_v1_guardian_alert_rules",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/approve": {
+      "post": {
+        "operationId": "post_api_v1_guardian_devices_id_approve",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/alert-rules/{ruleId}": {
+      "put": {
+        "operationId": "put_api_v1_guardian_alert_rules_ruleId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/remote-session/start": {
+      "post": {
+        "operationId": "post_api_v1_guardian_devices_id_remote_session_start",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/remote-session/webrtc-signal": {
+      "post": {
+        "operationId": "post_api_v1_guardian_devices_id_remote_session_webrtc_signal",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/remote-session/end": {
+      "post": {
+        "operationId": "post_api_v1_guardian_devices_id_remote_session_end",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/remote-session/screenshot": {
+      "post": {
+        "operationId": "post_api_v1_guardian_devices_id_remote_session_screenshot",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/remote-session/recordings": {
+      "get": {
+        "operationId": "get_api_v1_guardian_devices_id_remote_session_recordings",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/remote-session/inject-touch": {
+      "post": {
+        "operationId": "post_api_v1_guardian_devices_id_remote_session_inject_touch",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/remote-session/inject-key": {
+      "post": {
+        "operationId": "post_api_v1_guardian_devices_id_remote_session_inject_key",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/remote-session/mdm-action": {
+      "post": {
+        "operationId": "post_api_v1_guardian_devices_id_remote_session_mdm_action",
         "responses": {
           "200": {
             "description": "OK"

@@ -12,7 +12,7 @@ data class EnrollRequest(
     val fcm_token: String? = null,
     val app_version: String? = null,
 )
-data class EnrollResponse(val status: String, val device_uuid: String)
+data class EnrollResponse(val status: String, val device_uuid: String, val device_token: String? = null)
 data class HeartbeatRequest(val device_id: String, val battery_pct: Int? = null,
     val connectivity: String? = null, val lat: Double? = null, val lon: Double? = null)
 data class HeartbeatResponse(val commands: List<Map<String, Any>>)

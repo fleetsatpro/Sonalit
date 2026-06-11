@@ -36,7 +36,40 @@ router.post('/', async (req, res, next) => {
 
 router.patch('/:id', async (req, res, next) => {
   try {
-    const { status, assigned_zone } = req.body;
+    const orgId = req.user?.org_id ?? null;
+    const { status, assigned_zone, device_id } = req.body;
+
+    if (device_id !== undefined) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        if (orgId) await client.query('SET LOCAL app.current_org_id = $1', [orgId]);
+        if (device_id) {
+          // Unlink this device from any other officer that currently has it
+          await client.query(
+            `UPDATE field_officers SET device_id = NULL, updated_at = NOW()
+             WHERE device_id = $1 AND id != $2 AND ($3::uuid IS NULL OR org_id = $3)`,
+            [device_id, req.params.id, orgId]
+          );
+        }
+        const { rows } = await client.query(
+          `UPDATE field_officers
+           SET status = COALESCE($1, status),
+               assigned_zone = COALESCE($2, assigned_zone),
+               device_id = $3,
+               updated_at = NOW()
+           WHERE id = $4 AND ($5::uuid IS NULL OR org_id = $5) RETURNING *`,
+          [status ?? null, assigned_zone ?? null, device_id, req.params.id, orgId]
+        );
+        await client.query('COMMIT');
+        if (!rows[0]) return res.status(404).json({ error: 'Not found' });
+        return res.json({ data: rows[0] });
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally { client.release(); }
+    }
+
     const { rows } = await query(
       `UPDATE field_officers
        SET status = COALESCE($1, status),

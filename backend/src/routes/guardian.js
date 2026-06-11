@@ -490,10 +490,60 @@ async function deviceAuth(req, res, next) {
 
 /**
  * POST /api/v1/guardian/enroll
- * Register a new device. Validates org_token against env GUARDIAN_ORG_TOKEN.
+ * Register a new device.
+ * Accepts two formats:
+ *   v4 (Guardian Agent APK): { device_id, operator_code, play_integrity_token, platform, fcm_token, app_version }
+ *   legacy: { name, imei, android_id, manufacturer, model, os_version, app_version, org_token, enrollment_code }
  */
 router.post('/enroll', enrollLimiter, async (req, res, next) => {
   try {
+    // ── v4 format (Guardian Agent APK) ──────────────────────────────────────
+    if (!req.body.org_token && req.body.operator_code) {
+      const { device_id, operator_code, platform, fcm_token, app_version } = req.body;
+      if (!device_id || !operator_code) {
+        return res.status(400).json({ error: 'device_id and operator_code are required' });
+      }
+
+      // Find org via field officer badge number
+      const officerRes = await query(
+        `SELECT id, org_id FROM field_officers WHERE badge_number = $1 AND deleted_at IS NULL LIMIT 1`,
+        [operator_code]
+      );
+      const orgId = officerRes.rows[0]?.org_id ?? null;
+
+      // Dedup: return existing if already enrolled with this android device id
+      const existing = await query(
+        `SELECT id, token, status FROM guardian_devices
+         WHERE android_id = $1 AND deleted_at IS NULL
+         ORDER BY enrolled_at DESC LIMIT 1`,
+        [device_id]
+      );
+      if (existing.rows[0]) {
+        const dev = existing.rows[0];
+        const mappedStatus = (dev.status === 'active' || dev.status === 'enrolled') ? 'enrolled' : dev.status;
+        return res.json({ status: mappedStatus, device_uuid: dev.id, device_token: dev.token });
+      }
+
+      // New enrollment
+      const { rows } = await query(
+        `INSERT INTO guardian_devices (name, android_id, fcm_token, app_version, org_id, status)
+         VALUES ($1, $2, $3, $4, $5, 'pending') RETURNING id, token`,
+        [operator_code, device_id, fcm_token ?? null, app_version ?? null, orgId]
+      );
+
+      // Auto-link device to field officer
+      if (officerRes.rows[0]) {
+        await query(
+          `UPDATE field_officers SET device_id = $1, updated_at = NOW() WHERE id = $2`,
+          [rows[0].id, officerRes.rows[0].id]
+        );
+      }
+
+      auditLog('device', rows[0].id, 'v4_enroll', 'device', rows[0].id, { operator_code, platform }, req.ip);
+      return res.status(202).json({ status: 'pending_approval', device_uuid: rows[0].id, device_token: rows[0].token });
+    }
+
+    // ── legacy format ────────────────────────────────────────────────────────
     const { name, imei, android_id, manufacturer, model, os_version, app_version, org_token, enrollment_code } = req.body;
 
     if (!name) {
@@ -649,9 +699,7 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
 router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) => {
   try {
     const {
-      battery_level,
       battery_charging,
-      signal_strength,
       network_type,
       storage_free_mb,
       ram_free_mb,
@@ -659,6 +707,10 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
       app_version_code,
       fcm_token,
     } = req.body;
+    // Accept battery_pct (v4 APK) or battery_level (legacy)
+    const battery_level = req.body.battery_level ?? req.body.battery_pct ?? null;
+    // Accept signal_pct (v4 APK) or signal_strength (legacy)
+    const signal_strength = req.body.signal_strength ?? req.body.signal_pct ?? null;
     // Accept both lat/lng (legacy) and latitude/longitude (Guardian APK field names)
     const lat = req.body.lat ?? req.body.latitude ?? null;
     const lng = req.body.lng ?? req.body.longitude ?? null;
