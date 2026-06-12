@@ -26,45 +26,53 @@ public class PegAgentApp extends Application {
         super.onCreate();
         instance = this;
 
-        // Init logging
         Timber.plant(new Timber.DebugTree());
 
-        // Init secure storage
+        // SharedPreferences init — always succeeds, never throws
         SecureStore.init(this);
 
-        // Create notification channels
         createNotificationChannels();
 
-        // Start core command service immediately
-        Intent cmdService = new Intent(this, PegCommandService.class);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(cmdService);
+        // Only start the command service if the device is already enrolled.
+        // On first launch (no enrollment) we skip this entirely — starting a
+        // foreground service with no enrollment data is pointless and risks an
+        // ForegroundServiceDidNotStartInTimeException on some Android 14 builds.
+        if (PegConfig.isEnrolled(this)) {
+            startCommandService();
         } else {
-            startService(cmdService);
+            Timber.i("Not enrolled - skipping service start");
         }
-
-        Timber.i("PEGAGENT started. Device: %s | Org: %s",
-                PegConfig.getDeviceId(this),
-                PegConfig.getOrgId(this));
     }
 
     public static PegAgentApp getInstance() {
         return instance;
     }
 
+    public void startCommandService() {
+        try {
+            Intent svc = new Intent(this, PegCommandService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(svc);
+            } else {
+                startService(svc);
+            }
+        } catch (Throwable t) {
+            Timber.e(t, "PegCommandService start failed");
+        }
+    }
+
     private void createNotificationChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
 
         NotificationManager nm = getSystemService(NotificationManager.class);
+        if (nm == null) return;
 
-        // Core persistent channel
         NotificationChannel core = new NotificationChannel(
                 CHANNEL_CORE, "PEGAGENT Core", NotificationManager.IMPORTANCE_LOW);
         core.setDescription("Core agent status");
         core.setShowBadge(false);
         nm.createNotificationChannel(core);
 
-        // SOS high priority
         NotificationChannel sos = new NotificationChannel(
                 CHANNEL_SOS, "SOS Alert", NotificationManager.IMPORTANCE_HIGH);
         sos.setDescription("Emergency SOS alerts");
@@ -72,13 +80,11 @@ public class PegAgentApp extends Application {
         sos.enableLights(true);
         nm.createNotificationChannel(sos);
 
-        // Command execution
         NotificationChannel cmd = new NotificationChannel(
                 CHANNEL_COMMAND, "Commands", NotificationManager.IMPORTANCE_DEFAULT);
         cmd.setDescription("Remote command notifications");
         nm.createNotificationChannel(cmd);
 
-        // Remote session
         NotificationChannel session = new NotificationChannel(
                 CHANNEL_SESSION, "Remote Session", NotificationManager.IMPORTANCE_LOW);
         session.setDescription("Knox remote session");

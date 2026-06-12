@@ -10,8 +10,8 @@ android {
         applicationId "com.sonalit.pegagent"
         minSdk 26
         targetSdk 34
-        versionCode 1
-        versionName "1.0.0"
+        versionCode 4
+        versionName "1.0.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -61,7 +61,8 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-service:2.8.3'
     implementation 'androidx.lifecycle:lifecycle-runtime:2.8.3'
     implementation 'androidx.localbroadcastmanager:localbroadcastmanager:1.1.0'
-    implementation 'androidx.work:work-runtime:2.9.0'
+    // work-runtime was only needed by Firebase — removed with Firebase
+    // implementation 'androidx.work:work-runtime:2.9.0'
 
     // Networking - OkHttp + Retrofit
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
@@ -72,15 +73,13 @@ dependencies {
     // JSON
     implementation 'com.google.code.gson:gson:2.11.0'
 
-    // Firebase FCM
-    implementation 'com.google.firebase:firebase-messaging:24.0.0'
-    implementation 'com.google.firebase:firebase-analytics:22.0.2'
+    // Firebase FCM — disabled until google-services.json is configured;
+    // re-enable by uncommenting and adding PEGAGENT_GOOGLE_SERVICES_JSON secret
+    // implementation 'com.google.firebase:firebase-messaging:24.0.0'
+    // implementation 'com.google.firebase:firebase-analytics:22.0.2'
 
     // Location
     implementation 'com.google.android.gms:play-services-location:21.3.0'
-
-    // Secure storage
-    implementation 'androidx.security:security-crypto:1.1.0-alpha06'
 
     // WebSocket (Centrifugo) - using OkHttp WebSocket
     implementation 'org.java-websocket:Java-WebSocket:1.5.6'
@@ -97,7 +96,7 @@ dependencies {
     testImplementation 'junit:junit:4.13.2'
 }
 
-// Apply Google Services if google-services.json exists
-if (file('google-services.json').exists()) {
-    apply plugin: 'com.google.gms.google-services'
-}
+// google-services plugin only needed when firebase-messaging is re-enabled
+// if (file('google-services.json').exists()) {
+//     apply plugin: 'com.google.gms.google-services'
+// }

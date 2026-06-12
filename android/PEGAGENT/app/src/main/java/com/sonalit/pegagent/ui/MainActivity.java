@@ -1,11 +1,12 @@
 package com.sonalit.pegagent.ui;
 
 import android.Manifest;
+import android.app.admin.DevicePolicyManager;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
@@ -21,55 +22,80 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 
+import com.sonalit.pegagent.PegAgentApp;
 import com.sonalit.pegagent.R;
+import com.sonalit.pegagent.services.PegDeviceAdminReceiver;
 import com.sonalit.pegagent.util.PegConfig;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
 
     private static final int PERM_REQ = 100;
 
-    private TextView tvStatus, tvBadge, tvOrgId, tvDeviceId, tvLog;
-    private Button btnSos, btnEnroll;
-    private LinearLayout enrollLayout, mainLayout;
+    private TextView tvStatus, tvBadge, tvOrgId, tvDeviceId, tvAdminStatus, tvLog;
+    private Button btnSos, btnMdm;
+    private LinearLayout enrollLayout;
+    private StringBuilder logBuffer = new StringBuilder();
 
     private final ActivityResultLauncher<Intent> qrLauncher = registerForActivityResult(
             new ActivityResultContracts.StartActivityForResult(),
             result -> {
                 if (result.getResultCode() == RESULT_OK) {
                     refreshStatus();
-                    restartCommandService();
+                    ((PegAgentApp) getApplication()).startCommandService();
+                    appendLog("✓ QR enrollment complete — service started");
+                }
+            });
+
+    private final ActivityResultLauncher<Intent> adminLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(),
+            result -> {
+                if (PegDeviceAdminReceiver.isAdminActive(this)) {
+                    appendLog("✓ Device Admin: Active");
+                    tvAdminStatus.setText("MDM: Active");
+                    tvAdminStatus.setTextColor(Color.parseColor("#22c55e"));
+                    if (btnMdm != null) btnMdm.setVisibility(View.GONE);
+                } else {
+                    appendLog("✗ Device Admin: Not granted");
                 }
             });
 
     private final BroadcastReceiver forceCheckinReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context ctx, Intent intent) {
-            runOnUiThread(() -> showCheckinDialog());
+            runOnUiThread(() -> {
+                appendLog("⚡ Force check-in requested by operator");
+                tvLog.setTextColor(Color.parseColor("#f59e0b"));
+            });
         }
     };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
-        // Build UI programmatically - no XML dependency issues
         buildUI();
-
-        // Request permissions
         requestCriticalPermissions();
-
-        // Update display
         refreshStatus();
 
-        // Register force-checkin receiver
-        registerReceiver(forceCheckinReceiver,
+        androidx.core.content.ContextCompat.registerReceiver(this, forceCheckinReceiver,
                 new IntentFilter("com.sonalit.pegagent.ACTION_FORCE_CHECKIN"),
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                        ? Context.RECEIVER_NOT_EXPORTED : 0);
+                androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);
+
+        appendLog("Agent initializing...");
+        if (PegConfig.isEnrolled(this)) {
+            appendLog("✓ Enrollment: Active");
+            if (PegDeviceAdminReceiver.isAdminActive(this)) {
+                appendLog("✓ Device Admin: Active");
+            } else {
+                appendLog("! Device Admin: Not enabled");
+            }
+        }
     }
 
     private void buildUI() {
-        // Root scroll
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(Color.parseColor("#04080F"));
 
@@ -87,24 +113,40 @@ public class MainActivity extends AppCompatActivity {
         root.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Sonalit Field Officer Agent v1.0");
+        subtitle.setText("Sonalit Field Officer Agent v1.0.2");
         subtitle.setTextColor(Color.parseColor("#6b7280"));
         subtitle.setTextSize(11f);
         subtitle.setPadding(0, 4, 0, 32);
         root.addView(subtitle);
 
-        // Status section
+        // Status indicators
         tvStatus = makeLabel("● CONNECTING...", "#f59e0b");
         root.addView(tvStatus);
 
         tvBadge    = makeInfo("Badge: —");
         tvOrgId    = makeInfo("Org: —");
         tvDeviceId = makeInfo("Device: —");
+        tvAdminStatus = makeInfo("MDM: Checking...");
         root.addView(tvBadge);
         root.addView(tvOrgId);
         root.addView(tvDeviceId);
+        root.addView(tvAdminStatus);
 
-        // SOS Button
+        // Enable MDM button
+        btnMdm = new Button(this);
+        btnMdm.setText("ENABLE DEVICE ADMIN (MDM)");
+        btnMdm.setBackgroundColor(Color.parseColor("#1d4ed8"));
+        btnMdm.setTextColor(Color.WHITE);
+        btnMdm.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        btnMdm.setPadding(0, 24, 0, 24);
+        LinearLayout.LayoutParams mdmParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        mdmParams.setMargins(0, 16, 0, 8);
+        btnMdm.setLayoutParams(mdmParams);
+        btnMdm.setOnClickListener(v -> launchDeviceAdminRequest());
+        root.addView(btnMdm);
+
+        // SOS button
         btnSos = new Button(this);
         btnSos.setText("⚠ SOS EMERGENCY");
         btnSos.setBackgroundColor(Color.parseColor("#ef4444"));
@@ -114,15 +156,15 @@ public class MainActivity extends AppCompatActivity {
         btnSos.setPadding(0, 32, 0, 32);
         LinearLayout.LayoutParams sosParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        sosParams.setMargins(0, 40, 0, 16);
+        sosParams.setMargins(0, 16, 0, 16);
         btnSos.setLayoutParams(sosParams);
         btnSos.setOnClickListener(v -> triggerSos());
         root.addView(btnSos);
 
-        // Enroll section
+        // Enrollment section
         enrollLayout = new LinearLayout(this);
         enrollLayout.setOrientation(LinearLayout.VERTICAL);
-        enrollLayout.setPadding(0, 30, 0, 0);
+        enrollLayout.setPadding(0, 24, 0, 0);
 
         TextView enrollTitle = new TextView(this);
         enrollTitle.setText("ENROLL DEVICE");
@@ -131,7 +173,7 @@ public class MainActivity extends AppCompatActivity {
         enrollTitle.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         enrollLayout.addView(enrollTitle);
 
-        // QR scan button — primary enrollment path
+        // QR scan button
         Button btnScanQr = new Button(this);
         btnScanQr.setText("⬛ SCAN QR CODE");
         btnScanQr.setBackgroundColor(Color.parseColor("#1d4ed8"));
@@ -140,7 +182,7 @@ public class MainActivity extends AppCompatActivity {
         btnScanQr.setPadding(0, 24, 0, 24);
         LinearLayout.LayoutParams qrParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        qrParams.setMargins(0, 16, 0, 8);
+        qrParams.setMargins(0, 12, 0, 8);
         btnScanQr.setLayoutParams(qrParams);
         btnScanQr.setOnClickListener(v ->
                 qrLauncher.launch(new Intent(this, ScanQrActivity.class)));
@@ -153,49 +195,122 @@ public class MainActivity extends AppCompatActivity {
         orLabel.setPadding(0, 8, 0, 4);
         enrollLayout.addView(orLabel);
 
-        EditText etServer = makeInput("Server URL (e.g. https://api.sonalit.com)");
-        EditText etOrg    = makeInput("Organization ID");
-        EditText etToken  = makeInput("Enrollment Token");
-        EditText etBadge  = makeInput("Officer Badge (e.g. FO-012)");
+        // Pre-fill server URL
+        EditText etServer = makeInput("Server URL");
+        etServer.setText("https://api.sonalit.com");
+        EditText etOrg   = makeInput("Organization ID");
+        EditText etToken = makeInput("Auth Token");
+        EditText etBadge = makeInput("Officer Badge (e.g. FO-012)");
 
         enrollLayout.addView(etServer);
         enrollLayout.addView(etOrg);
         enrollLayout.addView(etToken);
         enrollLayout.addView(etBadge);
 
-        btnEnroll = new Button(this);
+        Button btnEnroll = new Button(this);
         btnEnroll.setText("ENROLL");
         btnEnroll.setBackgroundColor(Color.parseColor("#F0B429"));
         btnEnroll.setTextColor(Color.parseColor("#04080F"));
         btnEnroll.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        btnEnroll.setPadding(0, 24, 0, 24);
+        LinearLayout.LayoutParams enrollBtnParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        enrollBtnParams.setMargins(0, 8, 0, 0);
+        btnEnroll.setLayoutParams(enrollBtnParams);
         btnEnroll.setOnClickListener(v -> {
             String server = etServer.getText().toString().trim();
             String org    = etOrg.getText().toString().trim();
             String tok    = etToken.getText().toString().trim();
             String badge  = etBadge.getText().toString().trim();
-            if (!server.isEmpty() && !org.isEmpty() && !tok.isEmpty() && !badge.isEmpty()) {
-                // Save and restart service
-                PegConfig.saveEnrollment(server, org, "device_" + System.currentTimeMillis(),
-                        tok, tok, badge, "");
-                refreshStatus();
-                restartCommandService();
+            if (server.isEmpty() || org.isEmpty() || tok.isEmpty() || badge.isEmpty()) {
+                appendLog("✗ All fields required");
+                return;
             }
+            PegConfig.saveEnrollment(server, org,
+                    "device_" + System.currentTimeMillis(),
+                    tok, tok, badge, "");
+            appendLog("✓ Enrollment saved");
+            refreshStatus();
+            ((PegAgentApp) getApplication()).startCommandService();
+            appendLog("✓ Agent service started");
         });
         enrollLayout.addView(btnEnroll);
         enrollLayout.setVisibility(PegConfig.isEnrolled(this) ? View.GONE : View.VISIBLE);
         root.addView(enrollLayout);
 
-        // Log section
+        // Log display
         tvLog = new TextView(this);
         tvLog.setTextColor(Color.parseColor("#4b5563"));
         tvLog.setTextSize(10f);
         tvLog.setTypeface(android.graphics.Typeface.MONOSPACE);
-        tvLog.setPadding(0, 30, 0, 0);
-        tvLog.setText("Waiting for commands...");
+        LinearLayout.LayoutParams logParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        logParams.setMargins(0, 32, 0, 0);
+        tvLog.setLayoutParams(logParams);
         root.addView(tvLog);
 
         scroll.addView(root);
         setContentView(scroll);
+    }
+
+    private void refreshStatus() {
+        boolean enrolled = PegConfig.isEnrolled(this);
+        boolean adminActive = PegDeviceAdminReceiver.isAdminActive(this);
+
+        if (enrolled) {
+            tvStatus.setText("● AGENT ACTIVE");
+            tvStatus.setTextColor(Color.parseColor("#22c55e"));
+            tvBadge.setText("Badge: " + PegConfig.getOfficerBadge(this));
+            tvOrgId.setText("Org: " + PegConfig.getOrgId(this));
+            tvDeviceId.setText("Device: " + PegConfig.getDeviceId(this));
+            if (enrollLayout != null) enrollLayout.setVisibility(View.GONE);
+        } else {
+            tvStatus.setText("● NOT ENROLLED");
+            tvStatus.setTextColor(Color.parseColor("#ef4444"));
+            tvBadge.setText("Badge: —");
+            tvOrgId.setText("Org: —");
+            tvDeviceId.setText("Device: —");
+            if (enrollLayout != null) enrollLayout.setVisibility(View.VISIBLE);
+        }
+
+        if (adminActive) {
+            tvAdminStatus.setText("MDM: Active");
+            tvAdminStatus.setTextColor(Color.parseColor("#22c55e"));
+            if (btnMdm != null) btnMdm.setVisibility(View.GONE);
+        } else {
+            tvAdminStatus.setText("MDM: Not enabled");
+            tvAdminStatus.setTextColor(Color.parseColor("#f59e0b"));
+            if (btnMdm != null) btnMdm.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void launchDeviceAdminRequest() {
+        Intent intent = new Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN);
+        intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN,
+                PegDeviceAdminReceiver.getComponentName(this));
+        intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                "PEGAGENT requires device admin to enforce security policies and respond to commands.");
+        appendLog("Requesting Device Admin permission...");
+        adminLauncher.launch(intent);
+    }
+
+    private void triggerSos() {
+        Intent broadcast = new Intent("com.sonalit.pegagent.ACTION_SOS");
+        broadcast.putExtra("source", "manual_button");
+        sendBroadcast(broadcast);
+        btnSos.setText("⚠ SOS SENT — TAP TO CANCEL");
+        btnSos.setBackgroundColor(Color.parseColor("#991b1b"));
+        appendLog("⚠ SOS triggered manually");
+    }
+
+    private void appendLog(String message) {
+        String ts = new SimpleDateFormat("HH:mm:ss", Locale.US).format(new Date());
+        if (logBuffer.length() > 0) logBuffer.append("\n");
+        logBuffer.append(ts).append(" ").append(message);
+        if (tvLog != null) {
+            tvLog.setText(logBuffer.toString());
+            tvLog.setTextColor(Color.parseColor("#4b5563"));
+        }
     }
 
     private TextView makeLabel(String text, String color) {
@@ -233,66 +348,23 @@ public class MainActivity extends AppCompatActivity {
         return et;
     }
 
-    private void refreshStatus() {
-        if (PegConfig.isEnrolled(this)) {
-            tvStatus.setText("● AGENT ACTIVE");
-            tvStatus.setTextColor(Color.parseColor("#22c55e"));
-            tvBadge.setText("Badge: " + PegConfig.getOfficerBadge(this));
-            tvOrgId.setText("Org: " + PegConfig.getOrgId(this));
-            tvDeviceId.setText("Device: " + PegConfig.getDeviceId(this));
-            if (enrollLayout != null) enrollLayout.setVisibility(View.GONE);
-        } else {
-            tvStatus.setText("● NOT ENROLLED");
-            tvStatus.setTextColor(Color.parseColor("#ef4444"));
-            if (enrollLayout != null) enrollLayout.setVisibility(View.VISIBLE);
-        }
-    }
-
-    private void triggerSos() {
-        // SOS: send telemetry immediately with SOS flag
-        Intent broadcast = new Intent("com.sonalit.pegagent.ACTION_SOS");
-        broadcast.putExtra("source", "manual_button");
-        sendBroadcast(broadcast);
-
-        btnSos.setText("⚠ SOS SENT — TAP TO CANCEL");
-        btnSos.setBackgroundColor(Color.parseColor("#991b1b"));
-    }
-
-    private void showCheckinDialog() {
-        // Bring app to foreground for check-in
-        tvLog.setText("⚡ Force check-in requested by operator");
-        tvLog.setTextColor(Color.parseColor("#f59e0b"));
-    }
-
-    private void restartCommandService() {
-        Intent svc = new Intent(this, com.sonalit.pegagent.services.PegCommandService.class);
-        stopService(svc);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(svc);
-        } else {
-            startService(svc);
-        }
-    }
-
     private void requestCriticalPermissions() {
-        String[] perms = {
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.CAMERA,
-            Manifest.permission.RECORD_AUDIO,
-            Manifest.permission.POST_NOTIFICATIONS,
-            Manifest.permission.READ_MEDIA_IMAGES
-        };
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ActivityCompat.requestPermissions(this, perms, PERM_REQ);
+            ActivityCompat.requestPermissions(this, new String[]{
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.CAMERA,
+                Manifest.permission.RECORD_AUDIO,
+                Manifest.permission.POST_NOTIFICATIONS,
+                Manifest.permission.READ_MEDIA_IMAGES
+            }, PERM_REQ);
         } else {
-            String[] legacyPerms = {
+            ActivityCompat.requestPermissions(this, new String[]{
                 Manifest.permission.ACCESS_FINE_LOCATION,
                 Manifest.permission.CAMERA,
                 Manifest.permission.RECORD_AUDIO,
                 Manifest.permission.WRITE_EXTERNAL_STORAGE
-            };
-            ActivityCompat.requestPermissions(this, legacyPerms, PERM_REQ);
+            }, PERM_REQ);
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ActivityCompat.requestPermissions(this,
