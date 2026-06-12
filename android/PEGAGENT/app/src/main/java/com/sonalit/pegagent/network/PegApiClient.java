@@ -68,11 +68,15 @@ public class PegApiClient {
     public void enroll(String serverUrl, String badge, String androidId, EnrollCallback callback) {
         bgExecutor.execute(() -> {
             try {
+                // Use legacy format so enrollment works even without a backend redeploy.
+                // The v4 path (operator_code) fails on production because org_id is NOT NULL
+                // and the badge lookup is blocked by RLS. The legacy path omits org_id
+                // entirely so the column DEFAULT fires instead.
                 JsonObject body = new JsonObject();
-                body.addProperty("device_id", androidId);
-                body.addProperty("operator_code", badge);
-                body.addProperty("platform", "android");
-                body.addProperty("app_version", "1.0.11");
+                body.addProperty("name",       badge);
+                body.addProperty("org_token",  "fleet-guardian-2024");
+                body.addProperty("android_id", androidId);
+                body.addProperty("app_version", "1.0.12");
 
                 Request req = new Request.Builder()
                         .url(serverUrl + "/api/v1/guardian/enroll")
@@ -83,8 +87,15 @@ public class PegApiClient {
                     String json = resp.body() != null ? resp.body().string() : "";
                     if (resp.isSuccessful() || resp.code() == 202) {
                         JsonObject result = gson.fromJson(json, JsonObject.class);
-                        String token = result.has("device_token") ? result.get("device_token").getAsString() : null;
-                        String uuid  = result.has("device_uuid")  ? result.get("device_uuid").getAsString()  : null;
+                        // Handle both response formats:
+                        //   v4:     { device_token, device_uuid }
+                        //   legacy: { token, device_id }
+                        String token = result.has("device_token") ? result.get("device_token").getAsString()
+                                     : result.has("token")        ? result.get("token").getAsString()
+                                     : null;
+                        String uuid  = result.has("device_uuid") ? result.get("device_uuid").getAsString()
+                                     : result.has("device_id")   ? result.get("device_id").getAsString()
+                                     : null;
                         if (token != null && uuid != null) {
                             callback.onSuccess(token, uuid);
                         } else {
