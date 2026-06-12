@@ -22,8 +22,8 @@ public class PegAgentApp extends Application {
     public static final String CHANNEL_COMMAND = "peg_command";
     public static final String CHANNEL_SESSION = "peg_session";
 
-    static final String PREFS_CRASH = "peg_crash";
-    static final String KEY_CRASH   = "crash_log";
+    public static final String PREFS_CRASH = "peg_crash";
+    public static final String KEY_CRASH   = "crash_log";
 
     private static PegAgentApp instance;
 
