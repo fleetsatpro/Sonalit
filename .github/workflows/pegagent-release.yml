@@ -2,9 +2,10 @@ name: PEGAGENT APK Build & Release
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, claude/new-session-nwpd35 ]
     paths:
       - 'android/PEGAGENT/**'
+      - '.github/workflows/pegagent-release.yml'
   workflow_dispatch:
     inputs:
       release_tag:

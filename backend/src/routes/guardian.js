@@ -223,11 +223,13 @@ async function ensureTables() {
     `);
 
     // v2 columns — safe to run repeatedly
+    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS org_id UUID`);
     await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS convoy_code TEXT`);
     await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS last_checkin_at TIMESTAMPTZ`);
     await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS android_id TEXT`);
     await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS manufacturer TEXT`);
     await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS imei_hash TEXT`);
+    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS fcm_token TEXT`).catch(() => {}); // also added below
     await query(`
       CREATE UNIQUE INDEX IF NOT EXISTS uq_guardian_devices_imei_hash
         ON guardian_devices(imei_hash)

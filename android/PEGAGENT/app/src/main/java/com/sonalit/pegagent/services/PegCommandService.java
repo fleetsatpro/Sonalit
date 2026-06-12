@@ -33,12 +33,6 @@ import com.sonalit.pegagent.util.PegConfig;
 
 import timber.log.Timber;
 
-/**
- * PegCommandService: the persistent core of PEGAGENT.
- * Runs as a foreground service from app start until device shutdown.
- * Owns: WebSocket connection, CommandExecutor, TelemetryEngine, fallback polling.
- * Restart behavior: START_STICKY ensures the OS restarts this service if killed.
- */
 public class PegCommandService extends Service {
 
     private static final int NOTIF_ID   = 1001;
@@ -58,21 +52,21 @@ public class PegCommandService extends Service {
         super.onCreate();
         Timber.i("PegCommandService created");
 
-        // WakeLock — 30 min timeout prevents indefinite hold on OEM battery restrictions
+        // WakeLock — 30 min timeout; guarded with isHeld() to prevent double-acquire crash
         try {
             PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
             if (pm != null) {
                 wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "pegagent:command_service");
-                wakeLock.acquire(30 * 60 * 1000L);
+                if (!wakeLock.isHeld()) {
+                    wakeLock.acquire(30 * 60 * 1000L);
+                }
             }
         } catch (Throwable t) {
             Timber.e(t, "WakeLock init failed (non-fatal)");
         }
 
-        // Init networking and command components. Wrapped so that any failure (e.g.
-        // missing Play Services, Keystore error) does NOT prevent startForeground()
-        // from being called in onStartCommand() — an uncaught exception here would
-        // cause ForegroundServiceDidNotStartInTimeException and crash the app.
+        // Wrap ALL component init — any failure here must NOT prevent startForeground()
+        // in onStartCommand() from being called within 5 seconds.
         try {
             api             = new PegApiClient(this);
             wsClient        = new PegWebSocketClient(this);
@@ -80,7 +74,7 @@ public class PegCommandService extends Service {
             telemetry       = new TelemetryEngine(this, api);
             wsClient.setCommandExecutor(commandExecutor);
         } catch (Throwable t) {
-            Timber.e(t, "Component init failed — service will run in degraded mode");
+            Timber.e(t, "Component init failed — running in degraded mode");
         }
 
         pollHandler = new Handler(Looper.getMainLooper());
@@ -88,8 +82,7 @@ public class PegCommandService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        // startForeground() MUST be called before any other work — Android 8+ kills the
-        // process if this isn't done within 5 seconds of startForegroundService().
+        // startForeground() MUST be called within 5 s of startForegroundService().
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 boolean hasLocation =
@@ -105,7 +98,7 @@ public class PegCommandService extends Service {
                 startForeground(NOTIF_ID, buildNotification("Connected — monitoring active"));
             }
         } catch (Throwable t) {
-            Timber.e(t, "startForeground failed — attempting fallback");
+            Timber.e(t, "startForeground failed — fallback");
             try {
                 startForeground(NOTIF_ID, buildNotification("Agent starting..."));
             } catch (Throwable t2) {
@@ -118,7 +111,7 @@ public class PegCommandService extends Service {
         if (pollHandler != null) startFallbackPoll();
 
         Timber.i("PegCommandService started");
-        return START_STICKY;
+        return START_NOT_STICKY;
     }
 
     private void startFallbackPoll() {
@@ -153,7 +146,7 @@ public class PegCommandService extends Service {
     private Notification buildNotification(String status) {
         PendingIntent pi = PendingIntent.getActivity(this, 0,
                 new Intent(this, MainActivity.class),
-                PendingIntent.FLAG_IMMUTABLE);
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
 
         return new NotificationCompat.Builder(this, PegAgentApp.CHANNEL_CORE)
                 .setContentTitle("PEGAGENT")
@@ -174,8 +167,7 @@ public class PegCommandService extends Service {
     @Override
     public void onDestroy() {
         super.onDestroy();
-        Timber.w("PegCommandService destroyed - will restart via START_STICKY");
-
+        Timber.w("PegCommandService destroyed");
         if (wsClient != null)        wsClient.disconnect();
         if (telemetry != null)       telemetry.stop();
         if (commandExecutor != null) commandExecutor.shutdown();

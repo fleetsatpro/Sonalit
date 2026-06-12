@@ -9,17 +9,15 @@ import androidx.annotation.Nullable;
 import timber.log.Timber;
 
 /**
- * Stub FCM service — Firebase dependencies are disabled until google-services.json
- * is configured (add PEGAGENT_GOOGLE_SERVICES_JSON secret and re-enable firebase-messaging
- * in build.gradle). Commands arrive via WebSocket and HTTP polling in the meantime.
+ * FCM stub — Firebase is disabled until google-services.json is configured.
+ * Replace this with FirebaseMessagingService when Firebase is re-enabled.
  */
 public class PegFcmService extends Service {
 
     @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        Timber.d("PegFcmService: Firebase not configured, ignoring");
-        stopSelf();
-        return START_NOT_STICKY;
+    public void onCreate() {
+        super.onCreate();
+        Timber.d("PegFcmService stub created (Firebase disabled)");
     }
 
     @Nullable

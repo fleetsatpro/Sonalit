@@ -4,15 +4,10 @@ import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.location.Location;
+import android.location.LocationManager;
+import android.os.Looper;
 
 import androidx.core.app.ActivityCompat;
-
-import com.google.android.gms.location.CurrentLocationRequest;
-import com.google.android.gms.location.FusedLocationProviderClient;
-import com.google.android.gms.location.LocationServices;
-import com.google.android.gms.location.Priority;
-import com.google.android.gms.tasks.CancellationToken;
-import com.google.android.gms.tasks.OnTokenCanceledListener;
 
 import timber.log.Timber;
 
@@ -20,7 +15,7 @@ public class LocationEngine {
 
     private static LocationEngine instance;
     private final Context ctx;
-    private final FusedLocationProviderClient fusedLocation;
+    private final LocationManager locationManager;
 
     public interface LocationCallback {
         void onLocation(Location location);
@@ -28,7 +23,7 @@ public class LocationEngine {
 
     private LocationEngine(Context ctx) {
         this.ctx = ctx.getApplicationContext();
-        this.fusedLocation = LocationServices.getFusedLocationProviderClient(this.ctx);
+        this.locationManager = (LocationManager) this.ctx.getSystemService(Context.LOCATION_SERVICE);
     }
 
     public static synchronized LocationEngine getInstance(Context ctx) {
@@ -36,42 +31,58 @@ public class LocationEngine {
         return instance;
     }
 
-    /**
-     * Get best current location — high accuracy, no timeout wait.
-     * Uses getCurrentLocation() which returns the best available fix immediately.
-     */
     public void getLocationNow(LocationCallback callback) {
         if (ActivityCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED
+            && ActivityCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_COARSE_LOCATION)
                 != PackageManager.PERMISSION_GRANTED) {
             Timber.w("Location permission denied");
             callback.onLocation(null);
             return;
         }
 
-        CancellationToken ct = new CancellationToken() {
-            @Override
-            public boolean isCancellationRequested() { return false; }
-            @Override
-            public CancellationToken onCanceledRequested(OnTokenCanceledListener listener) { return this; }
-        };
+        if (locationManager == null) {
+            callback.onLocation(null);
+            return;
+        }
 
-        fusedLocation.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, ct)
-                .addOnSuccessListener(location -> {
-                    if (location != null) {
-                        Timber.d("Location fix: %.6f, %.6f acc=%.1f",
-                                location.getLatitude(), location.getLongitude(),
-                                location.getAccuracy());
-                        callback.onLocation(location);
-                    } else {
-                        // Fallback: get last known location
-                        fusedLocation.getLastLocation()
-                                .addOnSuccessListener(callback::onLocation)
-                                .addOnFailureListener(e -> callback.onLocation(null));
-                    }
-                })
-                .addOnFailureListener(e -> {
-                    Timber.e(e, "getCurrentLocation failed");
-                    callback.onLocation(null);
-                });
+        // Try GPS first, fall back to network
+        Location best = null;
+        try {
+            Location gps = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+            Location net = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+            if (gps != null && net != null) {
+                best = gps.getAccuracy() <= net.getAccuracy() ? gps : net;
+            } else {
+                best = gps != null ? gps : net;
+            }
+        } catch (Exception e) {
+            Timber.e(e, "getLastKnownLocation failed");
+        }
+
+        if (best != null) {
+            Timber.d("Location fix (cached): %.6f, %.6f acc=%.1f",
+                    best.getLatitude(), best.getLongitude(), best.getAccuracy());
+            callback.onLocation(best);
+            return;
+        }
+
+        // No cached fix — request a single update
+        try {
+            final Location[] result = {null};
+            android.location.LocationListener listener = new android.location.LocationListener() {
+                @Override
+                public void onLocationChanged(Location location) {
+                    result[0] = location;
+                    try { locationManager.removeUpdates(this); } catch (Exception ignored) {}
+                    Timber.d("Location fix (fresh): %.6f, %.6f", location.getLatitude(), location.getLongitude());
+                    callback.onLocation(location);
+                }
+            };
+            locationManager.requestSingleUpdate(LocationManager.GPS_PROVIDER, listener, Looper.getMainLooper());
+        } catch (Exception e) {
+            Timber.e(e, "requestSingleUpdate failed");
+            callback.onLocation(null);
+        }
     }
 }
