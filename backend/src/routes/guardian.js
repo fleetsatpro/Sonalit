@@ -526,12 +526,16 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
         return res.json({ status: mappedStatus, device_uuid: dev.id, device_token: dev.token });
       }
 
-      // New enrollment
-      const { rows } = await query(
-        `INSERT INTO guardian_devices (name, android_id, fcm_token, app_version, org_id, status)
-         VALUES ($1, $2, $3, $4, $5, 'pending') RETURNING id, token`,
-        [operator_code, device_id, fcm_token ?? null, app_version ?? null, orgId]
-      );
+      // New enrollment — omit org_id when null so the column DEFAULT fires
+      // rather than explicitly passing NULL against a NOT NULL constraint.
+      const enrollParams = [operator_code, device_id, fcm_token ?? null, app_version ?? null];
+      const enrollSql = orgId !== null
+        ? `INSERT INTO guardian_devices (name, android_id, fcm_token, app_version, org_id, status)
+           VALUES ($1, $2, $3, $4, $5, 'pending') RETURNING id, token`
+        : `INSERT INTO guardian_devices (name, android_id, fcm_token, app_version, status)
+           VALUES ($1, $2, $3, $4, 'pending') RETURNING id, token`;
+      if (orgId !== null) enrollParams.push(orgId);
+      const { rows } = await query(enrollSql, enrollParams);
 
       // Auto-link device to field officer
       if (officerRes.rows[0]) {
