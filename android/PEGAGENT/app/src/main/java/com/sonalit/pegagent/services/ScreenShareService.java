@@ -82,8 +82,13 @@ public class ScreenShareService extends Service {
 
         Timber.i("ScreenShare starting session=%s channel=%s", sessionId, centrifugoChannel);
 
-        // Start foreground notification
-        startForeground(NOTIF_ID, buildNotification());
+        // Start foreground with correct type — Android 14 enforces type matches manifest declaration.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIF_ID, buildNotification(),
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
+        } else {
+            startForeground(NOTIF_ID, buildNotification());
+        }
 
         // Check if Device Owner (Knox) for silent capture
         if (PegDeviceAdminReceiver.isDeviceOwner(this)) {

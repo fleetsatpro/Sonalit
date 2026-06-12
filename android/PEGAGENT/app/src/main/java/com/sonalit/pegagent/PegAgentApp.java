@@ -10,6 +10,9 @@ import com.sonalit.pegagent.services.PegCommandService;
 import com.sonalit.pegagent.util.PegConfig;
 import com.sonalit.pegagent.util.SecureStore;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
+
 import timber.log.Timber;
 
 public class PegAgentApp extends Application {
@@ -19,29 +22,58 @@ public class PegAgentApp extends Application {
     public static final String CHANNEL_COMMAND = "peg_command";
     public static final String CHANNEL_SESSION = "peg_session";
 
+    static final String PREFS_CRASH = "peg_crash";
+    static final String KEY_CRASH   = "crash_log";
+
     private static PegAgentApp instance;
 
     @Override
     public void onCreate() {
+        // Install crash logger FIRST — before super.onCreate() so we catch theme/resource crashes.
+        installCrashLogger();
+
         super.onCreate();
         instance = this;
 
-        Timber.plant(new Timber.DebugTree());
+        try {
+            Timber.plant(new Timber.DebugTree());
 
-        // SharedPreferences init — always succeeds, never throws
-        SecureStore.init(this);
+            // SharedPreferences init — always succeeds, never throws
+            SecureStore.init(this);
 
-        createNotificationChannels();
+            createNotificationChannels();
 
-        // Only start the command service if the device is already enrolled.
-        // On first launch (no enrollment) we skip this entirely — starting a
-        // foreground service with no enrollment data is pointless and risks an
-        // ForegroundServiceDidNotStartInTimeException on some Android 14 builds.
-        if (PegConfig.isEnrolled(this)) {
-            startCommandService();
-        } else {
-            Timber.i("Not enrolled - skipping service start");
+            // Only start the command service if the device is already enrolled.
+            // On first launch (no enrollment) we skip this entirely — starting a
+            // foreground service with no enrollment data is pointless and risks an
+            // ForegroundServiceDidNotStartInTimeException on some Android 14 builds.
+            if (PegConfig.isEnrolled(this)) {
+                startCommandService();
+            } else {
+                Timber.i("Not enrolled - skipping service start");
+            }
+        } catch (Throwable t) {
+            // Crash logger above will have captured this already; just prevent a double-kill.
+            android.util.Log.e("PegAgentApp", "onCreate crashed", t);
         }
+    }
+
+    private void installCrashLogger() {
+        Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, ex) -> {
+            try {
+                StringWriter sw = new StringWriter();
+                ex.printStackTrace(new PrintWriter(sw));
+                // Use commit() (synchronous) so it flushes before process dies.
+                getSharedPreferences(PREFS_CRASH, MODE_PRIVATE)
+                        .edit()
+                        .putString(KEY_CRASH, sw.toString())
+                        .commit();
+            } catch (Throwable ignored) {}
+            // Delegate to system handler so the usual crash dialog appears.
+            if (previous != null) previous.uncaughtException(thread, ex);
+            else android.os.Process.killProcess(android.os.Process.myPid());
+        });
     }
 
     public static PegAgentApp getInstance() {

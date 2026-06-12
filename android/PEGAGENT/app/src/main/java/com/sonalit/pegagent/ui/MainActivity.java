@@ -88,6 +88,9 @@ public class MainActivity extends AppCompatActivity {
                 timber.log.Timber.e(t, "registerReceiver failed");
             }
 
+            // Show crash from previous session (if any) before writing over the log
+            showPreviousCrash();
+
             appendLog("Agent initializing...");
             if (PegConfig.isEnrolled(this)) {
                 appendLog("✓ Enrollment: Active");
@@ -129,7 +132,7 @@ public class MainActivity extends AppCompatActivity {
         root.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Sonalit Field Officer Agent v1.0.5");
+        subtitle.setText("Sonalit Field Officer Agent v1.0.6");
         subtitle.setTextColor(Color.parseColor("#6b7280"));
         subtitle.setTextSize(11f);
         subtitle.setPadding(0, 4, 0, 32);
@@ -362,6 +365,21 @@ public class MainActivity extends AppCompatActivity {
         lp.setMargins(0, 8, 0, 8);
         et.setLayoutParams(lp);
         return et;
+    }
+
+    private void showPreviousCrash() {
+        try {
+            android.content.SharedPreferences crashPrefs =
+                    getSharedPreferences(PegAgentApp.PREFS_CRASH, MODE_PRIVATE);
+            String crash = crashPrefs.getString(PegAgentApp.KEY_CRASH, null);
+            if (crash != null) {
+                crashPrefs.edit().remove(PegAgentApp.KEY_CRASH).apply();
+                // Show first 600 chars so it fits on screen
+                String snippet = crash.length() > 600 ? crash.substring(0, 600) + "…" : crash;
+                appendLog("!! PREV CRASH:\n" + snippet);
+                if (tvLog != null) tvLog.setTextColor(Color.parseColor("#ef4444"));
+            }
+        } catch (Throwable ignored) {}
     }
 
     private void requestCriticalPermissions() {
