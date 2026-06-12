@@ -129,7 +129,7 @@ public class MainActivity extends AppCompatActivity {
         root.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Sonalit Field Officer Agent v1.0.4");
+        subtitle.setText("Sonalit Field Officer Agent v1.0.5");
         subtitle.setTextColor(Color.parseColor("#6b7280"));
         subtitle.setTextSize(11f);
         subtitle.setPadding(0, 4, 0, 32);

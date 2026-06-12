@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.PegAgent" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <style name="Theme.PegAgent" parent="Theme.AppCompat.NoActionBar">
         <item name="colorPrimary">#F0B429</item>
         <item name="colorAccent">#22c55e</item>
         <item name="android:windowBackground">#04080F</item>
