@@ -23,8 +23,8 @@ public class PegDeviceAdminReceiver extends DeviceAdminReceiver {
         ComponentName admin = getComponentName(ctx);
         try {
             dpm.setScreenCaptureDisabled(admin, false);
-        } catch (SecurityException e) {
-            Timber.w("setScreenCaptureDisabled requires Device Owner");
+        } catch (Exception e) {
+            Timber.w("setScreenCaptureDisabled requires Device Owner: %s", e.getMessage());
         }
     }
 

@@ -72,7 +72,7 @@ public class PegApiClient {
                 body.addProperty("device_id", androidId);
                 body.addProperty("operator_code", badge);
                 body.addProperty("platform", "android");
-                body.addProperty("app_version", "1.0.10");
+                body.addProperty("app_version", "1.0.11");
 
                 Request req = new Request.Builder()
                         .url(serverUrl + "/api/v1/guardian/enroll")
