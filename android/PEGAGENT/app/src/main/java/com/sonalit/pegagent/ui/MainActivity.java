@@ -76,22 +76,38 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        buildUI();
-        requestCriticalPermissions();
-        refreshStatus();
+        try {
+            buildUI();
+            refreshStatus();
 
-        androidx.core.content.ContextCompat.registerReceiver(this, forceCheckinReceiver,
-                new IntentFilter("com.sonalit.pegagent.ACTION_FORCE_CHECKIN"),
-                androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);
-
-        appendLog("Agent initializing...");
-        if (PegConfig.isEnrolled(this)) {
-            appendLog("✓ Enrollment: Active");
-            if (PegDeviceAdminReceiver.isAdminActive(this)) {
-                appendLog("✓ Device Admin: Active");
-            } else {
-                appendLog("! Device Admin: Not enabled");
+            try {
+                androidx.core.content.ContextCompat.registerReceiver(this, forceCheckinReceiver,
+                        new IntentFilter("com.sonalit.pegagent.ACTION_FORCE_CHECKIN"),
+                        androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);
+            } catch (Throwable t) {
+                timber.log.Timber.e(t, "registerReceiver failed");
             }
+
+            appendLog("Agent initializing...");
+            if (PegConfig.isEnrolled(this)) {
+                appendLog("✓ Enrollment: Active");
+                appendLog(PegDeviceAdminReceiver.isAdminActive(this)
+                        ? "✓ Device Admin: Active" : "! Device Admin: Not enabled");
+            }
+
+            // Defer permission requests until after first layout pass
+            if (tvLog != null) {
+                tvLog.post(this::requestCriticalPermissions);
+            }
+        } catch (Throwable t) {
+            timber.log.Timber.e(t, "MainActivity.onCreate crashed");
+            // Last resort: show a plain error view so the app doesn't silently die
+            android.widget.TextView fallback = new android.widget.TextView(this);
+            fallback.setText("Startup error: " + t.getMessage());
+            fallback.setTextColor(android.graphics.Color.RED);
+            fallback.setBackgroundColor(android.graphics.Color.BLACK);
+            fallback.setPadding(40, 80, 40, 40);
+            setContentView(fallback);
         }
     }
 
@@ -113,7 +129,7 @@ public class MainActivity extends AppCompatActivity {
         root.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Sonalit Field Officer Agent v1.0.3");
+        subtitle.setText("Sonalit Field Officer Agent v1.0.4");
         subtitle.setTextColor(Color.parseColor("#6b7280"));
         subtitle.setTextSize(11f);
         subtitle.setPadding(0, 4, 0, 32);

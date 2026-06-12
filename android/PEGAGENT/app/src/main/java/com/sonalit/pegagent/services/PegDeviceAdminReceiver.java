@@ -62,7 +62,11 @@ public class PegDeviceAdminReceiver extends DeviceAdminReceiver {
     }
 
     public static boolean isAdminActive(Context ctx) {
-        DevicePolicyManager dpm = ctx.getSystemService(DevicePolicyManager.class);
-        return dpm.isAdminActive(getComponentName(ctx));
+        try {
+            DevicePolicyManager dpm = ctx.getSystemService(DevicePolicyManager.class);
+            return dpm != null && dpm.isAdminActive(getComponentName(ctx));
+        } catch (Throwable t) {
+            return false;
+        }
     }
 }

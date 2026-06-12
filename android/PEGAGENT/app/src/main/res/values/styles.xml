@@ -1,12 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.PegAgent" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+    <style name="Theme.PegAgent" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="colorPrimary">#F0B429</item>
-        <item name="colorPrimaryVariant">#c8921a</item>
-        <item name="colorOnPrimary">#04080F</item>
-        <item name="colorSecondary">#22c55e</item>
+        <item name="colorAccent">#22c55e</item>
         <item name="android:windowBackground">#04080F</item>
-        <item name="android:statusBarColor">#080C14</item>
-        <item name="android:navigationBarColor">#080C14</item>
     </style>
 </resources>
