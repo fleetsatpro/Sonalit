@@ -11,6 +11,7 @@ import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -20,6 +21,7 @@ import android.widget.TextView;
 
 import com.sonalit.pegagent.PegAgentApp;
 import com.sonalit.pegagent.R;
+import com.sonalit.pegagent.network.PegApiClient;
 import com.sonalit.pegagent.services.PegDeviceAdminReceiver;
 import com.sonalit.pegagent.util.PegConfig;
 
@@ -147,7 +149,7 @@ public class MainActivity extends Activity {
         root.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Sonalit Field Officer Agent v1.0.9");
+        subtitle.setText("Sonalit Field Officer Agent v1.0.10");
         subtitle.setTextColor(Color.parseColor("#6b7280"));
         subtitle.setTextSize(11f);
         subtitle.setPadding(0, 4, 0, 32);
@@ -203,36 +205,11 @@ public class MainActivity extends Activity {
         enrollTitle.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         enrollLayout.addView(enrollTitle);
 
-        Button btnScanQr = new Button(this);
-        btnScanQr.setText("⬛ SCAN QR CODE");
-        btnScanQr.setBackgroundColor(Color.parseColor("#1d4ed8"));
-        btnScanQr.setTextColor(Color.WHITE);
-        btnScanQr.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        btnScanQr.setPadding(0, 24, 0, 24);
-        LinearLayout.LayoutParams qrParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        qrParams.setMargins(0, 12, 0, 8);
-        btnScanQr.setLayoutParams(qrParams);
-        btnScanQr.setOnClickListener(v ->
-                startActivityForResult(new Intent(this, ScanQrActivity.class), REQ_QR));
-        enrollLayout.addView(btnScanQr);
-
-        TextView orLabel = new TextView(this);
-        orLabel.setText("— or enter manually —");
-        orLabel.setTextColor(Color.parseColor("#6b7280"));
-        orLabel.setTextSize(10f);
-        orLabel.setPadding(0, 8, 0, 4);
-        enrollLayout.addView(orLabel);
-
         EditText etServer = makeInput("Server URL");
         etServer.setText("https://api.sonalit.com");
-        EditText etOrg   = makeInput("Organization ID");
-        EditText etToken = makeInput("Auth Token");
         EditText etBadge = makeInput("Officer Badge (e.g. FO-012)");
 
         enrollLayout.addView(etServer);
-        enrollLayout.addView(etOrg);
-        enrollLayout.addView(etToken);
         enrollLayout.addView(etBadge);
 
         Button btnEnroll = new Button(this);
@@ -247,20 +224,36 @@ public class MainActivity extends Activity {
         btnEnroll.setLayoutParams(enrollBtnParams);
         btnEnroll.setOnClickListener(v -> {
             String server = etServer.getText().toString().trim();
-            String org    = etOrg.getText().toString().trim();
-            String tok    = etToken.getText().toString().trim();
             String badge  = etBadge.getText().toString().trim();
-            if (server.isEmpty() || org.isEmpty() || tok.isEmpty() || badge.isEmpty()) {
-                appendLog("✗ All fields required");
+            if (server.isEmpty() || badge.isEmpty()) {
+                appendLog("✗ Server URL and Badge are required");
                 return;
             }
-            PegConfig.saveEnrollment(server, org,
-                    "device_" + System.currentTimeMillis(),
-                    tok, tok, badge, "");
-            appendLog("✓ Enrollment saved");
-            refreshStatus();
-            ((PegAgentApp) getApplication()).startCommandService();
-            appendLog("✓ Agent service started");
+            btnEnroll.setEnabled(false);
+            btnEnroll.setText("ENROLLING...");
+            appendLog("Connecting to " + server + "...");
+            String androidId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
+            PegApiClient tmpApi = new PegApiClient(this);
+            tmpApi.enroll(server, badge, androidId, new PegApiClient.EnrollCallback() {
+                @Override public void onSuccess(String deviceToken, String deviceUuid) {
+                    runOnUiThread(() -> {
+                        PegConfig.saveEnrollment(server, "", deviceUuid, deviceToken, deviceToken, badge, "");
+                        appendLog("✓ Enrolled — awaiting admin approval");
+                        appendLog("✓ Agent service starting...");
+                        refreshStatus();
+                        ((PegAgentApp) getApplication()).startCommandService();
+                        btnEnroll.setEnabled(true);
+                        btnEnroll.setText("ENROLL");
+                    });
+                }
+                @Override public void onFailure(String error) {
+                    runOnUiThread(() -> {
+                        appendLog("✗ Enrollment failed: " + error);
+                        btnEnroll.setEnabled(true);
+                        btnEnroll.setText("ENROLL");
+                    });
+                }
+            });
         });
         enrollLayout.addView(btnEnroll);
         enrollLayout.setVisibility(PegConfig.isEnrolled(this) ? View.GONE : View.VISIBLE);

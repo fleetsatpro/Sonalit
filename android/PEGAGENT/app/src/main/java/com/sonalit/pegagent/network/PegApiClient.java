@@ -22,10 +22,15 @@ import timber.log.Timber;
 
 /**
  * PegApiClient: REST calls to Sonalit backend.
- * - Telemetry PATCH on 30s heartbeat + immediate on location request
- * - Command ACK POST
- * - Enrollment
- * All calls are fire-and-forget on background executor - never blocks calling thread.
+ *
+ * Auth: X-Device-Token header (raw UUID issued by /api/v1/guardian/enroll).
+ *
+ * Endpoints:
+ *   POST /api/v1/guardian/enroll       — device registration (no auth needed)
+ *   POST /api/v1/guardian/heartbeat    — telemetry + receive pending commands
+ *   POST /api/v1/guardian/location     — immediate location push
+ *   POST /api/v1/guardian/ack-command  — command acknowledgement
+ *   POST /api/v1/guardian/panic        — SOS alert
  */
 public class PegApiClient {
 
@@ -49,81 +54,154 @@ public class PegApiClient {
                 .build();
     }
 
-    /** Send telemetry heartbeat. Non-blocking. */
-    public void sendTelemetry(TelemetryPayload payload) {
+    // ── Enroll ────────────────────────────────────────────────────────────────
+
+    public interface EnrollCallback {
+        void onSuccess(String deviceToken, String deviceUuid);
+        void onFailure(String error);
+    }
+
+    /**
+     * Enroll a device. No auth token required — call before saveEnrollment().
+     * Runs on bgExecutor; callback is NOT dispatched to main thread.
+     */
+    public void enroll(String serverUrl, String badge, String androidId, EnrollCallback callback) {
         bgExecutor.execute(() -> {
             try {
-                String deviceId = PegConfig.getDeviceId(ctx);
-                String url = PegConfig.getServerUrl(ctx)
-                        + "/api/guardian/devices/" + deviceId + "/telemetry";
+                JsonObject body = new JsonObject();
+                body.addProperty("device_id", androidId);
+                body.addProperty("operator_code", badge);
+                body.addProperty("platform", "android");
+                body.addProperty("app_version", "1.0.10");
 
-                String body = gson.toJson(payload);
                 Request req = new Request.Builder()
-                        .url(url)
-                        .patch(RequestBody.create(body, JSON))
-                        .header("Authorization", "Bearer " + PegConfig.getAuthToken(ctx))
-                        .header("Content-Type", "application/json")
+                        .url(serverUrl + "/api/v1/guardian/enroll")
+                        .post(RequestBody.create(body.toString(), JSON))
                         .build();
 
                 try (Response resp = http.newCall(req).execute()) {
-                    if (!resp.isSuccessful()) {
-                        Timber.w("Telemetry failed: HTTP %d", resp.code());
+                    String json = resp.body() != null ? resp.body().string() : "";
+                    if (resp.isSuccessful() || resp.code() == 202) {
+                        JsonObject result = gson.fromJson(json, JsonObject.class);
+                        String token = result.has("device_token") ? result.get("device_token").getAsString() : null;
+                        String uuid  = result.has("device_uuid")  ? result.get("device_uuid").getAsString()  : null;
+                        if (token != null && uuid != null) {
+                            callback.onSuccess(token, uuid);
+                        } else {
+                            callback.onFailure("Server returned incomplete enrollment: " + json);
+                        }
                     } else {
-                        Timber.d("Telemetry sent OK");
+                        callback.onFailure("HTTP " + resp.code() + ": " + json);
+                    }
+                }
+            } catch (Exception e) {
+                callback.onFailure(e.getMessage() != null ? e.getMessage() : "Network error");
+            }
+        });
+    }
+
+    // ── Telemetry (heartbeat) ─────────────────────────────────────────────────
+
+    /** Send telemetry heartbeat. Non-blocking. Returns pending commands via callback (may be null). */
+    public void sendTelemetry(TelemetryPayload payload) {
+        sendTelemetry(payload, null);
+    }
+
+    public void sendTelemetry(TelemetryPayload payload, CommandPollCallback commandCallback) {
+        bgExecutor.execute(() -> {
+            try {
+                String token = PegConfig.getAuthToken(ctx);
+                if (token == null) return;
+
+                JsonObject body = new JsonObject();
+                body.addProperty("battery_pct",      payload.battery_pct);
+                body.addProperty("signal_strength",  payload.signal_pct);
+                body.addProperty("app_version",      payload.app_version);
+                body.addProperty("app_version_code", 10);
+                if (payload.gps_locked) {
+                    body.addProperty("lat",   payload.gps_lat);
+                    body.addProperty("lng",   payload.gps_lng);
+                    body.addProperty("speed", 0.0);
+                }
+
+                Request req = new Request.Builder()
+                        .url(PegConfig.getServerUrl(ctx) + "/api/v1/guardian/heartbeat")
+                        .post(RequestBody.create(body.toString(), JSON))
+                        .header("X-Device-Token", token)
+                        .build();
+
+                try (Response resp = http.newCall(req).execute()) {
+                    if (resp.isSuccessful() && resp.body() != null) {
+                        String json = resp.body().string();
+                        Timber.d("Heartbeat OK");
+                        if (commandCallback != null) {
+                            // Extract commands array from { commands: [...] }
+                            try {
+                                JsonObject r = gson.fromJson(json, JsonObject.class);
+                                if (r.has("commands")) {
+                                    commandCallback.onCommands(r.get("commands").toString());
+                                }
+                            } catch (Exception ignored) {}
+                        }
+                    } else {
+                        Timber.w("Heartbeat failed: HTTP %d", resp.code());
                     }
                 }
             } catch (IOException e) {
-                Timber.e(e, "Telemetry send error");
+                Timber.e(e, "Heartbeat error");
             }
         });
     }
 
-    /** Force-send telemetry immediately with current location (for request_location command). */
+    // ── Location ──────────────────────────────────────────────────────────────
+
+    /** Push a fresh location immediately (e.g. triggered by request_location command). */
     public void sendTelemetryNow(Location location) {
         bgExecutor.execute(() -> {
             try {
-                String deviceId = PegConfig.getDeviceId(ctx);
-                String url = PegConfig.getServerUrl(ctx)
-                        + "/api/guardian/devices/" + deviceId + "/telemetry";
+                String token = PegConfig.getAuthToken(ctx);
+                if (token == null) return;
 
                 JsonObject body = new JsonObject();
-                body.addProperty("gps_locked", true);
-                body.addProperty("gps_lat", location.getLatitude());
-                body.addProperty("gps_lng", location.getLongitude());
-                body.addProperty("gps_accuracy_m", location.getAccuracy());
-                body.addProperty("trigger", "request_location");
+                body.addProperty("lat",      location.getLatitude());
+                body.addProperty("lng",      location.getLongitude());
+                body.addProperty("accuracy", location.getAccuracy());
+                body.addProperty("speed",    location.getSpeed());
+                body.addProperty("timestamp", new java.util.Date(location.getTime()).toString());
 
                 Request req = new Request.Builder()
-                        .url(url)
-                        .patch(RequestBody.create(body.toString(), JSON))
-                        .header("Authorization", "Bearer " + PegConfig.getAuthToken(ctx))
+                        .url(PegConfig.getServerUrl(ctx) + "/api/v1/guardian/location")
+                        .post(RequestBody.create(body.toString(), JSON))
+                        .header("X-Device-Token", token)
                         .build();
 
                 try (Response resp = http.newCall(req).execute()) {
-                    Timber.d("Location telemetry: HTTP %d", resp.code());
+                    Timber.d("Location push: HTTP %d", resp.code());
                 }
             } catch (IOException e) {
-                Timber.e(e, "Location telemetry error");
+                Timber.e(e, "Location push error");
             }
         });
     }
 
-    /** ACK a command back to the server with status and execution latency. */
+    // ── Command ACK ───────────────────────────────────────────────────────────
+
+    /** ACK a command back to the server. */
     public void ackCommand(String commandId, String status, long latencyMs) {
         bgExecutor.execute(() -> {
             try {
-                String url = PegConfig.getServerUrl(ctx) + "/api/guardian/commands/" + commandId + "/ack";
+                String token = PegConfig.getAuthToken(ctx);
+                if (token == null) return;
 
                 JsonObject body = new JsonObject();
-                body.addProperty("status", status);
-                body.addProperty("acked_at", System.currentTimeMillis());
-                body.addProperty("latency_ms", latencyMs);
-                body.addProperty("device_id", PegConfig.getDeviceId(ctx));
+                body.addProperty("command_id", commandId);
+                body.addProperty("status",     status.equals("executed") || status.equals("failed") ? status : "executed");
+                body.addProperty("result",     status);
 
                 Request req = new Request.Builder()
-                        .url(url)
+                        .url(PegConfig.getServerUrl(ctx) + "/api/v1/guardian/ack-command")
                         .post(RequestBody.create(body.toString(), JSON))
-                        .header("Authorization", "Bearer " + PegConfig.getAuthToken(ctx))
+                        .header("X-Device-Token", token)
                         .build();
 
                 try (Response resp = http.newCall(req).execute()) {
@@ -135,28 +213,67 @@ public class PegApiClient {
         });
     }
 
-    /** Poll command queue (fallback when WebSocket is down). */
+    // ── Poll (heartbeat fallback) ─────────────────────────────────────────────
+
+    /** Poll command queue via heartbeat (fallback when WebSocket is down). */
     public void pollCommands(CommandPollCallback callback) {
         bgExecutor.execute(() -> {
             try {
-                String deviceId = PegConfig.getDeviceId(ctx);
-                String url = PegConfig.getServerUrl(ctx)
-                        + "/api/guardian/devices/" + deviceId + "/commands/pending";
+                String token = PegConfig.getAuthToken(ctx);
+                if (token == null) return;
+
+                JsonObject body = new JsonObject();
+                body.addProperty("app_version_code", 10);
 
                 Request req = new Request.Builder()
-                        .url(url)
-                        .get()
-                        .header("Authorization", "Bearer " + PegConfig.getAuthToken(ctx))
+                        .url(PegConfig.getServerUrl(ctx) + "/api/v1/guardian/heartbeat")
+                        .post(RequestBody.create(body.toString(), JSON))
+                        .header("X-Device-Token", token)
                         .build();
 
                 try (Response resp = http.newCall(req).execute()) {
                     if (resp.isSuccessful() && resp.body() != null) {
                         String json = resp.body().string();
-                        callback.onCommands(json);
+                        try {
+                            JsonObject r = gson.fromJson(json, JsonObject.class);
+                            if (r.has("commands")) {
+                                callback.onCommands(r.get("commands").toString());
+                            }
+                        } catch (Exception ignored) {}
                     }
                 }
             } catch (IOException e) {
                 Timber.e(e, "Command poll error");
+            }
+        });
+    }
+
+    // ── SOS ───────────────────────────────────────────────────────────────────
+
+    /** Fire a panic/SOS event. */
+    public void sendPanic(double lat, double lng, String mode) {
+        bgExecutor.execute(() -> {
+            try {
+                String token = PegConfig.getAuthToken(ctx);
+                if (token == null) return;
+
+                JsonObject body = new JsonObject();
+                body.addProperty("lat",  lat);
+                body.addProperty("lng",  lng);
+                body.addProperty("mode", mode);
+
+                Request req = new Request.Builder()
+                        .url(PegConfig.getServerUrl(ctx) + "/api/v1/guardian/panic")
+                        .post(RequestBody.create(body.toString(), JSON))
+                        .header("X-Device-Token", token)
+                        .header("Idempotency-Key", java.util.UUID.randomUUID().toString())
+                        .build();
+
+                try (Response resp = http.newCall(req).execute()) {
+                    Timber.i("Panic sent: HTTP %d", resp.code());
+                }
+            } catch (IOException e) {
+                Timber.e(e, "Panic send error");
             }
         });
     }
@@ -170,7 +287,8 @@ public class PegApiClient {
         void onCommands(String json);
     }
 
-    /** Telemetry payload - matches backend PATCH /telemetry contract */
+    // ── Telemetry payload ─────────────────────────────────────────────────────
+
     public static class TelemetryPayload {
         public int battery_pct;
         public int signal_pct;
@@ -183,7 +301,6 @@ public class PegApiClient {
         public int ram_pct;
         public String app_version;
         public String android_version;
-        public String knox_version = "3.8";
 
         public static TelemetryPayload build(Context ctx, Location loc) {
             TelemetryPayload p = new TelemetryPayload();
@@ -195,12 +312,9 @@ public class PegApiClient {
                 p.gps_lat       = loc.getLatitude();
                 p.gps_lng       = loc.getLongitude();
                 p.gps_accuracy_m = loc.getAccuracy();
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    p.gps_satellites = 0; // requires NMEA listener for exact count
-                }
             }
             p.battery_pct = getBatteryPct(ctx);
-            p.signal_pct  = getSignalPct(ctx);
+            p.signal_pct  = 0;
             p.cpu_pct     = getCpuPct();
             p.ram_pct     = getRamPct(ctx);
             return p;
@@ -213,14 +327,6 @@ public class PegApiClient {
             int level = battIntent.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1);
             int scale = battIntent.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1);
             return (scale > 0) ? (int)((level / (float)scale) * 100) : -1;
-        }
-
-        private static int getSignalPct(Context ctx) {
-            android.telephony.TelephonyManager tm =
-                    (android.telephony.TelephonyManager) ctx.getSystemService(Context.TELEPHONY_SERVICE);
-            // Map signal strength: Android returns 0-4 bars
-            // We convert to 0-100 percentage
-            return -1; // Requires ASU listener, handled by TelemetryService
         }
 
         private static int getCpuPct() {

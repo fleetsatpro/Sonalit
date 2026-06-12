@@ -18,8 +18,9 @@ public class PegConfig {
     // Telemetry interval: 30 seconds
     public static final long TELEMETRY_INTERVAL_MS = 30_000L;
 
-    // Command poll fallback interval (WebSocket preferred): 5 seconds
-    public static final long CMD_POLL_INTERVAL_MS = 5_000L;
+    // Command poll fallback interval (WebSocket preferred): 45 seconds
+    // Heartbeat rate limit is 6/min; telemetry fires every 30s, so poll at 45s stays under limit.
+    public static final long CMD_POLL_INTERVAL_MS = 45_000L;
 
     // WebSocket reconnect: 2 seconds base, exponential backoff to 30s
     public static final long WS_RECONNECT_BASE_MS  = 2_000L;

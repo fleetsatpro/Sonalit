@@ -20,7 +20,7 @@ public class PegCommand {
     @SerializedName("id")
     public String id;
 
-    @SerializedName("command")
+    @SerializedName(value = "command", alternate = {"command_type"})
     public String command;
 
     @SerializedName("payload")
