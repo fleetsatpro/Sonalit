@@ -1,12 +1,13 @@
 package com.sonalit.pegagent.ui;
 
 import android.Manifest;
+import android.app.Activity;
 import android.app.admin.DevicePolicyManager;
 import android.content.BroadcastReceiver;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
@@ -17,11 +18,6 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import androidx.activity.result.ActivityResultLauncher;
-import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
-
 import com.sonalit.pegagent.PegAgentApp;
 import com.sonalit.pegagent.R;
 import com.sonalit.pegagent.services.PegDeviceAdminReceiver;
@@ -31,65 +27,66 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends Activity {
 
-    private static final int PERM_REQ = 100;
+    private static final int PERM_REQ   = 100;
+    private static final int REQ_QR     = 200;
+    private static final int REQ_ADMIN  = 201;
 
     private TextView tvStatus, tvBadge, tvOrgId, tvDeviceId, tvAdminStatus, tvLog;
     private Button btnSos, btnMdm;
     private LinearLayout enrollLayout;
-    private StringBuilder logBuffer = new StringBuilder();
+    private final StringBuilder logBuffer = new StringBuilder();
 
-    private final ActivityResultLauncher<Intent> qrLauncher = registerForActivityResult(
-            new ActivityResultContracts.StartActivityForResult(),
-            result -> {
-                if (result.getResultCode() == RESULT_OK) {
-                    refreshStatus();
-                    ((PegAgentApp) getApplication()).startCommandService();
-                    appendLog("✓ QR enrollment complete — service started");
-                }
-            });
-
-    private final ActivityResultLauncher<Intent> adminLauncher = registerForActivityResult(
-            new ActivityResultContracts.StartActivityForResult(),
-            result -> {
-                if (PegDeviceAdminReceiver.isAdminActive(this)) {
-                    appendLog("✓ Device Admin: Active");
-                    tvAdminStatus.setText("MDM: Active");
-                    tvAdminStatus.setTextColor(Color.parseColor("#22c55e"));
-                    if (btnMdm != null) btnMdm.setVisibility(View.GONE);
-                } else {
-                    appendLog("✗ Device Admin: Not granted");
-                }
-            });
+    // Read crash log before super.onCreate() (which may crash) using app context.
+    private String pendingCrashLog;
 
     private final BroadcastReceiver forceCheckinReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context ctx, Intent intent) {
             runOnUiThread(() -> {
                 appendLog("⚡ Force check-in requested by operator");
-                tvLog.setTextColor(Color.parseColor("#f59e0b"));
+                if (tvLog != null) tvLog.setTextColor(Color.parseColor("#f59e0b"));
             });
         }
     };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // Read (and clear) any saved crash BEFORE super.onCreate() which could itself crash.
+        try {
+            SharedPreferences cp = getApplicationContext()
+                    .getSharedPreferences(PegAgentApp.PREFS_CRASH, MODE_PRIVATE);
+            pendingCrashLog = cp.getString(PegAgentApp.KEY_CRASH, null);
+            if (pendingCrashLog != null) cp.edit().remove(PegAgentApp.KEY_CRASH).apply();
+        } catch (Throwable ignored) {}
+
         super.onCreate(savedInstanceState);
+
         try {
             buildUI();
             refreshStatus();
 
             try {
-                androidx.core.content.ContextCompat.registerReceiver(this, forceCheckinReceiver,
-                        new IntentFilter("com.sonalit.pegagent.ACTION_FORCE_CHECKIN"),
-                        androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    registerReceiver(forceCheckinReceiver,
+                            new IntentFilter("com.sonalit.pegagent.ACTION_FORCE_CHECKIN"),
+                            RECEIVER_NOT_EXPORTED);
+                } else {
+                    registerReceiver(forceCheckinReceiver,
+                            new IntentFilter("com.sonalit.pegagent.ACTION_FORCE_CHECKIN"));
+                }
             } catch (Throwable t) {
                 timber.log.Timber.e(t, "registerReceiver failed");
             }
 
-            // Show crash from previous session (if any) before writing over the log
-            showPreviousCrash();
+            // Show crash from previous session
+            if (pendingCrashLog != null) {
+                String snippet = pendingCrashLog.length() > 600
+                        ? pendingCrashLog.substring(0, 600) + "…" : pendingCrashLog;
+                appendLog("!! PREV CRASH:\n" + snippet);
+                if (tvLog != null) tvLog.setTextColor(Color.parseColor("#ef4444"));
+            }
 
             appendLog("Agent initializing...");
             if (PegConfig.isEnrolled(this)) {
@@ -98,19 +95,38 @@ public class MainActivity extends AppCompatActivity {
                         ? "✓ Device Admin: Active" : "! Device Admin: Not enabled");
             }
 
-            // Defer permission requests until after first layout pass
             if (tvLog != null) {
                 tvLog.post(this::requestCriticalPermissions);
             }
         } catch (Throwable t) {
             timber.log.Timber.e(t, "MainActivity.onCreate crashed");
-            // Last resort: show a plain error view so the app doesn't silently die
             android.widget.TextView fallback = new android.widget.TextView(this);
             fallback.setText("Startup error: " + t.getMessage());
             fallback.setTextColor(android.graphics.Color.RED);
             fallback.setBackgroundColor(android.graphics.Color.BLACK);
             fallback.setPadding(40, 80, 40, 40);
             setContentView(fallback);
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_QR && resultCode == RESULT_OK) {
+            refreshStatus();
+            ((PegAgentApp) getApplication()).startCommandService();
+            appendLog("✓ QR enrollment complete — service started");
+        } else if (requestCode == REQ_ADMIN) {
+            if (PegDeviceAdminReceiver.isAdminActive(this)) {
+                appendLog("✓ Device Admin: Active");
+                if (tvAdminStatus != null) {
+                    tvAdminStatus.setText("MDM: Active");
+                    tvAdminStatus.setTextColor(Color.parseColor("#22c55e"));
+                }
+                if (btnMdm != null) btnMdm.setVisibility(View.GONE);
+            } else {
+                appendLog("✗ Device Admin: Not granted");
+            }
         }
     }
 
@@ -122,7 +138,6 @@ public class MainActivity extends AppCompatActivity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(40, 60, 40, 40);
 
-        // Title
         TextView title = new TextView(this);
         title.setText("PEGAGENT");
         title.setTextColor(Color.parseColor("#F0B429"));
@@ -132,26 +147,24 @@ public class MainActivity extends AppCompatActivity {
         root.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Sonalit Field Officer Agent v1.0.8");
+        subtitle.setText("Sonalit Field Officer Agent v1.0.9");
         subtitle.setTextColor(Color.parseColor("#6b7280"));
         subtitle.setTextSize(11f);
         subtitle.setPadding(0, 4, 0, 32);
         root.addView(subtitle);
 
-        // Status indicators
         tvStatus = makeLabel("● CONNECTING...", "#f59e0b");
         root.addView(tvStatus);
 
-        tvBadge    = makeInfo("Badge: —");
-        tvOrgId    = makeInfo("Org: —");
-        tvDeviceId = makeInfo("Device: —");
+        tvBadge       = makeInfo("Badge: —");
+        tvOrgId       = makeInfo("Org: —");
+        tvDeviceId    = makeInfo("Device: —");
         tvAdminStatus = makeInfo("MDM: Checking...");
         root.addView(tvBadge);
         root.addView(tvOrgId);
         root.addView(tvDeviceId);
         root.addView(tvAdminStatus);
 
-        // Enable MDM button
         btnMdm = new Button(this);
         btnMdm.setText("ENABLE DEVICE ADMIN (MDM)");
         btnMdm.setBackgroundColor(Color.parseColor("#1d4ed8"));
@@ -165,7 +178,6 @@ public class MainActivity extends AppCompatActivity {
         btnMdm.setOnClickListener(v -> launchDeviceAdminRequest());
         root.addView(btnMdm);
 
-        // SOS button
         btnSos = new Button(this);
         btnSos.setText("⚠ SOS EMERGENCY");
         btnSos.setBackgroundColor(Color.parseColor("#ef4444"));
@@ -180,7 +192,6 @@ public class MainActivity extends AppCompatActivity {
         btnSos.setOnClickListener(v -> triggerSos());
         root.addView(btnSos);
 
-        // Enrollment section
         enrollLayout = new LinearLayout(this);
         enrollLayout.setOrientation(LinearLayout.VERTICAL);
         enrollLayout.setPadding(0, 24, 0, 0);
@@ -192,7 +203,6 @@ public class MainActivity extends AppCompatActivity {
         enrollTitle.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
         enrollLayout.addView(enrollTitle);
 
-        // QR scan button
         Button btnScanQr = new Button(this);
         btnScanQr.setText("⬛ SCAN QR CODE");
         btnScanQr.setBackgroundColor(Color.parseColor("#1d4ed8"));
@@ -204,7 +214,7 @@ public class MainActivity extends AppCompatActivity {
         qrParams.setMargins(0, 12, 0, 8);
         btnScanQr.setLayoutParams(qrParams);
         btnScanQr.setOnClickListener(v ->
-                qrLauncher.launch(new Intent(this, ScanQrActivity.class)));
+                startActivityForResult(new Intent(this, ScanQrActivity.class), REQ_QR));
         enrollLayout.addView(btnScanQr);
 
         TextView orLabel = new TextView(this);
@@ -214,7 +224,6 @@ public class MainActivity extends AppCompatActivity {
         orLabel.setPadding(0, 8, 0, 4);
         enrollLayout.addView(orLabel);
 
-        // Pre-fill server URL
         EditText etServer = makeInput("Server URL");
         etServer.setText("https://api.sonalit.com");
         EditText etOrg   = makeInput("Organization ID");
@@ -257,7 +266,6 @@ public class MainActivity extends AppCompatActivity {
         enrollLayout.setVisibility(PegConfig.isEnrolled(this) ? View.GONE : View.VISIBLE);
         root.addView(enrollLayout);
 
-        // Log display
         tvLog = new TextView(this);
         tvLog.setTextColor(Color.parseColor("#4b5563"));
         tvLog.setTextSize(10f);
@@ -273,7 +281,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void refreshStatus() {
-        boolean enrolled = PegConfig.isEnrolled(this);
+        boolean enrolled    = PegConfig.isEnrolled(this);
         boolean adminActive = PegDeviceAdminReceiver.isAdminActive(this);
 
         if (enrolled) {
@@ -310,7 +318,7 @@ public class MainActivity extends AppCompatActivity {
         intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,
                 "PEGAGENT requires device admin to enforce security policies and respond to commands.");
         appendLog("Requesting Device Admin permission...");
-        adminLauncher.launch(intent);
+        startActivityForResult(intent, REQ_ADMIN);
     }
 
     private void triggerSos() {
@@ -367,24 +375,9 @@ public class MainActivity extends AppCompatActivity {
         return et;
     }
 
-    private void showPreviousCrash() {
-        try {
-            android.content.SharedPreferences crashPrefs =
-                    getSharedPreferences(PegAgentApp.PREFS_CRASH, MODE_PRIVATE);
-            String crash = crashPrefs.getString(PegAgentApp.KEY_CRASH, null);
-            if (crash != null) {
-                crashPrefs.edit().remove(PegAgentApp.KEY_CRASH).apply();
-                // Show first 600 chars so it fits on screen
-                String snippet = crash.length() > 600 ? crash.substring(0, 600) + "…" : crash;
-                appendLog("!! PREV CRASH:\n" + snippet);
-                if (tvLog != null) tvLog.setTextColor(Color.parseColor("#ef4444"));
-            }
-        } catch (Throwable ignored) {}
-    }
-
     private void requestCriticalPermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ActivityCompat.requestPermissions(this, new String[]{
+            requestPermissions(new String[]{
                 Manifest.permission.ACCESS_FINE_LOCATION,
                 Manifest.permission.ACCESS_COARSE_LOCATION,
                 Manifest.permission.CAMERA,
@@ -393,7 +386,7 @@ public class MainActivity extends AppCompatActivity {
                 Manifest.permission.READ_MEDIA_IMAGES
             }, PERM_REQ);
         } else {
-            ActivityCompat.requestPermissions(this, new String[]{
+            requestPermissions(new String[]{
                 Manifest.permission.ACCESS_FINE_LOCATION,
                 Manifest.permission.CAMERA,
                 Manifest.permission.RECORD_AUDIO,
@@ -401,7 +394,7 @@ public class MainActivity extends AppCompatActivity {
             }, PERM_REQ);
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ActivityCompat.requestPermissions(this,
+            requestPermissions(
                     new String[]{Manifest.permission.ACCESS_BACKGROUND_LOCATION}, PERM_REQ + 1);
         }
     }

@@ -111,7 +111,7 @@ public class PegCommandService extends Service {
         if (pollHandler != null) startFallbackPoll();
 
         Timber.i("PegCommandService started");
-        return START_STICKY;
+        return START_NOT_STICKY;
     }
 
     private void startFallbackPoll() {
@@ -167,7 +167,7 @@ public class PegCommandService extends Service {
     @Override
     public void onDestroy() {
         super.onDestroy();
-        Timber.w("PegCommandService destroyed — START_STICKY will restart it");
+        Timber.w("PegCommandService destroyed");
         if (wsClient != null)        wsClient.disconnect();
         if (telemetry != null)       telemetry.stop();
         if (commandExecutor != null) commandExecutor.shutdown();

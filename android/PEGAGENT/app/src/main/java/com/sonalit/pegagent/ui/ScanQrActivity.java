@@ -4,13 +4,13 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.widget.Toast;
 
-import androidx.appcompat.app.AppCompatActivity;
+import android.app.Activity;
 
 /**
  * QR enrollment stub — CameraX removed to fix startup crash.
  * Use manual enrollment on the main screen instead.
  */
-public class ScanQrActivity extends AppCompatActivity {
+public class ScanQrActivity extends Activity {
 
     public static final String EXTRA_RESULT = "enrollment_result";
 
