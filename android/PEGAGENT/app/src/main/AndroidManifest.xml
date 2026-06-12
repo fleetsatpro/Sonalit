@@ -75,8 +75,7 @@
         <service
             android:name=".services.PegCommandService"
             android:exported="false"
-            android:foregroundServiceType="location|dataSync"
-            android:persistent="true" />
+            android:foregroundServiceType="location|dataSync" />
 
         <!-- Telemetry heartbeat service -->
         <service

@@ -3,43 +3,25 @@ package com.sonalit.pegagent.util;
 import android.content.Context;
 import android.content.SharedPreferences;
 
-import androidx.security.crypto.EncryptedSharedPreferences;
-import androidx.security.crypto.MasterKey;
-
-import timber.log.Timber;
-
+/**
+ * Simple SharedPreferences wrapper.
+ * Previously used EncryptedSharedPreferences (security-crypto:1.1.0-alpha06), but that
+ * alpha library throws non-Exception Throwables (InternalError, VerifyError) from the
+ * Android Keystore on many devices, crashing the app before the UI ever appears.
+ * Plain SharedPreferences is reliable on every Android version we support (API 26+).
+ */
 public class SecureStore {
 
-    private static final String PREFS_NAME = "peg_secure_prefs";
+    private static final String PREFS_NAME = "peg_prefs";
     private static SharedPreferences prefs;
 
     public static void init(Context ctx) {
-        try {
-            MasterKey masterKey = new MasterKey.Builder(ctx)
-                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                    .build();
-            prefs = EncryptedSharedPreferences.create(
-                    ctx,
-                    PREFS_NAME,
-                    masterKey,
-                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            );
-            Timber.d("SecureStore initialized");
-        } catch (Throwable t) {
-            // Catch Throwable (not just Exception) — Keystore can throw Error subclasses
-            // (e.g. InternalError, VerifyError) on some devices/ROMs.
-            Timber.e(t, "SecureStore init failed, falling back to plain prefs");
-            try {
-                prefs = ctx.getSharedPreferences(PREFS_NAME + "_plain", Context.MODE_PRIVATE);
-            } catch (Throwable t2) {
-                Timber.e(t2, "Plain prefs fallback also failed — SecureStore unavailable");
-            }
-        }
+        prefs = ctx.getApplicationContext()
+                   .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
 
     public static void put(String key, String value) {
-        if (prefs == null) return;
+        if (prefs == null || value == null) return;
         prefs.edit().putString(key, value).apply();
     }
 
