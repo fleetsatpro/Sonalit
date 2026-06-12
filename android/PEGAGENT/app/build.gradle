@@ -10,8 +10,8 @@ android {
         applicationId "com.sonalit.pegagent"
         minSdk 26
         targetSdk 34
-        versionCode 8
-        versionName "1.0.6"
+        versionCode 9
+        versionName "1.0.7"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -78,8 +78,7 @@ dependencies {
     // implementation 'com.google.firebase:firebase-messaging:24.0.0'
     // implementation 'com.google.firebase:firebase-analytics:22.0.2'
 
-    // Location
-    implementation 'com.google.android.gms:play-services-location:21.3.0'
+    // Location — using standard Android LocationManager (no GMS ContentProvider dependency)
 
     // WebSocket (Centrifugo) - using OkHttp WebSocket
     implementation 'org.java-websocket:Java-WebSocket:1.5.6'

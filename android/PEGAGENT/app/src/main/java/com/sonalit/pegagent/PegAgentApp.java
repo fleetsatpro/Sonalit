@@ -3,6 +3,7 @@ package com.sonalit.pegagent;
 import android.app.Application;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 
@@ -28,10 +29,15 @@ public class PegAgentApp extends Application {
     private static PegAgentApp instance;
 
     @Override
-    public void onCreate() {
-        // Install crash logger FIRST — before super.onCreate() so we catch theme/resource crashes.
+    protected void attachBaseContext(Context base) {
+        super.attachBaseContext(base);
+        // Install BEFORE ContentProviders run — they initialize between attachBaseContext()
+        // and onCreate(), so this catches library ContentProvider crashes too.
         installCrashLogger();
+    }
 
+    @Override
+    public void onCreate() {
         super.onCreate();
         instance = this;
 
@@ -44,16 +50,12 @@ public class PegAgentApp extends Application {
             createNotificationChannels();
 
             // Only start the command service if the device is already enrolled.
-            // On first launch (no enrollment) we skip this entirely — starting a
-            // foreground service with no enrollment data is pointless and risks an
-            // ForegroundServiceDidNotStartInTimeException on some Android 14 builds.
             if (PegConfig.isEnrolled(this)) {
                 startCommandService();
             } else {
                 Timber.i("Not enrolled - skipping service start");
             }
         } catch (Throwable t) {
-            // Crash logger above will have captured this already; just prevent a double-kill.
             android.util.Log.e("PegAgentApp", "onCreate crashed", t);
         }
     }
@@ -64,13 +66,12 @@ public class PegAgentApp extends Application {
             try {
                 StringWriter sw = new StringWriter();
                 ex.printStackTrace(new PrintWriter(sw));
-                // Use commit() (synchronous) so it flushes before process dies.
+                // commit() is synchronous — flushes before the process is killed.
                 getSharedPreferences(PREFS_CRASH, MODE_PRIVATE)
                         .edit()
                         .putString(KEY_CRASH, sw.toString())
                         .commit();
             } catch (Throwable ignored) {}
-            // Delegate to system handler so the usual crash dialog appears.
             if (previous != null) previous.uncaughtException(thread, ex);
             else android.os.Process.killProcess(android.os.Process.myPid());
         });
