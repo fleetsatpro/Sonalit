@@ -166,24 +166,21 @@ export default function ConvoyReports(): React.ReactElement {
 
   function handleSelectConvoy(item: ConvoyOverviewItem) {
     setSelectedId(item.id);
-    const raw = item.latest_report?.report_date ?? null;
+    const raw: string | null = item.latest_report?.report_date ?? null;
     if (!raw) { setSelectedDate(null); return; }
 
-    // If already YYYY-MM-DD, use as-is
+    // Already YYYY-MM-DD, use as-is
     if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
       setSelectedDate(raw);
       return;
     }
 
-    // Convert "Thu Jun 11" → "YYYY-MM-DD", using start_date year as fallback
+    // Convert "Thu Jun 11" → "YYYY-MM-DD" using start_date year as reference
     const year = item.start_date
       ? new Date(item.start_date).getFullYear()
       : new Date().getFullYear();
     const parsed = new Date(`${raw} ${year}`);
-    const formatted = !isNaN(parsed.getTime())
-      ? parsed.toISOString().split('T')[0]
-      : null;
-    setSelectedDate(formatted);
+    setSelectedDate(!isNaN(parsed.getTime()) ? parsed.toISOString().split('T')[0] : null);
   }
 
   return (
