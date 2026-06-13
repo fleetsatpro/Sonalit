@@ -676,9 +676,10 @@ async function getConvoyReportDetail(req, res, next) {
 
     const [trucksRes, photosRes, sealsRes, waypointsRes, reportRes] = await Promise.all([
       query(
-        `SELECT ct.id, ct.plate_number, ct.make, ct.model, ct.position,
+        `SELECT ct.id, v.registration AS plate_number, v.make, v.model, ct.position,
                 u.name AS cfo_name, u.id AS cfo_user_id
          FROM convoy_trucks ct
+         LEFT JOIN vehicles v ON v.id = ct.vehicle_id
          LEFT JOIN convoy_cfo_truck_assignments ccta
                ON ccta.convoy_truck_id = ct.id AND ccta.convoy_id = $1
          LEFT JOIN users u ON u.id = ccta.cfo_user_id
