@@ -171,20 +171,17 @@ export default function ConvoyReports(): React.ReactElement {
       : null;
     if (!raw) { setSelectedDate(null); return; }
 
-    // Already YYYY-MM-DD, use as-is
     if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
       setSelectedDate(raw);
       return;
     }
 
-    // Convert "Thu Jun 11" → "YYYY-MM-DD" using start_date year as reference
     const year: number = item.start_date
       ? new Date(item.start_date).getFullYear()
       : new Date().getFullYear();
     const parsed = new Date(`${raw} ${year}`);
-    const formatted: string | null = isNaN(parsed.getTime())
-      ? null
-      : parsed.toISOString().split('T')[0];
+    const iso = parsed.toISOString();
+    const formatted: string | null = isNaN(parsed.getTime()) ? null : iso.slice(0, 10);
     setSelectedDate(formatted);
   }
 
