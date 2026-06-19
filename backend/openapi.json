@@ -220,16 +220,6 @@
         }
       }
     },
-    "/api/v1/convoys/dispatch": {
-      "post": {
-        "operationId": "post_api_v1_convoys_dispatch",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
     "/api/v1/convoys/{id}": {
       "get": {
         "operationId": "get_api_v1_convoys_id",
@@ -349,16 +339,6 @@
     "/api/v1/convoys/{id}/cfo-assignments/{assignmentId}": {
       "delete": {
         "operationId": "delete_api_v1_convoys_id_cfo_assignments_assignmentId",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/convoys/cfo-users": {
-      "get": {
-        "operationId": "get_api_v1_convoys_cfo_users",
         "responses": {
           "200": {
             "description": "OK"
