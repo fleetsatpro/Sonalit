@@ -296,20 +296,5 @@ export default function ConvoyReports(): React.ReactElement {
         )}
       </main>
     </div>
-
-// Only this query changed — everything else identical to original
-query(
-  `SELECT ct.id, v.registration AS plate_number, v.make, v.model, ct.position,
-          u.name AS cfo_name, u.id AS cfo_user_id
-   FROM convoy_trucks ct
-   LEFT JOIN vehicles v ON v.id = ct.vehicle_id
-   LEFT JOIN convoy_cfo_truck_assignments ccta
-         ON ccta.convoy_truck_id = ct.id AND ccta.convoy_id = $1
-   LEFT JOIN users u ON u.id = ccta.cfo_user_id
-   WHERE ct.convoy_id = $1
-   ORDER BY ct.position`,
-  [id]
-),
-
   );
 }
