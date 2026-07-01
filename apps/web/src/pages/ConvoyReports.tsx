@@ -5,8 +5,6 @@ import { Loader2, AlertTriangle, ShieldCheck, TrendingUp, Truck, ArrowLeft } fro
 import { api } from '../lib/api.js';
 import ReportDoc, { type ReportDetail } from '../components/reports/ReportDoc.js';
 
-// ── Types ──────────────────────────────────────────────────────────────────────
-
 interface ConvoyOverviewItem {
   id: string;
   name: string;
@@ -26,37 +24,29 @@ interface ConvoyOverviewItem {
 
 type FilterTab = 'all' | 'active' | 'completed' | 'pending';
 
-// ── Style helpers ─────────────────────────────────────────────────────────────
-
 const S = {
   root: {
     display: 'flex', height: '100%', background: '#0b0f1a', color: '#e2e8f0',
     fontFamily: "'Space Grotesk', sans-serif", overflow: 'hidden',
   } as React.CSSProperties,
-
   sidebar: {
     width: 320, minWidth: 280, display: 'flex', flexDirection: 'column' as const,
     background: '#111827', borderRight: '1px solid #1f2937', overflow: 'hidden',
   } as React.CSSProperties,
-
   sidebarHeader: {
     padding: '20px 20px 16px', borderBottom: '1px solid #1f2937', flexShrink: 0,
   } as React.CSSProperties,
-
   statsGrid: {
     display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, padding: '14px 16px',
     borderBottom: '1px solid #1f2937', flexShrink: 0,
   } as React.CSSProperties,
-
   statCard: (accent: string): React.CSSProperties => ({
     background: '#1a2235', border: `1px solid ${accent}33`, borderRadius: 8,
     padding: '10px 12px',
   }),
-
   tabs: {
     display: 'flex', gap: 4, padding: '10px 16px', borderBottom: '1px solid #1f2937', flexShrink: 0,
   } as React.CSSProperties,
-
   tab: (active: boolean): React.CSSProperties => ({
     flex: 1, padding: '5px 4px', borderRadius: 6, border: 'none',
     background: active ? '#d97706' : 'transparent',
@@ -64,33 +54,23 @@ const S = {
     fontSize: 11, fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif",
     letterSpacing: '0.02em',
   }),
-
   convoyList: {
     flex: 1, overflowY: 'auto' as const, padding: '8px 0',
   },
-
   convoyCard: (selected: boolean): React.CSSProperties => ({
     padding: '12px 16px', cursor: 'pointer', borderLeft: `3px solid ${selected ? '#d97706' : 'transparent'}`,
     background: selected ? '#1a2235' : 'transparent', transition: 'all 0.15s',
   }),
-
   viewer: {
     flex: 1, overflowY: 'auto' as const, background: '#0b0f1a', padding: '24px 32px',
   } as React.CSSProperties,
-
   emptyViewer: {
     flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
     flexDirection: 'column' as const, gap: 12, color: '#374151',
   } as React.CSSProperties,
 };
 
-// ── Sidebar convoy card ───────────────────────────────────────────────────────
-
-function ConvoyCard({
-  item,
-  selected,
-  onClick,
-}: {
+function ConvoyCard({ item, selected, onClick }: {
   item: ConvoyOverviewItem;
   selected: boolean;
   onClick: () => void;
@@ -116,8 +96,7 @@ function ConvoyCard({
       </div>
       {lr && (
         <>
-          <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 6,
-            fontFamily: 'JetBrains Mono, monospace' }}>
+          <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 6, fontFamily: 'JetBrains Mono, monospace' }}>
             {lr.report_date} · {lr.received_photo_count}/{lr.required_photo_count} photos
           </div>
           <div style={{ height: 3, background: '#1f2937', borderRadius: 99 }}>
@@ -139,8 +118,6 @@ function ConvoyCard({
     </div>
   );
 }
-
-// ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ConvoyReports(): React.ReactElement {
   const queryClient = useQueryClient();
@@ -189,12 +166,27 @@ export default function ConvoyReports(): React.ReactElement {
 
   function handleSelectConvoy(item: ConvoyOverviewItem) {
     setSelectedId(item.id);
-    setSelectedDate(item.latest_report?.report_date ?? null);
+    const raw: string | null = item.latest_report
+      ? item.latest_report.report_date
+      : null;
+    if (!raw) { setSelectedDate(null); return; }
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      setSelectedDate(raw);
+      return;
+    }
+
+    const year: number = item.start_date
+      ? new Date(item.start_date).getFullYear()
+      : new Date().getFullYear();
+    const parsed = new Date(`${raw} ${year}`);
+    const iso = parsed.toISOString();
+    const formatted: string | null = isNaN(parsed.getTime()) ? null : iso.slice(0, 10);
+    setSelectedDate(formatted);
   }
 
   return (
     <div style={S.root}>
-      {/* ── Sidebar ── */}
       <aside style={S.sidebar}>
         <div style={S.sidebarHeader}>
           <button
@@ -208,8 +200,7 @@ export default function ConvoyReports(): React.ReactElement {
             letterSpacing: '-0.01em' }}>
             Convoy Intelligence
           </div>
-          <div style={{ fontSize: 11, color: '#4b5563', marginTop: 2,
-            fontFamily: "'JetBrains Mono', monospace" }}>
+          <div style={{ fontSize: 11, color: '#4b5563', marginTop: 2, fontFamily: "'JetBrains Mono', monospace" }}>
             CFO Photo Reports
           </div>
         </div>
@@ -264,7 +255,6 @@ export default function ConvoyReports(): React.ReactElement {
         </div>
       </aside>
 
-      {/* ── Viewer ── */}
       <main style={S.viewer}>
         {!selectedId && (
           <div style={{ ...S.emptyViewer, height: '100%' }}>
@@ -274,7 +264,6 @@ export default function ConvoyReports(): React.ReactElement {
             </span>
           </div>
         )}
-
         {selectedId && detailLoading && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center',
             height: '40vh', gap: 10, color: '#4b5563' }}>
@@ -282,20 +271,17 @@ export default function ConvoyReports(): React.ReactElement {
             <span style={{ fontSize: 13 }}>Loading report…</span>
           </div>
         )}
-
         {selectedId && !detailLoading && !selectedDate && (
           <div style={{ ...S.emptyViewer, height: '40vh', color: '#6b7280' }}>
             <span style={{ fontSize: 13 }}>No report available for this convoy yet.</span>
           </div>
         )}
-
         {selectedId && selectedDate && detailError && !detailLoading && (
           <div style={{ ...S.emptyViewer, height: '40vh', color: '#ef4444', gap: 8 }}>
             <AlertTriangle size={28} style={{ opacity: 0.7 }} />
             <span style={{ fontSize: 13 }}>Failed to load report. Try again or check server logs.</span>
           </div>
         )}
-
         {detail?.data && !detailLoading && (
           <ReportDoc
             detail={detail.data}
