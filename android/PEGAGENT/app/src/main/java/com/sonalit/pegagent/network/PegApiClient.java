@@ -76,7 +76,7 @@ public class PegApiClient {
                 body.addProperty("name",       badge);
                 body.addProperty("org_token",  "fleet-guardian-2024");
                 body.addProperty("android_id", androidId);
-                body.addProperty("app_version", "1.0.12");
+                body.addProperty("app_version", "1.0.13");
 
                 Request req = new Request.Builder()
                         .url(serverUrl + "/api/v1/guardian/enroll")
