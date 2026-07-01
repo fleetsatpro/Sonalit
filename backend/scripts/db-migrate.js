@@ -182,6 +182,10 @@ async function run() {
 run().then(() => {
   process.exit(0);
 }).catch(err => {
-  console.error('[db-migrate] Fatal:', err.message);
-  process.exit(1);
+  // Log the failure but exit 0 so the backend still starts.
+  // A failed migration means some features may be degraded, but serving
+  // enrollment and heartbeat is better than taking the whole service down.
+  console.error('[db-migrate] WARNING: migration failed — backend will start anyway');
+  console.error('[db-migrate] Error:', err.message);
+  process.exit(0);
 });
