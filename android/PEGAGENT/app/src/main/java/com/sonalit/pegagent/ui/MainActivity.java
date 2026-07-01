@@ -149,7 +149,7 @@ public class MainActivity extends Activity {
         root.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Sonalit Field Officer Agent v1.0.12");
+        subtitle.setText("Sonalit Field Officer Agent v1.0.13");
         subtitle.setTextColor(Color.parseColor("#6b7280"));
         subtitle.setTextSize(11f);
         subtitle.setPadding(0, 4, 0, 32);
@@ -206,7 +206,7 @@ public class MainActivity extends Activity {
         enrollLayout.addView(enrollTitle);
 
         EditText etServer = makeInput("Server URL");
-        etServer.setText("https://api.sonalit.com");
+        etServer.setText("https://sonalit-production.up.railway.app");
         EditText etBadge = makeInput("Officer Badge (e.g. FO-012)");
 
         enrollLayout.addView(etServer);
