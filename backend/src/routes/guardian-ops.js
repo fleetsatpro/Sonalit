@@ -24,7 +24,7 @@ router.get('/devices', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('SET LOCAL app.current_org_id = $1', [orgId]);
+      await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `SELECT gd.*, fo.name AS officer_name, fo.badge_number, fo.status AS officer_status
          FROM guardian_devices gd
@@ -46,7 +46,7 @@ router.get('/devices/:id', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('SET LOCAL app.current_org_id = $1', [orgId]);
+      await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `SELECT gd.*, fo.id AS officer_id, fo.name AS officer_name, fo.badge_number,
            fo.status AS officer_status, fo.current_convoy_id
@@ -74,7 +74,7 @@ router.patch('/devices/:id/telemetry', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('SET LOCAL app.current_org_id = $1', [orgId]);
+      await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `UPDATE guardian_devices SET
            battery_pct = COALESCE($1, battery_pct),
@@ -156,7 +156,7 @@ router.get('/devices/:id/command-history', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('SET LOCAL app.current_org_id = $1', [orgId]);
+      await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `SELECT * FROM device_commands WHERE device_id = $1 AND org_id = $2
          ORDER BY created_at DESC LIMIT $3`,
@@ -183,7 +183,7 @@ router.post('/devices/:id/commands', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('SET LOCAL app.current_org_id = $1', [orgId]);
+      await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const deviceCheck = await client.query(
         `SELECT id FROM guardian_devices WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
         [req.params.id, orgId]
@@ -223,7 +223,7 @@ router.post('/commands/broadcast', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('SET LOCAL app.current_org_id = $1', [orgId]);
+      await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const devices = await client.query(
         `SELECT id FROM guardian_devices WHERE org_id = $1 AND deleted_at IS NULL ${whereActive}`,
         [orgId]
@@ -258,7 +258,7 @@ router.get('/command-queue', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('SET LOCAL app.current_org_id = $1', [orgId]);
+      await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `SELECT dc.*, gd.name AS device_name, fo.name AS officer_name
          FROM device_commands dc
@@ -320,7 +320,7 @@ router.post('/devices/:id/approve', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('SET LOCAL app.current_org_id = $1', [orgId]);
+      await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `UPDATE guardian_devices SET status = 'enrolled', updated_at = NOW()
          WHERE id = $1 AND org_id = $2 AND status = 'pending' AND deleted_at IS NULL
@@ -364,7 +364,7 @@ router.post('/commands/:commandId/ack', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('SET LOCAL app.current_org_id = $1', [orgId]);
+      await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `UPDATE device_commands SET
            status     = $1,
@@ -400,7 +400,7 @@ router.get('/devices/:deviceId/commands/pending', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('SET LOCAL app.current_org_id = $1', [orgId]);
+      await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `SELECT id, command, payload, issued_at, ttl_hours
          FROM device_commands
@@ -428,7 +428,7 @@ router.post('/devices/:deviceId/ws-token', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('SET LOCAL app.current_org_id = $1', [orgId]);
+      await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `SELECT id FROM guardian_devices WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
         [deviceId, orgId]
