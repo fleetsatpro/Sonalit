@@ -43,21 +43,31 @@ public final class CommandGuard {
         }
     }
 
-    /** @return true if this id was already accepted (i.e. should be skipped). */
-    public synchronized boolean isDuplicate(String id) {
-        return id != null && seen.contains(id);
-    }
-
-    /** Record an id as processed. Persists synchronously-ish (apply) with ring eviction. */
-    public synchronized void markProcessed(String id) {
-        if (id == null || id.isEmpty()) return;
-        if (!seen.add(id)) return; // already present
+    /**
+     * Atomic check-and-mark. Returns true if this call is the first to see the id
+     * (caller owns execution); false if another delivery path already claimed it.
+     * The check and the mark happen under a single lock so simultaneous WS + poll
+     * deliveries of the same command cannot both win the race.
+     */
+    public synchronized boolean claim(String id) {
+        if (id == null || id.isEmpty()) return false;
+        if (!seen.add(id)) return false; // already claimed
         ring.addLast(id);
         while (ring.size() > MAX_IDS) {
             String evicted = ring.pollFirst();
             if (evicted != null) seen.remove(evicted);
         }
         persist();
+        return true;
+    }
+
+    /**
+     * Mark an id as processed without contesting a claim — used only for the
+     * "expired" / "bad_signature" paths where we DO want the id burned so a
+     * retry can't slip past, but we don't own execution.
+     */
+    public synchronized void markProcessed(String id) {
+        claim(id);
     }
 
     private void persist() {

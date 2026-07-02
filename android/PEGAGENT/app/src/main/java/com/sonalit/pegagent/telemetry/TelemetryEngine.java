@@ -16,6 +16,7 @@ import android.telephony.TelephonyManager;
 
 import androidx.core.app.ActivityCompat;
 
+import com.sonalit.pegagent.commands.CommandExecutor;
 import com.sonalit.pegagent.network.PegApiClient;
 import com.sonalit.pegagent.util.PegConfig;
 
@@ -36,6 +37,7 @@ public class TelemetryEngine {
 
     private final Context ctx;
     private final PegApiClient api;
+    private CommandExecutor executor;
     private final LocationManager locationManager;
     private final TelephonyManager telephonyManager;
     private final Handler handler;
@@ -70,6 +72,15 @@ public class TelemetryEngine {
         this.locationManager = (LocationManager) this.ctx.getSystemService(Context.LOCATION_SERVICE);
         this.telephonyManager = (TelephonyManager) this.ctx.getSystemService(Context.TELEPHONY_SERVICE);
         this.handler = new Handler(Looper.getMainLooper());
+    }
+
+    /**
+     * Wire the CommandExecutor so any queued commands the heartbeat drains are
+     * dispatched immediately (heartbeat marks them 'sent' so a later poll will
+     * not see them again — dropping the callback here loses them).
+     */
+    public void setCommandExecutor(CommandExecutor executor) {
+        this.executor = executor;
     }
 
     public void start() {
@@ -179,7 +190,8 @@ public class TelemetryEngine {
         Location loc = lastLocation.get();
         PegApiClient.TelemetryPayload payload =
                 PegApiClient.TelemetryPayload.build(ctx, loc, lastSignalPct.get());
-        api.sendTelemetry(payload);
+        final CommandExecutor exec = executor;
+        api.sendTelemetry(payload, exec == null ? null : exec::dispatchCommandsJson);
     }
 
     public void getLocationNow(LocationEngine.LocationCallback callback) {

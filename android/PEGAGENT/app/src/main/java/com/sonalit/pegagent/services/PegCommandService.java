@@ -23,13 +23,8 @@ import androidx.annotation.Nullable;
 import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
 import com.sonalit.pegagent.PegAgentApp;
 import com.sonalit.pegagent.commands.CommandExecutor;
-import com.sonalit.pegagent.commands.PegCommand;
 import com.sonalit.pegagent.network.PegApiClient;
 import com.sonalit.pegagent.network.PegWebSocketClient;
 import com.sonalit.pegagent.telemetry.LocationEngine;
@@ -65,7 +60,6 @@ public class PegCommandService extends Service {
     private PowerManager.WakeLock wakeLock;
     private Handler pollHandler;
     private boolean polling = false;
-    private final Gson gson = new Gson();
 
     private ConnectivityManager connectivityManager;
     private ConnectivityManager.NetworkCallback networkCallback;
@@ -97,6 +91,7 @@ public class PegCommandService extends Service {
             commandExecutor = new CommandExecutor(this, api);
             telemetry       = new TelemetryEngine(this, api);
             wsClient.setCommandExecutor(commandExecutor);
+            telemetry.setCommandExecutor(commandExecutor);
             PegAgentApp.setSharedWs(wsClient); // P2-4: single app-scoped Centrifugo client
         } catch (Throwable t) {
             Timber.e(t, "Component init failed — running in degraded mode");
@@ -158,20 +153,26 @@ public class PegCommandService extends Service {
         SirenController.get().start(this, 30);
         showSosNotification("SOS ACTIVE — locating…");
 
+        // Generate ONE event_uuid per SOS button press and reuse it across every
+        // retry. The server dedupes on event_uuid so a lost 2xx response cannot
+        // create a duplicate panic event for a single trigger.
+        final String eventUuid = java.util.UUID.randomUUID().toString();
+
         LocationEngine.getInstance(this).getFreshLocation(SOS_FIX_TIMEOUT_MS, (loc, stale) -> {
             if (loc != null) {
-                sendPanicWithRetry(loc.getLatitude(), loc.getLongitude(), stale, source, 1);
+                sendPanicWithRetry(eventUuid, loc.getLatitude(), loc.getLongitude(), stale, source, 1);
             } else {
                 // No fix at all — still transmit with zeros + stale flag so dispatch is alerted.
                 Timber.w("SOS with no location fix");
-                sendPanicWithRetry(0.0, 0.0, true, source, 1);
+                sendPanicWithRetry(eventUuid, 0.0, 0.0, true, source, 1);
             }
         });
     }
 
-    private void sendPanicWithRetry(double lat, double lng, boolean stale, String source, int attempt) {
+    private void sendPanicWithRetry(String eventUuid, double lat, double lng, boolean stale,
+                                    String source, int attempt) {
         if (api == null) { broadcastSosResult("FAILED"); return; }
-        api.sendPanic(lat, lng, PegApiClient.PANIC_MODE_SOS, source, stale, (ok, code) -> {
+        api.sendPanic(eventUuid, lat, lng, PegApiClient.PANIC_MODE_SOS, source, stale, (ok, code) -> {
             if (ok) {
                 showSosNotification("SOS DELIVERED — help is being dispatched");
                 broadcastSosResult("SENT");
@@ -180,7 +181,8 @@ public class PegCommandService extends Service {
                 long backoff = 1_000L * (long) Math.pow(2, attempt); // 2s,4s,8s
                 if (pollHandler != null) {
                     pollHandler.postDelayed(
-                            () -> sendPanicWithRetry(lat, lng, stale, source, attempt + 1), backoff);
+                            () -> sendPanicWithRetry(eventUuid, lat, lng, stale, source, attempt + 1),
+                            backoff);
                 }
             } else {
                 showSosNotification("SOS FAILED — retry from the app");
@@ -320,22 +322,9 @@ public class PegCommandService extends Service {
         public void run() {
             if (wsClient != null && api != null && !wsClient.isConnected()) {
                 Timber.d("WS down, polling for commands");
-                api.pollCommands(json -> {
-                    try {
-                        JsonArray cmds = gson.fromJson(json, JsonArray.class);
-                        if (cmds != null && commandExecutor != null) {
-                            for (JsonElement el : cmds) {
-                                if (!el.isJsonObject()) continue;
-                                JsonObject o = el.getAsJsonObject();
-                                PegCommand cmd = gson.fromJson(o, PegCommand.class);
-                                JsonElement rawPayload = o.has("payload") ? o.get("payload") : null;
-                                commandExecutor.execute(cmd, rawPayload);
-                            }
-                        }
-                    } catch (Exception e) {
-                        Timber.e(e, "Poll parse error");
-                    }
-                });
+                if (commandExecutor != null) {
+                    api.pollCommands(commandExecutor::dispatchCommandsJson);
+                }
             }
             if (pollHandler != null) pollHandler.postDelayed(this, POLL_DELAY);
         }

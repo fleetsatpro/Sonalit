@@ -347,18 +347,26 @@ public class PegApiClient {
     /**
      * Fire a panic/SOS event. The result callback (success = 2xx) makes the SOS
      * button state authoritative.
+     *
+     * The {@code eventUuid} MUST be stable across retries for a single SOS trigger:
+     * the server dedupes panic inserts on {@code event_uuid} (and honours the
+     * Idempotency-Key header). Retries reusing the same id are a no-op server-side
+     * (200) instead of creating duplicate panic events for one button press.
      */
-    public void sendPanic(double lat, double lng, String mode, String source,
+    public void sendPanic(String eventUuid, double lat, double lng, String mode, String source,
                           boolean gpsStale, PanicCallback callback) {
+        final String uuid = (eventUuid == null || eventUuid.isEmpty())
+                ? java.util.UUID.randomUUID().toString() : eventUuid;
         bgExecutor.execute(() -> {
             try {
                 String token = PegConfig.getAuthToken(ctx);
                 if (token == null) { if (callback != null) callback.onResult(false, 0); return; }
 
                 JsonObject body = new JsonObject();
-                body.addProperty("lat",       lat);
-                body.addProperty("lng",       lng);
-                body.addProperty("mode",      mode != null ? mode : PANIC_MODE_SOS);
+                body.addProperty("event_uuid", uuid);
+                body.addProperty("lat",        lat);
+                body.addProperty("lng",        lng);
+                body.addProperty("mode",       mode != null ? mode : PANIC_MODE_SOS);
                 if (source != null) body.addProperty("source", source);
                 if (gpsStale) body.addProperty("gps_stale", true);
 
@@ -366,12 +374,12 @@ public class PegApiClient {
                         .url(PegConfig.getServerUrl(ctx) + "/api/v1/guardian/panic")
                         .post(RequestBody.create(body.toString(), JSON))
                         .header("X-Device-Token", token)
-                        .header("Idempotency-Key", java.util.UUID.randomUUID().toString())
+                        .header("Idempotency-Key", uuid)
                         .build();
 
                 try (Response resp = http.newCall(req).execute()) {
                     boolean ok = resp.isSuccessful();
-                    Timber.i("Panic sent: HTTP %d ok=%b", resp.code(), ok);
+                    Timber.i("Panic sent: HTTP %d ok=%b uuid=%s", resp.code(), ok, uuid);
                     if (callback != null) callback.onResult(ok, resp.code());
                 }
             } catch (IOException e) {

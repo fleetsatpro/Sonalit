@@ -71,15 +71,17 @@ public class CommandExecutor {
 
         long startNs = System.nanoTime();
 
-        // Dedup across WS + poll (survives restart).
-        if (guard.isDuplicate(cmd.id)) {
+        // Atomically claim this id across ALL delivery paths (WS + poll). Runs
+        // first so simultaneous deliveries cannot both pass the check-then-mark
+        // TOCTOU window. If we lose the claim, another thread owns execution and
+        // will ACK — we return silently.
+        if (!guard.claim(cmd.id)) {
             Timber.d("Duplicate command %s (%s) — skipping", cmd.id, cmd.command);
             return;
         }
-        // TTL enforcement.
+        // TTL enforcement (id already burned so retries can't slip through).
         if (guard.isExpired(cmd)) {
             Timber.w("Command %s expired", cmd.id);
-            guard.markProcessed(cmd.id);
             ackCommand(cmd.id, "error:expired", startNs);
             return;
         }
@@ -87,12 +89,10 @@ public class CommandExecutor {
         if (CommandSignature.isDestructive(cmd)
                 && !CommandSignature.verify(ctx, cmd, rawPayload)) {
             Timber.e("Rejecting destructive command %s — bad signature", cmd.id);
-            guard.markProcessed(cmd.id);
             ackCommand(cmd.id, "error:bad_signature", startNs);
             return;
         }
 
-        guard.markProcessed(cmd.id);
         Timber.i("CMD_RECV id=%s command=%s", cmd.id, cmd.command);
 
         switch (cmd.command) {
@@ -224,12 +224,32 @@ public class CommandExecutor {
             if (loc != null) api.sendTelemetryNow(loc); // push current location
             PegApiClient.TelemetryPayload payload =
                     PegApiClient.TelemetryPayload.build(ctx, loc, -1);
-            // Heartbeat + drain any queued commands, then ACK truthfully.
-            api.performCheckin(payload, json -> {
-                // queued commands from the check-in are handled by the service poll loop;
-                // nothing to do here beyond the round-trip.
-            }, ok -> ackCommand(cmd.id, ok ? "executed" : "error:checkin_failed", startNs));
+            // Heartbeat + execute any commands the server hands back. The heartbeat
+            // atomically claims + marks them 'sent', so the poll loop will NOT
+            // return them again — if we don't run them here, they're lost.
+            api.performCheckin(payload, json -> dispatchCommandsJson(json),
+                    ok -> ackCommand(cmd.id, ok ? "executed" : "error:checkin_failed", startNs));
         });
+    }
+
+    /** Parse a heartbeat "commands" JSON array and dispatch each element. */
+    public void dispatchCommandsJson(String json) {
+        if (json == null || json.isEmpty()) return;
+        try {
+            com.google.gson.JsonArray arr = new com.google.gson.Gson().fromJson(
+                    json, com.google.gson.JsonArray.class);
+            if (arr == null) return;
+            com.google.gson.Gson gson = new com.google.gson.Gson();
+            for (com.google.gson.JsonElement el : arr) {
+                if (!el.isJsonObject()) continue;
+                com.google.gson.JsonObject o = el.getAsJsonObject();
+                PegCommand pc = gson.fromJson(o, PegCommand.class);
+                JsonElement rawPayload = o.has("payload") ? o.get("payload") : null;
+                execute(pc, rawPayload);
+            }
+        } catch (Exception e) {
+            Timber.e(e, "force_checkin: command dispatch failed");
+        }
     }
 
     // ── RESTART APP ───────────────────────────────────────────────────────────
