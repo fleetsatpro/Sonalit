@@ -755,10 +755,13 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
       app_version_code,
       fcm_token,
     } = req.body;
-    // Accept battery_pct (v4 APK) or battery_level (legacy)
-    const battery_level = req.body.battery_level ?? req.body.battery_pct ?? null;
+    // Accept battery_pct (v4 APK) or battery_level (legacy).
+    // APK sends -1 as an "unknown" sentinel — store NULL so it doesn't mask real data.
+    const rawBattery = req.body.battery_level ?? req.body.battery_pct ?? null;
+    const battery_level = rawBattery != null && rawBattery >= 0 ? rawBattery : null;
     // Accept signal_pct (v4 APK) or signal_strength (legacy)
-    const signal_strength = req.body.signal_strength ?? req.body.signal_pct ?? null;
+    const rawSignal = req.body.signal_strength ?? req.body.signal_pct ?? null;
+    const signal_strength = rawSignal != null && rawSignal >= 0 ? rawSignal : null;
     // Accept both lat/lng (legacy) and latitude/longitude (Guardian APK field names)
     const lat = req.body.lat ?? req.body.latitude ?? null;
     const lng = req.body.lng ?? req.body.longitude ?? null;
@@ -1338,7 +1341,7 @@ router.get('/devices', authenticate, async (req, res, next) => {
                 network_type, storage_free_mb, ram_free_mb, recorded_at
          FROM device_health
          WHERE device_id = gd.id
-         ORDER BY recorded_at DESC
+         ORDER BY (battery_level IS NOT NULL) DESC, recorded_at DESC
          LIMIT 1
        ) h ON true
        LEFT JOIN LATERAL (
