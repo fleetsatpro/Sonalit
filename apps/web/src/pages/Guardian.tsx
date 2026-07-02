@@ -37,6 +37,11 @@ function fmtRel(ts?: string | null): string {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
+/** Normalize telemetry percentages — APK sends -1 for "unknown". */
+function pct(v?: number | null): number | undefined {
+  return v != null && v >= 0 ? v : undefined;
+}
+
 const DEV_STATUS_COLOR: Record<string, string> = {
   active: C.green, inactive: C.sub, offline: C.dim, enrolled: C.amber, pending: C.purple,
 };
@@ -213,7 +218,7 @@ function DeviceMatrix({ devices, onLink, onApprove }: { devices: GuardianDevice[
                     <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: C.sub }}>{d.model || d.device_model || d.device_id?.slice(0, 12) || '—'}</div>
                   </td>
                   <td style={{ padding: '8px 10px' }}><StatusPill status={d.status} /></td>
-                  <td style={{ padding: '8px 10px' }}><HealthBars battery={d.battery_pct ?? d.battery_level} signal={d.signal_pct ?? d.signal_strength} /></td>
+                  <td style={{ padding: '8px 10px' }}><HealthBars battery={pct(d.battery_pct ?? d.battery_level)} signal={pct(d.signal_pct ?? d.signal_strength)} /></td>
                   <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: C.mid }}>{fmtRel(d.last_heartbeat_at || d.last_seen_at || d.last_seen)}</td>
                   <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: C.mid }}>{d.app_version || '—'}</td>
                   <td style={{ padding: '8px 10px' }} onClick={e => e.stopPropagation()}>
@@ -249,7 +254,7 @@ function DeviceMatrix({ devices, onLink, onApprove }: { devices: GuardianDevice[
                         </div>
                         <div>
                           <div style={{ fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700, fontSize: 10, color: C.gold, letterSpacing: '0.08em', marginBottom: 6 }}>TELEMETRY</div>
-                          {([['Battery', `${d.battery_pct ?? d.battery_level ?? '—'}%`], ['Signal', `${d.signal_pct ?? d.signal_strength ?? '—'}%`], ['GPS', (d.gps_locked || d.last_lat != null) ? 'Locked' : 'Searching'], ['Last Seen', fmtRel(d.last_heartbeat_at || d.last_seen_at || d.last_seen)]] as [string, string][]).map(([k, v]) => (
+                          {([['Battery', pct(d.battery_pct ?? d.battery_level) != null ? `${pct(d.battery_pct ?? d.battery_level)}%` : '—'], ['Signal', pct(d.signal_pct ?? d.signal_strength) != null ? `${pct(d.signal_pct ?? d.signal_strength)}%` : '—'], ['GPS', (d.gps_locked || d.last_lat != null) ? 'Locked' : 'Searching'], ['Last Seen', fmtRel(d.last_heartbeat_at || d.last_seen_at || d.last_seen)]] as [string, string][]).map(([k, v]) => (
                             <div key={k} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                               <span style={{ color: C.sub, fontSize: 10 }}>{k}</span>
                               <span style={{ color: C.txt, fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }}>{v}</span>
