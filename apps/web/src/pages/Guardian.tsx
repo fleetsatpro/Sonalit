@@ -242,7 +242,8 @@ function DeviceMatrix({ devices, onLink, onApprove }: { devices: GuardianDevice[
                 {exp && (
                   <tr key={`exp-${d.id}`}>
                     <td colSpan={7} style={{ background: C.panel, padding: '12px 16px', borderBottom: `1px solid ${C.border}` }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+                      {/* sticky+maxWidth keeps the panel inside the visible viewport when the table scrolls horizontally on mobile */}
+                      <div style={{ position: 'sticky', left: 12, maxWidth: 'calc(100vw - 90px)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
                         <div>
                           <div style={{ fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700, fontSize: 10, color: C.gold, letterSpacing: '0.08em', marginBottom: 6 }}>DEVICE INFO</div>
                           {([['IMEI', maskedImei], ['Model', d.model || '—'], ['Android', d.android_version || d.os_version || '—'], ['Knox', d.knox_version || '—'], ['App', d.app_version || '—']] as [string, string][]).map(([k, v]) => (
