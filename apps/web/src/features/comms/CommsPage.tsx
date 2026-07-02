@@ -11,7 +11,7 @@ import {
   useCreateChannel, useDeleteChannel, useSendMessage, useDeleteMessage,
   useReact, useToggleMute, useMarkRead, usePin,
 } from './hooks/useComms.js';
-import { useCommsRealtime, useTypingIndicator } from './hooks/useCommsRealtime.js';
+import { useCommsRealtime } from './hooks/useCommsRealtime.js';
 import { ChannelList } from './components/ChannelList.js';
 import { MessageStream } from './components/MessageStream.js';
 import { Composer } from './components/Composer.js';
@@ -48,8 +48,7 @@ export default function CommsPage() {
   const membersQ  = useChannelMembers(activeChannelId);
   const pinnedQ   = usePinned(activeChannelId);
 
-  useCommsRealtime(user?.org_id, activeChannelId);
-  const typing = useTypingIndicator(user?.org_id, activeChannelId, user?.id);
+  const typing = useCommsRealtime(user?.org_id, activeChannelId, user?.id);
 
   // Mark-read whenever we open a channel + when new messages arrive.
   const markRead = useMarkRead();

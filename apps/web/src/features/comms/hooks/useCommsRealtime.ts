@@ -1,20 +1,36 @@
 /**
- * Subscribes to the per-channel Centrifugo channel while a channel is open,
- * plus the org-wide badge channel for unread counts.
+ * Subscribes to the per-channel Centrifugo channel (rich payload) while a
+ * channel is open, plus the org-wide badge channel for unread counts.
  *
- * Every event is treated as a hint: we invalidate the relevant TanStack Query
- * key rather than merging server-shaped data into the cache. That way, if we
- * miss an event during a reconnect gap, the next REST fetch produces the
- * correct end state (spec §4).
+ * One `useEffect` per Centrifuge subscription — Centrifuge rejects duplicate
+ * subscriptions on the same channel, and the typing indicator needs to piggy-
+ * back on the same per-channel subscription rather than open a second one.
+ *
+ * Every event just invalidates the relevant TanStack Query key — the REST
+ * endpoints are the source of truth (spec §4). A reconnect gap self-heals on
+ * the next fetch.
  */
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { subscribe } from '../../../lib/centrifuge.js';
 import { commsKeys } from './useComms.js';
 import type { CommsEvent } from '../types/comms.js';
 
-export function useCommsRealtime(orgId: string | undefined, activeChannelId: string | null) {
+export interface TypingState { name: string; expiresAt: number }
+
+/**
+ * Handles invalidation of comms queries when realtime events fire, and
+ * returns the current typing indicator (if any) for the active channel.
+ * Combines what used to be two hooks so only one Centrifuge subscription is
+ * opened per per-channel channel.
+ */
+export function useCommsRealtime(
+  orgId: string | undefined,
+  activeChannelId: string | null,
+  selfId: string | undefined,
+): TypingState | null {
   const qc = useQueryClient();
+  const [typing, setTyping] = useState<TypingState | null>(null);
 
   // Org-wide badge channel — cheap invalidate on any comms.* signal so unread
   // counts stay fresh across the whole channel list.
@@ -26,9 +42,9 @@ export function useCommsRealtime(orgId: string | undefined, activeChannelId: str
     });
   }, [orgId, qc]);
 
-  // Per-channel channel — rich payload, per-key invalidation.
+  // Per-channel channel — handles both cache invalidation AND typing events.
   useEffect(() => {
-    if (!orgId || !activeChannelId) return;
+    if (!orgId || !activeChannelId) { setTyping(null); return; }
     return subscribe<CommsEvent>(`org#${orgId}#comms#${activeChannelId}`, (event) => {
       switch (event.type) {
         case 'message.created':
@@ -55,45 +71,21 @@ export function useCommsRealtime(orgId: string | undefined, activeChannelId: str
           qc.invalidateQueries({ queryKey: commsKeys.channels });
           break;
         case 'typing':
-          // Handled by the composer subscription; no cache impact.
+          if (event.user_id === selfId) break;
+          setTyping({ name: event.user_name || 'Someone', expiresAt: Date.now() + 5000 });
           break;
       }
     });
-  }, [orgId, activeChannelId, qc]);
-}
+  }, [orgId, activeChannelId, selfId, qc]);
 
-/**
- * Standalone hook for the composer's typing indicator: subscribes to the
- * per-channel channel and reports the most recent typer other than the
- * current user. Times out after 5 s of silence.
- */
-export function useTypingIndicator(
-  orgId: string | undefined,
-  activeChannelId: string | null,
-  selfId: string | undefined,
-): { name: string; expiresAt: number } | null {
-  // Kept as module-scoped state so the caller can re-render on updates.
-  const [state, setState] = useTypingState();
+  // Auto-clear the typing indicator when its TTL expires.
   useEffect(() => {
-    if (!orgId || !activeChannelId) { setState(null); return; }
-    return subscribe<CommsEvent>(`org#${orgId}#comms#${activeChannelId}`, (event) => {
-      if (event.type !== 'typing') return;
-      if (event.user_id === selfId) return;
-      setState({ name: event.user_name || 'Someone', expiresAt: Date.now() + 5000 });
-    });
-  }, [orgId, activeChannelId, selfId, setState]);
-  useEffect(() => {
-    if (!state) return;
-    const remaining = state.expiresAt - Date.now();
-    if (remaining <= 0) { setState(null); return; }
-    const t = setTimeout(() => setState(null), remaining);
+    if (!typing) return;
+    const remaining = typing.expiresAt - Date.now();
+    if (remaining <= 0) { setTyping(null); return; }
+    const t = setTimeout(() => setTyping(null), remaining);
     return () => clearTimeout(t);
-  }, [state, setState]);
-  return state;
-}
+  }, [typing]);
 
-// Simple useState wrapper isolated so useTypingIndicator stays tidy.
-import { useState } from 'react';
-function useTypingState() {
-  return useState<{ name: string; expiresAt: number } | null>(null);
+  return typing;
 }
