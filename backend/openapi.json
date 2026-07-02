@@ -1018,6 +1018,26 @@
         }
       }
     },
+    "/api/v1/guardian/whoami": {
+      "get": {
+        "operationId": "get_api_v1_guardian_whoami",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/panic/cancel": {
+      "post": {
+        "operationId": "post_api_v1_guardian_panic_cancel",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/commands": {
       "get": {
         "operationId": "get_api_v1_guardian_commands",
