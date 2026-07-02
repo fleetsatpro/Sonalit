@@ -452,11 +452,29 @@
             "description": "OK"
           }
         }
+      },
+      "post": {
+        "operationId": "post_api_v1_messages_channels",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
       }
     },
     "/api/v1/messages/channels/{id}": {
+      "delete": {
+        "operationId": "delete_api_v1_messages_channels_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/members": {
       "get": {
-        "operationId": "get_api_v1_messages_channels_id",
+        "operationId": "get_api_v1_messages_channels_id_members",
         "responses": {
           "200": {
             "description": "OK"
@@ -464,7 +482,7 @@
         }
       },
       "post": {
-        "operationId": "post_api_v1_messages_channels_id",
+        "operationId": "post_api_v1_messages_channels_id_members",
         "responses": {
           "200": {
             "description": "OK"
@@ -472,9 +490,173 @@
         }
       }
     },
-    "/api/v1/messages/broadcast": {
+    "/api/v1/messages/channels/{id}/members/{userId}": {
+      "patch": {
+        "operationId": "patch_api_v1_messages_channels_id_members_userId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_messages_channels_id_members_userId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/mute": {
+      "patch": {
+        "operationId": "patch_api_v1_messages_channels_id_mute",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/read": {
+      "patch": {
+        "operationId": "patch_api_v1_messages_channels_id_read",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/messages": {
+      "get": {
+        "operationId": "get_api_v1_messages_channels_id_messages",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
       "post": {
-        "operationId": "post_api_v1_messages_broadcast",
+        "operationId": "post_api_v1_messages_channels_id_messages",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/messages/{msgId}": {
+      "delete": {
+        "operationId": "delete_api_v1_messages_channels_id_messages_msgId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/messages/{msgId}/thread": {
+      "get": {
+        "operationId": "get_api_v1_messages_channels_id_messages_msgId_thread",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/messages/{msgId}/reactions": {
+      "post": {
+        "operationId": "post_api_v1_messages_channels_id_messages_msgId_reactions",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/messages/{msgId}/reactions/{emoji}": {
+      "delete": {
+        "operationId": "delete_api_v1_messages_channels_id_messages_msgId_reactions_emoji",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/pinned": {
+      "get": {
+        "operationId": "get_api_v1_messages_channels_id_pinned",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_messages_channels_id_pinned",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/pinned/{messageId}": {
+      "delete": {
+        "operationId": "delete_api_v1_messages_channels_id_pinned_messageId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/search": {
+      "get": {
+        "operationId": "get_api_v1_messages_channels_id_search",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/typing": {
+      "post": {
+        "operationId": "post_api_v1_messages_channels_id_typing",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/attachments/presign": {
+      "post": {
+        "operationId": "post_api_v1_messages_attachments_presign",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/attachments/{id}/finalize": {
+      "post": {
+        "operationId": "post_api_v1_messages_attachments_id_finalize",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/attachments/{id}/url": {
+      "get": {
+        "operationId": "get_api_v1_messages_attachments_id_url",
         "responses": {
           "200": {
             "description": "OK"
