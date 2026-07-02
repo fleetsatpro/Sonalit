@@ -14,6 +14,11 @@ public class PegConfig {
     private static final String KEY_BADGE       = "officer_badge";
     private static final String KEY_OFFICER_ID  = "officer_id";
     private static final String KEY_ENROLLED    = "enrolled";
+    private static final String KEY_CMD_SECRET  = "command_signing_secret";
+    private static final String KEY_CMD_CHANNEL = "command_channel";
+
+    /** Single source of truth for the default backend (P3-3). */
+    public static final String DEFAULT_SERVER_URL = "https://sonalit-production.up.railway.app";
 
     // Telemetry interval: 30 seconds
     public static final long TELEMETRY_INTERVAL_MS = 30_000L;
@@ -33,7 +38,7 @@ public class PegConfig {
 
     public static String getServerUrl(Context ctx) {
         String val = SecureStore.get(KEY_SERVER_URL);
-        return val != null ? val : "https://api.sonalit.com";
+        return val != null ? val : DEFAULT_SERVER_URL;
     }
 
     public static String getWsUrl(Context ctx) {
@@ -42,7 +47,8 @@ public class PegConfig {
     }
 
     public static String getOrgId(Context ctx) {
-        return SecureStore.get(KEY_ORG_ID);
+        String v = SecureStore.get(KEY_ORG_ID);
+        return (v == null || v.isEmpty()) ? null : v;
     }
 
     public static String getDeviceId(Context ctx) {
@@ -66,6 +72,31 @@ public class PegConfig {
 
     public static String getOfficerId(Context ctx) {
         return SecureStore.get(KEY_OFFICER_ID);
+    }
+
+    public static String getCommandSigningSecret(Context ctx) {
+        return SecureStore.get(KEY_CMD_SECRET);
+    }
+
+    public static void saveCommandSigningSecret(String secret) {
+        if (secret != null && !secret.isEmpty()) SecureStore.put(KEY_CMD_SECRET, secret);
+    }
+
+    /** Server-dictated command channel, if the server sends one; else null → template. */
+    public static String getCommandChannel(Context ctx) {
+        return SecureStore.get(KEY_CMD_CHANNEL);
+    }
+
+    public static void saveCommandChannel(String channel) {
+        if (channel != null && !channel.isEmpty()) SecureStore.put(KEY_CMD_CHANNEL, channel);
+    }
+
+    public static void saveOrgId(String orgId) {
+        if (orgId != null && !orgId.isEmpty()) SecureStore.put(KEY_ORG_ID, orgId);
+    }
+
+    public static void saveOfficerId(String officerId) {
+        if (officerId != null && !officerId.isEmpty()) SecureStore.put(KEY_OFFICER_ID, officerId);
     }
 
     public static boolean isEnrolled(Context ctx) {

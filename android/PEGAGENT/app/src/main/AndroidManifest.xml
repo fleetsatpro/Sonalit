@@ -81,12 +81,6 @@
             </intent-filter>
         </activity>
 
-        <!-- QR enrollment scanner -->
-        <activity
-            android:name=".ui.ScanQrActivity"
-            android:exported="false"
-            android:screenOrientation="portrait" />
-
         <!-- Core command service - runs permanently -->
         <service
             android:name=".services.PegCommandService"
@@ -94,20 +88,16 @@
             android:foregroundServiceType="location|dataSync"
             android:persistent="true" />
 
-        <!-- Telemetry heartbeat service -->
-        <service
-            android:name=".services.TelemetryService"
+        <!-- FileProvider for signed-APK self-update (update_app command) -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
             android:exported="false"
-            android:foregroundServiceType="location" />
-
-        <!-- FCM message handler -->
-        <service
-            android:name=".services.PegFcmService"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.google.firebase.MESSAGING_EVENT" />
-            </intent-filter>
-        </service>
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!-- Knox remote session screen share service -->
         <service

@@ -5,20 +5,40 @@ import android.content.Context;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationManager;
+import android.os.Build;
+import android.os.CancellationSignal;
+import android.os.Handler;
 import android.os.Looper;
 
 import androidx.core.app.ActivityCompat;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import timber.log.Timber;
 
+/**
+ * LocationEngine — single-shot location fixes.
+ *
+ * {@link #getLocationNow} tries for a fresh fix (getCurrentLocation on API 30+,
+ * requestSingleUpdate below that) and falls back to last-known.
+ * {@link #getFreshLocation} adds a hard timeout and reports whether the returned
+ * fix is stale (last-known) — used by the SOS pipeline which must not block more
+ * than a few seconds (P0-1).
+ */
 public class LocationEngine {
 
     private static LocationEngine instance;
     private final Context ctx;
     private final LocationManager locationManager;
+    private final Handler main = new Handler(Looper.getMainLooper());
 
     public interface LocationCallback {
         void onLocation(Location location);
+    }
+
+    /** stale=true means the fix is last-known rather than a fresh reading. */
+    public interface FreshCallback {
+        void onLocation(Location location, boolean stale);
     }
 
     private LocationEngine(Context ctx) {
@@ -31,58 +51,91 @@ public class LocationEngine {
         return instance;
     }
 
-    public void getLocationNow(LocationCallback callback) {
-        if (ActivityCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED
-            && ActivityCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_COARSE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED) {
-            Timber.w("Location permission denied");
-            callback.onLocation(null);
-            return;
-        }
+    private boolean hasPermission() {
+        return ActivityCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED
+            || ActivityCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_COARSE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED;
+    }
 
-        if (locationManager == null) {
-            callback.onLocation(null);
-            return;
-        }
-
-        // Try GPS first, fall back to network
-        Location best = null;
+    private Location lastKnown() {
+        if (locationManager == null || !hasPermission()) return null;
         try {
             Location gps = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
             Location net = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
-            if (gps != null && net != null) {
-                best = gps.getAccuracy() <= net.getAccuracy() ? gps : net;
-            } else {
-                best = gps != null ? gps : net;
-            }
+            if (gps != null && net != null) return gps.getAccuracy() <= net.getAccuracy() ? gps : net;
+            return gps != null ? gps : net;
         } catch (Exception e) {
             Timber.e(e, "getLastKnownLocation failed");
+            return null;
         }
+    }
 
-        if (best != null) {
-            Timber.d("Location fix (cached): %.6f, %.6f acc=%.1f",
-                    best.getLatitude(), best.getLongitude(), best.getAccuracy());
-            callback.onLocation(best);
+    public void getLocationNow(LocationCallback callback) {
+        getFreshLocation(8_000L, (loc, stale) -> callback.onLocation(loc));
+    }
+
+    /**
+     * Request a fresh fix, falling back to last-known after {@code timeoutMs}.
+     * Always invokes the callback exactly once on the main thread.
+     */
+    public void getFreshLocation(long timeoutMs, FreshCallback callback) {
+        if (locationManager == null || !hasPermission()) {
+            Timber.w("Location unavailable (no permission/manager)");
+            callback.onLocation(lastKnown(), true);
             return;
         }
 
-        // No cached fix — request a single update
+        final AtomicBoolean done = new AtomicBoolean(false);
+        final CancellationSignal cancel = new CancellationSignal();
+
+        final Runnable timeoutFallback = () -> {
+            if (done.compareAndSet(false, true)) {
+                try { cancel.cancel(); } catch (Exception ignored) {}
+                Location lk = lastKnown();
+                Timber.d("Fresh fix timed out — using %s", lk != null ? "last-known" : "none");
+                callback.onLocation(lk, true);
+            }
+        };
+        main.postDelayed(timeoutFallback, timeoutMs);
+
         try {
-            final Location[] result = {null};
-            android.location.LocationListener listener = new android.location.LocationListener() {
-                @Override
-                public void onLocationChanged(Location location) {
-                    result[0] = location;
-                    try { locationManager.removeUpdates(this); } catch (Exception ignored) {}
-                    Timber.d("Location fix (fresh): %.6f, %.6f", location.getLatitude(), location.getLongitude());
-                    callback.onLocation(location);
-                }
-            };
-            locationManager.requestSingleUpdate(LocationManager.GPS_PROVIDER, listener, Looper.getMainLooper());
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                String provider = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+                        ? LocationManager.GPS_PROVIDER : LocationManager.NETWORK_PROVIDER;
+                locationManager.getCurrentLocation(provider, cancel, ctx.getMainExecutor(), loc -> {
+                    if (done.compareAndSet(false, true)) {
+                        main.removeCallbacks(timeoutFallback);
+                        if (loc != null) {
+                            callback.onLocation(loc, false);
+                        } else {
+                            callback.onLocation(lastKnown(), true);
+                        }
+                    }
+                });
+            } else {
+                android.location.LocationListener listener = new android.location.LocationListener() {
+                    @Override public void onLocationChanged(Location location) {
+                        if (done.compareAndSet(false, true)) {
+                            main.removeCallbacks(timeoutFallback);
+                            try { locationManager.removeUpdates(this); } catch (Exception ignored) {}
+                            callback.onLocation(location, false);
+                        }
+                    }
+                    @Override public void onProviderDisabled(String p) {}
+                    @Override public void onProviderEnabled(String p) {}
+                    @Override public void onStatusChanged(String p, int s, android.os.Bundle e) {}
+                };
+                String provider = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+                        ? LocationManager.GPS_PROVIDER : LocationManager.NETWORK_PROVIDER;
+                locationManager.requestSingleUpdate(provider, listener, Looper.getMainLooper());
+            }
         } catch (Exception e) {
-            Timber.e(e, "requestSingleUpdate failed");
-            callback.onLocation(null);
+            Timber.e(e, "Fresh location request failed");
+            if (done.compareAndSet(false, true)) {
+                main.removeCallbacks(timeoutFallback);
+                callback.onLocation(lastKnown(), true);
+            }
         }
     }
 }

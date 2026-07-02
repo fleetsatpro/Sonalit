@@ -28,6 +28,18 @@ public class PegAgentApp extends Application {
 
     private static PegAgentApp instance;
 
+    // App-scoped single Centrifugo client (P2-4): PegCommandService owns it; the
+    // screen-share service reuses it for frame publishing instead of opening a second.
+    private static volatile com.sonalit.pegagent.network.PegWebSocketClient sharedWs;
+
+    public static void setSharedWs(com.sonalit.pegagent.network.PegWebSocketClient ws) {
+        sharedWs = ws;
+    }
+
+    public static com.sonalit.pegagent.network.PegWebSocketClient getSharedWs() {
+        return sharedWs;
+    }
+
     @Override
     protected void attachBaseContext(Context base) {
         super.attachBaseContext(base);

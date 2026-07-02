@@ -122,6 +122,28 @@ function signCommand(commandId, commandType, payload, issuedAt, expiresAt) {
   return crypto.createHmac('sha256', COMMAND_SIGNING_SECRET).update(message).digest('hex');
 }
 
+// Resolve a device's org_id (from guardian_devices) and its linked field-officer id
+// (by device link or badge/name). Additive: used to backfill enrollment responses so
+// the agent can subscribe to the correct realtime channel (org#<org_id>).
+async function resolveOrgOfficer(deviceId, badgeName) {
+  let orgId = null;
+  let officerId = null;
+  try {
+    const devRow = await query(`SELECT org_id FROM guardian_devices WHERE id = $1`, [deviceId]);
+    orgId = devRow.rows[0]?.org_id ?? null;
+    const offRow = await query(
+      `SELECT id FROM field_officers
+       WHERE (device_id = $1 OR badge_number = $2) AND deleted_at IS NULL
+       ORDER BY (device_id = $1) DESC LIMIT 1`,
+      [deviceId, badgeName || null]
+    );
+    officerId = offRow.rows[0]?.id ?? null;
+  } catch (e) {
+    logger.warn(`resolveOrgOfficer failed for ${deviceId}: ${e.message}`);
+  }
+  return { orgId, officerId };
+}
+
 // ─── Table Initialisation ────────────────────────────────────────────────────
 
 async function ensureTables() {
@@ -523,7 +545,14 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       if (existing.rows[0]) {
         const dev = existing.rows[0];
         const mappedStatus = (dev.status === 'active' || dev.status === 'enrolled') ? 'enrolled' : dev.status;
-        return res.json({ status: mappedStatus, device_uuid: dev.id, device_token: dev.token });
+        return res.json({
+          status: mappedStatus,
+          device_uuid: dev.id,
+          device_token: dev.token,
+          org_id: orgId,
+          officer_id: officerRes.rows[0]?.id ?? null,
+          command_signing_secret: COMMAND_SIGNING_SECRET,
+        });
       }
 
       // New enrollment — omit org_id when null so the column DEFAULT fires
@@ -546,7 +575,14 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       }
 
       auditLog('device', rows[0].id, 'v4_enroll', 'device', rows[0].id, { operator_code, platform }, req.ip);
-      return res.status(202).json({ status: 'pending_approval', device_uuid: rows[0].id, device_token: rows[0].token });
+      return res.status(202).json({
+        status: 'pending_approval',
+        device_uuid: rows[0].id,
+        device_token: rows[0].token,
+        org_id: orgId,
+        officer_id: officerRes.rows[0]?.id ?? null,
+        command_signing_secret: COMMAND_SIGNING_SECRET,
+      });
     }
 
     // ── legacy format ────────────────────────────────────────────────────────
@@ -641,12 +677,15 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       logger.info(`Guardian re-enrollment: device ${dev.id}`);
       auditLog('device', dev.id, 're_enroll', 'device', dev.id, { name }, req.ip);
       const certPin = process.env.GUARDIAN_CERT_PIN || null;
+      const { orgId: reOrgId, officerId: reOfficerId } = await resolveOrgOfficer(dev.id, name);
       return res.status(200).json({
         device_id: dev.id,
         token: dev.token,
         enrolled_at: dev.enrolled_at,
         cert_pin: certPin,
         command_signing_secret: COMMAND_SIGNING_SECRET,
+        org_id: reOrgId,
+        officer_id: reOfficerId,
       });
     }
 
@@ -685,6 +724,7 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
     auditLog('device', null, 'enroll', 'device', device.id, { name, android_id }, req.ip);
 
     const certPin = process.env.GUARDIAN_CERT_PIN || null;
+    const { orgId: newOrgId, officerId: newOfficerId } = await resolveOrgOfficer(device.id, name);
 
     res.status(201).json({
       device_id: device.id,
@@ -692,6 +732,8 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       enrolled_at: device.enrolled_at,
       cert_pin: certPin,
       command_signing_secret: COMMAND_SIGNING_SECRET,
+      org_id: newOrgId,
+      officer_id: newOfficerId,
     });
   } catch (err) {
     next(err);
@@ -817,6 +859,7 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
       server_time: Date.now(),
       commands: commands.rows,
       command_signing_secret: COMMAND_SIGNING_SECRET,
+      org_id: req.device.org_id ?? null,
       min_required_version: minCode,
       force_update: forceUpdate,
       ...(forceUpdate ? { download_url: `${backendBase}/api/v1/guardian/apk/download` } : {}),
@@ -1129,10 +1172,12 @@ router.post('/ack-command', deviceAuth, async (req, res, next) => {
 
     const deviceId = req.device.id;
 
+    // Accept ACKs for 'sent' (poll-delivered) AND 'pending' (WS-delivered before a
+    // heartbeat marked it 'sent') so realtime command acknowledgements are recorded.
     const updated = await query(
       `UPDATE device_commands
        SET status = $2, result = $3, executed_at = NOW()
-       WHERE id = $1 AND device_id = $4 AND status = 'sent'
+       WHERE id = $1 AND device_id = $4 AND status IN ('sent', 'pending')
        RETURNING id`,
       [command_id, status, cmdResult || null, deviceId]
     );
@@ -1144,7 +1189,8 @@ router.post('/ack-command', deviceAuth, async (req, res, next) => {
         [command_id, deviceId]
       );
       if (existing.rows.length) {
-        return res.status(409).json({ error: 'command_not_in_sent_state' });
+        // Already executed/failed — idempotent success (device may re-ack after dedup).
+        return res.json({ ok: true, already: existing.rows[0].status });
       }
       return res.status(404).json({ error: 'Command not found for this device' });
     }
@@ -1154,6 +1200,67 @@ router.post('/ack-command', deviceAuth, async (req, res, next) => {
     query(`INSERT INTO device_command_events (command_id, status) VALUES ($1, $2)`, [command_id, evtStatus]).catch(() => {});
 
     res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/v1/guardian/whoami
+ * Lightweight identity/backfill endpoint. Lets an already-enrolled agent recover
+ * org_id / officer_id after an update without re-enrolling (P0-2 migration).
+ */
+router.get('/whoami', deviceAuth, async (req, res, next) => {
+  try {
+    const { orgId, officerId } = await resolveOrgOfficer(req.device.id, req.device.name);
+    res.json({
+      device_id: req.device.id,
+      name: req.device.name,
+      org_id: orgId,
+      officer_id: officerId,
+      command_signing_secret: COMMAND_SIGNING_SECRET,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/v1/guardian/panic/cancel
+ * Device-initiated cancellation of its own active SOS (the "TAP TO CANCEL" path).
+ * Resolves the device's unresolved panic events and broadcasts a cancel.
+ */
+router.post('/panic/cancel', deviceAuth, async (req, res, next) => {
+  try {
+    const deviceId = req.device.id;
+    const resolved = await query(
+      `UPDATE panic_events
+       SET resolved_at = NOW()
+       WHERE device_id = $1 AND resolved_at IS NULL
+       RETURNING id`,
+      [deviceId]
+    );
+
+    await query(
+      `UPDATE guardian_devices SET panic_active = false, updated_at = NOW() WHERE id = $1`,
+      [deviceId]
+    );
+
+    const cancelPayload = {
+      type: 'panic_cancel',
+      device_id: deviceId,
+      device_name: req.device.name,
+      cancelled: resolved.rows.map(r => r.id),
+      cancelled_at: new Date().toISOString(),
+    };
+    if (req.device.org_id) {
+      publish(`org#${req.device.org_id}`, cancelPayload);
+    } else {
+      publish('device:panic', cancelPayload);
+    }
+
+    logger.warn(`PANIC cancelled by device=${deviceId} count=${resolved.rows.length}`);
+    res.json({ ok: true, cancelled: resolved.rows.length });
   } catch (err) {
     next(err);
   }
@@ -1498,7 +1605,9 @@ router.post('/devices/:id/command', authenticate, requireIdempotencyKey, command
 
     auditLog('admin', req.user.id, 'command_issued', 'device', req.params.id, { command_type, payload, nonce }, req.ip);
 
-    publish(`org#${req.user.org_id}`, { type: 'device.command', device_id: req.params.id, command_type, payload: payload || null, command_id: cmd.id, issued_at: cmd.issued_at, signature });
+    // expires_at MUST be included so the device can reconstruct the signed message
+    // (signCommand binds expires_at) and verify the signature over the WS path.
+    publish(`org#${req.user.org_id}`, { type: 'device.command', device_id: req.params.id, command_type, payload: payload || null, command_id: cmd.id, issued_at: cmd.issued_at, expires_at: cmd.expires_at, signature });
 
     // T5.3: record issued event
     query(`INSERT INTO device_command_events (command_id, status) VALUES ($1, 'issued')`, [cmd.id]).catch(() => {});

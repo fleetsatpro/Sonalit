@@ -32,7 +32,6 @@ import java.util.Locale;
 public class MainActivity extends Activity {
 
     private static final int PERM_REQ   = 100;
-    private static final int REQ_QR     = 200;
     private static final int REQ_ADMIN  = 201;
 
     private TextView tvStatus, tvBadge, tvOrgId, tvDeviceId, tvAdminStatus, tvLog;
@@ -43,6 +42,8 @@ public class MainActivity extends Activity {
     // Read crash log before super.onCreate() (which may crash) using app context.
     private String pendingCrashLog;
 
+    private boolean sosActive = false;
+
     private final BroadcastReceiver forceCheckinReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context ctx, Intent intent) {
@@ -50,6 +51,16 @@ public class MainActivity extends Activity {
                 appendLog("⚡ Force check-in requested by operator");
                 if (tvLog != null) tvLog.setTextColor(Color.parseColor("#f59e0b"));
             });
+        }
+    };
+
+    // Authoritative SOS button state driven by the service result (P0-1).
+    private final BroadcastReceiver sosResultReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context ctx, Intent intent) {
+            final String state = intent.getStringExtra(
+                    com.sonalit.pegagent.services.PegCommandService.EXTRA_SOS_STATE);
+            runOnUiThread(() -> applySosState(state));
         }
     };
 
@@ -80,6 +91,18 @@ public class MainActivity extends Activity {
                 }
             } catch (Throwable t) {
                 timber.log.Timber.e(t, "registerReceiver failed");
+            }
+
+            try {
+                IntentFilter sosFilter = new IntentFilter(
+                        com.sonalit.pegagent.services.PegCommandService.ACTION_SOS_RESULT);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    registerReceiver(sosResultReceiver, sosFilter, RECEIVER_NOT_EXPORTED);
+                } else {
+                    registerReceiver(sosResultReceiver, sosFilter);
+                }
+            } catch (Throwable t) {
+                timber.log.Timber.e(t, "SOS result receiver registration failed");
             }
 
             // Show crash from previous session
@@ -114,11 +137,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == REQ_QR && resultCode == RESULT_OK) {
-            refreshStatus();
-            ((PegAgentApp) getApplication()).startCommandService();
-            appendLog("✓ QR enrollment complete — service started");
-        } else if (requestCode == REQ_ADMIN) {
+        if (requestCode == REQ_ADMIN) {
             if (PegDeviceAdminReceiver.isAdminActive(this)) {
                 appendLog("✓ Device Admin: Active");
                 if (tvAdminStatus != null) {
@@ -149,7 +168,7 @@ public class MainActivity extends Activity {
         root.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Sonalit Field Officer Agent v1.0.13");
+        subtitle.setText("Sonalit Field Officer Agent v" + com.sonalit.pegagent.BuildConfig.VERSION_NAME);
         subtitle.setTextColor(Color.parseColor("#6b7280"));
         subtitle.setTextSize(11f);
         subtitle.setPadding(0, 4, 0, 32);
@@ -206,7 +225,7 @@ public class MainActivity extends Activity {
         enrollLayout.addView(enrollTitle);
 
         EditText etServer = makeInput("Server URL");
-        etServer.setText("https://sonalit-production.up.railway.app");
+        etServer.setText(PegConfig.DEFAULT_SERVER_URL);
         EditText etBadge = makeInput("Officer Badge (e.g. FO-012)");
 
         enrollLayout.addView(etServer);
@@ -235,9 +254,15 @@ public class MainActivity extends Activity {
             String androidId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
             PegApiClient tmpApi = new PegApiClient(this);
             tmpApi.enroll(server, badge, androidId, new PegApiClient.EnrollCallback() {
-                @Override public void onSuccess(String deviceToken, String deviceUuid) {
+                @Override public void onSuccess(PegApiClient.EnrollResult r) {
                     runOnUiThread(() -> {
-                        PegConfig.saveEnrollment(server, "", deviceUuid, deviceToken, deviceToken, badge, "");
+                        // Persist the full enroll response (org_id/officer_id may be null on
+                        // legacy servers — the service backfills them via /whoami).
+                        PegConfig.saveEnrollment(server,
+                                r.orgId != null ? r.orgId : "",
+                                r.deviceUuid, r.deviceToken, r.deviceToken, badge,
+                                r.officerId != null ? r.officerId : "");
+                        PegConfig.saveCommandSigningSecret(r.signingSecret);
                         appendLog("✓ Enrolled — awaiting admin approval");
                         appendLog("✓ Agent service starting...");
                         refreshStatus();
@@ -315,12 +340,56 @@ public class MainActivity extends Activity {
     }
 
     private void triggerSos() {
-        Intent broadcast = new Intent("com.sonalit.pegagent.ACTION_SOS");
+        if (sosActive) {
+            // Cancel path — actually tells the server to cancel (P0-1).
+            Intent cancel = new Intent(
+                    com.sonalit.pegagent.services.PegCommandService.ACTION_SOS_CANCEL)
+                    .setPackage(getPackageName());
+            sendBroadcast(cancel);
+            btnSos.setText("⚠ CANCELLING…");
+            appendLog("⚠ SOS cancel requested");
+            return;
+        }
+        Intent broadcast = new Intent(
+                com.sonalit.pegagent.services.PegCommandService.ACTION_SOS)
+                .setPackage(getPackageName());
         broadcast.putExtra("source", "manual_button");
         sendBroadcast(broadcast);
-        btnSos.setText("⚠ SOS SENT — TAP TO CANCEL");
+        btnSos.setText("⚠ SENDING SOS…");
         btnSos.setBackgroundColor(Color.parseColor("#991b1b"));
-        appendLog("⚠ SOS triggered manually");
+        appendLog("⚠ SOS triggered — delivering to dispatch");
+    }
+
+    /** Reflect the real SOS outcome reported by the service. */
+    private void applySosState(String state) {
+        if (btnSos == null || state == null) return;
+        switch (state) {
+            case "SENT":
+                sosActive = true;
+                btnSos.setText("⚠ SOS SENT — TAP TO CANCEL");
+                btnSos.setBackgroundColor(Color.parseColor("#991b1b"));
+                appendLog("✓ SOS delivered to server");
+                break;
+            case "RETRY":
+                sosActive = true;
+                btnSos.setText("⚠ SENDING… (retrying)");
+                appendLog("… SOS retrying");
+                break;
+            case "FAILED":
+                sosActive = false; // a tap re-fires a fresh SOS (retry)
+                btnSos.setText("⚠ SOS FAILED — RETRY");
+                btnSos.setBackgroundColor(Color.parseColor("#7f1d1d"));
+                appendLog("✗ SOS delivery failed");
+                break;
+            case "CANCELLED":
+                sosActive = false;
+                btnSos.setText("⚠ SOS EMERGENCY");
+                btnSos.setBackgroundColor(Color.parseColor("#ef4444"));
+                appendLog("✓ SOS cancelled");
+                break;
+            default:
+                break;
+        }
     }
 
     private void appendLog(String message) {
@@ -396,5 +465,6 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         super.onDestroy();
         try { unregisterReceiver(forceCheckinReceiver); } catch (Exception ignored) {}
+        try { unregisterReceiver(sosResultReceiver); } catch (Exception ignored) {}
     }
 }
