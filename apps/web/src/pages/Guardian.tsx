@@ -17,8 +17,9 @@ interface GuardianDevice {
   assignment_type?: string; assignment_id?: string; device_id?: string;
   model?: string; device_model?: string; status: string;
   battery_pct?: number; signal_pct?: number; gps_locked?: boolean;
-  app_version?: string; android_version?: string; knox_version?: string; imei?: string;
-  knox_do_enrolled?: boolean; last_seen_at?: string; last_heartbeat_at?: string;
+  battery_level?: number; signal_strength?: number; last_lat?: number; last_lng?: number;
+  app_version?: string; android_version?: string; os_version?: string; knox_version?: string; imei?: string;
+  knox_do_enrolled?: boolean; last_seen_at?: string; last_heartbeat_at?: string; last_seen?: string;
   device_commands?: DeviceCmd[];
 }
 interface DeviceCmd { id?: string; command_type?: string; command?: string; type?: string; status: string; created_at?: string; }
@@ -115,7 +116,7 @@ function EnrollDeviceModal({ devices, onClose, onApproved }: { devices: Guardian
             <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: C.panel, borderRadius: 4, marginBottom: 6 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: C.txt, overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.device_id || d.id.slice(0, 16)}</div>
-                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: C.sub }}>{d.model || d.device_model || 'Unknown'} · {fmtRel(d.last_heartbeat_at || d.last_seen_at)}</div>
+                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: C.sub }}>{d.model || d.device_model || 'Unknown'} · {fmtRel(d.last_heartbeat_at || d.last_seen_at || d.last_seen)}</div>
               </div>
               <StatusPill status={d.status} />
               <button onClick={() => approve(d.id)} disabled={approving === d.id}
@@ -212,8 +213,8 @@ function DeviceMatrix({ devices, onLink, onApprove }: { devices: GuardianDevice[
                     <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: C.sub }}>{d.model || d.device_model || d.device_id?.slice(0, 12) || '—'}</div>
                   </td>
                   <td style={{ padding: '8px 10px' }}><StatusPill status={d.status} /></td>
-                  <td style={{ padding: '8px 10px' }}><HealthBars battery={d.battery_pct} signal={d.signal_pct} /></td>
-                  <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: C.mid }}>{fmtRel(d.last_heartbeat_at || d.last_seen_at)}</td>
+                  <td style={{ padding: '8px 10px' }}><HealthBars battery={d.battery_pct ?? d.battery_level} signal={d.signal_pct ?? d.signal_strength} /></td>
+                  <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: C.mid }}>{fmtRel(d.last_heartbeat_at || d.last_seen_at || d.last_seen)}</td>
                   <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: C.mid }}>{d.app_version || '—'}</td>
                   <td style={{ padding: '8px 10px' }} onClick={e => e.stopPropagation()}>
                     <div style={{ display: 'flex', gap: 4 }}>
@@ -239,7 +240,7 @@ function DeviceMatrix({ devices, onLink, onApprove }: { devices: GuardianDevice[
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
                         <div>
                           <div style={{ fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700, fontSize: 10, color: C.gold, letterSpacing: '0.08em', marginBottom: 6 }}>DEVICE INFO</div>
-                          {([['IMEI', maskedImei], ['Model', d.model || '—'], ['Android', d.android_version || '—'], ['Knox', d.knox_version || '—'], ['App', d.app_version || '—']] as [string, string][]).map(([k, v]) => (
+                          {([['IMEI', maskedImei], ['Model', d.model || '—'], ['Android', d.android_version || d.os_version || '—'], ['Knox', d.knox_version || '—'], ['App', d.app_version || '—']] as [string, string][]).map(([k, v]) => (
                             <div key={k} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                               <span style={{ color: C.sub, fontSize: 10 }}>{k}</span>
                               <span style={{ color: C.txt, fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }}>{v}</span>
@@ -248,7 +249,7 @@ function DeviceMatrix({ devices, onLink, onApprove }: { devices: GuardianDevice[
                         </div>
                         <div>
                           <div style={{ fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700, fontSize: 10, color: C.gold, letterSpacing: '0.08em', marginBottom: 6 }}>TELEMETRY</div>
-                          {([['Battery', `${d.battery_pct ?? '—'}%`], ['Signal', `${d.signal_pct ?? '—'}%`], ['GPS', d.gps_locked ? 'Locked' : 'Searching'], ['Last Seen', fmtRel(d.last_heartbeat_at || d.last_seen_at)]] as [string, string][]).map(([k, v]) => (
+                          {([['Battery', `${d.battery_pct ?? d.battery_level ?? '—'}%`], ['Signal', `${d.signal_pct ?? d.signal_strength ?? '—'}%`], ['GPS', (d.gps_locked || d.last_lat != null) ? 'Locked' : 'Searching'], ['Last Seen', fmtRel(d.last_heartbeat_at || d.last_seen_at || d.last_seen)]] as [string, string][]).map(([k, v]) => (
                             <div key={k} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                               <span style={{ color: C.sub, fontSize: 10 }}>{k}</span>
                               <span style={{ color: C.txt, fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }}>{v}</span>
