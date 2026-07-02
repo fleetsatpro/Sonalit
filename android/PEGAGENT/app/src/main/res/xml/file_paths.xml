@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- update.apk is downloaded into getCacheDir() before the install intent. -->
+    <cache-path name="apk_cache" path="." />
+    <files-path name="files" path="." />
+</paths>

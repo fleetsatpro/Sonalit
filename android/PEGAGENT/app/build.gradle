@@ -10,8 +10,8 @@ android {
         applicationId "com.sonalit.pegagent"
         minSdk 26
         targetSdk 34
-        versionCode 15
-        versionName "1.0.13"
+        versionCode 16
+        versionName "1.0.14"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -21,6 +21,10 @@ android {
             storePassword System.getenv("KEYSTORE_PASSWORD") ?: ""
             keyAlias      System.getenv("KEY_ALIAS") ?: "pegagent"
             keyPassword   System.getenv("KEY_PASSWORD") ?: ""
+            // Ship v1+v2+v3 (v3 enables key rotation) for broadest install + future-proofing (P3-4).
+            enableV1Signing true
+            enableV2Signing true
+            enableV3Signing true
         }
     }
 
@@ -55,6 +59,10 @@ android {
 dependencies {
     // AndroidX core — appcompat/material/lifecycle/constraintlayout removed (plain Activity)
     implementation 'androidx.core:core:1.13.1'
+
+    // Encrypted credential store (P2-1). Wrapped in a Keystore-failure fallback in
+    // SecureStore so a Keystore/Tink failure degrades to plaintext instead of crashing.
+    implementation 'androidx.security:security-crypto:1.1.0-alpha06'
     // work-runtime was only needed by Firebase — removed with Firebase
     // implementation 'androidx.work:work-runtime:2.9.0'
 
