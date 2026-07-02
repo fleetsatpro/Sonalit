@@ -26,6 +26,8 @@ public class SecureStore {
 
     private static final String PLAINTEXT_PREFS = "peg_prefs";
     private static final String ENCRYPTED_PREFS = "peg_prefs_enc";
+    /** One-shot flag: migration ran successfully, do NOT touch the plaintext file again. */
+    private static final String KEY_MIGRATED   = "__plaintext_migrated";
 
     private static SharedPreferences prefs;      // active store (encrypted or plaintext)
     private static boolean encrypted = false;
@@ -56,15 +58,27 @@ public class SecureStore {
 
     private static void migratePlaintext(SharedPreferences plaintext, SharedPreferences enc) {
         try {
+            // One-shot: if we've already migrated, never touch the plaintext file again.
+            // Otherwise a stale plaintext copy (e.g. because .apply() clear did not flush
+            // before the process died) can OVERWRITE later token/secret rotations on next
+            // launch and silently revert enrollment.
+            if (enc.getBoolean(KEY_MIGRATED, false)) return;
+
             java.util.Map<String, ?> all = plaintext.getAll();
-            if (all.isEmpty()) return;
+            if (all.isEmpty()) {
+                enc.edit().putBoolean(KEY_MIGRATED, true).apply();
+                return;
+            }
             SharedPreferences.Editor e = enc.edit();
             for (java.util.Map.Entry<String, ?> entry : all.entrySet()) {
                 Object v = entry.getValue();
                 if (v instanceof String) e.putString(entry.getKey(), (String) v);
             }
+            // Set the flag in the same batch as the copied values so we cannot
+            // end up "migrated but flag missing" if the process dies between edits.
+            e.putBoolean(KEY_MIGRATED, true);
             e.apply();
-            plaintext.edit().clear().apply(); // delete plaintext copy after migration
+            plaintext.edit().clear().apply();
             Timber.i("SecureStore: migrated %d legacy values to encrypted store", all.size());
         } catch (Throwable t) {
             Timber.w(t, "SecureStore: plaintext migration skipped");

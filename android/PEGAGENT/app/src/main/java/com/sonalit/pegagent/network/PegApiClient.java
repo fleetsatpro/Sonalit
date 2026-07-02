@@ -60,6 +60,19 @@ public class PegApiClient {
                 .build();
     }
 
+    /**
+     * Guarded submit: a public API call arriving after {@link #shutdown()} (e.g. a
+     * delayed SOS retry Runnable posted from an in-flight OkHttp callback) must
+     * not crash the process with RejectedExecutionException. Log-and-drop instead.
+     */
+    private void submit(Runnable r) {
+        try {
+            bgExecutor.execute(r);
+        } catch (java.util.concurrent.RejectedExecutionException rex) {
+            Timber.w("PegApiClient submit rejected — executor shut down");
+        }
+    }
+
     // ── Enroll ────────────────────────────────────────────────────────────────
 
     public static class EnrollResult {
@@ -80,7 +93,7 @@ public class PegApiClient {
      * Runs on bgExecutor; callback is NOT dispatched to main thread.
      */
     public void enroll(String serverUrl, String badge, String androidId, EnrollCallback callback) {
-        bgExecutor.execute(() -> {
+        submit(() -> {
             try {
                 // Legacy format so enrollment works even without a backend redeploy.
                 JsonObject body = new JsonObject();
@@ -133,7 +146,7 @@ public class PegApiClient {
 
     /** Backfill org_id/officer_id for already-enrolled devices after an update. */
     public void fetchWhoami(WhoamiCallback callback) {
-        bgExecutor.execute(() -> {
+        submit(() -> {
             try {
                 String token = PegConfig.getAuthToken(ctx);
                 if (token == null) { callback.onResult(null, null); return; }
@@ -166,7 +179,7 @@ public class PegApiClient {
     public interface ResultCallback { void onResult(boolean success); }
 
     public void sendTelemetry(TelemetryPayload payload, CommandPollCallback commandCallback) {
-        bgExecutor.execute(() -> {
+        submit(() -> {
             try {
                 String token = PegConfig.getAuthToken(ctx);
                 if (token == null) return;
@@ -198,7 +211,7 @@ public class PegApiClient {
      */
     public void performCheckin(TelemetryPayload payload, CommandPollCallback commandCallback,
                                ResultCallback resultCallback) {
-        bgExecutor.execute(() -> {
+        submit(() -> {
             boolean ok = false;
             try {
                 String token = PegConfig.getAuthToken(ctx);
@@ -254,7 +267,7 @@ public class PegApiClient {
     // ── Location ──────────────────────────────────────────────────────────────
 
     public void sendTelemetryNow(Location location) {
-        bgExecutor.execute(() -> {
+        submit(() -> {
             try {
                 String token = PegConfig.getAuthToken(ctx);
                 if (token == null) return;
@@ -285,7 +298,7 @@ public class PegApiClient {
 
     /** ACK a command. Server accepts status "executed"/"failed"; detail goes in result. */
     public void ackCommand(String commandId, String status, long latencyMs) {
-        bgExecutor.execute(() -> {
+        submit(() -> {
             try {
                 String token = PegConfig.getAuthToken(ctx);
                 if (token == null) return;
@@ -315,7 +328,7 @@ public class PegApiClient {
 
     /** Poll command queue via heartbeat (fallback when WebSocket is down). */
     public void pollCommands(CommandPollCallback callback) {
-        bgExecutor.execute(() -> {
+        submit(() -> {
             try {
                 String token = PegConfig.getAuthToken(ctx);
                 if (token == null) return;
@@ -357,7 +370,7 @@ public class PegApiClient {
                           boolean gpsStale, PanicCallback callback) {
         final String uuid = (eventUuid == null || eventUuid.isEmpty())
                 ? java.util.UUID.randomUUID().toString() : eventUuid;
-        bgExecutor.execute(() -> {
+        submit(() -> {
             try {
                 String token = PegConfig.getAuthToken(ctx);
                 if (token == null) { if (callback != null) callback.onResult(false, 0); return; }
@@ -391,7 +404,7 @@ public class PegApiClient {
 
     /** Cancel this device's active SOS. */
     public void sendPanicCancel(PanicCallback callback) {
-        bgExecutor.execute(() -> {
+        submit(() -> {
             try {
                 String token = PegConfig.getAuthToken(ctx);
                 if (token == null) { if (callback != null) callback.onResult(false, 0); return; }
