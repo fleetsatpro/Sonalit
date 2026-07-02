@@ -43,7 +43,7 @@ router.patch('/:id', async (req, res, next) => {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        if (orgId) await client.query('SET LOCAL app.current_org_id = $1', [orgId]);
+        if (orgId) await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
         if (device_id) {
           // Unlink this device from any other officer that currently has it
           await client.query(
@@ -90,7 +90,7 @@ router.get('/:id', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('SET LOCAL app.current_org_id = $1', [orgId]);
+      await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `SELECT fo.*,
            gd.battery_pct, gd.signal_pct, gd.gps_locked, gd.gps_lat, gd.gps_lng, gd.telemetry_at,
@@ -131,7 +131,7 @@ router.get('/:id/activity', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('SET LOCAL app.current_org_id = $1', [orgId]);
+      await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `SELECT * FROM officer_activity_events
          WHERE officer_id = $1 AND org_id = $2
@@ -155,7 +155,7 @@ router.post('/:id/assign-convoy', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('SET LOCAL app.current_org_id = $1', [orgId]);
+      await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       // Validate convoy belongs to same org
       const convoy = await client.query(
         `SELECT id FROM convoys WHERE id = $1 AND org_id = $2`,
@@ -197,7 +197,7 @@ router.delete('/:id/unassign-convoy', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('SET LOCAL app.current_org_id = $1', [orgId]);
+      await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `UPDATE field_officers
          SET current_convoy_id = NULL, status = 'available', updated_at = NOW()
