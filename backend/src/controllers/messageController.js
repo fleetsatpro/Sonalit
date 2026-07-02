@@ -155,7 +155,7 @@ const listChannels = asyncHandler(async (req, res) => {
     WITH visible AS (
       SELECT c.*
         FROM channels c
-       WHERE ($3::boolean OR EXISTS (
+       WHERE ($2::boolean OR EXISTS (
               SELECT 1 FROM channel_members m
                WHERE m.channel_id = c.id AND m.user_id = $1
             ))
@@ -189,7 +189,7 @@ const listChannels = asyncHandler(async (req, res) => {
     LEFT JOIN channel_members m ON m.channel_id = v.id AND m.user_id = $1
     ORDER BY v.category NULLS LAST, v.name
     `,
-    [userId, null, isOrgAdmin(req.user)],
+    [userId, isOrgAdmin(req.user)],
   );
   res.json({ data: rows.rows });
 });
@@ -265,7 +265,9 @@ const deleteChannel = asyncHandler(async (req, res) => {
   );
   const before = { ...channel, ...stats.rows[0] };
 
-  await writeAuditRow(req.user.org_id, req.user.id, 'CHANNEL_DELETE', channel.id, before);
+  // audit_logs.action is constrained to INSERT/UPDATE/DELETE; the table_name
+  // ('channels') and the snapshot in before payload identify what got deleted.
+  await writeAuditRow(req.user.org_id, req.user.id, 'DELETE', channel.id, before);
 
   await req.db(`DELETE FROM channels WHERE id = $1`, [channel.id]);
   publishCommsEvent(req.user.org_id, channel.id, 'channel.deleted', { channel_id: channel.id });
