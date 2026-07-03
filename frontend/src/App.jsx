@@ -6,7 +6,7 @@ import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import { registerServiceWorker } from './services/offline';
 import socketService from './services/socket';
-import LoginPage from './pages/LoginPage';
+import LoginPage from './features/auth/login/LoginPage';
 
 // A page is a separate hashed chunk. After a redeploy, an already-open tab
 // holds stale chunk hashes — navigating to a page then fails to fetch its
