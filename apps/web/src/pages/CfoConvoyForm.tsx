@@ -66,32 +66,43 @@ const BASE_INPUT = [
 // Checkbox list for multi-select
 // ---------------------------------------------------------------------------
 
-function MultiSelectList({ items, value, onChange, emptyLabel = 'No items available' }: {
+function MultiSelectList({ items, value, onChange, emptyLabel = 'No items available', lockedIds }: {
   items: { id: string; label: string }[];
   value: string[];
   onChange: (v: string[]) => void;
   emptyLabel?: string;
+  /** Already-assigned items — shown checked but not uncheckable. There is no
+   * backend endpoint to remove a convoy_assignments/convoy_cfos row, so
+   * offering an uncheck here would silently do nothing on submit. */
+  lockedIds?: Set<string>;
 }) {
-  const toggle = (id: string) =>
+  const toggle = (id: string) => {
+    if (lockedIds?.has(id)) return;
     onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id]);
+  };
 
   return (
     <div className="max-h-44 overflow-y-auto bg-[#09101c] border border-[#122038] rounded-md divide-y divide-[#0c1424]">
       {items.length === 0 && (
         <p className="text-[#304558] text-xs px-3 py-2.5 font-mono">{emptyLabel}</p>
       )}
-      {items.map((item) => (
-        <label key={item.id}
-          className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-orange-500/5 transition-colors select-none">
-          <input
-            type="checkbox"
-            checked={value.includes(item.id)}
-            onChange={() => toggle(item.id)}
-            className="accent-orange-500 w-3.5 h-3.5 flex-shrink-0"
-          />
-          <span className="text-gray-200 text-xs font-mono leading-snug">{item.label}</span>
-        </label>
-      ))}
+      {items.map((item) => {
+        const locked = lockedIds?.has(item.id) ?? false;
+        return (
+          <label key={item.id}
+            className={`flex items-center gap-2.5 px-3 py-2 transition-colors select-none ${locked ? 'cursor-default opacity-60' : 'cursor-pointer hover:bg-orange-500/5'}`}>
+            <input
+              type="checkbox"
+              checked={value.includes(item.id)}
+              onChange={() => toggle(item.id)}
+              disabled={locked}
+              className="accent-orange-500 w-3.5 h-3.5 flex-shrink-0"
+            />
+            <span className="text-gray-200 text-xs font-mono leading-snug flex-1">{item.label}</span>
+            {locked && <span className="text-[9px] font-mono text-[#607890] uppercase tracking-wide flex-shrink-0">Assigned</span>}
+          </label>
+        );
+      })}
     </div>
   );
 }
@@ -128,15 +139,36 @@ export default function CfoConvoyForm(): React.ReactElement {
     queryFn: async () => (await api.get<{ data: CfoUser[] }>('/convoys/cfo-users')).data,
   });
 
-  const vehicleItems = vehiclesData?.data.map((v) => ({
-    id: v.id,
-    label: `${v.registration}${v.make || v.model ? ` — ${[v.make, v.model].filter(Boolean).join(' ')}` : ''}`,
-  })) ?? [];
+  // Already-assigned vehicles/CFOs — GET /convoys/:id returns these regardless
+  // of the vehicle's current status, so a vehicle in maintenance still shows
+  // up here even though the active-only /vehicles fetch above would miss it.
+  type AssignedVehicle = { id: string; registration?: string | null; make?: string | null; model?: string | null };
+  type AssignedCfo = { cfo_user_id: string; cfo_name?: string | null; cfo_email?: string | null };
+  const assignedVehicles = (existing?.['vehicles'] as AssignedVehicle[] | undefined) ?? [];
+  const assignedCfos = (existing?.['cfos'] as AssignedCfo[] | undefined) ?? [];
+  const lockedVehicleIds = new Set(assignedVehicles.map((v) => v.id));
+  const lockedCfoIds = new Set(assignedCfos.map((c) => c.cfo_user_id));
 
-  const cfoItems = cfoUsersData?.data.map((u) => ({
-    id: u.id,
-    label: `${u.name} — ${u.email}`,
-  })) ?? [];
+  const vehicleItems = (() => {
+    const fromList = vehiclesData?.data.map((v) => ({
+      id: v.id,
+      label: `${v.registration}${v.make || v.model ? ` — ${[v.make, v.model].filter(Boolean).join(' ')}` : ''}`,
+    })) ?? [];
+    const seen = new Set(fromList.map((i) => i.id));
+    const fromAssigned = assignedVehicles
+      .filter((v) => !seen.has(v.id))
+      .map((v) => ({ id: v.id, label: `${v.registration ?? v.id.slice(0, 8)}${v.make || v.model ? ` — ${[v.make, v.model].filter(Boolean).join(' ')}` : ''}` }));
+    return [...fromList, ...fromAssigned];
+  })();
+
+  const cfoItems = (() => {
+    const fromList = cfoUsersData?.data.map((u) => ({ id: u.id, label: `${u.name} — ${u.email}` })) ?? [];
+    const seen = new Set(fromList.map((i) => i.id));
+    const fromAssigned = assignedCfos
+      .filter((c) => !seen.has(c.cfo_user_id))
+      .map((c) => ({ id: c.cfo_user_id, label: `${c.cfo_name ?? 'CFO'} — ${c.cfo_email ?? c.cfo_user_id.slice(0, 8)}` }));
+    return [...fromList, ...fromAssigned];
+  })();
 
   const {
     register, handleSubmit, control, setError, reset, watch,
@@ -156,8 +188,8 @@ export default function CfoConvoyForm(): React.ReactElement {
         estimatedArrival: existing['estimated_arrival']
           ? String(existing['estimated_arrival']).slice(0, 16) : undefined,
         description: String(existing['description'] ?? ''),
-        vehicle_ids: [],
-        cfo_ids: [],
+        vehicle_ids: [...lockedVehicleIds],
+        cfo_ids: [...lockedCfoIds],
       },
     } : {}),
   });
@@ -191,10 +223,15 @@ export default function CfoConvoyForm(): React.ReactElement {
         const r = await api.post<{ data: { id: string } }>('/convoys', rest);
         convoyId = r.data.data.id;
       }
-      if (vehicle_ids.length) {
-        await api.post(`/convoys/${convoyId}/assign`, { vehicleIds: vehicle_ids }).catch(() => {});
+      // Only submit newly-checked ids — already-assigned ones are locked in
+      // the UI and re-posting them would be a redundant (or, for CFOs on a
+      // convoy no longer planned/active, rejected) call.
+      const newVehicleIds = vehicle_ids.filter((id) => !lockedVehicleIds.has(id));
+      const newCfoIds = cfo_ids.filter((id) => !lockedCfoIds.has(id));
+      if (newVehicleIds.length) {
+        await api.post(`/convoys/${convoyId}/assign`, { vehicleIds: newVehicleIds }).catch(() => {});
       }
-      for (const cfo_user_id of cfo_ids) {
+      for (const cfo_user_id of newCfoIds) {
         await api.post(`/convoys/${convoyId}/cfos`, { cfo_user_id }).catch(() => {});
       }
     },
@@ -317,9 +354,14 @@ export default function CfoConvoyForm(): React.ReactElement {
                 name="vehicle_ids"
                 control={control}
                 render={({ field }) => (
-                  <MultiSelectList items={vehicleItems} value={field.value} onChange={field.onChange} />
+                  <MultiSelectList items={vehicleItems} value={field.value} onChange={field.onChange} lockedIds={lockedVehicleIds} />
                 )}
               />
+              {lockedVehicleIds.size > 0 && (
+                <p className="text-[#304558] text-[10px] font-mono mt-1.5">
+                  Already-assigned vehicles are locked — removing an assignment isn&apos;t supported from this form yet.
+                </p>
+              )}
             </Field>
           </Section>
 
@@ -331,9 +373,10 @@ export default function CfoConvoyForm(): React.ReactElement {
                 control={control}
                 render={({ field }) => (
                   <MultiSelectList
-                    items={cfoItems.length ? cfoItems : []}
+                    items={cfoItems}
                     value={field.value}
                     onChange={field.onChange}
+                    lockedIds={lockedCfoIds}
                   />
                 )}
               />
