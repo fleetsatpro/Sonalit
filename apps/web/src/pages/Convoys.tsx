@@ -452,8 +452,12 @@ export default function Convoys() {
                           )}
                           <Link to="/convoys/$id/edit" params={{ id: c.id }}
                             className="cnv-icobtn" style={{ width:24, height:24, display:'flex', alignItems:'center', justifyContent:'center', borderRadius:2, background:'#161b20', border:'1px solid rgba(255,255,255,.08)', cursor:'pointer', color:'#4e5a65', fontSize:11, textDecoration:'none' }}>✏</Link>
-                          <button onClick={() => window.confirm(`Delete "${c.name}"?`) && deleteMutation.mutate(c.id)}
-                            className="cnv-icobtn" style={{ width:24, height:24, display:'flex', alignItems:'center', justifyContent:'center', borderRadius:2, background:'#161b20', border:'1px solid rgba(255,255,255,.08)', cursor:'pointer', color:'#4e5a65', fontSize:11 }}>🗑</button>
+                          {c.status !== 'active' && (
+                            <button
+                              title="Delete convoy"
+                              onClick={() => window.confirm(`Delete "${c.name}"?`) && deleteMutation.mutate(c.id)}
+                              className="cnv-icobtn" style={{ width:24, height:24, display:'flex', alignItems:'center', justifyContent:'center', borderRadius:2, background:'#161b20', border:'1px solid rgba(255,255,255,.08)', cursor:'pointer', color:'#4e5a65', fontSize:11 }}>🗑</button>
+                          )}
                         </div>
                       </td>
                     </tr>
