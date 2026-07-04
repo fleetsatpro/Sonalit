@@ -7,6 +7,27 @@ import { api } from '../lib/api.js'
 import { useAuthStore } from '../stores/auth.js'
 import type { DriverStatus } from '@sonalit/contracts'
 
+// ─── CSV export ───────────────────────────────────────────────────────────────
+
+function driversToCsv(rows: DriverRow[]): string {
+  const header = ['Name', 'Employee ID', 'Status', 'Phone', 'Email', 'License #', 'License Expiry', 'Score', 'Vehicle']
+  const lines = rows.map(d => [
+    d.name, d.employee_id ?? '', d.status, d.phone ?? '', d.email ?? '',
+    d.license_number ?? '', d.license_expiry ?? '', String(d.driver_score ?? ''), d.vehicle_registration ?? '',
+  ].map(f => `"${String(f).replace(/"/g, '""')}"`).join(','))
+  return [header.join(','), ...lines].join('\n')
+}
+
+function downloadDriversCsv(rows: DriverRow[]): void {
+  const blob = new Blob([driversToCsv(rows)], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `drivers-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface DriverRow {
@@ -161,6 +182,163 @@ function AddModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+// ─── Edit Driver Modal ─────────────────────────────────────────────────────────
+
+const editSchema = z.object({
+  name: z.string().min(1, 'Required'),
+  license_number: z.string().min(1, 'Required'),
+  license_expiry: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD'),
+  email: z.string().email().nullable().optional(),
+  phone: z.string().regex(/^\+[1-9]\d{6,14}$/, 'E.164 e.g. +2541234567').nullable().optional(),
+})
+type EditForm = z.infer<typeof editSchema>
+
+function EditModal({ driver, onClose }: { driver: DriverRow; onClose: () => void }) {
+  const qc = useQueryClient()
+  const { register, handleSubmit, formState: { errors } } = useForm<EditForm>({
+    resolver: zodResolver(editSchema),
+    defaultValues: {
+      name: driver.name,
+      license_number: driver.license_number ?? '',
+      license_expiry: driver.license_expiry ?? '',
+      email: driver.email ?? '',
+      phone: driver.phone ?? '',
+    },
+  })
+  const mut = useMutation({
+    mutationFn: (d: EditForm) => api.put(`/drivers/${driver.id}`, d),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['drivers'] }); onClose() },
+  })
+  const inp = (lbl: string, key: keyof EditForm, extra?: object) => (
+    <div>
+      <label style={{ display: 'block', fontFamily: MN, fontSize: 9, color: '#55556A', letterSpacing: '.1em', marginBottom: 5 }}>{lbl.toUpperCase()}</label>
+      <input {...register(key)} {...extra} style={{ width: '100%', background: '#1A1A20', border: '1px solid rgba(255,255,255,.11)', borderRadius: 7, padding: '9px 11px', fontFamily: SANS, fontSize: 13, color: '#EEEEF5', outline: 'none' }}
+        onFocus={e => (e.target.style.borderColor = LIME)} onBlur={e => (e.target.style.borderColor = 'rgba(255,255,255,.11)')} />
+      {errors[key] && <p style={{ fontFamily: MN, fontSize: 9, color: RED, marginTop: 3 }}>{String(errors[key]?.message ?? '')}</p>}
+    </div>
+  )
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: '#0C0C0E', border: '1px solid rgba(255,255,255,.11)', borderRadius: 12, padding: 28, width: 480, maxWidth: '95vw' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <div style={{ fontFamily: SANS, fontWeight: 700, fontSize: 18, color: '#EEEEF5' }}>Edit Driver</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#55556A', cursor: 'pointer', fontSize: 20 }}>×</button>
+        </div>
+        <form onSubmit={handleSubmit(d => mut.mutate(d))} noValidate>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+            {inp('Full Name', 'name')}
+            {inp('License Number', 'license_number')}
+            {inp('License Expiry', 'license_expiry', { placeholder: '2027-12-31' })}
+            {inp('Email', 'email', { type: 'email' })}
+            {inp('Phone (E.164)', 'phone', { placeholder: '+2541234567' })}
+          </div>
+          {mut.isError && <p style={{ fontFamily: MN, fontSize: 10, color: RED, marginBottom: 12 }}>Failed to update driver.</p>}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button type="submit" disabled={mut.isPending} style={{ flex: 1, background: LIME, border: 'none', borderRadius: 6, padding: '10px 0', fontFamily: SANS, fontWeight: 600, fontSize: 13, color: '#0C0C0E', cursor: 'pointer', opacity: mut.isPending ? .6 : 1 }}>
+              {mut.isPending ? 'Saving…' : 'Save Changes'}
+            </button>
+            <button type="button" onClick={onClose} style={{ padding: '10px 20px', background: 'transparent', border: '1px solid rgba(255,255,255,.11)', borderRadius: 6, fontFamily: SANS, fontSize: 13, color: '#9898B0', cursor: 'pointer' }}>Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ─── Scorecard Drawer ──────────────────────────────────────────────────────────
+
+interface ScorecardResponse {
+  driver: DriverRow & Record<string, unknown>
+  scorecard: {
+    overall: number | null
+    speeding: number
+    harsh_braking: number
+    harsh_acceleration: number
+    idling: number
+    route_discipline: number
+  }
+  recentStats: { trips: string | number; avg_score: string | number | null; total_km: string | number | null }
+  events: Record<string, number>
+}
+
+function ScoreBar({ label, value }: { label: string; value: number }) {
+  const col = value >= 85 ? LIME : value >= 70 ? CYAN : value >= 55 ? AMBER : RED
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
+        <span style={{ color: '#9898B0' }}>{label}</span>
+        <span style={{ fontFamily: MN, color: col, fontWeight: 600 }}>{value}</span>
+      </div>
+      <div style={{ height: 5, borderRadius: 3, background: 'rgba(255,255,255,.06)' }}>
+        <div style={{ height: '100%', width: `${Math.max(0, Math.min(100, value))}%`, background: col, borderRadius: 3 }} />
+      </div>
+    </div>
+  )
+}
+
+function ScorecardDrawer({ driverId, onClose }: { driverId: string; onClose: () => void }) {
+  const { data, isLoading, isError } = useQuery<{ data: ScorecardResponse }>({
+    queryKey: ['driver-scorecard', driverId],
+    queryFn: async () => (await api.get(`/drivers/${driverId}/scorecard`)).data,
+  })
+  const sc = data?.data
+
+  return (
+    <>
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 90 }} onClick={onClose} />
+      <aside style={{ position: 'fixed', right: 0, top: 0, height: '100%', width: '100%', maxWidth: 420, background: '#0C0C0E', borderLeft: '1px solid rgba(255,255,255,.11)', zIndex: 95, overflowY: 'auto', fontFamily: SANS, color: '#EEEEF5' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '20px 20px 16px', borderBottom: '1px solid rgba(255,255,255,.06)' }}>
+          <div>
+            <div style={{ fontFamily: MN, fontSize: 9, letterSpacing: '.15em', color: '#55556A', marginBottom: 4 }}>DRIVER SCORECARD</div>
+            <div style={{ fontWeight: 700, fontSize: 18 }}>{sc?.driver.name ?? '…'}</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#55556A', cursor: 'pointer', fontSize: 20 }}>×</button>
+        </div>
+
+        {isLoading && <div style={{ padding: 40, textAlign: 'center', fontFamily: MN, fontSize: 10, color: '#55556A' }}>LOADING SCORECARD…</div>}
+        {isError && <div style={{ padding: 20, fontSize: 12, color: RED }}>Failed to load scorecard.</div>}
+
+        {sc && (
+          <div style={{ padding: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
+              <div style={{ width: 64, height: 64, borderRadius: '50%', border: `3px solid ${scoreColor(sc.scorecard.overall).col}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: SANS, fontWeight: 700, fontSize: 22, color: scoreColor(sc.scorecard.overall).col, flexShrink: 0 }}>
+                {sc.scorecard.overall ?? '—'}
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: '#9898B0' }}>Overall Score</div>
+                <div style={{ fontFamily: MN, fontSize: 11, color: '#55556A', marginTop: 4 }}>
+                  {sc.recentStats.trips} trips · {sc.recentStats.total_km ? `${Math.round(Number(sc.recentStats.total_km))} km` : '—'} · last 30 days
+                </div>
+              </div>
+            </div>
+
+            <div style={{ fontFamily: MN, fontSize: 9, letterSpacing: '.12em', color: '#55556A', marginBottom: 12 }}>BEHAVIOUR BREAKDOWN</div>
+            <ScoreBar label="Speeding" value={sc.scorecard.speeding} />
+            <ScoreBar label="Harsh Braking" value={sc.scorecard.harsh_braking} />
+            <ScoreBar label="Harsh Acceleration" value={sc.scorecard.harsh_acceleration} />
+            <ScoreBar label="Idling" value={sc.scorecard.idling} />
+            <ScoreBar label="Route Discipline" value={sc.scorecard.route_discipline} />
+
+            {Object.keys(sc.events).length > 0 && (
+              <>
+                <div style={{ fontFamily: MN, fontSize: 9, letterSpacing: '.12em', color: '#55556A', margin: '20px 0 10px' }}>EVENTS (30d)</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {Object.entries(sc.events).map(([type, count]) => (
+                    <div key={type} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '6px 10px', background: '#1A1A20', borderRadius: 6 }}>
+                      <span style={{ color: '#9898B0', textTransform: 'capitalize' }}>{type.replace(/_/g, ' ')}</span>
+                      <span style={{ fontFamily: MN, color: '#EEEEF5' }}>{count}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </aside>
+    </>
+  )
+}
+
 // ─── Expanded Row Panel ────────────────────────────────────────────────────────
 
 function ExpandedPanel({ d, onStatusChange }: { d: DriverRow; onStatusChange: (id: string, status: DriverStatus) => void }) {
@@ -227,6 +405,9 @@ export default function Drivers() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [showAdd, setShowAdd] = useState(false)
   const [alertDismissed, setAlertDismissed] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [editingDriver, setEditingDriver] = useState<DriverRow | null>(null)
+  const [scorecardId, setScorecardId] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery<{ data: DriverRow[]; total: number }>({
     queryKey: ['drivers'],
@@ -237,6 +418,19 @@ export default function Drivers() {
   const statusMut = useMutation({
     mutationFn: ({ id, status }: { id: string; status: DriverStatus }) => api.put(`/drivers/${id}`, { status }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['drivers'] }),
+  })
+
+  const bulkStatusMut = useMutation({
+    mutationFn: async (status: DriverStatus) => {
+      await Promise.all([...selected].map(id => api.put(`/drivers/${id}`, { status })))
+    },
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['drivers'] }); setSelected(new Set()) },
+  })
+
+  const toggleSelect = (id: string) => setSelected(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
   })
 
   const all: DriverRow[] = data?.data ?? []
@@ -277,6 +471,9 @@ export default function Drivers() {
 
   const toggle = (id: string) => setExpanded(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
 
+  const allRowsSelected = rows.length > 0 && rows.every(d => selected.has(d.id))
+  const toggleSelectAll = () => setSelected(allRowsSelected ? new Set() : new Set(rows.map(d => d.id)))
+
   return (
     <div style={{ background: '#0C0C0E', minHeight: '100%', color: '#EEEEF5', fontFamily: SANS }}>
       <style>{`
@@ -299,9 +496,11 @@ export default function Drivers() {
           <div style={{ fontFamily: MN, fontSize: 11, color: '#55556A', marginTop: 8, letterSpacing: '.04em' }}>roster · compliance · performance · live status</div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', paddingTop: 4 }}>
-          {[{ label: 'Reports', icon: '📊' }, { label: 'Import CSV', icon: '⬆' }].map(b => (
-            <button key={b.label} style={{ fontFamily: SANS, fontSize: 12, fontWeight: 500, padding: '9px 16px', borderRadius: 6, cursor: 'pointer', border: '1px solid rgba(255,255,255,.11)', background: '#242430', color: '#9898B0', display: 'flex', alignItems: 'center', gap: 6 }}>{b.icon} {b.label}</button>
-          ))}
+          <button
+            onClick={() => downloadDriversCsv(rows)}
+            disabled={rows.length === 0}
+            style={{ fontFamily: SANS, fontSize: 12, fontWeight: 500, padding: '9px 16px', borderRadius: 6, cursor: rows.length ? 'pointer' : 'not-allowed', opacity: rows.length ? 1 : .5, border: '1px solid rgba(255,255,255,.11)', background: '#242430', color: '#9898B0', display: 'flex', alignItems: 'center', gap: 6 }}
+          >⬇ Export CSV</button>
           <button onClick={() => setShowAdd(true)} style={{ fontFamily: SANS, fontSize: 12, fontWeight: 600, padding: '9px 16px', borderRadius: 6, cursor: 'pointer', border: `1px solid ${LIME}`, background: LIME, color: '#0C0C0E', display: 'flex', alignItems: 'center', gap: 6 }}>+ Add Driver</button>
         </div>
       </div>
@@ -381,6 +580,24 @@ export default function Drivers() {
         </select>
       </div>
 
+      {/* Bulk ops bar */}
+      {selected.size > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '16px 28px 0', padding: '10px 16px', background: '#1A1A20', border: '1px solid rgba(255,255,255,.11)', borderRadius: 8, fontSize: 12 }}>
+          <span style={{ fontWeight: 600 }}>{selected.size} selected</span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {(['active', 'inactive', 'suspended'] as DriverStatus[]).map(s => (
+              <button
+                key={s}
+                disabled={bulkStatusMut.isPending}
+                onClick={() => bulkStatusMut.mutate(s)}
+                style={{ fontFamily: SANS, fontSize: 11, fontWeight: 500, padding: '6px 12px', borderRadius: 6, cursor: 'pointer', border: '1px solid rgba(255,255,255,.11)', background: '#242430', color: '#9898B0', opacity: bulkStatusMut.isPending ? .5 : 1, textTransform: 'capitalize' }}
+              >Set {s}</button>
+            ))}
+          </div>
+          <button onClick={() => setSelected(new Set())} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#55556A', cursor: 'pointer', fontSize: 16 }}>×</button>
+        </div>
+      )}
+
       {/* Table */}
       <div style={{ padding: '16px 28px 0', overflowX: 'auto' }}>
         {isLoading && <div style={{ textAlign: 'center', padding: 60, fontFamily: MN, fontSize: 10, color: '#55556A', letterSpacing: '.1em' }}>LOADING DRIVERS…</div>}
@@ -389,7 +606,10 @@ export default function Drivers() {
             <colgroup><col style={{ width: 40 }} /><col style={{ width: 200 }} /><col style={{ width: 175 }} /><col style={{ width: 110 }} /><col style={{ width: 90 }} /><col style={{ width: 115 }} /><col style={{ width: 120 }} /><col style={{ width: 90 }} /></colgroup>
             <thead>
               <tr style={{ borderBottom: '1px solid rgba(255,255,255,.11)' }}>
-                {['', 'DRIVER', 'CONTACT', 'VEHICLE', 'LICENSE', 'STATUS', 'SCORE', 'ACTIONS'].map(h => (
+                <th style={{ padding: '10px 12px' }}>
+                  <input type="checkbox" checked={allRowsSelected} onChange={toggleSelectAll} style={{ width: 15, height: 15, borderRadius: 4, accentColor: LIME, cursor: 'pointer' }} />
+                </th>
+                {['DRIVER', 'CONTACT', 'VEHICLE', 'LICENSE', 'STATUS', 'SCORE', 'ACTIONS'].map(h => (
                   <th key={h} style={{ fontFamily: MN, fontSize: 9, letterSpacing: '.12em', textTransform: 'uppercase', color: '#55556A', padding: '10px 12px', textAlign: 'left', fontWeight: 400 }}>{h}</th>
                 ))}
               </tr>
@@ -405,7 +625,9 @@ export default function Drivers() {
                 const isExp = expanded.has(d.id)
                 return [
                   <tr key={d.id} onClick={() => toggle(d.id)} className="drv-row" style={{ borderBottom: '1px solid rgba(255,255,255,.06)', animationDelay: `${idx * 18}ms` }}>
-                    <td style={{ padding: '16px 12px' }}><input type="checkbox" onClick={e => e.stopPropagation()} style={{ width: 15, height: 15, borderRadius: 4, accentColor: LIME, cursor: 'pointer' }} /></td>
+                    <td style={{ padding: '16px 12px' }} onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={selected.has(d.id)} onChange={() => toggleSelect(d.id)} style={{ width: 15, height: 15, borderRadius: 4, accentColor: LIME, cursor: 'pointer' }} />
+                    </td>
                     <td style={{ padding: '16px 12px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div style={{ width: 38, height: 38, borderRadius: 10, background: av.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: MN, fontSize: 12, fontWeight: 700, color: av.col, flexShrink: 0, position: 'relative', border: `1.5px solid ${av.ring}` }}>
@@ -434,9 +656,8 @@ export default function Drivers() {
                     <td style={{ padding: '16px 12px' }}><ScoreRing score={d.driver_score} /></td>
                     <td style={{ padding: '16px 12px' }} onClick={e => e.stopPropagation()}>
                       <div style={{ display: 'flex', gap: 5 }}>
-                        {(['✏', '👁', '🗑'] as const).map((ic, i) => (
-                          <button key={i} style={{ width: 28, height: 28, borderRadius: 6, background: '#242430', border: '1px solid rgba(255,255,255,.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 12 }}>{ic}</button>
-                        ))}
+                        <button title="Edit driver" onClick={() => setEditingDriver(d)} style={{ width: 28, height: 28, borderRadius: 6, background: '#242430', border: '1px solid rgba(255,255,255,.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 12 }}>✏</button>
+                        <button title="View scorecard" onClick={() => setScorecardId(d.id)} style={{ width: 28, height: 28, borderRadius: 6, background: '#242430', border: '1px solid rgba(255,255,255,.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 12 }}>👁</button>
                       </div>
                     </td>
                   </tr>,
@@ -460,6 +681,8 @@ export default function Drivers() {
       </div>
 
       {showAdd && <AddModal onClose={() => setShowAdd(false)} />}
+      {editingDriver && <EditModal driver={editingDriver} onClose={() => setEditingDriver(null)} />}
+      {scorecardId && <ScorecardDrawer driverId={scorecardId} onClose={() => setScorecardId(null)} />}
     </div>
   )
 }
