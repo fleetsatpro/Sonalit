@@ -1,5 +1,9 @@
 import { test, expect } from '@playwright/test';
 
+// The /login route renders the Sonalit ops-wall LoginPage
+// (src/features/auth/login/LoginPage.tsx). The password tab is the default
+// pane; email/password fields are labelled "EMAIL ADDRESS" / "PASSWORD".
+
 test.describe('Login page', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/login');
@@ -7,29 +11,33 @@ test.describe('Login page', () => {
 
   test('renders login form with platform title', async ({ page }) => {
     await expect(page).toHaveTitle(/Sonalit|Fleet/i);
-    await expect(page.getByText(/logistics dashboard/i)).toBeVisible({ timeout: 8000 });
+    await expect(page.getByRole('heading', { name: /welcome back/i })).toBeVisible({ timeout: 8000 });
   });
 
   test('password mode shows email and password inputs', async ({ page }) => {
-    // Switch to password mode — use exact match to avoid matching "Show password" and "Forgot password?"
-    await page.getByRole('button', { name: 'Password', exact: true }).click();
-    await expect(page.getByLabel(/email/i)).toBeVisible({ timeout: 8000 });
-    // Use exact label text to avoid matching the "Show password" toggle button's aria-label
-    await expect(page.getByLabel('Password', { exact: true })).toBeVisible({ timeout: 8000 });
+    // Password is the default tab — its pane is the only one mounted.
+    await expect(page.getByRole('textbox', { name: /email address/i })).toBeVisible({ timeout: 8000 });
+    // Role-based lookup skips the hidden forgot-password modal's email input.
+    await expect(page.getByRole('textbox', { name: 'PASSWORD', exact: true })).toBeVisible({ timeout: 8000 });
   });
 
   test('shows validation error for invalid email', async ({ page }) => {
-    await page.getByRole('button', { name: 'Password', exact: true }).click();
-    await page.getByLabel(/email/i).fill('not-an-email');
-    await page.getByLabel('Password', { exact: true }).fill('anypass');
+    await page.getByRole('textbox', { name: /email address/i }).fill('not-an-email');
+    await page.getByRole('textbox', { name: 'PASSWORD', exact: true }).fill('anypass');
     await page.getByRole('button', { name: /access dashboard/i }).click();
-    await expect(page.getByText(/valid email/i)).toBeVisible({ timeout: 8000 });
+    // Scope to the sign-in console — the hidden reset-password modal has identical copy.
+    await expect(page.getByLabel('Sign in').getByText(/valid email/i)).toBeVisible({ timeout: 8000 });
   });
 
   test('redirects unauthenticated users to /login', async ({ page }) => {
-    // All protected routes redirect to /login when no auth token
-    await page.goto('/');
-    await expect(page).toHaveURL(/\/login/, { timeout: 8000 });
+    // All protected routes redirect to /login when no auth token.
+    // Cold Vite dev can spend >30s transforming the dashboard module graph
+    // before the router's beforeLoad guard runs — give this test extra room.
+    test.slow();
+    // waitUntil 'commit': cold Vite dev transforms the whole dashboard module graph
+    // before DOMContentLoaded, which can exceed the test timeout on slow runners.
+    await page.goto('/', { waitUntil: 'commit' });
+    await expect(page).toHaveURL(/\/login/, { timeout: 60000 });
   });
 
   test('successful login navigates to dashboard', async ({ page }) => {
@@ -45,9 +53,8 @@ test.describe('Login page', () => {
       })
     );
 
-    await page.getByRole('button', { name: 'Password', exact: true }).click();
-    await page.getByLabel(/email/i).fill('admin@test.io');
-    await page.getByLabel('Password', { exact: true }).fill('password123');
+    await page.getByRole('textbox', { name: /email address/i }).fill('admin@test.io');
+    await page.getByRole('textbox', { name: 'PASSWORD', exact: true }).fill('password123');
     await page.getByRole('button', { name: /access dashboard/i }).click();
 
     // After login, should not be on /login any more
