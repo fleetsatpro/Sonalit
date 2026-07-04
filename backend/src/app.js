@@ -418,6 +418,41 @@ if (process.env.ENABLE_INPROCESS_WORKERS === "true" && process.env.REDIS_URL && 
   logger.info("Workers not started in-process — run standalone worker processes (T3.1)");
 }
 
+// ─── Convoy report worker — default-on, independent of the gate above ───────
+// This repo's Railway config (root railway.json, backend/nixpacks.toml,
+// Dockerfile) all deploy a single `npm start` service with no separate
+// worker process/service defined anywhere. That means the convoyReport
+// BullMQ queue's jobs (checkProgress, generateReport, scheduledRecount) were
+// never being consumed at all in that topology — CFO photo uploads worked
+// (they write synchronously) and convoy_daily_reports.status correctly
+// advanced to 'complete', but it never advanced to 'generated' and pdf_url
+// never populated, because that step only happens inside this worker.
+//
+// Unlike the GPS/alert/notification/guardian workers above (higher-frequency
+// or heavier workloads the original design deliberately isolated), this one
+// is bursty and lightweight — PDF generation uses pdfkit (no headless
+// browser, no image embedding), triggered only on photo upload or an explicit
+// regenerate click. Safe to run in the same process by default so a stock
+// single-service deploy actually finishes report generation without any
+// Railway dashboard changes. Opt out with DISABLE_INPROCESS_CONVOY_REPORT_WORKER=true
+// once/if a dedicated worker service is deployed (npm run start:worker:report).
+if (
+  !global._workers?.length &&
+  process.env.REDIS_URL &&
+  process.env.DISABLE_REDIS !== "true" &&
+  process.env.DISABLE_INPROCESS_CONVOY_REPORT_WORKER !== "true" &&
+  process.env.NODE_ENV !== 'test' &&
+  !process.env.GENERATE_OPENAPI
+) {
+  try {
+    const { startConvoyReportWorker } = require("./workers/convoyReportWorker");
+    global._workers = [...(global._workers || []), ...startConvoyReportWorker()];
+    logger.info("Convoy report worker started in-process (default-on; set DISABLE_INPROCESS_CONVOY_REPORT_WORKER=true to opt out)");
+  } catch (e) {
+    logger.warn("Convoy report worker startup failed: " + e.message + " — reports will not auto-generate");
+  }
+}
+
 process.on("SIGTERM", () => shutdown(0));
 process.on("SIGINT", () => shutdown(0));
 
