@@ -35,6 +35,10 @@ const getVehicles = asyncHandler(async (req, res) => {
   if (req.query.status) { params.push(req.query.status); filters.push(`v.status = $${params.length}`); }
   if (req.query.region) { params.push(req.query.region); filters.push(`v.region = $${params.length}`); }
   if (req.query.type) { params.push(req.query.type); filters.push(`v.type = $${params.length}`); }
+  if (req.query.search) {
+    params.push(`%${req.query.search}%`);
+    filters.push(`(v.registration ILIKE $${params.length} OR v.make ILIKE $${params.length} OR v.model ILIKE $${params.length})`);
+  }
 
   const where = filters.length ? `AND ${filters.join(' AND ')}` : '';
 
