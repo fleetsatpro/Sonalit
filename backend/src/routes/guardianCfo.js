@@ -417,6 +417,14 @@ router.post('/photo-upload-url', deviceAuth, photoUploadLimiter, async (req, res
     if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY || !R2_SECRET_KEY || !R2_BUCKET) {
       return res.status(501).json({ error: 'Photo storage not configured on this server' });
     }
+    // R2's native endpoint has no public-read addressing (unlike S3's virtual-
+    // hosted style) — a photo_url built without R2_PUBLIC_URL would never be
+    // fetchable, silently breaking the EXIF/content-type check in POST /photos
+    // (which HEADs this exact URL) for every submission. Fail the request
+    // clearly here instead of handing the CFO app an unusable public_url.
+    if (!R2_PUBLIC_URL) {
+      return res.status(501).json({ error: 'Photo storage public URL (R2_PUBLIC_URL) not configured on this server' });
+    }
 
     let S3Client, PutObjectCommand, getSignedUrl;
     try {
@@ -435,7 +443,7 @@ router.post('/photo-upload-url', deviceAuth, photoUploadLimiter, async (req, res
     });
     const command = new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, ContentType: 'image/jpeg' });
     const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
-    const publicUrl = `${R2_PUBLIC_URL || `https://${R2_BUCKET}.${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`}/${key}`;
+    const publicUrl = `${R2_PUBLIC_URL}/${key}`;
 
     res.json({ upload_url: uploadUrl, public_url: publicUrl, key });
   } catch (err) {

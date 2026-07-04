@@ -1129,6 +1129,13 @@ router.post('/reports/upload-url', deviceAuth, async (req, res, next) => {
     if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY || !R2_SECRET_KEY || !R2_BUCKET) {
       return res.status(501).json({ error: 'Photo storage not configured on this server' });
     }
+    // R2's native endpoint has no public-read addressing without a configured
+    // public base URL — a URL built without it would never resolve. The APK
+    // already treats 501 here as "fall back to base64" (see docstring above),
+    // so failing fast is strictly safer than handing back a dead public_url.
+    if (!R2_PUBLIC_URL) {
+      return res.status(501).json({ error: 'Photo storage public URL (R2_PUBLIC_URL) not configured on this server' });
+    }
 
     let S3Client, PutObjectCommand, getSignedUrl;
     try {
@@ -1150,7 +1157,7 @@ router.post('/reports/upload-url', deviceAuth, async (req, res, next) => {
       ContentType: 'image/jpeg',
     });
     const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
-    const publicUrl = `${R2_PUBLIC_URL || `https://${R2_BUCKET}.${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`}/${key}`;
+    const publicUrl = `${R2_PUBLIC_URL}/${key}`;
 
     res.json({ upload_url: uploadUrl, public_url: publicUrl, key });
   } catch (err) {

@@ -33,6 +33,16 @@ async function uploadToR2(key, buffer, contentType) {
   if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY || !R2_SECRET_KEY || !R2_BUCKET) {
     throw new Error('R2 not configured');
   }
+  // R2_PUBLIC_URL is required too: R2's native r2.cloudflarestorage.com endpoint
+  // has no virtual-hosted-style public-read addressing (unlike S3) — every GET
+  // there needs SigV4 auth. Without a real public base URL (custom domain or
+  // r2.dev), there is no reachable URL to construct. Throwing here (rather than
+  // silently building one that 404s/403s) routes generateReport's caller into
+  // the existing local-filesystem fallback below instead of "succeeding" with
+  // an unusable pdf_url.
+  if (!R2_PUBLIC_URL) {
+    throw new Error('R2_PUBLIC_URL not configured');
+  }
   const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
   const s3 = new S3Client({
     region: 'auto',
@@ -40,7 +50,7 @@ async function uploadToR2(key, buffer, contentType) {
     credentials: { accessKeyId: R2_ACCESS_KEY, secretAccessKey: R2_SECRET_KEY },
   });
   await s3.send(new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, Body: buffer, ContentType: contentType }));
-  return `${R2_PUBLIC_URL || `https://${R2_BUCKET}.${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`}/${key}`;
+  return `${R2_PUBLIC_URL}/${key}`;
 }
 
 // ─── DB Helpers ───────────────────────────────────────────────────────────────

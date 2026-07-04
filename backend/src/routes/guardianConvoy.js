@@ -151,8 +151,12 @@ router.post(
       if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0)
         return res.status(400).json({ error: 'Request body must be image binary data' });
 
-      const { R2_BUCKET, R2_PUBLIC_URL, R2_ACCOUNT_ID } = process.env;
+      const { R2_BUCKET, R2_PUBLIC_URL } = process.env;
       if (!R2_BUCKET) return res.status(501).json({ error: 'Photo storage not configured on this server' });
+      // R2's native endpoint has no public-read addressing without a
+      // configured public base URL — fail clearly rather than store a
+      // r2_url that will never resolve.
+      if (!R2_PUBLIC_URL) return res.status(501).json({ error: 'Photo storage public URL (R2_PUBLIC_URL) not configured on this server' });
 
       let PutObjectCommand;
       try {
@@ -173,7 +177,7 @@ router.post(
         ContentType: 'image/jpeg',
       }));
 
-      const r2Url = `${R2_PUBLIC_URL || `https://${R2_BUCKET}.${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`}/${key}`;
+      const r2Url = `${R2_PUBLIC_URL}/${key}`;
 
       const result = await query(
         `INSERT INTO photo_uploads
@@ -208,8 +212,9 @@ router.post('/photos/upload-url', jwtAuth, async (req, res, next) => {
     if (!phase || !['sod', 'eod'].includes(phase))
       return res.status(400).json({ error: 'phase must be sod or eod' });
 
-    const { R2_BUCKET, R2_PUBLIC_URL, R2_ACCOUNT_ID } = process.env;
+    const { R2_BUCKET, R2_PUBLIC_URL } = process.env;
     if (!R2_BUCKET) return res.status(501).json({ error: 'Photo storage not configured on this server' });
+    if (!R2_PUBLIC_URL) return res.status(501).json({ error: 'Photo storage public URL (R2_PUBLIC_URL) not configured on this server' });
 
     let PutObjectCommand, getSignedUrl;
     try {
@@ -226,7 +231,7 @@ router.post('/photos/upload-url', jwtAuth, async (req, res, next) => {
     const key = `convoy-app/${convoy_id}/${phase}/${photo_type}_${photoId}.jpg`;
     const command = new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, ContentType: 'image/jpeg' });
     const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
-    const r2Url = `${R2_PUBLIC_URL || `https://${R2_BUCKET}.${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`}/${key}`;
+    const r2Url = `${R2_PUBLIC_URL}/${key}`;
 
     return res.json({ upload_url: uploadUrl, photo_id: photoId, r2_url: r2Url });
   } catch (err) {
@@ -247,9 +252,10 @@ router.post('/photos/commit', jwtAuth, async (req, res, next) => {
     if (!phase || !['sod', 'eod'].includes(phase))
       return res.status(400).json({ error: 'phase must be sod or eod' });
 
-    const { R2_BUCKET, R2_PUBLIC_URL, R2_ACCOUNT_ID } = process.env;
+    const { R2_PUBLIC_URL } = process.env;
+    if (!R2_PUBLIC_URL) return res.status(501).json({ error: 'Photo storage public URL (R2_PUBLIC_URL) not configured on this server' });
     const key = `convoy-app/${convoy_id}/${phase}/${photo_type}_${photo_id}.jpg`;
-    const r2Url = `${R2_PUBLIC_URL || `https://${R2_BUCKET}.${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`}/${key}`;
+    const r2Url = `${R2_PUBLIC_URL}/${key}`;
 
     const result = await query(
       `INSERT INTO photo_uploads
@@ -287,8 +293,9 @@ router.post(
       if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0)
         return res.status(400).json({ error: 'Request body must be document binary data' });
 
-      const { R2_BUCKET, R2_PUBLIC_URL, R2_ACCOUNT_ID } = process.env;
+      const { R2_BUCKET, R2_PUBLIC_URL } = process.env;
       if (!R2_BUCKET) return res.status(501).json({ error: 'Storage not configured on this server' });
+      if (!R2_PUBLIC_URL) return res.status(501).json({ error: 'Storage public URL (R2_PUBLIC_URL) not configured on this server' });
 
       let PutObjectCommand;
       try {
@@ -310,7 +317,7 @@ router.post(
         ContentType: isPdf ? 'application/pdf' : 'image/jpeg',
       }));
 
-      const r2Url = `${R2_PUBLIC_URL || `https://${R2_BUCKET}.${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`}/${key}`;
+      const r2Url = `${R2_PUBLIC_URL}/${key}`;
 
       await query(
         `UPDATE convoy_reports SET handover_form_key = $1, handover_form_url = $2
