@@ -491,21 +491,35 @@ const regenerateReport = asyncHandler(async (req, res) => {
   );
 
   if (!report.rows.length) {
-    // No legacy row — check if CFO app data exists for this date and auto-create
-    const cfoCount = await query(
-      `SELECT COUNT(*)::int AS n FROM photo_uploads WHERE convoy_id = $1::text AND timestamp::date = $2::date`,
+    // No row yet — check if real photo data exists for this date in
+    // convoy_truck_photos (the table the live CFO app actually writes to;
+    // photo_uploads is a legacy/unused table from an earlier upload path) and
+    // auto-create the row if so.
+    const photoCount = await query(
+      `SELECT COUNT(*)::int AS n FROM convoy_truck_photos WHERE convoy_id = $1 AND report_date = $2`,
       [req.params.id, date]
     );
-    if (!cfoCount.rows[0].n) return res.status(404).json({ error: 'No report data for this date' });
+    if (!photoCount.rows[0].n) return res.status(404).json({ error: 'No report data for this date' });
+
+    const reqCountRes = await query(
+      `SELECT COUNT(ct.id) AS truck_count, c.seal_count_per_truck
+       FROM convoys c JOIN convoy_trucks ct ON ct.convoy_id = c.id
+       WHERE c.id = $1
+       GROUP BY c.seal_count_per_truck`,
+      [req.params.id]
+    );
+    const required = reqCountRes.rows.length
+      ? parseInt(reqCountRes.rows[0].truck_count) * (2 + parseInt(reqCountRes.rows[0].seal_count_per_truck)) * 2
+      : photoCount.rows[0].n;
 
     report = await query(
       `INSERT INTO convoy_daily_reports
          (convoy_id, report_date, status, received_photo_count, required_photo_count, created_at, updated_at)
-       VALUES ($1::uuid, $2, 'partial', $3, 10, NOW(), NOW())
+       VALUES ($1::uuid, $2, 'partial', $3, $4, NOW(), NOW())
        ON CONFLICT (convoy_id, report_date) DO UPDATE
-         SET status = 'partial', received_photo_count = $3, updated_at = NOW()
+         SET status = 'partial', received_photo_count = $3, required_photo_count = $4, updated_at = NOW()
        RETURNING id`,
-      [req.params.id, date, cfoCount.rows[0].n]
+      [req.params.id, date, photoCount.rows[0].n, required]
     );
   } else {
     // Reset existing row to partial so the worker will regenerate it
