@@ -61,7 +61,6 @@ const financeRoute = createRoute({ getParentRoute: () => authRoute, path: '/fina
 const maintenanceRoute = createRoute({ getParentRoute: () => authRoute, path: '/maintenance', component: lazyRouteComponent(() => import('./pages/Maintenance.js')) });
 const fuelRoute = createRoute({ getParentRoute: () => authRoute, path: '/fuel', component: lazyRouteComponent(() => import('./pages/Fuel.js')) });
 const claimsRoute = createRoute({ getParentRoute: () => authRoute, path: '/claims', component: lazyRouteComponent(() => import('./pages/Claims.js')) });
-const shiftsRoute = createRoute({ getParentRoute: () => authRoute, path: '/shifts', component: lazyRouteComponent(() => import('./pages/Shifts.js')) });
 const geofencesRoute = createRoute({ getParentRoute: () => authRoute, path: '/geofences', component: lazyRouteComponent(() => import('./pages/Geofences.js')) });
 const riskIntelRoute = createRoute({ getParentRoute: () => authRoute, path: '/risk-intel', component: lazyRouteComponent(() => import('./pages/RiskIntel.js')) });
 const rulesRoute = createRoute({ getParentRoute: () => authRoute, path: '/rules', component: lazyRouteComponent(() => import('./pages/Rules.js')) });
@@ -114,7 +113,7 @@ const routeTree = rootRoute.addChildren([
     driversRoute, alertsRoute, incidentsRoute,
     incidentCenterRoute, panicCenterRoute, messagesRoute,
     analyticsRoute, reportsRoute, shipmentsRoute,
-    financeRoute, maintenanceRoute, fuelRoute, claimsRoute, shiftsRoute, geofencesRoute,
+    financeRoute, maintenanceRoute, fuelRoute, claimsRoute, geofencesRoute,
     riskIntelRoute, rulesRoute, fieldOfficersRoute,
     executiveRoute, devicesRoute, guardianRoute, knoxRemoteSessionRoute,
     aiDecisionRoute, copilotRoute, settingsRoute, routeAnalysisRoute, cargoPortalRoute,
