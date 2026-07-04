@@ -1,4 +1,9 @@
 import './index.css';
+// Design tokens (--d-void, --d-rail-w, etc.) consumed by AppShell + Rail on
+// every route. Previously only Dashboard imported this; without it, the
+// margin-left: var(--d-rail-w) rule silently collapsed to 0 on non-Dashboard
+// pages, letting the outlet render underneath the sidebar.
+import './styles/dashboard.css';
 import './i18n/index.js';
 import React from 'react';
 import ReactDOM from 'react-dom/client';

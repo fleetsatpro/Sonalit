@@ -5,6 +5,8 @@ import {
   Bell, AlertTriangle, Eye, Map,
   Route, Truck, Users, Fuel, Wrench,
   Package, Link2, BarChart2, DollarSign, Settings,
+  MessageSquare, Bot, FileText, FileBarChart,
+  ClipboardList, Calendar, Cpu, BookOpen, Star,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/auth.js';
@@ -12,6 +14,9 @@ import { useAuthStore } from '../../stores/auth.js';
 interface NavItem { path: string; icon: LucideIcon; label: string }
 interface NavGroup { label: string; items: NavItem[] }
 
+// Groups merged from the legacy NavSidebar so consolidating to Rail loses no
+// nav entry. When adding routes: put them in the smallest section that fits
+// so the rail stays scannable — don't grow "Command" past ~8 items.
 const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Command',
@@ -19,36 +24,49 @@ const NAV_GROUPS: NavGroup[] = [
       { path: '/',                icon: LayoutDashboard, label: 'Command Center' },
       { path: '/gps',             icon: MapPin,          label: 'GPS Live' },
       { path: '/incident-center', icon: ShieldAlert,     label: 'Incident Center' },
+      { path: '/incidents',       icon: AlertTriangle,   label: 'Incidents' },
       { path: '/panic-center',    icon: Siren,           label: 'Panic Center' },
+      { path: '/messages',        icon: MessageSquare,   label: 'Messages' },
+      { path: '/ai',              icon: Bot,             label: 'AI Decision' },
+      { path: '/copilot',         icon: Bot,             label: 'Copilot' },
     ],
   },
   {
     label: 'Security',
     items: [
-      { path: '/alerts',    icon: Bell,          label: 'Alerts' },
-      { path: '/risk-intel', icon: AlertTriangle, label: 'Risk Intel' },
-      { path: '/guardian',  icon: Eye,           label: 'Guardian AI' },
-      { path: '/geofences', icon: Map,           label: 'Geofences' },
+      { path: '/alerts',         icon: Bell,          label: 'Alerts' },
+      { path: '/risk-intel',     icon: AlertTriangle, label: 'Risk Intel' },
+      { path: '/guardian',       icon: Eye,           label: 'Guardian AI' },
+      { path: '/geofences',      icon: Map,           label: 'Geofences' },
+      { path: '/rules',          icon: BookOpen,      label: 'Rules' },
+      { path: '/route-analysis', icon: Route,         label: 'Route Safety' },
     ],
   },
   {
     label: 'Fleet',
     items: [
-      { path: '/convoys',     icon: Route, label: 'Convoys' },
-      { path: '/fleet',       icon: Truck, label: 'Fleet' },
-      { path: '/drivers',     icon: Users, label: 'Drivers' },
-      { path: '/fuel',        icon: Fuel,  label: 'Fuel' },
-      { path: '/maintenance', icon: Wrench, label: 'Maintenance' },
+      { path: '/convoys',        icon: Route,   label: 'Convoys' },
+      { path: '/fleet',          icon: Truck,   label: 'Fleet' },
+      { path: '/drivers',        icon: Users,   label: 'Drivers' },
+      { path: '/field-officers', icon: Users,   label: 'Field Officers' },
+      { path: '/devices',        icon: Cpu,     label: 'Devices' },
+      { path: '/fuel',           icon: Fuel,    label: 'Fuel' },
+      { path: '/maintenance',    icon: Wrench,  label: 'Maintenance' },
+      { path: '/shifts',         icon: Calendar, label: 'Shifts' },
     ],
   },
   {
     label: 'Business',
     items: [
-      { path: '/shipments',    icon: Package,    label: 'Shipments' },
-      { path: '/cargo-portal', icon: Link2,      label: 'Cargo Portal' },
-      { path: '/analytics',    icon: BarChart2,  label: 'Analytics' },
-      { path: '/finance',      icon: DollarSign, label: 'Finance' },
-      { path: '/settings',     icon: Settings,   label: 'Settings' },
+      { path: '/shipments',      icon: Package,      label: 'Shipments' },
+      { path: '/cargo-portal',   icon: Link2,        label: 'Cargo Portal' },
+      { path: '/analytics',      icon: BarChart2,    label: 'Analytics' },
+      { path: '/reports',        icon: FileText,     label: 'Reports' },
+      { path: '/convoy-reports', icon: FileBarChart, label: 'Convoy Reports' },
+      { path: '/finance',        icon: DollarSign,   label: 'Finance' },
+      { path: '/claims',         icon: ClipboardList, label: 'Claims' },
+      { path: '/executive',      icon: Star,         label: 'Executive' },
+      { path: '/settings',       icon: Settings,     label: 'Settings' },
     ],
   },
 ];

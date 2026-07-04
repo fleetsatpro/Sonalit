@@ -1,6 +1,6 @@
 import { createRouter, createRoute, createRootRoute, Outlet, redirect, lazyRouteComponent } from '@tanstack/react-router';
 import { useAuthStore, getAccessToken } from './stores/auth.js';
-import Layout from './components/Layout.js';
+import AppShell from './components/layout/AppShell.js';
 import { RootErrorComponent } from './components/ErrorBoundary.js';
 import LoginPage from './pages/Login.js';
 
@@ -10,15 +10,20 @@ const authCheck = () => {
   if (!getAccessToken() && !useAuthStore.getState().user) throw redirect({ to: '/login' });
 };
 
-// Authenticated routes wrapped in the old NavSidebar + TopBar layout
+// Every authenticated page wears the same chrome — AppShell provides the Rail
+// (left), Topbar, mobile drawer + bottom nav. Dashboard-specific chrome
+// (TacticalMap, EventsTicker, ThreatStrip, PanicAlarm, OpsSidebar) lives
+// inside Dashboard.tsx itself, so there is exactly one sidebar system
+// everywhere. See components/layout/AppShell.tsx.
 const authRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: 'auth',
   beforeLoad: authCheck,
-  component: Layout,
+  component: AppShell,
 });
 
-// Authenticated routes that render full-screen (no old sidebar/topbar)
+// Authenticated routes that need an edge-to-edge viewport (no chrome). Used
+// only for print/report-style pages that draw their own top nav.
 const authFullscreenRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: 'auth-fullscreen',
@@ -29,7 +34,7 @@ const authFullscreenRoute = createRoute({
 const loginRoute = createRoute({ getParentRoute: () => rootRoute, path: '/login', component: LoginPage });
 const notFoundRoute = createRoute({ getParentRoute: () => rootRoute, path: '*', component: lazyRouteComponent(() => import('./pages/NotFound.js')) });
 
-const dashboardRoute = createRoute({ getParentRoute: () => authFullscreenRoute, path: '/', component: lazyRouteComponent(() => import('./pages/Dashboard.js')) });
+const dashboardRoute = createRoute({ getParentRoute: () => authRoute, path: '/', component: lazyRouteComponent(() => import('./pages/Dashboard.js')) });
 const fleetRoute = createRoute({ getParentRoute: () => authRoute, path: '/fleet', component: lazyRouteComponent(() => import('./pages/Fleet.js')) });
 const gpsRoute = createRoute({ getParentRoute: () => authRoute, path: '/gps', component: lazyRouteComponent(() => import('./pages/GPS.js')) });
 const convoysRoute = createRoute({ getParentRoute: () => authRoute, path: '/convoys', component: lazyRouteComponent(() => import('./pages/Convoys.js')) });
@@ -100,9 +105,10 @@ const routeTree = rootRoute.addChildren([
     portalTrackRoute, portalConvoyRoute, portalCustodyRoute, portalSecurityRoute,
   ]),
   authFullscreenRoute.addChildren([
-    dashboardRoute, convoyReportsRoute,
+    convoyReportsRoute,
   ]),
   authRoute.addChildren([
+    dashboardRoute,
     fleetRoute, gpsRoute,
     convoysRoute, convoyNewRoute, convoyEditRoute,
     driversRoute, alertsRoute, incidentsRoute,
