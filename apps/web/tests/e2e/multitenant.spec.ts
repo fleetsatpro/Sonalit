@@ -110,7 +110,8 @@ test.describe('Multi-tenant isolation — list endpoints', () => {
 
   test('vehicles list contains only Org A vehicles', async ({ page }) => {
     await page.goto('/fleet');
-    await expect(page.getByText('ORG-A-001')).toBeVisible({ timeout: 8000 });
+    // Scope to the table cell — the vehicle filter dropdown also lists ORG-A-001
+    await expect(page.getByRole('cell', { name: 'ORG-A-001' })).toBeVisible({ timeout: 8000 });
     // Org B vehicle must not appear
     await expect(page.getByText('veh-b-0001')).not.toBeVisible();
   });
