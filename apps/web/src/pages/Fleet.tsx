@@ -1,16 +1,51 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Truck, Search, Plus, ChevronLeft, ChevronRight,
-  Loader2, MapPin, List, LayoutGrid, X, AlertTriangle,
+  Loader2, List, LayoutGrid, X, AlertTriangle, Download,
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { normalizeList, type NormalizedList } from '../lib/normalize.js';
 import { AddVehicleForm } from '../components/AddVehicleForm.js';
 import { VehicleDetailDrawer } from '../components/VehicleDetailDrawer.js';
+import { useLiveFleet } from '../features/live-fleet/hooks/useLiveFleet.js';
+import FleetMap from '../features/live-fleet/components/FleetMap.js';
+import type { LiveVehicle } from '../features/live-fleet/types/fleet.js';
 import type { Vehicle, VehicleStatus } from '@sonalit/contracts';
 
 type ListResponse = NormalizedList<Vehicle>;
+
+function toCsv(rows: Vehicle[]): string {
+  const header = ['Registration', 'Make', 'Model', 'Year', 'Type', 'Region', 'Status'];
+  const lines = rows.map((v) => [
+    v.registration, v.make ?? '', v.model ?? '', String(v.year ?? ''),
+    v.type ?? '', (v as { region?: string }).region ?? '', v.status,
+  ].map((f) => `"${String(f).replace(/"/g, '""')}"`).join(','));
+  return [header.join(','), ...lines].join('\n');
+}
+
+function downloadCsv(rows: Vehicle[]): void {
+  const blob = new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `fleet-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Mounted only while the Map tab is active, so the live GPS subscription
+// (websocket + polling in useLiveFleet) doesn't run during list view.
+function FleetMapView(): React.ReactElement {
+  const { groups } = useLiveFleet();
+  const vehicles: LiveVehicle[] = useMemo(() => groups.flatMap((g) => g.vehicles), [groups]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-xl h-96 overflow-hidden">
+      <FleetMap vehicles={vehicles} selectedId={selectedId} onSelect={(v) => setSelectedId(v.id)} />
+    </div>
+  );
+}
 
 const STATUS_STYLES: Record<VehicleStatus, string> = {
   active: 'bg-green-900/60 text-green-300 border-green-700',
@@ -46,6 +81,7 @@ export default function Fleet(): React.ReactElement {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<VehicleStatus | ''>('');
   const [showForm, setShowForm] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -53,10 +89,10 @@ export default function Fleet(): React.ReactElement {
   const [expiryBannerDismissed, setExpiryBannerDismissed] = useState(false);
 
   const { data, isLoading, isError } = useQuery<ListResponse>({
-    queryKey: ['vehicles', page, search],
+    queryKey: ['vehicles', page, search, statusFilter],
     queryFn: async () => {
       const res = await api.get<ListResponse | Vehicle[]>('/vehicles', {
-        params: { page, limit: PAGE_SIZE, search: search || undefined },
+        params: { page, limit: PAGE_SIZE, search: search || undefined, status: statusFilter || undefined },
       });
       return normalizeList<Vehicle>(res.data);
     },
@@ -144,6 +180,15 @@ export default function Fleet(): React.ReactElement {
           </div>
           <button
             type="button"
+            onClick={() => data && downloadCsv(data.data)}
+            disabled={!data?.data.length}
+            title="Export current page as CSV"
+            className="flex items-center gap-1.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-gray-200 text-sm font-medium px-3 py-2 rounded-lg transition-colors border border-gray-700"
+          >
+            <Download className="w-4 h-4" /> Export
+          </button>
+          <button
+            type="button"
             onClick={() => setShowForm((v) => !v)}
             className="flex items-center gap-1.5 bg-orange-600 hover:bg-orange-500 text-white text-sm font-medium px-3 py-2 rounded-lg transition-colors"
           >
@@ -173,16 +218,29 @@ export default function Fleet(): React.ReactElement {
         </div>
       )}
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-          placeholder="Search plate or make…"
-          className="w-full pl-10 pr-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500"
-        />
+      {/* Search + filters */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative max-w-sm flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            placeholder="Search plate or make…"
+            className="w-full pl-10 pr-4 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500"
+          />
+        </div>
+        <select
+          value={statusFilter}
+          onChange={(e) => { setStatusFilter(e.target.value as VehicleStatus | ''); setPage(1); }}
+          className="bg-gray-900 border border-gray-700 rounded-lg text-white text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-500"
+        >
+          <option value="">All statuses</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+          <option value="maintenance">Maintenance</option>
+          <option value="retired">Retired</option>
+        </select>
       </div>
 
       {showForm && <AddVehicleForm onClose={() => setShowForm(false)} />}
@@ -222,13 +280,8 @@ export default function Fleet(): React.ReactElement {
       )}
       {isError && <p className="text-red-400 text-sm py-8 text-center">Failed to load vehicles.</p>}
 
-      {/* Map view */}
-      {viewMode === 'map' && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl h-96 flex flex-col items-center justify-center text-gray-500 gap-2">
-          <MapPin className="w-8 h-8" />
-          <p className="text-sm">Map view — GPS positions shown here</p>
-        </div>
-      )}
+      {/* Map view — live GPS positions from the same feed as GPS Live */}
+      {viewMode === 'map' && <FleetMapView />}
 
       {/* List view */}
       {viewMode === 'list' && data && (
