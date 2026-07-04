@@ -6,8 +6,8 @@ import { z } from 'zod';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import { useAuthStore, type AuthUser } from '../stores/auth.js';
-import './Login.css';
-import './Login.enhancements.css';
+import './Login.legacy.css';
+import './Login.legacy.enhancements.css';
 
 // ---------------------------------------------------------------------------
 // Schemas & types
