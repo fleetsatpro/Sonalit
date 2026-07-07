@@ -43,6 +43,7 @@ data class PendingPhotoEntity(
     val sealPosition: String?,
     val reportDate: String,
     val localFilePath: String,
+    val takenAt: String,
     val lat: Double?,
     val lng: Double?,
     val notes: String?,
@@ -76,7 +77,7 @@ interface PendingPhotoDao {
 
 @Database(
     entities = [GpsFixEntity::class, PendingPhotoEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

@@ -13,6 +13,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import io.sonalit.guardian.data.local.PendingPhotoDao
 import io.sonalit.guardian.data.local.PendingPhotoEntity
 import io.sonalit.guardian.data.remote.*
+import io.sonalit.guardian.worker.PendingPhotoUploadWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -95,6 +96,9 @@ class CfoViewModel @Inject constructor(
             loadContext()
         }
         refreshPendingCount()
+        // Resume any photos queued from a previous session/app-restart — schedule()
+        // is a no-op if a worker is already enqueued (ExistingPeriodicWorkPolicy.KEEP).
+        PendingPhotoUploadWorker.schedule(appContext)
     }
 
     // ── Auth ──────────────────────────────────────────────────────────────────
@@ -239,12 +243,14 @@ class CfoViewModel @Inject constructor(
                         sealPosition = sealPosition,
                         reportDate = ctx.report_date,
                         localFilePath = file.absolutePath,
+                        takenAt = takenAt,
                         lat = location?.latitude,
                         lng = location?.longitude,
                         notes = null,
                         createdAt = System.currentTimeMillis(),
                     )
                 )
+                PendingPhotoUploadWorker.schedule(appContext)
                 _state.update {
                     it.copy(
                         uploads = it.uploads.map { u ->
