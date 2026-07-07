@@ -244,6 +244,19 @@ fun CameraCapture(
 
     var imageCapture: ImageCapture? by remember { mutableStateOf(null) }
     var capturing by remember { mutableStateOf(false) }
+    // Held so DisposableEffect can unbind on the way out — without this the
+    // preview surface is torn down (navigating away) while CameraX still
+    // thinks it owns it, so the next visit binds a second session on top of
+    // a never-released one and the PreviewView renders black instead of a
+    // live feed.
+    var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            cameraProvider?.unbindAll()
+            cameraExecutor.shutdown()
+        }
+    }
 
     Box(modifier = modifier) {
         AndroidView(
@@ -251,7 +264,8 @@ fun CameraCapture(
                 val previewView = PreviewView(ctx)
                 val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
                 cameraProviderFuture.addListener({
-                    val cameraProvider = cameraProviderFuture.get()
+                    val provider = cameraProviderFuture.get()
+                    cameraProvider = provider
                     val preview = Preview.Builder().build().also {
                         it.surfaceProvider = previewView.surfaceProvider
                     }
@@ -260,8 +274,8 @@ fun CameraCapture(
                         .build()
                     imageCapture = ic
                     try {
-                        cameraProvider.unbindAll()
-                        cameraProvider.bindToLifecycle(
+                        provider.unbindAll()
+                        provider.bindToLifecycle(
                             lifecycleOwner,
                             CameraSelector.DEFAULT_BACK_CAMERA,
                             preview, ic,
