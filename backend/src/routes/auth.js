@@ -49,10 +49,10 @@ router.post('/users', authenticate, authorize('admin'), async (req, res) => {
     }
     const password_hash = await bcrypt.hash(password, 10);
     const result = await query(
-      `INSERT INTO users (name, email, password_hash, role, status)
-       VALUES ($1, $2, $3, $4, 'active')
+      `INSERT INTO users (name, email, password_hash, role, status, org_id)
+       VALUES ($1, $2, $3, $4, 'active', $5)
        RETURNING id, email, name, role, status`,
-      [name, email, password_hash, role]
+      [name, email, password_hash, role, req.user.org_id]
     );
     res.status(201).json({ data: result.rows[0] });
   } catch (err) {

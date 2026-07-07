@@ -80,6 +80,7 @@ export function GuardianConvoySettings() {
   const deleteMut = useMutation({
     mutationFn: (id: string) => api.delete(`/auth/users/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['cfo-assignments'] }),
+    onError: (e: any) => alert(e?.response?.data?.error ?? 'Failed to delete CFO account'),
   });
 
   const resetPinMut = useMutation({
