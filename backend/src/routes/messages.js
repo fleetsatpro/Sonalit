@@ -10,6 +10,9 @@ const { authenticate } = require('../middleware/auth');
 
 router.use(authenticate);
 
+// ─── Org directory (mention picker + add-people pickers) ────────────────────
+router.get('/org-users',            c.listOrgUsers);
+
 // ─── Channels ────────────────────────────────────────────────────────────────
 router.get('/channels',             c.listChannels);
 router.post('/channels',            c.createChannel);

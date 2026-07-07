@@ -87,21 +87,16 @@ export function useThread(channelId: string | null, msgId: string | null) {
 }
 
 /**
- * Populates the "add people" picker and mention popover. Reuses whatever
- * /field-officers or /admin/users endpoint exists in this repo; the actual
- * list is org-scoped by the backend (users.org_id via RLS on other lookups).
- * We use /admin/users if available and fall back to an empty list.
+ * Populates the "add people" picker and mention popover with every active
+ * user in the caller's org (GET /messages/org-users — any authenticated
+ * member can call this, it's not admin-gated).
  */
 export function useOrgUsers() {
   return useQuery({
     queryKey: commsKeys.orgUsers,
     queryFn: async (): Promise<OrgUser[]> => {
-      try {
-        const r = await api.get<{ data: OrgUser[] }>('/admin/users');
-        return r.data.data ?? [];
-      } catch {
-        return [];
-      }
+      const r = await api.get<{ data: OrgUser[] }>('/messages/org-users');
+      return r.data.data ?? [];
     },
     staleTime: 5 * 60_000,
   });
@@ -140,7 +135,12 @@ export function useSendMessage(channelId: string) {
       const r = await api.post<{ data: Message }>(`/messages/channels/${channelId}/messages`, input);
       return r.data.data;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: commsKeys.messages(channelId) }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: commsKeys.messages(channelId) });
+      if (variables.replyToId) {
+        qc.invalidateQueries({ queryKey: commsKeys.thread(channelId, variables.replyToId) });
+      }
+    },
   });
 }
 

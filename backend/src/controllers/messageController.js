@@ -141,6 +141,27 @@ async function writeAuditRow(orgId, userId, action, targetId, before) {
   }
 }
 
+// ─── Org directory ───────────────────────────────────────────────────────────
+
+/**
+ * GET /org-users
+ * Lightweight directory of every active user in the caller's org, for the
+ * mention popover and the "add people" pickers (create-channel + members
+ * panel). Any authenticated org member may call this — it's not an admin
+ * endpoint, just names/roles, and every mutating comms endpoint re-checks
+ * real permissions server-side regardless of what this list shows.
+ */
+const listOrgUsers = asyncHandler(async (req, res) => {
+  const rows = await req.db(
+    `SELECT id, name, role, email FROM users
+      WHERE org_id = $1 AND deleted_at IS NULL AND status = 'active'
+      ORDER BY name
+      LIMIT 500`,
+    [req.user.org_id],
+  );
+  res.json({ data: rows.rows });
+});
+
 // ─── Channels ────────────────────────────────────────────────────────────────
 
 /**
@@ -936,6 +957,7 @@ const publishTyping = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
+  listOrgUsers,
   listChannels, createChannel, deleteChannel,
   listMembers, addMembers, removeMember, updateMember, toggleMute, markRead,
   listMessages, sendMessage, deleteMessage, getThread,
