@@ -29,7 +29,7 @@ import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import java.io.File
-import java.util.concurrent.Executor
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -240,7 +240,7 @@ fun CameraCapture(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val cameraExecutor: Executor = remember { Executors.newSingleThreadExecutor() }
+    val cameraExecutor: ExecutorService = remember { Executors.newSingleThreadExecutor() }
 
     var imageCapture: ImageCapture? by remember { mutableStateOf(null) }
     var capturing by remember { mutableStateOf(false) }
