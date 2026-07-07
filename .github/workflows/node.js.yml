@@ -88,7 +88,14 @@ jobs:
           DATABASE_URL: ""
 
       - name: Install Playwright browsers
-        run: pnpm --filter @sonalit/web exec playwright install --with-deps chromium
+        # Retry: --with-deps runs apt-get, which intermittently fails on
+        # transient Azure/Microsoft mirror errors ("Clearsigned file isn't valid").
+        # Fall back to a plain browser install — the ubuntu-latest image already
+        # ships the system libraries Chromium needs.
+        run: |
+          pnpm --filter @sonalit/web exec playwright install --with-deps chromium \
+            || (sleep 20 && pnpm --filter @sonalit/web exec playwright install --with-deps chromium) \
+            || pnpm --filter @sonalit/web exec playwright install chromium
 
       - name: Playwright E2E tests
         run: pnpm --filter @sonalit/web exec playwright test
