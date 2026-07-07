@@ -47,7 +47,7 @@ class GuardianService : Service() {
         val notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("Guardian Active")
             .setContentText("Monitoring location")
-            .setSmallIcon(R.drawable.ic_notification)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setOngoing(true)
             .build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

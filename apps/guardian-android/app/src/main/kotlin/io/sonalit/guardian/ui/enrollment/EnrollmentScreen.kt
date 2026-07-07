@@ -2,6 +2,8 @@ package io.sonalit.guardian.ui.enrollment
 
 import android.provider.Settings
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.LaunchedEffect
@@ -34,7 +36,7 @@ fun EnrollmentScreen(
 
         when (state) {
             is EnrollUiState.PendingApproval -> {
-                Icon(androidx.compose.material.icons.Icons.Default.HourglassEmpty, contentDescription = null,
+                Icon(Icons.Default.HourglassEmpty, contentDescription = null,
                     modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.height(16.dp))
                 Text("Awaiting operator approval", style = MaterialTheme.typography.bodyLarge)
