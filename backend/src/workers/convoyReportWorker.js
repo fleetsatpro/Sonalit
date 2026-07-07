@@ -58,7 +58,14 @@ async function uploadToR2(key, buffer, contentType) {
 async function fetchReportData(convoy_id, report_date) {
   const [convoyRes, trucksRes, cfosRes, photosRes, reportRes, cfoPhotosRes] = await Promise.all([
     query('SELECT * FROM convoys WHERE id = $1', [convoy_id]),
-    query('SELECT * FROM convoy_trucks WHERE convoy_id = $1 ORDER BY position', [convoy_id]),
+    query(
+      `SELECT ct.*, COALESCE(ct.registration, v.registration) AS plate_number
+       FROM convoy_trucks ct
+       LEFT JOIN vehicles v ON v.id = ct.vehicle_id
+       WHERE ct.convoy_id = $1
+       ORDER BY ct.position`,
+      [convoy_id]
+    ),
     query(
       `SELECT cc.*, u.name AS cfo_name, u.email AS cfo_email
        FROM convoy_cfos cc JOIN users u ON u.id = cc.cfo_user_id
@@ -198,7 +205,14 @@ async function handleGenerateArchive({ convoy_id }) {
   if (!convoy) throw new Error(`Convoy ${convoy_id} not found`);
 
   const [trucks, cfos, reports, allPhotos] = await Promise.all([
-    query('SELECT * FROM convoy_trucks WHERE convoy_id = $1 ORDER BY position', [convoy_id]),
+    query(
+      `SELECT ct.*, COALESCE(ct.registration, v.registration) AS plate_number
+       FROM convoy_trucks ct
+       LEFT JOIN vehicles v ON v.id = ct.vehicle_id
+       WHERE ct.convoy_id = $1
+       ORDER BY ct.position`,
+      [convoy_id]
+    ),
     query(
       `SELECT cc.*, u.name AS cfo_name, u.email AS cfo_email
        FROM convoy_cfos cc JOIN users u ON u.id = cc.cfo_user_id

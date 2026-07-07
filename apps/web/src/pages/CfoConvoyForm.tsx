@@ -117,8 +117,10 @@ function MultiSelectList({ items, value, onChange, emptyLabel = 'No items availa
 interface ConvoyTruckRow {
   id: string;
   vehicle_id: string | null;
+  registration: string | null;
   driver_name: string;
   driver_phone: string | null;
+  driver_license_no: string | null;
   position: number;
 }
 interface CfoTruckAssignmentRow {
@@ -146,8 +148,10 @@ function TruckRosterSection({
   const [showAdd, setShowAdd] = useState(false);
 
   const addTruck = useMutation({
-    mutationFn: (body: { vehicle_id: string | null; driver_name: string; driver_phone: string; position: number }) =>
-      api.post(`/convoys/${convoyId}/trucks`, body),
+    mutationFn: (body: {
+      vehicle_id: string | null; registration: string; driver_name: string;
+      driver_phone: string; driver_license_no: string; position: number;
+    }) => api.post(`/convoys/${convoyId}/trucks`, body),
     onSuccess: () => { invalidate(); setShowAdd(false); },
   });
   const removeTruck = useMutation({
@@ -185,7 +189,8 @@ function TruckRosterSection({
         {trucks.map((truck) => {
           const assignment = assignments.find((a) => a.convoy_truck_id === truck.id) ?? null;
           const assignedCfo = assignment ? cfos.find((c) => c.cfo_user_id === assignment.cfo_user_id) : null;
-          const label = vehicleLabel(truck.vehicle_id);
+          const linkedVehicle = vehicleLabel(truck.vehicle_id);
+          const plate = truck.registration ?? (truck.vehicle_id ? vehicles.find((v) => v.id === truck.vehicle_id)?.registration : null);
 
           return (
             <div key={truck.id} className="bg-[#09101c] border border-[#122038] rounded-md p-3">
@@ -193,9 +198,10 @@ function TruckRosterSection({
                 <div className="flex items-center gap-2 text-xs font-mono text-gray-200 min-w-0">
                   <Truck size={13} className="text-orange-400 flex-shrink-0" />
                   <span className="truncate">
-                    Position {truck.position} · {truck.driver_name}
+                    Position {truck.position} · {plate ?? 'No plate'} · {truck.driver_name}
                     {truck.driver_phone ? ` · ${truck.driver_phone}` : ''}
-                    {label ? ` · ${label}` : ''}
+                    {truck.driver_license_no ? ` · Lic ${truck.driver_license_no}` : ''}
+                    {linkedVehicle ? ` · Fleet: ${linkedVehicle}` : ''}
                   </span>
                 </div>
                 <button type="button" onClick={() => removeTruck.mutate(truck.id)} disabled={removeTruck.isPending}
@@ -239,8 +245,11 @@ function TruckRosterSection({
             defaultPosition={nextPosition}
             pending={addTruck.isPending}
             error={addTruck.error ? extractApiError(addTruck.error, 'Failed to add truck') : null}
-            onAdd={(driverName, driverPhone, position, vehicleId) =>
-              addTruck.mutate({ vehicle_id: vehicleId, driver_name: driverName, driver_phone: driverPhone, position })}
+            onAdd={(driverName, driverPhone, driverLicenseNo, position, vehicleId, registration) =>
+              addTruck.mutate({
+                vehicle_id: vehicleId, registration, driver_name: driverName,
+                driver_phone: driverPhone, driver_license_no: driverLicenseNo, position,
+              })}
             onCancel={() => setShowAdd(false)}
           />
         ) : (
@@ -259,25 +268,27 @@ function AddTruckForm({ vehicles, defaultPosition, pending, error, onAdd, onCanc
   defaultPosition: number;
   pending: boolean;
   error: string | null;
-  onAdd: (driverName: string, driverPhone: string, position: number, vehicleId: string | null) => void;
+  onAdd: (
+    driverName: string, driverPhone: string, driverLicenseNo: string,
+    position: number, vehicleId: string | null, registration: string,
+  ) => void;
   onCancel: () => void;
 }) {
   const [driverName, setDriverName] = useState('');
   const [driverPhone, setDriverPhone] = useState('');
+  const [driverLicenseNo, setDriverLicenseNo] = useState('');
   const [position, setPosition] = useState(defaultPosition);
   const [vehicleId, setVehicleId] = useState('');
+  const [registration, setRegistration] = useState('');
+
+  const selectedVehicle = vehicles.find((v) => v.id === vehicleId);
+  // A fleet vehicle already carries its own registration — only prompt for one
+  // here when there's no linked vehicle to fall back on.
+  const needsRegistration = !vehicleId;
+  const canSubmit = driverName.trim().length > 0 && (!needsRegistration || registration.trim().length > 0);
 
   return (
     <div className="bg-[#09101c] border border-[#122038] rounded-md p-3 flex flex-col gap-1.5">
-      <div className="flex gap-1.5">
-        <input value={driverName} onChange={(e) => setDriverName(e.target.value)}
-          placeholder="Driver name" className={BASE_INPUT + ' !py-1.5 !text-[11px] flex-1'} />
-        <input value={driverPhone} onChange={(e) => setDriverPhone(e.target.value)}
-          placeholder="Phone (optional)" className={BASE_INPUT + ' !py-1.5 !text-[11px] w-28'} />
-        <input type="number" min={1} max={6} value={position}
-          onChange={(e) => setPosition(Number(e.target.value))}
-          className={BASE_INPUT + ' !py-1.5 !text-[11px] w-14'} />
-      </div>
       {vehicles.length > 0 && (
         <select value={vehicleId} onChange={(e) => setVehicleId(e.target.value)}
           className={BASE_INPUT + ' !py-1.5 !text-[11px] cursor-pointer'}>
@@ -289,12 +300,36 @@ function AddTruckForm({ vehicles, defaultPosition, pending, error, onAdd, onCanc
           ))}
         </select>
       )}
+      <div className="flex gap-1.5">
+        <input value={selectedVehicle ? (selectedVehicle.registration ?? '') : registration}
+          onChange={(e) => setRegistration(e.target.value)}
+          disabled={!!selectedVehicle}
+          placeholder="Plate / registration no."
+          className={BASE_INPUT + ' !py-1.5 !text-[11px] flex-1 disabled:opacity-50'} />
+        <input type="number" min={1} max={6} value={position}
+          onChange={(e) => setPosition(Number(e.target.value))}
+          className={BASE_INPUT + ' !py-1.5 !text-[11px] w-14'} />
+      </div>
+      {needsRegistration && registration.trim().length === 0 && (
+        <p className="text-amber-400 text-[10px] font-mono">Plate/reg. no. is required when no fleet vehicle is linked.</p>
+      )}
+      <div className="flex gap-1.5">
+        <input value={driverName} onChange={(e) => setDriverName(e.target.value)}
+          placeholder="Driver name" className={BASE_INPUT + ' !py-1.5 !text-[11px] flex-1'} />
+        <input value={driverPhone} onChange={(e) => setDriverPhone(e.target.value)}
+          placeholder="Phone (optional)" className={BASE_INPUT + ' !py-1.5 !text-[11px] flex-1'} />
+        <input value={driverLicenseNo} onChange={(e) => setDriverLicenseNo(e.target.value)}
+          placeholder="License no. (optional)" className={BASE_INPUT + ' !py-1.5 !text-[11px] flex-1'} />
+      </div>
       <div className="flex gap-1.5 justify-end">
         <button type="button" onClick={onCancel} className="text-[11px] font-mono text-[#607890] hover:text-gray-300 px-2">
           Cancel
         </button>
-        <button type="button" disabled={!driverName.trim() || pending}
-          onClick={() => onAdd(driverName.trim(), driverPhone.trim(), position, vehicleId || null)}
+        <button type="button" disabled={!canSubmit || pending}
+          onClick={() => onAdd(
+            driverName.trim(), driverPhone.trim(), driverLicenseNo.trim(),
+            position, vehicleId || null, selectedVehicle ? '' : registration.trim(),
+          )}
           className="bg-orange-600 hover:bg-orange-500 disabled:opacity-40 text-white text-[11px] font-mono px-3 rounded-md whitespace-nowrap">
           Add Truck
         </button>

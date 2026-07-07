@@ -230,7 +230,7 @@ router.get('/context', deviceAuth, async (req, res, next) => {
 
     const [trucksResult, photosResult, reportResult] = await Promise.all([
       query(
-        `SELECT ct.*, v.registration AS plate_number, v.make, v.model
+        `SELECT ct.*, COALESCE(ct.registration, v.registration) AS plate_number, v.make, v.model
          FROM convoy_cfo_truck_assignments ccta
          JOIN convoy_trucks ct ON ct.id = ccta.convoy_truck_id
          LEFT JOIN vehicles v ON v.id = ct.vehicle_id

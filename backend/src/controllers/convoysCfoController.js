@@ -19,6 +19,7 @@ function gAudit(actor_id, action, target_type, target_id, payload, ip) {
 
 const truckSchema = Joi.object({
   vehicle_id: Joi.string().uuid().allow('', null).optional(),
+  registration: Joi.string().max(50).allow('', null),
   driver_name: Joi.string().min(1).max(100).required(),
   driver_phone: Joi.string().max(30).allow('', null),
   driver_license_no: Joi.string().max(50).allow('', null),
@@ -132,10 +133,10 @@ const createConvoyCfo = asyncHandler(async (req, res) => {
     for (const truck of value.trucks) {
       const tr = await client.query(
         `INSERT INTO convoy_trucks
-           (convoy_id, vehicle_id, driver_name, driver_phone, driver_license_no, position)
-         VALUES ($1,$2,$3,$4,$5,$6)
+           (convoy_id, vehicle_id, registration, driver_name, driver_phone, driver_license_no, position)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
          RETURNING id, position`,
-        [convoy.id, truck.vehicle_id || null, truck.driver_name,
+        [convoy.id, truck.vehicle_id || null, truck.registration || null, truck.driver_name,
           truck.driver_phone || null, truck.driver_license_no || null, truck.position]
       );
       positionToTruckId.set(truck.position, tr.rows[0].id);
@@ -183,6 +184,7 @@ const addTruck = asyncHandler(async (req, res) => {
 
   const schema = Joi.object({
     vehicle_id: Joi.string().uuid().allow('', null).optional(),
+    registration: Joi.string().max(50).allow('', null),
     driver_name: Joi.string().min(1).max(100).required(),
     driver_phone: Joi.string().max(30).allow('', null),
     driver_license_no: Joi.string().max(50).allow('', null),
@@ -190,6 +192,9 @@ const addTruck = asyncHandler(async (req, res) => {
   });
   const { error, value } = schema.validate(req.body);
   if (error) return res.status(400).json({ error: error.message });
+  if (!value.vehicle_id && !value.registration) {
+    return res.status(400).json({ error: 'registration is required when no fleet vehicle is linked' });
+  }
 
   const convoy = await query(
     'SELECT id, status FROM convoys WHERE id = $1 AND deleted_at IS NULL',
@@ -205,10 +210,10 @@ const addTruck = asyncHandler(async (req, res) => {
   try {
     const result = await query(
       `INSERT INTO convoy_trucks
-         (convoy_id, vehicle_id, driver_name, driver_phone, driver_license_no, position)
-       VALUES ($1,$2,$3,$4,$5,$6)
+         (convoy_id, vehicle_id, registration, driver_name, driver_phone, driver_license_no, position)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
        RETURNING *`,
-      [req.params.id, value.vehicle_id || null, value.driver_name,
+      [req.params.id, value.vehicle_id || null, value.registration || null, value.driver_name,
         value.driver_phone || null, value.driver_license_no || null, value.position]
     );
     gAudit(req.user.id, 'convoy_truck_added', 'convoy_truck', result.rows[0].id, { convoy_id: req.params.id }, req.ip);
@@ -712,7 +717,7 @@ async function getConvoyReportDetail(req, res, next) {
 
     const [trucksRes, photosRes, sealsRes, waypointsRes, reportRes] = await Promise.all([
       query(
-        `SELECT ct.id, v.registration AS plate_number, v.make, v.model, ct.position,
+        `SELECT ct.id, COALESCE(ct.registration, v.registration) AS plate_number, v.make, v.model, ct.position,
                 u.name AS cfo_name, u.id AS cfo_user_id
          FROM convoy_trucks ct
          LEFT JOIN vehicles v ON v.id = ct.vehicle_id

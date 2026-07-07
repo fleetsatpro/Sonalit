@@ -154,7 +154,7 @@ function photoMatrix(doc, trucks, sealCount) {
       .text(`T${truck.position}`, M + 2, rowY + 4, { width: 18 });
     doc.font('Helvetica').fontSize(7).fill(C.muted)
       .text(truck.driver_name, M + 22, rowY + 4, { width: labelW - 24 })
-      .text(truck.vehicle_id || '—', M + 22, rowY + 12, { width: labelW - 24 });
+      .text(truck.plate_number || '—', M + 22, rowY + 12, { width: labelW - 24 });
 
     x = M + labelW + 8;
     sessions.forEach(session => {
@@ -310,7 +310,7 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
 
       sectionTitle(doc, `Truck ${truck.position} — ${truck.driver_name}`);
       kv2col(doc, [
-        ['Vehicle ID', truck.vehicle_id || '—'],
+        ['Plate / Reg No.', truck.plate_number || '—'],
         ['Driver Phone', truck.driver_phone || '—'],
         ['License No.', truck.driver_license_no || '—'],
         ['Photos Today', `${truckPhotos.length} / ${(2 + sealCount) * 2}`],
