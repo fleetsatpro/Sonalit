@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Loader2, AlertTriangle, ShieldCheck, TrendingUp, Truck, ArrowLeft } from 'lucide-react';
 import { api } from '../lib/api.js';
+import { subscribe } from '../lib/centrifuge.js';
+import { useAuthStore } from '../stores/auth.js';
 import ReportDoc, { type ReportDetail } from '../components/reports/ReportDoc.js';
 
 interface ConvoyOverviewItem {
@@ -122,6 +124,7 @@ function ConvoyCard({ item, selected, onClick }: {
 export default function ConvoyReports(): React.ReactElement {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const user = useAuthStore((s) => s.user);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterTab>('all');
@@ -136,6 +139,22 @@ export default function ConvoyReports(): React.ReactElement {
     queryFn: async () => (await api.get(`/convoys/${selectedId}/reports/${selectedDate}/detail`)).data,
     enabled: !!(selectedId && selectedDate),
   });
+
+  // Subscribe to Centrifugo for report-ready events so the viewer (and the
+  // sidebar's photo-count/status) updates the moment the worker finishes
+  // generating a PDF, instead of requiring a manual reload. Mirrors the same
+  // subscription already used on the Reports page.
+  useEffect(() => {
+    if (!user?.org_id) return;
+    const unsub = subscribe<{ convoy_id: string; report_date: string; pdf_url: string }>(
+      `convoy.report.ready.${user.org_id}`,
+      () => {
+        void queryClient.invalidateQueries({ queryKey: ['convoy-reports-overview'] });
+        void queryClient.invalidateQueries({ queryKey: ['convoy-report-detail'] });
+      }
+    );
+    return unsub;
+  }, [user?.org_id, queryClient]);
 
   const regenerateMutation = useMutation({
     mutationFn: async () => {
