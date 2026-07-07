@@ -1,10 +1,10 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useForm, Controller, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useNavigate, useParams, Link } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, AlertCircle, Route, ShieldAlert, MapPin } from 'lucide-react';
+import { Loader2, AlertCircle, Route, ShieldAlert, MapPin, Truck, X } from 'lucide-react';
 import Dexie from 'dexie';
 import { api } from '../lib/api.js';
 import type { Vehicle } from '@sonalit/contracts';
@@ -108,6 +108,197 @@ function MultiSelectList({ items, value, onChange, emptyLabel = 'No items availa
 }
 
 // ---------------------------------------------------------------------------
+// CFO truck roster — links an already-assigned vehicle to a driver + position
+// (convoy_trucks) and, separately, a CFO to that truck (convoy_cfo_truck_
+// assignments). This is what the Guardian CFO app and report generation
+// actually read; nothing else in this form writes to either table.
+// ---------------------------------------------------------------------------
+
+interface ConvoyTruckRow {
+  id: string;
+  vehicle_id: string;
+  driver_name: string;
+  driver_phone: string | null;
+  position: number;
+}
+interface CfoTruckAssignmentRow {
+  id: string;
+  cfo_user_id: string;
+  convoy_truck_id: string;
+}
+
+function extractApiError(err: unknown, fallback: string): string {
+  type ApiErr = { response?: { data?: { error?: string } } };
+  return (err as ApiErr).response?.data?.error ?? fallback;
+}
+
+function TruckRosterSection({
+  convoyId, vehicles, cfos, trucks, assignments,
+}: {
+  convoyId: string;
+  vehicles: { id: string; registration?: string | null; make?: string | null; model?: string | null }[];
+  cfos: { cfo_user_id: string; cfo_name?: string | null; cfo_email?: string | null }[];
+  trucks: ConvoyTruckRow[];
+  assignments: CfoTruckAssignmentRow[];
+}) {
+  const queryClient = useQueryClient();
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['convoys', convoyId] });
+
+  const addTruck = useMutation({
+    mutationFn: (body: { vehicle_id: string; driver_name: string; driver_phone: string; position: number }) =>
+      api.post(`/convoys/${convoyId}/trucks`, body),
+    onSuccess: invalidate,
+  });
+  const removeTruck = useMutation({
+    mutationFn: (truckId: string) => api.delete(`/convoys/${convoyId}/trucks/${truckId}`),
+    onSuccess: invalidate,
+  });
+  const assignCfo = useMutation({
+    mutationFn: (body: { cfo_user_id: string; convoy_truck_id: string }) =>
+      api.post(`/convoys/${convoyId}/cfo-assignments`, body),
+    onSuccess: invalidate,
+  });
+  const removeAssignment = useMutation({
+    mutationFn: (assignmentId: string) => api.delete(`/convoys/${convoyId}/cfo-assignments/${assignmentId}`),
+    onSuccess: invalidate,
+  });
+
+  const nextPosition = Math.min(6, trucks.length + 1);
+
+  return (
+    <Section label="CFO Truck Roster">
+      <p className="text-[#607890] text-[10px] font-mono leading-relaxed -mt-1 mb-1">
+        The Guardian CFO app and photo reports read from this roster, not from the vehicle list above.
+        Each assigned vehicle needs a driver + position here before a CFO can capture photos for it.
+      </p>
+      {vehicles.length === 0 && (
+        <p className="text-[#304558] text-xs font-mono">Assign vehicles above first.</p>
+      )}
+      <div className="space-y-2">
+        {vehicles.map((v) => {
+          const truck = trucks.find((t) => t.vehicle_id === v.id) ?? null;
+          const assignment = truck ? assignments.find((a) => a.convoy_truck_id === truck.id) ?? null : null;
+          const assignedCfo = assignment ? cfos.find((c) => c.cfo_user_id === assignment.cfo_user_id) : null;
+          const label = `${v.registration ?? v.id.slice(0, 8)}${v.make || v.model ? ` — ${[v.make, v.model].filter(Boolean).join(' ')}` : ''}`;
+
+          return (
+            <div key={v.id} className="bg-[#09101c] border border-[#122038] rounded-md p-3">
+              <div className="flex items-center gap-2 text-xs font-mono text-gray-200 mb-2">
+                <Truck size={13} className="text-orange-400 flex-shrink-0" />
+                <span className="flex-1 truncate">{label}</span>
+              </div>
+
+              {!truck ? (
+                <AddTruckRow
+                  defaultPosition={nextPosition}
+                  pending={addTruck.isPending}
+                  error={addTruck.error ? extractApiError(addTruck.error, 'Failed to add truck') : null}
+                  onAdd={(driverName, driverPhone, position) =>
+                    addTruck.mutate({ vehicle_id: v.id, driver_name: driverName, driver_phone: driverPhone, position })}
+                />
+              ) : (
+                <div className="flex items-center justify-between gap-2 pl-[21px]">
+                  <div className="text-[11px] font-mono text-[#8098b0]">
+                    Position {truck.position} · {truck.driver_name}
+                    {truck.driver_phone ? ` · ${truck.driver_phone}` : ''}
+                  </div>
+                  <button type="button" onClick={() => removeTruck.mutate(truck.id)} disabled={removeTruck.isPending}
+                    className="text-[#607890] hover:text-red-400 disabled:opacity-50" title="Remove truck">
+                    <X size={13} />
+                  </button>
+                </div>
+              )}
+
+              {truck && (
+                <div className="pl-[21px] mt-2">
+                  {assignment ? (
+                    <div className="flex items-center justify-between gap-2 bg-orange-500/5 border border-orange-500/20 rounded px-2 py-1.5">
+                      <span className="text-[11px] font-mono text-orange-300">
+                        CFO: {assignedCfo?.cfo_name ?? assignment.cfo_user_id.slice(0, 8)}
+                      </span>
+                      <button type="button" onClick={() => removeAssignment.mutate(assignment.id)}
+                        disabled={removeAssignment.isPending}
+                        className="text-[#607890] hover:text-red-400 disabled:opacity-50" title="Remove assignment">
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ) : (
+                    <AssignCfoRow
+                      cfos={cfos}
+                      pending={assignCfo.isPending}
+                      error={assignCfo.error ? extractApiError(assignCfo.error, 'Failed to assign CFO') : null}
+                      onAssign={(cfoUserId) => assignCfo.mutate({ cfo_user_id: cfoUserId, convoy_truck_id: truck.id })}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Section>
+  );
+}
+
+function AddTruckRow({ defaultPosition, pending, error, onAdd }: {
+  defaultPosition: number;
+  pending: boolean;
+  error: string | null;
+  onAdd: (driverName: string, driverPhone: string, position: number) => void;
+}) {
+  const [driverName, setDriverName] = useState('');
+  const [driverPhone, setDriverPhone] = useState('');
+  const [position, setPosition] = useState(defaultPosition);
+
+  return (
+    <div className="pl-[21px] flex flex-col gap-1.5">
+      <div className="flex gap-1.5">
+        <input value={driverName} onChange={(e) => setDriverName(e.target.value)}
+          placeholder="Driver name" className={BASE_INPUT + ' !py-1.5 !text-[11px] flex-1'} />
+        <input value={driverPhone} onChange={(e) => setDriverPhone(e.target.value)}
+          placeholder="Phone (optional)" className={BASE_INPUT + ' !py-1.5 !text-[11px] w-28'} />
+        <input type="number" min={1} max={6} value={position}
+          onChange={(e) => setPosition(Number(e.target.value))}
+          className={BASE_INPUT + ' !py-1.5 !text-[11px] w-14'} />
+        <button type="button" disabled={!driverName.trim() || pending}
+          onClick={() => onAdd(driverName.trim(), driverPhone.trim(), position)}
+          className="bg-orange-600 hover:bg-orange-500 disabled:opacity-40 text-white text-[11px] font-mono px-3 rounded-md whitespace-nowrap">
+          Add Truck
+        </button>
+      </div>
+      {error && <p className="text-red-400 text-[10px] font-mono">{error}</p>}
+    </div>
+  );
+}
+
+function AssignCfoRow({ cfos, pending, error, onAssign }: {
+  cfos: { cfo_user_id: string; cfo_name?: string | null; cfo_email?: string | null }[];
+  pending: boolean;
+  error: string | null;
+  onAssign: (cfoUserId: string) => void;
+}) {
+  const [selected, setSelected] = useState('');
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex gap-1.5">
+        <select value={selected} onChange={(e) => setSelected(e.target.value)}
+          className={BASE_INPUT + ' !py-1.5 !text-[11px] flex-1 cursor-pointer'}>
+          <option value="">Assign a CFO to this truck…</option>
+          {cfos.map((c) => (
+            <option key={c.cfo_user_id} value={c.cfo_user_id}>{c.cfo_name ?? c.cfo_email ?? c.cfo_user_id.slice(0, 8)}</option>
+          ))}
+        </select>
+        <button type="button" disabled={!selected || pending} onClick={() => onAssign(selected)}
+          className="bg-orange-600 hover:bg-orange-500 disabled:opacity-40 text-white text-[11px] font-mono px-3 rounded-md whitespace-nowrap">
+          Assign
+        </button>
+      </div>
+      {error && <p className="text-red-400 text-[10px] font-mono">{error}</p>}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main form
 // ---------------------------------------------------------------------------
 
@@ -148,6 +339,8 @@ export default function CfoConvoyForm(): React.ReactElement {
   const assignedCfos = (existing?.['cfos'] as AssignedCfo[] | undefined) ?? [];
   const lockedVehicleIds = new Set(assignedVehicles.map((v) => v.id));
   const lockedCfoIds = new Set(assignedCfos.map((c) => c.cfo_user_id));
+  const convoyTrucks = (existing?.['trucks'] as ConvoyTruckRow[] | undefined) ?? [];
+  const cfoTruckAssignments = (existing?.['cfo_truck_assignments'] as CfoTruckAssignmentRow[] | undefined) ?? [];
 
   const vehicleItems = (() => {
     const fromList = vehiclesData?.data.map((v) => ({
@@ -387,6 +580,16 @@ export default function CfoConvoyForm(): React.ReactElement {
               )}
             </Field>
           </Section>
+
+          {isEdit && params.id && (
+            <TruckRosterSection
+              convoyId={params.id}
+              vehicles={assignedVehicles}
+              cfos={assignedCfos}
+              trucks={convoyTrucks}
+              assignments={cfoTruckAssignments}
+            />
+          )}
 
           {/* Notes */}
           <Section label="Notes">
