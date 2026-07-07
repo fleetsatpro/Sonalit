@@ -96,7 +96,7 @@ fun CfoSodEodScreen(viewModel: CfoViewModel) {
             FilterChip(
                 selected = selectedTruckId == truck.id,
                 onClick = { selectedTruckId = truck.id },
-                label = { Text(truck.plate_number) },
+                label = { Text(truck.plate_number ?: truck.id.take(8)) },
                 modifier = Modifier.padding(end = 4.dp),
             )
         }

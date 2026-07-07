@@ -30,9 +30,9 @@ data class CfoLoginResponse(val user_id: String, val name: String, val email: St
 
 data class AssignedTruck(
     val id: String,
-    val plate_number: String,
-    val make: String,
-    val model: String,
+    val plate_number: String?,
+    val make: String?,
+    val model: String?,
     val position: Int,
 )
 
@@ -58,9 +58,9 @@ data class ConvoyInfo(
     val id: String,
     val name: String,
     val status: String,
-    val timezone: String,
-    val start_date: String,
-    val end_date: String,
+    val timezone: String?,
+    val start_date: String?,
+    val end_date: String?,
     val seal_count_per_truck: Int,
 )
 

@@ -56,8 +56,8 @@ fun CfoSealsScreen(viewModel: CfoViewModel) {
 
         ctx.assigned_trucks.forEach { truck ->
             TruckSealCard(
-                platNumber = truck.plate_number,
-                makeModel = "${truck.make} ${truck.model}",
+                platNumber = truck.plate_number ?: truck.id.take(8),
+                makeModel = listOfNotNull(truck.make, truck.model).joinToString(" ").ifBlank { "Unknown vehicle" },
                 sealCount = ctx.convoy.seal_count_per_truck,
                 photosToday = ctx.photos_today.filter {
                     it.convoy_truck_id == truck.id && it.photo_type == "seal"
