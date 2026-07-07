@@ -322,9 +322,15 @@ router.post('/login', deviceAuth, cfoLoginLimiter, async (req, res, next) => {
       }
     }
 
+    // deleted_at IS NULL: a soft-deleted account must not still be able to log in.
+    // ORDER BY + LIMIT 1: matching on LOWER(email) can return more than one row if
+    // duplicate accounts exist (the DB's UNIQUE constraint is case/whitespace-exact,
+    // so "Foo@x.com" and "foo@x.com" both satisfy it as distinct rows) — without
+    // this, which row's password_hash gets checked is arbitrary.
     const userResult = await query(
       `SELECT id, name, email, role, status, password_hash
-       FROM users WHERE LOWER(email) = $1 AND role = 'cfo'`,
+       FROM users WHERE LOWER(email) = $1 AND role = 'cfo' AND deleted_at IS NULL
+       ORDER BY created_at DESC LIMIT 1`,
       [emailClean]
     );
 

@@ -47,12 +47,17 @@ router.post('/users', authenticate, authorize('admin'), async (req, res) => {
     if (!VALID_ROLES.includes(role)) {
       return res.status(400).json({ error: `role must be one of: ${VALID_ROLES.join(', ')}` });
     }
+    // Normalise like every lookup does (login's `LOWER(email) = $1`, etc.) —
+    // otherwise "Foo@x.com" and "foo@x.com " both pass the DB's case- and
+    // whitespace-sensitive UNIQUE constraint as distinct rows, and any query
+    // matching on LOWER(email) becomes ambiguous between them.
+    const emailClean = email.trim().toLowerCase();
     const password_hash = await bcrypt.hash(password, 10);
     const result = await query(
       `INSERT INTO users (name, email, password_hash, role, status, org_id)
        VALUES ($1, $2, $3, $4, 'active', $5)
        RETURNING id, email, name, role, status`,
-      [name, email, password_hash, role, req.user.org_id]
+      [name.trim(), emailClean, password_hash, role, req.user.org_id]
     );
     res.status(201).json({ data: result.rows[0] });
   } catch (err) {
