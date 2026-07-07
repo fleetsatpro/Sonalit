@@ -133,7 +133,7 @@ async function resolveOrgOfficer(deviceId, badgeName) {
     orgId = devRow.rows[0]?.org_id ?? null;
     const offRow = await query(
       `SELECT id FROM field_officers
-       WHERE (device_id = $1 OR badge_number = $2) AND deleted_at IS NULL
+       WHERE (device_id = $1 OR badge_number = $2)
        ORDER BY (device_id = $1) DESC LIMIT 1`,
       [deviceId, badgeName || null]
     );
@@ -529,8 +529,9 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       }
 
       // Find org via field officer badge number
+      // (field_officers has no soft-delete column — a delete is a hard DELETE, see field-officers.js)
       const officerRes = await query(
-        `SELECT id, org_id FROM field_officers WHERE badge_number = $1 AND deleted_at IS NULL LIMIT 1`,
+        `SELECT id, org_id FROM field_officers WHERE badge_number = $1 LIMIT 1`,
         [operator_code]
       );
       const orgId = officerRes.rows[0]?.org_id ?? null;
