@@ -116,7 +116,7 @@ function MultiSelectList({ items, value, onChange, emptyLabel = 'No items availa
 
 interface ConvoyTruckRow {
   id: string;
-  vehicle_id: string;
+  vehicle_id: string | null;
   driver_name: string;
   driver_phone: string | null;
   position: number;
@@ -143,11 +143,12 @@ function TruckRosterSection({
 }) {
   const queryClient = useQueryClient();
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['convoys', convoyId] });
+  const [showAdd, setShowAdd] = useState(false);
 
   const addTruck = useMutation({
-    mutationFn: (body: { vehicle_id: string; driver_name: string; driver_phone: string; position: number }) =>
+    mutationFn: (body: { vehicle_id: string | null; driver_name: string; driver_phone: string; position: number }) =>
       api.post(`/convoys/${convoyId}/trucks`, body),
-    onSuccess: invalidate,
+    onSuccess: () => { invalidate(); setShowAdd(false); },
   });
   const removeTruck = useMutation({
     mutationFn: (truckId: string) => api.delete(`/convoys/${convoyId}/trucks/${truckId}`),
@@ -164,94 +165,110 @@ function TruckRosterSection({
   });
 
   const nextPosition = Math.min(6, trucks.length + 1);
+  const vehicleLabel = (id: string | null) => {
+    const v = id ? vehicles.find((x) => x.id === id) : null;
+    if (!v) return null;
+    return `${v.registration ?? v.id.slice(0, 8)}${v.make || v.model ? ` — ${[v.make, v.model].filter(Boolean).join(' ')}` : ''}`;
+  };
+  const takenVehicleIds = new Set(trucks.map((t) => t.vehicle_id).filter((x): x is string => !!x));
+  const unlinkedVehicles = vehicles.filter((v) => !takenVehicleIds.has(v.id));
 
   return (
     <Section label="CFO Truck Roster">
       <p className="text-[#607890] text-[10px] font-mono leading-relaxed -mt-1 mb-1">
         The Guardian CFO app and photo reports read from this roster, not from the vehicle list above.
-        Each assigned vehicle needs a driver + position here before a CFO can capture photos for it.
+        A truck needs a driver + position here before a CFO can capture photos for it — linking it to a
+        fleet vehicle is optional.
       </p>
-      {vehicles.length === 0 && (
-        <p className="text-[#304558] text-xs font-mono">Assign vehicles above first.</p>
-      )}
+
       <div className="space-y-2">
-        {vehicles.map((v) => {
-          const truck = trucks.find((t) => t.vehicle_id === v.id) ?? null;
-          const assignment = truck ? assignments.find((a) => a.convoy_truck_id === truck.id) ?? null : null;
+        {trucks.map((truck) => {
+          const assignment = assignments.find((a) => a.convoy_truck_id === truck.id) ?? null;
           const assignedCfo = assignment ? cfos.find((c) => c.cfo_user_id === assignment.cfo_user_id) : null;
-          const label = `${v.registration ?? v.id.slice(0, 8)}${v.make || v.model ? ` — ${[v.make, v.model].filter(Boolean).join(' ')}` : ''}`;
+          const label = vehicleLabel(truck.vehicle_id);
 
           return (
-            <div key={v.id} className="bg-[#09101c] border border-[#122038] rounded-md p-3">
-              <div className="flex items-center gap-2 text-xs font-mono text-gray-200 mb-2">
-                <Truck size={13} className="text-orange-400 flex-shrink-0" />
-                <span className="flex-1 truncate">{label}</span>
-              </div>
-
-              {!truck ? (
-                <AddTruckRow
-                  defaultPosition={nextPosition}
-                  pending={addTruck.isPending}
-                  error={addTruck.error ? extractApiError(addTruck.error, 'Failed to add truck') : null}
-                  onAdd={(driverName, driverPhone, position) =>
-                    addTruck.mutate({ vehicle_id: v.id, driver_name: driverName, driver_phone: driverPhone, position })}
-                />
-              ) : (
-                <div className="flex items-center justify-between gap-2 pl-[21px]">
-                  <div className="text-[11px] font-mono text-[#8098b0]">
+            <div key={truck.id} className="bg-[#09101c] border border-[#122038] rounded-md p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-xs font-mono text-gray-200 min-w-0">
+                  <Truck size={13} className="text-orange-400 flex-shrink-0" />
+                  <span className="truncate">
                     Position {truck.position} · {truck.driver_name}
                     {truck.driver_phone ? ` · ${truck.driver_phone}` : ''}
-                  </div>
-                  <button type="button" onClick={() => removeTruck.mutate(truck.id)} disabled={removeTruck.isPending}
-                    className="text-[#607890] hover:text-red-400 disabled:opacity-50" title="Remove truck">
-                    <X size={13} />
-                  </button>
+                    {label ? ` · ${label}` : ''}
+                  </span>
                 </div>
-              )}
+                <button type="button" onClick={() => removeTruck.mutate(truck.id)} disabled={removeTruck.isPending}
+                  className="text-[#607890] hover:text-red-400 disabled:opacity-50 flex-shrink-0" title="Remove truck">
+                  <X size={13} />
+                </button>
+              </div>
 
-              {truck && (
-                <div className="pl-[21px] mt-2">
-                  {assignment ? (
-                    <div className="flex items-center justify-between gap-2 bg-orange-500/5 border border-orange-500/20 rounded px-2 py-1.5">
-                      <span className="text-[11px] font-mono text-orange-300">
-                        CFO: {assignedCfo?.cfo_name ?? assignment.cfo_user_id.slice(0, 8)}
-                      </span>
-                      <button type="button" onClick={() => removeAssignment.mutate(assignment.id)}
-                        disabled={removeAssignment.isPending}
-                        className="text-[#607890] hover:text-red-400 disabled:opacity-50" title="Remove assignment">
-                        <X size={12} />
-                      </button>
-                    </div>
-                  ) : (
-                    <AssignCfoRow
-                      cfos={cfos}
-                      pending={assignCfo.isPending}
-                      error={assignCfo.error ? extractApiError(assignCfo.error, 'Failed to assign CFO') : null}
-                      onAssign={(cfoUserId) => assignCfo.mutate({ cfo_user_id: cfoUserId, convoy_truck_id: truck.id })}
-                    />
-                  )}
-                </div>
-              )}
+              <div className="pl-[21px] mt-2">
+                {assignment ? (
+                  <div className="flex items-center justify-between gap-2 bg-orange-500/5 border border-orange-500/20 rounded px-2 py-1.5">
+                    <span className="text-[11px] font-mono text-orange-300">
+                      CFO: {assignedCfo?.cfo_name ?? assignment.cfo_user_id.slice(0, 8)}
+                    </span>
+                    <button type="button" onClick={() => removeAssignment.mutate(assignment.id)}
+                      disabled={removeAssignment.isPending}
+                      className="text-[#607890] hover:text-red-400 disabled:opacity-50" title="Remove assignment">
+                      <X size={12} />
+                    </button>
+                  </div>
+                ) : (
+                  <AssignCfoRow
+                    cfos={cfos}
+                    pending={assignCfo.isPending}
+                    error={assignCfo.error ? extractApiError(assignCfo.error, 'Failed to assign CFO') : null}
+                    onAssign={(cfoUserId) => assignCfo.mutate({ cfo_user_id: cfoUserId, convoy_truck_id: truck.id })}
+                  />
+                )}
+              </div>
             </div>
           );
         })}
+
+        {trucks.length === 0 && (
+          <p className="text-[#304558] text-xs font-mono">No trucks registered yet.</p>
+        )}
+
+        {showAdd ? (
+          <AddTruckForm
+            vehicles={unlinkedVehicles}
+            defaultPosition={nextPosition}
+            pending={addTruck.isPending}
+            error={addTruck.error ? extractApiError(addTruck.error, 'Failed to add truck') : null}
+            onAdd={(driverName, driverPhone, position, vehicleId) =>
+              addTruck.mutate({ vehicle_id: vehicleId, driver_name: driverName, driver_phone: driverPhone, position })}
+            onCancel={() => setShowAdd(false)}
+          />
+        ) : (
+          <button type="button" onClick={() => setShowAdd(true)}
+            className="text-xs font-mono text-orange-400 hover:text-orange-300 border border-orange-500/30 rounded-md px-3 py-1.5">
+            + Add Truck
+          </button>
+        )}
       </div>
     </Section>
   );
 }
 
-function AddTruckRow({ defaultPosition, pending, error, onAdd }: {
+function AddTruckForm({ vehicles, defaultPosition, pending, error, onAdd, onCancel }: {
+  vehicles: { id: string; registration?: string | null; make?: string | null; model?: string | null }[];
   defaultPosition: number;
   pending: boolean;
   error: string | null;
-  onAdd: (driverName: string, driverPhone: string, position: number) => void;
+  onAdd: (driverName: string, driverPhone: string, position: number, vehicleId: string | null) => void;
+  onCancel: () => void;
 }) {
   const [driverName, setDriverName] = useState('');
   const [driverPhone, setDriverPhone] = useState('');
   const [position, setPosition] = useState(defaultPosition);
+  const [vehicleId, setVehicleId] = useState('');
 
   return (
-    <div className="pl-[21px] flex flex-col gap-1.5">
+    <div className="bg-[#09101c] border border-[#122038] rounded-md p-3 flex flex-col gap-1.5">
       <div className="flex gap-1.5">
         <input value={driverName} onChange={(e) => setDriverName(e.target.value)}
           placeholder="Driver name" className={BASE_INPUT + ' !py-1.5 !text-[11px] flex-1'} />
@@ -260,8 +277,24 @@ function AddTruckRow({ defaultPosition, pending, error, onAdd }: {
         <input type="number" min={1} max={6} value={position}
           onChange={(e) => setPosition(Number(e.target.value))}
           className={BASE_INPUT + ' !py-1.5 !text-[11px] w-14'} />
+      </div>
+      {vehicles.length > 0 && (
+        <select value={vehicleId} onChange={(e) => setVehicleId(e.target.value)}
+          className={BASE_INPUT + ' !py-1.5 !text-[11px] cursor-pointer'}>
+          <option value="">No fleet vehicle linked</option>
+          {vehicles.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.registration ?? v.id.slice(0, 8)}{v.make || v.model ? ` — ${[v.make, v.model].filter(Boolean).join(' ')}` : ''}
+            </option>
+          ))}
+        </select>
+      )}
+      <div className="flex gap-1.5 justify-end">
+        <button type="button" onClick={onCancel} className="text-[11px] font-mono text-[#607890] hover:text-gray-300 px-2">
+          Cancel
+        </button>
         <button type="button" disabled={!driverName.trim() || pending}
-          onClick={() => onAdd(driverName.trim(), driverPhone.trim(), position)}
+          onClick={() => onAdd(driverName.trim(), driverPhone.trim(), position, vehicleId || null)}
           className="bg-orange-600 hover:bg-orange-500 disabled:opacity-40 text-white text-[11px] font-mono px-3 rounded-md whitespace-nowrap">
           Add Truck
         </button>
