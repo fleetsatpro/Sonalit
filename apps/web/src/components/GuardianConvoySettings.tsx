@@ -8,6 +8,13 @@ const INPUT_CLS = 'w-full bg-slate-900 border border-slate-600 rounded px-3 py-2
 const BTN_PRIMARY = 'text-sm bg-orange-600 hover:bg-orange-500 disabled:opacity-40 text-white px-4 py-1.5 rounded-lg';
 const BTN_GHOST = 'text-sm text-slate-400 hover:text-white';
 
+// The "New CFO" button is a plain onClick, not a form submit, so the native
+// type="email" validation never actually runs — nothing stopped a CFO account
+// being created with a bare, non-email string.
+function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
 interface CfoAssignment {
   id: string;
   name: string;
@@ -155,6 +162,9 @@ export function GuardianConvoySettings() {
                 onChange={e => setCreateForm(p => ({ ...p, email: e.target.value }))}
                 className={INPUT_CLS}
               />
+              {createForm.email.length > 0 && !isValidEmail(createForm.email) && (
+                <p className="text-amber-400 text-xs">Doesn't look like a valid email address.</p>
+              )}
               <input
                 placeholder="Initial PIN / password"
                 type="password"
@@ -167,7 +177,7 @@ export function GuardianConvoySettings() {
                 <button onClick={() => setShowCreate(false)} className={BTN_GHOST}>Cancel</button>
                 <button
                   onClick={() => createMut.mutate(createForm)}
-                  disabled={createMut.isPending || !createForm.name || !createForm.email || !createForm.password}
+                  disabled={createMut.isPending || !createForm.name || !isValidEmail(createForm.email) || !createForm.password}
                   className={BTN_PRIMARY}
                 >
                   {createMut.isPending ? 'Creating…' : 'Create Account'}

@@ -47,6 +47,9 @@ router.post('/users', authenticate, authorize('admin'), async (req, res) => {
     if (!VALID_ROLES.includes(role)) {
       return res.status(400).json({ error: `role must be one of: ${VALID_ROLES.join(', ')}` });
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      return res.status(400).json({ error: 'email must be a valid email address' });
+    }
     // Normalise like every lookup does (login's `LOWER(email) = $1`, etc.) —
     // otherwise "Foo@x.com" and "foo@x.com " both pass the DB's case- and
     // whitespace-sensitive UNIQUE constraint as distinct rows, and any query
