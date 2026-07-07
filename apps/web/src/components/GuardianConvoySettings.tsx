@@ -46,6 +46,7 @@ export function GuardianConvoySettings() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [resetFor, setResetFor] = useState<string | null>(null);
   const [newPin, setNewPin] = useState('');
+  const [resetError, setResetError] = useState<string | null>(null);
   const [assignFor, setAssignFor] = useState<string | null>(null);
   const [selectedConvoy, setSelectedConvoy] = useState('');
 
@@ -88,7 +89,9 @@ export function GuardianConvoySettings() {
       qc.invalidateQueries({ queryKey: ['cfo-assignments'] });
       setResetFor(null);
       setNewPin('');
+      setResetError(null);
     },
+    onError: (e: any) => setResetError(e?.response?.data?.error ?? 'Failed to reset password'),
   });
 
   const assignMut = useMutation({
@@ -211,7 +214,7 @@ export function GuardianConvoySettings() {
                       </button>
                       <button
                         title="Reset PIN"
-                        onClick={() => { setResetFor(cfo.id); setNewPin(''); }}
+                        onClick={() => { setResetFor(cfo.id); setNewPin(''); setResetError(null); }}
                         className="text-slate-500 hover:text-orange-400"
                       >
                         <KeyRound size={14} />
@@ -229,22 +232,25 @@ export function GuardianConvoySettings() {
 
                   {/* Reset PIN inline */}
                   {resetFor === cfo.id && (
-                    <div className="flex items-center gap-2 bg-slate-900 rounded p-2">
-                      <input
-                        placeholder="New PIN / password"
-                        type="password"
-                        value={newPin}
-                        onChange={e => setNewPin(e.target.value)}
-                        className="flex-1 bg-transparent border border-slate-700 rounded px-2 py-1 text-sm focus:outline-none focus:border-orange-500"
-                      />
-                      <button
-                        onClick={() => resetPinMut.mutate({ id: cfo.id, password: newPin })}
-                        disabled={resetPinMut.isPending || !newPin}
-                        className={BTN_PRIMARY}
-                      >
-                        {resetPinMut.isPending ? 'Saving…' : 'Save'}
-                      </button>
-                      <button onClick={() => setResetFor(null)} className={BTN_GHOST}>Cancel</button>
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center gap-2 bg-slate-900 rounded p-2">
+                        <input
+                          placeholder="New PIN / password"
+                          type="password"
+                          value={newPin}
+                          onChange={e => setNewPin(e.target.value)}
+                          className="flex-1 bg-transparent border border-slate-700 rounded px-2 py-1 text-sm focus:outline-none focus:border-orange-500"
+                        />
+                        <button
+                          onClick={() => resetPinMut.mutate({ id: cfo.id, password: newPin })}
+                          disabled={resetPinMut.isPending || !newPin}
+                          className={BTN_PRIMARY}
+                        >
+                          {resetPinMut.isPending ? 'Saving…' : 'Save'}
+                        </button>
+                        <button onClick={() => { setResetFor(null); setResetError(null); }} className={BTN_GHOST}>Cancel</button>
+                      </div>
+                      {resetError && <p className="text-red-400 text-xs">{resetError}</p>}
                     </div>
                   )}
 
