@@ -196,7 +196,11 @@ const addTruck = asyncHandler(async (req, res) => {
     [req.params.id]
   );
   if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
-  if (convoy.rows[0].status !== 'planned') return res.status(422).json({ error: 'convoy_not_in_planned_status' });
+  // Matches addCfo's policy: roster/truck changes are allowed on planned AND active
+  // convoys (an admin correcting a staffing mistake mid-convoy is a normal operation),
+  // just not once a convoy is completing/completed/aborted/cancelled.
+  if (!['planned', 'active'].includes(convoy.rows[0].status))
+    return res.status(422).json({ error: 'convoy_not_in_planned_status' });
 
   try {
     const result = await query(
@@ -227,7 +231,11 @@ const removeTruck = asyncHandler(async (req, res) => {
     [req.params.id]
   );
   if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
-  if (convoy.rows[0].status !== 'planned') return res.status(422).json({ error: 'convoy_not_in_planned_status' });
+  // Matches addCfo's policy: roster/truck changes are allowed on planned AND active
+  // convoys (an admin correcting a staffing mistake mid-convoy is a normal operation),
+  // just not once a convoy is completing/completed/aborted/cancelled.
+  if (!['planned', 'active'].includes(convoy.rows[0].status))
+    return res.status(422).json({ error: 'convoy_not_in_planned_status' });
 
   const truck = await query(
     'SELECT id FROM convoy_trucks WHERE id = $1 AND convoy_id = $2',
@@ -316,7 +324,11 @@ const removeCfo = asyncHandler(async (req, res) => {
     [req.params.id]
   );
   if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
-  if (convoy.rows[0].status !== 'planned') return res.status(422).json({ error: 'convoy_not_in_planned_status' });
+  // Matches addCfo's policy: roster/truck changes are allowed on planned AND active
+  // convoys (an admin correcting a staffing mistake mid-convoy is a normal operation),
+  // just not once a convoy is completing/completed/aborted/cancelled.
+  if (!['planned', 'active'].includes(convoy.rows[0].status))
+    return res.status(422).json({ error: 'convoy_not_in_planned_status' });
 
   const cfoEntry = await query(
     'SELECT id, cfo_user_id FROM convoy_cfos WHERE id = $1 AND convoy_id = $2',
@@ -355,7 +367,11 @@ const assignTruckToCfo = asyncHandler(async (req, res) => {
     [req.params.id]
   );
   if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
-  if (convoy.rows[0].status !== 'planned') return res.status(422).json({ error: 'convoy_not_in_planned_status' });
+  // Matches addCfo's policy: roster/truck changes are allowed on planned AND active
+  // convoys (an admin correcting a staffing mistake mid-convoy is a normal operation),
+  // just not once a convoy is completing/completed/aborted/cancelled.
+  if (!['planned', 'active'].includes(convoy.rows[0].status))
+    return res.status(422).json({ error: 'convoy_not_in_planned_status' });
 
   const [truck, cfo] = await Promise.all([
     query('SELECT id FROM convoy_trucks WHERE id = $1 AND convoy_id = $2', [value.convoy_truck_id, req.params.id]),
@@ -392,7 +408,11 @@ const removeAssignment = asyncHandler(async (req, res) => {
     [req.params.id]
   );
   if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
-  if (convoy.rows[0].status !== 'planned') return res.status(422).json({ error: 'convoy_not_in_planned_status' });
+  // Matches addCfo's policy: roster/truck changes are allowed on planned AND active
+  // convoys (an admin correcting a staffing mistake mid-convoy is a normal operation),
+  // just not once a convoy is completing/completed/aborted/cancelled.
+  if (!['planned', 'active'].includes(convoy.rows[0].status))
+    return res.status(422).json({ error: 'convoy_not_in_planned_status' });
 
   const assignment = await query(
     'SELECT id FROM convoy_cfo_truck_assignments WHERE id = $1 AND convoy_id = $2',
