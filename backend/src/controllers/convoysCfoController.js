@@ -634,8 +634,10 @@ const getConvoyReportsOverview = asyncHandler(async (req, res) => {
               cr.convoy_id, cr.date AS report_date, cr.status,
               (SELECT COUNT(*)::int FROM photo_uploads pu
                WHERE pu.convoy_id = cr.convoy_id AND pu.timestamp::date = cr.date) AS received_photo_count,
-              10 AS required_photo_count
+              (SELECT COUNT(ct.id) FROM convoy_trucks ct WHERE ct.convoy_id::text = cr.convoy_id)::int
+                * (2 + COALESCE(c2.seal_count_per_truck, 0)) * 2 AS required_photo_count
        FROM convoy_reports cr
+       LEFT JOIN convoys c2 ON c2.id::text = cr.convoy_id
        WHERE cr.convoy_id = ANY($1::text[])
        ORDER BY cr.convoy_id, cr.date DESC`,
       [convoyIds]
@@ -784,10 +786,11 @@ async function getConvoyReportDetail(req, res, next) {
     let dailyReport = reportRes.rows[0] || null;
     if (!dailyReport && cfoReportRes.rows.length) {
       const cr = cfoReportRes.rows[0];
+      const sealCount = convoyRes.rows[0].seal_count_per_truck ?? 0;
       dailyReport = {
         status: cr.status,
         received_photo_count: cfoUploadsRes.rows.length,
-        required_photo_count: 10,
+        required_photo_count: trucksRes.rows.length * (2 + sealCount) * 2,
         generated_at: null,
         pdf_url: null,
         generation_error: null,
