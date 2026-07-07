@@ -444,6 +444,16 @@
         }
       }
     },
+    "/api/v1/messages/org-users": {
+      "get": {
+        "operationId": "get_api_v1_messages_org_users",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/messages/channels": {
       "get": {
         "operationId": "get_api_v1_messages_channels",
