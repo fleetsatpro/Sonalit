@@ -213,7 +213,11 @@ function truckDetail(ctx, truck, truckPhotos, sealCount) {
     section(ctx, label);
 
     const sp = truckPhotos.filter(p => p.session === session);
-    const types = ['front', 'rear', ...Array.from({ length: sealCount }, (_, i) => `seal-${i + 1}`)];
+    const sealPositions = Array.from(new Set(
+      truckPhotos.filter(p => p.photo_type === 'seal').map(p => String(p.seal_position))
+    )).sort();
+    while (sealPositions.length < sealCount) sealPositions.push(null);
+    const types = ['front', 'rear', ...sealPositions.map((pos, i) => ({ seal: true, pos, idx: i }))];
     const cols = [M, M + 110, M + 200, M + 310, M + 410];
     const colW = [106, 86, 106, 96, 80];
     tableHeader(doc, cols, colW, ['Photo Type', 'Seal Pos', 'Uploaded At', 'Location', 'Status']);
@@ -221,20 +225,20 @@ function truckDetail(ctx, truck, truckPhotos, sealCount) {
     let y = doc.y;
     types.forEach((ptype, idx) => {
       if (y + 16 > BODY_BOTTOM) { newPage(ctx); y = ctx.doc.y; }
-      const isSeal = ptype.startsWith('seal');
-      const sealNum = isSeal ? String(idx - 1) : null;
-      const match = sp.find(p =>
-        isSeal ? (p.photo_type === 'seal' && String(p.seal_position) === sealNum) : p.photo_type === ptype
-      );
+      const isSeal = typeof ptype === 'object';
+      const sealPos = isSeal ? ptype.pos : null;
+      const match = isSeal
+        ? (sealPos != null ? sp.find(p => p.photo_type === 'seal' && String(p.seal_position) === sealPos) : null)
+        : sp.find(p => p.photo_type === ptype);
       if (idx % 2 === 0) doc.rect(M, y, CW, 16).fill(C.stripe);
-      const typeLabel = isSeal ? `Seal (pos ${sealNum})` : ptype.charAt(0).toUpperCase() + ptype.slice(1);
+      const typeLabel = isSeal ? `Seal (pos ${sealPos || '—'})` : ptype.charAt(0).toUpperCase() + ptype.slice(1);
       const uploaded = match?.uploaded_at ? new Date(match.uploaded_at).toISOString().replace('T', ' ').slice(0, 16) : '—';
       const loc = match ? (match.location_mismatch ? '⚠ Mismatch' : '✓ OK') : '—';
       const status = match ? 'Present' : 'MISSING';
       doc.fill(match ? C.text : C.red).fontSize(8).font(match ? 'Helvetica' : 'Helvetica-Bold')
         .text(typeLabel, M + 2, y + 4, { width: 106 });
       doc.fill(C.muted).font('Helvetica')
-        .text(sealNum || '—', cols[1] + 2, y + 4, { width: 86 })
+        .text(sealPos || '—', cols[1] + 2, y + 4, { width: 86 })
         .text(uploaded, cols[2] + 2, y + 4, { width: 106 });
       doc.fill(match?.location_mismatch ? C.amber : C.muted)
         .text(loc, cols[3] + 2, y + 4, { width: 96 });
@@ -328,11 +332,15 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
     section(ctx, 'Photo Status Matrix');
     const truckMatrix = trucks.map(truck => {
       const tp = photos.filter(p => p.convoy_truck_id === truck.id);
+      const sealPositions = Array.from(new Set(
+        tp.filter(p => p.photo_type === 'seal').map(p => String(p.seal_position))
+      )).sort();
+      while (sealPositions.length < sealCount) sealPositions.push(null);
       const buildSession = (session) => ({
         front: tp.some(p => p.session === session && p.photo_type === 'front'),
         rear: tp.some(p => p.session === session && p.photo_type === 'rear'),
-        seals: Array.from({ length: sealCount }, (_, i) =>
-          tp.some(p => p.session === session && p.photo_type === 'seal' && String(p.seal_position) === String(i + 1))
+        seals: sealPositions.map(pos =>
+          pos != null && tp.some(p => p.session === session && p.photo_type === 'seal' && String(p.seal_position) === pos)
         ),
       });
       return { ...truck, sod: buildSession('sod'), eod: buildSession('eod') };
