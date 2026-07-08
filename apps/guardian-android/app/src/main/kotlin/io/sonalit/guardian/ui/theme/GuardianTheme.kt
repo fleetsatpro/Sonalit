@@ -1,9 +1,11 @@
 package io.sonalit.guardian.ui.theme
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 
 private val DarkColorScheme = darkColorScheme(
     primary = Color(0xFFD97706),
@@ -22,10 +24,28 @@ private val DarkColorScheme = darkColorScheme(
     onError = Color(0xFF1A2235),
 )
 
+// Heavier weights across the board — the stock M3 defaults read too quiet for
+// a field app operators glance at in bright sunlight or in a hurry.
+private val BaseTypography = Typography()
+private val BoldTypography = Typography(
+    headlineLarge = BaseTypography.headlineLarge.copy(fontWeight = FontWeight.ExtraBold),
+    headlineMedium = BaseTypography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold),
+    headlineSmall = BaseTypography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+    titleLarge = BaseTypography.titleLarge.copy(fontWeight = FontWeight.Bold),
+    titleMedium = BaseTypography.titleMedium.copy(fontWeight = FontWeight.Bold),
+    titleSmall = BaseTypography.titleSmall.copy(fontWeight = FontWeight.Bold),
+    bodyLarge = BaseTypography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+    bodyMedium = BaseTypography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+    labelLarge = BaseTypography.labelLarge.copy(fontWeight = FontWeight.Bold),
+    labelMedium = BaseTypography.labelMedium.copy(fontWeight = FontWeight.Bold),
+    labelSmall = BaseTypography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+)
+
 @Composable
 fun GuardianTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = DarkColorScheme,
+        typography = BoldTypography,
         content = content,
     )
 }

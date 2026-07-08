@@ -156,6 +156,28 @@ function getConvoyDate(timezone) {
   }
 }
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Builds the list of report dates a CFO may browse: convoy start_date through
+// today (capped at end_date if the convoy already finished).
+const MAX_AVAILABLE_DATES = 90; // convoys run for weeks, not years — guards against bogus start_date
+
+// Walks backward from the cap date so the most recent days are always
+// selectable even if a bogus/very-old start_date would otherwise blow past
+// MAX_AVAILABLE_DATES.
+function buildAvailableDates(startDate, endDate, today) {
+  if (!startDate) return [today];
+  const cap = endDate && endDate < today ? endDate : today;
+  const startMs = new Date(startDate + 'T00:00:00Z').getTime();
+  const dates = [];
+  let cursorMs = new Date(cap + 'T00:00:00Z').getTime();
+  while (cursorMs >= startMs && dates.length < MAX_AVAILABLE_DATES) {
+    dates.push(new Date(cursorMs).toISOString().slice(0, 10));
+    cursorMs -= 86400000;
+  }
+  return dates.length ? dates.reverse() : [today];
+}
+
 function gAudit(actor_id, action, target_type, target_id, payload, ip) {
   query(
     `INSERT INTO guardian_audit_log
@@ -245,7 +267,15 @@ router.get('/context', deviceAuth, async (req, res, next) => {
     }
 
     const { convoy_id, cfo_user_id, ...convoyFields } = assignmentResult.rows[0];
-    const reportDate = getConvoyDate(convoyFields.timezone);
+    const todayDate = getConvoyDate(convoyFields.timezone);
+    const startDate = convoyFields.start_date ? String(convoyFields.start_date).slice(0, 10) : null;
+    const endDate = convoyFields.end_date ? String(convoyFields.end_date).slice(0, 10) : null;
+    const availableDates = buildAvailableDates(startDate, endDate, todayDate);
+
+    const requestedDate = typeof req.query.date === 'string' && DATE_RE.test(req.query.date)
+      ? req.query.date : null;
+    const reportDate = requestedDate && availableDates.includes(requestedDate)
+      ? requestedDate : todayDate;
 
     const [trucksResult, photosResult, reportResult] = await Promise.all([
       query(
@@ -279,6 +309,8 @@ router.get('/context', deviceAuth, async (req, res, next) => {
         cfo_user_id,
         assigned_trucks: trucksResult.rows,
         report_date: reportDate,
+        today_date: todayDate,
+        available_dates: availableDates,
         photos_today: photosResult.rows,
         daily_report: dailyReport ? {
           status: dailyReport.status,

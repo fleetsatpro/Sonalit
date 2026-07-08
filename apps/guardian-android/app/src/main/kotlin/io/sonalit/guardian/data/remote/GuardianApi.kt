@@ -72,6 +72,8 @@ data class CfoContextData(
     val cfo_user_id: String,
     val assigned_trucks: List<AssignedTruck>,
     val report_date: String,
+    val today_date: String = report_date,
+    val available_dates: List<String> = listOf(report_date),
     val photos_today: List<PhotoRecord>,
     val daily_report: DailyReportStatus?,
 )
@@ -144,6 +146,7 @@ interface GuardianApi {
     @GET("guardian/cfo/context")
     suspend fun cfoContext(
         @Header("X-Device-Token") deviceToken: String,
+        @Query("date") date: String?,
     ): CfoContextResponse
 
     @POST("guardian/cfo/photo-upload-url")

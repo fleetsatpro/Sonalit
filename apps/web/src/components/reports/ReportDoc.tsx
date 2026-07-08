@@ -313,8 +313,9 @@ export default function ReportDoc({
 
       {/* Toolbar */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 32 }}>
-        {dr?.pdf_url && (
-          <a href={dr.pdf_url} target="_blank" rel="noopener noreferrer"
+        {dr?.status === 'generated' && (
+          <a href={dr.pdf_url || `/api/v1/convoys/${detail.convoy.id}/reports/${detail.report_date}/download`}
+            target="_blank" rel="noopener noreferrer"
             style={{
               display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px',
               background: '#111827', color: '#fff', borderRadius: 6, textDecoration: 'none',

@@ -122,5 +122,15 @@ class PendingPhotoUploadWorker @AssistedInject constructor(
                 "pending_photo_upload", ExistingPeriodicWorkPolicy.KEEP, request,
             )
         }
+
+        /** Runs the retry pass immediately — used by the Settings "Retry Now" action. */
+        fun retryNow(context: Context) {
+            val request = OneTimeWorkRequestBuilder<PendingPhotoUploadWorker>()
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                .build()
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                "pending_photo_upload_retry_now", ExistingWorkPolicy.REPLACE, request,
+            )
+        }
     }
 }

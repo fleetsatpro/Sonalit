@@ -15,10 +15,12 @@ import io.sonalit.guardian.data.local.PendingPhotoEntity
 import io.sonalit.guardian.data.remote.*
 import io.sonalit.guardian.worker.PendingPhotoUploadWorker
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.*
@@ -52,10 +54,16 @@ data class CfoUiState(
     val contextLoading: Boolean = false,
     val contextError: String? = null,
     val context: CfoContextData? = null,
+    val selectedDate: String? = null,
+    val lastRefreshedAt: Long? = null,
     val selectedTruckId: String? = null,
     val uploads: List<UploadState> = emptyList(),
     val pendingCount: Int = 0,
-)
+) {
+    /** True when browsing a past report_date rather than the live convoy day. */
+    val isViewingHistory: Boolean
+        get() = context != null && selectedDate != null && selectedDate != context.today_date
+}
 
 // ── ViewModel ─────────────────────────────────────────────────────────────────
 
@@ -99,6 +107,21 @@ class CfoViewModel @Inject constructor(
         // Resume any photos queued from a previous session/app-restart — schedule()
         // is a no-op if a worker is already enqueued (ExistingPeriodicWorkPolicy.KEEP).
         PendingPhotoUploadWorker.schedule(appContext)
+        startAutoRefresh()
+    }
+
+    // Keeps the dashboard current without the CFO having to pull-to-refresh —
+    // convoy photo counts change as other officers upload throughout the day.
+    private fun startAutoRefresh() {
+        viewModelScope.launch {
+            while (isActive) {
+                delay(30_000)
+                val s = _state.value
+                if (s.loggedInUser != null && s.screen != CfoNavScreen.LOGIN && !s.contextLoading) {
+                    loadContext(s.selectedDate)
+                }
+            }
+        }
     }
 
     // ── Auth ──────────────────────────────────────────────────────────────────
@@ -135,17 +158,30 @@ class CfoViewModel @Inject constructor(
 
     // ── Context ───────────────────────────────────────────────────────────────
 
-    fun loadContext() {
+    fun loadContext(date: String? = null) {
         _state.update { it.copy(contextLoading = true, contextError = null) }
         viewModelScope.launch {
             runCatching {
-                api.cfoContext(deviceToken)
+                api.cfoContext(deviceToken, date)
             }.onSuccess { resp ->
-                _state.update { it.copy(contextLoading = false, context = resp.data) }
+                _state.update {
+                    it.copy(
+                        contextLoading = false,
+                        context = resp.data,
+                        selectedDate = date ?: resp.data.report_date,
+                        lastRefreshedAt = System.currentTimeMillis(),
+                    )
+                }
             }.onFailure { e ->
                 _state.update { it.copy(contextLoading = false, contextError = e.message) }
             }
         }
+    }
+
+    /** CFO picked a date from the dashboard's date picker — reloads that day's data. */
+    fun selectDate(date: String) {
+        if (date == _state.value.selectedDate) return
+        loadContext(date)
     }
 
     // ── Navigation ────────────────────────────────────────────────────────────
@@ -170,6 +206,9 @@ class CfoViewModel @Inject constructor(
         eventUuid: String = UUID.randomUUID().toString(),
     ) {
         val ctx = _state.value.context ?: return
+        // Uploads always target the live convoy day, even while the CFO is
+        // browsing a past date's history in the dashboard.
+        val uploadDate = ctx.today_date
         val takenAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
         }.format(Date())
@@ -191,7 +230,7 @@ class CfoViewModel @Inject constructor(
                         session = session,
                         photo_type = photoType,
                         seal_position = sealPosition,
-                        report_date = ctx.report_date,
+                        report_date = uploadDate,
                     )
                 )
 
@@ -216,7 +255,7 @@ class CfoViewModel @Inject constructor(
                         session = session,
                         photo_type = photoType,
                         seal_position = sealPosition,
-                        report_date = ctx.report_date,
+                        report_date = uploadDate,
                         photo_url = urlResp.public_url,
                         taken_at = takenAt,
                         lat = location?.latitude,
@@ -233,7 +272,7 @@ class CfoViewModel @Inject constructor(
                         }
                     )
                 }
-                loadContext()
+                loadContext(_state.value.selectedDate)
             }.onFailure { e ->
                 Log.w("CfoViewModel", "Upload failed for $eventUuid, queuing offline: ${e.message}")
                 pendingPhotoDao.insert(
@@ -244,7 +283,7 @@ class CfoViewModel @Inject constructor(
                         session = session,
                         photoType = photoType,
                         sealPosition = sealPosition,
-                        reportDate = ctx.report_date,
+                        reportDate = uploadDate,
                         localFilePath = file.absolutePath,
                         takenAt = takenAt,
                         lat = location?.latitude,
