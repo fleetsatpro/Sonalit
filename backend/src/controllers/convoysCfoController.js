@@ -639,7 +639,11 @@ const downloadReport = asyncHandler(async (req, res) => {
   );
   if (!r.rows.length) return res.status(404).json({ error: 'Report not found' });
   if (r.rows[0].status !== 'generated') return res.status(422).json({ error: `Report status: ${r.rows[0].status}` });
-  if (r.rows[0].pdf_url?.startsWith('http')) return res.redirect(r.rows[0].pdf_url);
+  const r2PublicUrl = process.env.R2_PUBLIC_URL;
+  const pdfUrl = r.rows[0].pdf_url && r2PublicUrl
+    ? r.rows[0].pdf_url.replace(/^https?:\/\/pub-[a-f0-9]+\.r2\.dev\//, `${r2PublicUrl}/`)
+    : r.rows[0].pdf_url;
+  if (pdfUrl?.startsWith('http')) return res.redirect(pdfUrl);
   const filePath = path.resolve(__dirname, '../../data/reports', req.params.id, `${date}.pdf`);
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'PDF not on server — please regenerate' });
   res.setHeader('Content-Type', 'application/pdf');
@@ -842,6 +846,7 @@ async function getConvoyReportDetail(req, res, next) {
 
     // Synthesize daily_report from CFO app data when no PDF report exists yet
     let dailyReport = reportRes.rows[0] || null;
+    if (dailyReport) dailyReport.pdf_url = normalizePhotoUrl(dailyReport.pdf_url);
     if (!dailyReport && cfoReportRes.rows.length) {
       const cr = cfoReportRes.rows[0];
       const sealCount = convoyRes.rows[0].seal_count_per_truck ?? 0;
