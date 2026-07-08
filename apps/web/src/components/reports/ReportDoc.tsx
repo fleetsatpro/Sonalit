@@ -1,5 +1,6 @@
 import React from 'react';
 import { FileDown, RefreshCw, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
+import { api } from '../../lib/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -284,6 +285,31 @@ export default function ReportDoc({
   const completePercent = dr && dr.required_photo_count > 0
     ? Math.round((dr.received_photo_count / dr.required_photo_count) * 100)
     : 0;
+  const [downloading, setDownloading] = React.useState(false);
+
+  // dr.pdf_url is a public R2 link — safe to open directly. Without it, the
+  // backend endpoint requires a Bearer token that a plain <a> can't send, so
+  // fetch it through the authenticated api client and open the returned blob.
+  const handleDownload = async () => {
+    if (dr?.pdf_url) {
+      window.open(dr.pdf_url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    setDownloading(true);
+    try {
+      const res = await api.get(
+        `/convoys/${detail.convoy.id}/reports/${detail.report_date}/download`,
+        { responseType: 'blob' },
+      );
+      const blobUrl = URL.createObjectURL(res.data);
+      window.open(blobUrl, '_blank', 'noopener,noreferrer');
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+    } catch {
+      alert('Could not download the report PDF. Please try again.');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <div style={{
@@ -314,15 +340,15 @@ export default function ReportDoc({
       {/* Toolbar */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 32 }}>
         {dr?.status === 'generated' && (
-          <a href={dr.pdf_url || `/api/v1/convoys/${detail.convoy.id}/reports/${detail.report_date}/download`}
-            target="_blank" rel="noopener noreferrer"
+          <button onClick={handleDownload} disabled={downloading}
             style={{
               display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px',
-              background: '#111827', color: '#fff', borderRadius: 6, textDecoration: 'none',
+              background: '#111827', color: '#fff', borderRadius: 6, border: 'none',
+              cursor: downloading ? 'not-allowed' : 'pointer', opacity: downloading ? 0.6 : 1,
               fontSize: 12, fontWeight: 600, fontFamily: 'Space Grotesk, sans-serif',
             }}>
-            <FileDown size={14} /> Download PDF
-          </a>
+            <FileDown size={14} /> {downloading ? 'Preparing…' : 'Download PDF'}
+          </button>
         )}
         <button onClick={onRegenerate} disabled={regenerating}
           style={{
