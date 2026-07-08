@@ -122,6 +122,7 @@ CREATE TABLE IF NOT EXISTS convoy_truck_photos (
   lng                DOUBLE PRECISION,
   event_uuid         UUID         NOT NULL,
   location_mismatch  BOOLEAN      NOT NULL DEFAULT false,
+  photo_url_hash     TEXT,
   notes              TEXT,
   created_at         TIMESTAMPTZ  DEFAULT NOW(),
   UNIQUE (event_uuid)
@@ -144,6 +145,8 @@ END $$;
 CREATE INDEX IF NOT EXISTS idx_ctp_convoy_date ON convoy_truck_photos(convoy_id, report_date);
 CREATE INDEX IF NOT EXISTS idx_ctp_truck_date_session ON convoy_truck_photos(convoy_truck_id, report_date, session, photo_type);
 CREATE INDEX IF NOT EXISTS idx_ctp_cfo_date ON convoy_truck_photos(cfo_user_id, report_date);
+CREATE INDEX IF NOT EXISTS idx_convoy_truck_photos_hash
+  ON convoy_truck_photos(convoy_id, session, photo_url_hash) WHERE photo_url_hash IS NOT NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS ux_truck_photo_front_rear
   ON convoy_truck_photos(convoy_truck_id, report_date, session, photo_type)
