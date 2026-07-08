@@ -304,8 +304,24 @@ export default function ReportDoc({
       const blobUrl = URL.createObjectURL(res.data);
       window.open(blobUrl, '_blank', 'noopener,noreferrer');
       setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
-    } catch {
-      alert('Could not download the report PDF. Please try again.');
+    } catch (err: any) {
+      // responseType 'blob' means an error JSON body also arrives as a Blob —
+      // parse it so the operator sees the real reason (e.g. "PDF not on
+      // server — please regenerate") instead of a generic message.
+      let message = 'Could not download the report PDF. Please try again.';
+      const data = err?.response?.data;
+      if (data instanceof Blob) {
+        try {
+          const text = await data.text();
+          const parsed = JSON.parse(text);
+          if (parsed?.error) message = parsed.error;
+        } catch {
+          // keep the generic message
+        }
+      } else if (err?.message) {
+        message = err.message;
+      }
+      alert(message);
     } finally {
       setDownloading(false);
     }
