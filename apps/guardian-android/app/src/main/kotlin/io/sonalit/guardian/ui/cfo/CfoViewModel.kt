@@ -164,9 +164,9 @@ class CfoViewModel @Inject constructor(
         photoType: String,
         sealPosition: String?,
         location: Location?,
+        eventUuid: String = UUID.randomUUID().toString(),
     ) {
         val ctx = _state.value.context ?: return
-        val eventUuid = UUID.randomUUID().toString()
         val takenAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
         }.format(Date())
