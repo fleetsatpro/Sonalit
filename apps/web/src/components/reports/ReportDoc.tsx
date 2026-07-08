@@ -95,15 +95,18 @@ const SEAL_STATUS_COLOR: Record<string, string> = {
 };
 
 function PhotoBox({ url = undefined, label }: { url?: string | undefined; label: string }) {
+  const hasUrl = url && url.startsWith('http');
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={{
-        width: '100%', aspectRatio: '4/3', background: url ? 'transparent' : '#e5e7eb',
+        width: '100%', aspectRatio: '4/3', background: hasUrl ? 'transparent' : '#e5e7eb',
         borderRadius: 4, border: '1px solid #d1d5db', overflow: 'hidden',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        {url
-          ? <img src={url} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        {hasUrl
+          ? <img src={url} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; e.currentTarget.parentElement!.style.background = '#fee2e2'; }}
+            />
           : <span style={{ fontSize: 10, color: '#9ca3af', fontFamily: 'JetBrains Mono, monospace' }}>NO PHOTO</span>
         }
       </div>
