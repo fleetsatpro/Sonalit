@@ -823,12 +823,20 @@ async function getConvoyReportDetail(req, res, next) {
     const cfoUploadsRes = { rows: cfoUploadsRows };
     const cfoReportRes = { rows: cfoReportRows };
 
+    const r2PublicUrl = process.env.R2_PUBLIC_URL;
+    const normalizePhotoUrl = (url) => {
+      if (!url || !r2PublicUrl) return url;
+      return url.replace(/^https?:\/\/pub-[a-f0-9]+\.r2\.dev\//, `${r2PublicUrl}/`);
+    };
+
     const photosByTruck = {};
     for (const p of photosRes.rows) {
+      p.photo_url = normalizePhotoUrl(p.photo_url);
       (photosByTruck[p.convoy_truck_id] = photosByTruck[p.convoy_truck_id] || []).push(p);
     }
     const sealsByTruck = {};
     for (const s of sealsRes.rows) {
+      s.photo_url = normalizePhotoUrl(s.photo_url);
       (sealsByTruck[s.convoy_truck_id] = sealsByTruck[s.convoy_truck_id] || []).push(s);
     }
 
@@ -858,7 +866,7 @@ async function getConvoyReportDetail(req, res, next) {
           seals: sealsByTruck[t.id] || [],
         })),
         waypoints: waypointsRes.rows,
-        cfo_uploads: cfoUploadsRes.rows,
+        cfo_uploads: cfoUploadsRes.rows.map(u => ({ ...u, photo_url: normalizePhotoUrl(u.photo_url) })),
       },
     });
   } catch (err) {
