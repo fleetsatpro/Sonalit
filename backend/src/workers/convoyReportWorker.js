@@ -192,9 +192,9 @@ async function handleGenerateReport({ convoy_id, report_date, force }) {
   await query(
     `UPDATE convoy_daily_reports
      SET status = 'generated', pdf_url = $1, content_hash = $2,
-         generation_error = $3, generated_at = NOW(), updated_at = NOW()
-     WHERE convoy_id = $4 AND report_date = $5`,
-    [pdfUrl, contentHash, generationError, convoy_id, report_date]
+         generation_error = $3, pdf_data = $4, generated_at = NOW(), updated_at = NOW()
+     WHERE convoy_id = $5 AND report_date = $6`,
+    [pdfUrl, contentHash, generationError, pdfBuffer, convoy_id, report_date]
   );
 
   publish(`convoy.report.ready.${orgId}`, { convoy_id, report_date, pdf_url: pdfUrl });

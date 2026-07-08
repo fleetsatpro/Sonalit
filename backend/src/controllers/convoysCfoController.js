@@ -634,7 +634,7 @@ const downloadReport = asyncHandler(async (req, res) => {
   const convoy = await query('SELECT id FROM convoys WHERE id = $1 AND deleted_at IS NULL', [req.params.id]);
   if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
   const r = await query(
-    `SELECT pdf_url, status FROM convoy_daily_reports WHERE convoy_id = $1 AND report_date = $2`,
+    `SELECT pdf_url, status, pdf_data FROM convoy_daily_reports WHERE convoy_id = $1 AND report_date = $2`,
     [req.params.id, date]
   );
   if (!r.rows.length) return res.status(404).json({ error: 'Report not found' });
@@ -645,10 +645,20 @@ const downloadReport = asyncHandler(async (req, res) => {
     : r.rows[0].pdf_url;
   if (pdfUrl?.startsWith('http')) return res.redirect(pdfUrl);
   const filePath = path.resolve(__dirname, '../../data/reports', req.params.id, `${date}.pdf`);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'PDF not on server — please regenerate' });
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="convoy-report-${date}.pdf"`);
-  fs.createReadStream(filePath).pipe(res);
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="convoy-report-${date}.pdf"`);
+    return fs.createReadStream(filePath).pipe(res);
+  }
+  // Last resort: the in-DB copy survives even when R2 is unconfigured and the
+  // local-disk fallback was wiped by a redeploy (Railway's filesystem is
+  // ephemeral, but the database is not).
+  if (r.rows[0].pdf_data) {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="convoy-report-${date}.pdf"`);
+    return res.send(r.rows[0].pdf_data);
+  }
+  return res.status(404).json({ error: 'PDF not on server — please regenerate' });
 });
 
 // E5 — org-wide overview of all convoy report statuses
