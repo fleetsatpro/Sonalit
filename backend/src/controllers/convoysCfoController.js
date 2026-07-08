@@ -216,8 +216,32 @@ const addTruck = asyncHandler(async (req, res) => {
       [req.params.id, value.vehicle_id || null, value.registration || null, value.driver_name,
         value.driver_phone || null, value.driver_license_no || null, value.position]
     );
-    gAudit(req.user.id, 'convoy_truck_added', 'convoy_truck', result.rows[0].id, { convoy_id: req.params.id }, req.ip);
-    res.status(201).json({ data: result.rows[0] });
+    const newTruck = result.rows[0];
+
+    // createConvoyCfo enforces full CFO coverage of every truck at creation time
+    // (validateCoverage), but a truck added later here had no equivalent — it sat
+    // with zero convoy_cfo_truck_assignments rows, invisible in the Guardian app
+    // and permanently unphotographable, which also kept required_photo_count
+    // for the day out of reach forever. Auto-assign the sole CFO officer (capped
+    // at 2 trucks each, mirroring the original coverage schema) so a newly added
+    // truck is immediately usable; convoys with multiple CFOs still need a
+    // manual pick since it's ambiguous which officer should take it.
+    const cfoRows = await query(
+      `SELECT cc.cfo_user_id,
+              (SELECT COUNT(*)::int FROM convoy_cfo_truck_assignments ccta
+               WHERE ccta.cfo_user_id = cc.cfo_user_id AND ccta.convoy_id = cc.convoy_id) AS truck_count
+       FROM convoy_cfos cc WHERE cc.convoy_id = $1`,
+      [req.params.id]
+    );
+    if (cfoRows.rows.length === 1 && cfoRows.rows[0].truck_count < 2) {
+      await query(
+        `INSERT INTO convoy_cfo_truck_assignments (convoy_id, cfo_user_id, convoy_truck_id) VALUES ($1,$2,$3)`,
+        [req.params.id, cfoRows.rows[0].cfo_user_id, newTruck.id]
+      ).catch((e) => logger.warn(`auto-assign new truck to CFO failed: ${e.message}`));
+    }
+
+    gAudit(req.user.id, 'convoy_truck_added', 'convoy_truck', newTruck.id, { convoy_id: req.params.id }, req.ip);
+    res.status(201).json({ data: newTruck });
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'vehicle_or_position_conflict' });
     if (err.message?.includes('convoy_truck_limit_exceeded')) {
@@ -527,9 +551,10 @@ const regenerateReport = asyncHandler(async (req, res) => {
     if (!photoCount.rows[0].n) return res.status(404).json({ error: 'No report data for this date' });
 
     const reqCountRes = await query(
-      `SELECT COUNT(ct.id) AS truck_count, c.seal_count_per_truck
+      `SELECT COUNT(DISTINCT ct.id) AS truck_count, c.seal_count_per_truck
        FROM convoys c JOIN convoy_trucks ct ON ct.convoy_id = c.id
        WHERE c.id = $1
+         AND EXISTS (SELECT 1 FROM convoy_cfo_truck_assignments ccta WHERE ccta.convoy_truck_id = ct.id)
        GROUP BY c.seal_count_per_truck`,
       [req.params.id]
     );

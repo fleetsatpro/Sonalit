@@ -577,12 +577,15 @@ router.post('/photos', deviceAuth, async (req, res, next) => {
 });
 
 async function updateDailyReport(convoy_id, report_date) {
-  // Calculate required photo count for this convoy
+  // Only count trucks with a CFO assignment: an unassigned truck can never be
+  // photographed, so counting it here would make required_photo_count
+  // unreachable and the daily report would sit at 'partial' forever.
   const reqResult = await query(
-    `SELECT COUNT(ct.id) AS truck_count, c.seal_count_per_truck
+    `SELECT COUNT(DISTINCT ct.id) AS truck_count, c.seal_count_per_truck
      FROM convoys c
      JOIN convoy_trucks ct ON ct.convoy_id = c.id
      WHERE c.id = $1
+       AND EXISTS (SELECT 1 FROM convoy_cfo_truck_assignments ccta WHERE ccta.convoy_truck_id = ct.id)
      GROUP BY c.seal_count_per_truck`,
     [convoy_id]
   );
