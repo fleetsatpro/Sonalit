@@ -110,11 +110,14 @@ class CfoViewModel @Inject constructor(
             runCatching {
                 api.cfoLogin(deviceToken, CfoLoginRequest(email.trim().lowercase(), password))
             }.onSuccess { resp ->
-                prefs.edit()
+                val editor = prefs.edit()
                     .putString("cfo_user_id", resp.user_id)
                     .putString("cfo_name", resp.name)
                     .putString("cfo_email", resp.email)
-                    .apply()
+                if (resp.device_token != null) {
+                    editor.putString("auth_token", resp.device_token)
+                }
+                editor.apply()
                 _state.update {
                     it.copy(loginLoading = false, loggedInUser = resp, screen = CfoNavScreen.DASHBOARD)
                 }

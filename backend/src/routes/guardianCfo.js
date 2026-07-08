@@ -104,6 +104,25 @@ async function deviceAuth(req, res, next) {
   }
 }
 
+async function optionalDeviceAuth(req, _res, next) {
+  try {
+    const token = req.headers['x-device-token'];
+    if (token) {
+      const result = await query(
+        `SELECT * FROM guardian_devices WHERE token = $1 AND deleted_at IS NULL`,
+        [token]
+      );
+      if (result.rows.length && !['revoked','suspended'].includes(result.rows[0].status)) {
+        req.device = result.rows[0];
+      }
+    }
+    next();
+  } catch (err) {
+    logger.error(`optionalDeviceAuth error: ${err.message}`);
+    next(err);
+  }
+}
+
 // ─── Rate Limiters ────────────────────────────────────────────────────────────
 
 const photoUploadLimiter = rateLimit({
@@ -117,11 +136,11 @@ const photoUploadLimiter = rateLimit({
 
 const cfoLoginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5,
-  keyGenerator: (req) => req.device?.id || req.ip,
+  max: 10,
+  keyGenerator: (req) => req.ip,
   standardHeaders: true,
   legacyHeaders: false,
-  handler: (req, res) => res.status(429).json({ error: 'Too many login attempts — try again in 15 minutes' }),
+  handler: (_req, res) => res.status(429).json({ error: 'Too many login attempts — try again in 15 minutes' }),
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -283,7 +302,7 @@ router.get('/context', deviceAuth, async (req, res, next) => {
  * Links the device to the user's account and restores all active convoy CFO slot
  * assignments, making convoy data immediately available after a reinstall.
  */
-router.post('/login', deviceAuth, cfoLoginLimiter, async (req, res, next) => {
+router.post('/login', optionalDeviceAuth, cfoLoginLimiter, async (req, res, next) => {
   try {
     if (!await requireCfoModule(res)) return;
 
@@ -297,36 +316,30 @@ router.post('/login', deviceAuth, cfoLoginLimiter, async (req, res, next) => {
     }
 
     const emailClean = email.trim().toLowerCase();
-    const deviceId = req.device.id;
+    const rateLimitKey = req.device?.id || req.ip;
 
-    // ── Brute-force check (T1.5) ─────────────────────────────────────────────
+    // ── Brute-force check ────────────────────────────────────────────────────
     await query(`
       INSERT INTO cfo_login_attempts (device_id, attempts, window_start)
       VALUES ($1, 0, NOW())
       ON CONFLICT (device_id) DO NOTHING
-    `, [deviceId]).catch(() => {});
+    `, [rateLimitKey]).catch(() => {});
 
     const attemptRow = await query(
       `SELECT attempts, locked_until, window_start FROM cfo_login_attempts WHERE device_id = $1`,
-      [deviceId]
+      [rateLimitKey]
     );
     if (attemptRow.rows.length) {
       const row = attemptRow.rows[0];
       if (row.locked_until && new Date(row.locked_until) > new Date()) {
-        gAudit(deviceId, 'cfo_login_locked', null, null, { email: emailClean }, req.ip);
+        gAudit(rateLimitKey, 'cfo_login_locked', null, null, { email: emailClean }, req.ip);
         return res.status(423).json({ error: 'Account locked due to too many failed attempts', code: 'account_locked' });
       }
-      // Reset window if older than 15 minutes
       if (new Date(row.window_start) < new Date(Date.now() - 15 * 60 * 1000)) {
-        await query(`UPDATE cfo_login_attempts SET attempts=0, window_start=NOW(), locked_until=NULL WHERE device_id=$1`, [deviceId]).catch(() => {});
+        await query(`UPDATE cfo_login_attempts SET attempts=0, window_start=NOW(), locked_until=NULL WHERE device_id=$1`, [rateLimitKey]).catch(() => {});
       }
     }
 
-    // deleted_at IS NULL: a soft-deleted account must not still be able to log in.
-    // ORDER BY + LIMIT 1: matching on LOWER(email) can return more than one row if
-    // duplicate accounts exist (the DB's UNIQUE constraint is case/whitespace-exact,
-    // so "Foo@x.com" and "foo@x.com" both satisfy it as distinct rows) — without
-    // this, which row's password_hash gets checked is arbitrary.
     const userResult = await query(
       `SELECT id, name, email, role, status, password_hash
        FROM users WHERE LOWER(email) = $1 AND role = 'cfo' AND deleted_at IS NULL
@@ -334,13 +347,11 @@ router.post('/login', deviceAuth, cfoLoginLimiter, async (req, res, next) => {
       [emailClean]
     );
 
-    // Constant-time comparison to prevent timing attacks + email enumeration
     const bcrypt = require('bcryptjs');
     const hashToCompare = userResult.rows[0]?.password_hash || '$2a$10$dummyhashtopreventtimingattacks00000000000';
     const valid = userResult.rows.length > 0 && await bcrypt.compare(password, hashToCompare);
 
     if (!userResult.rows.length || !valid) {
-      // Increment attempt counter
       await query(`
         UPDATE cfo_login_attempts
         SET attempts = attempts + 1,
@@ -348,8 +359,8 @@ router.post('/login', deviceAuth, cfoLoginLimiter, async (req, res, next) => {
               THEN NOW() + INTERVAL '15 minutes' * POWER(2, GREATEST(0, attempts - 4))
               ELSE locked_until END
         WHERE device_id = $1
-      `, [deviceId]).catch(() => {});
-      gAudit(deviceId, 'cfo_login_failed', null, null, { email: emailClean }, req.ip);
+      `, [rateLimitKey]).catch(() => {});
+      gAudit(rateLimitKey, 'cfo_login_failed', null, null, { email: emailClean }, req.ip);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
@@ -358,13 +369,27 @@ router.post('/login', deviceAuth, cfoLoginLimiter, async (req, res, next) => {
       return res.status(403).json({ error: 'Account is not active' });
     }
 
-    // Success — reset attempt counter
-    await query(`UPDATE cfo_login_attempts SET attempts=0, locked_until=NULL WHERE device_id=$1`, [deviceId]).catch(() => {});
+    await query(`UPDATE cfo_login_attempts SET attempts=0, locked_until=NULL WHERE device_id=$1`, [rateLimitKey]).catch(() => {});
 
-    await query(
-      `UPDATE guardian_devices SET assignment_id = $1, assignment_type = 'user', updated_at = NOW() WHERE id = $2`,
-      [user.id, deviceId]
-    );
+    // Auto-provision a device record for CFO-only users without enrollment
+    let deviceId = req.device?.id;
+    let deviceToken = req.headers['x-device-token'] || null;
+
+    if (!deviceId) {
+      const newDevice = await query(
+        `INSERT INTO guardian_devices (name, status, assignment_type, assignment_id)
+         VALUES ($1, 'active', 'user', $2)
+         RETURNING id, token`,
+        [`CFO-${user.name}`, user.id]
+      );
+      deviceId = newDevice.rows[0].id;
+      deviceToken = newDevice.rows[0].token;
+    } else {
+      await query(
+        `UPDATE guardian_devices SET assignment_id = $1, assignment_type = 'user', updated_at = NOW() WHERE id = $2`,
+        [user.id, deviceId]
+      );
+    }
 
     await query(
       `UPDATE convoy_cfos SET guardian_device_id = $1
@@ -379,7 +404,10 @@ router.post('/login', deviceAuth, cfoLoginLimiter, async (req, res, next) => {
     gAudit(deviceId, 'cfo_login', 'user', user.id, { email: emailClean }, req.ip);
     logger.info(`CFO login: device=${deviceId} user=${user.id} email=${emailClean}`);
 
-    return res.json({ user_id: user.id, name: user.name, email: user.email, role: user.role });
+    return res.json({
+      user_id: user.id, name: user.name, email: user.email, role: user.role,
+      device_token: deviceToken,
+    });
   } catch (err) {
     next(err);
   }

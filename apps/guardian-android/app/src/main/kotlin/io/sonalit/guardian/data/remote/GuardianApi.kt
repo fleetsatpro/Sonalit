@@ -26,7 +26,10 @@ data class TelemetryBatch(val device_id: String, val fixes: List<GpsFixDto>)
 // ── CFO API ───────────────────────────────────────────────────────────────────
 
 data class CfoLoginRequest(val email: String, val password: String)
-data class CfoLoginResponse(val user_id: String, val name: String, val email: String, val role: String)
+data class CfoLoginResponse(
+    val user_id: String, val name: String, val email: String, val role: String,
+    val device_token: String? = null,
+)
 
 data class AssignedTruck(
     val id: String,
