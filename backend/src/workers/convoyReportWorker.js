@@ -73,7 +73,12 @@ async function fetchReportData(convoy_id, report_date) {
       [convoy_id]
     ),
     query(
-      `SELECT * FROM convoy_truck_photos WHERE convoy_id = $1 AND report_date = $2`,
+      // DISTINCT ON keeps only the most recent upload per slot — retaking a
+      // photo from the CFO app inserts a new row instead of replacing the
+      // old one, so the PDF/report must dedupe or it double-counts photos.
+      `SELECT DISTINCT ON (convoy_truck_id, session, photo_type, COALESCE(seal_position, '')) *
+       FROM convoy_truck_photos WHERE convoy_id = $1 AND report_date = $2
+       ORDER BY convoy_truck_id, session, photo_type, COALESCE(seal_position, ''), uploaded_at DESC`,
       [convoy_id, report_date]
     ),
     query(
@@ -115,7 +120,8 @@ async function recountPhotos(convoy_id, report_date) {
   const required = parseInt(truck_count) * (2 + parseInt(seal_count_per_truck)) * 2;
 
   const recvRes = await query(
-    `SELECT COUNT(*) AS received FROM convoy_truck_photos WHERE convoy_id = $1 AND report_date = $2`,
+    `SELECT COUNT(DISTINCT (convoy_truck_id, session, photo_type, COALESCE(seal_position, ''))) AS received
+     FROM convoy_truck_photos WHERE convoy_id = $1 AND report_date = $2`,
     [convoy_id, report_date]
   );
   const received = parseInt(recvRes.rows[0].received);

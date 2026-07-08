@@ -282,7 +282,7 @@ private fun TruckPhotoCard(
             Spacer(Modifier.height(10.dp))
 
             slots.forEach { slot ->
-                PhotoSlotRow(slot = slot, onTap = { if (!slot.isComplete) onSlotTap(slot) })
+                PhotoSlotRow(slot = slot, onTap = { onSlotTap(slot) })
             }
 
             if (!allDone) {
@@ -298,6 +298,13 @@ private fun TruckPhotoCard(
                         Text("Capture ${nextSlot.label}")
                     }
                 }
+            } else {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "All photos captured — tap any photo above to retake it",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
@@ -308,7 +315,7 @@ private fun PhotoSlotRow(slot: PhotoSlot, onTap: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .let { if (!slot.isComplete) it.clickable(onClick = onTap) else it }
+            .clickable(onClick = onTap)
             .padding(vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -330,8 +337,12 @@ private fun PhotoSlotRow(slot: PhotoSlot, onTap: () -> Unit) {
             color = if (slot.isComplete) MaterialTheme.colorScheme.onSurfaceVariant
                     else MaterialTheme.colorScheme.onSurface,
         )
-        if (!slot.isComplete) {
-            Spacer(Modifier.weight(1f))
+        Spacer(Modifier.weight(1f))
+        if (slot.isComplete) {
+            Icon(Icons.Default.Refresh, contentDescription = "Retake",
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
             Icon(Icons.Default.ChevronRight, contentDescription = null,
                 modifier = Modifier.size(18.dp),
                 tint = MaterialTheme.colorScheme.primary)
@@ -356,6 +367,10 @@ private fun SlotCaptureScreen(
     var capturedFile by remember(slot.label) { mutableStateOf<File?>(null) }
     var lastLocation by remember { mutableStateOf<Location?>(null) }
     var uploadEventId by remember(slot.label) { mutableStateOf<String?>(null) }
+    // A retake replaces an already-captured slot — after it uploads, return
+    // straight to the checklist instead of auto-advancing into the guided
+    // flow for whatever slot happens to still be incomplete elsewhere.
+    val isRetake = remember(slot.label) { slot.isComplete }
     val context = LocalContext.current
     val state by viewModel.state.collectAsState()
     val ctx = state.context
@@ -366,12 +381,16 @@ private fun SlotCaptureScreen(
         val eid = uploadEventId ?: return@LaunchedEffect
         val upload = state.uploads.find { it.eventUuid == eid }
         if (upload?.status == UploadStatus.DONE && ctx != null) {
-            val updatedPhotos = ctx.photos_today.filter {
-                it.convoy_truck_id == truck.id && it.session == session
-            }
-            val updatedSlots = buildSlots(ctx.convoy.seal_count_per_truck, updatedPhotos)
             uploadEventId = null
-            onAdvance(nextIncompleteSlot(updatedSlots))
+            if (isRetake) {
+                onAdvance(null)
+            } else {
+                val updatedPhotos = ctx.photos_today.filter {
+                    it.convoy_truck_id == truck.id && it.session == session
+                }
+                val updatedSlots = buildSlots(ctx.convoy.seal_count_per_truck, updatedPhotos)
+                onAdvance(nextIncompleteSlot(updatedSlots))
+            }
         }
     }
 
@@ -393,7 +412,8 @@ private fun SlotCaptureScreen(
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            "${slotIndex + 1} of $totalSlots — ${slot.label}",
+                            if (isRetake) "Retake — ${slot.label}"
+                            else "${slotIndex + 1} of $totalSlots — ${slot.label}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary,
                         )
@@ -490,7 +510,7 @@ private fun SlotCaptureScreen(
                     } else {
                         Icon(Icons.Default.CloudUpload, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("Upload ${slot.label}")
+                        Text(if (isRetake) "Replace ${slot.label}" else "Upload ${slot.label}")
                     }
                 }
             }

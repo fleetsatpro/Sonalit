@@ -288,9 +288,14 @@ router.get('/context', deviceAuth, async (req, res, next) => {
         [convoy_id, cfo_user_id]
       ),
       query(
-        `SELECT id, convoy_truck_id, session, photo_type, seal_position, taken_at, uploaded_at
+        // DISTINCT ON keeps only the most recent upload per slot — the CFO
+        // app allows retaking a photo, which inserts a new row rather than
+        // replacing the old one, so every consumer of this list must dedupe.
+        `SELECT DISTINCT ON (convoy_truck_id, session, photo_type, COALESCE(seal_position, ''))
+                id, convoy_truck_id, session, photo_type, seal_position, taken_at, uploaded_at
          FROM convoy_truck_photos
-         WHERE convoy_id = $1 AND cfo_user_id = $2 AND report_date = $3`,
+         WHERE convoy_id = $1 AND cfo_user_id = $2 AND report_date = $3
+         ORDER BY convoy_truck_id, session, photo_type, COALESCE(seal_position, ''), uploaded_at DESC`,
         [convoy_id, cfo_user_id, reportDate]
       ),
       query(
@@ -654,8 +659,12 @@ async function updateDailyReport(convoy_id, report_date) {
   const { truck_count, seal_count_per_truck } = reqResult.rows[0];
   const required = parseInt(truck_count) * (2 + parseInt(seal_count_per_truck)) * 2;
 
+  // Count distinct slots, not rows — retaking a photo inserts a new row
+  // alongside the old one rather than replacing it, so a raw COUNT(*) would
+  // inflate progress past 100% while some slots are still actually empty.
   const recvResult = await query(
-    `SELECT COUNT(*) AS received FROM convoy_truck_photos
+    `SELECT COUNT(DISTINCT (convoy_truck_id, session, photo_type, COALESCE(seal_position, ''))) AS received
+     FROM convoy_truck_photos
      WHERE convoy_id = $1 AND report_date = $2`,
     [convoy_id, report_date]
   );
