@@ -316,7 +316,7 @@ function startConvoyReportWorker() {
   return [reportWorker, archiveWorker];
 }
 
-module.exports = { startConvoyReportWorker, recountPhotos };
+module.exports = { startConvoyReportWorker, recountPhotos, handleGenerateReport };
 
 // Run standalone
 if (require.main === module) {

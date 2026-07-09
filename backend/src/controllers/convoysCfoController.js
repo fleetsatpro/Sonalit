@@ -577,18 +577,34 @@ const regenerateReport = asyncHandler(async (req, res) => {
   );
   if (!report.rows.length) return res.status(404).json({ error: 'No report data for this date' });
 
+  // Without REDIS_URL configured, getQueues() returns no convoyReportQueue —
+  // the previous version silently did nothing in that case (`if (queue)`
+  // guard skipped), leaving the row reset to 'partial' forever with no
+  // worker anywhere to ever pick it up and finish the job. Generate inline
+  // as a fallback so Regenerate actually completes regardless of whether a
+  // queue is set up — PDF generation here is lightweight (pdfkit, no
+  // headless browser, no embedded images), same reasoning app.js already
+  // uses to default this worker to running in-process.
+  let queued = false;
   try {
     const { getQueues } = require('../config/queue');
     const { convoyReportQueue } = getQueues();
     if (convoyReportQueue) {
       await convoyReportQueue.add('generateReport', { convoy_id: req.params.id, report_date: date },
         { removeOnComplete: { count: 200 } });
+      queued = true;
     }
-  } catch {}
+  } catch (err) {
+    logger.warn(`regenerateReport: enqueue failed, falling back to inline generation: ${err.message}`);
+  }
+  if (!queued) {
+    const { handleGenerateReport } = require('../workers/convoyReportWorker');
+    await handleGenerateReport({ convoy_id: req.params.id, report_date: date, force: true });
+  }
 
   gAudit(req.user.id, 'convoy_report_regenerated', 'convoy_daily_report', report.rows[0].id,
     { convoy_id: req.params.id, date }, req.ip);
-  res.json({ message: 'Report regeneration queued' });
+  res.json({ message: queued ? 'Report regeneration queued' : 'Report regenerated' });
 });
 
 // B2b — link a guardian device to an existing CFO slot (works on any convoy status)
