@@ -2,15 +2,18 @@ import React, { useState, useCallback } from 'react';
 import { Outlet } from '@tanstack/react-router';
 import Rail from './Rail.js';
 import DrawerNav from './DrawerNav.js';
-import BottomNav from './BottomNav.js';
 import Topbar from '../dashboard/Topbar.js';
-import DispatchSheet from './DispatchSheet.js';
 
-// Universal app chrome — Rail (left), Topbar, mobile drawer + bottom nav,
-// dispatch sheet. Extracted from DashboardShell so every authenticated route
-// wears the same shell instead of Dashboard alone. Dashboard-specific chrome
-// (TacticalMap, EventsTicker, ThreatStrip, PanicAlarm, OpsSidebar) lives in
-// Dashboard.tsx now — this shell is deliberately generic.
+// Universal app chrome — Rail (left), Topbar, mobile drawer. Extracted from
+// DashboardShell so every authenticated route wears the same shell instead
+// of Dashboard alone. Dashboard-specific chrome (TacticalMap, EventsTicker,
+// ThreatStrip, PanicAlarm, OpsSidebar) lives in Dashboard.tsx now — this
+// shell is deliberately generic.
+//
+// The floating mobile bottom-nav pill (Convoys/GPS Live/dispatch FAB/Alerts/
+// Menu) and the Topbar DISPATCH button were removed — both were redundant
+// with Rail/DrawerNav's own entries and Topbar's own hamburger menu button,
+// and found more distracting than useful.
 //
 // Route composition (see router.tsx):
 //   authShellRoute → AppShell (this) → <Outlet /> → any authenticated page
@@ -18,13 +21,10 @@ import DispatchSheet from './DispatchSheet.js';
 //     (e.g. ConvoyReports, which paints edge-to-edge PDF-like layouts)
 const AppShell = React.memo(function AppShell() {
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [dispatchOpen, setDispatchOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(true);
 
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
-  const openDispatch = useCallback(() => setDispatchOpen(true), []);
-  const closeDispatch = useCallback(() => setDispatchOpen(false), []);
 
   const toggleBtnBase: React.CSSProperties = {
     position: 'fixed',
@@ -84,19 +84,11 @@ const AppShell = React.memo(function AppShell() {
         }}
         className={`d-main-col${navOpen ? '' : ' d-nav-collapsed'}`}
       >
-        <Topbar onMenuOpen={openDrawer} onDispatch={openDispatch} />
-        <main style={{ paddingBottom: 88, overscrollBehavior: 'contain' }}>
+        <Topbar onMenuOpen={openDrawer} />
+        <main style={{ overscrollBehavior: 'contain' }}>
           <Outlet />
         </main>
       </div>
-
-      {/* Mobile bottom nav */}
-      <div className='d-mobile-nav'>
-        <BottomNav onMenuOpen={openDrawer} onDispatch={openDispatch} />
-      </div>
-
-      {/* Dispatch sheet */}
-      <DispatchSheet open={dispatchOpen} onClose={closeDispatch} />
 
       <style>{`
         @media (min-width: 900px) {
@@ -104,11 +96,7 @@ const AppShell = React.memo(function AppShell() {
           .d-nav-toggle  { display: flex !important; }
           .d-main-col { margin-left: var(--d-rail-w); }
           .d-main-col.d-nav-collapsed { margin-left: 0 !important; }
-          .d-mobile-nav { display: none !important; }
           .d-nav-hidden { display: none !important; }
-        }
-        @media (max-width: 899px) {
-          .d-mobile-nav { display: block !important; }
         }
         .d-nav-toggle:hover { background: var(--d-lift2) !important; color: var(--d-t1) !important; }
       `}</style>

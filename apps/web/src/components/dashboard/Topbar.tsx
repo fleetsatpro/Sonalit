@@ -1,15 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Bell, Menu, Zap } from 'lucide-react';
+import { Bell, Menu } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import NotificationPanel from '../layout/NotificationPanel.js';
 
 interface TopbarProps {
   onMenuOpen: () => void;
-  onDispatch: () => void;
 }
 
-const Topbar = React.memo(function Topbar({ onMenuOpen, onDispatch }: TopbarProps) {
+const Topbar = React.memo(function Topbar({ onMenuOpen }: TopbarProps) {
   const [time, setTime] = useState(() => new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }));
   const [bellOpen, setBellOpen] = useState(false);
 
@@ -105,16 +104,6 @@ const Topbar = React.memo(function Topbar({ onMenuOpen, onDispatch }: TopbarProp
           </button>
           <NotificationPanel open={bellOpen} onClose={closeBell} />
         </div>
-        <button
-          onClick={onDispatch}
-          style={{
-            background: 'var(--d-og)', border: '1px solid var(--d-orange)',
-            borderRadius: 8, padding: '6px 12px',
-            color: 'var(--d-orange)', fontSize: 13, cursor: 'pointer',
-            fontFamily: 'Orbitron, sans-serif', fontWeight: 700, letterSpacing: '.06em',
-          }}
-          aria-label='Quick dispatch'
-        ><Zap size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />DISPATCH</button>
       </div>
 
       <style>{`
