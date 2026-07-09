@@ -37,7 +37,7 @@ router.get('/', asyncHandler(async (req, res) => {
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
 
   const result = await req.db(
-    `SELECT s.*, u.name AS driver_name, v.registration_number AS vehicle_reg
+    `SELECT s.*, u.name AS driver_name, v.registration AS vehicle_reg
        FROM shifts s
        LEFT JOIN users u ON u.id = s.driver_id
        LEFT JOIN vehicles v ON v.id = s.vehicle_id
@@ -52,9 +52,10 @@ router.get('/', asyncHandler(async (req, res) => {
 // GET /shifts/on-duty — drivers currently on shift
 router.get('/on-duty', asyncHandler(async (req, res) => {
   const result = await req.db(
-    `SELECT s.*, u.name AS driver_name, u.phone AS driver_phone, v.registration_number AS vehicle_reg
+    `SELECT s.*, u.name AS driver_name, d.phone AS driver_phone, v.registration AS vehicle_reg
        FROM shifts s
        LEFT JOIN users u ON u.id = s.driver_id
+       LEFT JOIN drivers d ON d.user_id = s.driver_id
        LEFT JOIN vehicles v ON v.id = s.vehicle_id
       WHERE s.status = 'active'
          OR (s.status = 'scheduled' AND s.start_time <= NOW() AND s.end_time >= NOW())

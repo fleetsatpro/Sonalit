@@ -6,7 +6,7 @@ import {
   Route, Truck, Users, Fuel, Wrench,
   Package, Link2, BarChart2, DollarSign, Settings,
   MessageSquare, Bot, FileText, FileBarChart,
-  ClipboardList, Cpu, BookOpen, Star,
+  ClipboardList, Cpu, BookOpen, Star, CalendarClock,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/auth.js';
@@ -52,6 +52,7 @@ const NAV_GROUPS: NavGroup[] = [
       { path: '/devices',        icon: Cpu,     label: 'Devices' },
       { path: '/fuel',           icon: Fuel,    label: 'Fuel' },
       { path: '/maintenance',    icon: Wrench,  label: 'Maintenance' },
+      { path: '/shifts',         icon: CalendarClock, label: 'Shifts' },
     ],
   },
   {
