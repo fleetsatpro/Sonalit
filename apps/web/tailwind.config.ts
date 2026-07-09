@@ -34,10 +34,13 @@ export default {
         'd-rim2': d('rim2'),
         'd-rim3': d('rim3'),
       },
+      // Single system-wide font (Inter) — orbitron/mono keys are kept so
+      // existing font-orbitron/font-mono classNames don't need touching,
+      // they just no longer resolve to a separate typeface.
       fontFamily: {
-        orbitron: ['Orbitron', 'sans-serif'],
-        mono: ['"IBM Plex Mono"', 'monospace'],
-        sans: ['"DM Sans"', 'system-ui', 'sans-serif'],
+        orbitron: ['Inter', 'system-ui', 'sans-serif'],
+        mono: ['Inter', 'system-ui', 'sans-serif'],
+        sans: ['Inter', 'system-ui', 'sans-serif'],
       },
       borderRadius: {
         'd': '12px',

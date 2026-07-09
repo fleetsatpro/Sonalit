@@ -1,6 +1,11 @@
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;800;900&family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@300;400;500;600&display=swap');
 
 :root {
+  /* System-wide font — single typeface everywhere, standardized after
+     visibility complaints about the mixed Orbitron/IBM Plex Mono/DM Sans/
+     Barlow Condensed setup. Inter is designed for screen legibility at
+     small sizes, which is what an ops dashboard actually needs. */
+  --d-font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   /* Backgrounds */
   --d-void: #010407;
   --d-carbon: #050910;
@@ -45,6 +50,18 @@
   --d-top-h: 52px;
   --d-tick-h: 26px;
   --d-str-h: 40px;
+}
+
+/* ── System-wide font override ─────────────────────────────────────────
+   Forces Inter everywhere, including on the ~60 components that set
+   font-family inline (Orbitron, Space Grotesk, Syne, Fraunces, Barlow
+   Condensed, DM Sans...) — !important is deliberate here: it's the only
+   way to guarantee one consistent, legible typeface across the whole app
+   without a file-by-file rewrite of every inline style. Tabular numerals
+   keep metric columns aligned since Inter is proportional, not monospace. */
+html, body, #root, * {
+  font-family: var(--d-font) !important;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── Animations ─────────────────────────────────────────────────────────── */
@@ -126,21 +143,22 @@
 }
 
 .d-label {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: var(--d-font);
   font-size: 10px;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: .08em;
   text-transform: uppercase;
   color: var(--d-t2);
 }
 
 .d-num {
-  font-family: 'Orbitron', sans-serif;
+  font-family: var(--d-font);
+  font-weight: 700;
   color: var(--d-t1);
 }
 
 .d-mono {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: var(--d-font);
 }
 
 .d-section-reveal {
