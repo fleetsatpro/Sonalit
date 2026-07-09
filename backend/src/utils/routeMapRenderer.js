@@ -83,16 +83,19 @@ async function fetchTile(z, x, y) {
   }
 }
 
-function escapeXml(s) {
-  return String(s).replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
-}
-
-// points: [{ lat, lng, label }] in path order. Returns a JPEG buffer with a
-// real terrain/political map background (OSM raster tiles), the route drawn
-// as a straight-segment path between points (not road-snapped — that would
-// need a routing engine, a separate and much larger integration), and pin
-// markers with labels. Returns null on any failure so callers can fall back
-// to the schematic diagram — a map render never breaks report generation.
+// points: [{ lat, lng, label }] in path order. Returns { buffer, width,
+// height, points } where buffer is a JPEG with a real terrain/political map
+// background (OSM raster tiles) and the route drawn as a straight-segment
+// path between points (not road-snapped — that would need a routing
+// engine, a separate and much larger integration) with pin markers; points
+// gives each input point's pixel position within that buffer so the caller
+// can draw its own text labels on top. Labels are deliberately NOT baked
+// into the raster here: librsvg needs a system font to rasterize <text>,
+// and a minimal container image may not have one installed — confirmed in
+// production, where labels came out as tofu boxes while the (font-free)
+// circle markers rendered fine. Returns null on any failure so callers can
+// fall back to the vector schematic — a map render never breaks report
+// generation.
 async function renderRouteMapImage(points, { width = 860, height = 380 } = {}) {
   if (points.length < 2) return null;
   try {
@@ -140,10 +143,7 @@ async function renderRouteMapImage(points, { width = 860, height = 380 } = {}) {
       const isEnd = i === 0 || i === pts.length - 1;
       const r = isEnd ? 7 : 4.5;
       const fill = isEnd ? '#d97706' : '#ffffff';
-      const label = p.label
-        ? `<text x="${p.x}" y="${p.y - r - 7}" font-family="Helvetica,Arial,sans-serif" font-size="16" font-weight="700" fill="#111827" text-anchor="middle" stroke="#ffffff" stroke-width="4" paint-order="stroke">${escapeXml(p.label)}</text>`
-        : '';
-      return `<circle cx="${p.x}" cy="${p.y}" r="${r}" fill="${fill}" stroke="#78350f" stroke-width="2"/>${label}`;
+      return `<circle cx="${p.x}" cy="${p.y}" r="${r}" fill="${fill}" stroke="#78350f" stroke-width="2"/>`;
     }).join('');
     const overlaySvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${mosaicW}" height="${mosaicH}">
       <path d="${pathD}" fill="none" stroke="#1d4ed8" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity="0.88"/>
@@ -168,12 +168,27 @@ async function renderRouteMapImage(points, { width = 860, height = 380 } = {}) {
       .composite([...composites, { input: Buffer.from(overlaySvg), left: 0, top: 0 }])
       .png()
       .toBuffer();
+    // fit: 'contain' (not 'cover') keeps a single uniform scale + centering
+    // offset from crop-space to final-image-space, so point positions can be
+    // reprojected deterministically for the caller's text labels; 'cover'
+    // would additionally crop unpredictably depending on aspect ratio.
     const out = await sharp(merged)
       .extract({ left: cropX, top: cropY, width: Math.max(1, cropW), height: Math.max(1, cropH) })
-      .resize({ width, height, fit: 'cover' })
+      .resize({ width, height, fit: 'contain', background: '#e5e7eb' })
       .jpeg({ quality: 82 })
       .toBuffer();
-    return out;
+
+    const scale = Math.min(width / cropW, height / cropH);
+    const offX = (width - cropW * scale) / 2;
+    const offY = (height - cropH * scale) / 2;
+    const finalPoints = pts.map((p, i) => ({
+      x: offX + (p.x - cropX) * scale,
+      y: offY + (p.y - cropY) * scale,
+      label: p.label,
+      endpoint: i === 0 || i === pts.length - 1,
+    }));
+
+    return { buffer: out, width, height, points: finalPoints };
   } catch (err) {
     logger.warn(`[routeMap] render failed: ${err.message}`);
     return null;

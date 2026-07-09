@@ -434,7 +434,12 @@ function mismatchTable(ctx, photos) {
 }
 
 function truckDetail(ctx, truck, truckPhotos, sealCountPerTruck, photoBuffers) {
-  newPage(ctx);
+  // Was an unconditional newPage — wasted a lot of a page whenever the
+  // Photo Status Matrix left significant room (e.g. a single-truck convoy).
+  // Everything below this already paginates per-row on its own (see the
+  // hero row and seal grid below), so only force a page break when the
+  // truck's header + detail grid + first hero row genuinely won't fit.
+  ensureSpace(ctx, 350);
   const doc = ctx.doc;
 
   // sealPositions pools every distinct seal_position value ever seen — kept
@@ -469,40 +474,52 @@ function truckDetail(ctx, truck, truckPhotos, sealCountPerTruck, photoBuffers) {
     { label: 'Seal Codes', value: sealPositions.length ? sealPositions.join(', ') : '--' },
   ]);
 
-  // Photo evidence grid — 3 large cards per row instead of the previous
-  // cramped data-table with a 34x26pt thumbnail wedged next to five text
-  // columns. Each card: photo (or a clear "NO PHOTO" placeholder), a status
-  // badge overlaid in the corner, and a caption with the seal code,
-  // timestamp, and GPS underneath.
-  const gridCols = 3, gridGap = 14;
-  const cardW = (CW - gridGap * (gridCols - 1)) / gridCols;
-  const photoH = 118, captionH = 36;
-  const cardH = photoH + 6 + captionH;
-  const rowStride = cardH + 14;
+  // Front/Rear are the primary visual-inspection evidence (whole-vehicle
+  // condition), so they get a large hero row, side by side. Seals are a
+  // per-position checklist rather than a single "how does the truck look"
+  // shot, so they're secondary: a smaller grid underneath, 4 per row.
+  const heroGap = 14;
+  const heroW = (CW - heroGap) / 2;
+  const heroPhotoH = 175, heroCaptionH = 36;
+  const heroCardH = heroPhotoH + 6 + heroCaptionH;
+  const heroRowStride = heroCardH + 14;
+
+  const sealCols = 4, sealGap = 10;
+  const sealCardW = (CW - sealGap * (sealCols - 1)) / sealCols;
+  const sealPhotoH = 92, sealCaptionH = 30;
+  const sealCardH = sealPhotoH + 6 + sealCaptionH;
+  const sealRowStride = sealCardH + 12;
+  const sealRows = Math.ceil(sealPositions.length / sealCols);
 
   ['sod', 'eod'].forEach(session => {
     const label = session === 'sod' ? 'Start of Day (SOD)' : 'End of Day (EOD)';
     const sp = truckPhotos.filter(p => p.session === session);
-    const slots = [
-      { label: 'FRONT', photoType: 'front', sealPos: null },
-      { label: 'REAR', photoType: 'rear', sealPos: null },
-      ...sealPositions.map(pos => ({ label: `SEAL ${pos}`, photoType: 'seal', sealPos: pos })),
-    ];
-    ensureSpace(ctx, 24 + rowStride);
+    ensureSpace(ctx, 24 + heroRowStride);
     subBanner(ctx, label);
 
+    const heroY = doc.y;
+    const heroSlots = [
+      { label: 'FRONT', photoType: 'front', sealPos: null },
+      { label: 'REAR', photoType: 'rear', sealPos: null },
+    ];
+    heroSlots.forEach((slot, col) => {
+      const match = sp.find(p => p.photo_type === slot.photoType);
+      drawPhotoCard(doc, M + col * (heroW + heroGap), heroY, heroW, heroPhotoH, heroCaptionH, slot, match, photoBuffers);
+    });
+    doc.y = heroY + heroRowStride;
+
+    if (!sealPositions.length) return;
     let idx = 0;
-    while (idx < slots.length) {
-      ensureSpace(ctx, cardH + 12);
+    for (let row = 0; row < sealRows; row++) {
+      ensureSpace(ctx, sealRowStride + 12);
       const rowY = doc.y;
-      for (let col = 0; col < gridCols && idx < slots.length; col++, idx++) {
-        const slot = slots[idx];
-        const match = slot.sealPos != null
-          ? sp.find(p => p.photo_type === 'seal' && String(p.seal_position) === slot.sealPos)
-          : sp.find(p => p.photo_type === slot.photoType);
-        drawPhotoCard(doc, M + col * (cardW + gridGap), rowY, cardW, photoH, captionH, slot, match, photoBuffers);
+      for (let col = 0; col < sealCols && idx < sealPositions.length; col++, idx++) {
+        const pos = sealPositions[idx];
+        const slot = { label: `SEAL ${pos}`, photoType: 'seal', sealPos: pos };
+        const match = sp.find(p => p.photo_type === 'seal' && String(p.seal_position) === pos);
+        drawPhotoCard(doc, M + col * (sealCardW + sealGap), rowY, sealCardW, sealPhotoH, sealCaptionH, slot, match, photoBuffers);
       }
-      doc.y = rowY + rowStride;
+      doc.y = rowY + sealRowStride;
     }
   });
 }
@@ -646,14 +663,30 @@ function plannedRouteMap(ctx, convoy, namedWaypoints) {
 // Embeds a real, pre-rendered map image (OSM tiles + route overlay — see
 // routeMapRenderer.js) in place of the vector schematic. OSM's tile usage
 // policy requires visible attribution on any rendered output.
-function drawMapImageBox(doc, buf, boxH) {
+function drawMapImageBox(doc, mapResult, boxH) {
   const y = doc.y;
   doc.save().rect(M, y, CW, boxH).lineWidth(0.6).stroke(C.border).restore();
   try {
     doc.save();
     doc.rect(M, y, CW, boxH).clip();
-    doc.image(buf, M, y, { fit: [CW, boxH], align: 'center', valign: 'center' });
+    doc.image(mapResult.buffer, M, y, { fit: [CW, boxH], align: 'center', valign: 'center' });
     doc.restore();
+
+    // Labels are drawn here with PDFKit's own built-in font rather than
+    // baked into the raster (see routeMapRenderer.js) — reproject each
+    // point through the same fit-into-box scale/center PDFKit just applied
+    // to the whole image, using the pixel positions the renderer returned.
+    const scale = Math.min(CW / mapResult.width, boxH / mapResult.height);
+    const offX = M + (CW - mapResult.width * scale) / 2;
+    const offY = y + (boxH - mapResult.height * scale) / 2;
+    mapResult.points.forEach((p) => {
+      if (!p.label) return;
+      const px = offX + p.x * scale, py = offY + p.y * scale;
+      const lw = 92, lh = 12, lx = px - lw / 2, ly = py - 26;
+      doc.save().rect(lx, ly, lw, lh).fill('#ffffff').restore();
+      doc.fill(C.text).fontSize(6.5).font('Helvetica-Bold');
+      t(doc, p.label, lx, ly + 2, { width: lw, align: 'center' });
+    });
   } catch {
     doc.fill(C.light).fontSize(7).font('Helvetica');
     t(doc, 'Map image unavailable', M, y + boxH / 2 - 4, { width: CW, align: 'center' });
