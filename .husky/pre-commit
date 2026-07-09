@@ -19,3 +19,16 @@ if [ -n "$tracked_env" ]; then
   echo "Refusing. Only .env.example files are allowed."
   exit 1
 fi
+
+# openapi.json drift guard — backend route/controller changes must ship a
+# regenerated spec, or CI's generate-openapi --check step fails on main.
+backend_api_changed=$(git diff --cached --name-only | \
+  grep -E '^backend/src/(routes|controllers)/' || true)
+if [ -n "$backend_api_changed" ]; then
+  echo "backend routes/controllers staged — regenerating openapi.json"
+  (cd backend && JWT_SECRET="${JWT_SECRET:-precommit}" node scripts/generate-openapi.js >/dev/null 2>&1) || {
+    echo "✖ openapi.json regeneration failed — fix backend/scripts/generate-openapi.js errors first"
+    exit 1
+  }
+  git add backend/openapi.json
+fi
