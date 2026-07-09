@@ -74,6 +74,34 @@ function ensureSpace(ctx, needed) {
   if (ctx.doc.y + needed > BODY_BOTTOM) newPage(ctx);
 }
 
+// Fetches a photo's bytes for embedding as a thumbnail in the PDF — the
+// report previously only showed a text "Present/MISSING" indicator per
+// photo, never the actual image, which defeats the point of a report meant
+// to be visual proof of vehicle/seal condition. Failures return null so one
+// bad/slow URL degrades to a placeholder box instead of failing the whole
+// report.
+async function fetchImageBuffer(url) {
+  if (!url || !/^https?:\/\//.test(url)) return null;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return null;
+    return Buffer.from(await res.arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
+// Prefetches every present photo's bytes in parallel, keyed by photo id, so
+// truckDetail() can synchronously embed images while laying out the PDF.
+async function prefetchPhotoBuffers(photos) {
+  const map = new Map();
+  await Promise.all(photos.map(async (p) => {
+    const buf = await fetchImageBuffer(p.photo_url);
+    if (buf) map.set(p.id, buf);
+  }));
+  return map;
+}
+
 function sectionHead(ctx, label) {
   ensureSpace(ctx, 30);
   const doc = ctx.doc;
@@ -199,7 +227,7 @@ function mismatchTable(ctx, photos) {
   doc.y = y + 4;
 }
 
-function truckDetail(ctx, truck, truckPhotos, sealCountPerTruck) {
+function truckDetail(ctx, truck, truckPhotos, sealCountPerTruck, photoBuffers) {
   newPage(ctx);
   const doc = ctx.doc;
 
@@ -243,7 +271,7 @@ function truckDetail(ctx, truck, truckPhotos, sealCountPerTruck) {
 
   ['sod', 'eod'].forEach(session => {
     const label = session === 'sod' ? 'Start of Day (SOD)' : 'End of Day (EOD)';
-    ensureSpace(ctx, 50 + (2 + sealPositions.length) * 15);
+    ensureSpace(ctx, 50 + (2 + sealPositions.length) * 40);
     sectionHead(ctx, label);
 
     const sp = truckPhotos.filter(p => p.session === session);
@@ -253,37 +281,61 @@ function truckDetail(ctx, truck, truckPhotos, sealCountPerTruck) {
       ...sealPositions.map(pos => ({ typeLabel: 'Seal', photoType: 'seal', sealPos: pos })),
     ];
 
-    const cols = [M, M + 85, M + 165, M + 280, M + 380];
-    const colW = [81, 76, 111, 96, 90];
-    tableHeader(doc, cols, colW, ['Photo Type', 'Seal Code', 'Uploaded At', 'Location', 'Status']);
+    // Leading thumbnail column shows the actual uploaded photo — a text-only
+    // "Present/MISSING" row is not visual proof of anything. GPS replaces the
+    // old OK/MISMATCH flag with the real coordinates (still amber-highlighted
+    // on a mismatch) so a reviewer can see exactly where a photo was taken.
+    const thumbW = 34, thumbH = 26, rowH = 40;
+    const cols = [M, M + 42, M + 112, M + 172, M + 272, M + 372];
+    const colW = [36, 66, 56, 96, 96, 90];
+    tableHeader(doc, cols, colW, ['', 'Photo Type', 'Seal Code', 'Uploaded At', 'GPS', 'Status']);
 
     let y = doc.y;
     types.forEach((row, idx) => {
-      if (y + 15 > BODY_BOTTOM) { newPage(ctx); y = ctx.doc.y; }
+      if (y + rowH > BODY_BOTTOM) { newPage(ctx); y = ctx.doc.y; }
       const match = row.sealPos != null
         ? sp.find(p => p.photo_type === 'seal' && String(p.seal_position) === row.sealPos)
         : sp.find(p => p.photo_type === row.photoType);
 
-      if (idx % 2 === 0) doc.rect(M, y, CW, 15).fill(C.stripe);
+      if (idx % 2 === 0) doc.rect(M, y, CW, rowH).fill(C.stripe);
+
+      const buf = match ? photoBuffers.get(match.id) : null;
+      if (buf) {
+        try {
+          doc.image(buf, cols[0] + 1, y + (rowH - thumbH) / 2, { fit: [thumbW, thumbH] });
+        } catch {
+          drawNoPhotoBox(doc, cols[0] + 1, y + (rowH - thumbH) / 2, thumbW, thumbH);
+        }
+      } else {
+        drawNoPhotoBox(doc, cols[0] + 1, y + (rowH - thumbH) / 2, thumbW, thumbH);
+      }
 
       const uploaded = match?.uploaded_at
         ? new Date(match.uploaded_at).toISOString().replace('T', ' ').slice(0, 16) : '--';
-      const loc = match ? (match.location_mismatch ? 'MISMATCH' : 'OK') : '--';
+      const gps = match?.lat != null && match?.lng != null
+        ? `${parseFloat(match.lat).toFixed(4)}, ${parseFloat(match.lng).toFixed(4)}` : '--';
       const status = match ? 'Present' : 'MISSING';
+      const textY = y + (rowH - 8) / 2;
 
       doc.fill(match ? C.sub : C.red).fontSize(7.5).font(match ? 'Helvetica' : 'Helvetica-Bold');
-      t(doc, row.typeLabel, M + 3, y + 4, { width: 81 });
+      t(doc, row.typeLabel, cols[1] + 3, textY, { width: colW[1] });
       doc.fill(C.muted).font('Helvetica');
-      t(doc, row.sealPos || '--', cols[1] + 3, y + 4, { width: 76 });
-      t(doc, uploaded, cols[2] + 3, y + 4, { width: 111 });
+      t(doc, row.sealPos || '--', cols[2] + 3, textY, { width: colW[2] });
+      t(doc, uploaded, cols[3] + 3, textY, { width: colW[3] });
       doc.fill(match?.location_mismatch ? C.amber : C.light);
-      t(doc, loc, cols[3] + 3, y + 4, { width: 96 });
+      t(doc, gps, cols[4] + 3, textY, { width: colW[4] });
       doc.fill(match ? C.green : C.red).font('Helvetica-Bold');
-      t(doc, status, cols[4] + 3, y + 4, { width: 90 });
-      y += 15;
+      t(doc, status, cols[5] + 3, textY, { width: colW[5] });
+      y += rowH;
     });
     doc.y = y + 6;
   });
+}
+
+function drawNoPhotoBox(doc, x, y, w, h) {
+  doc.save().rect(x, y, w, h).lineWidth(0.4).fillAndStroke(C.stripe, C.border).restore();
+  doc.fill(C.light).fontSize(4.5).font('Helvetica');
+  t(doc, 'NO IMG', x, y + h / 2 - 3, { width: w, align: 'center' });
 }
 
 function cfoPhotosTable(ctx, cfoPhotos) {
@@ -348,6 +400,9 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
   const pct = report.required_photo_count > 0
     ? Math.round((report.received_photo_count / report.required_photo_count) * 100) : 0;
   const mismatchCount = photos.filter(p => p.location_mismatch).length;
+  // Fetched up front (PDFKit's drawing calls are synchronous) so truckDetail
+  // can embed the actual photo bytes instead of a text "Present" indicator.
+  const photoBuffers = await prefetchPhotoBuffers(photos);
 
   const ctx = { doc: null, pageNum: 0, generatedAt,
     title: convoy.name || 'Convoy Report', subtitle: `${convoy.name || 'Convoy'} · ${reportDate}` };
@@ -416,7 +471,7 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
     mismatchTable(ctx, photos);
 
     trucks.forEach(truck => {
-      truckDetail(ctx, truck, photos.filter(p => p.convoy_truck_id === truck.id), sealCountPerTruck);
+      truckDetail(ctx, truck, photos.filter(p => p.convoy_truck_id === truck.id), sealCountPerTruck, photoBuffers);
     });
 
     cfoPhotosTable(ctx, cfoPhotos);
