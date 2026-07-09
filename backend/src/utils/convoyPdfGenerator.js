@@ -1,6 +1,7 @@
 const PDFDocument = require('pdfkit');
 const sharp = require('sharp');
 const logger = require('./logger');
+const { geocode, renderRouteMapImage } = require('./routeMapRenderer');
 const C = {
   dark: '#0b1220', dark2: '#152238', navy: '#1a2a4a', accent: '#d97706', gold: '#f5a623',
   green: '#16a34a', greenBg: '#dcfce7', greenBorder: '#86efac',
@@ -234,6 +235,48 @@ async function prefetchPhotoBuffers(photos) {
     if (buf) map.set(p.id, buf);
   }));
   return map;
+}
+
+// Renders a real map image (OSM tiles + route overlay) for the day's
+// movement section, preferring live GPS pings when there are any and
+// falling back to the dispatcher-entered known-town route otherwise. Never
+// throws — any failure (geocoding miss, tile fetch down, etc.) returns null
+// so routeSection falls back to its vector schematic instead of losing the
+// section entirely.
+async function prefetchRouteMap(convoy, waypoints, namedWaypoints) {
+  try {
+    let points;
+    if (waypoints.length > 0) {
+      // Subsample so the overlay SVG stays a reasonable size — a full day
+      // of GPS pings (up to 500, per the query limit) is far more detail
+      // than a page-width map can usefully show.
+      const maxPoints = 40;
+      const step = Math.max(1, Math.floor(waypoints.length / maxPoints));
+      points = waypoints
+        .filter((_, i) => i % step === 0 || i === waypoints.length - 1)
+        .map((w, i, arr) => ({
+          lat: w.lat, lng: w.lng,
+          label: i === 0 ? 'Start' : i === arr.length - 1 ? 'Last ping' : undefined,
+        }));
+    } else if (namedWaypoints.length > 0) {
+      const trim = (s) => (s || '').trim().toLowerCase();
+      const stops = [{ name: convoy.route_origin }, ...namedWaypoints, { name: convoy.route_destination }]
+        .filter((s, i, arr) => i === 0 || trim(s.name) !== trim(arr[i - 1].name));
+      points = stops
+        .map((s) => {
+          const g = geocode(s.name);
+          return g ? { lat: g[0], lng: g[1], label: s.name } : null;
+        })
+        .filter(Boolean);
+    } else {
+      return null;
+    }
+    if (points.length < 2) return null;
+    return await renderRouteMapImage(points);
+  } catch (err) {
+    logger.warn(`[convoyPdf] route map prefetch failed: ${err.message}`);
+    return null;
+  }
 }
 
 function sectionHead(ctx, letter, label, status) {
@@ -600,7 +643,27 @@ function plannedRouteMap(ctx, convoy, namedWaypoints) {
   doc.y = mapY + mapH + 8;
 }
 
-function routeSection(ctx, waypoints, convoy, namedWaypoints = []) {
+// Embeds a real, pre-rendered map image (OSM tiles + route overlay — see
+// routeMapRenderer.js) in place of the vector schematic. OSM's tile usage
+// policy requires visible attribution on any rendered output.
+function drawMapImageBox(doc, buf, boxH) {
+  const y = doc.y;
+  doc.save().rect(M, y, CW, boxH).lineWidth(0.6).stroke(C.border).restore();
+  try {
+    doc.save();
+    doc.rect(M, y, CW, boxH).clip();
+    doc.image(buf, M, y, { fit: [CW, boxH], align: 'center', valign: 'center' });
+    doc.restore();
+  } catch {
+    doc.fill(C.light).fontSize(7).font('Helvetica');
+    t(doc, 'Map image unavailable', M, y + boxH / 2 - 4, { width: CW, align: 'center' });
+  }
+  doc.fill(C.light).fontSize(5.5).font('Helvetica');
+  t(doc, '(c) OpenStreetMap contributors', M, y + boxH + 3, { width: CW });
+  doc.y = y + boxH + 14;
+}
+
+function routeSection(ctx, waypoints, convoy, namedWaypoints = [], mapImage = null) {
   const doc = ctx.doc;
   ensureSpace(ctx, 60);
   sectionHead(ctx, nextLetter(ctx), "Day's Movement — Route Track");
@@ -616,7 +679,15 @@ function routeSection(ctx, waypoints, convoy, namedWaypoints = []) {
       doc.y += 16;
       return;
     }
-    plannedRouteMap(ctx, convoy, namedWaypoints);
+    if (mapImage) {
+      ensureSpace(ctx, 215);
+      doc.fill(C.sub).fontSize(7).font('Helvetica-Bold');
+      t(doc, 'PLANNED ROUTE (dispatcher-entered, not GPS-verified)', M, doc.y, { width: CW });
+      doc.y += 12;
+      drawMapImageBox(doc, mapImage, 190);
+    } else {
+      plannedRouteMap(ctx, convoy, namedWaypoints);
+    }
     return;
   }
 
@@ -632,35 +703,39 @@ function routeSection(ctx, waypoints, convoy, namedWaypoints = []) {
   const driveHrs = Math.floor(driveMs / 3600000), driveMin = Math.round((driveMs % 3600000) / 60000);
 
   ensureSpace(ctx, 190);
-  const mapH = 150, mapY = doc.y, padPx = 16;
-  doc.save().rect(M, mapY, CW, mapH).lineWidth(0.6).fillAndStroke('#f0fdf4', C.border).restore();
+  if (mapImage) {
+    drawMapImageBox(doc, mapImage, 150);
+  } else {
+    const mapH = 150, mapY = doc.y, padPx = 16;
+    doc.save().rect(M, mapY, CW, mapH).lineWidth(0.6).fillAndStroke('#f0fdf4', C.border).restore();
 
-  const lats = waypoints.map(w => w.lat), lngs = waypoints.map(w => w.lng);
-  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
-  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
-  const latRange = Math.max(maxLat - minLat, 0.0005);
-  const lngRange = Math.max(maxLng - minLng, 0.0005);
-  const project = (lat, lng) => [
-    M + padPx + ((lng - minLng) / lngRange) * (CW - padPx * 2),
-    mapY + padPx + (1 - (lat - minLat) / latRange) * (mapH - padPx * 2),
-  ];
+    const lats = waypoints.map(w => w.lat), lngs = waypoints.map(w => w.lng);
+    const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+    const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+    const latRange = Math.max(maxLat - minLat, 0.0005);
+    const lngRange = Math.max(maxLng - minLng, 0.0005);
+    const project = (lat, lng) => [
+      M + padPx + ((lng - minLng) / lngRange) * (CW - padPx * 2),
+      mapY + padPx + (1 - (lat - minLat) / latRange) * (mapH - padPx * 2),
+    ];
 
-  doc.save().lineWidth(1.4).strokeColor(C.accent);
-  waypoints.forEach((w, i) => {
-    const [x, y] = project(w.lat, w.lng);
-    if (i === 0) doc.moveTo(x, y); else doc.lineTo(x, y);
-  });
-  doc.stroke().restore();
+    doc.save().lineWidth(1.4).strokeColor(C.accent);
+    waypoints.forEach((w, i) => {
+      const [x, y] = project(w.lat, w.lng);
+      if (i === 0) doc.moveTo(x, y); else doc.lineTo(x, y);
+    });
+    doc.stroke().restore();
 
-  const [sx, sy] = project(waypoints[0].lat, waypoints[0].lng);
-  const [ex, ey] = project(waypoints[waypoints.length - 1].lat, waypoints[waypoints.length - 1].lng);
-  dot(doc, sx, sy, 3.5, C.green);
-  dot(doc, ex, ey, 3.5, C.red);
-  doc.fill(C.muted).fontSize(6).font('Helvetica');
-  t(doc, 'Schematic route track (not to scale) -- start (green) to last logged position (red)',
-    M, mapY + mapH + 4, { width: CW });
+    const [sx, sy] = project(waypoints[0].lat, waypoints[0].lng);
+    const [ex, ey] = project(waypoints[waypoints.length - 1].lat, waypoints[waypoints.length - 1].lng);
+    dot(doc, sx, sy, 3.5, C.green);
+    dot(doc, ex, ey, 3.5, C.red);
+    doc.fill(C.muted).fontSize(6).font('Helvetica');
+    t(doc, 'Schematic route track (not to scale) -- start (green) to last logged position (red)',
+      M, mapY + mapH + 4, { width: CW });
+    doc.y = mapY + mapH + 16;
+  }
 
-  doc.y = mapY + mapH + 16;
   detailGrid(doc, [
     { label: 'Distance Logged', value: `${distanceKm.toFixed(1)} km` },
     { label: 'Peak Speed', value: peakSpeed != null ? `${peakSpeed.toFixed(0)} km/h` : '--' },
@@ -783,7 +858,10 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
   const mismatchCount = photos.filter(p => p.location_mismatch).length;
   // Fetched up front (PDFKit's drawing calls are synchronous) so truckDetail
   // can embed the actual photo bytes instead of a text "Present" indicator.
-  const photoBuffers = await prefetchPhotoBuffers(photos);
+  const [photoBuffers, routeMapImage] = await Promise.all([
+    prefetchPhotoBuffers(photos),
+    prefetchRouteMap(convoy, waypoints, namedWaypoints),
+  ]);
 
   const statusMap = {
     generated: { label: 'FULLY GENERATED', fg: C.green, bg: C.greenBg },
@@ -838,7 +916,7 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
       { label: 'Seals / Truck', value: String(convoy.seal_count_per_truck ?? '--') },
     ]);
 
-    routeSection(ctx, waypoints, convoy, namedWaypoints);
+    routeSection(ctx, waypoints, convoy, namedWaypoints, routeMapImage);
 
     if (cfos.length) {
       sectionHead(ctx, nextLetter(ctx), 'Field Officers');
