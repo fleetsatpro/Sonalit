@@ -282,8 +282,11 @@ export default function ReportDoc({
   regenerating: boolean;
 }) {
   const dr = detail.daily_report;
+  // Math.min guards against any backend count mismatch still slipping
+  // through (mismatched formulas, stale cached counts, orphaned photo rows)
+  // — the UI must never claim >100% complete.
   const completePercent = dr && dr.required_photo_count > 0
-    ? Math.round((dr.received_photo_count / dr.required_photo_count) * 100)
+    ? Math.min(100, Math.round((dr.received_photo_count / dr.required_photo_count) * 100))
     : 0;
   const [downloading, setDownloading] = React.useState(false);
 

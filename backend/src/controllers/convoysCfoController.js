@@ -706,12 +706,22 @@ const getConvoyReportsOverview = asyncHandler(async (req, res) => {
        GROUP BY convoy_id, report_date`,
       [convoyIds]
     ),
-    // Guardian Convoy app reports (newer system using convoy_reports + photo_uploads)
+    // Guardian Convoy app reports (older system using convoy_reports + photo_uploads —
+    // its photo_type taxonomy — vehicle_front/cargo_seal/cargo_interior/cfo_identity/
+    // tyres_under/vehicle_arrival — doesn't match the front/rear/seal model this
+    // required-count formula assumes, and received is a raw undeduped COUNT(*), so
+    // it can wildly overcount (e.g. 45/10 = 450%). LEAST() is a stopgap so the UI can
+    // never show >100% while the underlying formula for this legacy path gets a
+    // proper fix that reflects its actual photo categories.
     query(
       `SELECT DISTINCT ON (cr.convoy_id)
               cr.convoy_id, cr.date::text AS report_date, cr.status,
-              (SELECT COUNT(*)::int FROM photo_uploads pu
-               WHERE pu.convoy_id = cr.convoy_id AND pu.timestamp::date = cr.date) AS received_photo_count,
+              LEAST(
+                (SELECT COUNT(*)::int FROM photo_uploads pu
+                 WHERE pu.convoy_id = cr.convoy_id AND pu.timestamp::date = cr.date),
+                (SELECT COUNT(ct.id) FROM convoy_trucks ct WHERE ct.convoy_id::text = cr.convoy_id)::int
+                  * (2 + COALESCE(c2.seal_count_per_truck, 0)) * 2
+              ) AS received_photo_count,
               (SELECT COUNT(ct.id) FROM convoy_trucks ct WHERE ct.convoy_id::text = cr.convoy_id)::int
                 * (2 + COALESCE(c2.seal_count_per_truck, 0)) * 2 AS required_photo_count
        FROM convoy_reports cr

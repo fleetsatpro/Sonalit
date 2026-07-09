@@ -681,7 +681,11 @@ async function updateDailyReport(convoy_id, report_date) {
      FROM slot_counts`,
     [convoy_id, report_date, seal_count_per_truck]
   );
-  const received = parseInt(recvResult.rows[0].received);
+  // Final backstop: a truck can have photos from before it was unassigned/
+  // removed, which the per-slot cap above doesn't know to exclude since it
+  // sums across whatever trucks have photo rows, not just currently-required
+  // ones. received must never be able to exceed required.
+  const received = Math.min(parseInt(recvResult.rows[0].received), required);
   const status = received >= required ? 'complete' : (received > 0 ? 'partial' : 'pending');
 
   await query(

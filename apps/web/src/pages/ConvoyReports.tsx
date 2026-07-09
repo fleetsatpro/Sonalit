@@ -78,8 +78,10 @@ function ConvoyCard({ item, selected, onClick }: {
   onClick: () => void;
 }) {
   const lr = item.latest_report;
+  // Math.min guards against any backend count mismatch still slipping
+  // through — the UI must never claim >100% complete.
   const pct = lr && lr.required_photo_count > 0
-    ? Math.round((lr.received_photo_count / lr.required_photo_count) * 100)
+    ? Math.min(100, Math.round((lr.received_photo_count / lr.required_photo_count) * 100))
     : null;
 
   const statusColor: Record<string, string> = {
