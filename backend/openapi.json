@@ -1090,11 +1090,9 @@
             "description": "OK"
           }
         }
-      }
-    },
-    "/api/v1/reports/generate": {
+      },
       "post": {
-        "operationId": "post_api_v1_reports_generate",
+        "operationId": "post_api_v1_reports",
         "responses": {
           "200": {
             "description": "OK"
@@ -1105,6 +1103,24 @@
     "/api/v1/reports/{id}": {
       "get": {
         "operationId": "get_api_v1_reports_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_reports_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/reports/{id}/export": {
+      "get": {
+        "operationId": "get_api_v1_reports_id_export",
         "responses": {
           "200": {
             "description": "OK"
