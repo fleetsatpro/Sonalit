@@ -49,7 +49,14 @@ async function uploadToR2(key, buffer, contentType) {
     endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
     credentials: { accessKeyId: R2_ACCESS_KEY, secretAccessKey: R2_SECRET_KEY },
   });
-  await s3.send(new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, Body: buffer, ContentType: contentType }));
+  // no-store: convoyreports.sonalit.com fronts this bucket through Cloudflare,
+  // which caches static file extensions like .pdf at the edge by default. The
+  // report key is now content-hashed (see callers) so this is defense in
+  // depth, not the primary fix — but without it a CDN or browser could still
+  // cache an old response for a URL that happens to get reused.
+  await s3.send(new PutObjectCommand({
+    Bucket: R2_BUCKET, Key: key, Body: buffer, ContentType: contentType, CacheControl: 'no-store',
+  }));
   return `${R2_PUBLIC_URL}/${key}`;
 }
 
@@ -200,7 +207,16 @@ async function handleGenerateReport({ convoy_id, report_date, force }) {
   }
 
   const pdfBuffer = await generateDailyReport(convoy, trucks, cfos, photos, report, report_date, cfoPhotos, waypoints, namedWaypoints);
-  const key = `reports/daily/${convoy_id}/${report_date}.pdf`;
+  // Every regenerate reused the exact same R2 key/URL for a given
+  // convoy+date, so once Cloudflare's edge (which fronts the R2 custom
+  // domain) cached that URL, "Regenerate" kept overwriting the R2 origin
+  // object while every download kept serving the original cached response
+  // forever — confirmed by a report showing the identical Report ID and
+  // generated_at timestamp across regenerations hours apart. Content-hashing
+  // the key means a genuinely new PDF always gets a URL that could never
+  // have been cached before, independent of any CDN behavior.
+  const contentHash = require('crypto').createHash('sha256').update(pdfBuffer).digest('hex');
+  const key = `reports/daily/${convoy_id}/${report_date}-${contentHash.slice(0, 12)}.pdf`;
 
   let pdfUrl = null;
   let generationError = null;
@@ -219,9 +235,6 @@ async function handleGenerateReport({ convoy_id, report_date, force }) {
       logger.error(`[convoyReport] local PDF save also failed: ${fsErr.message}`);
     }
   }
-
-  const crypto = require('crypto');
-  const contentHash = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
 
   const orgRow = await query(`SELECT org_id FROM convoys WHERE id = $1`, [convoy_id]);
   const orgId = orgRow.rows[0]?.org_id || convoy_id;
@@ -287,7 +300,12 @@ async function handleGenerateArchive({ convoy_id }) {
   ]);
 
   const pdfBuffer = await generateArchiveReport(convoy, trucks.rows, cfos.rows, reports.rows, allPhotos.rows);
-  const key = `reports/archive/${convoy_id}/archive.pdf`;
+  // Same content-hashed key fix as handleGenerateReport — a static key
+  // reused on every regeneration lets a fronting CDN keep serving a stale
+  // cached copy forever regardless of how many times the R2 origin object
+  // is overwritten.
+  const archiveHash = require('crypto').createHash('sha256').update(pdfBuffer).digest('hex');
+  const key = `reports/archive/${convoy_id}/archive-${archiveHash.slice(0, 12)}.pdf`;
 
   let pdfUrl = null;
   try {
