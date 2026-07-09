@@ -474,54 +474,74 @@ function truckDetail(ctx, truck, truckPhotos, sealCountPerTruck, photoBuffers) {
     { label: 'Seal Codes', value: sealPositions.length ? sealPositions.join(', ') : '--' },
   ]);
 
-  // Front/Rear are the primary visual-inspection evidence (whole-vehicle
-  // condition), so they get a large hero row, side by side. Seals are a
-  // per-position checklist rather than a single "how does the truck look"
-  // shot, so they're secondary: a smaller grid underneath, 4 per row.
-  const heroGap = 14;
-  const heroW = (CW - heroGap) / 2;
-  const heroPhotoH = 175, heroCaptionH = 36;
-  const heroCardH = heroPhotoH + 6 + heroCaptionH;
-  const heroRowStride = heroCardH + 14;
+  // A truck's whole day reads as one page: SOD on the left half, EOD on the
+  // right half, Front stacked over Rear in each half (the primary visual-
+  // inspection evidence), with seals — a per-position checklist rather than
+  // a single "how does the truck look" shot — as a smaller grid underneath
+  // each half.
+  const colGap = 16;
+  const colW = (CW - colGap) / 2;
+  const cols = [
+    { x: M, label: 'START OF DAY (SOD)', session: 'sod' },
+    { x: M + colW + colGap, label: 'END OF DAY (EOD)', session: 'eod' },
+  ];
 
-  const sealCols = 4, sealGap = 10;
-  const sealCardW = (CW - sealGap * (sealCols - 1)) / sealCols;
-  const sealPhotoH = 92, sealCaptionH = 30;
-  const sealCardH = sealPhotoH + 6 + sealCaptionH;
-  const sealRowStride = sealCardH + 12;
+  const bannerH = 18;
+  const photoH = 145, captionH = 28, photoGap = 10;
+  const heroPairH = (photoH + 6 + captionH) * 2 + photoGap;
+
+  const sealCols = 2, sealGap = 8;
+  const sealCardW = (colW - sealGap * (sealCols - 1)) / sealCols;
+  const sealPhotoH = 78, sealCaptionH = 24;
+  const sealRowStride = sealPhotoH + 6 + sealCaptionH + 10;
   const sealRows = Math.ceil(sealPositions.length / sealCols);
 
-  ['sod', 'eod'].forEach(session => {
-    const label = session === 'sod' ? 'Start of Day (SOD)' : 'End of Day (EOD)';
-    const sp = truckPhotos.filter(p => p.session === session);
-    ensureSpace(ctx, 24 + heroRowStride);
-    subBanner(ctx, label);
+  // The hero pair (banner + Front + Rear, both columns) always follows
+  // straight after the truck's own fresh page, so it's virtually guaranteed
+  // to fit — this ensureSpace is a safety net, not the primary pagination.
+  ensureSpace(ctx, bannerH + 8 + heroPairH + 20);
 
-    const heroY = doc.y;
-    const heroSlots = [
-      { label: 'FRONT', photoType: 'front', sealPos: null },
-      { label: 'REAR', photoType: 'rear', sealPos: null },
-    ];
-    heroSlots.forEach((slot, col) => {
-      const match = sp.find(p => p.photo_type === slot.photoType);
-      drawPhotoCard(doc, M + col * (heroW + heroGap), heroY, heroW, heroPhotoH, heroCaptionH, slot, match, photoBuffers);
-    });
-    doc.y = heroY + heroRowStride;
+  const topY = doc.y;
+  cols.forEach(col => {
+    doc.rect(col.x, topY, colW, bannerH).fill(C.navy);
+    doc.fill(C.white).fontSize(7.5).font('Helvetica-Bold');
+    t(doc, col.label, col.x + 8, topY + 5, { width: colW - 16 });
+  });
 
-    if (!sealPositions.length) return;
-    let idx = 0;
-    for (let row = 0; row < sealRows; row++) {
-      ensureSpace(ctx, sealRowStride + 12);
-      const rowY = doc.y;
-      for (let col = 0; col < sealCols && idx < sealPositions.length; col++, idx++) {
+  const heroY = topY + bannerH + 8;
+  cols.forEach(col => {
+    const sp = truckPhotos.filter(p => p.session === col.session);
+    const frontMatch = sp.find(p => p.photo_type === 'front');
+    const rearMatch = sp.find(p => p.photo_type === 'rear');
+    drawPhotoCard(doc, col.x, heroY, colW, photoH, captionH,
+      { label: 'FRONT', photoType: 'front', sealPos: null }, frontMatch, photoBuffers);
+    const rearY = heroY + photoH + 6 + captionH + photoGap;
+    drawPhotoCard(doc, col.x, rearY, colW, photoH, captionH,
+      { label: 'REAR', photoType: 'rear', sealPos: null }, rearMatch, photoBuffers);
+  });
+  doc.y = heroY + heroPairH + 12;
+
+  if (!sealPositions.length) return;
+  // Seal rows paginate on their own (unlike the hero pair above) since a
+  // truck with many seal positions is the one realistic way this block
+  // could outgrow a single page — each row still draws both columns
+  // together so SOD/EOD stay side by side if it does spill over.
+  for (let row = 0; row < sealRows; row++) {
+    ensureSpace(ctx, sealRowStride + 10);
+    const rowY = doc.y;
+    cols.forEach(col => {
+      const sp = truckPhotos.filter(p => p.session === col.session);
+      for (let sc = 0; sc < sealCols; sc++) {
+        const idx = row * sealCols + sc;
+        if (idx >= sealPositions.length) break;
         const pos = sealPositions[idx];
         const slot = { label: `SEAL ${pos}`, photoType: 'seal', sealPos: pos };
         const match = sp.find(p => p.photo_type === 'seal' && String(p.seal_position) === pos);
-        drawPhotoCard(doc, M + col * (sealCardW + sealGap), rowY, sealCardW, sealPhotoH, sealCaptionH, slot, match, photoBuffers);
+        drawPhotoCard(doc, col.x + sc * (sealCardW + sealGap), rowY, sealCardW, sealPhotoH, sealCaptionH, slot, match, photoBuffers);
       }
-      doc.y = rowY + sealRowStride;
-    }
-  });
+    });
+    doc.y = rowY + sealRowStride;
+  }
 }
 
 function drawPhotoCard(doc, x, y, w, photoH, captionH, slot, match, photoBuffers) {
