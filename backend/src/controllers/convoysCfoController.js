@@ -542,43 +542,31 @@ const regenerateReport = asyncHandler(async (req, res) => {
   if (!report.rows.length) {
     // No row yet — check if real photo data exists for this date in
     // convoy_truck_photos (the table the live CFO app actually writes to;
-    // photo_uploads is a legacy/unused table from an earlier upload path) and
-    // auto-create the row if so.
+    // photo_uploads is a legacy/unused table from an earlier upload path).
     const photoCount = await query(
       `SELECT COUNT(*)::int AS n FROM convoy_truck_photos WHERE convoy_id = $1 AND report_date = $2`,
       [req.params.id, date]
     );
     if (!photoCount.rows[0].n) return res.status(404).json({ error: 'No report data for this date' });
-
-    const reqCountRes = await query(
-      `SELECT COUNT(DISTINCT ct.id) AS truck_count, c.seal_count_per_truck
-       FROM convoys c JOIN convoy_trucks ct ON ct.convoy_id = c.id
-       WHERE c.id = $1
-         AND EXISTS (SELECT 1 FROM convoy_cfo_truck_assignments ccta WHERE ccta.convoy_truck_id = ct.id)
-       GROUP BY c.seal_count_per_truck`,
-      [req.params.id]
-    );
-    const required = reqCountRes.rows.length
-      ? parseInt(reqCountRes.rows[0].truck_count) * (2 + parseInt(reqCountRes.rows[0].seal_count_per_truck)) * 2
-      : photoCount.rows[0].n;
-
-    report = await query(
-      `INSERT INTO convoy_daily_reports
-         (convoy_id, report_date, status, received_photo_count, required_photo_count, created_at, updated_at)
-       VALUES ($1::uuid, $2, 'partial', $3, $4, NOW(), NOW())
-       ON CONFLICT (convoy_id, report_date) DO UPDATE
-         SET status = 'partial', received_photo_count = $3, required_photo_count = $4, updated_at = NOW()
-       RETURNING id`,
-      [req.params.id, date, photoCount.rows[0].n, required]
-    );
-  } else {
-    // Reset existing row to partial so the worker will regenerate it
-    await query(
-      `UPDATE convoy_daily_reports SET status = 'partial', pdf_url = NULL, generation_error = NULL, updated_at = NOW()
-       WHERE convoy_id = $1 AND report_date = $2`,
-      [req.params.id, date]
-    );
   }
+
+  // Recompute required/received via the shared, slot-capped counter (not a
+  // raw COUNT(*)) so a stale or first-time row can't bake a >100%
+  // completeness figure into the regenerated PDF — seal_position is a
+  // free-text RFID code, so a truck can otherwise accumulate more distinct
+  // values than seal_count_per_truck allows.
+  const { recountPhotos } = require('../workers/convoyReportWorker');
+  await recountPhotos(req.params.id, date);
+
+  // Reset to partial (clearing any stale PDF) so the worker regenerates it —
+  // handleGenerateReport skips rows already marked 'generated'.
+  report = await query(
+    `UPDATE convoy_daily_reports SET status = 'partial', pdf_url = NULL, generation_error = NULL, updated_at = NOW()
+     WHERE convoy_id = $1 AND report_date = $2
+     RETURNING id`,
+    [req.params.id, date]
+  );
+  if (!report.rows.length) return res.status(404).json({ error: 'No report data for this date' });
 
   try {
     const { getQueues } = require('../config/queue');
@@ -680,10 +668,21 @@ const getConvoyReportsOverview = asyncHandler(async (req, res) => {
   const convoyIds = convoysRes.rows.map(c => c.id);
   const [latestReports, mismatchCounts, cfoAppReports] = await Promise.all([
     query(
-      `SELECT DISTINCT ON (convoy_id) convoy_id, report_date, status,
-              required_photo_count, received_photo_count, pdf_url, generated_at, generation_error
-       FROM convoy_daily_reports WHERE convoy_id = ANY($1)
-       ORDER BY convoy_id, report_date DESC`,
+      // A stray convoy_daily_reports row outside the convoy's own
+      // start_date/end_date (bad test data, a client clock issue, a manual
+      // regenerate with the wrong date) used to win "latest" purely by
+      // being the newest by date, showing a blank/nonsensical report for
+      // a day the convoy was never even running. Only rows inside the
+      // convoy's actual window (or convoys with no bound set) are eligible.
+      `SELECT DISTINCT ON (cdr.convoy_id) cdr.convoy_id, cdr.report_date, cdr.status,
+              cdr.required_photo_count, cdr.received_photo_count, cdr.pdf_url,
+              cdr.generated_at, cdr.generation_error
+       FROM convoy_daily_reports cdr
+       JOIN convoys c ON c.id = cdr.convoy_id
+       WHERE cdr.convoy_id = ANY($1)
+         AND (c.start_date IS NULL OR cdr.report_date >= c.start_date)
+         AND (c.end_date IS NULL OR cdr.report_date <= c.end_date)
+       ORDER BY cdr.convoy_id, cdr.report_date DESC`,
       [convoyIds]
     ),
     query(
@@ -703,6 +702,8 @@ const getConvoyReportsOverview = asyncHandler(async (req, res) => {
        FROM convoy_reports cr
        LEFT JOIN convoys c2 ON c2.id::text = cr.convoy_id
        WHERE cr.convoy_id = ANY($1::text[])
+         AND (c2.start_date IS NULL OR cr.date >= c2.start_date)
+         AND (c2.end_date IS NULL OR cr.date <= c2.end_date)
        ORDER BY cr.convoy_id, cr.date DESC`,
       [convoyIds]
     ),

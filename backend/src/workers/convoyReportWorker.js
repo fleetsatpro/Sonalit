@@ -119,10 +119,23 @@ async function recountPhotos(convoy_id, report_date) {
   const { truck_count, seal_count_per_truck } = truckCountRes.rows[0];
   const required = parseInt(truck_count) * (2 + parseInt(seal_count_per_truck)) * 2;
 
+  // seal_position is the CFO-entered RFID code, not a fixed slot index, so a
+  // truck can accumulate more distinct values than seal_count_per_truck
+  // allows (typo, re-scan, genuine reseal) — cap each truck+session's seal
+  // contribution so received_photo_count can never exceed required.
   const recvRes = await query(
-    `SELECT COUNT(DISTINCT (convoy_truck_id, session, photo_type, COALESCE(seal_position, ''))) AS received
-     FROM convoy_truck_photos WHERE convoy_id = $1 AND report_date = $2`,
-    [convoy_id, report_date]
+    `WITH slot_counts AS (
+       SELECT convoy_truck_id, session, photo_type,
+              COUNT(DISTINCT COALESCE(seal_position, '')) AS n
+       FROM convoy_truck_photos
+       WHERE convoy_id = $1 AND report_date = $2
+       GROUP BY convoy_truck_id, session, photo_type
+     )
+     SELECT COALESCE(SUM(
+       CASE WHEN photo_type = 'seal' THEN LEAST(n, $3::int) ELSE LEAST(n, 1) END
+     ), 0) AS received
+     FROM slot_counts`,
+    [convoy_id, report_date, seal_count_per_truck]
   );
   const received = parseInt(recvRes.rows[0].received);
   const status = received >= required ? 'complete' : received > 0 ? 'partial' : 'pending';
@@ -299,7 +312,7 @@ function startConvoyReportWorker() {
   return [reportWorker, archiveWorker];
 }
 
-module.exports = { startConvoyReportWorker };
+module.exports = { startConvoyReportWorker, recountPhotos };
 
 // Run standalone
 if (require.main === module) {

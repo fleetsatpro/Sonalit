@@ -662,11 +662,24 @@ async function updateDailyReport(convoy_id, report_date) {
   // Count distinct slots, not rows — retaking a photo inserts a new row
   // alongside the old one rather than replacing it, so a raw COUNT(*) would
   // inflate progress past 100% while some slots are still actually empty.
+  // seal_position is the CFO-entered RFID code, not a fixed slot index, so
+  // if it drifts across attempts (typo, re-scan, genuine reseal) a truck can
+  // accumulate more distinct seal_position values than seal_count_per_truck
+  // allows — cap each truck+session's seal contribution at seal_count_per_truck
+  // so received_photo_count can never exceed required_photo_count.
   const recvResult = await query(
-    `SELECT COUNT(DISTINCT (convoy_truck_id, session, photo_type, COALESCE(seal_position, ''))) AS received
-     FROM convoy_truck_photos
-     WHERE convoy_id = $1 AND report_date = $2`,
-    [convoy_id, report_date]
+    `WITH slot_counts AS (
+       SELECT convoy_truck_id, session, photo_type,
+              COUNT(DISTINCT COALESCE(seal_position, '')) AS n
+       FROM convoy_truck_photos
+       WHERE convoy_id = $1 AND report_date = $2
+       GROUP BY convoy_truck_id, session, photo_type
+     )
+     SELECT COALESCE(SUM(
+       CASE WHEN photo_type = 'seal' THEN LEAST(n, $3::int) ELSE LEAST(n, 1) END
+     ), 0) AS received
+     FROM slot_counts`,
+    [convoy_id, report_date, seal_count_per_truck]
   );
   const received = parseInt(recvResult.rows[0].received);
   const status = received >= required ? 'complete' : (received > 0 ? 'partial' : 'pending');
