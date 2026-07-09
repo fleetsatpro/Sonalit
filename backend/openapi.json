@@ -296,6 +296,24 @@
         }
       }
     },
+    "/api/v1/convoys/{id}/route-waypoints": {
+      "get": {
+        "operationId": "get_api_v1_convoys_id_route_waypoints",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_convoys_id_route_waypoints",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/convoys/{id}/cfos": {
       "post": {
         "operationId": "post_api_v1_convoys_id_cfos",
