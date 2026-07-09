@@ -46,7 +46,7 @@ function StatusIcon({ status }: { status: ClaimStatus }) {
 
 export default function ClaimsPage() {
   const [showNew, setShowNew] = useState(false);
-  const [newClaim, setNewClaim] = useState({ insurer_name: '', policy_number: '', incident_description: '', damage_description: '', estimated_value: '', currency: 'KES' });
+  const [newClaim, setNewClaim] = useState({ vehicle_id: '', insurer_name: '', policy_number: '', incident_description: '', damage_description: '', estimated_value: '', currency: 'KES' });
   const qc = useQueryClient();
 
   const claimsQ = useQuery<{ data: Claim[] }>({
@@ -54,11 +54,21 @@ export default function ClaimsPage() {
     queryFn: () => api.get('/claims').then(r => r.data),
   });
 
+  const vehiclesQ = useQuery<{ data: { id: string; registration: string }[] }>({
+    queryKey: ['vehicles-lite'],
+    queryFn: () => api.get('/vehicles?limit=200').then(r => r.data),
+    enabled: showNew,
+  });
+
   const createMut = useMutation({
     mutationFn: (body: object) => api.post('/claims', body, {
       headers: { 'X-Idempotency-Key': `claim-${Date.now()}` },
     }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['claims'] }); setShowNew(false); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['claims'] });
+      setShowNew(false);
+      setNewClaim({ vehicle_id: '', insurer_name: '', policy_number: '', incident_description: '', damage_description: '', estimated_value: '', currency: 'KES' });
+    },
   });
 
   const statusMut = useMutation({
@@ -139,6 +149,10 @@ export default function ClaimsPage() {
               <button onClick={() => setShowNew(false)} className="text-gray-400 hover:text-white"><XCircle className="w-5 h-5" /></button>
             </div>
             <div className="grid grid-cols-2 gap-3">
+              <select value={newClaim.vehicle_id} onChange={e => setNewClaim(p => ({ ...p, vehicle_id: e.target.value }))} className="col-span-2 bg-gray-700 text-white px-3 py-2 rounded-lg text-sm">
+                <option value="">Select vehicle...</option>
+                {vehiclesQ.data?.data.map(v => <option key={v.id} value={v.id}>{v.registration}</option>)}
+              </select>
               <input placeholder="Insurer Name" value={newClaim.insurer_name} onChange={e => setNewClaim(p => ({ ...p, insurer_name: e.target.value }))} className="col-span-2 bg-gray-700 text-white px-3 py-2 rounded-lg text-sm" />
               <input placeholder="Policy Number" value={newClaim.policy_number} onChange={e => setNewClaim(p => ({ ...p, policy_number: e.target.value }))} className="bg-gray-700 text-white px-3 py-2 rounded-lg text-sm" />
               <input placeholder="Estimated Value" type="number" value={newClaim.estimated_value} onChange={e => setNewClaim(p => ({ ...p, estimated_value: e.target.value }))} className="bg-gray-700 text-white px-3 py-2 rounded-lg text-sm" />
@@ -149,6 +163,7 @@ export default function ClaimsPage() {
               <button onClick={() => setShowNew(false)} className="px-4 py-2 text-sm text-gray-400 hover:text-white">Cancel</button>
               <button
                 onClick={() => createMut.mutate({
+                  vehicle_id: newClaim.vehicle_id || undefined,
                   insurer_name: newClaim.insurer_name || undefined,
                   policy_number: newClaim.policy_number || undefined,
                   incident_description: newClaim.incident_description || undefined,

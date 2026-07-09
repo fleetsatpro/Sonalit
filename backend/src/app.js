@@ -185,8 +185,16 @@ app.get("/metrics", async (req, res) => {
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 ["auth", "vehicles", "convoys", "alerts", "messages", "analytics", "geofences", "devices",
-  "incidents", "rules", "gps", "sensors", "ai", "apikeys", "reports", "documents", "webhooks", "guardian", "realtime", "admin"]
+  "incidents", "rules", "gps", "sensors", "ai", "apikeys", "reports", "documents", "webhooks", "guardian", "realtime", "admin",
+  "fuel", "shifts"]
   .forEach(r => app.use("/api/v1/" + r, require("./routes/" + r)));
+
+// claims.js defines its own routes as /claims, /claims/:id, /incidents/:id/claims
+// (not relative to a /claims mount) so it belongs at the API root — mounting it
+// under /api/v1/claims would have doubled the path. This — combined with never
+// being mounted at all — is why Claims had no working backend.
+try { app.use("/api/v1", require("./routes/claims")); logger.info("Route loaded: /api/v1 (claims)"); }
+catch (e) { logger.warn("Claims route failed: " + e.message); }
 
 try { app.use("/api/v1/guardian/cfo", require("./routes/guardianCfo")); logger.info("Route loaded: /api/v1/guardian/cfo"); }
 catch (e) { logger.warn("Guardian CFO route failed: " + e.message); }

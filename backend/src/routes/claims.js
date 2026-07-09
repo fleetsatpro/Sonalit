@@ -49,7 +49,7 @@ router.get('/claims', asyncHandler(async (req, res) => {
   params.push(limit);
   const where = filters.length ? `AND ${filters.join(' AND ')}` : '';
   const result = await req.db(
-    `SELECT c.*, i.title AS incident_title, v.registration_number AS vehicle_reg
+    `SELECT c.*, i.title AS incident_title, v.registration AS vehicle_reg
        FROM insurance_claims c
        LEFT JOIN incidents i ON i.id = c.incident_id
        LEFT JOIN vehicles v ON v.id = c.vehicle_id

@@ -124,7 +124,7 @@ router.get('/', asyncHandler(async (req, res) => {
   params.push(limit, offset);
   const result = await req.db(
     `SELECT f.*,
-            v.registration_number AS vehicle_reg,
+            v.registration AS vehicle_reg,
             u.name AS driver_name
        FROM fuel_entries f
        LEFT JOIN vehicles v ON v.id = f.vehicle_id
@@ -224,7 +224,7 @@ router.get('/anomalies', asyncHandler(async (req, res) => {
   params.push(limit);
   const where = filters.length ? `AND ${filters.join(' AND ')}` : '';
   const result = await req.db(
-    `SELECT a.*, f.vehicle_id AS entry_vehicle_id, v.registration_number AS vehicle_reg
+    `SELECT a.*, f.vehicle_id AS entry_vehicle_id, v.registration AS vehicle_reg
        FROM fuel_anomalies a
        LEFT JOIN fuel_entries f ON f.id = a.fuel_entry_id
        LEFT JOIN vehicles v ON v.id = a.vehicle_id
@@ -257,7 +257,7 @@ router.patch('/anomalies/:id/resolve', auditLog('fuel_anomalies'), asyncHandler(
 router.get('/summary', asyncHandler(async (req, res) => {
   const days = Math.min(365, parseInt(req.query.days) || 30);
   const result = await req.db(
-    `SELECT v.registration_number,
+    `SELECT v.registration AS registration_number,
             f.vehicle_id,
             COUNT(*) AS fill_count,
             ROUND(SUM(f.litres)::numeric, 2) AS total_litres,
@@ -268,7 +268,7 @@ router.get('/summary', asyncHandler(async (req, res) => {
        LEFT JOIN fuel_anomalies a ON a.fuel_entry_id = f.id
       WHERE f.deleted_at IS NULL
         AND f.created_at > NOW() - ($1 || ' days')::interval
-      GROUP BY f.vehicle_id, v.registration_number
+      GROUP BY f.vehicle_id, v.registration
       ORDER BY total_litres DESC`,
     [days],
   );
@@ -334,7 +334,7 @@ router.get('/vehicles/:vehicleId', asyncHandler(async (req, res) => {
 // GET /fuel/convoys/:convoyId — fuel for convoy
 router.get('/convoys/:convoyId', asyncHandler(async (req, res) => {
   const result = await req.db(
-    `SELECT f.*, v.registration_number AS vehicle_reg
+    `SELECT f.*, v.registration AS vehicle_reg
        FROM fuel_entries f
        LEFT JOIN vehicles v ON v.id = f.vehicle_id
       WHERE f.convoy_id = $1 AND f.deleted_at IS NULL

@@ -103,11 +103,17 @@ export default function FuelPage() {
     enabled: tab === 'stations',
   });
 
+  const vehiclesQ = useQuery<{ data: { id: string; registration: string }[] }>({
+    queryKey: ['vehicles-lite'],
+    queryFn: () => api.get('/vehicles?limit=200').then(r => r.data),
+    enabled: showAddEntry,
+  });
+
   const addEntryMut = useMutation({
     mutationFn: (body: object) => api.post('/fuel', body, {
       headers: { 'X-Idempotency-Key': `manual-${Date.now()}` },
     }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['fuel-entries'] }); setShowAddEntry(false); setNewEntry({ litres: '', station_name: '', total_cost: '', odometer_km: '', vehicle_id: '' }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['fuel-entries'] }); setShowAddEntry(false); setNewEntry({ litres: '', station_name: '', total_cost: '', odometer_km: '', vehicle_id: '' }); qc.invalidateQueries({ queryKey: ['fuel-anomalies'] }); },
   });
 
   const resolveMut = useMutation({
@@ -337,6 +343,10 @@ export default function FuelPage() {
               <button onClick={() => setShowAddEntry(false)} className="text-gray-400 hover:text-white"><XCircle className="w-5 h-5" /></button>
             </div>
             <div className="space-y-3">
+              <select value={newEntry.vehicle_id} onChange={e => setNewEntry(p => ({ ...p, vehicle_id: e.target.value }))} className="w-full bg-gray-700 text-white px-3 py-2 rounded-lg text-sm">
+                <option value="">Select vehicle...</option>
+                {vehiclesQ.data?.data.map(v => <option key={v.id} value={v.id}>{v.registration}</option>)}
+              </select>
               <input placeholder="Litres *" type="number" value={newEntry.litres} onChange={e => setNewEntry(p => ({ ...p, litres: e.target.value }))} className="w-full bg-gray-700 text-white px-3 py-2 rounded-lg text-sm" />
               <input placeholder="Station Name" value={newEntry.station_name} onChange={e => setNewEntry(p => ({ ...p, station_name: e.target.value }))} className="w-full bg-gray-700 text-white px-3 py-2 rounded-lg text-sm" />
               <input placeholder="Total Cost" type="number" value={newEntry.total_cost} onChange={e => setNewEntry(p => ({ ...p, total_cost: e.target.value }))} className="w-full bg-gray-700 text-white px-3 py-2 rounded-lg text-sm" />
@@ -346,6 +356,7 @@ export default function FuelPage() {
               <button onClick={() => setShowAddEntry(false)} className="px-4 py-2 text-sm text-gray-400 hover:text-white">Cancel</button>
               <button
                 onClick={() => addEntryMut.mutate({
+                  vehicle_id: newEntry.vehicle_id || undefined,
                   litres: parseFloat(newEntry.litres),
                   station_name: newEntry.station_name || undefined,
                   total_cost: newEntry.total_cost ? parseFloat(newEntry.total_cost) : undefined,
