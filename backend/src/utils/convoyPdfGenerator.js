@@ -16,7 +16,20 @@ function t(doc, str, x, y, opts) {
 
 function makePdf(buildFn) {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: M, size: 'A4', autoFirstPage: false });
+    // bottom: 0 — the footer band is drawn at an absolute y around 816-830,
+    // outside a uniform 40pt margin (whose bottom boundary sits at ~802).
+    // PDFKit's own auto-pagination treats any text draw past that boundary
+    // as overflow and silently inserts an extra blank page to continue it —
+    // it has no way to know this was an intentional fixed-position footer.
+    // This file already does all its own pagination manually (ensureSpace /
+    // newPage / BODY_BOTTOM), so PDFKit's built-in margin-triggered paging
+    // is pure interference here; disabling just the bottom margin removes it
+    // without affecting the manual layout logic, which never relied on it.
+    const doc = new PDFDocument({
+      margins: { top: M, bottom: 0, left: M, right: M },
+      size: 'A4',
+      autoFirstPage: false,
+    });
     const chunks = [];
     doc.on('data', c => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -186,14 +199,32 @@ function mismatchTable(ctx, photos) {
   doc.y = y + 4;
 }
 
-function truckDetail(ctx, truck, truckPhotos) {
+function truckDetail(ctx, truck, truckPhotos, sealCountPerTruck) {
   newPage(ctx);
   const doc = ctx.doc;
 
+  // sealPositions pools every distinct seal_position value ever seen — kept
+  // as-is for listing/detail rows below (a code that drifted between SOD/EOD
+  // is a real anomaly worth showing). But it must NOT be used as the
+  // "required" denominator: seal_position is CFO-entered free text, not a
+  // fixed slot count, so a truck can rack up more distinct codes than
+  // seal_count_per_truck without that meaning more photos were genuinely
+  // required — that's exactly the bug that let this box read "10/16" for a
+  // convoy configured for 3 seals per truck.
   const sealPositions = Array.from(new Set(
     truckPhotos.filter(p => p.photo_type === 'seal').map(p => String(p.seal_position))
   )).sort();
-  const totalPhotos = truckPhotos.length, expectedTotal = (2 + sealPositions.length) * 2;
+  const expectedTotal = (2 + sealCountPerTruck) * 2;
+  const receivedTotal = ['sod', 'eod'].reduce((sum, session) => {
+    const sp = truckPhotos.filter(p => p.session === session);
+    const frontRear = (sp.some(p => p.photo_type === 'front') ? 1 : 0)
+      + (sp.some(p => p.photo_type === 'rear') ? 1 : 0);
+    const sealCount = Math.min(
+      new Set(sp.filter(p => p.photo_type === 'seal').map(p => String(p.seal_position))).size,
+      sealCountPerTruck
+    );
+    return sum + frontRear + sealCount;
+  }, 0);
 
   sectionHead(ctx, `Truck ${truck.position} -- ${truck.driver_name || 'Unknown Driver'}`);
 
@@ -201,7 +232,7 @@ function truckDetail(ctx, truck, truckPhotos) {
     { label: 'Plate / Reg', value: truck.plate_number || '--' },
     { label: 'Driver Phone', value: truck.driver_phone || '--' },
     { label: 'License No', value: truck.driver_license_no || '--' },
-    { label: 'Photos', value: `${totalPhotos} / ${expectedTotal}` },
+    { label: 'Photos', value: `${receivedTotal} / ${expectedTotal}` },
   ]);
 
   if (sealPositions.length > 0) {
@@ -360,20 +391,23 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
 
     newPage(ctx);
     sectionHead(ctx, 'D -- Photo Status Matrix');
+    const sealCountPerTruck = convoy.seal_count_per_truck ?? 3;
     const truckMatrix = trucks.map(truck => {
       const tp = photos.filter(p => p.convoy_truck_id === truck.id);
-      const sealPositions = Array.from(new Set(
-        tp.filter(p => p.photo_type === 'seal').map(p => String(p.seal_position))
-      ));
       const buildSession = (session) => {
         const sp = tp.filter(p => p.session === session);
-        const sealHave = sealPositions.filter(pos =>
-          sp.some(p => p.photo_type === 'seal' && String(p.seal_position) === pos)
-        ).length;
+        // Cap at the convoy's actual configured seal count, not the number
+        // of distinct seal_position values ever seen for this truck+session
+        // — seal_position is CFO-entered free text, so a drifted code
+        // shouldn't read as "6 seals required" when the convoy has 3.
+        const sealHave = Math.min(
+          new Set(sp.filter(p => p.photo_type === 'seal').map(p => String(p.seal_position))).size,
+          sealCountPerTruck
+        );
         return {
           front: sp.some(p => p.photo_type === 'front'),
           rear: sp.some(p => p.photo_type === 'rear'),
-          sealHave, sealTotal: sealPositions.length,
+          sealHave, sealTotal: sealCountPerTruck,
         };
       };
       return { ...truck, sod: buildSession('sod'), eod: buildSession('eod') };
@@ -382,7 +416,7 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
     mismatchTable(ctx, photos);
 
     trucks.forEach(truck => {
-      truckDetail(ctx, truck, photos.filter(p => p.convoy_truck_id === truck.id));
+      truckDetail(ctx, truck, photos.filter(p => p.convoy_truck_id === truck.id), sealCountPerTruck);
     });
 
     cfoPhotosTable(ctx, cfoPhotos);
