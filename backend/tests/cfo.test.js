@@ -93,8 +93,10 @@ beforeEach(() => {
   mockCR.mockReset();
   db.pool.connect.mockResolvedValue({ query: mockCQ, release: mockCR });
   isCfoModuleEnabled.mockResolvedValue(true);
+  // convoyReportQueue must exist: with no queue, regenerateReport falls back
+  // to inline PDF generation via the real worker, which this suite doesn't mock.
   require('../src/config/queue').getQueues.mockReturnValue({
-    convoyReportQueue: null, convoyArchiveQueue: null,
+    convoyReportQueue: { add: jest.fn().mockResolvedValue({}) }, convoyArchiveQueue: null,
   });
 });
 
