@@ -166,6 +166,12 @@ export default function ConvoyReports(): React.ReactElement {
       void queryClient.invalidateQueries({ queryKey: ['convoy-report-detail', selectedId, selectedDate] });
       void queryClient.invalidateQueries({ queryKey: ['convoy-reports-overview'] });
     },
+    onError: (err: any) => {
+      // Previously silent — a failed regenerate looked identical to a
+      // successful one that just hadn't been clicked yet, since only
+      // onSuccess was wired up.
+      alert(err?.response?.data?.error || err?.message || 'Could not regenerate the report. Please try again.');
+    },
   });
 
   const items = overview?.data ?? [];

@@ -646,10 +646,22 @@ const downloadReport = asyncHandler(async (req, res) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
   const convoy = await query('SELECT id FROM convoys WHERE id = $1 AND deleted_at IS NULL', [req.params.id]);
   if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
-  const r = await query(
-    `SELECT pdf_url, status, pdf_data FROM convoy_daily_reports WHERE convoy_id = $1 AND report_date = $2`,
-    [req.params.id, date]
-  );
+  // Tolerate pdf_data not existing yet if its migration hasn't applied on
+  // this database — fall back to the pre-migration column set rather than
+  // 500ing every download.
+  let r;
+  try {
+    r = await query(
+      `SELECT pdf_url, status, pdf_data FROM convoy_daily_reports WHERE convoy_id = $1 AND report_date = $2`,
+      [req.params.id, date]
+    );
+  } catch (err) {
+    if (err.code !== '42703') throw err;
+    r = await query(
+      `SELECT pdf_url, status FROM convoy_daily_reports WHERE convoy_id = $1 AND report_date = $2`,
+      [req.params.id, date]
+    );
+  }
   if (!r.rows.length) return res.status(404).json({ error: 'Report not found' });
   if (r.rows[0].status !== 'generated') return res.status(422).json({ error: `Report status: ${r.rows[0].status}` });
   const r2PublicUrl = process.env.R2_PUBLIC_URL;

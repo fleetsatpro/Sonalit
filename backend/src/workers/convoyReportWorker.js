@@ -212,13 +212,35 @@ async function handleGenerateReport({ convoy_id, report_date, force }) {
   const orgRow = await query(`SELECT org_id FROM convoys WHERE id = $1`, [convoy_id]);
   const orgId = orgRow.rows[0]?.org_id || convoy_id;
 
-  await query(
-    `UPDATE convoy_daily_reports
-     SET status = 'generated', pdf_url = $1, content_hash = $2,
-         generation_error = $3, pdf_data = $4, generated_at = NOW(), updated_at = NOW()
-     WHERE convoy_id = $5 AND report_date = $6`,
-    [pdfUrl, contentHash, generationError, pdfBuffer, convoy_id, report_date]
-  );
+  try {
+    await query(
+      `UPDATE convoy_daily_reports
+       SET status = 'generated', pdf_url = $1, content_hash = $2,
+           generation_error = $3, pdf_data = $4, generated_at = NOW(), updated_at = NOW()
+       WHERE convoy_id = $5 AND report_date = $6`,
+      [pdfUrl, contentHash, generationError, pdfBuffer, convoy_id, report_date]
+    );
+  } catch (updateErr) {
+    // 42703 = undefined_column — the pdf_data migration hasn't applied on
+    // this database yet. Don't let that abort the whole generation (the
+    // report would stay stuck on 'partial' forever with no PDF at all);
+    // fall back to the pre-migration column set so status still correctly
+    // flips to 'generated' with whatever pdf_url/R2 or local storage did
+    // succeed, at the cost of the DB-backed durability fallback until the
+    // migration actually runs.
+    if (updateErr.code === '42703') {
+      logger.warn('[convoyReport] pdf_data column missing (migration not yet applied) — saving without it');
+      await query(
+        `UPDATE convoy_daily_reports
+         SET status = 'generated', pdf_url = $1, content_hash = $2,
+             generation_error = $3, generated_at = NOW(), updated_at = NOW()
+         WHERE convoy_id = $4 AND report_date = $5`,
+        [pdfUrl, contentHash, generationError, convoy_id, report_date]
+      );
+    } else {
+      throw updateErr;
+    }
+  }
 
   publish(`convoy.report.ready.${orgId}`, { convoy_id, report_date, pdf_url: pdfUrl });
   logger.info(`[convoyReport] report marked generated for ${convoy_id}/${report_date}`);
