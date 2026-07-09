@@ -1,5 +1,6 @@
 const PDFDocument = require('pdfkit');
 const sharp = require('sharp');
+const logger = require('./logger');
 const C = {
   dark: '#0b1220', dark2: '#152238', navy: '#1a2a4a', accent: '#d97706', gold: '#f5a623',
   green: '#16a34a', greenBg: '#dcfce7', greenBorder: '#86efac',
@@ -185,17 +186,32 @@ function nextLetter(ctx) {
 // thumbnail and is typically tens of KB instead of multiple MB.
 async function fetchImageBuffer(url) {
   if (!url || !/^https?:\/\//.test(url)) return null;
+  let raw;
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (!res.ok) return null;
-    const raw = Buffer.from(await res.arrayBuffer());
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) {
+      logger.warn(`[convoyPdf] photo fetch non-2xx (${res.status}): ${url}`);
+      return null;
+    }
+    raw = Buffer.from(await res.arrayBuffer());
+  } catch (err) {
+    logger.warn(`[convoyPdf] photo fetch failed: ${url} -- ${err.message}`);
+    return null;
+  }
+  try {
     return await sharp(raw)
       .rotate() // apply EXIF orientation before stripping metadata
       .resize({ width: 640, withoutEnlargement: true })
       .jpeg({ quality: 70 })
       .toBuffer();
-  } catch {
-    return null;
+  } catch (err) {
+    // sharp couldn't decode/re-encode it (e.g. an unexpected format) — the
+    // fetch itself succeeded, so embed the original bytes rather than
+    // dropping a real, present photo down to a "NO PHOTO" placeholder.
+    // PDFKit can only embed JPEG/PNG directly; anything else still fails
+    // when drawPhotoCard tries doc.image(), but that's caught there.
+    logger.warn(`[convoyPdf] sharp processing failed, using raw bytes: ${url} -- ${err.message}`);
+    return raw;
   }
 }
 
@@ -499,15 +515,57 @@ function haversineKm(lat1, lng1, lat2, lng2) {
 // distance/speed/drive-time stats computed from those same points, and a
 // sampled route log table. All from convoy_waypoints, already populated by
 // the Guardian app's live tracking — no new data source required.
-function routeSection(ctx, waypoints, convoy) {
+// Most convoys have no continuous device tracking, so live GPS pings
+// (convoy_waypoints) are the exception rather than the rule — a plain "No
+// GPS waypoints logged" message left the section empty for the common case.
+// When there's no live track for the day, fall back to the dispatcher-keyed
+// known towns/checkpoints for the route (convoy_route_waypoints) so the
+// report still shows the intended path, clearly labeled as planned rather
+// than GPS-verified.
+function plannedRouteFallback(ctx, convoy, namedWaypoints) {
+  const doc = ctx.doc;
+  doc.fill(C.muted).fontSize(7.5).font('Helvetica');
+  t(doc, 'No GPS waypoints logged for this date.', M, doc.y, { width: CW });
+  doc.y += 14;
+
+  if (!namedWaypoints.length) {
+    doc.fill(C.light).fontSize(7).font('Helvetica');
+    t(doc, 'No known route waypoints configured for this convoy either — add them on the convoy setup page to show a planned route here.',
+      M, doc.y, { width: CW });
+    doc.y += 16;
+    return;
+  }
+
+  const stops = [
+    { name: convoy.route_origin || 'Origin' },
+    ...namedWaypoints,
+    { name: convoy.route_destination || 'Destination' },
+  ];
+  doc.fill(C.sub).fontSize(7).font('Helvetica-Bold');
+  t(doc, 'PLANNED ROUTE (dispatcher-entered, not GPS-verified)', M, doc.y, { width: CW });
+  doc.y += 14;
+
+  ensureSpace(ctx, stops.length * 16 + 10);
+  let y = doc.y;
+  stops.forEach((s, i) => {
+    if (i < stops.length - 1) {
+      doc.save().moveTo(M + 4, y + 8).lineTo(M + 4, y + 8 + 16).lineWidth(1).strokeColor(C.border).stroke().restore();
+    }
+    dot(doc, M + 4, y + 5, 3, i === 0 || i === stops.length - 1 ? C.accent : C.light);
+    doc.fill(C.text).fontSize(8).font('Helvetica-Bold');
+    t(doc, s.name, M + 14, y + 1, { width: CW - 60 });
+    y += 16;
+  });
+  doc.y = y + 6;
+}
+
+function routeSection(ctx, waypoints, convoy, namedWaypoints = []) {
   const doc = ctx.doc;
   ensureSpace(ctx, 60);
   sectionHead(ctx, nextLetter(ctx), "Day's Movement — Route Track");
 
   if (!waypoints.length) {
-    doc.fill(C.muted).fontSize(8).font('Helvetica');
-    t(doc, 'No GPS waypoints logged for this date.', M, doc.y, { width: CW });
-    doc.y += 16;
+    plannedRouteFallback(ctx, convoy, namedWaypoints);
     return;
   }
 
@@ -667,7 +725,7 @@ function summarySection(ctx, received, required, mismatchCount, cfos, report, co
   doc.y = sigY + 40;
 }
 
-async function generateDailyReport(convoy, trucks, cfos, photos, report, reportDate, cfoPhotos = [], waypoints = []) {
+async function generateDailyReport(convoy, trucks, cfos, photos, report, reportDate, cfoPhotos = [], waypoints = [], namedWaypoints = []) {
   const generatedAt = new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
   const pct = report.required_photo_count > 0
     ? Math.round((report.received_photo_count / report.required_photo_count) * 100) : 0;
@@ -710,7 +768,7 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
       ],
       checklist: [
         { label: 'Details', ok: true },
-        { label: 'Route', ok: waypoints.length > 0 },
+        { label: 'Route', ok: waypoints.length > 0 || namedWaypoints.length > 0 },
         { label: 'Officers', ok: cfos.length > 0 },
         { label: 'Photos', ok: pct >= 100 },
         { label: 'Summary', ok: report.status === 'generated' || report.status === 'complete' },
@@ -729,7 +787,7 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
       { label: 'Seals / Truck', value: String(convoy.seal_count_per_truck ?? '--') },
     ]);
 
-    routeSection(ctx, waypoints, convoy);
+    routeSection(ctx, waypoints, convoy, namedWaypoints);
 
     if (cfos.length) {
       sectionHead(ctx, nextLetter(ctx), 'Field Officers');

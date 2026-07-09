@@ -293,6 +293,65 @@ const removeTruck = asyncHandler(async (req, res) => {
   res.json({ message: 'Truck removed from convoy' });
 });
 
+// Known route waypoints (towns/checkpoints a dispatcher keys in for the
+// planned route) — used by the PDF report as a fallback route display when
+// no live GPS pings were logged for the convoy that day, which is the
+// common case rather than the exception for most convoys.
+const getRouteWaypoints = asyncHandler(async (req, res) => {
+  const convoy = await query('SELECT id FROM convoys WHERE id = $1 AND deleted_at IS NULL', [req.params.id]);
+  if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
+
+  const result = await query(
+    `SELECT id, seq, name, lat, lng FROM convoy_route_waypoints WHERE convoy_id = $1 ORDER BY seq`,
+    [req.params.id]
+  );
+  res.json({ data: result.rows });
+});
+
+const routeWaypointsSchema = Joi.object({
+  waypoints: Joi.array().items(Joi.object({
+    name: Joi.string().min(1).max(120).required(),
+    lat: Joi.number().min(-90).max(90).allow(null),
+    lng: Joi.number().min(-180).max(180).allow(null),
+  })).max(50).required(),
+});
+
+const setRouteWaypoints = asyncHandler(async (req, res) => {
+  const convoy = await query('SELECT id FROM convoys WHERE id = $1 AND deleted_at IS NULL', [req.params.id]);
+  if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
+
+  const { error, value } = routeWaypointsSchema.validate(req.body);
+  if (error) return res.status(400).json({ error: error.message });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM convoy_route_waypoints WHERE convoy_id = $1', [req.params.id]);
+    for (let i = 0; i < value.waypoints.length; i++) {
+      const wp = value.waypoints[i];
+      await client.query(
+        `INSERT INTO convoy_route_waypoints (convoy_id, seq, name, lat, lng) VALUES ($1,$2,$3,$4,$5)`,
+        [req.params.id, i, wp.name, wp.lat ?? null, wp.lng ?? null]
+      );
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  gAudit(req.user.id, 'convoy_route_waypoints_updated', 'convoy', req.params.id,
+    { count: value.waypoints.length }, req.ip);
+
+  const result = await query(
+    `SELECT id, seq, name, lat, lng FROM convoy_route_waypoints WHERE convoy_id = $1 ORDER BY seq`,
+    [req.params.id]
+  );
+  res.json({ data: result.rows });
+});
+
 // B2 — add CFO to planned convoy
 const addCfo = asyncHandler(async (req, res) => {
   if (!await isCfoModuleEnabled()) return res.status(403).json({ error: 'cfo_module_disabled' });
@@ -807,7 +866,7 @@ async function getConvoyReportDetail(req, res, next) {
     );
     if (!convoyRes.rows.length) return res.status(404).json({ error: 'Convoy not found' });
 
-    const [trucksRes, photosRes, sealsRes, waypointsRes, reportRes] = await Promise.all([
+    const [trucksRes, photosRes, sealsRes, waypointsRes, reportRes, namedWaypointsRes] = await Promise.all([
       query(
         `SELECT ct.id, COALESCE(ct.registration, v.registration) AS plate_number, v.make, v.model, ct.position,
                 u.name AS cfo_name, u.id AS cfo_user_id
@@ -850,6 +909,10 @@ async function getConvoyReportDetail(req, res, next) {
          FROM convoy_daily_reports
          WHERE convoy_id = $1 AND report_date = $2`,
         [id, date]
+      ),
+      query(
+        `SELECT seq, name, lat, lng FROM convoy_route_waypoints WHERE convoy_id = $1 ORDER BY seq`,
+        [id]
       ),
     ]);
 
@@ -934,6 +997,7 @@ async function getConvoyReportDetail(req, res, next) {
           seals: sealsByTruck[t.id] || [],
         })),
         waypoints: waypointsRes.rows,
+        named_waypoints: namedWaypointsRes.rows,
         cfo_uploads: cfoUploadsRes.rows.map(u => ({ ...u, photo_url: normalizePhotoUrl(u.photo_url) })),
       },
     });
@@ -946,6 +1010,8 @@ module.exports = {
   createConvoyCfo,
   addTruck,
   removeTruck,
+  getRouteWaypoints,
+  setRouteWaypoints,
   addCfo,
   removeCfo,
   assignTruckToCfo,

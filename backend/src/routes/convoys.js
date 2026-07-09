@@ -36,6 +36,10 @@ router.get('/:id/events', c.getConvoyEvents);
 router.post('/:id/trucks', authorize('admin', 'dispatcher'), cfo.addTruck);
 router.delete('/:id/trucks/:truckId', authorize('admin', 'dispatcher'), cfo.removeTruck);
 
+// Known route waypoints (dispatcher-entered towns/checkpoints for the planned route)
+router.get('/:id/route-waypoints', authorize('admin', 'dispatcher', 'analyst'), cfo.getRouteWaypoints);
+router.put('/:id/route-waypoints', authorize('admin', 'dispatcher'), auditLog('convoy_route_waypoints'), cfo.setRouteWaypoints);
+
 // CFO user management (B2)
 router.post('/:id/cfos', authorize('admin', 'dispatcher'), cfo.addCfo);
 router.delete('/:id/cfos/:cfoId', authorize('admin', 'dispatcher'), cfo.removeCfo);

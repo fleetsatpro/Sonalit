@@ -56,7 +56,7 @@ async function uploadToR2(key, buffer, contentType) {
 // ─── DB Helpers ───────────────────────────────────────────────────────────────
 
 async function fetchReportData(convoy_id, report_date) {
-  const [convoyRes, trucksRes, cfosRes, photosRes, reportRes, cfoPhotosRes, waypointsRes] = await Promise.all([
+  const [convoyRes, trucksRes, cfosRes, photosRes, reportRes, cfoPhotosRes, waypointsRes, namedWaypointsRes] = await Promise.all([
     query('SELECT * FROM convoys WHERE id = $1', [convoy_id]),
     query(
       `SELECT ct.*, COALESCE(ct.registration, v.registration) AS plate_number
@@ -102,6 +102,10 @@ async function fetchReportData(convoy_id, report_date) {
        LIMIT 500`,
       [convoy_id, report_date]
     ),
+    query(
+      `SELECT seq, name, lat, lng FROM convoy_route_waypoints WHERE convoy_id = $1 ORDER BY seq`,
+      [convoy_id]
+    ),
   ]);
   return {
     convoy: convoyRes.rows[0],
@@ -111,6 +115,7 @@ async function fetchReportData(convoy_id, report_date) {
     report: reportRes.rows[0],
     cfoPhotos: cfoPhotosRes.rows,
     waypoints: waypointsRes.rows,
+    namedWaypoints: namedWaypointsRes.rows,
   };
 }
 
@@ -182,7 +187,7 @@ async function handleCheckProgress({ convoy_id, report_date }) {
 }
 
 async function handleGenerateReport({ convoy_id, report_date, force }) {
-  const { convoy, trucks, cfos, photos, report, cfoPhotos, waypoints } = await fetchReportData(convoy_id, report_date);
+  const { convoy, trucks, cfos, photos, report, cfoPhotos, waypoints, namedWaypoints } = await fetchReportData(convoy_id, report_date);
   if (!convoy) throw new Error(`Convoy ${convoy_id} not found`);
   if (!report) {
     logger.warn(`[convoyReport] No daily report row for ${convoy_id} ${report_date} — running recount`);
@@ -194,7 +199,7 @@ async function handleGenerateReport({ convoy_id, report_date, force }) {
     return;
   }
 
-  const pdfBuffer = await generateDailyReport(convoy, trucks, cfos, photos, report, report_date, cfoPhotos, waypoints);
+  const pdfBuffer = await generateDailyReport(convoy, trucks, cfos, photos, report, report_date, cfoPhotos, waypoints, namedWaypoints);
   const key = `reports/daily/${convoy_id}/${report_date}.pdf`;
 
   let pdfUrl = null;

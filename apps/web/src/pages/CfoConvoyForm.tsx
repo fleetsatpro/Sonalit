@@ -263,6 +263,92 @@ function TruckRosterSection({
   );
 }
 
+// Known route waypoints (towns/checkpoints along the planned route) — the
+// PDF report shows these as a fallback "planned route" whenever live GPS
+// tracking has no pings logged for a given day, which is the common case
+// rather than the exception for most convoys.
+type RouteWaypointRow = { id?: string; name: string; lat?: number | null; lng?: number | null };
+
+function RouteWaypointsSection({ convoyId }: { convoyId: string }) {
+  const queryClient = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ['convoys', convoyId, 'route-waypoints'],
+    queryFn: () => api.get<{ data: RouteWaypointRow[] }>(`/convoys/${convoyId}/route-waypoints`).then((r) => r.data.data),
+  });
+  const [rows, setRows] = useState<RouteWaypointRow[] | null>(null);
+  const effectiveRows = rows ?? data ?? [];
+
+  const save = useMutation({
+    mutationFn: (waypoints: RouteWaypointRow[]) =>
+      api.put(`/convoys/${convoyId}/route-waypoints`, {
+        waypoints: waypoints
+          .filter((w) => w.name.trim().length > 0)
+          .map((w) => ({ name: w.name.trim(), lat: w.lat ?? null, lng: w.lng ?? null })),
+      }),
+    onSuccess: () => {
+      setRows(null);
+      void queryClient.invalidateQueries({ queryKey: ['convoys', convoyId, 'route-waypoints'] });
+    },
+  });
+
+  const updateName = (i: number, name: string) => {
+    const next = [...effectiveRows];
+    next[i] = { ...next[i], name };
+    setRows(next);
+  };
+  const removeRow = (i: number) => setRows(effectiveRows.filter((_, idx) => idx !== i));
+  const addRow = () => setRows([...effectiveRows, { name: '' }]);
+
+  return (
+    <Section label="Known Route Waypoints">
+      <p className="text-[#607890] text-[10px] font-mono leading-relaxed -mt-1 mb-1">
+        Towns or checkpoints along the planned route, in order. Shown on the daily PDF report as the
+        planned route whenever live GPS tracking has no pings logged for that day — most convoys don't
+        have continuous device tracking, so this is what fills the map section for them.
+      </p>
+
+      {isLoading ? (
+        <p className="text-[#304558] text-xs font-mono">Loading…</p>
+      ) : (
+        <div className="space-y-2">
+          {effectiveRows.map((wp, i) => (
+            <div key={wp.id ?? i} className="flex items-center gap-2">
+              <MapPin size={13} className="text-orange-400 flex-shrink-0" />
+              <input value={wp.name} onChange={(e) => updateName(i, e.target.value)}
+                placeholder={`Stop ${i + 1} (e.g. Lubumbashi)`}
+                className={BASE_INPUT + ' !py-1.5 !text-[11px]'} />
+              <button type="button" onClick={() => removeRow(i)}
+                className="text-[#607890] hover:text-red-400 flex-shrink-0" title="Remove stop">
+                <X size={13} />
+              </button>
+            </div>
+          ))}
+          {effectiveRows.length === 0 && (
+            <p className="text-[#304558] text-xs font-mono">No known waypoints configured yet.</p>
+          )}
+
+          <div className="flex items-center gap-3 pt-1">
+            <button type="button" onClick={addRow}
+              className="text-xs font-mono text-orange-400 hover:text-orange-300 border border-orange-500/30 rounded-md px-3 py-1.5">
+              + Add Stop
+            </button>
+            <button type="button" disabled={save.isPending} onClick={() => save.mutate(effectiveRows)}
+              className="text-xs font-mono text-gray-200 hover:text-white bg-[#09101c] border border-[#122038] hover:border-[#1a2e4a] disabled:opacity-50 rounded-md px-3 py-1.5">
+              {save.isPending ? 'Saving…' : 'Save Route'}
+            </button>
+            {save.isSuccess && !rows && <span className="text-[11px] font-mono text-green-400">Saved</span>}
+            {save.error && (
+              <span className="text-[11px] font-mono text-red-400">
+                {extractApiError(save.error, 'Failed to save route')}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </Section>
+  );
+}
+
 function AddTruckForm({ vehicles, defaultPosition, pending, error, onAdd, onCancel }: {
   vehicles: { id: string; registration?: string | null; make?: string | null; model?: string | null }[];
   defaultPosition: number;
@@ -657,6 +743,10 @@ export default function CfoConvoyForm(): React.ReactElement {
               trucks={convoyTrucks}
               assignments={cfoTruckAssignments}
             />
+          )}
+
+          {isEdit && params.id && (
+            <RouteWaypointsSection convoyId={params.id} />
           )}
 
           {/* Notes */}
