@@ -442,18 +442,23 @@ function truckDetail(ctx, truck, truckPhotos, sealCountPerTruck, photoBuffers) {
   newPage(ctx);
   const doc = ctx.doc;
 
-  // A truck has exactly sealCountPerTruck physical seal slots — never more.
-  // seal_position is CFO-entered free text though, not a fixed slot index,
-  // so a reseal between SOD and EOD (a normal, expected occurrence, not a
-  // data error) legitimately uses different codes for the same slots. That
-  // means SOD's and EOD's distinct codes must be capped and displayed
-  // *independently* — pooling both sessions into one combined list (the
-  // previous approach) could show up to 2x sealCountPerTruck codes/cards,
-  // which is exactly the "second truck that only has seals" confusion this
-  // was built to avoid, and directly contradicts the hard 3-seal cap.
+  // A truck has exactly sealCountPerTruck physical seal slots. seal_position
+  // is CFO-entered free text though, not a fixed slot index, so a reseal
+  // between SOD and EOD (a normal, expected occurrence, not a data error)
+  // legitimately uses different codes for the same slots — SOD's and EOD's
+  // distinct codes must be capped and displayed *independently*, or a truck
+  // could show up to 2x sealCountPerTruck cards.
+  //
+  // displaySealCap trims that further, on purpose: the PDF only ever shows
+  // up to 2 seal cards per session regardless of sealCountPerTruck, so the
+  // hero photos + seal grid reliably fit on one page with no overflow to a
+  // continuation page. This is a print-layout choice, not a data change —
+  // completeness counts elsewhere (matrix, summary) still use the true
+  // sealCountPerTruck.
+  const displaySealCap = Math.min(sealCountPerTruck, 2);
   const sealCodesFor = (session) => Array.from(new Set(
     truckPhotos.filter(p => p.session === session && p.photo_type === 'seal').map(p => String(p.seal_position))
-  )).sort().slice(0, sealCountPerTruck);
+  )).sort().slice(0, displaySealCap);
   const sodSealCodes = sealCodesFor('sod');
   const eodSealCodes = sealCodesFor('eod');
   const expectedTotal = (2 + sealCountPerTruck) * 2;
@@ -475,7 +480,7 @@ function truckDetail(ctx, truck, truckPhotos, sealCountPerTruck, photoBuffers) {
     { label: 'Driver Phone', value: truck.driver_phone || '--' },
     { label: 'License No', value: truck.driver_license_no || '--' },
     {
-      label: `Seal Codes (${sealCountPerTruck}/truck)`,
+      label: `Seal Codes (${displaySealCap} of ${sealCountPerTruck} shown)`,
       value: (sodSealCodes.length || eodSealCodes.length)
         ? `SOD: ${sodSealCodes.join(', ') || '--'}  ·  EOD: ${eodSealCodes.join(', ') || '--'}`
         : '--',
@@ -502,12 +507,12 @@ function truckDetail(ctx, truck, truckPhotos, sealCountPerTruck, photoBuffers) {
   const sealCardW = (colW - sealGap * (sealCols - 1)) / sealCols;
   const sealPhotoH = 78, sealCaptionH = 24;
   const sealRowStride = sealPhotoH + 6 + sealCaptionH + 10;
-  // Fixed to the convoy's configured slot count, not however many distinct
-  // codes the data happens to contain — this is the hard cap that keeps
-  // SOD's and EOD's grids the same size even when they used different
-  // codes for a reseal, and guarantees this can never render more cards
-  // than the truck actually has physical seal slots for.
-  const sealRows = Math.ceil(sealCountPerTruck / sealCols);
+  // Fixed to displaySealCap (at most 2), not sealCountPerTruck and not
+  // however many distinct codes the data happens to contain — this keeps
+  // SOD's and EOD's grids the same size regardless of reseals, and keeps
+  // the seal grid to a single row so it reliably fits under the hero
+  // photos with no continuation page.
+  const sealRows = Math.ceil(displaySealCap / sealCols);
 
   // The hero pair (banner + Front + Rear, both columns) always follows
   // straight after the truck's own fresh page, so it's virtually guaranteed
@@ -534,12 +539,12 @@ function truckDetail(ctx, truck, truckPhotos, sealCountPerTruck, photoBuffers) {
   });
   doc.y = heroY + heroPairH + 12;
 
-  if (sealCountPerTruck <= 0) return;
+  if (displaySealCap <= 0) return;
   const sealCodesByCol = { sod: sodSealCodes, eod: eodSealCodes };
-  // Seal rows paginate on their own (unlike the hero pair above) — sealRows
-  // is fixed at sealCountPerTruck, so this only ever runs for a genuinely
-  // large configured seal count, not because the data happened to contain
-  // more distinct codes than expected.
+  // Seal rows paginate on their own (unlike the hero pair above) as a
+  // safety net, but with displaySealCap capped at 2 and sealCols at 2 this
+  // is always exactly one row — the seal grid should never actually spill
+  // to a continuation page in practice.
   for (let row = 0; row < sealRows; row++) {
     const pageBefore = ctx.pageNum;
     ensureSpace(ctx, sealRowStride + 10);
@@ -563,7 +568,7 @@ function truckDetail(ctx, truck, truckPhotos, sealCountPerTruck, photoBuffers) {
       const codes = sealCodesByCol[col.session];
       for (let sc = 0; sc < sealCols; sc++) {
         const idx = row * sealCols + sc;
-        if (idx >= sealCountPerTruck) break;
+        if (idx >= displaySealCap) break;
         // The slot always exists (up to sealCountPerTruck) even if this
         // session has no code for it yet — draw it as MISSING rather than
         // skipping it, so both columns' grids stay the same shape.
