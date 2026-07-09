@@ -434,12 +434,12 @@ function mismatchTable(ctx, photos) {
 }
 
 function truckDetail(ctx, truck, truckPhotos, sealCountPerTruck, photoBuffers) {
-  // Was an unconditional newPage — wasted a lot of a page whenever the
-  // Photo Status Matrix left significant room (e.g. a single-truck convoy).
-  // Everything below this already paginates per-row on its own (see the
-  // hero row and seal grid below), so only force a page break when the
-  // truck's header + detail grid + first hero row genuinely won't fit.
-  ensureSpace(ctx, 350);
+  // Deliberate: every truck always starts on its own fresh page, even if
+  // that leaves the previous page partly blank. Each truck's photo
+  // evidence is meant to be reviewed as a self-contained block, and mixing
+  // the tail end of one truck's grid with the start of another's on the
+  // same page is worse than an underused page.
+  newPage(ctx);
   const doc = ctx.doc;
 
   // sealPositions pools every distinct seal_position value ever seen — kept
