@@ -1,21 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
-import { subscribe } from '../lib/centrifuge.js';
-import { useAuthStore } from '../stores/auth.js';
-import { FileText, Download, Plus, X, RefreshCw } from 'lucide-react';
+import { FileText, Download, Plus, X, Trash2, Truck, Route, Users, Gauge, TrendingUp, Fuel } from 'lucide-react';
 
-type ReportStatus = 'pending' | 'ready' | 'failed';
-type ReportType = 'convoy' | 'fleet' | 'driver';
+type ReportType = 'fleet' | 'convoy' | 'driver' | 'daily_ops' | 'sla_compliance' | 'fuel_efficiency';
 type ReportFormat = 'PDF' | 'CSV';
 
 interface Report {
   id: string;
   title: string;
   type: ReportType;
+  format: ReportFormat;
+  status: 'ready';
+  period_from: string | null;
+  period_to: string | null;
   generated_at: string;
-  status: ReportStatus;
-  url: string | null;
 }
 
 interface GenerateReportPayload {
@@ -25,10 +24,13 @@ interface GenerateReportPayload {
   format: ReportFormat;
 }
 
-const STATUS_STYLES: Record<ReportStatus, string> = {
-  pending: 'bg-yellow-800 text-yellow-200',
-  ready: 'bg-green-800 text-green-200',
-  failed: 'bg-red-800 text-red-200',
+const TYPE_META: Record<ReportType, { label: string; icon: React.ReactNode }> = {
+  fleet: { label: 'Fleet Status', icon: <Truck className="w-4 h-4" /> },
+  convoy: { label: 'Convoy Activity', icon: <Route className="w-4 h-4" /> },
+  driver: { label: 'Driver Performance', icon: <Users className="w-4 h-4" /> },
+  daily_ops: { label: 'Daily Operations', icon: <Gauge className="w-4 h-4" /> },
+  sla_compliance: { label: 'SLA Compliance', icon: <TrendingUp className="w-4 h-4" /> },
+  fuel_efficiency: { label: 'Fuel Efficiency', icon: <Fuel className="w-4 h-4" /> },
 };
 
 function formatDate(d: Date): string {
@@ -48,8 +50,7 @@ function GenerateForm({ onClose }: { onClose: () => void }) {
   });
 
   const mutation = useMutation({
-    mutationFn: (payload: GenerateReportPayload) =>
-      api.post('/reports', payload),
+    mutationFn: (payload: GenerateReportPayload) => api.post('/reports', payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['reports'] });
       onClose();
@@ -70,9 +71,9 @@ function GenerateForm({ onClose }: { onClose: () => void }) {
             value={form.type}
             onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as ReportType }))}
           >
-            <option value="convoy">Convoy</option>
-            <option value="fleet">Fleet</option>
-            <option value="driver">Driver</option>
+            {(Object.entries(TYPE_META) as [ReportType, typeof TYPE_META[ReportType]][]).map(([v, m]) => (
+              <option key={v} value={v}>{m.label}</option>
+            ))}
           </select>
         </div>
         <div>
@@ -119,29 +120,51 @@ function GenerateForm({ onClose }: { onClose: () => void }) {
   );
 }
 
+function DownloadButton({ report }: { report: Report }) {
+  const [busy, setBusy] = useState(false);
+
+  const download = async () => {
+    setBusy(true);
+    try {
+      const res = await api.get(`/reports/${report.id}/export`, { responseType: 'blob' });
+      const ext = report.format === 'CSV' ? 'csv' : 'pdf';
+      const blobUrl = URL.createObjectURL(res.data as Blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `${report.title.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <button onClick={download} disabled={busy} className="flex items-center gap-1 text-orange-400 hover:text-orange-300 text-sm disabled:opacity-50">
+      <Download size={14} />
+      {busy ? 'Preparing…' : 'Download'}
+    </button>
+  );
+}
+
 export default function Reports() {
   const [showForm, setShowForm] = useState(false);
   const queryClient = useQueryClient();
-  const user = useAuthStore((s) => s.user);
 
   const { data, isLoading, isError } = useQuery<Report[]>({
     queryKey: ['reports'],
     queryFn: async () => {
-      const res = await api.get<Report[] | { data: Report[] }>('/reports');
-      const raw = res.data;
-      return Array.isArray(raw) ? raw : (raw?.data ?? []);
+      const res = await api.get<{ data: Report[] }>('/reports');
+      return res.data.data ?? [];
     },
   });
 
-  // T3.4: subscribe to Centrifugo for report-ready events; invalidate query on arrival.
-  useEffect(() => {
-    if (!user?.org_id) return;
-    const unsub = subscribe<{ convoy_id: string; report_date: string; pdf_url: string }>(
-      `convoy.report.ready.${user.org_id}`,
-      () => { queryClient.invalidateQueries({ queryKey: ['reports'] }); }
-    );
-    return unsub;
-  }, [user?.org_id, queryClient]);
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => api.delete(`/reports/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['reports'] }),
+  });
 
   return (
     <div className="space-y-4">
@@ -175,49 +198,38 @@ export default function Reports() {
               <tr>
                 <th className="px-4 py-3 text-left">Title</th>
                 <th className="px-4 py-3 text-left">Type</th>
+                <th className="px-4 py-3 text-left">Period</th>
+                <th className="px-4 py-3 text-left">Format</th>
                 <th className="px-4 py-3 text-left">Generated</th>
-                <th className="px-4 py-3 text-left">Status</th>
                 <th className="px-4 py-3 text-left">Download</th>
+                <th className="px-4 py-3 text-left"></th>
               </tr>
             </thead>
             <tbody>
               {data.map((report) => (
                 <tr key={report.id} className="border-t border-slate-700">
                   <td className="px-4 py-3 font-medium">{report.title}</td>
-                  <td className="px-4 py-3 capitalize text-slate-300">{report.type}</td>
+                  <td className="px-4 py-3 text-slate-300">
+                    <span className="flex items-center gap-1.5">{TYPE_META[report.type]?.icon}{TYPE_META[report.type]?.label ?? report.type}</span>
+                  </td>
+                  <td className="px-4 py-3 text-slate-400 text-xs">
+                    {report.period_from && report.period_to ? `${report.period_from} – ${report.period_to}` : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-slate-300">{report.format}</td>
                   <td className="px-4 py-3 text-slate-400">
                     {new Date(report.generated_at).toLocaleString()}
                   </td>
+                  <td className="px-4 py-3"><DownloadButton report={report} /></td>
                   <td className="px-4 py-3">
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_STYLES[report.status]}`}>
-                      {report.status === 'pending' ? (
-                        <span className="flex items-center gap-1">
-                          <RefreshCw size={10} className="animate-spin" />
-                          pending
-                        </span>
-                      ) : report.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    {report.status === 'ready' && report.url ? (
-                      <a
-                        href={report.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center gap-1 text-orange-400 hover:text-orange-300 text-sm"
-                      >
-                        <Download size={14} />
-                        Download
-                      </a>
-                    ) : (
-                      <span className="text-slate-600">—</span>
-                    )}
+                    <button onClick={() => deleteMut.mutate(report.id)} className="text-slate-500 hover:text-red-400" aria-label="Delete report">
+                      <Trash2 size={14} />
+                    </button>
                   </td>
                 </tr>
               ))}
               {data.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
                     No reports generated yet.
                   </td>
                 </tr>
