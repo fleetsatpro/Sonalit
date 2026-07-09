@@ -29,7 +29,15 @@ ALTER TABLE convoys ADD COLUMN IF NOT EXISTS archive_pdf_url TEXT;
 ALTER TABLE convoys DROP CONSTRAINT IF EXISTS convoys_status_check;
 ALTER TABLE convoys DROP CONSTRAINT IF EXISTS convoys_status_cfo_check;
 ALTER TABLE convoys ADD CONSTRAINT convoys_status_cfo_check
-  CHECK (status IN ('planned','active','completed','aborted','cancelled'));
+  -- Must match migration 041's convoys_status_check list exactly ('completing'
+  -- included) — this migration was failing on every single deploy since it
+  -- shipped because a live convoy already has status='completing' (the
+  -- "completing/handover" feature from migration 041, itself never able to
+  -- run because it comes after this one in sort order and this one never
+  -- succeeded), and this constraint's list didn't have it. That blocked every
+  -- migration from 016 onward — including 049's convoy_daily_reports.pdf_data
+  -- column — from ever applying, on every deploy since.
+  CHECK (status IN ('planned','active','completing','completed','aborted','cancelled'));
 
 ALTER TABLE convoys DROP CONSTRAINT IF EXISTS convoys_seal_count_check;
 ALTER TABLE convoys ADD CONSTRAINT convoys_seal_count_check
