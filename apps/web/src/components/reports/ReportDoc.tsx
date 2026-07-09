@@ -93,6 +93,7 @@ const SEAL_STATUS_COLOR: Record<string, string> = {
   broken: '#ef4444',
   missing: '#f59e0b',
   replaced: '#a78bfa',
+  present: '#22c55e',
 };
 
 function PhotoBox({ url = undefined, label }: { url?: string | undefined; label: string }) {
@@ -174,7 +175,17 @@ function TruckBlock({ truck, session }: { truck: TruckRecord; session: 'sod' | '
           {sealPositions.length === 0
             ? <span style={{ fontSize: 11, color: '#9ca3af', fontFamily: 'JetBrains Mono, monospace' }}>No seals recorded</span>
             : sealPositions.map(pos => {
+              // convoy_seals (dedicated RFID scan-log records, with a
+              // status of intact/broken/replaced) is a separate table from
+              // convoy_truck_photos (what the Guardian app's seal capture
+              // flow actually writes to) — the CFO app has no "scan this
+              // seal" step, only "photograph this seal", so sealRecord(pos)
+              // is empty for every convoy using just the photo flow. Fall
+              // back to the photo itself as evidence the seal was checked,
+              // instead of defaulting straight to "missing".
               const sr = sealRecord(pos);
+              const hasPhoto = !!sealPhoto(pos);
+              const status = sr?.status || (hasPhoto ? 'present' : 'missing');
               return (
                 <div key={pos} style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -189,10 +200,10 @@ function TruckBlock({ truck, session }: { truck: TruckRecord; session: 'sod' | '
                   </div>
                   <span style={{
                     fontSize: 9, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase',
-                    color: SEAL_STATUS_COLOR[sr?.status || 'missing'],
+                    color: SEAL_STATUS_COLOR[status],
                     fontFamily: 'JetBrains Mono, monospace',
                   }}>
-                    {sr?.status || 'missing'}
+                    {status}
                   </span>
                 </div>
               );
