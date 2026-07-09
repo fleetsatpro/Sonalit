@@ -199,17 +199,27 @@ async function fetchImageBuffer(url) {
     return null;
   }
   try {
-    return await sharp(raw)
+    // failOn: 'none' — some Guardian devices produce JPEGs with malformed
+    // SOS markers ("Invalid SOS parameters for sequential JPEG") that
+    // libvips' default strict mode rejects outright even though the image
+    // is perfectly viewable in a browser. Confirmed from production logs:
+    // every photo on a report was failing this exact way, falling back to
+    // raw un-recompressed bytes that PDFKit's own (stricter) JPEG parser
+    // then also rejected, ending up as "NO PHOTO" despite the photo being
+    // genuinely present. Telling sharp to attempt a best-effort decode
+    // instead of erroring fixes it at the source.
+    return await sharp(raw, { failOn: 'none' })
       .rotate() // apply EXIF orientation before stripping metadata
       .resize({ width: 640, withoutEnlargement: true })
       .jpeg({ quality: 70 })
       .toBuffer();
   } catch (err) {
-    // sharp couldn't decode/re-encode it (e.g. an unexpected format) — the
-    // fetch itself succeeded, so embed the original bytes rather than
-    // dropping a real, present photo down to a "NO PHOTO" placeholder.
-    // PDFKit can only embed JPEG/PNG directly; anything else still fails
-    // when drawPhotoCard tries doc.image(), but that's caught there.
+    // Still failed even with lenient parsing (e.g. truly corrupt/truncated
+    // data) — fall back to the original fetched bytes rather than dropping
+    // a real, present photo down to a "NO PHOTO" placeholder. PDFKit can
+    // only embed JPEG/PNG directly; if the raw bytes aren't one of those,
+    // it still fails when drawPhotoCard tries doc.image(), but that's
+    // caught there.
     logger.warn(`[convoyPdf] sharp processing failed, using raw bytes: ${url} -- ${err.message}`);
     return raw;
   }
