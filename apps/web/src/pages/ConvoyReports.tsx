@@ -140,6 +140,17 @@ export default function ConvoyReports(): React.ReactElement {
     queryKey: ['convoy-report-detail', selectedId, selectedDate],
     queryFn: async () => (await api.get(`/convoys/${selectedId}/reports/${selectedDate}/detail`)).data,
     enabled: !!(selectedId && selectedDate),
+    // Regenerating flips the report to 'partial' immediately (before the
+    // background worker has actually produced a new PDF), which is also
+    // when the Centrifugo "report ready" push is supposed to tell us it's
+    // done — but that push depends on infra (Centrifugo) that isn't always
+    // reachable, so relying on it alone can leave the Download button gone
+    // indefinitely even after the PDF finishes generating. Poll while the
+    // report is in a non-final state so the UI self-heals either way.
+    refetchInterval: (query) => {
+      const status = query.state.data?.data.daily_report?.status;
+      return status === 'partial' || status === 'pending' ? 3000 : false;
+    },
   });
 
   // Subscribe to Centrifugo for report-ready events so the viewer (and the
