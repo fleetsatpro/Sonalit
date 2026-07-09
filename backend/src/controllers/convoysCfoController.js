@@ -668,12 +668,13 @@ const getConvoyReportsOverview = asyncHandler(async (req, res) => {
   const convoyIds = convoysRes.rows.map(c => c.id);
   const [latestReports, mismatchCounts, cfoAppReports] = await Promise.all([
     query(
-      // A stray convoy_daily_reports row outside the convoy's own
-      // start_date/end_date (bad test data, a client clock issue, a manual
-      // regenerate with the wrong date) used to win "latest" purely by
-      // being the newest by date, showing a blank/nonsensical report for
-      // a day the convoy was never even running. Only rows inside the
-      // convoy's actual window (or convoys with no bound set) are eligible.
+      // A stray convoy_daily_reports row from before the convoy's own
+      // start_date (bad test data, a client clock issue, a manual regenerate
+      // with the wrong date) used to win "latest" purely by being the
+      // newest by date, showing a blank/nonsensical report for a day the
+      // convoy didn't exist yet. Only excluding the lower bound — end_date
+      // is a plan, not a hard stop; an active convoy legitimately keeps
+      // getting real uploads past its original planned end date.
       `SELECT DISTINCT ON (cdr.convoy_id) cdr.convoy_id, cdr.report_date, cdr.status,
               cdr.required_photo_count, cdr.received_photo_count, cdr.pdf_url,
               cdr.generated_at, cdr.generation_error
@@ -681,7 +682,6 @@ const getConvoyReportsOverview = asyncHandler(async (req, res) => {
        JOIN convoys c ON c.id = cdr.convoy_id
        WHERE cdr.convoy_id = ANY($1)
          AND (c.start_date IS NULL OR cdr.report_date >= c.start_date)
-         AND (c.end_date IS NULL OR cdr.report_date <= c.end_date)
        ORDER BY cdr.convoy_id, cdr.report_date DESC`,
       [convoyIds]
     ),
@@ -703,7 +703,6 @@ const getConvoyReportsOverview = asyncHandler(async (req, res) => {
        LEFT JOIN convoys c2 ON c2.id::text = cr.convoy_id
        WHERE cr.convoy_id = ANY($1::text[])
          AND (c2.start_date IS NULL OR cr.date >= c2.start_date)
-         AND (c2.end_date IS NULL OR cr.date <= c2.end_date)
        ORDER BY cr.convoy_id, cr.date DESC`,
       [convoyIds]
     ),
