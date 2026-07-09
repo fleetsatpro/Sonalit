@@ -532,41 +532,72 @@ function haversineKm(lat1, lng1, lat2, lng2) {
 // known towns/checkpoints for the route (convoy_route_waypoints) so the
 // report still shows the intended path, clearly labeled as planned rather
 // than GPS-verified.
-function plannedRouteFallback(ctx, convoy, namedWaypoints) {
+// Renders the dispatcher-entered stops as an actual route diagram — a
+// connected line of checkpoints wrapping left-to-right / right-to-left in
+// successive rows (like a metro map), rather than a plain bulleted list.
+// Once Guardian devices are logging live GPS per truck, routeSection's own
+// lat/lng-projected track (above this fallback in the call order) takes
+// over automatically; this is only ever shown for days with no live ping.
+function plannedRouteMap(ctx, convoy, namedWaypoints) {
   const doc = ctx.doc;
-  doc.fill(C.muted).fontSize(7.5).font('Helvetica');
-  t(doc, 'No GPS waypoints logged for this date.', M, doc.y, { width: CW });
-  doc.y += 14;
-
-  if (!namedWaypoints.length) {
-    doc.fill(C.light).fontSize(7).font('Helvetica');
-    t(doc, 'No known route waypoints configured for this convoy either — add them on the convoy setup page to show a planned route here.',
-      M, doc.y, { width: CW });
-    doc.y += 16;
-    return;
-  }
-
+  const trim = (s) => (s || '').trim().toLowerCase();
   const stops = [
     { name: convoy.route_origin || 'Origin' },
     ...namedWaypoints,
     { name: convoy.route_destination || 'Destination' },
-  ];
-  doc.fill(C.sub).fontSize(7).font('Helvetica-Bold');
-  t(doc, 'PLANNED ROUTE (dispatcher-entered, not GPS-verified)', M, doc.y, { width: CW });
-  doc.y += 14;
+  // Collapse a duplicate stop where a dispatcher's last keyed-in waypoint is
+  // effectively the same place as the origin/destination already shown
+  // (e.g. "Dar es salaam" entered as a stop when the destination is already
+  // "Dar es Salaam") — same name, different casing, back to back.
+  ].filter((s, i, arr) => i === 0 || trim(s.name) !== trim(arr[i - 1].name));
 
-  ensureSpace(ctx, stops.length * 16 + 10);
-  let y = doc.y;
-  stops.forEach((s, i) => {
-    if (i < stops.length - 1) {
-      doc.save().moveTo(M + 4, y + 8).lineTo(M + 4, y + 8 + 16).lineWidth(1).strokeColor(C.border).stroke().restore();
-    }
-    dot(doc, M + 4, y + 5, 3, i === 0 || i === stops.length - 1 ? C.accent : C.light);
-    doc.fill(C.text).fontSize(8).font('Helvetica-Bold');
-    t(doc, s.name, M + 14, y + 1, { width: CW - 60 });
-    y += 16;
+  const perRow = 5;
+  const rowH = 62;
+  const rows = Math.ceil(stops.length / perRow);
+  const mapH = Math.max(120, 34 + rows * rowH);
+  ensureSpace(ctx, mapH + 20);
+  const mapY = doc.y, padX = 34;
+  doc.save().rect(M, mapY, CW, mapH).lineWidth(0.6).fillAndStroke('#f0fdf4', C.border).restore();
+
+  doc.fill(C.sub).fontSize(6.5).font('Helvetica-Bold');
+  t(doc, 'PLANNED ROUTE', M + 12, mapY + 9, { width: 200 });
+  doc.fill(C.light).fontSize(6).font('Helvetica');
+  t(doc, 'Dispatcher-entered, not GPS-verified', M + 12, mapY + 18, { width: 250 });
+
+  const chipW = 90, chipH = 30, chipX = M + CW - chipW - 10, chipY = mapY + 8;
+  doc.save().rect(chipX, chipY, chipW, chipH).lineWidth(0.6).fillAndStroke(C.white, C.border).restore();
+  doc.fill(C.light).fontSize(6).font('Helvetica');
+  t(doc, 'STOPS', chipX + 8, chipY + 5, { width: chipW - 16 });
+  doc.fill(C.text).fontSize(12).font('Helvetica-Bold');
+  t(doc, String(stops.length), chipX + 8, chipY + 15, { width: chipW - 16 });
+
+  const usableW = CW - padX * 2;
+  const positions = stops.map((s, i) => {
+    const row = Math.floor(i / perRow);
+    const idxInRow = i % perRow;
+    const itemsInRow = Math.min(perRow, stops.length - row * perRow);
+    const ltr = row % 2 === 0;
+    const displayIdx = ltr ? idxInRow : itemsInRow - 1 - idxInRow;
+    const rowColW = itemsInRow > 1 ? usableW / (itemsInRow - 1) : 0;
+    const x = M + padX + (itemsInRow > 1 ? displayIdx * rowColW : usableW / 2);
+    const y = mapY + 40 + row * rowH + rowH / 2;
+    return { x, y, name: s.name, endpoint: i === 0 || i === stops.length - 1 };
   });
-  doc.y = y + 6;
+
+  doc.save().lineWidth(1.4).strokeColor(C.accent);
+  for (let i = 1; i < positions.length; i++) {
+    doc.moveTo(positions[i - 1].x, positions[i - 1].y).lineTo(positions[i].x, positions[i].y);
+  }
+  doc.stroke().restore();
+
+  positions.forEach((p, i) => {
+    dot(doc, p.x, p.y, p.endpoint ? 4 : 3, p.endpoint ? C.accent : C.light);
+    const above = i % 2 === 0;
+    doc.fill(C.text).fontSize(6.5).font('Helvetica-Bold');
+    t(doc, p.name, p.x - 45, above ? p.y - 17 : p.y + 6, { width: 90, align: 'center' });
+  });
+
+  doc.y = mapY + mapH + 8;
 }
 
 function routeSection(ctx, waypoints, convoy, namedWaypoints = []) {
@@ -575,7 +606,17 @@ function routeSection(ctx, waypoints, convoy, namedWaypoints = []) {
   sectionHead(ctx, nextLetter(ctx), "Day's Movement — Route Track");
 
   if (!waypoints.length) {
-    plannedRouteFallback(ctx, convoy, namedWaypoints);
+    doc.fill(C.muted).fontSize(7.5).font('Helvetica');
+    t(doc, 'No GPS waypoints logged for this date.', M, doc.y, { width: CW });
+    doc.y += 14;
+    if (!namedWaypoints.length) {
+      doc.fill(C.light).fontSize(7).font('Helvetica');
+      t(doc, 'No known route waypoints configured for this convoy either — add them on the convoy setup page to show a planned route here.',
+        M, doc.y, { width: CW });
+      doc.y += 16;
+      return;
+    }
+    plannedRouteMap(ctx, convoy, namedWaypoints);
     return;
   }
 
@@ -657,7 +698,7 @@ function routeSection(ctx, waypoints, convoy, namedWaypoints = []) {
 
 function cfoPhotosTable(ctx, cfoPhotos) {
   if (!cfoPhotos.length) return;
-  newPage(ctx);
+  ensureSpace(ctx, 60 + Math.min(cfoPhotos.length, 10) * 14);
   sectionHead(ctx, nextLetter(ctx), `CFO App Photos (${cfoPhotos.length} uploaded)`);
   const doc = ctx.doc, cols = [M,M+55,M+130,M+230,M+310,M+390], colW = [51,71,96,76,76,115];
   tableHeader(doc, cols, colW, ['Phase','Type','Plate','Lat','Lng','Time (UTC)']);
@@ -813,7 +854,11 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
       doc.y = y + 6;
     }
 
-    newPage(ctx);
+    // Was an unconditional newPage regardless of how much room was left on
+    // the current page — a short Field Officers list (or none) left most of
+    // page 1 blank before jumping to a fresh page for this. ensureSpace only
+    // pages when the matrix + its header rows genuinely won't fit.
+    ensureSpace(ctx, 70 + trucks.length * 23);
     sectionHead(ctx, nextLetter(ctx), 'Photo Status Matrix');
     const sealCountPerTruck = convoy.seal_count_per_truck ?? 3;
     const truckMatrix = trucks.map(truck => {
