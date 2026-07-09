@@ -1,4 +1,5 @@
 const PDFDocument = require('pdfkit');
+const sharp = require('sharp');
 const C = {
   dark: '#0d1426', navy: '#1a2a4a', accent: '#d97706', accent2: '#f59e0b',
   green: '#16a34a', greenBg: '#dcfce7', greenBorder: '#86efac',
@@ -74,18 +75,28 @@ function ensureSpace(ctx, needed) {
   if (ctx.doc.y + needed > BODY_BOTTOM) newPage(ctx);
 }
 
-// Fetches a photo's bytes for embedding as a thumbnail in the PDF — the
-// report previously only showed a text "Present/MISSING" indicator per
-// photo, never the actual image, which defeats the point of a report meant
-// to be visual proof of vehicle/seal condition. Failures return null so one
-// bad/slow URL degrades to a placeholder box instead of failing the whole
-// report.
+// Fetches a photo's bytes for embedding in the PDF — the report previously
+// only showed a text "Present/MISSING" indicator per photo, never the actual
+// image, which defeats the point of a report meant to be visual proof of
+// vehicle/seal condition. Failures return null so one bad/slow URL degrades
+// to a placeholder box instead of failing the whole report.
+//
+// Downscaled + recompressed via sharp before returning: raw camera photos
+// (several MB each, full resolution) were being embedded as-is even though
+// they only ever render as a small thumbnail — a 5-page report with ~20
+// photos came out to 23.7MB. 640px wide at JPEG q70 is plenty for a printed
+// thumbnail and is typically tens of KB instead of multiple MB.
 async function fetchImageBuffer(url) {
   if (!url || !/^https?:\/\//.test(url)) return null;
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) return null;
-    return Buffer.from(await res.arrayBuffer());
+    const raw = Buffer.from(await res.arrayBuffer());
+    return await sharp(raw)
+      .rotate() // apply EXIF orientation before stripping metadata
+      .resize({ width: 640, withoutEnlargement: true })
+      .jpeg({ quality: 70 })
+      .toBuffer();
   } catch {
     return null;
   }
@@ -269,73 +280,88 @@ function truckDetail(ctx, truck, truckPhotos, sealCountPerTruck, photoBuffers) {
     doc.y += 14;
   }
 
+  // Photo evidence grid — 3 large cards per row instead of the previous
+  // cramped data-table with a 34x26pt thumbnail wedged next to five text
+  // columns. Each card: photo (or a clear "NO PHOTO" placeholder), a status
+  // badge overlaid in the corner, and a caption with the seal code,
+  // timestamp, and GPS underneath.
+  const gridCols = 3, gridGap = 14;
+  const cardW = (CW - gridGap * (gridCols - 1)) / gridCols;
+  const photoH = 118, captionH = 36;
+  const cardH = photoH + 6 + captionH;
+  const rowStride = cardH + 14;
+
   ['sod', 'eod'].forEach(session => {
     const label = session === 'sod' ? 'Start of Day (SOD)' : 'End of Day (EOD)';
-    ensureSpace(ctx, 50 + (2 + sealPositions.length) * 40);
+    const sp = truckPhotos.filter(p => p.session === session);
+    const slots = [
+      { label: 'FRONT', photoType: 'front', sealPos: null },
+      { label: 'REAR', photoType: 'rear', sealPos: null },
+      ...sealPositions.map(pos => ({ label: `SEAL ${pos}`, photoType: 'seal', sealPos: pos })),
+    ];
+    ensureSpace(ctx, 30 + rowStride);
     sectionHead(ctx, label);
 
-    const sp = truckPhotos.filter(p => p.session === session);
-    const types = [
-      { typeLabel: 'Front', photoType: 'front', sealPos: null },
-      { typeLabel: 'Rear', photoType: 'rear', sealPos: null },
-      ...sealPositions.map(pos => ({ typeLabel: 'Seal', photoType: 'seal', sealPos: pos })),
-    ];
-
-    // Leading thumbnail column shows the actual uploaded photo — a text-only
-    // "Present/MISSING" row is not visual proof of anything. GPS replaces the
-    // old OK/MISMATCH flag with the real coordinates (still amber-highlighted
-    // on a mismatch) so a reviewer can see exactly where a photo was taken.
-    const thumbW = 34, thumbH = 26, rowH = 40;
-    const cols = [M, M + 42, M + 112, M + 172, M + 272, M + 372];
-    const colW = [36, 66, 56, 96, 96, 90];
-    tableHeader(doc, cols, colW, ['', 'Photo Type', 'Seal Code', 'Uploaded At', 'GPS', 'Status']);
-
-    let y = doc.y;
-    types.forEach((row, idx) => {
-      if (y + rowH > BODY_BOTTOM) { newPage(ctx); y = ctx.doc.y; }
-      const match = row.sealPos != null
-        ? sp.find(p => p.photo_type === 'seal' && String(p.seal_position) === row.sealPos)
-        : sp.find(p => p.photo_type === row.photoType);
-
-      if (idx % 2 === 0) doc.rect(M, y, CW, rowH).fill(C.stripe);
-
-      const buf = match ? photoBuffers.get(match.id) : null;
-      if (buf) {
-        try {
-          doc.image(buf, cols[0] + 1, y + (rowH - thumbH) / 2, { fit: [thumbW, thumbH] });
-        } catch {
-          drawNoPhotoBox(doc, cols[0] + 1, y + (rowH - thumbH) / 2, thumbW, thumbH);
-        }
-      } else {
-        drawNoPhotoBox(doc, cols[0] + 1, y + (rowH - thumbH) / 2, thumbW, thumbH);
+    let idx = 0;
+    while (idx < slots.length) {
+      ensureSpace(ctx, cardH + 12);
+      const rowY = doc.y;
+      for (let col = 0; col < gridCols && idx < slots.length; col++, idx++) {
+        const slot = slots[idx];
+        const match = slot.sealPos != null
+          ? sp.find(p => p.photo_type === 'seal' && String(p.seal_position) === slot.sealPos)
+          : sp.find(p => p.photo_type === slot.photoType);
+        drawPhotoCard(doc, M + col * (cardW + gridGap), rowY, cardW, photoH, captionH, slot, match, photoBuffers);
       }
-
-      const uploaded = match?.uploaded_at
-        ? new Date(match.uploaded_at).toISOString().replace('T', ' ').slice(0, 16) : '--';
-      const gps = match?.lat != null && match?.lng != null
-        ? `${parseFloat(match.lat).toFixed(4)}, ${parseFloat(match.lng).toFixed(4)}` : '--';
-      const status = match ? 'Present' : 'MISSING';
-      const textY = y + (rowH - 8) / 2;
-
-      doc.fill(match ? C.sub : C.red).fontSize(7.5).font(match ? 'Helvetica' : 'Helvetica-Bold');
-      t(doc, row.typeLabel, cols[1] + 3, textY, { width: colW[1] });
-      doc.fill(C.muted).font('Helvetica');
-      t(doc, row.sealPos || '--', cols[2] + 3, textY, { width: colW[2] });
-      t(doc, uploaded, cols[3] + 3, textY, { width: colW[3] });
-      doc.fill(match?.location_mismatch ? C.amber : C.light);
-      t(doc, gps, cols[4] + 3, textY, { width: colW[4] });
-      doc.fill(match ? C.green : C.red).font('Helvetica-Bold');
-      t(doc, status, cols[5] + 3, textY, { width: colW[5] });
-      y += rowH;
-    });
-    doc.y = y + 6;
+      doc.y = rowY + rowStride;
+    }
   });
 }
 
-function drawNoPhotoBox(doc, x, y, w, h) {
-  doc.save().rect(x, y, w, h).lineWidth(0.4).fillAndStroke(C.stripe, C.border).restore();
-  doc.fill(C.light).fontSize(4.5).font('Helvetica');
-  t(doc, 'NO IMG', x, y + h / 2 - 3, { width: w, align: 'center' });
+function drawPhotoCard(doc, x, y, w, photoH, captionH, slot, match, photoBuffers) {
+  doc.save().rect(x, y, w, photoH).lineWidth(0.6).fillAndStroke(C.stripe, C.border).restore();
+
+  const buf = match ? photoBuffers.get(match.id) : null;
+  if (buf) {
+    try {
+      doc.save();
+      doc.rect(x, y, w, photoH).clip();
+      doc.image(buf, x, y, { fit: [w, photoH], align: 'center', valign: 'center' });
+      doc.restore();
+    } catch {
+      drawNoPhotoText(doc, x, y, w, photoH);
+    }
+  } else {
+    drawNoPhotoText(doc, x, y, w, photoH);
+  }
+
+  // Status badge, overlaid top-right corner of the photo
+  const present = !!match;
+  const badgeW = 54, badgeH = 13;
+  doc.save().rect(x + w - badgeW - 4, y + 4, badgeW, badgeH)
+    .fill(present ? C.greenBg : C.redBg).restore();
+  doc.fill(present ? C.green : C.red).fontSize(6).font('Helvetica-Bold');
+  t(doc, present ? 'PRESENT' : 'MISSING', x + w - badgeW - 4, y + 7, { width: badgeW, align: 'center' });
+
+  // Caption: label, timestamp, GPS
+  let cy = y + photoH + 4;
+  doc.fill(C.text).fontSize(7.5).font('Helvetica-Bold');
+  t(doc, slot.label, x, cy, { width: w });
+  cy += 11;
+  doc.fill(C.muted).fontSize(6).font('Helvetica');
+  const uploaded = match?.uploaded_at
+    ? new Date(match.uploaded_at).toISOString().replace('T', ' ').slice(0, 16) : '--';
+  t(doc, uploaded, x, cy, { width: w });
+  cy += 9;
+  const gps = match?.lat != null && match?.lng != null
+    ? `${parseFloat(match.lat).toFixed(4)}, ${parseFloat(match.lng).toFixed(4)}` : 'GPS --';
+  doc.fill(match?.location_mismatch ? C.amber : C.light).fontSize(6);
+  t(doc, gps, x, cy, { width: w });
+}
+
+function drawNoPhotoText(doc, x, y, w, h) {
+  doc.fill(C.light).fontSize(7.5).font('Helvetica');
+  t(doc, 'NO PHOTO', x, y + h / 2 - 4, { width: w, align: 'center' });
 }
 
 function cfoPhotosTable(ctx, cfoPhotos) {

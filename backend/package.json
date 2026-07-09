@@ -1,7 +1,7 @@
 {
   "name": "fleetops-backend",
   "version": "1.0.0",
-  "description": "FleetOps Pro \u2014 Backend API Server",
+  "description": "FleetOps Pro — Backend API Server",
   "main": "src/app.js",
   "scripts": {
     "prestart": "node scripts/db-migrate.js",
@@ -48,6 +48,7 @@
     "nodemailer": "^6.9.7",
     "pdfkit": "^0.15.0",
     "pg": "^8.11.3",
+    "sharp": "^0.35.3",
     "socket.io": "^4.7.2",
     "uuid": "^9.0.0",
     "winston": "^3.11.0"
