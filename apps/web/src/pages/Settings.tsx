@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import { useAuthStore, getAccessToken } from '../stores/auth.js';
-import { Settings as SettingsIcon, Key, Shield, Copy, Trash2, Plus, X, MessageCircle } from 'lucide-react';
+import { Settings as SettingsIcon, Key, Shield, Copy, Trash2, Plus, X, MessageCircle, Palette } from 'lucide-react';
 import { GuardianConvoySettings } from '../components/GuardianConvoySettings.js';
+import { useUIStore } from '../stores/ui.js';
 
 interface ApiKey {
   id: string;
@@ -375,6 +376,37 @@ interface WhatsAppConfig {
   active: boolean;
 }
 
+function AppearanceSection() {
+  const theme = useUIStore((s) => s.theme);
+  const setTheme = useUIStore((s) => s.setTheme);
+
+  return (
+    <SectionCard title="Appearance" icon={<Palette size={16} className="text-orange-400" />}>
+      <div className="space-y-2">
+        <label className="block text-xs text-slate-400 mb-1">Theme</label>
+        <div className="flex gap-2">
+          {(['dark', 'light'] as const).map((opt) => (
+            <button
+              key={opt}
+              onClick={() => setTheme(opt)}
+              className={`flex-1 text-sm px-3 py-2 rounded border transition-colors capitalize ${
+                theme === opt
+                  ? 'bg-orange-600 border-orange-500 text-white'
+                  : 'bg-slate-900 border-slate-600 text-slate-300 hover:border-slate-500'
+              }`}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-slate-500 pt-1">
+          Applies to the sidebar, top bar, and dashboard cards immediately and is remembered on this device.
+        </p>
+      </div>
+    </SectionCard>
+  );
+}
+
 function WhatsAppSection() {
   const qc = useQueryClient();
   const [form, setForm] = useState({ phone_number_id: '', access_token: '', verify_token: '', business_id: '', active: false });
@@ -435,6 +467,7 @@ export default function Settings() {
         <h1 className="text-xl font-bold">Settings</h1>
       </div>
       <ProfileSection />
+      <AppearanceSection />
       <ChangePasswordSection />
       <ApiKeysSection />
       <TotpSection />

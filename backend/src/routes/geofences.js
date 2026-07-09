@@ -1,10 +1,27 @@
 const router = require('express').Router();
+// Only used for ensureGeofenceActions()'s CREATE TABLE IF NOT EXISTS — schema
+// DDL, not org-scoped data access, so the unscoped connection is correct
+// there. Every actual data query below must go through req.db instead.
 const { query } = require('../config/database');
 const { authenticate } = require('../middleware/auth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { invalidateGeofenceCache } = require('../utils/geofenceEngine');
 const { asyncHandler } = require('../middleware/error');
 router.use(authenticate, attachOrgDb);
+
+// attachOrgDb only sets req.db when req.user.org_id is present — every route
+// below previously fell back to the raw, unscoped `query()` connection
+// whenever it wasn't, which runs as a Postgres superuser and therefore
+// bypasses the org_isolation RLS policy on geofences entirely (superusers
+// always bypass RLS, FORCE ROW LEVEL SECURITY notwithstanding). That
+// silently mixed every organization's geofences into one list for any
+// request missing org_id — the likely source of unfamiliar/"weird"
+// geofences showing up. Fail closed instead of falling back to an
+// unscoped query.
+router.use((req, res, next) => {
+  if (!req.db) return res.status(403).json({ error: 'org_scope_required' });
+  next();
+});
 
 function parseLatLng(row) {
   // Normalize double-serialized JSON strings (JSON.stringify called twice)
@@ -43,7 +60,7 @@ async function ensureGeofenceActions() {
 
 router.get('/', async (req, res, next) => {
   try {
-    const db = req.db || query;
+    const db = req.db;
     const { rows } = await db(`SELECT * FROM geofences ORDER BY created_at DESC`);
     res.json({ data: rows.map(parseLatLng) });
   } catch (err) { next(err); }
@@ -51,7 +68,7 @@ router.get('/', async (req, res, next) => {
 
 router.post('/', async (req, res, next) => {
   try {
-    const db = req.db || query;
+    const db = req.db;
     const { name, type = 'circle', radius, region } = req.body;
     if (!name) return res.status(400).json({ error: 'Name is required' });
     let coordinates = req.body.coordinates;
@@ -72,7 +89,7 @@ router.post('/', async (req, res, next) => {
 
 async function updateGeofence(req, res, next) {
   try {
-    const db = req.db || query;
+    const db = req.db;
     const { name, active, coordinates, radius } = req.body;
     const { rows } = await db(
       `UPDATE geofences SET name=COALESCE($1,name), active=COALESCE($2,active), coordinates=COALESCE($3,coordinates), radius=COALESCE($4,radius), updated_at=NOW() WHERE id=$5 RETURNING *`,
@@ -88,7 +105,7 @@ router.patch('/:id', updateGeofence);
 
 router.delete('/:id', async (req, res, next) => {
   try {
-    const db = req.db || query;
+    const db = req.db;
     await db(`DELETE FROM geofences WHERE id=$1`, [req.params.id]);
     res.json({ ok: true });
   } catch (err) { next(err); }
@@ -96,7 +113,7 @@ router.delete('/:id', async (req, res, next) => {
 
 router.get('/:id/actions', async (req, res, next) => {
   try {
-    const db = req.db || query;
+    const db = req.db;
     const { rows } = await db(`SELECT * FROM geofence_actions WHERE geofence_id = $1 ORDER BY created_at`, [req.params.id]);
     res.json({ data: rows });
   } catch (err) { next(err); }
@@ -105,7 +122,7 @@ router.get('/:id/actions', async (req, res, next) => {
 router.post('/:id/actions', async (req, res, next) => {
   try {
     await ensureGeofenceActions();
-    const db = req.db || query;
+    const db = req.db;
     const { action_type, recipient, message_template } = req.body;
     if (!action_type) return res.status(400).json({ error: 'action_type is required' });
     const { rows } = await db(
@@ -118,7 +135,7 @@ router.post('/:id/actions', async (req, res, next) => {
 
 router.delete('/:id/actions/:actionId', async (req, res, next) => {
   try {
-    const db = req.db || query;
+    const db = req.db;
     await db(`DELETE FROM geofence_actions WHERE id = $1 AND geofence_id = $2`, [req.params.actionId, req.params.id]);
     res.json({ ok: true });
   } catch (err) { next(err); }
@@ -126,7 +143,7 @@ router.delete('/:id/actions/:actionId', async (req, res, next) => {
 
 router.patch('/:id/actions/:actionId/toggle', async (req, res, next) => {
   try {
-    const db = req.db || query;
+    const db = req.db;
     const { rows } = await db(
       `UPDATE geofence_actions SET enabled = NOT enabled WHERE id = $1 AND geofence_id = $2 RETURNING *`,
       [req.params.actionId, req.params.id]

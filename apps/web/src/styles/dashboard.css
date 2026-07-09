@@ -52,6 +52,53 @@
   --d-str-h: 40px;
 }
 
+/* ── Light theme ────────────────────────────────────────────────────────
+   Every component reads colors through these var(--d-xxx) custom
+   properties rather than hardcoding them, so overriding them here is
+   enough to re-theme the whole dashboard chrome (Rail, Topbar, cards,
+   etc.) with no per-component changes. data-theme is set on <html> by
+   stores/ui.ts's setTheme(). Note: pages built with hardcoded Tailwind
+   classes (e.g. bg-slate-800) rather than these variables won't respond
+   to this — that's a separate, larger migration. */
+:root[data-theme="light"] {
+  --d-void: #ffffff;
+  --d-carbon: #f8fafc;
+  --d-deep: #f1f5f9;
+  --d-well: #e9edf2;
+  --d-surf: #e2e8f0;
+  --d-lift: #d8e0ea;
+  --d-lift2: #cbd6e3;
+
+  --d-rim: rgba(15,23,42,.08);
+  --d-rim2: rgba(15,23,42,.14);
+  --d-rim3: rgba(15,23,42,.26);
+
+  --d-sig: #16a34a;
+  --d-sig2: #15803d;
+  --d-sig3: #166534;
+  --d-sg: rgba(34,197,94,.15);
+  --d-sg2: rgba(34,197,94,.08);
+  --d-sglow: rgba(34,197,94,.5);
+
+  --d-orange: #ea580c;
+  --d-og: rgba(234,88,12,.14);
+  --d-oglow: rgba(234,88,12,.5);
+
+  --d-fire: #dc2626;
+  --d-fg: rgba(220,38,38,.12);
+  --d-fglow: rgba(220,38,38,.45);
+  --d-warn: #b45309;
+  --d-wg: rgba(180,83,9,.12);
+  --d-ok: #4d7c0f;
+  --d-okg: rgba(77,124,15,.10);
+  --d-purple: #7e22ce;
+
+  --d-t1: #0f172a;
+  --d-t2: #475569;
+  --d-t3: #94a3b8;
+  --d-t4: #cbd5e1;
+}
+
 /* ── System-wide font override ─────────────────────────────────────────
    Forces Inter everywhere, including on the ~60 components that set
    font-family inline (Orbitron, Space Grotesk, Syne, Fraunces, Barlow
@@ -62,6 +109,27 @@
 html, body, #root, * {
   font-family: var(--d-font) !important;
   font-variant-numeric: tabular-nums;
+}
+
+/* ── Rail (side nav) bold font ──────────────────────────────────────────
+   The blanket `* { font-family: var(--d-font) !important }` above wins
+   over any inline font-family Rail.tsx sets on its own, since !important
+   in an author stylesheet beats a plain inline style regardless of
+   specificity — so the only way to actually change the nav's typeface is
+   a rule at least as specific, also !important. Barlow Condensed is
+   already loaded (index.html's Google Fonts link) for the login page, so
+   this adds no new font asset. */
+.d-rail-navlabel {
+  font-family: 'Barlow Condensed', var(--d-font) !important;
+  font-weight: 700 !important;
+  letter-spacing: .015em;
+}
+.d-rail-navlabel.is-active {
+  font-weight: 800 !important;
+}
+.d-rail-wordmark {
+  font-family: 'Barlow Condensed', var(--d-font) !important;
+  font-weight: 800 !important;
 }
 
 /* ── Animations ─────────────────────────────────────────────────────────── */

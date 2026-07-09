@@ -101,14 +101,12 @@ const Rail = React.memo(function Rail({ onClose }: { onClose?: () => void }) {
             clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)',
             flexShrink: 0,
           }} />
-          <span style={{
-            fontFamily: 'Orbitron, sans-serif',
-            fontWeight: 800,
-            fontSize: 16,
+          <span className="d-rail-wordmark" style={{
+            fontSize: 17,
             background: 'linear-gradient(90deg, #ff9040, #f07020)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
-            letterSpacing: '.12em',
+            letterSpacing: '.1em',
           }}>SONALIT</span>
         </div>
         <div style={{ marginTop: 4, fontSize: 10, color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace', letterSpacing: '.06em' }}>
@@ -137,6 +135,7 @@ const Rail = React.memo(function Rail({ onClose }: { onClose?: () => void }) {
                   key={item.path}
                   to={item.path}
                   onClick={onClose}
+                  className={`d-rail-navlabel${active ? ' is-active' : ''}`}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -147,9 +146,7 @@ const Rail = React.memo(function Rail({ onClose }: { onClose?: () => void }) {
                     background: active ? 'linear-gradient(90deg, rgba(249,115,22,.08), transparent)' : 'transparent',
                     borderLeft: active ? '3px solid var(--d-orange)' : '3px solid transparent',
                     boxShadow: active ? 'inset 4px 0 12px rgba(249,115,22,.12)' : 'none',
-                    fontSize: 13,
-                    fontFamily: 'DM Sans, sans-serif',
-                    fontWeight: active ? 600 : 400,
+                    fontSize: 14,
                     transition: 'all .15s',
                   }}
                 >
