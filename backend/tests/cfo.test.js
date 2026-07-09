@@ -356,7 +356,8 @@ describe('Daily reports', () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [{ id: CID }] })       // convoy check
       .mockResolvedValueOnce({ rows: [{ id: 'rpt1' }] })    // report found
-      .mockResolvedValueOnce({ rows: [] });                  // UPDATE report status
+      .mockResolvedValueOnce({ rows: [] })                   // recountPhotos truck count (empty → early return)
+      .mockResolvedValueOnce({ rows: [{ id: 'rpt1' }] });   // UPDATE ... RETURNING id
     // gAudit fire-and-forget consumes default mockResolvedValue({ rows: [] })
     const res = await request(app)
       .post(`/api/v1/convoys/${CID}/reports/${DATE}/regenerate`);
