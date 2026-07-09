@@ -527,7 +527,22 @@ function truckDetail(ctx, truck, truckPhotos, sealCountPerTruck, photoBuffers) {
   // could outgrow a single page — each row still draws both columns
   // together so SOD/EOD stay side by side if it does spill over.
   for (let row = 0; row < sealRows; row++) {
+    const pageBefore = ctx.pageNum;
     ensureSpace(ctx, sealRowStride + 10);
+    if (ctx.pageNum !== pageBefore) {
+      // A bare row of seal cards with no header context, spilled onto a
+      // fresh page, reads as an unrelated truck rather than a continuation
+      // of this one — confirmed confusing in practice. Re-identify whose
+      // seals these are before drawing more.
+      subBanner(ctx, `Truck ${truck.position} — ${truck.driver_name || 'Unknown Driver'} (seals, continued)`);
+      const contY = doc.y;
+      cols.forEach(col => {
+        doc.rect(col.x, contY, colW, bannerH).fill(C.navy);
+        doc.fill(C.white).fontSize(7.5).font('Helvetica-Bold');
+        t(doc, col.label, col.x + 8, contY + 5, { width: colW - 16 });
+      });
+      doc.y = contY + bannerH + 8;
+    }
     const rowY = doc.y;
     cols.forEach(col => {
       const sp = truckPhotos.filter(p => p.session === col.session);
