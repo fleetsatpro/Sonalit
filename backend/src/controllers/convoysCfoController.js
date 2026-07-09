@@ -7,6 +7,15 @@ const { isCfoModuleEnabled } = require('../utils/cfoFlag');
 const logger = require('../utils/logger');
 const { publish } = require('../realtime/centrifugo');
 
+// node-pg parses SQL DATE columns into JS Date objects — String(dateObject)
+// calls toString() ("Thu Jul 09 2026 00:00:00 GMT+0000..."), not
+// toISOString(), so a plain String(x).slice(0,10) silently produces "Thu
+// Jul 09" instead of "2026-07-09". Use this wherever a date column arrives
+// via SELECT * (so it can't be cast to text in the query itself).
+function toISODate(v) {
+  return v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
+}
+
 function gAudit(actor_id, action, target_type, target_id, payload, ip) {
   query(
     `INSERT INTO guardian_audit_log
@@ -481,7 +490,7 @@ const getConvoyReports = asyncHandler(async (req, res) => {
   ]);
 
   const trucks = trucksRes.rows;
-  const reportDates = reportsRes.rows.map(r => String(r.report_date).slice(0, 10));
+  const reportDates = reportsRes.rows.map(r => toISODate(r.report_date));
   let allPhotos = [];
   if (reportDates.length > 0) {
     const photosRes = await query(
@@ -502,8 +511,8 @@ const getConvoyReports = asyncHandler(async (req, res) => {
   });
 
   const dailyReports = reportsRes.rows.map(report => {
-    const dateStr = String(report.report_date).slice(0, 10);
-    const dayPhotos = allPhotos.filter(p => String(p.report_date).slice(0, 10) === dateStr);
+    const dateStr = toISODate(report.report_date);
+    const dayPhotos = allPhotos.filter(p => toISODate(p.report_date) === dateStr);
     return {
       ...report,
       location_mismatch_count: dayPhotos.filter(p => p.location_mismatch).length,
@@ -675,7 +684,13 @@ const getConvoyReportsOverview = asyncHandler(async (req, res) => {
       // convoy didn't exist yet. Only excluding the lower bound — end_date
       // is a plan, not a hard stop; an active convoy legitimately keeps
       // getting real uploads past its original planned end date.
-      `SELECT DISTINCT ON (cdr.convoy_id) cdr.convoy_id, cdr.report_date, cdr.status,
+      // report_date::text — node-pg parses SQL DATE columns into JS Date
+      // objects, and String(dateObject) calls toString() ("Thu Jul 09 2026
+      // 00:00:00 GMT+0000..."), not toISOString(). Slicing that gives "Thu
+      // Jul 09" instead of "2026-07-09", which the frontend then mis-parses
+      // in the browser's local timezone, shifting the date by a day. Casting
+      // to text in SQL sidesteps the whole Date-object ambiguity.
+      `SELECT DISTINCT ON (cdr.convoy_id) cdr.convoy_id, cdr.report_date::text AS report_date, cdr.status,
               cdr.required_photo_count, cdr.received_photo_count, cdr.pdf_url,
               cdr.generated_at, cdr.generation_error
        FROM convoy_daily_reports cdr
@@ -686,7 +701,7 @@ const getConvoyReportsOverview = asyncHandler(async (req, res) => {
       [convoyIds]
     ),
     query(
-      `SELECT convoy_id, report_date, COUNT(*)::int AS mismatch_count
+      `SELECT convoy_id, report_date::text AS report_date, COUNT(*)::int AS mismatch_count
        FROM convoy_truck_photos WHERE convoy_id = ANY($1) AND location_mismatch = true
        GROUP BY convoy_id, report_date`,
       [convoyIds]
@@ -694,7 +709,7 @@ const getConvoyReportsOverview = asyncHandler(async (req, res) => {
     // Guardian Convoy app reports (newer system using convoy_reports + photo_uploads)
     query(
       `SELECT DISTINCT ON (cr.convoy_id)
-              cr.convoy_id, cr.date AS report_date, cr.status,
+              cr.convoy_id, cr.date::text AS report_date, cr.status,
               (SELECT COUNT(*)::int FROM photo_uploads pu
                WHERE pu.convoy_id = cr.convoy_id AND pu.timestamp::date = cr.date) AS received_photo_count,
               (SELECT COUNT(ct.id) FROM convoy_trucks ct WHERE ct.convoy_id::text = cr.convoy_id)::int
@@ -711,7 +726,7 @@ const getConvoyReportsOverview = asyncHandler(async (req, res) => {
   const reportMap = new Map(latestReports.rows.map(r => [String(r.convoy_id), r]));
   const cfoReportMap = new Map(cfoAppReports.rows.map(r => [String(r.convoy_id), r]));
   const mismatchMap = new Map(
-    mismatchCounts.rows.map(m => [`${m.convoy_id}:${String(m.report_date).slice(0, 10)}`, m.mismatch_count])
+    mismatchCounts.rows.map(m => [`${m.convoy_id}:${m.report_date}`, m.mismatch_count])
   );
 
   const data = convoysRes.rows.map(c => {
