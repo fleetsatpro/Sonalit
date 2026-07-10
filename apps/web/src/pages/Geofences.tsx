@@ -27,7 +27,7 @@ type DrawMode = 'circle' | 'linear' | 'corridor' | null;
 export default function Geofences() {
   const qc = useQueryClient();
 
-  const [tab, setTab] = useState<'zones' | 'events'>('zones');
+  const [tab, setTab] = useState<'zones' | 'events' | 'alerts' | 'mission'>('zones');
   const [showCreate, setShowCreate] = useState(false);
   const [drawMode, setDrawMode] = useState<DrawMode>(null);
   const [drawCenter, setDrawCenter] = useState<[number, number] | null>(null);
@@ -40,8 +40,6 @@ export default function Geofences() {
   const [search, setSearch] = useState('');
   const [regionFilter, setRegionFilter] = useState('all');
   const [regionMenuOpen, setRegionMenuOpen] = useState(false);
-  const [leftOpen, setLeftOpen] = useState(false);
-  const [rightOpen, setRightOpen] = useState(false);
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [consoleInput, setConsoleInput] = useState('');
@@ -140,7 +138,7 @@ export default function Geofences() {
     drawMode, drawCenter, drawPath, drawRadiusM: form.radius,
     onDrawCenter: setDrawCenter,
     onDrawPoint: pt => setDrawPath(prev => [...prev, pt]),
-    onVehiclePicked: id => { setSelectedVehicleId(id); setRightOpen(true); },
+    onVehiclePicked: id => { setSelectedVehicleId(id); setTab('mission'); },
     vehicles, visibleVehicles, devices, mapGeofences, visibleZones, regionFilter, expanded, mapStyle,
   });
 
@@ -181,7 +179,7 @@ export default function Geofences() {
     const hits: { type: string; label: string; sub: string; onClick: () => void }[] = [];
     vehiclesMeta.filter(v => v.registration.toLowerCase().includes(q)).slice(0, 5).forEach(v => hits.push({
       type: 'vehicle', label: v.registration, sub: v.status,
-      onClick: () => { setSelectedVehicleId(v.id); setRightOpen(true); const mv = vehicles.find(x => x.id === v.id); if (mv && mapRef.current) mapRef.current.flyTo({ center: [mv.lng, mv.lat], zoom: 11, duration: 800 }); },
+      onClick: () => { setSelectedVehicleId(v.id); setTab('mission'); const mv = vehicles.find(x => x.id === v.id); if (mv && mapRef.current) mapRef.current.flyTo({ center: [mv.lng, mv.lat], zoom: 11, duration: 800 }); },
     }));
     zones.filter(z => z.name.toLowerCase().includes(q)).slice(0, 5).forEach(z => hits.push({
       type: 'zone', label: z.name, sub: z.type,
@@ -231,10 +229,15 @@ export default function Geofences() {
     if (mapRef.current) mapRef.current.flyTo({ center: [v.lng, v.lat], zoom: 12, duration: 800 });
   }, []);
 
-  if (!bootReady) return <BootSplash loaded={bootLoaded} total={coreQueries.length} />;
-
   return (
     <div className="p-6 space-y-4">
+      {/* Rendered as an overlay, not an early return -- the map container below
+          must exist in the DOM on first mount for useGeofenceMap's map-init
+          effect (which only runs once) to ever attach a MapLibre instance to
+          it. Replacing the whole tree with BootSplash on first render meant
+          the map container was never in the DOM when that effect fired, so
+          the map silently never initialized. */}
+      {!bootReady && <BootSplash loaded={bootLoaded} total={coreQueries.length} />}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2">
           <MapPin className="w-6 h-6 text-cyan-400" />
@@ -343,17 +346,6 @@ export default function Geofences() {
           )}
         </div>
 
-        {!leftOpen && <button onClick={() => setLeftOpen(true)} className="absolute left-0 top-1/2 -translate-y-1/2 bg-black/70 backdrop-blur border border-gray-700 border-l-0 rounded-r-lg px-1.5 py-4 text-xs font-bold text-gray-300 [writing-mode:vertical-rl]">ALERTS {kpi.openAlerts > 0 && <span className="text-red-400">({kpi.openAlerts})</span>}</button>}
-        {!rightOpen && <button onClick={() => setRightOpen(true)} className="absolute right-0 top-1/2 -translate-y-1/2 bg-black/70 backdrop-blur border border-gray-700 border-r-0 rounded-l-lg px-1.5 py-4 text-xs font-bold text-gray-300 [writing-mode:vertical-rl]">MISSION CONTROL</button>}
-
-        <AlertsDrawer open={leftOpen} onClose={() => setLeftOpen(false)} alerts={alerts} onAcknowledge={id => acknowledgeAlertMut.mutate(id)} onResolve={id => resolveAlertMut.mutate(id)} />
-        <MissionControlDrawer
-          open={rightOpen} onClose={() => setRightOpen(false)} selectedVehicle={selectedVehicle} vehicles={vehicles}
-          selectedVehicleId={selectedVehicleId} onSelectVehicle={selectVehicle}
-          onSetStatus={(id, status) => setVehicleStatusMut.mutate({ id, status })}
-          allAlerts={allAlerts} events={events} aiText={aiText} aiLoading={aiLoading} onFetchAI={fetchAI}
-        />
-
         <div className="absolute bottom-3 right-3 bg-black/80 backdrop-blur border border-gray-700 rounded-lg overflow-hidden min-w-[220px]">
           <div className="px-3 py-1.5 bg-gray-900/60 border-b border-gray-700 flex items-center justify-between"><span className="text-xs font-bold text-gray-300 uppercase">Situation Overview</span><span className={`text-xs font-bold px-2 py-0.5 rounded ${topAlert ? SEVERITY_COLOR[topAlert.severity] : 'text-green-400'}`}>{topAlert ? topAlert.severity.toUpperCase() : 'CLEAR'}</span></div>
           <div className="grid grid-cols-2 gap-2 p-3 text-xs">
@@ -371,10 +363,25 @@ export default function Geofences() {
         </div>
       </div>
 
-      <div className="flex gap-1 bg-gray-800 p-1 rounded-lg w-fit">
+      <div className="flex gap-1 bg-gray-800 p-1 rounded-lg w-fit flex-wrap">
         <button onClick={() => setTab('zones')} className={`px-4 py-2 rounded-md text-sm font-semibold ${tab === 'zones' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'}`}>Zones ({visibleZones.length})</button>
         <button onClick={() => setTab('events')} className={`px-4 py-2 rounded-md text-sm font-semibold ${tab === 'events' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'}`}>Live Events ({events.length})</button>
+        <button onClick={() => setTab('alerts')} className={`px-4 py-2 rounded-md text-sm font-semibold ${tab === 'alerts' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'}`}>Alerts ({kpi.openAlerts})</button>
+        <button onClick={() => setTab('mission')} className={`px-4 py-2 rounded-md text-sm font-semibold ${tab === 'mission' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'}`}>Mission Control</button>
       </div>
+
+      {tab === 'alerts' && (
+        <AlertsDrawer alerts={alerts} onAcknowledge={id => acknowledgeAlertMut.mutate(id)} onResolve={id => resolveAlertMut.mutate(id)} />
+      )}
+
+      {tab === 'mission' && (
+        <MissionControlDrawer
+          selectedVehicle={selectedVehicle} vehicles={vehicles}
+          selectedVehicleId={selectedVehicleId} onSelectVehicle={selectVehicle}
+          onSetStatus={(id, status) => setVehicleStatusMut.mutate({ id, status })}
+          allAlerts={allAlerts} events={events} aiText={aiText} aiLoading={aiLoading} onFetchAI={fetchAI}
+        />
+      )}
 
       {tab === 'zones' && (
         <div className="space-y-2">
