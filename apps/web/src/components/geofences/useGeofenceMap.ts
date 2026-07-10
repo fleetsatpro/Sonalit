@@ -39,7 +39,15 @@ export function useGeofenceMap(opts: Options) {
   useEffect(() => {
     if (!mapEl.current || mapRef.current) return;
     const map = new maplibregl.Map({ container: mapEl.current, style: STREET_STYLE, center: EA_CENTER, zoom: EA_ZOOM });
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }));
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    // The custom layer/fullscreen buttons are overlaid at top-3 right-3 in
+    // Geofences.tsx, in the same top-right corner MapLibre reserves for its
+    // own controls (.maplibregl-ctrl-top-right has z-index:2, so it paints
+    // over anything at that position with the default stacking order) —
+    // push the native zoom control down below that button row instead of
+    // letting the two occupy the same space.
+    const topRightCtrl = map.getContainer().querySelector<HTMLElement>('.maplibregl-ctrl-top-right');
+    if (topRightCtrl) topRightCtrl.style.marginTop = '52px';
     map.on('load', () => { mapReadyRef.current = true; });
     mapRef.current = map;
     return () => { map.remove(); mapRef.current = null; mapReadyRef.current = false; };
@@ -86,7 +94,7 @@ export function useGeofenceMap(opts: Options) {
     const m = mapRef.current;
     if (!m) return;
     const render = () => {
-      ['gf-zone-fill', 'gf-zone-line', 'gf-corridor-glow', 'gf-corridor-line', 'gf-linear-line', 'gf-vehicles-glow', 'gf-vehicles-dot', 'gf-devices-glow', 'gf-devices-dot', 'gf-draw-fill', 'gf-draw-line']
+      ['gf-zone-fill', 'gf-zone-line', 'gf-zone-label', 'gf-corridor-glow', 'gf-corridor-line', 'gf-corridor-label', 'gf-linear-line', 'gf-linear-label', 'gf-vehicles-glow', 'gf-vehicles-dot', 'gf-vehicles-label', 'gf-devices-glow', 'gf-devices-dot', 'gf-devices-label', 'gf-draw-fill', 'gf-draw-line']
         .forEach(id => { if (m.getLayer(id)) m.removeLayer(id); });
       ['gf-zone-src', 'gf-corridor-src', 'gf-linear-src', 'gf-vehicles-src', 'gf-devices-src', 'gf-draw-src'].forEach(id => { if (m.getSource(id)) m.removeSource(id); });
 
@@ -103,26 +111,48 @@ export function useGeofenceMap(opts: Options) {
           circleFeatures.push({ type: 'Feature', properties: { name: g.name }, geometry: { type: 'Polygon', coordinates: [geoCircle(g.lat, g.lng, (g.radius_m || 1000) / 1000)] } });
         }
       });
+      const LABEL_FONT = ['Open Sans Regular', 'Arial Unicode MS Regular'];
+
       m.addSource('gf-zone-src', { type: 'geojson', data: { type: 'FeatureCollection', features: circleFeatures } });
       m.addLayer({ id: 'gf-zone-fill', type: 'fill', source: 'gf-zone-src', paint: { 'fill-color': '#22d3ee', 'fill-opacity': 0.08 } });
       m.addLayer({ id: 'gf-zone-line', type: 'line', source: 'gf-zone-src', paint: { 'line-color': '#22d3ee', 'line-width': 1.5, 'line-dasharray': [4, 3] } });
+      m.addLayer({ id: 'gf-zone-label', type: 'symbol', source: 'gf-zone-src', layout: {
+        'text-field': ['get', 'name'], 'text-size': 10, 'text-anchor': 'center', 'text-font': LABEL_FONT,
+        'text-allow-overlap': false, 'text-optional': true,
+      }, paint: { 'text-color': '#22d3ee', 'text-halo-color': '#000000', 'text-halo-width': 1.5 } });
       // Corridors get a wide translucent buffer band; linear geofences are a plain route line with no buffer.
       m.addSource('gf-corridor-src', { type: 'geojson', data: { type: 'FeatureCollection', features: corridorFeatures } });
       m.addLayer({ id: 'gf-corridor-glow', type: 'line', source: 'gf-corridor-src', layout: { 'line-cap': 'round' }, paint: { 'line-color': '#38bdf8', 'line-width': 14, 'line-opacity': 0.15 } });
       m.addLayer({ id: 'gf-corridor-line', type: 'line', source: 'gf-corridor-src', layout: { 'line-cap': 'round' }, paint: { 'line-color': '#38bdf8', 'line-width': 2.5, 'line-dasharray': [3, 2] } });
+      m.addLayer({ id: 'gf-corridor-label', type: 'symbol', source: 'gf-corridor-src', layout: {
+        'text-field': ['get', 'name'], 'text-size': 10, 'text-font': LABEL_FONT, 'symbol-placement': 'line-center',
+        'text-allow-overlap': false, 'text-optional': true,
+      }, paint: { 'text-color': '#38bdf8', 'text-halo-color': '#000000', 'text-halo-width': 1.5 } });
       m.addSource('gf-linear-src', { type: 'geojson', data: { type: 'FeatureCollection', features: linearFeatures } });
       m.addLayer({ id: 'gf-linear-line', type: 'line', source: 'gf-linear-src', layout: { 'line-cap': 'round' }, paint: { 'line-color': '#a78bfa', 'line-width': 2.5 } });
+      m.addLayer({ id: 'gf-linear-label', type: 'symbol', source: 'gf-linear-src', layout: {
+        'text-field': ['get', 'name'], 'text-size': 10, 'text-font': LABEL_FONT, 'symbol-placement': 'line-center',
+        'text-allow-overlap': false, 'text-optional': true,
+      }, paint: { 'text-color': '#a78bfa', 'text-halo-color': '#000000', 'text-halo-width': 1.5 } });
 
       const vehicleFeatures: GeoJSON.Feature[] = opts.visibleVehicles.map(v => ({ type: 'Feature', properties: { id: v.id, registration: v.registration, status: v.status }, geometry: { type: 'Point', coordinates: [v.lng, v.lat] } }));
       m.addSource('gf-vehicles-src', { type: 'geojson', data: { type: 'FeatureCollection', features: vehicleFeatures } });
       const statusColorExpr: maplibregl.ExpressionSpecification = ['match', ['get', 'status'], 'panic', STATUS_COLOR['panic']!, 'alert', STATUS_COLOR['alert']!, 'warn', STATUS_COLOR['warn']!, 'moving', STATUS_COLOR['moving']!, 'idle', STATUS_COLOR['idle']!, 'offline', STATUS_COLOR['offline']!, '#666666'];
       m.addLayer({ id: 'gf-vehicles-glow', type: 'circle', source: 'gf-vehicles-src', paint: { 'circle-radius': 13, 'circle-color': statusColorExpr, 'circle-opacity': 0.2, 'circle-blur': 1 } });
       m.addLayer({ id: 'gf-vehicles-dot', type: 'circle', source: 'gf-vehicles-src', paint: { 'circle-radius': 6, 'circle-color': statusColorExpr, 'circle-stroke-width': 1.5, 'circle-stroke-color': '#000', 'circle-opacity': 0.95 } });
+      m.addLayer({ id: 'gf-vehicles-label', type: 'symbol', source: 'gf-vehicles-src', layout: {
+        'text-field': ['get', 'registration'], 'text-size': 9, 'text-offset': [0, 1.4], 'text-anchor': 'top', 'text-font': LABEL_FONT,
+        'text-allow-overlap': false, 'text-optional': true,
+      }, paint: { 'text-color': '#ffffff', 'text-halo-color': '#000000', 'text-halo-width': 1.5 } });
 
       const deviceFeatures: GeoJSON.Feature[] = opts.devices.map(d => ({ type: 'Feature', properties: { id: d.id, name: d.name, status: d.status }, geometry: { type: 'Point', coordinates: [d.lng, d.lat] } }));
       m.addSource('gf-devices-src', { type: 'geojson', data: { type: 'FeatureCollection', features: deviceFeatures } });
       m.addLayer({ id: 'gf-devices-glow', type: 'circle', source: 'gf-devices-src', paint: { 'circle-radius': ['case', ['==', ['get', 'status'], 'panic'], 20, 9], 'circle-color': statusColorExpr, 'circle-opacity': ['case', ['==', ['get', 'status'], 'panic'], 0.35, 0.15], 'circle-blur': 1 } });
       m.addLayer({ id: 'gf-devices-dot', type: 'circle', source: 'gf-devices-src', paint: { 'circle-radius': 4.5, 'circle-color': statusColorExpr, 'circle-stroke-width': 1.5, 'circle-stroke-color': '#fff', 'circle-opacity': 0.95 } });
+      m.addLayer({ id: 'gf-devices-label', type: 'symbol', source: 'gf-devices-src', layout: {
+        'text-field': ['get', 'name'], 'text-size': 9, 'text-offset': [0, 1.2], 'text-anchor': 'top', 'text-font': LABEL_FONT,
+        'text-allow-overlap': false, 'text-optional': true,
+      }, paint: { 'text-color': '#e9d5ff', 'text-halo-color': '#000000', 'text-halo-width': 1.5 } });
 
       const drawFeatures: GeoJSON.Feature[] = [];
       if (opts.drawMode === 'circle' && opts.drawCenter) drawFeatures.push({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [geoCircle(opts.drawCenter[0], opts.drawCenter[1], parseFloat(opts.drawRadiusM || '2000') / 1000)] } });
