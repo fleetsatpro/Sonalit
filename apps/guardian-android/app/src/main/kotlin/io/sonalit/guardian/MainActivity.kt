@@ -120,7 +120,10 @@ private fun MainScaffold(viewModel: MainViewModel) {
         }
     ) {
         when (currentDestination) {
-            NavDestination.Home -> HomeScreen(onPanicClick = { viewModel.triggerPanic() })
+            NavDestination.Home -> HomeScreen(
+                onPanicClick = { viewModel.triggerPanic() },
+                onNavigate = { currentDestination = it },
+            )
             NavDestination.Cfo -> CfoScreen()
             NavDestination.Settings -> SettingsScreen()
         }

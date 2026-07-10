@@ -1,8 +1,12 @@
 package io.sonalit.guardian.ui.home
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import io.sonalit.guardian.data.local.AppDatabase
 import io.sonalit.guardian.data.local.HeartbeatStatusStore
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,6 +20,7 @@ import javax.inject.Inject
 enum class SignalState { GOOD, STALE, UNKNOWN }
 
 data class HomeUiState(
+    val isEnrolledDevice: Boolean = false,
     val lastHeartbeatAt: Long? = null,
     val lastGpsFixAt: Long? = null,
     val serviceState: SignalState = SignalState.UNKNOWN,
@@ -24,12 +29,22 @@ data class HomeUiState(
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val db: AppDatabase,
     private val statusStore: HeartbeatStatusStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    private val prefs by lazy {
+        val masterKey = MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
+        EncryptedSharedPreferences.create(
+            context, "guardian_prefs", masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+        )
+    }
 
     init {
         viewModelScope.launch {
@@ -44,8 +59,15 @@ class HomeViewModel @Inject constructor(
         val now = System.currentTimeMillis()
         val lastHeartbeat = statusStore.lastHeartbeatAt()
         val lastFix = db.gpsFixDao().getLatest()
+        // A CFO-only login auto-provisions a guardian_devices row server-side but
+        // never runs device enrollment on this phone, so HeartbeatWorker/
+        // GuardianService are never scheduled here — "Service: Not started" is
+        // then a correct read of an untracked account, not a failure, and the UI
+        // should say so instead of showing it as broken.
+        val isEnrolledDevice = prefs.getString("device_id", null) != null && prefs.getString("auth_token", null) != null
         _uiState.update {
             it.copy(
+                isEnrolledDevice = isEnrolledDevice,
                 lastHeartbeatAt = lastHeartbeat,
                 lastGpsFixAt = lastFix?.ts,
                 // The heartbeat worker runs every 5 minutes — allow one missed
