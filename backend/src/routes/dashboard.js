@@ -135,23 +135,28 @@ router.get('/map', asyncHandler(async (req, res) => {
                WHERE ct.convoy_id=c.id ORDER BY g.timestamp DESC LIMIT 1) AS lat,
              (SELECT g.lng FROM gps_logs g JOIN convoy_trucks ct ON ct.vehicle_id=g.vehicle_id
                WHERE ct.convoy_id=c.id ORDER BY g.timestamp DESC LIMIT 1) AS lng,
-             (SELECT g.heading FROM gps_logs g JOIN convoy_trucks ct ON ct.vehicle_id=g.vehicle_id
-               WHERE ct.convoy_id=c.id ORDER BY g.timestamp DESC LIMIT 1) AS heading
+             (SELECT v.heading FROM vehicles v JOIN convoy_trucks ct ON ct.vehicle_id=v.id
+               WHERE ct.convoy_id=c.id ORDER BY v.updated_at DESC LIMIT 1) AS heading
       FROM convoys c
       WHERE c.org_id=$1 AND c.status='active' AND c.deleted_at IS NULL
       LIMIT 20`, [orgId]),
 
     safeQuery(req.db, `
-      SELECT lat, lng, 2000 AS radius_m,
-             CASE WHEN severity='critical' THEN 'critical' WHEN severity='high' THEN 'high' ELSE 'medium' END AS severity
-      FROM alerts WHERE org_id=$1 AND resolved_at IS NULL AND lat IS NOT NULL
+      SELECT g.lat, g.lng, 2000 AS radius_m,
+             CASE WHEN a.severity='critical' THEN 'critical' WHEN a.severity='high' THEN 'high' ELSE 'medium' END AS severity
+      FROM alerts a
+      JOIN LATERAL (
+        SELECT lat, lng FROM gps_logs
+        WHERE vehicle_id=a.vehicle_id ORDER BY timestamp DESC LIMIT 1
+      ) g ON true
+      WHERE a.org_id=$1 AND a.resolved_at IS NULL AND a.vehicle_id IS NOT NULL
       LIMIT 10`, [orgId]),
 
     safeQuery(req.db, `
       SELECT v.id, v.registration,
              COALESCE(g.lat, v.latitude)   AS lat,
              COALESCE(g.lng, v.longitude)  AS lng,
-             COALESCE(g.heading, v.heading, 0) AS heading,
+             COALESCE(v.heading, 0) AS heading,
              COALESCE(g.speed, 0)          AS speed_kmh,
              CASE
                WHEN a.severity = 'critical' OR a.severity = 'high' THEN 'alert'
@@ -162,7 +167,7 @@ router.get('/map', asyncHandler(async (req, res) => {
              END AS status
       FROM vehicles v
       LEFT JOIN LATERAL (
-        SELECT lat, lng, heading, speed, timestamp FROM gps_logs
+        SELECT lat, lng, speed, timestamp FROM gps_logs
         WHERE vehicle_id=v.id ORDER BY timestamp DESC LIMIT 1
       ) g ON true
       LEFT JOIN convoy_trucks ct ON ct.vehicle_id=v.id
@@ -307,13 +312,12 @@ router.get('/vehicles', asyncHandler(async (req, res) => {
            COALESCE(g.speed, 0) AS speed_kmh,
            sr_fuel.value AS fuel_pct,
            sr_temp.value AS engine_temp_c,
-           g.signal_quality AS gps_signal_pct,
            g.timestamp AS last_ping_at
     FROM vehicles v
     LEFT JOIN convoy_trucks ct ON ct.vehicle_id=v.id
       AND ct.convoy_id IN (SELECT id FROM convoys WHERE org_id=$1 AND status='active')
     LEFT JOIN LATERAL (
-      SELECT speed, lat, lng, timestamp, signal_quality FROM gps_logs
+      SELECT speed, lat, lng, timestamp FROM gps_logs
       WHERE vehicle_id=v.id ORDER BY timestamp DESC LIMIT 1
     ) g ON true
     LEFT JOIN LATERAL (
@@ -338,7 +342,7 @@ router.get('/vehicles', asyncHandler(async (req, res) => {
     speed_kmh: parseFloat(row.speed_kmh) || 0,
     fuel_pct: row.fuel_pct != null ? parseFloat(row.fuel_pct) : null,
     engine_temp_c: row.engine_temp_c != null ? parseFloat(row.engine_temp_c) : null,
-    gps_signal_pct: row.gps_signal_pct != null ? parseFloat(row.gps_signal_pct) : null,
+    gps_signal_pct: null,
     last_ping_at: row.last_ping_at ? new Date(row.last_ping_at).toISOString() : null,
   })) });
 }));
@@ -348,7 +352,7 @@ router.get('/alerts', asyncHandler(async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 10, 50);
   try {
     const r = await req.db(`
-      SELECT id, severity, type, title, description AS summary,
+      SELECT id, severity, type, message,
              convoy_id, created_at AS occurred_at,
              resolved_at IS NOT NULL AS acknowledged
       FROM alerts WHERE org_id=$1
@@ -361,8 +365,8 @@ router.get('/alerts', asyncHandler(async (req, res) => {
       id: a.id,
       severity: a.severity,
       type: a.type,
-      title: a.title,
-      summary: a.summary || '',
+      title: a.message,
+      summary: a.message || '',
       convoy_id: a.convoy_id || null,
       occurred_at: new Date(a.occurred_at).toISOString(),
       acknowledged: a.acknowledged,
