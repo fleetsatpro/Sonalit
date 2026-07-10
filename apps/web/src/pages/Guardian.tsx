@@ -305,7 +305,7 @@ function CommandTerminal({ devices }: { devices: GuardianDevice[] }) {
       setSelCmd(null);
     } catch (ex: unknown) {
       const detail = ex && typeof ex === 'object' && 'response' in ex
-        ? (ex as { response?: { data?: { message?: string } } }).response?.data?.message
+        ? (ex as { response?: { data?: { error?: string } } }).response?.data?.error
         : undefined;
       setMsg({ text: detail || 'Command failed — check device status and try again', ok: false });
     } finally { setSending(false); }

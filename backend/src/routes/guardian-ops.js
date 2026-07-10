@@ -5,6 +5,8 @@ const { publish } = require('../realtime/centrifugo');
 const { getQueues } = require('../config/queue');
 const logger = require('../utils/logger');
 const jwt = require('jsonwebtoken');
+const { sendCommandPush } = require('../utils/fcm');
+const { signCommand } = require('../utils/commandSigning');
 
 router.use(authenticate);
 
@@ -185,21 +187,32 @@ router.post('/devices/:id/commands', async (req, res, next) => {
       await client.query('BEGIN');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const deviceCheck = await client.query(
-        `SELECT id FROM guardian_devices WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
+        `SELECT id, fcm_token FROM guardian_devices WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
         [req.params.id, orgId]
       );
       if (!deviceCheck.rows[0]) {
         await client.query('ROLLBACK');
         return res.status(404).json({ error: 'Device not found' });
       }
+      const device = deviceCheck.rows[0];
       const { rows } = await client.query(
-        `INSERT INTO device_commands (org_id, device_id, command, status, payload, ttl_hours, issued_by, expires_at)
-         VALUES ($1, $2, $3, 'pending', $4, $5, $6, NOW() + ($5 * INTERVAL '1 hour'))
-         RETURNING id`,
+        `INSERT INTO device_commands (org_id, device_id, command, command_type, status, payload, ttl_hours, issued_by, issued_at, expires_at)
+         VALUES ($1, $2, $3, $3, 'pending', $4, $5, $6, NOW(), NOW() + ($5 * INTERVAL '1 hour'))
+         RETURNING id, issued_at, expires_at`,
         [orgId, req.params.id, command, payload, effectiveTtl, req.user.id]
       );
+      const cmd = rows[0];
+      // The heartbeat poll fallback (guardian.js /heartbeat) only claims commands
+      // WHERE signature IS NOT NULL, so this path needs one too or it can only
+      // ever be delivered via the FCM push below.
+      const signature = signCommand(cmd.id, command, payload, cmd.issued_at, cmd.expires_at);
+      await client.query(`UPDATE device_commands SET signature = $1 WHERE id = $2`, [signature, cmd.id]);
       await client.query('COMMIT');
       publish(`org:${orgId}:device:${req.params.id}:commands`, { type: 'command_issued', command, command_id: rows[0].id }).catch(e => logger.warn(`Centrifugo publish failed: ${e.message}`));
+      publish(`org#${orgId}`, { type: 'command:queued', device_id: req.params.id, command, command_id: rows[0].id }).catch(e => logger.warn(`Centrifugo publish failed: ${e.message}`));
+      if (device.fcm_token) {
+        sendCommandPush(device.fcm_token, command, rows[0].id).catch(e => logger.warn(`Command FCM push failed: ${e.message}`));
+      }
       res.json({ data: { command_id: rows[0].id, status: 'queued' } });
     } catch (err) {
       await client.query('ROLLBACK');

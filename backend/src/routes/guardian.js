@@ -9,6 +9,7 @@ const rateLimit = require('express-rate-limit');
 const { sendCommandPush, sendPanicAck } = require('../utils/fcm');
 const { publish } = require('../realtime/centrifugo');
 const requireIdempotencyKey = require('../middleware/idempotency');
+const { COMMAND_SIGNING_SECRET, signCommand } = require('../utils/commandSigning');
 
 // ─── Integrity age thresholds per command type (T1.4) ────────────────────────
 const INTEGRITY_MAX_AGE = {
@@ -91,36 +92,6 @@ const commandLimiter = rateLimit({
   legacyHeaders: false,
   handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
 });
-
-// ─── HMAC signing helper ──────────────────────────────────────────────────────
-
-const COMMAND_SIGNING_SECRET = process.env.COMMAND_SIGNING_SECRET || 'guardian-dev-signing-secret-2024';
-
-// Produce canonical JSON: sorted keys, no whitespace, UTF-8. Handles nested objects/arrays.
-function canonicalJson(obj) {
-  if (obj == null) return '{}';
-  function sorted(val) {
-    if (val === null) return 'null';
-    if (typeof val === 'boolean' || typeof val === 'number') return String(val);
-    if (typeof val === 'string') return JSON.stringify(val);
-    if (Array.isArray(val)) return '[' + val.map(sorted).join(',') + ']';
-    if (typeof val === 'object') {
-      const keys = Object.keys(val).sort();
-      return '{' + keys.map(k => JSON.stringify(k) + ':' + sorted(val[k])).join(',') + '}';
-    }
-    return JSON.stringify(val);
-  }
-  return sorted(obj);
-}
-
-// Signed string: commandId:commandType:sha256(canonicalJson(payload)):issuedAt:expiresAt
-function signCommand(commandId, commandType, payload, issuedAt, expiresAt) {
-  const ts   = issuedAt  instanceof Date ? issuedAt.toISOString()  : (issuedAt  || '');
-  const exp  = expiresAt instanceof Date ? expiresAt.toISOString() : (expiresAt || '');
-  const payloadHash = crypto.createHash('sha256').update(canonicalJson(payload), 'utf8').digest('hex');
-  const message = `${commandId}:${commandType}:${payloadHash}:${ts}:${exp}`;
-  return crypto.createHmac('sha256', COMMAND_SIGNING_SECRET).update(message).digest('hex');
-}
 
 // Resolve a device's org_id (from guardian_devices) and its linked field-officer id
 // (by device link or badge/name). Additive: used to backfill enrollment responses so
@@ -1312,6 +1283,10 @@ router.get('/devices', authenticate, async (req, res, next) => {
     const filters = ['gd.deleted_at IS NULL'];
     const params = [];
 
+    if (req.user.org_id) {
+      params.push(req.user.org_id);
+      filters.push(`gd.org_id = $${params.length}`);
+    }
     if (status) {
       params.push(status);
       filters.push(`gd.status = $${params.length}`);
