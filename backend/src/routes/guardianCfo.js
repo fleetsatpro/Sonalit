@@ -267,6 +267,26 @@ router.get('/context', deviceAuth, async (req, res, next) => {
     }
 
     const { convoy_id, cfo_user_id, ...convoyFields } = assignmentResult.rows[0];
+
+    // Self-heal orphaned trucks: convoysCfoController's addConvoyTruck auto-assigns
+    // a newly-added truck to the sole CFO (see comment there), but that only covers
+    // trucks added through that one endpoint — a truck present since convoy
+    // creation (e.g. seeded/imported data) with no convoy_cfo_truck_assignments row
+    // at all is invisible here and permanently unphotographable. If this convoy has
+    // exactly one CFO, sweep up any such orphaned truck for them now, same 2-truck
+    // cap the DB trigger enforces (cfo_truck_limit_exceeded).
+    await query(`
+      INSERT INTO convoy_cfo_truck_assignments (convoy_id, cfo_user_id, convoy_truck_id)
+      SELECT $1, $2, ct.id
+      FROM convoy_trucks ct
+      WHERE ct.convoy_id = $1
+        AND NOT EXISTS (SELECT 1 FROM convoy_cfo_truck_assignments ccta WHERE ccta.convoy_truck_id = ct.id)
+        AND (SELECT COUNT(*) FROM convoy_cfos WHERE convoy_id = $1) = 1
+        AND (SELECT COUNT(*) FROM convoy_cfo_truck_assignments WHERE convoy_id = $1 AND cfo_user_id = $2) < 2
+      ORDER BY ct.position
+      LIMIT 2
+    `, [convoy_id, cfo_user_id]).catch((e) => logger.warn(`orphaned-truck self-heal failed: ${e.message}`));
+
     const todayDate = getConvoyDate(convoyFields.timezone);
     const startDate = convoyFields.start_date ? String(convoyFields.start_date).slice(0, 10) : null;
     const endDate = convoyFields.end_date ? String(convoyFields.end_date).slice(0, 10) : null;
