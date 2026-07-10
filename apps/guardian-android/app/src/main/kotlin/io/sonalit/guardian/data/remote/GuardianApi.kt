@@ -130,6 +130,9 @@ interface GuardianApi {
     @POST("guardian/panic")
     suspend fun panic(@Body req: PanicRequest): PanicResponse
 
+    @POST("guardian/panic/cancel")
+    suspend fun cancelPanic(): Map<String, Any>
+
     @POST("guardian/ack-command")
     suspend fun ackCommand(@Body body: Map<String, String>): Map<String, String>
 

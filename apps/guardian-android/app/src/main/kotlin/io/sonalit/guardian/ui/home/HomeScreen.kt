@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -15,14 +16,21 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.sonalit.guardian.BuildConfig
 import io.sonalit.guardian.NavDestination
+import io.sonalit.guardian.ui.health.DeviceHealthScreen
+import io.sonalit.guardian.ui.panic.PanicButtonScreen
 
 @Composable
 fun HomeScreen(
-    onPanicClick: () -> Unit = {},
     onNavigate: (NavDestination) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var showDeviceHealth by remember { mutableStateOf(false) }
+
+    if (showDeviceHealth) {
+        DeviceHealthScreen(onBack = { showDeviceHealth = false })
+        return
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()),
@@ -61,13 +69,9 @@ fun HomeScreen(
         }
 
         Spacer(Modifier.height(32.dp))
-        Button(
-            onClick = onPanicClick,
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-            modifier = Modifier.fillMaxWidth().height(64.dp),
-        ) {
-            Text("PANIC", style = MaterialTheme.typography.titleLarge)
-        }
+        Text("Hold for 3 seconds to arm", style = MaterialTheme.typography.titleSmall)
+        Spacer(Modifier.height(8.dp))
+        PanicButtonScreen()
         Spacer(Modifier.height(8.dp))
         Text(
             "Sends a silent SOS with your last known location to dispatch.",
@@ -92,6 +96,13 @@ fun HomeScreen(
                 onClick = { onNavigate(NavDestination.Settings) },
             )
         }
+        Spacer(Modifier.height(12.dp))
+        QuickActionCard(
+            icon = Icons.Default.MonitorHeart,
+            label = "Device Health",
+            modifier = Modifier.fillMaxWidth(),
+            onClick = { showDeviceHealth = true },
+        )
 
         Spacer(Modifier.height(24.dp))
         Text(

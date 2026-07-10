@@ -2,15 +2,19 @@ package io.sonalit.guardian.service
 
 import android.app.*
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.location.Location
+import android.media.AudioManager
 import android.os.*
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.google.android.gms.location.*
 import dagger.hilt.android.AndroidEntryPoint
 import io.sonalit.guardian.R
 import io.sonalit.guardian.data.local.AppDatabase
 import io.sonalit.guardian.data.local.GpsFixEntity
+import io.sonalit.guardian.receiver.VolumeKeySOSReceiver
 import kotlinx.coroutines.*
 import java.util.UUID
 import javax.inject.Inject
@@ -23,6 +27,11 @@ class GuardianService : Service() {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var fusedClient: FusedLocationProviderClient
     private lateinit var activityClient: ActivityRecognitionClient
+    // VOLUME_CHANGED_ACTION is an implicit broadcast Android 8+ mostly refuses to deliver to a
+    // manifest-declared <receiver> — registering it at runtime here (while this foreground
+    // service is alive) is the path that actually works; the manifest entry is defense-in-depth
+    // only for OEMs that still deliver it that way.
+    private val volumeKeyReceiver = VolumeKeySOSReceiver()
 
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
@@ -36,6 +45,10 @@ class GuardianService : Service() {
         activityClient = ActivityRecognition.getClient(this)
         startForeground()
         requestLocationUpdates(intervalMs = 30_000L)
+        ContextCompat.registerReceiver(
+            this, volumeKeyReceiver, IntentFilter(AudioManager.VOLUME_CHANGED_ACTION),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
     }
 
     private fun startForeground() {
@@ -85,6 +98,7 @@ class GuardianService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         fusedClient.removeLocationUpdates(locationCallback)
+        runCatching { unregisterReceiver(volumeKeyReceiver) }
         scope.cancel()
     }
 

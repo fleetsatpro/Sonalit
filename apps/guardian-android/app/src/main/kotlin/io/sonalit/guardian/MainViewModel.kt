@@ -8,7 +8,6 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import io.sonalit.guardian.service.PanicSender
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,13 +18,11 @@ import javax.inject.Inject
 data class MainUiState(
     val isEnrolled: Boolean = false,
     val pendingDeepLink: String? = null,
-    val panicTriggered: Boolean = false
 )
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val panicSender: PanicSender,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MainUiState())
@@ -81,21 +78,13 @@ class MainViewModel @Inject constructor(
                 // fires whether or not this activity is open. This branch would only
                 // ever see a "command" payload via a notification tap, which commands
                 // don't produce, so there's nothing to do here.
-                "panic_ack" -> {
-                    _uiState.update { it.copy(panicTriggered = false) }
-                }
+                // panic_ack has no local UI state to update anymore — PanicViewModel
+                // (ui/panic) now owns the whole panic lifecycle via direct HTTP responses
+                // from /guardian/panic and /guardian/panic/cancel, not FCM pushes.
                 "enrollment_approved" -> {
                     _uiState.update { it.copy(isEnrolled = true) }
                 }
             }
-        }
-    }
-
-    fun triggerPanic() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(panicTriggered = true) }
-            val sent = panicSender.send()
-            if (!sent) _uiState.update { it.copy(panicTriggered = false) }
         }
     }
 }

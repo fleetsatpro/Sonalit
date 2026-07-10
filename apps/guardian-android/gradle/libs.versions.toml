@@ -20,6 +20,8 @@ lifecycle = "2.8.7"
 activity-compose = "1.9.3"
 encrypted-prefs = "1.1.0-alpha06"
 google-services = "4.4.2"
+biometric = "1.1.0"
+fragment = "1.8.5"
 
 [libraries]
 # Compose BOM
@@ -75,6 +77,10 @@ camerax-core = { group = "androidx.camera", name = "camera-core", version.ref = 
 camerax-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "camerax" }
 camerax-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camerax" }
 camerax-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
+
+# Biometric + Fragment (FragmentActivity is required by BiometricPrompt)
+biometric = { group = "androidx.biometric", name = "biometric", version.ref = "biometric" }
+fragment-ktx = { group = "androidx.fragment", name = "fragment-ktx", version.ref = "fragment" }
 
 # Coil
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }

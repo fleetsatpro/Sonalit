@@ -2,7 +2,6 @@ package io.sonalit.guardian
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -23,6 +22,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.rememberNavController
 import dagger.hilt.android.AndroidEntryPoint
@@ -44,7 +44,7 @@ enum class NavDestination(
 }
 
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
 
@@ -101,14 +101,14 @@ private fun GuardianApp(viewModel: MainViewModel) {
     // "awaiting operator approval" state it actually was.
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         when {
-            uiState.isEnrolled -> MainScaffold(viewModel = viewModel)
+            uiState.isEnrolled -> MainScaffold()
             else -> EnrollmentScreen(onEnrolled = { viewModel.markEnrolled() })
         }
     }
 }
 
 @Composable
-private fun MainScaffold(viewModel: MainViewModel) {
+private fun MainScaffold() {
     var currentDestination by rememberSaveable { mutableStateOf(NavDestination.Home) }
 
     NavigationSuiteScaffold(
@@ -132,7 +132,6 @@ private fun MainScaffold(viewModel: MainViewModel) {
     ) {
         when (currentDestination) {
             NavDestination.Home -> HomeScreen(
-                onPanicClick = { viewModel.triggerPanic() },
                 onNavigate = { currentDestination = it },
             )
             NavDestination.Cfo -> CfoScreen()

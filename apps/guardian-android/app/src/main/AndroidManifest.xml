@@ -23,6 +23,12 @@
     <!-- Camera -->
     <uses-permission android:name="android.permission.CAMERA" />
 
+    <!-- Microphone (panic audio capture, mic-level diagnostic) -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Biometric panic-cancel -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+
     <!-- Boot -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
@@ -50,6 +56,8 @@
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.location.gps" android:required="true" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.fingerprint" android:required="false" />
 
     <application
         android:name=".GuardianApplication"
@@ -89,6 +97,16 @@
                 <data android:scheme="sonalit" android:host="guardian" />
             </intent-filter>
         </activity>
+
+        <!-- Panic Activity — launched by VolumeKeySOSReceiver or any other hardware trigger.
+             Show-over-lock-screen is set at runtime via Activity.setShowWhenLocked/setTurnScreenOn
+             (PanicActivity.onCreate) — there is no manifest attribute for this. -->
+        <activity
+            android:name=".ui.panic.PanicActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:theme="@style/Theme.GuardianApp" />
 
         <!-- Enrollment Activity alias for deep link -->
         <activity-alias
@@ -135,6 +153,18 @@
                 android:name="android.service.quicksettings.TOGGLEABLE_TILE"
                 android:value="false" />
         </service>
+
+        <!-- Volume-key SOS trigger — defense-in-depth manifest registration; the reliable
+             path is the runtime registerReceiver in GuardianService.onCreate, since Android
+             8+ mostly refuses to deliver implicit broadcasts like VOLUME_CHANGED_ACTION to a
+             manifest-declared receiver while the app isn't already running. -->
+        <receiver
+            android:name=".receiver.VolumeKeySOSReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.media.VOLUME_CHANGED_ACTION" />
+            </intent-filter>
+        </receiver>
 
         <!-- Boot Receiver -->
         <receiver

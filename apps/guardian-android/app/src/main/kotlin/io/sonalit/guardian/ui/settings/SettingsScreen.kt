@@ -6,12 +6,14 @@ import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import io.sonalit.guardian.BuildConfig
@@ -19,7 +21,10 @@ import io.sonalit.guardian.ui.cfo.CfoViewModel
 import io.sonalit.guardian.worker.PendingPhotoUploadWorker
 
 @Composable
-fun SettingsScreen(cfoViewModel: CfoViewModel = hiltViewModel()) {
+fun SettingsScreen(
+    cfoViewModel: CfoViewModel = hiltViewModel(),
+    panicPinViewModel: PanicPinViewModel = hiltViewModel(),
+) {
     val context = LocalContext.current
     val cfoState by cfoViewModel.state.collectAsState()
 
@@ -50,6 +55,45 @@ fun SettingsScreen(cfoViewModel: CfoViewModel = hiltViewModel()) {
                     Text("Not signed in to the CFO module.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+
+        // Panic cancel PIN
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                SectionHeader(Icons.Default.Shield, "Panic Cancel PIN")
+                Spacer(Modifier.height(12.dp))
+                var pin by remember { mutableStateOf("") }
+                var savedJustNow by remember { mutableStateOf(false) }
+                val hasPin = remember { panicPinViewModel.hasPin() }
+                Text(
+                    if (hasPin) "A cancel PIN is set. Enter a new one below to change it."
+                    else "No cancel PIN set — the panic cancel dialog can't verify a PIN until you set one.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = { if (it.length <= 8) pin = it; savedJustNow = false },
+                    label = { Text("New PIN") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = { panicPinViewModel.setPin(pin); pin = ""; savedJustNow = true },
+                    enabled = pin.length >= 4,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Save PIN")
+                }
+                if (savedJustNow) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("PIN saved.", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }

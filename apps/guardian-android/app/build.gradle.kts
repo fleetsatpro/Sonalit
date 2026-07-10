@@ -128,6 +128,10 @@ dependencies {
     implementation(libs.camerax.lifecycle)
     implementation(libs.camerax.view)
 
+    // Biometric (panic cancel) + Fragment (FragmentActivity, required by BiometricPrompt)
+    implementation(libs.biometric)
+    implementation(libs.fragment.ktx)
+
     // Coil
     implementation(libs.coil.compose)
 

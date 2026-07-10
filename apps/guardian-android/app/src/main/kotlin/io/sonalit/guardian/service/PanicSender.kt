@@ -48,4 +48,17 @@ class PanicSender @Inject constructor(
         )
         true
     }.getOrDefault(false)
+
+    /**
+     * Resolves this device's open panic_events server-side (POST
+     * /guardian/panic/cancel — deviceAuth, no body) and clears
+     * guardian_devices.panic_active. Returns true only if the backend
+     * actually confirmed the cancellation; callers must not locally clear
+     * "panic active" UI state on a false return, since the server may still
+     * consider the SOS live.
+     */
+    suspend fun cancel(): Boolean = runCatching {
+        api.cancelPanic()
+        true
+    }.getOrDefault(false)
 }
