@@ -353,27 +353,36 @@ router.post('/login', optionalDeviceAuth, cfoLoginLimiter, async (req, res, next
     }
 
     const emailClean = email.trim().toLowerCase();
-    const rateLimitKey = req.device?.id || req.ip;
+    // cfo_login_attempts.device_id is UUID — only req.device?.id qualifies.
+    // req.ip (e.g. "::ffff:100.64.0.2") is not a valid fallback key: passing it
+    // here throws "invalid input syntax for type uuid", which isn't caught on
+    // the SELECT below and 500s/400s the whole login. Callers without a
+    // recognized device token (e.g. a not-yet-enrolled CFO app) skip this
+    // per-device lockout entirely and fall back to the IP-based
+    // cfoLoginLimiter already applied to this route.
+    const rateLimitKey = req.device?.id || null;
 
-    // ── Brute-force check ────────────────────────────────────────────────────
-    await query(`
-      INSERT INTO cfo_login_attempts (device_id, attempts, window_start)
-      VALUES ($1, 0, NOW())
-      ON CONFLICT (device_id) DO NOTHING
-    `, [rateLimitKey]).catch(() => {});
+    // ── Brute-force check (per-device only) ──────────────────────────────────
+    if (rateLimitKey) {
+      await query(`
+        INSERT INTO cfo_login_attempts (device_id, attempts, window_start)
+        VALUES ($1, 0, NOW())
+        ON CONFLICT (device_id) DO NOTHING
+      `, [rateLimitKey]).catch(() => {});
 
-    const attemptRow = await query(
-      `SELECT attempts, locked_until, window_start FROM cfo_login_attempts WHERE device_id = $1`,
-      [rateLimitKey]
-    );
-    if (attemptRow.rows.length) {
-      const row = attemptRow.rows[0];
-      if (row.locked_until && new Date(row.locked_until) > new Date()) {
-        gAudit(rateLimitKey, 'cfo_login_locked', null, null, { email: emailClean }, req.ip);
-        return res.status(423).json({ error: 'Account locked due to too many failed attempts', code: 'account_locked' });
-      }
-      if (new Date(row.window_start) < new Date(Date.now() - 15 * 60 * 1000)) {
-        await query(`UPDATE cfo_login_attempts SET attempts=0, window_start=NOW(), locked_until=NULL WHERE device_id=$1`, [rateLimitKey]).catch(() => {});
+      const attemptRow = await query(
+        `SELECT attempts, locked_until, window_start FROM cfo_login_attempts WHERE device_id = $1`,
+        [rateLimitKey]
+      );
+      if (attemptRow.rows.length) {
+        const row = attemptRow.rows[0];
+        if (row.locked_until && new Date(row.locked_until) > new Date()) {
+          gAudit(rateLimitKey, 'cfo_login_locked', null, null, { email: emailClean }, req.ip);
+          return res.status(423).json({ error: 'Account locked due to too many failed attempts', code: 'account_locked' });
+        }
+        if (new Date(row.window_start) < new Date(Date.now() - 15 * 60 * 1000)) {
+          await query(`UPDATE cfo_login_attempts SET attempts=0, window_start=NOW(), locked_until=NULL WHERE device_id=$1`, [rateLimitKey]).catch(() => {});
+        }
       }
     }
 

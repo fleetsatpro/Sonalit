@@ -310,8 +310,6 @@ router.get('/vehicles', asyncHandler(async (req, res) => {
              ELSE 'idle'
            END AS status,
            COALESCE(g.speed, 0) AS speed_kmh,
-           sr_fuel.value AS fuel_pct,
-           sr_temp.value AS engine_temp_c,
            g.timestamp AS last_ping_at
     FROM vehicles v
     LEFT JOIN convoy_trucks ct ON ct.vehicle_id=v.id
@@ -323,14 +321,6 @@ router.get('/vehicles', asyncHandler(async (req, res) => {
     LEFT JOIN LATERAL (
       SELECT id FROM alerts WHERE convoy_id=ct.convoy_id AND resolved_at IS NULL LIMIT 1
     ) a ON true
-    LEFT JOIN LATERAL (
-      SELECT value FROM sensor_readings WHERE vehicle_id=v.id AND type='fuel_pct'
-      ORDER BY recorded_at DESC LIMIT 1
-    ) sr_fuel ON true
-    LEFT JOIN LATERAL (
-      SELECT value FROM sensor_readings WHERE vehicle_id=v.id AND type='engine_temp_c'
-      ORDER BY recorded_at DESC LIMIT 1
-    ) sr_temp ON true
     WHERE v.org_id=$1 AND v.deleted_at IS NULL
     ORDER BY v.registration`, [orgId]);
 
@@ -340,8 +330,8 @@ router.get('/vehicles', asyncHandler(async (req, res) => {
     convoy_id: row.convoy_id || null,
     status: row.status || 'offline',
     speed_kmh: parseFloat(row.speed_kmh) || 0,
-    fuel_pct: row.fuel_pct != null ? parseFloat(row.fuel_pct) : null,
-    engine_temp_c: row.engine_temp_c != null ? parseFloat(row.engine_temp_c) : null,
+    fuel_pct: null,
+    engine_temp_c: null,
     gps_signal_pct: null,
     last_ping_at: row.last_ping_at ? new Date(row.last_ping_at).toISOString() : null,
   })) });
@@ -605,25 +595,6 @@ router.get('/predictions', asyncHandler(async (req, res) => {
       });
     }
 
-    // Maintenance: brake wear
-    const brakeR = await req.db(`
-      SELECT v.id, v.registration, sr.value AS brake_wear
-      FROM vehicles v
-      JOIN sensor_readings sr ON sr.vehicle_id=v.id AND sr.type='brake_wear_pct'
-      WHERE v.org_id=$1 AND sr.value < 35 AND v.deleted_at IS NULL
-        AND sr.recorded_at = (SELECT MAX(recorded_at) FROM sensor_readings WHERE vehicle_id=v.id AND type='brake_wear_pct')`,
-      [orgId]);
-
-    for (const row of brakeR.rows) {
-      predictions.push({
-        id: `maint-${row.id}`,
-        confidence: 90,
-        type: 'maintenance',
-        title: `Brake inspection: ${row.registration}`,
-        detail: `Brake wear at ${Math.round(parseFloat(row.brake_wear))}% — below safe threshold`,
-        recommendation: 'Schedule immediate brake inspection before next deployment.',
-      });
-    }
   } catch (_) {}
 
   if (predictions.length === 0) {

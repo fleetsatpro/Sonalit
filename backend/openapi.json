@@ -1748,74 +1748,6 @@
         }
       }
     },
-    "/api/v1/claims": {
-      "get": {
-        "operationId": "get_api_v1_claims",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      },
-      "post": {
-        "operationId": "post_api_v1_claims",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/claims/{id}": {
-      "put": {
-        "operationId": "put_api_v1_claims_id",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/claims/{id}/status": {
-      "patch": {
-        "operationId": "patch_api_v1_claims_id_status",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/claims/{id}/generate-pdf": {
-      "post": {
-        "operationId": "post_api_v1_claims_id_generate_pdf",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/claims/{id}/download": {
-      "get": {
-        "operationId": "get_api_v1_claims_id_download",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/incidents/{incidentId}/claims": {
-      "get": {
-        "operationId": "get_api_v1_incidents_incidentId_claims",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
     "/api/v1/guardian/cfo/context": {
       "get": {
         "operationId": "get_api_v1_guardian_cfo_context",
@@ -3173,6 +3105,74 @@
     "/api/v1/dashboard/timeline": {
       "get": {
         "operationId": "get_api_v1_dashboard_timeline",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/claims": {
+      "get": {
+        "operationId": "get_api_v1_claims",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_claims",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/claims/{id}": {
+      "put": {
+        "operationId": "put_api_v1_claims_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/claims/{id}/status": {
+      "patch": {
+        "operationId": "patch_api_v1_claims_id_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/claims/{id}/generate-pdf": {
+      "post": {
+        "operationId": "post_api_v1_claims_id_generate_pdf",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/claims/{id}/download": {
+      "get": {
+        "operationId": "get_api_v1_claims_id_download",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/incidents/{incidentId}/claims": {
+      "get": {
+        "operationId": "get_api_v1_incidents_incidentId_claims",
         "responses": {
           "200": {
             "description": "OK"
