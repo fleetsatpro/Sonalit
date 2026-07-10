@@ -8,8 +8,7 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import io.sonalit.guardian.data.remote.GuardianApi
-import io.sonalit.guardian.data.remote.PanicRequest
+import io.sonalit.guardian.service.PanicSender
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,7 +25,7 @@ data class MainUiState(
 @HiltViewModel
 class MainViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val api: GuardianApi
+    private val panicSender: PanicSender,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MainUiState())
@@ -76,12 +75,12 @@ class MainViewModel @Inject constructor(
     fun handleFcmNotification(data: Map<String, String>) {
         viewModelScope.launch {
             when (data["type"]) {
-                "command" -> {
-                    val commandId = data["command_id"] ?: return@launch
-                    runCatching {
-                        api.ackCommand(mapOf("command_id" to commandId))
-                    }
-                }
+                // Command pushes are data-only (no `notification` block), so they're
+                // already picked up and executed by
+                // GuardianFirebaseMessagingService.onMessageReceived directly — that
+                // fires whether or not this activity is open. This branch would only
+                // ever see a "command" payload via a notification tap, which commands
+                // don't produce, so there's nothing to do here.
                 "panic_ack" -> {
                     _uiState.update { it.copy(panicTriggered = false) }
                 }
@@ -95,17 +94,8 @@ class MainViewModel @Inject constructor(
     fun triggerPanic() {
         viewModelScope.launch {
             _uiState.update { it.copy(panicTriggered = true) }
-            runCatching {
-                api.panic(
-                    PanicRequest(
-                        device_id = prefs.getString("device_id", "") ?: "",
-                        lat = 0.0,
-                        lon = 0.0
-                    )
-                )
-            }.onFailure {
-                _uiState.update { it.copy(panicTriggered = false) }
-            }
+            val sent = panicSender.send()
+            if (!sent) _uiState.update { it.copy(panicTriggered = false) }
         }
     }
 }

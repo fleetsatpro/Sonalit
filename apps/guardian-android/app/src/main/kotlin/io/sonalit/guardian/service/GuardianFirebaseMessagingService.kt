@@ -19,6 +19,9 @@ class GuardianFirebaseMessagingService : FirebaseMessagingService() {
     @Inject
     lateinit var api: GuardianApi
 
+    @Inject
+    lateinit var commandExecutor: CommandExecutor
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val prefs by lazy {
@@ -43,8 +46,13 @@ class GuardianFirebaseMessagingService : FirebaseMessagingService() {
         when (data["type"]) {
             "command" -> {
                 val commandId = data["command_id"] ?: return
+                val commandType = data["command_type"]
                 serviceScope.launch {
-                    runCatching { api.ackCommand(mapOf("command_id" to commandId)) }
+                    val deviceId = prefs.getString("device_id", null)
+                    val success = commandType != null && commandExecutor.execute(commandType, deviceId)
+                    runCatching {
+                        api.ackCommand(mapOf("command_id" to commandId, "status" to if (success) "executed" else "failed"))
+                    }
                 }
             }
         }

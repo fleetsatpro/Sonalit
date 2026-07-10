@@ -16,8 +16,8 @@ data class EnrollResponse(val status: String, val device_uuid: String, val devic
 data class HeartbeatRequest(val device_id: String, val battery_pct: Int? = null,
     val connectivity: String? = null, val lat: Double? = null, val lon: Double? = null)
 data class HeartbeatResponse(val commands: List<Map<String, Any>>)
-data class PanicRequest(val device_id: String, val lat: Double, val lon: Double,
-    val driver_id: String? = null, val note: String? = null)
+data class PanicRequest(val device_id: String, val mode: String, val lat: Double, val lon: Double,
+    val event_uuid: String? = null, val driver_id: String? = null, val note: String? = null)
 data class PanicResponse(val event_id: String, val status: String)
 data class GpsFixDto(val lat: Double, val lon: Double, val speed_kmh: Float,
     val heading: Float, val accuracy_m: Float, val ts: Long)
