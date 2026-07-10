@@ -1,13 +1,12 @@
-import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { api } from '../lib/api.js';
-import { geoCircle, fmtAge } from '../lib/geoMath.js';
+import { fmtAge } from '../lib/geoMath.js';
 import {
   MapPin, Plus, Bell, Truck, Smartphone, Radio,
   Circle as CircleIcon, Waypoints, ChevronDown, Search,
-  AlertTriangle,
+  AlertTriangle, Maximize2, Minimize2, Layers,
 } from 'lucide-react';
 import BootSplash from '../components/geofences/BootSplash.js';
 import Compass from '../components/geofences/Compass.js';
@@ -15,6 +14,7 @@ import AlertsDrawer from '../components/geofences/AlertsDrawer.js';
 import MissionControlDrawer from '../components/geofences/MissionControlDrawer.js';
 import ZoneCard from '../components/geofences/ZoneCard.js';
 import CreateGeofenceModal from '../components/geofences/CreateGeofenceModal.js';
+import { useGeofenceMap } from '../components/geofences/useGeofenceMap.js';
 import {
   STATUS_COLOR, REGIONS, REGION_BOUNDS, EA_CENTER, EA_ZOOM, EVENT_LABEL, EVENT_COLOR, SEVERITY_COLOR, SEVERITY_WEIGHT,
 } from '../components/geofences/types.js';
@@ -25,9 +25,6 @@ import type {
 type DrawMode = 'circle' | 'corridor' | null;
 
 export default function Geofences() {
-  const mapEl = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
-  const mapReadyRef = useRef(false);
   const qc = useQueryClient();
 
   const [tab, setTab] = useState<'zones' | 'events'>('zones');
@@ -52,6 +49,8 @@ export default function Geofences() {
   const [aiText, setAiText] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [eventTypeFilter, setEventTypeFilter] = useState('all');
+  const [mapStyle, setMapStyle] = useState<'street' | 'satellite'>('street');
+  const [expanded, setExpanded] = useState(false);
 
   const mapQ = useQuery<MapData>({ queryKey: ['geofence-map-data'], queryFn: async () => (await api.get<MapData>('/dashboard/map')).data, refetchInterval: 15_000 });
   const geofencesQ = useQuery<{ data: Geofence[] }>({ queryKey: ['geofences-list'], queryFn: () => api.get('/geofences').then(r => ({ data: Array.isArray(r.data) ? r.data : r.data?.data ?? [] })) });
@@ -116,85 +115,21 @@ export default function Geofences() {
     return () => clearInterval(t);
   }, []);
 
+  // Escape exits fullscreen.
   useEffect(() => {
-    if (!mapEl.current || mapRef.current) return;
-    const map = new maplibregl.Map({ container: mapEl.current, style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json', center: EA_CENTER, zoom: EA_ZOOM });
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }));
-    map.on('load', () => { mapReadyRef.current = true; });
-    mapRef.current = map;
-    return () => { map.remove(); mapRef.current = null; mapReadyRef.current = false; };
-  }, []);
+    if (!expanded) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setExpanded(false); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [expanded]);
 
-  useEffect(() => {
-    const m = mapRef.current;
-    if (!m || !drawMode) return;
-    const handler = (e: maplibregl.MapMouseEvent) => {
-      const pt: [number, number] = [e.lngLat.lat, e.lngLat.lng];
-      if (drawMode === 'circle') setDrawCenter(pt); else setDrawPath(prev => [...prev, pt]);
-    };
-    m.on('click', handler);
-    return () => { m.off('click', handler); };
-  }, [drawMode]);
-
-  useEffect(() => {
-    const m = mapRef.current;
-    if (!m) return;
-    const handler = (e: maplibregl.MapMouseEvent) => {
-      const feats = m.queryRenderedFeatures(e.point, { layers: ['gf-vehicles-dot'] });
-      const id = feats[0]?.properties?.['id'];
-      if (id) { setSelectedVehicleId(id); setRightOpen(true); }
-    };
-    m.on('click', 'gf-vehicles-dot', handler);
-    return () => { m.off('click', 'gf-vehicles-dot', handler); };
-  }, [vehicles.length]);
-
-  useEffect(() => {
-    const m = mapRef.current;
-    if (!m) return;
-    const render = () => {
-      ['gf-zone-fill', 'gf-zone-line', 'gf-corridor-glow', 'gf-corridor-line', 'gf-vehicles-glow', 'gf-vehicles-dot', 'gf-devices-glow', 'gf-devices-dot', 'gf-draw-fill', 'gf-draw-line']
-        .forEach(id => { if (m.getLayer(id)) m.removeLayer(id); });
-      ['gf-zone-src', 'gf-corridor-src', 'gf-vehicles-src', 'gf-devices-src', 'gf-draw-src'].forEach(id => { if (m.getSource(id)) m.removeSource(id); });
-
-      const circleFeatures: GeoJSON.Feature[] = [];
-      const corridorFeatures: GeoJSON.Feature[] = [];
-      const visibleZoneIds = new Set(visibleZones.map(z => z.id));
-      mapGeofences.filter(g => regionFilter === 'all' || visibleZoneIds.has(g.id)).forEach(g => {
-        if (g.type === 'corridor' && g.path && g.path.length >= 2) {
-          corridorFeatures.push({ type: 'Feature', properties: { name: g.name }, geometry: { type: 'LineString', coordinates: g.path.map(([lat, lng]) => [lng, lat]) } });
-        } else if (g.lat != null && g.lng != null) {
-          circleFeatures.push({ type: 'Feature', properties: { name: g.name }, geometry: { type: 'Polygon', coordinates: [geoCircle(g.lat, g.lng, (g.radius_m || 1000) / 1000)] } });
-        }
-      });
-      m.addSource('gf-zone-src', { type: 'geojson', data: { type: 'FeatureCollection', features: circleFeatures } });
-      m.addLayer({ id: 'gf-zone-fill', type: 'fill', source: 'gf-zone-src', paint: { 'fill-color': '#22d3ee', 'fill-opacity': 0.08 } });
-      m.addLayer({ id: 'gf-zone-line', type: 'line', source: 'gf-zone-src', paint: { 'line-color': '#22d3ee', 'line-width': 1.5, 'line-dasharray': [4, 3] } });
-      m.addSource('gf-corridor-src', { type: 'geojson', data: { type: 'FeatureCollection', features: corridorFeatures } });
-      m.addLayer({ id: 'gf-corridor-glow', type: 'line', source: 'gf-corridor-src', layout: { 'line-cap': 'round' }, paint: { 'line-color': '#38bdf8', 'line-width': 14, 'line-opacity': 0.15 } });
-      m.addLayer({ id: 'gf-corridor-line', type: 'line', source: 'gf-corridor-src', layout: { 'line-cap': 'round' }, paint: { 'line-color': '#38bdf8', 'line-width': 2.5, 'line-dasharray': [3, 2] } });
-
-      const vehicleFeatures: GeoJSON.Feature[] = visibleVehicles.map(v => ({ type: 'Feature', properties: { id: v.id, registration: v.registration, status: v.status }, geometry: { type: 'Point', coordinates: [v.lng, v.lat] } }));
-      m.addSource('gf-vehicles-src', { type: 'geojson', data: { type: 'FeatureCollection', features: vehicleFeatures } });
-      const statusColorExpr: maplibregl.ExpressionSpecification = ['match', ['get', 'status'], 'panic', STATUS_COLOR['panic']!, 'alert', STATUS_COLOR['alert']!, 'warn', STATUS_COLOR['warn']!, 'moving', STATUS_COLOR['moving']!, 'idle', STATUS_COLOR['idle']!, 'offline', STATUS_COLOR['offline']!, '#666666'];
-      m.addLayer({ id: 'gf-vehicles-glow', type: 'circle', source: 'gf-vehicles-src', paint: { 'circle-radius': 13, 'circle-color': statusColorExpr, 'circle-opacity': 0.2, 'circle-blur': 1 } });
-      m.addLayer({ id: 'gf-vehicles-dot', type: 'circle', source: 'gf-vehicles-src', paint: { 'circle-radius': 6, 'circle-color': statusColorExpr, 'circle-stroke-width': 1.5, 'circle-stroke-color': '#000', 'circle-opacity': 0.95 } });
-
-      const deviceFeatures: GeoJSON.Feature[] = devices.map(d => ({ type: 'Feature', properties: { id: d.id, name: d.name, status: d.status }, geometry: { type: 'Point', coordinates: [d.lng, d.lat] } }));
-      m.addSource('gf-devices-src', { type: 'geojson', data: { type: 'FeatureCollection', features: deviceFeatures } });
-      m.addLayer({ id: 'gf-devices-glow', type: 'circle', source: 'gf-devices-src', paint: { 'circle-radius': ['case', ['==', ['get', 'status'], 'panic'], 20, 9], 'circle-color': statusColorExpr, 'circle-opacity': ['case', ['==', ['get', 'status'], 'panic'], 0.35, 0.15], 'circle-blur': 1 } });
-      m.addLayer({ id: 'gf-devices-dot', type: 'circle', source: 'gf-devices-src', paint: { 'circle-radius': 4.5, 'circle-color': statusColorExpr, 'circle-stroke-width': 1.5, 'circle-stroke-color': '#fff', 'circle-opacity': 0.95 } });
-
-      const drawFeatures: GeoJSON.Feature[] = [];
-      if (drawMode === 'circle' && drawCenter) drawFeatures.push({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [geoCircle(drawCenter[0], drawCenter[1], parseFloat(form.radius || '2000') / 1000)] } });
-      else if (drawMode === 'corridor' && drawPath.length >= 2) drawFeatures.push({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: drawPath.map(([lat, lng]) => [lng, lat]) } });
-      m.addSource('gf-draw-src', { type: 'geojson', data: { type: 'FeatureCollection', features: drawFeatures } });
-      m.addLayer({ id: 'gf-draw-fill', type: 'fill', source: 'gf-draw-src', filter: ['==', ['geometry-type'], 'Polygon'], paint: { 'fill-color': '#f97316', 'fill-opacity': 0.15 } });
-      m.addLayer({ id: 'gf-draw-line', type: 'line', source: 'gf-draw-src', paint: { 'line-color': '#f97316', 'line-width': 2.5 } });
-    };
-    if (mapReadyRef.current) render(); else m.once('load', render);
-    m.on('style.load', render);
-    return () => { m.off('style.load', render); };
-  }, [visibleVehicles, devices, mapGeofences, visibleZones, regionFilter, drawMode, drawCenter, drawPath, form.radius]);
+  const { mapEl, mapRef } = useGeofenceMap({
+    drawMode, drawCenter, drawPath, drawRadiusM: form.radius,
+    onDrawCenter: setDrawCenter,
+    onDrawPoint: pt => setDrawPath(prev => [...prev, pt]),
+    onVehiclePicked: id => { setSelectedVehicleId(id); setRightOpen(true); },
+    vehicles, visibleVehicles, devices, mapGeofences, visibleZones, regionFilter, expanded, mapStyle,
+  });
 
   const startDraw = useCallback((mode: DrawMode) => { setDrawMode(mode); setDrawCenter(null); setDrawPath([]); setShowCreate(false); }, []);
   const finishDraw = useCallback(() => setShowCreate(true), []);
@@ -333,8 +268,8 @@ export default function Geofences() {
         </div>
       )}
 
-      <div className="relative rounded-lg overflow-hidden border border-gray-700">
-        <div ref={mapEl} style={{ width: '100%', height: 480, background: '#050f18' }} />
+      <div className={expanded ? 'fixed inset-0 z-[500] bg-gray-950' : 'relative rounded-lg overflow-hidden border border-gray-700'}>
+        <div ref={mapEl} style={{ width: '100%', height: expanded ? '100%' : 480, background: '#050f18' }} />
 
         <div className="absolute top-3 left-3 bg-black/70 backdrop-blur rounded-lg border border-gray-700 px-3 py-2 flex flex-col gap-1.5 text-xs font-semibold">
           <LegendRow color={STATUS_COLOR['moving']!} label="Moving" />
@@ -347,6 +282,22 @@ export default function Geofences() {
         <Compass heading={selectedVehicle?.pos?.heading ?? null} label={selectedVehicle?.meta?.registration ?? selectedVehicle?.pos?.registration ?? 'No vehicle selected'} />
 
         <div className="absolute top-3 right-3 flex flex-col items-end gap-2">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setMapStyle(s => s === 'street' ? 'satellite' : 'street')}
+              title={mapStyle === 'street' ? 'Switch to satellite view' : 'Switch to OSM street view'}
+              className={`flex items-center gap-1.5 backdrop-blur border px-3 py-1.5 rounded-lg text-xs font-semibold ${mapStyle === 'satellite' ? 'bg-orange-900/40 border-orange-500 text-orange-300' : 'bg-black/70 border-gray-700 hover:border-cyan-500 text-white'}`}
+            >
+              <Layers size={14} /> {mapStyle === 'street' ? 'Satellite' : 'OSM Street'}
+            </button>
+            <button
+              onClick={() => setExpanded(v => !v)}
+              title={expanded ? 'Exit fullscreen' : 'Fullscreen'}
+              className="flex items-center gap-1.5 bg-black/70 backdrop-blur border border-gray-700 hover:border-cyan-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold"
+            >
+              {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />} {expanded ? 'Exit' : 'Fullscreen'}
+            </button>
+          </div>
           {!drawMode && (
             <div className="flex gap-2">
               <button onClick={() => startDraw('circle')} className="flex items-center gap-1.5 bg-black/70 backdrop-blur border border-gray-700 hover:border-cyan-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold"><CircleIcon size={14} /> Draw Circle Zone</button>
