@@ -189,7 +189,7 @@ router.get('/map', asyncHandler(async (req, res) => {
       FROM geofences
       WHERE org_id=$1 AND active IS NOT FALSE
         AND coordinates IS NOT NULL
-      LIMIT 30`, [orgId]),
+      ORDER BY created_at`, [orgId]),
 
     // risk_zones is global (no org_id) — use raw query
     query(`
