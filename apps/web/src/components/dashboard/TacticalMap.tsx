@@ -167,7 +167,7 @@ function updateMapData(map: maplibregl.Map, data: MapData) {
   setData('sv-geofences', {
     type: 'FeatureCollection',
     features: (data.geofences ?? []).reduce<GeoJSON.Feature[]>((acc, g) => {
-      if (g.type === 'corridor' && Array.isArray(g.path) && g.path.length >= 2) {
+      if ((g.type === 'corridor' || g.type === 'linear') && Array.isArray(g.path) && g.path.length >= 2) {
         const coords = g.path.map(([lat, lng]) => [lng ?? 0, lat ?? 0] as [number, number]);
         acc.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: { id: g.id, name: g.name } });
       } else if (g.lat != null && g.lng != null) {

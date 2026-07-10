@@ -311,7 +311,7 @@ export default function CesiumLiveMap({
           }),
         });
         geofenceIdsRef.current.push(entityId);
-      } else if (geo.type === 'corridor') {
+      } else if (geo.type === 'corridor' || geo.type === 'linear') {
         const coords = geo.coordinates as { path?: [number, number][]; buffer_m?: number };
         if (!Array.isArray(coords?.path) || coords.path.length < 2) continue;
         const positions = coords.path.map(([lat, lng]) =>

@@ -5,7 +5,7 @@ import { api } from '../lib/api.js';
 import { fmtAge } from '../lib/geoMath.js';
 import {
   MapPin, Plus, Bell, Truck, Smartphone, Radio,
-  Circle as CircleIcon, Waypoints, ChevronDown, Search,
+  ChevronDown, Search,
   AlertTriangle, Maximize2, Minimize2, Layers,
 } from 'lucide-react';
 import BootSplash from '../components/geofences/BootSplash.js';
@@ -22,7 +22,7 @@ import type {
   MapData, Geofence, GeofenceEvent, GeofenceAction, VehicleMeta, VehicleTelemetry, AlertRow, MapVehicle,
 } from '../components/geofences/types.js';
 
-type DrawMode = 'circle' | 'corridor' | null;
+type DrawMode = 'circle' | 'linear' | 'corridor' | null;
 
 export default function Geofences() {
   const qc = useQueryClient();
@@ -35,6 +35,7 @@ export default function Geofences() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: '', region: REGIONS[0]!, radius: '2000', buffer_km: '2' });
   const [newAction, setNewAction] = useState({ action_type: 'sms', recipient: '', message_template: '' });
+  const [pendingActions, setPendingActions] = useState<{ action_type: string; recipient: string }[]>([]);
 
   const [search, setSearch] = useState('');
   const [regionFilter, setRegionFilter] = useState('all');
@@ -83,8 +84,20 @@ export default function Geofences() {
   const invalidateZones = () => { qc.invalidateQueries({ queryKey: ['geofences-list'] }); qc.invalidateQueries({ queryKey: ['geofence-map-data'] }); };
 
   const createMut = useMutation({
-    mutationFn: (body: object) => api.post('/geofences', body),
-    onSuccess: () => { invalidateZones(); setShowCreate(false); setDrawMode(null); setDrawCenter(null); setDrawPath([]); setForm({ name: '', region: REGIONS[0]!, radius: '2000', buffer_km: '2' }); },
+    mutationFn: async ({ body, actions }: { body: object; actions: { action_type: string; recipient: string }[] }) => {
+      const created = await api.post<{ data: { id: string } }>('/geofences', body);
+      const newId = created.data.data.id;
+      // Actions staged in the create form are chained right after the geofence
+      // exists — the actions endpoint needs a real geofence id, so this can't
+      // happen in the same request.
+      await Promise.all(actions.filter(a => a.recipient.trim()).map(a =>
+        api.post(`/geofences/${newId}/actions`, { action_type: a.action_type, recipient: a.recipient })));
+      return created;
+    },
+    onSuccess: () => {
+      invalidateZones(); setShowCreate(false); setDrawMode(null); setDrawCenter(null); setDrawPath([]);
+      setForm({ name: '', region: REGIONS[0]!, radius: '2000', buffer_km: '2' }); setPendingActions([]);
+    },
   });
   const toggleActiveMut = useMutation({ mutationFn: ({ id, active }: { id: string; active: boolean }) => api.patch(`/geofences/${id}`, { active }), onSuccess: invalidateZones });
   const deleteMut = useMutation({ mutationFn: (id: string) => api.delete(`/geofences/${id}`), onSuccess: invalidateZones });
@@ -131,13 +144,21 @@ export default function Geofences() {
     vehicles, visibleVehicles, devices, mapGeofences, visibleZones, regionFilter, expanded, mapStyle,
   });
 
-  const startDraw = useCallback((mode: DrawMode) => { setDrawMode(mode); setDrawCenter(null); setDrawPath([]); setShowCreate(false); }, []);
+  const startDraw = useCallback((mode: DrawMode) => {
+    if (mode === null) { setDrawMode(null); setDrawCenter(null); setDrawPath([]); return; }
+    setDrawMode(mode); setDrawCenter(null); setDrawPath([]); setShowCreate(false);
+  }, []);
   const finishDraw = useCallback(() => setShowCreate(true), []);
-  const cancelDraw = useCallback(() => { setDrawMode(null); setDrawCenter(null); setDrawPath([]); }, []);
+  const cancelDraw = useCallback(() => { setDrawMode(null); setDrawCenter(null); setDrawPath([]); setPendingActions([]); }, []);
   const submitCreate = useCallback(() => {
-    if (drawMode === 'circle' && drawCenter) createMut.mutate({ name: form.name, type: 'circle', lat: drawCenter[0], lng: drawCenter[1], radius: parseFloat(form.radius), region: form.region });
-    else if (drawMode === 'corridor' && drawPath.length >= 2) createMut.mutate({ name: form.name, type: 'corridor', region: form.region, coordinates: { path: drawPath, buffer_m: parseFloat(form.buffer_km) * 1000 } });
-  }, [drawMode, drawCenter, drawPath, form, createMut]);
+    if (drawMode === 'circle' && drawCenter) {
+      createMut.mutate({ body: { name: form.name, type: 'circle', lat: drawCenter[0], lng: drawCenter[1], radius: parseFloat(form.radius), region: form.region }, actions: pendingActions });
+    } else if (drawMode === 'linear' && drawPath.length >= 2) {
+      createMut.mutate({ body: { name: form.name, type: 'linear', region: form.region, coordinates: { path: drawPath } }, actions: pendingActions });
+    } else if (drawMode === 'corridor' && drawPath.length >= 2) {
+      createMut.mutate({ body: { name: form.name, type: 'corridor', region: form.region, coordinates: { path: drawPath, buffer_m: parseFloat(form.buffer_km) * 1000 } }, actions: pendingActions });
+    }
+  }, [drawMode, drawCenter, drawPath, form, pendingActions, createMut]);
 
   const applyRegion = useCallback((r: string) => {
     setRegionFilter(r); setRegionMenuOpen(false);
@@ -281,38 +302,40 @@ export default function Geofences() {
 
         <Compass heading={selectedVehicle?.pos?.heading ?? null} label={selectedVehicle?.meta?.registration ?? selectedVehicle?.pos?.registration ?? 'No vehicle selected'} />
 
+        {/* Compact icon-only view controls — kept minimal so the map surface stays clean */}
         <div className="absolute top-3 right-3 flex flex-col items-end gap-2">
-          <div className="flex gap-2">
+          <div className="flex gap-1.5">
             <button
               onClick={() => setMapStyle(s => s === 'street' ? 'satellite' : 'street')}
-              title={mapStyle === 'street' ? 'Switch to satellite view' : 'Switch to OSM street view'}
-              className={`flex items-center gap-1.5 backdrop-blur border px-3 py-1.5 rounded-lg text-xs font-semibold ${mapStyle === 'satellite' ? 'bg-orange-900/40 border-orange-500 text-orange-300' : 'bg-black/70 border-gray-700 hover:border-cyan-500 text-white'}`}
+              title={mapStyle === 'street' ? 'Switch to satellite view' : 'Switch to street view'}
+              className={`p-2 rounded-lg border backdrop-blur ${mapStyle === 'satellite' ? 'bg-orange-900/40 border-orange-500 text-orange-300' : 'bg-black/70 border-gray-700 hover:border-cyan-500 text-white'}`}
             >
-              <Layers size={14} /> {mapStyle === 'street' ? 'Satellite' : 'OSM Street'}
+              <Layers size={16} />
             </button>
             <button
               onClick={() => setExpanded(v => !v)}
               title={expanded ? 'Exit fullscreen' : 'Fullscreen'}
-              className="flex items-center gap-1.5 bg-black/70 backdrop-blur border border-gray-700 hover:border-cyan-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold"
+              className="p-2 rounded-lg bg-black/70 backdrop-blur border border-gray-700 hover:border-cyan-500 text-white"
             >
-              {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />} {expanded ? 'Exit' : 'Fullscreen'}
+              {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
             </button>
           </div>
-          {!drawMode && (
-            <div className="flex gap-2">
-              <button onClick={() => startDraw('circle')} className="flex items-center gap-1.5 bg-black/70 backdrop-blur border border-gray-700 hover:border-cyan-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold"><CircleIcon size={14} /> Draw Circle Zone</button>
-              <button onClick={() => startDraw('corridor')} className="flex items-center gap-1.5 bg-black/70 backdrop-blur border border-gray-700 hover:border-cyan-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold"><Waypoints size={14} /> Draw Corridor</button>
-            </div>
-          )}
+          {/* Only shown while a shape is actively being drawn (armed from the Add Geofence modal) */}
           {drawMode === 'circle' && (
-            <div className="bg-black/80 backdrop-blur border border-orange-500/50 rounded-lg px-3 py-2 text-xs font-semibold text-white space-y-2">
+            <div className="bg-black/80 backdrop-blur border border-orange-500/50 rounded-lg px-3 py-2 text-xs font-semibold text-white space-y-2 max-w-[220px]">
               <div>{drawCenter ? 'Center placed — adjust radius, then Continue' : 'Click the map to place the zone center'}</div>
               {drawCenter && <input type="number" value={form.radius} onChange={e => setForm(p => ({ ...p, radius: e.target.value }))} placeholder="Radius (m)" className="w-full bg-gray-800 text-white px-2 py-1 rounded text-xs" />}
               <div className="flex gap-2"><button onClick={cancelDraw} className="flex-1 px-2 py-1 rounded bg-gray-700 hover:bg-gray-600">Cancel</button>{drawCenter && <button onClick={finishDraw} className="flex-1 px-2 py-1 rounded bg-orange-600 hover:bg-orange-700">Continue</button>}</div>
             </div>
           )}
+          {drawMode === 'linear' && (
+            <div className="bg-black/80 backdrop-blur border border-orange-500/50 rounded-lg px-3 py-2 text-xs font-semibold text-white space-y-2 max-w-[220px]">
+              <div>{drawPath.length} point{drawPath.length === 1 ? '' : 's'} — click to add, need at least 2</div>
+              <div className="flex gap-2"><button onClick={cancelDraw} className="flex-1 px-2 py-1 rounded bg-gray-700 hover:bg-gray-600">Cancel</button><button onClick={finishDraw} disabled={drawPath.length < 2} className="flex-1 px-2 py-1 rounded bg-orange-600 hover:bg-orange-700 disabled:opacity-40">Continue</button></div>
+            </div>
+          )}
           {drawMode === 'corridor' && (
-            <div className="bg-black/80 backdrop-blur border border-orange-500/50 rounded-lg px-3 py-2 text-xs font-semibold text-white space-y-2">
+            <div className="bg-black/80 backdrop-blur border border-orange-500/50 rounded-lg px-3 py-2 text-xs font-semibold text-white space-y-2 max-w-[220px]">
               <div>{drawPath.length} point{drawPath.length === 1 ? '' : 's'} — click to add, need at least 2</div>
               <input type="number" value={form.buffer_km} onChange={e => setForm(p => ({ ...p, buffer_km: e.target.value }))} placeholder="Buffer width (km)" className="w-full bg-gray-800 text-white px-2 py-1 rounded text-xs" />
               <div className="flex gap-2"><button onClick={cancelDraw} className="flex-1 px-2 py-1 rounded bg-gray-700 hover:bg-gray-600">Cancel</button><button onClick={finishDraw} disabled={drawPath.length < 2} className="flex-1 px-2 py-1 rounded bg-orange-600 hover:bg-orange-700 disabled:opacity-40">Continue</button></div>
@@ -399,6 +422,7 @@ export default function Geofences() {
       {showCreate && (
         <CreateGeofenceModal
           drawMode={drawMode} drawCenter={drawCenter} drawPath={drawPath} form={form} setForm={setForm}
+          pendingActions={pendingActions} setPendingActions={setPendingActions}
           onStartDraw={startDraw} onClose={() => { setShowCreate(false); cancelDraw(); }} onSubmit={submitCreate}
           submitting={createMut.isPending} error={createMut.isError}
         />

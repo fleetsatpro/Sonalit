@@ -1,4 +1,4 @@
-import { Bell, Trash2, ChevronDown, ChevronRight, Circle as CircleIcon, Waypoints, CheckCircle2 } from 'lucide-react';
+import { Bell, Trash2, ChevronDown, ChevronRight, Circle as CircleIcon, Waypoints, Minus, CheckCircle2 } from 'lucide-react';
 import CorridorStats from './CorridorStats.js';
 import { ACTION_TYPE_META } from './types.js';
 import type { Geofence, MapGeofence, MapVehicle, GeofenceEvent, GeofenceAction } from './types.js';
@@ -32,7 +32,9 @@ export default function ZoneCard({
     <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
       <div className="flex items-center gap-3 px-4 py-3">
         <button onClick={onToggleExpand} className="text-gray-400 hover:text-white">{expanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</button>
-        {zone.type === 'corridor' ? <Waypoints size={16} className="text-blue-400 shrink-0" /> : <CircleIcon size={16} className="text-cyan-400 shrink-0" />}
+        {zone.type === 'corridor' ? <Waypoints size={16} className="text-blue-400 shrink-0" />
+          : zone.type === 'linear' ? <Minus size={16} className="text-violet-400 shrink-0" />
+          : <CircleIcon size={16} className="text-cyan-400 shrink-0" />}
         <div className="flex-1 min-w-0">
           <div className="font-semibold text-white truncate">{zone.name}</div>
           <div className="text-xs text-gray-400 font-medium">{zone.type} · {zone.region ?? 'Unassigned'}{zone.radius ? ` · ${Math.round(zone.radius)}m` : ''}</div>

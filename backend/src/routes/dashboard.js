@@ -238,10 +238,15 @@ router.get('/map', asyncHandler(async (req, res) => {
         const type = (g.type || 'circle').toLowerCase();
         const coords = g.coordinates || {};
         const CORRIDOR_TYPES = ['corridor', 'linear', 'line', 'linestring', 'route'];
+        // 'linear' is a real, distinct geofence shape from 'corridor': a plain
+        // route line with no buffer zone, vs. a corridor's buffered safety
+        // band. Only corridor-family types get a fabricated buffer default —
+        // a linear geofence has none unless one was explicitly stored.
+        const isLinear = type === 'linear' || type === 'line' || type === 'linestring';
 
         // Extract path in [[lat,lng],...] format from any known structure
         let path = null;
-        let buffer_m = g.corridor_width_km ? g.corridor_width_km * 1000 : 300;
+        let buffer_m = isLinear ? null : (g.corridor_width_km ? g.corridor_width_km * 1000 : 300);
         if (Array.isArray(coords.path) && coords.path.length >= 2) {
           path = coords.path; // [[lat,lng],...] order
           if (typeof coords.buffer_m === 'number') buffer_m = coords.buffer_m;
@@ -256,7 +261,7 @@ router.get('/map', asyncHandler(async (req, res) => {
           if (!path || path.length < 2) return null;
           const mid = path[Math.floor(path.length / 2)];
           return {
-            id: g.id, name: g.name, type: 'corridor',
+            id: g.id, name: g.name, type: isLinear ? 'linear' : 'corridor',
             path, buffer_m,
             lat: mid ? parseFloat(mid[0]) : null,
             lng: mid ? parseFloat(mid[1]) : null,

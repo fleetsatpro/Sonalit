@@ -74,8 +74,13 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      connectSrc: ["'self'", "wss://rt.sonalit.io", "https://api.anthropic.com", "https://*.sentry.io", "https://*.openstreetmap.org"],
-      imgSrc: ["'self'", "data:", "https://*.r2.cloudflarestorage.com", "https://basemaps.cartocdn.com", "https://demotiles.maplibre.org", "https://*.openstreetmap.org"],
+      // MapLibre GL fetches raster tiles via fetch()/XHR (not <img> tags), so
+      // connect-src — not img-src — is what actually gates tile loading.
+      // server.arcgisonline.com (Esri street + satellite tiles) and
+      // demotiles.maplibre.org (glyphs) were missing from connect-src, which
+      // silently blocked the map from ever rendering.
+      connectSrc: ["'self'", "wss://rt.sonalit.io", "https://api.anthropic.com", "https://*.sentry.io", "https://*.openstreetmap.org", "https://server.arcgisonline.com", "https://demotiles.maplibre.org"],
+      imgSrc: ["'self'", "data:", "https://*.r2.cloudflarestorage.com", "https://basemaps.cartocdn.com", "https://demotiles.maplibre.org", "https://*.openstreetmap.org", "https://server.arcgisonline.com"],
       workerSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"], // Tailwind CSS requires this
       scriptSrc: ["'self'"],
