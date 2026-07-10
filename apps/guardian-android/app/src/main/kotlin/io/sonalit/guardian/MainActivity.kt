@@ -15,6 +15,8 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.runtime.*
@@ -90,9 +92,18 @@ private fun GuardianApp(viewModel: MainViewModel) {
         }
     }
 
-    when {
-        uiState.isEnrolled -> MainScaffold(viewModel = viewModel)
-        else -> EnrollmentScreen(onEnrolled = { viewModel.markEnrolled() })
+    // MainScaffold's NavigationSuiteScaffold wraps its content in a Surface
+    // (giving Text its background/content-color pairing for free), but
+    // EnrollmentScreen — shown before that scaffold ever mounts — had none, so
+    // its default-colored Text resolved to black against the dark theme's
+    // black background: invisible, while the explicitly-tinted hourglass icon
+    // stayed visible. Looked exactly like a frozen black screen instead of the
+    // "awaiting operator approval" state it actually was.
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        when {
+            uiState.isEnrolled -> MainScaffold(viewModel = viewModel)
+            else -> EnrollmentScreen(onEnrolled = { viewModel.markEnrolled() })
+        }
     }
 }
 
