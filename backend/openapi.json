@@ -1540,6 +1540,282 @@
         }
       }
     },
+    "/api/v1/fuel/webhook/fuel-card": {
+      "post": {
+        "operationId": "post_api_v1_fuel_webhook_fuel_card",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/fuel/": {
+      "get": {
+        "operationId": "get_api_v1_fuel",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_fuel",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/fuel/{id}": {
+      "put": {
+        "operationId": "put_api_v1_fuel_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_fuel_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/fuel/anomalies": {
+      "get": {
+        "operationId": "get_api_v1_fuel_anomalies",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/fuel/anomalies/{id}/resolve": {
+      "patch": {
+        "operationId": "patch_api_v1_fuel_anomalies_id_resolve",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/fuel/summary": {
+      "get": {
+        "operationId": "get_api_v1_fuel_summary",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/fuel/stations": {
+      "get": {
+        "operationId": "get_api_v1_fuel_stations",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_fuel_stations",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/fuel/stations/{id}": {
+      "delete": {
+        "operationId": "delete_api_v1_fuel_stations_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/fuel/vehicles/{vehicleId}": {
+      "get": {
+        "operationId": "get_api_v1_fuel_vehicles_vehicleId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/fuel/convoys/{convoyId}": {
+      "get": {
+        "operationId": "get_api_v1_fuel_convoys_convoyId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/shifts/": {
+      "get": {
+        "operationId": "get_api_v1_shifts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_shifts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/shifts/on-duty": {
+      "get": {
+        "operationId": "get_api_v1_shifts_on_duty",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/shifts/coverage": {
+      "get": {
+        "operationId": "get_api_v1_shifts_coverage",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/shifts/{id}": {
+      "put": {
+        "operationId": "put_api_v1_shifts_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_shifts_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/shifts/{id}/handover": {
+      "post": {
+        "operationId": "post_api_v1_shifts_id_handover",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "get": {
+        "operationId": "get_api_v1_shifts_id_handover",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/shifts/handovers/{handoverId}/ack": {
+      "patch": {
+        "operationId": "patch_api_v1_shifts_handovers_handoverId_ack",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/claims": {
+      "get": {
+        "operationId": "get_api_v1_claims",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_claims",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/claims/{id}": {
+      "put": {
+        "operationId": "put_api_v1_claims_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/claims/{id}/status": {
+      "patch": {
+        "operationId": "patch_api_v1_claims_id_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/claims/{id}/generate-pdf": {
+      "post": {
+        "operationId": "post_api_v1_claims_id_generate_pdf",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/claims/{id}/download": {
+      "get": {
+        "operationId": "get_api_v1_claims_id_download",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/incidents/{incidentId}/claims": {
+      "get": {
+        "operationId": "get_api_v1_incidents_incidentId_claims",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/cfo/context": {
       "get": {
         "operationId": "get_api_v1_guardian_cfo_context",
@@ -1854,6 +2130,16 @@
         }
       }
     },
+    "/api/v1/shipments/stats/summary": {
+      "get": {
+        "operationId": "get_api_v1_shipments_stats_summary",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/shipments/{id}": {
       "get": {
         "operationId": "get_api_v1_shipments_id",
@@ -1867,16 +2153,6 @@
     "/api/v1/shipments/{id}/status": {
       "patch": {
         "operationId": "patch_api_v1_shipments_id_status",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/shipments/stats/summary": {
-      "get": {
-        "operationId": "get_api_v1_shipments_stats_summary",
         "responses": {
           "200": {
             "description": "OK"
