@@ -194,13 +194,6 @@ app.get("/metrics", async (req, res) => {
   "fuel", "shifts"]
   .forEach(r => app.use("/api/v1/" + r, require("./routes/" + r)));
 
-// claims.js defines its own routes as /claims, /claims/:id, /incidents/:id/claims
-// (not relative to a /claims mount) so it belongs at the API root — mounting it
-// under /api/v1/claims would have doubled the path. This — combined with never
-// being mounted at all — is why Claims had no working backend.
-try { app.use("/api/v1", require("./routes/claims")); logger.info("Route loaded: /api/v1 (claims)"); }
-catch (e) { logger.warn("Claims route failed: " + e.message); }
-
 try { app.use("/api/v1/guardian/cfo", require("./routes/guardianCfo")); logger.info("Route loaded: /api/v1/guardian/cfo"); }
 catch (e) { logger.warn("Guardian CFO route failed: " + e.message); }
 
@@ -240,6 +233,21 @@ try { app.use("/api/v1/dashboard", require("./routes/dashboard")); logger.info("
 catch (e) { logger.warn("Dashboard route failed: " + e.message); }
 
 app.use("/api/v1/sync", (req, res) => res.json({ ok: true, processed: 0 }));
+
+// claims.js defines its own routes as /claims, /claims/:id, /incidents/:id/claims
+// (not relative to a /claims mount) so it belongs at the API root — mounting it
+// under /api/v1/claims would have doubled the path. It must be mounted LAST,
+// after every other /api/v1/* router: claims.js applies `router.use(authenticate,
+// attachOrgDb)` unconditionally, and because Express matches app.use() mounts by
+// path prefix in registration order, mounting this at the bare /api/v1 root
+// anywhere earlier made it swallow every request that fell through an
+// earlier-mounted router without a matching route (e.g. any /api/v1/guardian/**
+// path the base guardian.js router doesn't own, like /guardian/cfo/login) and
+// reject it with 401 "Missing or malformed Authorization header" before it
+// could ever reach the router that actually owned that path.
+try { app.use("/api/v1", require("./routes/claims")); logger.info("Route loaded: /api/v1 (claims)"); }
+catch (e) { logger.warn("Claims route failed: " + e.message); }
+
 app.use((req, res) => res.status(404).json({ error: req.method + " " + req.path + " not found" }));
 if (process.env.SENTRY_DSN) Sentry.setupExpressErrorHandler(app);
 app.use(errorHandler);
