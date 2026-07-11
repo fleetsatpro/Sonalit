@@ -1,9 +1,12 @@
 package io.sonalit.guardian.worker
 
+import android.app.ActivityManager
 import android.content.Context
+import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.BatteryManager
+import androidx.core.content.ContextCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.*
 import dagger.assisted.Assisted
@@ -12,6 +15,7 @@ import io.sonalit.guardian.data.local.HeartbeatStatusStore
 import io.sonalit.guardian.data.remote.GuardianApi
 import io.sonalit.guardian.data.remote.HeartbeatRequest
 import io.sonalit.guardian.service.CommandExecutor
+import io.sonalit.guardian.service.GuardianService
 import java.util.concurrent.TimeUnit
 
 @HiltWorker
@@ -24,6 +28,18 @@ class HeartbeatWorker @AssistedInject constructor(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
+        // GuardianService hosts the volume-key SOS receiver (registered at
+        // runtime in its onCreate) and the GPS buffer — if Android (or an
+        // OEM's more aggressive battery manager) killed it while the app sat
+        // in the background, the volume-key trigger silently stops working
+        // with no visible symptom. WorkManager's periodic jobs tend to
+        // survive background-kill better than a bare foreground service on
+        // most OEM skins, so this running every 5 minutes regardless is a
+        // reasonable place to notice and restart it. This is a mitigation,
+        // not a full fix — a battery-optimization exemption (requested at
+        // first launch, MainActivity) is the other half, and neither reaches
+        // OEM-specific "autostart manager" kills that ignore both.
+        reviveGuardianServiceIfDead()
         return try {
             val deviceId = inputData.getString(KEY_DEVICE_ID) ?: return Result.failure()
             val response = api.heartbeat(HeartbeatRequest(
@@ -46,6 +62,19 @@ class HeartbeatWorker @AssistedInject constructor(
             Result.success()
         } catch (e: Exception) {
             if (runAttemptCount < 3) Result.retry() else Result.failure()
+        }
+    }
+
+    @Suppress("DEPRECATION") // getRunningServices is restricted to the caller's own services
+    // since API 26 (exactly this self-check use case), not actually deprecated for it.
+    private fun reviveGuardianServiceIfDead() {
+        runCatching {
+            val am = applicationContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val isRunning = am.getRunningServices(Int.MAX_VALUE)
+                .any { it.service.className == GuardianService::class.java.name }
+            if (!isRunning) {
+                ContextCompat.startForegroundService(applicationContext, Intent(applicationContext, GuardianService::class.java))
+            }
         }
     }
 

@@ -118,6 +118,7 @@ private fun GuardianApp(viewModel: MainViewModel) {
 private fun MainScaffold() {
     var currentDestination by rememberSaveable { mutableStateOf(NavDestination.Home) }
     RequestCorePermissionsOnFirstLaunch()
+    RequestBatteryOptimizationExemptionOnFirstLaunch()
 
     NavigationSuiteScaffold(
         modifier = Modifier.fillMaxSize(),
@@ -198,6 +199,45 @@ private fun RequestCorePermissionsOnFirstLaunch() {
         ) {
             askedBackgroundLocation = true
             backgroundLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+        }
+    }
+}
+
+/**
+ * GuardianService (GPS buffering, the volume-key SOS receiver registered at
+ * runtime inside it, and the voice trigger) is only alive at all as long as
+ * Android doesn't kill the process — and without this exemption, stock
+ * Android's own Doze/App Standby, on top of most OEMs' much more aggressive
+ * background-app killers (Xiaomi/MIUI, Oppo/ColorOS, Vivo, Huawei/EMUI
+ * especially), will kill it after the app sits in the background a while.
+ * The volume-key SOS then silently stops working with no visible symptom —
+ * this is very likely why a previously-working triple-press stops firing
+ * once the app hasn't been opened in a bit.
+ *
+ * This dialog only stops *stock Android's* battery management from killing
+ * the service; it does not reach the OEM-specific "autostart"/"lock in
+ * recents"/"battery saver whitelist" settings that MIUI/ColorOS/EMUI keep
+ * entirely separate from the standard Android API — those still need to be
+ * granted manually per-device and there's no universal API to request them.
+ */
+@Composable
+private fun RequestBatteryOptimizationExemptionOnFirstLaunch() {
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { /* no-op — re-checked via isIgnoringBatteryOptimizations on next launch regardless of result */ }
+
+    LaunchedEffect(Unit) {
+        val powerManager = context.getSystemService(android.os.PowerManager::class.java)
+        if (powerManager?.isIgnoringBatteryOptimizations(context.packageName) == false) {
+            runCatching {
+                launcher.launch(
+                    Intent(
+                        android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        android.net.Uri.parse("package:${context.packageName}"),
+                    )
+                )
+            }
         }
     }
 }

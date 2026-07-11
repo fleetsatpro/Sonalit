@@ -52,6 +52,12 @@
     <!-- Wake lock for background work -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Battery optimization exemption — without this, stock Android (and far
+         more aggressively, most OEM skins) will kill GuardianService in the
+         background, silently taking the volume-key SOS trigger and voice
+         trigger down with it. Requested once at first launch (MainActivity). -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <!-- Request install packages for OTA -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
