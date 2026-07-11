@@ -196,10 +196,16 @@ router.post('/devices/:id/commands', async (req, res, next) => {
       }
       const device = deviceCheck.rows[0];
       const { rows } = await client.query(
+        // $5 must not be reused inside the interval expression below — the ttl_hours
+        // column infers it as integer while `$5 * INTERVAL` infers double precision,
+        // and Postgres rejects a single placeholder with two conflicting inferred
+        // types ("inconsistent types deduced for parameter") before the query runs
+        // at all. Binding the same value again as its own placeholder ($7) sidesteps
+        // the conflict entirely.
         `INSERT INTO device_commands (org_id, device_id, command, command_type, status, payload, ttl_hours, issued_by, issued_at, expires_at)
-         VALUES ($1, $2, $3, $3, 'pending', $4, $5, $6, NOW(), NOW() + ($5 * INTERVAL '1 hour'))
+         VALUES ($1, $2, $3, $3, 'pending', $4, $5, $6, NOW(), NOW() + ($7 * INTERVAL '1 hour'))
          RETURNING id, issued_at, expires_at`,
-        [orgId, req.params.id, command, payload, effectiveTtl, req.user.id]
+        [orgId, req.params.id, command, payload, effectiveTtl, req.user.id, effectiveTtl]
       );
       const cmd = rows[0];
       // The heartbeat poll fallback (guardian.js /heartbeat) only claims commands
