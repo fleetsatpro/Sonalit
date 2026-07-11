@@ -3,6 +3,7 @@ package io.sonalit.guardian.ui.health
 import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.hardware.camera2.CameraManager
 import android.location.GnssStatus
 import android.location.LocationManager
@@ -90,7 +91,13 @@ class DeviceHealthViewModel @Inject constructor(
         val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
         val level = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
         val status = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_STATUS)
-        val health = when (batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_HEALTH)) {
+        // Battery health isn't exposed via BatteryManager.getIntProperty (there is no
+        // BATTERY_PROPERTY_HEALTH) — it only comes through the ACTION_BATTERY_CHANGED
+        // sticky broadcast's EXTRA_HEALTH, which registerReceiver(null, ...) reads synchronously.
+        val healthExtra = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            ?.getIntExtra(BatteryManager.EXTRA_HEALTH, BatteryManager.BATTERY_HEALTH_UNKNOWN)
+            ?: BatteryManager.BATTERY_HEALTH_UNKNOWN
+        val health = when (healthExtra) {
             BatteryManager.BATTERY_HEALTH_GOOD -> "Good"
             BatteryManager.BATTERY_HEALTH_OVERHEAT -> "Overheat"
             BatteryManager.BATTERY_HEALTH_DEAD -> "Dead"

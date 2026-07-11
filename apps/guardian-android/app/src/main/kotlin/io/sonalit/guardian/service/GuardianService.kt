@@ -5,7 +5,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.location.Location
-import android.media.AudioManager
 import android.os.*
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -46,7 +45,7 @@ class GuardianService : Service() {
         startForeground()
         requestLocationUpdates(intervalMs = 30_000L)
         ContextCompat.registerReceiver(
-            this, volumeKeyReceiver, IntentFilter(AudioManager.VOLUME_CHANGED_ACTION),
+            this, volumeKeyReceiver, IntentFilter(VolumeKeySOSReceiver.VOLUME_CHANGED_ACTION),
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
     }
