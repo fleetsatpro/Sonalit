@@ -6,7 +6,7 @@ import { playSiren, stopSiren } from '../../lib/siren.js';
 
 interface PanicPollData {
   status: 'clear' | 'active';
-  active_event: { id: string; vehicle_id: string; lat: number | null; lng: number | null; triggered_at: string } | null;
+  active_event: { id: string; vehicle_id: string; mode?: string | null; lat: number | null; lng: number | null; triggered_at: string } | null;
 }
 
 export default function PanicAlarm() {
@@ -30,6 +30,7 @@ export default function PanicAlarm() {
       updatePanicState({
         id: pollData.active_event.id,
         status: 'active',
+        ...(pollData.active_event.mode != null && { mode: pollData.active_event.mode }),
         ...(pollData.active_event.lat != null && { lat: pollData.active_event.lat }),
         ...(pollData.active_event.lng != null && { lng: pollData.active_event.lng }),
         triggered_at: pollData.active_event.triggered_at,
@@ -42,12 +43,13 @@ export default function PanicAlarm() {
   }, [pollData]);
 
   const isActive = panicState?.status === 'active';
+  const isVoiceDistress = panicState?.mode === 'voice_distress';
 
   useEffect(() => {
     if (!isActive) { stopSiren(); return; }
-    playSiren('wail', { loop: true });
+    playSiren(isVoiceDistress ? 'mayday' : 'wail', { loop: true });
     return () => stopSiren();
-  }, [isActive]);
+  }, [isActive, isVoiceDistress]);
 
   if (!isActive) return null;
 

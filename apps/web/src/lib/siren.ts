@@ -6,7 +6,7 @@
 //   - 'sweep': a continuous frequency ramp back and forth between two tones
 //     (a real siren "wail", not a stepped approximation).
 
-export type SirenId = 'wail' | 'yelp' | 'klaxon' | 'chirp' | 'classic';
+export type SirenId = 'wail' | 'yelp' | 'klaxon' | 'chirp' | 'classic' | 'mayday';
 
 interface DiscreteSiren { kind: 'discrete'; waveform: OscillatorType; tones: [number, number][]; gain: number }
 interface SweepSiren { kind: 'sweep'; waveform: OscillatorType; low: number; high: number; sweepMs: number; gain: number }
@@ -24,6 +24,11 @@ export const SIRENS: Record<SirenId, SirenDef> = {
   chirp:   { kind: 'discrete', waveform: 'sine', tones: [[1400, 90], [0, 70], [1400, 90], [0, 600]], gain: 0.18 },
   // The original panic-alarm two-tone pattern, kept as a selectable style.
   classic: { kind: 'discrete', waveform: 'sawtooth', tones: [[960, 380], [700, 380], [960, 380], [700, 380], [960, 380], [700, 800]], gain: 0.25 },
+  // Faster, higher-pitched, harsher sweep than the standard wail — reserved
+  // for panic_events.mode === 'voice_distress' (the field agent verbally
+  // called "PAN PAN PAN" under duress rather than pressing a button), so
+  // dispatch can tell by ear alone that this one needs the fastest response.
+  mayday:  { kind: 'sweep', waveform: 'square', low: 700, high: 1400, sweepMs: 450, gain: 0.28 },
 };
 
 let activeStop: (() => void) | null = null;

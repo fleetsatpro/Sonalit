@@ -919,7 +919,11 @@ router.post('/panic', deviceAuth, requireIdempotencyKey, panicLimiter, async (re
     // event_uuid is optional for backward compatibility; generate one server-side if omitted
     const event_uuid = req.body.event_uuid || uuidv4();
 
-    const validModes = ['silent', 'loud', 'medical', 'security', 'hijack'];
+    // voice_distress: fired by VoiceTriggerService detecting "PAN PAN PAN" —
+    // distinct from the other modes because it means the agent verbally
+    // called out under duress, so the dashboard plays a more urgent siren
+    // for it (see apps/web/src/lib/siren.ts's `mayday` style).
+    const validModes = ['silent', 'loud', 'medical', 'security', 'hijack', 'voice_distress'];
     if (!mode || !validModes.includes(mode)) {
       return res.status(400).json({
         error: `mode is required and must be one of: ${validModes.join(', ')}`,

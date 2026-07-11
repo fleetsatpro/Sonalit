@@ -107,6 +107,7 @@ class VoiceTriggerService : android.app.Service() {
         Log.w(TAG, "Voice trigger \"PAN PAN PAN\" detected — activating panic")
         val panicIntent = Intent(this, PanicActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            putExtra(PanicActivity.EXTRA_PANIC_MODE, "voice_distress")
         }
         startActivity(panicIntent)
     }

@@ -35,13 +35,19 @@ class PanicViewModel @Inject constructor(
      * it must never be gated behind camera/microphone permission prompts. Audio recording and
      * the camera burst (triggered by the composable observing cameraBurstTrigger) are best-effort
      * evidence capture on top of that, and silently no-op if permission was never granted.
+     *
+     * `mode` defaults to "silent" (the normal hardware-trigger case — volume keys, in-app
+     * button) but callers that know *why* this fired (e.g. PanicActivity reading a
+     * "panic_mode" intent extra set by VoiceTriggerService) can pass one of the other
+     * backend-recognized modes so the dashboard can react differently (a distinct siren
+     * for "voice_distress" — see apps/web/src/lib/siren.ts).
      */
-    fun activatePanic(context: Context) {
+    fun activatePanic(context: Context, mode: String = "silent") {
         showCancelDialog.value = true
         cancelError.value = null
         panicSendFailed.value = false
         viewModelScope.launch {
-            val sent = panicSender.send(mode = "silent")
+            val sent = panicSender.send(mode = mode)
             panicSendFailed.value = !sent
         }
         startAudioRecording(context)

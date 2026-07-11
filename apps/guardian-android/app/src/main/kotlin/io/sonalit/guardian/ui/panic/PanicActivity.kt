@@ -30,6 +30,12 @@ import io.sonalit.guardian.ui.theme.GuardianTheme
 @AndroidEntryPoint
 class PanicActivity : FragmentActivity() {
 
+    companion object {
+        /** Optional String extra — one of PanicSender's backend-recognized modes.
+         *  Defaults to "silent" when absent (the plain hardware-trigger case). */
+        const val EXTRA_PANIC_MODE = "panic_mode"
+    }
+
     private val viewModel: PanicViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -44,7 +50,8 @@ class PanicActivity : FragmentActivity() {
                     val showDialog by viewModel.showCancelDialog
                     var everShown by remember { mutableStateOf(false) }
 
-                    LaunchedEffect(Unit) { viewModel.activatePanic(this@PanicActivity) }
+                    val panicMode = intent.getStringExtra(EXTRA_PANIC_MODE) ?: "silent"
+                    LaunchedEffect(Unit) { viewModel.activatePanic(this@PanicActivity, mode = panicMode) }
                     LaunchedEffect(showDialog) {
                         if (showDialog) everShown = true
                         if (everShown && !showDialog) finish()
