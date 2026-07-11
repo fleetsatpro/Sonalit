@@ -74,6 +74,11 @@ guardian-android/**/.cxx/
 android/PEGAGENT/app/google-services.json
 android/PEGAGENT/pegagent-release.keystore
 
+# Vosk speech model — binary, downloaded separately per model-en-us/README.md,
+# not committed (see apps/guardian-android/app/src/main/assets/model-en-us/).
+apps/guardian-android/app/src/main/assets/model-en-us/*
+!apps/guardian-android/app/src/main/assets/model-en-us/README.md
+
 # Terraform
 infra/terraform/.terraform/
 infra/terraform/*.tfstate

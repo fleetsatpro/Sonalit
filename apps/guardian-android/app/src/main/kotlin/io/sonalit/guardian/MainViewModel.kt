@@ -10,7 +10,9 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import io.sonalit.guardian.data.local.VoiceTriggerStore
 import io.sonalit.guardian.service.GuardianService
+import io.sonalit.guardian.service.VoiceTriggerService
 import io.sonalit.guardian.worker.HeartbeatWorker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,6 +29,7 @@ data class MainUiState(
 @HiltViewModel
 class MainViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val voiceTriggerStore: VoiceTriggerStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MainUiState())
@@ -78,6 +81,12 @@ class MainViewModel @Inject constructor(
         val deviceId = prefs.getString("device_id", null) ?: return
         ContextCompat.startForegroundService(context, Intent(context, GuardianService::class.java))
         HeartbeatWorker.schedule(context, deviceId = deviceId)
+        // Voice trigger is opt-in (see Settings) — only (re)start it here if the
+        // operator already turned it on in a previous session, same as
+        // GuardianService needing to survive cold start/reboot/reinstall.
+        if (voiceTriggerStore.isEnabled()) {
+            ContextCompat.startForegroundService(context, Intent(context, VoiceTriggerService::class.java))
+        }
     }
 
     fun handleDeepLink(uri: String) {

@@ -16,8 +16,8 @@ android {
         applicationId = "io.sonalit.guardian"
         minSdk = 29
         targetSdk = 35
-        versionCode = 7
-        versionName = "4.3.3"
+        versionCode = 8
+        versionName = "4.4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -144,4 +144,10 @@ dependencies {
     // Coroutines
     implementation(libs.kotlinx.coroutines.play)
     implementation(libs.kotlinx.serialization)
+
+    // Vosk offline speech recognition (voice panic trigger — VoiceTriggerService).
+    // jna needs the `@aar` artifact classifier on Android, which isn't
+    // expressible in the version-catalog TOML format.
+    implementation(libs.vosk.android)
+    implementation("net.java.dev.jna:jna:${libs.versions.jna.get()}@aar")
 }

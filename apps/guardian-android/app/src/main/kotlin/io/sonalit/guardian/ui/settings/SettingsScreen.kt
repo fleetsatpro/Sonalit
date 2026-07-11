@@ -1,10 +1,13 @@
 package io.sonalit.guardian.ui.settings
 
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.*
@@ -15,6 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import io.sonalit.guardian.BuildConfig
 import io.sonalit.guardian.ui.cfo.CfoViewModel
@@ -24,9 +28,11 @@ import io.sonalit.guardian.worker.PendingPhotoUploadWorker
 fun SettingsScreen(
     cfoViewModel: CfoViewModel = hiltViewModel(),
     panicPinViewModel: PanicPinViewModel = hiltViewModel(),
+    voiceTriggerViewModel: VoiceTriggerViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
     val cfoState by cfoViewModel.state.collectAsState()
+    val voiceEnabled by voiceTriggerViewModel.enabled.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
@@ -94,6 +100,46 @@ fun SettingsScreen(
                 if (savedJustNow) {
                     Spacer(Modifier.height(6.dp))
                     Text("PIN saved.", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+
+        // Voice Panic Trigger
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                SectionHeader(Icons.Default.Mic, "Voice Panic Trigger")
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Say \"PAN PAN PAN\" to trigger a panic alert hands-free — for situations where " +
+                        "you can't reach the phone. Runs fully offline; audio never leaves this device or " +
+                        "gets stored. Uses the microphone continuously in the background, which costs " +
+                        "some extra battery.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                val micGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                    PackageManager.PERMISSION_GRANTED
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Enabled", style = MaterialTheme.typography.bodyMedium)
+                    Switch(
+                        checked = voiceEnabled,
+                        enabled = micGranted,
+                        onCheckedChange = { voiceTriggerViewModel.setEnabled(it) },
+                    )
+                }
+                if (!micGranted) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Microphone permission isn't granted — enable it for this app in system Settings first.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
             }
         }

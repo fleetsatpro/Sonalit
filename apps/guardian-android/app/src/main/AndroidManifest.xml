@@ -15,6 +15,7 @@
     <!-- Foreground Service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <!-- Activity Recognition -->
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
@@ -138,6 +139,15 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <!-- Voice panic trigger — listens offline (Vosk) for "PAN PAN PAN" and
+             launches PanicActivity, same as VolumeKeySOSReceiver. Opt-in only:
+             started/stopped from Settings (VoiceTriggerViewModel), never runs
+             unless the operator has explicitly enabled it. -->
+        <service
+            android:name=".service.VoiceTriggerService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
         <!-- Panic Quick Settings Tile -->
         <service
