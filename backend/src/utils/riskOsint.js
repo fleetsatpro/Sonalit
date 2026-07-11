@@ -138,7 +138,7 @@ async function insertEvents(zone, items) {
 
 async function runOsintSweep() {
   const { rows: zones } = await query(
-    `SELECT id, org_id, name, region, continent FROM risk_zones WHERE is_active = true`
+    `SELECT id, org_id, name, region, continent, level, confidence, velocity FROM risk_zones WHERE is_active = true`
   );
   if (!zones.length) return;
 
@@ -179,7 +179,72 @@ async function runOsintSweep() {
     await publish(`risk:updates:${orgId}`, { type: 'event_added', org_id: orgId }).catch(() => {});
   }
 
-  logger.info(`Risk Intel OSINT sweep complete: ${zones.length} zones checked, ${totalInserted} new events, ${orgsTouched.size} orgs updated`);
+  const zonesChanged = await recomputeZoneLevels(zones);
+
+  logger.info(`Risk Intel OSINT sweep complete: ${zones.length} zones checked, ${totalInserted} new events, ${orgsTouched.size} orgs updated, ${zonesChanged} zone levels recomputed`);
+}
+
+// Derives a zone's level/confidence/velocity purely from the severity and
+// recency of its own risk_events — run for every active zone each sweep
+// (not just ones with new events this cycle) so a zone with no recent
+// events for the level's cause step back down instead of staying pinned
+// at whatever it was in a similar quiet period. Escalates on high-severity
+// hits fast (72h window) and eases off gradually as the window empties.
+function computeZoneRisk(events) {
+  const weight = (lvl) => (lvl === 'high' ? 3 : lvl === 'medium' ? 2 : 1);
+  const hoursAgo = (e) => (Date.now() - new Date(e.occurred_at).getTime()) / 3600000;
+  const within = (hours) => events.filter(e => hoursAgo(e) <= hours);
+
+  const last72h = within(72);
+  const highCount72h = last72h.filter(e => e.level === 'high').length;
+  const mediumCount72h = last72h.filter(e => e.level === 'medium').length;
+
+  let level = 'low';
+  if (highCount72h >= 1 || mediumCount72h >= 3) level = 'high';
+  else if (events.some(e => e.level === 'medium') || last72h.length >= 2) level = 'medium';
+
+  const score7d = events.reduce((s, e) => s + weight(e.level), 0);
+  const confidence = Math.max(40, Math.min(95, 40 + score7d * 8));
+
+  const recentScore = last72h.reduce((s, e) => s + weight(e.level), 0);
+  const priorScore = events.filter(e => hoursAgo(e) > 72).reduce((s, e) => s + weight(e.level), 0);
+  let velocity = 'stable';
+  if (recentScore > 0 && recentScore > priorScore * 1.3) velocity = 'rising';
+  else if (recentScore < priorScore * 0.7) velocity = 'falling';
+
+  return { level, confidence, velocity };
+}
+
+async function recomputeZoneLevels(zones) {
+  const zoneIds = zones.map(z => z.id);
+  const { rows } = await query(
+    `SELECT zone_id, level, occurred_at FROM risk_events
+     WHERE zone_id = ANY($1::uuid[]) AND occurred_at >= now() - interval '7 days'`,
+    [zoneIds]
+  );
+  const byZone = new Map();
+  for (const r of rows) {
+    if (!byZone.has(r.zone_id)) byZone.set(r.zone_id, []);
+    byZone.get(r.zone_id).push(r);
+  }
+
+  const orgsTouched = new Set();
+  let changed = 0;
+  for (const zone of zones) {
+    const computed = computeZoneRisk(byZone.get(zone.id) || []);
+    if (computed.level === zone.level && computed.confidence === zone.confidence && computed.velocity === zone.velocity) continue;
+    await query(
+      `UPDATE risk_zones SET level = $1, confidence = $2, velocity = $3, updated_at = NOW() WHERE id = $4`,
+      [computed.level, computed.confidence, computed.velocity, zone.id]
+    );
+    orgsTouched.add(zone.org_id);
+    changed++;
+  }
+
+  for (const orgId of orgsTouched) {
+    await publish(`risk:updates:${orgId}`, { type: 'zone_updated', org_id: orgId }).catch(() => {});
+  }
+  return changed;
 }
 
 module.exports = { runOsintSweep };
