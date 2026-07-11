@@ -15,6 +15,7 @@ export interface RiskZone {
   tags: string[]
   map_lon: number
   map_lat: number
+  radius_km: number
   confidence: number
   velocity: Velocity
   events: number

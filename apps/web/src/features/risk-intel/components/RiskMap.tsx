@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import * as d3 from 'd3'
-import * as topojson from 'topojson-client'
-import type { Topology, GeometryCollection } from 'topojson-specification'
-import { CONTINENT_VIEWS, flyTo } from '../utils/map.js'
-import { levelColor } from '../utils/colors.js'
+import maplibregl from 'maplibre-gl'
+import 'maplibre-gl/dist/maplibre-gl.css'
+import { STREET_STYLE, SAT_STYLE } from '../../../lib/mapStyles.js'
+import { geoCircle } from '../../../lib/geoMath.js'
+import { CONTINENT_VIEWS } from '../utils/map.js'
+import { LEVEL_COLOR } from '../utils/colors.js'
 import MapPopup from './MapPopup.js'
 import type { RiskZone, Continent } from '../types/risk.js'
 
@@ -15,201 +16,193 @@ interface Props {
   onZoneClick: (id: string) => void
 }
 
-const WORLD_URL = '/countries-110m.json'
+type ZoneFC = {
+  type: 'FeatureCollection'
+  features: Array<{
+    type: 'Feature'
+    geometry: { type: 'Polygon'; coordinates: [number, number][][] } | { type: 'Point'; coordinates: [number, number] }
+    properties: { id: string; level: string; weight: number }
+  }>
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const LEVEL_MATCH: any = [
+  'match', ['get', 'level'],
+  'high', LEVEL_COLOR.high,
+  'medium', LEVEL_COLOR.medium,
+  'low', LEVEL_COLOR.low,
+  '#6e6c64',
+]
+
+function buildZoneFC(zones: RiskZone[]): ZoneFC {
+  return {
+    type: 'FeatureCollection',
+    features: zones
+      .filter(z => z.map_lat != null && z.map_lon != null)
+      .map(z => ({
+        type: 'Feature' as const,
+        geometry: {
+          type: 'Polygon' as const,
+          coordinates: [geoCircle(z.map_lat, z.map_lon, Number(z.radius_km) || 5)],
+        },
+        properties: { id: z.id, level: z.level, weight: 1 + (z.events_24h ?? 0) },
+      })),
+  }
+}
+
+function buildPointFC(zones: RiskZone[]): ZoneFC {
+  return {
+    type: 'FeatureCollection',
+    features: zones
+      .filter(z => z.map_lat != null && z.map_lon != null)
+      .map(z => ({
+        type: 'Feature' as const,
+        geometry: { type: 'Point' as const, coordinates: [z.map_lon, z.map_lat] },
+        properties: { id: z.id, level: z.level, weight: 1 + (z.events_24h ?? 0) },
+      })),
+  }
+}
 
 export default function RiskMap({ zones, activeCont, activeZoneId, heatVisible, onZoneClick }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const svgRef = useRef<SVGSVGElement>(null)
-  const projRef = useRef<d3.GeoProjection | null>(null)
-  const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null)
+  const mapRef = useRef<maplibregl.Map | null>(null)
+  const animRef = useRef(0)
+  const [mapReady, setMapReady] = useState(false)
+  const [isSatellite, setIsSatellite] = useState(false)
   const [popup, setPopup] = useState<{ zone: RiskZone; x: number; y: number } | null>(null)
-  const [ready, setReady] = useState(false)
 
-  // Build the map once on mount
+  // init map
   useEffect(() => {
-    const container = containerRef.current
-    const svgEl = svgRef.current
-    if (!container || !svgEl) return
-
-    const W = container.clientWidth || 800
-    const H = container.clientHeight || 440
-
-    const svg = d3.select(svgEl)
-      .attr('width', W).attr('height', H)
-      .style('background', '#0a1424')
-
-    // Projection
-    const proj = d3.geoNaturalEarth1()
-      .scale(140)
-      .translate([W / 2, H / 2])
-    projRef.current = proj
-    const path = d3.geoPath().projection(proj)
-
-    // Layers
-    const gMap      = svg.append('g').attr('class', 'g-map')
-    const gHeat     = svg.append('g').attr('class', 'g-heat')
-    const gHotspots = svg.append('g').attr('class', 'g-hotspots')
-
-    // Graticule
-    gMap.append('path')
-      .datum(d3.geoGraticule()())
-      .attr('d', path)
-      .attr('fill', 'none')
-      .attr('stroke', 'rgba(255,255,255,.04)')
-      .attr('stroke-width', 0.5)
-
-    // Sphere outline
-    gMap.append('path')
-      .datum({ type: 'Sphere' } as d3.GeoPermissibleObjects)
-      .attr('d', path as unknown as string)
-      .attr('fill', '#0a1424')
-      .attr('stroke', 'rgba(255,255,255,.06)')
-      .attr('stroke-width', 1)
-
-    // Countries
-    d3.json<Topology>(WORLD_URL)
-      .then(world => {
-        if (!world) return
-        const countries = topojson.feature(world, world.objects['countries'] as GeometryCollection)
-        gMap.selectAll<SVGPathElement, GeoJSON.Feature>('.country')
-          .data((countries as GeoJSON.FeatureCollection).features)
-          .join('path')
-          .attr('class', 'country')
-          .attr('d', path)
-          .attr('fill', '#0f2040')
-          .attr('stroke', 'rgba(255,255,255,.08)')
-          .attr('stroke-width', 0.4)
-      })
-      .catch(() => {
-        gMap.append('rect')
-          .attr('width', W).attr('height', H)
-          .attr('fill', '#0f2040')
-      })
-
-    // Zoom
-    const zoom = d3.zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.5, 15])
-      .on('zoom', (e: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
-        gMap.attr('transform', e.transform.toString())
-        gHeat.attr('transform', e.transform.toString())
-        gHotspots.attr('transform', e.transform.toString())
-        setPopup(null)
-      })
-    svg.call(zoom)
-    zoomRef.current = zoom
-
-    setReady(true)
-    return () => { svg.on('.zoom', null) }
+    if (!containerRef.current || mapRef.current) return
+    const m = new maplibregl.Map({
+      container: containerRef.current,
+      style: STREET_STYLE,
+      center: [20, 10],
+      zoom: 1.3,
+      attributionControl: false,
+    })
+    m.addControl(new maplibregl.AttributionControl({ compact: true }))
+    m.on('load', () => setMapReady(true))
+    mapRef.current = m
+    return () => { m.remove(); mapRef.current = null; setMapReady(false) }
   }, [])
 
-  // Fly to continent on change
+  const toggleSatellite = () => {
+    const map = mapRef.current; if (!map) return
+    setMapReady(false)
+    setIsSatellite(prev => {
+      const next = !prev
+      map.setStyle(next ? SAT_STYLE : STREET_STYLE)
+      map.once('style.load', () => setMapReady(true))
+      return next
+    })
+  }
+
+  // zone circles + heatmap layers (created once, updated via setData after)
   useEffect(() => {
-    const svgEl = svgRef.current
-    const proj = projRef.current
-    const zoom = zoomRef.current
-    const container = containerRef.current
-    if (!svgEl || !proj || !zoom || !container || !ready) return
-    const W = container.clientWidth || 800
-    const H = container.clientHeight || 440
-    const view = CONTINENT_VIEWS[activeCont] ?? CONTINENT_VIEWS['global']!
-    flyTo(d3.select(svgEl), zoom, proj, view.center, view.scale, W, H)
-  }, [activeCont, ready])
+    const map = mapRef.current; if (!map || !mapReady) return
+    const zoneFC = buildZoneFC(zones)
+    const pointFC = buildPointFC(zones)
 
-  // Draw hotspots and heat
-  useEffect(() => {
-    const svgEl = svgRef.current
-    const proj = projRef.current
-    if (!svgEl || !proj || !ready) return
+    const zoneSrc = map.getSource('rz-zones') as maplibregl.GeoJSONSource | undefined
+    const pointSrc = map.getSource('rz-points') as maplibregl.GeoJSONSource | undefined
 
-    const svg = d3.select(svgEl)
-    const gHeat = svg.select<SVGGElement>('.g-heat')
-    const gHotspots = svg.select<SVGGElement>('.g-hotspots')
-
-    // Heat blobs
-    gHeat.selectAll('*').remove()
-    if (heatVisible) {
-      const defs = svg.select<SVGDefsElement>('defs').empty()
-        ? svg.insert('defs', ':first-child')
-        : svg.select<SVGDefsElement>('defs')
-
-      zones.forEach(z => {
-        const coords = proj([z.map_lon, z.map_lat])
-        if (!coords) return
-        const filterId = `blur-${z.id.slice(0, 8)}`
-        if (defs.select(`#${filterId}`).empty()) {
-          const f = defs.append('filter').attr('id', filterId)
-          f.append('feGaussianBlur').attr('stdDeviation', 18)
-        }
-        gHeat.append('circle')
-          .attr('cx', coords[0]).attr('cy', coords[1])
-          .attr('r', 30 + (z.events_24h ?? 0) * 2)
-          .attr('fill', levelColor(z.level))
-          .attr('opacity', 0.12)
-          .attr('filter', `url(#${filterId})`)
-      })
+    if (zoneSrc && pointSrc) {
+      zoneSrc.setData(zoneFC as GeoJSON.FeatureCollection)
+      pointSrc.setData(pointFC as GeoJSON.FeatureCollection)
+      return
     }
 
-    // Hotspots
-    gHotspots.selectAll('*').remove()
-    zones.forEach(z => {
-      const coords = proj([z.map_lon, z.map_lat])
-      if (!coords) return
-      const [cx, cy] = coords
-      const color = levelColor(z.level)
-      const isActive = activeZoneId === z.id
+    map.addSource('rz-zones', { type: 'geojson', data: zoneFC as GeoJSON.FeatureCollection })
+    map.addSource('rz-points', { type: 'geojson', data: pointFC as GeoJSON.FeatureCollection })
 
-      // Ping ring
-      const ring = gHotspots.append('circle')
-        .attr('cx', cx).attr('cy', cy)
-        .attr('r', isActive ? 16 : 10)
-        .attr('fill', 'none')
-        .attr('stroke', color)
-        .attr('stroke-width', isActive ? 1.5 : 1)
-        .attr('opacity', 0)
+    map.addLayer({ id: 'rz-heat', type: 'heatmap', source: 'rz-points', paint: {
+      'heatmap-weight': ['interpolate', ['linear'], ['get', 'weight'], 0, 0.2, 20, 1],
+      'heatmap-intensity': 1.1,
+      'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 1, 22, 6, 60],
+      'heatmap-opacity': 0.55,
+      'heatmap-color': [
+        'interpolate', ['linear'], ['heatmap-density'],
+        0,    'rgba(0,0,0,0)',
+        0.2,  'rgba(74,222,128,.5)',
+        0.5,  'rgba(239,159,39,.6)',
+        1,    'rgba(226,75,74,.85)',
+      ],
+    } })
 
-      function pingAnimation() {
-        ring.attr('r', isActive ? 16 : 10).attr('opacity', isActive ? 0.8 : 0.6)
-          .transition().duration(1800).ease(d3.easeQuadOut)
-          .attr('r', isActive ? 28 : 20).attr('opacity', 0)
-          .on('end', pingAnimation)
-      }
-      pingAnimation()
+    map.addLayer({ id: 'rz-glow', type: 'fill', source: 'rz-zones', paint: { 'fill-color': LEVEL_MATCH, 'fill-opacity': 0.15 } })
+    map.addLayer({ id: 'rz-fill', type: 'fill', source: 'rz-zones', paint: { 'fill-color': LEVEL_MATCH, 'fill-opacity': 0.18 } })
+    map.addLayer({ id: 'rz-line', type: 'line', source: 'rz-zones', paint: { 'line-color': LEVEL_MATCH, 'line-width': 2, 'line-opacity': 0.9 } })
+    map.addLayer({ id: 'rz-active-line', type: 'line', source: 'rz-zones', filter: ['==', ['get', 'id'], ''], paint: { 'line-color': LEVEL_MATCH, 'line-width': 3.5, 'line-opacity': 1 } })
+    map.addLayer({ id: 'rz-dot', type: 'circle', source: 'rz-points', paint: {
+      'circle-radius': 5, 'circle-color': LEVEL_MATCH, 'circle-stroke-width': 1.5, 'circle-stroke-color': '#0d1520',
+    } })
 
-      // Dot
-      gHotspots.append('circle')
-        .attr('cx', cx).attr('cy', cy)
-        .attr('r', isActive ? 6 : 4)
-        .attr('fill', color)
-        .attr('stroke', '#0d1520')
-        .attr('stroke-width', 1.5)
-        .style('cursor', 'pointer')
-        .on('click', (event: MouseEvent) => {
-          event.stopPropagation()
-          const transform = d3.zoomTransform(svgRef.current!)
-          const [sx, sy] = transform.apply([cx, cy])
-          setPopup({ zone: z, x: sx, y: sy })
-          onZoneClick(z.id)
-        })
-
-      // Label
-      if (isActive) {
-        gHotspots.append('text')
-          .attr('x', cx + 8).attr('y', cy - 8)
-          .attr('fill', color)
-          .attr('font-size', 9)
-          .attr('font-family', 'IBM Plex Mono, monospace')
-          .attr('pointer-events', 'none')
-          .text(z.zone_code)
-      }
+    map.on('mouseenter', 'rz-fill', () => { map.getCanvas().style.cursor = 'pointer' })
+    map.on('mouseleave', 'rz-fill', () => { map.getCanvas().style.cursor = '' })
+    map.on('click', 'rz-fill', (e) => {
+      const f = e.features?.[0]
+      if (!f) return
+      const id = (f.properties as { id: string } | undefined)?.id
+      const zone = zones.find(z => z.id === id)
+      if (!zone) return
+      const point = map.project([zone.map_lon, zone.map_lat])
+      setPopup({ zone, x: point.x, y: point.y })
+      onZoneClick(zone.id)
     })
-  }, [zones, activeZoneId, heatVisible, ready, onZoneClick])
+  }, [mapReady, zones, onZoneClick])
 
-  // Close popup on background click
-  const handleSvgClick = () => setPopup(null)
+  // highlight the selected zone's outline
+  useEffect(() => {
+    const map = mapRef.current; if (!map || !mapReady || !map.getLayer('rz-active-line')) return
+    map.setFilter('rz-active-line', ['==', ['get', 'id'], activeZoneId ?? ''])
+  }, [activeZoneId, mapReady, zones])
+
+  // toggle heat layer visibility
+  useEffect(() => {
+    const map = mapRef.current; if (!map || !mapReady) return
+    if (!map.getLayer('rz-heat')) return
+    map.setLayoutProperty('rz-heat', 'visibility', heatVisible ? 'visible' : 'none')
+  }, [heatVisible, mapReady])
+
+  // pulse the glow layer
+  useEffect(() => {
+    const map = mapRef.current; if (!map || !mapReady) return
+    let t = 0
+    const loop = () => {
+      const p = 0.08 + 0.16 * (0.5 + 0.5 * Math.sin(t)); t += 0.04
+      try { if (map.getLayer('rz-glow')) map.setPaintProperty('rz-glow', 'fill-opacity', p) } catch { /* layer torn down mid-frame */ }
+      animRef.current = requestAnimationFrame(loop)
+    }
+    animRef.current = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(animRef.current)
+  }, [mapReady])
+
+  // fly to continent
+  useEffect(() => {
+    const map = mapRef.current; if (!map || !mapReady) return
+    const view = CONTINENT_VIEWS[activeCont] ?? CONTINENT_VIEWS['global']!
+    map.flyTo({ center: view.center, zoom: view.zoom, duration: 900 })
+  }, [activeCont, mapReady])
+
+  // keep popup position synced while panning/zooming; close on background click
+  useEffect(() => {
+    const map = mapRef.current; if (!map) return
+    const sync = () => {
+      setPopup(p => {
+        if (!p) return p
+        const point = map.project([p.zone.map_lon, p.zone.map_lat])
+        return { ...p, x: point.x, y: point.y }
+      })
+    }
+    map.on('move', sync)
+    return () => { map.off('move', sync) }
+  }, [])
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
-      <svg ref={svgRef} style={{ width: '100%', height: '100%' }} onClick={handleSvgClick} />
+    <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+      <div ref={containerRef} style={{ width: '100%', height: '100%', background: '#0a1424' }} onClick={() => setPopup(null)} />
+
       {popup && (
         <MapPopup
           zone={popup.zone}
@@ -218,6 +211,27 @@ export default function RiskMap({ zones, activeCont, activeZoneId, heatVisible, 
           onOpen={() => onZoneClick(popup.zone.id)}
         />
       )}
+
+      {/* top-right controls */}
+      <div style={{ position: 'absolute', right: 14, top: 14, zIndex: 500, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <button
+          onClick={toggleSatellite}
+          title={isSatellite ? 'Street map' : 'Satellite'}
+          style={{
+            width: 32, height: 32, borderRadius: 6,
+            background: isSatellite ? 'rgba(240,180,41,.18)' : 'rgba(8,11,20,.92)',
+            border: `1px solid ${isSatellite ? 'rgba(240,180,41,.5)' : 'rgba(255,255,255,.1)'}`,
+            color: isSatellite ? '#F0B429' : '#9a9890', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /><line x1="2" y1="12" x2="22" y2="12" />
+          </svg>
+        </button>
+        <button onClick={() => mapRef.current?.zoomIn()} style={{ width: 32, height: 32, borderRadius: 6, background: 'rgba(8,11,20,.92)', border: '1px solid rgba(255,255,255,.1)', color: '#9a9890', fontFamily: 'IBM Plex Mono, monospace', fontSize: 16, cursor: 'pointer' }}>+</button>
+        <button onClick={() => mapRef.current?.zoomOut()} style={{ width: 32, height: 32, borderRadius: 6, background: 'rgba(8,11,20,.92)', border: '1px solid rgba(255,255,255,.1)', color: '#9a9890', fontFamily: 'IBM Plex Mono, monospace', fontSize: 16, cursor: 'pointer' }}>−</button>
+      </div>
     </div>
   )
 }

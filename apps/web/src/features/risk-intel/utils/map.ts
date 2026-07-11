@@ -1,30 +1,9 @@
-import * as d3 from 'd3'
-
-export const CONTINENT_VIEWS: Record<string, { center: [number,number], scale: number }> = {
-  global:   { center: [0, 20],    scale: 140 },
-  africa:   { center: [20, 0],    scale: 360 },
-  asia:     { center: [90, 35],   scale: 280 },
-  europe:   { center: [15, 54],   scale: 500 },
-  americas: { center: [-80, 15],  scale: 260 },
-  oceania:  { center: [140, -25], scale: 380 },
-  mideast:  { center: [45, 28],   scale: 600 },
-}
-
-export function flyTo(
-  svg: d3.Selection<SVGSVGElement, unknown, null, undefined>,
-  zoom: d3.ZoomBehavior<SVGSVGElement, unknown>,
-  projection: d3.GeoProjection,
-  center: [number, number],
-  scale: number,
-  W: number,
-  H: number,
-) {
-  const k = scale / 140
-  const projected = projection(center)
-  if (!projected) return
-  const [cx, cy] = projected
-  const tx = W / 2 - k * cx
-  const ty = H / 2 - k * cy
-  svg.transition().duration(750).ease(d3.easeCubicInOut)
-    .call(zoom.transform as never, d3.zoomIdentity.translate(tx, ty).scale(k))
+export const CONTINENT_VIEWS: Record<string, { center: [number, number]; zoom: number }> = {
+  global:   { center: [10, 15],   zoom: 1.3 },
+  africa:   { center: [20, 2],    zoom: 3 },
+  asia:     { center: [95, 30],   zoom: 2.6 },
+  europe:   { center: [15, 50],   zoom: 3.2 },
+  americas: { center: [-75, 10],  zoom: 2.4 },
+  oceania:  { center: [140, -25], zoom: 3.2 },
+  mideast:  { center: [45, 27],   zoom: 4 },
 }
