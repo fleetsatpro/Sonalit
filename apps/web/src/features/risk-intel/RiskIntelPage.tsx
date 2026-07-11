@@ -33,6 +33,7 @@ export default function RiskIntelPage() {
   const [activeZoneId, setActiveZoneId] = useState<string | null>(null)
   const [heatVisible, setHeatVisible]   = useState(true)
   const [activeTab, setActiveTab]       = useState<'map' | 'list'>('list')
+  const [refreshState, setRefreshState] = useState<'idle' | 'refreshing' | 'done'>('idle')
 
   const { data, isLoading } = useRiskZones(activeCont, levelFilter)
   const zones  = data?.zones  ?? []
@@ -53,6 +54,24 @@ export default function RiskIntelPage() {
     a.download = `risk-intel-${new Date().toISOString().slice(0, 10)}.csv`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  const handleRefreshIntel = async () => {
+    if (refreshState === 'refreshing') return
+    setRefreshState('refreshing')
+    try {
+      await api.post('/risk/refresh-intel')
+    } catch {
+      // fall through — still worth re-polling in case it started server-side
+    }
+    // The sweep runs in the background (external OSINT calls can take
+    // ~1 min) — give it time to land before refetching.
+    setTimeout(() => {
+      queryClient.invalidateQueries({ queryKey: ['risk-zones'] })
+      queryClient.invalidateQueries({ queryKey: ['risk-ticker'] })
+      setRefreshState('done')
+      setTimeout(() => setRefreshState('idle'), 3000)
+    }, 25000)
   }
 
   const handleZoneSelect = (id: string) => {
@@ -122,6 +141,23 @@ export default function RiskIntelPage() {
               onClick={handleExport}
               style={{ padding: '3px 8px', background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)', borderRadius: 5, cursor: 'pointer', fontSize: 10, color: '#9a9890' }}
             >CSV</button>
+          )}
+          {user?.role === 'admin' && (
+            <button
+              onClick={handleRefreshIntel}
+              disabled={refreshState === 'refreshing'}
+              title="Pull fresh OSINT events now instead of waiting for the next scheduled sweep"
+              style={{
+                padding: '3px 8px',
+                background: refreshState === 'done' ? 'rgba(76,175,80,.12)' : 'rgba(255,255,255,.04)',
+                border: `1px solid ${refreshState === 'done' ? 'rgba(76,175,80,.3)' : 'rgba(255,255,255,.08)'}`,
+                borderRadius: 5,
+                cursor: refreshState === 'refreshing' ? 'wait' : 'pointer',
+                fontSize: 10,
+                color: refreshState === 'done' ? '#4CAF50' : '#9a9890',
+                opacity: refreshState === 'refreshing' ? 0.6 : 1,
+              }}
+            >{refreshState === 'refreshing' ? 'Refreshing…' : refreshState === 'done' ? 'Refreshed ✓' : 'Refresh Intel'}</button>
           )}
         </div>
       </div>

@@ -3,6 +3,9 @@ const { authenticate } = require('../middleware/auth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 const { publish } = require('../realtime/centrifugo');
+const { runOsintSweep, isSweeping } = require('../utils/riskOsint');
+const { query: rawQuery } = require('../config/database');
+const logger = require('../utils/logger');
 
 router.use(authenticate);
 router.use(attachOrgDb);
@@ -270,6 +273,27 @@ router.get('/export', asyncHandler(async (req, res) => {
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename="risk-report.csv"');
   res.send(lines.join('\n'));
+}));
+
+// ─── POST /refresh-intel (admin only) ──────────────────────────────────────
+// Lets an admin force the OSINT sweep now instead of waiting for the next
+// scheduled run (every 2 hours — see backend/src/utils/riskOsint.js). The
+// sweep itself (several external HTTP calls per zone) can take a minute or
+// more, so this responds immediately and runs it in the background; the
+// frontend re-polls risk-zones/ticker shortly after to pick up the results.
+router.post('/refresh-intel', asyncHandler(async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin role required' });
+  }
+  if (isSweeping()) {
+    return res.json({ started: false, message: 'A refresh is already running — try again shortly.' });
+  }
+
+  runOsintSweep()
+    .then(() => rawQuery('REFRESH MATERIALIZED VIEW CONCURRENTLY risk_zone_stats'))
+    .catch(err => logger.error('Manual Risk Intel OSINT sweep failed: ' + err.message));
+
+  res.json({ started: true, message: 'Refreshing risk intel from OSINT sources — this can take a minute.' });
 }));
 
 module.exports = router;

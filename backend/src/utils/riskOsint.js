@@ -136,52 +136,67 @@ async function insertEvents(zone, items) {
   return inserted;
 }
 
+// Guards against an admin-triggered manual refresh overlapping with the
+// scheduled cron sweep (or another manual click) — both call runOsintSweep().
+let sweeping = false;
+const isSweeping = () => sweeping;
+
 async function runOsintSweep() {
-  const { rows: zones } = await query(
-    `SELECT id, org_id, name, region, continent, level, confidence, velocity FROM risk_zones WHERE is_active = true`
-  );
-  if (!zones.length) return;
+  if (sweeping) {
+    logger.warn('Risk Intel OSINT sweep already in progress — skipping this trigger');
+    return { skipped: true };
+  }
+  sweeping = true;
+  try {
+    const { rows: zones } = await query(
+      `SELECT id, org_id, name, region, continent, level, confidence, velocity FROM risk_zones WHERE is_active = true`
+    );
+    if (!zones.length) return { zonesChecked: 0 };
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  const client = (apiKey && apiKey.length >= 20) ? new Anthropic({ apiKey }) : null;
-  if (!client) logger.warn('Risk Intel OSINT: skipping Claude web search — ANTHROPIC_API_KEY not configured');
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const client = (apiKey && apiKey.length >= 20) ? new Anthropic({ apiKey }) : null;
+    if (!client) logger.warn('Risk Intel OSINT: skipping Claude web search — ANTHROPIC_API_KEY not configured');
 
-  let claudeByZone = {};
-  if (client) {
-    try {
-      claudeByZone = await fetchClaudeForZones(client, zones);
-    } catch (e) {
-      logger.warn(`Risk Intel OSINT: Claude web search sweep failed: ${e.message}`);
+    let claudeByZone = {};
+    if (client) {
+      try {
+        claudeByZone = await fetchClaudeForZones(client, zones);
+      } catch (e) {
+        logger.warn(`Risk Intel OSINT: Claude web search sweep failed: ${e.message}`);
+      }
     }
-  }
 
-  const orgsTouched = new Set();
-  let totalInserted = 0;
+    const orgsTouched = new Set();
+    let totalInserted = 0;
 
-  for (const zone of zones) {
-    const found = [];
-    try { found.push(...await fetchGdeltForZone(zone)); }
-    catch (e) { logger.warn(`Risk Intel OSINT: GDELT failed for "${zone.name}": ${e.message}`); }
+    for (const zone of zones) {
+      const found = [];
+      try { found.push(...await fetchGdeltForZone(zone)); }
+      catch (e) { logger.warn(`Risk Intel OSINT: GDELT failed for "${zone.name}": ${e.message}`); }
 
-    try { found.push(...await fetchReliefWebForZone(zone)); }
-    catch (e) { logger.warn(`Risk Intel OSINT: ReliefWeb failed for "${zone.name}": ${e.message}`); }
+      try { found.push(...await fetchReliefWebForZone(zone)); }
+      catch (e) { logger.warn(`Risk Intel OSINT: ReliefWeb failed for "${zone.name}": ${e.message}`); }
 
-    found.push(...(claudeByZone[zone.id] || []).map(it => ({ ...it, source: 'osint:claude' })));
+      found.push(...(claudeByZone[zone.id] || []).map(it => ({ ...it, source: 'osint:claude' })));
 
-    if (found.length) {
-      const inserted = await insertEvents(zone, found);
-      if (inserted > 0) { orgsTouched.add(zone.org_id); totalInserted += inserted; }
+      if (found.length) {
+        const inserted = await insertEvents(zone, found);
+        if (inserted > 0) { orgsTouched.add(zone.org_id); totalInserted += inserted; }
+      }
+      await new Promise(r => setTimeout(r, 500)); // stay polite to the free public APIs
     }
-    await new Promise(r => setTimeout(r, 500)); // stay polite to the free public APIs
+
+    for (const orgId of orgsTouched) {
+      await publish(`risk:updates:${orgId}`, { type: 'event_added', org_id: orgId }).catch(() => {});
+    }
+
+    const zonesChanged = await recomputeZoneLevels(zones);
+
+    logger.info(`Risk Intel OSINT sweep complete: ${zones.length} zones checked, ${totalInserted} new events, ${orgsTouched.size} orgs updated, ${zonesChanged} zone levels recomputed`);
+    return { zonesChecked: zones.length, totalInserted, orgsUpdated: orgsTouched.size, zonesChanged };
+  } finally {
+    sweeping = false;
   }
-
-  for (const orgId of orgsTouched) {
-    await publish(`risk:updates:${orgId}`, { type: 'event_added', org_id: orgId }).catch(() => {});
-  }
-
-  const zonesChanged = await recomputeZoneLevels(zones);
-
-  logger.info(`Risk Intel OSINT sweep complete: ${zones.length} zones checked, ${totalInserted} new events, ${orgsTouched.size} orgs updated, ${zonesChanged} zone levels recomputed`);
 }
 
 // Derives a zone's level/confidence/velocity purely from the severity and
@@ -247,4 +262,4 @@ async function recomputeZoneLevels(zones) {
   return changed;
 }
 
-module.exports = { runOsintSweep };
+module.exports = { runOsintSweep, isSweeping };

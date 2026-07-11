@@ -2564,6 +2564,16 @@
         }
       }
     },
+    "/api/v1/risk/refresh-intel": {
+      "post": {
+        "operationId": "post_api_v1_risk_refresh_intel",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/routes/analyse": {
       "post": {
         "operationId": "post_api_v1_routes_analyse",
