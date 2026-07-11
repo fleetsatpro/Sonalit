@@ -242,7 +242,12 @@ router.get('/map', asyncHandler(async (req, res) => {
     })),
     geofences: geofencesR.rows.map(g => {
         const type = (g.type || 'circle').toLowerCase();
-        const coords = g.coordinates || {};
+        // Unwrap a GeoJSON Feature to its bare geometry — imported/legacy
+        // zones are sometimes stored as the full Feature envelope rather
+        // than just the geometry, which none of the shape checks below
+        // recognize on their own.
+        const rawCoords = g.coordinates || {};
+        const coords = (rawCoords.type === 'Feature' && rawCoords.geometry) ? rawCoords.geometry : rawCoords;
         const CORRIDOR_TYPES = ['corridor', 'linear', 'line', 'linestring', 'route'];
         // 'linear' is a real, distinct geofence shape from 'corridor': a plain
         // route line with no buffer zone, vs. a corridor's buffered safety
@@ -289,8 +294,14 @@ router.get('/map', asyncHandler(async (req, res) => {
           return { id: g.id, name: g.name, type, lat, lng, radius_m: parseFloat(g.radius_m), path: null, buffer_m: null };
         }
 
-        const lat = coords.lat ?? coords.center?.lat ?? coords.latitude ?? null;
-        const lng = coords.lng ?? coords.center?.lng ?? coords.longitude ?? null;
+        // GeoJSON Point (e.g. the border-crossing seed data) — coordinates
+        // is [lng,lat], the opposite order from every plain {lat,lng} shape
+        // checked below, so it needs its own explicit branch.
+        let lat = coords.lat ?? coords.center?.lat ?? coords.latitude ?? null;
+        let lng = coords.lng ?? coords.center?.lng ?? coords.longitude ?? null;
+        if ((lat == null || lng == null) && coords.type === 'Point' && Array.isArray(coords.coordinates) && coords.coordinates.length >= 2) {
+          [lng, lat] = coords.coordinates;
+        }
         if (lat == null || lng == null) {
           logger.warn(`Geofence dropped from /dashboard/map (no recognizable lat/lng): id=${g.id} name="${g.name}" type=${type} coordinates=${JSON.stringify(g.coordinates)}`);
           return null;
