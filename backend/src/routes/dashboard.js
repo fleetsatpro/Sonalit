@@ -248,7 +248,6 @@ router.get('/map', asyncHandler(async (req, res) => {
         // recognize on their own.
         const rawCoords = g.coordinates || {};
         const coords = (rawCoords.type === 'Feature' && rawCoords.geometry) ? rawCoords.geometry : rawCoords;
-        const CORRIDOR_TYPES = ['corridor', 'linear', 'line', 'linestring', 'route'];
         // 'linear' is a real, distinct geofence shape from 'corridor': a plain
         // route line with no buffer zone, vs. a corridor's buffered safety
         // band. Only corridor-family types get a fabricated buffer default —
@@ -268,11 +267,16 @@ router.get('/map', asyncHandler(async (req, res) => {
           path = coords; // assume [[lat,lng],...] already
         }
 
-        if (CORRIDOR_TYPES.includes(type) || path) {
-          if (!path || path.length < 2) {
-            logger.warn(`Geofence dropped from /dashboard/map (corridor/linear with no usable path): id=${g.id} name="${g.name}" type=${type} coordinates=${JSON.stringify(g.coordinates)}`);
-            return null;
-          }
+        // A path was successfully extracted — render it as a line, whatever
+        // the stored `type` says. Only gate on `type` for what to render AS
+        // (corridor vs linear), never for WHETHER to render at all — a
+        // corridor/linear-typed row whose coordinates aren't in path shape
+        // (e.g. one flipped to type='corridor' via POST /:id/activate-corridor,
+        // which never rewrites `coordinates` into {path:[...]} — it was
+        // still a plain circle/polygon before that call) must still fall
+        // through to the Polygon/lat-lng fallbacks below instead of being
+        // unconditionally dropped just because its type looks corridor-like.
+        if (path && path.length >= 2) {
           const mid = path[Math.floor(path.length / 2)];
           return {
             id: g.id, name: g.name, type: isLinear ? 'linear' : 'corridor',
@@ -283,9 +287,10 @@ router.get('/map', asyncHandler(async (req, res) => {
           };
         }
 
-        // GeoJSON Polygon (e.g. imported/legacy zones) — coordinates is
-        // [[[lng,lat],...]] (ring array); use the ring's centroid as the
-        // zone center rather than dropping it outright.
+        // GeoJSON Polygon (e.g. imported/legacy zones, or a corridor-typed
+        // row whose coordinates were never migrated off its original
+        // polygon shape) — coordinates is [[[lng,lat],...]] (ring array);
+        // use the ring's centroid as the zone center rather than dropping it.
         if (coords.type === 'Polygon' && Array.isArray(coords.coordinates?.[0]) && coords.coordinates[0].length >= 3) {
           const ring = coords.coordinates[0];
           const sum = ring.reduce((acc, [lng, lat]) => [acc[0] + lat, acc[1] + lng], [0, 0]);

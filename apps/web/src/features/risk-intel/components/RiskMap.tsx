@@ -199,11 +199,28 @@ export default function RiskMap({ zones, activeCont, activeZoneId, heatVisible, 
     return () => cancelAnimationFrame(animRef.current)
   }, [mapReady])
 
-  // fly to continent
+  // fly to continent — fit to the zones actually present rather than a
+  // fixed zoom, so a continent with a few clustered zones doesn't end up
+  // over- or under-cropped relative to one with many spread-out ones
   useEffect(() => {
     const map = mapRef.current; if (!map || !mapReady) return
-    const view = CONTINENT_VIEWS[activeCont] ?? CONTINENT_VIEWS['global']!
-    map.flyTo({ center: view.center, zoom: view.zoom, duration: 900 })
+    map.resize() // guard against a resize that hasn't been picked up yet
+    const inCont = zonesRef.current.filter(z => activeCont === 'global' || z.continent === activeCont)
+    const pts = inCont.filter(z => z.map_lat != null && z.map_lon != null)
+
+    if (pts.length >= 2) {
+      const lngs = pts.map(z => z.map_lon)
+      const lats = pts.map(z => z.map_lat)
+      map.fitBounds(
+        [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+        { padding: 60, maxZoom: 6, duration: 900 },
+      )
+    } else if (pts.length === 1) {
+      map.flyTo({ center: [pts[0]!.map_lon, pts[0]!.map_lat], zoom: 5, duration: 900 })
+    } else {
+      const view = CONTINENT_VIEWS[activeCont] ?? CONTINENT_VIEWS['global']!
+      map.flyTo({ center: view.center, zoom: view.zoom, duration: 900 })
+    }
   }, [activeCont, mapReady])
 
   // keep popup position synced while panning/zooming; close on background click
