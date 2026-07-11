@@ -1,13 +1,17 @@
 package io.sonalit.guardian
 
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import io.sonalit.guardian.service.GuardianService
+import io.sonalit.guardian.worker.HeartbeatWorker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -48,11 +52,32 @@ class MainViewModel @Inject constructor(
     private fun checkEnrollmentStatus() {
         val deviceId = prefs.getString("device_id", null)
         val authToken = prefs.getString("auth_token", null)
-        _uiState.update { it.copy(isEnrolled = deviceId != null && authToken != null) }
+        val isEnrolled = deviceId != null && authToken != null
+        _uiState.update { it.copy(isEnrolled = isEnrolled) }
+        if (isEnrolled) ensureBackgroundServicesRunning()
     }
 
     fun markEnrolled() {
         _uiState.update { it.copy(isEnrolled = true) }
+        ensureBackgroundServicesRunning()
+    }
+
+    /**
+     * GuardianService and HeartbeatWorker were previously only ever started from
+     * BootReceiver (device reboot) or an already-running device's own remote
+     * "restart_app" command — so a freshly enrolled device (or one that kept its
+     * credentials across an app reinstall) never actually ran either until the
+     * next reboot: no heartbeat, no GPS, and no volume-key SOS trigger, since that
+     * receiver is only registered at runtime inside GuardianService.onCreate().
+     * Calling this everywhere enrollment state can become true — cold start,
+     * fresh enrollment, and remote-approved enrollment — closes that gap.
+     * startForegroundService and enqueueUniquePeriodicWork(..., KEEP, ...) are both
+     * safe to call repeatedly; an already-running instance is left alone.
+     */
+    private fun ensureBackgroundServicesRunning() {
+        val deviceId = prefs.getString("device_id", null) ?: return
+        ContextCompat.startForegroundService(context, Intent(context, GuardianService::class.java))
+        HeartbeatWorker.schedule(context, deviceId = deviceId)
     }
 
     fun handleDeepLink(uri: String) {
@@ -83,6 +108,7 @@ class MainViewModel @Inject constructor(
                 // from /guardian/panic and /guardian/panic/cancel, not FCM pushes.
                 "enrollment_approved" -> {
                     _uiState.update { it.copy(isEnrolled = true) }
+                    ensureBackgroundServicesRunning()
                 }
             }
         }
