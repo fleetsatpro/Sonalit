@@ -72,12 +72,23 @@ fun PanicButtonScreen(
         if (isHolding) {
             val startTime = System.currentTimeMillis()
             val duration = 3000L
-            while (isHolding && System.currentTimeMillis() - startTime < duration) {
-                progress = ((System.currentTimeMillis() - startTime).toFloat() / duration).coerceIn(0f, 1f)
+            var armed = false
+            // Checking the time bound before updating progress meant the loop could exit
+            // (elapsed just ticked past 3000ms) without progress ever having been set to
+            // exactly 1f, so the post-loop `progress >= 1f` check below was never true —
+            // holding the button, however long, never armed it. Recompute elapsed first,
+            // clamp progress to 1f, and break explicitly once the duration is reached.
+            while (isHolding) {
+                val elapsed = System.currentTimeMillis() - startTime
+                progress = (elapsed.toFloat() / duration).coerceIn(0f, 1f)
+                if (elapsed >= duration) {
+                    armed = true
+                    break
+                }
                 vibrator?.vibrate(VibrationEffect.createOneShot(10, VibrationEffect.DEFAULT_AMPLITUDE))
-                delay(200)
+                delay(100)
             }
-            if (isHolding && progress >= 1f) {
+            if (armed) {
                 isHolding = false
                 if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ||
                     ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED

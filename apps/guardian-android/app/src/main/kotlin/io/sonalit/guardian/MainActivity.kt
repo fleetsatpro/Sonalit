@@ -1,9 +1,14 @@
 package io.sonalit.guardian
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
@@ -22,6 +27,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.rememberNavController
@@ -110,6 +117,7 @@ private fun GuardianApp(viewModel: MainViewModel) {
 @Composable
 private fun MainScaffold() {
     var currentDestination by rememberSaveable { mutableStateOf(NavDestination.Home) }
+    RequestCorePermissionsOnFirstLaunch()
 
     NavigationSuiteScaffold(
         modifier = Modifier.fillMaxSize(),
@@ -136,6 +144,60 @@ private fun MainScaffold() {
             )
             NavDestination.Cfo -> CfoScreen()
             NavDestination.Settings -> SettingsScreen()
+        }
+    }
+}
+
+/**
+ * Previously every runtime permission (camera, mic, background location) was only ever
+ * requested reactively, at the moment a specific feature first needed it — e.g. camera/mic
+ * were requested from the panic button at the same instant the SOS was firing, too late for
+ * that activation's own capture to use them. Requesting the whole set once, right when the
+ * user first reaches the main app, means they're already granted by the time any feature
+ * needs them. Re-launching costs nothing on later app opens — the system skips the dialog
+ * for anything already granted.
+ */
+@Composable
+private fun RequestCorePermissionsOnFirstLaunch() {
+    val context = LocalContext.current
+    var askedBackgroundLocation by rememberSaveable { mutableStateOf(false) }
+
+    val backgroundLocationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* no-op — many OEMs route "Allow all the time" through Settings regardless of this dialog's outcome */ }
+
+    val corePermissionsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        val fineLocationGranted = results[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (fineLocationGranted && !askedBackgroundLocation && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED
+        ) {
+            askedBackgroundLocation = true
+            backgroundLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        val corePermissions = buildList {
+            add(Manifest.permission.ACCESS_FINE_LOCATION)
+            add(Manifest.permission.ACCESS_COARSE_LOCATION)
+            add(Manifest.permission.CAMERA)
+            add(Manifest.permission.RECORD_AUDIO)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) add(Manifest.permission.ACTIVITY_RECOGNITION)
+        }
+        val missing = corePermissions.filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            corePermissionsLauncher.launch(missing.toTypedArray())
+        } else if (!askedBackgroundLocation && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED
+        ) {
+            askedBackgroundLocation = true
+            backgroundLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
         }
     }
 }
