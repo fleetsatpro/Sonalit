@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { subscribe } from '../lib/centrifuge.js';
 import { useDashboardStore } from '../stores/dashboardStore.js';
 import type { DashboardAlert, ConvoyUpdate, IncidentUpdate, PanicEvent } from '../stores/dashboardStore.js';
+import { playSiren, sirenForAlert } from '../lib/siren.js';
 
 // ── Message shapes from the backend (org#<id> channel) ─────────────────────
 
@@ -158,6 +159,14 @@ export function useDashboardRealtime(orgId: string): void {
             severity: alert.severity,
             timestamp: alert.occurred_at,
           });
+          // A one-shot cue, distinct per alert type — but never cut off an
+          // active panic wail (playSiren only runs one siren at a time, so
+          // playing a cue here while panic is active would silently kill
+          // the ongoing panic alarm and not restart it).
+          if (useDashboardStore.getState().panicState?.status !== 'active') {
+            const cue = sirenForAlert(alert.type, alert.severity);
+            if (cue) playSiren(cue, { loop: false });
+          }
           break;
         }
 

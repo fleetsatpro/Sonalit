@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
 import { useDashboardStore } from '../../stores/dashboardStore.js';
+import { playSiren, stopSiren } from '../../lib/siren.js';
 
 interface PanicPollData {
   status: 'clear' | 'active';
@@ -41,60 +42,11 @@ export default function PanicAlarm() {
   }, [pollData]);
 
   const isActive = panicState?.status === 'active';
-  const stopRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    if (!isActive) {
-      stopRef.current?.();
-      stopRef.current = null;
-      return;
-    }
-
-    let running = true;
-    let ctx: AudioContext | null = null;
-
-    const start = async () => {
-      ctx = new AudioContext();
-
-      const pattern: [number, number][] = [
-        [960, 380], [700, 380],
-        [960, 380], [700, 380],
-        [960, 380], [700, 800],
-      ];
-
-      let idx = 0;
-      while (running) {
-        const [freq, ms] = pattern[idx % pattern.length]!;
-        idx++;
-        if (!running || !ctx) break;
-
-        const osc  = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sawtooth';
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.25, ctx.currentTime);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start();
-
-        await new Promise<void>((r) => setTimeout(r, ms));
-        if (ctx) gain.gain.setTargetAtTime(0, ctx.currentTime, 0.04);
-        osc.stop(ctx.currentTime + 0.12);
-        await new Promise<void>((r) => setTimeout(r, 20));
-      }
-    };
-
-    start().catch(() => {});
-
-    stopRef.current = () => {
-      running = false;
-      ctx?.close().catch(() => {});
-    };
-
-    return () => {
-      stopRef.current?.();
-      stopRef.current = null;
-    };
+    if (!isActive) { stopSiren(); return; }
+    playSiren('wail', { loop: true });
+    return () => stopSiren();
   }, [isActive]);
 
   if (!isActive) return null;
