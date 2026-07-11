@@ -2,6 +2,7 @@ package io.sonalit.guardian.service
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
@@ -105,11 +106,36 @@ class VoiceTriggerService : android.app.Service() {
         if (now - lastTriggerMs < COOLDOWN_MS) return // one panic activation per utterance, not per recognition pass
         lastTriggerMs = now
         Log.w(TAG, "Voice trigger \"PAN PAN PAN\" detected — activating panic")
+
         val panicIntent = Intent(this, PanicActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             putExtra(PanicActivity.EXTRA_PANIC_MODE, "voice_distress")
         }
-        startActivity(panicIntent)
+
+        // Android 11+ (API 31) removed the foreground-service exception for startActivity(),
+        // so a direct call silently drops. Use a full-screen intent notification instead —
+        // Android grants these for alarm/call categories regardless of background state.
+        val fullScreenPi = PendingIntent.getActivity(
+            this, 0, panicIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val nm = getSystemService(NotificationManager::class.java)
+        val channelId = "voice_panic_trigger"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            nm.createNotificationChannel(
+                NotificationChannel(channelId, "Voice Panic", NotificationManager.IMPORTANCE_HIGH)
+            )
+        }
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle("Voice distress trigger")
+            .setContentText("\"PAN PAN PAN\" detected — activating SOS")
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setFullScreenIntent(fullScreenPi, /* highPriority= */ true)
+            .setAutoCancel(true)
+            .build()
+        nm.notify(PANIC_NOTIFICATION_ID, notification)
     }
 
     private fun startForegroundNotification() {
@@ -147,6 +173,7 @@ class VoiceTriggerService : android.app.Service() {
     companion object {
         private const val TAG = "VoiceTrigger"
         private const val NOTIFICATION_ID = 2
+        private const val PANIC_NOTIFICATION_ID = 3
         private const val SAMPLE_RATE = 16000.0f
         private const val COOLDOWN_MS = 10_000L
     }
