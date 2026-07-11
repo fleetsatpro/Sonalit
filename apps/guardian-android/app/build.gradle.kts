@@ -132,6 +132,9 @@ dependencies {
     implementation(libs.biometric)
     implementation(libs.fragment.ktx)
 
+    // MediaSession (headset button SOS trigger)
+    implementation(libs.androidx.media)
+
     // Coil
     implementation(libs.coil.compose)
 

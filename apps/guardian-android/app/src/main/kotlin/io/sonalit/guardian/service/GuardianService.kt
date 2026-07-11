@@ -6,6 +6,9 @@ import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.location.Location
 import android.os.*
+import android.support.v4.media.session.MediaSessionCompat
+import android.util.Log
+import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.*
@@ -22,15 +25,18 @@ import javax.inject.Inject
 class GuardianService : Service() {
 
     @Inject lateinit var db: AppDatabase
+    @Inject lateinit var panicSender: PanicSender
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var fusedClient: FusedLocationProviderClient
     private lateinit var activityClient: ActivityRecognitionClient
-    // VOLUME_CHANGED_ACTION is an implicit broadcast Android 8+ mostly refuses to deliver to a
-    // manifest-declared <receiver> — registering it at runtime here (while this foreground
-    // service is alive) is the path that actually works; the manifest entry is defense-in-depth
-    // only for OEMs that still deliver it that way.
+    private lateinit var mediaSession: MediaSessionCompat
+
     private val volumeKeyReceiver = VolumeKeySOSReceiver()
+
+    // Headset button triple-press state
+    private var btnPressCount = 0
+    private var lastBtnPressMs = 0L
 
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
@@ -48,6 +54,45 @@ class GuardianService : Service() {
             this, volumeKeyReceiver, IntentFilter(VolumeKeySOSReceiver.VOLUME_CHANGED_ACTION),
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
+        registerMediaSession()
+    }
+
+    /**
+     * Registers a MediaSession so headset/earpiece inline buttons are delivered
+     * to this service. Three presses within 2 s fires the same panic path as
+     * VolumeKeySOSReceiver — useful when the phone is pocketed and the officer
+     * is wearing an earpiece.
+     *
+     * MediaSession does NOT require the screen to be on, and the button callback
+     * fires inside this foreground service so there are no background launch
+     * restrictions to deal with — the panic call goes out directly.
+     */
+    private fun registerMediaSession() {
+        mediaSession = MediaSessionCompat(this, "GuardianSOS").apply {
+            setCallback(object : MediaSessionCompat.Callback() {
+                override fun onMediaButtonEvent(mediaButtonIntent: Intent?): Boolean {
+                    val ke: KeyEvent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        mediaButtonIntent?.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        mediaButtonIntent?.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+                    }
+                    if (ke == null || ke.action != KeyEvent.ACTION_DOWN) return false
+
+                    val now = System.currentTimeMillis()
+                    btnPressCount = if (now - lastBtnPressMs < 2000L) btnPressCount + 1 else 1
+                    lastBtnPressMs = now
+
+                    if (btnPressCount >= 3) {
+                        btnPressCount = 0
+                        Log.w(TAG, "Headset button triple press — triggering panic")
+                        scope.launch { panicSender.send(mode = "silent") }
+                    }
+                    return true
+                }
+            })
+            isActive = true
+        }
     }
 
     private fun startForeground() {
@@ -98,8 +143,14 @@ class GuardianService : Service() {
         super.onDestroy()
         fusedClient.removeLocationUpdates(locationCallback)
         runCatching { unregisterReceiver(volumeKeyReceiver) }
+        mediaSession.isActive = false
+        mediaSession.release()
         scope.cancel()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    companion object {
+        private const val TAG = "GuardianService"
+    }
 }
