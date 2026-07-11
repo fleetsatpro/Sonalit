@@ -462,6 +462,16 @@
         }
       }
     },
+    "/api/v1/alerts/{id}/promote": {
+      "post": {
+        "operationId": "post_api_v1_alerts_id_promote",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/messages/org-users": {
       "get": {
         "operationId": "get_api_v1_messages_org_users",

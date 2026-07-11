@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
 import {
-  LayoutDashboard, MapPin, ShieldAlert, Siren,
+  LayoutDashboard, MapPin, Siren,
   Bell, AlertTriangle, Eye, Map,
   Route, Truck, Users, Fuel, Wrench,
   Package, Link2, BarChart2, DollarSign, Settings,
@@ -23,8 +23,6 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { path: '/',                icon: LayoutDashboard, label: 'Command Center' },
       { path: '/gps',             icon: MapPin,          label: 'GPS Live' },
-      { path: '/incident-center', icon: ShieldAlert,     label: 'Incident Center' },
-      { path: '/incidents',       icon: AlertTriangle,   label: 'Incidents' },
       { path: '/panic-center',    icon: Siren,           label: 'Panic Center' },
       { path: '/messages',        icon: MessageSquare,   label: 'Messages' },
       { path: '/ai',              icon: Bot,             label: 'AI Decision' },
@@ -34,7 +32,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Security',
     items: [
-      { path: '/alerts',         icon: Bell,          label: 'Alerts' },
+      { path: '/alerts',         icon: Bell,          label: 'Alerts & Incidents' },
       { path: '/risk-intel',     icon: AlertTriangle, label: 'Risk Intel' },
       { path: '/guardian',       icon: Eye,           label: 'Guardian AI' },
       { path: '/geofences',      icon: Map,           label: 'Geofences' },

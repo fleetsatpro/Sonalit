@@ -53,8 +53,12 @@ const convoyNewRoute = createRoute({ getParentRoute: () => authRoute, path: '/co
 const convoyEditRoute = createRoute({ getParentRoute: () => authRoute, path: '/convoys/$id/edit', component: lazyRouteComponent(() => import('./pages/CfoConvoyForm.js')) });
 const driversRoute = createRoute({ getParentRoute: () => authRoute, path: '/drivers', component: lazyRouteComponent(() => import('./pages/Drivers.js')) });
 const alertsRoute = createRoute({ getParentRoute: () => authRoute, path: '/alerts', component: lazyRouteComponent(() => import('./pages/Alerts.js')) });
-const incidentsRoute = createRoute({ getParentRoute: () => authRoute, path: '/incidents', component: lazyRouteComponent(() => import('./pages/Incidents.js')) });
-const incidentCenterRoute = createRoute({ getParentRoute: () => authRoute, path: '/incident-center', component: lazyRouteComponent(() => import('./pages/IncidentCenter.js')) });
+// Incidents and Incident Center were merged into the Alerts page (alerts and
+// incidents are the same "something bad happened" concept split across two
+// under-maintained tables/pages) — keep these as redirects so old links and
+// nav bookmarks still land somewhere instead of 404ing.
+const incidentsRoute = createRoute({ getParentRoute: () => authRoute, path: '/incidents', beforeLoad: () => { throw redirect({ to: '/alerts' }); } });
+const incidentCenterRoute = createRoute({ getParentRoute: () => authRoute, path: '/incident-center', beforeLoad: () => { throw redirect({ to: '/alerts' }); } });
 const panicCenterRoute = createRoute({ getParentRoute: () => authRoute, path: '/panic-center', component: lazyRouteComponent(() => import('./pages/PanicCenter.js')) });
 const messagesRoute = createRoute({ getParentRoute: () => authRoute, path: '/messages', component: lazyRouteComponent(() => import('./pages/Messages.js')) });
 const analyticsRoute = createRoute({ getParentRoute: () => authRoute, path: '/analytics', component: lazyRouteComponent(() => import('./pages/Analytics.js')) });
