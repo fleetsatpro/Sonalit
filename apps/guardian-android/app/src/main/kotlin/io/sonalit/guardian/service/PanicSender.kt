@@ -1,6 +1,7 @@
 package io.sonalit.guardian.service
 
 import android.content.Context
+import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -47,6 +48,14 @@ class PanicSender @Inject constructor(
             ),
         )
         true
+    }.onFailure {
+        // Previously swallowed entirely — a failed SOS send (wrong mode, 4xx/5xx
+        // from the backend, no network) looked identical in Logcat to a successful
+        // one, since the only visible symptom was the generic "could not reach
+        // dispatch" toast with no detail. Retrofit throws HttpException for any
+        // non-2xx response, so this also surfaces the actual status/body for
+        // server-side rejections, not just true connectivity failures.
+        Log.e("PanicSender", "SOS send failed: ${it.message}", it)
     }.getOrDefault(false)
 
     /**
@@ -60,5 +69,7 @@ class PanicSender @Inject constructor(
     suspend fun cancel(): Boolean = runCatching {
         api.cancelPanic()
         true
+    }.onFailure {
+        Log.e("PanicSender", "SOS cancel failed: ${it.message}", it)
     }.getOrDefault(false)
 }
