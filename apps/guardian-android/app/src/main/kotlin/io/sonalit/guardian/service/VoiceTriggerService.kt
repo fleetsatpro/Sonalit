@@ -12,6 +12,11 @@ import androidx.core.app.NotificationCompat
 import dagger.hilt.android.AndroidEntryPoint
 import io.sonalit.guardian.R
 import io.sonalit.guardian.ui.panic.PanicActivity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.vosk.LibVosk
 import org.vosk.LogLevel
@@ -20,54 +25,56 @@ import org.vosk.Recognizer
 import org.vosk.android.RecognitionListener
 import org.vosk.android.SpeechService
 import org.vosk.android.StorageService
+import javax.inject.Inject
 
 /**
  * Offline (Vosk, no network, nothing ever leaves the device) listener for the
  * distress phrase "PAN PAN PAN" — the maritime/aviation urgency call, chosen
  * so it's distinctive enough not to come up in ordinary conversation while
- * still being sayable hands-free under stress. Detecting it fires the exact
- * same panic path as VolumeKeySOSReceiver: launch PanicActivity, which fires
- * the send() immediately and only then shows the cancel dialog.
+ * still being sayable hands-free under stress.
  *
- * Opt-in only — started/stopped from Settings (VoiceTriggerViewModel), never
- * runs unless the operator has explicitly turned it on. Requires the model
- * files to be present at app/src/main/assets/model-en-us/ (see README note
- * in that directory) — this is NOT bundled with the source tree; download
- * vosk-model-small-en-us-0.15 from https://alphacephei.com/vosk/models and
- * unzip its contents there before building a release that ships this.
+ * On recognition: sends the panic API call directly (no activity launch needed)
+ * then shows a cancellable "SOS ACTIVE" notification. The user can tap the
+ * notification's Cancel action to open PanicActivity and authenticate — this
+ * is a user-initiated tap so the activity launch is always allowed.
+ *
+ * Direct-send avoids Android 10–14 background activity launch restrictions
+ * (the foreground-service exception was removed in Android 11, full-screen
+ * intent notifications require POST_NOTIFICATIONS on API 33+). The panic is
+ * fire-and-forget from the service; cancel is the only thing that needs UI.
  */
 @AndroidEntryPoint
 class VoiceTriggerService : android.app.Service() {
 
+    @Inject lateinit var panicSender: PanicSender
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var model: Model? = null
     private var speechService: SpeechService? = null
     private var lastTriggerMs = 0L
 
-    // The recognizer is constrained to only ever output "pan pan pan" or the
-    // catch-all [unk] token — Vosk snaps whatever it hears to the closest of
-    // the allowed phrases rather than doing open transcription. This is both
-    // far more accurate for a single fixed phrase than open dictation would
-    // be, and makes matching trivial (no fuzzy text matching needed below).
     private val grammar = """["pan pan pan", "[unk]"]"""
 
     private val listener = object : RecognitionListener {
-        override fun onPartialResult(hypothesis: String?) { /* acted on final result only, see onResult */ }
+        override fun onPartialResult(hypothesis: String?) {}
 
         override fun onResult(hypothesis: String?) {
-            val text = runCatching { JSONObject(hypothesis ?: return).optString("text") }.getOrNull() ?: return
+            val text = runCatching {
+                JSONObject(hypothesis ?: return).optString("text")
+            }.getOrNull() ?: return
             if (text.trim().equals("pan pan pan", ignoreCase = true)) {
                 triggerPanic()
             }
         }
 
-        override fun onFinalResult(hypothesis: String?) { onResult(hypothesis) }
+        override fun onFinalResult(hypothesis: String?) = onResult(hypothesis)
 
         override fun onError(exception: Exception?) {
-            Log.w(TAG, "Recognition error, restarting listener: ${exception?.message}")
+            Log.w(TAG, "Recognition error, restarting: ${exception?.message}")
             restartListening()
         }
 
-        override fun onTimeout() { restartListening() }
+        override fun onTimeout() = restartListening()
     }
 
     override fun onCreate() {
@@ -81,7 +88,7 @@ class VoiceTriggerService : android.app.Service() {
                 startListening()
             },
             { exception ->
-                Log.e(TAG, "Failed to unpack voice model — is assets/model-en-us present? ${exception.message}")
+                Log.e(TAG, "Failed to unpack voice model: ${exception.message}")
                 stopSelf()
             },
         )
@@ -96,53 +103,70 @@ class VoiceTriggerService : android.app.Service() {
     private fun restartListening() {
         speechService?.stop()
         speechService = null
-        // Small delay avoids a tight crash loop if the mic is unavailable
-        // (e.g. another app briefly holding it) rather than erroring instantly again.
         android.os.Handler(mainLooper).postDelayed({ if (model != null) startListening() }, 2000)
     }
 
     private fun triggerPanic() {
         val now = System.currentTimeMillis()
-        if (now - lastTriggerMs < COOLDOWN_MS) return // one panic activation per utterance, not per recognition pass
+        if (now - lastTriggerMs < COOLDOWN_MS) return
         lastTriggerMs = now
-        Log.w(TAG, "Voice trigger \"PAN PAN PAN\" detected — activating panic")
+        Log.w(TAG, "\"PAN PAN PAN\" detected — sending panic")
 
-        val panicIntent = Intent(this, PanicActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            putExtra(PanicActivity.EXTRA_PANIC_MODE, "voice_distress")
+        // Fire the panic network call directly from the service.  No activity
+        // launch needed here — avoids background activity launch restrictions
+        // (Android 10+, tightened each release) and the POST_NOTIFICATIONS
+        // requirement (API 33+) for full-screen intent notifications.
+        serviceScope.launch {
+            val ok = panicSender.send(mode = "voice_distress")
+            Log.w(TAG, if (ok) "Panic sent OK" else "Panic send FAILED (logged in PanicSender)")
         }
 
-        // Android 11+ (API 31) removed the foreground-service exception for startActivity(),
-        // so a direct call silently drops. Use a full-screen intent notification instead —
-        // Android grants these for alarm/call categories regardless of background state.
-        val fullScreenPi = PendingIntent.getActivity(
-            this, 0, panicIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
+        showSosActiveNotification()
+    }
+
+    /**
+     * Shows an ongoing "SOS ACTIVE" notification after voice trigger fires.
+     * The Cancel action is a user tap, so launching PanicActivity from it is
+     * always allowed (user-interaction exception applies).
+     */
+    private fun showSosActiveNotification() {
         val nm = getSystemService(NotificationManager::class.java)
-        val channelId = "voice_panic_trigger"
+        val channelId = "voice_sos_active"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             nm.createNotificationChannel(
-                NotificationChannel(channelId, "Voice Panic", NotificationManager.IMPORTANCE_HIGH)
+                NotificationChannel(channelId, "SOS Active", NotificationManager.IMPORTANCE_HIGH)
             )
         }
+
+        // PanicActivity opened via user tap — always allowed, no background restriction
+        val cancelPi = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, PanicActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                putExtra(PanicActivity.EXTRA_PANIC_MODE, "voice_distress")
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
         val notification = NotificationCompat.Builder(this, channelId)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("Voice distress trigger")
-            .setContentText("\"PAN PAN PAN\" detected — activating SOS")
+            .setContentTitle("SOS ACTIVE — voice distress")
+            .setContentText("\"PAN PAN PAN\" detected. Tap to cancel.")
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setFullScreenIntent(fullScreenPi, /* highPriority= */ true)
-            .setAutoCancel(true)
+            .setOngoing(true)
+            .addAction(0, "Cancel SOS", cancelPi)
+            .setContentIntent(cancelPi)
             .build()
-        nm.notify(PANIC_NOTIFICATION_ID, notification)
+        nm.notify(SOS_NOTIFICATION_ID, notification)
     }
 
     private fun startForegroundNotification() {
         val channelId = "voice_trigger_service"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(channelId, "Voice Panic Trigger", NotificationManager.IMPORTANCE_LOW)
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+            getSystemService(NotificationManager::class.java).createNotificationChannel(
+                NotificationChannel(channelId, "Voice Panic Trigger", NotificationManager.IMPORTANCE_LOW)
+            )
         }
         val notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("Voice panic trigger active")
@@ -161,6 +185,7 @@ class VoiceTriggerService : android.app.Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        serviceScope.cancel()
         speechService?.stop()
         speechService?.shutdown()
         speechService = null
@@ -173,7 +198,7 @@ class VoiceTriggerService : android.app.Service() {
     companion object {
         private const val TAG = "VoiceTrigger"
         private const val NOTIFICATION_ID = 2
-        private const val PANIC_NOTIFICATION_ID = 3
+        private const val SOS_NOTIFICATION_ID = 3
         private const val SAMPLE_RATE = 16000.0f
         private const val COOLDOWN_MS = 10_000L
     }
