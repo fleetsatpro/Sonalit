@@ -102,21 +102,29 @@ export default function PanicAlarm() {
   return (
     <div
       aria-hidden='true'
-      style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 9999 }}
+      style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 99999 }}
     >
+      {/*
+        A full-bleed fixed overlay sitting above Rail/Topbar/Outlet strobes
+        the entire screen — sidenav, clock, everything underneath — since it
+        covers the whole viewport regardless of what's rendered below it.
+        `steps(1, end)` gives a hard on/off cut instead of a smooth pulse, so
+        it actually reads as a flicker. Cycle held at 400ms (2.5 flashes/sec)
+        to stay just under the ~3-flashes/sec threshold flagged by WCAG for
+        photosensitive reactions while still feeling urgent/violent.
+      */}
       <style>{`
-        @keyframes panic-edge {
-          0%   { box-shadow: inset 0 0 0 3px #ff0000, inset 0 0 50px rgba(255,0,0,.25); }
-          50%  { box-shadow: inset 0 0 0 7px #ff2200, inset 0 0 110px rgba(255,0,0,.55); }
-          100% { box-shadow: inset 0 0 0 3px #ff0000, inset 0 0 50px rgba(255,0,0,.25); }
+        @keyframes panic-flash {
+          0%, 49%   { background: rgba(255,0,0,.4); box-shadow: inset 0 0 0 10px #ff0000, inset 0 0 180px rgba(255,0,0,.65); }
+          50%, 100% { background: rgba(255,0,0,.05); box-shadow: inset 0 0 0 3px #ff0000, inset 0 0 40px rgba(255,0,0,.2); }
         }
-        .panic-edge-overlay {
+        .panic-flash-overlay {
           position: absolute;
           inset: 0;
-          animation: panic-edge .45s ease-in-out infinite;
+          animation: panic-flash .4s steps(1, end) infinite;
         }
       `}</style>
-      <div className='panic-edge-overlay' />
+      <div className='panic-flash-overlay' />
     </div>
   );
 }

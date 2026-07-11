@@ -3,12 +3,15 @@ import { Outlet } from '@tanstack/react-router';
 import Rail from './Rail.js';
 import DrawerNav from './DrawerNav.js';
 import Topbar from '../dashboard/Topbar.js';
+import GlobalPanicAlarm from './GlobalPanicAlarm.js';
 
 // Universal app chrome — Rail (left), Topbar, mobile drawer. Extracted from
 // DashboardShell so every authenticated route wears the same shell instead
 // of Dashboard alone. Dashboard-specific chrome (TacticalMap, EventsTicker,
-// ThreatStrip, PanicAlarm, OpsSidebar) lives in Dashboard.tsx now — this
-// shell is deliberately generic.
+// ThreatStrip, OpsSidebar) lives in Dashboard.tsx now — this shell is
+// deliberately generic, except for GlobalPanicAlarm: a panic must reach the
+// operator regardless of which page they're on, so it's mounted here rather
+// than inside Dashboard.tsx.
 //
 // The floating mobile bottom-nav pill (Convoys/GPS Live/dispatch FAB/Alerts/
 // Menu) and the Topbar DISPATCH button were removed — both were redundant
@@ -69,6 +72,9 @@ const AppShell = React.memo(function AppShell() {
 
       {/* Mobile drawer */}
       <DrawerNav open={drawerOpen} onClose={closeDrawer} />
+
+      {/* Global panic alarm — full-screen flash + siren, active on every authenticated route */}
+      <GlobalPanicAlarm />
 
       {/* Main column */}
       <div

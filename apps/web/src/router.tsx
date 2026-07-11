@@ -1,6 +1,7 @@
 import { createRouter, createRoute, createRootRoute, Outlet, redirect, lazyRouteComponent } from '@tanstack/react-router';
 import { useAuthStore, getAccessToken } from './stores/auth.js';
 import AppShell from './components/layout/AppShell.js';
+import GlobalPanicAlarm from './components/layout/GlobalPanicAlarm.js';
 import { RootErrorComponent } from './components/ErrorBoundary.js';
 import LoginPage from './pages/Login.js';
 
@@ -23,12 +24,22 @@ const authRoute = createRoute({
 });
 
 // Authenticated routes that need an edge-to-edge viewport (no chrome). Used
-// only for print/report-style pages that draw their own top nav.
+// only for print/report-style pages that draw their own top nav. Still needs
+// GlobalPanicAlarm — a panic must reach the operator even from here.
+function FullscreenShell() {
+  return (
+    <>
+      <GlobalPanicAlarm />
+      <Outlet />
+    </>
+  );
+}
+
 const authFullscreenRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: 'auth-fullscreen',
   beforeLoad: authCheck,
-  component: Outlet,
+  component: FullscreenShell,
 });
 
 const loginRoute = createRoute({ getParentRoute: () => rootRoute, path: '/login', component: LoginPage });

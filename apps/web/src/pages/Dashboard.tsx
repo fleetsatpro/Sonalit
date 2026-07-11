@@ -1,14 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
-import { useAuthStore } from '../stores/auth.js';
 import { useDashboardStore } from '../stores/dashboardStore.js';
-import { useDashboardRealtime } from '../hooks/useDashboardRealtime.js';
 import '../styles/dashboard.css';
 
 import { useEffect, useRef, useState, Suspense, lazy } from 'react';
 import EventsTicker from '../components/dashboard/EventsTicker.js';
 import ThreatStrip from '../components/dashboard/ThreatStrip.js';
-import PanicAlarm from '../components/dashboard/PanicAlarm.js';
 import OpsSidebar from '../components/dashboard/OpsSidebar.js';
 import KPIStrip from '../components/dashboard/KPIStrip.js';
 const TacticalMap = lazy(() => import('../components/dashboard/TacticalMap.js'));
@@ -28,7 +25,6 @@ import IncidentLog from '../components/dashboard/IncidentLog.js';
 import type { DashboardOverview } from '../stores/dashboardStore.js';
 
 export default function Dashboard() {
-  const user = useAuthStore((s) => s.user);
   const { setOverview } = useDashboardStore.getState();
 
   // Fetch overview data
@@ -45,8 +41,8 @@ export default function Dashboard() {
     refetchInterval: 60000,
   });
 
-  // Wire realtime
-  useDashboardRealtime(user?.org_id ?? '');
+  // Realtime subscription + panic alarm are wired globally in AppShell now
+  // (GlobalPanicAlarm) so they stay active on every route, not just here.
 
   // Right-side OpsSidebar — Dashboard-only chrome. AppShell provides the left
   // Rail + top bar; everything below lives inside the outlet region.
@@ -150,9 +146,6 @@ export default function Dashboard() {
       >
         {sbOpen ? '›' : '‹'}
       </button>
-
-      {/* Panic alarm — screen-edge flash + audio (Dashboard-only). */}
-      <PanicAlarm />
 
       <style>{`
         .d-grid-2col {

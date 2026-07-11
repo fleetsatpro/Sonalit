@@ -26,6 +26,13 @@ interface PanicMsg {
   triggered_at?: string;
 }
 
+interface PanicCancelMsg {
+  type: 'panic_cancel';
+  device_id: string;
+  cancelled: string[];
+  cancelled_at: string;
+}
+
 interface AlertNewMsg {
   type: 'alert.new';
   alertId: string;
@@ -52,6 +59,7 @@ interface IncidentMsg {
 type OrgMsg =
   | LocationMsg
   | PanicMsg
+  | PanicCancelMsg
   | AlertNewMsg
   | ConvoyUpdateMsg
   | IncidentMsg
@@ -112,6 +120,18 @@ export function useDashboardRealtime(orgId: string): void {
             severity: 'critical',
             timestamp: p.triggered_at,
           });
+          break;
+        }
+
+        // Device-initiated cancel (POST /guardian/panic/cancel). Previously
+        // unhandled here, so the alarm only cleared via the 15s REST poll in
+        // PanicAlarm.tsx — up to 15s of a strobing/siren dashboard after the
+        // operator had already resolved it from the device side.
+        case 'panic_cancel': {
+          const current = useDashboardStore.getState().panicState;
+          if (current?.status === 'active') {
+            updatePanicState({ id: current.id, status: 'resolved', triggered_at: current.triggered_at });
+          }
           break;
         }
 
