@@ -70,6 +70,8 @@ export default function RiskMap({ zones, activeCont, activeZoneId, heatVisible, 
   const [mapReady, setMapReady] = useState(false)
   const [isSatellite, setIsSatellite] = useState(false)
   const [popup, setPopup] = useState<{ zone: RiskZone; x: number; y: number } | null>(null)
+  const zonesRef = useRef(zones)
+  useEffect(() => { zonesRef.current = zones }, [zones])
 
   // init map
   useEffect(() => {
@@ -84,7 +86,16 @@ export default function RiskMap({ zones, activeCont, activeZoneId, heatVisible, 
     m.addControl(new maplibregl.AttributionControl({ compact: true }))
     m.on('load', () => setMapReady(true))
     mapRef.current = m
-    return () => { m.remove(); mapRef.current = null; setMapReady(false) }
+
+    // The container's box changes size on continent-bar layout shifts and
+    // (on mobile) when the list/map tab toggles it from display:none to
+    // flex — MapLibre only auto-resizes on window resize, not container
+    // resize, so without this the canvas stays whatever size it was at
+    // construction and the map renders truncated/cut off.
+    const ro = new ResizeObserver(() => m.resize())
+    ro.observe(containerRef.current)
+
+    return () => { ro.disconnect(); m.remove(); mapRef.current = null; setMapReady(false) }
   }, [])
 
   const toggleSatellite = () => {
@@ -157,6 +168,16 @@ export default function RiskMap({ zones, activeCont, activeZoneId, heatVisible, 
     const map = mapRef.current; if (!map || !mapReady || !map.getLayer('rz-active-line')) return
     map.setFilter('rz-active-line', ['==', ['get', 'id'], activeZoneId ?? ''])
   }, [activeZoneId, mapReady, zones])
+
+  // zoom in to the selected zone, whether it was picked from the map or
+  // the sidebar list. Keyed only on activeZoneId/mapReady (via zonesRef)
+  // so the 60s background refetch of `zones` doesn't re-trigger the flight.
+  useEffect(() => {
+    const map = mapRef.current; if (!map || !mapReady || !activeZoneId) return
+    const zone = zonesRef.current.find(z => z.id === activeZoneId)
+    if (!zone) return
+    map.flyTo({ center: [zone.map_lon, zone.map_lat], zoom: Math.max(map.getZoom(), 6), duration: 900 })
+  }, [activeZoneId, mapReady])
 
   // toggle heat layer visibility
   useEffect(() => {

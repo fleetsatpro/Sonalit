@@ -149,7 +149,7 @@ async function runOsintSweep() {
   sweeping = true;
   try {
     const { rows: zones } = await query(
-      `SELECT id, org_id, name, region, continent, level, confidence, velocity FROM risk_zones WHERE is_active = true`
+      `SELECT id, org_id, name, region, continent, level, confidence, velocity, level_source FROM risk_zones WHERE is_active = true`
     );
     if (!zones.length) return { zonesChecked: 0 };
 
@@ -230,6 +230,8 @@ function computeZoneRisk(events) {
   return { level, confidence, velocity };
 }
 
+const LEVEL_RANK = { low: 1, medium: 2, high: 3 };
+
 async function recomputeZoneLevels(zones) {
   const zoneIds = zones.map(z => z.id);
   const { rows } = await query(
@@ -247,10 +249,25 @@ async function recomputeZoneLevels(zones) {
   let changed = 0;
   for (const zone of zones) {
     const computed = computeZoneRisk(byZone.get(zone.id) || []);
-    if (computed.level === zone.level && computed.confidence === zone.confidence && computed.velocity === zone.velocity) continue;
+    let levelSource = zone.level_source;
+
+    // An admin-set level is a floor, not just a starting point: the sweep
+    // finding zero matching OSINT events for a zone means "we found no
+    // evidence", not "this place is now safe" — a manually curated 'high'
+    // (or the original seed data) must never get quietly wiped to 'low'
+    // just because this cycle's searches came up empty. Once real evidence
+    // pushes a zone's severity past that floor, it's under the sweep's
+    // control from then on and can move both up and down with it.
+    if (zone.level_source === 'manual' && LEVEL_RANK[computed.level] < LEVEL_RANK[zone.level]) {
+      computed.level = zone.level;
+    } else if (LEVEL_RANK[computed.level] > LEVEL_RANK[zone.level]) {
+      levelSource = 'auto';
+    }
+
+    if (computed.level === zone.level && computed.confidence === zone.confidence && computed.velocity === zone.velocity && levelSource === zone.level_source) continue;
     await query(
-      `UPDATE risk_zones SET level = $1, confidence = $2, velocity = $3, updated_at = NOW() WHERE id = $4`,
-      [computed.level, computed.confidence, computed.velocity, zone.id]
+      `UPDATE risk_zones SET level = $1, confidence = $2, velocity = $3, level_source = $4, updated_at = NOW() WHERE id = $5`,
+      [computed.level, computed.confidence, computed.velocity, levelSource, zone.id]
     );
     orgsTouched.add(zone.org_id);
     changed++;

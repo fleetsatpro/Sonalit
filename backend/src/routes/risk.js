@@ -176,6 +176,13 @@ router.patch('/zones/:zoneId', asyncHandler(async (req, res) => {
     }
   }
 
+  // An admin setting level by hand takes it out of the automated sweep's
+  // hands until it escalates past this floor again — see riskOsint.js.
+  if (Object.prototype.hasOwnProperty.call(req.body, 'level')) {
+    values.push('manual');
+    setClauses.push(`level_source = $${values.length}`);
+  }
+
   if (!setClauses.length) {
     return res.status(400).json({ error: 'No valid fields to update' });
   }
