@@ -332,6 +332,22 @@ try {
   logger.info("CFO EOD finalization sweep scheduled (*/15 * * * *)");
 } catch (e) { logger.warn("CFO EOD sweep not scheduled: " + e.message); }
 
+// Risk Intel: refresh risk_zone_stats (materialized view backing GET /api/v1/risk/zones'
+// events/events_24h/week_data columns). Postgres never auto-refreshes materialized views,
+// and worker.risk.js — written to do exactly this — was never wired to an actual queue or
+// started as a process, so the view (and the dashboard reading it) was frozen at whatever
+// it computed on creation. Running it in-process here needs no new worker deployment.
+if (!process.env.GENERATE_OPENAPI && process.env.NODE_ENV !== 'test')
+try {
+  const cron = require("node-cron");
+  async function refreshRiskZoneStats() {
+    await dbQuery("REFRESH MATERIALIZED VIEW CONCURRENTLY risk_zone_stats");
+  }
+  cron.schedule("*/10 * * * *", () => refreshRiskZoneStats().catch(err => logger.error("Risk zone stats refresh error: " + err.message)));
+  refreshRiskZoneStats().catch(err => logger.warn("Risk zone stats startup refresh: " + err.message));
+  logger.info("Risk zone stats refresh scheduled (every 10 min)");
+} catch (e) { logger.warn("Risk zone stats refresh not scheduled: " + e.message); }
+
 // BL-010: GDPR scheduled purge — weekly at 04:00 UTC Sunday
 // Executes pending erasure requests older than 30 days.
 if (!process.env.GENERATE_OPENAPI && process.env.NODE_ENV !== 'test')

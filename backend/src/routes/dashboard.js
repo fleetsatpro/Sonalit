@@ -9,6 +9,7 @@ const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 const { query } = require('../config/database');
 const https = require('https');
+const logger = require('../utils/logger');
 
 router.use(authenticate, attachOrgDb);
 
@@ -263,7 +264,10 @@ router.get('/map', asyncHandler(async (req, res) => {
         }
 
         if (CORRIDOR_TYPES.includes(type) || path) {
-          if (!path || path.length < 2) return null;
+          if (!path || path.length < 2) {
+            logger.warn(`Geofence dropped from /dashboard/map (corridor/linear with no usable path): id=${g.id} name="${g.name}" type=${type} coordinates=${JSON.stringify(g.coordinates)}`);
+            return null;
+          }
           const mid = path[Math.floor(path.length / 2)];
           return {
             id: g.id, name: g.name, type: isLinear ? 'linear' : 'corridor',
@@ -274,9 +278,23 @@ router.get('/map', asyncHandler(async (req, res) => {
           };
         }
 
+        // GeoJSON Polygon (e.g. imported/legacy zones) — coordinates is
+        // [[[lng,lat],...]] (ring array); use the ring's centroid as the
+        // zone center rather than dropping it outright.
+        if (coords.type === 'Polygon' && Array.isArray(coords.coordinates?.[0]) && coords.coordinates[0].length >= 3) {
+          const ring = coords.coordinates[0];
+          const sum = ring.reduce((acc, [lng, lat]) => [acc[0] + lat, acc[1] + lng], [0, 0]);
+          const lat = sum[0] / ring.length;
+          const lng = sum[1] / ring.length;
+          return { id: g.id, name: g.name, type, lat, lng, radius_m: parseFloat(g.radius_m), path: null, buffer_m: null };
+        }
+
         const lat = coords.lat ?? coords.center?.lat ?? coords.latitude ?? null;
         const lng = coords.lng ?? coords.center?.lng ?? coords.longitude ?? null;
-        if (lat == null || lng == null) return null;
+        if (lat == null || lng == null) {
+          logger.warn(`Geofence dropped from /dashboard/map (no recognizable lat/lng): id=${g.id} name="${g.name}" type=${type} coordinates=${JSON.stringify(g.coordinates)}`);
+          return null;
+        }
         return { id: g.id, name: g.name, type, lat: parseFloat(lat), lng: parseFloat(lng), radius_m: parseFloat(g.radius_m), path: null, buffer_m: null };
       }).filter(Boolean),
     riskzones: riskzonesR.rows.map(r => ({
