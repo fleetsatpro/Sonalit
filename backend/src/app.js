@@ -348,6 +348,18 @@ try {
   logger.info("Risk zone stats refresh scheduled (every 10 min)");
 } catch (e) { logger.warn("Risk zone stats refresh not scheduled: " + e.message); }
 
+// Risk Intel OSINT sweep: populates risk_events from real-world sources
+// (GDELT, ReliefWeb, Claude web search) instead of only manual admin
+// entries — see backend/src/utils/riskOsint.js for source details.
+if (!process.env.GENERATE_OPENAPI && process.env.NODE_ENV !== 'test')
+try {
+  const cron = require("node-cron");
+  const { runOsintSweep } = require("./utils/riskOsint");
+  cron.schedule("0 */2 * * *", () => runOsintSweep().catch(err => logger.error("Risk Intel OSINT sweep error: " + err.message)));
+  runOsintSweep().catch(err => logger.warn("Risk Intel OSINT startup sweep: " + err.message));
+  logger.info("Risk Intel OSINT sweep scheduled (every 2 hours)");
+} catch (e) { logger.warn("Risk Intel OSINT sweep not scheduled: " + e.message); }
+
 // BL-010: GDPR scheduled purge — weekly at 04:00 UTC Sunday
 // Executes pending erasure requests older than 30 days.
 if (!process.env.GENERATE_OPENAPI && process.env.NODE_ENV !== 'test')
