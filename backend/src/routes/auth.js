@@ -189,7 +189,7 @@ router.post('/refresh', async (req, res) => {
     const accessToken = jwt.sign(
       { id: row.uid, email: row.email, role: row.role },
       process.env.JWT_SECRET,
-      { expiresIn: '15m' }
+      { expiresIn: '2h' }
     );
 
     logger.info(`Token refreshed for user ${row.email}`);

@@ -75,7 +75,7 @@ const login = asyncHandler(async (req, res) => {
   const accessToken = jwt.sign(
     { id: user.id, email: user.email, role: user.role },
     process.env.JWT_SECRET,
-    { expiresIn: '15m' }
+    { expiresIn: '2h' }
   );
 
   // Refresh token: long-lived, httpOnly cookie (T1.2)

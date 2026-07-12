@@ -37,9 +37,24 @@ api.interceptors.request.use((config) => {
 });
 
 // ── Refresh interceptor with infinite-loop guard (T1.2) ───────────────────────
-// If isRefreshing is true when a 401 arrives, a refresh is already in flight —
-// do NOT retry again; clear auth and redirect to login instead.
-let isRefreshing = false;
+// Several requests can 401 at once (a page mounts and fires multiple calls
+// right as the access token expires). They all share this one in-flight
+// refresh promise instead of racing separate /auth/refresh calls — the
+// previous isRefreshing boolean treated "a refresh is already running" as
+// "give up and log out", which force-logged-out users mid-session any time
+// two or more requests happened to expire together.
+let refreshPromise: Promise<string> | null = null;
+
+async function refreshAccessToken(): Promise<string> {
+  const { data } = await axios.post<{ token: string; user: import('../stores/auth.js').AuthUser }>(
+    `${API_BASE}/auth/refresh`,
+    {},
+    { withCredentials: true },
+  );
+  setAccessToken(data.token);
+  useAuthStore.getState().setAuth(data.token, data.user);
+  return data.token;
+}
 
 api.interceptors.response.use(
   (res) => res,
@@ -47,32 +62,19 @@ api.interceptors.response.use(
     const original = err.config as typeof err.config & { _retry?: boolean };
 
     if (err.response?.status === 401 && !original._retry) {
-      // Infinite-loop guard: if we already tried a refresh, give up
-      if (isRefreshing) {
-        useAuthStore.getState().clearAuth();
-        window.location.href = '/login';
-        return Promise.reject(err);
-      }
-
       original._retry = true;
-      isRefreshing = true;
 
       try {
-        const { data } = await axios.post<{ token: string; user: import('../stores/auth.js').AuthUser }>(
-          `${API_BASE}/auth/refresh`,
-          {},
-          { withCredentials: true },
-        );
-        setAccessToken(data.token);
-        useAuthStore.getState().setAuth(data.token, data.user);
-        original.headers['Authorization'] = `Bearer ${data.token}`;
+        if (!refreshPromise) {
+          refreshPromise = refreshAccessToken().finally(() => { refreshPromise = null; });
+        }
+        const token = await refreshPromise;
+        original.headers['Authorization'] = `Bearer ${token}`;
         return api(original);
       } catch {
         useAuthStore.getState().clearAuth();
         window.location.href = '/login';
         return Promise.reject(err);
-      } finally {
-        isRefreshing = false;
       }
     }
 
