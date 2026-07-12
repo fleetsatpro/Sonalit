@@ -21,7 +21,20 @@ const convoySchema = Joi.object({
   estimatedArrival: Joi.date().iso().allow(null),
   routeOrigin: Joi.string().max(100).required(),
   routeDestination: Joi.string().max(100).required(),
+  clientId: Joi.string().uuid().allow('', null),
 });
+
+// Confirms a client belongs to the requesting org before it's attached to a
+// convoy — cargo_clients has no direct org check at the DB layer here since
+// this runs through the raw (unscoped) query() helper, not req.db/RLS.
+async function assertClientInOrg(clientId, orgId) {
+  if (!clientId) return true;
+  const result = await query(
+    'SELECT id FROM cargo_clients WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL',
+    [clientId, orgId]
+  );
+  return result.rows.length > 0;
+}
 
 function buildPagination(page, limit, total) {
   return { page: parseInt(page), limit: parseInt(limit), totalCount: parseInt(total), totalPages: Math.ceil(total / limit) };
@@ -36,6 +49,7 @@ const getConvoys = asyncHandler(async (req, res) => {
   if (req.query.status) { params.push(req.query.status); filters.push(`c.status = $${params.length}`); }
   if (req.query.region) { params.push(req.query.region); filters.push(`c.region = $${params.length}`); }
   if (req.query.priority) { params.push(req.query.priority); filters.push(`c.priority = $${params.length}`); }
+  if (req.query.clientId) { params.push(req.query.clientId); filters.push(`c.client_id = $${params.length}`); }
 
   const where = filters.length ? `AND ${filters.join(' AND ')}` : '';
 
@@ -45,12 +59,15 @@ const getConvoys = asyncHandler(async (req, res) => {
   const result = await query(
     `SELECT c.*,
             u.name AS created_by_name,
+            cl.name AS client_name,
+            cl.company AS client_company,
             COUNT(DISTINCT ca.vehicle_id) AS vehicle_count
      FROM convoys c
      LEFT JOIN users u ON u.id = c.created_by
+     LEFT JOIN cargo_clients cl ON cl.id = c.client_id
      LEFT JOIN convoy_assignments ca ON ca.convoy_id = c.id
      WHERE c.org_id = $1 AND c.deleted_at IS NULL ${where}
-     GROUP BY c.id, u.name
+     GROUP BY c.id, u.name, cl.name, cl.company
      ORDER BY c.created_at DESC
      LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
@@ -61,8 +78,10 @@ const getConvoys = asyncHandler(async (req, res) => {
 
 const getConvoy = asyncHandler(async (req, res) => {
   const result = await query(
-    `SELECT c.*, u.name AS created_by_name FROM convoys c
+    `SELECT c.*, u.name AS created_by_name, cl.name AS client_name, cl.company AS client_company
+     FROM convoys c
      LEFT JOIN users u ON u.id = c.created_by
+     LEFT JOIN cargo_clients cl ON cl.id = c.client_id
      WHERE c.id = $1 AND c.org_id = $2 AND c.deleted_at IS NULL`,
     [req.params.id, req.user.org_id]
   );
@@ -108,15 +127,20 @@ const createConvoy = asyncHandler(async (req, res) => {
   const { error, value } = convoySchema.validate(req.body);
   if (error) return res.status(400).json({ error: error.message });
 
+  const clientId = value.clientId || null;
+  if (clientId && !(await assertClientInOrg(clientId, req.user.org_id))) {
+    return res.status(422).json({ error: 'client_not_found' });
+  }
+
   const result = await query(
     `INSERT INTO convoys
        (name, region, priority, description, departure_time, estimated_arrival,
-        route_origin, route_destination, status, created_by, org_id, created_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'planned',$9,$10,NOW(),NOW())
+        route_origin, route_destination, client_id, status, created_by, org_id, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'planned',$10,$11,NOW(),NOW())
      RETURNING *`,
     [value.name, value.region, value.priority, value.description || null,
      value.departureTime || null, value.estimatedArrival || null,
-     value.routeOrigin, value.routeDestination, req.user.id, req.user.org_id]
+     value.routeOrigin, value.routeDestination, clientId, req.user.id, req.user.org_id]
   );
 
   req.auditAction = 'INSERT';
@@ -133,6 +157,11 @@ const updateConvoy = asyncHandler(async (req, res) => {
   const { error, value } = convoySchema.fork(Object.keys(convoySchema.describe().keys), (f) => f.optional()).validate(req.body);
   if (error) return res.status(400).json({ error: error.message });
 
+  const clientId = value.clientId || null;
+  if (clientId && !(await assertClientInOrg(clientId, req.user.org_id))) {
+    return res.status(422).json({ error: 'client_not_found' });
+  }
+
   const result = await query(
     `UPDATE convoys SET
        name = COALESCE($1, name), region = COALESCE($2, region),
@@ -141,11 +170,12 @@ const updateConvoy = asyncHandler(async (req, res) => {
        estimated_arrival = COALESCE($6, estimated_arrival),
        route_origin = COALESCE($7, route_origin),
        route_destination = COALESCE($8, route_destination),
+       client_id = COALESCE($9, client_id),
        updated_at = NOW()
-     WHERE id = $9 AND org_id = $10 AND deleted_at IS NULL RETURNING *`,
+     WHERE id = $10 AND org_id = $11 AND deleted_at IS NULL RETURNING *`,
     [value.name, value.region, value.priority, value.description,
      value.departureTime, value.estimatedArrival, value.routeOrigin,
-     value.routeDestination, req.params.id, req.user.org_id]
+     value.routeDestination, clientId, req.params.id, req.user.org_id]
   );
 
   req.auditAction = 'UPDATE';

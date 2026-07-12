@@ -64,7 +64,12 @@ async function uploadToR2(key, buffer, contentType) {
 
 async function fetchReportData(convoy_id, report_date) {
   const [convoyRes, trucksRes, cfosRes, photosRes, reportRes, cfoPhotosRes, waypointsRes, namedWaypointsRes] = await Promise.all([
-    query('SELECT * FROM convoys WHERE id = $1', [convoy_id]),
+    query(
+      `SELECT c.*, cl.name AS client_name, cl.company AS client_company
+       FROM convoys c LEFT JOIN cargo_clients cl ON cl.id = c.client_id
+       WHERE c.id = $1`,
+      [convoy_id]
+    ),
     query(
       `SELECT ct.*, COALESCE(ct.registration, v.registration) AS plate_number
        FROM convoy_trucks ct
@@ -274,7 +279,12 @@ async function handleGenerateReport({ convoy_id, report_date, force }) {
 }
 
 async function handleGenerateArchive({ convoy_id }) {
-  const convoy = (await query('SELECT * FROM convoys WHERE id = $1', [convoy_id])).rows[0];
+  const convoy = (await query(
+    `SELECT c.*, cl.name AS client_name, cl.company AS client_company
+     FROM convoys c LEFT JOIN cargo_clients cl ON cl.id = c.client_id
+     WHERE c.id = $1`,
+    [convoy_id]
+  )).rows[0];
   if (!convoy) throw new Error(`Convoy ${convoy_id} not found`);
 
   const [trucks, cfos, reports, allPhotos] = await Promise.all([

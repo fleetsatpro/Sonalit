@@ -56,6 +56,7 @@ const createSchema = Joi.object({
   route_destination: Joi.string().max(100).required(),
   trucks: Joi.array().items(truckSchema).min(1).max(6).required(),
   cfos: Joi.array().items(cfoInputSchema).min(1).required(),
+  clientId: Joi.string().uuid().allow('', null),
 });
 
 function validateCoverage(trucks, cfos) {
@@ -104,6 +105,15 @@ const createConvoyCfo = asyncHandler(async (req, res) => {
   const coverageErr = validateCoverage(value.trucks, value.cfos);
   if (coverageErr) return res.status(422).json(coverageErr);
 
+  const clientId = value.clientId || null;
+  if (clientId) {
+    const clientCheck = await query(
+      'SELECT id FROM cargo_clients WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL',
+      [clientId, req.user.org_id]
+    );
+    if (!clientCheck.rows.length) return res.status(422).json({ error: 'client_not_found' });
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -128,13 +138,13 @@ const createConvoyCfo = asyncHandler(async (req, res) => {
     const convoyResult = await client.query(
       `INSERT INTO convoys
          (name, region, priority, description, route_origin, route_destination,
-          timezone, start_date, end_date, seal_count_per_truck, status, created_by, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'planned',$11,NOW(),NOW())
+          timezone, start_date, end_date, seal_count_per_truck, client_id, status, created_by, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'planned',$12,NOW(),NOW())
        RETURNING *`,
       [value.name, value.region, value.priority, value.description || null,
         value.route_origin, value.route_destination,
         value.timezone, value.start_date, value.end_date,
-        value.seal_count_per_truck, req.user.id]
+        value.seal_count_per_truck, clientId, req.user.id]
     );
     const convoy = convoyResult.rows[0];
 
@@ -751,9 +761,11 @@ const getConvoyReportsOverview = asyncHandler(async (req, res) => {
   const convoysRes = await query(
     `SELECT c.id, c.name, c.status, c.timezone, c.start_date, c.end_date,
             c.seal_count_per_truck, c.archive_pdf_url,
+            cl.name AS client_name, cl.company AS client_company,
             (SELECT COUNT(*) FROM convoy_trucks ct WHERE ct.convoy_id = c.id)::int AS truck_count,
             (SELECT COUNT(*) FROM convoy_cfos cc WHERE cc.convoy_id = c.id)::int AS cfo_count
      FROM convoys c
+     LEFT JOIN cargo_clients cl ON cl.id = c.client_id
      WHERE c.org_id = $1 AND c.deleted_at IS NULL
        AND c.status IN ('planned','active','completing','completed')
      ORDER BY (c.status = 'active') DESC, c.start_date DESC LIMIT 200`,
@@ -860,8 +872,11 @@ async function getConvoyReportDetail(req, res, next) {
     const { query } = require('../config/database');
 
     const convoyRes = await query(
-      `SELECT id, name, status, start_date, end_date, timezone, seal_count_per_truck
-       FROM convoys WHERE id = $1 AND deleted_at IS NULL`,
+      `SELECT c.id, c.name, c.status, c.start_date, c.end_date, c.timezone, c.seal_count_per_truck,
+              cl.name AS client_name, cl.company AS client_company
+       FROM convoys c
+       LEFT JOIN cargo_clients cl ON cl.id = c.client_id
+       WHERE c.id = $1 AND c.deleted_at IS NULL`,
       [id]
     );
     if (!convoyRes.rows.length) return res.status(404).json({ error: 'Convoy not found' });

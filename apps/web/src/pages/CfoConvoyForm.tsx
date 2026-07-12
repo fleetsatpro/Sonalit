@@ -30,6 +30,7 @@ const convoyFormSchema = z.object({
   departureTime: z.string().optional(),
   estimatedArrival: z.string().optional(),
   description: z.string().max(500).optional(),
+  clientId: z.string().optional(),
   vehicle_ids: z.array(z.string()).default([]),
   cfo_ids: z.array(z.string()).default([]),
 });
@@ -38,6 +39,7 @@ type ConvoyForm = z.infer<typeof convoyFormSchema>;
 type RawConvoy = Record<string, unknown>;
 type VehicleListResponse = { data: Vehicle[] };
 type CfoUser = { id: string; name: string; email: string };
+type CargoClient = { id: string; name: string; company?: string | null; email: string };
 
 // ---------------------------------------------------------------------------
 // Field wrapper
@@ -103,6 +105,83 @@ function MultiSelectList({ items, value, onChange, emptyLabel = 'No items availa
           </label>
         );
       })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Client picker — selects which cargo owner this convoy runs for, with an
+// inline "new client" flow so ops doesn't have to leave the form to register
+// one first. Client records themselves (cargo_clients) live in the portal
+// client-management screen; this just attaches an existing (or freshly
+// created) one to the convoy for classification/reporting.
+// ---------------------------------------------------------------------------
+
+function ClientPicker({ value, onChange, clients, onClientCreated }: {
+  value: string | undefined;
+  onChange: (id: string) => void;
+  clients: CargoClient[];
+  onClientCreated: (client: CargoClient) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newCompany, setNewCompany] = useState('');
+
+  const createMutation = useMutation<CargoClient, Error, void>({
+    mutationFn: async () => {
+      const r = await api.post<{ data: CargoClient }>('/portal/clients', {
+        name: newName.trim(), email: newEmail.trim(), company: newCompany.trim() || undefined,
+      });
+      return r.data.data;
+    },
+    onSuccess: (client) => {
+      onClientCreated(client);
+      onChange(client.id);
+      setAdding(false);
+      setNewName(''); setNewEmail(''); setNewCompany('');
+    },
+  });
+
+  if (adding) {
+    return (
+      <div className="bg-[#09101c] border border-[#122038] rounded-md p-3 space-y-2">
+        <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Client name"
+          className={BASE_INPUT} />
+        <input value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="Contact email" type="email"
+          className={BASE_INPUT} />
+        <input value={newCompany} onChange={(e) => setNewCompany(e.target.value)} placeholder="Company (optional)"
+          className={BASE_INPUT} />
+        {createMutation.isError && (
+          <p className="text-red-400 text-xs font-mono">{extractApiError(createMutation.error, 'Could not create client.')}</p>
+        )}
+        <div className="flex gap-2 pt-1">
+          <button type="button" disabled={!newName.trim() || !newEmail.trim() || createMutation.isPending}
+            onClick={() => createMutation.mutate()}
+            className="flex items-center gap-1.5 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-mono font-semibold px-3 py-1.5 rounded-md text-[10px] uppercase tracking-wider transition-colors">
+            {createMutation.isPending && <Loader2 className="w-3 h-3 animate-spin" />} Save Client
+          </button>
+          <button type="button" onClick={() => setAdding(false)}
+            className="px-3 py-1.5 bg-transparent border border-[#122038] text-[#607890] rounded-md text-[10px] font-mono font-semibold uppercase tracking-wider">
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex gap-2">
+      <select value={value ?? ''} onChange={(e) => onChange(e.target.value)} className={BASE_INPUT + ' cursor-pointer flex-1'}>
+        <option value="">No client assigned</option>
+        {clients.map((c) => (
+          <option key={c.id} value={c.id}>{c.name}{c.company ? ` — ${c.company}` : ''}</option>
+        ))}
+      </select>
+      <button type="button" onClick={() => setAdding(true)}
+        className="px-3 py-2.5 bg-[#07090f] hover:bg-[#09101c] border border-[#122038] hover:border-orange-500/30 text-[#607890] hover:text-orange-400 rounded-md text-[10px] font-mono font-semibold uppercase tracking-wider transition-colors whitespace-nowrap">
+        + New
+      </button>
     </div>
   );
 }
@@ -484,6 +563,21 @@ export default function CfoConvoyForm(): React.ReactElement {
     queryFn: async () => (await api.get<{ data: CfoUser[] }>('/convoys/cfo-users')).data,
   });
 
+  const { data: clientsData } = useQuery<{ data: CargoClient[] }>({
+    queryKey: ['cargo-clients'],
+    queryFn: async () => (await api.get<{ data: CargoClient[] }>('/portal/clients')).data,
+  });
+  // Holds a client created inline via ClientPicker's "+ New" flow so it shows
+  // up in the select immediately, without waiting on a cargo-clients refetch.
+  const [justCreatedClient, setJustCreatedClient] = useState<CargoClient | null>(null);
+  const clientItems = (() => {
+    const fromList = clientsData?.data ?? [];
+    if (justCreatedClient && !fromList.some((c) => c.id === justCreatedClient.id)) {
+      return [...fromList, justCreatedClient];
+    }
+    return fromList;
+  })();
+
   // Already-assigned vehicles/CFOs — GET /convoys/:id returns these regardless
   // of the vehicle's current status, so a vehicle in maintenance still shows
   // up here even though the active-only /vehicles fetch above would miss it.
@@ -535,6 +629,7 @@ export default function CfoConvoyForm(): React.ReactElement {
         estimatedArrival: existing['estimated_arrival']
           ? String(existing['estimated_arrival']).slice(0, 16) : undefined,
         description: String(existing['description'] ?? ''),
+        clientId: existing['client_id'] ? String(existing['client_id']) : undefined,
         vehicle_ids: [...lockedVehicleIds],
         cfo_ids: [...lockedCfoIds],
       },
@@ -664,6 +759,20 @@ export default function CfoConvoyForm(): React.ReactElement {
                 </select>
               </Field>
             </div>
+            <Field label="Client" error={errors.clientId?.message}>
+              <Controller
+                name="clientId"
+                control={control}
+                render={({ field }) => (
+                  <ClientPicker
+                    value={field.value}
+                    onChange={field.onChange}
+                    clients={clientItems}
+                    onClientCreated={setJustCreatedClient}
+                  />
+                )}
+              />
+            </Field>
           </Section>
 
           {/* Route */}

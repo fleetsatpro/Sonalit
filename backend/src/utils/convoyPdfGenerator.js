@@ -981,6 +981,7 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
       pct,
       stats: [
         { label: 'Report Date', value: reportDate },
+        { label: 'Client', value: convoy.client_name || '--' },
         { label: 'Lead CFO', value: cfos[0]?.cfo_name || '--', color: C.gold },
         { label: 'Vehicles', value: `${trucks.length} truck${trucks.length === 1 ? '' : 's'}` },
         { label: 'Total Photos', value: `${report.received_photo_count}/${report.required_photo_count}`, color: pct >= 100 ? '#4ade80' : C.white },
@@ -998,6 +999,7 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
     sectionHead(ctx, nextLetter(ctx), 'Convoy Details', `${pct}% Complete`);
     detailGrid(doc, [
       { label: 'Convoy ID', value: convoy.name || '--' },
+      { label: 'Client', value: convoy.client_name || '--' },
       { label: 'Report Date', value: reportDate },
       { label: 'Origin', value: convoy.route_origin || '--' },
       { label: 'Destination', value: convoy.route_destination || '--' },
@@ -1090,6 +1092,7 @@ async function generateArchiveReport(convoy, trucks, cfos, reports, allPhotos) {
       generatedAt,
       pct: overallPct,
       stats: [
+        { label: 'Client', value: convoy.client_name || '--' },
         { label: 'Region', value: convoy.region || '--' },
         { label: 'Vehicles', value: `${trucks.length} truck${trucks.length === 1 ? '' : 's'}` },
         { label: 'CFOs', value: String(cfos.length) },
@@ -1106,6 +1109,7 @@ async function generateArchiveReport(convoy, trucks, cfos, reports, allPhotos) {
     sectionHead(ctx, nextLetter(ctx), 'Archive Summary');
     detailGrid(doc, [
       { label: 'Convoy', value: convoy.name || '--' },
+      { label: 'Client', value: convoy.client_name || '--' },
       { label: 'Status', value: (convoy.status || '').toUpperCase() || '--' },
       { label: 'Region', value: convoy.region || '--' },
       { label: 'Timezone', value: convoy.timezone || 'UTC' },

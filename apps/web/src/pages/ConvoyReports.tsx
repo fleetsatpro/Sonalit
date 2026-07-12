@@ -14,6 +14,8 @@ interface ConvoyOverviewItem {
   start_date: string;
   end_date: string;
   timezone: string;
+  client_name?: string | null;
+  client_company?: string | null;
   latest_report: {
     report_date: string;
     status: string;
@@ -98,6 +100,11 @@ function ConvoyCard({ item, selected, onClick }: {
           color: statusColor[item.status] || '#6b7280', fontFamily: 'JetBrains Mono, monospace',
         }}>{item.status}</span>
       </div>
+      {item.client_name && (
+        <div style={{ fontSize: 10, color: '#d97706', marginBottom: 4, fontFamily: 'JetBrains Mono, monospace' }}>
+          {item.client_name}
+        </div>
+      )}
       {lr && (
         <>
           <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 6, fontFamily: 'JetBrains Mono, monospace' }}>

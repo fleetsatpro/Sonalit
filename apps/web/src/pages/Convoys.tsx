@@ -18,6 +18,7 @@ interface ConvoyRow {
   priority?: string | null; region?: string | null; description?: string | null
   vehicle_count?: number; created_by_name?: string | null
   timezone?: string | null
+  client_id?: string | null; client_name?: string | null; client_company?: string | null
 }
 interface ConvoyDetail extends ConvoyRow {
   trucks?: Array<{ id: string; position: number; driver_name: string; driver_phone?: string | null }>
@@ -68,6 +69,26 @@ const fmtTime = (d?: string | null) => {
 
 const MN = 'IBM Plex Mono, monospace'
 const SANS = 'Archivo, system-ui, sans-serif'
+
+// Deterministic accent color per client so the same client reads as the same
+// color everywhere (table badge, detail panel) without a server-assigned color.
+const CLIENT_PALETTE = ['#00d4ff', '#a855f7', '#22c55e', '#f59e0b', '#ec4899', '#60a5fa', '#f97316', '#14b8a6']
+function clientColor(name: string): string {
+  let hash = 0
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0
+  return CLIENT_PALETTE[Math.abs(hash) % CLIENT_PALETTE.length]!
+}
+
+function ClientBadge({ name }: { name?: string | null | undefined }) {
+  if (!name) return <span style={{ fontFamily:MN, fontSize:9, color:'#39424c', letterSpacing:'.08em' }}>— UNASSIGNED —</span>
+  const color = clientColor(name)
+  return (
+    <span style={{ display:'inline-flex', alignItems:'center', gap:5, fontFamily:SANS, fontSize:11, color:'#c3cad2', maxWidth:150 }}>
+      <span style={{ width:6, height:6, borderRadius:'50%', background:color, flexShrink:0 }} />
+      <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{name}</span>
+    </span>
+  )
+}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -164,6 +185,7 @@ function DetailPanel({ id, onClose, onBroadcast, onEnd }: { id: string; onClose:
       <div style={{ padding:'12px 18px', borderBottom:'1px solid rgba(255,255,255,.06)', flexShrink:0 }}>
         {[
           ['Status', c ? <SBadge key="s" status={c.status} /> : '—'],
+          ['Client', c ? <ClientBadge key="cl" name={c.client_name} /> : '—'],
           ['Route', c ? `${origin} → ${dest}` : '—'],
           ['Progress', c ? `${pct}%` : '—'],
           ['Vehicles', c?.vehicle_count ?? (c?.trucks?.length ?? c?.vehicles?.length ?? '—')],
@@ -233,6 +255,7 @@ export default function Convoys() {
   const qc = useQueryClient()
   const orgId = useAuthStore(s => s.user?.org_id)
   const [filter, setFilter] = useState<Filter>('all')
+  const [clientFilter, setClientFilter] = useState<string>('all')
   const [search, setSearch] = useState('')
   const [selId, setSelId] = useState<string | null>(null)
   const [broadcastConvoy, setBroadcastConvoy] = useState<{ id: string; name: string } | null>(null)
@@ -282,14 +305,22 @@ export default function Convoys() {
     onSettled: () => setEndingId(null),
   })
 
+  const clientOptions = useMemo(() => {
+    const all: ConvoyRow[] = data?.data ?? []
+    const seen = new Map<string, string>()
+    for (const c of all) if (c.client_id && c.client_name) seen.set(c.client_id, c.client_name)
+    return [...seen.entries()].sort((a, b) => a[1].localeCompare(b[1]))
+  }, [data])
+
   const rows = useMemo(() => {
     const all: ConvoyRow[] = data?.data ?? []
     return all.filter(c => {
       const mf = filter === 'all' || c.status === filter
-      const ms = !search || (c.name + (c.route_origin ?? '') + (c.route_destination ?? '') + (c.region ?? '')).toLowerCase().includes(search.toLowerCase())
-      return mf && ms
+      const mc = clientFilter === 'all' || (clientFilter === 'unassigned' ? !c.client_id : c.client_id === clientFilter)
+      const ms = !search || (c.name + (c.route_origin ?? '') + (c.route_destination ?? '') + (c.region ?? '') + (c.client_name ?? '')).toLowerCase().includes(search.toLowerCase())
+      return mf && mc && ms
     })
-  }, [data, filter, search])
+  }, [data, filter, clientFilter, search])
 
   const counts = useMemo(() => {
     const all: ConvoyRow[] = data?.data ?? []
@@ -379,6 +410,13 @@ export default function Convoys() {
             </button>
           ))}
         </div>
+        <select value={clientFilter} onChange={e => setClientFilter(e.target.value)}
+          style={{ fontFamily:MN, fontSize:9, letterSpacing:'.08em', padding:'6px 8px', borderRadius:3, cursor:'pointer',
+            background:'#111519', border:'1px solid rgba(255,255,255,.08)', color: clientFilter === 'all' ? '#4e5a65' : '#dde3ea', outline:'none' }}>
+          <option value="all">ALL CLIENTS</option>
+          <option value="unassigned">UNASSIGNED</option>
+          {clientOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+        </select>
         <span style={{ fontFamily:MN, fontSize:9, color:'#4e5a65', marginLeft:'auto', whiteSpace:'nowrap' }}>{rows.length} convoy{rows.length !== 1 ? 's' : ''}</span>
       </div>
 
@@ -391,14 +429,14 @@ export default function Convoys() {
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
               <thead>
                 <tr>
-                  {['CONVOY ID / NAME','STATUS','ROUTE','PROGRESS','RISK','VEHICLES','START DATE','ETA',''].map((h, i) => (
+                  {['CONVOY ID / NAME','STATUS','CLIENT','ROUTE','PROGRESS','RISK','VEHICLES','START DATE','ETA',''].map((h, i) => (
                     <th key={i} style={{ fontFamily:MN, fontSize:7, letterSpacing:'.2em', color:'#4e5a65', padding:'8px 14px', textAlign:'left', background:'#0d1014', borderBottom:'1px solid rgba(255,255,255,.08)', position:'sticky', top:0, zIndex:2, whiteSpace:'nowrap', paddingLeft: i===0?24:14 }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 && (
-                  <tr><td colSpan={9} style={{ padding:'60px 24px', textAlign:'center', fontFamily:MN, fontSize:10, color:'#4e5a65', letterSpacing:'.1em' }}>NO CONVOYS MATCH YOUR SEARCH</td></tr>
+                  <tr><td colSpan={10} style={{ padding:'60px 24px', textAlign:'center', fontFamily:MN, fontSize:10, color:'#4e5a65', letterSpacing:'.1em' }}>NO CONVOYS MATCH YOUR SEARCH</td></tr>
                 )}
                 {rows.map((c, idx) => {
                   const pct = convoyProgress(c)
@@ -415,6 +453,7 @@ export default function Convoys() {
                         <div style={{ fontFamily:SANS, fontWeight:500, fontSize:13, color:'#dde3ea' }}>{c.name}</div>
                       </td>
                       <td style={{ padding:'11px 14px' }}><SBadge status={c.status} /></td>
+                      <td style={{ padding:'11px 14px' }}><ClientBadge name={c.client_name} /></td>
                       <td style={{ padding:'11px 14px' }}>
                         <div style={{ display:'flex', alignItems:'center', gap:4, fontFamily:SANS, fontSize:11, color:'#8a95a0' }}>
                           <span>{origin}</span><span style={{ color:'#f97316', fontSize:10 }}>→</span><span>{dest}</span>

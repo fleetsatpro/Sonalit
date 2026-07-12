@@ -78,6 +78,8 @@ export interface ReportDetail {
     end_date: string;
     timezone: string;
     seal_count_per_truck: number;
+    client_name?: string | null;
+    client_company?: string | null;
   };
   report_date: string;
   daily_report: DailyReportMeta | null;
@@ -356,6 +358,11 @@ export default function ReportDoc({
           <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: '#6b7280', marginTop: 4 }}>
             {detail.convoy.name} · {detail.report_date}
           </div>
+          {detail.convoy.client_name && (
+            <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#d97706', marginTop: 2 }}>
+              Client: {detail.convoy.client_name}
+            </div>
+          )}
         </div>
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontFamily: 'Fraunces, serif', fontWeight: 900, fontSize: 28, color: '#d97706' }}>
@@ -396,6 +403,7 @@ export default function ReportDoc({
       <Section label="A — Convoy Details">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12 }}>
           {[
+            { label: 'Client', value: detail.convoy.client_name || '—' },
             { label: 'Status', value: detail.convoy.status.toUpperCase() },
             { label: 'Start Date', value: detail.convoy.start_date },
             { label: 'End Date', value: detail.convoy.end_date },
