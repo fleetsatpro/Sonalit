@@ -200,6 +200,9 @@ catch (e) { logger.warn("Guardian CFO route failed: " + e.message); }
 try { app.use("/api/v1/guardian/convoy", require("./routes/guardianConvoy")); logger.info("Route loaded: /api/v1/guardian/convoy"); }
 catch (err) { logger.error("Failed to load route /api/v1/guardian/convoy: " + err.message); }
 
+try { app.use("/api/v1/telemetry", require("./routes/telemetry")); logger.info("Route loaded: /api/v1/telemetry (legacy Guardian sync compat)"); }
+catch (e) { logger.warn("Telemetry compat route failed: " + e.message); }
+
 try { app.use("/api/v1/guardian/convoy", require("./routes/guardianDayPlan")); logger.info("Route loaded: /api/v1/guardian/convoy (day plans)"); }
 catch (err) { logger.error("Failed to load route guardianDayPlan: " + err.message); }
 

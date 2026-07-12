@@ -2281,82 +2281,94 @@ router.get('/apk/download', (req, res) => {
  * Body: { points: [{lat, lng, altitude, heading, speed, accuracy, timestamp}] }
  * Max points controlled by guardian_config.batch_location_max_points (default 500).
  */
+// Shared by /location/batch and the legacy /api/v1/telemetry/batch alias
+// (older shipped Guardian app builds call that path with a differently
+// shaped body — see routes/telemetry.js). Both normalize to this same
+// {lat, lng, altitude, heading, speed, accuracy, timestamp} point shape
+// before calling in.
+async function processLocationBatch(deviceId, points) {
+  const cfgRow = await query(
+    `SELECT value_int FROM guardian_config WHERE key = 'batch_location_max_points'`
+  );
+  const maxPoints = cfgRow.rows[0]?.value_int ?? 500;
+  if (points.length > maxPoints) {
+    const err = new Error(`Too many points. Max allowed: ${maxPoints}`);
+    err.statusCode = 400;
+    throw err;
+  }
+
+  let accepted = 0;
+  let lastLat = null;
+  let lastLng = null;
+  let lastSpeed = null;
+
+  // Bulk insert using unnest for efficiency
+  const lats      = [];
+  const lngs      = [];
+  const alts      = [];
+  const headings  = [];
+  const speeds    = [];
+  const accuracies= [];
+  const timestamps= [];
+
+  for (const pt of points) {
+    if (pt.lat == null || pt.lng == null) continue;
+    lats.push(pt.lat);
+    lngs.push(pt.lng);
+    alts.push(pt.altitude ?? null);
+    headings.push(pt.heading ?? null);
+    speeds.push(pt.speed ?? null);
+    accuracies.push(pt.accuracy ?? null);
+    timestamps.push(pt.timestamp || null);
+    lastLat = pt.lat;
+    lastLng = pt.lng;
+    lastSpeed = pt.speed ?? null;
+    accepted++;
+  }
+
+  if (accepted === 0) {
+    const err = new Error('No valid points (lat/lng required)');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  await query(
+    `INSERT INTO device_locations (device_id, lat, lng, altitude, heading, speed, accuracy, timestamp)
+     SELECT $1, unnest($2::decimal[]), unnest($3::decimal[]),
+            unnest($4::decimal[]), unnest($5::decimal[]),
+            unnest($6::decimal[]), unnest($7::decimal[]),
+            unnest($8::timestamptz[])`,
+    [deviceId, lats, lngs, alts, headings, speeds, accuracies, timestamps]
+  );
+
+  // Update last known position to the last point in the batch
+  if (lastLat != null) {
+    await query(
+      `UPDATE guardian_devices
+       SET last_lat = $2, last_lng = $3, last_speed = $4, last_seen = NOW(), updated_at = NOW()
+       WHERE id = $1`,
+      [deviceId, lastLat, lastLng, lastSpeed]
+    );
+  }
+
+  logger.info(`Batch location: device=${deviceId} accepted=${accepted}/${points.length}`);
+  return { accepted, total: points.length };
+}
+
 router.post('/location/batch', deviceAuth, async (req, res, next) => {
   try {
     const { points } = req.body;
     if (!Array.isArray(points) || points.length === 0) {
       return res.status(400).json({ error: 'points must be a non-empty array' });
     }
-
-    // Enforce max points from config
-    const cfgRow = await query(
-      `SELECT value_int FROM guardian_config WHERE key = 'batch_location_max_points'`
-    );
-    const maxPoints = cfgRow.rows[0]?.value_int ?? 500;
-    if (points.length > maxPoints) {
-      return res.status(400).json({
-        error: `Too many points. Max allowed: ${maxPoints}`,
-      });
-    }
-
-    const deviceId = req.device.id;
-    let accepted = 0;
-    let lastLat = null;
-    let lastLng = null;
-    let lastSpeed = null;
-
-    // Bulk insert using unnest for efficiency
-    const lats      = [];
-    const lngs      = [];
-    const alts      = [];
-    const headings  = [];
-    const speeds    = [];
-    const accuracies= [];
-    const timestamps= [];
-
-    for (const pt of points) {
-      if (pt.lat == null || pt.lng == null) continue;
-      lats.push(pt.lat);
-      lngs.push(pt.lng);
-      alts.push(pt.altitude ?? null);
-      headings.push(pt.heading ?? null);
-      speeds.push(pt.speed ?? null);
-      accuracies.push(pt.accuracy ?? null);
-      timestamps.push(pt.timestamp || null);
-      lastLat = pt.lat;
-      lastLng = pt.lng;
-      lastSpeed = pt.speed ?? null;
-      accepted++;
-    }
-
-    if (accepted === 0) {
-      return res.status(400).json({ error: 'No valid points (lat/lng required)' });
-    }
-
-    await query(
-      `INSERT INTO device_locations (device_id, lat, lng, altitude, heading, speed, accuracy, timestamp)
-       SELECT $1, unnest($2::decimal[]), unnest($3::decimal[]),
-              unnest($4::decimal[]), unnest($5::decimal[]),
-              unnest($6::decimal[]), unnest($7::decimal[]),
-              unnest($8::timestamptz[])`,
-      [deviceId, lats, lngs, alts, headings, speeds, accuracies, timestamps]
-    );
-
-    // Update last known position to the last point in the batch
-    if (lastLat != null) {
-      await query(
-        `UPDATE guardian_devices
-         SET last_lat = $2, last_lng = $3, last_speed = $4, last_seen = NOW(), updated_at = NOW()
-         WHERE id = $1`,
-        [deviceId, lastLat, lastLng, lastSpeed]
-      );
-    }
-
-    logger.info(`Batch location: device=${deviceId} accepted=${accepted}/${points.length}`);
-    res.json({ accepted, total: points.length });
+    const result = await processLocationBatch(req.device.id, points);
+    res.json(result);
   } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
     next(err);
   }
 });
 
 module.exports = router;
+module.exports.deviceAuth = deviceAuth;
+module.exports.processLocationBatch = processLocationBatch;

@@ -23,9 +23,18 @@ data class HeartbeatResponse(val commands: List<Map<String, Any>>)
 data class PanicRequest(val device_id: String, val mode: String, val lat: Double, @Json(name = "lng") val lon: Double,
     val event_uuid: String? = null, val driver_id: String? = null, val note: String? = null)
 data class PanicResponse(val event_id: String, val status: String)
-data class GpsFixDto(val lat: Double, val lon: Double, val speed_kmh: Float,
-    val heading: Float, val accuracy_m: Float, val ts: Long)
-data class TelemetryBatch(val device_id: String, val fixes: List<GpsFixDto>)
+// Backend POST /guardian/location/batch reads req.body.points[].lng, not "lon"
+// (see backend/src/routes/guardian.js processLocationBatch) — same lon/lng
+// mismatch already fixed on PanicRequest above, mapped the same way here.
+data class LocationPoint(
+    val lat: Double,
+    @Json(name = "lng") val lon: Double,
+    val heading: Float? = null,
+    val speed: Float? = null,
+    @Json(name = "accuracy") val accuracyM: Float? = null,
+    val timestamp: String,
+)
+data class LocationBatchRequest(val points: List<LocationPoint>)
 
 // ── CFO API ───────────────────────────────────────────────────────────────────
 
@@ -140,8 +149,11 @@ interface GuardianApi {
     @POST("guardian/ack-command")
     suspend fun ackCommand(@Body body: Map<String, String>): Map<String, String>
 
-    @POST("telemetry/batch")
-    suspend fun telemetryBatch(@Body batch: TelemetryBatch): Map<String, Any>
+    // Was "telemetry/batch" — a path no backend route ever matched, so every
+    // background GPS sync 404'd and field officer positions never reached
+    // the server. guardian/location/batch is the real, working endpoint.
+    @POST("guardian/location/batch")
+    suspend fun locationBatch(@Body batch: LocationBatchRequest): Map<String, Any>
 
     // CFO endpoints — all require X-Device-Token header
     @POST("guardian/cfo/login")

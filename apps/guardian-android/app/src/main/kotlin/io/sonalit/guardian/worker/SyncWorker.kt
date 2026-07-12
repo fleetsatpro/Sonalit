@@ -7,8 +7,9 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import io.sonalit.guardian.data.local.AppDatabase
 import io.sonalit.guardian.data.remote.GuardianApi
-import io.sonalit.guardian.data.remote.TelemetryBatch
-import io.sonalit.guardian.data.remote.GpsFixDto
+import io.sonalit.guardian.data.remote.LocationBatchRequest
+import io.sonalit.guardian.data.remote.LocationPoint
+import java.time.Instant
 
 @HiltWorker
 class SyncWorker @AssistedInject constructor(
@@ -20,14 +21,21 @@ class SyncWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         return try {
-            val deviceId = inputData.getString("device_id") ?: return Result.failure()
             val fixes = db.gpsFixDao().getUnsynced(limit = 50)
             if (fixes.isEmpty()) return Result.success()
-            val batch = TelemetryBatch(
-                device_id = deviceId,
-                fixes = fixes.map { GpsFixDto(lat = it.lat, lon = it.lon, speed_kmh = it.speed * 3.6f, heading = it.heading, accuracy_m = it.accuracy, ts = it.ts) },
+            val batch = LocationBatchRequest(
+                points = fixes.map {
+                    LocationPoint(
+                        lat = it.lat,
+                        lon = it.lon,
+                        heading = it.heading,
+                        speed = it.speed * 3.6f,
+                        accuracyM = it.accuracy,
+                        timestamp = Instant.ofEpochMilli(it.ts).toString(),
+                    )
+                },
             )
-            api.telemetryBatch(batch)
+            api.locationBatch(batch)
             db.gpsFixDao().markSynced(fixes.map { it.id })
             Result.success()
         } catch (e: Exception) {

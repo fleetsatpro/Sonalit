@@ -1928,6 +1928,16 @@
         }
       }
     },
+    "/api/v1/telemetry/batch": {
+      "post": {
+        "operationId": "post_api_v1_telemetry_batch",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/convoy/day-plan/{convoy_id}": {
       "get": {
         "operationId": "get_api_v1_guardian_convoy_day_plan_convoy_id",

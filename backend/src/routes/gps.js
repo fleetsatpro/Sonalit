@@ -63,6 +63,10 @@ router.get('/track', authenticate, attachOrgDb, asyncHandler(async (req, res) =>
      UNION ALL
 
      -- Guardian handheld devices (IoT path — secondary source)
+     -- guardian_devices has no heading column of its own (only last_lat/lng/
+     -- speed/seen), so pull the most recent heading from the raw fix history
+     -- device_locations instead — that's what makes a moving field officer's
+     -- marker able to point in their direction of travel on the live map.
      SELECT
        gd.id::text                        AS device_id,
        CASE WHEN gd.assignment_type = 'vehicle'
@@ -71,9 +75,14 @@ router.get('/track', authenticate, attachOrgDb, asyncHandler(async (req, res) =>
        gd.last_lat                        AS lat,
        gd.last_lng                        AS lng,
        gd.last_speed                      AS speed,
-       NULL::numeric                      AS heading,
+       dl.heading                         AS heading,
        gd.last_seen                       AS timestamp
      FROM guardian_devices gd
+     LEFT JOIN LATERAL (
+       SELECT heading FROM device_locations
+       WHERE device_id = gd.id
+       ORDER BY timestamp DESC LIMIT 1
+     ) dl ON true
      WHERE gd.last_lat IS NOT NULL
        AND gd.last_lng IS NOT NULL
        AND gd.deleted_at IS NULL
