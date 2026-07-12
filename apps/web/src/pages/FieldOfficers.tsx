@@ -25,6 +25,20 @@ interface FieldOfficer {
   shift_start?: string; last_seen_at?: string; last_gps_at?: string;
   device_model?: string; device_imei?: string; app_version?: string;
   android_version?: string; knox_version?: string;
+  // The actual source the Live Fleet GPS map reads (guardian_devices.last_*,
+  // written by heartbeat/location-batch syncs) — distinct from gps_lat/gps_lng
+  // above, which nothing in production currently writes to. An officer only
+  // appears on the live map once last_lat/last_lng are populated.
+  last_lat?: number; last_lng?: number; last_speed?: number; last_seen?: string;
+}
+
+// Prefer the field that actually feeds the Live Fleet GPS map; fall back to
+// the legacy telemetry columns in case some device does populate those.
+function officerFix(o: FieldOfficer) {
+  const lat = o.last_lat ?? o.gps_lat;
+  const lng = o.last_lng ?? o.gps_lng;
+  const at = o.last_seen ?? o.last_gps_at ?? o.last_seen_at;
+  return { lat, lng, at, onMap: lat != null && lng != null };
 }
 
 interface ActivityEvent { id?: string; type?: string; event?: string; created_at?: string; ts?: string; }
@@ -180,13 +194,14 @@ function SosStrip({ officers }: { officers: FieldOfficer[] }) {
   const sos = officers.filter(o => o.status === 'sos');
   if (!sos.length) return null;
   const top = sos[0]!;
+  const fix = officerFix(top);
   return (
     <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 6, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
       <div style={{ width: 8, height: 8, borderRadius: '50%', background: C.red, animation: 'sosPulse 1s infinite', flexShrink: 0 }} />
       <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, fontWeight: 700, color: C.red, letterSpacing: '0.1em' }}>
         SOS — {top.name} · {top.badge_number || top.badge || '—'}
       </span>
-      {top.gps_lat != null && <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: C.mid }}>{Number(top.gps_lat).toFixed(4)}, {Number(top.gps_lng).toFixed(4)}</span>}
+      {fix.lat != null && <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: C.mid }}>{Number(fix.lat).toFixed(4)}, {Number(fix.lng).toFixed(4)}</span>}
       {top.battery_pct != null && <span style={{ color: C.amber, fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }}>BAT {top.battery_pct}%</span>}
       <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
         <button onClick={() => top.phone && (window.location.href = `tel:${top.phone}`)}
@@ -348,7 +363,7 @@ export default function FieldOfficers() {
             <div style={{ textAlign: 'center' }}>
               <MapPin size={18} style={{ color: C.gold, marginBottom: 4 }} />
               <div style={{ fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700, fontSize: 11, color: C.gold, letterSpacing: '0.1em' }}>GPS MAP</div>
-              <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: C.sub, marginTop: 2 }}>{officers.filter(o => o.gps_lat).length} officers with GPS fix</div>
+              <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: C.sub, marginTop: 2 }}>{officers.filter(o => officerFix(o).onMap).length} of {officers.length} on Live Fleet GPS</div>
             </div>
           </div>
 
@@ -379,6 +394,7 @@ export default function FieldOfficers() {
                 <tbody>
                   {filtered.map(o => {
                     const exp = expandedId === o.id;
+                    const fix = officerFix(o);
                     return (
                       <>
                         <tr key={o.id} style={{ borderBottom: `1px solid ${C.border}`, background: exp ? C.panel : 'transparent', cursor: 'pointer' }}
@@ -391,9 +407,15 @@ export default function FieldOfficers() {
                           <td style={{ padding: '8px 10px' }}><StatusPill status={o.status} /></td>
                           <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: C.mid }}>{o.assigned_zone || o.zone || '—'}</td>
                           <td style={{ padding: '8px 10px' }}>
-                            {o.gps_lat != null
-                              ? <><div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: C.txt }}>{Number(o.gps_lat).toFixed(4)}, {Number(o.gps_lng).toFixed(4)}</div><div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: C.sub }}>{fmtRel(o.last_gps_at || o.last_seen_at)}</div></>
-                              : <span style={{ color: C.sub, fontSize: 10 }}>—</span>}
+                            {fix.onMap
+                              ? <>
+                                  <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: C.txt }}>{Number(fix.lat).toFixed(4)}, {Number(fix.lng).toFixed(4)}</div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}>
+                                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: C.sub }}>{fmtRel(fix.at)}</span>
+                                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 8, fontWeight: 700, color: C.green, letterSpacing: '0.05em' }}>ON MAP</span>
+                                  </div>
+                                </>
+                              : <span style={{ color: C.sub, fontSize: 9, fontFamily: 'JetBrains Mono, monospace' }} title="No successful GPS sync yet — won't appear on Live Fleet GPS until the device reports a fix">NO FIX YET</span>}
                           </td>
                           <td style={{ padding: '8px 10px' }}><HealthBars battery={o.battery_pct} signal={o.signal_pct} gpsLocked={o.gps_locked} /></td>
                           <td style={{ padding: '8px 10px', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, fontWeight: 700, color: C.blue }}>{o.missions_total ?? 0}</td>

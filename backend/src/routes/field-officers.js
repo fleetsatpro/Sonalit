@@ -10,8 +10,19 @@ router.use(authenticate);
 router.get('/', async (req, res, next) => {
   try {
     const orgId = req.user?.org_id ?? null;
+    // Was a bare `SELECT * FROM field_officers` with no guardian_devices join,
+    // so gps_lat/battery_pct/last_seen etc were undefined for every officer in
+    // this list — only GET /:id ever joined guardian_devices. That silently
+    // broke the "does this officer have a live GPS fix" column for the whole
+    // table, not just one device.
     const { rows } = await query(
-      `SELECT * FROM field_officers WHERE ($1::uuid IS NULL OR org_id = $1) ORDER BY name`,
+      `SELECT fo.*,
+              gd.battery_pct, gd.signal_pct, gd.gps_locked,
+              gd.last_lat, gd.last_lng, gd.last_speed, gd.last_seen
+       FROM field_officers fo
+       LEFT JOIN guardian_devices gd ON gd.id = fo.device_id
+       WHERE ($1::uuid IS NULL OR fo.org_id = $1)
+       ORDER BY fo.name`,
       [orgId],
     );
     res.json({ data: rows });
@@ -95,6 +106,7 @@ router.get('/:id', async (req, res, next) => {
         `SELECT fo.*,
            gd.battery_pct, gd.signal_pct, gd.gps_locked, gd.gps_lat, gd.gps_lng, gd.telemetry_at,
            gd.app_version, gd.active_session_id,
+           gd.last_lat, gd.last_lng, gd.last_speed, gd.last_seen,
            c.reference AS convoy_reference
          FROM field_officers fo
          LEFT JOIN guardian_devices gd ON gd.id = fo.device_id
