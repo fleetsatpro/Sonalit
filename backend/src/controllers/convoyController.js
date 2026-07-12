@@ -61,7 +61,9 @@ const getConvoys = asyncHandler(async (req, res) => {
             u.name AS created_by_name,
             cl.name AS client_name,
             cl.company AS client_company,
-            COUNT(DISTINCT ca.vehicle_id) AS vehicle_count
+            COUNT(DISTINCT ca.vehicle_id) AS vehicle_count,
+            (SELECT COUNT(*) FROM alerts a WHERE a.convoy_id = c.id AND a.resolved_at IS NULL) AS open_alert_count,
+            (SELECT COUNT(*) FROM incidents i WHERE i.convoy_id = c.id AND i.status NOT IN ('resolved','closed')) AS open_incident_count
      FROM convoys c
      LEFT JOIN users u ON u.id = c.created_by
      LEFT JOIN cargo_clients cl ON cl.id = c.client_id
@@ -78,7 +80,9 @@ const getConvoys = asyncHandler(async (req, res) => {
 
 const getConvoy = asyncHandler(async (req, res) => {
   const result = await query(
-    `SELECT c.*, u.name AS created_by_name, cl.name AS client_name, cl.company AS client_company
+    `SELECT c.*, u.name AS created_by_name, cl.name AS client_name, cl.company AS client_company,
+            (SELECT COUNT(*) FROM alerts a WHERE a.convoy_id = c.id AND a.resolved_at IS NULL) AS open_alert_count,
+            (SELECT COUNT(*) FROM incidents i WHERE i.convoy_id = c.id AND i.status NOT IN ('resolved','closed')) AS open_incident_count
      FROM convoys c
      LEFT JOIN users u ON u.id = c.created_by
      LEFT JOIN cargo_clients cl ON cl.id = c.client_id

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import {
   Search, Truck, Radio, Flag, Pencil, Trash2, MapPin, Plus, X, Zap, Building2, SlidersHorizontal, ChevronDown,
+  Download,
 } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { subscribe } from '../lib/centrifuge.js'
@@ -22,6 +23,8 @@ interface ConvoyRow {
   vehicle_count?: number; created_by_name?: string | null
   timezone?: string | null
   client_id?: string | null; client_name?: string | null; client_company?: string | null
+  open_alert_count?: number | string | null; open_incident_count?: number | string | null
+  seal_intact?: boolean | null
 }
 interface ConvoyDetail extends ConvoyRow {
   trucks?: Array<{ id: string; position: number; driver_name: string; driver_phone?: string | null }>
@@ -93,6 +96,35 @@ function ClientBadge({ name }: { name?: string | null | undefined }) {
   )
 }
 
+// Live health signal — computed from real open alerts/incidents/seal status
+// (not the operator-set `priority` field, which is a plan-time classification).
+type HealthLevel = 'critical' | 'elevated' | 'clear'
+const HEALTH_COLOR: Record<HealthLevel, string> = { critical: '#ef4444', elevated: '#f59e0b', clear: '#22c55e' }
+
+function convoyHealth(c: ConvoyRow): { level: HealthLevel; label: string; detail: string } {
+  const alerts = Number(c.open_alert_count ?? 0) || 0
+  const incidents = Number(c.open_incident_count ?? 0) || 0
+  if (incidents > 0 || c.seal_intact === false) {
+    const parts: string[] = []
+    if (incidents > 0) parts.push(`${incidents} open incident${incidents === 1 ? '' : 's'}`)
+    if (c.seal_intact === false) parts.push('seal breach')
+    if (alerts > 0) parts.push(`${alerts} open alert${alerts === 1 ? '' : 's'}`)
+    return { level: 'critical', label: 'CRITICAL', detail: parts.join(' · ') }
+  }
+  if (alerts > 0) return { level: 'elevated', label: 'ELEVATED', detail: `${alerts} open alert${alerts === 1 ? '' : 's'}` }
+  return { level: 'clear', label: 'CLEAR', detail: 'No open alerts or incidents' }
+}
+
+function HealthBadge({ c }: { c: ConvoyRow }) {
+  const h = convoyHealth(c)
+  return (
+    <span title={h.detail} style={{ display:'inline-flex', alignItems:'center', gap:5, fontFamily:MN, fontSize:8, letterSpacing:'.08em', color:HEALTH_COLOR[h.level] }}>
+      <span style={{ width:6, height:6, borderRadius:'50%', background:HEALTH_COLOR[h.level], boxShadow: h.level !== 'clear' ? `0 0 5px ${HEALTH_COLOR[h.level]}aa` : 'none', flexShrink:0 }} />
+      {h.label}
+    </span>
+  )
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function SBadge({ status }: { status: string }) {
@@ -139,6 +171,89 @@ function ScheduleCell({ c }: { c: ConvoyRow }) {
       <div style={{ display:'flex', alignItems:'baseline', gap:5 }}>
         <span style={{ fontFamily:MN, fontSize:7, color:'#39424c', letterSpacing:'.1em', width:26, flexShrink:0 }}>ETA</span>
         <span style={{ fontFamily:MN, fontSize:10, color:'#8a95a0' }}>{fmtTime(c.estimated_arrival ?? c.end_date)}</span>
+      </div>
+    </div>
+  )
+}
+
+// ─── Export ───────────────────────────────────────────────────────────────────
+
+function csvValue(v: unknown): string {
+  const s = v == null ? '' : String(v)
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
+function exportConvoysCsv(list: ConvoyRow[], filename: string) {
+  const headers = ['ID', 'Name', 'Status', 'Client', 'Origin', 'Destination', 'Priority', 'Vehicles', 'Departure', 'ETA', 'Open Alerts', 'Open Incidents', 'Seal Status']
+  const lines = [headers.join(',')]
+  for (const c of list) {
+    lines.push([
+      c.id, c.name, c.status, c.client_name ?? '',
+      c.route_origin ?? c.region ?? '', c.route_destination ?? '',
+      c.priority ?? '', c.vehicle_count ?? '',
+      c.departure_time ?? c.start_date ?? '', c.estimated_arrival ?? c.end_date ?? '',
+      Number(c.open_alert_count ?? 0) || 0, Number(c.open_incident_count ?? 0) || 0,
+      c.seal_intact === false ? 'compromised' : c.seal_intact === true ? 'intact' : 'unverified',
+    ].map(csvValue).join(','))
+  }
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+// ─── Bulk Broadcast ───────────────────────────────────────────────────────────
+
+function BulkBroadcastModal({ convoys, onClose }: { convoys: { id: string; name: string }[]; onClose: () => void }) {
+  const [message, setMessage] = useState('')
+  const [sending, setSending] = useState(false)
+  const [result, setResult] = useState<{ sent: number; failed: number } | null>(null)
+
+  const send = async () => {
+    if (!message.trim()) return
+    setSending(true)
+    setResult(null)
+    const outcomes = await Promise.allSettled(
+      convoys.map(c => api.post(`/convoys/${c.id}/broadcast`, { message: message.trim() }, {
+        headers: { 'X-Idempotency-Key': `bulk-${c.id}-${Date.now()}` },
+      }))
+    )
+    const sent = outcomes.filter(o => o.status === 'fulfilled').length
+    setResult({ sent, failed: outcomes.length - sent })
+    setSending(false)
+  }
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.6)', zIndex:60, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background:'#111519', border:'1px solid rgba(255,255,255,.1)', borderRadius:6, width:420, maxWidth:'90vw', padding:20 }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+          <span style={{ fontFamily:MN, fontSize:11, letterSpacing:'.12em', color:'#dde3ea', display:'flex', alignItems:'center', gap:7 }}>
+            <Radio size={13} color="#f97316" /> BULK BROADCAST
+          </span>
+          <button onClick={onClose} style={{ background:'none', border:'none', color:'#4e5a65', cursor:'pointer' }}><X size={14} /></button>
+        </div>
+        <div style={{ fontFamily:MN, fontSize:9, color:'#4e5a65', marginBottom:10, lineHeight:1.5 }}>
+          Sending to {convoys.length} active convoy{convoys.length === 1 ? '' : 's'}: {convoys.map(c => c.name).join(', ')}
+        </div>
+        <textarea value={message} onChange={e => setMessage(e.target.value)} rows={4} placeholder="Message to all drivers…"
+          style={{ width:'100%', background:'#09101c', border:'1px solid rgba(255,255,255,.08)', borderRadius:3, color:'#dde3ea', fontFamily:SANS, fontSize:12, padding:8, resize:'none', outline:'none', boxSizing:'border-box' }} />
+        {result && (
+          <div style={{ marginTop:10, fontFamily:MN, fontSize:9, color: result.failed ? '#f59e0b' : '#22c55e' }}>
+            Sent to {result.sent} convoy{result.sent === 1 ? '' : 's'}{result.failed ? `, ${result.failed} failed` : ''}.
+          </div>
+        )}
+        <div style={{ display:'flex', gap:8, marginTop:14 }}>
+          <button onClick={send} disabled={sending || !message.trim() || convoys.length === 0}
+            style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontFamily:MN, fontSize:9, letterSpacing:'.1em', padding:'8px 12px', borderRadius:3, background:'#f97316', border:'1px solid #f97316', color:'#000', fontWeight:700, cursor:'pointer', opacity: sending || !message.trim() || convoys.length === 0 ? .5 : 1 }}>
+            <Radio size={11} /> {sending ? 'SENDING…' : 'SEND TO ALL'}
+          </button>
+          <button onClick={onClose} style={{ padding:'8px 12px', borderRadius:3, background:'none', border:'1px solid rgba(255,255,255,.08)', color:'#8a95a0', fontFamily:MN, fontSize:9, cursor:'pointer' }}>CLOSE</button>
+        </div>
       </div>
     </div>
   )
@@ -220,6 +335,7 @@ function DetailPanel({ id, onClose, onBroadcast, onEnd }: { id: string; onClose:
       {/* stats */}
       <div style={{ padding:'12px 18px', borderBottom:'1px solid rgba(255,255,255,.06)', flexShrink:0 }}>
         {[
+          ['Health', c ? <HealthBadge key="h" c={c} /> : '—'],
           ['Route', c ? `${origin} → ${dest}` : '—'],
           ['Progress', c ? `${pct}%` : '—'],
           ['Vehicles', c?.vehicle_count ?? (c?.trucks?.length ?? c?.vehicles?.length ?? '—')],
@@ -293,6 +409,8 @@ export default function Convoys() {
   const [search, setSearch] = useState('')
   const [selId, setSelId] = useState<string | null>(null)
   const [broadcastConvoy, setBroadcastConvoy] = useState<{ id: string; name: string } | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkBroadcastOpen, setBulkBroadcastOpen] = useState(false)
 
   const { data, isLoading, isError } = useQuery<{ data: ConvoyRow[]; pagination?: unknown }>({
     queryKey: ['convoys'],
@@ -309,6 +427,17 @@ export default function Convoys() {
       }
     })
   }, [orgId, qc])
+
+  // Prune selection when convoys drop out of the fetched set (deleted, or no
+  // longer within the org's list) rather than silently keeping stale ids.
+  useEffect(() => {
+    if (!data) return
+    const validIds = new Set(data.data.map(c => c.id))
+    setSelectedIds(prev => {
+      const next = new Set([...prev].filter(id => validIds.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [data])
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/convoys/${id}`),
@@ -371,6 +500,21 @@ export default function Convoys() {
 
   const filtersActive = filter !== 'all' || clientFilter !== 'all' || search !== ''
   const clearFilters = () => { setFilter('all'); setClientFilter('all'); setSearch('') }
+
+  const selectedConvoys = useMemo(() => (data?.data ?? []).filter(c => selectedIds.has(c.id)), [data, selectedIds])
+  const selectedActiveConvoys = useMemo(() => selectedConvoys.filter(c => c.status === 'active'), [selectedConvoys])
+  const allVisibleSelected = rows.length > 0 && rows.every(c => selectedIds.has(c.id))
+  const toggleRow = (id: string) => setSelectedIds(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
+  const toggleAllVisible = () => setSelectedIds(prev => {
+    const next = new Set(prev)
+    if (allVisibleSelected) rows.forEach(c => next.delete(c.id))
+    else rows.forEach(c => next.add(c.id))
+    return next
+  })
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', position:'relative', overflow:'hidden' }}>
@@ -473,10 +617,38 @@ export default function Convoys() {
           </button>
         )}
 
+        <button onClick={() => exportConvoysCsv(rows, `convoys-${new Date().toISOString().slice(0,10)}.csv`)}
+          disabled={rows.length === 0}
+          className="cnv-clear" style={{ display:'flex', alignItems:'center', gap:5, fontFamily:MN, fontSize:8, letterSpacing:'.1em', color:'#4e5a65', background:'none', border:'1px solid rgba(255,255,255,.08)', borderRadius:3, padding:'5px 8px', cursor: rows.length === 0 ? 'default' : 'pointer', transition:'all .12s', flexShrink:0, opacity: rows.length === 0 ? .4 : 1 }}>
+          <Download size={10} /> EXPORT CSV
+        </button>
+
         <span style={{ display:'flex', alignItems:'center', gap:5, fontFamily:MN, fontSize:9, color:'#4e5a65', marginLeft:'auto', whiteSpace:'nowrap' }}>
           <SlidersHorizontal size={10} /> {rows.length} convoy{rows.length !== 1 ? 's' : ''}
         </span>
       </div>
+
+      {/* ── Bulk action bar ── */}
+      {selectedIds.size > 0 && (
+        <div style={{ display:'flex', alignItems:'center', gap:12, padding:'8px 24px', background:'rgba(249,115,22,.06)', borderBottom:'1px solid rgba(249,115,22,.2)', flexShrink:0 }}>
+          <span style={{ fontFamily:MN, fontSize:9, letterSpacing:'.1em', color:'#f97316', fontWeight:700 }}>
+            {selectedIds.size} SELECTED
+          </span>
+          <button onClick={() => setBulkBroadcastOpen(true)} disabled={selectedActiveConvoys.length === 0}
+            title={selectedActiveConvoys.length === 0 ? 'No active convoys in selection' : undefined}
+            style={{ display:'flex', alignItems:'center', gap:5, fontFamily:MN, fontSize:8, letterSpacing:'.1em', padding:'5px 9px', borderRadius:3, background:'none', border:'1px solid rgba(249,115,22,.35)', color: selectedActiveConvoys.length === 0 ? '#4e5a65' : '#f97316', cursor: selectedActiveConvoys.length === 0 ? 'default' : 'pointer', opacity: selectedActiveConvoys.length === 0 ? .5 : 1 }}>
+            <Radio size={10} /> BROADCAST ({selectedActiveConvoys.length})
+          </button>
+          <button onClick={() => exportConvoysCsv(selectedConvoys, `convoys-selected-${new Date().toISOString().slice(0,10)}.csv`)}
+            style={{ display:'flex', alignItems:'center', gap:5, fontFamily:MN, fontSize:8, letterSpacing:'.1em', padding:'5px 9px', borderRadius:3, background:'none', border:'1px solid rgba(255,255,255,.1)', color:'#8a95a0', cursor:'pointer' }}>
+            <Download size={10} /> EXPORT
+          </button>
+          <button onClick={() => setSelectedIds(new Set())}
+            style={{ display:'flex', alignItems:'center', gap:5, fontFamily:MN, fontSize:8, letterSpacing:'.1em', padding:'5px 9px', borderRadius:3, background:'none', border:'1px solid rgba(255,255,255,.1)', color:'#4e5a65', cursor:'pointer', marginLeft:'auto' }}>
+            <X size={10} /> CLEAR SELECTION
+          </button>
+        </div>
+      )}
 
       {/* ── Table + Panel ── */}
       <div style={{ flex:1, overflow:'hidden', position:'relative', display:'flex' }}>
@@ -487,14 +659,18 @@ export default function Convoys() {
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
               <thead>
                 <tr>
-                  {['CONVOY', 'STATUS', 'CLIENT', 'ROUTE / PROGRESS', 'RISK', 'VEHICLES', 'SCHEDULE', ''].map((h, i) => (
-                    <th key={i} style={{ fontFamily:MN, fontSize:7, letterSpacing:'.2em', color:'#4e5a65', padding:'9px 14px', textAlign:'left', background:'#0d1014', borderBottom:'1px solid rgba(255,255,255,.08)', position:'sticky', top:0, zIndex:2, whiteSpace:'nowrap', paddingLeft: i===0?24:14 }}>{h}</th>
+                  <th style={{ padding:'9px 0 9px 24px', background:'#0d1014', borderBottom:'1px solid rgba(255,255,255,.08)', position:'sticky', top:0, zIndex:2, width:32 }}>
+                    <input type="checkbox" checked={allVisibleSelected} onChange={toggleAllVisible}
+                      style={{ accentColor:'#f97316', cursor:'pointer' }} />
+                  </th>
+                  {['CONVOY', 'STATUS', 'CLIENT', 'ROUTE / PROGRESS', 'PRIORITY / HEALTH', 'VEHICLES', 'SCHEDULE', ''].map((h, i) => (
+                    <th key={i} style={{ fontFamily:MN, fontSize:7, letterSpacing:'.2em', color:'#4e5a65', padding:'9px 14px', textAlign:'left', background:'#0d1014', borderBottom:'1px solid rgba(255,255,255,.08)', position:'sticky', top:0, zIndex:2, whiteSpace:'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 && (
-                  <tr><td colSpan={8} style={{ padding:'60px 24px', textAlign:'center', fontFamily:MN, fontSize:10, color:'#4e5a65', letterSpacing:'.1em' }}>
+                  <tr><td colSpan={9} style={{ padding:'60px 24px', textAlign:'center', fontFamily:MN, fontSize:10, color:'#4e5a65', letterSpacing:'.1em' }}>
                     {filtersActive ? 'NO CONVOYS MATCH YOUR FILTERS' : 'NO CONVOYS YET'}
                   </td></tr>
                 )}
@@ -505,7 +681,11 @@ export default function Convoys() {
                     <tr key={c.id} onClick={() => setSelId(isSel ? null : c.id)} className={`cnv-tr${isSel ? ' sel-row' : ''}`}
                       style={{ borderBottom:'1px solid rgba(255,255,255,.04)', cursor:'pointer', position:'relative', animationDelay:`${idx * 20}ms` }}>
                       <div className="cnv-left-border" style={{ position:'absolute', left:0, top:0, bottom:0, width:0, background:'rgba(249,115,22,.5)', transition:'width .15s' }} />
-                      <td style={{ padding:'12px 14px', paddingLeft:24 }}>
+                      <td style={{ padding:'12px 0 12px 24px' }} onClick={e => e.stopPropagation()}>
+                        <input type="checkbox" checked={selectedIds.has(c.id)} onChange={() => toggleRow(c.id)}
+                          style={{ accentColor:'#f97316', cursor:'pointer' }} />
+                      </td>
+                      <td style={{ padding:'12px 14px' }}>
                         <div style={{ fontFamily:MN, fontSize:9, color:'#4e5a65', marginBottom:1 }}>{c.id.slice(0,8).toUpperCase()}</div>
                         <div style={{ fontFamily:SANS, fontWeight:500, fontSize:13, color:'#dde3ea' }}>{c.name}</div>
                       </td>
@@ -513,7 +693,10 @@ export default function Convoys() {
                       <td style={{ padding:'12px 14px' }}><ClientBadge name={c.client_name} /></td>
                       <td style={{ padding:'12px 14px' }}><RouteProgressCell c={c} /></td>
                       <td style={{ padding:'12px 14px' }}>
-                        <span style={{ fontFamily:MN, fontSize:9, fontWeight:700, letterSpacing:'.08em', color:riskColor(risk) }}>{risk.toUpperCase()}</span>
+                        <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                          <span style={{ fontFamily:MN, fontSize:9, fontWeight:700, letterSpacing:'.08em', color:riskColor(risk) }}>{risk.toUpperCase()}</span>
+                          <HealthBadge c={c} />
+                        </div>
                       </td>
                       <td style={{ padding:'12px 14px' }}>
                         <div style={{ display:'flex', alignItems:'center', gap:5, fontFamily:MN, fontSize:11, color:'#8a95a0' }}>
@@ -580,6 +763,13 @@ export default function Convoys() {
 
       {broadcastConvoy && (
         <BroadcastPanel convoyId={broadcastConvoy.id} convoyName={broadcastConvoy.name} onClose={() => setBroadcastConvoy(null)} />
+      )}
+
+      {bulkBroadcastOpen && (
+        <BulkBroadcastModal
+          convoys={selectedActiveConvoys.map(c => ({ id: c.id, name: c.name }))}
+          onClose={() => setBulkBroadcastOpen(false)}
+        />
       )}
     </div>
   )
