@@ -22,6 +22,15 @@ function TruckIcon({ color }: { color: string }) {
   )
 }
 
+function OfficerIcon({ color }: { color: string }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+      <circle cx="12" cy="7.5" r="4.2"/>
+      <path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>
+    </svg>
+  )
+}
+
 function VehicleRow({ v, selected, onSelect }: { v: LiveVehicle; selected: boolean; onSelect: () => void }) {
   const color = STATUS_COLOR[v.status]
   const spd = Math.round(v.speed_kmh)
@@ -44,12 +53,12 @@ function VehicleRow({ v, selected, onSelect }: { v: LiveVehicle; selected: boole
 
       {/* icon */}
       <div style={{
-        width: 34, height: 34, borderRadius: 7,
+        width: 34, height: 34, borderRadius: v.kind === 'guardian' ? 17 : 7,
         background: v.status === 'move' ? 'rgba(22,199,132,.1)' : v.status === 'idle' ? 'rgba(245,158,11,.08)' : v.status === 'sos' ? 'rgba(239,68,68,.12)' : 'rgba(71,85,105,.1)',
         border: `1.5px solid ${color}33`,
         display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
       }}>
-        <TruckIcon color={color} />
+        {v.kind === 'guardian' ? <OfficerIcon color={color} /> : <TruckIcon color={color} />}
       </div>
 
       {/* info */}
@@ -86,6 +95,7 @@ function ConvoySection({ group, selectedId, onSelect }: {
   const [open, setOpen] = useState(true)
   const hasSos = group.vehicles.some(v => v.status === 'sos')
   const movingCount = group.vehicles.filter(v => v.status === 'move').length
+  const isOfficerGroup = group.id === '__guardian'
 
   return (
     <div style={{ borderBottom: '1px solid rgba(255,255,255,.06)' }}>
@@ -96,8 +106,8 @@ function ConvoySection({ group, selectedId, onSelect }: {
         transition: 'background .1s',
       }}>
         <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 2, background: hasSos ? '#ef4444' : '#e8a830' }} />
-        <div style={{ width: 28, height: 28, borderRadius: 6, background: 'rgba(232,168,48,.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <TruckIcon color="#e8a830" />
+        <div style={{ width: 28, height: 28, borderRadius: isOfficerGroup ? 14 : 6, background: 'rgba(232,168,48,.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          {isOfficerGroup ? <OfficerIcon color="#e8a830" /> : <TruckIcon color="#e8a830" />}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 14, fontWeight: 600, letterSpacing: '.02em', color: '#dfe0db', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -169,7 +179,7 @@ export default function VehiclePanel({ groups, selectedId, collapsed, onToggleCo
       {/* search */}
       <div style={{ margin: '8px 12px 6px', display: 'flex', alignItems: 'center', gap: 7, background: '#0c1020', border: '1px solid rgba(255,255,255,.06)', borderRadius: 5, padding: '0 10px', height: 28, flexShrink: 0 }}>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3e4252" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filter vehicles…" style={{ background: 'none', border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 12, color: '#dfe0db', flex: 1 }} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filter vehicles or officers…" style={{ background: 'none', border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 12, color: '#dfe0db', flex: 1 }} />
       </div>
 
       {/* list */}

@@ -78,6 +78,14 @@ export default function GPS() {
           </div>
         )}
 
+        {/* Field officers online indicator */}
+        {counts.officers > 0 && (
+          <div style={{ marginLeft: 12, display: 'flex', alignItems: 'center', gap: 6, height: 28, padding: '0 12px', background: 'rgba(232,168,48,.08)', border: '1px solid rgba(232,168,48,.3)', borderRadius: 4 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#e8a830" strokeWidth="2"><circle cx="12" cy="7.5" r="4.2"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
+            <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: '.1em', color: '#e8a830' }}>{counts.officers} OFFICER{counts.officers === 1 ? '' : 'S'} ONLINE</span>
+          </div>
+        )}
+
         {/* mobile tab toggle */}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 2, padding: '0 12px' }}>
           {(['map', 'list'] as const).map(t => (

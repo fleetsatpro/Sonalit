@@ -4,6 +4,7 @@ const { getQueues } = require('../config/queue');
 const { query } = require('../config/database');
 const { asyncHandler } = require('../middleware/error');
 const { authenticate } = require('../middleware/auth');
+const { attachOrgDb } = require('../utils/orgScopedDb');
 
 const gpsSchema = Joi.object({
   vehicle_id: Joi.string().required(),
@@ -37,7 +38,7 @@ router.post('/', asyncHandler(async (req, res) => {
 }));
 
 // GET /gps/track — current live snapshot of all device positions for the org
-router.get('/track', authenticate, asyncHandler(async (req, res) => {
+router.get('/track', authenticate, attachOrgDb, asyncHandler(async (req, res) => {
   const result = await req.db(
     `-- Vehicle positions (GPS worker writes here — primary source)
      SELECT
@@ -84,7 +85,7 @@ router.get('/track', authenticate, asyncHandler(async (req, res) => {
 }));
 
 // GET /gps?vehicle_id=&limit=  — query-param form used by the frontend
-router.get('/', authenticate, asyncHandler(async (req, res) => {
+router.get('/', authenticate, attachOrgDb, asyncHandler(async (req, res) => {
   const { vehicle_id } = req.query;
   if (!vehicle_id) return res.status(400).json({ error: 'vehicle_id query parameter is required' });
   const limit = Math.min(parseInt(req.query.limit) || 200, 500);
@@ -96,7 +97,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
 }));
 
 // GET /gps/:vehicleId  — path-param form (legacy / IoT clients)
-router.get('/:vehicleId', authenticate, asyncHandler(async (req, res) => {
+router.get('/:vehicleId', authenticate, attachOrgDb, asyncHandler(async (req, res) => {
   const result = await req.db(
     'SELECT * FROM gps_logs WHERE vehicle_id = $1 ORDER BY timestamp DESC LIMIT 200',
     [req.params.vehicleId]

@@ -100,21 +100,32 @@ const riskColorExpr: any = ['case',
   '#eab308',
 ]
 
+// Field officer (Guardian device) marker glyph — a person icon inside a
+// rounded-square badge, distinct from the plain dot used for vehicles so the
+// two are never confused at a glance on a busy map.
+const OFFICER_ICON = (color: string) =>
+  `<svg width="11" height="11" viewBox="0 0 24 24" fill="${color}" stroke="none" style="pointer-events:none">
+     <circle cx="12" cy="7.5" r="4.2"/>
+     <path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>
+   </svg>`
+
 function makeEl(v: LiveVehicle): HTMLElement {
+  const isOfficer = v.kind === 'guardian'
   const color = STATUS_COLOR[v.status]
   const spd = Math.round(v.speed_kmh)
   const reg = v.registration.length > 10 ? v.registration.slice(0, 10) : v.registration
   const label = v.status === 'sos' ? 'SOS' : v.status === 'move' ? `${spd} km/h` : v.status === 'offline' ? 'OFF' : v.status.toUpperCase().slice(0, 4)
   const pulse = (v.status === 'move' || v.status === 'idle')
-    ? `<div style="position:absolute;inset:-6px;border-radius:50%;border:1.5px solid ${color}55;animation:lf-mping 2.2s ease-out infinite;pointer-events:none"></div>` : ''
+    ? `<div style="position:absolute;inset:-6px;border-radius:${isOfficer ? '7px' : '50%'};border:1.5px solid ${color}55;animation:lf-mping 2.2s ease-out infinite;pointer-events:none"></div>` : ''
   const sos = v.status === 'sos'
-    ? `<div style="position:absolute;inset:-7px;border-radius:50%;border:2px solid ${color}88;animation:lf-sos-ring .65s ease-in-out infinite;pointer-events:none"></div>` : ''
+    ? `<div style="position:absolute;inset:-7px;border-radius:${isOfficer ? '8px' : '50%'};border:2px solid ${color}88;animation:lf-sos-ring .65s ease-in-out infinite;pointer-events:none"></div>` : ''
+  const glyph = isOfficer ? OFFICER_ICON(color) : `<div style="width:7px;height:7px;border-radius:50%;background:${color};box-shadow:0 0 5px ${color};pointer-events:none"></div>`
   const wrap = document.createElement('div')
   wrap.innerHTML = `
     <div style="display:flex;flex-direction:column;align-items:center;gap:3px;pointer-events:none">
-      <div style="position:relative;overflow:visible;width:22px;height:22px;border-radius:50%;background:rgba(5,7,13,.92);border:2px solid ${color};display:flex;align-items:center;justify-content:center;box-shadow:0 0 12px ${color}44,0 2px 8px rgba(0,0,0,.8);pointer-events:all;cursor:pointer;${v.status==='sos'?'animation:lf-sos-marker .65s ease-in-out infinite':''}">
+      <div style="position:relative;overflow:visible;width:22px;height:22px;border-radius:${isOfficer ? '6px' : '50%'};background:rgba(5,7,13,.92);border:2px solid ${color};display:flex;align-items:center;justify-content:center;box-shadow:0 0 12px ${color}44,0 2px 8px rgba(0,0,0,.8);pointer-events:all;cursor:pointer;${v.status==='sos'?'animation:lf-sos-marker .65s ease-in-out infinite':''}">
         ${pulse}${sos}
-        <div style="width:7px;height:7px;border-radius:50%;background:${color};box-shadow:0 0 5px ${color};pointer-events:none"></div>
+        ${glyph}
       </div>
       <div style="display:flex;gap:3px;align-items:center;background:rgba(5,7,13,.95);border:1px solid ${color}44;border-radius:3px;padding:1px 6px;pointer-events:none;white-space:nowrap">
         <span style="font-family:JetBrains Mono,IBM Plex Mono,monospace;font-size:9px;font-weight:700;color:#e8a830">${reg}</span>

@@ -71,18 +71,25 @@ export default function DetailCard({ vehicle: v, onClose }: Props) {
 
       {/* header */}
       <div style={{ padding: '12px 14px 10px 17px', display: 'flex', alignItems: 'flex-start', gap: 10, borderBottom: '1px solid rgba(255,255,255,.07)' }}>
-        <div style={{ width: 36, height: 36, borderRadius: 8, background: isSos ? 'rgba(239,68,68,.1)' : 'rgba(255,255,255,.04)', border: `1.5px solid ${color}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
-            <rect x="1" y="3" width="15" height="13" rx="1"/>
-            <path d="M16 8h4l3 5v3h-7V8z"/>
-            <circle cx="5.5" cy="18.5" r="2.5"/>
-            <circle cx="18.5" cy="18.5" r="2.5"/>
-          </svg>
+        <div style={{ width: 36, height: 36, borderRadius: v.kind === 'guardian' ? 18 : 8, background: isSos ? 'rgba(239,68,68,.1)' : 'rgba(255,255,255,.04)', border: `1.5px solid ${color}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          {v.kind === 'guardian' ? (
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+              <circle cx="12" cy="7.5" r="4.2"/>
+              <path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>
+            </svg>
+          ) : (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+              <rect x="1" y="3" width="15" height="13" rx="1"/>
+              <path d="M16 8h4l3 5v3h-7V8z"/>
+              <circle cx="5.5" cy="18.5" r="2.5"/>
+              <circle cx="18.5" cy="18.5" r="2.5"/>
+            </svg>
+          )}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 17, fontWeight: 700, letterSpacing: '.03em', color: '#dfe0db' }}>{v.registration}</div>
           <div style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 9, color: '#7a7e8a', marginTop: 2 }}>
-            {v.convoy_name ?? 'Standalone'}
+            {v.kind === 'guardian' ? 'Field Officer · Guardian Device' : (v.convoy_name ?? 'Standalone')}
           </div>
           <div style={{ marginTop: 4, display: 'inline-flex', fontFamily: 'IBM Plex Mono, monospace', fontSize: 9, fontWeight: 700, letterSpacing: '.08em', padding: '2px 7px', borderRadius: 3, color, background: `${color}18`, border: `1px solid ${color}44` }}>
             {STATUS_LABEL[v.status]}

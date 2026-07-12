@@ -102,13 +102,18 @@ export function useLiveFleet() {
     const now = Date.now()
     const byConvoy = new Map<string, LiveVehicle[]>()
     const standalone: LiveVehicle[] = []
-    const counts: StatusCounts = { all: 0, move: 0, idle: 0, stop: 0, sos: 0, offline: 0 }
+    const officers: LiveVehicle[] = []
+    const counts: StatusCounts = { all: 0, move: 0, idle: 0, stop: 0, sos: 0, offline: 0, officers: 0 }
+    // Keys already represented by a vehicle row below, so the guardian pass
+    // doesn't double-count a device whose ping happens to share a vehicle's key.
+    const usedKeys = new Set<string>()
 
     // Seed: start from dashboard vehicles if available, otherwise from GPS positions
     const useDashboard = (dashVehicles?.length ?? 0) > 0
 
     if (useDashboard) {
       for (const v of dashVehicles!) {
+        usedKeys.add(v.id)
         const pos = positions.get(v.id)
         const secsAgo = pos?.timestamp ? Math.floor((now - new Date(pos.timestamp).getTime()) / 1000) : 99999
         const speedKmh = pos ? (pos.speed ?? 0) : v.speed_kmh
@@ -127,6 +132,7 @@ export function useLiveFleet() {
           secondsAgo: secsAgo,
           panic_active: false,
           location_desc: '',
+          kind: 'vehicle',
         }
         counts.all++
         counts[status]++
@@ -140,6 +146,7 @@ export function useLiveFleet() {
     } else {
       // Fallback: build from GPS positions directly (like old GPS.tsx)
       for (const [key, pos] of positions) {
+        usedKeys.add(key)
         const secsAgo = pos.timestamp ? Math.floor((now - new Date(pos.timestamp).getTime()) / 1000) : 99999
         const speedKmh = pos.speed ?? 0
         const status = deriveStatus(speedKmh, secsAgo)
@@ -158,10 +165,46 @@ export function useLiveFleet() {
           secondsAgo: secsAgo,
           panic_active: false,
           location_desc: '',
+          kind: pos.vehicle_id ? 'vehicle' : 'guardian',
         }
         counts.all++
         counts[status]++
+        if (lv.kind === 'guardian') counts.officers++
         standalone.push(lv)
+      }
+    }
+
+    // Guardian (field officer) devices with no vehicle assignment are a
+    // separate position stream from /gps/track — when dashVehicles exists,
+    // the loop above never visits them since it only walks dashVehicles.
+    // Surface every one whose key wasn't already consumed by a vehicle above.
+    if (useDashboard) {
+      for (const [key, pos] of positions) {
+        if (usedKeys.has(key) || pos.vehicle_id) continue
+        usedKeys.add(key)
+        const secsAgo = pos.timestamp ? Math.floor((now - new Date(pos.timestamp).getTime()) / 1000) : 99999
+        const speedKmh = pos.speed ?? 0
+        const status = deriveStatus(speedKmh, secsAgo)
+        const lv: LiveVehicle = {
+          id: key,
+          registration: pos.name || pos.device_id.slice(0, 8),
+          convoy_id: null,
+          convoy_name: null,
+          status,
+          lat: pos.lat,
+          lng: pos.lng,
+          speed_kmh: speedKmh,
+          heading: pos.heading,
+          last_ping_at: pos.timestamp,
+          secondsAgo: secsAgo,
+          panic_active: false,
+          location_desc: '',
+          kind: 'guardian',
+        }
+        counts.all++
+        counts[status]++
+        counts.officers++
+        officers.push(lv)
       }
     }
 
@@ -183,6 +226,15 @@ export function useLiveFleet() {
         origin: null,
         destination: null,
         vehicles: standalone,
+      })
+    }
+    if (officers.length) {
+      groups.push({
+        id: '__guardian',
+        name: 'Field Officers',
+        origin: null,
+        destination: null,
+        vehicles: officers,
       })
     }
 

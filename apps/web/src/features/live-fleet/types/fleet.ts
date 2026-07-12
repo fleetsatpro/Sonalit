@@ -14,6 +14,8 @@ export interface LiveVehicle {
   secondsAgo: number
   panic_active: boolean
   location_desc: string
+  /** 'guardian' = a field officer's Guardian device, not tied to any vehicle. */
+  kind: 'vehicle' | 'guardian'
 }
 
 export interface ConvoyGroup {
@@ -31,4 +33,6 @@ export interface StatusCounts {
   stop: number
   sos: number
   offline: number
+  /** Field officers (Guardian devices) currently reporting a position, out of `all`. */
+  officers: number
 }
