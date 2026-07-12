@@ -1,6 +1,9 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
+import {
+  Search, Truck, Radio, Flag, Pencil, Trash2, MapPin, Plus, X, Zap, Building2, SlidersHorizontal, ChevronDown,
+} from 'lucide-react'
 import { api } from '../lib/api.js'
 import { subscribe } from '../lib/centrifuge.js'
 import { useAuthStore } from '../stores/auth.js'
@@ -80,11 +83,11 @@ function clientColor(name: string): string {
 }
 
 function ClientBadge({ name }: { name?: string | null | undefined }) {
-  if (!name) return <span style={{ fontFamily:MN, fontSize:9, color:'#39424c', letterSpacing:'.08em' }}>— UNASSIGNED —</span>
+  if (!name) return <span style={{ fontFamily:MN, fontSize:9, color:'#39424c', letterSpacing:'.06em' }}>UNASSIGNED</span>
   const color = clientColor(name)
   return (
-    <span style={{ display:'inline-flex', alignItems:'center', gap:5, fontFamily:SANS, fontSize:11, color:'#c3cad2', maxWidth:150 }}>
-      <span style={{ width:6, height:6, borderRadius:'50%', background:color, flexShrink:0 }} />
+    <span style={{ display:'inline-flex', alignItems:'center', gap:6, fontFamily:SANS, fontSize:12, color:'#c3cad2', maxWidth:170 }}>
+      <span style={{ width:6, height:6, borderRadius:'50%', background:color, flexShrink:0, boxShadow:`0 0 5px ${color}66` }} />
       <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{name}</span>
     </span>
   )
@@ -104,14 +107,39 @@ function SBadge({ status }: { status: string }) {
   )
 }
 
-function ProgressBar({ pct, status }: { pct: number; status: string }) {
-  const ss = statusStyle(status)
+function RouteProgressCell({ c }: { c: ConvoyRow }) {
+  const pct = convoyProgress(c)
+  const ss = statusStyle(c.status)
+  const origin = c.route_origin ?? c.region ?? '—'
+  const dest = c.route_destination ?? '—'
   return (
-    <div style={{ minWidth:100 }}>
-      <div style={{ height:2, background:'rgba(255,255,255,.08)', borderRadius:1, marginBottom:3 }}>
-        <div style={{ height:'100%', width:`${pct}%`, background:ss.color, borderRadius:1, transition:'width .6s' }} />
+    <div style={{ minWidth:150 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:5, fontFamily:SANS, fontSize:11.5, color:'#8a95a0', marginBottom:4 }}>
+        <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:90 }}>{origin}</span>
+        <span style={{ color:'#f97316', fontSize:10, flexShrink:0 }}>→</span>
+        <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:90 }}>{dest}</span>
       </div>
-      <span style={{ fontFamily:MN, fontSize:8, color:'#4e5a65' }}>{pct}%</span>
+      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+        <div style={{ flex:1, height:2, background:'rgba(255,255,255,.08)', borderRadius:1 }}>
+          <div style={{ height:'100%', width:`${pct}%`, background:ss.color, borderRadius:1, transition:'width .6s' }} />
+        </div>
+        <span style={{ fontFamily:MN, fontSize:8, color:'#4e5a65', flexShrink:0 }}>{pct}%</span>
+      </div>
+    </div>
+  )
+}
+
+function ScheduleCell({ c }: { c: ConvoyRow }) {
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+      <div style={{ display:'flex', alignItems:'baseline', gap:5 }}>
+        <span style={{ fontFamily:MN, fontSize:7, color:'#39424c', letterSpacing:'.1em', width:26, flexShrink:0 }}>OUT</span>
+        <span style={{ fontFamily:MN, fontSize:10, color:'#8a95a0' }}>{fmtDate(c.departure_time ?? c.start_date)}</span>
+      </div>
+      <div style={{ display:'flex', alignItems:'baseline', gap:5 }}>
+        <span style={{ fontFamily:MN, fontSize:7, color:'#39424c', letterSpacing:'.1em', width:26, flexShrink:0 }}>ETA</span>
+        <span style={{ fontFamily:MN, fontSize:10, color:'#8a95a0' }}>{fmtTime(c.estimated_arrival ?? c.end_date)}</span>
+      </div>
     </div>
   )
 }
@@ -139,15 +167,23 @@ function DetailPanel({ id, onClose, onBroadcast, onEnd }: { id: string; onClose:
   const stageIdx = !c ? -1 : c.status === 'completed' ? 4 : c.status === 'planned' || c.status === 'draft' ? 0 : Math.max(1, Math.floor(pct / 34))
 
   return (
-    <div style={{ position:'absolute', right:0, top:0, bottom:0, width:360, background:'#0d1014',
+    <div style={{ position:'absolute', right:0, top:0, bottom:0, width:380, background:'#0d1014',
       borderLeft:'1px solid rgba(255,255,255,.08)', zIndex:30, display:'flex', flexDirection:'column',
       transform:'translateX(0)', overflowY:'auto' }}>
       {/* header */}
       <div style={{ background:'#111519', borderBottom:'1px solid rgba(255,255,255,.08)', padding:'16px 18px', position:'relative', flexShrink:0 }}>
         <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:'linear-gradient(90deg, #f97316, transparent)' }} />
-        <div style={{ fontFamily:MN, fontSize:8, color:'#4e5a65', letterSpacing:'.18em', marginBottom:3 }}>{c?.id?.slice(0,8).toUpperCase() ?? '…'}</div>
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:3 }}>
+          <span style={{ fontFamily:MN, fontSize:8, color:'#4e5a65', letterSpacing:'.18em' }}>{c?.id?.slice(0,8).toUpperCase() ?? '…'}</span>
+          {c && <SBadge status={c.status} />}
+        </div>
         <div style={{ fontFamily:SANS, fontWeight:700, fontSize:22, color:'#dde3ea', lineHeight:1.1 }}>{c?.name ?? 'Loading…'}</div>
-        <button onClick={onClose} style={{ position:'absolute', top:12, right:12, width:24, height:24, display:'flex', alignItems:'center', justifyContent:'center', background:'#1c2228', border:'1px solid rgba(255,255,255,.08)', borderRadius:2, cursor:'pointer', color:'#4e5a65', fontSize:14 }}>×</button>
+        {c?.client_name && (
+          <div style={{ marginTop:6 }}><ClientBadge name={c.client_name} /></div>
+        )}
+        <button onClick={onClose} style={{ position:'absolute', top:12, right:12, width:24, height:24, display:'flex', alignItems:'center', justifyContent:'center', background:'#1c2228', border:'1px solid rgba(255,255,255,.08)', borderRadius:2, cursor:'pointer', color:'#4e5a65' }}>
+          <X size={13} />
+        </button>
       </div>
 
       {/* minimap */}
@@ -184,8 +220,6 @@ function DetailPanel({ id, onClose, onBroadcast, onEnd }: { id: string; onClose:
       {/* stats */}
       <div style={{ padding:'12px 18px', borderBottom:'1px solid rgba(255,255,255,.06)', flexShrink:0 }}>
         {[
-          ['Status', c ? <SBadge key="s" status={c.status} /> : '—'],
-          ['Client', c ? <ClientBadge key="cl" name={c.client_name} /> : '—'],
           ['Route', c ? `${origin} → ${dest}` : '—'],
           ['Progress', c ? `${pct}%` : '—'],
           ['Vehicles', c?.vehicle_count ?? (c?.trucks?.length ?? c?.vehicles?.length ?? '—')],
@@ -207,7 +241,7 @@ function DetailPanel({ id, onClose, onBroadcast, onEnd }: { id: string; onClose:
           <div style={{ fontFamily:MN, fontSize:7, letterSpacing:'.22em', color:'#4e5a65', marginBottom:8 }}>VEHICLES</div>
           {(c.trucks ?? []).slice(0, 5).map(t => (
             <div key={t.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'6px 0', borderBottom:'1px solid rgba(255,255,255,.04)' }}>
-              <div style={{ width:28, height:28, background:'#161b20', border:'1px solid rgba(255,255,255,.08)', borderRadius:3, display:'flex', alignItems:'center', justifyContent:'center', color:'#4e5a65', fontSize:13, flexShrink:0 }}>🚛</div>
+              <div style={{ width:28, height:28, background:'#161b20', border:'1px solid rgba(255,255,255,.08)', borderRadius:3, display:'flex', alignItems:'center', justifyContent:'center', color:'#4e5a65', flexShrink:0 }}><Truck size={14} /></div>
               <div>
                 <div style={{ fontFamily:SANS, fontSize:11, color:'#8a95a0' }}>{t.driver_name}</div>
                 <div style={{ fontFamily:MN, fontSize:9, color:'#4e5a65' }}>Position {t.position}</div>
@@ -217,7 +251,7 @@ function DetailPanel({ id, onClose, onBroadcast, onEnd }: { id: string; onClose:
           ))}
           {(c.vehicles ?? []).slice(0, c.trucks?.length ? 0 : 5).map(v => (
             <div key={v.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'6px 0', borderBottom:'1px solid rgba(255,255,255,.04)' }}>
-              <div style={{ width:28, height:28, background:'#161b20', border:'1px solid rgba(255,255,255,.08)', borderRadius:3, display:'flex', alignItems:'center', justifyContent:'center', color:'#4e5a65', fontSize:13, flexShrink:0 }}>🚛</div>
+              <div style={{ width:28, height:28, background:'#161b20', border:'1px solid rgba(255,255,255,.08)', borderRadius:3, display:'flex', alignItems:'center', justifyContent:'center', color:'#4e5a65', flexShrink:0 }}><Truck size={14} /></div>
               <div>
                 <div style={{ fontFamily:SANS, fontSize:11, color:'#8a95a0' }}>{v.registration ?? v.id.slice(0,8)}</div>
                 <div style={{ fontFamily:MN, fontSize:9, color:'#4e5a65' }}>{v.make} {v.model}</div>
@@ -230,16 +264,16 @@ function DetailPanel({ id, onClose, onBroadcast, onEnd }: { id: string; onClose:
       {/* footer */}
       <div style={{ padding:'12px 18px', display:'flex', gap:8, borderTop:'1px solid rgba(255,255,255,.08)', flexShrink:0, background:'#0d1014', marginTop:'auto' }}>
         <Link to="/gps" style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontFamily:MN, fontSize:9, letterSpacing:'.12em', padding:'7px 13px', borderRadius:3, border:'1px solid rgba(255,255,255,.1)', background:'transparent', color:'#8a95a0', cursor:'pointer', textDecoration:'none' }}>
-          📍 TRACK LIVE
+          <MapPin size={11} /> TRACK LIVE
         </Link>
         {c?.status === 'active' && (
           <button onClick={onBroadcast} style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontFamily:MN, fontSize:9, letterSpacing:'.12em', padding:'7px 13px', borderRadius:3, border:'1px solid #f97316', background:'#f97316', color:'#000', fontWeight:700, cursor:'pointer' }}>
-            📡 BROADCAST
+            <Radio size={11} /> BROADCAST
           </button>
         )}
         {c?.status === 'active' && (
           <button onClick={onEnd} style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontFamily:MN, fontSize:9, letterSpacing:'.12em', padding:'7px 13px', borderRadius:3, border:'1px solid #a855f7', background:'transparent', color:'#a855f7', fontWeight:700, cursor:'pointer' }}>
-            🏁 END CONVOY
+            <Flag size={11} /> END CONVOY
           </button>
         )}
       </div>
@@ -335,6 +369,9 @@ export default function Convoys() {
 
   const selConvoy = useMemo(() => selId ? (data?.data ?? []).find(c => c.id === selId) : null, [selId, data])
 
+  const filtersActive = filter !== 'all' || clientFilter !== 'all' || search !== ''
+  const clearFilters = () => { setFilter('all'); setClientFilter('all'); setSearch('') }
+
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', position:'relative', overflow:'hidden' }}>
       <style>{`
@@ -348,6 +385,8 @@ export default function Convoys() {
         .cnv-icobtn:hover{border-color:#f97316!important;color:#f97316!important}
         .cnv-tab.on{background:#f97316;color:#000;font-weight:700}
         .cnv-tab:not(.on):hover{color:#dde3ea}
+        .cnv-select{appearance:none;-webkit-appearance:none}
+        .cnv-clear:hover{color:#f97316!important;border-color:rgba(249,115,22,.3)!important}
       `}</style>
 
       {/* ── Page Header ── */}
@@ -366,8 +405,8 @@ export default function Convoys() {
             </div>
           </div>
           <div style={{ display:'flex', gap:8, paddingTop:6 }}>
-            <Link to="/convoys/new" style={{ display:'flex', alignItems:'center', gap:6, fontFamily:MN, fontSize:9, letterSpacing:'.12em', padding:'7px 13px', borderRadius:3, background:'#f97316', border:'1px solid #f97316', color:'#000', fontWeight:700, cursor:'pointer', textDecoration:'none' }}>
-              + NEW CONVOY
+            <Link to="/convoys/new" style={{ display:'flex', alignItems:'center', gap:6, fontFamily:MN, fontSize:9, letterSpacing:'.12em', padding:'8px 14px', borderRadius:3, background:'#f97316', border:'1px solid #f97316', color:'#000', fontWeight:700, cursor:'pointer', textDecoration:'none' }}>
+              <Plus size={12} strokeWidth={2.5} /> NEW CONVOY
             </Link>
           </div>
         </div>
@@ -380,9 +419,10 @@ export default function Convoys() {
             { label:'COMPLETED',     val:counts.completed, color:'#00d4ff', filter:'completed' },
             { label:'PLANNED',       val:counts.planned, color:'#f59e0b', filter:'planned' },
           ] as const).map(sc => (
-            <div key={sc.label} onClick={() => setFilter(sc.filter as Filter)} style={{ background:'#0d1014', padding:'12px 18px', position:'relative', overflow:'hidden', cursor:'pointer', transition:'background .15s' }}
-              onMouseEnter={e => (e.currentTarget.style.background='#111519')} onMouseLeave={e => (e.currentTarget.style.background='#0d1014')}>
-              <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:`linear-gradient(90deg,${sc.color},transparent)` }} />
+            <div key={sc.label} onClick={() => setFilter(sc.filter as Filter)}
+              style={{ background: filter === sc.filter ? '#111519' : '#0d1014', padding:'12px 18px', position:'relative', overflow:'hidden', cursor:'pointer', transition:'background .15s' }}
+              onMouseEnter={e => (e.currentTarget.style.background='#111519')} onMouseLeave={e => (e.currentTarget.style.background = filter === sc.filter ? '#111519' : '#0d1014')}>
+              <div style={{ position:'absolute', top:0, left:0, right:0, height:2, background:`linear-gradient(90deg,${sc.color},transparent)`, opacity: filter === sc.filter ? 1 : 0.5 }} />
               <div style={{ fontFamily:MN, fontSize:7, letterSpacing:'.2em', color:'#4e5a65', marginBottom:4 }}>{sc.label}</div>
               <div style={{ fontFamily:SANS, fontWeight:700, fontSize:36, lineHeight:1, color:sc.color }}>{sc.val}</div>
               <div style={{ height:2, background:'rgba(255,255,255,.06)', borderRadius:1, marginTop:10 }}>
@@ -395,14 +435,17 @@ export default function Convoys() {
       </div>
 
       {/* ── Toolbar ── */}
-      <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 24px', background:'#0d1014', borderBottom:'1px solid rgba(255,255,255,.06)', flexShrink:0 }}>
-        <div style={{ position:'relative', flex:1, maxWidth:300 }}>
-          <span style={{ position:'absolute', left:9, top:'50%', transform:'translateY(-50%)', fontSize:12, color:'#4e5a65', pointerEvents:'none' }}>🔍</span>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search convoys, routes, regions…"
+      <div style={{ display:'flex', alignItems:'center', gap:14, padding:'10px 24px', background:'#0d1014', borderBottom:'1px solid rgba(255,255,255,.06)', flexShrink:0, flexWrap:'wrap' }}>
+        <div style={{ position:'relative', flex:'1 1 220px', maxWidth:280 }}>
+          <Search size={12} style={{ position:'absolute', left:9, top:'50%', transform:'translateY(-50%)', color:'#4e5a65', pointerEvents:'none' }} />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search convoys, routes, clients…"
             style={{ width:'100%', background:'#111519', border:'1px solid rgba(255,255,255,.08)', borderRadius:3, fontFamily:SANS, fontSize:12, color:'#dde3ea', padding:'6px 10px 6px 28px', outline:'none' }}
             onFocus={e => (e.target.style.borderColor='#f97316')} onBlur={e => (e.target.style.borderColor='rgba(255,255,255,.08)')} />
         </div>
-        <div style={{ display:'flex', gap:2, background:'#111519', border:'1px solid rgba(255,255,255,.08)', borderRadius:3, padding:2 }}>
+
+        <div style={{ width:1, height:20, background:'rgba(255,255,255,.08)', flexShrink:0 }} />
+
+        <div style={{ display:'flex', gap:2, background:'#111519', border:'1px solid rgba(255,255,255,.08)', borderRadius:3, padding:2, flexShrink:0 }}>
           {(['all','active','completed','planned','cancelled'] as const).map(f => (
             <button key={f} onClick={() => setFilter(f)} className={`cnv-tab${filter===f?' on':''}`}
               style={{ fontFamily:MN, fontSize:8, letterSpacing:'.12em', padding:'4px 10px', borderRadius:2, cursor:'pointer', border:'none', background:'none', color:'#4e5a65', transition:'all .12s' }}>
@@ -410,14 +453,29 @@ export default function Convoys() {
             </button>
           ))}
         </div>
-        <select value={clientFilter} onChange={e => setClientFilter(e.target.value)}
-          style={{ fontFamily:MN, fontSize:9, letterSpacing:'.08em', padding:'6px 8px', borderRadius:3, cursor:'pointer',
-            background:'#111519', border:'1px solid rgba(255,255,255,.08)', color: clientFilter === 'all' ? '#4e5a65' : '#dde3ea', outline:'none' }}>
-          <option value="all">ALL CLIENTS</option>
-          <option value="unassigned">UNASSIGNED</option>
-          {clientOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-        </select>
-        <span style={{ fontFamily:MN, fontSize:9, color:'#4e5a65', marginLeft:'auto', whiteSpace:'nowrap' }}>{rows.length} convoy{rows.length !== 1 ? 's' : ''}</span>
+
+        <div style={{ position:'relative', flexShrink:0 }}>
+          <Building2 size={11} style={{ position:'absolute', left:9, top:'50%', transform:'translateY(-50%)', color: clientFilter === 'all' ? '#4e5a65' : '#f97316', pointerEvents:'none' }} />
+          <select value={clientFilter} onChange={e => setClientFilter(e.target.value)} className="cnv-select"
+            style={{ fontFamily:MN, fontSize:9, letterSpacing:'.08em', padding:'6px 22px 6px 27px', borderRadius:3, cursor:'pointer',
+              background:'#111519', border: clientFilter === 'all' ? '1px solid rgba(255,255,255,.08)' : '1px solid rgba(249,115,22,.3)',
+              color: clientFilter === 'all' ? '#4e5a65' : '#dde3ea', outline:'none' }}>
+            <option value="all">ALL CLIENTS</option>
+            <option value="unassigned">UNASSIGNED</option>
+            {clientOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </select>
+          <ChevronDown size={10} style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', color:'#4e5a65', pointerEvents:'none' }} />
+        </div>
+
+        {filtersActive && (
+          <button onClick={clearFilters} className="cnv-clear" style={{ display:'flex', alignItems:'center', gap:4, fontFamily:MN, fontSize:8, letterSpacing:'.1em', color:'#4e5a65', background:'none', border:'1px solid rgba(255,255,255,.08)', borderRadius:3, padding:'5px 8px', cursor:'pointer', transition:'all .12s', flexShrink:0 }}>
+            <X size={10} /> CLEAR
+          </button>
+        )}
+
+        <span style={{ display:'flex', alignItems:'center', gap:5, fontFamily:MN, fontSize:9, color:'#4e5a65', marginLeft:'auto', whiteSpace:'nowrap' }}>
+          <SlidersHorizontal size={10} /> {rows.length} convoy{rows.length !== 1 ? 's' : ''}
+        </span>
       </div>
 
       {/* ── Table + Panel ── */}
@@ -429,55 +487,48 @@ export default function Convoys() {
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
               <thead>
                 <tr>
-                  {['CONVOY ID / NAME','STATUS','CLIENT','ROUTE','PROGRESS','RISK','VEHICLES','START DATE','ETA',''].map((h, i) => (
-                    <th key={i} style={{ fontFamily:MN, fontSize:7, letterSpacing:'.2em', color:'#4e5a65', padding:'8px 14px', textAlign:'left', background:'#0d1014', borderBottom:'1px solid rgba(255,255,255,.08)', position:'sticky', top:0, zIndex:2, whiteSpace:'nowrap', paddingLeft: i===0?24:14 }}>{h}</th>
+                  {['CONVOY', 'STATUS', 'CLIENT', 'ROUTE / PROGRESS', 'RISK', 'VEHICLES', 'SCHEDULE', ''].map((h, i) => (
+                    <th key={i} style={{ fontFamily:MN, fontSize:7, letterSpacing:'.2em', color:'#4e5a65', padding:'9px 14px', textAlign:'left', background:'#0d1014', borderBottom:'1px solid rgba(255,255,255,.08)', position:'sticky', top:0, zIndex:2, whiteSpace:'nowrap', paddingLeft: i===0?24:14 }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 && (
-                  <tr><td colSpan={10} style={{ padding:'60px 24px', textAlign:'center', fontFamily:MN, fontSize:10, color:'#4e5a65', letterSpacing:'.1em' }}>NO CONVOYS MATCH YOUR SEARCH</td></tr>
+                  <tr><td colSpan={8} style={{ padding:'60px 24px', textAlign:'center', fontFamily:MN, fontSize:10, color:'#4e5a65', letterSpacing:'.1em' }}>
+                    {filtersActive ? 'NO CONVOYS MATCH YOUR FILTERS' : 'NO CONVOYS YET'}
+                  </td></tr>
                 )}
                 {rows.map((c, idx) => {
-                  const pct = convoyProgress(c)
-                  const origin = c.route_origin ?? c.region ?? '—'
-                  const dest = c.route_destination ?? '—'
                   const risk = c.priority ?? '—'
                   const isSel = c.id === selId
                   return (
                     <tr key={c.id} onClick={() => setSelId(isSel ? null : c.id)} className={`cnv-tr${isSel ? ' sel-row' : ''}`}
                       style={{ borderBottom:'1px solid rgba(255,255,255,.04)', cursor:'pointer', position:'relative', animationDelay:`${idx * 20}ms` }}>
                       <div className="cnv-left-border" style={{ position:'absolute', left:0, top:0, bottom:0, width:0, background:'rgba(249,115,22,.5)', transition:'width .15s' }} />
-                      <td style={{ padding:'11px 14px', paddingLeft:24 }}>
+                      <td style={{ padding:'12px 14px', paddingLeft:24 }}>
                         <div style={{ fontFamily:MN, fontSize:9, color:'#4e5a65', marginBottom:1 }}>{c.id.slice(0,8).toUpperCase()}</div>
                         <div style={{ fontFamily:SANS, fontWeight:500, fontSize:13, color:'#dde3ea' }}>{c.name}</div>
                       </td>
-                      <td style={{ padding:'11px 14px' }}><SBadge status={c.status} /></td>
-                      <td style={{ padding:'11px 14px' }}><ClientBadge name={c.client_name} /></td>
-                      <td style={{ padding:'11px 14px' }}>
-                        <div style={{ display:'flex', alignItems:'center', gap:4, fontFamily:SANS, fontSize:11, color:'#8a95a0' }}>
-                          <span>{origin}</span><span style={{ color:'#f97316', fontSize:10 }}>→</span><span>{dest}</span>
-                        </div>
-                      </td>
-                      <td style={{ padding:'11px 14px' }}><ProgressBar pct={pct} status={c.status} /></td>
-                      <td style={{ padding:'11px 14px' }}>
+                      <td style={{ padding:'12px 14px' }}><SBadge status={c.status} /></td>
+                      <td style={{ padding:'12px 14px' }}><ClientBadge name={c.client_name} /></td>
+                      <td style={{ padding:'12px 14px' }}><RouteProgressCell c={c} /></td>
+                      <td style={{ padding:'12px 14px' }}>
                         <span style={{ fontFamily:MN, fontSize:9, fontWeight:700, letterSpacing:'.08em', color:riskColor(risk) }}>{risk.toUpperCase()}</span>
                       </td>
-                      <td style={{ padding:'11px 14px' }}>
+                      <td style={{ padding:'12px 14px' }}>
                         <div style={{ display:'flex', alignItems:'center', gap:5, fontFamily:MN, fontSize:11, color:'#8a95a0' }}>
-                          <span style={{ fontSize:11, color:'#4e5a65' }}>🚛</span>{c.vehicle_count ?? '—'}
+                          <Truck size={12} style={{ color:'#4e5a65' }} />{c.vehicle_count ?? '—'}
                         </div>
                       </td>
-                      <td style={{ padding:'11px 14px', fontFamily:MN, fontSize:10, color:'#8a95a0' }}>{fmtDate(c.departure_time ?? c.start_date)}</td>
-                      <td style={{ padding:'11px 14px', fontFamily:MN, fontSize:10, color:'#8a95a0' }}>{fmtTime(c.estimated_arrival ?? c.end_date)}</td>
-                      <td style={{ padding:'11px 14px 11px 0' }}>
-                        <div style={{ display:'flex', gap:4, alignItems:'center' }} onClick={e => e.stopPropagation()}>
+                      <td style={{ padding:'12px 14px' }}><ScheduleCell c={c} /></td>
+                      <td style={{ padding:'12px 14px 12px 0' }}>
+                        <div style={{ display:'flex', gap:4, alignItems:'center', justifyContent:'flex-end' }} onClick={e => e.stopPropagation()}>
                           {c.status === 'planned' && (
                             <button
                               onClick={() => { if (window.confirm(`Dispatch "${c.name}"? This will mark it active.`)) { setDispatchingId(c.id); dispatchMutation.mutate(c.id) } }}
                               disabled={dispatchingId === c.id}
                               style={{ height:24, padding:'0 8px', display:'flex', alignItems:'center', gap:4, borderRadius:2, background:'#f97316', border:'1px solid #f97316', cursor:'pointer', color:'#000', fontFamily:MN, fontSize:8, fontWeight:700, letterSpacing:'.1em', opacity: dispatchingId === c.id ? 0.5 : 1 }}>
-                              ⚡ {dispatchingId === c.id ? '…' : 'DISPATCH'}
+                              <Zap size={10} /> {dispatchingId === c.id ? '…' : 'DISPATCH'}
                             </button>
                           )}
                           {c.status === 'active' && (
@@ -485,17 +536,21 @@ export default function Convoys() {
                               title="Broadcast"
                               onClick={() => setBroadcastConvoy({ id: c.id, name: c.name })}
                               className="cnv-icobtn"
-                              style={{ width:24, height:24, display:'flex', alignItems:'center', justifyContent:'center', borderRadius:2, background:'#161b20', border:'1px solid rgba(249,115,22,.3)', cursor:'pointer', color:'#f97316', fontSize:11 }}>
-                              📡
+                              style={{ width:24, height:24, display:'flex', alignItems:'center', justifyContent:'center', borderRadius:2, background:'#161b20', border:'1px solid rgba(249,115,22,.3)', cursor:'pointer', color:'#f97316' }}>
+                              <Radio size={11} />
                             </button>
                           )}
                           <Link to="/convoys/$id/edit" params={{ id: c.id }}
-                            className="cnv-icobtn" style={{ width:24, height:24, display:'flex', alignItems:'center', justifyContent:'center', borderRadius:2, background:'#161b20', border:'1px solid rgba(255,255,255,.08)', cursor:'pointer', color:'#4e5a65', fontSize:11, textDecoration:'none' }}>✏</Link>
+                            className="cnv-icobtn" style={{ width:24, height:24, display:'flex', alignItems:'center', justifyContent:'center', borderRadius:2, background:'#161b20', border:'1px solid rgba(255,255,255,.08)', cursor:'pointer', color:'#4e5a65', textDecoration:'none' }}>
+                            <Pencil size={11} />
+                          </Link>
                           {c.status !== 'active' && (
                             <button
                               title="Delete convoy"
                               onClick={() => window.confirm(`Delete "${c.name}"?`) && deleteMutation.mutate(c.id)}
-                              className="cnv-icobtn" style={{ width:24, height:24, display:'flex', alignItems:'center', justifyContent:'center', borderRadius:2, background:'#161b20', border:'1px solid rgba(255,255,255,.08)', cursor:'pointer', color:'#4e5a65', fontSize:11 }}>🗑</button>
+                              className="cnv-icobtn" style={{ width:24, height:24, display:'flex', alignItems:'center', justifyContent:'center', borderRadius:2, background:'#161b20', border:'1px solid rgba(255,255,255,.08)', cursor:'pointer', color:'#4e5a65' }}>
+                              <Trash2 size={11} />
+                            </button>
                           )}
                         </div>
                       </td>
