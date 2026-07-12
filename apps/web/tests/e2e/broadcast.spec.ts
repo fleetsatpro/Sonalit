@@ -88,7 +88,9 @@ test.describe('Broadcast — BroadcastPanel interactions', () => {
   });
 
   test('canned message dropdown populates from API', async ({ page }) => {
-    const dropdown = page.locator('select').first();
+    // The Convoys toolbar has its own <select> (client filter), so scope to
+    // the BroadcastPanel dropdown via its placeholder option text.
+    const dropdown = page.locator('select').filter({ hasText: 'Use a canned message' });
     await expect(dropdown).toBeVisible({ timeout: 5000 });
     // <option> elements inside a closed <select> are always hidden in the DOM;
     // verify via allInnerTexts() instead of toBeVisible().
@@ -98,7 +100,7 @@ test.describe('Broadcast — BroadcastPanel interactions', () => {
   });
 
   test('selecting a canned message populates the textarea', async ({ page }) => {
-    const dropdown = page.locator('select').first();
+    const dropdown = page.locator('select').filter({ hasText: 'Use a canned message' });
     await dropdown.selectOption('canned-001');
     const textarea = page.locator('textarea').first();
     await expect(textarea).toHaveValue(CANNED_MESSAGES[0]!.body, { timeout: 3000 });
