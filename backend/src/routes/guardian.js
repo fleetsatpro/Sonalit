@@ -530,7 +530,16 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
         `SELECT id, org_id, device_id FROM field_officers WHERE badge_number = $1 LIMIT 1`,
         [operator_code]
       );
-      const orgId = officerRes.rows[0]?.org_id ?? null;
+      // A mistyped/unknown badge number used to fall through silently: the
+      // INSERT below still ran with org_id NULL (the column DEFAULT fires),
+      // creating a device no admin's org view could ever see — the officer
+      // was left staring at "Awaiting operator approval" forever, since
+      // nothing was ever actually pending in any real organisation's queue.
+      // Reject it up front instead, with a message the app can show as-is.
+      if (!officerRes.rows[0]) {
+        return res.status(404).json({ error: 'Badge number not recognized. Check with your dispatcher and try again.' });
+      }
+      const orgId = officerRes.rows[0].org_id;
 
       // Dedup: return existing if already enrolled with this android device id
       const existing = await query(

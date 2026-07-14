@@ -27,6 +27,9 @@ interface GpsFixDao {
     @Query("SELECT * FROM gps_fixes ORDER BY ts DESC LIMIT 1")
     suspend fun getLatest(): GpsFixEntity?
 
+    @Query("SELECT COUNT(*) FROM gps_fixes WHERE synced = 0")
+    suspend fun countUnsynced(): Int
+
     @Query("UPDATE gps_fixes SET synced = 1 WHERE id IN (:ids)")
     suspend fun markSynced(ids: List<String>)
 

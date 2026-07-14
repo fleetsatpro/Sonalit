@@ -54,8 +54,12 @@ fun HomeScreen(
             StatusCard(
                 label = "GPS",
                 value = when (state.gpsState) {
-                    SignalState.GOOD -> "Active · ${fmtAge(state.lastGpsFixAt)}"
-                    SignalState.STALE -> "Stale · ${fmtAge(state.lastGpsFixAt)}"
+                    SignalState.GOOD -> "Syncing · last sent ${fmtAge(state.lastGpsSyncAt)}"
+                    SignalState.STALE -> if (state.unsyncedFixCount > 0) {
+                        "Recording but not syncing · ${state.unsyncedFixCount} queued"
+                    } else {
+                        "Not syncing · last sent ${fmtAge(state.lastGpsSyncAt)}"
+                    }
                     SignalState.UNKNOWN -> "No fix yet"
                 },
                 isGood = state.gpsState == SignalState.GOOD,
