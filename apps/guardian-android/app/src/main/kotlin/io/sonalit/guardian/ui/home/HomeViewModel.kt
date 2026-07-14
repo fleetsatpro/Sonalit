@@ -27,6 +27,7 @@ data class HomeUiState(
     val lastGpsSyncAt: Long? = null,
     val unsyncedFixCount: Int = 0,
     val serviceState: SignalState = SignalState.UNKNOWN,
+    val heartbeatState: SignalState = SignalState.UNKNOWN,
     val gpsState: SignalState = SignalState.UNKNOWN,
 )
 
@@ -62,6 +63,7 @@ class HomeViewModel @Inject constructor(
     private suspend fun refresh() {
         val now = System.currentTimeMillis()
         val lastHeartbeat = statusStore.lastHeartbeatAt()
+        val serviceAlive = statusStore.serviceAliveAt()
         val lastFix = db.gpsFixDao().getLatest()
         val lastSync = syncStatusStore.lastSyncAt()
         val unsyncedCount = db.gpsFixDao().countUnsynced()
@@ -77,10 +79,10 @@ class HomeViewModel @Inject constructor(
         // telemetry/batch fix). "GPS: Active" needs BOTH a recent local fix
         // AND a recent successful sync, not just the former.
         val localFixHealthy = classify(lastFix?.ts, now, staleAfterMs = 2 * 60_000L) == SignalState.GOOD
-        // SyncWorker runs every 10 minutes (SyncWorker.schedule) — allow one
-        // missed cycle plus backoff before calling it unhealthy, same slack
-        // HeartbeatWorker's status card gets.
-        val syncHealthy = classify(lastSync, now, staleAfterMs = 22 * 60_000L) == SignalState.GOOD
+        // SyncWorker's real cadence is WorkManager's 15-min floor, so allow two
+        // missed cycles plus backoff (~37 min) before calling sync unhealthy —
+        // otherwise a single Doze-delayed cycle falsely reads as "not syncing".
+        val syncHealthy = classify(lastSync, now, staleAfterMs = 37 * 60_000L) == SignalState.GOOD
         val gpsState = when {
             lastFix == null -> SignalState.UNKNOWN
             localFixHealthy && syncHealthy -> SignalState.GOOD
@@ -93,9 +95,16 @@ class HomeViewModel @Inject constructor(
                 lastGpsFixAt = lastFix?.ts,
                 lastGpsSyncAt = lastSync,
                 unsyncedFixCount = unsyncedCount,
-                // The heartbeat worker runs every 5 minutes — allow one missed
-                // cycle plus retry backoff before calling the service unhealthy.
-                serviceState = classify(lastHeartbeat, now, staleAfterMs = 11 * 60_000L),
+                // "Service" reflects whether the on-device GuardianService is
+                // actually alive right now. It writes a liveness tick every 60s,
+                // so >3 min (three missed ticks) means it's genuinely dead —
+                // unlike the old check, which read the ≤15-min network heartbeat
+                // and therefore went falsely red for minutes every single cycle.
+                serviceState = classify(serviceAlive, now, staleAfterMs = 3 * 60_000L),
+                // The network heartbeat can only run every ~15 min (WorkManager's
+                // periodic floor), so it's only genuinely unhealthy after two
+                // missed cycles (~35 min) plus retry backoff.
+                heartbeatState = classify(lastHeartbeat, now, staleAfterMs = 35 * 60_000L),
                 gpsState = gpsState,
             )
         }

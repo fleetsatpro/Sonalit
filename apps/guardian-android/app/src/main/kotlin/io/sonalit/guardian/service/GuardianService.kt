@@ -12,10 +12,12 @@ import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.*
+import com.google.android.gms.tasks.CancellationTokenSource
 import dagger.hilt.android.AndroidEntryPoint
 import io.sonalit.guardian.R
 import io.sonalit.guardian.data.local.AppDatabase
 import io.sonalit.guardian.data.local.GpsFixEntity
+import io.sonalit.guardian.data.local.HeartbeatStatusStore
 import io.sonalit.guardian.receiver.VolumeKeySOSReceiver
 import kotlinx.coroutines.*
 import java.util.UUID
@@ -26,6 +28,7 @@ class GuardianService : Service() {
 
     @Inject lateinit var db: AppDatabase
     @Inject lateinit var panicSender: PanicSender
+    @Inject lateinit var statusStore: HeartbeatStatusStore
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var fusedClient: FusedLocationProviderClient
@@ -49,12 +52,40 @@ class GuardianService : Service() {
         fusedClient = LocationServices.getFusedLocationProviderClient(this)
         activityClient = ActivityRecognition.getClient(this)
         startForeground()
+        // Record liveness immediately so the Home "Service" card flips to
+        // "Running" the instant the service starts, rather than waiting on the
+        // ~15-min network heartbeat worker (which could never keep it fresh).
+        statusStore.recordServiceAlive()
         requestLocationUpdates(intervalMs = 30_000L)
+        // Grab one fix right now instead of waiting up to 30s for the first
+        // interval callback — this is what clears "GPS: No fix yet" seconds
+        // after the officer arms the device.
+        requestImmediateFix()
+        startLivenessTicker()
         ContextCompat.registerReceiver(
             this, volumeKeyReceiver, IntentFilter(VolumeKeySOSReceiver.VOLUME_CHANGED_ACTION),
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         registerMediaSession()
+    }
+
+    /** Beats a local proof-of-life every 60s so the Home screen can tell the
+     *  service is genuinely alive without depending on the network heartbeat. */
+    private fun startLivenessTicker() {
+        scope.launch {
+            while (isActive) {
+                statusStore.recordServiceAlive()
+                delay(60_000L)
+            }
+        }
+    }
+
+    @Suppress("MissingPermission")
+    private fun requestImmediateFix() {
+        runCatching {
+            fusedClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token)
+                .addOnSuccessListener { loc -> loc?.let { bufferFix(it) } }
+        }
     }
 
     /**
@@ -134,6 +165,8 @@ class GuardianService : Service() {
                 ts = location.time,
                 synced = false,
             ))
+            // Every delivered fix is also proof the service is alive.
+            statusStore.recordServiceAlive()
         }
     }
 

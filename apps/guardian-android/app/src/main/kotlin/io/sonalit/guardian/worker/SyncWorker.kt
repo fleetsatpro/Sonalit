@@ -61,11 +61,12 @@ class SyncWorker @AssistedInject constructor(
          * request_location/force_checkin command (CommandExecutor). Every fix
          * GuardianService buffered locally piled up in Room forever unless
          * dispatch happened to send one of those commands to this specific
-         * device. 10 minutes mirrors the same "allow one missed cycle" slack
-         * as HeartbeatWorker's 5-minute period.
+         * device. 15 minutes is WorkManager's periodic floor — a smaller value
+         * (this was 10) is silently clamped to 15 anyway, so the interval and
+         * the Home screen's sync-staleness threshold now both reflect reality.
          */
         fun schedule(context: Context) {
-            val request = PeriodicWorkRequestBuilder<SyncWorker>(10, TimeUnit.MINUTES)
+            val request = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                 .build()

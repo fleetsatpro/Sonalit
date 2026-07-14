@@ -98,7 +98,13 @@ class HeartbeatWorker @AssistedInject constructor(
         const val KEY_DEVICE_ID = "device_id"
 
         fun schedule(context: Context, deviceId: String) {
-            val request = PeriodicWorkRequestBuilder<HeartbeatWorker>(5, TimeUnit.MINUTES)
+            // 15 minutes is WorkManager's hard minimum for periodic work — a
+            // smaller value (this was 5) is silently clamped up to 15, so
+            // asking for 5 only created the illusion of a faster cadence while
+            // the status thresholds that assumed it went falsely red. The live
+            // "Service" card is now driven by GuardianService's own 60s liveness
+            // tick, so this network heartbeat only needs to check in periodically.
+            val request = PeriodicWorkRequestBuilder<HeartbeatWorker>(15, TimeUnit.MINUTES)
                 .setInputData(workDataOf(KEY_DEVICE_ID to deviceId))
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)

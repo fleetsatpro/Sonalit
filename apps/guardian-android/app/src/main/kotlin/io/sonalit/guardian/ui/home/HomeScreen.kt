@@ -49,7 +49,7 @@ fun HomeScreen(
                 isGood = state.serviceState == SignalState.GOOD,
             )
             Spacer(Modifier.height(8.dp))
-            StatusCard(label = "Last Heartbeat", value = fmtAge(state.lastHeartbeatAt), isGood = state.serviceState == SignalState.GOOD)
+            StatusCard(label = "Last Heartbeat", value = fmtAge(state.lastHeartbeatAt), isGood = state.heartbeatState == SignalState.GOOD)
             Spacer(Modifier.height(8.dp))
             StatusCard(
                 label = "GPS",
