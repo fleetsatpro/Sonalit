@@ -1360,9 +1360,17 @@ router.get('/devices', authenticate, async (req, res, next) => {
          h.battery_level, h.battery_charging, h.signal_strength,
          h.network_type, h.storage_free_mb, h.ram_free_mb, h.recorded_at AS health_recorded_at,
          COALESCE(pc.cnt, 0)::INT AS pending_commands,
-         CASE WHEN gd.assignment_type = 'officer' THEN fo.name ELSE NULL END AS assigned_officer_name,
-         CASE WHEN gd.assignment_type = 'officer' THEN fo.badge_number ELSE NULL END AS assigned_officer_badge,
-         CASE WHEN gd.assignment_type = 'officer' THEN fo.phone ELSE NULL END AS assigned_officer_phone
+         -- The officer<->device link's single source of truth is
+         -- field_officers.device_id (written by enroll auto-link, the Field
+         -- Officers page, and the Guardian LINK button). The old join used
+         -- gd.assignment_id, which none of those paths set — so the officer
+         -- name never showed here even when a device was clearly linked. Also
+         -- surface officer_name/officer_badge/officer_phone under the names the
+         -- Guardian frontend actually reads.
+         fo.name         AS officer_name,
+         fo.badge_number AS officer_badge,
+         fo.phone        AS officer_phone,
+         fo.id           AS officer_id
        FROM guardian_devices gd
        LEFT JOIN LATERAL (
          SELECT battery_level, battery_charging, signal_strength,
@@ -1377,7 +1385,8 @@ router.get('/devices', authenticate, async (req, res, next) => {
          FROM device_commands
          WHERE device_id = gd.id AND status = 'pending'
        ) pc ON true
-       LEFT JOIN field_officers fo ON fo.id = gd.assignment_id AND gd.assignment_type = 'officer'
+       LEFT JOIN field_officers fo ON fo.device_id = gd.id
+         AND (gd.org_id IS NULL OR fo.org_id = gd.org_id)
        WHERE ${filters.join(' AND ')}
        ORDER BY gd.last_seen DESC NULLS LAST, gd.created_at DESC
        LIMIT $${limitIdx} OFFSET $${offsetIdx}`,

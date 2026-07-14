@@ -13,13 +13,15 @@ const C = {
 };
 
 interface GuardianDevice {
-  id: string; name?: string; officer_name?: string; assigned_to?: string;
+  id: string; name?: string; officer_name?: string; officer_badge?: string; officer_phone?: string; officer_id?: string;
+  assigned_to?: string;
   assignment_type?: string; assignment_id?: string; device_id?: string;
   model?: string; device_model?: string; status: string;
   battery_pct?: number; signal_pct?: number; gps_locked?: boolean;
-  battery_level?: number; signal_strength?: number; last_lat?: number; last_lng?: number;
+  battery_level?: number; signal_strength?: number; last_lat?: number; last_lng?: number; last_speed?: number;
   app_version?: string; android_version?: string; os_version?: string; knox_version?: string; imei?: string;
   knox_do_enrolled?: boolean; last_seen_at?: string; last_heartbeat_at?: string; last_seen?: string;
+  pending_commands?: number;
   device_commands?: DeviceCmd[];
 }
 interface DeviceCmd { id?: string; command_type?: string; command?: string; type?: string; status: string; created_at?: string; }
@@ -70,13 +72,20 @@ function HealthBars({ battery, signal }: { battery?: number | undefined; signal?
   );
 }
 
-const COMMANDS = [
-  { id: 'request_location', label: 'Request Location', desc: 'Get current GPS fix', color: C.gold },
-  { id: 'trigger_siren', label: 'Capture Photo', desc: 'Take device photo/alert', color: C.red, confirm: true },
+// command_type values MUST match the backend allow-list in
+// guardian.js POST /devices/:id/command (validCommandTypes). Previously three
+// of these (force_checkin, restart_app, remote_wipe) were not valid values and
+// every attempt to send them 400'd — that's a big part of why the command
+// panel looked "non-functional".
+const COMMANDS: { id: string; label: string; desc: string; color: string; confirm?: boolean; dangerous?: boolean }[] = [
+  { id: 'request_location', label: 'Request Location', desc: 'Get one current GPS fix', color: C.gold },
+  { id: 'force_sync', label: 'Force Sync', desc: 'Flush buffered GPS + data', color: C.amber },
+  { id: 'start_live_tracking', label: 'Live Track', desc: 'Start high-rate GPS stream', color: C.cyan },
+  { id: 'trigger_siren', label: 'Trigger Siren', desc: 'Sound the device alarm', color: C.red, confirm: true },
+  { id: 'TAKE_PHOTO', label: 'Capture Photo', desc: 'Take a device photo', color: C.purple, confirm: true },
   { id: 'lock_screen', label: 'Lock Screen', desc: 'Lock device screen', color: C.blue, confirm: true },
-  { id: 'force_checkin', label: 'Force Locate', desc: 'Force GPS locate update', color: C.amber },
-  { id: 'restart_app', label: 'Restart App', desc: 'Restart Guardian service', color: C.green },
-  { id: 'remote_wipe', label: 'Remote Wipe', desc: 'Factory reset device', color: C.red, confirm: true, dangerous: true },
+  { id: 'restart_agent', label: 'Restart Agent', desc: 'Restart Guardian service', color: C.green },
+  { id: 'WIPE', label: 'Remote Wipe', desc: 'Factory reset device', color: C.red, confirm: true, dangerous: true },
 ];
 
 const OVERLAY: CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 };
@@ -300,14 +309,31 @@ function CommandTerminal({ devices }: { devices: GuardianDevice[] }) {
     if (cmd.confirm && !window.confirm(`Execute "${cmd.label}" on this device?`)) return;
     setSending(true); setMsg(null);
     try {
-      await api.post(`/guardian/devices/${selDevice}/commands`, { command: cmd.id, confirm: cmd.dangerous === true });
+      // The backend command route (guardian.js POST /devices/:id/command)
+      // requires a replay-protection nonce, an issued_at inside a 5-min window,
+      // and an X-Idempotency-Key header — the old call sent none of these to
+      // the wrong (plural) URL, so no command ever actually reached a device.
+      const nonce = crypto.randomUUID();
+      await api.post(
+        `/guardian/devices/${selDevice}/command`,
+        { command_type: cmd.id, payload: null, nonce, issued_at: new Date().toISOString() },
+        { headers: { 'X-Idempotency-Key': nonce } },
+      );
       setMsg({ text: `✓ Command issued: ${cmd.label}`, ok: true });
       setSelCmd(null);
     } catch (ex: unknown) {
-      const detail = ex && typeof ex === 'object' && 'response' in ex
-        ? (ex as { response?: { data?: { error?: string } } }).response?.data?.error
+      const resp = ex && typeof ex === 'object' && 'response' in ex
+        ? (ex as { response?: { data?: { error?: string; code?: string } } }).response
         : undefined;
-      setMsg({ text: detail || 'Command failed — check device status and try again', ok: false });
+      const code = resp?.data?.code;
+      // Translate the backend's safety-gate codes into plain guidance instead
+      // of a raw error string.
+      const friendly =
+        code === 'integrity_required' ? 'Device integrity check required — a verification request was queued; retry once the device re-checks in.'
+        : code === 'replay_detected' ? 'Duplicate command ignored — it was already sent.'
+        : code === 'clock_skew' ? 'Device/server clock mismatch — try again.'
+        : resp?.data?.error;
+      setMsg({ text: friendly || 'Command failed — check device status and try again', ok: false });
     } finally { setSending(false); }
   }
 
@@ -363,14 +389,54 @@ export default function Guardian() {
 
   useEffect(() => {
     if (!user?.org_id) return;
-    return subscribe<{ type?: string; device_id?: string; action?: string; message?: string }>(`org#${user.org_id}`, (msg) => {
-      if (msg.type === 'device:telemetry' && msg.device_id) {
-        setDevices(prev => prev.map(d => d.id === msg.device_id ? { ...d, ...(msg as Partial<GuardianDevice>) } : d));
+    // The backend publishes on org#<id> with type 'location' when a device
+    // reports GPS (guardian.js POST /location) and 'device.command' when a
+    // command is issued. The old code listened for 'device:telemetry' /
+    // 'command:queued', which are never emitted — so nothing here ever
+    // live-updated. These names now match the real payloads.
+    type RtMsg = {
+      type?: string; device_id?: string; command_id?: string; command_type?: string;
+      lat?: number; lng?: number; speed?: number; timestamp?: string; issued_at?: string;
+      action?: string; message?: string;
+    };
+    return subscribe<RtMsg>(`org#${user.org_id}`, (msg) => {
+      if (msg.type === 'location' && msg.device_id) {
+        setDevices(prev => prev.map(d => d.id === msg.device_id
+          ? { ...d,
+              ...(msg.lat != null && { last_lat: msg.lat }),
+              ...(msg.lng != null && { last_lng: msg.lng }),
+              ...(msg.speed != null && { last_speed: msg.speed }),
+              last_seen: msg.timestamp ?? new Date().toISOString() }
+          : d));
       }
-      if (msg.type === 'command:queued') setCommands(prev => [msg as DevCommand, ...prev].slice(0, 30));
-      if (msg.action || msg.message) setAuditEvents(prev => [{ ...msg, ts: new Date().toISOString() }, ...prev].slice(0, 20));
+      if (msg.type === 'device.command' && msg.command_id) {
+        setCommands(prev => [{
+          id: msg.command_id!, status: 'pending', created_at: msg.issued_at ?? new Date().toISOString(),
+          ...(msg.command_type != null && { command_type: msg.command_type }),
+          ...(msg.device_id != null && { device_id: msg.device_id }),
+        }, ...prev].slice(0, 30));
+        if (msg.device_id) {
+          setDevices(prev => prev.map(d => d.id === msg.device_id
+            ? { ...d, pending_commands: (d.pending_commands ?? 0) + 1 } : d));
+        }
+      }
+      if (msg.action || msg.message) setAuditEvents(prev => [{
+        ts: new Date().toISOString(),
+        ...(msg.action != null && { action: msg.action }),
+        ...(msg.message != null && { message: msg.message }),
+        ...(msg.type != null && { type: msg.type }),
+      }, ...prev].slice(0, 20));
     });
   }, [user?.org_id]);
+
+  function cancelCommand(id: string) {
+    // Optimistic — DELETE /guardian/command-queue/:id only cancels rows still
+    // 'pending' (guardian-ops.js); revert if the server rejects it.
+    setCommands(prev => prev.map(c => c.id === id ? { ...c, status: 'cancelled' } : c));
+    api.delete(`/guardian/command-queue/${id}`).catch(() => {
+      setCommands(prev => prev.map(c => c.id === id ? { ...c, status: 'pending' } : c));
+    });
+  }
 
   function toggleRule(rule: AlertRule) {
     const next = !rule.enabled;
@@ -418,6 +484,12 @@ export default function Guardian() {
                           <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: C.sub }}>{cmd.device_name || cmd.device_id?.slice(0, 8)}</div>
                         </div>
                         <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: sc, fontWeight: 700 }}>{cmd.status}</span>
+                        {cmd.status === 'pending' && cmd.id && (
+                          <button onClick={() => cancelCommand(cmd.id)} title="Cancel pending command"
+                            style={{ background: 'none', border: 'none', color: C.sub, cursor: 'pointer', padding: 2, lineHeight: 1, flexShrink: 0 }}>
+                            <X size={12} />
+                          </button>
+                        )}
                       </div>
                     );
                   })}
