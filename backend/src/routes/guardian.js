@@ -484,6 +484,31 @@ async function deviceAuth(req, res, next) {
 // ─── Device Routes (no JWT required) ─────────────────────────────────────────
 
 /**
+ * Points a field officer at `deviceId`, retiring whatever device they were
+ * previously linked to (if different). A field officer only ever has one
+ * meaningfully "current" device — an old one left behind after a factory
+ * reset, signing-key change, or hand-me-down phone reassignment otherwise
+ * lingers forever as an orphaned row that reads as a duplicate device for
+ * the same officer in every device list.
+ */
+async function linkOfficerDevice(officer, deviceId) {
+  if (officer.device_id && officer.device_id !== deviceId) {
+    await query(
+      `UPDATE guardian_devices SET status = 'revoked', deleted_at = NOW(), updated_at = NOW()
+       WHERE id = $1 AND deleted_at IS NULL`,
+      [officer.device_id]
+    );
+    logger.info(`Retired stale device ${officer.device_id} for officer ${officer.id} (now ${deviceId})`);
+  }
+  if (officer.device_id !== deviceId) {
+    await query(
+      `UPDATE field_officers SET device_id = $1, updated_at = NOW() WHERE id = $2`,
+      [deviceId, officer.id]
+    );
+  }
+}
+
+/**
  * POST /api/v1/guardian/enroll
  * Register a new device.
  * Accepts two formats:
@@ -502,7 +527,7 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       // Find org via field officer badge number
       // (field_officers has no soft-delete column — a delete is a hard DELETE, see field-officers.js)
       const officerRes = await query(
-        `SELECT id, org_id FROM field_officers WHERE badge_number = $1 LIMIT 1`,
+        `SELECT id, org_id, device_id FROM field_officers WHERE badge_number = $1 LIMIT 1`,
         [operator_code]
       );
       const orgId = officerRes.rows[0]?.org_id ?? null;
@@ -516,6 +541,14 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       );
       if (existing.rows[0]) {
         const dev = existing.rows[0];
+        // Re-establish (or retarget) the officer<->device link even on this
+        // fast path — not just on fresh enrollment below — so an officer
+        // reassigned to hardware that already has a guardian_devices row
+        // (e.g. a spare/handed-down phone) still ends up correctly linked
+        // instead of staying deviceless.
+        if (officerRes.rows[0]) {
+          await linkOfficerDevice(officerRes.rows[0], dev.id);
+        }
         const mappedStatus = (dev.status === 'active' || dev.status === 'enrolled') ? 'enrolled' : dev.status;
         return res.json({
           status: mappedStatus,
@@ -538,12 +571,11 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       if (orgId !== null) enrollParams.push(orgId);
       const { rows } = await query(enrollSql, enrollParams);
 
-      // Auto-link device to field officer
+      // Auto-link device to field officer (see linkOfficerDevice — retires
+      // any previous device this officer had so it doesn't linger as an
+      // orphaned "duplicate" row).
       if (officerRes.rows[0]) {
-        await query(
-          `UPDATE field_officers SET device_id = $1, updated_at = NOW() WHERE id = $2`,
-          [rows[0].id, officerRes.rows[0].id]
-        );
+        await linkOfficerDevice(officerRes.rows[0], rows[0].id);
       }
 
       auditLog('device', rows[0].id, 'v4_enroll', 'device', rows[0].id, { operator_code, platform }, req.ip);

@@ -19,6 +19,7 @@ const STATUS_ORDER: Record<string, number> = { sos: 0, on_mission: 1, available:
 interface FieldOfficer {
   id: string; name: string; badge_number?: string; badge?: string; phone?: string;
   zone?: string; assigned_zone?: string; route?: string; rank?: string; status: string;
+  device_id?: string | null;
   gps_lat?: number; gps_lng?: number; gps_locked?: boolean;
   battery_pct?: number; signal_pct?: number;
   missions_total?: number; checkin_rate?: number; sos_events_total?: number; seals_verified?: number;
@@ -32,13 +33,21 @@ interface FieldOfficer {
   last_lat?: number; last_lng?: number; last_speed?: number; last_seen?: string;
 }
 
-// Prefer the field that actually feeds the Live Fleet GPS map; fall back to
-// the legacy telemetry columns in case some device does populate those.
-function officerFix(o: FieldOfficer) {
+type FixState = 'no_device' | 'no_fix' | 'on_map';
+
+// Every officer should have a linked device, and that device should be the
+// one showing on Live Fleet GPS — three distinct states so "why can't I see
+// them" always has a concrete, visible answer instead of one blank dash:
+//   no_device — field_officers.device_id is null, nothing to sync at all
+//   no_fix    — device linked, but it's never completed a GPS sync
+//   on_map    — linked and reporting; this is what the live map shows
+function officerFix(o: FieldOfficer): { lat?: number | undefined; lng?: number | undefined; at?: string | undefined; state: FixState } {
   const lat = o.last_lat ?? o.gps_lat;
   const lng = o.last_lng ?? o.gps_lng;
   const at = o.last_seen ?? o.last_gps_at ?? o.last_seen_at;
-  return { lat, lng, at, onMap: lat != null && lng != null };
+  if (!o.device_id) return { state: 'no_device' };
+  if (lat == null || lng == null) return { at, state: 'no_fix' };
+  return { lat, lng, at, state: 'on_map' };
 }
 
 interface ActivityEvent { id?: string; type?: string; event?: string; created_at?: string; ts?: string; }
@@ -363,7 +372,12 @@ export default function FieldOfficers() {
             <div style={{ textAlign: 'center' }}>
               <MapPin size={18} style={{ color: C.gold, marginBottom: 4 }} />
               <div style={{ fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700, fontSize: 11, color: C.gold, letterSpacing: '0.1em' }}>GPS MAP</div>
-              <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: C.sub, marginTop: 2 }}>{officers.filter(o => officerFix(o).onMap).length} of {officers.length} on Live Fleet GPS</div>
+              <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: C.sub, marginTop: 2 }}>{officers.filter(o => officerFix(o).state === 'on_map').length} of {officers.length} on Live Fleet GPS</div>
+              {officers.some(o => officerFix(o).state === 'no_device') && (
+                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: C.red, marginTop: 2 }}>
+                  {officers.filter(o => officerFix(o).state === 'no_device').length} with no device linked
+                </div>
+              )}
             </div>
           </div>
 
@@ -407,15 +421,21 @@ export default function FieldOfficers() {
                           <td style={{ padding: '8px 10px' }}><StatusPill status={o.status} /></td>
                           <td style={{ padding: '8px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: C.mid }}>{o.assigned_zone || o.zone || '—'}</td>
                           <td style={{ padding: '8px 10px' }}>
-                            {fix.onMap
-                              ? <>
-                                  <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: C.txt }}>{Number(fix.lat).toFixed(4)}, {Number(fix.lng).toFixed(4)}</div>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}>
-                                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: C.sub }}>{fmtRel(fix.at)}</span>
-                                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 8, fontWeight: 700, color: C.green, letterSpacing: '0.05em' }}>ON MAP</span>
-                                  </div>
-                                </>
-                              : <span style={{ color: C.sub, fontSize: 9, fontFamily: 'JetBrains Mono, monospace' }} title="No successful GPS sync yet — won't appear on Live Fleet GPS until the device reports a fix">NO FIX YET</span>}
+                            {fix.state === 'on_map' && (
+                              <>
+                                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: C.txt }}>{Number(fix.lat).toFixed(4)}, {Number(fix.lng).toFixed(4)}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}>
+                                  <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: C.sub }}>{fmtRel(fix.at)}</span>
+                                  <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 8, fontWeight: 700, color: C.green, letterSpacing: '0.05em' }}>ON MAP</span>
+                                </div>
+                              </>
+                            )}
+                            {fix.state === 'no_fix' && (
+                              <span style={{ color: C.amber, fontSize: 9, fontFamily: 'JetBrains Mono, monospace' }} title="Device is linked but has never completed a GPS sync — won't appear on Live Fleet GPS until it does">NO FIX YET</span>
+                            )}
+                            {fix.state === 'no_device' && (
+                              <span style={{ color: C.red, fontSize: 9, fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }} title="No Guardian device linked to this officer at all — link one via Assign">NO DEVICE</span>
+                            )}
                           </td>
                           <td style={{ padding: '8px 10px' }}><HealthBars battery={o.battery_pct} signal={o.signal_pct} gpsLocked={o.gps_locked} /></td>
                           <td style={{ padding: '8px 10px', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, fontWeight: 700, color: C.blue }}>{o.missions_total ?? 0}</td>
