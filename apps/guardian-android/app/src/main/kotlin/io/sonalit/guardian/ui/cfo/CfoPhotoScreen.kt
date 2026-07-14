@@ -73,6 +73,17 @@ private fun buildSlots(
 private fun nextIncompleteSlot(slots: List<PhotoSlot>): PhotoSlot? =
     slots.firstOrNull { !it.isComplete }
 
+// Guided capture is strict: front, then rear, then each seal in turn. A slot can
+// only be tapped if it's already complete (retake) or it's the single next slot
+// in the sequence — this stops a CFO from skipping ahead to seals before the
+// front/rear photos exist.
+private fun slotInstruction(slot: PhotoSlot): String = when (slot.photoType) {
+    "front" -> "Stand facing the FRONT of the truck. Frame the whole cab and number plate clearly."
+    "rear" -> "Walk to the REAR of the truck. Frame the whole rear and number plate clearly."
+    "seal" -> "Take a close-up of seal ${slot.sealPosition.orEmpty()} — make sure the code on the tag is readable."
+    else -> "Take the photo for ${slot.label}."
+}
+
 // ── Main Screen ──────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalPermissionsApi::class)
@@ -166,7 +177,14 @@ fun CfoSodEodScreen(viewModel: CfoViewModel) {
     }
 
     if (showSealDialog) {
+        val existingSealPositions = remember(captureTruckId, ctx.photos_today) {
+            ctx.photos_today
+                .filter { it.convoy_truck_id == captureTruckId && it.session == session && it.photo_type == "seal" }
+                .mapNotNull { it.seal_position }
+                .toSet()
+        }
         SealPositionDialog(
+            existingPositions = existingSealPositions,
             onConfirm = { pos ->
                 captureSlot = PhotoSlot("seal", pos, "Seal $pos", false)
                 showSealDialog = false
@@ -281,13 +299,14 @@ private fun TruckPhotoCard(
             )
             Spacer(Modifier.height(10.dp))
 
+            val nextSlot = nextIncompleteSlot(slots)
             slots.forEach { slot ->
-                PhotoSlotRow(slot = slot, onTap = { onSlotTap(slot) })
+                val tappable = slot.isComplete || slot == nextSlot
+                PhotoSlotRow(slot = slot, tappable = tappable, onTap = { if (tappable) onSlotTap(slot) })
             }
 
             if (!allDone) {
                 Spacer(Modifier.height(8.dp))
-                val nextSlot = nextIncompleteSlot(slots)
                 if (nextSlot != null) {
                     Button(
                         onClick = { onSlotTap(nextSlot) },
@@ -311,41 +330,52 @@ private fun TruckPhotoCard(
 }
 
 @Composable
-private fun PhotoSlotRow(slot: PhotoSlot, onTap: () -> Unit) {
+private fun PhotoSlotRow(slot: PhotoSlot, tappable: Boolean, onTap: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onTap)
+            .clickable(enabled = tappable, onClick = onTap)
             .padding(vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             when {
                 slot.isComplete -> Icons.Default.CheckCircle
-                else -> Icons.Default.RadioButtonUnchecked
+                tappable -> Icons.Default.RadioButtonUnchecked
+                else -> Icons.Default.Lock
             },
             contentDescription = null,
             modifier = Modifier.size(18.dp),
-            tint = if (slot.isComplete) MaterialTheme.colorScheme.primary
-                   else MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = when {
+                slot.isComplete -> MaterialTheme.colorScheme.primary
+                tappable -> MaterialTheme.colorScheme.onSurfaceVariant
+                else -> MaterialTheme.colorScheme.outline
+            },
         )
         Spacer(Modifier.width(10.dp))
         Text(
             slot.label,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = if (slot.isComplete) FontWeight.Normal else FontWeight.SemiBold,
-            color = if (slot.isComplete) MaterialTheme.colorScheme.onSurfaceVariant
-                    else MaterialTheme.colorScheme.onSurface,
+            color = when {
+                slot.isComplete -> MaterialTheme.colorScheme.onSurfaceVariant
+                tappable -> MaterialTheme.colorScheme.onSurface
+                else -> MaterialTheme.colorScheme.outline
+            },
         )
         Spacer(Modifier.weight(1f))
-        if (slot.isComplete) {
-            Icon(Icons.Default.Refresh, contentDescription = "Retake",
+        when {
+            slot.isComplete -> Icon(Icons.Default.Refresh, contentDescription = "Retake",
                 modifier = Modifier.size(16.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            Icon(Icons.Default.ChevronRight, contentDescription = null,
+            tappable -> Icon(Icons.Default.ChevronRight, contentDescription = null,
                 modifier = Modifier.size(18.dp),
                 tint = MaterialTheme.colorScheme.primary)
+            else -> Text(
+                "Locked",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline,
+            )
         }
     }
     HorizontalDivider(thickness = 0.5.dp)
@@ -430,6 +460,14 @@ private fun SlotCaptureScreen(
                     progress = { (slotIndex + 1).toFloat() / totalSlots },
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)),
                 )
+                if (!isRetake) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        slotInstruction(slot),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
             }
         }
 
@@ -521,8 +559,15 @@ private fun SlotCaptureScreen(
 // ── Seal Position Dialog ─────────────────────────────────────────────────────
 
 @Composable
-private fun SealPositionDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+private fun SealPositionDialog(
+    existingPositions: Set<String>,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
     var position by remember { mutableStateOf("") }
+    val normalized = position.trim().uppercase()
+    val isDuplicate = normalized.isNotEmpty() &&
+        existingPositions.any { it.trim().uppercase() == normalized }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -530,7 +575,7 @@ private fun SealPositionDialog(onConfirm: (String) -> Unit, onDismiss: () -> Uni
         title = { Text("Enter Seal Code") },
         text = {
             Column {
-                Text("Enter the RFID seal code printed on the seal tag.",
+                Text("Enter the RFID seal code printed on the seal tag. Each seal must have a unique code — no duplicates.",
                     style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
@@ -538,14 +583,18 @@ private fun SealPositionDialog(onConfirm: (String) -> Unit, onDismiss: () -> Uni
                     onValueChange = { position = it.trim() },
                     label = { Text("Seal Code (e.g. 0099)") },
                     singleLine = true,
+                    isError = isDuplicate,
+                    supportingText = if (isDuplicate) {
+                        { Text("This code was already recorded for this truck today. Enter a different code.") }
+                    } else null,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
         },
         confirmButton = {
             Button(
-                onClick = { onConfirm(position) },
-                enabled = position.isNotBlank(),
+                onClick = { onConfirm(position.trim()) },
+                enabled = position.isNotBlank() && !isDuplicate,
             ) { Text("Continue") }
         },
         dismissButton = {
