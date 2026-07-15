@@ -81,7 +81,17 @@ const AppShell = React.memo(function AppShell() {
         style={{
           display: 'flex',
           flexDirection: 'column',
-          minHeight: '100vh',
+          // Must be a definite height, not minHeight — <main> below is a
+          // percentage-height page like GPS.tsx's Live Fleet map, and a
+          // percentage height only resolves against a definite parent height.
+          // With minHeight, this box's height was 'auto' whenever content was
+          // shorter than the viewport, so height:'100%' cascaded down through
+          // <main> as 'auto' too, collapsing pages that rely on it (map/list
+          // panels rendering at ~0 height while fixed-height chrome above
+          // them, like GPS.tsx's 44px header, still appeared to work fine).
+          // 100dvh (not 100vh) so mobile browser chrome showing/hiding
+          // doesn't over- or under-size this against the visual viewport.
+          height: '100dvh',
           width: '100%',
           minWidth: 0,
           overflowX: 'clip',
@@ -91,7 +101,13 @@ const AppShell = React.memo(function AppShell() {
         className={`d-main-col${navOpen ? '' : ' d-nav-collapsed'}`}
       >
         <Topbar onMenuOpen={openDrawer} />
-        <main style={{ overscrollBehavior: 'contain' }}>
+        {/* flex:1 to actually claim the remaining height after Topbar;
+            minHeight:0 so it can shrink instead of overflowing to content
+            size (the classic flex-child sizing trap); overflowY:auto so
+            normal scrolling pages (Dashboard, Convoys, tables, ...) still
+            scroll exactly as before — only now within a definite box instead
+            of relying on the whole document growing taller than the viewport. */}
+        <main style={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain' }}>
           <Outlet />
         </main>
       </div>
