@@ -1,8 +1,10 @@
 package io.sonalit.guardian.service
 
+import android.Manifest
 import android.app.*
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.location.Location
 import android.os.*
@@ -39,6 +41,10 @@ class GuardianService : Service() {
 
     private val volumeKeyReceiver = VolumeKeySOSReceiver()
 
+    // True once requestLocationUpdates has been successfully handed to the
+    // fused client. Reset on registration failure so the ticker retries.
+    @Volatile private var locationUpdatesActive = false
+
     // Headset button triple-press state
     private var btnPressCount = 0
     private var lastBtnPressMs = 0L
@@ -59,11 +65,7 @@ class GuardianService : Service() {
         // ~15-min network heartbeat worker (which could never keep it fresh).
         statusStore.recordServiceAlive()
         checkPlayServicesAvailability()
-        requestLocationUpdates(intervalMs = 30_000L)
-        // Grab one fix right now instead of waiting up to 30s for the first
-        // interval callback — this is what clears "GPS: No fix yet" seconds
-        // after the officer arms the device.
-        requestImmediateFix()
+        tryStartLocationUpdates()
         startLivenessTicker()
         ContextCompat.registerReceiver(
             this, volumeKeyReceiver, IntentFilter(VolumeKeySOSReceiver.VOLUME_CHANGED_ACTION),
@@ -84,14 +86,42 @@ class GuardianService : Service() {
     }
 
     /** Beats a local proof-of-life every 60s so the Home screen can tell the
-     *  service is genuinely alive without depending on the network heartbeat. */
+     *  service is genuinely alive without depending on the network heartbeat.
+     *  Doubles as the retry loop for location registration: on a first launch
+     *  this service is started BEFORE the runtime permission dialog is even
+     *  shown, so the one-shot registration in onCreate() fails and — being
+     *  START_STICKY — the service would otherwise live forever without a
+     *  location listener ("GPS: No fix yet" with Service: Running). */
     private fun startLivenessTicker() {
         scope.launch {
             while (isActive) {
                 statusStore.recordServiceAlive()
+                tryStartLocationUpdates()
                 delay(60_000L)
             }
         }
+    }
+
+    private fun hasLocationPermission(): Boolean =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+    /** Registers location updates once permission is actually held. Safe to
+     *  call repeatedly (onCreate, every onStartCommand, the liveness ticker) —
+     *  it no-ops while registered and retries after grant or a failed
+     *  registration, instead of the old register-once-at-birth behaviour. */
+    private fun tryStartLocationUpdates() {
+        if (locationUpdatesActive) return
+        if (!hasLocationPermission()) {
+            Log.w(TAG, "Location permission not granted yet — GPS registration deferred, will retry")
+            return
+        }
+        locationUpdatesActive = true
+        requestLocationUpdates(intervalMs = 30_000L)
+        // Grab one fix right now instead of waiting up to 30s for the first
+        // interval callback — this is what clears "GPS: No fix yet" seconds
+        // after the officer arms the device.
+        requestImmediateFix()
     }
 
     @Suppress("MissingPermission")
@@ -182,7 +212,11 @@ class GuardianService : Service() {
         // (e.g. location settings not satisfied, provider unavailable) would
         // then look identical to "working fine, just no fix yet" forever.
         fusedClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
-            .addOnFailureListener { e -> Log.e(TAG, "requestLocationUpdates registration failed", e) }
+            .addOnFailureListener { e ->
+                // Let the liveness ticker retry rather than staying dead forever.
+                locationUpdatesActive = false
+                Log.e(TAG, "requestLocationUpdates registration failed", e)
+            }
     }
 
     private fun bufferFix(location: Location) {
@@ -202,7 +236,14 @@ class GuardianService : Service() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // MainActivity pokes the service (startForegroundService on an already-
+        // running instance) right after the location permission is granted —
+        // this is what picks the grant up immediately instead of waiting for
+        // the next ticker beat.
+        tryStartLocationUpdates()
+        return START_STICKY
+    }
 
     override fun onDestroy() {
         super.onDestroy()
