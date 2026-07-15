@@ -22,7 +22,10 @@ import io.sonalit.guardian.R
 import io.sonalit.guardian.data.local.AppDatabase
 import io.sonalit.guardian.data.local.GpsFixEntity
 import io.sonalit.guardian.data.local.HeartbeatStatusStore
+import io.sonalit.guardian.data.local.SyncStatusStore
 import io.sonalit.guardian.data.remote.GuardianApi
+import io.sonalit.guardian.data.remote.LocationBatchRequest
+import io.sonalit.guardian.data.remote.LocationPoint
 import io.sonalit.guardian.receiver.VolumeKeySOSReceiver
 import kotlinx.coroutines.*
 import java.util.UUID
@@ -36,6 +39,7 @@ class GuardianService : Service() {
     @Inject lateinit var statusStore: HeartbeatStatusStore
     @Inject lateinit var api: GuardianApi
     @Inject lateinit var commandExecutor: CommandExecutor
+    @Inject lateinit var syncStatusStore: SyncStatusStore
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var fusedClient: FusedLocationProviderClient
@@ -111,8 +115,13 @@ class GuardianService : Service() {
             while (isActive) {
                 statusStore.recordServiceAlive()
                 tryStartLocationUpdates()
+                // 15s, not 60s: a voice message is a call replacement — a
+                // minute of silence after dispatch hits Send reads as broken.
+                // 4 polls/min sits inside the server's 6/min device limit
+                // with heartbeats to spare; FCM push still beats this to the
+                // punch whenever the token+credentials are in place.
                 pollPendingCommands()
-                delay(60_000L)
+                delay(15_000L)
             }
         }
     }
@@ -254,7 +263,7 @@ class GuardianService : Service() {
 
     private fun bufferFix(location: Location) {
         scope.launch {
-            db.gpsFixDao().insert(GpsFixEntity(
+            val fix = GpsFixEntity(
                 id = UUID.randomUUID().toString(),
                 lat = location.latitude,
                 lon = location.longitude,
@@ -263,9 +272,27 @@ class GuardianService : Service() {
                 accuracy = location.accuracy,
                 ts = location.time,
                 synced = false,
-            ))
+            )
+            db.gpsFixDao().insert(fix)
             // Every delivered fix is also proof the service is alive.
             statusStore.recordServiceAlive()
+            // Stream the fix to the server immediately — SyncWorker's 15-minute
+            // period is WorkManager's floor, which made the live map lag by up
+            // to 15 minutes. With this, the dashboard tracks at the fix
+            // interval (~30s); SyncWorker remains the offline backlog catcher
+            // for anything this upload misses.
+            runCatching {
+                api.locationBatch(LocationBatchRequest(points = listOf(LocationPoint(
+                    lat = fix.lat,
+                    lon = fix.lon,
+                    heading = fix.heading,
+                    speed = fix.speed * 3.6f,
+                    accuracyM = fix.accuracy,
+                    timestamp = java.time.Instant.ofEpochMilli(fix.ts).toString(),
+                ))))
+                db.gpsFixDao().markSynced(listOf(fix.id))
+                syncStatusStore.recordSuccess()
+            }
         }
     }
 

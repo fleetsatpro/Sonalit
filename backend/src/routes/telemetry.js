@@ -35,7 +35,7 @@ router.post('/batch', deviceAuth, async (req, res, next) => {
     if (points.length === 0) {
       return res.status(400).json({ error: 'No valid fixes (lat/lon required)' });
     }
-    const result = await processLocationBatch(req.device.id, points);
+    const result = await processLocationBatch(req.device, points);
     res.json(result);
   } catch (err) {
     if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
