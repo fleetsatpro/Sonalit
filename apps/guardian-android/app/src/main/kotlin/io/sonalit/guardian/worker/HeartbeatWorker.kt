@@ -8,9 +8,13 @@ import android.net.NetworkCapabilities
 import android.os.BatteryManager
 import androidx.core.content.ContextCompat
 import androidx.hilt.work.HiltWorker
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import androidx.work.*
+import com.google.firebase.messaging.FirebaseMessaging
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.tasks.await
 import io.sonalit.guardian.data.local.HeartbeatStatusStore
 import io.sonalit.guardian.data.remote.GuardianApi
 import io.sonalit.guardian.data.remote.HeartbeatRequest
@@ -26,6 +30,29 @@ class HeartbeatWorker @AssistedInject constructor(
     private val commandExecutor: CommandExecutor,
     private val statusStore: HeartbeatStatusStore,
 ) : CoroutineWorker(context, params) {
+
+    private val prefs by lazy {
+        val masterKey = MasterKey.Builder(applicationContext)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        EncryptedSharedPreferences.create(
+            applicationContext, "guardian_prefs", masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+        )
+    }
+
+    /** The server only learned the FCM token at enrollment — usually before
+     *  Firebase had issued one — so guardian_devices.fcm_token stayed NULL and
+     *  every command push was silently skipped. Resolve it here (prefs first,
+     *  live fetch as fallback) and carry it on every heartbeat so the backend
+     *  self-heals within one beat and token rotations propagate too. */
+    private suspend fun resolveFcmToken(): String? {
+        prefs.getString("fcm_token", null)?.let { return it }
+        return runCatching { FirebaseMessaging.getInstance().token.await() }
+            .getOrNull()
+            ?.also { prefs.edit().putString("fcm_token", it).apply() }
+    }
 
     override suspend fun doWork(): Result {
         // GuardianService hosts the volume-key SOS receiver (registered at
@@ -46,6 +73,7 @@ class HeartbeatWorker @AssistedInject constructor(
                 device_id = deviceId,
                 battery_pct = readBatteryPct(),
                 connectivity = readConnectivity(),
+                fcm_token = resolveFcmToken(),
             ))
             statusStore.recordSuccess()
             // Fallback delivery path for commands FCM couldn't wake the device for —

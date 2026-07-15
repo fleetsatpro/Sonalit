@@ -1196,6 +1196,16 @@
         }
       }
     },
+    "/api/v1/guardian/commands/poll": {
+      "post": {
+        "operationId": "post_api_v1_guardian_commands_poll",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/location": {
       "post": {
         "operationId": "post_api_v1_guardian_location",

@@ -15,7 +15,11 @@ data class EnrollRequest(
 )
 data class EnrollResponse(val status: String, val device_uuid: String, val device_token: String? = null)
 data class HeartbeatRequest(val device_id: String, val battery_pct: Int? = null,
-    val connectivity: String? = null, val lat: Double? = null, val lon: Double? = null)
+    val connectivity: String? = null, val lat: Double? = null, val lon: Double? = null,
+    // Without this the server only ever learns the FCM token at enrollment —
+    // when Firebase usually hasn't issued one yet — leaving guardian_devices.
+    // fcm_token NULL forever and every command push silently skipped.
+    val fcm_token: String? = null)
 data class HeartbeatResponse(val commands: List<Map<String, Any>>)
 // Backend reads req.body.lng (POST /guardian/panic in guardian.js), not "lon" —
 // unlike /guardian/heartbeat, this route has no legacy-field fallback, so every
@@ -148,6 +152,10 @@ interface GuardianApi {
 
     @POST("guardian/ack-command")
     suspend fun ackCommand(@Body body: Map<String, String>): Map<String, String>
+
+    /** 60s in-service pickup — same claim as the heartbeat, minus telemetry. */
+    @POST("guardian/commands/poll")
+    suspend fun pollCommands(): HeartbeatResponse
 
     // Was "telemetry/batch" — a path no backend route ever matched, so every
     // background GPS sync 404'd and field officer positions never reached

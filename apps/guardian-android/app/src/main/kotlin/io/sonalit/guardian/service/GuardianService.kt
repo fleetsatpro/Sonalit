@@ -22,6 +22,7 @@ import io.sonalit.guardian.R
 import io.sonalit.guardian.data.local.AppDatabase
 import io.sonalit.guardian.data.local.GpsFixEntity
 import io.sonalit.guardian.data.local.HeartbeatStatusStore
+import io.sonalit.guardian.data.remote.GuardianApi
 import io.sonalit.guardian.receiver.VolumeKeySOSReceiver
 import kotlinx.coroutines.*
 import java.util.UUID
@@ -33,6 +34,8 @@ class GuardianService : Service() {
     @Inject lateinit var db: AppDatabase
     @Inject lateinit var panicSender: PanicSender
     @Inject lateinit var statusStore: HeartbeatStatusStore
+    @Inject lateinit var api: GuardianApi
+    @Inject lateinit var commandExecutor: CommandExecutor
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var fusedClient: FusedLocationProviderClient
@@ -44,6 +47,17 @@ class GuardianService : Service() {
     // True once requestLocationUpdates has been successfully handed to the
     // fused client. Reset on registration failure so the ticker retries.
     @Volatile private var locationUpdatesActive = false
+
+    private val devicePrefs by lazy {
+        val masterKey = androidx.security.crypto.MasterKey.Builder(applicationContext)
+            .setKeyScheme(androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        androidx.security.crypto.EncryptedSharedPreferences.create(
+            applicationContext, "guardian_prefs", masterKey,
+            androidx.security.crypto.EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+        )
+    }
 
     // Headset button triple-press state
     private var btnPressCount = 0
@@ -97,7 +111,26 @@ class GuardianService : Service() {
             while (isActive) {
                 statusStore.recordServiceAlive()
                 tryStartLocationUpdates()
+                pollPendingCommands()
                 delay(60_000L)
+            }
+        }
+    }
+
+    /** Dashboard commands (trigger_siren, show_message, ...) are delivered by
+     *  FCM push when the server knows this device's token, with the 15-minute
+     *  heartbeat as the only fallback. Polling here narrows worst-case
+     *  delivery to ~60s whenever the service is alive, regardless of FCM. */
+    private suspend fun pollPendingCommands() {
+        runCatching {
+            val deviceId = devicePrefs.getString("device_id", null) ?: return
+            for (cmd in api.pollCommands().commands) {
+                val commandId = (cmd["id"] ?: cmd["command_id"])?.toString() ?: continue
+                val commandType = cmd["command_type"]?.toString() ?: continue
+                val success = commandExecutor.execute(commandType, deviceId, cmd["payload"]?.toString())
+                runCatching {
+                    api.ackCommand(mapOf("command_id" to commandId, "status" to if (success) "executed" else "failed"))
+                }
             }
         }
     }
