@@ -952,7 +952,7 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
     res.json({
       status: 'ok',
       server_time: Date.now(),
-      commands: commands.rows,
+      commands: commands.rows.map(serializeCommandPayload),
       command_signing_secret: COMMAND_SIGNING_SECRET,
       org_id: req.device.org_id ?? null,
       min_required_version: minCode,
@@ -997,11 +997,31 @@ router.post('/commands/poll', deviceAuth, heartbeatLimiter, async (req, res, nex
         query(`INSERT INTO device_command_events (command_id, status) VALUES ($1, 'delivered')`, [cmd.id]).catch(() => {});
       }
     }
-    res.json({ commands: commands.rows });
+    res.json({ commands: commands.rows.map(serializeCommandPayload) });
   } catch (err) {
     next(err);
   }
 });
+
+/**
+ * The app treats a command's payload as an opaque string and parses it as
+ * JSON itself (see CommandExecutor). When these endpoints returned the jsonb
+ * payload as a nested OBJECT, the Kotlin client stringified it with
+ * Map.toString() — "{url=https://...}" — whose unquoted values truncate at
+ * ':' under lenient JSON parsing, so play_voice_message's URL parsed as
+ * literally "https" and every voice command acked 'failed'. Plain-word
+ * show_message texts survived by luck. Serialize payload to a JSON string
+ * here — the same shape the FCM push path has always used — so all delivery
+ * paths hand the app identical bytes.
+ */
+function serializeCommandPayload(cmd) {
+  return {
+    ...cmd,
+    payload: cmd.payload == null
+      ? null
+      : (typeof cmd.payload === 'string' ? cmd.payload : JSON.stringify(cmd.payload)),
+  };
+}
 
 /**
  * GET /api/v1/guardian/voice-messages/:id/audio
