@@ -2491,7 +2491,8 @@ router.get('/apk/download', (req, res) => {
 // shaped body — see routes/telemetry.js). Both normalize to this same
 // {lat, lng, altitude, heading, speed, accuracy, timestamp} point shape
 // before calling in.
-async function processLocationBatch(deviceId, points) {
+async function processLocationBatch(device, points) {
+  const deviceId = device.id;
   const cfgRow = await query(
     `SELECT value_int FROM guardian_config WHERE key = 'batch_location_max_points'`
   );
@@ -2506,6 +2507,8 @@ async function processLocationBatch(deviceId, points) {
   let lastLat = null;
   let lastLng = null;
   let lastSpeed = null;
+  let lastHeading = null;
+  let lastTimestamp = null;
 
   // Bulk insert using unnest for efficiency
   const lats      = [];
@@ -2528,6 +2531,8 @@ async function processLocationBatch(deviceId, points) {
     lastLat = pt.lat;
     lastLng = pt.lng;
     lastSpeed = pt.speed ?? null;
+    lastHeading = pt.heading ?? null;
+    lastTimestamp = pt.timestamp || null;
     accepted++;
   }
 
@@ -2556,6 +2561,30 @@ async function processLocationBatch(deviceId, points) {
     );
   }
 
+  // Publish the newest point to the live map. The single /location route has
+  // always done this, but batches never did — so devices that upload via the
+  // batch path (the Guardian app's only path) moved on the dashboard solely
+  // on a page reload, never live. Same payload shape as /location.
+  if (lastLat != null) {
+    const locationPayload = {
+      type: 'location',
+      device_id: deviceId,
+      name: device.name ?? null,
+      lat: lastLat,
+      lng: lastLng,
+      altitude: null,
+      heading: lastHeading,
+      speed: lastSpeed,
+      accuracy: null,
+      timestamp: lastTimestamp || new Date().toISOString(),
+    };
+    if (device.org_id) {
+      publish(`org#${device.org_id}`, locationPayload);
+    } else {
+      publish('device:location', locationPayload);
+    }
+  }
+
   logger.info(`Batch location: device=${deviceId} accepted=${accepted}/${points.length}`);
   return { accepted, total: points.length };
 }
@@ -2566,7 +2595,7 @@ router.post('/location/batch', deviceAuth, async (req, res, next) => {
     if (!Array.isArray(points) || points.length === 0) {
       return res.status(400).json({ error: 'points must be a non-empty array' });
     }
-    const result = await processLocationBatch(req.device.id, points);
+    const result = await processLocationBatch(req.device, points);
     res.json(result);
   } catch (err) {
     if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });

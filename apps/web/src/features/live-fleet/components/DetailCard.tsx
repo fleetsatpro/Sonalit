@@ -156,7 +156,7 @@ export default function DetailCard({ vehicle: v, onClose, trackedId, onToggleTra
       api.post(`/guardian/devices/${v!.id}/voice-message?duration_ms=${durationMs}`, blob, {
         headers: { 'Content-Type': blob.type || 'audio/webm' },
       })
-        .then(() => setAction({ kind: 'done', note: 'Voice message sent — plays on the device within ~1 min' }))
+        .then(() => setAction({ kind: 'done', note: 'Voice message sent — playing on the device in seconds' }))
         .catch(() => setAction({ kind: 'error', note: 'Failed — voice message not sent' }))
     }
     recStartRef.current = Date.now()
