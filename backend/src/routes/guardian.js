@@ -925,6 +925,31 @@ router.post('/commands/poll', deviceAuth, heartbeatLimiter, async (req, res, nex
 });
 
 /**
+ * GET /api/v1/guardian/voice-messages/:id/audio
+ * Audio bytes for a play_voice_message command. Device-token authenticated
+ * and scoped to the requesting device, so a leaked URL is useless without
+ * that device's token.
+ */
+router.get('/voice-messages/:id/audio', deviceAuth, async (req, res, next) => {
+  try {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid voice message id' });
+    }
+    const result = await query(
+      `SELECT mime, audio FROM guardian_voice_messages WHERE id = $1 AND device_id = $2`,
+      [req.params.id, req.device.id]
+    );
+    const row = result.rows[0];
+    if (!row) return res.status(404).json({ error: 'Voice message not found' });
+    res.set('Content-Type', row.mime || 'audio/webm');
+    res.set('Cache-Control', 'private, max-age=3600');
+    res.send(row.audio);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * POST /api/v1/guardian/location
  * GPS position update from device.
  */

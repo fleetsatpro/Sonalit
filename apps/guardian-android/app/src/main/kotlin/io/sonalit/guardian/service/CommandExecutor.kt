@@ -8,14 +8,20 @@ import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
+import android.media.MediaPlayer
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import io.sonalit.guardian.MainActivity
 import io.sonalit.guardian.R
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONObject
+import java.io.File
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
@@ -35,6 +41,9 @@ import javax.inject.Singleton
 @Singleton
 class CommandExecutor @Inject constructor(
     @ApplicationContext private val context: Context,
+    // The app's shared client — its interceptor attaches the X-Device-Token
+    // header, which is what authenticates the voice-message audio download.
+    private val httpClient: OkHttpClient,
 ) {
     private val devicePolicyManager by lazy {
         context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
@@ -67,6 +76,15 @@ class CommandExecutor @Inject constructor(
                 vibrateAlert()
                 true
             }
+            // Dispatch voice recording (Live Fleet "Voice" action).
+            // payload: {"voice_id": "...", "url": "https://..."} — download
+            // with the device-token client, then play out loud on the alarm
+            // stream so it cuts through even when media volume is muted.
+            "play_voice_message" -> {
+                val url = payload?.let { p -> runCatching { JSONObject(p).optString("url") }.getOrNull() }
+                    ?.takeIf { it.isNotBlank() } ?: return@runCatching false
+                playVoiceMessage(url)
+            }
             "stop_siren" -> { stopVibrate(); true }
             "restart_app", "restart_agent" -> { restartGuardianService(); true }
             "clear_app_data" -> {
@@ -93,6 +111,44 @@ class CommandExecutor @Inject constructor(
             if (text.isNotBlank()) return text
         }
         return payload.takeIf { it.isNotBlank() && !it.startsWith("{") }
+    }
+
+    /** Downloads the clip (device-token auth via the shared OkHttp client),
+     *  plays it on the ALARM stream so it's audible with media volume muted,
+     *  and posts a notification + vibration so the officer knows what fired.
+     *  Called from Dispatchers.IO in all three command-delivery paths, so the
+     *  synchronous download is fine. Returns true once playback starts. */
+    private fun playVoiceMessage(url: String): Boolean {
+        val cacheFile = File(context.cacheDir, "voice-msg-${url.hashCode()}.bin")
+        httpClient.newCall(Request.Builder().url(url).build()).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                Log.e(TAG, "voice message download failed: HTTP ${resp.code}")
+                return false
+            }
+            resp.body?.byteStream()?.use { input ->
+                cacheFile.outputStream().use { output -> input.copyTo(output) }
+            } ?: return false
+        }
+
+        val player = MediaPlayer().apply {
+            setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            setDataSource(cacheFile.absolutePath)
+            setOnCompletionListener { mp -> mp.release(); cacheFile.delete() }
+            setOnErrorListener { mp, what, extra ->
+                Log.e(TAG, "voice message playback error what=$what extra=$extra")
+                mp.release(); cacheFile.delete(); true
+            }
+            prepare()
+        }
+        showOperatorMessage("Voice message from dispatch — playing now")
+        vibrateAlert()
+        player.start()
+        return true
     }
 
     private fun showOperatorMessage(text: String) {

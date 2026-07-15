@@ -12,7 +12,10 @@ router.use(authenticate);
 
 // show_message: display an operator text on the device as a high-priority
 // notification (the Live Fleet "Msg" action) — payload: { text }
-const VALID_COMMANDS = ['request_location', 'trigger_siren', 'lock_screen', 'force_checkin', 'restart_app', 'clear_app_data', 'remote_wipe', 'show_message'];
+// play_voice_message: play a dispatch voice recording out loud on the device
+// (the Live Fleet "Voice" action) — payload: { voice_id, url, duration_ms };
+// issued by POST /devices/:id/voice-message below, which stores the audio.
+const VALID_COMMANDS = ['request_location', 'trigger_siren', 'lock_screen', 'force_checkin', 'restart_app', 'clear_app_data', 'remote_wipe', 'show_message', 'play_voice_message'];
 
 const DEFAULT_ALERT_RULES = [
   { name: 'Battery Low', trigger: 'battery_low', threshold: 15, action: 'notify', enabled: true },
@@ -228,6 +231,81 @@ router.post('/devices/:id/commands', async (req, res, next) => {
     } finally { client.release(); }
   } catch (err) { next(err); }
 });
+
+// POST /devices/:id/voice-message — record-and-send from the dashboard.
+// Body is the raw audio bytes (audio/webm|ogg|mp4|mpeg, ≤2 MB; the global
+// express.json parser ignores non-JSON content types so this route-level raw
+// parser receives the body untouched). Stores the clip in
+// guardian_voice_messages, then issues a signed play_voice_message command
+// through the same pipeline as every other device command (FCM push for
+// instant delivery, 60s in-service poll / heartbeat as fallback).
+router.post(
+  '/devices/:id/voice-message',
+  require('express').raw({ type: ['audio/*'], limit: '2mb' }),
+  async (req, res, next) => {
+    try {
+      const orgId = req.user.org_id;
+      if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+        return res.status(400).json({ error: 'Request body must be raw audio bytes with an audio/* content type' });
+      }
+      const mime = (req.headers['content-type'] || 'audio/webm').split(';')[0];
+      const durationMs = parseInt(req.query.duration_ms) || null;
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
+        const deviceCheck = await client.query(
+          `SELECT id, fcm_token FROM guardian_devices WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
+          [req.params.id, orgId]
+        );
+        if (!deviceCheck.rows[0]) {
+          await client.query('ROLLBACK');
+          return res.status(404).json({ error: 'Device not found' });
+        }
+        const device = deviceCheck.rows[0];
+
+        const { rows: voiceRows } = await client.query(
+          `INSERT INTO guardian_voice_messages (org_id, device_id, issued_by, mime, duration_ms, audio)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id, created_at`,
+          [orgId, req.params.id, req.user.id, mime, durationMs, req.body]
+        );
+        const voice = voiceRows[0];
+        const backendBase = process.env.BACKEND_URL || '';
+        const payload = {
+          voice_id: voice.id,
+          url: `${backendBase}/api/v1/guardian/voice-messages/${voice.id}/audio`,
+          duration_ms: durationMs,
+        };
+
+        // Same shape as POST /devices/:id/commands — see that route for why
+        // ttl is bound twice ($5/$7).
+        const ttl = 6;
+        const { rows: cmdRows } = await client.query(
+          `INSERT INTO device_commands (org_id, device_id, command, command_type, status, payload, ttl_hours, issued_by, issued_at, expires_at)
+           VALUES ($1, $2, $3, $3, 'pending', $4, $5, $6, NOW(), NOW() + ($7 * INTERVAL '1 hour'))
+           RETURNING id, issued_at, expires_at`,
+          [orgId, req.params.id, 'play_voice_message', payload, ttl, req.user.id, ttl]
+        );
+        const cmd = cmdRows[0];
+        const signature = signCommand(cmd.id, 'play_voice_message', payload, cmd.issued_at, cmd.expires_at);
+        await client.query(`UPDATE device_commands SET signature = $1 WHERE id = $2`, [signature, cmd.id]);
+        await client.query('COMMIT');
+
+        publish(`org#${orgId}`, { type: 'command:queued', device_id: req.params.id, command: 'play_voice_message', command_id: cmd.id }).catch(e => logger.warn(`Centrifugo publish failed: ${e.message}`));
+        if (device.fcm_token) {
+          sendCommandPush(device.fcm_token, 'play_voice_message', cmd.id, payload).catch(e => logger.warn(`Voice command FCM push failed: ${e.message}`));
+        }
+        logger.info(`Voice message queued: device=${req.params.id} voice=${voice.id} bytes=${req.body.length} by user ${req.user.id}`);
+        res.json({ data: { voice_id: voice.id, command_id: cmd.id, status: 'queued' } });
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally { client.release(); }
+    } catch (err) { next(err); }
+  }
+);
 
 // POST /commands/broadcast
 router.post('/commands/broadcast', async (req, res, next) => {

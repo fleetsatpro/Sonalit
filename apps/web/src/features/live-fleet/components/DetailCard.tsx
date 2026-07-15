@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../../../lib/api.js'
 import type { LiveVehicle, LiveStatus } from '../types/fleet.js'
+
+const MAX_VOICE_MS = 60_000
 
 const STATUS_COLOR: Record<LiveStatus, string> = {
   move: '#16c784', idle: '#f59e0b', stop: '#475569', offline: '#3e4252', sos: '#ef4444',
@@ -67,9 +69,31 @@ export default function DetailCard({ vehicle: v, onClose, trackedId, onToggleTra
   const [msgOpen, setMsgOpen] = useState(false)
   const [msgText, setMsgText] = useState('')
   const [action, setAction] = useState<ActionState>({ kind: 'idle' })
+  const [recording, setRecording] = useState(false)
+  const [recElapsed, setRecElapsed] = useState(0)
+  const recorderRef = useRef<MediaRecorder | null>(null)
+  const recChunksRef = useRef<BlobPart[]>([])
+  const recTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const recStartRef = useRef(0)
+  // 'send' posts the clip; 'discard' just tears the recorder down
+  const recIntentRef = useRef<'send' | 'discard'>('discard')
+
+  const stopRecorder = (intent: 'send' | 'discard') => {
+    recIntentRef.current = intent
+    if (recTimerRef.current) { clearInterval(recTimerRef.current); recTimerRef.current = null }
+    const rec = recorderRef.current
+    if (rec && rec.state !== 'inactive') rec.stop()
+    else setRecording(false)
+  }
 
   // Reset transient action UI when the operator switches device
-  useEffect(() => { setMsgOpen(false); setMsgText(''); setAction({ kind: 'idle' }) }, [v?.id])
+  useEffect(() => {
+    setMsgOpen(false); setMsgText(''); setAction({ kind: 'idle' })
+    stopRecorder('discard')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [v?.id])
+  // Tear down the mic if the card unmounts mid-recording
+  useEffect(() => () => stopRecorder('discard'), [])
 
   if (!v) return null
 
@@ -105,6 +129,45 @@ export default function DetailCard({ vehicle: v, onClose, trackedId, onToggleTra
     void sendCommand('show_message', { text }, 'Message delivered to device').then(ok => {
       if (ok) { setMsgText(''); setMsgOpen(false) }
     })
+  }
+
+  const startRecording = async () => {
+    setAction({ kind: 'idle' })
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch {
+      setAction({ kind: 'error', note: 'Microphone access denied' })
+      return
+    }
+    const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find(m => MediaRecorder.isTypeSupported(m)) ?? ''
+    const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
+    recorderRef.current = rec
+    recChunksRef.current = []
+    recIntentRef.current = 'discard'
+    rec.ondataavailable = e => { if (e.data.size > 0) recChunksRef.current.push(e.data) }
+    rec.onstop = () => {
+      stream.getTracks().forEach(t => t.stop())
+      setRecording(false)
+      const durationMs = Math.min(Date.now() - recStartRef.current, MAX_VOICE_MS)
+      if (recIntentRef.current !== 'send' || recChunksRef.current.length === 0) return
+      const blob = new Blob(recChunksRef.current, { type: rec.mimeType || 'audio/webm' })
+      setAction({ kind: 'busy' })
+      api.post(`/guardian/devices/${v!.id}/voice-message?duration_ms=${durationMs}`, blob, {
+        headers: { 'Content-Type': blob.type || 'audio/webm' },
+      })
+        .then(() => setAction({ kind: 'done', note: 'Voice message sent — plays on the device within ~1 min' }))
+        .catch(() => setAction({ kind: 'error', note: 'Failed — voice message not sent' }))
+    }
+    recStartRef.current = Date.now()
+    setRecElapsed(0)
+    setRecording(true)
+    rec.start()
+    recTimerRef.current = setInterval(() => {
+      const elapsed = Date.now() - recStartRef.current
+      setRecElapsed(elapsed)
+      if (elapsed >= MAX_VOICE_MS) stopRecorder('send')
+    }, 200)
   }
 
   return (
@@ -224,13 +287,40 @@ export default function DetailCard({ vehicle: v, onClose, trackedId, onToggleTra
             autoFocus
             style={{ resize: 'none', background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 7, color: '#dfe0db', fontSize: 12, fontFamily: 'inherit', padding: '7px 9px', outline: 'none' }}
           />
-          <button
-            onClick={sendMsg}
-            disabled={!msgText.trim() || action.kind === 'busy'}
-            style={{ alignSelf: 'flex-end', padding: '5px 14px', borderRadius: 6, cursor: msgText.trim() ? 'pointer' : 'not-allowed', background: 'rgba(232,168,48,.14)', border: '1px solid rgba(232,168,48,.4)', color: '#e8a830', fontSize: 11, fontWeight: 600, fontFamily: 'inherit', opacity: msgText.trim() ? 1 : 0.4 }}
-          >
-            {action.kind === 'busy' ? 'Sending…' : 'Send to device'}
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {/* voice message — record & send; plays out loud on the device */}
+            {!recording ? (
+              <button
+                onClick={() => void startRecording()}
+                disabled={action.kind === 'busy'}
+                title="Record a voice message — it plays out loud on the device"
+                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 6, cursor: 'pointer', background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.1)', color: '#7a7e8a', fontSize: 11, fontFamily: 'inherit' }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></svg>
+                Voice
+              </button>
+            ) : (
+              <>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: 'IBM Plex Mono, monospace', fontSize: 11, color: '#ef4444' }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#ef4444', animation: 'lf-ldot 1s ease-in-out infinite' }} />
+                  {Math.floor(recElapsed / 1000)}s / 60s
+                </span>
+                <button onClick={() => stopRecorder('send')} style={{ padding: '5px 10px', borderRadius: 6, cursor: 'pointer', background: 'rgba(22,199,132,.12)', border: '1px solid rgba(22,199,132,.4)', color: '#16c784', fontSize: 11, fontWeight: 600, fontFamily: 'inherit' }}>
+                  Send voice
+                </button>
+                <button onClick={() => stopRecorder('discard')} style={{ padding: '5px 8px', borderRadius: 6, cursor: 'pointer', background: 'none', border: '1px solid rgba(255,255,255,.1)', color: '#7a7e8a', fontSize: 11, fontFamily: 'inherit' }}>
+                  Cancel
+                </button>
+              </>
+            )}
+            <button
+              onClick={sendMsg}
+              disabled={!msgText.trim() || action.kind === 'busy' || recording}
+              style={{ marginLeft: 'auto', padding: '5px 14px', borderRadius: 6, cursor: msgText.trim() ? 'pointer' : 'not-allowed', background: 'rgba(232,168,48,.14)', border: '1px solid rgba(232,168,48,.4)', color: '#e8a830', fontSize: 11, fontWeight: 600, fontFamily: 'inherit', opacity: msgText.trim() && !recording ? 1 : 0.4 }}
+            >
+              {action.kind === 'busy' ? 'Sending…' : 'Send to device'}
+            </button>
+          </div>
         </div>
       )}
 

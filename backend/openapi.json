@@ -1206,6 +1206,16 @@
         }
       }
     },
+    "/api/v1/guardian/voice-messages/{id}/audio": {
+      "get": {
+        "operationId": "get_api_v1_guardian_voice_messages_id_audio",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/location": {
       "post": {
         "operationId": "post_api_v1_guardian_location",
@@ -2341,6 +2351,16 @@
     "/api/v1/guardian/devices/{id}/command-history": {
       "get": {
         "operationId": "get_api_v1_guardian_devices_id_command_history",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/voice-message": {
+      "post": {
+        "operationId": "post_api_v1_guardian_devices_id_voice_message",
         "responses": {
           "200": {
             "description": "OK"
