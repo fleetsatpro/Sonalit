@@ -569,6 +569,39 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
         });
       }
 
+      // No android_id match, but the badge's officer already has a linked
+      // live device — this is almost always the SAME phone re-enrolling
+      // (fresh install wiped its stored credentials, or the row predates
+      // android_id tracking). Adopt that row — backfill android_id, hand its
+      // token back — instead of forking a new row and retiring the old one,
+      // which silently discarded the device's entire position history and
+      // flipped the officer to "NO FIX YET" until the fork caught up.
+      if (officerRes.rows[0].device_id) {
+        const adopt = await query(
+          `UPDATE guardian_devices
+              SET android_id = $2,
+                  fcm_token = COALESCE($3, fcm_token),
+                  app_version = COALESCE($4, app_version),
+                  updated_at = NOW()
+            WHERE id = $1 AND deleted_at IS NULL
+            RETURNING id, token, status`,
+          [officerRes.rows[0].device_id, device_id, fcm_token ?? null, app_version ?? null]
+        );
+        if (adopt.rows[0]) {
+          const dev = adopt.rows[0];
+          const mappedStatus = (dev.status === 'active' || dev.status === 'enrolled') ? 'enrolled' : dev.status;
+          auditLog('device', dev.id, 'v4_enroll_adopted', 'device', dev.id, { operator_code, platform }, req.ip);
+          return res.json({
+            status: mappedStatus,
+            device_uuid: dev.id,
+            device_token: dev.token,
+            org_id: orgId,
+            officer_id: officerRes.rows[0].id,
+            command_signing_secret: COMMAND_SIGNING_SECRET,
+          });
+        }
+      }
+
       // New enrollment — omit org_id when null so the column DEFAULT fires
       // rather than explicitly passing NULL against a NOT NULL constraint.
       const enrollParams = [operator_code, device_id, fcm_token ?? null, app_version ?? null];
