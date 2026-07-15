@@ -1,4 +1,3 @@
-import { useEffect, useRef } from 'react'
 import type { LiveVehicle, LiveStatus } from '../types/fleet.js'
 
 const STATUS_COLOR: Record<LiveStatus, string> = {
@@ -21,23 +20,22 @@ function fmtAgo(s: number): string {
   return `${Math.floor(s / 3600)}h ago`
 }
 
-function SpeedBars({ speed }: { speed: number }) {
-  const bars = Array.from({ length: 12 }, (_, i) => {
-    const base = i * (speed / 11)
-    const jitter = base * (0.75 + Math.random() * 0.5)
-    return Math.min(speed, Math.max(2, Math.round(jitter)))
-  })
-  const max = Math.max(...bars, 1)
+/** device_health stores -1/NULL for "unknown" — never render a fabricated value. */
+function pct(v: number | null | undefined): number | null {
+  return v != null && v >= 0 ? v : null
+}
+
+function HealthBar({ label, value }: { label: string; value: number | null }) {
+  const color = value == null ? '#3e4252' : value < 20 ? '#ef4444' : value < 50 ? '#f59e0b' : '#16c784'
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 44 }}>
-      {bars.map((v, i) => (
-        <div key={i} style={{
-          flex: 1, borderRadius: '1px 1px 0 0', minHeight: 2,
-          height: `${Math.max(5, Math.round((v / max) * 100))}%`,
-          background: v > 60 ? 'rgba(22,199,132,.6)' : v > 20 ? 'rgba(245,158,11,.5)' : 'rgba(239,68,68,.5)',
-          transition: 'height .3s',
-        }} />
-      ))}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 9, color: '#7a7e8a', width: 24, flexShrink: 0 }}>{label}</span>
+      <div style={{ flex: 1, height: 5, background: 'rgba(255,255,255,.06)', borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{ width: `${value ?? 0}%`, height: '100%', background: color, borderRadius: 2 }} />
+      </div>
+      <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 10, fontWeight: 600, color, width: 30, textAlign: 'right', flexShrink: 0 }}>
+        {value == null ? '—' : `${value}%`}
+      </span>
     </div>
   )
 }
@@ -48,9 +46,6 @@ interface Props {
 }
 
 export default function DetailCard({ vehicle: v, onClose }: Props) {
-  const barsKey = useRef(0)
-  useEffect(() => { barsKey.current++ }, [v?.id])
-
   if (!v) return null
 
   const color = STATUS_COLOR[v.status]
@@ -114,11 +109,14 @@ export default function DetailCard({ vehicle: v, onClose }: Props) {
         ))}
       </div>
 
-      {/* speed chart */}
-      <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,.07)' }}>
-        <div style={{ fontSize: 9, color: '#3e4252', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 6 }}>Speed — last 60 min</div>
-        <SpeedBars key={barsKey.current} speed={v.speed_kmh} />
-      </div>
+      {/* device health — Guardian devices only; vehicles have no battery/signal telemetry */}
+      {v.kind === 'guardian' && (
+        <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,.07)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ fontSize: 9, color: '#3e4252', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 2 }}>Device Health</div>
+          <HealthBar label="BAT" value={pct(v.battery_level)} />
+          <HealthBar label="SIG" value={pct(v.signal_strength)} />
+        </div>
+      )}
 
       {/* location */}
       {v.lat != null && (

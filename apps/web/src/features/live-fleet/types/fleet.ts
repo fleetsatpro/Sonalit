@@ -16,6 +16,9 @@ export interface LiveVehicle {
   location_desc: string
   /** 'guardian' = a field officer's Guardian device, not tied to any vehicle. */
   kind: 'vehicle' | 'guardian'
+  /** Latest device_health reading for Guardian devices; null/undefined = not reported. */
+  battery_level: number | null
+  signal_strength: number | null
 }
 
 export interface ConvoyGroup {

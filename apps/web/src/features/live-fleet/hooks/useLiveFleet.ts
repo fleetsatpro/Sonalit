@@ -15,7 +15,18 @@ interface DashConvoy {
 interface GpsPos {
   device_id: string; vehicle_id: string | null; name?: string | null
   lat: number; lng: number; speed: number | null; heading: number | null; timestamp: string | null
+  panic_active?: boolean; battery_level?: number | null; signal_strength?: number | null
 }
+// Realtime publishes on the org# channel carry a `type` field; GPS position
+// updates are always 'location' (gpsWorker.js, guardian.js POST /location).
+// Everything else on that channel (panic, panic_cancel, geofence:event,
+// device.command, convoy.update, comms.*, ...) also carries device_id or
+// vehicle_id, so without this check those events were being treated as GPS
+// position updates and clobbering the real position with whatever partial
+// fields they happened to carry (no lat/lng at all in most cases) — the
+// device's marker would then vanish or freeze the instant any unrelated
+// event fired for it.
+interface RealtimeEvent { type?: string; device_id?: string; vehicle_id?: string }
 
 function deriveStatus(speedKmh: number, secsAgo: number): LiveStatus {
   if (secsAgo > 1800) return 'offline'
@@ -31,6 +42,11 @@ export function useLiveFleet() {
   const [positions, setPositions] = useState<Map<string, GpsPos>>(new Map())
   const posRef = useRef(positions)
   posRef.current = positions
+
+  // device_ids with an unresolved panic_events row — seeded from /gps/track's
+  // panic_active column, kept live by 'panic' / 'panic_cancel' publishes so a
+  // brand-new SOS (or its cancellation) reflects on the map without a reload.
+  const [panicDevices, setPanicDevices] = useState<Set<string>>(new Set())
 
   const { data: dashVehicles } = useQuery<DashVehicle[]>({
     queryKey: ['live-fleet-vehicles'],
@@ -60,11 +76,14 @@ export function useLiveFleet() {
     queryFn: async () => {
       const r = await api.get<GpsPos[]>('/gps/track')
       const next = new Map<string, GpsPos>()
+      const panicking = new Set<string>()
       for (const p of r.data) {
         const key = p.vehicle_id ?? p.device_id
         next.set(key, p)
+        if (p.panic_active) panicking.add(p.device_id)
       }
       setPositions(next)
+      setPanicDevices(panicking)
       return r.data
     },
     enabled: !!orgId,
@@ -74,14 +93,33 @@ export function useLiveFleet() {
   // Real-time GPS updates via Centrifuge
   useEffect(() => {
     if (!orgId) return
-    return subscribe<GpsPos>(`org#${orgId}`, ev => {
+    return subscribe<GpsPos & RealtimeEvent>(`org#${orgId}`, ev => {
+      if (ev.type && ev.type !== 'location') return
       if (!ev.device_id && !ev.vehicle_id) return
-      const key = ev.vehicle_id ?? ev.device_id
+      const key = ev.vehicle_id ?? ev.device_id!
       setPositions(prev => {
         const next = new Map(prev)
         next.set(key, ev)
         return next
       })
+    })
+  }, [orgId])
+
+  // Real-time panic (SOS) state via Centrifuge — kept separate from the
+  // position stream since panic events don't carry a position payload.
+  useEffect(() => {
+    if (!orgId) return
+    return subscribe<RealtimeEvent>(`org#${orgId}`, ev => {
+      if (ev.type === 'panic' && ev.device_id) {
+        setPanicDevices(prev => (prev.has(ev.device_id!) ? prev : new Set(prev).add(ev.device_id!)))
+      } else if (ev.type === 'panic_cancel' && ev.device_id) {
+        setPanicDevices(prev => {
+          if (!prev.has(ev.device_id!)) return prev
+          const next = new Set(prev)
+          next.delete(ev.device_id!)
+          return next
+        })
+      }
     })
   }, [orgId])
 
@@ -117,7 +155,8 @@ export function useLiveFleet() {
         const pos = positions.get(v.id)
         const secsAgo = pos?.timestamp ? Math.floor((now - new Date(pos.timestamp).getTime()) / 1000) : 99999
         const speedKmh = pos ? (pos.speed ?? 0) : v.speed_kmh
-        const status = deriveStatus(speedKmh, secsAgo)
+        const isPanic = !!pos && panicDevices.has(pos.device_id)
+        const status = isPanic ? 'sos' : deriveStatus(speedKmh, secsAgo)
         const lv: LiveVehicle = {
           id: v.id,
           registration: v.registration,
@@ -130,9 +169,11 @@ export function useLiveFleet() {
           heading: pos?.heading ?? null,
           last_ping_at: pos?.timestamp ?? v.last_ping_at,
           secondsAgo: secsAgo,
-          panic_active: false,
+          panic_active: isPanic,
           location_desc: '',
           kind: 'vehicle',
+          battery_level: pos?.battery_level ?? null,
+          signal_strength: pos?.signal_strength ?? null,
         }
         counts.all++
         counts[status]++
@@ -149,7 +190,8 @@ export function useLiveFleet() {
         usedKeys.add(key)
         const secsAgo = pos.timestamp ? Math.floor((now - new Date(pos.timestamp).getTime()) / 1000) : 99999
         const speedKmh = pos.speed ?? 0
-        const status = deriveStatus(speedKmh, secsAgo)
+        const isPanic = panicDevices.has(pos.device_id)
+        const status = isPanic ? 'sos' : deriveStatus(speedKmh, secsAgo)
         const dashV = pos.vehicle_id ? vehicleRegMap.get(pos.vehicle_id) : undefined
         const lv: LiveVehicle = {
           id: key,
@@ -163,9 +205,11 @@ export function useLiveFleet() {
           heading: pos.heading,
           last_ping_at: pos.timestamp,
           secondsAgo: secsAgo,
-          panic_active: false,
+          panic_active: isPanic,
           location_desc: '',
           kind: pos.vehicle_id ? 'vehicle' : 'guardian',
+          battery_level: pos.battery_level ?? null,
+          signal_strength: pos.signal_strength ?? null,
         }
         counts.all++
         counts[status]++
@@ -184,7 +228,8 @@ export function useLiveFleet() {
         usedKeys.add(key)
         const secsAgo = pos.timestamp ? Math.floor((now - new Date(pos.timestamp).getTime()) / 1000) : 99999
         const speedKmh = pos.speed ?? 0
-        const status = deriveStatus(speedKmh, secsAgo)
+        const isPanic = panicDevices.has(pos.device_id)
+        const status = isPanic ? 'sos' : deriveStatus(speedKmh, secsAgo)
         const lv: LiveVehicle = {
           id: key,
           registration: pos.name || pos.device_id.slice(0, 8),
@@ -197,9 +242,11 @@ export function useLiveFleet() {
           heading: pos.heading,
           last_ping_at: pos.timestamp,
           secondsAgo: secsAgo,
-          panic_active: false,
+          panic_active: isPanic,
           location_desc: '',
           kind: 'guardian',
+          battery_level: pos.battery_level ?? null,
+          signal_strength: pos.signal_strength ?? null,
         }
         counts.all++
         counts[status]++
@@ -239,7 +286,7 @@ export function useLiveFleet() {
     }
 
     return { groups, counts }
-  }, [dashVehicles, positions, convoyMap, vehicleRegMap])
+  }, [dashVehicles, positions, convoyMap, vehicleRegMap, panicDevices])
 
   return { groups, counts }
 }

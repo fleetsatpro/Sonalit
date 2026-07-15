@@ -49,7 +49,10 @@ router.get('/track', authenticate, attachOrgDb, asyncHandler(async (req, res) =>
        v.longitude                        AS lng,
        gl.speed                           AS speed,
        v.heading                          AS heading,
-       COALESCE(v.last_ping, gl.timestamp) AS timestamp
+       COALESCE(v.last_ping, gl.timestamp) AS timestamp,
+       false                               AS panic_active,
+       NULL::int                          AS battery_level,
+       NULL::int                          AS signal_strength
      FROM vehicles v
      LEFT JOIN LATERAL (
        SELECT speed, timestamp FROM gps_logs
@@ -67,6 +70,9 @@ router.get('/track', authenticate, attachOrgDb, asyncHandler(async (req, res) =>
      -- speed/seen), so pull the most recent heading from the raw fix history
      -- device_locations instead — that's what makes a moving field officer's
      -- marker able to point in their direction of travel on the live map.
+     -- panic_active and the latest device_health reading (battery/signal) are
+     -- surfaced here too — the Live Fleet map previously had no way to show a
+     -- field officer's SOS state or device health at all.
      SELECT
        gd.id::text                        AS device_id,
        CASE WHEN gd.assignment_type = 'vehicle'
@@ -76,13 +82,21 @@ router.get('/track', authenticate, attachOrgDb, asyncHandler(async (req, res) =>
        gd.last_lng                        AS lng,
        gd.last_speed                      AS speed,
        dl.heading                         AS heading,
-       gd.last_seen                       AS timestamp
+       gd.last_seen                       AS timestamp,
+       COALESCE(gd.panic_active, false)   AS panic_active,
+       dh.battery_level                   AS battery_level,
+       dh.signal_strength                 AS signal_strength
      FROM guardian_devices gd
      LEFT JOIN LATERAL (
        SELECT heading FROM device_locations
        WHERE device_id = gd.id
        ORDER BY timestamp DESC LIMIT 1
      ) dl ON true
+     LEFT JOIN LATERAL (
+       SELECT battery_level, signal_strength FROM device_health
+       WHERE device_id = gd.id
+       ORDER BY (battery_level IS NOT NULL) DESC, recorded_at DESC LIMIT 1
+     ) dh ON true
      WHERE gd.last_lat IS NOT NULL
        AND gd.last_lng IS NOT NULL
        AND gd.deleted_at IS NULL
