@@ -1017,10 +1017,22 @@ router.post('/panic', deviceAuth, requireIdempotencyKey, panicLimiter, async (re
     };
 
     if (isNew) {
-      // Mark device panic_active so dashboard shows alert immediately on reload
+      // Mark device panic_active so dashboard shows alert immediately on reload.
+      // A panic that carries coordinates is also the freshest position we have —
+      // fold it into last_lat/last_lng/last_seen, which is all Live Fleet reads.
+      // Otherwise a device whose continuous GPS stream is down shows OFF on the
+      // map at a stale position while its SOS sits in Panic Center with exact
+      // coordinates a few pixels away.
       await query(
-        `UPDATE guardian_devices SET panic_active = true, updated_at = NOW() WHERE id = $1`,
-        [deviceId]
+        `UPDATE guardian_devices
+            SET panic_active = true,
+                updated_at = NOW(),
+                last_lat = COALESCE($2::float8, last_lat),
+                last_lng = COALESCE($3::float8, last_lng),
+                last_seen = CASE WHEN $2::float8 IS NOT NULL AND $3::float8 IS NOT NULL
+                                 THEN NOW() ELSE last_seen END
+          WHERE id = $1`,
+        [deviceId, lat ?? null, lng ?? null]
       );
 
       const panicPublishPayload = { type: 'panic', ...payload };
