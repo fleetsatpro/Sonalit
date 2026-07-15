@@ -217,5 +217,18 @@ class CommandExecutor @Inject constructor(
 
     companion object {
         private const val TAG = "CommandExecutor"
+
+        /** Command payloads must reach execute() as a JSON string. Older
+         *  backends returned the payload as a nested object over the poll/
+         *  heartbeat paths — Kotlin's Map.toString() ("{url=https://...}")
+         *  truncates unquoted values at ':' under lenient JSON parsing, which
+         *  is exactly how voice-message URLs became the literal string
+         *  "https". Convert maps through JSONObject instead. */
+        fun payloadToJson(raw: Any?): String? = when (raw) {
+            null -> null
+            is String -> raw
+            is Map<*, *> -> JSONObject(raw.mapKeys { it.key.toString() }).toString()
+            else -> raw.toString()
+        }
     }
 }
