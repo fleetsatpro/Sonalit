@@ -72,7 +72,12 @@ export function useLiveFleet() {
     staleTime: 30_000,
   })
 
-  // Initial GPS positions — always fetch; used as primary source when no vehicle records
+  // GPS positions — always fetch; used as primary source when no vehicle
+  // records. Polled every 15s as a resilience floor: realtime Centrifugo
+  // pushes are the fast path, but when that layer is down or unreachable
+  // (publishes fail server-side, or the browser's websocket can't connect)
+  // this poll is what keeps the map moving instead of freezing until a
+  // manual page reload.
   useQuery<GpsPos[]>({
     queryKey: ['live-fleet-gps-init'],
     queryFn: async () => {
@@ -90,6 +95,7 @@ export function useLiveFleet() {
     },
     enabled: !!orgId,
     staleTime: 0,
+    refetchInterval: 15_000,
   })
 
   // Real-time GPS updates via Centrifuge
