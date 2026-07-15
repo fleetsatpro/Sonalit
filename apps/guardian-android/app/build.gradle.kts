@@ -16,8 +16,8 @@ android {
         applicationId = "io.sonalit.guardian"
         minSdk = 29
         targetSdk = 35
-        versionCode = 10
-        versionName = "4.6.0"
+        versionCode = 11
+        versionName = "4.6.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

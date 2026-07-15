@@ -11,6 +11,8 @@ import android.util.Log
 import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailability
 import com.google.android.gms.location.*
 import com.google.android.gms.tasks.CancellationTokenSource
 import dagger.hilt.android.AndroidEntryPoint
@@ -56,6 +58,7 @@ class GuardianService : Service() {
         // "Running" the instant the service starts, rather than waiting on the
         // ~15-min network heartbeat worker (which could never keep it fresh).
         statusStore.recordServiceAlive()
+        checkPlayServicesAvailability()
         requestLocationUpdates(intervalMs = 30_000L)
         // Grab one fix right now instead of waiting up to 30s for the first
         // interval callback — this is what clears "GPS: No fix yet" seconds
@@ -67,6 +70,17 @@ class GuardianService : Service() {
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         registerMediaSession()
+    }
+
+    /** FusedLocationProviderClient depends entirely on Play Services — on a
+     *  device where it's missing, disabled, or too outdated, every location
+     *  call above fails (or silently never resolves) with nothing in the UI
+     *  to explain why. Logged once at startup so that case is diagnosable. */
+    private fun checkPlayServicesAvailability() {
+        val status = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(this)
+        if (status != ConnectionResult.SUCCESS) {
+            Log.e(TAG, "Google Play Services unavailable (status=$status) — location fixes will never arrive")
+        }
     }
 
     /** Beats a local proof-of-life every 60s so the Home screen can tell the
@@ -84,8 +98,22 @@ class GuardianService : Service() {
     private fun requestImmediateFix() {
         runCatching {
             fusedClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token)
-                .addOnSuccessListener { loc -> loc?.let { bufferFix(it) } }
-        }
+                .addOnSuccessListener { loc ->
+                    if (loc == null) {
+                        Log.w(TAG, "requestImmediateFix: succeeded but returned null location (no provider had a recent fix cached)")
+                    } else {
+                        bufferFix(loc)
+                    }
+                }
+                .addOnFailureListener { e ->
+                    // Silently swallowing this (as the old code did) is exactly why
+                    // "GPS: No fix yet" was undiagnosable on a real device with location
+                    // services on — this is the one place that would have shown a
+                    // ResolvableApiException (location settings not satisfied) or a
+                    // missing/outdated Play Services error.
+                    Log.e(TAG, "requestImmediateFix failed", e)
+                }
+        }.onFailure { e -> Log.e(TAG, "requestImmediateFix threw synchronously", e) }
     }
 
     /**
@@ -150,7 +178,11 @@ class GuardianService : Service() {
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, intervalMs)
             .setMinUpdateIntervalMillis(intervalMs / 2)
             .build()
+        // The returned Task was previously discarded — a registration failure
+        // (e.g. location settings not satisfied, provider unavailable) would
+        // then look identical to "working fine, just no fix yet" forever.
         fusedClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
+            .addOnFailureListener { e -> Log.e(TAG, "requestLocationUpdates registration failed", e) }
     }
 
     private fun bufferFix(location: Location) {
