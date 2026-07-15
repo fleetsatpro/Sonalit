@@ -886,6 +886,45 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
 });
 
 /**
+ * POST /api/v1/guardian/commands/poll
+ * Lightweight command pickup for the app's 60s in-service poll — the same
+ * atomic claim as the heartbeat path, without writing a device_health row,
+ * so it's cheap enough to hit every minute. This keeps dashboard commands
+ * (trigger_siren, show_message, ...) delivering in ≤60s even when FCM can't
+ * reach the device: no registered token, missing Play services, or push
+ * throttling by the OEM.
+ */
+router.post('/commands/poll', deviceAuth, heartbeatLimiter, async (req, res, next) => {
+  try {
+    const deviceId = req.device.id;
+    const commands = await query(
+      `WITH claimed AS (
+        SELECT id FROM device_commands
+        WHERE device_id = $1 AND status = 'pending' AND signature IS NOT NULL
+        ORDER BY issued_at ASC
+        LIMIT 50
+        FOR UPDATE SKIP LOCKED
+      )
+      UPDATE device_commands dc
+      SET status = 'sent', sent_at = NOW()
+      FROM claimed
+      WHERE dc.id = claimed.id
+      RETURNING dc.id, dc.command_type, dc.payload, dc.status,
+                dc.issued_at, dc.expires_at, dc.signature`,
+      [deviceId]
+    );
+    if (commands.rows.length) {
+      for (const cmd of commands.rows) {
+        query(`INSERT INTO device_command_events (command_id, status) VALUES ($1, 'delivered')`, [cmd.id]).catch(() => {});
+      }
+    }
+    res.json({ commands: commands.rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * POST /api/v1/guardian/location
  * GPS position update from device.
  */
