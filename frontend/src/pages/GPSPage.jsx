@@ -3,7 +3,8 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { vehiclesAPI, alertsAPI, geofenceAPI, riskZoneAPI } from '../services/api';
 import api from '../services/api';
-import socketService from '../services/socket';
+import { subscribe } from '../services/centrifuge';
+import { useAuthStore } from '../store';
 import { Spinner } from '../components/UI';
 import toast from 'react-hot-toast';
 import { timeAgo, formatDate } from '../utils/helpers';
@@ -55,11 +56,16 @@ function speedColor(speed) {
 }
 
 function fuelColor(fuel) {
-  const f = parseFloat(fuel || 100);
+  if (fuel == null) return '#475569';
+  const f = parseFloat(fuel);
   if (f < 20) return '#ef4444';
   if (f < 40) return '#F97316';
   if (f < 70) return '#F0B429';
   return '#22D3A0';
+}
+
+function fuelLabel(fuel) {
+  return fuel == null ? '—' : `${parseFloat(fuel).toFixed(0)}%`;
 }
 
 export default function GPSPage() {
@@ -169,49 +175,89 @@ export default function GPSPage() {
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
   }, []);
 
-  // ── Socket live updates ────────────────────────────────────────────────
+  // ── Realtime updates via Centrifugo ─────────────────────────────────────
+  // backend/src has no Socket.IO server at all (fully migrated to
+  // Centrifugo) — the socketService this effect used to drive had nothing
+  // to connect to, so none of this ever fired in production; the map was
+  // only ever as fresh as the 15s poll below. Every message on the org
+  // channel carries a `type`, and channel-sharing means unrelated event
+  // types (device.command, convoy.update, comms.*, ...) land here too, so
+  // this only acts on the types it explicitly recognizes.
+  const orgId = useAuthStore(s => s.user?.org_id ?? '');
   useEffect(() => {
-    socketService.connect();
-    const unsubVehicle = socketService.onVehicleUpdate(data => {
-      setVehicles(prev => prev.map(v =>
-        v.id === data.vehicleId ? { ...v, lat: data.lat, lng: data.lng, speed: data.speed || v.speed } : v
-      ));
-      if (leafletRef.current && markersMap.current[data.vehicleId] && data.lat && data.lng) {
-        markersMap.current[data.vehicleId].setLatLng([data.lat, data.lng]);
-        updateTrail(leafletRef.current, data.vehicleId, data.lat, data.lng);
+    if (!orgId) return;
+    return subscribe(`org#${orgId}`, data => {
+      switch (data.type) {
+        case 'location': {
+          if (data.vehicle_id) {
+            setVehicles(prev => prev.map(v =>
+              v.id === data.vehicle_id ? { ...v, lat: data.lat, lng: data.lng, speed: data.speed ?? v.speed } : v
+            ));
+            if (leafletRef.current && markersMap.current[data.vehicle_id] && data.lat != null && data.lng != null) {
+              markersMap.current[data.vehicle_id].setLatLng([data.lat, data.lng]);
+              updateTrail(leafletRef.current, data.vehicle_id, data.lat, data.lng);
+            }
+            setLiveCount(c => c + 1);
+            setEvents(prev => [{
+              id: Date.now(), time: new Date(), type: 'position',
+              text: `Vehicle updated — ${data.speed || 0} km/h`,
+              color: speedColor(data.speed),
+            }, ...prev.slice(0, 49)]);
+          } else if (data.device_id) {
+            setGuardianDevices(prev => prev.map(d =>
+              d.id === data.device_id
+                ? { ...d, last_lat: data.lat, last_lng: data.lng, last_speed: data.speed ?? d.last_speed, last_seen: data.timestamp || new Date().toISOString() }
+                : d
+            ));
+            const marker = guardianMarkersRef.current[data.device_id];
+            if (marker && data.lat != null && data.lng != null) marker.setLatLng([data.lat, data.lng]);
+          }
+          break;
+        }
+        case 'panic': {
+          setGuardianDevices(prev => prev.map(d => d.id === data.device_id ? { ...d, panic_active: true } : d));
+          setEvents(prev => [{
+            id: Date.now(), time: new Date(), type: 'alert',
+            text: `🆘 SOS: ${data.device_name || data.device_id}${data.message ? ' — ' + data.message : ''}`,
+            color: '#ef4444',
+          }, ...prev.slice(0, 49)]);
+          toast.error(`🆘 SOS triggered: ${data.device_name || 'Guardian device'}`, { duration: 8000 });
+          break;
+        }
+        case 'panic_cancel': {
+          setGuardianDevices(prev => prev.map(d => d.id === data.device_id ? { ...d, panic_active: false } : d));
+          break;
+        }
+        case 'alert.new': {
+          setAlerts(prev => [{
+            id: data.alertId, vehicle_id: data.vehicleId, type: data.alertType,
+            severity: data.severity, message: data.message, created_at: new Date().toISOString(),
+          }, ...prev.slice(0, 19)]);
+          setEvents(prev => [{
+            id: Date.now(), time: new Date(), type: 'alert',
+            text: `${(data.severity || '').toUpperCase()}: ${data.message}`,
+            color: data.severity === 'critical' ? '#ef4444' : '#F97316',
+          }, ...prev.slice(0, 49)]);
+          if (data.geofenceName) {
+            setMapViolation(data);
+            setTimeout(() => setMapViolation(null), 2000);
+          }
+          break;
+        }
+        case 'geofence:event': {
+          if (data.event_type !== 'route_deviation') break;
+          setEvents(prev => [{
+            id: Date.now(), time: new Date(), type: 'deviation',
+            text: `Route deviation: ${data.deviation_km ?? '?'}km off route`,
+            color: '#ef4444',
+          }, ...prev.slice(0, 49)]);
+          break;
+        }
+        default:
+          break;
       }
-      setLiveCount(c => c + 1);
-      setEvents(prev => [{
-        id: Date.now(), time: new Date(), type: 'position',
-        text: `Vehicle updated — ${data.speed || 0} km/h`,
-        color: speedColor(data.speed),
-      }, ...prev.slice(0, 49)]);
     });
-
-    const unsubAlert = socketService.onAlert(data => {
-      setAlerts(prev => [data, ...prev.slice(0, 19)]);
-      setEvents(prev => [{
-        id: Date.now(), time: new Date(), type: 'alert',
-        text: `${data.severity?.toUpperCase()}: ${data.message}`,
-        color: data.severity === 'critical' ? '#ef4444' : '#F97316',
-      }, ...prev.slice(0, 49)]);
-    });
-
-    const unsubDeviation = socketService.onConvoyDeviation(data => {
-      setEvents(prev => [{
-        id: Date.now(), time: new Date(), type: 'deviation',
-        text: `Route deviation: ${data.deviationKm}km off route`,
-        color: '#ef4444',
-      }, ...prev.slice(0, 49)]);
-    });
-
-    const unsubViolation = socketService.on('geofence:violation', data => {
-      setMapViolation(data);
-      setTimeout(() => setMapViolation(null), 2000);
-    });
-
-    return () => { unsubVehicle(); unsubAlert(); unsubDeviation(); unsubViolation(); };
-  }, []);
+  }, [orgId]);
 
   // ── AI map-update event — refresh geofences + risk zones when AI creates them ──
   useEffect(() => {
@@ -246,8 +292,11 @@ export default function GPSPage() {
         lat: parseFloat(v.lat ?? v.latitude ?? 0) || null,
         lng: parseFloat(v.lng ?? v.longitude ?? 0) || null,
         speed: parseFloat(v.speed ?? 0),
-        fuel_level: parseFloat(v.fuel_level ?? 85),
-        maintenance_score: parseInt(v.maintenance_score ?? 0),
+        // No fallback default — a vehicle with no real fuel/maintenance
+        // reading must show as unknown, not a fabricated "85% full" /
+        // "0 = perfect condition" value indistinguishable from real data.
+        fuel_level: v.fuel_level != null ? parseFloat(v.fuel_level) : null,
+        maintenance_score: v.maintenance_score != null ? parseInt(v.maintenance_score) : null,
       }));
       setVehicles(vs);
 
@@ -289,7 +338,7 @@ export default function GPSPage() {
             <div style="font-size:10px;color:#64748b;line-height:1.8">
               <div>Type: <span style="color:#e2e8f0">${v.type}</span></div>
               <div>Speed: <span style="color:${spColor};font-weight:700">${parseFloat(v.speed||0).toFixed(0)} km/h</span></div>
-              ${v.fuel_level != null ? `<div>Fuel: <span style="color:${fuelColor(v.fuel_level)};font-weight:700">${parseFloat(v.fuel_level).toFixed(0)}%</span></div>` : ''}
+              <div>Fuel: <span style="color:${fuelColor(v.fuel_level)};font-weight:700">${fuelLabel(v.fuel_level)}</span></div>
               <div>Driver: <span style="color:#e2e8f0">${v.driver_name || '—'}</span></div>
               <div>Region: <span style="color:#e2e8f0">${v.region}</span></div>
               ${v.last_ping ? `<div>Ping: <span style="color:#e2e8f0">${timeAgo(v.last_ping)}</span></div>` : ''}
@@ -311,6 +360,43 @@ export default function GPSPage() {
     } catch(e) { console.error(e); }
   }, [alerts, showTrails, showHeat]);
 
+  // battery_level/signal_strength are normalized to NULL server-side when
+  // unknown (the APK sends -1 as a sentinel), never 0 — so a falsy check
+  // like `d.battery_level || '?'` wrongly shows "?" for a real 0% battery.
+  // Always use a null/undefined check instead.
+  const guardianIcon = useCallback((Lfl, d) => {
+    const panic = !!d.panic_active;
+    const color = panic ? '#ef4444' : '#22D3A0';
+    const svgIcon = `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+      ${panic ? `<circle cx="16" cy="16" r="15" fill="none" stroke="#ef4444" stroke-width="2" opacity="0.6">
+        <animate attributeName="r" values="13;16;13" dur="0.8s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0.8;0.1;0.8" dur="0.8s" repeatCount="indefinite"/>
+      </circle>` : ''}
+      <circle cx="16" cy="16" r="13" fill="rgba(${panic?'239,68,68':'34,211,160'},0.15)" stroke="${color}" stroke-width="1.5"/>
+      <circle cx="16" cy="12" r="4" fill="${color}"/>
+      <path d="M8 24 Q8 18 16 18 Q24 18 24 24" fill="${color}"/>
+    </svg>`;
+    return Lfl.divIcon({ html: svgIcon, iconSize: [32,32], iconAnchor: [16,16], className: '' });
+  }, []);
+
+  const guardianPopup = useCallback((d) => {
+    const cfoName = d.cfo_convoy_name ? ` · ${d.cfo_convoy_name}` : '';
+    const battery = d.battery_level != null ? `${d.battery_level}%` : '—';
+    const batteryColor = d.battery_level == null ? '#64748b' : d.battery_level < 20 ? '#ef4444' : d.battery_level < 50 ? '#F59E0B' : '#22D3A0';
+    const signal = d.signal_strength != null ? `${d.signal_strength}%` : '—';
+    const signalColor = d.signal_strength == null ? '#64748b' : d.signal_strength < 30 ? '#ef4444' : '#22D3A0';
+    return `<div style="background:#0D1321;border:1px solid rgba(${d.panic_active?'239,68,68':'34,211,160'},0.2);border-radius:10px;padding:12px;min-width:160px;font-family:monospace">
+      <div style="color:${d.panic_active?'#ef4444':'#22D3A0'};font-size:12px;font-weight:700;margin-bottom:6px">${d.panic_active ? '🆘 SOS ACTIVE — ' : '👤 '}${d.name || d.imei || 'Guardian Device'}</div>
+      <div style="font-size:10px;color:#64748b;line-height:1.8">
+        <div>IMEI: <span style="color:#e2e8f0">${d.imei || '—'}</span></div>
+        <div>Battery: <span style="color:${batteryColor}">${battery}</span></div>
+        <div>Signal: <span style="color:${signalColor}">${signal}</span></div>
+        ${cfoName ? `<div>Convoy: <span style="color:#F0B429">${d.cfo_convoy_name}</span></div>` : ''}
+        <div>Last seen: <span style="color:#e2e8f0">${d.last_seen ? new Date(d.last_seen).toLocaleTimeString() : '—'}</span></div>
+      </div>
+    </div>`;
+  }, []);
+
   const loadGuardianDevices = useCallback(async (Lf, map) => {
     try {
       const r = await api.get('/guardian/devices', { params: { limit: 200 } });
@@ -326,24 +412,10 @@ export default function GPSPage() {
       });
       if (!showCFO) return;
       devs.forEach(d => {
-        const cfoName = d.cfo_convoy_name ? ` · ${d.cfo_convoy_name}` : '';
-        const svgIcon = `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="16" cy="16" r="13" fill="rgba(34,211,160,0.15)" stroke="#22D3A0" stroke-width="1.5"/>
-        <circle cx="16" cy="12" r="4" fill="#22D3A0"/>
-        <path d="M8 24 Q8 18 16 18 Q24 18 24 24" fill="#22D3A0"/>
-      </svg>`;
-        const icon = Lfl.divIcon({ html: svgIcon, iconSize: [32,32], iconAnchor: [16,16], className: '' });
-        const popup = `<div style="background:#0D1321;border:1px solid rgba(34,211,160,0.2);border-radius:10px;padding:12px;min-width:160px;font-family:monospace">
-        <div style="color:#22D3A0;font-size:12px;font-weight:700;margin-bottom:6px">👤 ${d.name || d.imei || 'CFO Device'}</div>
-        <div style="font-size:10px;color:#64748b;line-height:1.8">
-          <div>IMEI: <span style="color:#e2e8f0">${d.imei || '—'}</span></div>
-          <div>Battery: <span style="color:#22D3A0">${d.battery_level || '?'}%</span></div>
-          ${cfoName ? `<div>Convoy: <span style="color:#F0B429">${d.cfo_convoy_name}</span></div>` : ''}
-          <div>Last seen: <span style="color:#e2e8f0">${d.last_seen ? new Date(d.last_seen).toLocaleTimeString() : '—'}</span></div>
-        </div>
-      </div>`;
+        const icon = guardianIcon(Lfl, d);
+        const popup = guardianPopup(d);
         if (guardianMarkersRef.current[d.id]) {
-          guardianMarkersRef.current[d.id].setLatLng([d.last_lat, d.last_lng]).bindPopup(popup);
+          guardianMarkersRef.current[d.id].setLatLng([d.last_lat, d.last_lng]).setIcon(icon).bindPopup(popup);
         } else {
           const marker = Lfl.marker([d.last_lat, d.last_lng], { icon }).bindPopup(popup);
           marker.addTo(mapI);
@@ -351,7 +423,7 @@ export default function GPSPage() {
         }
       });
     } catch(e) { console.error('guardian devices', e); }
-  }, [showCFO]);
+  }, [showCFO, guardianIcon, guardianPopup]);
 
   const updateTrail = (Lf, vehicleId, lat, lng) => {
     if (!trailsMap.current[vehicleId]) trailsMap.current[vehicleId] = { pts:[], line:null };
@@ -523,6 +595,7 @@ export default function GPSPage() {
   const filtered = vehicles.filter(v => filter === 'all' || v.status === filter);
   const selectedVehicle = selected ? vehicles.find(v => v.id === selected) : null;
   const activeAlerts = alerts.filter(a => !a.resolved_at);
+  const panicCount = guardianDevices.filter(d => d.panic_active).length;
 
   const B = ({ onClick, active, title, children }) => (
     <button onClick={onClick} title={title} style={{
@@ -564,6 +637,12 @@ export default function GPSPage() {
           </p>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+          {panicCount > 0 && (
+            <div style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(239,68,68,0.15)', border:'1px solid rgba(239,68,68,0.4)', borderRadius:8, padding:'5px 10px', animation:'ping 1s infinite' }}>
+              <div style={{ width:6, height:6, borderRadius:'50%', background:'#ef4444' }} />
+              <span style={{ fontSize:9, color:'#ef4444', fontWeight:800, letterSpacing:1 }}>🆘 {panicCount} SOS ACTIVE</span>
+            </div>
+          )}
           {activeAlerts.length > 0 && (
             <div style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.25)', borderRadius:8, padding:'5px 10px' }}>
               <div style={{ width:6, height:6, borderRadius:'50%', background:'#ef4444', animation:'ping 1s infinite' }} />
@@ -699,7 +778,7 @@ export default function GPSPage() {
                 <div style={{ flex:1, overflowY:'auto', padding:8, display:'flex', flexDirection:'column', gap:6 }}>
                   {filtered.map(v => {
                     const color = SC[v.status]||'#94a3b8';
-                    const fuel = parseFloat(v.fuel_level||100);
+                    const fuel = v.fuel_level;
                     const isSelected = selected === v.id;
                     return (
                       <div key={v.id} onClick={() => { setSelected(v.id); setRightPanel('detail'); loadVehicleDetail(v); flyTo(v); }}
@@ -718,9 +797,9 @@ export default function GPSPage() {
                         <div style={{ display:'flex', alignItems:'center', gap:6 }}>
                           <span style={{ fontSize:8, color:'#475569', minWidth:20 }}>⛽</span>
                           <div style={{ flex:1, height:3, background:'rgba(255,255,255,0.06)', borderRadius:2 }}>
-                            <div style={{ width:fuel+'%', height:'100%', background:fuelColor(fuel), borderRadius:2 }} />
+                            <div style={{ width:(fuel ?? 0)+'%', height:'100%', background:fuelColor(fuel), borderRadius:2 }} />
                           </div>
-                          <span style={{ fontSize:8, color:fuelColor(fuel), fontWeight:700, minWidth:24 }}>{fuel.toFixed(0)}%</span>
+                          <span style={{ fontSize:8, color:fuelColor(fuel), fontWeight:700, minWidth:24 }}>{fuelLabel(fuel)}</span>
                         </div>
                         {v.driver_name && <div style={{ fontSize:9, color:'#475569', marginTop:4 }}>👤 {v.driver_name}</div>}
                       </div>
@@ -746,7 +825,7 @@ export default function GPSPage() {
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
                     {[
                       ['SPEED', parseFloat(selectedVehicle.speed||0).toFixed(0)+' km/h', speedColor(selectedVehicle.speed)],
-                      ['FUEL', parseFloat(selectedVehicle.fuel_level||100).toFixed(0)+'%', fuelColor(selectedVehicle.fuel_level)],
+                      ['FUEL', fuelLabel(selectedVehicle.fuel_level), fuelColor(selectedVehicle.fuel_level)],
                       ['STATUS', selectedVehicle.status?.toUpperCase(), SC[selectedVehicle.status]||'#94a3b8'],
                       ['REGION', selectedVehicle.region, '#94a3b8'],
                       ['ENG HRS', parseFloat(selectedVehicle.engine_hours||0).toFixed(0)+'h', '#64748b'],
@@ -786,14 +865,14 @@ export default function GPSPage() {
                   <div style={{ background:'rgba(255,255,255,0.02)', border:'1px solid rgba(255,255,255,0.05)', borderRadius:10, padding:10 }}>
                     <div style={{ display:'flex', justifyContent:'space-between', marginBottom:6 }}>
                       <span style={{ fontSize:8, color:'#475569', letterSpacing:2 }}>FUEL LEVEL</span>
-                      <span style={{ fontSize:9, fontWeight:700, color:fuelColor(selectedVehicle.fuel_level) }}>{parseFloat(selectedVehicle.fuel_level||100).toFixed(0)}%</span>
+                      <span style={{ fontSize:9, fontWeight:700, color:fuelColor(selectedVehicle.fuel_level) }}>{fuelLabel(selectedVehicle.fuel_level)}</span>
                     </div>
                     <div style={{ height:6, background:'rgba(255,255,255,0.06)', borderRadius:3 }}>
-                      <div style={{ width:parseFloat(selectedVehicle.fuel_level||100)+'%', height:'100%', background:fuelColor(selectedVehicle.fuel_level), borderRadius:3, transition:'width .5s' }} />
+                      <div style={{ width:(selectedVehicle.fuel_level ?? 0)+'%', height:'100%', background:fuelColor(selectedVehicle.fuel_level), borderRadius:3, transition:'width .5s' }} />
                     </div>
-                    {selectedVehicle.fuel_capacity && (
+                    {selectedVehicle.fuel_capacity && selectedVehicle.fuel_level != null && (
                       <div style={{ fontSize:8, color:'#475569', marginTop:4 }}>
-                        {(selectedVehicle.fuel_capacity * parseFloat(selectedVehicle.fuel_level||100) / 100).toFixed(0)}L remaining of {selectedVehicle.fuel_capacity}L
+                        {(selectedVehicle.fuel_capacity * selectedVehicle.fuel_level / 100).toFixed(0)}L remaining of {selectedVehicle.fuel_capacity}L
                       </div>
                     )}
                   </div>
