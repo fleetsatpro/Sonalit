@@ -172,6 +172,15 @@ private fun RequestCorePermissionsOnFirstLaunch() {
     ) { results ->
         val fineLocationGranted = results[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (fineLocationGranted) {
+            // GuardianService is started before this dialog is ever shown, and its
+            // location registration no-ops without the permission. Poke the already-
+            // running instance (onStartCommand) so it registers right now instead of
+            // waiting for its internal retry tick.
+            ContextCompat.startForegroundService(
+                context, Intent(context, io.sonalit.guardian.service.GuardianService::class.java)
+            )
+        }
         if (fineLocationGranted && !askedBackgroundLocation && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED
         ) {
