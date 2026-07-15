@@ -52,7 +52,8 @@ router.get('/track', authenticate, attachOrgDb, asyncHandler(async (req, res) =>
        COALESCE(v.last_ping, gl.timestamp) AS timestamp,
        false                               AS panic_active,
        NULL::int                          AS battery_level,
-       NULL::int                          AS signal_strength
+       NULL::int                          AS signal_strength,
+       NULL::timestamptz                  AS health_recorded_at
      FROM vehicles v
      LEFT JOIN LATERAL (
        SELECT speed, timestamp FROM gps_logs
@@ -85,7 +86,8 @@ router.get('/track', authenticate, attachOrgDb, asyncHandler(async (req, res) =>
        gd.last_seen                       AS timestamp,
        COALESCE(gd.panic_active, false)   AS panic_active,
        dh.battery_level                   AS battery_level,
-       dh.signal_strength                 AS signal_strength
+       dh.signal_strength                 AS signal_strength,
+       dh.recorded_at                     AS health_recorded_at
      FROM guardian_devices gd
      LEFT JOIN LATERAL (
        SELECT heading FROM device_locations
@@ -93,7 +95,7 @@ router.get('/track', authenticate, attachOrgDb, asyncHandler(async (req, res) =>
        ORDER BY timestamp DESC LIMIT 1
      ) dl ON true
      LEFT JOIN LATERAL (
-       SELECT battery_level, signal_strength FROM device_health
+       SELECT battery_level, signal_strength, recorded_at FROM device_health
        WHERE device_id = gd.id
        ORDER BY (battery_level IS NOT NULL) DESC, recorded_at DESC LIMIT 1
      ) dh ON true

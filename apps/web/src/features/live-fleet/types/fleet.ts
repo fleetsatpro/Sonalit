@@ -16,9 +16,16 @@ export interface LiveVehicle {
   location_desc: string
   /** 'guardian' = a field officer's Guardian device, not tied to any vehicle. */
   kind: 'vehicle' | 'guardian'
-  /** Latest device_health reading for Guardian devices; null/undefined = not reported. */
+  /**
+   * Latest device_health reading for Guardian devices; null/undefined = not
+   * reported. health_recorded_at is the reading's own timestamp — it can be
+   * far older than last_ping_at (a GPS fix and a battery/signal check are
+   * independent events), so a UI showing these numbers must show their age
+   * too, or a long-stale reading looks like live telemetry.
+   */
   battery_level: number | null
   signal_strength: number | null
+  health_recorded_at: string | null
 }
 
 export interface ConvoyGroup {

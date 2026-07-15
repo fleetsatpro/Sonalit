@@ -25,6 +25,17 @@ function pct(v: number | null | undefined): number | null {
   return v != null && v >= 0 ? v : null
 }
 
+const HEALTH_STALE_AFTER_MS = 30 * 60_000
+
+function fmtHealthAge(ts: string | null): string | null {
+  if (!ts) return null
+  const secs = Math.floor((Date.now() - new Date(ts).getTime()) / 1000)
+  if (secs < 60) return 'just now'
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`
+  return `${Math.floor(secs / 86400)}d ago`
+}
+
 function HealthBar({ label, value }: { label: string; value: number | null }) {
   const color = value == null ? '#3e4252' : value < 20 ? '#ef4444' : value < 50 ? '#f59e0b' : '#16c784'
   return (
@@ -109,14 +120,27 @@ export default function DetailCard({ vehicle: v, onClose }: Props) {
         ))}
       </div>
 
-      {/* device health — Guardian devices only; vehicles have no battery/signal telemetry */}
-      {v.kind === 'guardian' && (
-        <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,.07)', display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ fontSize: 9, color: '#3e4252', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 2 }}>Device Health</div>
-          <HealthBar label="BAT" value={pct(v.battery_level)} />
-          <HealthBar label="SIG" value={pct(v.signal_strength)} />
-        </div>
-      )}
+      {/* device health — Guardian devices only; vehicles have no battery/signal telemetry.
+          A battery/signal check is a separate event from a GPS fix, so this reading
+          can be far older than "Last ping" above — showing it with no age would make
+          a long-stale reading look like live telemetry for a device that's OFFLINE. */}
+      {v.kind === 'guardian' && (() => {
+        const ageMs = v.health_recorded_at ? Date.now() - new Date(v.health_recorded_at).getTime() : null
+        const stale = ageMs == null || ageMs > HEALTH_STALE_AFTER_MS
+        const ageLabel = fmtHealthAge(v.health_recorded_at)
+        return (
+          <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,.07)', display: 'flex', flexDirection: 'column', gap: 6, opacity: stale ? 0.55 : 1 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <span style={{ fontSize: 9, color: '#3e4252', textTransform: 'uppercase', letterSpacing: '.08em' }}>Device Health</span>
+              <span style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: stale ? '#ef4444' : '#3e4252' }}>
+                {ageLabel ? `as of ${ageLabel}` : 'never reported'}
+              </span>
+            </div>
+            <HealthBar label="BAT" value={pct(v.battery_level)} />
+            <HealthBar label="SIG" value={pct(v.signal_strength)} />
+          </div>
+        )
+      })()}
 
       {/* location */}
       {v.lat != null && (

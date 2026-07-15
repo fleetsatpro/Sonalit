@@ -16,6 +16,7 @@ interface GpsPos {
   device_id: string; vehicle_id: string | null; name?: string | null
   lat: number; lng: number; speed: number | null; heading: number | null; timestamp: string | null
   panic_active?: boolean; battery_level?: number | null; signal_strength?: number | null
+  health_recorded_at?: string | null
 }
 // Realtime publishes on the org# channel carry a `type` field; GPS position
 // updates are always 'location' (gpsWorker.js, guardian.js POST /location).
@@ -99,7 +100,12 @@ export function useLiveFleet() {
       const key = ev.vehicle_id ?? ev.device_id!
       setPositions(prev => {
         const next = new Map(prev)
-        next.set(key, ev)
+        // A live location ping never carries battery/signal/health data
+        // (that only comes from the periodic /gps/track fetch) — replacing
+        // the whole entry instead of merging would wipe those fields the
+        // instant a device's next GPS fix arrives.
+        const existing = prev.get(key)
+        next.set(key, existing ? { ...existing, ...ev } : ev)
         return next
       })
     })
@@ -174,6 +180,7 @@ export function useLiveFleet() {
           kind: 'vehicle',
           battery_level: pos?.battery_level ?? null,
           signal_strength: pos?.signal_strength ?? null,
+          health_recorded_at: pos?.health_recorded_at ?? null,
         }
         counts.all++
         counts[status]++
@@ -210,10 +217,15 @@ export function useLiveFleet() {
           kind: pos.vehicle_id ? 'vehicle' : 'guardian',
           battery_level: pos.battery_level ?? null,
           signal_strength: pos.signal_strength ?? null,
+          health_recorded_at: pos.health_recorded_at ?? null,
         }
         counts.all++
         counts[status]++
-        if (lv.kind === 'guardian') counts.officers++
+        // "officers" backs the header's "N OFFICER(S) ONLINE" badge — it must
+        // mean actually reachable right now, not "has a device record with
+        // any position ever", or the badge contradicts the OFFLINE label the
+        // same officer's own marker shows a few pixels away.
+        if (lv.kind === 'guardian' && status !== 'offline') counts.officers++
         standalone.push(lv)
       }
     }
@@ -247,10 +259,11 @@ export function useLiveFleet() {
           kind: 'guardian',
           battery_level: pos.battery_level ?? null,
           signal_strength: pos.signal_strength ?? null,
+          health_recorded_at: pos.health_recorded_at ?? null,
         }
         counts.all++
         counts[status]++
-        counts.officers++
+        if (status !== 'offline') counts.officers++
         officers.push(lv)
       }
     }
