@@ -127,11 +127,19 @@
         </activity-alias>
 
         <!-- Guardian Foreground Service -->
+        <!-- android:permission was previously set to BIND_JOB_SERVICE — a signature
+             permission owned by the Android platform that no third-party app, including
+             this one, can ever hold. android:permission on a <service> is enforced against
+             EVERY caller, same-app included; it isn't an exemption for same-package Intents.
+             GuardianService is a plain Service (not a JobService bound by the system
+             JobScheduler), so it has no legitimate reason to require this at all — and as
+             declared, it likely made every startForegroundService(GuardianService) call in
+             this app (BootReceiver, MainViewModel, HeartbeatWorker, CommandExecutor) fail.
+             exported="false" alone already fully prevents other apps from starting/binding it. -->
         <service
             android:name=".service.GuardianService"
             android:exported="false"
-            android:foregroundServiceType="location"
-            android:permission="android.permission.BIND_JOB_SERVICE">
+            android:foregroundServiceType="location">
             <intent-filter>
                 <action android:name="io.sonalit.guardian.ACTION_START_SERVICE" />
             </intent-filter>
