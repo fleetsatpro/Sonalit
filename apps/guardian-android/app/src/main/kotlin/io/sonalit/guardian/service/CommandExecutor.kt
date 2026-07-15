@@ -204,4 +204,8 @@ class CommandExecutor @Inject constructor(
         context.stopService(intent)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
     }
+
+    companion object {
+        private const val TAG = "CommandExecutor"
+    }
 }
