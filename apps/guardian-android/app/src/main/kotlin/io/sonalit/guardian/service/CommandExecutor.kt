@@ -16,8 +16,10 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import io.sonalit.guardian.BuildConfig
 import io.sonalit.guardian.MainActivity
 import io.sonalit.guardian.R
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -119,8 +121,16 @@ class CommandExecutor @Inject constructor(
      *  Called from Dispatchers.IO in all three command-delivery paths, so the
      *  synchronous download is fine. Returns true once playback starts. */
     private fun playVoiceMessage(url: String): Boolean {
-        val cacheFile = File(context.cacheDir, "voice-msg-${url.hashCode()}.bin")
-        httpClient.newCall(Request.Builder().url(url).build()).execute().use { resp ->
+        // Older backends (no BACKEND_URL env) sent a relative path here —
+        // Request.Builder().url() throws on those before any request goes
+        // out. Resolve against our own API origin instead of failing.
+        val absoluteUrl = if (url.startsWith("http")) url else {
+            val base = BuildConfig.API_BASE_URL.toHttpUrl()
+            val portSuffix = if (base.port != 80 && base.port != 443) ":${base.port}" else ""
+            "${base.scheme}://${base.host}$portSuffix$url"
+        }
+        val cacheFile = File(context.cacheDir, "voice-msg-${absoluteUrl.hashCode()}.bin")
+        httpClient.newCall(Request.Builder().url(absoluteUrl).build()).execute().use { resp ->
             if (!resp.isSuccessful) {
                 Log.e(TAG, "voice message download failed: HTTP ${resp.code}")
                 return false

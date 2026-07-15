@@ -272,7 +272,12 @@ router.post(
           [orgId, req.params.id, req.user.id, mime, durationMs, req.body]
         );
         const voice = voiceRows[0];
-        const backendBase = process.env.BACKEND_URL || '';
+        // Without BACKEND_URL this produced a RELATIVE url ("/api/v1/...")
+        // — the app's HTTP client throws on it before any request is made,
+        // so voice commands silently acked 'failed' while text commands
+        // (no URL in payload) worked fine. Fall back to the request host;
+        // production always terminates TLS so https is safe to assume.
+        const backendBase = (process.env.BACKEND_URL || `https://${req.get('host')}`).replace(/\/$/, '');
         const payload = {
           voice_id: voice.id,
           url: `${backendBase}/api/v1/guardian/voice-messages/${voice.id}/audio`,
