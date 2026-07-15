@@ -14,6 +14,7 @@ data class EnrollRequest(
     val app_version: String? = null,
 )
 data class EnrollResponse(val status: String, val device_uuid: String, val device_token: String? = null)
+data class RecoverRequest(val device_id: String)
 data class HeartbeatRequest(val device_id: String, val battery_pct: Int? = null,
     val connectivity: String? = null, val lat: Double? = null, val lon: Double? = null,
     // Without this the server only ever learns the FCM token at enrollment —
@@ -140,6 +141,11 @@ interface GuardianApi {
     // Device endpoints
     @POST("guardian/enroll")
     suspend fun enroll(@Body req: EnrollRequest): EnrollResponse
+
+    /** Silent identity recovery by ANDROID_ID — a reinstalled app on known
+     *  hardware gets its device identity back without re-enrolling. */
+    @POST("guardian/recover")
+    suspend fun recover(@Body req: RecoverRequest): EnrollResponse
 
     @POST("guardian/heartbeat")
     suspend fun heartbeat(@Body req: HeartbeatRequest): HeartbeatResponse

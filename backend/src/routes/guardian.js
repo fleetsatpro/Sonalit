@@ -509,6 +509,52 @@ async function linkOfficerDevice(officer, deviceId) {
 }
 
 /**
+ * POST /api/v1/guardian/recover
+ * Silent identity recovery: the app lost its stored credentials (fresh
+ * reinstall, cleared data, logout) but the hardware is already registered.
+ * The app calls this on launch with its ANDROID_ID before ever showing the
+ * enrollment screen — a known device gets its identity back with no badge
+ * typing and no operator involvement, so enrollment is a first-time-only
+ * event. Trust level is identical to the enroll dedup fast path, which has
+ * always returned the token for a matching android_id.
+ */
+router.post('/recover', enrollLimiter, async (req, res, next) => {
+  try {
+    const { device_id } = req.body; // ANDROID_ID, same value enroll sends
+    if (!device_id) {
+      return res.status(400).json({ error: 'device_id is required' });
+    }
+    const result = await query(
+      `SELECT id, token, status, org_id FROM guardian_devices
+       WHERE android_id = $1 AND deleted_at IS NULL
+       ORDER BY enrolled_at DESC LIMIT 1`,
+      [device_id]
+    );
+    const dev = result.rows[0];
+    if (!dev) return res.status(404).json({ error: 'unknown_device' });
+    if (dev.status === 'revoked' || dev.status === 'suspended') {
+      return res.status(403).json({ error: `Device is ${dev.status}` });
+    }
+    const officer = await query(
+      `SELECT id FROM field_officers WHERE device_id = $1 LIMIT 1`,
+      [dev.id]
+    );
+    const mappedStatus = (dev.status === 'active' || dev.status === 'enrolled') ? 'enrolled' : dev.status;
+    auditLog('device', dev.id, 'identity_recovered', 'device', dev.id, {}, req.ip);
+    res.json({
+      status: mappedStatus,
+      device_uuid: dev.id,
+      device_token: dev.token,
+      org_id: dev.org_id ?? null,
+      officer_id: officer.rows[0]?.id ?? null,
+      command_signing_secret: COMMAND_SIGNING_SECRET,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * POST /api/v1/guardian/enroll
  * Register a new device.
  * Accepts two formats:
