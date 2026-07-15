@@ -54,7 +54,7 @@ class HeartbeatWorker @AssistedInject constructor(
             for (cmd in response.commands) {
                 val commandId = (cmd["id"] ?: cmd["command_id"])?.toString() ?: continue
                 val commandType = cmd["command_type"]?.toString() ?: continue
-                val success = commandExecutor.execute(commandType, deviceId)
+                val success = commandExecutor.execute(commandType, deviceId, cmd["payload"]?.toString())
                 runCatching {
                     api.ackCommand(mapOf("command_id" to commandId, "status" to if (success) "executed" else "failed"))
                 }

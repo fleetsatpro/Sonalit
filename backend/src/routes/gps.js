@@ -53,7 +53,9 @@ router.get('/track', authenticate, attachOrgDb, asyncHandler(async (req, res) =>
        false                               AS panic_active,
        NULL::int                          AS battery_level,
        NULL::int                          AS signal_strength,
-       NULL::timestamptz                  AS health_recorded_at
+       NULL::timestamptz                  AS health_recorded_at,
+       NULL::text                         AS officer_name,
+       NULL::text                         AS officer_phone
      FROM vehicles v
      LEFT JOIN LATERAL (
        SELECT speed, timestamp FROM gps_logs
@@ -87,8 +89,11 @@ router.get('/track', authenticate, attachOrgDb, asyncHandler(async (req, res) =>
        COALESCE(gd.panic_active, false)   AS panic_active,
        dh.battery_level                   AS battery_level,
        dh.signal_strength                 AS signal_strength,
-       dh.recorded_at                     AS health_recorded_at
+       dh.recorded_at                     AS health_recorded_at,
+       fo.name                            AS officer_name,
+       fo.phone                           AS officer_phone
      FROM guardian_devices gd
+     LEFT JOIN field_officers fo ON fo.device_id = gd.id
      LEFT JOIN LATERAL (
        SELECT heading FROM device_locations
        WHERE device_id = gd.id

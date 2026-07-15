@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react'
+import { api } from '../../../lib/api.js'
 import type { LiveVehicle, LiveStatus } from '../types/fleet.js'
 
 const STATUS_COLOR: Record<LiveStatus, string> = {
@@ -54,13 +56,56 @@ function HealthBar({ label, value }: { label: string; value: number | null }) {
 interface Props {
   vehicle: LiveVehicle | null
   onClose: () => void
+  /** id of the vehicle/device the map camera is currently following */
+  trackedId: string | null
+  onToggleTrack: (v: LiveVehicle) => void
 }
 
-export default function DetailCard({ vehicle: v, onClose }: Props) {
+type ActionState = { kind: 'idle' } | { kind: 'busy' } | { kind: 'done'; note: string } | { kind: 'error'; note: string }
+
+export default function DetailCard({ vehicle: v, onClose, trackedId, onToggleTrack }: Props) {
+  const [msgOpen, setMsgOpen] = useState(false)
+  const [msgText, setMsgText] = useState('')
+  const [action, setAction] = useState<ActionState>({ kind: 'idle' })
+
+  // Reset transient action UI when the operator switches device
+  useEffect(() => { setMsgOpen(false); setMsgText(''); setAction({ kind: 'idle' }) }, [v?.id])
+
   if (!v) return null
 
   const color = STATUS_COLOR[v.status]
   const isSos = v.status === 'sos'
+  const isGuardian = v.kind === 'guardian'
+  const tracking = trackedId === v.id
+
+  const sendCommand = async (command: string, payload: Record<string, unknown> | null, doneNote: string): Promise<boolean> => {
+    setAction({ kind: 'busy' })
+    try {
+      await api.post(`/guardian/devices/${v.id}/commands`, { command, payload })
+      setAction({ kind: 'done', note: doneNote })
+      return true
+    } catch {
+      setAction({ kind: 'error', note: 'Failed — device command not sent' })
+      return false
+    }
+  }
+
+  const onCall = () => {
+    if (v.officer_phone) window.location.href = `tel:${v.officer_phone}`
+  }
+  const onMsg = () => { setMsgOpen(o => !o); setAction({ kind: 'idle' }) }
+  const onAlert = () => {
+    if (window.confirm(`Sound an alert on ${v.registration}'s device?`)) {
+      void sendCommand('trigger_siren', null, 'Alert sent to device')
+    }
+  }
+  const sendMsg = () => {
+    const text = msgText.trim()
+    if (!text) return
+    void sendCommand('show_message', { text }, 'Message delivered to device').then(ok => {
+      if (ok) { setMsgText(''); setMsgOpen(false) }
+    })
+  }
 
   return (
     <div style={{
@@ -153,17 +198,48 @@ export default function DetailCard({ vehicle: v, onClose }: Props) {
       {/* actions */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6, padding: '9px 10px' }}>
         {[
-          { label: 'Call', icon: 'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13.1 19.79 19.79 0 0 1 1.61 4.53 2 2 0 0 1 3.58 2.34h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 9.91A16 16 0 0 0 14 16l.91-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 17z', danger: false },
-          { label: 'Msg', icon: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z', danger: false },
-          { label: 'Track', icon: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z', danger: false },
-          { label: 'Alert', icon: 'm21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3M12 9v4M12 17h.01', danger: true },
+          // Call rings the linked field officer's phone; Msg/Alert are device
+          // commands, so both need a guardian device on the other end.
+          { label: 'Call', icon: 'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13.1 19.79 19.79 0 0 1 1.61 4.53 2 2 0 0 1 3.58 2.34h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 9.91A16 16 0 0 0 14 16l.91-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 17z', danger: false, onClick: onCall, disabled: !v.officer_phone, active: false, title: v.officer_phone ? `Call ${v.officer_name ?? v.registration} (${v.officer_phone})` : 'No officer phone on record' },
+          { label: 'Msg', icon: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z', danger: false, onClick: onMsg, disabled: !isGuardian, active: msgOpen, title: isGuardian ? 'Send a message to the device' : 'Messaging is only available for Guardian devices' },
+          { label: 'Track', icon: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z', danger: false, onClick: () => onToggleTrack(v), disabled: v.lat == null, active: tracking, title: tracking ? 'Stop following' : 'Follow on map' },
+          { label: 'Alert', icon: 'm21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3M12 9v4M12 17h.01', danger: true, onClick: onAlert, disabled: !isGuardian, active: false, title: isGuardian ? 'Sound an alert on the device' : 'Alerts are only available for Guardian devices' },
         ].map(a => (
-          <button key={a.label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '7px 4px', borderRadius: 7, cursor: 'pointer', background: a.danger ? 'rgba(239,68,68,.07)' : 'rgba(255,255,255,.04)', border: `1px solid ${a.danger ? 'rgba(239,68,68,.2)' : 'rgba(255,255,255,.06)'}`, color: a.danger ? '#fca5a5' : '#7a7e8a', fontSize: 10, fontFamily: 'inherit', transition: 'all .12s' }}>
+          <button key={a.label} onClick={a.onClick} disabled={a.disabled || action.kind === 'busy'} title={a.title} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '7px 4px', borderRadius: 7, cursor: a.disabled ? 'not-allowed' : 'pointer', opacity: a.disabled ? 0.35 : 1, background: a.active ? 'rgba(232,168,48,.14)' : a.danger ? 'rgba(239,68,68,.07)' : 'rgba(255,255,255,.04)', border: `1px solid ${a.active ? 'rgba(232,168,48,.45)' : a.danger ? 'rgba(239,68,68,.2)' : 'rgba(255,255,255,.06)'}`, color: a.active ? '#e8a830' : a.danger ? '#fca5a5' : '#7a7e8a', fontSize: 10, fontFamily: 'inherit', transition: 'all .12s' }}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d={a.icon}/></svg>
-            {a.label}
+            {a.label === 'Track' && tracking ? 'Following' : a.label}
           </button>
         ))}
       </div>
+
+      {/* message composer */}
+      {msgOpen && (
+        <div style={{ padding: '0 10px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <textarea
+            value={msgText}
+            onChange={e => setMsgText(e.target.value)}
+            placeholder={`Message to ${v.officer_name ?? v.registration}…`}
+            rows={2}
+            maxLength={240}
+            autoFocus
+            style={{ resize: 'none', background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 7, color: '#dfe0db', fontSize: 12, fontFamily: 'inherit', padding: '7px 9px', outline: 'none' }}
+          />
+          <button
+            onClick={sendMsg}
+            disabled={!msgText.trim() || action.kind === 'busy'}
+            style={{ alignSelf: 'flex-end', padding: '5px 14px', borderRadius: 6, cursor: msgText.trim() ? 'pointer' : 'not-allowed', background: 'rgba(232,168,48,.14)', border: '1px solid rgba(232,168,48,.4)', color: '#e8a830', fontSize: 11, fontWeight: 600, fontFamily: 'inherit', opacity: msgText.trim() ? 1 : 0.4 }}
+          >
+            {action.kind === 'busy' ? 'Sending…' : 'Send to device'}
+          </button>
+        </div>
+      )}
+
+      {/* action feedback */}
+      {(action.kind === 'done' || action.kind === 'error') && (
+        <div style={{ padding: '0 12px 10px', fontSize: 10, fontFamily: 'IBM Plex Mono, monospace', color: action.kind === 'done' ? '#16c784' : '#ef4444' }}>
+          {action.note}
+        </div>
+      )}
     </div>
   )
 }

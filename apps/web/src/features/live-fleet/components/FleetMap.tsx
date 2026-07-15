@@ -147,9 +147,9 @@ function makeEl(v: LiveVehicle): HTMLElement {
   return wrap
 }
 
-interface Props { vehicles: LiveVehicle[]; selectedId: string | null; onSelect: (v: LiveVehicle) => void }
+interface Props { vehicles: LiveVehicle[]; selectedId: string | null; onSelect: (v: LiveVehicle) => void; trackedId?: string | null }
 
-export default function FleetMap({ vehicles, selectedId, onSelect }: Props) {
+export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = null }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map())
@@ -297,12 +297,21 @@ export default function FleetMap({ vehicles, selectedId, onSelect }: Props) {
     }
   }, [vehicles, onSelect])
 
-  // fly to selected
+  // fly to selected (one-shot, when selection changes)
   useEffect(() => {
     const map = mapRef.current; if (!map || !selectedId) return
     const v = vehicles.find(x => x.id === selectedId)
     if (v?.lat != null) map.flyTo({ center: [v.lng!, v.lat!], zoom: Math.max(map.getZoom(), 9), duration: 700 })
-  }, [selectedId, vehicles])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId])
+
+  // follow mode ("Track" action) — keep the camera glued to the tracked
+  // vehicle/device as new positions stream in, until the operator toggles off.
+  useEffect(() => {
+    const map = mapRef.current; if (!map || !trackedId) return
+    const v = vehicles.find(x => x.id === trackedId)
+    if (v?.lat != null) map.easeTo({ center: [v.lng!, v.lat!], zoom: Math.max(map.getZoom(), 12), duration: 600 })
+  }, [trackedId, vehicles])
 
   // keyframes
   useEffect(() => {
