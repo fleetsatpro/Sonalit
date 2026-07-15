@@ -273,15 +273,22 @@ export default function FleetMap({ vehicles, selectedId, onSelect }: Props) {
     for (const [id, marker] of markersRef.current) {
       if (!ids.has(id)) { marker.remove(); markersRef.current.delete(id) }
     }
+    // Live markers must stack above dead ones: a retired/offline duplicate of
+    // the same device often sits at almost the same coordinates as the live
+    // row, and if it renders on top the operator sees (and taps) OFFLINE while
+    // the online marker hides underneath.
+    const zFor = (s: string) => (s === 'sos' ? '40' : s === 'move' ? '30' : s === 'offline' ? '10' : '20')
     for (const v of positioned) {
       const existing = markersRef.current.get(v.id)
       if (existing) {
         existing.setLngLat([v.lng!, v.lat!])
         const el = existing.getElement(); el.innerHTML = makeEl(v).innerHTML
+        el.style.zIndex = zFor(v.status)
         const inner = el.firstElementChild as HTMLElement | null
         if (inner) inner.addEventListener('click', e => { e.stopPropagation(); onSelect(v) }, { once: true })
       } else {
         const el = makeEl(v)
+        el.style.zIndex = zFor(v.status)
         const inner = el.firstElementChild as HTMLElement | null
         if (inner) inner.addEventListener('click', e => { e.stopPropagation(); onSelect(v) })
         const marker = new maplibregl.Marker({ element: el, anchor: 'top' }).setLngLat([v.lng!, v.lat!]).addTo(map)
