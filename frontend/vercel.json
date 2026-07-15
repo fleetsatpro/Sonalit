@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://serene-ambition-production-6311.up.railway.app/api/:path*" },
+    { "source": "/:path*", "destination": "/index.html" }
+  ]
+}
