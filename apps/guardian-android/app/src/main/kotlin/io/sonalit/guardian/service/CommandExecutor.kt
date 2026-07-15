@@ -1,6 +1,9 @@
 package io.sonalit.guardian.service
 
 import android.app.ActivityManager
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
@@ -9,6 +12,10 @@ import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import androidx.core.app.NotificationCompat
+import io.sonalit.guardian.MainActivity
+import io.sonalit.guardian.R
+import org.json.JSONObject
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
@@ -35,7 +42,7 @@ class CommandExecutor @Inject constructor(
     private val adminComponent by lazy { ComponentName(context, GuardianDeviceAdminReceiver::class.java) }
 
     /** Returns true if the command was actually carried out. */
-    fun execute(commandType: String, deviceId: String?): Boolean = runCatching {
+    fun execute(commandType: String, deviceId: String?, payload: String? = null): Boolean = runCatching {
         when (commandType) {
             "request_location", "force_checkin", "force_sync" -> {
                 if (deviceId == null) return@runCatching false
@@ -51,6 +58,15 @@ class CommandExecutor @Inject constructor(
                 true
             }
             "trigger_siren" -> { vibrateAlert(); true }
+            // Operator text from the dashboard (Live Fleet "Msg" action).
+            // payload: {"text": "..."} — shown as a high-priority notification
+            // plus the alert vibration so it lands even with the screen off.
+            "show_message" -> {
+                val text = parseMessageText(payload) ?: return@runCatching false
+                showOperatorMessage(text)
+                vibrateAlert()
+                true
+            }
             "stop_siren" -> { stopVibrate(); true }
             "restart_app", "restart_agent" -> { restartGuardianService(); true }
             "clear_app_data" -> {
@@ -67,6 +83,41 @@ class CommandExecutor @Inject constructor(
             else -> false
         }
     }.getOrDefault(false)
+
+    /** payload may be the raw JSON object string or (from the heartbeat map)
+     *  a Kotlin map .toString() — try JSON first, fall back to the raw text. */
+    private fun parseMessageText(payload: String?): String? {
+        if (payload.isNullOrBlank()) return null
+        runCatching {
+            val text = JSONObject(payload).optString("text")
+            if (text.isNotBlank()) return text
+        }
+        return payload.takeIf { it.isNotBlank() && !it.startsWith("{") }
+    }
+
+    private fun showOperatorMessage(text: String) {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            nm.createNotificationChannel(
+                NotificationChannel("operator_messages", "Dispatch Messages", NotificationManager.IMPORTANCE_HIGH)
+            )
+        }
+        val contentIntent = PendingIntent.getActivity(
+            context, 0, Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(context, "operator_messages")
+            .setContentTitle("Message from dispatch")
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setContentIntent(contentIntent)
+            .setAutoCancel(true)
+            .build()
+        nm.notify(("op-msg" + System.currentTimeMillis()).hashCode(), notification)
+    }
 
     private fun vibrateAlert() {
         val pattern = longArrayOf(0, 400, 200, 400, 200, 400, 200, 400)

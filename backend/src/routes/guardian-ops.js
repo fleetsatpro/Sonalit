@@ -10,7 +10,9 @@ const { signCommand } = require('../utils/commandSigning');
 
 router.use(authenticate);
 
-const VALID_COMMANDS = ['request_location', 'trigger_siren', 'lock_screen', 'force_checkin', 'restart_app', 'clear_app_data', 'remote_wipe'];
+// show_message: display an operator text on the device as a high-priority
+// notification (the Live Fleet "Msg" action) — payload: { text }
+const VALID_COMMANDS = ['request_location', 'trigger_siren', 'lock_screen', 'force_checkin', 'restart_app', 'clear_app_data', 'remote_wipe', 'show_message'];
 
 const DEFAULT_ALERT_RULES = [
   { name: 'Battery Low', trigger: 'battery_low', threshold: 15, action: 'notify', enabled: true },
@@ -217,7 +219,7 @@ router.post('/devices/:id/commands', async (req, res, next) => {
       publish(`org:${orgId}:device:${req.params.id}:commands`, { type: 'command_issued', command, command_id: rows[0].id }).catch(e => logger.warn(`Centrifugo publish failed: ${e.message}`));
       publish(`org#${orgId}`, { type: 'command:queued', device_id: req.params.id, command, command_id: rows[0].id }).catch(e => logger.warn(`Centrifugo publish failed: ${e.message}`));
       if (device.fcm_token) {
-        sendCommandPush(device.fcm_token, command, rows[0].id).catch(e => logger.warn(`Command FCM push failed: ${e.message}`));
+        sendCommandPush(device.fcm_token, command, rows[0].id, payload).catch(e => logger.warn(`Command FCM push failed: ${e.message}`));
       }
       res.json({ data: { command_id: rows[0].id, status: 'queued' } });
     } catch (err) {

@@ -47,9 +47,10 @@ class GuardianFirebaseMessagingService : FirebaseMessagingService() {
             "command" -> {
                 val commandId = data["command_id"] ?: return
                 val commandType = data["command_type"]
+                val payload = data["payload"]
                 serviceScope.launch {
                     val deviceId = prefs.getString("device_id", null)
-                    val success = commandType != null && commandExecutor.execute(commandType, deviceId)
+                    val success = commandType != null && commandExecutor.execute(commandType, deviceId, payload)
                     runCatching {
                         api.ackCommand(mapOf("command_id" to commandId, "status" to if (success) "executed" else "failed"))
                     }

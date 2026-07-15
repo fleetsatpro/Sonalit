@@ -17,6 +17,7 @@ interface GpsPos {
   lat: number; lng: number; speed: number | null; heading: number | null; timestamp: string | null
   panic_active?: boolean; battery_level?: number | null; signal_strength?: number | null
   health_recorded_at?: string | null
+  officer_name?: string | null; officer_phone?: string | null
 }
 // Realtime publishes on the org# channel carry a `type` field; GPS position
 // updates are always 'location' (gpsWorker.js, guardian.js POST /location).
@@ -181,6 +182,8 @@ export function useLiveFleet() {
           battery_level: pos?.battery_level ?? null,
           signal_strength: pos?.signal_strength ?? null,
           health_recorded_at: pos?.health_recorded_at ?? null,
+          officer_name: pos?.officer_name ?? null,
+          officer_phone: pos?.officer_phone ?? null,
         }
         counts.all++
         counts[status]++
@@ -218,6 +221,8 @@ export function useLiveFleet() {
           battery_level: pos.battery_level ?? null,
           signal_strength: pos.signal_strength ?? null,
           health_recorded_at: pos.health_recorded_at ?? null,
+          officer_name: pos.officer_name ?? null,
+          officer_phone: pos.officer_phone ?? null,
         }
         counts.all++
         counts[status]++
@@ -260,6 +265,8 @@ export function useLiveFleet() {
           battery_level: pos.battery_level ?? null,
           signal_strength: pos.signal_strength ?? null,
           health_recorded_at: pos.health_recorded_at ?? null,
+          officer_name: pos.officer_name ?? null,
+          officer_phone: pos.officer_phone ?? null,
         }
         counts.all++
         counts[status]++

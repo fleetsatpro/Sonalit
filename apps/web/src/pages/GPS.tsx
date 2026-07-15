@@ -21,6 +21,7 @@ export default function GPS() {
   const isMobile = useIsMobile()
 
   const [selected, setSelected]         = useState<LiveVehicle | null>(null)
+  const [trackedId, setTrackedId]       = useState<string | null>(null)
   const [panelOpen, setPanelOpen]       = useState(true)
   const [statusFilter, setStatusFilter] = useState<'all' | LiveStatus>('all')
   const [mobileTab, setMobileTab]       = useState<'map' | 'list'>('map')
@@ -119,9 +120,15 @@ export default function GPS() {
             vehicles={allVehicles}
             selectedId={selected?.id ?? null}
             onSelect={handleSelect}
+            trackedId={trackedId}
           />
           {/* detail card — desktop only (inside map area) */}
-          <DetailCard vehicle={selected} onClose={() => setSelected(null)} />
+          <DetailCard
+            vehicle={selected}
+            onClose={() => setSelected(null)}
+            trackedId={trackedId}
+            onToggleTrack={v => setTrackedId(prev => (prev === v.id ? null : v.id))}
+          />
         </div>
 
       </div>
