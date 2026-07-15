@@ -11,6 +11,8 @@ import androidx.security.crypto.MasterKey
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.sonalit.guardian.data.local.VoiceTriggerStore
+import io.sonalit.guardian.data.remote.GuardianApi
+import io.sonalit.guardian.data.remote.RecoverRequest
 import io.sonalit.guardian.service.GuardianService
 import io.sonalit.guardian.service.VoiceTriggerService
 import io.sonalit.guardian.worker.HeartbeatWorker
@@ -24,6 +26,10 @@ import javax.inject.Inject
 
 data class MainUiState(
     val isEnrolled: Boolean = false,
+    /** False while silent identity recovery is still in flight — the
+     *  enrollment screen must not flash for a device that's about to
+     *  recover its registration automatically. */
+    val identityCheckDone: Boolean = false,
     val pendingDeepLink: String? = null,
 )
 
@@ -31,6 +37,7 @@ data class MainUiState(
 class MainViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val voiceTriggerStore: VoiceTriggerStore,
+    private val api: GuardianApi,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MainUiState())
@@ -57,12 +64,45 @@ class MainViewModel @Inject constructor(
         val deviceId = prefs.getString("device_id", null)
         val authToken = prefs.getString("auth_token", null)
         val isEnrolled = deviceId != null && authToken != null
-        _uiState.update { it.copy(isEnrolled = isEnrolled) }
-        if (isEnrolled) ensureBackgroundServicesRunning()
+        _uiState.update { it.copy(isEnrolled = isEnrolled, identityCheckDone = isEnrolled) }
+        if (isEnrolled) ensureBackgroundServicesRunning() else attemptSilentRecovery()
+    }
+
+    /**
+     * A device already registered on the system must not require manual
+     * re-enrollment just because the app was reinstalled or logged out —
+     * that doesn't scale past a handful of officers. ANDROID_ID survives
+     * reinstalls (same signing key), so ask the server whether it already
+     * knows this hardware and quietly restore the stored identity if so.
+     * Enrollment is only shown when recovery genuinely finds nothing
+     * (new hardware) or the network is down.
+     */
+    private fun attemptSilentRecovery() {
+        viewModelScope.launch {
+            try {
+                val androidId = android.provider.Settings.Secure.getString(
+                    context.contentResolver, android.provider.Settings.Secure.ANDROID_ID
+                )
+                if (!androidId.isNullOrBlank()) {
+                    val resp = api.recover(RecoverRequest(device_id = androidId))
+                    if (resp.status == "enrolled" && resp.device_token != null) {
+                        prefs.edit()
+                            .putString("device_id", resp.device_uuid)
+                            .putString("auth_token", resp.device_token)
+                            .apply()
+                        _uiState.update { it.copy(isEnrolled = true) }
+                        ensureBackgroundServicesRunning()
+                    }
+                }
+            } catch (_: Exception) {
+                // unknown device, revoked, or offline — fall through to enrollment
+            }
+            _uiState.update { it.copy(identityCheckDone = true) }
+        }
     }
 
     fun markEnrolled() {
-        _uiState.update { it.copy(isEnrolled = true) }
+        _uiState.update { it.copy(isEnrolled = true, identityCheckDone = true) }
         ensureBackgroundServicesRunning()
     }
 

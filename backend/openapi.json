@@ -1176,6 +1176,16 @@
         }
       }
     },
+    "/api/v1/guardian/recover": {
+      "post": {
+        "operationId": "post_api_v1_guardian_recover",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/enroll": {
       "post": {
         "operationId": "post_api_v1_guardian_enroll",
