@@ -1,12 +1,17 @@
-// Risk Intel OSINT sweep: pulls real-world security incidents from three
+// Risk Intel OSINT sweep: pulls real-world security incidents from four
 // sources and inserts them as risk_events so zone activity reflects live
 // media coverage instead of only manual admin entries.
 //   - GDELT (free, no key): global news-monitoring index, geo/keyword search.
 //   - ReliefWeb (free, no key): humanitarian/conflict situation reports.
+//   - ACLED (needs ACLED_USERNAME/ACLED_PASSWORD, free myACLED registration):
+//     event-coded political violence/protest data at village/road level —
+//     catches incidents too small to make wire-service news, which is
+//     exactly what GDELT/ReliefWeb (both built on published articles) miss.
 //   - Claude web search (needs ANTHROPIC_API_KEY): broader synthesis across
 //     the open web, covering breaking coverage the structured feeds miss.
-// Every inserted row carries a source_url hashed into external_id so re-runs
-// don't duplicate the same article (see risk_events_zone_external_uniq).
+// Every inserted row carries a stable external_id (URL hash, or the
+// source's own event id) so re-runs don't duplicate the same item (see
+// risk_events_zone_external_uniq).
 const crypto = require('crypto');
 const Anthropic = require('@anthropic-ai/sdk');
 const { query } = require('../config/database');
@@ -90,6 +95,102 @@ async function fetchReliefWebForZone(zone) {
     .filter(it => it.description && it.source_url);
 }
 
+// ACLED's `country` filter needs an exact match against its own controlled
+// country list — zone.region is free text ("Northern Mali / Western Niger",
+// "KPK Province, Pakistan"), so we can't pass it through directly the way
+// GDELT's keyword search tolerates. Instead pull out whichever known country
+// name(s) appear in region/name, same idea as extractPlaceTerms() but
+// matched against a fixed vocabulary instead of split on punctuation.
+const ACLED_COUNTRIES = [
+  'Afghanistan', 'Bangladesh', 'Burkina Faso', 'Cameroon', 'Central African Republic',
+  'Chad', 'Colombia', 'Democratic Republic of Congo', 'Egypt', 'El Salvador', 'Ethiopia',
+  'Ghana', 'Guatemala', 'Haiti', 'Honduras', 'India', 'Iraq', 'Kenya', 'Lebanon', 'Libya',
+  'Mali', 'Mexico', 'Mozambique', 'Myanmar', 'Niger', 'Nigeria', 'Pakistan',
+  'Papua New Guinea', 'Philippines', 'Senegal', 'Somalia', 'South Sudan', 'Sri Lanka',
+  'Sudan', 'Syria', 'Tanzania', 'Uganda', 'Ukraine', 'Venezuela', 'Yemen', 'Zimbabwe',
+];
+
+function extractAcledCountries(zone) {
+  // Word-boundary match, not plain substring — "Somalia" contains "Mali" and
+  // "Nigeria" contains "Niger", so a naive .includes() misidentifies almost
+  // every Nigeria/Somalia zone as also being in Mali/Niger. Prefer the
+  // structured region field over the free-label name — "Niger Delta" is a
+  // real place inside Nigeria, and matching zone.name too would misread it
+  // as also naming the country Niger.
+  const haystack = zone.region || zone.name || '';
+  return ACLED_COUNTRIES.filter(c => new RegExp(`\\b${c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(haystack));
+}
+
+const ACLED_HIGH_TYPES = new Set(['Battles', 'Violence against civilians', 'Explosions/Remote violence']);
+
+function classifyAcledLevel(item) {
+  const fatalities = parseInt(item.fatalities, 10) || 0;
+  if (fatalities >= 1 || ACLED_HIGH_TYPES.has(item.event_type)) return 'high';
+  if (item.event_type === 'Riots' || item.disorder_type === 'Political violence') return 'medium';
+  return 'low';
+}
+
+// Access token is memory-only and re-requested (not refreshed) each time it's
+// stale — the sweep runs at most once per 2h, so re-authenticating well
+// under the 24h token lifetime costs one extra request per cycle at most.
+let _acledToken = null;
+let _acledTokenExpiresAt = 0;
+
+async function getAcledToken() {
+  if (_acledToken && Date.now() < _acledTokenExpiresAt) return _acledToken;
+
+  const username = process.env.ACLED_USERNAME;
+  const password = process.env.ACLED_PASSWORD;
+  if (!username || !password) return null;
+
+  const res = await fetch('https://acleddata.com/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      username, password, grant_type: 'password', client_id: 'acled', scope: 'authenticated',
+    }),
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) throw new Error(`ACLED OAuth HTTP ${res.status}`);
+  const data = await res.json();
+  if (!data.access_token) throw new Error('ACLED OAuth response missing access_token');
+
+  _acledToken = data.access_token;
+  // Renew 5 minutes early rather than racing the exact expiry.
+  _acledTokenExpiresAt = Date.now() + (Math.max(60, (data.expires_in || 86400) - 300)) * 1000;
+  return _acledToken;
+}
+
+async function fetchAcledForZone(zone, token) {
+  const countries = extractAcledCountries(zone);
+  if (!countries.length) return [];
+
+  const since = new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  const params = new URLSearchParams({
+    _format: 'json',
+    country: countries.join('|'),
+    event_date: `${since}|${today}`,
+    event_date_where: 'BETWEEN',
+    limit: '5',
+    fields: 'event_id_cnty|event_date|event_type|sub_event_type|disorder_type|country|location|notes|fatalities',
+  });
+  const url = `https://acleddata.com/api/acled/read?${params.toString()}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10000) });
+  if (!res.ok) throw new Error(`ACLED HTTP ${res.status}`);
+  const data = await res.json();
+  const items = Array.isArray(data.data) ? data.data : [];
+
+  return items
+    .filter(it => it.notes && it.event_id_cnty)
+    .map(it => ({
+      description: `${[it.event_type, it.location].filter(Boolean).join(' — ')}: ${it.notes.slice(0, 400)}`.slice(0, 500),
+      level: classifyAcledLevel(it),
+      source: 'osint:acled',
+      external_id: `acled:${it.event_id_cnty}`,
+    }));
+}
+
 async function createMessageWithRetry(client, params, maxRetries = 3) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
@@ -141,14 +242,19 @@ Reply with ONLY a JSON object mapping zone id -> array of up to 3 items found (o
 async function insertEvents(zone, items) {
   let inserted = 0;
   for (const item of items) {
-    if (!item?.description || !item?.source_url) continue;
+    if (!item?.description) continue;
+    // Most sources dedupe off a hash of their article URL; ACLED has no
+    // stable per-event public URL, so it supplies its own external_id
+    // (namespaced 'acled:...') directly instead.
+    const externalId = item.external_id
+      || (item.source_url ? crypto.createHash('sha1').update(item.source_url).digest('hex') : null);
+    if (!externalId) continue;
     const level = ['high', 'medium', 'low'].includes(item.level) ? item.level : 'medium';
-    const externalId = crypto.createHash('sha1').update(item.source_url).digest('hex');
     const { rowCount } = await query(
       `INSERT INTO risk_events (org_id, zone_id, description, level, source, external_url, external_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (zone_id, external_id) WHERE external_id IS NOT NULL DO NOTHING`,
-      [zone.org_id, zone.id, item.description.slice(0, 500), level, item.source || 'osint', item.source_url, externalId]
+      [zone.org_id, zone.id, item.description.slice(0, 500), level, item.source || 'osint', item.source_url || null, externalId]
     );
     inserted += rowCount;
   }
@@ -194,6 +300,17 @@ async function runOsintSweep() {
       }
     }
 
+    // ACLED needs a myACLED account (ACLED_USERNAME/ACLED_PASSWORD) — like
+    // Claude, it's an optional add-on source, not required for the sweep to
+    // run. One token covers every zone this cycle.
+    let acledToken = null;
+    try {
+      acledToken = await getAcledToken();
+      if (!acledToken) logger.warn('Risk Intel OSINT: skipping ACLED — ACLED_USERNAME/ACLED_PASSWORD not configured');
+    } catch (e) {
+      logger.warn(`Risk Intel OSINT: ACLED auth failed: ${e.message}`);
+    }
+
     const orgsTouched = new Set();
     let totalInserted = 0;
 
@@ -204,6 +321,11 @@ async function runOsintSweep() {
 
       try { found.push(...await fetchReliefWebForZone(zone)); }
       catch (e) { logger.warn(`Risk Intel OSINT: ReliefWeb failed for "${zone.name}": ${e.message}`); }
+
+      if (acledToken) {
+        try { found.push(...await fetchAcledForZone(zone, acledToken)); }
+        catch (e) { logger.warn(`Risk Intel OSINT: ACLED failed for "${zone.name}": ${e.message}`); }
+      }
 
       found.push(...(claudeByZone[zone.id] || []).map(it => ({ ...it, source: 'osint:claude' })));
 
@@ -220,8 +342,8 @@ async function runOsintSweep() {
 
     const zonesChanged = await recomputeZoneLevels(zones);
 
-    logger.info(`Risk Intel OSINT sweep complete: ${zones.length} zones checked, ${totalInserted} new events, ${orgsTouched.size} orgs updated, ${zonesChanged} zone levels recomputed, claude=${client ? 'used' : 'skipped'}`);
-    return { zonesChecked: zones.length, totalInserted, orgsUpdated: orgsTouched.size, zonesChanged, claudeUsed: !!client };
+    logger.info(`Risk Intel OSINT sweep complete: ${zones.length} zones checked, ${totalInserted} new events, ${orgsTouched.size} orgs updated, ${zonesChanged} zone levels recomputed, acled=${acledToken ? 'used' : 'skipped'}, claude=${client ? 'used' : 'skipped'}`);
+    return { zonesChecked: zones.length, totalInserted, orgsUpdated: orgsTouched.size, zonesChanged, acledUsed: !!acledToken, claudeUsed: !!client };
   } finally {
     sweeping = false;
   }
