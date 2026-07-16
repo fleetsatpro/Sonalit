@@ -44,6 +44,12 @@ function ask(question) {
     phoneNumber: () => ask('Phone number (with country code, e.g. +12025551234): '),
     phoneCode: () => ask('Login code Telegram just sent you: '),
     password: (hint) => ask(`2FA password${hint ? ` (hint: ${hint})` : ''} — leave blank if not set: `),
+    // Only asked if this phone number has no Telegram account yet.
+    firstAndLastNames: async () => {
+      const first = await ask('This number has no Telegram account yet — first name for the new account: ');
+      const last = await ask('Last name (optional, press enter to skip): ');
+      return [first, last || undefined];
+    },
     onError: (err) => { console.error('Auth error:', err.message); },
   });
 
