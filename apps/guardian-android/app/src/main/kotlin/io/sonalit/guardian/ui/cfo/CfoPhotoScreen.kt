@@ -73,6 +73,35 @@ private fun buildSlots(
 private fun nextIncompleteSlot(slots: List<PhotoSlot>): PhotoSlot? =
     slots.firstOrNull { !it.isComplete }
 
+/**
+ * One entry in the single, ordered capture sequence spanning every assigned
+ * truck. Flattening per-truck slots into one global list is what lets us
+ * enforce a strict "one next action" wizard — front, then rear, then each
+ * seal, per truck in position order, then the next truck — instead of a
+ * grid the CFO can tap anywhere on.
+ */
+data class TruckSlot(
+    val truck: AssignedTruck,
+    val slot: PhotoSlot,
+)
+
+private fun buildGlobalSlots(
+    trucks: List<AssignedTruck>,
+    sealCount: Int,
+    photos: List<PhotoRecord>,
+    session: String,
+): List<TruckSlot> =
+    trucks.sortedBy { it.position }.flatMap { truck ->
+        val truckPhotos = photos.filter { it.convoy_truck_id == truck.id && it.session == session }
+        buildSlots(sealCount, truckPhotos).map { TruckSlot(truck, it) }
+    }
+
+private fun nextIncompleteGlobal(slots: List<TruckSlot>): TruckSlot? =
+    slots.firstOrNull { !it.slot.isComplete }
+
+private fun sameSlot(a: PhotoSlot, b: PhotoSlot): Boolean =
+    a.photoType == b.photoType && a.sealPosition == b.sealPosition
+
 // ── Main Screen ──────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalPermissionsApi::class)
@@ -87,9 +116,10 @@ fun CfoSodEodScreen(viewModel: CfoViewModel) {
         listOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION)
     )
 
-    var captureTruckId by remember { mutableStateOf<String?>(null) }
-    var captureSlot by remember { mutableStateOf<PhotoSlot?>(null) }
+    var captureTarget by remember { mutableStateOf<TruckSlot?>(null) }
     var showSealDialog by remember { mutableStateOf(false) }
+    var pendingSealTarget by remember { mutableStateOf<TruckSlot?>(null) }
+    var retakeConfirmTarget by remember { mutableStateOf<TruckSlot?>(null) }
 
     if (ctx == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -108,42 +138,41 @@ fun CfoSodEodScreen(viewModel: CfoViewModel) {
         return
     }
 
-    if (captureTruckId != null && captureSlot != null) {
-        val truck = ctx.assigned_trucks.find { it.id == captureTruckId }
-        if (truck != null) {
-            val truckPhotos = ctx.photos_today.filter {
-                it.convoy_truck_id == truck.id && it.session == session
-            }
-            val slots = buildSlots(ctx.convoy.seal_count_per_truck, truckPhotos)
-            val currentIndex = slots.indexOfFirst {
-                it.photoType == captureSlot!!.photoType &&
-                    it.sealPosition == captureSlot!!.sealPosition &&
-                    it.label == captureSlot!!.label
-            }.let { if (it < 0) 0 else it }
+    // The single source of truth for ordering: front, then rear, then each seal,
+    // per truck in position order, then the next truck. The CFO can only ever
+    // act on nextIncompleteGlobal() — everything after it is locked in the
+    // checklist below, which is what makes duplication/skipping impossible.
+    val globalSlots = buildGlobalSlots(
+        ctx.assigned_trucks, ctx.convoy.seal_count_per_truck, ctx.photos_today, session
+    )
 
-            SlotCaptureScreen(
-                viewModel = viewModel,
-                truck = truck,
-                session = session,
-                slot = captureSlot!!,
-                slotIndex = currentIndex,
-                totalSlots = slots.size,
-                onAdvance = { next ->
-                    if (next != null) {
-                        if (next.photoType == "seal" && next.sealPosition == null) {
-                            captureSlot = next
-                            showSealDialog = true
-                        } else {
-                            captureSlot = next
-                        }
-                    } else {
-                        captureTruckId = null
-                        captureSlot = null
-                    }
-                },
-                onBack = { captureTruckId = null; captureSlot = null },
-            )
+    fun startCapture(target: TruckSlot) {
+        if (target.slot.photoType == "seal" && target.slot.sealPosition == null) {
+            pendingSealTarget = target
+            showSealDialog = true
+        } else {
+            captureTarget = target
         }
+    }
+
+    val target = captureTarget
+    if (target != null) {
+        val currentIndex = globalSlots.indexOfFirst {
+            it.truck.id == target.truck.id && sameSlot(it.slot, target.slot)
+        }.let { if (it < 0) 0 else it }
+
+        SlotCaptureScreen(
+            viewModel = viewModel,
+            truck = target.truck,
+            session = session,
+            slot = target.slot,
+            slotIndex = currentIndex,
+            totalSlots = globalSlots.size,
+            onAdvance = { next ->
+                if (next != null) startCapture(next) else captureTarget = null
+            },
+            onBack = { captureTarget = null },
+        )
     } else {
         PhotoChecklistScreen(
             trucks = ctx.assigned_trucks,
@@ -152,32 +181,48 @@ fun CfoSodEodScreen(viewModel: CfoViewModel) {
             sessionLabel = sessionLabel,
             sealCount = ctx.convoy.seal_count_per_truck,
             convoyName = ctx.convoy.name,
-            onSlotTap = { truckId, slot ->
-                captureTruckId = truckId
-                if (slot.photoType == "seal" && slot.sealPosition == null) {
-                    captureSlot = slot
-                    showSealDialog = true
-                } else {
-                    captureSlot = slot
-                }
-            },
+            onNextSlotTap = { truck, slot -> startCapture(TruckSlot(truck, slot)) },
+            onRetakeTap = { truck, slot -> retakeConfirmTarget = TruckSlot(truck, slot) },
             onBack = { viewModel.navigate(CfoNavScreen.DASHBOARD) },
         )
     }
 
     if (showSealDialog) {
+        // Seal codes are physical RFID tag IDs — the same code entered for two
+        // slots on one truck would silently overwrite the first seal's photo
+        // record (backend replaces by truck+session+seal_position), so catch
+        // the duplicate here instead of letting it happen invisibly.
+        val usedSealCodes = pendingSealTarget?.let { pending ->
+            ctx.photos_today.filter {
+                it.convoy_truck_id == pending.truck.id && it.session == session && it.photo_type == "seal"
+            }.mapNotNull { it.seal_position }.toSet()
+        } ?: emptySet()
+
         SealPositionDialog(
+            usedCodes = usedSealCodes,
             onConfirm = { pos ->
-                captureSlot = PhotoSlot("seal", pos, "Seal $pos", false)
+                pendingSealTarget?.let { pending ->
+                    captureTarget = TruckSlot(pending.truck, PhotoSlot("seal", pos, "Seal $pos", false))
+                }
+                pendingSealTarget = null
                 showSealDialog = false
             },
             onDismiss = {
                 showSealDialog = false
-                if (captureSlot?.isComplete != false) {
-                    captureTruckId = null
-                    captureSlot = null
-                }
+                pendingSealTarget = null
             },
+        )
+    }
+
+    retakeConfirmTarget?.let { rt ->
+        RetakeConfirmDialog(
+            truck = rt.truck,
+            slot = rt.slot,
+            onConfirm = {
+                retakeConfirmTarget = null
+                startCapture(rt)
+            },
+            onDismiss = { retakeConfirmTarget = null },
         )
     }
 }
@@ -192,9 +237,14 @@ private fun PhotoChecklistScreen(
     sessionLabel: String,
     sealCount: Int,
     convoyName: String,
-    onSlotTap: (truckId: String, slot: PhotoSlot) -> Unit,
+    onNextSlotTap: (truck: AssignedTruck, slot: PhotoSlot) -> Unit,
+    onRetakeTap: (truck: AssignedTruck, slot: PhotoSlot) -> Unit,
     onBack: () -> Unit,
 ) {
+    val orderedTrucks = trucks.sortedBy { it.position }
+    val globalSlots = buildGlobalSlots(orderedTrucks, sealCount, photos, session)
+    val nextTarget = nextIncompleteGlobal(globalSlots)
+
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
@@ -206,21 +256,33 @@ private fun PhotoChecklistScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            if (nextTarget != null)
+                "Follow the checklist in order — one photo at a time, no skipping."
+            else "All photos captured for this session.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Spacer(Modifier.height(12.dp))
 
-        trucks.forEach { truck ->
+        orderedTrucks.forEach { truck ->
             val truckPhotos = photos.filter {
                 it.convoy_truck_id == truck.id && it.session == session
             }
             val slots = buildSlots(sealCount, truckPhotos)
             val done = slots.count { it.isComplete }
+            val isActiveTruck = nextTarget?.truck?.id == truck.id
 
             TruckPhotoCard(
                 truck = truck,
                 slots = slots,
                 done = done,
                 total = slots.size,
-                onSlotTap = { slot -> onSlotTap(truck.id, slot) },
+                isActiveTruck = isActiveTruck,
+                isNextSlot = { slot -> isActiveTruck && nextTarget != null && sameSlot(nextTarget.slot, slot) },
+                onNextSlotTap = { slot -> onNextSlotTap(truck, slot) },
+                onRetakeTap = { slot -> onRetakeTap(truck, slot) },
             )
             Spacer(Modifier.height(10.dp))
         }
@@ -233,7 +295,10 @@ private fun TruckPhotoCard(
     slots: List<PhotoSlot>,
     done: Int,
     total: Int,
-    onSlotTap: (PhotoSlot) -> Unit,
+    isActiveTruck: Boolean,
+    isNextSlot: (PhotoSlot) -> Boolean,
+    onNextSlotTap: (PhotoSlot) -> Unit,
+    onRetakeTap: (PhotoSlot) -> Unit,
 ) {
     val allDone = done >= total
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -282,26 +347,47 @@ private fun TruckPhotoCard(
             Spacer(Modifier.height(10.dp))
 
             slots.forEach { slot ->
-                PhotoSlotRow(slot = slot, onTap = { onSlotTap(slot) })
+                val locked = !slot.isComplete && !isNextSlot(slot)
+                PhotoSlotRow(
+                    slot = slot,
+                    locked = locked,
+                    onTap = {
+                        if (slot.isComplete) onRetakeTap(slot)
+                        else if (isNextSlot(slot)) onNextSlotTap(slot)
+                    },
+                )
             }
 
             if (!allDone) {
                 Spacer(Modifier.height(8.dp))
                 val nextSlot = nextIncompleteSlot(slots)
-                if (nextSlot != null) {
+                if (isActiveTruck && nextSlot != null) {
                     Button(
-                        onClick = { onSlotTap(nextSlot) },
+                        onClick = { onNextSlotTap(nextSlot) },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Icon(Icons.Default.CameraAlt, contentDescription = null, Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
                         Text("Capture ${nextSlot.label}")
                     }
+                } else {
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Lock, contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "Finish the truck above first",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             } else {
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "All photos captured — tap any photo above to retake it",
+                    "All photos captured — tap a photo above to retake it",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -311,44 +397,68 @@ private fun TruckPhotoCard(
 }
 
 @Composable
-private fun PhotoSlotRow(slot: PhotoSlot, onTap: () -> Unit) {
+private fun PhotoSlotRow(slot: PhotoSlot, locked: Boolean, onTap: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onTap)
+            .clickable(enabled = !locked, onClick = onTap)
             .padding(vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             when {
                 slot.isComplete -> Icons.Default.CheckCircle
+                locked -> Icons.Default.Lock
                 else -> Icons.Default.RadioButtonUnchecked
             },
             contentDescription = null,
             modifier = Modifier.size(18.dp),
-            tint = if (slot.isComplete) MaterialTheme.colorScheme.primary
-                   else MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = when {
+                slot.isComplete -> MaterialTheme.colorScheme.primary
+                locked -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                else -> MaterialTheme.colorScheme.primary
+            },
         )
         Spacer(Modifier.width(10.dp))
         Text(
             slot.label,
             style = MaterialTheme.typography.bodyMedium,
-            fontWeight = if (slot.isComplete) FontWeight.Normal else FontWeight.SemiBold,
-            color = if (slot.isComplete) MaterialTheme.colorScheme.onSurfaceVariant
-                    else MaterialTheme.colorScheme.onSurface,
+            fontWeight = if (!slot.isComplete && !locked) FontWeight.SemiBold else FontWeight.Normal,
+            color = when {
+                locked -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                slot.isComplete -> MaterialTheme.colorScheme.onSurfaceVariant
+                else -> MaterialTheme.colorScheme.onSurface
+            },
         )
         Spacer(Modifier.weight(1f))
-        if (slot.isComplete) {
-            Icon(Icons.Default.Refresh, contentDescription = "Retake",
+        when {
+            slot.isComplete -> Icon(Icons.Default.Refresh, contentDescription = "Retake",
                 modifier = Modifier.size(16.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            Icon(Icons.Default.ChevronRight, contentDescription = null,
+            !locked -> Icon(Icons.Default.ChevronRight, contentDescription = null,
                 modifier = Modifier.size(18.dp),
                 tint = MaterialTheme.colorScheme.primary)
         }
     }
     HorizontalDivider(thickness = 0.5.dp)
+}
+
+@Composable
+private fun RetakeConfirmDialog(truck: AssignedTruck, slot: PhotoSlot, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Refresh, contentDescription = null) },
+        title = { Text("Retake ${slot.label}?") },
+        text = {
+            Text(
+                "This replaces the existing ${slot.label.lowercase()} photo for " +
+                    "${truck.plate_number ?: truck.id.take(8)}. The old photo will no longer count.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        confirmButton = { Button(onClick = onConfirm) { Text("Retake") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 // ── Capture Screen ───────────────────────────────────────────────────────────
@@ -361,16 +471,19 @@ private fun SlotCaptureScreen(
     slot: PhotoSlot,
     slotIndex: Int,
     totalSlots: Int,
-    onAdvance: (PhotoSlot?) -> Unit,
+    onAdvance: (TruckSlot?) -> Unit,
     onBack: () -> Unit,
 ) {
-    var capturedFile by remember(slot.label) { mutableStateOf<File?>(null) }
+    // Slot labels (e.g. "Front") repeat across trucks, so remember() must key
+    // on truck.id too — otherwise state from truck A's "Front" would leak into
+    // truck B's "Front" when the wizard advances across trucks.
+    var capturedFile by remember(truck.id, slot.label) { mutableStateOf<File?>(null) }
     var lastLocation by remember { mutableStateOf<Location?>(null) }
-    var uploadEventId by remember(slot.label) { mutableStateOf<String?>(null) }
+    var uploadEventId by remember(truck.id, slot.label) { mutableStateOf<String?>(null) }
     // A retake replaces an already-captured slot — after it uploads, return
     // straight to the checklist instead of auto-advancing into the guided
     // flow for whatever slot happens to still be incomplete elsewhere.
-    val isRetake = remember(slot.label) { slot.isComplete }
+    val isRetake = remember(truck.id, slot.label) { slot.isComplete }
     val context = LocalContext.current
     val state by viewModel.state.collectAsState()
     val ctx = state.context
@@ -385,11 +498,10 @@ private fun SlotCaptureScreen(
             if (isRetake) {
                 onAdvance(null)
             } else {
-                val updatedPhotos = ctx.photos_today.filter {
-                    it.convoy_truck_id == truck.id && it.session == session
-                }
-                val updatedSlots = buildSlots(ctx.convoy.seal_count_per_truck, updatedPhotos)
-                onAdvance(nextIncompleteSlot(updatedSlots))
+                val updatedGlobalSlots = buildGlobalSlots(
+                    ctx.assigned_trucks, ctx.convoy.seal_count_per_truck, ctx.photos_today, session
+                )
+                onAdvance(nextIncompleteGlobal(updatedGlobalSlots))
             }
         }
     }
@@ -521,8 +633,9 @@ private fun SlotCaptureScreen(
 // ── Seal Position Dialog ─────────────────────────────────────────────────────
 
 @Composable
-private fun SealPositionDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+private fun SealPositionDialog(usedCodes: Set<String>, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
     var position by remember { mutableStateOf("") }
+    val isDuplicate = position.isNotBlank() && usedCodes.contains(position)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -538,14 +651,23 @@ private fun SealPositionDialog(onConfirm: (String) -> Unit, onDismiss: () -> Uni
                     onValueChange = { position = it.trim() },
                     label = { Text("Seal Code (e.g. 0099)") },
                     singleLine = true,
+                    isError = isDuplicate,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (isDuplicate) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "This code is already recorded for this truck — enter the next seal's code.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = { onConfirm(position) },
-                enabled = position.isNotBlank(),
+                enabled = position.isNotBlank() && !isDuplicate,
             ) { Text("Continue") }
         },
         dismissButton = {
