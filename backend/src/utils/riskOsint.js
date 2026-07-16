@@ -114,7 +114,7 @@ async function fetchReliefWebForZone(zone) {
 // same idea as extractPlaceTerms() but matched against a fixed vocabulary
 // instead of split on punctuation.
 const COUNTRY_NAMES = [
-  'Afghanistan', 'Bangladesh', 'Burkina Faso', 'Burundi', 'Cameroon', 'Central African Republic',
+  'Afghanistan', 'Bangladesh', 'Benin', 'Burkina Faso', 'Burundi', 'Cameroon', 'Central African Republic',
   'Chad', 'Colombia', 'Democratic Republic of Congo', 'Egypt', 'El Salvador', 'Ethiopia',
   'Ghana', 'Guatemala', 'Haiti', 'Honduras', 'India', 'Iraq', 'Kenya', 'Lebanon', 'Libya',
   'Mali', 'Mexico', 'Mozambique', 'Myanmar', 'Niger', 'Nigeria', 'Pakistan',
@@ -370,17 +370,23 @@ async function fetchExtraRssForZone(zone, feeds) {
 // whoever picked it, so treat the starter list as a baseline to curate
 // further, not a finished one.
 const DEFAULT_TELEGRAM_CHANNELS = {
-  '*': ['IntelSlava', 'osint613'],
-  africa: ['africaintelligence', 'africansecurity'],
-  kenya: ['KSUcountrywide', 'kenyan_news_panel', 'sikikaroadsafety'],
+  '*': ['IntelSlava', 'osint613', 'war_monitor', 'osintwarfare', 'Liveuamap', 'AuroraIntel', 'BNONews', 'wartranslated'],
+  africa: ['africaintelligence', 'africansecurity', 'AfricaIntel', 'CrisisGroup'],
+  kenya: ['KSUcountrywide', 'kenyan_news_panel', 'sikikaroadsafety', 'citizentvke'],
   uganda: ['nbs_television'],
   tanzania: ['tanzaniaupdates'],
   ethiopia: ['ethiopianmonitor'],
   somalia: ['hornobserver'],
   sudan: ['sudanwarupdates'],
   mali: ['azawad_news', 'maliinfos'],
-  'burkina faso': ['Burkina24'],
+  'burkina faso': ['Burkina24', 'Lefaso'],
   libya: ['tripoli_news'],
+  'democratic republic of congo': ['actualitecd'],
+  cameroon: ['ActuCameroun'],
+  nigeria: ['TheCableNG'],
+  ghana: ['JoyNewsOnTV'],
+  senegal: ['Seneweb'],
+  benin: ['Banouto'],
 };
 
 function loadTelegramChannels() {
