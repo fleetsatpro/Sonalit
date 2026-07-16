@@ -17,7 +17,10 @@
 //   - Telegram public channels (verified starter list built in, override via
 //     RISK_INTEL_TELEGRAM_CHANNELS): the fastest-moving grassroots layer in
 //     a lot of these corridors, but only as trustworthy as the channels
-//     behind it — treat the default as a baseline to curate further.
+//     behind it — treat the default as a baseline to curate further. Reads
+//     via the public preview page by default; channels that don't expose
+//     one (most official news orgs) need the MTProto client (see
+//     telegramMtproto.js + scripts/telegram-login.js) to be set up instead.
 //   - Claude web search (needs ANTHROPIC_API_KEY): broader synthesis across
 //     the open web, covering breaking coverage the structured feeds miss.
 // Every inserted row carries a stable external_id (URL hash, or the
@@ -26,6 +29,7 @@
 const crypto = require('crypto');
 const Anthropic = require('@anthropic-ai/sdk');
 const { XMLParser } = require('fast-xml-parser');
+const telegramMtproto = require('./telegramMtproto');
 const { query } = require('../config/database');
 const { publish } = require('../realtime/centrifugo');
 const logger = require('./logger');
@@ -116,10 +120,10 @@ async function fetchReliefWebForZone(zone) {
 const COUNTRY_NAMES = [
   'Afghanistan', 'Bangladesh', 'Benin', 'Burkina Faso', 'Burundi', 'Cameroon', 'Central African Republic',
   'Chad', 'Colombia', 'Democratic Republic of Congo', 'Egypt', 'El Salvador', 'Ethiopia',
-  'Ghana', 'Guatemala', 'Haiti', 'Honduras', 'India', 'Iraq', 'Kenya', 'Lebanon', 'Libya',
+  'Ghana', 'Guatemala', 'Haiti', 'Honduras', 'India', 'Iraq', 'Ivory Coast', 'Kenya', 'Lebanon', 'Libya',
   'Mali', 'Mexico', 'Mozambique', 'Myanmar', 'Niger', 'Nigeria', 'Pakistan',
   'Papua New Guinea', 'Philippines', 'Rwanda', 'Senegal', 'Somalia', 'South Sudan', 'Sri Lanka',
-  'Sudan', 'Syria', 'Tanzania', 'Uganda', 'Ukraine', 'Venezuela', 'Yemen', 'Zimbabwe',
+  'Sudan', 'Syria', 'Tanzania', 'Togo', 'Uganda', 'Ukraine', 'Venezuela', 'Yemen', 'Zimbabwe',
 ];
 
 function extractZoneCountries(zone) {
@@ -353,8 +357,9 @@ async function fetchExtraRssForZone(zone, feeds) {
 }
 
 // ─── Telegram public channels (org-curated) ──────────────────────────────────
-// Scrapes the public https://t.me/s/<channel> preview page — no bot/API key
-// needed, works for any channel with public preview enabled.
+// Reads via MTProto when configured (any public channel, see below), falling
+// back to scraping the https://t.me/s/<channel> preview page otherwise (no
+// key needed, but only works for channels with that preview enabled).
 //
 // DEFAULT_TELEGRAM_CHANNELS below ships a starter list, each handle checked
 // against the live preview before being added (several plausible-looking
@@ -369,8 +374,18 @@ async function fetchExtraRssForZone(zone, feeds) {
 // entirely with your own list — a channel is only as trustworthy as
 // whoever picked it, so treat the starter list as a baseline to curate
 // further, not a finished one.
+// Channels marked "MTProto-only" below are real, correctly-identified
+// channels (title matched the intended brand during verification) that
+// don't expose the public preview page — fetchTelegramChannelMessages()
+// silently gets nothing from them until TELEGRAM_API_ID/TELEGRAM_API_HASH/
+// TELEGRAM_SESSION_STRING are set up (see telegramMtproto.js), at which
+// point they work the same as every other entry here with no config change.
 const DEFAULT_TELEGRAM_CHANNELS = {
-  '*': ['IntelSlava', 'osint613', 'war_monitor', 'osintwarfare', 'Liveuamap', 'AuroraIntel', 'BNONews', 'wartranslated'],
+  '*': [
+    'IntelSlava', 'osint613', 'war_monitor', 'osintwarfare', 'Liveuamap', 'AuroraIntel', 'BNONews', 'wartranslated',
+    // MTProto-only:
+    'FaytuksNetwork', 'WarMonitor3', 'sentdefender', 'conflict_radar', 'ELINTNews', 'IntelCrab', 'TheIntelFrog', 'Visegrad24',
+  ],
   africa: ['africaintelligence', 'africansecurity', 'AfricaIntel', 'CrisisGroup'],
   kenya: ['KSUcountrywide', 'kenyan_news_panel', 'sikikaroadsafety', 'citizentvke'],
   uganda: ['nbs_television'],
@@ -378,15 +393,18 @@ const DEFAULT_TELEGRAM_CHANNELS = {
   ethiopia: ['ethiopianmonitor'],
   somalia: ['hornobserver'],
   sudan: ['sudanwarupdates'],
-  mali: ['azawad_news', 'maliinfos'],
+  mali: ['azawad_news', 'maliinfos', 'Maliactu', 'StudioTamani'], // last two MTProto-only
   'burkina faso': ['Burkina24', 'Lefaso'],
+  niger: ['ActuNiger'], // MTProto-only
   libya: ['tripoli_news'],
-  'democratic republic of congo': ['actualitecd'],
-  cameroon: ['ActuCameroun'],
-  nigeria: ['TheCableNG'],
-  ghana: ['JoyNewsOnTV'],
+  'democratic republic of congo': ['actualitecd', 'RadioOkapi', 'mediacongo', 'congoactu'], // last three MTProto-only
+  cameroon: ['ActuCameroun', 'JournalDuCameroun'], // last one MTProto-only
+  nigeria: ['TheCableNG', 'SaharaReporters', 'MobilePunch', 'ChannelsTV', 'PremiumTimesng', 'Nairametrics'], // last five MTProto-only
+  ghana: ['JoyNewsOnTV', 'Citi973'], // last one MTProto-only
   senegal: ['Seneweb'],
   benin: ['Banouto'],
+  'ivory coast': ['AbidjanNet'], // MTProto-only
+  togo: ['TogoBreakingNews'], // MTProto-only
 };
 
 function loadTelegramChannels() {
@@ -427,14 +445,16 @@ function decodeHtmlText(html) {
 // message rather than parsing full HTML/DOM. A message that itself embeds a
 // reply-preview referencing another data-post can truncate early; acceptable
 // for a supplementary, org-curated source rather than the sweep's primary one.
-async function fetchTelegramChannel(channel) {
+// Only reachable for channels that have the public preview enabled — many
+// real news orgs don't (see fetchTelegramChannelMessages below, which tries
+// MTProto first for exactly that reason).
+async function fetchTelegramChannelViaScrape(channel, cutoffMs) {
   const res = await fetch(`https://t.me/s/${encodeURIComponent(channel)}`, {
     headers: { 'User-Agent': 'Mozilla/5.0' },
     signal: AbortSignal.timeout(10000),
   });
   if (!res.ok) throw new Error(`Telegram HTTP ${res.status} (${channel})`);
   const html = await res.text();
-  const cutoffMs = Date.now() - 2 * 24 * 3600 * 1000;
 
   const messages = [];
   for (const block of html.split('data-post="').slice(1)) {
@@ -452,7 +472,52 @@ async function fetchTelegramChannel(channel) {
   return messages;
 }
 
-async function fetchTelegramForZone(zone, channelsByCountry) {
+// MTProto (see telegramMtproto.js) can read any public channel regardless of
+// preview settings, so it's tried first whenever it's configured; the HTML
+// scraper is the fallback for orgs that haven't done the one-time MTProto
+// login yet, or for a channel MTProto itself fails to resolve.
+async function fetchTelegramChannelMessages(channel, cutoffMs) {
+  if (telegramMtproto.isConfigured()) {
+    const messages = await telegramMtproto.fetchChannelMessages(channel, cutoffMs);
+    return messages.map(m => ({ id: m.id, text: m.text }));
+  }
+  return fetchTelegramChannelViaScrape(channel, cutoffMs);
+}
+
+// Fetched once per sweep for every channel the config references (like
+// GDACS's single global fetch) rather than once per zone — the same global
+// channel would otherwise be re-fetched for every single zone, and for
+// MTProto specifically that means holding one connection open across the
+// whole sweep instead of reconnecting per zone.
+async function fetchAllTelegramMessages(channelsByCountry) {
+  const allChannels = new Set();
+  for (const channels of Object.values(channelsByCountry)) {
+    for (const ch of channels) allChannels.add(ch);
+  }
+
+  const cutoffMs = Date.now() - 2 * 24 * 3600 * 1000;
+  const eventsByChannel = new Map();
+  for (const channel of allChannels) {
+    try {
+      const messages = await fetchTelegramChannelMessages(channel, cutoffMs);
+      const events = messages
+        .filter(msg => HIGH_KEYWORDS.test(msg.text) || MEDIUM_KEYWORDS.test(msg.text))
+        .map(msg => ({
+          description: msg.text.slice(0, 500),
+          level: classifyLevelFromKeywords(msg.text),
+          source: 'osint:telegram',
+          source_url: `https://t.me/${msg.id}`,
+          external_id: `telegram:${msg.id}`,
+        }));
+      eventsByChannel.set(channel.toLowerCase(), events);
+    } catch (e) {
+      logger.warn(`Risk Intel OSINT: Telegram channel "${channel}" failed: ${e.message}`);
+    }
+  }
+  return eventsByChannel;
+}
+
+function matchTelegramToZone(zone, channelsByCountry, eventsByChannel) {
   const countries = extractZoneCountries(zone).map(c => c.toLowerCase());
   const channels = new Set();
   for (const ch of channelsByCountry['*'] || []) channels.add(ch);
@@ -462,25 +527,10 @@ async function fetchTelegramForZone(zone, channelsByCountry) {
   for (const country of countries) {
     for (const ch of channelsByCountry[country] || []) channels.add(ch);
   }
-  if (!channels.size) return [];
 
   const found = [];
   for (const channel of channels) {
-    try {
-      const messages = await fetchTelegramChannel(channel);
-      for (const msg of messages) {
-        if (!HIGH_KEYWORDS.test(msg.text) && !MEDIUM_KEYWORDS.test(msg.text)) continue;
-        found.push({
-          description: msg.text.slice(0, 500),
-          level: classifyLevelFromKeywords(msg.text),
-          source: 'osint:telegram',
-          source_url: `https://t.me/${msg.id}`,
-          external_id: `telegram:${msg.id}`,
-        });
-      }
-    } catch (e) {
-      logger.warn(`Risk Intel OSINT: Telegram channel "${channel}" failed: ${e.message}`);
-    }
+    found.push(...(eventsByChannel.get(channel.toLowerCase()) || []));
   }
   return found;
 }
@@ -616,7 +666,12 @@ async function runOsintSweep() {
 
     const extraRssFeeds = loadExtraRssFeeds();
     const telegramChannels = loadTelegramChannels();
-    const telegramConfigured = Object.keys(telegramChannels).length > 0;
+    let telegramEventsByChannel = new Map();
+    try {
+      telegramEventsByChannel = await fetchAllTelegramMessages(telegramChannels);
+    } catch (e) {
+      logger.warn(`Risk Intel OSINT: Telegram sweep failed: ${e.message}`);
+    }
 
     const orgsTouched = new Set();
     let totalInserted = 0;
@@ -644,10 +699,7 @@ async function runOsintSweep() {
         catch (e) { logger.warn(`Risk Intel OSINT: extra RSS failed for "${zone.name}": ${e.message}`); }
       }
 
-      if (telegramConfigured) {
-        try { found.push(...await fetchTelegramForZone(zone, telegramChannels)); }
-        catch (e) { logger.warn(`Risk Intel OSINT: Telegram failed for "${zone.name}": ${e.message}`); }
-      }
+      found.push(...matchTelegramToZone(zone, telegramChannels, telegramEventsByChannel));
 
       found.push(...(claudeByZone[zone.id] || []).map(it => ({ ...it, source: 'osint:claude' })));
 
@@ -664,13 +716,14 @@ async function runOsintSweep() {
 
     const zonesChanged = await recomputeZoneLevels(zones);
 
-    logger.info(`Risk Intel OSINT sweep complete: ${zones.length} zones checked, ${totalInserted} new events, ${orgsTouched.size} orgs updated, ${zonesChanged} zone levels recomputed, gdacs=${gdacsFeatures.length ? 'used' : 'skipped'}, acled=${acledToken ? 'used' : 'skipped'}, telegram=${telegramConfigured ? 'used' : 'skipped'}, claude=${client ? 'used' : 'skipped'}`);
+    logger.info(`Risk Intel OSINT sweep complete: ${zones.length} zones checked, ${totalInserted} new events, ${orgsTouched.size} orgs updated, ${zonesChanged} zone levels recomputed, gdacs=${gdacsFeatures.length ? 'used' : 'skipped'}, acled=${acledToken ? 'used' : 'skipped'}, telegram=${telegramEventsByChannel.size ? 'used' : 'skipped'} (mtproto=${telegramMtproto.isConfigured() ? 'on' : 'off'}), claude=${client ? 'used' : 'skipped'}`);
     return {
       zonesChecked: zones.length, totalInserted, orgsUpdated: orgsTouched.size, zonesChanged,
-      acledUsed: !!acledToken, telegramUsed: telegramConfigured, claudeUsed: !!client,
+      acledUsed: !!acledToken, telegramUsed: telegramEventsByChannel.size > 0, claudeUsed: !!client,
     };
   } finally {
     sweeping = false;
+    await telegramMtproto.disconnect();
   }
 }
 

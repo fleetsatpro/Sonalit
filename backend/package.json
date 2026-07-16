@@ -17,6 +17,7 @@
     "generate-openapi": "node scripts/generate-openapi.js",
     "predeploy": "node scripts/db-migrate.js",
     "seed": "node scripts/seed.js",
+    "telegram:login": "node scripts/telegram-login.js",
     "workers": "node scripts/start-workers.js",
     "worker:gps": "node src/workers/worker.gps.js",
     "worker:alert": "node src/workers/worker.alert.js",
@@ -51,6 +52,7 @@
     "pg": "^8.11.3",
     "sharp": "^0.35.3",
     "socket.io": "^4.7.2",
+    "telegram": "^2.26.22",
     "uuid": "^9.0.0",
     "winston": "^3.11.0"
   },
