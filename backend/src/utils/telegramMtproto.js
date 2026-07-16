@@ -72,7 +72,13 @@ async function fetchChannelMessages(channelUsername, sinceMs) {
 
 async function disconnect() {
   if (client) {
-    await client.disconnect().catch((e) => logger.warn(`Telegram MTProto disconnect error: ${e.message}`));
+    // client.disconnect() only closes the socket — GramJS's internal ping/
+    // update loop keeps running (it only checks client._destroyed, a flag
+    // disconnect() never sets), so it spins forever re-pinging a dead
+    // connection and logging "Error: TIMEOUT" every ~9s. destroy() sets
+    // that flag first, which lets the loop exit on its next iteration.
+    // https://github.com/gram-js/gramjs/issues/615
+    await client.destroy().catch((e) => logger.warn(`Telegram MTProto disconnect error: ${e.message}`));
     client = null;
   }
 }
