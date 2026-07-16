@@ -14,10 +14,10 @@
 //     African outlets GDELT's international-wire bias tends to miss, plus
 //     any extra feeds an org configures via RISK_INTEL_EXTRA_RSS_FEEDS for
 //     other regions.
-//   - Telegram public channels (needs RISK_INTEL_TELEGRAM_CHANNELS): the
-//     fastest-moving grassroots layer in a lot of these corridors, but only
-//     as trustworthy as the channels an org curates — nothing is scraped
-//     unless explicitly configured.
+//   - Telegram public channels (verified starter list built in, override via
+//     RISK_INTEL_TELEGRAM_CHANNELS): the fastest-moving grassroots layer in
+//     a lot of these corridors, but only as trustworthy as the channels
+//     behind it — treat the default as a baseline to curate further.
 //   - Claude web search (needs ANTHROPIC_API_KEY): broader synthesis across
 //     the open web, covering breaking coverage the structured feeds miss.
 // Every inserted row carries a stable external_id (URL hash, or the
@@ -114,11 +114,11 @@ async function fetchReliefWebForZone(zone) {
 // same idea as extractPlaceTerms() but matched against a fixed vocabulary
 // instead of split on punctuation.
 const COUNTRY_NAMES = [
-  'Afghanistan', 'Bangladesh', 'Burkina Faso', 'Cameroon', 'Central African Republic',
+  'Afghanistan', 'Bangladesh', 'Burkina Faso', 'Burundi', 'Cameroon', 'Central African Republic',
   'Chad', 'Colombia', 'Democratic Republic of Congo', 'Egypt', 'El Salvador', 'Ethiopia',
   'Ghana', 'Guatemala', 'Haiti', 'Honduras', 'India', 'Iraq', 'Kenya', 'Lebanon', 'Libya',
   'Mali', 'Mexico', 'Mozambique', 'Myanmar', 'Niger', 'Nigeria', 'Pakistan',
-  'Papua New Guinea', 'Philippines', 'Senegal', 'Somalia', 'South Sudan', 'Sri Lanka',
+  'Papua New Guinea', 'Philippines', 'Rwanda', 'Senegal', 'Somalia', 'South Sudan', 'Sri Lanka',
   'Sudan', 'Syria', 'Tanzania', 'Uganda', 'Ukraine', 'Venezuela', 'Yemen', 'Zimbabwe',
 ];
 
@@ -352,26 +352,51 @@ async function fetchExtraRssForZone(zone, feeds) {
   return found;
 }
 
-// ─── Telegram public channels (opt-in, org-curated) ──────────────────────────
+// ─── Telegram public channels (org-curated) ──────────────────────────────────
 // Scrapes the public https://t.me/s/<channel> preview page — no bot/API key
-// needed, works for any channel with public preview enabled. Channels are
-// entirely org-configured (RISK_INTEL_TELEGRAM_CHANNELS, JSON object mapping
-// country name -> array of channel usernames); nothing is scraped unless
-// explicitly set, since a channel is only as trustworthy as whoever picked it.
+// needed, works for any channel with public preview enabled.
+//
+// DEFAULT_TELEGRAM_CHANNELS below ships a starter list, each handle checked
+// against the live preview before being added (several plausible-looking
+// guesses resolved to the wrong channel — a squatted/for-sale username, an
+// unrelated channel, an apparent impersonator — and were deliberately left
+// out; see conversation/PR history for the full verification pass). Keys are
+// lowercased country names (matched via extractZoneCountries), plus two
+// special keys:
+//   '*'      — applies to every zone regardless of country/continent
+//   'africa' — applies to every zone on that continent
+// Set RISK_INTEL_TELEGRAM_CHANNELS (same shape) to replace this default
+// entirely with your own list — a channel is only as trustworthy as
+// whoever picked it, so treat the starter list as a baseline to curate
+// further, not a finished one.
+const DEFAULT_TELEGRAM_CHANNELS = {
+  '*': ['IntelSlava', 'osint613'],
+  africa: ['africaintelligence', 'africansecurity'],
+  kenya: ['KSUcountrywide', 'kenyan_news_panel', 'sikikaroadsafety'],
+  uganda: ['nbs_television'],
+  tanzania: ['tanzaniaupdates'],
+  ethiopia: ['ethiopianmonitor'],
+  somalia: ['hornobserver'],
+  sudan: ['sudanwarupdates'],
+  mali: ['azawad_news', 'maliinfos'],
+  'burkina faso': ['Burkina24'],
+  libya: ['tripoli_news'],
+};
+
 function loadTelegramChannels() {
   const raw = process.env.RISK_INTEL_TELEGRAM_CHANNELS;
-  if (!raw) return {};
+  if (!raw) return DEFAULT_TELEGRAM_CHANNELS;
   try {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return {};
     const normalised = {};
-    for (const [country, channels] of Object.entries(parsed)) {
-      if (Array.isArray(channels)) normalised[country.toLowerCase()] = channels;
+    for (const [key, channels] of Object.entries(parsed)) {
+      if (Array.isArray(channels)) normalised[key === '*' ? '*' : key.toLowerCase()] = channels;
     }
     return normalised;
   } catch (e) {
     logger.warn(`Risk Intel OSINT: RISK_INTEL_TELEGRAM_CHANNELS is not valid JSON: ${e.message}`);
-    return {};
+    return DEFAULT_TELEGRAM_CHANNELS;
   }
 }
 
@@ -424,6 +449,10 @@ async function fetchTelegramChannel(channel) {
 async function fetchTelegramForZone(zone, channelsByCountry) {
   const countries = extractZoneCountries(zone).map(c => c.toLowerCase());
   const channels = new Set();
+  for (const ch of channelsByCountry['*'] || []) channels.add(ch);
+  if (zone.continent) {
+    for (const ch of channelsByCountry[zone.continent.toLowerCase()] || []) channels.add(ch);
+  }
   for (const country of countries) {
     for (const ch of channelsByCountry[country] || []) channels.add(ch);
   }
