@@ -2382,9 +2382,18 @@ router.patch('/config', authenticate, async (req, res, next) => {
   try {
     const { key, value_int, value_text } = req.body;
 
-    const allowlist = ['dms_default_interval_minutes', 'dms_max_interval_minutes', 'min_apk_version_code', 'audit_log_archive_enabled'];
+    const allowlist = [
+      'dms_default_interval_minutes', 'dms_max_interval_minutes', 'min_apk_version_code',
+      'audit_log_archive_enabled', 'dispatch_phone_number',
+    ];
     if (!key || !allowlist.includes(key)) {
       return res.status(400).json({ error: `key must be one of: ${allowlist.join(', ')}` });
+    }
+    // Guardian's Home "Call Dispatch" button dials this verbatim via
+    // ACTION_DIAL — reject anything that isn't plausibly a phone number so a
+    // typo here can't silently become an unreachable/garbage dial target.
+    if (key === 'dispatch_phone_number' && value_text && !/^\+?[0-9 ()-]{5,20}$/.test(value_text)) {
+      return res.status(400).json({ error: 'dispatch_phone_number must look like a phone number (digits, spaces, +, -, () only)' });
     }
 
     const result = await query(
