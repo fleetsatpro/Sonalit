@@ -41,6 +41,21 @@ data class LocationPoint(
 )
 data class LocationBatchRequest(val points: List<LocationPoint>)
 
+data class ConvoyMember(
+    val id: String,
+    val name: String,
+    val last_lat: Double?,
+    val last_lng: Double?,
+    val last_speed: Double?,
+    val last_seen: String?,
+    val status: String?,
+)
+data class ConvoyStatusResponse(
+    val in_convoy: Boolean,
+    val convoy_code: String?,
+    val members: List<ConvoyMember> = emptyList(),
+)
+
 // ── CFO API ───────────────────────────────────────────────────────────────────
 
 data class CfoLoginRequest(val email: String, val password: String)
@@ -168,6 +183,18 @@ interface GuardianApi {
     // the server. guardian/location/batch is the real, working endpoint.
     @POST("guardian/location/batch")
     suspend fun locationBatch(@Body batch: LocationBatchRequest): Map<String, Any>
+
+    /** Other Guardian devices sharing this device's ad-hoc convoy_code, with
+     *  their last known position/status — backs the Home "My Convoy" card. */
+    @GET("guardian/convoy")
+    suspend fun convoyStatus(): ConvoyStatusResponse
+
+    /** Org-wide device config (guardian_config table) — currently only used
+     *  for dispatch_phone_number (Home's Call Dispatch button). Untyped
+     *  because the table is a generic key/value store the backend flattens
+     *  into a single JSON object. */
+    @GET("guardian/config")
+    suspend fun config(): Map<String, Any>
 
     // CFO endpoints — all require X-Device-Token header
     @POST("guardian/cfo/login")

@@ -79,14 +79,73 @@ interface PendingPhotoDao {
     suspend fun count(): Int
 }
 
+// ── Dispatch inbox (show_message / play_voice_message commands) ──────────────
+
+@Entity(tableName = "dispatch_messages")
+data class DispatchMessageEntity(
+    @PrimaryKey val id: String,
+    val kind: String,          // text | voice
+    val text: String?,         // text messages, or the voice message's fallback label
+    val voiceUrl: String?,
+    val receivedAt: Long,
+    val read: Boolean = false,
+)
+
+@Dao
+interface DispatchMessageDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(message: DispatchMessageEntity)
+
+    @Query("SELECT * FROM dispatch_messages ORDER BY receivedAt DESC LIMIT :limit")
+    fun recent(limit: Int = 20): kotlinx.coroutines.flow.Flow<List<DispatchMessageEntity>>
+
+    @Query("SELECT COUNT(*) FROM dispatch_messages WHERE read = 0")
+    fun unreadCount(): kotlinx.coroutines.flow.Flow<Int>
+
+    @Query("UPDATE dispatch_messages SET read = 1 WHERE id = :id")
+    suspend fun markRead(id: String)
+
+    @Query("DELETE FROM dispatch_messages WHERE receivedAt < :cutoffMs")
+    suspend fun pruneOld(cutoffMs: Long)
+}
+
+// ── Recent activity (SOS + device-health flag history) ────────────────────────
+
+@Entity(tableName = "activity_events")
+data class ActivityEventEntity(
+    @PrimaryKey val id: String,
+    val kind: String,          // sos | health
+    val title: String,
+    val detail: String?,
+    val severity: String,      // ok | warn
+    val occurredAt: Long,
+)
+
+@Dao
+interface ActivityEventDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(event: ActivityEventEntity)
+
+    @Query("SELECT * FROM activity_events ORDER BY occurredAt DESC LIMIT :limit")
+    fun recent(limit: Int = 10): kotlinx.coroutines.flow.Flow<List<ActivityEventEntity>>
+
+    @Query("DELETE FROM activity_events WHERE occurredAt < :cutoffMs")
+    suspend fun pruneOld(cutoffMs: Long)
+}
+
 // ── Database ──────────────────────────────────────────────────────────────────
 
 @Database(
-    entities = [GpsFixEntity::class, PendingPhotoEntity::class],
-    version = 3,
+    entities = [
+        GpsFixEntity::class, PendingPhotoEntity::class,
+        DispatchMessageEntity::class, ActivityEventEntity::class,
+    ],
+    version = 4,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun gpsFixDao(): GpsFixDao
     abstract fun pendingPhotoDao(): PendingPhotoDao
+    abstract fun dispatchMessageDao(): DispatchMessageDao
+    abstract fun activityEventDao(): ActivityEventDao
 }

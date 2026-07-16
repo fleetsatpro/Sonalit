@@ -138,6 +138,9 @@ dependencies {
     // Coil
     implementation(libs.coil.compose)
 
+    // Haze (backdrop blur for Home's glass cards)
+    implementation(libs.haze)
+
     // Accompanist
     implementation(libs.accompanist.permissions)
 

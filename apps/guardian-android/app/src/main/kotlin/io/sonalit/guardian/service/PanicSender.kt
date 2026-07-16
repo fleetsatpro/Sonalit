@@ -5,6 +5,8 @@ import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import dagger.hilt.android.qualifiers.ApplicationContext
+import io.sonalit.guardian.data.local.ActivityEventDao
+import io.sonalit.guardian.data.local.ActivityEventEntity
 import io.sonalit.guardian.data.local.AppDatabase
 import io.sonalit.guardian.data.remote.GuardianApi
 import io.sonalit.guardian.data.remote.PanicRequest
@@ -23,6 +25,7 @@ class PanicSender @Inject constructor(
     @ApplicationContext private val context: Context,
     private val db: AppDatabase,
     private val api: GuardianApi,
+    private val activityEventDao: ActivityEventDao,
 ) {
     private val prefs by lazy {
         val masterKey = MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
@@ -48,6 +51,13 @@ class PanicSender @Inject constructor(
             ),
         )
         true
+    }.onSuccess {
+        activityEventDao.insert(
+            ActivityEventEntity(
+                id = UUID.randomUUID().toString(), kind = "sos", title = "SOS sent",
+                detail = null, severity = "warn", occurredAt = System.currentTimeMillis(),
+            )
+        )
     }.onFailure {
         // Previously swallowed entirely — a failed SOS send (wrong mode, 4xx/5xx
         // from the backend, no network) looked identical in Logcat to a successful
@@ -69,6 +79,13 @@ class PanicSender @Inject constructor(
     suspend fun cancel(): Boolean = runCatching {
         api.cancelPanic()
         true
+    }.onSuccess {
+        activityEventDao.insert(
+            ActivityEventEntity(
+                id = UUID.randomUUID().toString(), kind = "sos", title = "SOS resolved",
+                detail = null, severity = "ok", occurredAt = System.currentTimeMillis(),
+            )
+        )
     }.onFailure {
         Log.e("PanicSender", "SOS cancel failed: ${it.message}", it)
     }.getOrDefault(false)

@@ -28,8 +28,13 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import dagger.hilt.android.qualifiers.ApplicationContext
+import io.sonalit.guardian.data.local.DispatchMessageDao
+import io.sonalit.guardian.data.local.DispatchMessageEntity
 import io.sonalit.guardian.receiver.GuardianDeviceAdminReceiver
 import io.sonalit.guardian.worker.SyncWorker
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -46,6 +51,7 @@ class CommandExecutor @Inject constructor(
     // The app's shared client — its interceptor attaches the X-Device-Token
     // header, which is what authenticates the voice-message audio download.
     private val httpClient: OkHttpClient,
+    private val dispatchMessageDao: DispatchMessageDao,
 ) {
     private val devicePolicyManager by lazy {
         context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
@@ -53,7 +59,7 @@ class CommandExecutor @Inject constructor(
     private val adminComponent by lazy { ComponentName(context, GuardianDeviceAdminReceiver::class.java) }
 
     /** Returns true if the command was actually carried out. */
-    fun execute(commandType: String, deviceId: String?, payload: String? = null): Boolean = runCatching {
+    suspend fun execute(commandType: String, deviceId: String?, payload: String? = null): Boolean = runCatching {
         when (commandType) {
             "request_location", "force_checkin", "force_sync" -> {
                 if (deviceId == null) return@runCatching false
@@ -72,10 +78,19 @@ class CommandExecutor @Inject constructor(
             // Operator text from the dashboard (Live Fleet "Msg" action).
             // payload: {"text": "..."} — shown as a high-priority notification
             // plus the alert vibration so it lands even with the screen off.
+            // Also persisted to the local inbox (Home "Messages from Dispatch")
+            // so it's still visible after the notification is dismissed —
+            // previously this was fire-and-forget with nothing kept in-app.
             "show_message" -> {
                 val text = parseMessageText(payload) ?: return@runCatching false
                 showOperatorMessage(text)
                 vibrateAlert()
+                dispatchMessageDao.insert(
+                    DispatchMessageEntity(
+                        id = UUID.randomUUID().toString(), kind = "text", text = text,
+                        voiceUrl = null, receivedAt = System.currentTimeMillis(),
+                    )
+                )
                 true
             }
             // Dispatch voice recording (Live Fleet "Voice" action).
@@ -85,6 +100,12 @@ class CommandExecutor @Inject constructor(
             "play_voice_message" -> {
                 val url = payload?.let { p -> runCatching { JSONObject(p).optString("url") }.getOrNull() }
                     ?.takeIf { it.isNotBlank() } ?: return@runCatching false
+                dispatchMessageDao.insert(
+                    DispatchMessageEntity(
+                        id = UUID.randomUUID().toString(), kind = "voice", text = null,
+                        voiceUrl = url, receivedAt = System.currentTimeMillis(),
+                    )
+                )
                 playVoiceMessage(url)
             }
             "stop_siren" -> { stopVibrate(); true }
@@ -103,6 +124,15 @@ class CommandExecutor @Inject constructor(
             else -> false
         }
     }.getOrDefault(false)
+
+    /** Re-plays a voice message from the Home dispatch inbox (tap-to-play) —
+     *  same download/playback path as the original command delivery, just
+     *  invoked directly instead of via a command payload. playVoiceMessage()
+     *  blocks on network I/O, so unlike execute() (always called from a
+     *  background context already) this must move off the caller's thread
+     *  itself — a ViewModel's viewModelScope.launch defaults to Main. */
+    suspend fun replayVoiceMessage(url: String): Boolean =
+        withContext(Dispatchers.IO) { runCatching { playVoiceMessage(url) }.getOrDefault(false) }
 
     /** payload may be the raw JSON object string or (from the heartbeat map)
      *  a Kotlin map .toString() — try JSON first, fall back to the raw text. */
