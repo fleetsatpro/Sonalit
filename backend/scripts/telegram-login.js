@@ -24,6 +24,7 @@ require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') }
 const readline = require('readline');
 const { TelegramClient } = require('telegram');
 const { StringSession } = require('telegram/sessions');
+const { ConnectionTCPObfuscated } = require('telegram/network/connection/TCPObfuscated');
 
 function ask(question) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -38,7 +39,13 @@ function ask(question) {
     process.exit(1);
   }
 
-  const client = new TelegramClient(new StringSession(''), apiId, apiHash, { connectionRetries: 5 });
+  // TCPObfuscated rather than the default TCPFull — some networks silently
+  // drop the plain TCPFull handshake with no error at all, while the
+  // obfuscated transport gets through.
+  const client = new TelegramClient(new StringSession(''), apiId, apiHash, {
+    connectionRetries: 5,
+    connection: ConnectionTCPObfuscated,
+  });
 
   await client.start({
     phoneNumber: () => ask('Phone number (with country code, e.g. +12025551234): '),

@@ -16,6 +16,7 @@
 // unconditionally — same opt-in pattern as ACLED/Claude.
 const { TelegramClient } = require('telegram');
 const { StringSession } = require('telegram/sessions');
+const { ConnectionTCPObfuscated } = require('telegram/network/connection/TCPObfuscated');
 const logger = require('./logger');
 
 let client = null;
@@ -33,8 +34,12 @@ async function getClient() {
   connectPromise = (async () => {
     const apiId = parseInt(process.env.TELEGRAM_API_ID, 10);
     const apiHash = process.env.TELEGRAM_API_HASH;
+    // TCPObfuscated rather than the default TCPFull — some networks (this
+    // one included, observed during setup) silently drop the plain TCPFull
+    // handshake with no error, while the obfuscated transport gets through.
     const c = new TelegramClient(new StringSession(process.env.TELEGRAM_SESSION_STRING), apiId, apiHash, {
-      connectionRetries: 3,
+      connectionRetries: 5,
+      connection: ConnectionTCPObfuscated,
     });
     await c.connect();
     client = c;
