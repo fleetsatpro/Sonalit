@@ -22,7 +22,7 @@ export default function MapPopup({ zone, x, y, onOpen }: Props) {
       border: `1px solid ${border}`,
       borderRadius: 8,
       padding: '10px 12px',
-      width: 200,
+      width: 220,
       pointerEvents: 'auto',
       zIndex: 20,
       boxShadow: '0 8px 32px rgba(0,0,0,.5)',
@@ -48,7 +48,13 @@ export default function MapPopup({ zone, x, y, onOpen }: Props) {
         }}>{zone.level}</span>
       </div>
       <div style={{ fontSize: 12, fontWeight: 600, color: '#e8e6df', marginBottom: 2 }}>{zone.name}</div>
-      <div style={{ fontSize: 10, color: '#9a9890', marginBottom: 8 }}>{zone.region}</div>
+      <div style={{ fontSize: 10, color: '#9a9890', marginBottom: 6 }}>{zone.region}</div>
+      {zone.why && (
+        <div style={{
+          fontSize: 10.5, color: '#c8c6bf', lineHeight: 1.4, marginBottom: 8,
+          overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical',
+        }}>{zone.why}</div>
+      )}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
         <span style={{ fontSize: 10, color: '#6e6c64' }}>Events 24h</span>
         <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 10, color }}>{zone.events_24h}</span>

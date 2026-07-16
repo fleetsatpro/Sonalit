@@ -149,9 +149,7 @@ export default function RiskMap({ zones, activeCont, activeZoneId, heatVisible, 
       'circle-radius': 5, 'circle-color': LEVEL_MATCH, 'circle-stroke-width': 1.5, 'circle-stroke-color': '#0d1520',
     } })
 
-    map.on('mouseenter', 'rz-fill', () => { map.getCanvas().style.cursor = 'pointer' })
-    map.on('mouseleave', 'rz-fill', () => { map.getCanvas().style.cursor = '' })
-    map.on('click', 'rz-fill', (e) => {
+    const handleZoneClick = (e: maplibregl.MapLayerMouseEvent) => {
       const f = e.features?.[0]
       if (!f) return
       const id = (f.properties as { id: string } | undefined)?.id
@@ -160,7 +158,16 @@ export default function RiskMap({ zones, activeCont, activeZoneId, heatVisible, 
       const point = map.project([zone.map_lon, zone.map_lat])
       setPopup({ zone, x: point.x, y: point.y })
       onZoneClick(zone.id)
-    })
+    }
+    // rz-fill is the zone's radius_km circle, which at low/global zoom can
+    // render at only a few pixels (or sub-pixel) — the rz-dot marker is what
+    // a tap actually lands on in that case, so both layers need the same
+    // click/hover wiring or "clicking the pin" silently does nothing.
+    for (const layer of ['rz-fill', 'rz-dot']) {
+      map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer' })
+      map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = '' })
+      map.on('click', layer, handleZoneClick)
+    }
   }, [mapReady, zones, onZoneClick])
 
   // highlight the selected zone's outline
