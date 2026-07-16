@@ -48,6 +48,9 @@ export default function ThreatCard({ zone, active, onClick }: Props) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
           <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 9, color: '#6e6c64' }}>{zone.zone_code}</span>
           <span style={{ fontSize: 12, fontWeight: 600, color: '#e8e6de', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{zone.name}</span>
+          {zone.level_source === 'auto' && (
+            <span title="Auto-detected from live OSINT — not yet hand-curated" style={{ fontSize: 8, fontWeight: 700, padding: '2px 5px', borderRadius: 4, background: 'rgba(240,180,41,.12)', color: '#F0B429', border: '1px solid rgba(240,180,41,.3)', flexShrink: 0 }}>AUTO</span>
+          )}
           <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: levelBg(zone.level), color, border: `1px solid ${levelBorder(zone.level)}`, textTransform: 'uppercase', flexShrink: 0 }}>{zone.level}</span>
         </div>
         <div style={{ fontSize: 10, color: '#6e6c64', marginBottom: 4 }}>📍 {zone.region}</div>

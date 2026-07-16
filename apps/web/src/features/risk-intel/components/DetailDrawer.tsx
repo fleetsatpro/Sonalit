@@ -80,6 +80,9 @@ export default function DetailDrawer({ zone, onClose, isMobile = false }: Props)
                 padding: '1px 6px',
                 textTransform: 'uppercase',
               }}>{zone.level}</span>
+              {zone.level_source === 'auto' && (
+                <span title="Auto-detected from live OSINT — not yet hand-curated" style={{ fontSize: 8, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: 'rgba(240,180,41,.12)', color: '#F0B429', border: '1px solid rgba(240,180,41,.3)' }}>AUTO</span>
+              )}
             </div>
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#e8e6df' }}>{zone.name}</h3>
             <div style={{ fontSize: 11, color: '#6e6c64', marginTop: 2 }}>{zone.region}</div>
