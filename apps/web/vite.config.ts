@@ -54,7 +54,10 @@ export default defineConfig({
     },
   },
   build: {
-    sourcemap: true,
+    // Source maps let anyone reconstruct the original TypeScript from the
+    // deployed bundle (auth flow, API surface, internal TODOs). Keep them
+    // out of the production artifact entirely.
+    sourcemap: false,
     rollupOptions: {
       output: {
         manualChunks: {

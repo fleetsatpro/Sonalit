@@ -1,6 +1,7 @@
 #!/bin/sh
 set -e
 pnpm --filter @sonalit/web... build
+find apps/web/dist -name '*.map' -delete
 (cd apps/guardian-convoy && npm ci && npm run build)
 cp apps/guardian-convoy/dist/index.html apps/web/dist/convoy.html
 mkdir -p apps/web/dist/convoy-assets

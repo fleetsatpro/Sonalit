@@ -1,14 +1,35 @@
-// Risk Intel OSINT sweep: pulls real-world security incidents from three
+// Risk Intel OSINT sweep: pulls real-world security incidents from seven
 // sources and inserts them as risk_events so zone activity reflects live
-// media coverage instead of only manual admin entries.
+// ground coverage instead of only manual admin entries.
 //   - GDELT (free, no key): global news-monitoring index, geo/keyword search.
 //   - ReliefWeb (free, no key): humanitarian/conflict situation reports.
+//   - GDACS (free, no key): real-time natural-hazard alerts (floods,
+//     cyclones, quakes) matched to zones by distance, not keyword — this is
+//     the only source here that isn't conflict/violence-focused.
+//   - ACLED (needs ACLED_USERNAME/ACLED_PASSWORD, free myACLED registration):
+//     event-coded political violence/protest data at village/road level —
+//     catches incidents too small to make wire-service news, which is
+//     exactly what GDELT/ReliefWeb (both built on published articles) miss.
+//   - AllAfrica RSS (free, no key, Africa zones only): aggregates local
+//     African outlets GDELT's international-wire bias tends to miss, plus
+//     any extra feeds an org configures via RISK_INTEL_EXTRA_RSS_FEEDS for
+//     other regions.
+//   - Telegram public channels (verified starter list built in, override via
+//     RISK_INTEL_TELEGRAM_CHANNELS): the fastest-moving grassroots layer in
+//     a lot of these corridors, but only as trustworthy as the channels
+//     behind it — treat the default as a baseline to curate further. Reads
+//     via the public preview page by default; channels that don't expose
+//     one (most official news orgs) need the MTProto client (see
+//     telegramMtproto.js + scripts/telegram-login.js) to be set up instead.
 //   - Claude web search (needs ANTHROPIC_API_KEY): broader synthesis across
 //     the open web, covering breaking coverage the structured feeds miss.
-// Every inserted row carries a source_url hashed into external_id so re-runs
-// don't duplicate the same article (see risk_events_zone_external_uniq).
+// Every inserted row carries a stable external_id (URL hash, or the
+// source's own event/message id) so re-runs don't duplicate the same item
+// (see risk_events_zone_external_uniq).
 const crypto = require('crypto');
 const Anthropic = require('@anthropic-ai/sdk');
+const { XMLParser } = require('fast-xml-parser');
+const telegramMtproto = require('./telegramMtproto');
 const { query } = require('../config/database');
 const { publish } = require('../realtime/centrifugo');
 const logger = require('./logger');
@@ -90,6 +111,430 @@ async function fetchReliefWebForZone(zone) {
     .filter(it => it.description && it.source_url);
 }
 
+// Several sources below (ACLED, AllAfrica RSS, Telegram) need an exact
+// country match rather than GDELT's tolerant free-text keyword search —
+// zone.region is free text ("Northern Mali / Western Niger", "KPK Province,
+// Pakistan"), so pull out whichever known country name(s) appear in it,
+// same idea as extractPlaceTerms() but matched against a fixed vocabulary
+// instead of split on punctuation.
+const COUNTRY_NAMES = [
+  'Afghanistan', 'Bangladesh', 'Benin', 'Burkina Faso', 'Burundi', 'Cameroon', 'Central African Republic',
+  'Chad', 'Colombia', 'Democratic Republic of Congo', 'Egypt', 'El Salvador', 'Ethiopia',
+  'Ghana', 'Guatemala', 'Haiti', 'Honduras', 'India', 'Iraq', 'Ivory Coast', 'Kenya', 'Lebanon', 'Libya',
+  'Mali', 'Mexico', 'Mozambique', 'Myanmar', 'Niger', 'Nigeria', 'Pakistan',
+  'Papua New Guinea', 'Philippines', 'Rwanda', 'Senegal', 'Somalia', 'South Sudan', 'Sri Lanka',
+  'Sudan', 'Syria', 'Tanzania', 'Togo', 'Uganda', 'Ukraine', 'Venezuela', 'Yemen', 'Zimbabwe',
+];
+
+function extractZoneCountries(zone) {
+  // Word-boundary match, not plain substring — "Somalia" contains "Mali" and
+  // "Nigeria" contains "Niger", so a naive .includes() misidentifies almost
+  // every Nigeria/Somalia zone as also being in Mali/Niger. Prefer the
+  // structured region field over the free-label name — "Niger Delta" is a
+  // real place inside Nigeria, and matching zone.name too would misread it
+  // as also naming the country Niger.
+  const haystack = zone.region || zone.name || '';
+  return COUNTRY_NAMES.filter(c => new RegExp(`\\b${c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(haystack));
+}
+
+// GDACS matches by distance, not keyword — a flood/cyclone doesn't announce
+// itself in a headline naming the zone. Fetched once per sweep as a global
+// list rather than once per zone, since GDACS has no query-by-location.
+const GDACS_ALERT_LEVEL = { Red: 'high', Orange: 'medium', Green: 'low' };
+
+// GDACS events (floods, cyclones) span a much wider area than a single road
+// corridor's own radius_km — 300km keeps this a "does this zone sit inside
+// the affected region" check rather than a precise-radius one.
+const GDACS_MATCH_RADIUS_KM = 300;
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+async function fetchGdacsEvents() {
+  const from = new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+  const to = new Date().toISOString().slice(0, 10);
+  const url = `https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?fromdate=${from}&todate=${to}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+  if (!res.ok) throw new Error(`GDACS HTTP ${res.status}`);
+  const data = await res.json();
+  return Array.isArray(data.features) ? data.features : [];
+}
+
+function matchGdacsToZone(zone, features) {
+  const zoneLat = Number(zone.lat);
+  const zoneLng = Number(zone.lng);
+  const hasCoords = Number.isFinite(zoneLat) && Number.isFinite(zoneLng);
+  const zoneCountries = extractZoneCountries(zone).map(c => c.toLowerCase());
+
+  return features
+    .filter(f => {
+      const [lon, lat] = f.geometry?.coordinates || [];
+      const withinRadius = hasCoords && Number.isFinite(lat) && Number.isFinite(lon)
+        && haversineKm(zoneLat, zoneLng, lat, lon) <= GDACS_MATCH_RADIUS_KM;
+      // A point/centroid distance check works for localised events (a quake
+      // epicenter, one country's flood) but a multi-country drought's
+      // "centroid" can land hundreds of km from any one affected zone even
+      // though the zone's own country is squarely in the affected list —
+      // so also match on GDACS's own affectedcountries, which is reliably
+      // populated for every event type.
+      const countryOverlap = zoneCountries.length > 0 && (f.properties?.affectedcountries || [])
+        .some(c => zoneCountries.includes(String(c?.countryname || '').toLowerCase()));
+      return withinRadius || countryOverlap;
+    })
+    .map(f => ({
+      description: (f.properties?.name || f.properties?.description || '').slice(0, 500),
+      level: GDACS_ALERT_LEVEL[f.properties?.alertlevel] || 'medium',
+      source: 'osint:gdacs',
+      source_url: f.properties?.url?.report,
+      external_id: `gdacs:${f.properties?.eventtype}:${f.properties?.eventid}:${f.properties?.episodeid}`,
+    }))
+    .filter(it => it.description);
+}
+
+const ACLED_HIGH_TYPES = new Set(['Battles', 'Violence against civilians', 'Explosions/Remote violence']);
+
+function classifyAcledLevel(item) {
+  const fatalities = parseInt(item.fatalities, 10) || 0;
+  if (fatalities >= 1 || ACLED_HIGH_TYPES.has(item.event_type)) return 'high';
+  if (item.event_type === 'Riots' || item.disorder_type === 'Political violence') return 'medium';
+  return 'low';
+}
+
+// Access token is memory-only and re-requested (not refreshed) each time it's
+// stale — the sweep runs at most once per 2h, so re-authenticating well
+// under the 24h token lifetime costs one extra request per cycle at most.
+let _acledToken = null;
+let _acledTokenExpiresAt = 0;
+
+async function getAcledToken() {
+  if (_acledToken && Date.now() < _acledTokenExpiresAt) return _acledToken;
+
+  const username = process.env.ACLED_USERNAME;
+  const password = process.env.ACLED_PASSWORD;
+  if (!username || !password) return null;
+
+  const res = await fetch('https://acleddata.com/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      username, password, grant_type: 'password', client_id: 'acled', scope: 'authenticated',
+    }),
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) throw new Error(`ACLED OAuth HTTP ${res.status}`);
+  const data = await res.json();
+  if (!data.access_token) throw new Error('ACLED OAuth response missing access_token');
+
+  _acledToken = data.access_token;
+  // Renew 5 minutes early rather than racing the exact expiry.
+  _acledTokenExpiresAt = Date.now() + (Math.max(60, (data.expires_in || 86400) - 300)) * 1000;
+  return _acledToken;
+}
+
+async function fetchAcledForZone(zone, token) {
+  const countries = extractZoneCountries(zone);
+  if (!countries.length) return [];
+
+  const since = new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  const params = new URLSearchParams({
+    _format: 'json',
+    country: countries.join('|'),
+    event_date: `${since}|${today}`,
+    event_date_where: 'BETWEEN',
+    limit: '5',
+    fields: 'event_id_cnty|event_date|event_type|sub_event_type|disorder_type|country|location|notes|fatalities',
+  });
+  const url = `https://acleddata.com/api/acled/read?${params.toString()}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10000) });
+  if (!res.ok) throw new Error(`ACLED HTTP ${res.status}`);
+  const data = await res.json();
+  const items = Array.isArray(data.data) ? data.data : [];
+
+  return items
+    .filter(it => it.notes && it.event_id_cnty)
+    .map(it => ({
+      description: `${[it.event_type, it.location].filter(Boolean).join(' — ')}: ${it.notes.slice(0, 400)}`.slice(0, 500),
+      level: classifyAcledLevel(it),
+      source: 'osint:acled',
+      external_id: `acled:${it.event_id_cnty}`,
+    }));
+}
+
+// ─── RSS: AllAfrica (default, Africa zones) + org-configured extra feeds ─────
+const xmlParser = new XMLParser({ ignoreAttributes: true });
+
+async function fetchRssItems(url) {
+  const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+  if (!res.ok) throw new Error(`RSS HTTP ${res.status} (${url})`);
+  const xml = await res.text();
+  const items = xmlParser.parse(xml)?.rss?.channel?.item;
+  if (!items) return [];
+  return Array.isArray(items) ? items : [items];
+}
+
+// AllAfrica/GDELT-style feeds are general country news, not pre-filtered to
+// security incidents the way GDELT's query is — keep only items whose title
+// actually trips the same keyword lists the other sources classify with,
+// so a country's ordinary news doesn't flood risk_events.
+function rssItemsToEvents(items, source) {
+  const cutoffMs = Date.now() - 2 * 24 * 3600 * 1000;
+  return items
+    .filter(it => {
+      const title = String(it.title || '');
+      const pub = it.pubDate ? new Date(it.pubDate).getTime() : 0;
+      return it.link && pub >= cutoffMs && (HIGH_KEYWORDS.test(title) || MEDIUM_KEYWORDS.test(title));
+    })
+    .map(it => ({
+      description: String(it.title).slice(0, 500),
+      level: classifyLevelFromKeywords(String(it.title)),
+      source,
+      source_url: it.link,
+    }));
+}
+
+// AllAfrica publishes one feed per country at a predictable slug. This only
+// covers Africa zones (continent field) and only the countries whose slug
+// is just the lowercased name with spaces hyphenated — an unrecognised or
+// wrong slug 404s and is skipped for that zone rather than failing the sweep.
+async function fetchAllAfricaForZone(zone) {
+  if (zone.continent !== 'africa') return [];
+  const countries = extractZoneCountries(zone);
+  if (!countries.length) return [];
+
+  const found = [];
+  for (const country of countries) {
+    const slug = country.toLowerCase().replace(/\s+/g, '-');
+    try {
+      const items = await fetchRssItems(`https://allafrica.com/tools/headlines/rdf/${slug}/headlines.rdf`);
+      found.push(...rssItemsToEvents(items, 'osint:allafrica'));
+    } catch (e) {
+      logger.warn(`Risk Intel OSINT: AllAfrica feed failed for "${country}": ${e.message}`);
+    }
+  }
+  return found;
+}
+
+// Orgs can point at any additional region-specific outlet RSS feeds beyond
+// AllAfrica's Africa coverage, e.g.:
+//   RISK_INTEL_EXTRA_RSS_FEEDS=[{"country":"Pakistan","url":"https://..."}]
+// Nothing is fetched unless explicitly configured — hyperlocal/regional
+// outlets aren't something safe to guess and hardcode into every deploy.
+function loadExtraRssFeeds() {
+  const raw = process.env.RISK_INTEL_EXTRA_RSS_FEEDS;
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter(f => f?.country && f?.url) : [];
+  } catch (e) {
+    logger.warn(`Risk Intel OSINT: RISK_INTEL_EXTRA_RSS_FEEDS is not valid JSON: ${e.message}`);
+    return [];
+  }
+}
+
+async function fetchExtraRssForZone(zone, feeds) {
+  if (!feeds.length) return [];
+  const countries = extractZoneCountries(zone).map(c => c.toLowerCase());
+  const matching = feeds.filter(f => countries.includes(String(f.country).toLowerCase()));
+
+  const found = [];
+  for (const feed of matching) {
+    try {
+      const items = await fetchRssItems(feed.url);
+      found.push(...rssItemsToEvents(items, 'osint:rss'));
+    } catch (e) {
+      logger.warn(`Risk Intel OSINT: extra RSS feed failed for "${feed.country}" (${feed.url}): ${e.message}`);
+    }
+  }
+  return found;
+}
+
+// ─── Telegram public channels (org-curated) ──────────────────────────────────
+// Reads via MTProto when configured (any public channel, see below), falling
+// back to scraping the https://t.me/s/<channel> preview page otherwise (no
+// key needed, but only works for channels with that preview enabled).
+//
+// DEFAULT_TELEGRAM_CHANNELS below ships a starter list, each handle checked
+// against the live preview before being added (several plausible-looking
+// guesses resolved to the wrong channel — a squatted/for-sale username, an
+// unrelated channel, an apparent impersonator — and were deliberately left
+// out; see conversation/PR history for the full verification pass). Keys are
+// lowercased country names (matched via extractZoneCountries), plus two
+// special keys:
+//   '*'      — applies to every zone regardless of country/continent
+//   'africa' — applies to every zone on that continent
+// Set RISK_INTEL_TELEGRAM_CHANNELS (same shape) to replace this default
+// entirely with your own list — a channel is only as trustworthy as
+// whoever picked it, so treat the starter list as a baseline to curate
+// further, not a finished one.
+// Channels marked "MTProto-only" below are real, correctly-identified
+// channels (title matched the intended brand during verification) that
+// don't expose the public preview page — fetchTelegramChannelMessages()
+// silently gets nothing from them until TELEGRAM_API_ID/TELEGRAM_API_HASH/
+// TELEGRAM_SESSION_STRING are set up (see telegramMtproto.js), at which
+// point they work the same as every other entry here with no config change.
+const DEFAULT_TELEGRAM_CHANNELS = {
+  '*': [
+    'IntelSlava', 'osint613', 'war_monitor', 'osintwarfare', 'Liveuamap', 'AuroraIntel', 'BNONews', 'wartranslated',
+    // MTProto-only:
+    'FaytuksNetwork', 'WarMonitor3', 'sentdefender', 'conflict_radar', 'ELINTNews', 'IntelCrab', 'TheIntelFrog', 'Visegrad24',
+  ],
+  africa: ['africaintelligence', 'africansecurity', 'AfricaIntel', 'CrisisGroup'],
+  kenya: ['KSUcountrywide', 'kenyan_news_panel', 'sikikaroadsafety', 'citizentvke'],
+  uganda: ['nbs_television'],
+  tanzania: ['tanzaniaupdates'],
+  ethiopia: ['ethiopianmonitor'],
+  somalia: ['hornobserver'],
+  sudan: ['sudanwarupdates'],
+  mali: ['azawad_news', 'maliinfos', 'Maliactu', 'StudioTamani'], // last two MTProto-only
+  'burkina faso': ['Burkina24', 'Lefaso'],
+  niger: ['ActuNiger'], // MTProto-only
+  libya: ['tripoli_news'],
+  'democratic republic of congo': ['actualitecd', 'RadioOkapi', 'mediacongo', 'congoactu'], // last three MTProto-only
+  cameroon: ['ActuCameroun', 'JournalDuCameroun'], // last one MTProto-only
+  nigeria: ['TheCableNG', 'SaharaReporters', 'MobilePunch', 'ChannelsTV', 'PremiumTimesng', 'Nairametrics'], // last five MTProto-only
+  ghana: ['JoyNewsOnTV', 'Citi973'], // last one MTProto-only
+  senegal: ['Seneweb'],
+  benin: ['Banouto'],
+  'ivory coast': ['AbidjanNet'], // MTProto-only
+  togo: ['TogoBreakingNews'], // MTProto-only
+};
+
+function loadTelegramChannels() {
+  const raw = process.env.RISK_INTEL_TELEGRAM_CHANNELS;
+  if (!raw) return DEFAULT_TELEGRAM_CHANNELS;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+    const normalised = {};
+    for (const [key, channels] of Object.entries(parsed)) {
+      if (Array.isArray(channels)) normalised[key === '*' ? '*' : key.toLowerCase()] = channels;
+    }
+    return normalised;
+  } catch (e) {
+    logger.warn(`Risk Intel OSINT: RISK_INTEL_TELEGRAM_CHANNELS is not valid JSON: ${e.message}`);
+    return DEFAULT_TELEGRAM_CHANNELS;
+  }
+}
+
+const HTML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', "#39": "'", apos: "'", nbsp: ' ' };
+
+function decodeHtmlText(html) {
+  return html
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (whole, code) => {
+      if (code[0] === '#') {
+        const cp = code[1].toLowerCase() === 'x' ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
+        return Number.isFinite(cp) ? String.fromCodePoint(cp) : whole;
+      }
+      return HTML_ENTITIES[code.toLowerCase()] ?? whole;
+    })
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// The public preview page has no JSON API — each message is bounded by its
+// own data-post="channel/id" marker, so split on that to get one block per
+// message rather than parsing full HTML/DOM. A message that itself embeds a
+// reply-preview referencing another data-post can truncate early; acceptable
+// for a supplementary, org-curated source rather than the sweep's primary one.
+// Only reachable for channels that have the public preview enabled — many
+// real news orgs don't (see fetchTelegramChannelMessages below, which tries
+// MTProto first for exactly that reason).
+async function fetchTelegramChannelViaScrape(channel, cutoffMs) {
+  const res = await fetch(`https://t.me/s/${encodeURIComponent(channel)}`, {
+    headers: { 'User-Agent': 'Mozilla/5.0' },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) throw new Error(`Telegram HTTP ${res.status} (${channel})`);
+  const html = await res.text();
+
+  const messages = [];
+  for (const block of html.split('data-post="').slice(1)) {
+    const idMatch = block.match(/^([^"]+)"/);
+    const timeMatch = block.match(/<time[^>]*datetime="([^"]+)"/);
+    const textMatch = block.match(/<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/);
+    if (!idMatch || !timeMatch || !textMatch) continue;
+
+    const postedMs = new Date(timeMatch[1]).getTime();
+    if (!Number.isFinite(postedMs) || postedMs < cutoffMs) continue;
+
+    const text = decodeHtmlText(textMatch[1]);
+    if (text) messages.push({ id: idMatch[1], text });
+  }
+  return messages;
+}
+
+// MTProto (see telegramMtproto.js) can read any public channel regardless of
+// preview settings, so it's tried first whenever it's configured; the HTML
+// scraper is the fallback for orgs that haven't done the one-time MTProto
+// login yet, or for a channel MTProto itself fails to resolve.
+async function fetchTelegramChannelMessages(channel, cutoffMs) {
+  if (telegramMtproto.isConfigured()) {
+    const messages = await telegramMtproto.fetchChannelMessages(channel, cutoffMs);
+    return messages.map(m => ({ id: m.id, text: m.text }));
+  }
+  return fetchTelegramChannelViaScrape(channel, cutoffMs);
+}
+
+// Fetched once per sweep for every channel the config references (like
+// GDACS's single global fetch) rather than once per zone — the same global
+// channel would otherwise be re-fetched for every single zone, and for
+// MTProto specifically that means holding one connection open across the
+// whole sweep instead of reconnecting per zone.
+async function fetchAllTelegramMessages(channelsByCountry) {
+  const allChannels = new Set();
+  for (const channels of Object.values(channelsByCountry)) {
+    for (const ch of channels) allChannels.add(ch);
+  }
+
+  const cutoffMs = Date.now() - 2 * 24 * 3600 * 1000;
+  const eventsByChannel = new Map();
+  for (const channel of allChannels) {
+    try {
+      const messages = await fetchTelegramChannelMessages(channel, cutoffMs);
+      const events = messages
+        .filter(msg => HIGH_KEYWORDS.test(msg.text) || MEDIUM_KEYWORDS.test(msg.text))
+        .map(msg => ({
+          description: msg.text.slice(0, 500),
+          level: classifyLevelFromKeywords(msg.text),
+          source: 'osint:telegram',
+          source_url: `https://t.me/${msg.id}`,
+          external_id: `telegram:${msg.id}`,
+        }));
+      eventsByChannel.set(channel.toLowerCase(), events);
+    } catch (e) {
+      logger.warn(`Risk Intel OSINT: Telegram channel "${channel}" failed: ${e.message}`);
+    }
+  }
+  return eventsByChannel;
+}
+
+function matchTelegramToZone(zone, channelsByCountry, eventsByChannel) {
+  const countries = extractZoneCountries(zone).map(c => c.toLowerCase());
+  const channels = new Set();
+  for (const ch of channelsByCountry['*'] || []) channels.add(ch);
+  if (zone.continent) {
+    for (const ch of channelsByCountry[zone.continent.toLowerCase()] || []) channels.add(ch);
+  }
+  for (const country of countries) {
+    for (const ch of channelsByCountry[country] || []) channels.add(ch);
+  }
+
+  const found = [];
+  for (const channel of channels) {
+    found.push(...(eventsByChannel.get(channel.toLowerCase()) || []));
+  }
+  return found;
+}
+
 async function createMessageWithRetry(client, params, maxRetries = 3) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
@@ -141,14 +586,19 @@ Reply with ONLY a JSON object mapping zone id -> array of up to 3 items found (o
 async function insertEvents(zone, items) {
   let inserted = 0;
   for (const item of items) {
-    if (!item?.description || !item?.source_url) continue;
+    if (!item?.description) continue;
+    // Most sources dedupe off a hash of their article URL; ACLED has no
+    // stable per-event public URL, so it supplies its own external_id
+    // (namespaced 'acled:...') directly instead.
+    const externalId = item.external_id
+      || (item.source_url ? crypto.createHash('sha1').update(item.source_url).digest('hex') : null);
+    if (!externalId) continue;
     const level = ['high', 'medium', 'low'].includes(item.level) ? item.level : 'medium';
-    const externalId = crypto.createHash('sha1').update(item.source_url).digest('hex');
     const { rowCount } = await query(
       `INSERT INTO risk_events (org_id, zone_id, description, level, source, external_url, external_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (zone_id, external_id) WHERE external_id IS NOT NULL DO NOTHING`,
-      [zone.org_id, zone.id, item.description.slice(0, 500), level, item.source || 'osint', item.source_url, externalId]
+      [zone.org_id, zone.id, item.description.slice(0, 500), level, item.source || 'osint', item.source_url || null, externalId]
     );
     inserted += rowCount;
   }
@@ -168,7 +618,7 @@ async function runOsintSweep() {
   sweeping = true;
   try {
     const { rows: zones } = await query(
-      `SELECT id, org_id, name, region, continent, level, confidence, velocity, level_source FROM risk_zones WHERE is_active = true`
+      `SELECT id, org_id, name, region, continent, level, confidence, velocity, level_source, lat, lng FROM risk_zones WHERE is_active = true`
     );
     if (!zones.length) return { zonesChecked: 0 };
 
@@ -194,6 +644,35 @@ async function runOsintSweep() {
       }
     }
 
+    // ACLED needs a myACLED account (ACLED_USERNAME/ACLED_PASSWORD) — like
+    // Claude, it's an optional add-on source, not required for the sweep to
+    // run. One token covers every zone this cycle.
+    let acledToken = null;
+    try {
+      acledToken = await getAcledToken();
+      if (!acledToken) logger.warn('Risk Intel OSINT: skipping ACLED — ACLED_USERNAME/ACLED_PASSWORD not configured');
+    } catch (e) {
+      logger.warn(`Risk Intel OSINT: ACLED auth failed: ${e.message}`);
+    }
+
+    // GDACS needs no key/subscription, same tier as GDELT/ReliefWeb — one
+    // global fetch, then matched to each zone by distance below.
+    let gdacsFeatures = [];
+    try {
+      gdacsFeatures = await fetchGdacsEvents();
+    } catch (e) {
+      logger.warn(`Risk Intel OSINT: GDACS sweep failed: ${e.message}`);
+    }
+
+    const extraRssFeeds = loadExtraRssFeeds();
+    const telegramChannels = loadTelegramChannels();
+    let telegramEventsByChannel = new Map();
+    try {
+      telegramEventsByChannel = await fetchAllTelegramMessages(telegramChannels);
+    } catch (e) {
+      logger.warn(`Risk Intel OSINT: Telegram sweep failed: ${e.message}`);
+    }
+
     const orgsTouched = new Set();
     let totalInserted = 0;
 
@@ -204,6 +683,23 @@ async function runOsintSweep() {
 
       try { found.push(...await fetchReliefWebForZone(zone)); }
       catch (e) { logger.warn(`Risk Intel OSINT: ReliefWeb failed for "${zone.name}": ${e.message}`); }
+
+      found.push(...matchGdacsToZone(zone, gdacsFeatures));
+
+      if (acledToken) {
+        try { found.push(...await fetchAcledForZone(zone, acledToken)); }
+        catch (e) { logger.warn(`Risk Intel OSINT: ACLED failed for "${zone.name}": ${e.message}`); }
+      }
+
+      try { found.push(...await fetchAllAfricaForZone(zone)); }
+      catch (e) { logger.warn(`Risk Intel OSINT: AllAfrica failed for "${zone.name}": ${e.message}`); }
+
+      if (extraRssFeeds.length) {
+        try { found.push(...await fetchExtraRssForZone(zone, extraRssFeeds)); }
+        catch (e) { logger.warn(`Risk Intel OSINT: extra RSS failed for "${zone.name}": ${e.message}`); }
+      }
+
+      found.push(...matchTelegramToZone(zone, telegramChannels, telegramEventsByChannel));
 
       found.push(...(claudeByZone[zone.id] || []).map(it => ({ ...it, source: 'osint:claude' })));
 
@@ -220,10 +716,14 @@ async function runOsintSweep() {
 
     const zonesChanged = await recomputeZoneLevels(zones);
 
-    logger.info(`Risk Intel OSINT sweep complete: ${zones.length} zones checked, ${totalInserted} new events, ${orgsTouched.size} orgs updated, ${zonesChanged} zone levels recomputed, claude=${client ? 'used' : 'skipped'}`);
-    return { zonesChecked: zones.length, totalInserted, orgsUpdated: orgsTouched.size, zonesChanged, claudeUsed: !!client };
+    logger.info(`Risk Intel OSINT sweep complete: ${zones.length} zones checked, ${totalInserted} new events, ${orgsTouched.size} orgs updated, ${zonesChanged} zone levels recomputed, gdacs=${gdacsFeatures.length ? 'used' : 'skipped'}, acled=${acledToken ? 'used' : 'skipped'}, telegram=${telegramEventsByChannel.size ? 'used' : 'skipped'} (mtproto=${telegramMtproto.isConfigured() ? 'on' : 'off'}), claude=${client ? 'used' : 'skipped'}`);
+    return {
+      zonesChecked: zones.length, totalInserted, orgsUpdated: orgsTouched.size, zonesChanged,
+      acledUsed: !!acledToken, telegramUsed: telegramEventsByChannel.size > 0, claudeUsed: !!client,
+    };
   } finally {
     sweeping = false;
+    await telegramMtproto.disconnect();
   }
 }
 
