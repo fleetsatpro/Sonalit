@@ -165,7 +165,7 @@ export default function RiskIntelPage() {
       </div>
 
       {/* ── Live ticker ── */}
-      <LiveTicker />
+      <LiveTicker continent={activeCont} />
 
       {/* ── Continent bar ── */}
       <ContinentBar active={activeCont} zones={zones} onChange={c => { setActiveCont(c); if (isMobile) setActiveTab('map') }} />
@@ -242,7 +242,7 @@ export default function RiskIntelPage() {
           flexShrink: 0,
           background: '#0a1220',
         }}>
-          <LiveFeedPanel />
+          <LiveFeedPanel continent={activeCont} />
         </div>
 
         {/* Detail drawer — full-width on mobile, 360px slide-in on desktop */}

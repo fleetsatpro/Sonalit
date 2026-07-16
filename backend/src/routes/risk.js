@@ -88,13 +88,16 @@ router.get('/convoys', asyncHandler(async (req, res) => {
 // ─── GET /ticker ──────────────────────────────────────────────────────────────
 
 router.get('/ticker', asyncHandler(async (req, res) => {
+  const continent = req.query.continent || null;
+
   const { rows } = await req.db(
     `SELECT re.level, rz.zone_code, re.description AS text, re.occurred_at
      FROM risk_events re
      JOIN risk_zones rz ON rz.id = re.zone_id AND rz.is_active = true
+       AND ($1::text IS NULL OR rz.continent = $1)
      ORDER BY re.occurred_at DESC
      LIMIT 12`,
-    []
+    [continent]
   );
 
   res.json({ items: rows });
@@ -107,14 +110,17 @@ router.get('/ticker', asyncHandler(async (req, res) => {
 // what's actually live — every row is a real article the OSINT sweep found,
 // most recent first, across every zone worldwide.
 router.get('/live-feed', asyncHandler(async (req, res) => {
+  const continent = req.query.continent || null;
+
   const { rows } = await req.db(
     `SELECT re.id, re.description, re.level, re.source, re.external_url, re.occurred_at,
             rz.zone_code, rz.name AS zone_name, rz.continent
      FROM risk_events re
      JOIN risk_zones rz ON rz.id = re.zone_id AND rz.is_active = true
+       AND ($1::text IS NULL OR rz.continent = $1)
      ORDER BY re.occurred_at DESC
      LIMIT 50`,
-    []
+    [continent]
   );
 
   res.json({ items: rows });
