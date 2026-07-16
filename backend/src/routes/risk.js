@@ -100,6 +100,26 @@ router.get('/ticker', asyncHandler(async (req, res) => {
   res.json({ items: rows });
 }));
 
+// ─── GET /live-feed ───────────────────────────────────────────────────────────
+// Same underlying risk_events as /ticker, but the full picture instead of a
+// 12-item marquee: source, clickable article link, zone name — for the Risk
+// Intel page's Live Feed panel. The 16 zones stay curated/seeded; this is
+// what's actually live — every row is a real article the OSINT sweep found,
+// most recent first, across every zone worldwide.
+router.get('/live-feed', asyncHandler(async (req, res) => {
+  const { rows } = await req.db(
+    `SELECT re.id, re.description, re.level, re.source, re.external_url, re.occurred_at,
+            rz.zone_code, rz.name AS zone_name, rz.continent
+     FROM risk_events re
+     JOIN risk_zones rz ON rz.id = re.zone_id AND rz.is_active = true
+     ORDER BY re.occurred_at DESC
+     LIMIT 50`,
+    []
+  );
+
+  res.json({ items: rows });
+}));
+
 // ─── POST /zones (admin only) ─────────────────────────────────────────────────
 
 router.post('/zones', asyncHandler(async (req, res) => {

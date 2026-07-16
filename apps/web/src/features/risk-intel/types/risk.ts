@@ -49,6 +49,18 @@ export interface TickerItem {
   occurred_at: string
 }
 
+export interface LiveFeedItem {
+  id: string
+  description: string
+  level: RiskLevel
+  source: string
+  external_url: string | null
+  occurred_at: string
+  zone_code: string
+  zone_name: string
+  continent: string
+}
+
 export interface RiskCounts {
   high: number
   medium: number
