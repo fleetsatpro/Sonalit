@@ -144,6 +144,19 @@ function setupMapLayers(map: maplibregl.Map) {
     'circle-color': STATUS_COLOR_EXPR,
     'circle-stroke-width': 1.5, 'circle-stroke-color': '#ffffff', 'circle-opacity': 0.95,
   }});
+  // Devices (Guardian officer phones) previously had no on-map label at all —
+  // just a colored dot, so identifying WHO a dot was or their live state
+  // meant leaving this widget for the GPS Live page. This tag (name + state)
+  // is what makes Tactical Map a glanceable HUD rather than a duplicate of
+  // GPS Live's click-to-inspect officer markers.
+  map.addLayer({ id: 'sv-devices-label', type: 'symbol', source: 'sv-devices', layout: {
+    'text-field': ['concat', ['get', 'name'], '  ·  ', ['upcase', ['get', 'status']]],
+    'text-size': 9, 'text-offset': [0, 1.1], 'text-anchor': 'top',
+    'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+    'text-allow-overlap': false, 'text-optional': true,
+  }, paint: {
+    'text-color': '#ffffff', 'text-halo-color': '#000000', 'text-halo-width': 1.5,
+  }});
 }
 
 function updateMapData(map: maplibregl.Map, data: MapData) {

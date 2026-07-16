@@ -205,7 +205,16 @@ export default function PanicCenter() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0">
+      {/*
+        Row height used to be implicit (grid-auto-rows: auto), so it tracked
+        whichever column's content was tallest — in practice the events list,
+        since it grows/shrinks with the number of active panics. The map sat
+        at height:100% of that same row, so it visibly grew or shrank along
+        with panic count instead of staying a fixed, reliable size. Pinning
+        the row to an explicit height makes both columns — and the map in
+        particular — independent of how many events are listed.
+      */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0 lg:h-[640px]">
         {/* Events list */}
         <div className="flex flex-col gap-3 overflow-y-auto">
           {isLoading && (
@@ -245,8 +254,10 @@ export default function PanicCenter() {
           )}
         </div>
 
-        {/* Map */}
-        <div className="rounded-lg overflow-hidden border border-white/[0.06] min-h-64">
+        {/* Map — fixed height so it stays "big enough" and doesn't shrink or
+           grow with the events list on mobile (own row) or desktop (shares
+           the row above, now pinned to lg:h-[640px]). */}
+        <div className="rounded-lg overflow-hidden border border-white/[0.06] h-[420px] lg:h-full">
           <Map
             mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
             initialViewState={{

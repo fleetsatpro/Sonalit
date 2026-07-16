@@ -31,8 +31,27 @@ function classifyLevelFromTone(tone) {
   return 'low';
 }
 
+// zone.name is a curated descriptive label ("Mokambo Crossing Banditry Zone",
+// "Sahel Corridor (Mali-Niger)") that essentially never appears verbatim in
+// news text — quoting the whole thing as one exact phrase (the previous
+// query) reliably matched zero articles, for every zone, forever, regardless
+// of whether anything newsworthy was happening there. zone.region holds a
+// real place descriptor ("Northern Mali / Western Niger", "KPK Province,
+// Pakistan") — split that into its individual place names and OR them
+// together so GDELT has terms an actual article could plausibly contain.
+function extractPlaceTerms(zone) {
+  const source = zone.region || zone.name;
+  const terms = source
+    .split(/[\/,]/)
+    .map(s => s.replace(/[()]/g, '').trim())
+    .filter(Boolean)
+    .slice(0, 4);
+  return terms.length ? terms : [zone.name];
+}
+
 async function fetchGdeltForZone(zone) {
-  const q = `"${zone.name}" (attack OR conflict OR violence OR kidnap OR ambush OR unrest OR clash OR insurgent OR banditry OR militant OR terrorist)`;
+  const placeClause = '(' + extractPlaceTerms(zone).map(t => `"${t}"`).join(' OR ') + ')';
+  const q = `${placeClause} (attack OR conflict OR violence OR kidnap OR ambush OR unrest OR clash OR insurgent OR banditry OR militant OR terrorist)`;
   const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(q)}&mode=artlist&maxrecords=5&timespan=2d&format=json`;
   const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
   if (!res.ok) throw new Error(`GDELT HTTP ${res.status}`);
@@ -153,9 +172,18 @@ async function runOsintSweep() {
     );
     if (!zones.length) return { zonesChecked: 0 };
 
+    // Claude web search is a supplementary third source, not the sweep's
+    // load-bearing one — GDELT + ReliefWeb need no key/subscription and run
+    // unconditionally below. This step used to run every cycle by default
+    // (every 2h via cron, plus every manual "Refresh Intel" click) purely
+    // because a key happened to be configured, silently burning Anthropic
+    // usage even though the free sources cover the same ground. Opt in
+    // explicitly via RISK_INTEL_ENABLE_CLAUDE=true if the broader synthesis
+    // is worth the cost for your org.
+    const claudeEnabled = process.env.RISK_INTEL_ENABLE_CLAUDE === 'true';
     const apiKey = process.env.ANTHROPIC_API_KEY;
-    const client = (apiKey && apiKey.length >= 20) ? new Anthropic({ apiKey }) : null;
-    if (!client) logger.warn('Risk Intel OSINT: skipping Claude web search — ANTHROPIC_API_KEY not configured');
+    const client = (claudeEnabled && apiKey && apiKey.length >= 20) ? new Anthropic({ apiKey }) : null;
+    if (claudeEnabled && !client) logger.warn('Risk Intel OSINT: skipping Claude web search — ANTHROPIC_API_KEY not configured');
 
     let claudeByZone = {};
     if (client) {
@@ -192,8 +220,8 @@ async function runOsintSweep() {
 
     const zonesChanged = await recomputeZoneLevels(zones);
 
-    logger.info(`Risk Intel OSINT sweep complete: ${zones.length} zones checked, ${totalInserted} new events, ${orgsTouched.size} orgs updated, ${zonesChanged} zone levels recomputed`);
-    return { zonesChecked: zones.length, totalInserted, orgsUpdated: orgsTouched.size, zonesChanged };
+    logger.info(`Risk Intel OSINT sweep complete: ${zones.length} zones checked, ${totalInserted} new events, ${orgsTouched.size} orgs updated, ${zonesChanged} zone levels recomputed, claude=${client ? 'used' : 'skipped'}`);
+    return { zonesChecked: zones.length, totalInserted, orgsUpdated: orgsTouched.size, zonesChanged, claudeUsed: !!client };
   } finally {
     sweeping = false;
   }
