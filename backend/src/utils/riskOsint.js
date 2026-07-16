@@ -374,18 +374,21 @@ async function fetchExtraRssForZone(zone, feeds) {
 // entirely with your own list — a channel is only as trustworthy as
 // whoever picked it, so treat the starter list as a baseline to curate
 // further, not a finished one.
-// Channels marked "MTProto-only" below are real, correctly-identified
-// channels (title matched the intended brand during verification) that
-// don't expose the public preview page — fetchTelegramChannelMessages()
-// silently gets nothing from them until TELEGRAM_API_ID/TELEGRAM_API_HASH/
-// TELEGRAM_SESSION_STRING are set up (see telegramMtproto.js), at which
-// point they work the same as every other entry here with no config change.
+//
+// Every entry here is verified against the *scraped* public preview page
+// (real message content visible, not just a generic "Contact @X" landing
+// page). A batch of additional channels that only showed that generic
+// contact page were previously included here as "MTProto-only," on the
+// assumption that page proves the username exists — production logs (once
+// MTProto was live) showed most of them don't actually resolve at all
+// (contacts.ResolveUsername: "No user has X as username" /
+// USERNAME_INVALID), and repeatedly trying invalid usernames triggered
+// Telegram flood-wait penalties on the account. That whole batch was
+// removed rather than re-verified one by one — re-add individual channels
+// here only after confirming a real MTProto getMessages() call succeeds
+// against them, not from the scrape page alone.
 const DEFAULT_TELEGRAM_CHANNELS = {
-  '*': [
-    'IntelSlava', 'osint613', 'war_monitor', 'osintwarfare', 'Liveuamap', 'AuroraIntel', 'BNONews', 'wartranslated',
-    // MTProto-only:
-    'FaytuksNetwork', 'WarMonitor3', 'sentdefender', 'conflict_radar', 'ELINTNews', 'IntelCrab', 'TheIntelFrog', 'Visegrad24',
-  ],
+  '*': ['IntelSlava', 'osint613', 'war_monitor', 'osintwarfare', 'Liveuamap', 'AuroraIntel', 'BNONews', 'wartranslated'],
   africa: ['africaintelligence', 'africansecurity', 'AfricaIntel', 'CrisisGroup'],
   kenya: ['KSUcountrywide', 'kenyan_news_panel', 'sikikaroadsafety', 'citizentvke'],
   uganda: ['nbs_television'],
@@ -393,18 +396,15 @@ const DEFAULT_TELEGRAM_CHANNELS = {
   ethiopia: ['ethiopianmonitor'],
   somalia: ['hornobserver'],
   sudan: ['sudanwarupdates'],
-  mali: ['azawad_news', 'maliinfos', 'Maliactu', 'StudioTamani'], // last two MTProto-only
+  mali: ['azawad_news', 'maliinfos'],
   'burkina faso': ['Burkina24', 'Lefaso'],
-  niger: ['ActuNiger'], // MTProto-only
   libya: ['tripoli_news'],
-  'democratic republic of congo': ['actualitecd', 'RadioOkapi', 'mediacongo', 'congoactu'], // last three MTProto-only
-  cameroon: ['ActuCameroun', 'JournalDuCameroun'], // last one MTProto-only
-  nigeria: ['TheCableNG', 'SaharaReporters', 'MobilePunch', 'ChannelsTV', 'PremiumTimesng', 'Nairametrics'], // last five MTProto-only
-  ghana: ['JoyNewsOnTV', 'Citi973'], // last one MTProto-only
+  'democratic republic of congo': ['actualitecd'],
+  cameroon: ['ActuCameroun'],
+  nigeria: ['TheCableNG'],
+  ghana: ['JoyNewsOnTV'],
   senegal: ['Seneweb'],
   benin: ['Banouto'],
-  'ivory coast': ['AbidjanNet'], // MTProto-only
-  togo: ['TogoBreakingNews'], // MTProto-only
 };
 
 function loadTelegramChannels() {
