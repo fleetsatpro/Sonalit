@@ -37,8 +37,24 @@ async function getClient() {
     // TCPObfuscated rather than the default TCPFull — some networks (this
     // one included, observed during setup) silently drop the plain TCPFull
     // handshake with no error, while the obfuscated transport gets through.
+    //
+    // reconnectRetries defaults to Infinity in GramJS, and its internal
+    // auto-reconnect (MTProtoSender.reconnect/_reconnect) doesn't check our
+    // disconnect()/destroy() flag before re-establishing the connection —
+    // a network hiccup mid-sweep spins up a reconnect loop that keeps
+    // retrying forever, races past destroy() when one is already in
+    // flight, and logs "Error: TIMEOUT"/"Error: Not connected" every
+    // 30-90s indefinitely (observed in production for 16+ minutes after a
+    // sweep had already finished and tried to clean up — see PR history).
+    // We connect fresh once per sweep and explicitly destroy() afterwards,
+    // so there's no reason for GramJS to keep fighting to reconnect on its
+    // own — reconnectRetries: 0 makes a dropped connection terminal
+    // (MTProtoSender's own retry-count check then sets userDisconnected
+    // and exits its loops for real) instead of an unstoppable retry loop.
     const c = new TelegramClient(new StringSession(process.env.TELEGRAM_SESSION_STRING), apiId, apiHash, {
       connectionRetries: 5,
+      reconnectRetries: 0,
+      autoReconnect: false,
       connection: ConnectionTCPObfuscated,
     });
     await c.connect();
@@ -78,8 +94,15 @@ async function disconnect() {
     // connection and logging "Error: TIMEOUT" every ~9s. destroy() sets
     // that flag first, which lets the loop exit on its next iteration.
     // https://github.com/gram-js/gramjs/issues/615
-    await client.destroy().catch((e) => logger.warn(`Telegram MTProto disconnect error: ${e.message}`));
+    //
+    // Clear the module-level reference *before* awaiting destroy() (not
+    // after) so a getClient() call that runs while destroy() is still
+    // settling never hands back this instance — with reconnectRetries: 0
+    // above this matters less than it used to, but a client mid-teardown
+    // is never something a fresh call should reuse either way.
+    const dying = client;
     client = null;
+    await dying.destroy().catch((e) => logger.warn(`Telegram MTProto disconnect error: ${e.message}`));
   }
 }
 

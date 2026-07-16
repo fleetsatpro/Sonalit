@@ -30,6 +30,8 @@ const crypto = require('crypto');
 const Anthropic = require('@anthropic-ai/sdk');
 const { XMLParser } = require('fast-xml-parser');
 const telegramMtproto = require('./telegramMtproto');
+const { geocodePlace } = require('./geocode');
+const { continentForCountry } = require('./countryContinent');
 const { query } = require('../config/database');
 const { publish } = require('../realtime/centrifugo');
 const logger = require('./logger');
@@ -365,15 +367,23 @@ async function fetchExtraRssForZone(zone, feeds) {
 // against the live preview before being added (several plausible-looking
 // guesses resolved to the wrong channel — a squatted/for-sale username, an
 // unrelated channel, an apparent impersonator — and were deliberately left
-// out; see conversation/PR history for the full verification pass). Keys are
-// lowercased country names (matched via extractZoneCountries), plus two
-// special keys:
-//   '*'      — applies to every zone regardless of country/continent
-//   'africa' — applies to every zone on that continent
-// Set RISK_INTEL_TELEGRAM_CHANNELS (same shape) to replace this default
+// out; see conversation/PR history for the full verification pass).
+//
+// This used to be keyed by country so a message could only be matched to a
+// zone whose country the channel was filed under — which meant a channel
+// covering several countries (or simply miscategorised) misattached its
+// messages to the wrong zone entirely (e.g. Yemen/Iran news showing up on a
+// Sahel zone). Messages are now geolocated individually (see
+// rewriteAndLocateTelegramMessages + resolveOrCreateZoneForLocation below),
+// so this is just the flat list of channels worth polling — which zone a
+// message belongs to is derived from what the message itself says, not from
+// which bucket its channel used to sit in.
+//
+// Set RISK_INTEL_TELEGRAM_CHANNELS to a JSON array to replace this default
 // entirely with your own list — a channel is only as trustworthy as
 // whoever picked it, so treat the starter list as a baseline to curate
-// further, not a finished one.
+// further, not a finished one. A legacy per-country object (the old shape)
+// is still accepted and flattened for backward compatibility.
 //
 // Every entry here is verified against the *scraped* public preview page
 // (real message content visible, not just a generic "Contact @X" landing
@@ -387,37 +397,31 @@ async function fetchExtraRssForZone(zone, feeds) {
 // removed rather than re-verified one by one — re-add individual channels
 // here only after confirming a real MTProto getMessages() call succeeds
 // against them, not from the scrape page alone.
-const DEFAULT_TELEGRAM_CHANNELS = {
-  '*': ['IntelSlava', 'osint613', 'war_monitor', 'osintwarfare', 'Liveuamap', 'AuroraIntel', 'BNONews', 'wartranslated'],
-  africa: ['africaintelligence', 'africansecurity', 'AfricaIntel', 'CrisisGroup'],
-  kenya: ['KSUcountrywide', 'kenyan_news_panel', 'sikikaroadsafety', 'citizentvke'],
-  uganda: ['nbs_television'],
-  tanzania: ['tanzaniaupdates'],
-  ethiopia: ['ethiopianmonitor'],
-  somalia: ['hornobserver'],
-  sudan: ['sudanwarupdates'],
-  mali: ['azawad_news', 'maliinfos'],
-  'burkina faso': ['Burkina24', 'Lefaso'],
-  libya: ['tripoli_news'],
-  'democratic republic of congo': ['actualitecd'],
-  cameroon: ['ActuCameroun'],
-  nigeria: ['TheCableNG'],
-  ghana: ['JoyNewsOnTV'],
-  senegal: ['Seneweb'],
-  benin: ['Banouto'],
-};
+const DEFAULT_TELEGRAM_CHANNELS = [
+  'IntelSlava', 'osint613', 'war_monitor', 'osintwarfare', 'Liveuamap', 'AuroraIntel', 'BNONews', 'wartranslated',
+  'africaintelligence', 'africansecurity', 'AfricaIntel', 'CrisisGroup',
+  'KSUcountrywide', 'kenyan_news_panel', 'sikikaroadsafety', 'citizentvke',
+  'nbs_television', 'tanzaniaupdates', 'ethiopianmonitor', 'hornobserver', 'sudanwarupdates',
+  'azawad_news', 'maliinfos', 'Burkina24', 'Lefaso', 'tripoli_news', 'actualitecd', 'ActuCameroun',
+  'TheCableNG', 'JoyNewsOnTV', 'Seneweb', 'Banouto',
+];
 
 function loadTelegramChannels() {
   const raw = process.env.RISK_INTEL_TELEGRAM_CHANNELS;
   if (!raw) return DEFAULT_TELEGRAM_CHANNELS;
   try {
     const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return {};
-    const normalised = {};
-    for (const [key, channels] of Object.entries(parsed)) {
-      if (Array.isArray(channels)) normalised[key === '*' ? '*' : key.toLowerCase()] = channels;
+    if (Array.isArray(parsed)) return parsed.filter(c => typeof c === 'string' && c);
+    if (parsed && typeof parsed === 'object') {
+      // Legacy per-country shape from before zone-matching went fully
+      // dynamic — flatten to the plain list this now expects.
+      const flat = new Set();
+      for (const channels of Object.values(parsed)) {
+        if (Array.isArray(channels)) channels.forEach(c => flat.add(c));
+      }
+      return [...flat];
     }
-    return normalised;
+    return DEFAULT_TELEGRAM_CHANNELS;
   } catch (e) {
     logger.warn(`Risk Intel OSINT: RISK_INTEL_TELEGRAM_CHANNELS is not valid JSON: ${e.message}`);
     return DEFAULT_TELEGRAM_CHANNELS;
@@ -484,55 +488,154 @@ async function fetchTelegramChannelMessages(channel, cutoffMs) {
   return fetchTelegramChannelViaScrape(channel, cutoffMs);
 }
 
-// Fetched once per sweep for every channel the config references (like
-// GDACS's single global fetch) rather than once per zone — the same global
-// channel would otherwise be re-fetched for every single zone, and for
-// MTProto specifically that means holding one connection open across the
-// whole sweep instead of reconnecting per zone.
-async function fetchAllTelegramMessages(channelsByCountry) {
-  const allChannels = new Set();
-  for (const channels of Object.values(channelsByCountry)) {
-    for (const ch of channels) allChannels.add(ch);
-  }
-
+// Fetched once per sweep for every configured channel (like GDACS's single
+// global fetch) rather than once per zone — the same channel would
+// otherwise be re-fetched for every single zone, and for MTProto
+// specifically that means holding one connection open across the whole
+// sweep instead of reconnecting per zone. Keyword pre-filtering happens
+// here (same lists every other source classifies with) purely to bound how
+// many messages get sent to Claude for rewriting below — the actual
+// severity classification for these candidates comes from that rewrite
+// step, not from this filter.
+async function fetchAllTelegramMessages(channels) {
   const cutoffMs = Date.now() - 2 * 24 * 3600 * 1000;
-  const eventsByChannel = new Map();
-  for (const channel of allChannels) {
+  const candidates = [];
+  for (const channel of channels) {
     try {
       const messages = await fetchTelegramChannelMessages(channel, cutoffMs);
-      const events = messages
-        .filter(msg => HIGH_KEYWORDS.test(msg.text) || MEDIUM_KEYWORDS.test(msg.text))
-        .map(msg => ({
-          description: msg.text.slice(0, 500),
-          level: classifyLevelFromKeywords(msg.text),
-          source: 'osint:telegram',
+      for (const msg of messages) {
+        if (!HIGH_KEYWORDS.test(msg.text) && !MEDIUM_KEYWORDS.test(msg.text)) continue;
+        candidates.push({
+          channel,
+          text: msg.text,
           source_url: `https://t.me/${msg.id}`,
           external_id: `telegram:${msg.id}`,
-        }));
-      eventsByChannel.set(channel.toLowerCase(), events);
+        });
+      }
     } catch (e) {
       logger.warn(`Risk Intel OSINT: Telegram channel "${channel}" failed: ${e.message}`);
     }
   }
-  return eventsByChannel;
+  return candidates;
 }
 
-function matchTelegramToZone(zone, channelsByCountry, eventsByChannel) {
-  const countries = extractZoneCountries(zone).map(c => c.toLowerCase());
-  const channels = new Set();
-  for (const ch of channelsByCountry['*'] || []) channels.add(ch);
-  if (zone.continent) {
-    for (const ch of channelsByCountry[zone.continent.toLowerCase()] || []) channels.add(ch);
-  }
-  for (const country of countries) {
-    for (const ch of channelsByCountry[country] || []) channels.add(ch);
+// Telegram is the fastest-moving but least structured source here — no
+// dateline, no dedicated location field, often written as a raw first-hand
+// snippet rather than a formal report. Batched into one Claude call per
+// sweep (same pattern as fetchClaudeForZones) so cost stays bounded
+// regardless of channel count: this rewrites each candidate into one
+// formal sentence and extracts the place it actually happened at, which is
+// what makes dynamic zone matching/creation below possible at all — without
+// a real place, a message can't be geolocated and is dropped.
+const TELEGRAM_REWRITE_MAX_MESSAGES = 40;
+
+async function rewriteAndLocateTelegramMessages(client, candidates) {
+  if (!candidates.length) return [];
+  const batch = candidates.slice(0, TELEGRAM_REWRITE_MAX_MESSAGES);
+  if (candidates.length > TELEGRAM_REWRITE_MAX_MESSAGES) {
+    logger.warn(`Risk Intel OSINT: ${candidates.length} Telegram candidates this sweep, only rewriting the first ${TELEGRAM_REWRITE_MAX_MESSAGES}`);
   }
 
-  const found = [];
-  for (const channel of channels) {
-    found.push(...(eventsByChannel.get(channel.toLowerCase()) || []));
+  const list = batch.map((c, i) => `${i}. [channel: ${c.channel}] ${c.text}`).join('\n');
+  const response = await createMessageWithRetry(client, {
+    model: MODEL,
+    max_tokens: 4000,
+    system: 'You are an OSINT security analyst. Respond with raw JSON only — no markdown fences, no commentary before or after.',
+    messages: [{
+      role: 'user',
+      content: `For EACH numbered raw Telegram post below, do three things:
+1. Rewrite it as one concise, formal, factual sentence — no emoji, no hashtags, no channel self-promotion, no speculation beyond what the post states.
+2. Extract the single most specific real place the incident occurred at (city/town/region plus country), e.g. "Ma'rib, Yemen". If no specific place is identifiable, use null.
+3. Classify severity: "high" (attack, kidnapping, bombing, active combat, killings), "medium" (protest, unrest, roadblock, tension, arrests), or "low" (anything else still worth noting).
+
+Posts:
+${list}
+
+Reply with ONLY a JSON array of exactly ${batch.length} objects, one per post in order: [{"i": 0, "text": "rewritten sentence", "place": "City, Country" or null, "level": "high"|"medium"|"low"}, ...]`,
+    }],
+  });
+
+  const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('').trim();
+  const cleaned = text.replace(/^```(json)?/i, '').replace(/```$/, '').trim();
+  let parsed;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    logger.warn(`Risk Intel OSINT: Telegram rewrite response unparseable: ${cleaned.slice(0, 300)}`);
+    return [];
   }
-  return found;
+  if (!Array.isArray(parsed)) return [];
+
+  const results = [];
+  for (const item of parsed) {
+    const src = batch[item?.i];
+    if (!src || !item?.text) continue;
+    results.push({
+      ...src,
+      formalText: String(item.text).slice(0, 500),
+      place: item.place || null,
+      level: ['high', 'medium', 'low'].includes(item.level) ? item.level : 'medium',
+    });
+  }
+  return results;
+}
+
+// A geolocated message either lands inside an existing zone's catchment
+// (curated or previously auto-created — either way, no reason to fragment
+// coverage of the same place into two overlapping zones) or, if nothing is
+// within range, becomes a brand-new zone flagged level_source='auto' so the
+// UI and recomputeZoneLevels both know it wasn't hand-curated. Matching is
+// scoped per-org since risk_zones are org-isolated (RLS) — the same public
+// incident can independently create/match a zone for each org running Risk
+// Intel, same as any other OSINT source here.
+const AUTO_ZONE_MATCH_RADIUS_KM = 150;
+const AUTO_ZONE_DEFAULT_RADIUS_KM = 75;
+const AUTO_ZONE_DEFAULT_CONFIDENCE = 55;
+
+function slugForZoneCode(place, country) {
+  const base = (place || country || 'zone').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) || 'ZNE';
+  const hash = crypto.createHash('sha1').update(`${place}|${country}`.toLowerCase()).digest('hex').slice(0, 5).toUpperCase();
+  return `AUTO-${base}-${hash}`;
+}
+
+async function resolveOrCreateZoneForLocation(orgId, zonesForOrg, { lat, lng, country, continent, place, level }) {
+  const existing = zonesForOrg.find(z => {
+    const zLat = Number(z.lat);
+    const zLng = Number(z.lng);
+    return Number.isFinite(zLat) && Number.isFinite(zLng) && haversineKm(lat, lng, zLat, zLng) <= AUTO_ZONE_MATCH_RADIUS_KM;
+  });
+  if (existing) return existing;
+
+  const zoneCode = slugForZoneCode(place, country);
+  const name = place || country;
+  const { rows } = await query(
+    `INSERT INTO risk_zones (
+       org_id, zone_code, name, zone_type, continent, level, region,
+       why, when_active, precaution, tags, map_lon, map_lat, confidence,
+       velocity, is_active, active, lat, lng, radius_km, risk_level, level_source
+     ) VALUES (
+       $1, $2, $3, 'conflict', $4, $5, $6,
+       $7, 'Ongoing — auto-detected', 'Verify independently before route planning.', ARRAY['auto-detected'], $8, $9, $10,
+       'stable', true, true, $11, $12, $13, $5, 'auto'
+     )
+     ON CONFLICT (zone_code, org_id) DO NOTHING
+     RETURNING *`,
+    [orgId, zoneCode, name, continent, level, country,
+      `Auto-detected from live Telegram OSINT reporting near ${name}.`, lng, lat, AUTO_ZONE_DEFAULT_CONFIDENCE,
+      lat, lng, AUTO_ZONE_DEFAULT_RADIUS_KM]
+  );
+
+  let zone = rows[0];
+  if (!zone) {
+    // Extremely rare race — another message earlier in this same sweep (or
+    // a concurrent one) already inserted this exact zone_code for this org
+    // between our distance check and this insert.
+    const { rows: existingRows } = await query('SELECT * FROM risk_zones WHERE org_id = $1 AND zone_code = $2', [orgId, zoneCode]);
+    zone = existingRows[0];
+    if (!zone) return null;
+  }
+  zonesForOrg.push(zone);
+  return zone;
 }
 
 async function createMessageWithRetry(client, params, maxRetries = 3) {
@@ -622,6 +725,19 @@ async function runOsintSweep() {
     );
     if (!zones.length) return { zonesChecked: 0 };
 
+    // Grouped per-org for the Telegram dynamic zone-matching/creation step
+    // below — risk_zones are org-isolated (RLS), so a message's nearest
+    // zone (or whether it needs a brand-new one) is resolved separately per
+    // org. New zones created during the sweep get pushed into both this map
+    // and the flat `zones` array so recomputeZoneLevels sees them too.
+    const zonesByOrg = new Map();
+    for (const z of zones) {
+      if (!zonesByOrg.has(z.org_id)) zonesByOrg.set(z.org_id, []);
+      zonesByOrg.get(z.org_id).push(z);
+    }
+
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+
     // Claude web search is a supplementary third source, not the sweep's
     // load-bearing one — GDELT + ReliefWeb need no key/subscription and run
     // unconditionally below. This step used to run every cycle by default
@@ -631,7 +747,6 @@ async function runOsintSweep() {
     // explicitly via RISK_INTEL_ENABLE_CLAUDE=true if the broader synthesis
     // is worth the cost for your org.
     const claudeEnabled = process.env.RISK_INTEL_ENABLE_CLAUDE === 'true';
-    const apiKey = process.env.ANTHROPIC_API_KEY;
     const client = (claudeEnabled && apiKey && apiKey.length >= 20) ? new Anthropic({ apiKey }) : null;
     if (claudeEnabled && !client) logger.warn('Risk Intel OSINT: skipping Claude web search — ANTHROPIC_API_KEY not configured');
 
@@ -665,16 +780,62 @@ async function runOsintSweep() {
     }
 
     const extraRssFeeds = loadExtraRssFeeds();
-    const telegramChannels = loadTelegramChannels();
-    let telegramEventsByChannel = new Map();
-    try {
-      telegramEventsByChannel = await fetchAllTelegramMessages(telegramChannels);
-    } catch (e) {
-      logger.warn(`Risk Intel OSINT: Telegram sweep failed: ${e.message}`);
-    }
 
     const orgsTouched = new Set();
     let totalInserted = 0;
+
+    // Telegram: fetch candidate messages, rewrite+geolocate them via Claude
+    // (needs ANTHROPIC_API_KEY — independent of RISK_INTEL_ENABLE_CLAUDE
+    // above, which gates the costlier web-search source, not this plain
+    // rewrite call), then resolve each to an existing zone by distance or
+    // create a new level_source='auto' one. Runs once per sweep rather than
+    // per-zone since a message can create a zone that didn't exist yet.
+    const telegramChannels = loadTelegramChannels();
+    let telegramCandidates = [];
+    try {
+      telegramCandidates = await fetchAllTelegramMessages(telegramChannels);
+    } catch (e) {
+      logger.warn(`Risk Intel OSINT: Telegram fetch failed: ${e.message}`);
+    }
+
+    const telegramRewriteClient = (apiKey && apiKey.length >= 20) ? new Anthropic({ apiKey }) : null;
+    let telegramProcessed = 0;
+    let telegramZonesCreated = 0;
+
+    if (telegramCandidates.length && !telegramRewriteClient) {
+      logger.warn('Risk Intel OSINT: skipping Telegram rewrite/geolocation — ANTHROPIC_API_KEY not configured');
+    } else if (telegramCandidates.length) {
+      try {
+        const located = await rewriteAndLocateTelegramMessages(telegramRewriteClient, telegramCandidates);
+        for (const item of located) {
+          if (!item.place) continue;
+          const geo = await geocodePlace(item.place);
+          if (!geo) continue;
+          const continent = continentForCountry(geo.country);
+          if (!continent) {
+            logger.warn(`Risk Intel OSINT: no continent mapping for country "${geo.country}" (place "${item.place}") — skipping`);
+            continue;
+          }
+
+          for (const [orgId, orgZones] of zonesByOrg) {
+            const zoneCountBefore = orgZones.length;
+            const zone = await resolveOrCreateZoneForLocation(orgId, orgZones, {
+              lat: geo.lat, lng: geo.lng, country: geo.country, continent, place: item.place, level: item.level,
+            });
+            if (!zone) continue;
+            if (orgZones.length > zoneCountBefore) { zones.push(zone); telegramZonesCreated++; }
+
+            const inserted = await insertEvents(zone, [{
+              description: item.formalText, level: item.level, source: 'osint:telegram',
+              source_url: item.source_url, external_id: item.external_id,
+            }]);
+            if (inserted > 0) { orgsTouched.add(orgId); totalInserted += inserted; telegramProcessed++; }
+          }
+        }
+      } catch (e) {
+        logger.warn(`Risk Intel OSINT: Telegram rewrite/geolocation sweep failed: ${e.message}`);
+      }
+    }
 
     for (const zone of zones) {
       const found = [];
@@ -699,8 +860,6 @@ async function runOsintSweep() {
         catch (e) { logger.warn(`Risk Intel OSINT: extra RSS failed for "${zone.name}": ${e.message}`); }
       }
 
-      found.push(...matchTelegramToZone(zone, telegramChannels, telegramEventsByChannel));
-
       found.push(...(claudeByZone[zone.id] || []).map(it => ({ ...it, source: 'osint:claude' })));
 
       if (found.length) {
@@ -716,10 +875,10 @@ async function runOsintSweep() {
 
     const zonesChanged = await recomputeZoneLevels(zones);
 
-    logger.info(`Risk Intel OSINT sweep complete: ${zones.length} zones checked, ${totalInserted} new events, ${orgsTouched.size} orgs updated, ${zonesChanged} zone levels recomputed, gdacs=${gdacsFeatures.length ? 'used' : 'skipped'}, acled=${acledToken ? 'used' : 'skipped'}, telegram=${telegramEventsByChannel.size ? 'used' : 'skipped'} (mtproto=${telegramMtproto.isConfigured() ? 'on' : 'off'}), claude=${client ? 'used' : 'skipped'}`);
+    logger.info(`Risk Intel OSINT sweep complete: ${zones.length} zones checked, ${totalInserted} new events, ${orgsTouched.size} orgs updated, ${zonesChanged} zone levels recomputed, gdacs=${gdacsFeatures.length ? 'used' : 'skipped'}, acled=${acledToken ? 'used' : 'skipped'}, telegram=${telegramCandidates.length ? `used (${telegramProcessed} placed, ${telegramZonesCreated} zones auto-created)` : 'skipped'} (mtproto=${telegramMtproto.isConfigured() ? 'on' : 'off'}), claude=${client ? 'used' : 'skipped'}`);
     return {
       zonesChecked: zones.length, totalInserted, orgsUpdated: orgsTouched.size, zonesChanged,
-      acledUsed: !!acledToken, telegramUsed: telegramEventsByChannel.size > 0, claudeUsed: !!client,
+      acledUsed: !!acledToken, telegramUsed: telegramProcessed > 0, telegramZonesCreated, claudeUsed: !!client,
     };
   } finally {
     sweeping = false;

@@ -18,6 +18,7 @@ export interface RiskZone {
   radius_km: number
   confidence: number
   velocity: Velocity
+  level_source?: string
   events: number
   events_24h: number
   week_data: number[]

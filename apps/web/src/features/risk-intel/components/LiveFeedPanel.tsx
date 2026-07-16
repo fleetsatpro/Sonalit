@@ -64,8 +64,8 @@ function FeedRow({ item }: { item: LiveFeedItem }) {
   )
 }
 
-export default function LiveFeedPanel() {
-  const { data, isLoading, dataUpdatedAt } = useLiveFeed()
+export default function LiveFeedPanel({ continent }: { continent?: string }) {
+  const { data, isLoading, dataUpdatedAt } = useLiveFeed(continent)
   const items = data?.items ?? []
 
   return (
