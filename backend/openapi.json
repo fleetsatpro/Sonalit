@@ -2604,6 +2604,16 @@
         }
       }
     },
+    "/api/v1/risk/live-feed": {
+      "get": {
+        "operationId": "get_api_v1_risk_live_feed",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/risk/zones/{zoneId}": {
       "patch": {
         "operationId": "patch_api_v1_risk_zones_zoneId",
