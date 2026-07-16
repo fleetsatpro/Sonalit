@@ -55,23 +55,27 @@ router.get('/overview', asyncHandler(async (req, res) => {
       LIMIT 1`, [orgId]),
 
     safeQuery(req.db, `
-      SELECT started_at FROM shifts
-      WHERE org_id=$1 AND ended_at IS NULL
-      ORDER BY started_at DESC LIMIT 1`, [orgId]),
+      SELECT actual_start AS started_at FROM shifts
+      WHERE org_id=$1 AND status='active'
+      ORDER BY actual_start DESC NULLS LAST LIMIT 1`, [orgId]),
 
     safeQuery(req.db, `
       SELECT COUNT(*) AS panic_open
       FROM panic_events WHERE org_id=$1 AND resolved_at IS NULL`, [orgId]),
   ]);
 
-  // km_today: sum of GPS distance for active vehicles since midnight
+  // km_today: sum of GPS distance for active vehicles since midnight.
+  // Haversine in plain SQL — no PostGIS extension required.
   let kmToday = 0;
   try {
     const kmR = await req.db(`
-      SELECT COALESCE(SUM(ST_Distance(
-        ST_MakePoint(lat, lng)::geography,
-        ST_MakePoint(prev_lat, prev_lng)::geography
-      ))/1000, 0) AS km
+      SELECT COALESCE(SUM(
+        2 * 6371 * ASIN(SQRT(
+          POWER(SIN(RADIANS(lat - prev_lat) / 2), 2) +
+          COS(RADIANS(prev_lat)) * COS(RADIANS(lat)) *
+          POWER(SIN(RADIANS(lng - prev_lng) / 2), 2)
+        ))
+      ), 0) AS km
       FROM (
         SELECT lat, lng,
                LAG(lat) OVER (PARTITION BY vehicle_id ORDER BY timestamp) AS prev_lat,
@@ -81,7 +85,7 @@ router.get('/overview', asyncHandler(async (req, res) => {
         WHERE v.org_id=$1 AND g.timestamp >= date_trunc('day', NOW())
       ) t WHERE prev_lat IS NOT NULL`, [orgId]);
     kmToday = parseFloat(kmR.rows[0]?.km) || 0;
-  } catch (_) { /* PostGIS may not be available */ }
+  } catch (_) { /* defensive: keep dashboard load resilient to this query's failure */ }
 
   const t = threatR.rows[0];
   const sosOpen = parseInt(t.sos_open) || 0;
@@ -92,15 +96,15 @@ router.get('/overview', asyncHandler(async (req, res) => {
 
   const k = kpiR.rows[0];
 
-  // on_time_pct from recent trips
+  // on_time_pct from recently delivered shipments
   let onTimePct = 100;
   try {
     const otR = await req.db(`
       SELECT
-        COUNT(*) FILTER (WHERE actual_arrival <= planned_arrival + INTERVAL '15 minutes') AS on_time,
+        COUNT(*) FILTER (WHERE actual_delivery <= scheduled_delivery + INTERVAL '15 minutes') AS on_time,
         COUNT(*) AS total
-      FROM trips WHERE org_id=$1 AND actual_arrival IS NOT NULL
-        AND planned_arrival >= NOW() - INTERVAL '30 days'`, [orgId]);
+      FROM shipments WHERE org_id=$1 AND actual_delivery IS NOT NULL
+        AND scheduled_delivery >= NOW() - INTERVAL '30 days'`, [orgId]);
     const ot = otR.rows[0];
     onTimePct = ot.total > 0 ? Math.round((parseInt(ot.on_time)/parseInt(ot.total))*100) : 100;
   } catch (_) {}
@@ -423,7 +427,7 @@ router.get('/convoys', asyncHandler(async (req, res) => {
       const ph = convoyIds.map((_, i) => `$${i+2}`).join(',');
       const cpR = await safeQuery(req.db, `
         SELECT cc.convoy_id, cc.name, cc.reached_at
-        FROM convoy_checkpoints cc
+        FROM checkpoints cc
         WHERE cc.convoy_id IN (${ph})
         ORDER BY cc.convoy_id`, [orgId, ...convoyIds]);
       checkpoints = cpR.rows;
@@ -574,11 +578,11 @@ router.get('/performance', asyncHandler(async (req, res) => {
   try {
   const r = await req.db(`
     SELECT
-      date_trunc('day', COALESCE(actual_arrival, planned_arrival)) AS day,
+      date_trunc('day', COALESCE(actual_delivery, scheduled_delivery)) AS day,
       COUNT(*) AS total,
-      COUNT(*) FILTER (WHERE actual_arrival <= planned_arrival + INTERVAL '15 minutes') AS on_time
-    FROM trips
-    WHERE org_id=$1 AND planned_arrival >= NOW()-($2 || ' days')::INTERVAL
+      COUNT(*) FILTER (WHERE actual_delivery <= scheduled_delivery + INTERVAL '15 minutes') AS on_time
+    FROM shipments
+    WHERE org_id=$1 AND scheduled_delivery >= NOW()-($2 || ' days')::INTERVAL
     GROUP BY 1 ORDER BY 1 DESC`, [orgId, days]);
 
   const rows = r.rows;
@@ -778,15 +782,16 @@ router.get('/timeline', asyncHandler(async (req, res) => {
             FROM convoys WHERE org_id=$1 AND status='active'
               AND COALESCE(estimated_arrival_at, estimated_arrival) BETWEEN NOW() AND NOW()+INTERVAL '24 hours'
             ORDER BY time LIMIT 10`, [orgId]),
-    safeQuery(req.db, `SELECT cc.convoy_id, cc.name AS label, cc.scheduled_at AS time
-            FROM convoy_checkpoints cc
+    safeQuery(req.db, `SELECT cc.convoy_id, cc.name AS label, cc.expected_at AS time
+            FROM checkpoints cc
             JOIN convoys c ON c.id=cc.convoy_id
             WHERE c.org_id=$1 AND cc.reached_at IS NULL
-              AND cc.scheduled_at BETWEEN NOW() AND NOW()+INTERVAL '24 hours'
-            ORDER BY cc.scheduled_at LIMIT 10`, [orgId]),
-    safeQuery(req.db, `SELECT 'Shift changeover' AS label, changeover_at AS time
-            FROM shifts WHERE org_id=$1 AND changeover_at BETWEEN NOW() AND NOW()+INTERVAL '24 hours'
-            ORDER BY changeover_at LIMIT 3`, [orgId]),
+              AND cc.expected_at BETWEEN NOW() AND NOW()+INTERVAL '24 hours'
+            ORDER BY cc.expected_at LIMIT 10`, [orgId]),
+    safeQuery(req.db, `SELECT 'Shift changeover' AS label, end_time AS time
+            FROM shifts WHERE org_id=$1 AND status IN ('scheduled','active')
+              AND end_time BETWEEN NOW() AND NOW()+INTERVAL '24 hours'
+            ORDER BY end_time LIMIT 3`, [orgId]),
   ]);
 
   const events = [
