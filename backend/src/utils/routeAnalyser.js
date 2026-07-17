@@ -5,11 +5,10 @@
  * to score the route and suggest alternates. Returns a structured
  * RouteAnalysis object ready to persist and send to the client.
  */
-const Anthropic = require('@anthropic-ai/sdk');
+const aiClient = require('./aiClient');
 const { query } = require('../config/database');
 const logger = require('./logger');
 
-const client = new Anthropic();
 const MODEL = 'claude-opus-4-8';
 
 /**
@@ -132,7 +131,9 @@ Provide: an overall risk score (0–100), the primary risk factors present, a re
     },
   }];
 
-  const response = await client.messages.create({
+  // Falls back to Groq (open-weight model) if Anthropic is rate-limited,
+  // out of quota, or down and GROQ_API_KEY is configured — see aiClient.js.
+  const response = await aiClient.createMessage({
     model: MODEL,
     max_tokens: 1024,
     tools,

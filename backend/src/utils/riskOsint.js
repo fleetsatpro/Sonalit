@@ -27,9 +27,9 @@
 // source's own event/message id) so re-runs don't duplicate the same item
 // (see risk_events_zone_external_uniq).
 const crypto = require('crypto');
-const Anthropic = require('@anthropic-ai/sdk');
 const { XMLParser } = require('fast-xml-parser');
 const telegramMtproto = require('./telegramMtproto');
+const aiClient = require('./aiClient');
 const { geocodePlace } = require('./geocode');
 const { continentForCountry } = require('./countryContinent');
 const { query } = require('../config/database');
@@ -529,15 +529,17 @@ async function fetchAllTelegramMessages(channels) {
 // a real place, a message can't be geolocated and is dropped.
 const TELEGRAM_REWRITE_MAX_MESSAGES = 40;
 
-async function rewriteAndLocateTelegramMessages(client, candidates) {
+async function rewriteAndLocateTelegramMessages(candidates) {
   if (!candidates.length) return [];
   const batch = candidates.slice(0, TELEGRAM_REWRITE_MAX_MESSAGES);
   if (candidates.length > TELEGRAM_REWRITE_MAX_MESSAGES) {
     logger.warn(`Risk Intel OSINT: ${candidates.length} Telegram candidates this sweep, only rewriting the first ${TELEGRAM_REWRITE_MAX_MESSAGES}`);
   }
 
+  // No tools/server-side features here (plain text in, JSON text out), so
+  // this can fall back to Groq if Anthropic is unavailable — see aiClient.js.
   const list = batch.map((c, i) => `${i}. [channel: ${c.channel}] ${c.text}`).join('\n');
-  const response = await createMessageWithRetry(client, {
+  const response = await aiClient.createMessage({
     model: MODEL,
     max_tokens: 4000,
     system: 'You are an OSINT security analyst. Respond with raw JSON only — no markdown fences, no commentary before or after.',
@@ -638,28 +640,18 @@ async function resolveOrCreateZoneForLocation(orgId, zonesForOrg, { lat, lng, co
   return zone;
 }
 
-async function createMessageWithRetry(client, params, maxRetries = 3) {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await client.messages.create(params);
-    } catch (err) {
-      const isOverloaded = err?.status === 529 || (err?.message || '').includes('Overloaded');
-      if (isOverloaded && attempt < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, (attempt + 1) * 2000));
-        continue;
-      }
-      throw err;
-    }
-  }
-}
-
 // One batched call covering every zone, rather than one call per zone —
 // keeps the web-search tool budget (and Anthropic API cost) bounded
-// regardless of how many risk zones exist.
-async function fetchClaudeForZones(client, zones) {
+// regardless of how many risk zones exist. web_search is an Anthropic
+// server-side tool with no open-weight equivalent, so this explicitly
+// opts out of the Groq fallback (allowFallback: false) rather than send a
+// broken/tool-less request to Groq — if Anthropic is down, this source
+// just sits out the sweep like it already does when RISK_INTEL_ENABLE_CLAUDE
+// is off, and GDELT/ReliefWeb/etc keep running as usual.
+async function fetchClaudeForZones(zones) {
   const zoneList = zones.map(z => `- ${z.id}: ${[z.name, z.region, z.continent].filter(Boolean).join(', ')}`).join('\n');
 
-  const response = await createMessageWithRetry(client, {
+  const response = await aiClient.createMessage({
     model: MODEL,
     max_tokens: 6000,
     system: 'You are an OSINT security analyst. Respond with raw JSON only — no markdown fences, no commentary before or after.',
@@ -673,7 +665,7 @@ ${zoneList}
 
 Reply with ONLY a JSON object mapping zone id -> array of up to 3 items found (omit ids with nothing credible from the last 48h). Each item: {"description": "one factual sentence, no speculation", "level": "high"|"medium"|"low", "source_url": "..."}`,
     }],
-  });
+  }, { allowFallback: false });
 
   const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('').trim();
   const cleaned = text.replace(/^```(json)?/i, '').replace(/```$/, '').trim();
@@ -736,8 +728,6 @@ async function runOsintSweep() {
       zonesByOrg.get(z.org_id).push(z);
     }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-
     // Claude web search is a supplementary third source, not the sweep's
     // load-bearing one — GDELT + ReliefWeb need no key/subscription and run
     // unconditionally below. This step used to run every cycle by default
@@ -745,15 +735,16 @@ async function runOsintSweep() {
     // because a key happened to be configured, silently burning Anthropic
     // usage even though the free sources cover the same ground. Opt in
     // explicitly via RISK_INTEL_ENABLE_CLAUDE=true if the broader synthesis
-    // is worth the cost for your org.
+    // is worth the cost for your org. No Groq fallback here — see
+    // fetchClaudeForZones's allowFallback: false (web_search has no
+    // open-weight equivalent).
     const claudeEnabled = process.env.RISK_INTEL_ENABLE_CLAUDE === 'true';
-    const client = (claudeEnabled && apiKey && apiKey.length >= 20) ? new Anthropic({ apiKey }) : null;
-    if (claudeEnabled && !client) logger.warn('Risk Intel OSINT: skipping Claude web search — ANTHROPIC_API_KEY not configured');
+    if (claudeEnabled && !aiClient.hasAnthropic()) logger.warn('Risk Intel OSINT: skipping Claude web search — ANTHROPIC_API_KEY not configured');
 
     let claudeByZone = {};
-    if (client) {
+    if (claudeEnabled && aiClient.hasAnthropic()) {
       try {
-        claudeByZone = await fetchClaudeForZones(client, zones);
+        claudeByZone = await fetchClaudeForZones(zones);
       } catch (e) {
         logger.warn(`Risk Intel OSINT: Claude web search sweep failed: ${e.message}`);
       }
@@ -784,12 +775,13 @@ async function runOsintSweep() {
     const orgsTouched = new Set();
     let totalInserted = 0;
 
-    // Telegram: fetch candidate messages, rewrite+geolocate them via Claude
-    // (needs ANTHROPIC_API_KEY — independent of RISK_INTEL_ENABLE_CLAUDE
-    // above, which gates the costlier web-search source, not this plain
-    // rewrite call), then resolve each to an existing zone by distance or
-    // create a new level_source='auto' one. Runs once per sweep rather than
-    // per-zone since a message can create a zone that didn't exist yet.
+    // Telegram: fetch candidate messages, rewrite+geolocate them via the
+    // shared AI client (Anthropic first, falls back to Groq if configured
+    // and Anthropic is unavailable — this call uses no tools, so unlike
+    // the web-search source above it CAN run on an open-weight model),
+    // then resolve each to an existing zone by distance or create a new
+    // level_source='auto' one. Runs once per sweep rather than per-zone
+    // since a message can create a zone that didn't exist yet.
     const telegramChannels = loadTelegramChannels();
     let telegramCandidates = [];
     try {
@@ -798,15 +790,15 @@ async function runOsintSweep() {
       logger.warn(`Risk Intel OSINT: Telegram fetch failed: ${e.message}`);
     }
 
-    const telegramRewriteClient = (apiKey && apiKey.length >= 20) ? new Anthropic({ apiKey }) : null;
+    const telegramAIAvailable = aiClient.hasAnthropic() || aiClient.hasGroqFallback();
     let telegramProcessed = 0;
     let telegramZonesCreated = 0;
 
-    if (telegramCandidates.length && !telegramRewriteClient) {
-      logger.warn('Risk Intel OSINT: skipping Telegram rewrite/geolocation — ANTHROPIC_API_KEY not configured');
+    if (telegramCandidates.length && !telegramAIAvailable) {
+      logger.warn('Risk Intel OSINT: skipping Telegram rewrite/geolocation — no AI provider configured (ANTHROPIC_API_KEY or GROQ_API_KEY)');
     } else if (telegramCandidates.length) {
       try {
-        const located = await rewriteAndLocateTelegramMessages(telegramRewriteClient, telegramCandidates);
+        const located = await rewriteAndLocateTelegramMessages(telegramCandidates);
         for (const item of located) {
           if (!item.place) continue;
           const geo = await geocodePlace(item.place);
@@ -875,10 +867,10 @@ async function runOsintSweep() {
 
     const zonesChanged = await recomputeZoneLevels(zones);
 
-    logger.info(`Risk Intel OSINT sweep complete: ${zones.length} zones checked, ${totalInserted} new events, ${orgsTouched.size} orgs updated, ${zonesChanged} zone levels recomputed, gdacs=${gdacsFeatures.length ? 'used' : 'skipped'}, acled=${acledToken ? 'used' : 'skipped'}, telegram=${telegramCandidates.length ? `used (${telegramProcessed} placed, ${telegramZonesCreated} zones auto-created)` : 'skipped'} (mtproto=${telegramMtproto.isConfigured() ? 'on' : 'off'}), claude=${client ? 'used' : 'skipped'}`);
+    logger.info(`Risk Intel OSINT sweep complete: ${zones.length} zones checked, ${totalInserted} new events, ${orgsTouched.size} orgs updated, ${zonesChanged} zone levels recomputed, gdacs=${gdacsFeatures.length ? 'used' : 'skipped'}, acled=${acledToken ? 'used' : 'skipped'}, telegram=${telegramCandidates.length ? `used (${telegramProcessed} placed, ${telegramZonesCreated} zones auto-created)` : 'skipped'} (mtproto=${telegramMtproto.isConfigured() ? 'on' : 'off'}), claude=${claudeEnabled && aiClient.hasAnthropic() ? 'used' : 'skipped'}`);
     return {
       zonesChecked: zones.length, totalInserted, orgsUpdated: orgsTouched.size, zonesChanged,
-      acledUsed: !!acledToken, telegramUsed: telegramProcessed > 0, telegramZonesCreated, claudeUsed: !!client,
+      acledUsed: !!acledToken, telegramUsed: telegramProcessed > 0, telegramZonesCreated, claudeUsed: claudeEnabled && aiClient.hasAnthropic(),
     };
   } finally {
     sweeping = false;
