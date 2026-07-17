@@ -1788,6 +1788,36 @@
         }
       }
     },
+    "/api/v1/traffic/status": {
+      "get": {
+        "operationId": "get_api_v1_traffic_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/traffic/tiles/flow/{z}/{x}/{y}.png": {
+      "get": {
+        "operationId": "get_api_v1_traffic_tiles_flow_z_x_y_png",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/traffic/incidents": {
+      "get": {
+        "operationId": "get_api_v1_traffic_incidents",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/cfo/context": {
       "get": {
         "operationId": "get_api_v1_guardian_cfo_context",

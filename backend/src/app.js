@@ -191,7 +191,7 @@ app.get("/metrics", async (req, res) => {
 // ─── Routes ───────────────────────────────────────────────────────────────────
 ["auth", "vehicles", "convoys", "alerts", "messages", "analytics", "geofences", "devices",
   "incidents", "rules", "gps", "sensors", "ai", "apikeys", "reports", "documents", "webhooks", "guardian", "realtime", "admin",
-  "fuel", "shifts"]
+  "fuel", "shifts", "traffic"]
   .forEach(r => app.use("/api/v1/" + r, require("./routes/" + r)));
 
 try { app.use("/api/v1/guardian/cfo", require("./routes/guardianCfo")); logger.info("Route loaded: /api/v1/guardian/cfo"); }

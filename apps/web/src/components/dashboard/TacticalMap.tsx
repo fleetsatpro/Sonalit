@@ -4,6 +4,10 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
 import { useDashboardStore } from '../../stores/dashboardStore.js';
+import {
+  trafficTransformRequest, addTrafficLayers, setTrafficLayersVisible, setTrafficIncidents,
+  bboxFromMap, useTrafficIncidents, useTrafficStatus,
+} from '../../lib/trafficLayer.js';
 
 interface MapConvoy { id: string; name: string; status: string; lat: number | null; lng: number | null; heading: number; color: string }
 interface AlertZone { lat: number; lng: number; radius_m: number; severity: string }
@@ -259,7 +263,15 @@ const TacticalMap = React.memo(function TacticalMap() {
   const { setSelectedVehicle } = useDashboardStore.getState();
   const [expanded, setExpanded] = useState(false);
   const [mapStyle, setMapStyle] = useState<'street' | 'satellite'>('street');
+  const [trafficOn, setTrafficOn] = useState(false);
+  const [bbox, setBbox] = useState<string | null>(null);
   const currentDataRef = useRef<MapData | null>(null);
+  const trafficOnRef = useRef(trafficOn);
+  trafficOnRef.current = trafficOn;
+  const trafficFCRef = useRef<GeoJSON.FeatureCollection | null>(null);
+
+  const { data: trafficStatus } = useTrafficStatus();
+  const { data: trafficFC } = useTrafficIncidents(bbox, trafficOn);
 
   const { data: mapData } = useQuery<MapData>({
     queryKey: ['dashboard-map'],
@@ -279,13 +291,17 @@ const TacticalMap = React.memo(function TacticalMap() {
       container: mapContainer.current,
       style: STREET_STYLE,
       center: EA_CENTER, zoom: EA_ZOOM, attributionControl: false,
+      transformRequest: trafficTransformRequest,
     });
     map.on('error', () => {});
     map.on('load', () => {
       setupMapLayers(map);
+      addTrafficLayers(map, trafficOnRef.current);
+      setBbox(bboxFromMap(map));
       mapReadyRef.current = true;
       if (pendingDataRef.current) { updateMapData(map, pendingDataRef.current); pendingDataRef.current = null; }
     });
+    map.on('moveend', () => setBbox(bboxFromMap(map)));
     mapRef.current = map;
     return () => { map.remove(); mapRef.current = null; mapReadyRef.current = false; };
   }, []);
@@ -309,12 +325,26 @@ const TacticalMap = React.memo(function TacticalMap() {
     map.setStyle(style);
     const onLoad = () => {
       setupMapLayers(map);
+      addTrafficLayers(map, trafficOnRef.current);
+      if (trafficFCRef.current) setTrafficIncidents(map, trafficFCRef.current);
       mapReadyRef.current = true;
       if (currentDataRef.current) updateMapData(map, currentDataRef.current);
     };
     map.once('style.load', onLoad);
     return () => { map.off('style.load', onLoad); };
   }, [mapStyle]);
+
+  // traffic visibility toggle — instant (setLayoutProperty), no re-fetch
+  useEffect(() => {
+    const map = mapRef.current; if (!map || !mapReadyRef.current) return;
+    setTrafficLayersVisible(map, trafficOn);
+  }, [trafficOn]);
+
+  useEffect(() => {
+    trafficFCRef.current = trafficFC ?? null;
+    const map = mapRef.current; if (!map || !mapReadyRef.current || !trafficFC) return;
+    setTrafficIncidents(map, trafficFC);
+  }, [trafficFC]);
 
   useEffect(() => {
     vehiclePositions.forEach((pos, vehicleId) => {
@@ -374,6 +404,16 @@ const TacticalMap = React.memo(function TacticalMap() {
         <LegendDot color='#ff4422' label='ALERT' />
         <LegendDot color='#ff1e1e' label='PANIC' />
         <LegendDot color='#888888' label='IDLE' />
+        {/* Traffic toggle — hidden entirely if no TOMTOM_API_KEY is configured server-side */}
+        {trafficStatus?.configured && (
+          <button
+            onClick={() => setTrafficOn(v => !v)}
+            title={trafficOn ? 'Hide traffic (congestion + incidents)' : 'Show traffic (congestion + incidents) — coverage is sparse or absent in some conflict corridors'}
+            style={{ background: trafficOn ? 'rgba(239,68,68,.15)' : 'var(--d-lift2)', border: `1px solid ${trafficOn ? '#ef4444' : 'var(--d-rim2)'}`, borderRadius: 6, color: trafficOn ? '#ef4444' : 'var(--d-t2)', cursor: 'pointer', padding: '4px 8px', fontSize: 10, fontFamily: 'IBM Plex Mono, monospace', letterSpacing: '.06em', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}
+          >
+            TRAFFIC
+          </button>
+        )}
         {/* Layer switcher */}
         <button
           onClick={() => setMapStyle(s => s === 'street' ? 'satellite' : 'street')}
