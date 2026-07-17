@@ -3,6 +3,10 @@ import { useQuery } from '@tanstack/react-query'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { api } from '../../../lib/api.js'
+import {
+  trafficTransformRequest, addTrafficLayers, setTrafficLayersVisible, setTrafficIncidents,
+  bboxFromMap, useTrafficIncidents, useTrafficStatus,
+} from '../../../lib/trafficLayer.js'
 import type { LiveVehicle, LiveStatus } from '../types/fleet.js'
 
 const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
@@ -157,6 +161,11 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
   const animRef = useRef(0)
   const [mapReady, setMapReady] = useState(false)
   const [isSatellite, setIsSatellite] = useState(false)
+  const [trafficOn, setTrafficOn] = useState(false)
+  const [bbox, setBbox] = useState<string | null>(null)
+
+  const { data: trafficStatus } = useTrafficStatus()
+  const { data: trafficFC } = useTrafficIncidents(bbox, trafficOn)
 
   const { data: geofences } = useQuery<Geofence[]>({
     queryKey: ['live-fleet-geofences'],
@@ -172,13 +181,14 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
   // init map
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
-    const m = new maplibregl.Map({ container: containerRef.current, style: DARK_STYLE, center: [35.5, 1.2], zoom: 5, attributionControl: false })
+    const m = new maplibregl.Map({ container: containerRef.current, style: DARK_STYLE, center: [35.5, 1.2], zoom: 5, attributionControl: false, transformRequest: trafficTransformRequest })
     m.on('style.load', () => setMapReady(true))
     m.on('mousemove', e => {
       if (!coordsRef.current) return
       const { lat, lng } = e.lngLat
       coordsRef.current.textContent = `${Math.abs(lat).toFixed(4)}°${lat >= 0 ? 'N' : 'S'} ${Math.abs(lng).toFixed(4)}°${lng >= 0 ? 'E' : 'W'}`
     })
+    m.on('moveend', () => setBbox(bboxFromMap(m)))
     mapRef.current = m
     return () => { m.remove(); mapRef.current = null; setMapReady(false) }
   }, [])
@@ -233,6 +243,25 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
       map.addLayer({ id: 'gf-line-center', type: 'line', source: 'gf-lines', paint: { 'line-color': '#22d3ee', 'line-width': 2.5, 'line-opacity': 0.9, 'line-dasharray': [6, 3] } })
     }
   }, [mapReady, geofences])
+
+  // traffic overlay — added once per style load (satellite toggle wipes and
+  // re-triggers mapReady, same as the geofence/risk-zone overlays above)
+  useEffect(() => {
+    const map = mapRef.current; if (!map || !mapReady) return
+    addTrafficLayers(map, trafficOn)
+    setBbox(bboxFromMap(map))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapReady])
+
+  useEffect(() => {
+    const map = mapRef.current; if (!map || !mapReady) return
+    setTrafficLayersVisible(map, trafficOn)
+  }, [trafficOn, mapReady])
+
+  useEffect(() => {
+    const map = mapRef.current; if (!map || !mapReady || !trafficFC) return
+    setTrafficIncidents(map, trafficFC)
+  }, [trafficFC, mapReady])
 
   // risk zone overlay
   useEffect(() => {
@@ -334,6 +363,15 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
 
       {/* top-right controls */}
       <div style={{ position: 'absolute', right: 14, top: 14, zIndex: 500, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {/* traffic toggle — hidden entirely if no TOMTOM_API_KEY is configured server-side */}
+        {trafficStatus?.configured && (
+          <button
+            onClick={() => setTrafficOn(v => !v)}
+            title={trafficOn ? 'Hide traffic (congestion + incidents)' : 'Show traffic (congestion + incidents) — coverage is sparse or absent in some conflict corridors'}
+            style={{ width: 34, height: 34, borderRadius: 7, background: trafficOn ? 'rgba(239,68,68,.18)' : 'rgba(8,11,20,.92)', border: `1px solid ${trafficOn ? 'rgba(239,68,68,.6)' : 'rgba(255,255,255,.11)'}`, color: trafficOn ? '#ef4444' : '#7a7e8a', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="2" width="6" height="20" rx="1"/><circle cx="12" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/></svg>
+          </button>
+        )}
         {/* satellite toggle */}
         <button onClick={toggleSatellite} title={isSatellite ? 'Dark map' : 'Satellite'} style={{ width: 34, height: 34, borderRadius: 7, background: isSatellite ? 'rgba(232,168,48,.18)' : 'rgba(8,11,20,.92)', border: `1px solid ${isSatellite ? 'rgba(232,168,48,.6)' : 'rgba(255,255,255,.11)'}`, color: isSatellite ? '#e8a830' : '#7a7e8a', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
