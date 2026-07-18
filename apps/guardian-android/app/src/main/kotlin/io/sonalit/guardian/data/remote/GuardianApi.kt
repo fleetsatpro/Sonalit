@@ -1,6 +1,7 @@
 package io.sonalit.guardian.data.remote
 
 import com.squareup.moshi.Json
+import okhttp3.RequestBody
 import retrofit2.http.*
 
 // ── Device API ────────────────────────────────────────────────────────────────
@@ -40,6 +41,9 @@ data class LocationPoint(
     val timestamp: String,
 )
 data class LocationBatchRequest(val points: List<LocationPoint>)
+
+data class VoiceMessageUploadResponseData(val voice_id: String, val status: String)
+data class VoiceMessageUploadResponse(val data: VoiceMessageUploadResponseData)
 
 data class ConvoyMember(
     val id: String,
@@ -183,6 +187,16 @@ interface GuardianApi {
     // the server. guardian/location/batch is the real, working endpoint.
     @POST("guardian/location/batch")
     suspend fun locationBatch(@Body batch: LocationBatchRequest): Map<String, Any>
+
+    /** Field officer -> dispatch voice note. Body is raw audio bytes (see
+     *  CommandExecutor's replayVoiceMessage for the reverse/download side) —
+     *  X-Device-Token is injected by NetworkModule's interceptor like every
+     *  other plain device endpoint here, so no explicit header param. */
+    @POST("guardian/voice-message")
+    suspend fun uploadVoiceMessage(
+        @Body body: RequestBody,
+        @Query("duration_ms") durationMs: Int,
+    ): VoiceMessageUploadResponse
 
     /** Other Guardian devices sharing this device's ad-hoc convoy_code, with
      *  their last known position/status — backs the Home "My Convoy" card. */

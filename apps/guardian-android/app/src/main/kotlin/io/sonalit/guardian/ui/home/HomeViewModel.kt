@@ -1,6 +1,8 @@
 package io.sonalit.guardian.ui.home
 
 import android.content.Context
+import android.media.MediaRecorder
+import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.security.crypto.EncryptedSharedPreferences
@@ -18,6 +20,7 @@ import io.sonalit.guardian.data.local.VoiceTriggerStore
 import io.sonalit.guardian.data.remote.ConvoyMember
 import io.sonalit.guardian.data.remote.GuardianApi
 import io.sonalit.guardian.service.CommandExecutor
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,6 +28,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
@@ -36,6 +42,11 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 enum class SignalState { GOOD, STALE, UNKNOWN }
+enum class VoiceNoteSendState { IDLE, SENDING, DONE, ERROR }
+
+// Matches the 60s cap the dispatch-side web recorder already enforces
+// (DetailCard.tsx MAX_VOICE_MS) and the backend's raw-body route.
+private const val MAX_VOICE_NOTE_MS = 60_000L
 
 data class ConvoyMemberUi(
     val id: String,
@@ -77,6 +88,9 @@ data class HomeUiState(
     val unreadDispatchCount: Int = 0,
     val voiceTriggerArmed: Boolean = false,
     val dispatchPhoneNumber: String? = null,
+    val isRecordingVoiceNote: Boolean = false,
+    val voiceNoteElapsedMs: Long = 0,
+    val voiceNoteSendState: VoiceNoteSendState = VoiceNoteSendState.IDLE,
 )
 
 @HiltViewModel
@@ -155,6 +169,86 @@ class HomeViewModel @Inject constructor(
             commandExecutor.replayVoiceMessage(url)
             dispatchMessageDao.markRead(id)
         }
+    }
+
+    // ── Voice note to dispatch (reverse of the inbox above — officer records,
+    // dispatch listens on the Live Fleet detail card) ──────────────────────────
+    private var voiceRecorder: MediaRecorder? = null
+    private var voiceNoteFile: File? = null
+    private var voiceNoteStartMs: Long = 0
+    private var voiceNoteTickerJob: Job? = null
+
+    fun startVoiceNote() {
+        if (voiceRecorder != null) return
+        val file = File(context.cacheDir, "voice_note_${System.currentTimeMillis()}.m4a")
+        @Suppress("DEPRECATION")
+        val rec = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(context) else MediaRecorder()
+        try {
+            rec.setAudioSource(MediaRecorder.AudioSource.MIC)
+            rec.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            rec.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            rec.setAudioEncodingBitRate(64_000)
+            rec.setAudioSamplingRate(44_100)
+            rec.setOutputFile(file.absolutePath)
+            rec.prepare()
+            rec.start()
+        } catch (e: Exception) {
+            rec.release()
+            _uiState.update { it.copy(voiceNoteSendState = VoiceNoteSendState.ERROR) }
+            return
+        }
+        voiceRecorder = rec
+        voiceNoteFile = file
+        voiceNoteStartMs = System.currentTimeMillis()
+        _uiState.update { it.copy(isRecordingVoiceNote = true, voiceNoteElapsedMs = 0, voiceNoteSendState = VoiceNoteSendState.IDLE) }
+        voiceNoteTickerJob = viewModelScope.launch {
+            while (true) {
+                delay(200)
+                val elapsed = System.currentTimeMillis() - voiceNoteStartMs
+                _uiState.update { it.copy(voiceNoteElapsedMs = elapsed) }
+                if (elapsed >= MAX_VOICE_NOTE_MS) { stopVoiceNote(send = true); break }
+            }
+        }
+    }
+
+    /** [send]=false discards the clip (officer cancelled); true uploads it. */
+    fun stopVoiceNote(send: Boolean) {
+        voiceNoteTickerJob?.cancel()
+        voiceNoteTickerJob = null
+        val rec = voiceRecorder ?: return
+        val file = voiceNoteFile
+        val durationMs = (System.currentTimeMillis() - voiceNoteStartMs).coerceAtMost(MAX_VOICE_NOTE_MS)
+        runCatching { rec.stop() }
+        rec.release()
+        voiceRecorder = null
+        _uiState.update { it.copy(isRecordingVoiceNote = false) }
+
+        if (!send || file == null) {
+            file?.delete()
+            voiceNoteFile = null
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(voiceNoteSendState = VoiceNoteSendState.SENDING) }
+            val result = runCatching {
+                val body = file.readBytes().toRequestBody("audio/mp4".toMediaTypeOrNull())
+                api.uploadVoiceMessage(body, durationMs.toInt())
+            }
+            file.delete()
+            voiceNoteFile = null
+            _uiState.update {
+                it.copy(voiceNoteSendState = if (result.isSuccess) VoiceNoteSendState.DONE else VoiceNoteSendState.ERROR)
+            }
+            delay(3000)
+            _uiState.update { it.copy(voiceNoteSendState = VoiceNoteSendState.IDLE) }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        // Discard, don't upload, a clip still recording when the screen goes away.
+        if (voiceRecorder != null) stopVoiceNote(send = false)
     }
 
     private suspend fun refreshConvoyAndConfig() {

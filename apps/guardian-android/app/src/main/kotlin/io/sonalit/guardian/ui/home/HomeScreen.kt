@@ -1,7 +1,11 @@
 package io.sonalit.guardian.ui.home
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -38,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.sonalit.guardian.BuildConfig
@@ -189,6 +194,15 @@ fun HomeScreen(
                 unreadCount = state.unreadDispatchCount,
                 onPlay = { msg -> msg.voiceUrl?.let { viewModel.replayVoiceMessage(msg.id, it) } },
                 onTapText = { msg -> viewModel.markMessageRead(msg.id) },
+            )
+
+            Spacer(Modifier.height(28.dp))
+            VoiceNoteRecorderCard(
+                isRecording = state.isRecordingVoiceNote,
+                elapsedMs = state.voiceNoteElapsedMs,
+                sendState = state.voiceNoteSendState,
+                onStart = viewModel::startVoiceNote,
+                onStop = viewModel::stopVoiceNote,
             )
 
             Spacer(Modifier.height(28.dp))
@@ -475,6 +489,83 @@ private fun DispatchInboxCard(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+// ── Voice note to dispatch (reverse of the inbox above) ────────────────────────
+
+@Composable
+private fun VoiceNoteRecorderCard(
+    isRecording: Boolean,
+    elapsedMs: Long,
+    sendState: VoiceNoteSendState,
+    onStart: () -> Unit,
+    onStop: (send: Boolean) -> Unit,
+) {
+    val context = LocalContext.current
+    var micGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted -> micGranted = granted; if (granted) onStart() }
+
+    SectionLabel("Send a voice note to dispatch")
+    Box(Modifier.fillMaxWidth().glassCard()) {
+        Column(Modifier.padding(13.dp).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            if (!isRecording) {
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(100))
+                        .background(Glass.accent)
+                        .clickable {
+                            if (micGranted) onStart() else permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                        .padding(horizontal = 18.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Default.Mic, contentDescription = null, tint = Glass.accentText, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(7.dp))
+                    Text("Record", color = Glass.accentText, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                }
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(8.dp).clip(CircleShape).background(Glass.danger))
+                    Spacer(Modifier.width(7.dp))
+                    Text("${elapsedMs / 1000}s / 60s", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.clip(RoundedCornerShape(100)).background(Glass.success)
+                            .clickable { onStop(true) }.padding(horizontal = 16.dp, vertical = 8.dp),
+                    ) { Text("Send", color = Glass.accentText, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium) }
+                    Row(
+                        modifier = Modifier.clip(RoundedCornerShape(100)).border(1.dp, Glass.border, RoundedCornerShape(100))
+                            .clickable { onStop(false) }.padding(horizontal = 16.dp, vertical = 8.dp),
+                    ) { Text("Cancel", color = Glass.textMuted, style = MaterialTheme.typography.labelMedium) }
+                }
+            }
+            if (sendState != VoiceNoteSendState.IDLE) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    when (sendState) {
+                        VoiceNoteSendState.SENDING -> "Sending…"
+                        VoiceNoteSendState.DONE -> "Sent to dispatch"
+                        VoiceNoteSendState.ERROR -> "Failed to send"
+                        VoiceNoteSendState.IDLE -> ""
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = when (sendState) {
+                        VoiceNoteSendState.DONE -> Glass.success
+                        VoiceNoteSendState.ERROR -> Glass.danger
+                        else -> Glass.textMuted
+                    },
+                )
             }
         }
     }
