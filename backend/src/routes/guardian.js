@@ -83,6 +83,16 @@ const reportLimiter = rateLimit({
   handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
 });
 
+const voiceMessageLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  keyGenerator: (req) => (req.device && req.device.id) || req.headers['x-device-token'] || req.ip,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
+  handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
+});
+
 // Per-admin-per-target-device: 10 commands/min per (admin, device) pair
 const commandLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -1047,6 +1057,57 @@ router.get('/voice-messages/:id/audio', deviceAuth, async (req, res, next) => {
     next(err);
   }
 });
+
+/**
+ * POST /api/v1/guardian/voice-message
+ * Reverse direction of the route above: a field officer records a note and
+ * sends it up to dispatch. Body is raw audio bytes (audio/*, ≤2 MB, same
+ * cap as the dispatch->device route), stored with direction='from_device'
+ * so GET /guardian/devices/:id/voice-messages (guardian-ops.js) can list
+ * only these for the operator UI. No signed command/FCM push needed here —
+ * dispatch is the web dashboard, which gets the update over the org's
+ * existing Centrifugo channel instead of a device-command round-trip.
+ */
+router.post(
+  '/voice-message',
+  deviceAuth,
+  voiceMessageLimiter,
+  require('express').raw({ type: ['audio/*'], limit: '2mb' }),
+  async (req, res, next) => {
+    try {
+      if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+        return res.status(400).json({ error: 'Request body must be raw audio bytes with an audio/* content type' });
+      }
+      const mime = (req.headers['content-type'] || 'audio/webm').split(';')[0];
+      const durationMs = parseInt(req.query.duration_ms) || null;
+      const orgId = req.device.org_id || null;
+
+      const { rows } = await query(
+        `INSERT INTO guardian_voice_messages (org_id, device_id, mime, duration_ms, audio, direction)
+         VALUES ($1, $2, $3, $4, $5, 'from_device')
+         RETURNING id, created_at`,
+        [orgId, req.device.id, mime, durationMs, req.body]
+      );
+      const voice = rows[0];
+
+      if (orgId) {
+        publish(`org#${orgId}`, {
+          type: 'guardian_voice_message',
+          device_id: req.device.id,
+          device_name: req.device.name,
+          voice_id: voice.id,
+          duration_ms: durationMs,
+          created_at: voice.created_at,
+        }).catch(e => logger.warn(`Centrifugo publish failed: ${e.message}`));
+      }
+
+      logger.info(`Voice note received: device=${req.device.id} voice=${voice.id} bytes=${req.body.length}`);
+      res.status(201).json({ data: { voice_id: voice.id, status: 'received' } });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 /**
  * POST /api/v1/guardian/location

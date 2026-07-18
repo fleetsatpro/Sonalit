@@ -312,6 +312,45 @@ router.post(
   }
 );
 
+// GET /devices/:id/voice-messages — reverse direction of the route above:
+// voice notes a field officer recorded and sent up (direction='from_device',
+// see POST /guardian/voice-message in guardian.js). No RLS on this table
+// (see migration 062's comment on why), so org scoping is explicit here.
+router.get('/devices/:id/voice-messages', async (req, res, next) => {
+  try {
+    const orgId = req.user.org_id;
+    const { rows } = await query(
+      `SELECT id, duration_ms, created_at
+       FROM guardian_voice_messages
+       WHERE device_id = $1 AND org_id = $2 AND direction = 'from_device'
+       ORDER BY created_at DESC
+       LIMIT 20`,
+      [req.params.id, orgId]
+    );
+    res.json({ data: rows });
+  } catch (err) { next(err); }
+});
+
+// GET /devices/:id/voice-messages/:msgId/audio — operator playback of a
+// from_device clip. Distinct path from guardian.js's device-token-authed
+// GET /voice-messages/:id/audio (dispatch->device direction) so the two
+// routers, both mounted at /api/v1/guardian, never collide.
+router.get('/devices/:id/voice-messages/:msgId/audio', async (req, res, next) => {
+  try {
+    const orgId = req.user.org_id;
+    const { rows } = await query(
+      `SELECT mime, audio FROM guardian_voice_messages
+       WHERE id = $1 AND device_id = $2 AND org_id = $3 AND direction = 'from_device'`,
+      [req.params.msgId, req.params.id, orgId]
+    );
+    const row = rows[0];
+    if (!row) return res.status(404).json({ error: 'Voice message not found' });
+    res.set('Content-Type', row.mime || 'audio/webm');
+    res.set('Cache-Control', 'private, max-age=3600');
+    res.send(row.audio);
+  } catch (err) { next(err); }
+});
+
 // POST /commands/broadcast
 router.post('/commands/broadcast', async (req, res, next) => {
   try {

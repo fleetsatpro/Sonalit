@@ -1,8 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { api } from '../../../lib/api.js'
 import type { LiveVehicle, LiveStatus } from '../types/fleet.js'
 
 const MAX_VOICE_MS = 60_000
+
+interface VoiceNote { id: string; duration_ms: number | null; created_at: string }
+
+function fmtNoteAge(iso: string): string {
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
+  if (s < 60) return 'just now'
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`
+  return `${Math.floor(s / 3600)}h ago`
+}
 
 const STATUS_COLOR: Record<LiveStatus, string> = {
   move: '#16c784', idle: '#f59e0b', stop: '#475569', offline: '#3e4252', sos: '#ef4444',
@@ -77,6 +87,18 @@ export default function DetailCard({ vehicle: v, onClose, trackedId, onToggleTra
   const recStartRef = useRef(0)
   // 'send' posts the clip; 'discard' just tears the recorder down
   const recIntentRef = useRef<'send' | 'discard'>('discard')
+  const [playingId, setPlayingId] = useState<string | null>(null)
+  const playerRef = useRef<HTMLAudioElement | null>(null)
+
+  const { data: voiceNotes } = useQuery<VoiceNote[]>({
+    queryKey: ['guardian-voice-notes', v?.id],
+    queryFn: async () => {
+      const r = await api.get<{ data: VoiceNote[] }>(`/guardian/devices/${v!.id}/voice-messages`)
+      return r.data.data ?? []
+    },
+    enabled: !!v && v.kind === 'guardian',
+    refetchInterval: 30_000,
+  })
 
   const stopRecorder = (intent: 'send' | 'discard') => {
     recIntentRef.current = intent
@@ -90,10 +112,14 @@ export default function DetailCard({ vehicle: v, onClose, trackedId, onToggleTra
   useEffect(() => {
     setMsgOpen(false); setMsgText(''); setAction({ kind: 'idle' })
     stopRecorder('discard')
+    playerRef.current?.pause()
+    setPlayingId(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [v?.id])
   // Tear down the mic if the card unmounts mid-recording
   useEffect(() => () => stopRecorder('discard'), [])
+  // Stop playback if the card unmounts mid-clip
+  useEffect(() => () => playerRef.current?.pause(), [])
 
   if (!v) return null
 
@@ -116,6 +142,21 @@ export default function DetailCard({ vehicle: v, onClose, trackedId, onToggleTra
 
   const onCall = () => {
     if (v.officer_phone) window.location.href = `tel:${v.officer_phone}`
+  }
+  const playNote = async (noteId: string) => {
+    if (playingId === noteId) { playerRef.current?.pause(); setPlayingId(null); return }
+    try {
+      const res = await api.get(`/guardian/devices/${v!.id}/voice-messages/${noteId}/audio`, { responseType: 'blob' })
+      const url = URL.createObjectURL(res.data as Blob)
+      if (!playerRef.current) playerRef.current = new Audio()
+      const player = playerRef.current
+      player.src = url
+      player.onended = () => { setPlayingId(null); URL.revokeObjectURL(url) }
+      await player.play()
+      setPlayingId(noteId)
+    } catch {
+      setAction({ kind: 'error', note: 'Failed to play voice note' })
+    }
   }
   const onMsg = () => { setMsgOpen(o => !o); setAction({ kind: 'idle' }) }
   const onAlert = () => {
@@ -321,6 +362,38 @@ export default function DetailCard({ vehicle: v, onClose, trackedId, onToggleTra
               {action.kind === 'busy' ? 'Sending…' : 'Send to device'}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* incoming voice notes — the officer's device recorded and sent these up;
+          reverse direction of the "Voice" recorder above, which sends dispatch's
+          own clip down to play on the device. */}
+      {isGuardian && !!voiceNotes?.length && (
+        <div style={{ padding: '0 10px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ fontSize: 9, color: '#3e4252', textTransform: 'uppercase', letterSpacing: '.08em' }}>
+            Voice notes from device
+          </div>
+          {voiceNotes.slice(0, 5).map(note => (
+            <div key={note.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderRadius: 6, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)' }}>
+              <button
+                onClick={() => void playNote(note.id)}
+                title={playingId === note.id ? 'Pause' : 'Play'}
+                style={{ width: 22, height: 22, flexShrink: 0, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: playingId === note.id ? 'rgba(232,168,48,.18)' : 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.1)', color: playingId === note.id ? '#e8a830' : '#7a7e8a' }}
+              >
+                {playingId === note.id ? (
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                ) : (
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4l14 8-14 8z"/></svg>
+                )}
+              </button>
+              <span style={{ fontSize: 10, fontFamily: 'IBM Plex Mono, monospace', color: '#9a9890' }}>
+                {note.duration_ms != null ? `${Math.round(note.duration_ms / 1000)}s` : '—'}
+              </span>
+              <span style={{ marginLeft: 'auto', fontSize: 9, color: '#6e6c64', fontFamily: 'IBM Plex Mono, monospace' }}>
+                {fmtNoteAge(note.created_at)}
+              </span>
+            </div>
+          ))}
         </div>
       )}
 

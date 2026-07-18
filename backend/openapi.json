@@ -1226,6 +1226,16 @@
         }
       }
     },
+    "/api/v1/guardian/voice-message": {
+      "post": {
+        "operationId": "post_api_v1_guardian_voice_message",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/location": {
       "post": {
         "operationId": "post_api_v1_guardian_location",
@@ -2401,6 +2411,26 @@
     "/api/v1/guardian/devices/{id}/voice-message": {
       "post": {
         "operationId": "post_api_v1_guardian_devices_id_voice_message",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/voice-messages": {
+      "get": {
+        "operationId": "get_api_v1_guardian_devices_id_voice_messages",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/voice-messages/{msgId}/audio": {
+      "get": {
+        "operationId": "get_api_v1_guardian_devices_id_voice_messages_msgId_audio",
         "responses": {
           "200": {
             "description": "OK"
