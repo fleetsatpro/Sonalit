@@ -462,11 +462,83 @@ async function runCommandExpiryJob() {
   }
 }
 
+// ─── Dead Man's Switch Monitor ───────────────────────────────────────────────
+// Server-authoritative DMS: a field officer's device sends periodic check-ins
+// (POST /checkin); if a device with DMS enabled goes past its timeout without
+// one, escalate to a silent SOS on its behalf. Doing this server-side (rather
+// than on the device) is what makes it a real dead-man's switch — it still
+// fires when the phone is destroyed, powered off, or out of signal, which is
+// exactly when the officer most needs it and a device-side timer never could.
+async function runDmsMonitorJob() {
+  try {
+    // Only devices that (a) have DMS on, (b) have actually checked in at least
+    // once since it was enabled (last_checkin_at NULL = no baseline, never
+    // fire blindly), (c) aren't temporarily suspended, and (d) are past their
+    // window. A NULL dms_timeout_minutes yields NULL here and is skipped.
+    const due = await query(
+      `SELECT id, org_id, name, last_lat, last_lng
+         FROM guardian_devices
+        WHERE dms_enabled = true
+          AND deleted_at IS NULL
+          AND panic_active = false
+          AND last_checkin_at IS NOT NULL
+          AND (dms_suspended_until IS NULL OR dms_suspended_until < NOW())
+          AND last_checkin_at < NOW() - (dms_timeout_minutes * INTERVAL '1 minute')`
+    );
+
+    for (const dev of due.rows) {
+      // Claim the device atomically: flip dms_enabled off (operator re-enables
+      // after resolving) and mark panic_active. The WHERE dms_enabled = true
+      // guard means only one monitor tick can win, so we never double-fire.
+      const claim = await query(
+        `UPDATE guardian_devices
+            SET dms_enabled = false, panic_active = true, updated_at = NOW()
+          WHERE id = $1 AND dms_enabled = true
+          RETURNING id`,
+        [dev.id]
+      );
+      if (!claim.rows.length) continue;
+
+      const eventUuid = uuidv4();
+      const ins = await query(
+        `INSERT INTO panic_events (event_uuid, device_id, org_id, mode, lat, lng, message, created_at)
+         VALUES ($1, $2, $3, 'silent', $4, $5, $6, NOW())
+         RETURNING id, created_at`,
+        [eventUuid, dev.id, dev.org_id ?? null, dev.last_lat ?? null, dev.last_lng ?? null,
+         "Dead Man's Switch: missed check-in"]
+      );
+      const row = ins.rows[0];
+
+      // Same payload shape the POST /panic handler publishes, so the dashboard's
+      // existing 'panic' realtime handler renders it identically.
+      const payload = {
+        type: 'panic',
+        panic_id: row.id,
+        event_uuid: eventUuid,
+        device_id: dev.id,
+        device_name: dev.name,
+        mode: 'silent',
+        lat: dev.last_lat ?? null,
+        lng: dev.last_lng ?? null,
+        message: "Dead Man's Switch: missed check-in",
+        created_at: row.created_at,
+        triggered_at: row.created_at,
+      };
+      if (dev.org_id) publish(`org#${dev.org_id}`, payload); else publish('device:panic', payload);
+      logger.warn(`DMS timeout PANIC: device=${dev.id} name="${dev.name}" org=${dev.org_id ?? 'unknown'}`);
+    }
+  } catch (err) {
+    logger.error(`DMS monitor job error: ${err.message}`);
+  }
+}
+
 // Run immediately on module load
 ensureTables().then(() => {
   // Start command expiry job after tables are ready
   runCommandExpiryJob();
   setInterval(runCommandExpiryJob, 10 * 60 * 1000); // every 10 minutes
+  runDmsMonitorJob();
+  setInterval(runDmsMonitorJob, 2 * 60 * 1000); // every 2 minutes
 });
 
 // ─── Device Auth Middleware ───────────────────────────────────────────────────
@@ -2220,6 +2292,10 @@ router.patch('/devices/:id/dms', authenticate, authorize('admin', 'dispatcher'),
     if (typeof dms_enabled === 'boolean') {
       sets.push(`dms_enabled = $${idx++}`);
       values.push(dms_enabled);
+      // Reset the check-in baseline when turning DMS on, so a stale
+      // last_checkin_at from an earlier session can't make the monitor fire an
+      // immediate timeout before the device has had a chance to check in.
+      if (dms_enabled) sets.push('last_checkin_at = NOW()');
     }
     if (dms_timeout_minutes !== undefined) {
       if (dms_timeout_minutes !== null && (dms_timeout_minutes < 1 || dms_timeout_minutes > 1440)) {
