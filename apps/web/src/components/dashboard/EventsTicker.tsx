@@ -38,15 +38,12 @@ const EventsTicker = React.memo(function EventsTicker() {
   return (
     <div
       style={{
-        // Sticky within AppShell's <main> scroll region, which starts below
-        // the Topbar — so 0 here is already flush under the topbar. Offsetting
-        // by --d-top-h double-counted the topbar and left a dead band above.
-        position: 'sticky',
-        top: 0,
-        zIndex: 190,
+        // Bottom rail of the command console — a fixed-height flex row, so
+        // no sticky positioning needed.
+        flexShrink: 0,
         height: 'var(--d-tick-h)',
         background: 'rgba(8,14,24,.95)',
-        borderBottom: '1px solid var(--d-rim)',
+        borderTop: '1px solid var(--d-rim)',
         overflow: 'hidden',
         maskImage: 'linear-gradient(90deg, transparent, black 3%, black 97%, transparent)',
         WebkitMaskImage: 'linear-gradient(90deg, transparent, black 3%, black 97%, transparent)',

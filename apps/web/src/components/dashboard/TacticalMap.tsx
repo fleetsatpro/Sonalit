@@ -252,7 +252,7 @@ function LegendDot({ color, label }: { color: string; label: string }) {
   );
 }
 
-const TacticalMap = React.memo(function TacticalMap() {
+const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: boolean }) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const mapReadyRef = useRef(false);
@@ -383,6 +383,16 @@ const TacticalMap = React.memo(function TacticalMap() {
     if (mapRef.current) setTimeout(() => mapRef.current?.resize(), 50);
   }, [expanded]);
 
+  // In fill mode the map's height tracks the console flex layout, so follow
+  // real container resizes (viewport changes, panel wrap) with map.resize().
+  useEffect(() => {
+    const el = mapContainer.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => mapRef.current?.resize());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // Escape key closes fullscreen
   useEffect(() => {
     if (!expanded) return;
@@ -392,7 +402,12 @@ const TacticalMap = React.memo(function TacticalMap() {
   }, [expanded]);
 
   return (
-    <div style={expanded ? { position: 'fixed', inset: 0, zIndex: 500, background: 'var(--d-void)', display: 'flex', flexDirection: 'column', padding: 0 } : { padding: '16px 16px 0' }}>
+    <div style={expanded
+      ? { position: 'fixed', inset: 0, zIndex: 500, background: 'var(--d-void)', display: 'flex', flexDirection: 'column', padding: 0 }
+      : fill
+        // Console hero mode: fill the pane, the map itself takes all slack.
+        ? { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, padding: '10px 14px 8px' }
+        : { padding: '16px 16px 0' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap', rowGap: 6, ...(expanded && { padding: '12px 16px 0' }) }}>
         <div style={{ width: 3, height: 14, background: 'var(--d-orange)', borderRadius: 2, flexShrink: 0 }} />
@@ -433,8 +448,8 @@ const TacticalMap = React.memo(function TacticalMap() {
       </div>
 
       {/* Map container */}
-      <div style={{ position: 'relative', borderRadius: expanded ? 0 : 12, overflow: 'hidden', border: '1px solid var(--d-rim2)', marginBottom: expanded ? 0 : 12, flex: expanded ? 1 : undefined }}>
-        <div ref={mapContainer} style={{ width: '100%', height: expanded ? '100%' : 420, background: 'var(--d-deep)', ...(expanded && { position: 'absolute', inset: 0 }) }} />
+      <div style={{ position: 'relative', borderRadius: expanded ? 0 : 12, overflow: 'hidden', border: '1px solid var(--d-rim2)', marginBottom: expanded ? 0 : fill ? 8 : 12, flex: expanded || fill ? 1 : undefined, minHeight: fill ? 240 : undefined }}>
+        <div ref={mapContainer} style={{ width: '100%', height: expanded || fill ? '100%' : 420, background: 'var(--d-deep)', ...(expanded && { position: 'absolute', inset: 0 }) }} />
 
         {/* Radar — own 160×160 square SVG so rings stay circular on all widths */}
         <div style={{ position: 'absolute', top: 8, left: 8, pointerEvents: 'none', width: 160, height: 160 }}>
@@ -507,7 +522,7 @@ const TacticalMap = React.memo(function TacticalMap() {
 
       {/* Vehicle chips */}
       {vehicles && vehicles.length > 0 && (
-        <div className='d-hscroll' style={{ marginBottom: 12, gap: 8, paddingBottom: 6 }}>
+        <div className='d-hscroll' style={{ marginBottom: fill ? 4 : 12, gap: 8, paddingBottom: 6, flexShrink: 0 }}>
           {vehicles.map(v => (
             <button key={v.id} onClick={() => setSelectedVehicle(v.id === selectedVehicleId ? null : v.id)}
               style={{ flex: '0 0 auto', scrollSnapAlign: 'start', padding: '6px 12px', background: v.id === selectedVehicleId ? 'var(--d-sg)' : 'var(--d-well)', border: `1px solid ${v.id === selectedVehicleId ? 'var(--d-sig)' : 'var(--d-rim2)'}`, borderRadius: 6, cursor: 'pointer', color: v.id === selectedVehicleId ? 'var(--d-sig)' : 'var(--d-t2)', fontSize: 11, fontFamily: 'IBM Plex Mono, monospace' }}
@@ -516,8 +531,9 @@ const TacticalMap = React.memo(function TacticalMap() {
         </div>
       )}
 
-      {/* Telemetry row */}
-      {selectedVehicle && (
+      {/* Telemetry row — per-vehicle detail lives on GPS Live in console
+          (fill) mode; home answers only "is anything wrong?" */}
+      {!fill && selectedVehicle && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', padding: '10px 12px', background: 'var(--d-well)', borderRadius: 8, border: '1px solid var(--d-rim2)' }}>
           <TelItem label='Speed' value={`${Math.round(selectedVehicle.speed_kmh)} km/h`} />
           <TelItem label='Status' value={selectedVehicle.status.toUpperCase()} color={selectedVehicle.status === 'alert' ? 'var(--d-fire)' : selectedVehicle.status === 'moving' ? 'var(--d-ok)' : 'var(--d-t3)'} />
@@ -526,7 +542,7 @@ const TacticalMap = React.memo(function TacticalMap() {
       )}
 
       {/* Gauges */}
-      {selectedVehicle && (
+      {!fill && selectedVehicle && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
           <Gauge label='SPEED' value={selectedVehicle.speed_kmh} max={120} unit='km/h' type='speed' />
           <Gauge label='FUEL' value={selectedVehicle.fuel_pct} max={100} unit='%' type='fuel' />
@@ -535,7 +551,7 @@ const TacticalMap = React.memo(function TacticalMap() {
         </div>
       )}
 
-      <FleetBars vehicles={vehicles ?? []} />
+      {!fill && <FleetBars vehicles={vehicles ?? []} />}
     </div>
   );
 });
