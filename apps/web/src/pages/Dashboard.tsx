@@ -77,7 +77,7 @@ export default function Dashboard() {
       <KPIStrip />
 
       {/* Command console — tactical map hero beside the live ops / priority queue */}
-      <div className='d-console-grid'>
+      <div className='d-console-row'>
         <div className='d-console-map'>
           <Suspense fallback={
             <div style={{ padding: 16 }}>
@@ -112,21 +112,30 @@ export default function Dashboard() {
       </div>
 
       <style>{`
-        .d-console-grid {
-          display: grid;
-          grid-template-columns: minmax(0, 1fr);
+        /* Map hero beside the priority-queue panel whenever there is room for
+           both; the panel wraps below the map (full-width) on narrow screens.
+           Flex-wrap instead of a media query so browser zoom / OS display
+           scaling can't silently drop the panel. */
+        .d-console-row {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: stretch;
+        }
+        .d-console-map {
+          flex: 1 1 560px;
+          min-width: 0;
+        }
+        .d-console-row > aside {
+          flex: 1 0 var(--d-sb-w);
+          max-width: 100%;
+        }
+        @media (min-width: 900px) {
+          .d-console-row > aside { flex: 0 0 var(--d-sb-w); }
         }
         .d-grid-2col {
           display: grid;
           grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
           gap: 14px;
-        }
-        @media (min-width: 1100px) {
-          /* Map hero on the left, priority queue panel on the right. */
-          .d-console-grid {
-            grid-template-columns: minmax(0, 1fr) var(--d-sb-w);
-            align-items: stretch;
-          }
         }
       `}</style>
     </div>
