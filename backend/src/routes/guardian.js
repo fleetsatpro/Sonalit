@@ -2255,6 +2255,76 @@ router.post('/checkin', deviceAuth, async (req, res, next) => {
   }
 });
 
+// ─── Dispatch-requested photo capture ("remote eyes") ────────────────────────
+// Lightweight substitute for the old Knox remote screen/control: a dispatcher
+// issues a capture_photo command, the device captures a still and uploads it to
+// R2 via the presigned PUT below, then reports the public URL. Device-token
+// auth only — unlike the CFO photo pipeline this carries no convoy/truck
+// context, it's a direct response to the command.
+
+/** POST /api/v1/guardian/capture-photo-url — presigned R2 PUT for one capture. */
+router.post('/capture-photo-url', deviceAuth, async (req, res, next) => {
+  try {
+    const { R2_ACCOUNT_ID, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET, R2_PUBLIC_URL } = process.env;
+    if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY || !R2_SECRET_KEY || !R2_BUCKET) {
+      return res.status(501).json({ error: 'Photo storage not configured on this server' });
+    }
+    if (!R2_PUBLIC_URL) {
+      return res.status(501).json({ error: 'Photo storage public URL (R2_PUBLIC_URL) not configured' });
+    }
+    let S3Client, PutObjectCommand, getSignedUrl;
+    try {
+      ({ S3Client, PutObjectCommand } = require('@aws-sdk/client-s3'));
+      ({ getSignedUrl } = require('@aws-sdk/s3-request-presigner'));
+    } catch {
+      return res.status(501).json({ error: 'Photo storage SDK not installed' });
+    }
+    const key = `captures/${req.device.id}/${uuidv4()}.jpg`;
+    const s3 = new S3Client({
+      region: 'auto',
+      endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      credentials: { accessKeyId: R2_ACCESS_KEY, secretAccessKey: R2_SECRET_KEY },
+    });
+    const command = new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, ContentType: 'image/jpeg' });
+    const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
+    res.json({ upload_url: uploadUrl, public_url: `${R2_PUBLIC_URL}/${key}`, key });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** POST /api/v1/guardian/capture-photo — device reports a completed capture.
+ *  Persisted org-scoped (explicit org_id, no RLS — same rationale as
+ *  guardian_voice_messages) and published to the org channel so Live Fleet
+ *  surfaces it live. */
+router.post('/capture-photo', deviceAuth, async (req, res, next) => {
+  try {
+    const { public_url, key, command_id } = req.body;
+    if (!public_url || typeof public_url !== 'string') {
+      return res.status(400).json({ error: 'public_url is required' });
+    }
+    const orgId = req.device.org_id || null;
+    const ins = await query(
+      `INSERT INTO guardian_captures (org_id, device_id, command_id, url, storage_key)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at`,
+      [orgId, req.device.id, command_id != null ? String(command_id) : null, public_url, key || null]
+    );
+    const row = ins.rows[0];
+    const payload = {
+      type: 'guardian_capture_photo',
+      device_id: req.device.id,
+      device_name: req.device.name,
+      capture_id: row.id,
+      url: public_url,
+      created_at: row.created_at,
+    };
+    if (orgId) publish(`org#${orgId}`, payload); else publish('device:capture', payload);
+    res.status(201).json({ id: row.id, created_at: row.created_at });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ─── Dead Man's Switch Admin ─────────────────────────────────────────────────
 
 /**
