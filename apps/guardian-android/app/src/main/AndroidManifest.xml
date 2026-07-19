@@ -49,6 +49,9 @@
     <!-- Vibrate for panic -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- Raise the alarm stream to max when a dispatcher triggers the siren -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
     <!-- Wake lock for background work -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 

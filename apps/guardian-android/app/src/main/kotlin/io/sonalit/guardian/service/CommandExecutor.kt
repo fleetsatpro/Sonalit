@@ -9,8 +9,12 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.MediaPlayer
+import android.media.RingtoneManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -74,7 +78,7 @@ class CommandExecutor @Inject constructor(
                 devicePolicyManager.lockNow()
                 true
             }
-            "trigger_siren" -> { vibrateAlert(); true }
+            "trigger_siren" -> { triggerSiren(parseSirenDuration(payload)); true }
             // Operator text from the dashboard (Live Fleet "Msg" action).
             // payload: {"text": "..."} — shown as a high-priority notification
             // plus the alert vibration so it lands even with the screen off.
@@ -108,7 +112,7 @@ class CommandExecutor @Inject constructor(
                 )
                 playVoiceMessage(url)
             }
-            "stop_siren" -> { stopVibrate(); true }
+            "stop_siren" -> { stopSiren(); true }
             "restart_app", "restart_agent" -> { restartGuardianService(); true }
             "clear_app_data" -> {
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return@runCatching false
@@ -215,6 +219,91 @@ class CommandExecutor @Inject constructor(
         nm.notify(("op-msg" + System.currentTimeMillis()).hashCode(), notification)
     }
 
+    // ── Audible siren ────────────────────────────────────────────────────────
+    // The old (guardian-agent) app played a looping alarm tone on the ALARM
+    // stream at max volume; the Compose rewrite reduced trigger_siren to a
+    // vibrate only, so a dispatcher-triggered "siren" made no sound at all.
+    // Restore the audible behaviour, reusing the same ALARM-stream MediaPlayer
+    // approach already used by playVoiceMessage() above. Held at class scope
+    // (this is a @Singleton) so stop_siren and the auto-stop timer can end it;
+    // @Synchronized guards the shared player against the several threads that
+    // can drive execute() (FCM service, HeartbeatWorker).
+    private var sirenPlayer: MediaPlayer? = null
+    private val sirenHandler = Handler(Looper.getMainLooper())
+    private var sirenStopCallback: Runnable? = null
+
+    /** Optional {"duration_seconds": N} in the command payload; defaults to 30. */
+    private fun parseSirenDuration(payload: String?): Int {
+        if (payload.isNullOrBlank()) return DEFAULT_SIREN_SECONDS
+        return runCatching {
+            val n = JSONObject(payload).optInt("duration_seconds", DEFAULT_SIREN_SECONDS)
+            n.coerceIn(1, MAX_SIREN_SECONDS)
+        }.getOrDefault(DEFAULT_SIREN_SECONDS)
+    }
+
+    @Synchronized
+    private fun triggerSiren(durationSeconds: Int) {
+        try {
+            // Best-effort max alarm volume; ignore if the OS/device denies it.
+            runCatching {
+                val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                am.setStreamVolume(
+                    AudioManager.STREAM_ALARM,
+                    am.getStreamMaxVolume(AudioManager.STREAM_ALARM),
+                    0,
+                )
+            }.onFailure { Log.w(TAG, "Could not set alarm volume: ${it.message}") }
+
+            val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+                ?: run {
+                    Log.e(TAG, "No alarm/ringtone URI available — vibrating only")
+                    vibrateAlert()
+                    return
+                }
+
+            stopSirenInternal() // clear any siren already running
+            sirenPlayer = MediaPlayer().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                setDataSource(context, alarmUri)
+                isLooping = true
+                setOnErrorListener { mp, what, extra ->
+                    Log.e(TAG, "siren playback error what=$what extra=$extra")
+                    mp.release(); if (sirenPlayer === mp) sirenPlayer = null; true
+                }
+                prepare()
+                start()
+            }
+            vibrateAlert()
+
+            // Auto-stop after the requested window (no lifecycleScope here).
+            sirenStopCallback = Runnable { stopSiren() }
+            sirenHandler.postDelayed(sirenStopCallback!!, durationSeconds.toLong() * 1000)
+            Log.i(TAG, "Siren triggered for ${durationSeconds}s")
+        } catch (e: Exception) {
+            Log.e(TAG, "Siren failed: ${e.message}")
+            vibrateAlert() // fall back to at least vibrating
+        }
+    }
+
+    @Synchronized
+    private fun stopSiren() {
+        stopSirenInternal()
+        stopVibrate()
+    }
+
+    private fun stopSirenInternal() {
+        sirenStopCallback?.let { sirenHandler.removeCallbacks(it) }
+        sirenStopCallback = null
+        sirenPlayer?.apply { runCatching { if (isPlaying) stop() }; release() }
+        sirenPlayer = null
+    }
+
     private fun vibrateAlert() {
         val pattern = longArrayOf(0, 400, 200, 400, 200, 400, 200, 400)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -247,6 +336,8 @@ class CommandExecutor @Inject constructor(
 
     companion object {
         private const val TAG = "CommandExecutor"
+        private const val DEFAULT_SIREN_SECONDS = 30
+        private const val MAX_SIREN_SECONDS = 300
 
         /** Command payloads must reach execute() as a JSON string. Older
          *  backends returned the payload as a nested object over the poll/
