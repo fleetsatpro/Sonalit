@@ -3,31 +3,21 @@ import { api } from '../lib/api.js';
 import { useDashboardStore } from '../stores/dashboardStore.js';
 import '../styles/dashboard.css';
 
-import { useEffect, useRef, Suspense, lazy } from 'react';
+import { Suspense, lazy } from 'react';
 import EventsTicker from '../components/dashboard/EventsTicker.js';
-import ThreatStrip from '../components/dashboard/ThreatStrip.js';
-import OpsSidebar from '../components/dashboard/OpsSidebar.js';
-import KPIStrip from '../components/dashboard/KPIStrip.js';
+import InstrumentBar from '../components/dashboard/InstrumentBar.js';
+import PriorityQueue from '../components/dashboard/PriorityQueue.js';
 const TacticalMap = lazy(() => import('../components/dashboard/TacticalMap.js'));
-import AlertCards from '../components/dashboard/AlertCards.js';
-import ConvoyTracker from '../components/dashboard/ConvoyTracker.js';
-import RouteRiskIntelligence from '../components/dashboard/RouteRiskIntelligence.js';
-import DriverBehavior from '../components/dashboard/DriverBehavior.js';
-import BorderCrossings from '../components/dashboard/BorderCrossings.js';
-import PerformanceChart from '../components/dashboard/PerformanceChart.js';
-import AIIntelligence from '../components/dashboard/AIIntelligence.js';
-import WeatherIntelligence from '../components/dashboard/WeatherIntelligence.js';
-import PanicCenter from '../components/dashboard/PanicCenter.js';
-import MissionTimeline from '../components/dashboard/MissionTimeline.js';
-import CommunicationsStatus from '../components/dashboard/CommunicationsStatus.js';
-import QuickActions from '../components/dashboard/QuickActions.js';
-import IncidentLog from '../components/dashboard/IncidentLog.js';
 import type { DashboardOverview } from '../stores/dashboardStore.js';
 
+// Command console: a tactical single pane. The living map is the hero, one
+// instrument bar on top, one urgency-ranked priority queue on the right, the
+// events ticker along the bottom. Analytics detail (driver behaviour,
+// weather, performance charts, ...) lives on its own pages — home answers
+// only "is anything wrong, and where?".
 export default function Dashboard() {
   const { setOverview } = useDashboardStore.getState();
 
-  // Fetch overview data
   useQuery({
     queryKey: ['dashboard-overview'],
     queryFn: async () => {
@@ -41,101 +31,52 @@ export default function Dashboard() {
     refetchInterval: 60000,
   });
 
-  // Realtime subscription + panic alarm are wired globally in AppShell now
+  // Realtime subscription + panic alarm are wired globally in AppShell
   // (GlobalPanicAlarm) so they stay active on every route, not just here.
 
-  const mainRef = useRef<HTMLDivElement>(null);
-
-  // Staggered section reveals for the analytics deck below the console —
-  // kept behaviourally identical to the previous IntersectionObserver.
-  useEffect(() => {
-    const io = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            (entry.target as HTMLElement).classList.add('vis');
-            io.unobserve(entry.target);
-          }
-        });
-      },
-      { threshold: 0.07 },
-    );
-    const observeNew = () => {
-      mainRef.current?.querySelectorAll('.d-section-reveal:not(.vis)').forEach((el) => io.observe(el));
-    };
-    observeNew();
-    const mo = new MutationObserver(observeNew);
-    if (mainRef.current) mo.observe(mainRef.current, { childList: true, subtree: true });
-    return () => { io.disconnect(); mo.disconnect(); };
-  }, []);
-
   return (
-    <div ref={mainRef} className='d-console-scope' style={{ background: 'var(--d-void)' }}>
-      {/* Instrument band — live feed ticker, threat status, KPI tiles */}
-      <EventsTicker />
-      <ThreatStrip />
-      <KPIStrip />
+    <div className='d-console' style={{ background: 'var(--d-void)', display: 'flex', flexDirection: 'column' }}>
+      <InstrumentBar />
 
-      {/* Command console — tactical map hero beside the live ops / priority queue */}
-      <div className='d-console-row'>
+      <div className='d-console-main'>
         <div className='d-console-map'>
           <Suspense fallback={
-            <div style={{ padding: 16 }}>
-              <div style={{ height: 420, background: 'var(--d-well)', borderRadius: 12, border: '1px solid var(--d-rim2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div style={{ fontSize: 12, color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace' }}>Loading tactical map…</div>
-              </div>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 320 }}>
+              <div style={{ fontSize: 12, color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace' }}>Loading tactical map…</div>
             </div>
           }>
-            <TacticalMap />
+            <TacticalMap fill />
           </Suspense>
         </div>
-        <OpsSidebar inline />
+        <PriorityQueue />
       </div>
 
-      {/* Analytics deck — full operational detail below the console fold */}
-      <div className='d-analytics-deck' style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '14px 16px 24px' }}>
-        <AlertCards />
-        <ConvoyTracker />
-        <div className='d-grid-2col'>
-          <RouteRiskIntelligence />
-          <DriverBehavior />
-          <BorderCrossings />
-          <PanicCenter />
-          <AIIntelligence />
-          <QuickActions />
-        </div>
-        <MissionTimeline />
-        <WeatherIntelligence />
-        <PerformanceChart />
-        <CommunicationsStatus />
-        <IncidentLog />
-      </div>
+      <EventsTicker />
 
       <style>{`
-        /* Map hero beside the priority-queue panel whenever there is room for
-           both; the panel wraps below the map (full-width) on narrow screens.
-           Flex-wrap instead of a media query so browser zoom / OS display
-           scaling can't silently drop the panel. */
-        .d-console-row {
+        .d-console-main {
+          flex: 1;
+          min-height: 0;
           display: flex;
-          flex-wrap: wrap;
-          align-items: stretch;
         }
         .d-console-map {
           flex: 1 1 560px;
           min-width: 0;
+          display: flex;
+          flex-direction: column;
+          min-height: 0;
         }
-        .d-console-row > aside {
-          flex: 1 0 var(--d-sb-w);
-          max-width: 100%;
+        .d-console-queue { flex: 0 0 340px; max-width: 100%; }
+        /* Single-viewport pane on desktop: the console owns the height and
+           the map/queue scroll internally. On narrow screens fall back to a
+           normal flowing page — map first, queue below, page scrolls. */
+        @media (min-width: 1000px) {
+          .d-console { height: 100%; }
         }
-        @media (min-width: 900px) {
-          .d-console-row > aside { flex: 0 0 var(--d-sb-w); }
-        }
-        .d-grid-2col {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-          gap: 14px;
+        @media (max-width: 999px) {
+          .d-console-main { flex-direction: column; }
+          .d-console-map { min-height: 380px; }
+          .d-console-queue { flex: 1 1 auto; border-left: none; border-top: 1px solid var(--d-rim2); }
         }
       `}</style>
     </div>
