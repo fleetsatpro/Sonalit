@@ -125,6 +125,7 @@ data class PhotoUploadUrlRequest(
     val report_date: String,
 )
 data class PhotoUploadUrlResponse(val upload_url: String, val public_url: String, val key: String)
+data class CapturePhotoUrlResponse(val upload_url: String, val public_url: String, val key: String)
 
 data class CommitPhotoRequest(
     val event_uuid: String,
@@ -180,6 +181,16 @@ interface GuardianApi {
      *  once check-ins actually stop (device dark past its DMS timeout). */
     @POST("guardian/checkin")
     suspend fun checkin(): Map<String, Any>
+
+    /** Presigns a one-shot R2 PUT for a capture_photo command (the covert
+     *  "remote eyes" Knox substitute). Device-token auth via the interceptor. */
+    @POST("guardian/capture-photo-url")
+    suspend fun capturePhotoUrl(): CapturePhotoUrlResponse
+
+    /** Reports a completed capture so dispatch sees it in Live Fleet.
+     *  Body: { public_url, key, command_id? }. */
+    @POST("guardian/capture-photo")
+    suspend fun capturePhoto(@Body body: Map<String, String>): Map<String, Any>
 
     @POST("guardian/ack-command")
     suspend fun ackCommand(@Body body: Map<String, String>): Map<String, String>

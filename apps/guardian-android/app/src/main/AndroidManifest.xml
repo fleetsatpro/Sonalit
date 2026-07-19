@@ -16,6 +16,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Camera FGS for covert capture_photo (dispatcher "remote eyes") -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
 
     <!-- Activity Recognition -->
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
@@ -156,6 +158,15 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <!-- Covert photo capture — reaches the camera from the background in
+             response to a dispatcher capture_photo command. Camera FGS type is
+             required to use the camera outside the foreground. exported=false:
+             only CommandExecutor starts it. -->
+        <service
+            android:name=".service.PhotoCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="camera" />
 
         <!-- Voice panic trigger — listens offline (Vosk) for "PAN PAN PAN" and
              launches PanicActivity, same as VolumeKeySOSReceiver. Opt-in only:
