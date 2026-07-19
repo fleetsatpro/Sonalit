@@ -92,7 +92,12 @@ const AppShell = React.memo(function AppShell() {
           // 100dvh (not 100vh) so mobile browser chrome showing/hiding
           // doesn't over- or under-size this against the visual viewport.
           height: '100dvh',
-          width: '100%',
+          // width intentionally left auto: the desktop rail is position:fixed
+          // and this column clears it with margin-left. An explicit 100% here
+          // means 100% of the viewport PLUS that margin, shoving the right
+          // edge (and anything laid out against it) 232px off-screen. Block
+          // auto-width resolves to viewport minus margins, which is what the
+          // layout actually wants.
           minWidth: 0,
           overflowX: 'clip',
           background: 'var(--d-void)',
