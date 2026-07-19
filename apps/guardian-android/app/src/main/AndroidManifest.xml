@@ -120,6 +120,15 @@
             android:launchMode="singleInstance"
             android:theme="@style/Theme.GuardianApp" />
 
+        <!-- Officer-tap fallback for capture_photo (opened from the notification
+             CommandExecutor posts when the covert capture service can't run). -->
+        <activity
+            android:name=".ui.capture.CaptureRequestActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:theme="@style/Theme.GuardianApp" />
+
         <!-- Enrollment Activity alias for deep link -->
         <activity-alias
             android:name=".EnrollmentAlias"
