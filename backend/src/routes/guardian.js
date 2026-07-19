@@ -450,6 +450,16 @@ async function runCommandExpiryJob() {
   } catch (err) {
     logger.error(`Command expiry job error: ${err.message}`);
   }
+
+  // Purge replay-protection nonces past their 24h window. The
+  // cleanup_command_nonces() function (migration 002) was defined but never
+  // invoked, so guardian_command_nonces grew unbounded. Guarded separately so a
+  // failure here never blocks command expiry above.
+  try {
+    await query('SELECT cleanup_command_nonces()');
+  } catch (err) {
+    logger.error(`Nonce cleanup job error: ${err.message}`);
+  }
 }
 
 // Run immediately on module load
