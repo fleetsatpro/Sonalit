@@ -118,8 +118,13 @@ const authRefreshLimiter = rateLimit({ windowMs: 900_000, max: 30, standardHeade
 app.use("/api/v1/auth/login", authLoginLimiter);
 app.use("/api/v1/auth/refresh", authRefreshLimiter);
 
-// Body parser AFTER rate limit
-app.use(express.json({ limit: "64kb" }));
+// Body parser AFTER rate limit. Capture the raw body so HMAC webhook signature
+// checks (e.g. the WhatsApp webhook's X-Hub-Signature-256 verification) can hash
+// exactly what was received — express.json otherwise discards it.
+app.use(express.json({
+  limit: "64kb",
+  verify: (req, _res, buf) => { req.rawBody = buf; },
+}));
 app.use(responseEnvelope);
 app.use(express.urlencoded({ extended: true }));
 app.use(csrf);
@@ -253,6 +258,16 @@ app.use("/api/v1/sync", (req, res) => res.json({ ok: true, processed: 0 }));
 // path the base guardian.js router doesn't own, like /guardian/cfo/login) and
 // reject it with 401 "Missing or malformed Authorization header" before it
 // could ever reach the router that actually owned that path.
+// broadcast.js (convoy broadcast + WhatsApp webhook/settings/inbound) defines
+// absolute paths (/guardian/whatsapp/webhook, /canned-messages, /settings/whatsapp,
+// /convoys/:id/broadcast) so it mounts at the /api/v1 root — but BEFORE claims
+// below, whose unconditional authenticate would otherwise 401 the unauthenticated
+// webhook. It was previously never mounted at all, so the whole feature (and the
+// Meta webhook) was dead. Its own /whatsapp/webhook falls through the earlier
+// /api/v1/guardian routers (which don't define it) to here.
+try { app.use("/api/v1", require("./routes/broadcast")); logger.info("Route loaded: /api/v1 (broadcast/whatsapp)"); }
+catch (e) { logger.warn("Broadcast route failed: " + e.message); }
+
 try { app.use("/api/v1", require("./routes/claims")); logger.info("Route loaded: /api/v1 (claims)"); }
 catch (e) { logger.warn("Claims route failed: " + e.message); }
 
