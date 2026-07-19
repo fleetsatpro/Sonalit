@@ -15,7 +15,7 @@ export interface DashboardOverview {
     guards_active: number;
   };
   next_delivery: { convoy_id: string; convoy_name: string; eta: string } | null;
-  shift_started_at: string;
+  shift_started_at: string | null;
 }
 
 export interface VehiclePosition {

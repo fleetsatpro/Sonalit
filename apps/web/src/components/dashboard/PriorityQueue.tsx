@@ -28,6 +28,13 @@ function chipFor(type: string, severity?: string): Chip {
   return { label: 'EVENT', hue: '255,178,62' };
 }
 
+// Alerts written before vehicle labels were fixed embed raw UUIDs in their
+// text; shorten any UUID to its first 8 chars so old rows stay readable.
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+function shortenIds(text: string): string {
+  return text.replace(UUID_RE, (m) => m.slice(0, 8));
+}
+
 function relTime(iso: string): string {
   const sec = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
   if (sec < 60) return `${Math.max(sec, 0)}s`;
@@ -97,10 +104,10 @@ const PriorityQueue = React.memo(function PriorityQueue() {
     ...alerts.map((a): QueueItem => ({
       id: `a-${a.id}`,
       chip: chipFor(a.type, a.severity),
-      title: a.title,
+      title: shortenIds(a.title),
       // Some alert types mirror the title into summary — showing both would
       // print the same sentence twice on the card.
-      ...(a.summary && a.summary.trim() !== a.title.trim() ? { body: a.summary } : {}),
+      ...(a.summary && a.summary.trim() !== a.title.trim() ? { body: shortenIds(a.summary) } : {}),
       at: a.occurred_at,
       rank: SEV_RANK[a.severity] ?? 3,
       ...(!a.acknowledged ? { ackId: a.id } : {}),
@@ -110,7 +117,7 @@ const PriorityQueue = React.memo(function PriorityQueue() {
       .map((f): QueueItem => ({
         id: `f-${f.id}`,
         chip: chipFor(f.type, f.severity),
-        title: f.message,
+        title: shortenIds(f.message),
         at: f.timestamp,
         rank: SEV_RANK[f.severity ?? f.type] ?? 3,
       })),
