@@ -1438,6 +1438,26 @@
         }
       }
     },
+    "/api/v1/guardian/capture-photo-url": {
+      "post": {
+        "operationId": "post_api_v1_guardian_capture_photo_url",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/capture-photo": {
+      "post": {
+        "operationId": "post_api_v1_guardian_capture_photo",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/devices/{id}/dms": {
       "get": {
         "operationId": "get_api_v1_guardian_devices_id_dms",
@@ -2421,6 +2441,16 @@
     "/api/v1/guardian/devices/{id}/voice-messages": {
       "get": {
         "operationId": "get_api_v1_guardian_devices_id_voice_messages",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/captures": {
+      "get": {
+        "operationId": "get_api_v1_guardian_devices_id_captures",
         "responses": {
           "200": {
             "description": "OK"

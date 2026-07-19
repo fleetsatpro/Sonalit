@@ -6,6 +6,7 @@ import type { LiveVehicle, LiveStatus } from '../types/fleet.js'
 const MAX_VOICE_MS = 60_000
 
 interface VoiceNote { id: string; duration_ms: number | null; created_at: string }
+interface Capture { id: string; url: string; created_at: string }
 
 function fmtNoteAge(iso: string): string {
   const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
@@ -94,6 +95,16 @@ export default function DetailCard({ vehicle: v, onClose, trackedId, onToggleTra
     queryKey: ['guardian-voice-notes', v?.id],
     queryFn: async () => {
       const r = await api.get<{ data: VoiceNote[] }>(`/guardian/devices/${v!.id}/voice-messages`)
+      return r.data.data ?? []
+    },
+    enabled: !!v && v.kind === 'guardian',
+    refetchInterval: 30_000,
+  })
+
+  const { data: captures } = useQuery<Capture[]>({
+    queryKey: ['guardian-captures', v?.id],
+    queryFn: async () => {
+      const r = await api.get<{ data: Capture[] }>(`/guardian/devices/${v!.id}/captures`)
       return r.data.data ?? []
     },
     enabled: !!v && v.kind === 'guardian',
@@ -394,6 +405,36 @@ export default function DetailCard({ vehicle: v, onClose, trackedId, onToggleTra
               </span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* photos the device captured in response to a capture_photo command
+          (the lightweight "remote eyes" substitute for Knox screen share).
+          R2 public URLs, so they render directly; tap to open full-size. */}
+      {isGuardian && !!captures?.length && (
+        <div style={{ padding: '0 10px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ fontSize: 9, color: '#3e4252', textTransform: 'uppercase', letterSpacing: '.08em' }}>
+            Captured photos
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
+            {captures.slice(0, 8).map(cap => (
+              <a
+                key={cap.id}
+                href={cap.url}
+                target="_blank"
+                rel="noreferrer"
+                title={fmtNoteAge(cap.created_at)}
+                style={{ display: 'block', aspectRatio: '1', borderRadius: 6, overflow: 'hidden', border: '1px solid rgba(255,255,255,.08)' }}
+              >
+                <img
+                  src={cap.url}
+                  alt={`Capture ${fmtNoteAge(cap.created_at)}`}
+                  loading="lazy"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                />
+              </a>
+            ))}
+          </div>
         </div>
       )}
 

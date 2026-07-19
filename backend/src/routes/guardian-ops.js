@@ -15,7 +15,7 @@ router.use(authenticate);
 // play_voice_message: play a dispatch voice recording out loud on the device
 // (the Live Fleet "Voice" action) — payload: { voice_id, url, duration_ms };
 // issued by POST /devices/:id/voice-message below, which stores the audio.
-const VALID_COMMANDS = ['request_location', 'trigger_siren', 'lock_screen', 'force_checkin', 'restart_app', 'clear_app_data', 'remote_wipe', 'show_message', 'play_voice_message'];
+const VALID_COMMANDS = ['request_location', 'trigger_siren', 'lock_screen', 'force_checkin', 'restart_app', 'clear_app_data', 'remote_wipe', 'show_message', 'play_voice_message', 'capture_photo'];
 
 const DEFAULT_ALERT_RULES = [
   { name: 'Battery Low', trigger: 'battery_low', threshold: 15, action: 'notify', enabled: true },
@@ -325,6 +325,24 @@ router.get('/devices/:id/voice-messages', async (req, res, next) => {
        WHERE device_id = $1 AND org_id = $2 AND direction = 'from_device'
        ORDER BY created_at DESC
        LIMIT 20`,
+      [req.params.id, orgId]
+    );
+    res.json({ data: rows });
+  } catch (err) { next(err); }
+});
+
+// GET /devices/:id/captures — photos this device captured in response to
+// capture_photo commands (see POST /guardian/capture-photo in guardian.js).
+// No RLS on guardian_captures (migration 064), so org scoping is explicit.
+router.get('/devices/:id/captures', async (req, res, next) => {
+  try {
+    const orgId = req.user.org_id;
+    const { rows } = await query(
+      `SELECT id, url, command_id, created_at
+       FROM guardian_captures
+       WHERE device_id = $1 AND org_id = $2
+       ORDER BY created_at DESC
+       LIMIT 30`,
       [req.params.id, orgId]
     );
     res.json({ data: rows });
