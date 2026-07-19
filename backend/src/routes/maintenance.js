@@ -1,8 +1,14 @@
 const router = require('express').Router();
 const { authenticate, authorize } = require('../middleware/auth');
-const { query } = require('../config/database');
 
 router.use(authenticate);
+
+// All queries go through req.db (authenticate → attachOrgDb), which runs as the
+// non-owner sonalit_app role with app.current_org_id set so the org_isolation
+// RLS policy on maintenance_records (migration 063) scopes rows to the caller's
+// org. Previously these ran through the raw pooled query() as the table owner
+// with no org filter — any authenticated user could read or update any org's
+// maintenance history by id.
 
 router.get('/', async (req, res, next) => {
   try {
@@ -13,7 +19,7 @@ router.get('/', async (req, res, next) => {
     if (status) { params.push(status); filters.push(`mr.status=$${params.length}`); }
     if (priority) { params.push(priority); filters.push(`mr.priority=$${params.length}`); }
     params.push(limit);
-    const result = await query(
+    const result = await req.db(
       `SELECT mr.*, v.registration, v.type, v.region FROM maintenance_records mr
        JOIN vehicles v ON v.id=mr.vehicle_id
        WHERE ${filters.join(' AND ')}
@@ -29,10 +35,10 @@ router.post('/', authorize('admin', 'dispatcher', 'operator'), async (req, res, 
   try {
     const { vehicle_id, type, title, description, priority = 'medium', cost, workshop, scheduled_at, next_service_km } = req.body;
     if (!vehicle_id || !type || !title) return res.status(400).json({ error: 'vehicle_id, type, title required' });
-    const result = await query(
-      `INSERT INTO maintenance_records (vehicle_id, type, title, description, priority, cost, workshop, scheduled_at, next_service_km, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [vehicle_id, type, title, description, priority, cost, workshop, scheduled_at, next_service_km, req.user.id]
+    const result = await req.db(
+      `INSERT INTO maintenance_records (vehicle_id, type, title, description, priority, cost, workshop, scheduled_at, next_service_km, created_by, org_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+      [vehicle_id, type, title, description, priority, cost, workshop, scheduled_at, next_service_km, req.user.id, req.user.org_id]
     );
     res.status(201).json({ data: result.rows[0] });
   } catch (err) { next(err); }
@@ -41,7 +47,7 @@ router.post('/', authorize('admin', 'dispatcher', 'operator'), async (req, res, 
 router.patch('/:id', async (req, res, next) => {
   try {
     const { status, cost, completed_at, notes, technician } = req.body;
-    const result = await query(
+    const result = await req.db(
       `UPDATE maintenance_records SET
         status=COALESCE($1,status), cost=COALESCE($2,cost),
         completed_at=COALESCE($3,completed_at), notes=COALESCE($4,notes),
@@ -51,7 +57,7 @@ router.patch('/:id', async (req, res, next) => {
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Maintenance record not found' });
     if (status === 'completed') {
-      await query('UPDATE vehicles SET last_service_date=NOW(), maintenance_score=0 WHERE id=(SELECT vehicle_id FROM maintenance_records WHERE id=$1)', [req.params.id]);
+      await req.db('UPDATE vehicles SET last_service_date=NOW(), maintenance_score=0 WHERE id=(SELECT vehicle_id FROM maintenance_records WHERE id=$1)', [req.params.id]);
     }
     res.json({ data: result.rows[0] });
   } catch (err) { next(err); }
@@ -60,7 +66,7 @@ router.patch('/:id', async (req, res, next) => {
 // GET /maintenance/overdue
 router.get('/overdue', async (req, res, next) => {
   try {
-    const result = await query(`
+    const result = await req.db(`
       SELECT mr.*, v.registration, v.region FROM maintenance_records mr
       JOIN vehicles v ON v.id=mr.vehicle_id
       WHERE mr.status IN ('scheduled','in_progress')
