@@ -38,8 +38,11 @@ const EventsTicker = React.memo(function EventsTicker() {
   return (
     <div
       style={{
+        // Sticky within AppShell's <main> scroll region, which starts below
+        // the Topbar — so 0 here is already flush under the topbar. Offsetting
+        // by --d-top-h double-counted the topbar and left a dead band above.
         position: 'sticky',
-        top: 'var(--d-top-h)',
+        top: 0,
         zIndex: 190,
         height: 'var(--d-tick-h)',
         background: 'rgba(8,14,24,.95)',
