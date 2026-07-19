@@ -35,6 +35,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import io.sonalit.guardian.data.local.DispatchMessageDao
 import io.sonalit.guardian.data.local.DispatchMessageEntity
 import io.sonalit.guardian.receiver.GuardianDeviceAdminReceiver
+import io.sonalit.guardian.ui.capture.CaptureRequestActivity
 import io.sonalit.guardian.worker.SyncWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -88,10 +89,15 @@ class CommandExecutor @Inject constructor(
                     ?.takeIf { it.isNotBlank() } ?: "back"
                 val intent = Intent(context, PhotoCaptureService::class.java)
                     .putExtra(PhotoCaptureService.EXTRA_LENS, lens)
-                runCatching {
+                val started = runCatching {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
                     else context.startService(intent)
                 }.isSuccess
+                // Android 12+ can reject a background camera-FGS start; when the
+                // covert path can't run, fall back to a tap-to-capture request
+                // the officer completes on screen (CaptureRequestActivity).
+                if (!started) postCaptureRequestNotification()
+                true
             }
             // Operator text from the dashboard (Live Fleet "Msg" action).
             // payload: {"text": "..."} — shown as a high-priority notification
@@ -231,6 +237,32 @@ class CommandExecutor @Inject constructor(
             .setAutoCancel(true)
             .build()
         nm.notify(("op-msg" + System.currentTimeMillis()).hashCode(), notification)
+    }
+
+    /** Fallback for capture_photo when the covert service can't start: a
+     *  high-priority notification the officer taps to capture on screen. */
+    private fun postCaptureRequestNotification() {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            nm.createNotificationChannel(
+                NotificationChannel("capture_request", "Dispatch Requests", NotificationManager.IMPORTANCE_HIGH)
+            )
+        }
+        val contentIntent = PendingIntent.getActivity(
+            context, 0,
+            Intent(context, CaptureRequestActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(context, "capture_request")
+            .setContentTitle("Dispatch requested a photo")
+            .setContentText("Tap to capture and send")
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setContentIntent(contentIntent)
+            .setAutoCancel(true)
+            .build()
+        nm.notify("capture-request".hashCode(), notification)
     }
 
     // ── Audible siren ────────────────────────────────────────────────────────
