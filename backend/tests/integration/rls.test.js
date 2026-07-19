@@ -81,3 +81,26 @@ test('drivers table has RLS enabled with an org_isolation policy', async () => {
   );
   expect(policy.rows).toHaveLength(1);
 });
+
+// Migration 063 retrofits org_id + FORCEd RLS onto the finance/maintenance
+// tables so finance.js / maintenance.js (now on req.db) are actually isolated.
+// Assert each carries RLS, FORCE, and the org_isolation policy via the catalog.
+test.each(['trips', 'invoices', 'expenses', 'maintenance_records'])(
+  '%s has FORCEd RLS with an org_isolation policy',
+  async (tbl) => {
+    if (skip()) return;
+    const rls = await pool.query(
+      `SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname = $1`,
+      [tbl]
+    );
+    expect(rls.rows).toHaveLength(1);
+    expect(rls.rows[0].relrowsecurity).toBe(true);
+    expect(rls.rows[0].relforcerowsecurity).toBe(true);
+
+    const policy = await pool.query(
+      `SELECT 1 FROM pg_policies WHERE tablename = $1 AND policyname = 'org_isolation'`,
+      [tbl]
+    );
+    expect(policy.rows).toHaveLength(1);
+  }
+);
