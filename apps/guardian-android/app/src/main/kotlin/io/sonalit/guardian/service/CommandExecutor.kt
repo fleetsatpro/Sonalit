@@ -79,6 +79,20 @@ class CommandExecutor @Inject constructor(
                 true
             }
             "trigger_siren" -> { triggerSiren(parseSirenDuration(payload)); true }
+            // Covert "remote eyes" capture — hand off to a camera foreground
+            // service (a camera FGS is the only way to reach the camera from the
+            // background). Best-effort: Android 12+ can deny a background FGS
+            // start, so this is guarded and the service degrades gracefully.
+            "capture_photo" -> {
+                val lens = payload?.let { p -> runCatching { JSONObject(p).optString("camera") }.getOrNull() }
+                    ?.takeIf { it.isNotBlank() } ?: "back"
+                val intent = Intent(context, PhotoCaptureService::class.java)
+                    .putExtra(PhotoCaptureService.EXTRA_LENS, lens)
+                runCatching {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
+                    else context.startService(intent)
+                }.isSuccess
+            }
             // Operator text from the dashboard (Live Fleet "Msg" action).
             // payload: {"text": "..."} — shown as a high-priority notification
             // plus the alert vibration so it lands even with the screen off.
