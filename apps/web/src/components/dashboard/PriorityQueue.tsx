@@ -98,7 +98,9 @@ const PriorityQueue = React.memo(function PriorityQueue() {
       id: `a-${a.id}`,
       chip: chipFor(a.type, a.severity),
       title: a.title,
-      ...(a.summary ? { body: a.summary } : {}),
+      // Some alert types mirror the title into summary — showing both would
+      // print the same sentence twice on the card.
+      ...(a.summary && a.summary.trim() !== a.title.trim() ? { body: a.summary } : {}),
       at: a.occurred_at,
       rank: SEV_RANK[a.severity] ?? 3,
       ...(!a.acknowledged ? { ackId: a.id } : {}),
