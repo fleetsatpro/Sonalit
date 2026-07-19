@@ -175,6 +175,12 @@ interface GuardianApi {
     @POST("guardian/panic/cancel")
     suspend fun cancelPanic(): Map<String, Any>
 
+    /** Resets the server-side Dead Man's Switch timer (last_checkin_at). Sent
+     *  while the device is alive so the server only escalates to a silent SOS
+     *  once check-ins actually stop (device dark past its DMS timeout). */
+    @POST("guardian/checkin")
+    suspend fun checkin(): Map<String, Any>
+
     @POST("guardian/ack-command")
     suspend fun ackCommand(@Body body: Map<String, String>): Map<String, String>
 

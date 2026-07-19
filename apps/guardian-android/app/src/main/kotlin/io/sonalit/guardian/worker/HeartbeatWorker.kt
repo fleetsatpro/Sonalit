@@ -76,6 +76,11 @@ class HeartbeatWorker @AssistedInject constructor(
                 fcm_token = resolveFcmToken(),
             ))
             statusStore.recordSuccess()
+            // Reset the server-side Dead Man's Switch timer while we're alive.
+            // Guarded so a check-in failure never fails the heartbeat itself;
+            // if check-ins stop (device dark), the server escalates to a silent
+            // SOS once the DMS timeout passes.
+            runCatching { api.checkin() }
             // Fallback delivery path for commands FCM couldn't wake the device for —
             // the heartbeat only ever hands back commands it just marked 'sent', so
             // this is the one chance to execute+ack them if the push never arrived.
