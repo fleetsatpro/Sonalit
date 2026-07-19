@@ -11,6 +11,8 @@ const Joi = require('joi');
 const { authenticate } = require('../middleware/auth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { withOrg } = require('../utils/orgScopedDb');
+const { query } = require('../config/database');
+const { publish } = require('../realtime/centrifugo');
 const { sendWhatsAppMessage, verifyWebhookSignature } = require('../utils/whatsapp');
 const { asyncHandler } = require('../middleware/error');
 const { auditLog } = require('../middleware/audit');
@@ -40,14 +42,58 @@ router.post('/guardian/whatsapp/webhook', asyncHandler(async (req, res) => {
     return res.status(401).json({ error: 'Invalid webhook signature' });
   }
 
-  // Process inbound messages — log for now, extensible for auto-reply flows
+  // Persist inbound messages (previously only logged, then dropped) and push
+  // them live to the owning org's dashboard.
   const body = req.body;
   if (body?.entry) {
     for (const entry of body.entry) {
       for (const change of (entry.changes ?? [])) {
-        const messages = change.value?.messages ?? [];
+        const value = change.value ?? {};
+        const messages = value.messages ?? [];
+        if (!messages.length) continue;
+
+        const phoneNumberId = value.metadata?.phone_number_id ?? null;
+        // Resolve which org owns the receiving business number. The raw pooled
+        // connection runs as the superuser role, which bypasses whatsapp_config's
+        // RLS, so this cross-org lookup works without an org context. org stays
+        // null (message still stored) if nothing matches.
+        let orgId = null;
+        if (phoneNumberId) {
+          try {
+            const r = await query(
+              `SELECT org_id FROM whatsapp_config WHERE phone_number_id = $1 ORDER BY active DESC LIMIT 1`,
+              [phoneNumberId],
+            );
+            orgId = r.rows[0]?.org_id ?? null;
+          } catch (err) {
+            logger.warn(`WhatsApp org resolution failed: ${err.message}`);
+          }
+        }
+
         for (const msg of messages) {
-          logger.info(`WhatsApp inbound: from=${msg.from} type=${msg.type}`);
+          const bodyText = msg.text?.body ?? msg.button?.text ?? null;
+          try {
+            const ins = await query(
+              `INSERT INTO whatsapp_inbound_messages
+                 (org_id, wa_message_id, phone_number_id, from_number, msg_type, body, raw)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
+               ON CONFLICT (wa_message_id) DO NOTHING
+               RETURNING id, received_at`,
+              [orgId, msg.id ?? null, phoneNumberId, msg.from ?? null, msg.type ?? null, bodyText, JSON.stringify(msg)],
+            );
+            if (ins.rows.length && orgId) {
+              publish(`org#${orgId}`, {
+                type: 'whatsapp_inbound',
+                id: ins.rows[0].id,
+                from: msg.from ?? null,
+                msg_type: msg.type ?? null,
+                body: bodyText,
+                received_at: ins.rows[0].received_at,
+              });
+            }
+          } catch (err) {
+            logger.error(`WhatsApp inbound persist failed: ${err.message}`);
+          }
         }
       }
     }
@@ -196,6 +242,21 @@ router.delete('/canned-messages/:id', auditLog('canned_messages'), asyncHandler(
   req.auditAction = 'DELETE';
   req.auditRecordId = req.params.id;
   res.json({ ok: true });
+}));
+
+// ─── WhatsApp inbound ─────────────────────────────────────────────────────────
+
+// GET /whatsapp/inbound — inbound messages for the caller's org (RLS-scoped via
+// req.db). Persisted by the webhook above; NULL-org messages stay hidden here.
+router.get('/whatsapp/inbound', asyncHandler(async (req, res) => {
+  const limit = Math.min(100, parseInt(req.query.limit) || 50);
+  const result = await req.db(
+    `SELECT id, from_number, msg_type, body, received_at
+       FROM whatsapp_inbound_messages
+      ORDER BY received_at DESC LIMIT $1`,
+    [limit],
+  );
+  res.json({ data: result.rows });
 }));
 
 // ─── WhatsApp settings ────────────────────────────────────────────────────────

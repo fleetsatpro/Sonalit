@@ -4,12 +4,74 @@
  */
 const router = require('express').Router();
 const Joi = require('joi');
+const PDFDocument = require('pdfkit');
 const { authenticate } = require('../middleware/auth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 const { auditLog } = require('../middleware/audit');
+const logger = require('../utils/logger');
 
 router.use(authenticate, attachOrgDb);
+
+// ─── Claim PDF rendering + storage ────────────────────────────────────────────
+
+/** Renders an insurance claim to a PDF buffer with pdfkit (buffered in memory —
+ *  claims are a page or two, no need to spill to disk). */
+function renderClaimPdf(claim) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    const chunks = [];
+    doc.on('data', (c) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const money = claim.estimated_value != null
+      ? `${claim.currency || ''} ${Number(claim.estimated_value).toLocaleString()}`.trim()
+      : '—';
+    const line = (label, value) => {
+      doc.font('Helvetica-Bold').fontSize(10).fillColor('#444').text(label);
+      doc.font('Helvetica').fontSize(11).fillColor('#000').text(value != null && value !== '' ? String(value) : '—');
+      doc.moveDown(0.6);
+    };
+
+    doc.font('Helvetica-Bold').fontSize(18).text('Insurance Claim', { align: 'left' });
+    doc.font('Helvetica').fontSize(10).fillColor('#666')
+      .text(`Claim ${claim.claim_number || claim.id}`)
+      .text(`Status: ${claim.status || 'draft'}`)
+      .text(`Generated: ${new Date().toISOString()}`);
+    doc.moveDown(1).fillColor('#000');
+
+    line('Insurer', claim.insurer_name);
+    line('Policy number', claim.policy_number);
+    line('Incident date', claim.incident_date);
+    line('Incident location', claim.incident_location);
+    line('Incident description', claim.incident_description);
+    line('Damage description', claim.damage_description);
+    line('Estimated value', money);
+    line('Police reference', claim.police_ref);
+    line('Witnesses', claim.witness_names);
+    if (claim.resolution_note) line('Resolution note', claim.resolution_note);
+
+    doc.end();
+  });
+}
+
+/** Server-side R2 upload (mirrors convoyReportWorker). Returns the public URL,
+ *  or null when object storage isn't configured on this server. */
+async function uploadPdfToR2(key, buffer) {
+  const { R2_ACCOUNT_ID, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET, R2_PUBLIC_URL } = process.env;
+  if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY || !R2_SECRET_KEY || !R2_BUCKET || !R2_PUBLIC_URL) return null;
+  const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+  const s3 = new S3Client({
+    region: 'auto',
+    endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId: R2_ACCESS_KEY, secretAccessKey: R2_SECRET_KEY },
+  });
+  await s3.send(new PutObjectCommand({
+    Bucket: R2_BUCKET, Key: key, Body: buffer, ContentType: 'application/pdf', CacheControl: 'no-store',
+  }));
+  return `${R2_PUBLIC_URL}/${key}`;
+}
 
 const VALID_STATUSES = ['draft', 'submitted', 'under_review', 'approved', 'rejected', 'withdrawn'];
 const STATUS_TRANSITIONS = {
@@ -162,20 +224,35 @@ router.patch('/claims/:id/status', auditLog('insurance_claims'), asyncHandler(as
   res.json({ data: result.rows[0] });
 }));
 
-// POST /claims/:id/generate-pdf — stub (PDF generation via claimPdfGenerator)
+// POST /claims/:id/generate-pdf — render the claim to a PDF, store it in R2, and
+// record the URL. Previously a stub that only stamped pdf_generated_at.
 router.post('/claims/:id/generate-pdf', auditLog('insurance_claims'), asyncHandler(async (req, res) => {
   const claimRes = await req.db(`SELECT * FROM insurance_claims WHERE id = $1`, [req.params.id]);
   if (!claimRes.rows.length) return res.status(404).json({ error: 'Claim not found' });
+  const claim = claimRes.rows[0];
 
-  // Update timestamp; actual PDF generation would call claimPdfGenerator
+  let buffer;
+  try {
+    buffer = await renderClaimPdf(claim);
+  } catch (err) {
+    logger.error(`Claim PDF render failed for ${claim.id}: ${err.message}`);
+    return res.status(500).json({ error: 'Failed to render claim PDF' });
+  }
+
+  const key = `claims/${claim.org_id || 'default'}/${claim.id}.pdf`;
+  const url = await uploadPdfToR2(key, buffer);
+  if (!url) {
+    return res.status(501).json({ error: 'PDF storage (R2) not configured on this server' });
+  }
+
   await req.db(
-    `UPDATE insurance_claims SET pdf_generated_at = NOW(), updated_at = NOW() WHERE id = $1`,
-    [req.params.id],
+    `UPDATE insurance_claims SET pdf_url = $1, pdf_generated_at = NOW(), updated_at = NOW() WHERE id = $2`,
+    [url, req.params.id],
   );
 
   req.auditAction = 'UPDATE';
   req.auditRecordId = req.params.id;
-  res.json({ ok: true, message: 'PDF generation queued', claim_id: req.params.id });
+  res.json({ ok: true, pdf_url: url, claim_id: req.params.id });
 }));
 
 // GET /claims/:id/download — redirect to PDF URL
