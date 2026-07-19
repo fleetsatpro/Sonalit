@@ -3282,6 +3282,108 @@
         }
       }
     },
+    "/api/v1/guardian/whatsapp/webhook": {
+      "get": {
+        "operationId": "get_api_v1_guardian_whatsapp_webhook",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_guardian_whatsapp_webhook",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoys/{id}/broadcast": {
+      "post": {
+        "operationId": "post_api_v1_convoys_id_broadcast",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoys/{id}/broadcasts": {
+      "get": {
+        "operationId": "get_api_v1_convoys_id_broadcasts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/canned-messages": {
+      "get": {
+        "operationId": "get_api_v1_canned_messages",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_canned_messages",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/canned-messages/{id}": {
+      "put": {
+        "operationId": "put_api_v1_canned_messages_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_canned_messages_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/whatsapp/inbound": {
+      "get": {
+        "operationId": "get_api_v1_whatsapp_inbound",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/settings/whatsapp": {
+      "get": {
+        "operationId": "get_api_v1_settings_whatsapp",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_settings_whatsapp",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/claims": {
       "get": {
         "operationId": "get_api_v1_claims",
