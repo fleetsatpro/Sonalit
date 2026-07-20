@@ -16,6 +16,13 @@ const vehicleSchema = Joi.object({
   region: Joi.string().valid('Kenya', 'DRC', 'Tanzania', 'Mali').required(),
   capacity: Joi.number().integer().min(1).max(50).required(),
   driverId: Joi.string().uuid().allow(null),
+  // Identity fields — the columns always existed but were never accepted
+  // here, so every vehicle showed blank make/model/year in the UI.
+  make: Joi.string().max(100).allow(null, ''),
+  model: Joi.string().max(100).allow(null, ''),
+  year: Joi.number().integer().min(1900).max(2100).allow(null),
+  vin: Joi.string().max(50).allow(null, ''),
+  color: Joi.string().max(50).allow(null, ''),
 });
 
 const updateSchema = vehicleSchema.fork(
@@ -94,10 +101,12 @@ const createVehicle = asyncHandler(async (req, res) => {
   // WITH CHECK, so its USING clause governs INSERT too — relying on the column
   // default (the legacy default-org UUID) would be rejected for any other org.
   const result = await req.db(
-    `INSERT INTO vehicles (type, registration, region, capacity, driver_id, status, org_id, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, 'idle', $6, NOW(), NOW())
+    `INSERT INTO vehicles (type, registration, region, capacity, driver_id, status, org_id,
+                           make, model, year, vin, color, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, 'idle', $6, $7, $8, $9, $10, $11, NOW(), NOW())
      RETURNING *`,
-    [value.type, value.registration, value.region, value.capacity, value.driverId || null, req.user.org_id]
+    [value.type, value.registration, value.region, value.capacity, value.driverId || null, req.user.org_id,
+     value.make || null, value.model || null, value.year ?? null, value.vin || null, value.color || null]
   );
 
   req.auditAction = 'INSERT';
@@ -121,10 +130,17 @@ const updateVehicle = asyncHandler(async (req, res) => {
        region = COALESCE($3, region),
        capacity = COALESCE($4, capacity),
        driver_id = COALESCE($5, driver_id),
+       make = COALESCE($6, make),
+       model = COALESCE($7, model),
+       year = COALESCE($8, year),
+       vin = COALESCE($9, vin),
+       color = COALESCE($10, color),
        updated_at = NOW()
-     WHERE id = $6 AND deleted_at IS NULL
+     WHERE id = $11 AND deleted_at IS NULL
      RETURNING *`,
-    [value.type, value.registration, value.region, value.capacity, value.driverId, req.params.id]
+    [value.type, value.registration, value.region, value.capacity, value.driverId,
+     value.make || null, value.model || null, value.year ?? null, value.vin || null, value.color || null,
+     req.params.id]
   );
 
   req.auditAction = 'UPDATE';
