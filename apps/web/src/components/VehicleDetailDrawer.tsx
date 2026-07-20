@@ -151,8 +151,7 @@ function DriverSection({ vehicle }: DriverSectionProps): React.ReactElement {
 
   const drivers = driversData?.data ?? [];
 
-  // Vehicle uses assigned_driver_id in the contracts type
-  const currentDriverId = vehicle.assigned_driver_id ?? null;
+  const currentDriverId = vehicle.driver_id ?? null;
   const [selectedDriverId, setSelectedDriverId] = useState<string>(currentDriverId ?? '');
 
   const assignMutation = useMutation({
@@ -281,7 +280,9 @@ export function VehicleDetailDrawer({ vehicle, onClose }: Props): React.ReactEle
         <div className="flex items-start justify-between p-5 border-b border-gray-800">
           <div>
             <p className="text-xl font-mono font-bold text-white">{vehicle.registration}</p>
-            <p className="text-sm text-gray-400 mt-0.5">{vehicle.make} {vehicle.model} · {vehicle.year}</p>
+            <p className="text-sm text-gray-400 mt-0.5">
+              {[vehicle.make, vehicle.model, vehicle.year].filter(Boolean).join(' ') || `${vehicle.type} · ${vehicle.region}`}
+            </p>
           </div>
           <button type="button" onClick={onClose} className="text-gray-400 hover:text-white p-1">
             <X className="w-5 h-5" />
@@ -294,9 +295,12 @@ export function VehicleDetailDrawer({ vehicle, onClose }: Props): React.ReactEle
             {[
               { label: 'Status', value: vehicle.status },
               { label: 'Type', value: vehicle.type },
-              { label: 'Odometer', value: vehicle.odometer_km != null ? `${vehicle.odometer_km.toLocaleString()} km` : '—' },
-              { label: 'Fuel capacity', value: vehicle.fuel_capacity_l != null ? `${vehicle.fuel_capacity_l} L` : '—' },
-              { label: 'Utilisation', value: vehicle.utilisation_pct != null ? `${vehicle.utilisation_pct}%` : '—' },
+              { label: 'Region', value: vehicle.region },
+              { label: 'Capacity', value: vehicle.capacity != null ? `${vehicle.capacity} seats` : '—' },
+              { label: 'Colour', value: vehicle.color ?? '—' },
+              { label: 'Last ping', value: vehicle.last_ping ? new Date(vehicle.last_ping).toLocaleString() : 'never' },
+              { label: 'Insurance', value: vehicle.insurance_expiry ? new Date(vehicle.insurance_expiry).toLocaleDateString() : '—' },
+              { label: 'Inspection', value: vehicle.inspection_expiry ? new Date(vehicle.inspection_expiry).toLocaleDateString() : '—' },
               { label: 'VIN', value: vehicle.vin ?? '—', mono: true },
               { label: 'Seal No.', value: sealNumber, mono: true },
             ].map(({ label, value, mono }) => (
