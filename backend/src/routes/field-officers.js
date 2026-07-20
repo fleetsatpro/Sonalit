@@ -32,14 +32,18 @@ router.get('/', async (req, res, next) => {
 router.post('/', async (req, res, next) => {
   try {
     const orgId = req.user?.org_id ?? null;
-    const { name, badge_number, phone, assigned_zone = null } = req.body;
+    const { name, badge_number, phone, assigned_zone = null, status } = req.body;
     if (!name || !badge_number || !phone) {
       return res.status(400).json({ error: 'name, badge_number, and phone are required' });
     }
+    // Honour the Add form's status select instead of silently defaulting to
+    // 'available'. Whitelist matches the field_officers_status_check constraint.
+    const VALID_STATUS = ['available', 'busy', 'offline', 'on_mission', 'sos'];
+    const initialStatus = VALID_STATUS.includes(status) ? status : 'available';
     const { rows } = await query(
-      `INSERT INTO field_officers (org_id, name, badge_number, phone, assigned_zone)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [orgId, name, badge_number, phone, assigned_zone],
+      `INSERT INTO field_officers (org_id, name, badge_number, phone, assigned_zone, status)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [orgId, name, badge_number, phone, assigned_zone, initialStatus],
     );
     res.status(201).json({ data: rows[0] });
   } catch (err) { next(err); }

@@ -86,11 +86,11 @@ const OpsSidebar = React.memo(function OpsSidebar({ inline = false }: { inline?:
     : 0;
   const tempPct = Math.round((1 - Math.min(1, avgTemp / 120)) * 100);
 
+  // Only gauges backed by real telemetry. TYRES/BRAKES were hardcoded (82/30)
+  // and read as live readings — dropped rather than fake a sensor we don't have.
   const GAUGES = [
     { label: 'ENGINE', value: tempPct, color: tempPct < 20 ? 'var(--d-fire)' : 'var(--d-ok)' },
     { label: 'FUEL', value: avgFuel, color: avgFuel <= 25 ? 'var(--d-fire)' : avgFuel <= 50 ? 'var(--d-warn)' : 'var(--d-sig)' },
-    { label: 'TYRES', value: 82, color: 'var(--d-ok)' },
-    { label: 'BRAKES', value: 30, color: 'var(--d-fire)' },
   ];
 
   return (

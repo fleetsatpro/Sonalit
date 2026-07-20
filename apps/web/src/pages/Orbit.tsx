@@ -30,17 +30,11 @@ interface Ops {
   convoys: Array<Array<[number, number]>>;
 }
 
-// East-Africa seed overlays so the globe is never bare before/without data.
-const SEED: Ops = {
-  risk: [[28.8, -1.6, 1], [31.6, 6.8, .85], [45, 4, .8], [-3, 17, .65], [40, -12, .6], [18, 12, .5]],
-  hubs: [[36.82, -1.29], [39.66, -4.05], [32.58, 0.35], [39.28, -6.82]],
-  pings: Array.from({ length: 26 }, () => [18 + Math.random() * 44, -20 + Math.random() * 32, Math.random()] as [number, number, number]),
-  convoys: ([
-    [[39.66, -4.05], [36.82, -1.29]], [[36.82, -1.29], [32.58, 0.35]],
-    [[32.58, 0.35], [29.2, -1.7]], [[39.28, -6.82], [35.75, -6.17]],
-  ] as Array<[[number, number], [number, number]]>).map(([a, b]) => greatCircle(a, b, 54)),
-};
-
+// Geometry helpers must be declared before SEED, which calls greatCircle at
+// module-eval time — greatCircle → toVec reads the `const D2R` below, and a
+// const is in the temporal dead zone until its own line runs. Declaring SEED
+// first threw "Cannot access 'D2R' before initialization" on import, which
+// took down the whole homepage.
 const D2R = Math.PI / 180;
 function toVec(lo: number, la: number): [number, number, number] {
   lo *= D2R; la *= D2R;
@@ -58,6 +52,17 @@ function greatCircle(a: [number, number], b: [number, number], n: number): Array
   }
   return out;
 }
+
+// East-Africa seed overlays so the globe is never bare before/without data.
+const SEED: Ops = {
+  risk: [[28.8, -1.6, 1], [31.6, 6.8, .85], [45, 4, .8], [-3, 17, .65], [40, -12, .6], [18, 12, .5]],
+  hubs: [[36.82, -1.29], [39.66, -4.05], [32.58, 0.35], [39.28, -6.82]],
+  pings: Array.from({ length: 26 }, () => [18 + Math.random() * 44, -20 + Math.random() * 32, Math.random()] as [number, number, number]),
+  convoys: ([
+    [[39.66, -4.05], [36.82, -1.29]], [[36.82, -1.29], [32.58, 0.35]],
+    [[32.58, 0.35], [29.2, -1.7]], [[39.28, -6.82], [35.75, -6.17]],
+  ] as Array<[[number, number], [number, number]]>).map(([a, b]) => greatCircle(a, b, 54)),
+};
 
 const VS = 'attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}';
 const FS = `precision highp float;
