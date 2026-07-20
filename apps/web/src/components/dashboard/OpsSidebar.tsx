@@ -23,7 +23,7 @@ function FeedItemRow({ item }: { item: FeedItem }) {
     }}>
       <div style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0, marginTop: 4 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 11, color: 'var(--d-t1)', lineHeight: 1.4 }}>{item.message}</div>
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--d-t1)', lineHeight: 1.4 }}>{item.message}</div>
         <div style={{ fontSize: 9, color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace', marginTop: 2 }}>{relTime(item.timestamp)}</div>
       </div>
     </div>
@@ -116,7 +116,7 @@ const OpsSidebar = React.memo(function OpsSidebar({ inline = false }: { inline?:
         </div>
         <div style={{ maxHeight: 200, overflowY: 'auto', scrollbarWidth: 'none' }}>
           {feedItems.length === 0
-            ? <div style={{ fontSize: 11, color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace', padding: '8px 0' }}>Awaiting events…</div>
+            ? <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--d-t2)', fontFamily: 'IBM Plex Mono, monospace', padding: '8px 0' }}>Awaiting events…</div>
             : feedItems.map(f => <FeedItemRow key={f.id} item={f} />)
           }
         </div>
@@ -133,14 +133,14 @@ const OpsSidebar = React.memo(function OpsSidebar({ inline = false }: { inline?:
           <div key={a.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--d-rim)', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
             <div style={{ width: 6, height: 6, borderRadius: '50%', background: SEV_COLOR[a.severity] ?? 'var(--d-t3)', flexShrink: 0, marginTop: 3 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 11, color: 'var(--d-t1)', lineHeight: 1.3, marginBottom: 3 }}>{a.title}</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--d-t1)', lineHeight: 1.3, marginBottom: 3 }}>{a.title}</div>
             </div>
             {!a.acknowledged && (
               <button onClick={() => ackMut.mutate(a.id)} style={{ background: 'none', border: '1px solid var(--d-rim2)', borderRadius: 4, color: 'var(--d-t3)', fontSize: 9, cursor: 'pointer', padding: '2px 6px', flexShrink: 0 }}>ACK</button>
             )}
           </div>
         ))}
-        {storeAlerts.length === 0 && <div style={{ fontSize: 11, color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace' }}>No active alerts</div>}
+        {storeAlerts.length === 0 && <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--d-t2)', fontFamily: 'IBM Plex Mono, monospace' }}>No active alerts</div>}
       </div>
 
       {/* Fleet health rings */}
