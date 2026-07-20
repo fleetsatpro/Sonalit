@@ -25,7 +25,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Command',
     hue: '255,178,62',
     items: [
-      { path: '/',                icon: LayoutDashboard, label: 'Command Center' },
+      { path: '/command',         icon: LayoutDashboard, label: 'Command Center' },
       { path: '/gps',             icon: MapPin,          label: 'GPS Live' },
       { path: '/panic-center',    icon: Siren,           label: 'Panic Center' },
       { path: '/messages',        icon: MessageSquare,   label: 'Messages' },
@@ -98,8 +98,8 @@ const Rail = React.memo(function Rail({ onClose }: { onClose?: () => void }) {
       overflowY: 'auto',
       scrollbarWidth: 'none',
     }}>
-      {/* Wordmark */}
-      <div style={{ padding: '20px 20px 12px', borderBottom: '1px solid var(--d-rim)' }}>
+      {/* Wordmark — links home to the Orbit launcher */}
+      <Link to="/" onClick={onClose} style={{ display: 'block', textDecoration: 'none', padding: '20px 20px 12px', borderBottom: '1px solid var(--d-rim)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
             width: 32, height: 32,
@@ -118,7 +118,7 @@ const Rail = React.memo(function Rail({ onClose }: { onClose?: () => void }) {
         <div style={{ marginTop: 4, fontSize: 10, color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace', letterSpacing: '.06em' }}>
           COMMAND CENTER v3
         </div>
-      </div>
+      </Link>
 
       {/* Nav groups */}
       <div style={{ flex: 1, padding: '12px 0', overflowY: 'auto', scrollbarWidth: 'none' }}>
