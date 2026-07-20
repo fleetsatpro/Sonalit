@@ -1,9 +1,8 @@
 import React, { useState, useCallback } from 'react';
 import { Outlet } from '@tanstack/react-router';
-import Rail from './Rail.js';
-import DrawerNav from './DrawerNav.js';
 import Topbar from '../dashboard/Topbar.js';
 import GlobalPanicAlarm from './GlobalPanicAlarm.js';
+import AppLauncherOverlay from './AppLauncherOverlay.js';
 
 // Universal app chrome — Rail (left), Topbar, mobile drawer. Extracted from
 // DashboardShell so every authenticated route wears the same shell instead
@@ -23,55 +22,17 @@ import GlobalPanicAlarm from './GlobalPanicAlarm.js';
 //   authFullscreenRoute → <Outlet /> alone → pages that need full viewport
 //     (e.g. ConvoyReports, which paints edge-to-edge PDF-like layouts)
 const AppShell = React.memo(function AppShell() {
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [navOpen, setNavOpen] = useState(true);
-
-  const openDrawer = useCallback(() => setDrawerOpen(true), []);
-  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
-
-  const toggleBtnBase: React.CSSProperties = {
-    position: 'fixed',
-    top: '50%',
-    zIndex: 350,
-    display: 'none',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 18,
-    height: 52,
-    background: 'var(--d-carbon)',
-    border: '1px solid var(--d-rim2)',
-    cursor: 'pointer',
-    color: 'var(--d-t3)',
-    fontSize: 10,
-    padding: 0,
-    transition: 'background .15s, color .15s',
-  };
+  // The old always-on rail is gone: deep pages open the same Orbit folder
+  // launcher on demand (Topbar → Apps), so navigation stays consistent with
+  // the home surface instead of resurrecting a rigid side panel.
+  const [launcherOpen, setLauncherOpen] = useState(false);
+  const openLauncher = useCallback(() => setLauncherOpen(true), []);
+  const closeLauncher = useCallback(() => setLauncherOpen(false), []);
 
   return (
     <>
-      {/* Desktop rail */}
-      <div style={{ display: 'none' }} className={`d-rail-wrapper${navOpen ? '' : ' d-nav-hidden'}`}>
-        <Rail />
-      </div>
-
-      {/* Nav toggle tab (desktop) */}
-      <button
-        className='d-nav-toggle'
-        onClick={() => setNavOpen((v) => !v)}
-        title={navOpen ? 'Hide nav' : 'Show nav'}
-        style={{
-          ...toggleBtnBase,
-          left: navOpen ? 'var(--d-rail-w)' : 0,
-          transform: 'translateY(-50%)',
-          borderRadius: '0 6px 6px 0',
-          borderLeft: navOpen ? undefined : '1px solid var(--d-rim2)',
-        }}
-      >
-        {navOpen ? '‹' : '›'}
-      </button>
-
-      {/* Mobile drawer */}
-      <DrawerNav open={drawerOpen} onClose={closeDrawer} />
+      {/* App launcher — folders → apps, over a scrim (all screen sizes) */}
+      <AppLauncherOverlay open={launcherOpen} onClose={closeLauncher} />
 
       {/* Global panic alarm — full-screen flash + siren, active on every authenticated route */}
       <GlobalPanicAlarm />
@@ -92,20 +53,15 @@ const AppShell = React.memo(function AppShell() {
           // 100dvh (not 100vh) so mobile browser chrome showing/hiding
           // doesn't over- or under-size this against the visual viewport.
           height: '100dvh',
-          // width intentionally left auto: the desktop rail is position:fixed
-          // and this column clears it with margin-left. An explicit 100% here
-          // means 100% of the viewport PLUS that margin, shoving the right
-          // edge (and anything laid out against it) 232px off-screen. Block
-          // auto-width resolves to viewport minus margins, which is what the
-          // layout actually wants.
+          width: '100%',
           minWidth: 0,
           overflowX: 'clip',
           background: 'var(--d-void)',
           overscrollBehavior: 'contain',
         }}
-        className={`d-main-col${navOpen ? '' : ' d-nav-collapsed'}`}
+        className="d-main-col"
       >
-        <Topbar onMenuOpen={openDrawer} />
+        <Topbar onMenuOpen={openLauncher} />
         {/* flex:1 to actually claim the remaining height after Topbar;
             minHeight:0 so it can shrink instead of overflowing to content
             size (the classic flex-child sizing trap); overflowY:auto so
@@ -117,16 +73,6 @@ const AppShell = React.memo(function AppShell() {
         </main>
       </div>
 
-      <style>{`
-        @media (min-width: 900px) {
-          .d-rail-wrapper { display: flex !important; }
-          .d-nav-toggle  { display: flex !important; }
-          .d-main-col { margin-left: var(--d-rail-w); }
-          .d-main-col.d-nav-collapsed { margin-left: 0 !important; }
-          .d-nav-hidden { display: none !important; }
-        }
-        .d-nav-toggle:hover { background: var(--d-lift2) !important; color: var(--d-t1) !important; }
-      `}</style>
     </>
   );
 });
