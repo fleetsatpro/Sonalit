@@ -35,6 +35,29 @@ interface PanicCancelMsg {
   cancelled_at: string;
 }
 
+interface PanicAckMsg {
+  type: 'panic_ack';
+  panic_id: string;
+  device_id: string;
+  acknowledged_at: string;
+  acknowledged_by_name?: string | null;
+}
+
+interface PanicResolvedMsg {
+  type: 'panic_resolved';
+  panic_id: string;
+  device_id: string;
+  resolved_at: string;
+}
+
+interface PanicEscalatedMsg {
+  type: 'panic_escalated';
+  panic_id: string;
+  device_id: string;
+  device_name?: string;
+  escalation_level: number;
+}
+
 interface AlertNewMsg {
   type: 'alert.new';
   alertId: string;
@@ -75,6 +98,9 @@ type OrgMsg =
   | LocationMsg
   | PanicMsg
   | PanicCancelMsg
+  | PanicAckMsg
+  | PanicResolvedMsg
+  | PanicEscalatedMsg
   | AlertNewMsg
   | ConvoyUpdateMsg
   | IncidentMsg
@@ -91,6 +117,8 @@ export function useDashboardRealtime(orgId: string): void {
     updateConvoy,
     updateIncident,
     updatePanicState,
+    acknowledgePanicState,
+    escalatePanicState,
     prependFeedItem,
     appendTickerEvent,
     setVoiceNoteAlert,
@@ -150,6 +178,50 @@ export function useDashboardRealtime(orgId: string): void {
           if (current?.status === 'active') {
             updatePanicState({ id: current.id, status: 'resolved', triggered_at: current.triggered_at });
           }
+          break;
+        }
+
+        // Admin-initiated resolve (PATCH /guardian/panic/:id/resolve) — previously
+        // silent over realtime, so other dashboards only cleared via a 15-60s poll.
+        case 'panic_resolved': {
+          const m = msg as PanicResolvedMsg;
+          const current = useDashboardStore.getState().panicState;
+          if (current?.id === m.panic_id) {
+            updatePanicState({ id: current.id, status: 'resolved', triggered_at: current.triggered_at });
+          }
+          prependFeedItem({
+            id: `${m.panic_id}-resolved`,
+            type: 'panic',
+            message: 'Panic alert resolved',
+            timestamp: m.resolved_at,
+          });
+          break;
+        }
+
+        case 'panic_ack': {
+          const m = msg as PanicAckMsg;
+          acknowledgePanicState(m.panic_id, m.acknowledged_at, m.acknowledged_by_name ?? null);
+          prependFeedItem({
+            id: `${m.panic_id}-ack`,
+            type: 'panic',
+            message: `Panic alert acknowledged${m.acknowledged_by_name ? ` by ${m.acknowledged_by_name}` : ''}`,
+            timestamp: m.acknowledged_at,
+          });
+          break;
+        }
+
+        case 'panic_escalated': {
+          const m = msg as PanicEscalatedMsg;
+          escalatePanicState(m.panic_id, m.escalation_level);
+          const escMsg = `PANIC ESCALATED (level ${m.escalation_level}) — ${m.device_name ?? 'device'} still unacknowledged`;
+          prependFeedItem({
+            id: `${m.panic_id}-esc-${m.escalation_level}`,
+            type: 'panic',
+            message: escMsg,
+            severity: 'critical',
+            timestamp: new Date().toISOString(),
+          });
+          appendTickerEvent({ id: `${m.panic_id}-esc-${m.escalation_level}`, severity: 'critical', message: escMsg });
           break;
         }
 
@@ -256,5 +328,5 @@ export function useDashboardRealtime(orgId: string): void {
     });
 
     return unsub;
-  }, [orgId, updateVehiclePosition, prependAlert, updateConvoy, updateIncident, updatePanicState, prependFeedItem, appendTickerEvent, setVoiceNoteAlert]);
+  }, [orgId, updateVehiclePosition, prependAlert, updateConvoy, updateIncident, updatePanicState, acknowledgePanicState, escalatePanicState, prependFeedItem, appendTickerEvent, setVoiceNoteAlert]);
 }

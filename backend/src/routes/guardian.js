@@ -7,6 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const { sendCommandPush, sendPanicAck } = require('../utils/fcm');
+const { sendWhatsAppMessage } = require('../utils/whatsapp');
 const { publish } = require('../realtime/centrifugo');
 const requireIdempotencyKey = require('../middleware/idempotency');
 const { COMMAND_SIGNING_SECRET, signCommand } = require('../utils/commandSigning');
@@ -366,6 +367,19 @@ async function ensureTables() {
     // p2t3 — command expiry
     await query(`ALTER TABLE device_commands ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`);
 
+    // panic revamp — acknowledge/escalation/resolution-reason workflow
+    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ`);
+    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS acknowledged_by UUID`);
+    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS resolution_note TEXT`);
+    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS reason_code TEXT`);
+    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS escalation_level INT DEFAULT 0`);
+    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMPTZ`);
+    await query(`
+      CREATE INDEX IF NOT EXISTS idx_panic_events_open_unacked
+        ON panic_events(org_id, created_at)
+        WHERE resolved_at IS NULL AND acknowledged_at IS NULL
+    `);
+
     // p1t5 — idempotency UUIDs for panic events and field reports
     await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS event_uuid UUID`);
     await query(`
@@ -532,11 +546,80 @@ async function runDmsMonitorJob() {
   }
 }
 
+// ─── Panic Escalation Background Job ─────────────────────────────────────────
+
+// Minutes an unacknowledged panic waits before each escalation tier fires.
+// Tier 1 fires at ESCALATION_MINUTES, tier 2 at 2x, tier 3 at 3x — then stops.
+const ESCALATION_MINUTES = parseInt(process.env.PANIC_ESCALATION_MINUTES) || 3;
+const MAX_ESCALATION_LEVEL = 3;
+
+async function runPanicEscalationJob() {
+  try {
+    const due = await query(
+      `SELECT pe.id, pe.org_id, pe.device_id, pe.mode, pe.escalation_level, pe.created_at,
+              gd.name AS device_name
+       FROM panic_events pe
+       JOIN guardian_devices gd ON gd.id = pe.device_id
+       WHERE pe.resolved_at IS NULL
+         AND pe.acknowledged_at IS NULL
+         AND pe.org_id IS NOT NULL
+         AND pe.escalation_level < $1
+         AND pe.created_at < NOW() - ((pe.escalation_level + 1) * $2 || ' minutes')::INTERVAL
+       ORDER BY pe.created_at ASC
+       LIMIT 100`,
+      [MAX_ESCALATION_LEVEL, ESCALATION_MINUTES]
+    );
+
+    for (const row of due.rows) {
+      const nextLevel = row.escalation_level + 1;
+      await query(
+        `UPDATE panic_events SET escalation_level = $2, escalated_at = NOW() WHERE id = $1`,
+        [row.id, nextLevel]
+      );
+
+      publish(`org#${row.org_id}`, {
+        type: 'panic_escalated',
+        panic_id: row.id,
+        device_id: row.device_id,
+        device_name: row.device_name,
+        mode: row.mode,
+        escalation_level: nextLevel,
+        escalated_at: new Date().toISOString(),
+      });
+
+      auditLog('system', null, 'panic_escalated', 'panic_event', row.id, { escalation_level: nextLevel }, null);
+      logger.warn(`PANIC escalated: id=${row.id} device=${row.device_name} level=${nextLevel}`);
+
+      // Notify org admins/dispatchers with a phone number on file, fire-and-forget.
+      try {
+        const contacts = await query(
+          `SELECT phone FROM users WHERE org_id = $1 AND role IN ('admin', 'dispatcher') AND phone IS NOT NULL`,
+          [row.org_id]
+        );
+        const minutesOpen = Math.round((Date.now() - new Date(row.created_at).getTime()) / 60000);
+        const text = `⚠️ PANIC unacknowledged ${minutesOpen}m — ${row.device_name} (${row.mode}). Escalation level ${nextLevel}. Open Panic Center now.`;
+        for (const c of contacts.rows) {
+          sendWhatsAppMessage(row.org_id, c.phone, text).catch(() => {});
+        }
+      } catch (notifyErr) {
+        logger.error(`panic escalation notify error: ${notifyErr.message}`);
+      }
+    }
+  } catch (err) {
+    logger.error(`Panic escalation job error: ${err.message}`);
+  }
+}
+
 // Run immediately on module load
 ensureTables().then(() => {
   // Start command expiry job after tables are ready
   runCommandExpiryJob();
   setInterval(runCommandExpiryJob, 10 * 60 * 1000); // every 10 minutes
+
+  // Start panic escalation job — checks every minute for unacknowledged panics
+  runPanicEscalationJob();
+  setInterval(runPanicEscalationJob, 60 * 1000);
+
   runDmsMonitorJob();
   setInterval(runDmsMonitorJob, 2 * 60 * 1000); // every 2 minutes
 });
@@ -2132,17 +2215,70 @@ router.get('/panic', authenticate, async (req, res, next) => {
 });
 
 /**
- * PATCH /api/v1/guardian/panic/:id/resolve
- * Resolve a panic event.
+ * PATCH /api/v1/guardian/panic/:id/ack
+ * Admin acknowledges an active panic — signals "someone is on it" without
+ * resolving it, so other dashboards stop treating it as unattended and the
+ * escalation job stops paging further contacts.
  */
-router.patch('/panic/:id/resolve', authenticate, async (req, res, next) => {
+router.patch('/panic/:id/ack', authenticate, async (req, res, next) => {
   try {
     const result = await query(
       `UPDATE panic_events
-       SET resolved_at = NOW(), resolved_by = $2
-       WHERE id = $1 AND resolved_at IS NULL
-       RETURNING id, device_id, resolved_at`,
+       SET acknowledged_at = NOW(), acknowledged_by = $2
+       WHERE id = $1 AND resolved_at IS NULL AND acknowledged_at IS NULL
+       RETURNING id, device_id, org_id, mode, acknowledged_at`,
       [req.params.id, req.user.id]
+    );
+
+    if (!result.rows.length) {
+      const existing = await query(`SELECT id, acknowledged_at, resolved_at FROM panic_events WHERE id = $1`, [req.params.id]);
+      if (!existing.rows.length) return res.status(404).json({ error: 'Panic event not found' });
+      if (existing.rows[0].resolved_at) return res.status(409).json({ error: 'Panic event already resolved' });
+      return res.json({ data: existing.rows[0] }); // already acknowledged — idempotent
+    }
+
+    const panicEvent = result.rows[0];
+    const acker = await query(`SELECT name FROM users WHERE id = $1`, [req.user.id]);
+
+    const ackPayload = {
+      type: 'panic_ack',
+      panic_id: panicEvent.id,
+      device_id: panicEvent.device_id,
+      acknowledged_at: panicEvent.acknowledged_at,
+      acknowledged_by: req.user.id,
+      acknowledged_by_name: acker.rows[0]?.name ?? null,
+    };
+    if (panicEvent.org_id) publish(`org#${panicEvent.org_id}`, ackPayload);
+
+    auditLog('admin', req.user.id, 'panic_acknowledged', 'panic_event', req.params.id, {}, req.ip);
+    logger.info(`Panic acknowledged: ${req.params.id} by user=${req.user.id}`);
+
+    res.json({ data: panicEvent });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * PATCH /api/v1/guardian/panic/:id/resolve
+ * Resolve a panic event. Body: { resolution_note?, reason_code? }
+ */
+router.patch('/panic/:id/resolve', authenticate, async (req, res, next) => {
+  try {
+    const { resolution_note, reason_code } = req.body || {};
+    const validReasonCodes = ['false_alarm', 'resolved_safe', 'escalated_to_authorities', 'training_test', 'other'];
+    if (reason_code && !validReasonCodes.includes(reason_code)) {
+      return res.status(400).json({ error: `reason_code must be one of: ${validReasonCodes.join(', ')}` });
+    }
+
+    const result = await query(
+      `UPDATE panic_events
+       SET resolved_at = NOW(), resolved_by = $2,
+           resolution_note = COALESCE($3, resolution_note),
+           reason_code = COALESCE($4, reason_code)
+       WHERE id = $1 AND resolved_at IS NULL
+       RETURNING id, device_id, org_id, resolved_at, resolution_note, reason_code`,
+      [req.params.id, req.user.id, resolution_note || null, reason_code || null]
     );
 
     if (!result.rows.length) {
@@ -2162,7 +2298,20 @@ router.patch('/panic/:id/resolve', authenticate, async (req, res, next) => {
       [panicEvent.device_id]
     );
 
-    auditLog('admin', req.user.id, 'panic_resolved', 'panic_event', req.params.id, {}, req.ip);
+    // Broadcast the resolution — previously only device-initiated cancels did
+    // this, so other connected dashboards relied on a 15-60s poll to notice
+    // an admin had resolved a panic elsewhere.
+    const resolvePayload = {
+      type: 'panic_resolved',
+      panic_id: panicEvent.id,
+      device_id: panicEvent.device_id,
+      resolved_at: panicEvent.resolved_at,
+      resolved_by: req.user.id,
+      reason_code: panicEvent.reason_code,
+    };
+    if (panicEvent.org_id) publish(`org#${panicEvent.org_id}`, resolvePayload);
+
+    auditLog('admin', req.user.id, 'panic_resolved', 'panic_event', req.params.id, { resolution_note, reason_code }, req.ip);
     logger.info(`Panic resolved: ${req.params.id} by user=${req.user.id}`);
 
     res.json({ data: panicEvent });

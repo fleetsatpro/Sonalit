@@ -62,6 +62,9 @@ export interface PanicEvent {
   lat?: number;
   lng?: number;
   triggered_at: string;
+  acknowledgedAt?: string | null;
+  acknowledgedByName?: string | null;
+  escalationLevel?: number;
 }
 
 export interface FeedItem {
@@ -102,6 +105,8 @@ interface DashboardStore {
   updateConvoy: (c: ConvoyUpdate) => void;
   updateIncident: (i: IncidentUpdate) => void;
   updatePanicState: (p: PanicEvent) => void;
+  acknowledgePanicState: (id: string, acknowledgedAt: string, acknowledgedByName: string | null) => void;
+  escalatePanicState: (id: string, escalationLevel: number) => void;
   prependFeedItem: (f: FeedItem) => void;
   setSelectedVehicle: (id: string | null) => void;
   appendTickerEvent: (e: { id: string; severity: string; message: string }) => void;
@@ -153,7 +158,31 @@ export const useDashboardStore = create<DashboardStore>((set) => ({
         : [incident, ...s.incidents].slice(0, 20),
     })),
 
-  updatePanicState: (p) => set({ panicState: p.status === 'active' ? p : null }),
+  updatePanicState: (p) =>
+    set((s) => {
+      if (p.status !== 'active') return { panicState: null };
+      // Merge onto an in-flight panic of the same id so a fresh 'panic'
+      // publish (e.g. re-delivered on reconnect) doesn't wipe out
+      // acknowledged/escalation state already reflected in the UI.
+      if (s.panicState?.id === p.id) {
+        return { panicState: { ...s.panicState, ...p } };
+      }
+      return { panicState: p };
+    }),
+
+  acknowledgePanicState: (id, acknowledgedAt, acknowledgedByName) =>
+    set((s) =>
+      s.panicState?.id === id
+        ? { panicState: { ...s.panicState, acknowledgedAt, acknowledgedByName } }
+        : {}
+    ),
+
+  escalatePanicState: (id, escalationLevel) =>
+    set((s) =>
+      s.panicState?.id === id
+        ? { panicState: { ...s.panicState, escalationLevel } }
+        : {}
+    ),
 
   prependFeedItem: (f) =>
     set((s) => ({ feedItems: [f, ...s.feedItems].slice(0, 12) })),

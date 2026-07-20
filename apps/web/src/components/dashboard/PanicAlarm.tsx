@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
 import { useDashboardStore } from '../../stores/dashboardStore.js';
 import { playSiren, stopSiren } from '../../lib/siren.js';
@@ -44,12 +44,20 @@ export default function PanicAlarm() {
 
   const isActive = panicState?.status === 'active';
   const isVoiceDistress = panicState?.mode === 'voice_distress';
+  const isAcknowledged = !!panicState?.acknowledgedAt;
 
   useEffect(() => {
     if (!isActive) { stopSiren(); return; }
     playSiren(isVoiceDistress ? 'mayday' : 'wail', { loop: true });
     return () => stopSiren();
   }, [isActive, isVoiceDistress]);
+
+  const [acking, setAcking] = useState(false);
+  const ackMutation = useMutation({
+    mutationFn: (id: string) => api.patch(`/guardian/panic/${id}/ack`, {}),
+    onMutate: () => setAcking(true),
+    onSettled: () => setAcking(false),
+  });
 
   if (!isActive) return null;
 
@@ -66,19 +74,45 @@ export default function PanicAlarm() {
         it actually reads as a flicker. Cycle held at 400ms (2.5 flashes/sec)
         to stay just under the ~3-flashes/sec threshold flagged by WCAG for
         photosensitive reactions while still feeling urgent/violent.
+        Once acknowledged the flash slows and dims (still visible, less
+        alarming) — help is confirmed en route, but the siren keeps playing
+        until the panic is actually resolved.
       */}
       <style>{`
         @keyframes panic-flash {
           0%, 49%   { background: rgba(255,0,0,.4); box-shadow: inset 0 0 0 10px #ff0000, inset 0 0 180px rgba(255,0,0,.65); }
           50%, 100% { background: rgba(255,0,0,.05); box-shadow: inset 0 0 0 3px #ff0000, inset 0 0 40px rgba(255,0,0,.2); }
         }
+        @keyframes panic-flash-acked {
+          0%, 74%   { background: rgba(255,140,0,.18); box-shadow: inset 0 0 0 6px #ff8c00, inset 0 0 100px rgba(255,140,0,.3); }
+          75%, 100% { background: rgba(255,140,0,.02); box-shadow: inset 0 0 0 2px #ff8c00, inset 0 0 20px rgba(255,140,0,.1); }
+        }
         .panic-flash-overlay {
           position: absolute;
           inset: 0;
           animation: panic-flash .4s steps(1, end) infinite;
         }
+        .panic-flash-overlay.acked {
+          animation: panic-flash-acked 1.6s steps(1, end) infinite;
+        }
       `}</style>
-      <div className='panic-flash-overlay' />
+      <div className={`panic-flash-overlay${isAcknowledged ? ' acked' : ''}`} />
+
+      <div style={{ position: 'absolute', top: 16, right: 16, pointerEvents: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+        {isAcknowledged ? (
+          <span style={{ background: 'rgba(255,140,0,.9)', color: '#1a1000', fontWeight: 700, fontSize: 12, padding: '6px 12px', borderRadius: 6 }}>
+            ACKNOWLEDGED{panicState?.acknowledgedByName ? ` BY ${panicState.acknowledgedByName.toUpperCase()}` : ''}
+          </span>
+        ) : (
+          <button
+            onClick={() => panicState && ackMutation.mutate(panicState.id)}
+            disabled={acking}
+            style={{ background: '#fff', color: '#b91c1c', fontWeight: 700, fontSize: 12, padding: '8px 16px', borderRadius: 6, border: 'none', cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,.4)' }}
+          >
+            {acking ? 'ACKNOWLEDGING…' : 'ACKNOWLEDGE'}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
