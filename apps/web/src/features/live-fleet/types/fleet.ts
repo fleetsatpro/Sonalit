@@ -26,6 +26,9 @@ export interface LiveVehicle {
   battery_level: number | null
   signal_strength: number | null
   health_recorded_at: string | null
+  /** Linked field officer (guardian devices only) — powers the Call action. */
+  officer_name: string | null
+  officer_phone: string | null
 }
 
 export interface ConvoyGroup {

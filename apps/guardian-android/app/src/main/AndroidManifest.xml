@@ -16,6 +16,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Camera FGS for covert capture_photo (dispatcher "remote eyes") -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
 
     <!-- Activity Recognition -->
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
@@ -48,6 +50,9 @@
 
     <!-- Vibrate for panic -->
     <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- Raise the alarm stream to max when a dispatcher triggers the siren -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
     <!-- Wake lock for background work -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -115,6 +120,15 @@
             android:launchMode="singleInstance"
             android:theme="@style/Theme.GuardianApp" />
 
+        <!-- Officer-tap fallback for capture_photo (opened from the notification
+             CommandExecutor posts when the covert capture service can't run). -->
+        <activity
+            android:name=".ui.capture.CaptureRequestActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:theme="@style/Theme.GuardianApp" />
+
         <!-- Enrollment Activity alias for deep link -->
         <activity-alias
             android:name=".EnrollmentAlias"
@@ -153,6 +167,15 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <!-- Covert photo capture — reaches the camera from the background in
+             response to a dispatcher capture_photo command. Camera FGS type is
+             required to use the camera outside the foreground. exported=false:
+             only CommandExecutor starts it. -->
+        <service
+            android:name=".service.PhotoCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="camera" />
 
         <!-- Voice panic trigger — listens offline (Vosk) for "PAN PAN PAN" and
              launches PanicActivity, same as VolumeKeySOSReceiver. Opt-in only:

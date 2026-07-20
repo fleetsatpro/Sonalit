@@ -7,6 +7,7 @@ import { useRiskRealtime } from './hooks/useRiskRealtime.js'
 import { levelColor } from './utils/colors.js'
 import ContinentBar from './components/ContinentBar.js'
 import LiveTicker from './components/LiveTicker.js'
+import LiveFeedPanel from './components/LiveFeedPanel.js'
 import ThreatList from './components/ThreatList.js'
 import RiskMap from './components/RiskMap.js'
 import DetailDrawer from './components/DetailDrawer.js'
@@ -32,7 +33,7 @@ export default function RiskIntelPage() {
   const [levelFilter, setLevelFilter]   = useState<RiskLevel | 'all'>('all')
   const [activeZoneId, setActiveZoneId] = useState<string | null>(null)
   const [heatVisible, setHeatVisible]   = useState(true)
-  const [activeTab, setActiveTab]       = useState<'map' | 'list'>('list')
+  const [activeTab, setActiveTab]       = useState<'map' | 'list' | 'feed'>('list')
   const [refreshState, setRefreshState] = useState<'idle' | 'refreshing' | 'done'>('idle')
 
   const { data, isLoading } = useRiskZones(activeCont, levelFilter)
@@ -69,6 +70,7 @@ export default function RiskIntelPage() {
     setTimeout(() => {
       queryClient.invalidateQueries({ queryKey: ['risk-zones'] })
       queryClient.invalidateQueries({ queryKey: ['risk-ticker'] })
+      queryClient.invalidateQueries({ queryKey: ['risk-live-feed'] })
       setRefreshState('done')
       setTimeout(() => setRefreshState('idle'), 3000)
     }, 25000)
@@ -163,7 +165,7 @@ export default function RiskIntelPage() {
       </div>
 
       {/* ── Live ticker ── */}
-      <LiveTicker />
+      <LiveTicker continent={activeCont} />
 
       {/* ── Continent bar ── */}
       <ContinentBar active={activeCont} zones={zones} onChange={c => { setActiveCont(c); if (isMobile) setActiveTab('map') }} />
@@ -171,14 +173,14 @@ export default function RiskIntelPage() {
       {/* ── Mobile tab bar ── */}
       {isMobile && (
         <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,.06)', flexShrink: 0 }}>
-          {(['list', 'map'] as const).map(t => (
+          {(['list', 'map', 'feed'] as const).map(t => (
             <button key={t} onClick={() => setActiveTab(t)} style={{
               flex: 1, padding: '8px', background: 'none', border: 'none',
               borderBottom: activeTab === t ? '2px solid #F0B429' : '2px solid transparent',
               cursor: 'pointer', fontSize: 12, fontWeight: 600,
               color: activeTab === t ? '#F0B429' : '#6e6c64',
               textTransform: 'capitalize',
-            }}>{t === 'list' ? `Zones (${zones.length})` : 'Map'}</button>
+            }}>{t === 'list' ? `Zones (${zones.length})` : t === 'map' ? 'Map' : 'Live Feed'}</button>
           ))}
         </div>
       )}
@@ -227,6 +229,20 @@ export default function RiskIntelPage() {
               if (isMobile) setActiveTab('map')
             }}
           />
+        </div>
+
+        {/* Live feed — every OSINT article behind the zones/ticker, most recent
+           first. The 16 zones stay curated; this panel is what's actually live. */}
+        <div style={{
+          width: isMobile ? '100%' : 320,
+          borderLeft: isMobile ? 'none' : '1px solid rgba(255,255,255,.06)',
+          display: (!isMobile || activeTab === 'feed') ? 'flex' : 'none',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          flexShrink: 0,
+          background: '#0a1220',
+        }}>
+          <LiveFeedPanel continent={activeCont} />
         </div>
 
         {/* Detail drawer — full-width on mobile, 360px slide-in on desktop */}

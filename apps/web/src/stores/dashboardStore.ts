@@ -75,6 +75,15 @@ export interface FeedItem {
   timestamp: string;
 }
 
+export interface VoiceNoteAlert {
+  id: string; // = voiceId, doubles as the toast's React key
+  deviceId: string;
+  deviceName: string;
+  voiceId: string;
+  durationMs: number | null;
+  createdAt: string;
+}
+
 interface DashboardStore {
   overview: DashboardOverview | null;
   alerts: DashboardAlert[];
@@ -85,6 +94,7 @@ interface DashboardStore {
   feedItems: FeedItem[];
   selectedVehicleId: string | null;
   tickerEvents: Array<{ id: string; severity: string; message: string }>;
+  voiceNoteAlert: VoiceNoteAlert | null;
 
   setOverview: (o: DashboardOverview) => void;
   setAlerts: (a: DashboardAlert[]) => void;
@@ -100,6 +110,7 @@ interface DashboardStore {
   prependFeedItem: (f: FeedItem) => void;
   setSelectedVehicle: (id: string | null) => void;
   appendTickerEvent: (e: { id: string; severity: string; message: string }) => void;
+  setVoiceNoteAlert: (a: VoiceNoteAlert | null) => void;
 }
 
 export const useDashboardStore = create<DashboardStore>((set) => ({
@@ -112,6 +123,7 @@ export const useDashboardStore = create<DashboardStore>((set) => ({
   feedItems: [],
   selectedVehicleId: null,
   tickerEvents: [],
+  voiceNoteAlert: null,
 
   setOverview: (overview) => set({ overview }),
 
@@ -179,4 +191,6 @@ export const useDashboardStore = create<DashboardStore>((set) => ({
 
   appendTickerEvent: (e) =>
     set((s) => ({ tickerEvents: [...s.tickerEvents, e].slice(-40) })),
+
+  setVoiceNoteAlert: (voiceNoteAlert) => set({ voiceNoteAlert }),
 }));

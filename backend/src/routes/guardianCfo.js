@@ -49,35 +49,80 @@ async function validatePhotoUrl(photo_url, claimedLat, claimedLng) {
   return null;
 }
 
+// Real JPEG/EXIF GPS parser (replaces the old stub that always returned null,
+// so the anti-spoofing check in POST /photos never actually ran). Walks JPEG
+// segments to the APP1/EXIF block, then the TIFF → IFD0 → GPS-IFD structure to
+// pull GPSLatitude/Longitude and their N/S/E/W refs.
 function extractExifLatLng(buf) {
-  // Minimal JPEG EXIF GPS parser — looks for GPS IFD marker
-  if (buf[0] !== 0xFF || buf[1] !== 0xD8) return null; // not JPEG
+  if (buf.length < 4 || buf[0] !== 0xFF || buf[1] !== 0xD8) return null; // not JPEG
   let i = 2;
-  while (i < buf.length - 4) {
+  while (i + 4 <= buf.length) {
     if (buf[i] !== 0xFF) break;
     const marker = buf[i + 1];
+    if (marker === 0xDA || marker === 0xD9) break; // start-of-scan / end-of-image
     const segLen = buf.readUInt16BE(i + 2);
+    if (segLen < 2) break;
     if (marker === 0xE1) { // APP1 — EXIF
-      const exif = buf.slice(i + 4, i + 2 + segLen);
-      // Look for GPS IFD tags 0x0002 (GPSLatitude) and 0x0004 (GPSLongitude)
-      const latDeg = readExifGps(exif, 0x0002);
-      const lngDeg = readExifGps(exif, 0x0004);
-      const latRef = readExifGpsRef(exif, 0x0001);
-      const lngRef = readExifGpsRef(exif, 0x0003);
-      if (latDeg != null && lngDeg != null) {
-        return {
-          lat: latDeg * (latRef === 'S' ? -1 : 1),
-          lng: lngDeg * (lngRef === 'W' ? -1 : 1),
-        };
-      }
+      const gps = parseGpsFromApp1(buf.slice(i + 4, i + 2 + segLen));
+      if (gps) return gps;
     }
     i += 2 + segLen;
   }
   return null;
 }
 
-function readExifGps(_buf, _tag) { return null; } // Stub: full EXIF parse omitted for brevity
-function readExifGpsRef(_buf, _tag) { return null; } // Stub
+function parseGpsFromApp1(app1) {
+  // "Exif\0\0" header, then a self-contained TIFF block (all offsets below are
+  // relative to the TIFF start, per the EXIF spec).
+  if (app1.length < 14 || app1.toString('ascii', 0, 4) !== 'Exif') return null;
+  const tiff = app1.slice(6);
+  if (tiff.length < 8) return null;
+  const bo = tiff.toString('ascii', 0, 2);
+  const le = bo === 'II';
+  if (!le && bo !== 'MM') return null;
+  const u16 = (o) => (o + 2 > tiff.length ? null : (le ? tiff.readUInt16LE(o) : tiff.readUInt16BE(o)));
+  const u32 = (o) => (o + 4 > tiff.length ? null : (le ? tiff.readUInt32LE(o) : tiff.readUInt32BE(o)));
+  if (u16(2) !== 0x002A) return null;
+  const ifd0 = u32(4);
+  if (ifd0 == null) return null;
+
+  // Find the GPS Info IFD pointer (tag 0x8825) in IFD0.
+  const count0 = u16(ifd0);
+  if (count0 == null) return null;
+  let gpsIfd = null;
+  for (let e = 0; e < count0; e++) {
+    const entry = ifd0 + 2 + e * 12;
+    if (entry + 12 > tiff.length) break;
+    if (u16(entry) === 0x8825) { gpsIfd = u32(entry + 8); break; }
+  }
+  if (gpsIfd == null) return null;
+
+  // Walk the GPS IFD for lat/lng and their refs.
+  const gpsCount = u16(gpsIfd);
+  if (gpsCount == null) return null;
+  const rational = (off) => {
+    const n = u32(off), d = u32(off + 4);
+    return n == null || d == null || d === 0 ? null : n / d;
+  };
+  const dms = (off) => {
+    const deg = rational(off), min = rational(off + 8), sec = rational(off + 16);
+    return deg == null || min == null || sec == null ? null : deg + min / 60 + sec / 3600;
+  };
+  let lat = null, lng = null, latRef = 'N', lngRef = 'E';
+  for (let e = 0; e < gpsCount; e++) {
+    const entry = gpsIfd + 2 + e * 12;
+    if (entry + 12 > tiff.length) break;
+    const tag = u16(entry);
+    const type = u16(entry + 2);
+    const cnt = u32(entry + 4);
+    if (tag === 0x0001) latRef = String.fromCharCode(tiff[entry + 8]);
+    else if (tag === 0x0003) lngRef = String.fromCharCode(tiff[entry + 8]);
+    else if (tag === 0x0002 && type === 5 && cnt === 3) lat = dms(u32(entry + 8));
+    else if (tag === 0x0004 && type === 5 && cnt === 3) lng = dms(u32(entry + 8));
+  }
+  if (lat == null || lng == null) return null;
+  return { lat: lat * (latRef === 'S' ? -1 : 1), lng: lng * (lngRef === 'W' ? -1 : 1) };
+}
 
 // ─── Device Auth ─────────────────────────────────────────────────────────────
 
@@ -730,3 +775,5 @@ async function updateDailyReport(convoy_id, report_date) {
 }
 
 module.exports = router;
+// Exposed for unit testing the EXIF GPS parser.
+module.exports.extractExifLatLng = extractExifLatLng;

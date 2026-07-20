@@ -54,7 +54,7 @@ function DonutGauge({ label, value, color }: { label: string; value: number; col
   );
 }
 
-const OpsSidebar = React.memo(function OpsSidebar() {
+const OpsSidebar = React.memo(function OpsSidebar({ inline = false }: { inline?: boolean }) {
   const feedItems = useDashboardStore((s) => s.feedItems);
   const storeAlerts = useDashboardStore((s) => s.alerts);
   const { setAlerts, removeAlert } = useDashboardStore.getState();
@@ -95,16 +95,17 @@ const OpsSidebar = React.memo(function OpsSidebar() {
 
   return (
     <aside style={{
-      width: 'var(--d-sb-w)',
+      width: inline ? '100%' : 'var(--d-sb-w)',
       background: 'var(--d-carbon)',
       borderLeft: '1px solid var(--d-rim2)',
       display: 'flex',
       flexDirection: 'column',
-      height: '100vh',
-      overflowY: 'auto',
       scrollbarWidth: 'none',
-      position: 'sticky',
-      top: 0,
+      ...(inline
+        // In-flow console panel: stick to the top of the scroll region and
+        // scroll internally so the priority queue stays beside the map hero.
+        ? { position: 'sticky', top: 0, alignSelf: 'start', maxHeight: 'calc(100dvh - var(--d-top-h))', overflowY: 'auto' as const }
+        : { height: '100vh', overflowY: 'auto' as const, position: 'sticky', top: 0 }),
     }}>
       {/* Live feed */}
       <div style={{ padding: '16px 16px 0', borderBottom: '1px solid var(--d-rim2)', paddingBottom: 16 }}>

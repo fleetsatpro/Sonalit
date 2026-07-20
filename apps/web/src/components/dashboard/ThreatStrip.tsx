@@ -40,11 +40,16 @@ const ThreatStrip = React.memo(function ThreatStrip() {
 
   return (
     <div style={{
+      // Sticky within <main>'s scroll region (starts below the Topbar), so
+      // only the ticker height needs clearing — adding --d-top-h here parked
+      // the strip 52px too low, straddling the KPI tiles.
       position: 'sticky',
-      top: `calc(var(--d-top-h) + var(--d-tick-h))`,
+      top: 'var(--d-tick-h)',
       zIndex: 180,
       height: 'var(--d-str-h)',
-      background: style.bg,
+      // Opaque base under the translucent threat tint: content scrolling
+      // beneath the stuck strip must not show through it.
+      background: `linear-gradient(${style.bg}, ${style.bg}), var(--d-carbon)`,
       borderBottom: `1px solid ${style.border}`,
       display: 'flex',
       alignItems: 'center',

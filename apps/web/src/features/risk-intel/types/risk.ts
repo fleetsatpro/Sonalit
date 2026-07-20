@@ -18,6 +18,7 @@ export interface RiskZone {
   radius_km: number
   confidence: number
   velocity: Velocity
+  level_source?: string
   events: number
   events_24h: number
   week_data: number[]
@@ -47,6 +48,18 @@ export interface TickerItem {
   zone_code: string
   text: string
   occurred_at: string
+}
+
+export interface LiveFeedItem {
+  id: string
+  description: string
+  level: RiskLevel
+  source: string
+  external_url: string | null
+  occurred_at: string
+  zone_code: string
+  zone_name: string
+  continent: string
 }
 
 export interface RiskCounts {

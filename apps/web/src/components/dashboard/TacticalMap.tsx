@@ -4,6 +4,10 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
 import { useDashboardStore } from '../../stores/dashboardStore.js';
+import {
+  trafficTransformRequest, addTrafficLayers, setTrafficLayersVisible, setTrafficIncidents,
+  bboxFromMap, useTrafficIncidents, useTrafficStatus,
+} from '../../lib/trafficLayer.js';
 
 interface MapConvoy { id: string; name: string; status: string; lat: number | null; lng: number | null; heading: number; color: string }
 interface AlertZone { lat: number; lng: number; radius_m: number; severity: string }
@@ -144,6 +148,19 @@ function setupMapLayers(map: maplibregl.Map) {
     'circle-color': STATUS_COLOR_EXPR,
     'circle-stroke-width': 1.5, 'circle-stroke-color': '#ffffff', 'circle-opacity': 0.95,
   }});
+  // Devices (Guardian officer phones) previously had no on-map label at all —
+  // just a colored dot, so identifying WHO a dot was or their live state
+  // meant leaving this widget for the GPS Live page. This tag (name + state)
+  // is what makes Tactical Map a glanceable HUD rather than a duplicate of
+  // GPS Live's click-to-inspect officer markers.
+  map.addLayer({ id: 'sv-devices-label', type: 'symbol', source: 'sv-devices', layout: {
+    'text-field': ['concat', ['get', 'name'], '  ·  ', ['upcase', ['get', 'status']]],
+    'text-size': 9, 'text-offset': [0, 1.1], 'text-anchor': 'top',
+    'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+    'text-allow-overlap': false, 'text-optional': true,
+  }, paint: {
+    'text-color': '#ffffff', 'text-halo-color': '#000000', 'text-halo-width': 1.5,
+  }});
 }
 
 function updateMapData(map: maplibregl.Map, data: MapData) {
@@ -235,7 +252,7 @@ function LegendDot({ color, label }: { color: string; label: string }) {
   );
 }
 
-const TacticalMap = React.memo(function TacticalMap() {
+const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: boolean }) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const mapReadyRef = useRef(false);
@@ -246,7 +263,15 @@ const TacticalMap = React.memo(function TacticalMap() {
   const { setSelectedVehicle } = useDashboardStore.getState();
   const [expanded, setExpanded] = useState(false);
   const [mapStyle, setMapStyle] = useState<'street' | 'satellite'>('street');
+  const [trafficOn, setTrafficOn] = useState(false);
+  const [bbox, setBbox] = useState<string | null>(null);
   const currentDataRef = useRef<MapData | null>(null);
+  const trafficOnRef = useRef(trafficOn);
+  trafficOnRef.current = trafficOn;
+  const trafficFCRef = useRef<GeoJSON.FeatureCollection | null>(null);
+
+  const { data: trafficStatus } = useTrafficStatus();
+  const { data: trafficFC } = useTrafficIncidents(bbox, trafficOn);
 
   const { data: mapData } = useQuery<MapData>({
     queryKey: ['dashboard-map'],
@@ -266,13 +291,17 @@ const TacticalMap = React.memo(function TacticalMap() {
       container: mapContainer.current,
       style: STREET_STYLE,
       center: EA_CENTER, zoom: EA_ZOOM, attributionControl: false,
+      transformRequest: trafficTransformRequest,
     });
     map.on('error', () => {});
     map.on('load', () => {
       setupMapLayers(map);
+      addTrafficLayers(map, trafficOnRef.current);
+      setBbox(bboxFromMap(map));
       mapReadyRef.current = true;
       if (pendingDataRef.current) { updateMapData(map, pendingDataRef.current); pendingDataRef.current = null; }
     });
+    map.on('moveend', () => setBbox(bboxFromMap(map)));
     mapRef.current = map;
     return () => { map.remove(); mapRef.current = null; mapReadyRef.current = false; };
   }, []);
@@ -296,12 +325,26 @@ const TacticalMap = React.memo(function TacticalMap() {
     map.setStyle(style);
     const onLoad = () => {
       setupMapLayers(map);
+      addTrafficLayers(map, trafficOnRef.current);
+      if (trafficFCRef.current) setTrafficIncidents(map, trafficFCRef.current);
       mapReadyRef.current = true;
       if (currentDataRef.current) updateMapData(map, currentDataRef.current);
     };
     map.once('style.load', onLoad);
     return () => { map.off('style.load', onLoad); };
   }, [mapStyle]);
+
+  // traffic visibility toggle — instant (setLayoutProperty), no re-fetch
+  useEffect(() => {
+    const map = mapRef.current; if (!map || !mapReadyRef.current) return;
+    setTrafficLayersVisible(map, trafficOn);
+  }, [trafficOn]);
+
+  useEffect(() => {
+    trafficFCRef.current = trafficFC ?? null;
+    const map = mapRef.current; if (!map || !mapReadyRef.current || !trafficFC) return;
+    setTrafficIncidents(map, trafficFC);
+  }, [trafficFC]);
 
   useEffect(() => {
     vehiclePositions.forEach((pos, vehicleId) => {
@@ -340,6 +383,16 @@ const TacticalMap = React.memo(function TacticalMap() {
     if (mapRef.current) setTimeout(() => mapRef.current?.resize(), 50);
   }, [expanded]);
 
+  // In fill mode the map's height tracks the console flex layout, so follow
+  // real container resizes (viewport changes, panel wrap) with map.resize().
+  useEffect(() => {
+    const el = mapContainer.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => mapRef.current?.resize());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // Escape key closes fullscreen
   useEffect(() => {
     if (!expanded) return;
@@ -349,7 +402,12 @@ const TacticalMap = React.memo(function TacticalMap() {
   }, [expanded]);
 
   return (
-    <div style={expanded ? { position: 'fixed', inset: 0, zIndex: 500, background: 'var(--d-void)', display: 'flex', flexDirection: 'column', padding: 0 } : { padding: '16px 16px 0' }}>
+    <div style={expanded
+      ? { position: 'fixed', inset: 0, zIndex: 500, background: 'var(--d-void)', display: 'flex', flexDirection: 'column', padding: 0 }
+      : fill
+        // Console hero mode: fill the pane, the map itself takes all slack.
+        ? { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, padding: '10px 14px 8px' }
+        : { padding: '16px 16px 0' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap', rowGap: 6, ...(expanded && { padding: '12px 16px 0' }) }}>
         <div style={{ width: 3, height: 14, background: 'var(--d-orange)', borderRadius: 2, flexShrink: 0 }} />
@@ -361,6 +419,16 @@ const TacticalMap = React.memo(function TacticalMap() {
         <LegendDot color='#ff4422' label='ALERT' />
         <LegendDot color='#ff1e1e' label='PANIC' />
         <LegendDot color='#888888' label='IDLE' />
+        {/* Traffic toggle — hidden entirely if no TOMTOM_API_KEY is configured server-side */}
+        {trafficStatus?.configured && (
+          <button
+            onClick={() => setTrafficOn(v => !v)}
+            title={trafficOn ? 'Hide traffic (congestion + incidents)' : 'Show traffic (congestion + incidents) — coverage is sparse or absent in some conflict corridors'}
+            style={{ background: trafficOn ? 'rgba(239,68,68,.15)' : 'var(--d-lift2)', border: `1px solid ${trafficOn ? '#ef4444' : 'var(--d-rim2)'}`, borderRadius: 6, color: trafficOn ? '#ef4444' : 'var(--d-t2)', cursor: 'pointer', padding: '4px 8px', fontSize: 10, fontFamily: 'IBM Plex Mono, monospace', letterSpacing: '.06em', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}
+          >
+            TRAFFIC
+          </button>
+        )}
         {/* Layer switcher */}
         <button
           onClick={() => setMapStyle(s => s === 'street' ? 'satellite' : 'street')}
@@ -380,8 +448,8 @@ const TacticalMap = React.memo(function TacticalMap() {
       </div>
 
       {/* Map container */}
-      <div style={{ position: 'relative', borderRadius: expanded ? 0 : 12, overflow: 'hidden', border: '1px solid var(--d-rim2)', marginBottom: expanded ? 0 : 12, flex: expanded ? 1 : undefined }}>
-        <div ref={mapContainer} style={{ width: '100%', height: expanded ? '100%' : 420, background: 'var(--d-deep)', ...(expanded && { position: 'absolute', inset: 0 }) }} />
+      <div style={{ position: 'relative', borderRadius: expanded ? 0 : 12, overflow: 'hidden', border: '1px solid var(--d-rim2)', marginBottom: expanded ? 0 : fill ? 8 : 12, flex: expanded || fill ? 1 : undefined, minHeight: fill ? 240 : undefined }}>
+        <div ref={mapContainer} style={{ width: '100%', height: expanded || fill ? '100%' : 420, background: 'var(--d-deep)', ...(expanded && { position: 'absolute', inset: 0 }) }} />
 
         {/* Radar — own 160×160 square SVG so rings stay circular on all widths */}
         <div style={{ position: 'absolute', top: 8, left: 8, pointerEvents: 'none', width: 160, height: 160 }}>
@@ -454,7 +522,7 @@ const TacticalMap = React.memo(function TacticalMap() {
 
       {/* Vehicle chips */}
       {vehicles && vehicles.length > 0 && (
-        <div className='d-hscroll' style={{ marginBottom: 12, gap: 8, paddingBottom: 6 }}>
+        <div className='d-hscroll' style={{ marginBottom: fill ? 4 : 12, gap: 8, paddingBottom: 6, flexShrink: 0 }}>
           {vehicles.map(v => (
             <button key={v.id} onClick={() => setSelectedVehicle(v.id === selectedVehicleId ? null : v.id)}
               style={{ flex: '0 0 auto', scrollSnapAlign: 'start', padding: '6px 12px', background: v.id === selectedVehicleId ? 'var(--d-sg)' : 'var(--d-well)', border: `1px solid ${v.id === selectedVehicleId ? 'var(--d-sig)' : 'var(--d-rim2)'}`, borderRadius: 6, cursor: 'pointer', color: v.id === selectedVehicleId ? 'var(--d-sig)' : 'var(--d-t2)', fontSize: 11, fontFamily: 'IBM Plex Mono, monospace' }}
@@ -463,8 +531,9 @@ const TacticalMap = React.memo(function TacticalMap() {
         </div>
       )}
 
-      {/* Telemetry row */}
-      {selectedVehicle && (
+      {/* Telemetry row — per-vehicle detail lives on GPS Live in console
+          (fill) mode; home answers only "is anything wrong?" */}
+      {!fill && selectedVehicle && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', padding: '10px 12px', background: 'var(--d-well)', borderRadius: 8, border: '1px solid var(--d-rim2)' }}>
           <TelItem label='Speed' value={`${Math.round(selectedVehicle.speed_kmh)} km/h`} />
           <TelItem label='Status' value={selectedVehicle.status.toUpperCase()} color={selectedVehicle.status === 'alert' ? 'var(--d-fire)' : selectedVehicle.status === 'moving' ? 'var(--d-ok)' : 'var(--d-t3)'} />
@@ -473,7 +542,7 @@ const TacticalMap = React.memo(function TacticalMap() {
       )}
 
       {/* Gauges */}
-      {selectedVehicle && (
+      {!fill && selectedVehicle && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
           <Gauge label='SPEED' value={selectedVehicle.speed_kmh} max={120} unit='km/h' type='speed' />
           <Gauge label='FUEL' value={selectedVehicle.fuel_pct} max={100} unit='%' type='fuel' />
@@ -482,7 +551,7 @@ const TacticalMap = React.memo(function TacticalMap() {
         </div>
       )}
 
-      <FleetBars vehicles={vehicles ?? []} />
+      {!fill && <FleetBars vehicles={vehicles ?? []} />}
     </div>
   );
 });

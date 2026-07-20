@@ -1,6 +1,7 @@
 package io.sonalit.guardian.data.remote
 
 import com.squareup.moshi.Json
+import okhttp3.RequestBody
 import retrofit2.http.*
 
 // ── Device API ────────────────────────────────────────────────────────────────
@@ -14,8 +15,13 @@ data class EnrollRequest(
     val app_version: String? = null,
 )
 data class EnrollResponse(val status: String, val device_uuid: String, val device_token: String? = null)
+data class RecoverRequest(val device_id: String)
 data class HeartbeatRequest(val device_id: String, val battery_pct: Int? = null,
-    val connectivity: String? = null, val lat: Double? = null, val lon: Double? = null)
+    val connectivity: String? = null, val lat: Double? = null, val lon: Double? = null,
+    // Without this the server only ever learns the FCM token at enrollment —
+    // when Firebase usually hasn't issued one yet — leaving guardian_devices.
+    // fcm_token NULL forever and every command push silently skipped.
+    val fcm_token: String? = null)
 data class HeartbeatResponse(val commands: List<Map<String, Any>>)
 // Backend reads req.body.lng (POST /guardian/panic in guardian.js), not "lon" —
 // unlike /guardian/heartbeat, this route has no legacy-field fallback, so every
@@ -35,6 +41,24 @@ data class LocationPoint(
     val timestamp: String,
 )
 data class LocationBatchRequest(val points: List<LocationPoint>)
+
+data class VoiceMessageUploadResponseData(val voice_id: String, val status: String)
+data class VoiceMessageUploadResponse(val data: VoiceMessageUploadResponseData)
+
+data class ConvoyMember(
+    val id: String,
+    val name: String,
+    val last_lat: Double?,
+    val last_lng: Double?,
+    val last_speed: Double?,
+    val last_seen: String?,
+    val status: String?,
+)
+data class ConvoyStatusResponse(
+    val in_convoy: Boolean,
+    val convoy_code: String?,
+    val members: List<ConvoyMember> = emptyList(),
+)
 
 // ── CFO API ───────────────────────────────────────────────────────────────────
 
@@ -101,6 +125,7 @@ data class PhotoUploadUrlRequest(
     val report_date: String,
 )
 data class PhotoUploadUrlResponse(val upload_url: String, val public_url: String, val key: String)
+data class CapturePhotoUrlResponse(val upload_url: String, val public_url: String, val key: String)
 
 data class CommitPhotoRequest(
     val event_uuid: String,
@@ -137,6 +162,11 @@ interface GuardianApi {
     @POST("guardian/enroll")
     suspend fun enroll(@Body req: EnrollRequest): EnrollResponse
 
+    /** Silent identity recovery by ANDROID_ID — a reinstalled app on known
+     *  hardware gets its device identity back without re-enrolling. */
+    @POST("guardian/recover")
+    suspend fun recover(@Body req: RecoverRequest): EnrollResponse
+
     @POST("guardian/heartbeat")
     suspend fun heartbeat(@Body req: HeartbeatRequest): HeartbeatResponse
 
@@ -146,14 +176,56 @@ interface GuardianApi {
     @POST("guardian/panic/cancel")
     suspend fun cancelPanic(): Map<String, Any>
 
+    /** Resets the server-side Dead Man's Switch timer (last_checkin_at). Sent
+     *  while the device is alive so the server only escalates to a silent SOS
+     *  once check-ins actually stop (device dark past its DMS timeout). */
+    @POST("guardian/checkin")
+    suspend fun checkin(): Map<String, Any>
+
+    /** Presigns a one-shot R2 PUT for a capture_photo command (the covert
+     *  "remote eyes" Knox substitute). Device-token auth via the interceptor. */
+    @POST("guardian/capture-photo-url")
+    suspend fun capturePhotoUrl(): CapturePhotoUrlResponse
+
+    /** Reports a completed capture so dispatch sees it in Live Fleet.
+     *  Body: { public_url, key, command_id? }. */
+    @POST("guardian/capture-photo")
+    suspend fun capturePhoto(@Body body: Map<String, String>): Map<String, Any>
+
     @POST("guardian/ack-command")
     suspend fun ackCommand(@Body body: Map<String, String>): Map<String, String>
+
+    /** 60s in-service pickup — same claim as the heartbeat, minus telemetry. */
+    @POST("guardian/commands/poll")
+    suspend fun pollCommands(): HeartbeatResponse
 
     // Was "telemetry/batch" — a path no backend route ever matched, so every
     // background GPS sync 404'd and field officer positions never reached
     // the server. guardian/location/batch is the real, working endpoint.
     @POST("guardian/location/batch")
     suspend fun locationBatch(@Body batch: LocationBatchRequest): Map<String, Any>
+
+    /** Field officer -> dispatch voice note. Body is raw audio bytes (see
+     *  CommandExecutor's replayVoiceMessage for the reverse/download side) —
+     *  X-Device-Token is injected by NetworkModule's interceptor like every
+     *  other plain device endpoint here, so no explicit header param. */
+    @POST("guardian/voice-message")
+    suspend fun uploadVoiceMessage(
+        @Body body: RequestBody,
+        @Query("duration_ms") durationMs: Int,
+    ): VoiceMessageUploadResponse
+
+    /** Other Guardian devices sharing this device's ad-hoc convoy_code, with
+     *  their last known position/status — backs the Home "My Convoy" card. */
+    @GET("guardian/convoy")
+    suspend fun convoyStatus(): ConvoyStatusResponse
+
+    /** Org-wide device config (guardian_config table) — currently only used
+     *  for dispatch_phone_number (Home's Call Dispatch button). Untyped
+     *  because the table is a generic key/value store the backend flattens
+     *  into a single JSON object. */
+    @GET("guardian/config")
+    suspend fun config(): Map<String, Any>
 
     // CFO endpoints — all require X-Device-Token header
     @POST("guardian/cfo/login")

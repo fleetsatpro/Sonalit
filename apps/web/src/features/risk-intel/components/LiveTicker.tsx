@@ -2,10 +2,19 @@ import { useRef } from 'react'
 import { useRiskTicker } from '../hooks/useRiskTicker.js'
 import { levelColor } from '../utils/colors.js'
 
-export default function LiveTicker() {
-  const { data } = useRiskTicker()
+export default function LiveTicker({ continent }: { continent?: string }) {
+  const { data } = useRiskTicker(continent)
   const items = data?.items ?? []
   const tickerRef = useRef<HTMLDivElement>(null)
+
+  // Duration was a fixed 40s regardless of how much text there was to
+  // scroll through — fine when there were only a couple of items, but with
+  // more OSINT sources feeding the ticker it now has to cover far more
+  // characters in the same window, so it visibly speeds up. Scale the
+  // scroll duration to content length instead, so the pace (not the time)
+  // stays constant.
+  const totalChars = items.reduce((sum, item) => sum + item.text.length + 20, 0)
+  const durationSec = Math.max(20, Math.min(120, totalChars / 12))
 
   return (
     <div style={{
@@ -28,7 +37,7 @@ export default function LiveTicker() {
           <div style={{
             display: 'inline-flex',
             gap: 32,
-            animation: 'risk-ticker-scroll 40s linear infinite',
+            animation: `risk-ticker-scroll ${durationSec}s linear infinite`,
             whiteSpace: 'nowrap',
           }}>
             {[...items, ...items].map((item, i) => (

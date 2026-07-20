@@ -76,16 +76,20 @@ async function sendPush(fcmToken, title, body, data = {}) {
  * Send command push to a device — data-only so Android onMessageReceived
  * fires even when the app is in background, triggering an immediate heartbeat.
  */
-async function sendCommandPush(fcmToken, commandType, commandId) {
+async function sendCommandPush(fcmToken, commandType, commandId, payload = null) {
   if (!fcmToken) return false;
   const app = getApp();
   if (!app) return false;
   try {
     const admin = require('firebase-admin');
+    const data = { type: 'command', command_type: commandType, command_id: String(commandId) };
+    // FCM data values must be strings — commands that carry arguments
+    // (e.g. show_message's { text }) ride along as a JSON string.
+    if (payload != null) data.payload = typeof payload === 'string' ? payload : JSON.stringify(payload);
     await admin.messaging(app).send({
       token: fcmToken,
       // No notification field — data-only wakes background onMessageReceived
-      data: { type: 'command', command_type: commandType, command_id: String(commandId) },
+      data,
       android: { priority: 'high' },
     });
     logger.info(`FCM command push sent to token=${fcmToken.slice(0, 8)}... type=${commandType}`);

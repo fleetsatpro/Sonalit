@@ -10,7 +10,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
@@ -18,6 +22,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -25,8 +30,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
@@ -109,7 +116,25 @@ private fun GuardianApp(viewModel: MainViewModel) {
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         when {
             uiState.isEnrolled -> MainScaffold()
+            // Silent identity recovery is in flight — a reinstalled app on
+            // already-registered hardware re-attaches automatically, so don't
+            // flash the enrollment form at an officer who never needs it.
+            !uiState.identityCheckDone -> IdentityRecoverySplash()
             else -> EnrollmentScreen(onEnrolled = { viewModel.markEnrolled() })
+        }
+    }
+}
+
+@Composable
+private fun IdentityRecoverySplash() {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator()
+            Spacer(modifier = Modifier.height(14.dp))
+            Text(
+                text = "Checking device registration…",
+                color = MaterialTheme.colorScheme.onBackground,
+            )
         }
     }
 }
@@ -172,6 +197,15 @@ private fun RequestCorePermissionsOnFirstLaunch() {
     ) { results ->
         val fineLocationGranted = results[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (fineLocationGranted) {
+            // GuardianService is started before this dialog is ever shown, and its
+            // location registration no-ops without the permission. Poke the already-
+            // running instance (onStartCommand) so it registers right now instead of
+            // waiting for its internal retry tick.
+            ContextCompat.startForegroundService(
+                context, Intent(context, io.sonalit.guardian.service.GuardianService::class.java)
+            )
+        }
         if (fineLocationGranted && !askedBackgroundLocation && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED
         ) {

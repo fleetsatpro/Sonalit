@@ -11,15 +11,19 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/auth.js';
 
-interface NavItem { path: string; icon: LucideIcon; label: string }
-interface NavGroup { label: string; items: NavItem[] }
+export interface NavItem { path: string; icon: LucideIcon; label: string }
+interface NavGroup { label: string; hue: string; items: NavItem[] }
 
 // Groups merged from the legacy NavSidebar so consolidating to Rail loses no
 // nav entry. When adding routes: put them in the smallest section that fits
 // so the rail stays scannable — don't grow "Command" past ~8 items.
-const NAV_GROUPS: NavGroup[] = [
+// `hue` is an "r,g,b" triple: each section carries its own accent so a
+// section is found by colour before the label is read (amber=command,
+// red=security, cyan=fleet, green=business).
+export const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Command',
+    hue: '255,178,62',
     items: [
       { path: '/',                icon: LayoutDashboard, label: 'Command Center' },
       { path: '/gps',             icon: MapPin,          label: 'GPS Live' },
@@ -31,6 +35,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: 'Security',
+    hue: '255,59,92',
     items: [
       { path: '/alerts',         icon: Bell,          label: 'Alerts & Incidents' },
       { path: '/risk-intel',     icon: AlertTriangle, label: 'Risk Intel' },
@@ -42,6 +47,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: 'Fleet',
+    hue: '55,230,255',
     items: [
       { path: '/convoys',        icon: Route,   label: 'Convoys' },
       { path: '/fleet',          icon: Truck,   label: 'Fleet' },
@@ -55,6 +61,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: 'Business',
+    hue: '34,227,154',
     items: [
       { path: '/shipments',      icon: Package,      label: 'Shipments' },
       { path: '/cargo-portal',   icon: Link2,        label: 'Cargo Portal' },
@@ -124,8 +131,14 @@ const Rail = React.memo(function Rail({ onClose }: { onClose?: () => void }) {
               fontWeight: 600,
               letterSpacing: '.12em',
               textTransform: 'uppercase',
-              color: 'var(--d-t3)',
-            }}>{group.label}</div>
+              color: `rgba(${group.hue},.75)`,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+            }}>
+              <span style={{ width: 3, height: 8, borderRadius: 2, background: `rgba(${group.hue},.85)`, flexShrink: 0 }} />
+              {group.label}
+            </div>
             {group.items.map(item => {
               const active = currentPath === item.path || (item.path !== '/' && currentPath.startsWith(item.path));
               const Icon = item.icon;
@@ -141,15 +154,15 @@ const Rail = React.memo(function Rail({ onClose }: { onClose?: () => void }) {
                     gap: 10,
                     padding: '9px 20px',
                     textDecoration: 'none',
-                    color: active ? 'var(--d-orange)' : 'var(--d-t2)',
-                    background: active ? 'linear-gradient(90deg, rgba(249,115,22,.08), transparent)' : 'transparent',
-                    borderLeft: active ? '3px solid var(--d-orange)' : '3px solid transparent',
-                    boxShadow: active ? 'inset 4px 0 12px rgba(249,115,22,.12)' : 'none',
+                    color: active ? `rgb(${group.hue})` : 'var(--d-t2)',
+                    background: active ? `linear-gradient(90deg, rgba(${group.hue},.10), transparent)` : 'transparent',
+                    borderLeft: active ? `3px solid rgb(${group.hue})` : '3px solid transparent',
+                    boxShadow: active ? `inset 4px 0 12px rgba(${group.hue},.14)` : 'none',
                     fontSize: 14,
                     transition: 'all .15s',
                   }}
                 >
-                  <Icon size={15} strokeWidth={active ? 2.2 : 1.6} style={{ flexShrink: 0, opacity: active ? 1 : 0.65 }} />
+                  <Icon size={15} strokeWidth={active ? 2.2 : 1.6} style={{ flexShrink: 0, opacity: active ? 1 : 0.65, color: active ? `rgb(${group.hue})` : `rgba(${group.hue},.55)` }} />
                   {item.label}
                 </Link>
               );

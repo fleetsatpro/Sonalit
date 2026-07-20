@@ -62,3 +62,45 @@ test('org B sees only its own vehicle', async () => {
   expect(result.rows).toHaveLength(1);
   expect(result.rows[0].registration).toBe('TEST-ORG-B-001');
 });
+
+// The drivers route (backend/src/routes/drivers.js) was moved onto req.db/withOrg;
+// that only isolates data if the drivers table actually carries RLS + the
+// org_isolation policy. Assert it via the catalog (schema-independent — no seed
+// row needed, so this doesn't depend on the drivers DDL which lives outside the
+// tracked migrations).
+test('drivers table has RLS enabled with an org_isolation policy', async () => {
+  if (skip()) return;
+  const rls = await pool.query(
+    `SELECT relrowsecurity FROM pg_class WHERE relname = 'drivers'`
+  );
+  expect(rls.rows).toHaveLength(1);
+  expect(rls.rows[0].relrowsecurity).toBe(true);
+
+  const policy = await pool.query(
+    `SELECT 1 FROM pg_policies WHERE tablename = 'drivers' AND policyname = 'org_isolation'`
+  );
+  expect(policy.rows).toHaveLength(1);
+});
+
+// Migration 063 retrofits org_id + FORCEd RLS onto the finance/maintenance
+// tables so finance.js / maintenance.js (now on req.db) are actually isolated.
+// Assert each carries RLS, FORCE, and the org_isolation policy via the catalog.
+test.each(['trips', 'invoices', 'expenses', 'maintenance_records'])(
+  '%s has FORCEd RLS with an org_isolation policy',
+  async (tbl) => {
+    if (skip()) return;
+    const rls = await pool.query(
+      `SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relname = $1`,
+      [tbl]
+    );
+    expect(rls.rows).toHaveLength(1);
+    expect(rls.rows[0].relrowsecurity).toBe(true);
+    expect(rls.rows[0].relforcerowsecurity).toBe(true);
+
+    const policy = await pool.query(
+      `SELECT 1 FROM pg_policies WHERE tablename = $1 AND policyname = 'org_isolation'`,
+      [tbl]
+    );
+    expect(policy.rows).toHaveLength(1);
+  }
+);

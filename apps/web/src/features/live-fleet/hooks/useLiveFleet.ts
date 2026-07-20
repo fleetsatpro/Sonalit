@@ -17,6 +17,7 @@ interface GpsPos {
   lat: number; lng: number; speed: number | null; heading: number | null; timestamp: string | null
   panic_active?: boolean; battery_level?: number | null; signal_strength?: number | null
   health_recorded_at?: string | null
+  officer_name?: string | null; officer_phone?: string | null
 }
 // Realtime publishes on the org# channel carry a `type` field; GPS position
 // updates are always 'location' (gpsWorker.js, guardian.js POST /location).
@@ -71,7 +72,12 @@ export function useLiveFleet() {
     staleTime: 30_000,
   })
 
-  // Initial GPS positions — always fetch; used as primary source when no vehicle records
+  // GPS positions — always fetch; used as primary source when no vehicle
+  // records. Polled every 15s as a resilience floor: realtime Centrifugo
+  // pushes are the fast path, but when that layer is down or unreachable
+  // (publishes fail server-side, or the browser's websocket can't connect)
+  // this poll is what keeps the map moving instead of freezing until a
+  // manual page reload.
   useQuery<GpsPos[]>({
     queryKey: ['live-fleet-gps-init'],
     queryFn: async () => {
@@ -89,6 +95,7 @@ export function useLiveFleet() {
     },
     enabled: !!orgId,
     staleTime: 0,
+    refetchInterval: 15_000,
   })
 
   // Real-time GPS updates via Centrifuge
@@ -181,6 +188,8 @@ export function useLiveFleet() {
           battery_level: pos?.battery_level ?? null,
           signal_strength: pos?.signal_strength ?? null,
           health_recorded_at: pos?.health_recorded_at ?? null,
+          officer_name: pos?.officer_name ?? null,
+          officer_phone: pos?.officer_phone ?? null,
         }
         counts.all++
         counts[status]++
@@ -218,6 +227,8 @@ export function useLiveFleet() {
           battery_level: pos.battery_level ?? null,
           signal_strength: pos.signal_strength ?? null,
           health_recorded_at: pos.health_recorded_at ?? null,
+          officer_name: pos.officer_name ?? null,
+          officer_phone: pos.officer_phone ?? null,
         }
         counts.all++
         counts[status]++
@@ -260,6 +271,8 @@ export function useLiveFleet() {
           battery_level: pos.battery_level ?? null,
           signal_strength: pos.signal_strength ?? null,
           health_recorded_at: pos.health_recorded_at ?? null,
+          officer_name: pos.officer_name ?? null,
+          officer_phone: pos.officer_phone ?? null,
         }
         counts.all++
         counts[status]++

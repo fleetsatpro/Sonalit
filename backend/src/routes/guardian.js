@@ -84,6 +84,16 @@ const reportLimiter = rateLimit({
   handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
 });
 
+const voiceMessageLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  keyGenerator: (req) => (req.device && req.device.id) || req.headers['x-device-token'] || req.ip,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
+  handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
+});
+
 // Per-admin-per-target-device: 10 commands/min per (admin, device) pair
 const commandLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -454,6 +464,86 @@ async function runCommandExpiryJob() {
   } catch (err) {
     logger.error(`Command expiry job error: ${err.message}`);
   }
+
+  // Purge replay-protection nonces past their 24h window. The
+  // cleanup_command_nonces() function (migration 002) was defined but never
+  // invoked, so guardian_command_nonces grew unbounded. Guarded separately so a
+  // failure here never blocks command expiry above.
+  try {
+    await query('SELECT cleanup_command_nonces()');
+  } catch (err) {
+    logger.error(`Nonce cleanup job error: ${err.message}`);
+  }
+}
+
+// ─── Dead Man's Switch Monitor ───────────────────────────────────────────────
+// Server-authoritative DMS: a field officer's device sends periodic check-ins
+// (POST /checkin); if a device with DMS enabled goes past its timeout without
+// one, escalate to a silent SOS on its behalf. Doing this server-side (rather
+// than on the device) is what makes it a real dead-man's switch — it still
+// fires when the phone is destroyed, powered off, or out of signal, which is
+// exactly when the officer most needs it and a device-side timer never could.
+async function runDmsMonitorJob() {
+  try {
+    // Only devices that (a) have DMS on, (b) have actually checked in at least
+    // once since it was enabled (last_checkin_at NULL = no baseline, never
+    // fire blindly), (c) aren't temporarily suspended, and (d) are past their
+    // window. A NULL dms_timeout_minutes yields NULL here and is skipped.
+    const due = await query(
+      `SELECT id, org_id, name, last_lat, last_lng
+         FROM guardian_devices
+        WHERE dms_enabled = true
+          AND deleted_at IS NULL
+          AND panic_active = false
+          AND last_checkin_at IS NOT NULL
+          AND (dms_suspended_until IS NULL OR dms_suspended_until < NOW())
+          AND last_checkin_at < NOW() - (dms_timeout_minutes * INTERVAL '1 minute')`
+    );
+
+    for (const dev of due.rows) {
+      // Claim the device atomically: flip dms_enabled off (operator re-enables
+      // after resolving) and mark panic_active. The WHERE dms_enabled = true
+      // guard means only one monitor tick can win, so we never double-fire.
+      const claim = await query(
+        `UPDATE guardian_devices
+            SET dms_enabled = false, panic_active = true, updated_at = NOW()
+          WHERE id = $1 AND dms_enabled = true
+          RETURNING id`,
+        [dev.id]
+      );
+      if (!claim.rows.length) continue;
+
+      const eventUuid = uuidv4();
+      const ins = await query(
+        `INSERT INTO panic_events (event_uuid, device_id, org_id, mode, lat, lng, message, created_at)
+         VALUES ($1, $2, $3, 'silent', $4, $5, $6, NOW())
+         RETURNING id, created_at`,
+        [eventUuid, dev.id, dev.org_id ?? null, dev.last_lat ?? null, dev.last_lng ?? null,
+         "Dead Man's Switch: missed check-in"]
+      );
+      const row = ins.rows[0];
+
+      // Same payload shape the POST /panic handler publishes, so the dashboard's
+      // existing 'panic' realtime handler renders it identically.
+      const payload = {
+        type: 'panic',
+        panic_id: row.id,
+        event_uuid: eventUuid,
+        device_id: dev.id,
+        device_name: dev.name,
+        mode: 'silent',
+        lat: dev.last_lat ?? null,
+        lng: dev.last_lng ?? null,
+        message: "Dead Man's Switch: missed check-in",
+        created_at: row.created_at,
+        triggered_at: row.created_at,
+      };
+      if (dev.org_id) publish(`org#${dev.org_id}`, payload); else publish('device:panic', payload);
+      logger.warn(`DMS timeout PANIC: device=${dev.id} name="${dev.name}" org=${dev.org_id ?? 'unknown'}`);
+    }
+  } catch (err) {
+    logger.error(`DMS monitor job error: ${err.message}`);
+  }
 }
 
 // ─── Panic Escalation Background Job ─────────────────────────────────────────
@@ -529,6 +619,9 @@ ensureTables().then(() => {
   // Start panic escalation job — checks every minute for unacknowledged panics
   runPanicEscalationJob();
   setInterval(runPanicEscalationJob, 60 * 1000);
+
+  runDmsMonitorJob();
+  setInterval(runDmsMonitorJob, 2 * 60 * 1000); // every 2 minutes
 });
 
 // ─── Device Auth Middleware ───────────────────────────────────────────────────
@@ -591,6 +684,52 @@ async function linkOfficerDevice(officer, deviceId) {
 }
 
 /**
+ * POST /api/v1/guardian/recover
+ * Silent identity recovery: the app lost its stored credentials (fresh
+ * reinstall, cleared data, logout) but the hardware is already registered.
+ * The app calls this on launch with its ANDROID_ID before ever showing the
+ * enrollment screen — a known device gets its identity back with no badge
+ * typing and no operator involvement, so enrollment is a first-time-only
+ * event. Trust level is identical to the enroll dedup fast path, which has
+ * always returned the token for a matching android_id.
+ */
+router.post('/recover', enrollLimiter, async (req, res, next) => {
+  try {
+    const { device_id } = req.body; // ANDROID_ID, same value enroll sends
+    if (!device_id) {
+      return res.status(400).json({ error: 'device_id is required' });
+    }
+    const result = await query(
+      `SELECT id, token, status, org_id FROM guardian_devices
+       WHERE android_id = $1 AND deleted_at IS NULL
+       ORDER BY enrolled_at DESC LIMIT 1`,
+      [device_id]
+    );
+    const dev = result.rows[0];
+    if (!dev) return res.status(404).json({ error: 'unknown_device' });
+    if (dev.status === 'revoked' || dev.status === 'suspended') {
+      return res.status(403).json({ error: `Device is ${dev.status}` });
+    }
+    const officer = await query(
+      `SELECT id FROM field_officers WHERE device_id = $1 LIMIT 1`,
+      [dev.id]
+    );
+    const mappedStatus = (dev.status === 'active' || dev.status === 'enrolled') ? 'enrolled' : dev.status;
+    auditLog('device', dev.id, 'identity_recovered', 'device', dev.id, {}, req.ip);
+    res.json({
+      status: mappedStatus,
+      device_uuid: dev.id,
+      device_token: dev.token,
+      org_id: dev.org_id ?? null,
+      officer_id: officer.rows[0]?.id ?? null,
+      command_signing_secret: COMMAND_SIGNING_SECRET,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * POST /api/v1/guardian/enroll
  * Register a new device.
  * Accepts two formats:
@@ -649,6 +788,39 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
           officer_id: officerRes.rows[0]?.id ?? null,
           command_signing_secret: COMMAND_SIGNING_SECRET,
         });
+      }
+
+      // No android_id match, but the badge's officer already has a linked
+      // live device — this is almost always the SAME phone re-enrolling
+      // (fresh install wiped its stored credentials, or the row predates
+      // android_id tracking). Adopt that row — backfill android_id, hand its
+      // token back — instead of forking a new row and retiring the old one,
+      // which silently discarded the device's entire position history and
+      // flipped the officer to "NO FIX YET" until the fork caught up.
+      if (officerRes.rows[0].device_id) {
+        const adopt = await query(
+          `UPDATE guardian_devices
+              SET android_id = $2,
+                  fcm_token = COALESCE($3, fcm_token),
+                  app_version = COALESCE($4, app_version),
+                  updated_at = NOW()
+            WHERE id = $1 AND deleted_at IS NULL
+            RETURNING id, token, status`,
+          [officerRes.rows[0].device_id, device_id, fcm_token ?? null, app_version ?? null]
+        );
+        if (adopt.rows[0]) {
+          const dev = adopt.rows[0];
+          const mappedStatus = (dev.status === 'active' || dev.status === 'enrolled') ? 'enrolled' : dev.status;
+          auditLog('device', dev.id, 'v4_enroll_adopted', 'device', dev.id, { operator_code, platform }, req.ip);
+          return res.json({
+            status: mappedStatus,
+            device_uuid: dev.id,
+            device_token: dev.token,
+            org_id: orgId,
+            officer_id: officerRes.rows[0].id,
+            command_signing_secret: COMMAND_SIGNING_SECRET,
+          });
+        }
       }
 
       // New enrollment — omit org_id when null so the column DEFAULT fires
@@ -955,7 +1127,7 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
     res.json({
       status: 'ok',
       server_time: Date.now(),
-      commands: commands.rows,
+      commands: commands.rows.map(serializeCommandPayload),
       command_signing_secret: COMMAND_SIGNING_SECRET,
       org_id: req.device.org_id ?? null,
       min_required_version: minCode,
@@ -966,6 +1138,141 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
     next(err);
   }
 });
+
+/**
+ * POST /api/v1/guardian/commands/poll
+ * Lightweight command pickup for the app's 60s in-service poll — the same
+ * atomic claim as the heartbeat path, without writing a device_health row,
+ * so it's cheap enough to hit every minute. This keeps dashboard commands
+ * (trigger_siren, show_message, ...) delivering in ≤60s even when FCM can't
+ * reach the device: no registered token, missing Play services, or push
+ * throttling by the OEM.
+ */
+router.post('/commands/poll', deviceAuth, heartbeatLimiter, async (req, res, next) => {
+  try {
+    const deviceId = req.device.id;
+    const commands = await query(
+      `WITH claimed AS (
+        SELECT id FROM device_commands
+        WHERE device_id = $1 AND status = 'pending' AND signature IS NOT NULL
+        ORDER BY issued_at ASC
+        LIMIT 50
+        FOR UPDATE SKIP LOCKED
+      )
+      UPDATE device_commands dc
+      SET status = 'sent', sent_at = NOW()
+      FROM claimed
+      WHERE dc.id = claimed.id
+      RETURNING dc.id, dc.command_type, dc.payload, dc.status,
+                dc.issued_at, dc.expires_at, dc.signature`,
+      [deviceId]
+    );
+    if (commands.rows.length) {
+      for (const cmd of commands.rows) {
+        query(`INSERT INTO device_command_events (command_id, status) VALUES ($1, 'delivered')`, [cmd.id]).catch(() => {});
+      }
+    }
+    res.json({ commands: commands.rows.map(serializeCommandPayload) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * The app treats a command's payload as an opaque string and parses it as
+ * JSON itself (see CommandExecutor). When these endpoints returned the jsonb
+ * payload as a nested OBJECT, the Kotlin client stringified it with
+ * Map.toString() — "{url=https://...}" — whose unquoted values truncate at
+ * ':' under lenient JSON parsing, so play_voice_message's URL parsed as
+ * literally "https" and every voice command acked 'failed'. Plain-word
+ * show_message texts survived by luck. Serialize payload to a JSON string
+ * here — the same shape the FCM push path has always used — so all delivery
+ * paths hand the app identical bytes.
+ */
+function serializeCommandPayload(cmd) {
+  return {
+    ...cmd,
+    payload: cmd.payload == null
+      ? null
+      : (typeof cmd.payload === 'string' ? cmd.payload : JSON.stringify(cmd.payload)),
+  };
+}
+
+/**
+ * GET /api/v1/guardian/voice-messages/:id/audio
+ * Audio bytes for a play_voice_message command. Device-token authenticated
+ * and scoped to the requesting device, so a leaked URL is useless without
+ * that device's token.
+ */
+router.get('/voice-messages/:id/audio', deviceAuth, async (req, res, next) => {
+  try {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid voice message id' });
+    }
+    const result = await query(
+      `SELECT mime, audio FROM guardian_voice_messages WHERE id = $1 AND device_id = $2`,
+      [req.params.id, req.device.id]
+    );
+    const row = result.rows[0];
+    if (!row) return res.status(404).json({ error: 'Voice message not found' });
+    res.set('Content-Type', row.mime || 'audio/webm');
+    res.set('Cache-Control', 'private, max-age=3600');
+    res.send(row.audio);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/v1/guardian/voice-message
+ * Reverse direction of the route above: a field officer records a note and
+ * sends it up to dispatch. Body is raw audio bytes (audio/*, ≤2 MB, same
+ * cap as the dispatch->device route), stored with direction='from_device'
+ * so GET /guardian/devices/:id/voice-messages (guardian-ops.js) can list
+ * only these for the operator UI. No signed command/FCM push needed here —
+ * dispatch is the web dashboard, which gets the update over the org's
+ * existing Centrifugo channel instead of a device-command round-trip.
+ */
+router.post(
+  '/voice-message',
+  deviceAuth,
+  voiceMessageLimiter,
+  require('express').raw({ type: ['audio/*'], limit: '2mb' }),
+  async (req, res, next) => {
+    try {
+      if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+        return res.status(400).json({ error: 'Request body must be raw audio bytes with an audio/* content type' });
+      }
+      const mime = (req.headers['content-type'] || 'audio/webm').split(';')[0];
+      const durationMs = parseInt(req.query.duration_ms) || null;
+      const orgId = req.device.org_id || null;
+
+      const { rows } = await query(
+        `INSERT INTO guardian_voice_messages (org_id, device_id, mime, duration_ms, audio, direction)
+         VALUES ($1, $2, $3, $4, $5, 'from_device')
+         RETURNING id, created_at`,
+        [orgId, req.device.id, mime, durationMs, req.body]
+      );
+      const voice = rows[0];
+
+      if (orgId) {
+        publish(`org#${orgId}`, {
+          type: 'guardian_voice_message',
+          device_id: req.device.id,
+          device_name: req.device.name,
+          voice_id: voice.id,
+          duration_ms: durationMs,
+          created_at: voice.created_at,
+        }).catch(e => logger.warn(`Centrifugo publish failed: ${e.message}`));
+      }
+
+      logger.info(`Voice note received: device=${req.device.id} voice=${voice.id} bytes=${req.body.length}`);
+      res.status(201).json({ data: { voice_id: voice.id, status: 'received' } });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 /**
  * POST /api/v1/guardian/location
@@ -1099,10 +1406,22 @@ router.post('/panic', deviceAuth, requireIdempotencyKey, panicLimiter, async (re
     };
 
     if (isNew) {
-      // Mark device panic_active so dashboard shows alert immediately on reload
+      // Mark device panic_active so dashboard shows alert immediately on reload.
+      // A panic that carries coordinates is also the freshest position we have —
+      // fold it into last_lat/last_lng/last_seen, which is all Live Fleet reads.
+      // Otherwise a device whose continuous GPS stream is down shows OFF on the
+      // map at a stale position while its SOS sits in Panic Center with exact
+      // coordinates a few pixels away.
       await query(
-        `UPDATE guardian_devices SET panic_active = true, updated_at = NOW() WHERE id = $1`,
-        [deviceId]
+        `UPDATE guardian_devices
+            SET panic_active = true,
+                updated_at = NOW(),
+                last_lat = COALESCE($2::float8, last_lat),
+                last_lng = COALESCE($3::float8, last_lng),
+                last_seen = CASE WHEN $2::float8 IS NOT NULL AND $3::float8 IS NOT NULL
+                                 THEN NOW() ELSE last_seen END
+          WHERE id = $1`,
+        [deviceId, lat ?? null, lng ?? null]
       );
 
       const panicPublishPayload = { type: 'panic', ...payload };
@@ -2085,6 +2404,76 @@ router.post('/checkin', deviceAuth, async (req, res, next) => {
   }
 });
 
+// ─── Dispatch-requested photo capture ("remote eyes") ────────────────────────
+// Lightweight substitute for the old Knox remote screen/control: a dispatcher
+// issues a capture_photo command, the device captures a still and uploads it to
+// R2 via the presigned PUT below, then reports the public URL. Device-token
+// auth only — unlike the CFO photo pipeline this carries no convoy/truck
+// context, it's a direct response to the command.
+
+/** POST /api/v1/guardian/capture-photo-url — presigned R2 PUT for one capture. */
+router.post('/capture-photo-url', deviceAuth, async (req, res, next) => {
+  try {
+    const { R2_ACCOUNT_ID, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET, R2_PUBLIC_URL } = process.env;
+    if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY || !R2_SECRET_KEY || !R2_BUCKET) {
+      return res.status(501).json({ error: 'Photo storage not configured on this server' });
+    }
+    if (!R2_PUBLIC_URL) {
+      return res.status(501).json({ error: 'Photo storage public URL (R2_PUBLIC_URL) not configured' });
+    }
+    let S3Client, PutObjectCommand, getSignedUrl;
+    try {
+      ({ S3Client, PutObjectCommand } = require('@aws-sdk/client-s3'));
+      ({ getSignedUrl } = require('@aws-sdk/s3-request-presigner'));
+    } catch {
+      return res.status(501).json({ error: 'Photo storage SDK not installed' });
+    }
+    const key = `captures/${req.device.id}/${uuidv4()}.jpg`;
+    const s3 = new S3Client({
+      region: 'auto',
+      endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      credentials: { accessKeyId: R2_ACCESS_KEY, secretAccessKey: R2_SECRET_KEY },
+    });
+    const command = new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, ContentType: 'image/jpeg' });
+    const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
+    res.json({ upload_url: uploadUrl, public_url: `${R2_PUBLIC_URL}/${key}`, key });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** POST /api/v1/guardian/capture-photo — device reports a completed capture.
+ *  Persisted org-scoped (explicit org_id, no RLS — same rationale as
+ *  guardian_voice_messages) and published to the org channel so Live Fleet
+ *  surfaces it live. */
+router.post('/capture-photo', deviceAuth, async (req, res, next) => {
+  try {
+    const { public_url, key, command_id } = req.body;
+    if (!public_url || typeof public_url !== 'string') {
+      return res.status(400).json({ error: 'public_url is required' });
+    }
+    const orgId = req.device.org_id || null;
+    const ins = await query(
+      `INSERT INTO guardian_captures (org_id, device_id, command_id, url, storage_key)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at`,
+      [orgId, req.device.id, command_id != null ? String(command_id) : null, public_url, key || null]
+    );
+    const row = ins.rows[0];
+    const payload = {
+      type: 'guardian_capture_photo',
+      device_id: req.device.id,
+      device_name: req.device.name,
+      capture_id: row.id,
+      url: public_url,
+      created_at: row.created_at,
+    };
+    if (orgId) publish(`org#${orgId}`, payload); else publish('device:capture', payload);
+    res.status(201).json({ id: row.id, created_at: row.created_at });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ─── Dead Man's Switch Admin ─────────────────────────────────────────────────
 
 /**
@@ -2122,6 +2511,10 @@ router.patch('/devices/:id/dms', authenticate, authorize('admin', 'dispatcher'),
     if (typeof dms_enabled === 'boolean') {
       sets.push(`dms_enabled = $${idx++}`);
       values.push(dms_enabled);
+      // Reset the check-in baseline when turning DMS on, so a stale
+      // last_checkin_at from an earlier session can't make the monitor fire an
+      // immediate timeout before the device has had a chance to check in.
+      if (dms_enabled) sets.push('last_checkin_at = NOW()');
     }
     if (dms_timeout_minutes !== undefined) {
       if (dms_timeout_minutes !== null && (dms_timeout_minutes < 1 || dms_timeout_minutes > 1440)) {
@@ -2355,9 +2748,18 @@ router.patch('/config', authenticate, async (req, res, next) => {
   try {
     const { key, value_int, value_text } = req.body;
 
-    const allowlist = ['dms_default_interval_minutes', 'dms_max_interval_minutes', 'min_apk_version_code', 'audit_log_archive_enabled'];
+    const allowlist = [
+      'dms_default_interval_minutes', 'dms_max_interval_minutes', 'min_apk_version_code',
+      'audit_log_archive_enabled', 'dispatch_phone_number',
+    ];
     if (!key || !allowlist.includes(key)) {
       return res.status(400).json({ error: `key must be one of: ${allowlist.join(', ')}` });
+    }
+    // Guardian's Home "Call Dispatch" button dials this verbatim via
+    // ACTION_DIAL — reject anything that isn't plausibly a phone number so a
+    // typo here can't silently become an unreachable/garbage dial target.
+    if (key === 'dispatch_phone_number' && value_text && !/^\+?[0-9 ()-]{5,20}$/.test(value_text)) {
+      return res.status(400).json({ error: 'dispatch_phone_number must look like a phone number (digits, spaces, +, -, () only)' });
     }
 
     const result = await query(
@@ -2484,7 +2886,8 @@ router.get('/apk/download', (req, res) => {
 // shaped body — see routes/telemetry.js). Both normalize to this same
 // {lat, lng, altitude, heading, speed, accuracy, timestamp} point shape
 // before calling in.
-async function processLocationBatch(deviceId, points) {
+async function processLocationBatch(device, points) {
+  const deviceId = device.id;
   const cfgRow = await query(
     `SELECT value_int FROM guardian_config WHERE key = 'batch_location_max_points'`
   );
@@ -2499,6 +2902,8 @@ async function processLocationBatch(deviceId, points) {
   let lastLat = null;
   let lastLng = null;
   let lastSpeed = null;
+  let lastHeading = null;
+  let lastTimestamp = null;
 
   // Bulk insert using unnest for efficiency
   const lats      = [];
@@ -2521,6 +2926,8 @@ async function processLocationBatch(deviceId, points) {
     lastLat = pt.lat;
     lastLng = pt.lng;
     lastSpeed = pt.speed ?? null;
+    lastHeading = pt.heading ?? null;
+    lastTimestamp = pt.timestamp || null;
     accepted++;
   }
 
@@ -2549,6 +2956,30 @@ async function processLocationBatch(deviceId, points) {
     );
   }
 
+  // Publish the newest point to the live map. The single /location route has
+  // always done this, but batches never did — so devices that upload via the
+  // batch path (the Guardian app's only path) moved on the dashboard solely
+  // on a page reload, never live. Same payload shape as /location.
+  if (lastLat != null) {
+    const locationPayload = {
+      type: 'location',
+      device_id: deviceId,
+      name: device.name ?? null,
+      lat: lastLat,
+      lng: lastLng,
+      altitude: null,
+      heading: lastHeading,
+      speed: lastSpeed,
+      accuracy: null,
+      timestamp: lastTimestamp || new Date().toISOString(),
+    };
+    if (device.org_id) {
+      publish(`org#${device.org_id}`, locationPayload);
+    } else {
+      publish('device:location', locationPayload);
+    }
+  }
+
   logger.info(`Batch location: device=${deviceId} accepted=${accepted}/${points.length}`);
   return { accepted, total: points.length };
 }
@@ -2559,7 +2990,7 @@ router.post('/location/batch', deviceAuth, async (req, res, next) => {
     if (!Array.isArray(points) || points.length === 0) {
       return res.status(400).json({ error: 'points must be a non-empty array' });
     }
-    const result = await processLocationBatch(req.device.id, points);
+    const result = await processLocationBatch(req.device, points);
     res.json(result);
   } catch (err) {
     if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });

@@ -84,7 +84,7 @@ test.describe('Fuel Management — list and anomalies', () => {
   test('fuel list page renders with entry data', async ({ page }) => {
     await page.goto('/fuel');
     await expect(page.getByText('KAA 001A')).toBeVisible({ timeout: 8000 });
-    await expect(page.getByText('50')).toBeVisible();
+    await expect(page.getByRole('cell', { name: '50.0 L' })).toBeVisible();
   });
 
   test('anomalies tab shows detected anomaly', async ({ page }) => {

@@ -1,8 +1,10 @@
 package io.sonalit.guardian.service
 
+import android.Manifest
 import android.app.*
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.location.Location
 import android.os.*
@@ -20,6 +22,10 @@ import io.sonalit.guardian.R
 import io.sonalit.guardian.data.local.AppDatabase
 import io.sonalit.guardian.data.local.GpsFixEntity
 import io.sonalit.guardian.data.local.HeartbeatStatusStore
+import io.sonalit.guardian.data.local.SyncStatusStore
+import io.sonalit.guardian.data.remote.GuardianApi
+import io.sonalit.guardian.data.remote.LocationBatchRequest
+import io.sonalit.guardian.data.remote.LocationPoint
 import io.sonalit.guardian.receiver.VolumeKeySOSReceiver
 import kotlinx.coroutines.*
 import java.util.UUID
@@ -31,6 +37,9 @@ class GuardianService : Service() {
     @Inject lateinit var db: AppDatabase
     @Inject lateinit var panicSender: PanicSender
     @Inject lateinit var statusStore: HeartbeatStatusStore
+    @Inject lateinit var api: GuardianApi
+    @Inject lateinit var commandExecutor: CommandExecutor
+    @Inject lateinit var syncStatusStore: SyncStatusStore
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var fusedClient: FusedLocationProviderClient
@@ -38,6 +47,21 @@ class GuardianService : Service() {
     private lateinit var mediaSession: MediaSessionCompat
 
     private val volumeKeyReceiver = VolumeKeySOSReceiver()
+
+    // True once requestLocationUpdates has been successfully handed to the
+    // fused client. Reset on registration failure so the ticker retries.
+    @Volatile private var locationUpdatesActive = false
+
+    private val devicePrefs by lazy {
+        val masterKey = androidx.security.crypto.MasterKey.Builder(applicationContext)
+            .setKeyScheme(androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        androidx.security.crypto.EncryptedSharedPreferences.create(
+            applicationContext, "guardian_prefs", masterKey,
+            androidx.security.crypto.EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+        )
+    }
 
     // Headset button triple-press state
     private var btnPressCount = 0
@@ -59,11 +83,7 @@ class GuardianService : Service() {
         // ~15-min network heartbeat worker (which could never keep it fresh).
         statusStore.recordServiceAlive()
         checkPlayServicesAvailability()
-        requestLocationUpdates(intervalMs = 30_000L)
-        // Grab one fix right now instead of waiting up to 30s for the first
-        // interval callback — this is what clears "GPS: No fix yet" seconds
-        // after the officer arms the device.
-        requestImmediateFix()
+        tryStartLocationUpdates()
         startLivenessTicker()
         ContextCompat.registerReceiver(
             this, volumeKeyReceiver, IntentFilter(VolumeKeySOSReceiver.VOLUME_CHANGED_ACTION),
@@ -84,14 +104,66 @@ class GuardianService : Service() {
     }
 
     /** Beats a local proof-of-life every 60s so the Home screen can tell the
-     *  service is genuinely alive without depending on the network heartbeat. */
+     *  service is genuinely alive without depending on the network heartbeat.
+     *  Doubles as the retry loop for location registration: on a first launch
+     *  this service is started BEFORE the runtime permission dialog is even
+     *  shown, so the one-shot registration in onCreate() fails and — being
+     *  START_STICKY — the service would otherwise live forever without a
+     *  location listener ("GPS: No fix yet" with Service: Running). */
     private fun startLivenessTicker() {
         scope.launch {
             while (isActive) {
                 statusStore.recordServiceAlive()
-                delay(60_000L)
+                tryStartLocationUpdates()
+                // 15s, not 60s: a voice message is a call replacement — a
+                // minute of silence after dispatch hits Send reads as broken.
+                // 4 polls/min sits inside the server's 6/min device limit
+                // with heartbeats to spare; FCM push still beats this to the
+                // punch whenever the token+credentials are in place.
+                pollPendingCommands()
+                delay(15_000L)
             }
         }
+    }
+
+    /** Dashboard commands (trigger_siren, show_message, ...) are delivered by
+     *  FCM push when the server knows this device's token, with the 15-minute
+     *  heartbeat as the only fallback. Polling here narrows worst-case
+     *  delivery to ~60s whenever the service is alive, regardless of FCM. */
+    private suspend fun pollPendingCommands() {
+        runCatching {
+            val deviceId = devicePrefs.getString("device_id", null) ?: return
+            for (cmd in api.pollCommands().commands) {
+                val commandId = (cmd["id"] ?: cmd["command_id"])?.toString() ?: continue
+                val commandType = cmd["command_type"]?.toString() ?: continue
+                val success = commandExecutor.execute(commandType, deviceId, CommandExecutor.payloadToJson(cmd["payload"]))
+                runCatching {
+                    api.ackCommand(mapOf("command_id" to commandId, "status" to if (success) "executed" else "failed"))
+                }
+            }
+        }
+    }
+
+    private fun hasLocationPermission(): Boolean =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+    /** Registers location updates once permission is actually held. Safe to
+     *  call repeatedly (onCreate, every onStartCommand, the liveness ticker) —
+     *  it no-ops while registered and retries after grant or a failed
+     *  registration, instead of the old register-once-at-birth behaviour. */
+    private fun tryStartLocationUpdates() {
+        if (locationUpdatesActive) return
+        if (!hasLocationPermission()) {
+            Log.w(TAG, "Location permission not granted yet — GPS registration deferred, will retry")
+            return
+        }
+        locationUpdatesActive = true
+        requestLocationUpdates(intervalMs = 30_000L)
+        // Grab one fix right now instead of waiting up to 30s for the first
+        // interval callback — this is what clears "GPS: No fix yet" seconds
+        // after the officer arms the device.
+        requestImmediateFix()
     }
 
     @Suppress("MissingPermission")
@@ -182,12 +254,16 @@ class GuardianService : Service() {
         // (e.g. location settings not satisfied, provider unavailable) would
         // then look identical to "working fine, just no fix yet" forever.
         fusedClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
-            .addOnFailureListener { e -> Log.e(TAG, "requestLocationUpdates registration failed", e) }
+            .addOnFailureListener { e ->
+                // Let the liveness ticker retry rather than staying dead forever.
+                locationUpdatesActive = false
+                Log.e(TAG, "requestLocationUpdates registration failed", e)
+            }
     }
 
     private fun bufferFix(location: Location) {
         scope.launch {
-            db.gpsFixDao().insert(GpsFixEntity(
+            val fix = GpsFixEntity(
                 id = UUID.randomUUID().toString(),
                 lat = location.latitude,
                 lon = location.longitude,
@@ -196,13 +272,38 @@ class GuardianService : Service() {
                 accuracy = location.accuracy,
                 ts = location.time,
                 synced = false,
-            ))
+            )
+            db.gpsFixDao().insert(fix)
             // Every delivered fix is also proof the service is alive.
             statusStore.recordServiceAlive()
+            // Stream the fix to the server immediately — SyncWorker's 15-minute
+            // period is WorkManager's floor, which made the live map lag by up
+            // to 15 minutes. With this, the dashboard tracks at the fix
+            // interval (~30s); SyncWorker remains the offline backlog catcher
+            // for anything this upload misses.
+            runCatching {
+                api.locationBatch(LocationBatchRequest(points = listOf(LocationPoint(
+                    lat = fix.lat,
+                    lon = fix.lon,
+                    heading = fix.heading,
+                    speed = fix.speed * 3.6f,
+                    accuracyM = fix.accuracy,
+                    timestamp = java.time.Instant.ofEpochMilli(fix.ts).toString(),
+                ))))
+                db.gpsFixDao().markSynced(listOf(fix.id))
+                syncStatusStore.recordSuccess()
+            }
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // MainActivity pokes the service (startForegroundService on an already-
+        // running instance) right after the location permission is granted —
+        // this is what picks the grant up immediately instead of waiting for
+        // the next ticker beat.
+        tryStartLocationUpdates()
+        return START_STICKY
+    }
 
     override fun onDestroy() {
         super.onDestroy()

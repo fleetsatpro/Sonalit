@@ -1176,6 +1176,16 @@
         }
       }
     },
+    "/api/v1/guardian/recover": {
+      "post": {
+        "operationId": "post_api_v1_guardian_recover",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/enroll": {
       "post": {
         "operationId": "post_api_v1_guardian_enroll",
@@ -1189,6 +1199,36 @@
     "/api/v1/guardian/heartbeat": {
       "post": {
         "operationId": "post_api_v1_guardian_heartbeat",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/commands/poll": {
+      "post": {
+        "operationId": "post_api_v1_guardian_commands_poll",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/voice-messages/{id}/audio": {
+      "get": {
+        "operationId": "get_api_v1_guardian_voice_messages_id_audio",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/voice-message": {
+      "post": {
+        "operationId": "post_api_v1_guardian_voice_message",
         "responses": {
           "200": {
             "description": "OK"
@@ -1391,6 +1431,26 @@
     "/api/v1/guardian/checkin": {
       "post": {
         "operationId": "post_api_v1_guardian_checkin",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/capture-photo-url": {
+      "post": {
+        "operationId": "post_api_v1_guardian_capture_photo_url",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/capture-photo": {
+      "post": {
+        "operationId": "post_api_v1_guardian_capture_photo",
         "responses": {
           "200": {
             "description": "OK"
@@ -1751,6 +1811,36 @@
     "/api/v1/shifts/handovers/{handoverId}/ack": {
       "patch": {
         "operationId": "patch_api_v1_shifts_handovers_handoverId_ack",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/traffic/status": {
+      "get": {
+        "operationId": "get_api_v1_traffic_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/traffic/tiles/flow/{z}/{x}/{y}.png": {
+      "get": {
+        "operationId": "get_api_v1_traffic_tiles_flow_z_x_y_png",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/traffic/incidents": {
+      "get": {
+        "operationId": "get_api_v1_traffic_incidents",
         "responses": {
           "200": {
             "description": "OK"
@@ -2338,6 +2428,46 @@
         }
       }
     },
+    "/api/v1/guardian/devices/{id}/voice-message": {
+      "post": {
+        "operationId": "post_api_v1_guardian_devices_id_voice_message",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/voice-messages": {
+      "get": {
+        "operationId": "get_api_v1_guardian_devices_id_voice_messages",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/captures": {
+      "get": {
+        "operationId": "get_api_v1_guardian_devices_id_captures",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/voice-messages/{msgId}/audio": {
+      "get": {
+        "operationId": "get_api_v1_guardian_devices_id_voice_messages_msgId_audio",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/commands/broadcast": {
       "post": {
         "operationId": "post_api_v1_guardian_commands_broadcast",
@@ -2557,6 +2687,16 @@
     "/api/v1/risk/ticker": {
       "get": {
         "operationId": "get_api_v1_risk_ticker",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/risk/live-feed": {
+      "get": {
+        "operationId": "get_api_v1_risk_live_feed",
         "responses": {
           "200": {
             "description": "OK"
@@ -3135,6 +3275,108 @@
     "/api/v1/dashboard/timeline": {
       "get": {
         "operationId": "get_api_v1_dashboard_timeline",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/whatsapp/webhook": {
+      "get": {
+        "operationId": "get_api_v1_guardian_whatsapp_webhook",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_guardian_whatsapp_webhook",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoys/{id}/broadcast": {
+      "post": {
+        "operationId": "post_api_v1_convoys_id_broadcast",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoys/{id}/broadcasts": {
+      "get": {
+        "operationId": "get_api_v1_convoys_id_broadcasts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/canned-messages": {
+      "get": {
+        "operationId": "get_api_v1_canned_messages",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_canned_messages",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/canned-messages/{id}": {
+      "put": {
+        "operationId": "put_api_v1_canned_messages_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_canned_messages_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/whatsapp/inbound": {
+      "get": {
+        "operationId": "get_api_v1_whatsapp_inbound",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/settings/whatsapp": {
+      "get": {
+        "operationId": "get_api_v1_settings_whatsapp",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_settings_whatsapp",
         "responses": {
           "200": {
             "description": "OK"

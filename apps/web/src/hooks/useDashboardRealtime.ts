@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { subscribe } from '../lib/centrifuge.js';
 import { useDashboardStore } from '../stores/dashboardStore.js';
-import type { DashboardAlert, ConvoyUpdate, IncidentUpdate, PanicEvent } from '../stores/dashboardStore.js';
+import type { DashboardAlert, ConvoyUpdate, IncidentUpdate, PanicEvent, VoiceNoteAlert } from '../stores/dashboardStore.js';
 import { playSiren, sirenForAlert } from '../lib/siren.js';
+import { startTabTitleFlash, notifyIfHidden } from '../lib/tabAlert.js';
 
 // ── Message shapes from the backend (org#<id> channel) ─────────────────────
 
@@ -79,6 +80,19 @@ interface IncidentMsg {
   payload: IncidentUpdate;
 }
 
+// Published by POST /guardian/voice-message (guardian.js) the moment a
+// field officer's clip lands — the reverse direction of dispatch's own
+// voice messages, which use command:queued instead (see 'panic' above for
+// the general shape of a device-originated event on this channel).
+interface GuardianVoiceMessageMsg {
+  type: 'guardian_voice_message';
+  device_id: string;
+  device_name?: string;
+  voice_id: string;
+  duration_ms: number | null;
+  created_at: string;
+}
+
 // Catch-all for unhandled types
 type OrgMsg =
   | LocationMsg
@@ -90,6 +104,7 @@ type OrgMsg =
   | AlertNewMsg
   | ConvoyUpdateMsg
   | IncidentMsg
+  | GuardianVoiceMessageMsg
   | { type: string; [key: string]: unknown };
 
 // Per-vehicle throttle: max 1 position update per 500ms
@@ -106,6 +121,7 @@ export function useDashboardRealtime(orgId: string): void {
     escalatePanicState,
     prependFeedItem,
     appendTickerEvent,
+    setVoiceNoteAlert,
   } = useDashboardStore.getState();
   const orgRef = useRef(orgId);
   orgRef.current = orgId;
@@ -261,6 +277,36 @@ export function useDashboardRealtime(orgId: string): void {
           break;
         }
 
+        // Field officer sent a voice note up (reverse of the existing
+        // dispatch->device flow). Previously this only ever showed up
+        // passively in Live Fleet's device detail card — easy to miss
+        // entirely unless that exact card happened to be open. This makes
+        // it hard to miss regardless of what page/device is on screen:
+        // a toast (VoiceNoteAlertToast, rendered by GlobalPanicAlarm
+        // alongside the actual panic alarm), a one-shot chime, and — if the
+        // tab isn't even in front of the operator — a flashing tab title
+        // plus a native OS notification (only once permission's granted;
+        // see VoiceNoteAlertToast's "Enable notifications" affordance).
+        case 'guardian_voice_message': {
+          const m = msg as GuardianVoiceMessageMsg;
+          const alert: VoiceNoteAlert = {
+            id: m.voice_id,
+            deviceId: m.device_id,
+            deviceName: m.device_name ?? 'Field officer',
+            voiceId: m.voice_id,
+            durationMs: m.duration_ms,
+            createdAt: m.created_at,
+          };
+          setVoiceNoteAlert(alert);
+          // Never cut off an active panic wail — same guard as alert.new above.
+          if (useDashboardStore.getState().panicState?.status !== 'active') {
+            playSiren('chirp', { loop: false });
+          }
+          startTabTitleFlash(`🎙️ Voice note from ${alert.deviceName}`);
+          notifyIfHidden('New voice note', `${alert.deviceName} sent a voice note`);
+          break;
+        }
+
         case 'incident': {
           const m = msg as IncidentMsg;
           if (m.payload) {
@@ -282,5 +328,5 @@ export function useDashboardRealtime(orgId: string): void {
     });
 
     return unsub;
-  }, [orgId, updateVehiclePosition, prependAlert, updateConvoy, updateIncident, updatePanicState, acknowledgePanicState, escalatePanicState, prependFeedItem, appendTickerEvent]);
+  }, [orgId, updateVehiclePosition, prependAlert, updateConvoy, updateIncident, updatePanicState, acknowledgePanicState, escalatePanicState, prependFeedItem, appendTickerEvent, setVoiceNoteAlert]);
 }

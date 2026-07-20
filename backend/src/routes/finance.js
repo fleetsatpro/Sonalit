@@ -1,28 +1,34 @@
 const router = require('express').Router();
 const { authenticate, authorize } = require('../middleware/auth');
-const { query } = require('../config/database');
 
 router.use(authenticate);
+
+// All queries go through req.db (authenticate → attachOrgDb), which runs as the
+// non-owner sonalit_app role with app.current_org_id set so the org_isolation
+// RLS policies on invoices/expenses/trips (migration 063) scope every read and
+// aggregate to the caller's org. Previously these ran through the raw pooled
+// query() as the table owner with no org filter at all — the dashboard and
+// profitability endpoints summed revenue/expenses/trip costs across every tenant.
 
 // GET /finance/dashboard
 router.get('/dashboard', async (req, res, next) => {
   try {
     const [invoices, expenses, tripCosts] = await Promise.all([
-      query(`SELECT
+      req.db(`SELECT
         COUNT(*) total_invoices,
         SUM(total) FILTER (WHERE status='paid') revenue_collected,
         SUM(total) FILTER (WHERE status='sent') revenue_pending,
         SUM(total) FILTER (WHERE status='overdue') revenue_overdue,
         COUNT(*) FILTER (WHERE status='overdue') overdue_count
         FROM invoices`),
-      query(`SELECT
+      req.db(`SELECT
         SUM(amount) total_expenses,
         SUM(amount) FILTER (WHERE category='fuel') fuel_costs,
         SUM(amount) FILTER (WHERE category='maintenance') maintenance_costs,
         SUM(amount) FILTER (WHERE category='toll') toll_costs,
         SUM(amount) FILTER (WHERE category='driver_allowance') allowances
         FROM expenses WHERE expense_date > NOW() - INTERVAL '30 days'`),
-      query(`SELECT
+      req.db(`SELECT
         COUNT(*) total_trips,
         SUM(distance_km) total_km,
         SUM(fuel_used) total_fuel_used,
@@ -45,7 +51,7 @@ router.get('/invoices', async (req, res, next) => {
     const params = [limit, offset];
     const where = status ? `AND status=$3` : '';
     if (status) params.push(status);
-    const result = await query(
+    const result = await req.db(
       `SELECT * FROM invoices WHERE 1=1 ${where} ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
       params
     );
@@ -63,10 +69,10 @@ router.post('/invoices', authorize('admin', 'dispatcher'), async (req, res, next
     const tax_amount = subtotal * tax_rate;
     const total = subtotal + tax_amount;
     const invoice_number = `INV-${Date.now().toString(36).toUpperCase()}`;
-    const result = await query(
-      `INSERT INTO invoices (invoice_number, shipment_id, customer_name, customer_email, subtotal, tax_rate, tax_amount, total, line_items, due_date, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-      [invoice_number, shipment_id||null, customer_name, customer_email, subtotal, tax_rate, tax_amount, total, JSON.stringify(line_items), due_date, notes, req.user.id]
+    const result = await req.db(
+      `INSERT INTO invoices (invoice_number, shipment_id, customer_name, customer_email, subtotal, tax_rate, tax_amount, total, line_items, due_date, notes, created_by, org_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+      [invoice_number, shipment_id||null, customer_name, customer_email, subtotal, tax_rate, tax_amount, total, JSON.stringify(line_items), due_date, notes, req.user.id, req.user.org_id]
     );
     res.status(201).json({ data: result.rows[0] });
   } catch (err) { next(err); }
@@ -81,7 +87,7 @@ router.get('/expenses', async (req, res, next) => {
     if (vehicle_id) { params.push(vehicle_id); filters.push(`e.vehicle_id=$${params.length}`); }
     if (category) { params.push(category); filters.push(`e.category=$${params.length}`); }
     params.push(limit);
-    const result = await query(
+    const result = await req.db(
       `SELECT e.*, v.registration, d.name AS driver_name FROM expenses e
        LEFT JOIN vehicles v ON v.id=e.vehicle_id LEFT JOIN drivers d ON d.id=e.driver_id
        WHERE ${filters.join(' AND ')} ORDER BY e.expense_date DESC LIMIT $${params.length}`,
@@ -96,9 +102,9 @@ router.post('/expenses', async (req, res, next) => {
   try {
     const { trip_id, vehicle_id, driver_id, category, amount, currency = 'USD', description, expense_date } = req.body;
     if (!category || !amount) return res.status(400).json({ error: 'category and amount required' });
-    const result = await query(
-      'INSERT INTO expenses (trip_id, vehicle_id, driver_id, category, amount, currency, description, expense_date, recorded_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *',
-      [trip_id||null, vehicle_id||null, driver_id||null, category, amount, currency, description, expense_date||new Date(), req.user.id]
+    const result = await req.db(
+      'INSERT INTO expenses (trip_id, vehicle_id, driver_id, category, amount, currency, description, expense_date, recorded_by, org_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *',
+      [trip_id||null, vehicle_id||null, driver_id||null, category, amount, currency, description, expense_date||new Date(), req.user.id, req.user.org_id]
     );
     res.status(201).json({ data: result.rows[0] });
   } catch (err) { next(err); }
@@ -109,7 +115,7 @@ router.get('/profitability', async (req, res, next) => {
   try {
     // Each table is pre-aggregated in its own subquery to avoid the
     // cartesian-product row multiplication a flat multi-LEFT-JOIN would cause.
-    const result = await query(`
+    const result = await req.db(`
       SELECT
         v.registration,
         v.type,
