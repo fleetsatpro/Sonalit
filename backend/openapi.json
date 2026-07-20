@@ -1408,6 +1408,16 @@
         }
       }
     },
+    "/api/v1/guardian/panic/{id}/ack": {
+      "patch": {
+        "operationId": "patch_api_v1_guardian_panic_id_ack",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/panic/{id}/resolve": {
       "patch": {
         "operationId": "patch_api_v1_guardian_panic_id_resolve",
