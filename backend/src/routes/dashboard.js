@@ -42,7 +42,7 @@ router.get('/overview', asyncHandler(async (req, res) => {
           JOIN convoys c ON c.id=s.convoy_id
           WHERE c.org_id=$1 AND c.status='active' AND smi.deleted_at IS NULL) AS payload_tonnes,
         (SELECT COUNT(*) FROM shipments WHERE org_id=$1 AND deleted_at IS NULL) AS consignments,
-        (SELECT COUNT(*) FROM vehicles WHERE org_id=$1 AND deleted_at IS NULL) AS guards_active
+        (SELECT COUNT(*) FROM field_officers WHERE org_id=$1 AND status <> 'offline') AS guards_active
       `, [orgId]),
 
     safeQuery(req.db, `
@@ -125,7 +125,9 @@ router.get('/overview', asyncHandler(async (req, res) => {
       guards_active: parseInt(k.guards_active)||0,
     },
     next_delivery: nextRow ? { convoy_id: nextRow.id, convoy_name: nextRow.convoy_name, eta: new Date(nextRow.eta).toISOString() } : null,
-    shift_started_at: shiftRow ? new Date(shiftRow.started_at).toISOString() : new Date().toISOString(),
+    // null when no shift is active — a NOW() fallback made the client's shift
+    // timer restart at 00:00:00 on every poll, which reads as a placeholder.
+    shift_started_at: shiftRow?.started_at ? new Date(shiftRow.started_at).toISOString() : null,
   });
 }));
 

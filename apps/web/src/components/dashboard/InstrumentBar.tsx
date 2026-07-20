@@ -43,9 +43,10 @@ function Sparkline({ points, color }: { points: number[]; color: string }) {
 }
 
 function useShiftTimer(shiftStartedAt: string | null): string {
-  const [elapsed, setElapsed] = useState('00:00:00');
+  // '—' rather than a fake 00:00:00 when no shift is active.
+  const [elapsed, setElapsed] = useState('—');
   useEffect(() => {
-    if (!shiftStartedAt) return;
+    if (!shiftStartedAt) { setElapsed('—'); return; }
     const start = new Date(shiftStartedAt).getTime();
     const tick = () => {
       const sec = Math.max(0, Math.floor((Date.now() - start) / 1000));

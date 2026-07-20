@@ -68,11 +68,14 @@ async function processGPS(job) {
     [vehicle_id, lat, lng, speed, timestamp]
   );
 
-  // 2. Update vehicle position and get org_id via active convoy
-  await query(
-    'UPDATE vehicles SET latitude=$1, longitude=$2, last_ping=$3, updated_at=NOW() WHERE id=$4',
+  // 2. Update vehicle position and get org_id via active convoy. RETURNING
+  // registration so alert messages can name the vehicle like an operator
+  // would ("KEN-001"), not by its raw UUID.
+  const posRes = await query(
+    'UPDATE vehicles SET latitude=$1, longitude=$2, last_ping=$3, updated_at=NOW() WHERE id=$4 RETURNING registration',
     [lat, lng, new Date(timestamp), vehicle_id]
   );
+  const vehicleLabel = posRes.rows[0]?.registration || String(vehicle_id).slice(0, 8);
 
   // 3. Broadcast live position on org channel for real-time GPS page
   const orgRes = await query(
@@ -107,7 +110,7 @@ async function processGPS(job) {
   if (speed > SPEED_THRESHOLD && alertQueue) {
     await alertQueue.add('speed-alert', {
       vehicle_id, type: 'speed', severity: speed > 150 ? 'critical' : 'high',
-      message: `Vehicle ${vehicle_id} travelling at ${speed} km/h — threshold is ${SPEED_THRESHOLD} km/h`,
+      message: `Vehicle ${vehicleLabel} travelling at ${speed} km/h — threshold is ${SPEED_THRESHOLD} km/h`,
     });
     logger.warn(`Speed alert queued for vehicle ${vehicle_id}: ${speed} km/h`);
   }
@@ -141,7 +144,7 @@ async function processGPS(job) {
         await alertQueue.add('geofence-alert', {
           vehicle_id, convoy_id: convoy.convoy_id, type: 'geofence',
           severity: deviation > GEOFENCE_KM * 2 ? 'critical' : 'high',
-          message: `Vehicle ${vehicle_id} is ${deviation.toFixed(1)} km from convoy route (limit: ${GEOFENCE_KM} km)`,
+          message: `Vehicle ${vehicleLabel} is ${deviation.toFixed(1)} km from convoy route (limit: ${GEOFENCE_KM} km)`,
         });
         logger.warn(`Geofence alert queued for vehicle ${vehicle_id}: ${deviation.toFixed(1)} km deviation`);
       }
@@ -169,7 +172,7 @@ async function processGPS(job) {
               geofence_id: fence.id,
               type: 'route_deviation',
               severity: distKm > fence.buffer_km * 4 ? 'critical' : 'high',
-              message: `Vehicle ${vehicle_id} is ${distM}m off corridor "${fence.name}" (limit: ${limitM}m)`,
+              message: `Vehicle ${vehicleLabel} is ${distM}m off corridor "${fence.name}" (limit: ${limitM}m)`,
             });
             logger.warn(`Corridor deviation: vehicle=${vehicle_id} fence="${fence.name}" dist=${distM}m limit=${limitM}m`);
           }
