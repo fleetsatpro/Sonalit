@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Bell, Menu } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
+import { Bell, LayoutGrid, Home } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import NotificationPanel from '../layout/NotificationPanel.js';
 
@@ -48,14 +49,19 @@ const Topbar = React.memo(function Topbar({ onMenuOpen }: TopbarProps) {
       borderBottom: '1px solid var(--d-rim)',
     }}>
       {/* Left */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Link
+          to='/'
+          title='Home — Orbit'
+          aria-label='Home'
+          style={{ background: 'none', border: '1px solid var(--d-rim2)', color: 'var(--d-t2)', cursor: 'pointer', padding: 6, borderRadius: 8, display: 'flex', alignItems: 'center', textDecoration: 'none' }}
+        ><Home size={17} strokeWidth={2} /></Link>
         <button
           onClick={onMenuOpen}
-          style={{ background: 'none', border: 'none', color: 'var(--d-t2)', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center' }}
-          className='d-desktop-hide'
-          aria-label='Open menu'
-        ><Menu size={20} strokeWidth={1.8} /></button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          style={{ background: 'none', border: '1px solid var(--d-rim2)', color: 'var(--d-t2)', cursor: 'pointer', padding: '6px 10px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 7, fontFamily: 'IBM Plex Mono, monospace', fontSize: 11, fontWeight: 700, letterSpacing: '.08em' }}
+          aria-label='Open apps'
+        ><LayoutGrid size={16} strokeWidth={2} /> APPS</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 4 }}>
           <div style={{ position: 'relative', width: 8, height: 8 }}>
             <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--d-sig)', boxShadow: '0 0 6px var(--d-sglow)' }} />
             <div style={{
