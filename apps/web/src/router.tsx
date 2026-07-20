@@ -45,7 +45,12 @@ const authFullscreenRoute = createRoute({
 const loginRoute = createRoute({ getParentRoute: () => rootRoute, path: '/login', component: LoginPage });
 const notFoundRoute = createRoute({ getParentRoute: () => rootRoute, path: '*', component: lazyRouteComponent(() => import('./pages/NotFound.js')) });
 
-const dashboardRoute = createRoute({ getParentRoute: () => authRoute, path: '/', component: lazyRouteComponent(() => import('./pages/Dashboard.js')) });
+// Home is the immersive Orbit launcher — a full-viewport globe + folder grid
+// that replaces the rail on the home surface. It lives under the fullscreen
+// shell (no AppShell rail) but still gets GlobalPanicAlarm. The former command
+// console keeps its home at /command, reachable from the Command folder.
+const orbitRoute = createRoute({ getParentRoute: () => authFullscreenRoute, path: '/', component: lazyRouteComponent(() => import('./pages/Orbit.js')) });
+const commandRoute = createRoute({ getParentRoute: () => authRoute, path: '/command', component: lazyRouteComponent(() => import('./pages/Dashboard.js')) });
 const fleetRoute = createRoute({ getParentRoute: () => authRoute, path: '/fleet', component: lazyRouteComponent(() => import('./pages/Fleet.js')) });
 const gpsRoute = createRoute({ getParentRoute: () => authRoute, path: '/gps', component: lazyRouteComponent(() => import('./pages/GPS.js')) });
 const convoysRoute = createRoute({ getParentRoute: () => authRoute, path: '/convoys', component: lazyRouteComponent(() => import('./pages/Convoys.js')) });
@@ -120,10 +125,11 @@ const routeTree = rootRoute.addChildren([
     portalTrackRoute, portalConvoyRoute, portalCustodyRoute, portalSecurityRoute,
   ]),
   authFullscreenRoute.addChildren([
+    orbitRoute,
     convoyReportsRoute,
   ]),
   authRoute.addChildren([
-    dashboardRoute,
+    commandRoute,
     fleetRoute, gpsRoute,
     convoysRoute, convoyNewRoute, convoyEditRoute,
     driversRoute, alertsRoute, incidentsRoute,
