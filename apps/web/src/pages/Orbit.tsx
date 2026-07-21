@@ -208,7 +208,13 @@ export default function Orbit() {
       readyRef.current = true;
       if (dataRef.current) updateData(map, dataRef.current);
       setBbox(bboxFromMap(map));
+      // Container size can settle a tick after load; force a resize so the
+      // globe fills the pane instead of MapLibre's fallback height.
+      map.resize();
+      setTimeout(() => map.resize(), 120);
     });
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => map.resize()) : null;
+    if (ro && mapEl.current) ro.observe(mapEl.current);
 
     // idle spin
     let raf = 0;
@@ -231,7 +237,7 @@ export default function Orbit() {
       setMode(m);
     }, 9000);
 
-    return () => { cancelAnimationFrame(raf); clearInterval(cycle); map.remove(); mapRef.current = null; readyRef.current = false; };
+    return () => { cancelAnimationFrame(raf); clearInterval(cycle); ro?.disconnect(); map.remove(); mapRef.current = null; readyRef.current = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -307,12 +313,6 @@ export default function Orbit() {
 
       {/* panic fly-to banner */}
       {banner && <div className="o-flybanner">⚠ {banner}</div>}
-
-      {/* hero */}
-      <div className="o-hero">
-        <div className="o-k">Command · Orbit</div>
-        <h1>Every mission, over one live globe.</h1>
-      </div>
 
       {/* floating deck */}
       <div className="o-float">
