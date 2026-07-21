@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../../lib/api.js'
 import type { LiveVehicle, LiveStatus } from '../types/fleet.js'
 
@@ -110,6 +110,7 @@ export default function DetailCard({ vehicle: v, onClose, trackedId, onToggleTra
     enabled: !!v && v.kind === 'guardian',
     refetchInterval: 30_000,
   })
+  const qc = useQueryClient()
 
   const stopRecorder = (intent: 'send' | 'discard') => {
     recIntentRef.current = intent
@@ -170,6 +171,18 @@ export default function DetailCard({ vehicle: v, onClose, trackedId, onToggleTra
     }
   }
   const onMsg = () => { setMsgOpen(o => !o); setAction({ kind: 'idle' }) }
+  const onCapture = () => {
+    void sendCommand('capture_photo', null, 'Capture requested — photo will appear below shortly').then(ok => {
+      if (!ok) return
+      // The device uploads a moment after receiving the command; poll the
+      // captures list a few times so the new still surfaces without a reload.
+      let n = 0
+      const iv = setInterval(() => {
+        void qc.invalidateQueries({ queryKey: ['guardian-captures', v.id] })
+        if (++n >= 8) clearInterval(iv)
+      }, 3000)
+    })
+  }
   const onAlert = () => {
     if (window.confirm(`Sound an alert on ${v.registration}'s device?`)) {
       void sendCommand('trigger_siren', null, 'Alert sent to device')
@@ -311,12 +324,13 @@ export default function DetailCard({ vehicle: v, onClose, trackedId, onToggleTra
       )}
 
       {/* actions */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 6, padding: '9px 10px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 6, padding: '9px 10px' }}>
         {[
-          // Call rings the linked field officer's phone; Msg/Alert are device
-          // commands, so both need a guardian device on the other end.
+          // Call rings the linked field officer's phone; Msg/Alert/Capture are
+          // device commands, so they need a guardian device on the other end.
           { label: 'Call', icon: 'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13.1 19.79 19.79 0 0 1 1.61 4.53 2 2 0 0 1 3.58 2.34h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 9.91A16 16 0 0 0 14 16l.91-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 17z', danger: false, onClick: onCall, disabled: !v.officer_phone, active: false, title: v.officer_phone ? `Call ${v.officer_name ?? v.registration} (${v.officer_phone})` : 'No officer phone on record' },
           { label: 'Msg', icon: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z', danger: false, onClick: onMsg, disabled: !isGuardian, active: msgOpen, title: isGuardian ? 'Send a message to the device' : 'Messaging is only available for Guardian devices' },
+          { label: 'Capture', icon: 'M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', danger: false, onClick: onCapture, disabled: !isGuardian, active: false, title: isGuardian ? 'Covertly capture a photo from the device camera' : 'Capture is only available for Guardian devices' },
           { label: 'Track', icon: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z', danger: false, onClick: () => onToggleTrack(v), disabled: v.lat == null, active: tracking, title: tracking ? 'Stop following' : 'Follow on map' },
           { label: 'Alert', icon: 'm21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3M12 9v4M12 17h.01', danger: true, onClick: onAlert, disabled: !isGuardian, active: false, title: isGuardian ? 'Sound an alert on the device' : 'Alerts are only available for Guardian devices' },
         ].map(a => (

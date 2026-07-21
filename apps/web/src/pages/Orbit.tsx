@@ -175,7 +175,7 @@ const SOS_REASONS: Array<{ value: string; label: string }> = [
 interface RecentVoice { id: string; device_id: string; device_name: string; duration_ms: number | null; created_at: string; lat: number | null; lng: number | null }
 interface InspectRow { k: string; v: string }
 interface Inspect { kind: string; kindLabel: string; title: string; rows: InspectRow[]; gpsPath: string | null; lng: number; lat: number }
-interface RailRow { id: string; kind: 'alert' | 'feed' | 'voice'; severity: string; title: string; sub?: string; at: string; voice?: { deviceId: string; voiceId: string; durationMs: number | null } }
+interface RailRow { id: string; kind: 'alert' | 'feed' | 'voice' | 'capture'; severity: string; title: string; sub?: string; at: string; voice?: { deviceId: string; voiceId: string; durationMs: number | null }; imageUrl?: string }
 
 function useClock(): string {
   const [t, setT] = useState(() => new Date());
@@ -558,7 +558,7 @@ export default function Orbit() {
     if (voiceNoteAlert) pushVoice(voiceNoteAlert.voiceId, voiceNoteAlert.deviceId, voiceNoteAlert.deviceName, voiceNoteAlert.durationMs, voiceNoteAlert.createdAt);
     for (const v of (recentVoice ?? [])) pushVoice(v.id, v.device_id, v.device_name, v.duration_ms, v.created_at);
     for (const a of alerts) rows.push({ id: `alert-${a.id}`, kind: 'alert', severity: a.severity, title: a.title, sub: a.summary, at: a.occurred_at });
-    for (const f of feedItems) rows.push({ id: `feed-${f.id}`, kind: 'feed', severity: f.severity ?? 'low', title: f.message, at: f.timestamp });
+    for (const f of feedItems) rows.push({ id: `feed-${f.id}`, kind: f.imageUrl ? 'capture' : 'feed', severity: f.severity ?? 'low', title: f.message, at: f.timestamp, ...(f.imageUrl ? { imageUrl: f.imageUrl } : {}) });
     rows.sort((x, y) => new Date(y.at).getTime() - new Date(x.at).getTime());
     return rows;
   }, [alerts, feedItems, voiceNoteAlert, recentVoice]);
@@ -790,11 +790,16 @@ export default function Orbit() {
                   : 'No earlier events yet.'}</div>
               )}
               {shownRows.map(r => (
-                <div key={r.id} className={`o-rail-row ${r.kind === 'voice' ? 'voice' : ''}`}>
-                  <span className={`o-rail-chip ${r.severity}`}>{r.kind === 'voice' ? '♪' : r.severity[0]!.toUpperCase()}</span>
+                <div key={r.id} className={`o-rail-row ${r.kind === 'voice' ? 'voice' : ''} ${r.kind === 'capture' ? 'capture' : ''}`}>
+                  <span className={`o-rail-chip ${r.severity}`}>{r.kind === 'voice' ? '♪' : r.kind === 'capture' ? '📷' : r.severity[0]!.toUpperCase()}</span>
                   <div className="o-rail-main">
                     <div className="o-rail-title">{r.title}</div>
                     {r.sub && <div className="o-rail-sub">{r.sub}</div>}
+                    {r.imageUrl && (
+                      <a className="o-rail-thumb" href={r.imageUrl} target="_blank" rel="noreferrer" title="Open full-size">
+                        <img src={r.imageUrl} alt="Captured photo" loading="lazy" />
+                      </a>
+                    )}
                     {r.voice && (
                       <button className={`o-rail-play ${playingVoice === r.voice.voiceId ? 'on' : ''}`} onClick={() => void playVoice(r.voice!.deviceId, r.voice!.voiceId)}>
                         <Play size={11} />{playingVoice === r.voice.voiceId ? 'Playing…' : 'Play'}

@@ -232,6 +232,10 @@ button.o-rail-row:hover{background:rgba(255,255,255,.08)}
 .o-rail-play.on{background:color-mix(in srgb,var(--o-amber) 18%,transparent);border-color:color-mix(in srgb,var(--o-amber) 50%,transparent);color:var(--o-amber)}
 .o-rail-play svg{fill:currentColor}
 .o-rail-dur{color:var(--o-t3)}
+.o-rail-row.capture{border-color:color-mix(in srgb,var(--o-violet) 45%,var(--o-rim))}
+.o-rail-thumb{display:block;margin-top:8px;width:100%;max-width:190px;border-radius:9px;overflow:hidden;border:1px solid var(--o-rim2);line-height:0}
+.o-rail-thumb img{width:100%;height:auto;display:block;max-height:130px;object-fit:cover}
+.o-rail-thumb:hover{border-color:var(--o-violet)}
 .o-rail-t{flex:none;font:700 9.5px/1 var(--o-mono);letter-spacing:.03em;color:var(--o-t3);white-space:nowrap;margin-top:3px}
 
 /* GPS Live shortcut, bottom-left */
