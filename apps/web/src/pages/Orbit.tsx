@@ -3,7 +3,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { Search, Mic, X, Settings, Home, LayoutDashboard, ShieldAlert, Truck, Briefcase, Activity, ChevronRight, Play, ShieldCheck, Radio, type LucideIcon } from 'lucide-react';
+import { Search, Mic, X, Settings, Home, LayoutDashboard, ShieldAlert, Truck, Briefcase, Activity, ChevronRight, Play, ShieldCheck, Radio, MapPin, type LucideIcon } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useDashboardStore, type DashboardOverview } from '../stores/dashboardStore.js';
 import { NAV_GROUPS } from '../components/layout/Rail.js';
@@ -192,6 +192,7 @@ export default function Orbit() {
   const lastVoiceId = useRef<string | null>(null);
   const voicePollInit = useRef(false);
   const voiceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const voiceMarkerRef = useRef<maplibregl.Marker | null>(null);
   const clock = useClock();
 
   const { setOverview, acknowledgePanicState, updatePanicState, setVoiceNoteAlert } = useDashboardStore.getState();
@@ -440,8 +441,10 @@ export default function Orbit() {
     if (voiceTimerRef.current) clearTimeout(voiceTimerRef.current);
     idleRef.current = false;
     flyingRef.current = true;
-    setMode({ key: 'FLEET', color: '#22e39a' }); applyMode(m, 'FLEET');
-    m.flyTo({ center: [a.lng, a.lat], zoom: 13.5, speed: 0.8, curve: 1.5, essential: true });
+    // Drop to the street map and zoom to building level so the operator can read
+    // the actual streets around the officer, with a pin planted on the spot.
+    setMode({ key: 'STREET', color: '#ffb23e' }); applyMode(m, 'STREET');
+    m.flyTo({ center: [a.lng, a.lat], zoom: 16.6, speed: 0.7, curve: 1.4, essential: true });
     m.once('moveend', () => { flyingRef.current = false; });
     setVoiceLoc({ name: a.deviceName, short: null, lat: a.lat, lng: a.lng, at: a.createdAt, voiceId: a.voiceId, deviceId: a.deviceId });
     api.get<{ short: string | null; address: string | null }>(`/dashboard/reverse-geocode?lat=${a.lat}&lng=${a.lng}`)
@@ -459,6 +462,22 @@ export default function Orbit() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voiceNoteAlert, panicActive]);
   useEffect(() => () => { if (voiceTimerRef.current) clearTimeout(voiceTimerRef.current); }, []);
+
+  // Plant a pin on the exact spot while a voice note is on screen; its tip
+  // points at the coordinate (anchor:'bottom') and it clears when the note does.
+  useEffect(() => {
+    const m = mapRef.current;
+    if (!m) return;
+    if (!voiceLoc) { voiceMarkerRef.current?.remove(); return; }
+    if (!voiceMarkerRef.current) {
+      const el = document.createElement('div');
+      el.className = 'o-vpin';
+      el.innerHTML = '<span class="o-vpin-pulse"></span><span class="o-vpin-body"></span>';
+      voiceMarkerRef.current = new maplibregl.Marker({ element: el, anchor: 'bottom' });
+    }
+    voiceMarkerRef.current.setLngLat([voiceLoc.lng, voiceLoc.lat]).addTo(m);
+  }, [voiceLoc]);
+  useEffect(() => () => { voiceMarkerRef.current?.remove(); }, []);
 
   // Poll-driven new-note detection. On first result we adopt the newest note as
   // the baseline (no auto-play of history on load); after that, a newer note id
@@ -623,7 +642,7 @@ export default function Orbit() {
         <div className="o-voice">
           <div className="o-voice-head"><span className="o-voice-tag">🎙 VOICE NOTE</span><span className="o-voice-live"><i />PLAYING LIVE</span><span className="o-voice-t">{relTime(voiceLoc.at)}</span></div>
           <div className="o-voice-who">{voiceLoc.name}</div>
-          <div className="o-voice-addr">{voiceLoc.short ?? `${voiceLoc.lat.toFixed(4)}, ${voiceLoc.lng.toFixed(4)}`}</div>
+          <div className="o-voice-addr"><MapPin size={13} />{voiceLoc.short ?? `${voiceLoc.lat.toFixed(4)}, ${voiceLoc.lng.toFixed(4)}`}</div>
           <div className="o-voice-coord">{voiceLoc.lat.toFixed(5)}, {voiceLoc.lng.toFixed(5)}</div>
           <div className="o-voice-actions">
             <button className={`o-voice-play ${playingVoice === voiceLoc.voiceId ? 'on' : ''} ${voiceBlocked && playingVoice !== voiceLoc.voiceId ? 'blocked' : ''}`} onClick={() => void playVoice(voiceLoc.deviceId, voiceLoc.voiceId)}>
