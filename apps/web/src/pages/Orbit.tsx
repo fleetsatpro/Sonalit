@@ -184,6 +184,8 @@ export default function Orbit() {
   const idleRef = useRef(true);           // spinning + cycling when true
   const flyingRef = useRef(false);
   const lastPanicId = useRef<string | null>(null);
+  const lastVoiceId = useRef<string | null>(null);
+  const voiceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clock = useClock();
 
   const { setOverview, acknowledgePanicState, updatePanicState } = useDashboardStore.getState();
@@ -196,6 +198,7 @@ export default function Orbit() {
 
   const [mode, setMode] = useState<Mode>(BASE_MODES[0]!);
   const [sos, setSos] = useState<{ label: string; short: string | null; lat: number; lng: number; at: string } | null>(null);
+  const [voiceLoc, setVoiceLoc] = useState<{ name: string; short: string | null; lat: number; lng: number; at: string; voiceId: string; deviceId: string } | null>(null);
   const [openGroup, setOpenGroup] = useState<number | null>(null);
   const [q, setQ] = useState('');
   const [bbox, setBbox] = useState<string | null>(null);
@@ -232,10 +235,12 @@ export default function Orbit() {
       if (!voicePlayerRef.current) voicePlayerRef.current = new Audio();
       const p = voicePlayerRef.current;
       p.src = url;
+      p.volume = 1; // play field-officer notes at full volume — they can be urgent
       p.onended = () => { setPlayingVoice(null); URL.revokeObjectURL(url); };
       await p.play();
       setPlayingVoice(voiceId);
-    } catch { setPlayingVoice(null); }
+      return true;
+    } catch { setPlayingVoice(null); return false; }
   };
   useEffect(() => () => voicePlayerRef.current?.pause(), []);
 
@@ -367,6 +372,44 @@ export default function Orbit() {
     }
   }, [panicActive, acknowledged, panic]);
 
+  // ── field-officer voice note: auto-play at full volume + fly to its exact spot
+  // A live clip from the field is treated like a soft alert: it plays itself and
+  // the globe swings to the precise send location (backend ships the device's
+  // GPS fix on the note), holds with a reverse-geocoded callout, then eases back.
+  // A live panic always wins — its siren and lock take priority, so we stand down.
+  useEffect(() => {
+    const a = voiceNoteAlert;
+    if (!a || a.id === lastVoiceId.current) return;
+    lastVoiceId.current = a.id;
+    if (panicActive) return;
+
+    void playVoice(a.deviceId, a.voiceId); // falls back to manual Play if autoplay is blocked
+
+    const m = mapRef.current;
+    if (!m || !readyRef.current || a.lat == null || a.lng == null) return;
+    if (voiceTimerRef.current) clearTimeout(voiceTimerRef.current);
+    idleRef.current = false;
+    flyingRef.current = true;
+    setMode({ key: 'FLEET', color: '#22e39a' }); applyMode(m, 'FLEET');
+    m.flyTo({ center: [a.lng, a.lat], zoom: 13.5, speed: 0.8, curve: 1.5, essential: true });
+    m.once('moveend', () => { flyingRef.current = false; });
+    setVoiceLoc({ name: a.deviceName, short: null, lat: a.lat, lng: a.lng, at: a.createdAt, voiceId: a.voiceId, deviceId: a.deviceId });
+    api.get<{ short: string | null; address: string | null }>(`/dashboard/reverse-geocode?lat=${a.lat}&lng=${a.lng}`)
+      .then(r => setVoiceLoc(s => (s && s.lat === a.lat ? { ...s, short: r.data.short ?? r.data.address } : s)))
+      .catch(() => {});
+
+    const hold = Math.min(20000, Math.max(10000, (a.durationMs ?? 0) + 4000));
+    voiceTimerRef.current = setTimeout(() => {
+      setVoiceLoc(null);
+      if (!lastPanicId.current) { // don't undo a panic lock that engaged meanwhile
+        mapRef.current?.flyTo({ center: EA_CENTER, zoom: EA_ZOOM, speed: 0.5, essential: true });
+        idleRef.current = true;
+      }
+    }, hold);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceNoteAlert, panicActive]);
+  useEffect(() => () => { if (voiceTimerRef.current) clearTimeout(voiceTimerRef.current); }, []);
+
   // Build the inspect card for whichever marker layer was clicked. Assigned
   // every render so it always closes over the latest nav/setters (the map's
   // own click handler is bound once and reaches it through this ref).
@@ -492,6 +535,23 @@ export default function Orbit() {
             </div>
           )}
           <button className="o-sos-link" onClick={() => nav({ to: '/panic-center' })}>Open Panic Center →</button>
+        </div>
+      )}
+
+      {/* live voice-note callout — auto-plays and pins the globe to its exact spot
+          (suppressed while a panic owns the card slot) */}
+      {voiceLoc && !sos && (
+        <div className="o-voice">
+          <div className="o-voice-head"><span className="o-voice-tag">🎙 VOICE NOTE</span><span className="o-voice-live"><i />PLAYING LIVE</span><span className="o-voice-t">{relTime(voiceLoc.at)}</span></div>
+          <div className="o-voice-who">{voiceLoc.name}</div>
+          <div className="o-voice-addr">{voiceLoc.short ?? `${voiceLoc.lat.toFixed(4)}, ${voiceLoc.lng.toFixed(4)}`}</div>
+          <div className="o-voice-coord">{voiceLoc.lat.toFixed(5)}, {voiceLoc.lng.toFixed(5)}</div>
+          <div className="o-voice-actions">
+            <button className={`o-voice-play ${playingVoice === voiceLoc.voiceId ? 'on' : ''}`} onClick={() => void playVoice(voiceLoc.deviceId, voiceLoc.voiceId)}>
+              <Play size={13} />{playingVoice === voiceLoc.voiceId ? 'Playing…' : 'Replay'}
+            </button>
+            <button className="o-voice-go" onClick={() => nav({ to: '/gps' })}>Open in GPS Live →</button>
+          </div>
         </div>
       )}
 

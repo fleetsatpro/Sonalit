@@ -1247,6 +1247,15 @@ router.post(
       const durationMs = parseInt(req.query.duration_ms) || null;
       const orgId = req.device.org_id || null;
 
+      // Exact location of the note. Prefer the device's live GPS at record time
+      // (sent as ?lat=&lng=), fall back to its last known position so the map
+      // still zooms to a real place even on an older client. A fresh fix also
+      // refreshes the device's stored position so its marker is accurate too.
+      const qLat = parseFloat(req.query.lat), qLng = parseFloat(req.query.lng);
+      const hasFix = Number.isFinite(qLat) && Number.isFinite(qLng) && Math.abs(qLat) <= 90 && Math.abs(qLng) <= 180;
+      const lat = hasFix ? qLat : (req.device.last_lat != null ? parseFloat(req.device.last_lat) : null);
+      const lng = hasFix ? qLng : (req.device.last_lng != null ? parseFloat(req.device.last_lng) : null);
+
       const { rows } = await query(
         `INSERT INTO guardian_voice_messages (org_id, device_id, mime, duration_ms, audio, direction)
          VALUES ($1, $2, $3, $4, $5, 'from_device')
@@ -1254,6 +1263,13 @@ router.post(
         [orgId, req.device.id, mime, durationMs, req.body]
       );
       const voice = rows[0];
+
+      if (hasFix) {
+        await query(
+          `UPDATE guardian_devices SET last_lat = $2, last_lng = $3, last_seen = NOW(), updated_at = NOW() WHERE id = $1`,
+          [req.device.id, qLat, qLng]
+        ).catch(e => logger.warn(`voice-message position update failed: ${e.message}`));
+      }
 
       if (orgId) {
         publish(`org#${orgId}`, {
@@ -1263,6 +1279,7 @@ router.post(
           voice_id: voice.id,
           duration_ms: durationMs,
           created_at: voice.created_at,
+          lat, lng,
         }).catch(e => logger.warn(`Centrifugo publish failed: ${e.message}`));
       }
 

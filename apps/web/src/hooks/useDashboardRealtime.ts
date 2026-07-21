@@ -91,6 +91,8 @@ interface GuardianVoiceMessageMsg {
   voice_id: string;
   duration_ms: number | null;
   created_at: string;
+  lat?: number | null;
+  lng?: number | null;
 }
 
 // Catch-all for unhandled types
@@ -296,6 +298,8 @@ export function useDashboardRealtime(orgId: string): void {
             voiceId: m.voice_id,
             durationMs: m.duration_ms,
             createdAt: m.created_at,
+            lat: m.lat ?? null,
+            lng: m.lng ?? null,
           };
           setVoiceNoteAlert(alert);
           // Never cut off an active panic wail — same guard as alert.new above.
