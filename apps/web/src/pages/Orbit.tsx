@@ -621,7 +621,7 @@ export default function Orbit() {
       {sos && panic && (
         <div className="o-sos">
           <div className="o-sos-head"><span className="o-sos-tag">● SOS</span><b>PANIC ACTIVE</b><span className="o-sos-t">{relTime(sos.at)}</span></div>
-          <div className="o-sos-who">{sos.label}</div>
+          <div className="o-sos-who">{panic.deviceName ?? panic.vehicle_id ?? sos.label}</div>
           <div className="o-sos-addr">{sos.short ?? `${sos.lat.toFixed(4)}, ${sos.lng.toFixed(4)}`}</div>
           <div className="o-sos-coord">{sos.lat.toFixed(5)}, {sos.lng.toFixed(5)}</div>
 
