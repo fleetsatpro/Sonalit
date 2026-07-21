@@ -100,6 +100,16 @@ env:
     value: guardian-svc
   - name: NATS_CONSUMER_GROUP
     value: guardian-eval
+  # Covert-capture photo storage (Cloudflare R2). Bucket + public base URL are
+  # non-secret and live here (same pattern as media-svc); the credentials
+  # R2_ACCOUNT_ID / R2_ACCESS_KEY / R2_SECRET_KEY are injected from Vault at
+  # sonalit/data/guardian-svc. Captures are stored under
+  # captures/<device>/<uuid>.jpg in the shared media bucket and served from
+  # R2_PUBLIC_URL so the dashboard can load them directly.
+  - name: R2_BUCKET
+    value: sonalit-media
+  - name: R2_PUBLIC_URL
+    value: https://media.sonalit.com
 
 topologySpreadConstraints:
   - maxSkew: 1
