@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { Search, Mic, X, Settings, Home, LayoutDashboard, ShieldAlert, Truck, Briefcase, type LucideIcon } from 'lucide-react';
+import { Search, Mic, X, Settings, Home, LayoutDashboard, ShieldAlert, Truck, Briefcase, Activity, ChevronRight, Play, ShieldCheck, Radio, type LucideIcon } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useDashboardStore, type DashboardOverview } from '../stores/dashboardStore.js';
 import { NAV_GROUPS } from '../components/layout/Rail.js';
@@ -25,7 +25,7 @@ const GROUP_COVER: Record<string, LucideIcon> = {
 
 interface MapConvoy { id: string; name: string; status: string; lat: number | null; lng: number | null; heading?: number }
 interface MapVehicle { id: string; registration: string; lat: number; lng: number; status: string; speed_kmh?: number }
-interface MapDevice { id: string; name: string; status: string; lat: number; lng: number; panic_active?: boolean }
+interface MapDevice { id: string; name: string; status: string; lat: number; lng: number; panic_active?: boolean; speed_kmh?: number; last_seen?: string | null; model?: string }
 interface MapGeofence { id: string; name: string; type: string; lat: number | null; lng: number | null; radius_m: number; path?: [number, number][] | null }
 interface MapRiskZone { id: string; name: string; risk_level: string; lat: number; lng: number; radius_km: number }
 interface AlertZone { lat: number; lng: number; radius_m: number; severity: string }
@@ -87,9 +87,9 @@ function setupLayers(map: maplibregl.Map) {
 
 function updateData(map: maplibregl.Map, d: MapData) {
   const set = (n: string, fc: GeoJSON.FeatureCollection) => (map.getSource(n) as maplibregl.GeoJSONSource | undefined)?.setData(fc);
-  set('sv-vehicles', { type: 'FeatureCollection', features: (d.vehicles ?? []).filter(v => v.lat != null && v.lng != null).map(v => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [v.lng, v.lat] }, properties: { registration: v.registration, status: v.status } })) });
-  set('sv-devices', { type: 'FeatureCollection', features: (d.devices ?? []).filter(v => v.lat != null && v.lng != null).map(v => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [v.lng, v.lat] }, properties: { name: v.name, status: v.status } })) });
-  set('sv-convoys', { type: 'FeatureCollection', features: (d.convoys ?? []).filter(c => c.lat != null && c.lng != null).map(c => ({ type: 'Feature', geometry: { type: 'LineString', coordinates: [[c.lng!, c.lat!], EA_CENTER] }, properties: { name: c.name } })) });
+  set('sv-vehicles', { type: 'FeatureCollection', features: (d.vehicles ?? []).filter(v => v.lat != null && v.lng != null).map(v => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [v.lng, v.lat] }, properties: { registration: v.registration, status: v.status, speed_kmh: v.speed_kmh ?? 0 } })) });
+  set('sv-devices', { type: 'FeatureCollection', features: (d.devices ?? []).filter(v => v.lat != null && v.lng != null).map(v => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [v.lng, v.lat] }, properties: { name: v.name, status: v.status, speed_kmh: v.speed_kmh ?? 0, last_seen: v.last_seen ?? '', model: v.model ?? '' } })) });
+  set('sv-convoys', { type: 'FeatureCollection', features: (d.convoys ?? []).filter(c => c.lat != null && c.lng != null).map(c => ({ type: 'Feature', geometry: { type: 'LineString', coordinates: [[c.lng!, c.lat!], EA_CENTER] }, properties: { name: c.name, status: c.status } })) });
   set('sv-geofences', {
     type: 'FeatureCollection',
     features: (d.geofences ?? []).reduce<GeoJSON.Feature[]>((acc, g) => {
@@ -147,6 +147,28 @@ function relTime(iso: string): string {
   return `${Math.floor(s / 3600)}h ago`;
 }
 
+// ── inspect-popup + priority-rail plumbing ──────────────────────────────────
+// Marker layers a click can land on. A single map click handler hit-tests
+// against these (order = pick priority) so tapping a vehicle/device/convoy/
+// risk zone opens its inspect card; a miss closes any open card.
+const PICK_LAYERS = ['sv-vehicles-dot', 'sv-devices-dot', 'sv-convoys-line', 'sv-risk-fill'];
+const STATUS_LABEL: Record<string, string> = {
+  moving: 'Moving', idle: 'Idle', offline: 'Offline', panic: 'PANIC', sos: 'SOS',
+  alert: 'Alert', warn: 'Warning', on_mission: 'On mission', available: 'Available', active: 'Active',
+};
+function statusLabel(s: unknown): string { const k = String(s ?? ''); return STATUS_LABEL[k] ?? (k ? k[0]!.toUpperCase() + k.slice(1) : '—'); }
+// Compact subset of the Panic Center reason codes for the on-globe resolve —
+// the full list (with notes) still lives in Panic Center for the paper trail.
+const SOS_REASONS: Array<{ value: string; label: string }> = [
+  { value: 'resolved_safe', label: 'Safe' },
+  { value: 'false_alarm', label: 'False alarm' },
+  { value: 'escalated_to_authorities', label: 'Escalated' },
+];
+
+interface InspectRow { k: string; v: string }
+interface Inspect { kind: string; kindLabel: string; title: string; rows: InspectRow[]; gpsPath: string | null; lng: number; lat: number }
+interface RailRow { id: string; kind: 'alert' | 'feed' | 'voice'; severity: string; title: string; sub?: string; at: string; voice?: { deviceId: string; voiceId: string; durationMs: number | null } }
+
 function useClock(): string {
   const [t, setT] = useState(() => new Date());
   useEffect(() => { const id = setInterval(() => setT(new Date()), 1000); return () => clearInterval(id); }, []);
@@ -164,9 +186,12 @@ export default function Orbit() {
   const lastPanicId = useRef<string | null>(null);
   const clock = useClock();
 
-  const { setOverview } = useDashboardStore.getState();
+  const { setOverview, acknowledgePanicState, updatePanicState } = useDashboardStore.getState();
   const overview = useDashboardStore(s => s.overview);
   const panic = useDashboardStore(s => s.panicState);
+  const alerts = useDashboardStore(s => s.alerts);
+  const feedItems = useDashboardStore(s => s.feedItems);
+  const voiceNoteAlert = useDashboardStore(s => s.voiceNoteAlert);
   const panicActive = panic?.status === 'active';
 
   const [mode, setMode] = useState<Mode>(BASE_MODES[0]!);
@@ -174,6 +199,42 @@ export default function Orbit() {
   const [openGroup, setOpenGroup] = useState<number | null>(null);
   const [q, setQ] = useState('');
   const [bbox, setBbox] = useState<string | null>(null);
+
+  // #1 — act on a panic from the SOS card without leaving the globe
+  const [resolving, setResolving] = useState(false);
+  const ackMut = useMutation({
+    mutationFn: (id: string) => api.patch(`/guardian/panic/${id}/ack`, {}),
+    onSuccess: (_r, id) => acknowledgePanicState(id, new Date().toISOString(), null),
+  });
+  const resolveMut = useMutation({
+    mutationFn: (v: { id: string; reason: string }) => api.patch(`/guardian/panic/${v.id}/resolve`, { reason_code: v.reason }),
+    onSuccess: (_r, v) => { updatePanicState({ id: v.id, status: 'resolved', triggered_at: panic?.triggered_at ?? new Date().toISOString() }); setResolving(false); },
+  });
+
+  // #2 — inspect popup for a clicked marker (React overlay projected onto the globe)
+  const [inspect, setInspect] = useState<Inspect | null>(null);
+  const [inspectPos, setInspectPos] = useState<{ x: number; y: number } | null>(null);
+  const pickRef = useRef<(layerId: string, props: Record<string, unknown>, lng: number, lat: number) => void>(() => {});
+  const closeInspectRef = useRef<() => void>(() => {});
+
+  // #3 — live priority rail
+  const [railOpen, setRailOpen] = useState<boolean>(() => { try { return localStorage.getItem('orbit-rail') !== '0'; } catch { return true; } });
+  useEffect(() => { try { localStorage.setItem('orbit-rail', railOpen ? '1' : '0'); } catch { /* private mode */ } }, [railOpen]);
+  const [playingVoice, setPlayingVoice] = useState<string | null>(null);
+  const voicePlayerRef = useRef<HTMLAudioElement | null>(null);
+  const playVoice = async (deviceId: string, voiceId: string) => {
+    try {
+      const res = await api.get(`/guardian/devices/${deviceId}/voice-messages/${voiceId}/audio`, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data as Blob);
+      if (!voicePlayerRef.current) voicePlayerRef.current = new Audio();
+      const p = voicePlayerRef.current;
+      p.src = url;
+      p.onended = () => { setPlayingVoice(null); URL.revokeObjectURL(url); };
+      await p.play();
+      setPlayingVoice(voiceId);
+    } catch { setPlayingVoice(null); }
+  };
+  useEffect(() => () => voicePlayerRef.current?.pause(), []);
 
   const { data: trafficStatus } = useTrafficStatus();
   const { data: trafficFC } = useTrafficIncidents(bbox, mode.key === 'TRAFFIC');
@@ -212,6 +273,23 @@ export default function Orbit() {
       setupLayers(map);
       addTrafficLayers(map, false);
       applyMode(map, BASE_MODES[0]!.key);
+
+      // Click-to-inspect: hit-test the marker layers; a hit opens that entity's
+      // card, a miss closes whatever's open. Layer-specific handlers won't fire
+      // for the empty-space case, so one global handler owns both.
+      const pickLayers = () => PICK_LAYERS.filter(l => map.getLayer(l));
+      map.on('click', (e) => {
+        const hits = map.queryRenderedFeatures(e.point, { layers: pickLayers() });
+        if (!hits.length) { closeInspectRef.current(); return; }
+        const f = hits[0]!;
+        let lng = e.lngLat.lng, lat = e.lngLat.lat;
+        if (f.geometry.type === 'Point') { const c = f.geometry.coordinates as [number, number]; lng = c[0]; lat = c[1]; }
+        pickRef.current(f.layer.id, (f.properties ?? {}) as Record<string, unknown>, lng, lat);
+      });
+      map.on('mousemove', (e) => {
+        map.getCanvas().style.cursor = map.queryRenderedFeatures(e.point, { layers: pickLayers() }).length ? 'pointer' : '';
+      });
+
       readyRef.current = true;
       if (dataRef.current) updateData(map, dataRef.current);
       setBbox(bboxFromMap(map));
@@ -286,6 +364,58 @@ export default function Orbit() {
     }
   }, [panicActive, acknowledged, panic]);
 
+  // Build the inspect card for whichever marker layer was clicked. Assigned
+  // every render so it always closes over the latest nav/setters (the map's
+  // own click handler is bound once and reaches it through this ref).
+  pickRef.current = (layerId, props, lng, lat) => {
+    setOpenGroup(null);
+    const coord = { k: 'Position', v: `${lat.toFixed(4)}, ${lng.toFixed(4)}` };
+    if (layerId === 'sv-vehicles-dot') {
+      setInspect({ kind: 'vehicle', kindLabel: 'Vehicle', title: String(props['registration'] ?? 'Vehicle'), gpsPath: '/gps', lng, lat,
+        rows: [{ k: 'Status', v: statusLabel(props['status']) }, { k: 'Speed', v: `${Math.round(Number(props['speed_kmh']) || 0)} km/h` }, coord] });
+    } else if (layerId === 'sv-devices-dot') {
+      const panicking = props['status'] === 'panic' || props['status'] === 'sos';
+      const seen = props['last_seen'] ? String(props['last_seen']) : '';
+      setInspect({ kind: panicking ? 'panic' : 'device', kindLabel: 'Guardian device', title: String(props['name'] ?? 'Device'), gpsPath: '/gps', lng, lat,
+        rows: [{ k: 'Status', v: statusLabel(props['status']) }, { k: 'Speed', v: `${Math.round(Number(props['speed_kmh']) || 0)} km/h` }, { k: 'Last seen', v: seen ? relTime(seen) : '—' }, coord] });
+    } else if (layerId === 'sv-convoys-line') {
+      setInspect({ kind: 'convoy', kindLabel: 'Convoy', title: String(props['name'] ?? 'Convoy'), gpsPath: '/gps', lng, lat,
+        rows: [{ k: 'Status', v: statusLabel(props['status'] ?? 'active') }, coord] });
+    } else if (layerId === 'sv-risk-fill') {
+      setInspect({ kind: 'risk', kindLabel: 'Risk zone', title: String(props['name'] ?? 'Risk zone'), gpsPath: null, lng, lat,
+        rows: [{ k: 'Risk level', v: statusLabel(props['risk_level']) }, coord] });
+    }
+  };
+  closeInspectRef.current = () => setInspect(null);
+
+  // Keep the inspect card glued to its marker as the globe moves/spins; hide it
+  // if the point rotates off-screen so it never floats over empty sky.
+  useEffect(() => {
+    const m = mapRef.current;
+    if (!m || !inspect) { setInspectPos(null); return; }
+    const place = () => {
+      const p = m.project([inspect.lng, inspect.lat]);
+      const c = m.getCanvas();
+      const on = p.x >= 0 && p.y >= 0 && p.x <= c.clientWidth && p.y <= c.clientHeight;
+      setInspectPos(on ? { x: p.x, y: p.y } : null);
+    };
+    place();
+    m.on('move', place); m.on('render', place);
+    return () => { m.off('move', place); m.off('render', place); };
+  }, [inspect]);
+
+  // Merge alerts + realtime feed (+ any live voice note) into one newest-first
+  // stream for the priority rail. The SOS row is pinned separately, above this.
+  const railRows = useMemo<RailRow[]>(() => {
+    const rows: RailRow[] = [];
+    if (voiceNoteAlert) rows.push({ id: `voice-${voiceNoteAlert.id}`, kind: 'voice', severity: 'info', title: 'Voice note', sub: voiceNoteAlert.deviceName, at: voiceNoteAlert.createdAt, voice: { deviceId: voiceNoteAlert.deviceId, voiceId: voiceNoteAlert.voiceId, durationMs: voiceNoteAlert.durationMs } });
+    for (const a of alerts) rows.push({ id: `alert-${a.id}`, kind: 'alert', severity: a.severity, title: a.title, sub: a.summary, at: a.occurred_at });
+    for (const f of feedItems) rows.push({ id: `feed-${f.id}`, kind: 'feed', severity: f.severity ?? 'low', title: f.message, at: f.timestamp });
+    rows.sort((x, y) => new Date(y.at).getTime() - new Date(x.at).getTime());
+    return rows;
+  }, [alerts, feedItems, voiceNoteAlert]);
+  const railCount = railRows.length + (panicActive ? 1 : 0);
+
   const kpi = overview?.kpi;
   const glances = [
     { l: 'Vehicles', v: kpi?.vehicles_live ?? '—', d: 'live', c: 'var(--o-cyan)' },
@@ -329,14 +459,36 @@ export default function Orbit() {
         <span className="o-modedot" /><b>{mode.key}</b><span>· live composite</span>
       </div>
 
-      {/* persistent SOS lock card — stays until acknowledged/resolved */}
-      {sos && (
+      {/* persistent SOS lock card — stays until acknowledged/resolved, and now
+          lets the operator acknowledge or resolve without leaving the globe */}
+      {sos && panic && (
         <div className="o-sos">
           <div className="o-sos-head"><span className="o-sos-tag">● SOS</span><b>PANIC ACTIVE</b><span className="o-sos-t">{relTime(sos.at)}</span></div>
           <div className="o-sos-who">{sos.label}</div>
           <div className="o-sos-addr">{sos.short ?? `${sos.lat.toFixed(4)}, ${sos.lng.toFixed(4)}`}</div>
           <div className="o-sos-coord">{sos.lat.toFixed(5)}, {sos.lng.toFixed(5)}</div>
-          <button className="o-sos-btn" onClick={() => nav({ to: '/panic-center' })}>OPEN PANIC CENTER →</button>
+
+          {!resolving ? (
+            <div className="o-sos-actions">
+              <button className="o-sos-act ack" disabled={ackMut.isPending || !!panic.acknowledgedAt}
+                onClick={() => ackMut.mutate(panic.id)}>
+                <ShieldCheck size={14} />{panic.acknowledgedAt ? 'ACKNOWLEDGED' : ackMut.isPending ? 'ACKNOWLEDGING…' : 'ACKNOWLEDGE'}
+              </button>
+              <button className="o-sos-act resolve" disabled={resolveMut.isPending} onClick={() => setResolving(true)}>RESOLVE</button>
+            </div>
+          ) : (
+            <div className="o-sos-resolve">
+              <span className="o-sos-rl">Resolve — pick a reason</span>
+              <div className="o-sos-reasons">
+                {SOS_REASONS.map(r => (
+                  <button key={r.value} className="o-sos-reason" disabled={resolveMut.isPending}
+                    onClick={() => resolveMut.mutate({ id: panic.id, reason: r.value })}>{r.label}</button>
+                ))}
+              </div>
+              <button className="o-sos-cancel" disabled={resolveMut.isPending} onClick={() => setResolving(false)}>Cancel</button>
+            </div>
+          )}
+          <button className="o-sos-link" onClick={() => nav({ to: '/panic-center' })}>Open Panic Center →</button>
         </div>
       )}
 
@@ -409,6 +561,69 @@ export default function Orbit() {
           </div>
         );
       })()}
+
+      {/* inspect popup — clicked marker, glued to its point on the globe */}
+      {inspect && inspectPos && (
+        <div className="o-inspect" style={{ left: inspectPos.x, top: inspectPos.y } as CSSProperties}>
+          <div className={`o-inspect-card k-${inspect.kind}`}>
+            <button className="o-inspect-x" onClick={() => setInspect(null)} aria-label="Close"><X size={13} /></button>
+            <div className="o-inspect-kind">{inspect.kindLabel}</div>
+            <div className="o-inspect-title">{inspect.title}</div>
+            <div className="o-inspect-rows">
+              {inspect.rows.map(r => (<div key={r.k} className="o-inspect-row"><span>{r.k}</span><b>{r.v}</b></div>))}
+            </div>
+            {inspect.gpsPath && <button className="o-inspect-go" onClick={() => nav({ to: inspect.gpsPath! })}>Open in GPS Live →</button>}
+          </div>
+          <span className="o-inspect-stem" />
+        </div>
+      )}
+
+      {/* live priority rail — realtime stream, SOS pinned, collapsible */}
+      <aside className={`o-rail ${railOpen ? 'open' : 'closed'}`}>
+        {!railOpen ? (
+          <button className="o-rail-tab" onClick={() => setRailOpen(true)} title="Open live feed">
+            <Radio size={17} />
+            {railCount > 0 && <span className="o-rail-badge">{railCount > 99 ? '99+' : railCount}</span>}
+          </button>
+        ) : (
+          <div className="o-rail-body">
+            <div className="o-rail-head">
+              <Activity size={15} /><b>LIVE FEED</b>
+              <span className="o-rail-livedot"><i />realtime</span>
+              <button className="o-rail-collapse" onClick={() => setRailOpen(false)} title="Collapse"><ChevronRight size={16} /></button>
+            </div>
+            <div className="o-rail-list">
+              {panicActive && panic && (
+                <button className="o-rail-row pinned" onClick={() => nav({ to: '/panic-center' })}>
+                  <span className="o-rail-chip crit">SOS</span>
+                  <div className="o-rail-main">
+                    <div className="o-rail-title">Panic active · {panic.vehicle_id ?? 'device'}</div>
+                    <div className="o-rail-sub">{panic.acknowledgedAt ? 'Acknowledged — resolve to clear' : 'Awaiting response'}</div>
+                  </div>
+                  <span className="o-rail-t">{relTime(panic.triggered_at)}</span>
+                </button>
+              )}
+              {railCount === 0 && <div className="o-rail-empty">All quiet.<br />Live alerts, driver events and voice notes stream in here.</div>}
+              {railRows.map(r => (
+                <div key={r.id} className={`o-rail-row ${r.kind === 'voice' ? 'voice' : ''}`}>
+                  <span className={`o-rail-chip ${r.severity}`}>{r.kind === 'voice' ? '♪' : r.severity[0]!.toUpperCase()}</span>
+                  <div className="o-rail-main">
+                    <div className="o-rail-title">{r.title}</div>
+                    {r.sub && <div className="o-rail-sub">{r.sub}</div>}
+                    {r.voice && (
+                      <button className={`o-rail-play ${playingVoice === r.voice.voiceId ? 'on' : ''}`} onClick={() => void playVoice(r.voice!.deviceId, r.voice!.voiceId)}>
+                        <Play size={11} />{playingVoice === r.voice.voiceId ? 'Playing…' : 'Play'}
+                        {r.voice.durationMs != null && <span className="o-rail-dur">{Math.round(r.voice.durationMs / 1000)}s</span>}
+                      </button>
+                    )}
+                  </div>
+                  <span className="o-rail-t">{relTime(r.at)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </aside>
 
       {/* Home button (bottom-left) */}
       <button className="o-homebtn" onClick={() => nav({ to: '/gps' })} title="Open full GPS Live"><Home size={15} /> GPS LIVE</button>
