@@ -67,7 +67,10 @@
 
 /* real MapLibre globe background */
 .orbit--map{background:#04070e}
-.o-map{position:absolute;inset:0;z-index:0}
+/* MapLibre forces the container to position:relative inline, which defeats
+   absolute inset sizing — so give it an explicit full size against the
+   definite-height .orbit parent, or the map collapses to 0 height. */
+.o-map{position:absolute;inset:0;width:100%;height:100%;z-index:0}
 .o-map .maplibregl-canvas{outline:none}
 .o-map .maplibregl-ctrl-attrib,.o-map .maplibregl-ctrl-logo{display:none!important}
 /* darken edges + the lower band so foreground stays legible over imagery */
