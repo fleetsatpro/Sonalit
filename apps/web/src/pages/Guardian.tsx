@@ -335,7 +335,8 @@ function CapturesGallery({ devices }: { devices: GuardianDevice[] }) {
         if (deviceFilter && msg.device_id !== deviceFilter) return;
         setCaptures(prev => prev.some(c => c.id === msg.capture_id) ? prev : [{
           id: msg.capture_id!, url: msg.url!, created_at: msg.created_at ?? new Date().toISOString(),
-          device_id: msg.device_id ?? '', device_name: msg.device_name,
+          device_id: msg.device_id ?? '',
+          ...(msg.device_name != null && { device_name: msg.device_name }),
         }, ...prev]);
       }
     );
