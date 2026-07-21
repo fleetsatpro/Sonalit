@@ -82,6 +82,8 @@ export interface VoiceNoteAlert {
   voiceId: string;
   durationMs: number | null;
   createdAt: string;
+  lat?: number | null;
+  lng?: number | null;
 }
 
 interface DashboardStore {

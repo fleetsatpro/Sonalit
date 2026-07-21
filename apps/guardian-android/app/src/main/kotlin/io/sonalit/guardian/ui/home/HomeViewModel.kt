@@ -232,8 +232,9 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(voiceNoteSendState = VoiceNoteSendState.SENDING) }
             val result = runCatching {
+                val fix = db.gpsFixDao().getLatest() // tag the note with the officer's live location
                 val body = file.readBytes().toRequestBody("audio/mp4".toMediaTypeOrNull())
-                api.uploadVoiceMessage(body, durationMs.toInt())
+                api.uploadVoiceMessage(body, durationMs.toInt(), fix?.lat, fix?.lon)
             }
             file.delete()
             voiceNoteFile = null

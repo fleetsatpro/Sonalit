@@ -213,6 +213,11 @@ interface GuardianApi {
     suspend fun uploadVoiceMessage(
         @Body body: RequestBody,
         @Query("duration_ms") durationMs: Int,
+        // The officer's live GPS at record time so dispatch's globe can zoom to
+        // the exact spot. Null when no fix yet — server falls back to the
+        // device's last known position.
+        @Query("lat") lat: Double? = null,
+        @Query("lng") lng: Double? = null,
     ): VoiceMessageUploadResponse
 
     /** Other Guardian devices sharing this device's ad-hoc convoy_code, with

@@ -123,6 +123,29 @@
   font:800 10px/1 var(--o-mono);letter-spacing:.06em;text-align:center}
 .o-sos-link:hover{color:#fff}
 
+/* live voice-note callout — pinned to its exact location, plays on arrival */
+.o-voice{position:absolute;top:74px;left:50%;transform:translateX(-50%);z-index:6;width:min(360px,92vw);
+  padding:13px 15px;border-radius:15px;background:rgba(28,20,4,.84);border:1.5px solid var(--o-amber);color:#fff;
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 0 40px -10px var(--o-amber),0 24px 60px -30px #000;
+  animation:o-pop .22s}
+.o-voice-head{display:flex;align-items:center;gap:9px;margin-bottom:7px}
+.o-voice-tag{font:900 10px/1 var(--o-mono);letter-spacing:.08em;color:#1a1000;background:var(--o-amber);border-radius:5px;padding:3px 7px}
+.o-voice-live{display:inline-flex;align-items:center;gap:6px;font:800 9px/1 var(--o-mono);letter-spacing:.1em;color:var(--o-amber)}
+.o-voice-live i{width:6px;height:6px;border-radius:50%;background:var(--o-amber);box-shadow:0 0 8px var(--o-amber);animation:o-pulse 1.4s infinite}
+.o-voice-t{margin-left:auto;font:700 10px/1 var(--o-mono);color:var(--o-t2)}
+.o-voice-who{font:900 16px/1.1 var(--o-sans);color:#fff}
+.o-voice-addr{margin-top:5px;font:600 12.5px/1.35 var(--o-sans);color:var(--o-t1)}
+.o-voice-coord{margin-top:3px;font:700 10px/1 var(--o-mono);letter-spacing:.04em;color:var(--o-t3)}
+.o-voice-actions{margin-top:12px;display:flex;gap:8px}
+.o-voice-play{flex:0 0 auto;display:inline-flex;align-items:center;gap:7px;padding:10px 14px;border-radius:9px;cursor:pointer;
+  background:var(--o-amber);color:#1a1000;border:none;font:900 11px/1 var(--o-mono);letter-spacing:.05em}
+.o-voice-play svg{fill:currentColor}
+.o-voice-play.on{background:rgba(255,178,62,.2);color:var(--o-amber);border:1px solid var(--o-amber)}
+.o-voice-play:hover{filter:brightness(1.05)}
+.o-voice-go{flex:1;padding:10px 0;border-radius:9px;cursor:pointer;background:transparent;color:#fff;
+  border:1.5px solid rgba(255,255,255,.32);font:900 11px/1 var(--o-mono);letter-spacing:.05em}
+.o-voice-go:hover{border-color:#fff;background:rgba(255,255,255,.08)}
+
 /* inspect popup — clicked marker card, projected onto the globe */
 .o-inspect{position:absolute;z-index:6;transform:translate(-50%,calc(-100% - 16px));pointer-events:none;filter:drop-shadow(0 18px 40px rgba(0,0,0,.7))}
 .o-inspect-card{position:relative;pointer-events:auto;width:236px;padding:13px 14px 12px;border-radius:15px;
@@ -305,8 +328,9 @@ button.o-rail-row:hover{background:rgba(255,255,255,.08)}
   /* decorative auto-cycle badge just clutters the small canvas */
   .o-modehud{display:none}
 
-  /* SOS lock card near the top, full-bleed */
+  /* SOS lock card + voice callout near the top, full-bleed */
   .o-sos{top:56px;left:50%;width:calc(100vw - 20px)}
+  .o-voice{top:56px;left:50%;width:calc(100vw - 20px)}
 
   /* GPS shortcut + live-feed tab live in the free top corners on mobile */
   .o-homebtn{top:58px;left:10px;bottom:auto;padding:8px 11px;font-size:10px}
