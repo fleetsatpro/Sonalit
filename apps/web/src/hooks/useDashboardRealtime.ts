@@ -95,6 +95,16 @@ interface GuardianVoiceMessageMsg {
   lng?: number | null;
 }
 
+// Published by POST /guardian/capture-photo the moment a covert still lands.
+interface GuardianCapturePhotoMsg {
+  type: 'guardian_capture_photo';
+  device_id: string;
+  device_name?: string;
+  capture_id: string;
+  url: string;
+  created_at: string;
+}
+
 // Catch-all for unhandled types
 type OrgMsg =
   | LocationMsg
@@ -107,6 +117,7 @@ type OrgMsg =
   | ConvoyUpdateMsg
   | IncidentMsg
   | GuardianVoiceMessageMsg
+  | GuardianCapturePhotoMsg
   | { type: string; [key: string]: unknown };
 
 // Per-vehicle throttle: max 1 position update per 500ms
@@ -309,6 +320,21 @@ export function useDashboardRealtime(orgId: string): void {
           }
           startTabTitleFlash(`🎙️ Voice note from ${alert.deviceName}`);
           notifyIfHidden('New voice note', `${alert.deviceName} sent a voice note`);
+          break;
+        }
+
+        // Covert photo landed — surface it in the live feed with a thumbnail.
+        case 'guardian_capture_photo': {
+          const m = msg as GuardianCapturePhotoMsg;
+          prependFeedItem({
+            id: m.capture_id,
+            type: 'capture',
+            message: `Photo captured — ${m.device_name ?? 'device'}`,
+            severity: 'info',
+            timestamp: m.created_at,
+            imageUrl: m.url,
+          });
+          notifyIfHidden('Photo captured', `${m.device_name ?? 'A device'} sent a photo`);
           break;
         }
 

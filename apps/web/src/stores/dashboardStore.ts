@@ -74,6 +74,7 @@ export interface FeedItem {
   message: string;
   severity?: string;
   timestamp: string;
+  imageUrl?: string; // e.g. a covert capture_photo result — renders as a thumbnail
 }
 
 export interface VoiceNoteAlert {
