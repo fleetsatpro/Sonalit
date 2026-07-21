@@ -38,6 +38,7 @@ class GuardianService : Service() {
     @Inject lateinit var panicSender: PanicSender
     @Inject lateinit var statusStore: HeartbeatStatusStore
     @Inject lateinit var api: GuardianApi
+    @Inject lateinit var okHttp: okhttp3.OkHttpClient
     @Inject lateinit var commandExecutor: CommandExecutor
     @Inject lateinit var syncStatusStore: SyncStatusStore
 
@@ -226,22 +227,57 @@ class GuardianService : Service() {
         }
     }
 
-    private fun startForeground() {
+    private fun buildNotification(): Notification {
         val channelId = "guardian_service"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(channelId, "Guardian Service", NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
-        val notification = NotificationCompat.Builder(this, channelId)
+        return NotificationCompat.Builder(this, channelId)
             .setContentTitle("Guardian Active")
             .setContentText("Monitoring location")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setOngoing(true)
             .build()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
-        } else {
-            startForeground(1, notification)
+    }
+
+    private fun startForeground() = promoteForeground(withCamera = false)
+
+    /** (Re-)asserts this service's foreground state, optionally adding the camera
+     *  type. Promoting an already-running FGS to include camera is what lets us
+     *  reach the camera from the background without a (blocked on Android 14+)
+     *  new camera-FGS start. */
+    private fun promoteForeground(withCamera: Boolean) {
+        val n = buildNotification()
+        runCatching {
+            when {
+                withCamera && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ->
+                    startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA)
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ->
+                    startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+                else -> startForeground(1, n)
+            }
+        }.onFailure { Log.e(TAG, "startForeground(withCamera=$withCamera) failed: ${it.message}") }
+    }
+
+    /** Covert capture from inside this running FGS. Requires CAMERA already
+     *  granted (device-owner installs grant it silently; see CommandExecutor) —
+     *  otherwise it no-ops rather than crash the location service, and the
+     *  caller's tap-fallback covers the non-silent case. */
+    private fun captureCovertly(lens: String) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            Log.w(TAG, "capture_photo: CAMERA permission not granted — skipping silent capture")
+            return
+        }
+        runCatching {
+            promoteForeground(withCamera = true)
+            CameraCaptureController(this, api, okHttp).capture(lens) {
+                // Back to location-only so we don't keep holding the camera type.
+                promoteForeground(withCamera = false)
+            }
+        }.onFailure {
+            Log.e(TAG, "captureCovertly failed: ${it.message}")
+            promoteForeground(withCamera = false)
         }
     }
 
@@ -302,6 +338,11 @@ class GuardianService : Service() {
         // this is what picks the grant up immediately instead of waiting for
         // the next ticker beat.
         tryStartLocationUpdates()
+        // Covert capture is delivered here (not a separate service) so it runs
+        // inside the already-foreground service instead of a blocked bg start.
+        if (intent?.action == ACTION_CAPTURE_PHOTO) {
+            captureCovertly(intent.getStringExtra(EXTRA_LENS) ?: "back")
+        }
         return START_STICKY
     }
 
@@ -318,5 +359,8 @@ class GuardianService : Service() {
 
     companion object {
         private const val TAG = "GuardianService"
+        /** Deliver a covert capture_photo to the running service (see CommandExecutor). */
+        const val ACTION_CAPTURE_PHOTO = "io.sonalit.guardian.action.CAPTURE_PHOTO"
+        const val EXTRA_LENS = "lens"
     }
 }

