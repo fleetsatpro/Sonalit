@@ -283,12 +283,58 @@ button.o-rail-row:hover{background:rgba(255,255,255,.08)}
 @media (prefers-reduced-motion:reduce){.o-live i{animation:none}.o-scrim,.o-folderpanel{animation:none}}
 
 @media(min-width:460px){.o-apps{grid-template-columns:repeat(4,1fr)}}
-@media(max-height:760px){.o-float{top:auto;bottom:14%}}
-@media(max-width:560px){
-  .o-clock{font-size:18px}
-  .o-hero{top:8%}
-  .o-grp{width:calc(50% - 7px)}
-  .o-float{top:auto;bottom:15%}
-  .o-rail{top:auto;bottom:74px;right:12px}
-  .o-rail-body{height:min(56vh,420px)}
+@media(max-height:760px) and (min-width:681px){.o-float{top:auto;bottom:14%}}
+
+/* ── Phones / small tablets ─────────────────────────────────────────────────
+   The desktop layout floats absolute panels around a full-bleed globe and
+   needs ~720px to breathe; below that everything collides. Re-flow into a
+   clean vertical stack: compact top row, KPI strip + 2×2 folder grid pinned
+   above the command bar, GPS + live-feed tucked into the free top corners. */
+@media(max-width:680px){
+  /* single compact top row — no 3-line wrap over the globe */
+  .o-top{padding:9px 11px;gap:7px;flex-wrap:nowrap}
+  .o-brand{padding:5px 10px 5px 5px;gap:8px;flex:0 1 auto;min-width:0}
+  .o-avatar{width:26px;height:26px;font-size:10px}
+  .o-brand b{font-size:11.5px}
+  .o-brand span{display:none}
+  .o-clock{font-size:14px;letter-spacing:.04em;text-shadow:0 1px 2px rgba(0,0,0,.75)}
+  .o-live{display:none}
+  .o-chip{padding:6px 9px;font-size:9px;letter-spacing:.02em;gap:6px}
+  .o-iconbtn{width:32px;height:32px}
+
+  /* decorative auto-cycle badge just clutters the small canvas */
+  .o-modehud{display:none}
+
+  /* SOS lock card near the top, full-bleed */
+  .o-sos{top:56px;left:50%;width:calc(100vw - 20px)}
+
+  /* GPS shortcut + live-feed tab live in the free top corners on mobile */
+  .o-homebtn{top:58px;left:10px;bottom:auto;padding:8px 11px;font-size:10px}
+  .o-rail{top:52px;bottom:82px;right:10px;left:auto;justify-content:flex-end}
+  .o-rail-body{width:min(320px,86vw)}
+
+  /* the deck: horizontal KPI strip + 2×2 folder grid, above the command bar */
+  .o-float{top:auto;bottom:72px;gap:10px;padding:0 10px}
+  .o-glance{flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;gap:8px;max-width:100%;
+    scrollbar-width:none;padding-bottom:1px}
+  .o-glance::-webkit-scrollbar{display:none}
+  .o-pod{flex:0 0 auto;min-width:104px;padding:9px 12px}
+  .o-pv{font-size:20px}
+  .o-lh span{display:none}
+  .o-groups{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%}
+  .o-grp{width:auto;padding:15px 10px 13px;border-radius:18px}
+  .o-folder{width:50px;height:50px;margin:0 auto 9px;border-radius:14px}
+  .o-folder svg{width:26px;height:26px}
+  .o-grp h3{font-size:14px}
+  .o-grp p{font-size:9px;margin-top:5px}
+  .o-badge{top:9px;right:9px}
+
+  /* command bar */
+  .o-cmdwrap{padding:0 10px 12px}
+  .o-cmd{padding:11px 13px;gap:9px;border-radius:14px}
+  .o-cmd input{font-size:14px}
+  .o-kbd{display:none}
+
+  /* inspect popup must never exceed the viewport */
+  .o-inspect-card{width:min(236px,74vw)}
 }

@@ -218,7 +218,10 @@ export default function Orbit() {
   const closeInspectRef = useRef<() => void>(() => {});
 
   // #3 — live priority rail
-  const [railOpen, setRailOpen] = useState<boolean>(() => { try { return localStorage.getItem('orbit-rail') !== '0'; } catch { return true; } });
+  const [railOpen, setRailOpen] = useState<boolean>(() => {
+    try { const saved = localStorage.getItem('orbit-rail'); if (saved != null) return saved !== '0'; } catch { /* private mode */ }
+    return typeof window !== 'undefined' ? window.innerWidth > 680 : true; // default closed on phones so it doesn't cover the deck
+  });
   useEffect(() => { try { localStorage.setItem('orbit-rail', railOpen ? '1' : '0'); } catch { /* private mode */ } }, [railOpen]);
   const [playingVoice, setPlayingVoice] = useState<string | null>(null);
   const voicePlayerRef = useRef<HTMLAudioElement | null>(null);
