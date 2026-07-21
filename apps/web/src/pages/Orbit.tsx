@@ -152,6 +152,10 @@ function relTime(iso: string): string {
 // against these (order = pick priority) so tapping a vehicle/device/convoy/
 // risk zone opens its inspect card; a miss closes any open card.
 const PICK_LAYERS = ['sv-vehicles-dot', 'sv-devices-dot', 'sv-convoys-line', 'sv-risk-fill'];
+// A 0-sample WAV. Browsers refuse audio.play() until a media element has been
+// unlocked by a user gesture; playing this on the first interaction primes the
+// shared element so a voice note that lands later can auto-play on its own.
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
 const STATUS_LABEL: Record<string, string> = {
   moving: 'Moving', idle: 'Idle', offline: 'Offline', panic: 'PANIC', sos: 'SOS',
   alert: 'Alert', warn: 'Warning', on_mission: 'On mission', available: 'Available', active: 'Active',
@@ -227,22 +231,58 @@ export default function Orbit() {
   });
   useEffect(() => { try { localStorage.setItem('orbit-rail', railOpen ? '1' : '0'); } catch { /* private mode */ } }, [railOpen]);
   const [playingVoice, setPlayingVoice] = useState<string | null>(null);
+  const [voiceBlocked, setVoiceBlocked] = useState(false); // autoplay gated → invite a tap
   const voicePlayerRef = useRef<HTMLAudioElement | null>(null);
+  const audioUnlocked = useRef(false);
   const playVoice = async (deviceId: string, voiceId: string) => {
+    let url: string | null = null;
     try {
       const res = await api.get(`/guardian/devices/${deviceId}/voice-messages/${voiceId}/audio`, { responseType: 'blob' });
-      const url = URL.createObjectURL(res.data as Blob);
+      url = URL.createObjectURL(res.data as Blob);
       if (!voicePlayerRef.current) voicePlayerRef.current = new Audio();
       const p = voicePlayerRef.current;
+      const objUrl = url;
       p.src = url;
+      p.muted = false;
       p.volume = 1; // play field-officer notes at full volume — they can be urgent
-      p.onended = () => { setPlayingVoice(null); URL.revokeObjectURL(url); };
-      await p.play();
+      p.onended = () => { setPlayingVoice(null); URL.revokeObjectURL(objUrl); };
+      await p.play();          // rejects when the browser's autoplay gate is closed
       setPlayingVoice(voiceId);
+      setVoiceBlocked(false);
       return true;
-    } catch { setPlayingVoice(null); return false; }
+    } catch {
+      setPlayingVoice(null);
+      setVoiceBlocked(true);   // most often the autoplay policy — the callout now says "TAP TO PLAY"
+      if (url) URL.revokeObjectURL(url);
+      return false;
+    }
   };
   useEffect(() => () => voicePlayerRef.current?.pause(), []);
+
+  // Unlock audio on the first user gesture so later voice notes can auto-play.
+  useEffect(() => {
+    const unlock = () => {
+      if (audioUnlocked.current) return;
+      audioUnlocked.current = true;
+      if (!voicePlayerRef.current) voicePlayerRef.current = new Audio();
+      const p = voicePlayerRef.current;
+      try {
+        p.muted = true; p.src = SILENT_WAV;
+        void p.play().then(() => { p.pause(); p.currentTime = 0; p.muted = false; }).catch(() => { p.muted = false; });
+      } catch { /* ignore */ }
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+      window.removeEventListener('touchstart', unlock);
+    };
+    window.addEventListener('pointerdown', unlock);
+    window.addEventListener('keydown', unlock);
+    window.addEventListener('touchstart', unlock);
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+      window.removeEventListener('touchstart', unlock);
+    };
+  }, []);
 
   const { data: trafficStatus } = useTrafficStatus();
   const { data: trafficFC } = useTrafficIncidents(bbox, mode.key === 'TRAFFIC');
@@ -547,8 +587,8 @@ export default function Orbit() {
           <div className="o-voice-addr">{voiceLoc.short ?? `${voiceLoc.lat.toFixed(4)}, ${voiceLoc.lng.toFixed(4)}`}</div>
           <div className="o-voice-coord">{voiceLoc.lat.toFixed(5)}, {voiceLoc.lng.toFixed(5)}</div>
           <div className="o-voice-actions">
-            <button className={`o-voice-play ${playingVoice === voiceLoc.voiceId ? 'on' : ''}`} onClick={() => void playVoice(voiceLoc.deviceId, voiceLoc.voiceId)}>
-              <Play size={13} />{playingVoice === voiceLoc.voiceId ? 'Playing…' : 'Replay'}
+            <button className={`o-voice-play ${playingVoice === voiceLoc.voiceId ? 'on' : ''} ${voiceBlocked && playingVoice !== voiceLoc.voiceId ? 'blocked' : ''}`} onClick={() => void playVoice(voiceLoc.deviceId, voiceLoc.voiceId)}>
+              <Play size={13} />{playingVoice === voiceLoc.voiceId ? 'Playing…' : voiceBlocked ? 'TAP TO PLAY' : 'Replay'}
             </button>
             <button className="o-voice-go" onClick={() => nav({ to: '/gps' })}>Open in GPS Live →</button>
           </div>
