@@ -3162,6 +3162,16 @@
         }
       }
     },
+    "/api/v1/dashboard/reverse-geocode": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_reverse_geocode",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/dashboard/map": {
       "get": {
         "operationId": "get_api_v1_dashboard_map",

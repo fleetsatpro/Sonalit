@@ -131,6 +131,27 @@ router.get('/overview', asyncHandler(async (req, res) => {
   });
 }));
 
+// ── Reverse geocode (server-side; the browser CSP blocks geocoder hosts) ────
+// Used by the Orbit homepage to name a panic location. Best-effort: returns
+// {address, short:null} rather than erroring so the caller can fall back to
+// coordinates. Nominatim's policy is fine here — panic events are rare.
+router.get('/reverse-geocode', asyncHandler(async (req, res) => {
+  const lat = parseFloat(req.query.lat), lng = parseFloat(req.query.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ error: 'lat and lng required' });
+  try {
+    const r = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=jsonv2&zoom=16&addressdetails=1`,
+      { headers: { 'User-Agent': 'Sonalit-CommandCenter/1.0 (ops@sonalit.io)' }, signal: AbortSignal.timeout(6000) },
+    );
+    if (!r.ok) throw new Error(`geocode ${r.status}`);
+    const d = await r.json();
+    const a = d.address || {};
+    const short = [a.suburb || a.neighbourhood || a.village || a.town || a.city_district, a.city || a.county || a.state, a.country]
+      .filter(Boolean).slice(0, 3).join(', ');
+    res.json({ address: d.display_name || null, short: short || d.display_name || null });
+  } catch { res.json({ address: null, short: null }); }
+}));
+
 // ── §2.2 Map ───────────────────────────────────────────────────────────────
 router.get('/map', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
