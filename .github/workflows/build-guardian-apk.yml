@@ -6,6 +6,13 @@ on:
     paths:
       - 'apps/guardian-android/**'
       - '.github/workflows/build-guardian-apk.yml'
+  # Compile the app on PRs that touch it so Kotlin errors are caught before
+  # merge (the release + Railway steps below stay gated to main pushes, so a PR
+  # run just builds + uploads the debug APK — handy for on-device QA too).
+  pull_request:
+    paths:
+      - 'apps/guardian-android/**'
+      - '.github/workflows/build-guardian-apk.yml'
   workflow_dispatch:
     inputs:
       upload_only:
@@ -14,6 +21,12 @@ on:
         default: 'false'
         type: choice
         options: ['false', 'true']
+
+# Cancel a superseded in-flight run when a PR is updated (main pushes keep their
+# own lane so releases are never cancelled mid-flight).
+concurrency:
+  group: guardian-apk-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
