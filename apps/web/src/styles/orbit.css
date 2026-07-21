@@ -141,6 +141,8 @@
   background:var(--o-amber);color:#1a1000;border:none;font:900 11px/1 var(--o-mono);letter-spacing:.05em}
 .o-voice-play svg{fill:currentColor}
 .o-voice-play.on{background:rgba(255,178,62,.2);color:var(--o-amber);border:1px solid var(--o-amber)}
+.o-voice-play.blocked{animation:o-voicetap 1.2s ease-in-out infinite}
+@keyframes o-voicetap{0%,100%{box-shadow:0 0 0 0 rgba(255,178,62,.5)}50%{box-shadow:0 0 0 6px rgba(255,178,62,0)}}
 .o-voice-play:hover{filter:brightness(1.05)}
 .o-voice-go{flex:1;padding:10px 0;border-radius:9px;cursor:pointer;background:transparent;color:#fff;
   border:1.5px solid rgba(255,255,255,.32);font:900 11px/1 var(--o-mono);letter-spacing:.05em}
