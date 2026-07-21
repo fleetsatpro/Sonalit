@@ -297,6 +297,118 @@ function DeviceMatrix({ devices, onLink, onApprove }: { devices: GuardianDevice[
   );
 }
 
+interface Capture {
+  id: string; url: string; created_at: string; device_id: string;
+  device_name?: string; officer_name?: string; officer_badge?: string;
+}
+
+function CapturesGallery({ devices }: { devices: GuardianDevice[] }) {
+  const [captures, setCaptures] = useState<Capture[]>([]);
+  const [deviceFilter, setDeviceFilter] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [lightbox, setLightbox] = useState<Capture | null>(null);
+  const user = useAuthStore(s => s.user);
+
+  const load = useCallback((filter: string) => {
+    setLoading(true);
+    const qs = filter ? `?device_id=${filter}` : '';
+    api.get<{ data: Capture[]; next_cursor: string | null }>(`/guardian/captures${qs}`)
+      .then(r => { setCaptures(r.data.data ?? []); setNextCursor(r.data.next_cursor ?? null); })
+      .catch(() => setCaptures([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(deviceFilter); }, [load, deviceFilter]);
+
+  // New captures land live via the same org channel guardian.js publishes
+  // 'guardian_capture_photo' to on POST /capture-photo — otherwise a covert
+  // capture taken while this gallery is open would sit invisible until a
+  // manual refresh.
+  useEffect(() => {
+    if (!user?.org_id) return;
+    return subscribe<{ type?: string; device_id?: string; device_name?: string; capture_id?: string; url?: string; created_at?: string }>(
+      `org#${user.org_id}`,
+      (msg) => {
+        if (msg.type !== 'guardian_capture_photo' || !msg.capture_id || !msg.url) return;
+        if (deviceFilter && msg.device_id !== deviceFilter) return;
+        setCaptures(prev => prev.some(c => c.id === msg.capture_id) ? prev : [{
+          id: msg.capture_id!, url: msg.url!, created_at: msg.created_at ?? new Date().toISOString(),
+          device_id: msg.device_id ?? '', device_name: msg.device_name,
+        }, ...prev]);
+      }
+    );
+  }, [user?.org_id, deviceFilter]);
+
+  function loadMore() {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    const params = new URLSearchParams({ after: nextCursor });
+    if (deviceFilter) params.set('device_id', deviceFilter);
+    api.get<{ data: Capture[]; next_cursor: string | null }>(`/guardian/captures?${params.toString()}`)
+      .then(r => { setCaptures(prev => [...prev, ...(r.data.data ?? [])]); setNextCursor(r.data.next_cursor ?? null); })
+      .finally(() => setLoadingMore(false));
+  }
+
+  return (
+    <div style={{ background: C.surf, border: `1px solid ${C.border}`, borderRadius: 6, padding: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ fontFamily: 'Barlow Condensed, sans-serif', fontWeight: 700, fontSize: 13, color: C.gold, letterSpacing: '0.08em' }}>CAPTURES</div>
+        <select value={deviceFilter} onChange={e => setDeviceFilter(e.target.value)}
+          style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, color: C.txt, fontSize: 10, fontFamily: 'JetBrains Mono, monospace', padding: '4px 6px' }}>
+          <option value="">All devices</option>
+          {devices.map(d => <option key={d.id} value={d.id}>{d.officer_name || d.assigned_to || d.name || d.id}</option>)}
+        </select>
+      </div>
+
+      {loading ? (
+        <div style={{ color: C.sub, fontSize: 10 }}>Loading…</div>
+      ) : captures.length === 0 ? (
+        <div style={{ color: C.sub, fontSize: 10 }}>No captures yet — issue "Capture Photo" from the Command Terminal.</div>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(88px, 1fr))', gap: 6 }}>
+            {captures.map(cap => (
+              <button key={cap.id} onClick={() => setLightbox(cap)} title={`${cap.officer_name || cap.device_name || 'Device'} — ${new Date(cap.created_at).toLocaleString()}`}
+                style={{ position: 'relative', aspectRatio: '1', borderRadius: 5, overflow: 'hidden', border: `1px solid ${C.border}`, padding: 0, cursor: 'pointer', background: C.panel }}>
+                <img src={cap.url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(transparent, rgba(0,0,0,.85))', padding: '10px 4px 3px', fontSize: 8, fontFamily: 'JetBrains Mono, monospace', color: '#fff', textAlign: 'left', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {fmtRel(cap.created_at)}
+                </div>
+              </button>
+            ))}
+          </div>
+          {nextCursor && (
+            <button onClick={loadMore} disabled={loadingMore}
+              style={{ marginTop: 8, width: '100%', background: 'none', border: `1px solid ${C.border}`, borderRadius: 4, color: C.sub, fontSize: 10, fontFamily: 'JetBrains Mono, monospace', padding: '6px 0', cursor: loadingMore ? 'default' : 'pointer' }}>
+              {loadingMore ? 'Loading…' : 'Load more'}
+            </button>
+          )}
+        </>
+      )}
+
+      {lightbox && (
+        <div style={OVERLAY} onClick={() => setLightbox(null)}>
+          <div style={{ ...MBOX, maxWidth: 640, padding: 0, overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
+            <img src={lightbox.url} alt="" style={{ width: '100%', display: 'block', maxHeight: '70vh', objectFit: 'contain', background: '#000' }} />
+            <div style={{ padding: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: 11, color: C.txt, fontWeight: 600 }}>
+                  {lightbox.officer_name || lightbox.device_name || 'Unknown device'}
+                  {lightbox.officer_badge && <span style={{ color: C.sub }}> · #{lightbox.officer_badge}</span>}
+                </div>
+                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 9, color: C.sub, marginTop: 2 }}>{new Date(lightbox.created_at).toLocaleString()}</div>
+              </div>
+              <button onClick={() => setLightbox(null)} style={{ background: 'none', border: 'none', color: C.sub, cursor: 'pointer', padding: 4 }}><X size={16} /></button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CommandTerminal({ devices }: { devices: GuardianDevice[] }) {
   const [selDevice, setSelDevice] = useState('');
   const [selCmd, setSelCmd] = useState<string | null>(null);
@@ -525,6 +637,7 @@ export default function Guardian() {
               </div>
             </div>
           </div>
+          <CapturesGallery devices={devices} />
         </div>
       )}
 

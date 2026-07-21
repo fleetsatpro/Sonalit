@@ -349,6 +349,62 @@ router.get('/devices/:id/captures', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /captures — org-wide gallery of every capture_photo result, newest
+// first, optionally filtered to one device. This is the only place these
+// covertly-taken photos are actually browsable end to end — previously the
+// only surface was an 8-thumbnail strip on a single device's Live Fleet
+// popup, so anything not captured in the last few shots (or for a device
+// not currently open on the map) was effectively unviewable. Every fetch is
+// audit-logged: these are photos taken of a person without their knowledge,
+// so who looked at them and when needs the same trail as who commanded the
+// capture in the first place.
+router.get('/captures', async (req, res, next) => {
+  try {
+    const orgId = req.user.org_id;
+    const { device_id, after, limit = 40 } = req.query;
+    const parsedLimit = Math.min(parseInt(limit) || 40, 100);
+
+    const filters = ['gc.org_id = $1'];
+    const params = [orgId];
+    if (device_id) {
+      params.push(device_id);
+      filters.push(`gc.device_id = $${params.length}`);
+    }
+    if (after) {
+      params.push(after);
+      filters.push(`gc.created_at < $${params.length}`);
+    }
+    params.push(parsedLimit);
+    const limitIdx = params.length;
+
+    const { rows } = await query(
+      `SELECT gc.id, gc.url, gc.command_id, gc.created_at, gc.device_id,
+              gd.name AS device_name, fo.name AS officer_name, fo.badge_number AS officer_badge
+       FROM guardian_captures gc
+       JOIN guardian_devices gd ON gd.id = gc.device_id
+       LEFT JOIN field_officers fo ON fo.device_id = gd.id AND fo.org_id = $1
+       WHERE ${filters.join(' AND ')}
+       ORDER BY gc.created_at DESC
+       LIMIT $${limitIdx}`,
+      params
+    );
+
+    const next_cursor = rows.length < parsedLimit
+      ? null
+      : rows[rows.length - 1].created_at instanceof Date
+        ? rows[rows.length - 1].created_at.toISOString()
+        : rows[rows.length - 1].created_at;
+
+    query(
+      `INSERT INTO guardian_audit_log (actor_type, actor_id, action, target_type, target_id, payload, ip_address)
+       VALUES ('admin', $1, 'captures_viewed', 'org', $2, $3, $4)`,
+      [req.user.id, orgId, JSON.stringify({ device_id: device_id || null, count: rows.length }), req.ip]
+    ).catch((e) => logger.warn(`captures_viewed audit log failed: ${e.message}`));
+
+    res.json({ data: rows, next_cursor });
+  } catch (err) { next(err); }
+});
+
 // GET /devices/:id/voice-messages/:msgId/audio — operator playback of a
 // from_device clip. Distinct path from guardian.js's device-token-authed
 // GET /voice-messages/:id/audio (dispatch->device direction) so the two
