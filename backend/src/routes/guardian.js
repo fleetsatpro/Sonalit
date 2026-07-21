@@ -1257,10 +1257,10 @@ router.post(
       const lng = hasFix ? qLng : (req.device.last_lng != null ? parseFloat(req.device.last_lng) : null);
 
       const { rows } = await query(
-        `INSERT INTO guardian_voice_messages (org_id, device_id, mime, duration_ms, audio, direction)
-         VALUES ($1, $2, $3, $4, $5, 'from_device')
+        `INSERT INTO guardian_voice_messages (org_id, device_id, mime, duration_ms, audio, direction, lat, lng)
+         VALUES ($1, $2, $3, $4, $5, 'from_device', $6, $7)
          RETURNING id, created_at`,
-        [orgId, req.device.id, mime, durationMs, req.body]
+        [orgId, req.device.id, mime, durationMs, req.body, lat, lng]
       );
       const voice = rows[0];
 

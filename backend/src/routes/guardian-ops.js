@@ -331,6 +331,37 @@ router.get('/devices/:id/voice-messages', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /voice-messages/recent — org-wide recent field-officer voice notes,
+// newest first, for the homepage live feed + its auto-play/globe-zoom backstop.
+// Carries each note's record-time location (falling back to the device's last
+// known position for rows predating that column) so the globe can fly to the
+// exact spot a note was sent, even if the live websocket event was missed.
+router.get('/voice-messages/recent', async (req, res, next) => {
+  try {
+    const orgId = req.user.org_id;
+    const { rows } = await query(
+      `SELECT v.id, v.device_id, d.name AS device_name, v.duration_ms, v.created_at,
+              COALESCE(v.lat, d.last_lat) AS lat,
+              COALESCE(v.lng, d.last_lng) AS lng
+       FROM guardian_voice_messages v
+       LEFT JOIN guardian_devices d ON d.id = v.device_id
+       WHERE v.org_id = $1 AND v.direction = 'from_device'
+       ORDER BY v.created_at DESC
+       LIMIT 15`,
+      [orgId]
+    );
+    res.json({ data: rows.map(r => ({
+      id: r.id,
+      device_id: r.device_id,
+      device_name: r.device_name ?? 'Field officer',
+      duration_ms: r.duration_ms,
+      created_at: r.created_at,
+      lat: r.lat != null ? parseFloat(r.lat) : null,
+      lng: r.lng != null ? parseFloat(r.lng) : null,
+    })) });
+  } catch (err) { next(err); }
+});
+
 // GET /devices/:id/captures — photos this device captured in response to
 // capture_photo commands (see POST /guardian/capture-photo in guardian.js).
 // No RLS on guardian_captures (migration 064), so org scoping is explicit.

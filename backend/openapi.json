@@ -2458,6 +2458,16 @@
         }
       }
     },
+    "/api/v1/guardian/voice-messages/recent": {
+      "get": {
+        "operationId": "get_api_v1_guardian_voice_messages_recent",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/devices/{id}/captures": {
       "get": {
         "operationId": "get_api_v1_guardian_devices_id_captures",
