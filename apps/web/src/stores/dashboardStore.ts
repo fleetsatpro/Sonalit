@@ -58,6 +58,7 @@ export interface PanicEvent {
   id: string;
   status: 'active' | 'resolved';
   vehicle_id?: string;
+  deviceName?: string | null;
   mode?: string;
   lat?: number;
   lng?: number;
