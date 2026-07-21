@@ -2478,6 +2478,26 @@
         }
       }
     },
+    "/api/v1/guardian/capture/status": {
+      "get": {
+        "operationId": "get_api_v1_guardian_capture_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/captures/recent": {
+      "get": {
+        "operationId": "get_api_v1_guardian_captures_recent",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/devices/{id}/voice-messages/{msgId}/audio": {
       "get": {
         "operationId": "get_api_v1_guardian_devices_id_voice_messages_msgId_audio",
