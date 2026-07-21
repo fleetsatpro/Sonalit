@@ -169,6 +169,7 @@ const SOS_REASONS: Array<{ value: string; label: string }> = [
   { value: 'escalated_to_authorities', label: 'Escalated' },
 ];
 
+interface RecentVoice { id: string; device_id: string; device_name: string; duration_ms: number | null; created_at: string; lat: number | null; lng: number | null }
 interface InspectRow { k: string; v: string }
 interface Inspect { kind: string; kindLabel: string; title: string; rows: InspectRow[]; gpsPath: string | null; lng: number; lat: number }
 interface RailRow { id: string; kind: 'alert' | 'feed' | 'voice'; severity: string; title: string; sub?: string; at: string; voice?: { deviceId: string; voiceId: string; durationMs: number | null } }
@@ -189,10 +190,11 @@ export default function Orbit() {
   const flyingRef = useRef(false);
   const lastPanicId = useRef<string | null>(null);
   const lastVoiceId = useRef<string | null>(null);
+  const voicePollInit = useRef(false);
   const voiceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clock = useClock();
 
-  const { setOverview, acknowledgePanicState, updatePanicState } = useDashboardStore.getState();
+  const { setOverview, acknowledgePanicState, updatePanicState, setVoiceNoteAlert } = useDashboardStore.getState();
   const overview = useDashboardStore(s => s.overview);
   const panic = useDashboardStore(s => s.panicState);
   const alerts = useDashboardStore(s => s.alerts);
@@ -300,6 +302,14 @@ export default function Orbit() {
       catch { return null; }
     },
     staleTime: 30000, refetchInterval: 45000,
+  });
+  // Reliable backstop for voice notes: poll the org's recent from-device notes
+  // so the feed keeps a history and a new note still auto-plays + zooms even if
+  // the live websocket event was missed (tab unfocused / brief disconnect).
+  const { data: recentVoice } = useQuery<RecentVoice[]>({
+    queryKey: ['orbit-recent-voice'],
+    queryFn: async () => { try { const r = await api.get<{ data: RecentVoice[] }>('/guardian/voice-messages/recent'); return r.data.data ?? []; } catch { return []; } },
+    staleTime: 8000, refetchInterval: 12000,
   });
 
   // ── build the map once ────────────────────────────────────────────────────
@@ -450,6 +460,29 @@ export default function Orbit() {
   }, [voiceNoteAlert, panicActive]);
   useEffect(() => () => { if (voiceTimerRef.current) clearTimeout(voiceTimerRef.current); }, []);
 
+  // Poll-driven new-note detection. On first result we adopt the newest note as
+  // the baseline (no auto-play of history on load); after that, a newer note id
+  // is pushed into the store, which drives the same auto-play + zoom + callout
+  // path as the websocket event. `lastVoiceId` is the shared guard, so a note
+  // already handled live is never replayed here.
+  useEffect(() => {
+    const list = recentVoice ?? [];
+    if (list.length === 0) return;
+    const newest = list[0]!;
+    if (!voicePollInit.current) {
+      voicePollInit.current = true;
+      if (!lastVoiceId.current) lastVoiceId.current = newest.id;
+      return;
+    }
+    if (newest.id === lastVoiceId.current) return;
+    setVoiceNoteAlert({
+      id: newest.id, deviceId: newest.device_id, deviceName: newest.device_name,
+      voiceId: newest.id, durationMs: newest.duration_ms, createdAt: newest.created_at,
+      lat: newest.lat, lng: newest.lng,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recentVoice]);
+
   // Build the inspect card for whichever marker layer was clicked. Assigned
   // every render so it always closes over the latest nav/setters (the map's
   // own click handler is bound once and reaches it through this ref).
@@ -494,12 +527,18 @@ export default function Orbit() {
   // stream for the priority rail. The SOS row is pinned separately, above this.
   const railRows = useMemo<RailRow[]>(() => {
     const rows: RailRow[] = [];
-    if (voiceNoteAlert) rows.push({ id: `voice-${voiceNoteAlert.id}`, kind: 'voice', severity: 'info', title: 'Voice note', sub: voiceNoteAlert.deviceName, at: voiceNoteAlert.createdAt, voice: { deviceId: voiceNoteAlert.deviceId, voiceId: voiceNoteAlert.voiceId, durationMs: voiceNoteAlert.durationMs } });
+    const seenVoice = new Set<string>();
+    const pushVoice = (voiceId: string, deviceId: string, deviceName: string, durationMs: number | null, at: string) => {
+      if (seenVoice.has(voiceId)) return; seenVoice.add(voiceId);
+      rows.push({ id: `voice-${voiceId}`, kind: 'voice', severity: 'info', title: 'Voice note', sub: deviceName, at, voice: { deviceId, voiceId, durationMs } });
+    };
+    if (voiceNoteAlert) pushVoice(voiceNoteAlert.voiceId, voiceNoteAlert.deviceId, voiceNoteAlert.deviceName, voiceNoteAlert.durationMs, voiceNoteAlert.createdAt);
+    for (const v of (recentVoice ?? [])) pushVoice(v.id, v.device_id, v.device_name, v.duration_ms, v.created_at);
     for (const a of alerts) rows.push({ id: `alert-${a.id}`, kind: 'alert', severity: a.severity, title: a.title, sub: a.summary, at: a.occurred_at });
     for (const f of feedItems) rows.push({ id: `feed-${f.id}`, kind: 'feed', severity: f.severity ?? 'low', title: f.message, at: f.timestamp });
     rows.sort((x, y) => new Date(y.at).getTime() - new Date(x.at).getTime());
     return rows;
-  }, [alerts, feedItems, voiceNoteAlert]);
+  }, [alerts, feedItems, voiceNoteAlert, recentVoice]);
   const railCount = railRows.length + (panicActive ? 1 : 0);
 
   const kpi = overview?.kpi;
