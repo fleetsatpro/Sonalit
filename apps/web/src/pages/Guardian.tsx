@@ -359,7 +359,12 @@ function CapturesGallery({ devices }: { devices: GuardianDevice[] }) {
         <select value={deviceFilter} onChange={e => setDeviceFilter(e.target.value)}
           style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, color: C.txt, fontSize: 10, fontFamily: 'JetBrains Mono, monospace', padding: '4px 6px' }}>
           <option value="">All devices</option>
-          {devices.map(d => <option key={d.id} value={d.id}>{d.officer_name || d.assigned_to || d.name || d.id}</option>)}
+          {/* " — {model}" suffix, matching CommandTerminal's device select below,
+              keeps this option's text from exact-duplicating the officer name
+              already shown in the device table (breaks getByText(exact:true)
+              lookups in guardian.spec.ts otherwise — a strict-mode violation
+              since Playwright resolves <option> text alongside visible DOM text). */}
+          {devices.map(d => <option key={d.id} value={d.id}>{d.officer_name || d.assigned_to || d.name || d.id} — {d.model || '?'}</option>)}
         </select>
       </div>
 
