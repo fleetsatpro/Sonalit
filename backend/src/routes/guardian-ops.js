@@ -380,6 +380,46 @@ router.get('/devices/:id/captures', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /capture/status — is covert-photo storage (Cloudflare R2) configured?
+// The Surveillance app uses this to explain why captures aren't landing rather
+// than leaving the operator staring at an empty gallery.
+router.get('/capture/status', (req, res) => {
+  const { R2_ACCOUNT_ID, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET, R2_PUBLIC_URL } = process.env;
+  const configured = !!(R2_ACCOUNT_ID && R2_ACCESS_KEY && R2_SECRET_KEY && R2_BUCKET && R2_PUBLIC_URL);
+  res.json({ configured });
+});
+
+// GET /captures/recent — org-wide covert captures, newest first, for the
+// Surveillance gallery. Labelled with the assigned field officer's name
+// (falling back to the device code). Uses an org-scoped tx so the RLS-FORCEd
+// field_officers join resolves.
+router.get('/captures/recent', async (req, res, next) => {
+  try {
+    const orgId = req.user.org_id;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
+      const { rows } = await client.query(
+        `SELECT c.id, c.device_id, c.url, c.created_at,
+                COALESCE(fo.name, d.name) AS device_name
+         FROM guardian_captures c
+         LEFT JOIN guardian_devices d ON d.id = c.device_id
+         LEFT JOIN field_officers fo ON fo.device_id = c.device_id
+         WHERE c.org_id = $1
+         ORDER BY c.created_at DESC
+         LIMIT 60`,
+        [orgId]
+      );
+      await client.query('COMMIT');
+      res.json({ data: rows.map(r => ({
+        id: r.id, device_id: r.device_id, url: r.url,
+        created_at: r.created_at, device_name: r.device_name ?? 'Device',
+      })) });
+    } finally { client.release(); }
+  } catch (err) { next(err); }
+});
+
 // GET /devices/:id/voice-messages/:msgId/audio — operator playback of a
 // from_device clip. Distinct path from guardian.js's device-token-authed
 // GET /voice-messages/:id/audio (dispatch->device direction) so the two
