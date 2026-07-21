@@ -727,10 +727,17 @@ router.get('/panic', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
   try {
   const [activeR, statsR, teamsR] = await Promise.all([
+    // Prefer the assigned field officer's name (the person holding the device)
+    // over the raw device code — the device links to a field_officer via
+    // field_officers.device_id. req.db is org-scoped, so RLS on field_officers
+    // is satisfied (the device-auth publish path can't read it, hence this poll
+    // is where the SOS card learns who it is).
     safeQuery(req.db, `SELECT p.id, p.device_id, p.mode, p.lat, p.lng, p.created_at AS triggered_at,
-              p.acknowledged_at, p.escalation_level, d.name AS device_name
+              p.acknowledged_at, p.escalation_level,
+              COALESCE(fo.name, d.name) AS device_name
             FROM panic_events p
             LEFT JOIN guardian_devices d ON d.id = p.device_id
+            LEFT JOIN field_officers fo ON fo.device_id = p.device_id
             WHERE p.org_id=$1 AND p.resolved_at IS NULL ORDER BY p.created_at DESC LIMIT 1`, [orgId]),
     safeQuery(req.db, `SELECT
               AVG(EXTRACT(EPOCH FROM (resolved_at - created_at))) AS avg_response_s,
