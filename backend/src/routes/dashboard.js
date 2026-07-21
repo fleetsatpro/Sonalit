@@ -727,9 +727,11 @@ router.get('/panic', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
   try {
   const [activeR, statsR, teamsR] = await Promise.all([
-    safeQuery(req.db, `SELECT id, device_id, mode, lat, lng, created_at AS triggered_at,
-              acknowledged_at, escalation_level FROM panic_events
-            WHERE org_id=$1 AND resolved_at IS NULL ORDER BY created_at DESC LIMIT 1`, [orgId]),
+    safeQuery(req.db, `SELECT p.id, p.device_id, p.mode, p.lat, p.lng, p.created_at AS triggered_at,
+              p.acknowledged_at, p.escalation_level, d.name AS device_name
+            FROM panic_events p
+            LEFT JOIN guardian_devices d ON d.id = p.device_id
+            WHERE p.org_id=$1 AND p.resolved_at IS NULL ORDER BY p.created_at DESC LIMIT 1`, [orgId]),
     safeQuery(req.db, `SELECT
               AVG(EXTRACT(EPOCH FROM (resolved_at - created_at))) AS avg_response_s,
               MAX(created_at) AS last_event_at
@@ -749,6 +751,7 @@ router.get('/panic', asyncHandler(async (req, res) => {
     active_event: active ? {
       id: active.id,
       vehicle_id: active.device_id,
+      device_name: active.device_name ?? null,
       mode: active.mode,
       lat: active.lat ? parseFloat(active.lat) : null,
       lng: active.lng ? parseFloat(active.lng) : null,

@@ -155,6 +155,7 @@ export function useDashboardRealtime(orgId: string): void {
           const p: PanicEvent = {
             id: m.panic_id,
             status: 'active',
+            ...(m.device_name != null && { deviceName: m.device_name }),
             ...(m.mode != null && { mode: m.mode }),
             ...(m.lat != null && { lat: m.lat }),
             ...(m.lng != null && { lng: m.lng }),

@@ -6,7 +6,7 @@ import { playSiren, stopSiren } from '../../lib/siren.js';
 
 interface PanicPollData {
   status: 'clear' | 'active';
-  active_event: { id: string; vehicle_id: string; mode?: string | null; lat: number | null; lng: number | null; triggered_at: string } | null;
+  active_event: { id: string; vehicle_id: string; device_name?: string | null; mode?: string | null; lat: number | null; lng: number | null; triggered_at: string } | null;
 }
 
 export default function PanicAlarm() {
@@ -30,6 +30,7 @@ export default function PanicAlarm() {
       updatePanicState({
         id: pollData.active_event.id,
         status: 'active',
+        ...(pollData.active_event.device_name != null && { deviceName: pollData.active_event.device_name }),
         ...(pollData.active_event.mode != null && { mode: pollData.active_event.mode }),
         ...(pollData.active_event.lat != null && { lat: pollData.active_event.lat }),
         ...(pollData.active_event.lng != null && { lng: pollData.active_event.lng }),

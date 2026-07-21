@@ -152,6 +152,9 @@ function relTime(iso: string): string {
 // against these (order = pick priority) so tapping a vehicle/device/convoy/
 // risk zone opens its inspect card; a miss closes any open card.
 const PICK_LAYERS = ['sv-vehicles-dot', 'sv-devices-dot', 'sv-convoys-line', 'sv-risk-fill'];
+// "Live" means the last few minutes; older items drop to the History tab so the
+// live feed stays a live feed instead of an ever-growing scrollback.
+const LIVE_WINDOW_MS = 15 * 60_000;
 // A 0-sample WAV. Browsers refuse audio.play() until a media element has been
 // unlocked by a user gesture; playing this on the first interaction primes the
 // shared element so a voice note that lands later can auto-play on its own.
@@ -233,6 +236,7 @@ export default function Orbit() {
     return typeof window !== 'undefined' ? window.innerWidth > 680 : true; // default closed on phones so it doesn't cover the deck
   });
   useEffect(() => { try { localStorage.setItem('orbit-rail', railOpen ? '1' : '0'); } catch { /* private mode */ } }, [railOpen]);
+  const [railTab, setRailTab] = useState<'live' | 'history'>('live');
   const [playingVoice, setPlayingVoice] = useState<string | null>(null);
   const [voiceBlocked, setVoiceBlocked] = useState(false); // autoplay gated → invite a tap
   const voicePlayerRef = useRef<HTMLAudioElement | null>(null);
@@ -407,7 +411,7 @@ export default function Orbit() {
         setMode({ key: 'RISK INTEL', color: '#ff3b5c' }); applyMode(m, 'RISK INTEL');
         m.flyTo({ center: [panic!.lng!, panic!.lat!], zoom: 14.5, speed: 0.85, curve: 1.5, essential: true });
         m.once('moveend', () => { flyingRef.current = false; });
-        setSos({ label: panic!.vehicle_id ?? 'unassigned device', short: null, lat: panic!.lat!, lng: panic!.lng!, at: panic!.triggered_at });
+        setSos({ label: panic!.deviceName ?? panic!.vehicle_id ?? 'unassigned device', short: null, lat: panic!.lat!, lng: panic!.lng!, at: panic!.triggered_at });
         // Best-effort reverse geocode via the backend (browser CSP blocks geocoders).
         api.get<{ short: string | null; address: string | null }>(`/dashboard/reverse-geocode?lat=${panic!.lat}&lng=${panic!.lng}`)
           .then(r => setSos(s => (s && s.lat === panic!.lat ? { ...s, short: r.data.short ?? r.data.address } : s)))
@@ -558,7 +562,16 @@ export default function Orbit() {
     rows.sort((x, y) => new Date(y.at).getTime() - new Date(x.at).getTime());
     return rows;
   }, [alerts, feedItems, voiceNoteAlert, recentVoice]);
-  const railCount = railRows.length + (panicActive ? 1 : 0);
+  // useClock re-renders each second, so this recency split re-evaluates live.
+  const { liveRows, historyRows } = useMemo(() => {
+    const now = Date.now();
+    const live: RailRow[] = [], hist: RailRow[] = [];
+    for (const r of railRows) (now - new Date(r.at).getTime() < LIVE_WINDOW_MS ? live : hist).push(r);
+    return { liveRows: live, historyRows: hist };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [railRows, clock]);
+  const shownRows = railTab === 'live' ? liveRows : historyRows;
+  const railCount = liveRows.length + (panicActive ? 1 : 0); // collapsed badge = live only
 
   const kpi = overview?.kpi;
   const glances = [
@@ -749,23 +762,34 @@ export default function Orbit() {
         ) : (
           <div className="o-rail-body">
             <div className="o-rail-head">
-              <Activity size={15} /><b>LIVE FEED</b>
-              <span className="o-rail-livedot"><i />realtime</span>
+              <Activity size={15} />
+              <div className="o-rail-tabs">
+                <button className={`o-rail-tabbtn ${railTab === 'live' ? 'on' : ''}`} onClick={() => setRailTab('live')}>
+                  <i className="o-rail-livei" />LIVE{liveRows.length > 0 ? ` ${liveRows.length}` : ''}
+                </button>
+                <button className={`o-rail-tabbtn ${railTab === 'history' ? 'on' : ''}`} onClick={() => setRailTab('history')}>
+                  HISTORY{historyRows.length > 0 ? ` ${historyRows.length}` : ''}
+                </button>
+              </div>
               <button className="o-rail-collapse" onClick={() => setRailOpen(false)} title="Collapse"><ChevronRight size={16} /></button>
             </div>
             <div className="o-rail-list">
-              {panicActive && panic && (
+              {railTab === 'live' && panicActive && panic && (
                 <button className="o-rail-row pinned" onClick={() => nav({ to: '/panic-center' })}>
                   <span className="o-rail-chip crit">SOS</span>
                   <div className="o-rail-main">
-                    <div className="o-rail-title">Panic active · {panic.vehicle_id ?? 'device'}</div>
+                    <div className="o-rail-title">Panic active · {panic.deviceName ?? panic.vehicle_id ?? 'device'}</div>
                     <div className="o-rail-sub">{panic.acknowledgedAt ? 'Acknowledged — resolve to clear' : 'Awaiting response'}</div>
                   </div>
                   <span className="o-rail-t">{relTime(panic.triggered_at)}</span>
                 </button>
               )}
-              {railCount === 0 && <div className="o-rail-empty">All quiet.<br />Live alerts, driver events and voice notes stream in here.</div>}
-              {railRows.map(r => (
+              {shownRows.length === 0 && !(railTab === 'live' && panicActive) && (
+                <div className="o-rail-empty">{railTab === 'live'
+                  ? <>All quiet.<br />Live alerts, driver events and voice notes stream in here.</>
+                  : 'No earlier events yet.'}</div>
+              )}
+              {shownRows.map(r => (
                 <div key={r.id} className={`o-rail-row ${r.kind === 'voice' ? 'voice' : ''}`}>
                   <span className={`o-rail-chip ${r.severity}`}>{r.kind === 'voice' ? '♪' : r.severity[0]!.toUpperCase()}</span>
                   <div className="o-rail-main">
