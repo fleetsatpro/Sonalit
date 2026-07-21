@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Search, Mic, X, Settings, Home, LayoutDashboard, ShieldAlert, Truck, Briefcase, type LucideIcon } from 'lucide-react';
 import { api } from '../lib/api.js';
-import { useDashboardStore, type DashboardOverview, type PanicEvent } from '../stores/dashboardStore.js';
+import { useDashboardStore, type DashboardOverview } from '../stores/dashboardStore.js';
 import { NAV_GROUPS } from '../components/layout/Rail.js';
 import {
   trafficTransformRequest, addTrafficLayers, setTrafficLayersVisible, setTrafficIncidents,
@@ -140,6 +140,13 @@ function applyMode(map: maplibregl.Map, key: ModeKey) {
   setTrafficLayersVisible(map, key === 'TRAFFIC');
 }
 
+function relTime(iso: string): string {
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  return `${Math.floor(s / 3600)}h ago`;
+}
+
 function useClock(): string {
   const [t, setT] = useState(() => new Date());
   useEffect(() => { const id = setInterval(() => setT(new Date()), 1000); return () => clearInterval(id); }, []);
@@ -163,7 +170,7 @@ export default function Orbit() {
   const panicActive = panic?.status === 'active';
 
   const [mode, setMode] = useState<Mode>(BASE_MODES[0]!);
-  const [banner, setBanner] = useState<string | null>(null);
+  const [sos, setSos] = useState<{ label: string; short: string | null; lat: number; lng: number; at: string } | null>(null);
   const [openGroup, setOpenGroup] = useState<number | null>(null);
   const [q, setQ] = useState('');
   const [bbox, setBbox] = useState<string | null>(null);
@@ -247,26 +254,37 @@ export default function Orbit() {
   // feed traffic incidents when in traffic mode
   useEffect(() => { const m = mapRef.current; if (m && readyRef.current && trafficFC) setTrafficIncidents(m, trafficFC); }, [trafficFC]);
 
-  // ── fly in to zoom on a live panic, then return ───────────────────────────
+  // ── lock the globe on a live panic until it's acknowledged or resolved ─────
+  // "Action taken" = acknowledged or cleared. Until then the globe stays zoomed
+  // in on the location with a persistent SOS card (reverse-geocoded address).
+  const acknowledged = !!panic?.acknowledgedAt;
   useEffect(() => {
     const m = mapRef.current;
     if (!m || !readyRef.current) return;
-    if (panicActive && panic && panic.id !== lastPanicId.current && panic.lat != null && panic.lng != null) {
-      lastPanicId.current = panic.id;
-      idleRef.current = false; flyingRef.current = true;
-      setMode({ key: 'RISK INTEL', color: '#ff3b5c' }); applyMode(m, 'RISK INTEL');
-      setBanner(`PANIC · ${(panic as PanicEvent).vehicle_id ?? 'device'} — zooming in`);
-      m.flyTo({ center: [panic.lng, panic.lat], zoom: 8.5, speed: 0.7, curve: 1.5, essential: true });
-      const t = setTimeout(() => {
-        flyingRef.current = false; setBanner(null);
-        m.flyTo({ center: EA_CENTER, zoom: EA_ZOOM, speed: 0.5, essential: true });
-        setTimeout(() => { idleRef.current = true; }, 4000);
-      }, 14000);
-      return () => clearTimeout(t);
+    const locked = panicActive && !acknowledged && !!panic && panic.lat != null && panic.lng != null;
+    if (locked) {
+      idleRef.current = false;
+      if (panic!.id !== lastPanicId.current) {
+        lastPanicId.current = panic!.id;
+        flyingRef.current = true;
+        setMode({ key: 'RISK INTEL', color: '#ff3b5c' }); applyMode(m, 'RISK INTEL');
+        m.flyTo({ center: [panic!.lng!, panic!.lat!], zoom: 14.5, speed: 0.85, curve: 1.5, essential: true });
+        m.once('moveend', () => { flyingRef.current = false; });
+        setSos({ label: panic!.vehicle_id ?? 'unassigned device', short: null, lat: panic!.lat!, lng: panic!.lng!, at: panic!.triggered_at });
+        // Best-effort reverse geocode via the backend (browser CSP blocks geocoders).
+        api.get<{ short: string | null; address: string | null }>(`/dashboard/reverse-geocode?lat=${panic!.lat}&lng=${panic!.lng}`)
+          .then(r => setSos(s => (s && s.lat === panic!.lat ? { ...s, short: r.data.short ?? r.data.address } : s)))
+          .catch(() => {});
+      }
+      return;
     }
-    if (!panicActive) lastPanicId.current = null;
-    return;
-  }, [panicActive, panic]);
+    // acknowledged or resolved → release the lock, ease back to the overview
+    if (lastPanicId.current) {
+      lastPanicId.current = null; setSos(null);
+      m.flyTo({ center: EA_CENTER, zoom: EA_ZOOM, speed: 0.5, essential: true });
+      setTimeout(() => { idleRef.current = true; }, 3500);
+    }
+  }, [panicActive, acknowledged, panic]);
 
   const kpi = overview?.kpi;
   const glances = [
@@ -311,8 +329,16 @@ export default function Orbit() {
         <span className="o-modedot" /><b>{mode.key}</b><span>· live composite</span>
       </div>
 
-      {/* panic fly-to banner */}
-      {banner && <div className="o-flybanner">⚠ {banner}</div>}
+      {/* persistent SOS lock card — stays until acknowledged/resolved */}
+      {sos && (
+        <div className="o-sos">
+          <div className="o-sos-head"><span className="o-sos-tag">● SOS</span><b>PANIC ACTIVE</b><span className="o-sos-t">{relTime(sos.at)}</span></div>
+          <div className="o-sos-who">{sos.label}</div>
+          <div className="o-sos-addr">{sos.short ?? `${sos.lat.toFixed(4)}, ${sos.lng.toFixed(4)}`}</div>
+          <div className="o-sos-coord">{sos.lat.toFixed(5)}, {sos.lng.toFixed(5)}</div>
+          <button className="o-sos-btn" onClick={() => nav({ to: '/panic-center' })}>OPEN PANIC CENTER →</button>
+        </div>
+      )}
 
       {/* floating deck */}
       <div className="o-float">

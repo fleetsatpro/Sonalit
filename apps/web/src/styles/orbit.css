@@ -87,11 +87,22 @@
 .o-modehud b{color:var(--mc)}
 .o-modehud span{color:var(--o-t3);letter-spacing:.06em;font-weight:700}
 
-/* panic fly-to banner */
-.o-flybanner{position:absolute;top:74px;left:50%;transform:translateX(-50%);z-index:6;
-  padding:10px 18px;border-radius:999px;background:rgba(255,59,92,.16);border:1px solid var(--o-red);color:#fff;
-  backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);font:800 12px/1 var(--o-sans);letter-spacing:.02em;
-  box-shadow:0 0 30px -6px var(--o-red);animation:o-pulse 1.4s infinite}
+/* persistent SOS lock card */
+.o-sos{position:absolute;top:74px;left:50%;transform:translateX(-50%);z-index:7;width:min(380px,90vw);
+  padding:14px 16px;border-radius:16px;background:rgba(24,6,12,.82);border:1.5px solid var(--o-red);color:#fff;
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 0 44px -8px var(--o-red),0 24px 60px -30px #000;
+  animation:o-sospulse 1.6s ease-in-out infinite}
+@keyframes o-sospulse{0%,100%{box-shadow:0 0 44px -8px var(--o-red),0 24px 60px -30px #000}50%{box-shadow:0 0 70px -4px var(--o-red),0 24px 60px -30px #000}}
+.o-sos-head{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+.o-sos-tag{font:900 10px/1 var(--o-mono);letter-spacing:.12em;color:#fff;background:var(--o-red);border-radius:5px;padding:3px 7px}
+.o-sos-head b{font:900 12px/1 var(--o-sans);letter-spacing:.06em;color:var(--o-red)}
+.o-sos-t{margin-left:auto;font:700 10px/1 var(--o-mono);color:var(--o-t2)}
+.o-sos-who{font:900 16px/1.1 var(--o-sans);color:#fff}
+.o-sos-addr{margin-top:5px;font:600 12.5px/1.35 var(--o-sans);color:var(--o-t1)}
+.o-sos-coord{margin-top:3px;font:700 10px/1 var(--o-mono);letter-spacing:.04em;color:var(--o-t3)}
+.o-sos-btn{margin-top:12px;width:100%;padding:10px 0;border:none;border-radius:9px;background:var(--o-red);color:#fff;
+  cursor:pointer;font:900 11px/1 var(--o-mono);letter-spacing:.08em}
+.o-sos-btn:hover{filter:brightness(1.1)}
 
 /* GPS Live shortcut, bottom-left */
 .o-homebtn{position:absolute;left:22px;bottom:26px;z-index:4;display:inline-flex;align-items:center;gap:8px;
