@@ -94,6 +94,18 @@ export function createGlobeEngine(
 
   let W = 0, H = 0, cx = 0, cy = 0, R = 0;
   let lon0 = startLon;
+
+  // Deep-space starfield behind the globe — normalized coords so it survives
+  // resize; a few gold stars pick up the brand. Adds depth so the backdrop
+  // reads as a scene, not a flat vector disc.
+  const stars = Array.from({ length: 130 }, () => ({
+    x: Math.random(), y: Math.random(),
+    r: 0.4 + Math.random() * 1.2,
+    a: 0.10 + Math.random() * 0.5,
+    tw: 0.4 + Math.random() * 1.3,
+    ph: Math.random() * 6.283,
+    gold: Math.random() < 0.09,
+  }));
   let startT: number | null = null;
   let rafId: number | null = null;
   let running = false;
@@ -252,11 +264,19 @@ export function createGlobeEngine(
       const p = project(c.lon, c.lat);
       if (!p.vis || p.depth < 0) return;
       const col = MODE_COL[c.mode];
+      // luminous node — soft coloured bloom + hot white core, brighter as the
+      // city faces us. Cheap: only ~a dozen cities per frame.
+      ctx!.save();
+      ctx!.shadowColor = col;
+      ctx!.shadowBlur = 7 * (0.4 + 0.6 * p.depth);
       ctx!.fillStyle = col;
       ctx!.globalAlpha = 0.9;
       ctx!.beginPath(); ctx!.arc(p.sx, p.sy, 2.3, 0, 7); ctx!.fill();
+      ctx!.shadowBlur = 4;
+      ctx!.shadowColor = '#FFF6DA';
       ctx!.fillStyle = '#FFF6DA';
       ctx!.beginPath(); ctx!.arc(p.sx, p.sy, 0.9, 0, 7); ctx!.fill();
+      ctx!.restore();
       ctx!.globalAlpha = 1;
       if (c.label && p.depth > 0.34) {
         ctx!.font = '500 9px "JetBrains Mono", monospace';
@@ -280,9 +300,20 @@ export function createGlobeEngine(
     }
   }
 
+  function drawStars(now: number): void {
+    for (const s of stars) {
+      const tw = reducedMotion ? 1 : 0.55 + 0.45 * Math.sin(now * 0.001 * s.tw + s.ph);
+      ctx!.globalAlpha = s.a * tw;
+      ctx!.fillStyle = s.gold ? '#F0B429' : '#AEBBD6';
+      ctx!.beginPath(); ctx!.arc(s.x * W, s.y * H, s.r, 0, 7); ctx!.fill();
+    }
+    ctx!.globalAlpha = 1;
+  }
+
   function drawFrame(now: number): void {
     if (!W || !H) return;
     ctx!.clearRect(0, 0, W, H);
+    drawStars(now);   // behind everything; the sphere fill covers any that fall on the disc
     drawSphere();
     drawGraticule();
     drawLand();
