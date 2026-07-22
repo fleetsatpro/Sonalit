@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import {
-  Loader2, AlertTriangle, ShieldCheck, TrendingUp, Truck, ArrowLeft,
+  Loader2, AlertTriangle, ShieldCheck, TrendingUp, Truck, ArrowLeft, Home,
   Folder, FolderOpen, ChevronRight, ChevronDown, FileText, CheckCircle2, Clock, CircleDashed,
 } from 'lucide-react';
 import { api } from '../lib/api.js';
@@ -86,6 +86,23 @@ const STATUS_META: Record<string, StatusMeta> = {
   failed: { label: 'Failed', color: T.red, Icon: AlertTriangle },
   none: NONE_META,
 };
+
+// The page is a two-pane master/detail on desktop; on a phone the two panes
+// can't sit side by side (the report gets squeezed into an unusable sliver), so
+// below this width we stack — show the list, and swap to the full-width report
+// once a day is picked, with a back button to return.
+function useIsMobile(): boolean {
+  const [mobile, setMobile] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)');
+    const on = () => setMobile(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return mobile;
+}
 
 function isoRange(startISO: string, endISO: string): string[] {
   const out: string[] = [];
@@ -285,13 +302,28 @@ export default function ConvoyReports(): React.ReactElement {
     mismatches: items.reduce((a, c) => a + (c.latest_report?.location_mismatch_count ?? 0), 0),
   };
 
+  const isMobile = useIsMobile();
+  const showViewer = !!selectedId;
+
   function pickDay(convoyId: string, date: string) {
     setSelectedId(convoyId);
     setSelectedDate(date);
   }
+  function clearSelection() {
+    setSelectedId(null);
+    setSelectedDate(null);
+  }
   function toggleConvoy(id: string) {
     setExpandedConvoy(prev => (prev === id ? null : id));
   }
+
+  // On mobile the two panes stack: show one at a time.
+  const sidebarStyle: React.CSSProperties = isMobile
+    ? { ...S.sidebar, width: '100%', minWidth: 0, borderRight: 'none', display: showViewer ? 'none' : 'flex' }
+    : S.sidebar;
+  const viewerStyle: React.CSSProperties = isMobile
+    ? { ...S.viewer, padding: '0 0 24px', display: showViewer ? 'block' : 'none' }
+    : S.viewer;
 
   const renderGroup = (label: string, key: 'active' | 'completed', convoys: ConvoyOverviewItem[], accent: string) => (
     <div style={{ marginBottom: 4 }}>
@@ -326,14 +358,24 @@ export default function ConvoyReports(): React.ReactElement {
 
   return (
     <div style={S.root}>
-      <aside style={S.sidebar}>
+      <aside style={sidebarStyle}>
         <div style={S.sidebarHeader}>
-          <button
-            onClick={() => void navigate({ to: '/convoys' })}
-            style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none',
-              color: T.faint, cursor: 'pointer', padding: 0, marginBottom: 10, fontSize: 11, fontFamily: T.mono }}>
-            <ArrowLeft size={11} /> Fleet Ops
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <button
+              onClick={() => void navigate({ to: '/' })}
+              title="Home"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: T.panel2,
+                border: `1px solid ${T.rim}`, borderRadius: 8, padding: '6px 11px', color: T.body,
+                cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: T.mono }}>
+              <Home size={13} /> Home
+            </button>
+            <button
+              onClick={() => void navigate({ to: '/convoys' })}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: 'none',
+                color: T.faint, cursor: 'pointer', padding: '6px 4px', fontSize: 11, fontFamily: T.mono }}>
+              <ArrowLeft size={11} /> Fleet Ops
+            </button>
+          </div>
           <div style={{ fontFamily: T.syne, fontWeight: 800, fontSize: 16, color: T.text, letterSpacing: '-0.01em' }}>
             Convoy Intelligence
           </div>
@@ -380,8 +422,29 @@ export default function ConvoyReports(): React.ReactElement {
         </div>
       </aside>
 
-      <main style={S.viewer}>
-        {!selectedId && (
+      <main style={viewerStyle}>
+        {/* Mobile: back-to-list + home bar above the report */}
+        {isMobile && showViewer && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px',
+            borderBottom: `1px solid ${T.rim}`, background: T.panel, position: 'sticky', top: 0, zIndex: 5 }}>
+            <button
+              onClick={clearSelection}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: T.panel2,
+                border: `1px solid ${T.rim}`, borderRadius: 8, padding: '8px 12px', color: T.text,
+                cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: T.mono }}>
+              <ArrowLeft size={14} /> Convoys
+            </button>
+            <button
+              onClick={() => void navigate({ to: '/' })}
+              title="Home"
+              style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, background: T.panel2,
+                border: `1px solid ${T.rim}`, borderRadius: 8, padding: '8px 12px', color: T.body,
+                cursor: 'pointer', fontSize: 12, fontFamily: T.mono }}>
+              <Home size={14} />
+            </button>
+          </div>
+        )}
+        {!selectedId && !isMobile && (
           <div style={{ ...S.emptyViewer, height: '100%' }}>
             <FolderOpen size={40} style={{ opacity: 0.2 }} />
             <span style={{ fontSize: 14 }}>Open a convoy folder and pick a day to view its report</span>

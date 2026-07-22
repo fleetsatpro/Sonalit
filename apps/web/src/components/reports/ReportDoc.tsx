@@ -269,7 +269,7 @@ function CfoUploadsSection({ uploads }: { uploads: CfoUpload[] }) {
               {phase === 'sod' ? 'Start of Day' : 'End of Day'}
               {photos[0]?.cfo_name && <span style={{ fontWeight: 400, marginLeft: 8 }}>— {photos[0].cfo_name}</span>}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(88px, 1fr))', gap: 8 }}>
               {photos.map(p => (
                 <div key={p.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <a href={p.photo_url} target="_blank" rel="noopener noreferrer"
@@ -382,7 +382,7 @@ function IntegritySection({ a }: { a: Integrity }) {
         <div style={{ marginTop: 16 }}>
           <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', color: '#6b7280',
             fontFamily: 'JetBrains Mono, monospace', marginBottom: 8 }}>ROUTE ANALYTICS</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(92px, 1fr))', gap: 8 }}>
             {stats.map(s => (
               <div key={s.label} style={{ background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 6, padding: '8px 10px' }}>
                 <div style={{ fontSize: 8, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em',
@@ -478,7 +478,7 @@ export default function ReportDoc({
   return (
     <div style={{
       background: '#ffffff', color: '#111827', fontFamily: 'Space Grotesk, sans-serif',
-      maxWidth: 860, margin: '0 auto', padding: '40px 48px',
+      maxWidth: 860, margin: '0 auto', padding: 'clamp(16px, 4vw, 40px) clamp(14px, 4vw, 48px)',
       boxShadow: '0 4px 24px rgba(0,0,0,0.12)', borderRadius: 4,
     }}>
       {/* Header */}
@@ -536,7 +536,7 @@ export default function ReportDoc({
 
       {/* A — Details */}
       <Section label="A — Convoy Details">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 12 }}>
           {[
             { label: 'Client', value: detail.convoy.client_name || '—' },
             { label: 'Status', value: detail.convoy.status.toUpperCase() },
