@@ -24,7 +24,7 @@ function telemetryLine(i: number): string {
 type FeedItem = { s: 'ok' | 'warn' | 'high'; t: string };
 const FEED: FeedItem[] = [
   { s: 'ok',   t: 'Every custody handoff cryptographically sealed & chained' },
-  { s: 'ok',   t: 'Road, air & sea telemetry in one verified timeline' },
+  { s: 'ok',   t: 'Unified live telemetry in one verified timeline' },
   { s: 'ok',   t: 'SOS pipeline — device to dispatch in seconds' },
   { s: 'warn', t: 'Geofence & route-deviation detection, corridor-aware' },
   { s: 'ok',   t: 'Cold-chain monitoring with tamper-evident records' },
@@ -104,19 +104,14 @@ export default function Theater(): React.ReactElement {
           <span className="brand-sub">GLOBAL OPERATIONS<br />SECURITY WALL</span>
         </div>
 
-        <div className="eyebrow">CHAIN OF CUSTODY · ROAD · AIR · SEA</div>
+        <div className="eyebrow">PROTECTIVE LOGISTICS · INTELLIGENCE-LED</div>
 
         <h1 className="headline">
-          <span className="ln"><span>Every shipment.</span></span>
-          <span className="ln"><span className="dim">Every kilometer.</span></span>
-          <span className="ln"><span className="stroke">Accounted for.</span></span>
+          <span className="ln"><span>Zero</span></span>
+          <span className="ln"><span className="stroke">blind spots.</span></span>
         </h1>
 
-        <div className="modes">
-          <div className="mode road"><i /><b>ROAD</b></div>
-          <div className="mode air"><i /><b>AIR</b></div>
-          <div className="mode sea"><i /><b>SEA</b></div>
-        </div>
+        <p className="lede">Powering the world&rsquo;s most secure supply chains.</p>
 
         <div className="feed">
           <span className={'fd ' + feed.s} />

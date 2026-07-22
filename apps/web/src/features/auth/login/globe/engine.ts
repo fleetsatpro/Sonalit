@@ -22,6 +22,46 @@ import { VSIZE, drawVehicle } from './vehicles';
 export const ROT_PER_MS = 360 / 90000;
 export const BASE_LON = 20;
 
+// ─────────────────────────────────────────────────────────────────────────
+// Per-load variety — like a fresh backdrop every visit. On each mount we pick
+// one SCENE (colour mood for the sphere / atmosphere / graticule) and one
+// starting REGION (which slice of the planet is framed first). Brand colours
+// for land, routes and cities stay constant so identity holds.
+// ─────────────────────────────────────────────────────────────────────────
+type Scene = {
+  name: string;
+  sphere: [string, string, string];      // core → mid → rim
+  atmo: [string, string, string, string]; // 4 atmosphere stops (inner→outer)
+  grat: string;                            // graticule stroke
+};
+const SCENES: Scene[] = [
+  { name: 'nightwatch',
+    sphere: ['#0D1728', '#080E1A', '#050810'],
+    atmo: ['rgba(74,158,255,0)', 'rgba(74,158,255,0.05)', 'rgba(240,180,41,0.07)', 'rgba(240,180,41,0)'],
+    grat: 'rgba(120,150,195,0.055)' },
+  { name: 'goldstorm',
+    sphere: ['#181206', '#0C0A06', '#050810'],
+    atmo: ['rgba(240,180,41,0)', 'rgba(240,180,41,0.06)', 'rgba(255,201,74,0.10)', 'rgba(240,180,41,0)'],
+    grat: 'rgba(190,160,110,0.06)' },
+  { name: 'aurora',
+    sphere: ['#08191E', '#06131A', '#050810'],
+    atmo: ['rgba(53,196,215,0)', 'rgba(53,196,215,0.06)', 'rgba(95,224,200,0.09)', 'rgba(53,196,215,0)'],
+    grat: 'rgba(110,180,190,0.06)' },
+  { name: 'deepsea',
+    sphere: ['#081522', '#05101A', '#050810'],
+    atmo: ['rgba(74,158,255,0)', 'rgba(74,158,255,0.07)', 'rgba(53,196,215,0.08)', 'rgba(74,158,255,0)'],
+    grat: 'rgba(90,140,190,0.06)' },
+  { name: 'emberwatch',
+    sphere: ['#1A0E10', '#0E080C', '#050810'],
+    atmo: ['rgba(255,93,108,0)', 'rgba(239,159,39,0.05)', 'rgba(240,180,41,0.09)', 'rgba(255,93,108,0)'],
+    grat: 'rgba(180,130,120,0.055)' },
+];
+// Region centres (°lon) that frame a pleasing land mass first: Africa, Europe,
+// Middle East, South Asia, East Asia, Oceania, the Americas.
+const REGION_LONS = [20, 10, 45, 78, 110, 140, -60, -95];
+
+function pick<T>(arr: T[]): T { return arr[(Math.random() * arr.length) | 0]!; }
+
 export type GlobeController = {
   start: () => void;
   stop: () => void;
@@ -48,17 +88,20 @@ export function createGlobeEngine(
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('2D canvas context unavailable');
 
+  // Fresh scene + framing every mount.
+  const scene = pick(SCENES);
+  const startLon = pick(REGION_LONS) + (Math.random() * 24 - 12);
+
   let W = 0, H = 0, cx = 0, cy = 0, R = 0;
-  let lon0 = BASE_LON;
+  let lon0 = startLon;
   let startT: number | null = null;
   let rafId: number | null = null;
   let running = false;
 
   function resize(): void {
     const rect = canvas.getBoundingClientRect();
-    // Cap DPR at 2.5 — retina-crisp on high-density panels while keeping the
-    // per-frame fill cost (which scales with pixel count²) bounded.
-    const DPR = Math.min(window.devicePixelRatio || 1, 2.5);
+    // Render at up to 3× device pixels for an extremely crisp, high-DPI globe.
+    const DPR = Math.min(window.devicePixelRatio || 1, 3);
     W = rect.width  || 700;
     H = rect.height || 700;
     canvas.width  = Math.round(W * DPR);
@@ -97,23 +140,23 @@ export function createGlobeEngine(
 
   function drawSphere(): void {
     const g = ctx!.createRadialGradient(cx - R * 0.32, cy - R * 0.34, R * 0.1, cx, cy, R);
-    g.addColorStop(0, '#0D1728');
-    g.addColorStop(0.7, '#080E1A');
-    g.addColorStop(1, '#050810');
+    g.addColorStop(0, scene.sphere[0]);
+    g.addColorStop(0.7, scene.sphere[1]);
+    g.addColorStop(1, scene.sphere[2]);
     ctx!.fillStyle = g;
     ctx!.beginPath(); ctx!.arc(cx, cy, R, 0, 7); ctx!.fill();
     const a = ctx!.createRadialGradient(cx, cy, R * 0.9, cx, cy, R * 1.14);
-    a.addColorStop(0,    'rgba(74,158,255,0)');
-    a.addColorStop(0.5,  'rgba(74,158,255,0.05)');
-    a.addColorStop(0.78, 'rgba(240,180,41,0.07)');
-    a.addColorStop(1,    'rgba(240,180,41,0)');
+    a.addColorStop(0,    scene.atmo[0]);
+    a.addColorStop(0.5,  scene.atmo[1]);
+    a.addColorStop(0.78, scene.atmo[2]);
+    a.addColorStop(1,    scene.atmo[3]);
     ctx!.fillStyle = a;
     ctx!.beginPath(); ctx!.arc(cx, cy, R * 1.14, 0, 7); ctx!.fill();
   }
 
   function drawGraticule(): void {
     ctx!.lineWidth = 1;
-    ctx!.strokeStyle = 'rgba(120,150,195,0.055)';
+    ctx!.strokeStyle = scene.grat;
     for (let lon = -180; lon < 180; lon += 30) {
       ctx!.beginPath();
       let on = false;
@@ -250,7 +293,7 @@ export function createGlobeEngine(
   function loop(now: number): void {
     if (!running) return;
     if (startT === null) startT = now;
-    lon0 = (BASE_LON + (now - startT) * ROT_PER_MS) % 360;
+    lon0 = (startLon + (now - startT) * ROT_PER_MS) % 360;
     drawFrame(now);
     rafId = requestAnimationFrame(loop);
   }
@@ -260,7 +303,7 @@ export function createGlobeEngine(
     running = true;
     startT = null;
     if (reducedMotion) {
-      lon0 = BASE_LON;
+      lon0 = startLon;
       drawFrame(0);
       running = false;
       return;
