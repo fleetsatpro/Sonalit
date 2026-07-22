@@ -1,0 +1,120 @@
+name: Build Sonalit APK
+
+# The Sonalit operator app is a thin Capacitor shell that loads the hosted web
+# app (see apps/sonalit-app/capacitor.config.ts). Because it does NOT bundle web
+# assets, ordinary UI/feature changes in apps/web ship via the web deploy and
+# need no new APK — so this workflow only rebuilds when the shell itself changes
+# (or on manual dispatch).
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/sonalit-app/**'
+      - '.github/workflows/build-sonalit-apk.yml'
+  pull_request:
+    paths:
+      - 'apps/sonalit-app/**'
+      - '.github/workflows/build-sonalit-apk.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: sonalit-apk-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: apps/sonalit-app
+        run: npm install --no-audit --no-fund
+
+      - name: Add Android platform
+        working-directory: apps/sonalit-app
+        run: npx cap add android
+
+      - name: Generate launcher icon + splash
+        working-directory: apps/sonalit-app
+        run: >
+          npx @capacitor/assets generate --android
+          --iconBackgroundColor '#0B111C' --iconBackgroundColorDark '#0B111C'
+          --splashBackgroundColor '#0B111C' --splashBackgroundColorDark '#0B111C'
+
+      - name: Sync web shell into Android
+        working-directory: apps/sonalit-app
+        run: npx cap sync android
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept SDK licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Install platform and build tools
+        run: sdkmanager "build-tools;34.0.0" "platforms;android-35"
+
+      - name: Set local.properties
+        working-directory: apps/sonalit-app/android
+        run: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+          if [ -f variables.gradle ]; then
+            sed -i 's/minSdkVersion = [0-9]*/minSdkVersion = 24/' variables.gradle
+          fi
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-sonalit-gradle-${{ hashFiles('apps/sonalit-app/android/**/*.gradle*', 'apps/sonalit-app/android/**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-sonalit-gradle-
+
+      - name: Make gradlew executable
+        run: chmod +x apps/sonalit-app/android/gradlew
+
+      - name: Build debug APK
+        working-directory: apps/sonalit-app/android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sonalit-debug
+          path: apps/sonalit-app/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: sonalit-v${{ github.run_number }}
+          name: Sonalit v${{ github.run_number }}
+          body: |
+            Sonalit operator app — auto-built from commit ${{ github.sha }}.
+
+            **Install**: Download and open on an Android 7.0+ device (enable "Install unknown apps" in settings). Installing a newer build over an older one is an in-place update — no uninstall needed.
+
+            **Updates**: This app loads the live Sonalit web app, so UI and feature updates appear automatically on next open. You only need a new APK for rare native changes.
+          files: apps/sonalit-app/android/app/build/outputs/apk/debug/app-debug.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
