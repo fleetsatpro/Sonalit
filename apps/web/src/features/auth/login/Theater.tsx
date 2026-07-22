@@ -107,8 +107,8 @@ export default function Theater(): React.ReactElement {
         <div className="eyebrow">PROTECTIVE LOGISTICS · INTELLIGENCE-LED</div>
 
         <h1 className="headline">
-          <span className="ln"><span>Zero</span></span>
-          <span className="ln"><span className="stroke">blind spots.</span></span>
+          <span className="ln"><span>The mission</span></span>
+          <span className="ln"><span className="stroke">never stops.</span></span>
         </h1>
 
         <p className="lede">Powering the world&rsquo;s most secure supply chains.</p>
