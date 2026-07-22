@@ -51,6 +51,15 @@ export const reportApi = {
       )
       .then(r => r.data),
 
+  postTrack: (
+    convoy_id: string,
+    points: Array<{ lat: number; lng: number; speed?: number | null; heading?: number | null; accuracy?: number | null; recorded_at: string }>,
+    token: string,
+  ): Promise<{ accepted: number }> =>
+    axios
+      .post(`${BASE}/track`, { convoy_id, points }, { headers: headers(token) })
+      .then(r => r.data),
+
   getHistory: (token: string): Promise<ConvoyReport[]> =>
     axios
       .get(`${BASE}/history`, { headers: headers(token) })
