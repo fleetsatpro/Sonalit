@@ -56,7 +56,9 @@ export function createGlobeEngine(
 
   function resize(): void {
     const rect = canvas.getBoundingClientRect();
-    const DPR = Math.min(window.devicePixelRatio || 1, 2);
+    // Cap DPR at 2.5 — retina-crisp on high-density panels while keeping the
+    // per-frame fill cost (which scales with pixel count²) bounded.
+    const DPR = Math.min(window.devicePixelRatio || 1, 2.5);
     W = rect.width  || 700;
     H = rect.height || 700;
     canvas.width  = Math.round(W * DPR);
