@@ -39,6 +39,7 @@ import java.io.File
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.coroutines.resume
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 data class PhotoSlot(
@@ -488,7 +489,16 @@ private fun SlotCaptureScreen(
     val state by viewModel.state.collectAsState()
     val ctx = state.context
 
-    LaunchedEffect(Unit) { lastLocation = getLastKnownLocation(context) }
+    // Keep trying for a fix rather than a one-shot read — a cold GPS often
+    // returns null on first ask, which used to leave the whole capture reading
+    // "not available". Upload never waits on this; it just fills in when ready.
+    LaunchedEffect(Unit) {
+        var tries = 0
+        while (lastLocation == null && tries < 8) {
+            lastLocation = getLastKnownLocation(context)
+            if (lastLocation == null) { tries++; delay(1500) }
+        }
+    }
 
     LaunchedEffect(state.uploads, ctx?.photos_today) {
         val eid = uploadEventId ?: return@LaunchedEffect
@@ -556,22 +566,13 @@ private fun SlotCaptureScreen(
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
+                // Review only — the single Retake / Use-photo action bar lives
+                // below, so there's never a second button floating on the image.
                 AsyncImage(
                     model = capturedFile,
                     contentDescription = "Captured photo",
                     modifier = Modifier.fillMaxSize(),
                 )
-                Row(
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    FloatingActionButton(
-                        onClick = { capturedFile = null },
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                    ) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Retake")
-                    }
-                }
             }
         }
 
@@ -589,40 +590,66 @@ private fun SlotCaptureScreen(
                     Spacer(Modifier.width(4.dp))
                     Text(
                         if (lastLocation != null)
-                            "GPS: ${String.format("%.5f", lastLocation!!.latitude)}, ${String.format("%.5f", lastLocation!!.longitude)}"
-                        else "GPS not available",
+                            "GPS locked · ${String.format("%.5f", lastLocation!!.latitude)}, ${String.format("%.5f", lastLocation!!.longitude)}"
+                        else "Locating GPS… photo still saves",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Spacer(Modifier.height(10.dp))
-                Button(
-                    onClick = {
-                        capturedFile?.let { file ->
-                            val eid = java.util.UUID.randomUUID().toString()
-                            uploadEventId = eid
-                            viewModel.uploadPhoto(
-                                file = file,
-                                truckId = truck.id,
-                                session = session,
-                                photoType = slot.photoType,
-                                sealPosition = slot.sealPosition,
-                                location = lastLocation,
-                                eventUuid = eid,
-                            )
+                Spacer(Modifier.height(12.dp))
+                if (capturedFile == null) {
+                    // Camera live — one instruction, no dead/disabled buttons.
+                    Text(
+                        "Tap the shutter to capture ${slot.label}.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                } else {
+                    // Photo taken — exactly two choices, primary vs secondary.
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        OutlinedButton(
+                            onClick = { capturedFile = null },
+                            enabled = !isUploading,
+                            modifier = Modifier.height(48.dp),
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Retake")
                         }
-                    },
-                    enabled = capturedFile != null && !isUploading,
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                ) {
-                    if (isUploading) {
-                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Uploading...")
-                    } else {
-                        Icon(Icons.Default.CloudUpload, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (isRetake) "Replace ${slot.label}" else "Upload ${slot.label}")
+                        Button(
+                            onClick = {
+                                capturedFile?.let { file ->
+                                    val eid = java.util.UUID.randomUUID().toString()
+                                    uploadEventId = eid
+                                    viewModel.uploadPhoto(
+                                        file = file,
+                                        truckId = truck.id,
+                                        session = session,
+                                        photoType = slot.photoType,
+                                        sealPosition = slot.sealPosition,
+                                        location = lastLocation,
+                                        eventUuid = eid,
+                                    )
+                                }
+                            },
+                            enabled = !isUploading,
+                            modifier = Modifier.weight(1f).height(48.dp),
+                        ) {
+                            if (isUploading) {
+                                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Uploading…")
+                            } else {
+                                Icon(Icons.Default.CloudUpload, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(if (isRetake) "Replace ${slot.label}" else "Use photo")
+                            }
+                        }
                     }
                 }
             }
@@ -721,10 +748,10 @@ fun CameraCapture(onImageCaptured: (File) -> Unit, modifier: Modifier = Modifier
             },
             modifier = Modifier.fillMaxSize(),
         )
-        FloatingActionButton(
+        LargeFloatingActionButton(
             onClick = {
-                val ic = imageCapture ?: return@FloatingActionButton
-                if (capturing) return@FloatingActionButton
+                val ic = imageCapture ?: return@LargeFloatingActionButton
+                if (capturing) return@LargeFloatingActionButton
                 capturing = true
                 val file = File(context.cacheDir, "photo_${System.currentTimeMillis()}.jpg")
                 val opts = ImageCapture.OutputFileOptions.Builder(file).build()
@@ -739,10 +766,11 @@ fun CameraCapture(onImageCaptured: (File) -> Unit, modifier: Modifier = Modifier
                     }
                 })
             },
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp),
+            containerColor = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 20.dp),
         ) {
-            if (capturing) CircularProgressIndicator(Modifier.size(24.dp))
-            else Icon(Icons.Default.Camera, contentDescription = "Capture")
+            if (capturing) CircularProgressIndicator(Modifier.size(30.dp), strokeWidth = 3.dp)
+            else Icon(Icons.Default.Camera, contentDescription = "Capture", Modifier.size(36.dp))
         }
     }
 }
