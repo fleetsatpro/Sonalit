@@ -69,6 +69,36 @@ export interface CfoUpload {
   cfo_name?: string;
 }
 
+export interface IntegrityFinding {
+  severity: 'critical' | 'warning' | 'info';
+  code: string;
+  title: string;
+  detail: string;
+}
+export interface IntegrityRoute {
+  hasTrack: boolean;
+  distanceKm: number;
+  durationMin: number;
+  avgSpeedKmh: number | null;
+  maxSpeedKmh: number | null;
+  stops: number;
+  maxStopMin: number;
+  overspeedCount: number;
+  deviationKm: number | null;
+  gpsPoints: number;
+}
+export interface Integrity {
+  verdict: 'cleared' | 'review' | 'exceptions';
+  score: number;
+  coverage: { received: number; required: number; pct: number };
+  findings: IntegrityFinding[];
+  counts: { critical: number; warning: number; info: number };
+  route: IntegrityRoute;
+  seals: { total: number; anomalies: number };
+  gpsMismatches: number;
+  evidenceDigest: string;
+}
+
 export interface ReportDetail {
   convoy: {
     id: string;
@@ -83,6 +113,7 @@ export interface ReportDetail {
   };
   report_date: string;
   daily_report: DailyReportMeta | null;
+  integrity?: Integrity | null;
   trucks: TruckRecord[];
   waypoints: WaypointRecord[];
   cfo_uploads?: CfoUpload[];
@@ -266,6 +297,107 @@ function CfoUploadsSection({ uploads }: { uploads: CfoUpload[] }) {
   );
 }
 
+const VERDICT_STYLE: Record<Integrity['verdict'], { label: string; fg: string; bg: string; border: string; blurb: string }> = {
+  cleared: { label: 'CLEARED', fg: '#16a34a', bg: '#f0fdf4', border: '#86efac', blurb: 'Full evidence coverage; no anomalies detected.' },
+  review: { label: 'UNDER REVIEW', fg: '#d97706', bg: '#fffbeb', border: '#fcd34d', blurb: 'Minor gaps or anomalies require dispatcher review.' },
+  exceptions: { label: 'EXCEPTIONS', fg: '#dc2626', bg: '#fef2f2', border: '#fca5a5', blurb: 'Critical anomalies detected — escalate before sign-off.' },
+};
+const SEV_COLOR: Record<IntegrityFinding['severity'], string> = { critical: '#dc2626', warning: '#d97706', info: '#6b7280' };
+
+function fmtDur(mins: number): string {
+  const h = Math.floor(mins / 60), m = Math.round(mins % 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function IntegritySection({ a }: { a: Integrity }) {
+  const v = VERDICT_STYLE[a.verdict];
+  const route = a.route;
+  const stats: Array<{ label: string; value: string; danger?: boolean }> = route.hasTrack ? [
+    { label: 'Distance', value: `${route.distanceKm} km` },
+    { label: 'Duration', value: fmtDur(route.durationMin) },
+    { label: 'Avg Speed', value: route.avgSpeedKmh != null ? `${route.avgSpeedKmh} km/h` : '—' },
+    { label: 'Peak Speed', value: route.maxSpeedKmh != null ? `${route.maxSpeedKmh} km/h` : '—', danger: route.overspeedCount > 0 },
+    { label: 'Stops', value: String(route.stops) },
+    { label: 'Max Deviation', value: route.deviationKm != null ? `${route.deviationKm} km` : '—', danger: route.deviationKm != null && route.deviationKm > 8 },
+  ] : [];
+
+  return (
+    <Section label="Integrity Assessment">
+      {/* Verdict banner */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 16, padding: '16px 20px', borderRadius: 8,
+        background: v.bg, border: `1px solid ${v.border}`, borderLeft: `5px solid ${v.fg}`, marginBottom: 16,
+      }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', color: v.fg,
+            fontFamily: 'JetBrains Mono, monospace' }}>CONVOY INTEGRITY VERDICT</div>
+          <div style={{ fontSize: 24, fontWeight: 800, color: v.fg, fontFamily: 'Syne, sans-serif', lineHeight: 1.1 }}>{v.label}</div>
+          <div style={{ fontSize: 11, color: '#374151', marginTop: 4 }}>{v.blurb}</div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', color: '#9ca3af',
+            fontFamily: 'JetBrains Mono, monospace' }}>INTEGRITY SCORE</div>
+          <div style={{ fontSize: 34, fontWeight: 800, color: v.fg, fontFamily: 'Syne, sans-serif', lineHeight: 1 }}>
+            {a.score}<span style={{ fontSize: 15, color: '#9ca3af' }}>/100</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Findings register */}
+      {a.findings.length === 0 ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#16a34a',
+          fontWeight: 600 }}>
+          <CheckCircle size={14} /> No exceptions — all coverage, seal, and route checks passed.
+        </div>
+      ) : (
+        <div>
+          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', color: '#6b7280',
+            fontFamily: 'JetBrains Mono, monospace', marginBottom: 8 }}>
+            FINDINGS REGISTER — {a.counts.critical} CRITICAL · {a.counts.warning} WARNING · {a.counts.info} INFO
+          </div>
+          <div style={{ border: '1px solid #e5e7eb', borderRadius: 6, overflow: 'hidden' }}>
+            {a.findings.map((f, i) => (
+              <div key={i} style={{
+                display: 'flex', gap: 10, padding: '8px 12px', alignItems: 'flex-start',
+                background: i % 2 === 0 ? '#f8fafc' : '#fff', borderBottom: i < a.findings.length - 1 ? '1px solid #f3f4f6' : 'none',
+              }}>
+                <span style={{ marginTop: 4, width: 8, height: 8, borderRadius: 99, flexShrink: 0,
+                  background: SEV_COLOR[f.severity] }} />
+                <span style={{ width: 56, flexShrink: 0, fontSize: 8, fontWeight: 700, letterSpacing: '0.05em',
+                  color: SEV_COLOR[f.severity], textTransform: 'uppercase', fontFamily: 'JetBrains Mono, monospace', marginTop: 2 }}>
+                  {f.severity}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>{f.title}</div>
+                  <div style={{ fontSize: 11, color: '#6b7280', marginTop: 1 }}>{f.detail}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Route analytics */}
+      {stats.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', color: '#6b7280',
+            fontFamily: 'JetBrains Mono, monospace', marginBottom: 8 }}>ROUTE ANALYTICS</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8 }}>
+            {stats.map(s => (
+              <div key={s.label} style={{ background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 6, padding: '8px 10px' }}>
+                <div style={{ fontSize: 8, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em',
+                  fontFamily: 'JetBrains Mono, monospace', marginBottom: 3 }}>{s.label}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: s.danger ? '#dc2626' : '#111827',
+                  fontFamily: 'Space Grotesk, sans-serif' }}>{s.value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </Section>
+  );
+}
+
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div style={{ marginBottom: 32 }}>
@@ -398,6 +530,9 @@ export default function ReportDoc({
           {regenerating ? 'Regenerating…' : 'Regenerate'}
         </button>
       </div>
+
+      {/* Integrity Assessment — the headline security read */}
+      {detail.integrity && <IntegritySection a={detail.integrity} />}
 
       {/* A — Details */}
       <Section label="A — Convoy Details">
@@ -549,6 +684,23 @@ export default function ReportDoc({
             </div>
           ))}
         </div>
+
+        {/* Chain-of-custody / tamper-evidence band */}
+        {detail.integrity?.evidenceDigest && (
+          <div style={{ marginTop: 24, borderRadius: 6, background: '#0b1220', borderLeft: '5px solid #f5a623',
+            padding: '12px 16px' }}>
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', color: '#f5a623',
+              fontFamily: 'JetBrains Mono, monospace' }}>CHAIN OF CUSTODY — EVIDENCE ATTESTATION</div>
+            <div style={{ fontSize: 10.5, color: '#c7ced9', marginTop: 5, lineHeight: 1.5 }}>
+              Generated automatically by the Sonalit Guardian CFO system from field-captured evidence.
+              Authenticity is verifiable against the evidence fingerprint below.
+            </div>
+            <div style={{ fontSize: 10, color: '#fff', marginTop: 6, fontFamily: 'JetBrains Mono, monospace',
+              wordBreak: 'break-all' }}>
+              SHA-256 {detail.integrity.evidenceDigest}
+            </div>
+          </div>
+        )}
       </Section>
     </div>
   );
