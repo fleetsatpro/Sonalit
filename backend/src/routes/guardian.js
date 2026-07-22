@@ -11,6 +11,7 @@ const { sendWhatsAppMessage } = require('../utils/whatsapp');
 const { publish } = require('../realtime/centrifugo');
 const requireIdempotencyKey = require('../middleware/idempotency');
 const { COMMAND_SIGNING_SECRET, signCommand } = require('../utils/commandSigning');
+const captureVision = require('../utils/captureVision');
 
 // ─── Integrity age thresholds per command type (T1.4) ────────────────────────
 const INTEGRITY_MAX_AGE = {
@@ -2549,6 +2550,10 @@ router.post('/capture-photo', deviceAuth, async (req, res, next) => {
       lat, lng,
     };
     if (orgId) publish(`org#${orgId}`, payload); else publish('device:capture', payload);
+    // Auto-tag the photo (people / weapons / vehicles / plates) the moment it
+    // lands. Detached — vision latency must not hold up the device's upload ack.
+    captureVision.analyzeCaptureAndStore(row.id, orgId, public_url)
+      .catch(e => logger.warn(`capture auto-analyze error: ${e.message}`));
     res.status(201).json({ id: row.id, created_at: row.created_at });
   } catch (err) {
     next(err);

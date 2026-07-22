@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Camera, ShieldAlert, X, RefreshCw, ExternalLink, MapPin, Search, LayoutGrid, Map as MapIcon, Crosshair, Siren } from 'lucide-react';
+import { Camera, ShieldAlert, X, RefreshCw, ExternalLink, MapPin, Search, LayoutGrid, Map as MapIcon, Crosshair, Siren, Sparkles, Users, Car, Loader } from 'lucide-react';
 import { api } from '../lib/api.js';
 
 // Surveillance — the covert-capture console. Every photo a Guardian device took
@@ -11,13 +11,31 @@ import { api } from '../lib/api.js';
 // gallery doubles as a map. Filter by officer, search, narrow the time window,
 // and read the reverse-geocoded address of any shot.
 
+interface CaptureAI {
+  summary: string | null;
+  labels: string[];
+  person_count: number;
+  has_weapon: boolean;
+  plates: string[];
+  vehicles: string[];
+  threat_level: 'low' | 'medium' | 'high';
+}
 interface Capture {
   id: string; device_id: string; url: string; created_at: string;
   device_name: string; officer_name?: string | null;
   trigger_reason?: string | null;
   lat?: number | null; lng?: number | null;
+  ai?: CaptureAI | null;
 }
 interface Device { id: string; name: string; officer_name?: string | null; status?: string }
+
+type Facet = 'people' | 'weapon' | 'vehicle';
+const FACETS: Array<{ k: Facet; label: string; icon: typeof Users }> = [
+  { k: 'people', label: 'People', icon: Users },
+  { k: 'weapon', label: 'Weapon', icon: ShieldAlert },
+  { k: 'vehicle', label: 'Vehicle', icon: Car },
+];
+const THREAT_COLOR: Record<string, string> = { low: 'text-emerald-400', medium: 'text-amber-400', high: 'text-red-400' };
 
 const WINDOWS: Array<{ k: string; label: string; ms: number | null }> = [
   { k: 'all', label: 'All', ms: null },
@@ -67,10 +85,11 @@ export default function Surveillance() {
   const [search, setSearch] = useState('');
   const [filterDevice, setFilterDevice] = useState('');
   const [win, setWin] = useState('all');
+  const [facets, setFacets] = useState<Set<Facet>>(new Set());
 
-  const { data: status } = useQuery<{ configured: boolean }>({
+  const { data: status } = useQuery<{ configured: boolean; ai_configured?: boolean }>({
     queryKey: ['capture-status'],
-    queryFn: async () => (await api.get('/guardian/capture/status')).data as { configured: boolean },
+    queryFn: async () => (await api.get('/guardian/capture/status')).data as { configured: boolean; ai_configured?: boolean },
     staleTime: 60_000,
   });
   const { data: captures, isLoading, refetch, isFetching } = useQuery<Capture[]>({
@@ -94,10 +113,35 @@ export default function Surveillance() {
     onError: () => setNote({ kind: 'err', text: 'Failed to send the capture command to the device.' }),
   });
 
+  // (Re)tag a single capture on demand.
+  const analyzeOne = useMutation({
+    mutationFn: (id: string) => api.post(`/guardian/captures/${id}/analyze`),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['captures-recent'] }),
+    onError: () => setNote({ kind: 'err', text: 'Analysis failed — check the AI vision configuration.' }),
+  });
+  // Backfill: tag captures that predate the feature.
+  const analyzeUntagged = useMutation({
+    mutationFn: () => api.post('/guardian/captures/analyze-untagged', { limit: 15 }),
+    onSuccess: (r) => {
+      const d = (r.data as { data?: { analyzed?: number } })?.data;
+      setNote({ kind: 'ok', text: `Tagged ${d?.analyzed ?? 0} capture(s).` });
+      void qc.invalidateQueries({ queryKey: ['captures-recent'] });
+    },
+    onError: () => setNote({ kind: 'err', text: 'Backfill failed — check the AI vision configuration.' }),
+  });
+
   const guardianDevices = useMemo(() => (devices ?? []).filter(d => !!d.name), [devices]);
   const configured = status?.configured !== false;
+  const aiConfigured = status?.ai_configured !== false;
 
-  // Apply the filter bar: device, free-text (officer/device), time window.
+  const toggleFacet = (f: Facet) => setFacets(prev => {
+    const next = new Set(prev);
+    next.has(f) ? next.delete(f) : next.add(f);
+    return next;
+  });
+
+  // Apply the filter bar: device, free-text (officer/device/AI tags), time
+  // window, and the AI facet chips (people / weapon / vehicle).
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const cutoff = WINDOWS.find(w => w.k === win)?.ms;
@@ -105,13 +149,18 @@ export default function Surveillance() {
     return (captures ?? []).filter(c => {
       if (filterDevice && c.device_id !== filterDevice) return false;
       if (min != null && new Date(c.created_at).getTime() < min) return false;
+      if (facets.has('people') && !((c.ai?.person_count ?? 0) > 0)) return false;
+      if (facets.has('weapon') && !c.ai?.has_weapon) return false;
+      if (facets.has('vehicle') && !((c.ai?.vehicles?.length ?? 0) > 0 || (c.ai?.plates?.length ?? 0) > 0)) return false;
       if (q) {
-        const hay = `${c.device_name} ${c.officer_name ?? ''}`.toLowerCase();
+        const ai = c.ai;
+        const hay = [c.device_name, c.officer_name ?? '', ai?.summary ?? '',
+          ...(ai?.labels ?? []), ...(ai?.plates ?? []), ...(ai?.vehicles ?? [])].join(' ').toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [captures, search, filterDevice, win]);
+  }, [captures, search, filterDevice, win, facets]);
 
   const located = useMemo(() => filtered.filter(c => c.lat != null && c.lng != null), [filtered]);
 
@@ -175,7 +224,7 @@ export default function Surveillance() {
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search officer or device…"
+            placeholder="Search officer, device, plate, or scene…"
             className="w-full rounded-md border border-white/10 bg-neutral-900 py-2 pl-9 pr-3 text-sm text-white outline-none placeholder:text-neutral-600"
           />
         </div>
@@ -201,6 +250,45 @@ export default function Surveillance() {
           ))}
         </div>
       </div>
+
+      {/* AI facet chips + backfill */}
+      <div className="-mt-1 flex flex-wrap items-center gap-2">
+        <Sparkles size={13} className="text-violet-400" />
+        {FACETS.map(f => {
+          const on = facets.has(f.k);
+          const Icon = f.icon;
+          return (
+            <button
+              key={f.k}
+              onClick={() => toggleFacet(f.k)}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold ${on ? 'border-violet-500 bg-violet-600/20 text-violet-200' : 'border-white/10 bg-white/[0.03] text-neutral-400 hover:text-white'}`}
+            >
+              <Icon size={12} /> {f.label}
+            </button>
+          );
+        })}
+        {aiConfigured && (captures ?? []).some(c => !c.ai) && (
+          <button
+            onClick={() => analyzeUntagged.mutate()}
+            disabled={analyzeUntagged.isPending}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-violet-500/40 bg-violet-600/10 px-3 py-1 text-[11px] font-semibold text-violet-200 hover:bg-violet-600/20 disabled:opacity-40"
+          >
+            {analyzeUntagged.isPending ? <Loader size={12} className="animate-spin" /> : <Sparkles size={12} />}
+            {analyzeUntagged.isPending ? 'Tagging…' : 'Tag untagged'}
+          </button>
+        )}
+      </div>
+
+      {/* AI status banner */}
+      {status && status.configured && !aiConfigured && (
+        <div className="flex items-start gap-3 rounded-lg border border-violet-600/30 bg-violet-950/20 p-3">
+          <Sparkles size={18} className="mt-0.5 flex-none text-violet-400" />
+          <div className="text-[12.5px] leading-relaxed text-violet-100">
+            <b>AI auto-tagging isn’t configured.</b> Set <code className="mx-1 rounded bg-black/40 px-1 py-0.5 text-[11px] text-violet-200">ANTHROPIC_API_KEY</code>
+            on the backend and captures will be scanned for people, weapons, vehicles, and licence plates automatically.
+          </div>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
         <span className="text-[11px] font-mono uppercase tracking-wider text-neutral-500">Request a capture</span>
         <select
@@ -263,9 +351,34 @@ export default function Surveillance() {
                       <MapPin size={13} />
                     </div>
                   )}
+                  {/* AI facet badges (weapon → red, person count, plate) */}
+                  {c.ai && (
+                    <div className="absolute left-2 top-2 flex flex-col items-start gap-1" style={c.trigger_reason === 'panic' ? { top: 34 } : undefined}>
+                      {c.ai.has_weapon && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-red-600/90 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white shadow" title="Weapon detected">
+                          <ShieldAlert size={10} /> Weapon
+                        </span>
+                      )}
+                      {c.ai.person_count > 0 && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-black/70 px-2 py-0.5 text-[9px] font-bold text-white shadow" title={`${c.ai.person_count} people`}>
+                          <Users size={10} /> {c.ai.person_count}
+                        </span>
+                      )}
+                      {c.ai.plates.length > 0 && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-cyan-600/85 px-2 py-0.5 text-[9px] font-black tracking-wider text-white shadow" title="Plate read">
+                          <Car size={10} /> {c.ai.plates[0]}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent p-2">
                     <div className="truncate text-[12px] font-bold text-white">{c.device_name}</div>
-                    <div className="text-[10px] font-mono text-neutral-300">{relTime(c.created_at)}</div>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[10px] font-mono text-neutral-300">{relTime(c.created_at)}</div>
+                      {c.ai
+                        ? <span className={`text-[9px] font-black uppercase ${THREAT_COLOR[c.ai.threat_level] ?? 'text-neutral-400'}`}>{c.ai.threat_level}</span>
+                        : <Sparkles size={10} className="text-neutral-600" />}
+                    </div>
                   </div>
                 </button>
               ))}
@@ -274,7 +387,15 @@ export default function Surveillance() {
         )}
       </div>
 
-      {lightbox && <Lightbox capture={lightbox} onClose={() => setLightbox(null)} />}
+      {lightbox && (
+        <Lightbox
+          capture={(captures ?? []).find(c => c.id === lightbox.id) ?? lightbox}
+          aiConfigured={aiConfigured}
+          analyzing={analyzeOne.isPending}
+          onAnalyze={() => analyzeOne.mutate(lightbox.id)}
+          onClose={() => setLightbox(null)}
+        />
+      )}
     </div>
   );
 }
@@ -345,13 +466,51 @@ function CaptureMap({ captures, onPick, selectedId }: { captures: Capture[]; onP
 }
 
 // ── Lightbox ─────────────────────────────────────────────────────────────────
-function Lightbox({ capture, onClose }: { capture: Capture; onClose: () => void }) {
+function Lightbox({ capture, aiConfigured, analyzing, onAnalyze, onClose }: {
+  capture: Capture; aiConfigured: boolean; analyzing: boolean; onAnalyze: () => void; onClose: () => void;
+}) {
   const { data: geo, isLoading } = useAddress(capture.lat, capture.lng);
   const hasLoc = capture.lat != null && capture.lng != null;
+  const ai = capture.ai;
   return (
     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/85 p-4" onClick={onClose}>
       <div className="relative max-h-full max-w-3xl" onClick={e => e.stopPropagation()}>
-        <img src={capture.url} alt={`Capture from ${capture.device_name}`} className="max-h-[76vh] w-auto rounded-lg" />
+        <img src={capture.url} alt={`Capture from ${capture.device_name}`} className="max-h-[70vh] w-auto rounded-lg" />
+        {/* AI analysis panel */}
+        <div className="mt-2 rounded-lg border border-violet-500/20 bg-violet-950/20 p-3">
+          {ai ? (
+            <>
+              <div className="flex items-center gap-2">
+                <Sparkles size={13} className="text-violet-400" />
+                <span className="text-[10px] font-mono uppercase tracking-widest text-violet-300">AI analysis</span>
+                <span className={`ml-auto text-[10px] font-black uppercase ${THREAT_COLOR[ai.threat_level] ?? 'text-neutral-400'}`}>{ai.threat_level} threat</span>
+              </div>
+              {ai.summary && <div className="mt-1.5 text-[13px] leading-snug text-neutral-100">{ai.summary}</div>}
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {ai.has_weapon && <span className="inline-flex items-center gap-1 rounded-full bg-red-600/90 px-2 py-0.5 text-[10px] font-bold text-white"><ShieldAlert size={11} /> Weapon</span>}
+                {ai.person_count > 0 && <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-neutral-200"><Users size={11} /> {ai.person_count} {ai.person_count === 1 ? 'person' : 'people'}</span>}
+                {ai.plates.map(p => <span key={p} className="inline-flex items-center gap-1 rounded-full bg-cyan-600/25 px-2 py-0.5 text-[10px] font-black tracking-wider text-cyan-200"><Car size={11} /> {p}</span>)}
+                {ai.vehicles.map((v, i) => <span key={i} className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] text-neutral-300">{v}</span>)}
+                {ai.labels.map(l => <span key={l} className="rounded-full bg-white/[0.04] px-2 py-0.5 text-[10px] text-neutral-400">{l}</span>)}
+              </div>
+              {aiConfigured && (
+                <button onClick={onAnalyze} disabled={analyzing} className="mt-2 inline-flex items-center gap-1.5 text-[10px] font-semibold text-violet-300 hover:text-violet-200 disabled:opacity-40">
+                  {analyzing ? <Loader size={11} className="animate-spin" /> : <RefreshCw size={11} />} Re-analyze
+                </button>
+              )}
+            </>
+          ) : (
+            <div className="flex items-center gap-3">
+              <Sparkles size={15} className="text-neutral-600" />
+              <div className="mr-auto text-[12px] text-neutral-400">{aiConfigured ? 'Not yet analysed.' : 'AI vision not configured.'}</div>
+              {aiConfigured && (
+                <button onClick={onAnalyze} disabled={analyzing} className="inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-violet-500 disabled:opacity-40">
+                  {analyzing ? <Loader size={12} className="animate-spin" /> : <Sparkles size={12} />} {analyzing ? 'Analysing…' : 'Analyse'}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
         <div className="mt-2 flex items-start gap-3">
           <div className="mr-auto min-w-0">
             <div className="flex items-center gap-2">
