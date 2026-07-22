@@ -6,16 +6,17 @@
   <meta name="theme-color" content="#0B111C" />
   <title>Sonalit</title>
   <style>
-    html,body{height:100%;margin:0;background:#0B111C;color:#EAEFF6;
+    html,body{height:100%;margin:0;background:#000;color:#EAEFF6;
       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
       -webkit-font-smoothing:antialiased;}
     .wrap{height:100%;display:flex;flex-direction:column;align-items:center;
-      justify-content:center;gap:22px;text-align:center;padding:24px;}
+      justify-content:center;gap:20px;text-align:center;padding:24px;}
+    .logo{width:150px;height:150px;object-fit:contain;}
     .brand{font-weight:800;letter-spacing:6px;font-size:22px;}
-    .brand b{color:#F0B429;}
+    .brand b{color:#F0A020;}
     .sub{color:#8A93A6;font-size:13px;letter-spacing:1px;}
-    .spin{width:26px;height:26px;border-radius:50%;border:2px solid #1c2740;
-      border-top-color:#F0B429;animation:s .8s linear infinite;}
+    .spin{width:26px;height:26px;border-radius:50%;border:2px solid #1c1c1c;
+      border-top-color:#F0A020;animation:s .8s linear infinite;}
     @keyframes s{to{transform:rotate(360deg)}}
   </style>
 </head>
@@ -25,12 +26,7 @@
     offline. The app itself lives at server.url (see capacitor.config.ts).
   -->
   <div class="wrap">
-    <svg width="72" height="72" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M12 2 3 6v6c0 5 3.8 8.7 9 10 5.2-1.3 9-5 9-10V6l-9-4Z"
-            fill="#F0B429" stroke="#8A6410" stroke-width="0.4" stroke-linejoin="round"/>
-      <path d="M8.4 12.1l2.5 2.5 4.9-5.1" fill="none" stroke="#0B111C"
-            stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
+    <img class="logo" src="logo.png" alt="Sonalit" />
     <div class="brand">SON<b>A</b>LIT</div>
     <div class="spin"></div>
     <div class="sub">Connecting to your operations console…</div>

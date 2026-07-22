@@ -33,8 +33,8 @@ export default defineConfig({
       manifest: {
         name: 'Sonalit Fleet',
         short_name: 'Sonalit',
-        theme_color: '#0f172a',
-        background_color: '#0f172a',
+        theme_color: '#0B111C',
+        background_color: '#000000',
         display: 'standalone',
         icons: [
           { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
