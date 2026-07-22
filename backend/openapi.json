@@ -3212,6 +3212,16 @@
         }
       }
     },
+    "/api/v1/dashboard/replay": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_replay",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/dashboard/vehicles": {
       "get": {
         "operationId": "get_api_v1_dashboard_vehicles",

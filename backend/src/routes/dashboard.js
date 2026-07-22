@@ -362,6 +362,84 @@ router.get('/map', asyncHandler(async (req, res) => {
   });
 }));
 
+// ── §2.2b Ops Replay ───────────────────────────────────────────────────────
+// A DVR for the operation: every vehicle + Guardian-device track and the panic /
+// alert / voice-note / capture events across a time window, so the front end can
+// scrub the whole picture back and forth. Tracks are downsampled server-side to
+// keep the payload bounded; device events are positioned client-side by
+// interpolating the device track when they carry no coordinates of their own.
+router.get('/replay', asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+  const now = Date.now();
+  const MAX_MS = 24 * 3600_000;
+  let to = req.query.to ? new Date(req.query.to).getTime() : now;
+  let from = req.query.from ? new Date(req.query.from).getTime() : to - 6 * 3600_000;
+  if (!Number.isFinite(to)) to = now;
+  if (!Number.isFinite(from) || from >= to) from = to - 6 * 3600_000;
+  if (to - from > MAX_MS) from = to - MAX_MS;           // cap the window
+  const fromIso = new Date(from).toISOString(), toIso = new Date(to).toISOString();
+
+  // Even-sample a per-entity point list down to at most `cap` points.
+  const downsample = (pts, cap = 500) => {
+    if (pts.length <= cap) return pts;
+    const step = pts.length / cap, out = [];
+    for (let i = 0; i < cap; i++) out.push(pts[Math.floor(i * step)]);
+    out[out.length - 1] = pts[pts.length - 1];          // always keep the last fix
+    return out;
+  };
+
+  const [vTrack, dTrack, vNames, dNames, panics, voices, captures, alerts] = await Promise.all([
+    safeQuery(req.db, `SELECT vehicle_id AS id, lat, lng, speed, timestamp AS t
+        FROM gps_logs WHERE org_id=$1 AND timestamp BETWEEN $2 AND $3
+        ORDER BY vehicle_id, timestamp`, [orgId, fromIso, toIso]),
+    safeQuery(req.db, `SELECT dl.device_id AS id, dl.lat, dl.lng, dl.speed, dl.timestamp AS t
+        FROM device_locations dl JOIN guardian_devices d ON d.id = dl.device_id
+        WHERE d.org_id=$1 AND dl.timestamp BETWEEN $2 AND $3
+        ORDER BY dl.device_id, dl.timestamp`, [orgId, fromIso, toIso]),
+    safeQuery(req.db, `SELECT id, registration FROM vehicles WHERE org_id=$1 AND deleted_at IS NULL`, [orgId]),
+    safeQuery(req.db, `SELECT d.id, d.name, fo.name AS officer
+        FROM guardian_devices d LEFT JOIN field_officers fo ON fo.device_id = d.id
+        WHERE d.org_id=$1 AND d.deleted_at IS NULL`, [orgId]),
+    safeQuery(req.db, `SELECT id, device_id, mode, lat, lng, created_at AS at, message
+        FROM panic_events WHERE org_id=$1 AND created_at BETWEEN $2 AND $3 ORDER BY created_at`, [orgId, fromIso, toIso]),
+    safeQuery(req.db, `SELECT id, device_id, lat, lng, duration_ms, created_at AS at
+        FROM guardian_voice_messages WHERE org_id=$1 AND direction='from_device' AND created_at BETWEEN $2 AND $3 ORDER BY created_at`, [orgId, fromIso, toIso]),
+    safeQuery(req.db, `SELECT id, device_id, url, created_at AS at
+        FROM guardian_captures WHERE org_id=$1 AND created_at BETWEEN $2 AND $3 ORDER BY created_at`, [orgId, fromIso, toIso]),
+    safeQuery(req.db, `SELECT id, vehicle_id, severity, type, message, created_at AS at
+        FROM alerts WHERE org_id=$1 AND deleted_at IS NULL AND created_at BETWEEN $2 AND $3 ORDER BY created_at`, [orgId, fromIso, toIso]),
+  ]);
+
+  const vName = new Map(vNames.rows.map(r => [r.id, r.registration]));
+  const dName = new Map(dNames.rows.map(r => [r.id, r.officer || r.name]));
+
+  const groupTrack = (rows, nameMap) => {
+    const by = new Map();
+    for (const r of rows) {
+      if (!by.has(r.id)) by.set(r.id, []);
+      by.get(r.id).push({ t: new Date(r.t).getTime(), lat: parseFloat(r.lat), lng: parseFloat(r.lng), spd: parseFloat(r.speed) || 0 });
+    }
+    return [...by.entries()].map(([id, pts]) => ({
+      id, name: nameMap.get(id) || 'Unknown', track: downsample(pts),
+    }));
+  };
+
+  const num = (v) => (v == null ? null : parseFloat(v));
+  const events = [
+    ...panics.rows.map(r => ({ kind: 'panic', id: r.id, at: new Date(r.at).getTime(), deviceId: r.device_id, lat: num(r.lat), lng: num(r.lng), label: r.mode === 'voice_distress' ? 'Voice distress' : 'PANIC / SOS', sub: dName.get(r.device_id) || 'device' })),
+    ...voices.rows.map(r => ({ kind: 'voice', id: r.id, at: new Date(r.at).getTime(), deviceId: r.device_id, lat: num(r.lat), lng: num(r.lng), label: 'Voice note', sub: dName.get(r.device_id) || 'Field officer', durationMs: r.duration_ms })),
+    ...captures.rows.map(r => ({ kind: 'capture', id: r.id, at: new Date(r.at).getTime(), deviceId: r.device_id, lat: null, lng: null, label: 'Covert capture', sub: dName.get(r.device_id) || 'device', url: r.url })),
+    ...alerts.rows.map(r => ({ kind: 'alert', id: r.id, at: new Date(r.at).getTime(), vehicleId: r.vehicle_id, lat: null, lng: null, label: r.message || r.type, sub: (r.severity || '').toUpperCase(), severity: r.severity })),
+  ].sort((a, b) => a.at - b.at);
+
+  res.json({
+    window: { from, to },
+    vehicles: groupTrack(vTrack.rows, vName),
+    devices: groupTrack(dTrack.rows, dName),
+    events,
+  });
+}));
+
 // ── §2.3 Vehicles ──────────────────────────────────────────────────────────
 router.get('/vehicles', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
