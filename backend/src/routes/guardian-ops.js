@@ -7,6 +7,7 @@ const logger = require('../utils/logger');
 const jwt = require('jsonwebtoken');
 const { sendCommandPush } = require('../utils/fcm');
 const { signCommand } = require('../utils/commandSigning');
+const captureVision = require('../utils/captureVision');
 
 router.use(authenticate);
 
@@ -386,7 +387,7 @@ router.get('/devices/:id/captures', async (req, res, next) => {
 router.get('/capture/status', (req, res) => {
   const { R2_ACCOUNT_ID, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET, R2_PUBLIC_URL } = process.env;
   const configured = !!(R2_ACCOUNT_ID && R2_ACCESS_KEY && R2_SECRET_KEY && R2_BUCKET && R2_PUBLIC_URL);
-  res.json({ configured });
+  res.json({ configured, ai_configured: captureVision.hasVision() });
 });
 
 // GET /captures/recent — org-wide covert captures, newest first, for the
@@ -408,7 +409,9 @@ router.get('/captures/recent', async (req, res, next) => {
                 COALESCE(c.lng, d.last_lng) AS lng,
                 COALESCE(fo.name, d.name) AS device_name,
                 fo.name AS officer_name,
-                dc.payload->>'reason' AS trigger_reason
+                dc.payload->>'reason' AS trigger_reason,
+                c.ai_summary, c.ai_labels, c.ai_person_count, c.ai_has_weapon,
+                c.ai_plates, c.ai_vehicles, c.ai_threat_level, c.ai_analyzed_at
          FROM guardian_captures c
          LEFT JOIN guardian_devices d ON d.id = c.device_id
          LEFT JOIN field_officers fo ON fo.device_id = c.device_id
@@ -426,8 +429,58 @@ router.get('/captures/recent', async (req, res, next) => {
         trigger_reason: r.trigger_reason ?? null,
         lat: r.lat != null ? parseFloat(r.lat) : null,
         lng: r.lng != null ? parseFloat(r.lng) : null,
+        ai: r.ai_analyzed_at ? {
+          summary: r.ai_summary,
+          labels: r.ai_labels ?? [],
+          person_count: r.ai_person_count,
+          has_weapon: r.ai_has_weapon,
+          plates: r.ai_plates ?? [],
+          vehicles: r.ai_vehicles ?? [],
+          threat_level: r.ai_threat_level,
+        } : null,
       })) });
     } finally { client.release(); }
+  } catch (err) { next(err); }
+});
+
+// POST /captures/:id/analyze — (re)run AI auto-tagging for one capture, on
+// demand. Used to tag captures that predate the feature, or to re-tag after a
+// bad read. Returns the fresh tags so the console can update in place.
+router.post('/captures/:id/analyze', async (req, res, next) => {
+  try {
+    if (!captureVision.hasVision()) return res.status(501).json({ error: 'AI vision not configured on this server' });
+    const orgId = req.user.org_id;
+    const { rows } = await query(
+      `SELECT id, url FROM guardian_captures WHERE id = $1 AND org_id = $2`,
+      [req.params.id, orgId]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Capture not found' });
+    const tags = await captureVision.analyzeCaptureAndStore(rows[0].id, orgId, rows[0].url);
+    if (!tags) return res.status(502).json({ error: 'Analysis failed' });
+    res.json({ data: tags });
+  } catch (err) { next(err); }
+});
+
+// POST /captures/analyze-untagged — backfill: tag up to N of the org's captures
+// that were never analysed (bounded so one click can't fan out unboundedly).
+router.post('/captures/analyze-untagged', async (req, res, next) => {
+  try {
+    if (!captureVision.hasVision()) return res.status(501).json({ error: 'AI vision not configured on this server' });
+    const orgId = req.user.org_id;
+    const limit = Math.min(parseInt(req.body?.limit) || 10, 25);
+    const { rows } = await query(
+      `SELECT id, url FROM guardian_captures
+        WHERE org_id = $1 AND ai_analyzed_at IS NULL
+        ORDER BY created_at DESC LIMIT $2`,
+      [orgId, limit]
+    );
+    // Sequential so we don't burst the vision API; each stores itself.
+    let analyzed = 0;
+    for (const r of rows) {
+      const tags = await captureVision.analyzeCaptureAndStore(r.id, orgId, r.url);
+      if (tags) analyzed++;
+    }
+    res.json({ data: { requested: rows.length, analyzed } });
   } catch (err) { next(err); }
 });
 

@@ -2498,6 +2498,26 @@
         }
       }
     },
+    "/api/v1/guardian/captures/{id}/analyze": {
+      "post": {
+        "operationId": "post_api_v1_guardian_captures_id_analyze",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/captures/analyze-untagged": {
+      "post": {
+        "operationId": "post_api_v1_guardian_captures_analyze_untagged",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/devices/{id}/voice-messages/{msgId}/audio": {
       "get": {
         "operationId": "get_api_v1_guardian_devices_id_voice_messages_msgId_audio",
