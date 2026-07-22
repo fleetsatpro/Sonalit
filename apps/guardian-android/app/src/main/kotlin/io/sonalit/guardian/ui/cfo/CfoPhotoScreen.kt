@@ -7,6 +7,7 @@ import android.util.Log
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -21,11 +22,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
@@ -565,6 +568,9 @@ private fun SlotCaptureScreen(
                     onImageCaptured = { capturedFile = it },
                     modifier = Modifier.fillMaxSize(),
                 )
+                // Lazily-floating announcement of exactly what to shoot next, so
+                // advancing from one slot to the next is never ambiguous.
+                CaptureTargetBanner(truck = truck, slot = slot, session = session)
             } else {
                 // Review only — the single Retake / Use-photo action bar lives
                 // below, so there's never a second button floating on the image.
@@ -652,6 +658,92 @@ private fun SlotCaptureScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+// ── Floating "what to capture next" banner ───────────────────────────────────
+
+/**
+ * A lazily-floating announcement over the live camera telling the officer
+ * exactly which shot is expected right now — "NOW CAPTURING · Rear" (or
+ * "Seal 0099"). It re-appears with a soft entrance whenever the target changes,
+ * so advancing through the checklist is never ambiguous.
+ */
+@Composable
+private fun BoxScope.CaptureTargetBanner(
+    truck: AssignedTruck,
+    slot: PhotoSlot,
+    session: String,
+) {
+    // Two out-of-phase oscillations give a gentle, lazy drift.
+    val float = rememberInfiniteTransition(label = "capture-target-float")
+    val dy by float.animateFloat(
+        initialValue = -6f, targetValue = 6f,
+        animationSpec = infiniteRepeatable(tween(2600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "dy",
+    )
+    val dx by float.animateFloat(
+        initialValue = -4f, targetValue = 4f,
+        animationSpec = infiniteRepeatable(tween(3400, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "dx",
+    )
+    // Fresh entrance each time the target changes.
+    val appear = remember(truck.id, slot.label, slot.sealPosition) { Animatable(0f) }
+    LaunchedEffect(truck.id, slot.label, slot.sealPosition) {
+        appear.snapTo(0f)
+        appear.animateTo(1f, tween(420, easing = FastOutSlowInEasing))
+    }
+
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = Color(0xE60B111C),
+        tonalElevation = 8.dp,
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .padding(top = 20.dp)
+            .offset(x = dx.dp, y = dy.dp)
+            .graphicsLayer {
+                alpha = appear.value
+                val s = 0.92f + 0.08f * appear.value
+                scaleX = s; scaleY = s
+            },
+    ) {
+        Row(
+            Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                when {
+                    slot.photoType == "seal" -> Icons.Default.Security
+                    slot.photoType == "rear" -> Icons.Default.LocalShipping
+                    else -> Icons.Default.CameraAlt
+                },
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(26.dp),
+            )
+            Spacer(Modifier.width(14.dp))
+            Column {
+                Text(
+                    "NOW CAPTURING",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    letterSpacing = 2.sp,
+                )
+                Spacer(Modifier.height(1.dp))
+                Text(
+                    slot.label,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                )
+                Text(
+                    "${truck.plate_number ?: truck.id.take(8)} · ${session.uppercase()}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.7f),
+                )
             }
         }
     }
