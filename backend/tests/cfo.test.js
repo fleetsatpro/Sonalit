@@ -344,14 +344,18 @@ describe('Daily reports', () => {
     expect(res.body.error).toMatch(/YYYY-MM-DD/);
   });
 
-  test('POST /:id/reports/:date/regenerate returns 404 when no report row exists', async () => {
+  test('POST /:id/reports/:date/regenerate returns 400 for a date outside the convoy window', async () => {
+    // Any day within the convoy's operating window is now generatable on demand
+    // (materialized if no row exists yet), so the only rejection for a missing
+    // row is a date before the convoy started / in the future. DATE (2026-06-01)
+    // is before this convoy's start_date, so it must be rejected.
     mockQuery
-      .mockResolvedValueOnce({ rows: [{ id: CID }] })   // convoy check
-      .mockResolvedValueOnce({ rows: [] })                // no report row
-      .mockResolvedValueOnce({ rows: [{ n: 0 }] });      // cfoCount = 0 → 404
+      .mockResolvedValueOnce({ rows: [{ id: CID, start_date: '2026-07-01', end_date: '2026-07-10' }] }) // convoy check
+      .mockResolvedValueOnce({ rows: [] });                                                              // no report row
     const res = await request(app)
       .post(`/api/v1/convoys/${CID}/reports/${DATE}/regenerate`);
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/operating window/i);
   });
 
   test('POST /:id/reports/:date/regenerate queues job and returns 200', async () => {
