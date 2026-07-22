@@ -540,6 +540,10 @@ async function runDmsMonitorJob() {
       };
       if (dev.org_id) publish(`org#${dev.org_id}`, payload); else publish('device:panic', payload);
       logger.warn(`DMS timeout PANIC: device=${dev.id} name="${dev.name}" org=${dev.org_id ?? 'unknown'}`);
+      // Queue a burst too — a missed check-in is exactly when eyes on the scene
+      // matter most. No fcm_token on this partial row, so it rides the device's
+      // next heartbeat/poll claim (6h TTL covers a late reconnect).
+      autoBurstOnPanic(dev, dev.org_id ?? null).catch(e => logger.warn(`autoBurstOnPanic (DMS) error: ${e.message}`));
     }
   } catch (err) {
     logger.error(`DMS monitor job error: ${err.message}`);
@@ -1354,6 +1358,45 @@ router.post('/location', deviceAuth, locationLimiter, async (req, res, next) => 
   }
 });
 
+// Auto-burst on panic: the instant an SOS fires, silently capture imagery from
+// both lenses so dispatch has a located photo of the scene the moment the alert
+// lands — no operator action, no waiting. Reuses the standard capture_photo
+// pipeline (signed command → FCM push + heartbeat/poll claim → covert capture →
+// R2 upload → located pin in Surveillance). Fire-and-forget: a failure here must
+// never delay or break the panic response, so every step is guarded.
+const PANIC_BURST_LENSES = ['back', 'front'];
+async function autoBurstOnPanic(device, orgId) {
+  const ttl = 6;
+  for (const camera of PANIC_BURST_LENSES) {
+    try {
+      const payload = { camera, reason: 'panic' };
+      // ttl bound twice ($5/$6): the same placeholder inferred as both the
+      // integer ttl_hours column and the double-precision interval multiplier
+      // makes Postgres reject the query — see guardian-ops.js for the full note.
+      const { rows } = await query(
+        `INSERT INTO device_commands (org_id, device_id, command, command_type, status, payload, ttl_hours, issued_by, issued_at, expires_at)
+         VALUES ($1, $2, $3, $3, 'pending', $4, $5, NULL, NOW(), NOW() + ($6 * INTERVAL '1 hour'))
+         RETURNING id, issued_at, expires_at`,
+        [orgId, device.id, 'capture_photo', JSON.stringify(payload), ttl, ttl]
+      );
+      const cmd = rows[0];
+      // Signature is what makes the heartbeat/poll claim (WHERE signature IS NOT
+      // NULL) deliver it; without this the burst would only ever reach the device
+      // via the FCM push below.
+      const signature = signCommand(cmd.id, 'capture_photo', payload, cmd.issued_at, cmd.expires_at);
+      await query(`UPDATE device_commands SET signature = $1 WHERE id = $2`, [signature, cmd.id]);
+      if (orgId) {
+        publish(`org#${orgId}`, { type: 'command:queued', device_id: device.id, command: 'capture_photo', command_id: cmd.id }).catch(() => {});
+      }
+      if (device.fcm_token) {
+        sendCommandPush(device.fcm_token, 'capture_photo', cmd.id, payload).catch(() => {});
+      }
+    } catch (e) {
+      logger.warn(`autoBurstOnPanic failed: device=${device.id} camera=${camera}: ${e.message}`);
+    }
+  }
+}
+
 /**
  * POST /api/v1/guardian/panic
  * Trigger SOS alert from device.
@@ -1452,6 +1495,9 @@ router.post('/panic', deviceAuth, requireIdempotencyKey, panicLimiter, async (re
       if (req.device.fcm_token) {
         sendPanicAck(req.device.fcm_token, panicEvent.id).catch(() => {});
       }
+      // Auto-burst: get eyes on the scene the instant the SOS lands. Detached so
+      // it never delays the panic response.
+      autoBurstOnPanic(req.device, orgId).catch(e => logger.warn(`autoBurstOnPanic error: ${e.message}`));
     }
 
     res.status(isNew ? 201 : 200).json(payload);

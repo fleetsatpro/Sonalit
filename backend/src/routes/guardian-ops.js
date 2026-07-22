@@ -401,14 +401,18 @@ router.get('/captures/recent', async (req, res, next) => {
       await client.query('BEGIN');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
+        // command_id is TEXT here and device_commands.id is UUID — compare as
+        // text so a non-UUID/legacy command_id can't throw a cast error.
         `SELECT c.id, c.device_id, c.url, c.created_at,
                 COALESCE(c.lat, d.last_lat) AS lat,
                 COALESCE(c.lng, d.last_lng) AS lng,
                 COALESCE(fo.name, d.name) AS device_name,
-                fo.name AS officer_name
+                fo.name AS officer_name,
+                dc.payload->>'reason' AS trigger_reason
          FROM guardian_captures c
          LEFT JOIN guardian_devices d ON d.id = c.device_id
          LEFT JOIN field_officers fo ON fo.device_id = c.device_id
+         LEFT JOIN device_commands dc ON dc.id::text = c.command_id
          WHERE c.org_id = $1
          ORDER BY c.created_at DESC
          LIMIT 200`,
@@ -419,6 +423,7 @@ router.get('/captures/recent', async (req, res, next) => {
         id: r.id, device_id: r.device_id, url: r.url,
         created_at: r.created_at, device_name: r.device_name ?? 'Device',
         officer_name: r.officer_name ?? null,
+        trigger_reason: r.trigger_reason ?? null,
         lat: r.lat != null ? parseFloat(r.lat) : null,
         lng: r.lng != null ? parseFloat(r.lng) : null,
       })) });
