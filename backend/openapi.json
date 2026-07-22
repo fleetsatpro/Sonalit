@@ -1958,6 +1958,16 @@
         }
       }
     },
+    "/api/v1/guardian/convoy/track": {
+      "post": {
+        "operationId": "post_api_v1_guardian_convoy_track",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/convoy/convoy-reports/{convoy_id}": {
       "get": {
         "operationId": "get_api_v1_guardian_convoy_convoy_reports_convoy_id",

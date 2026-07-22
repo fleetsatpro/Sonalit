@@ -9,12 +9,17 @@ import { SOSScreen } from './features/guardian-convoy/screens/SOSScreen';
 import { HistoryScreen } from './features/guardian-convoy/screens/HistoryScreen';
 import { DayPlanScreen } from './features/guardian-convoy/screens/DayPlanScreen';
 import { WaypointPrompt } from './features/guardian-convoy/components/WaypointPrompt';
+import { useConvoyTracking } from './features/guardian-convoy/hooks/useConvoyTracking';
 
 export type ScreenName = 'login' | 'home' | 'sod' | 'eod' | 'seals' | 'sos' | 'history' | 'dayplan';
 
 export default function App() {
   const [screen, setScreen] = useState<ScreenName>('login');
   const [auth, setAuth] = useState<AuthState | null>(null);
+
+  // Stream the device's live GPS track to the backend whenever a CFO is signed
+  // in — this is what fills the daily report's route track + analytics.
+  useConvoyTracking(auth);
 
   const navigate = (s: string) => setScreen(s as ScreenName);
 

@@ -104,7 +104,7 @@ export function SODUploadScreen({ navigate, auth }: SODUploadScreenProps) {
   const [sodAlreadyDone, setSodAlreadyDone] = useState(false);
   const [checkingStatus, setCheckingStatus] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { gps, loading: gpsLoading } = useGPSStamp();
+  const { gps, loading: gpsLoading, ensure: ensureGps } = useGPSStamp();
 
   const safeAuth = auth!;
   const currentPlate = safeAuth.convoy.trucks[0]?.plate ?? 'TRUCK-1';
@@ -120,13 +120,14 @@ export function SODUploadScreen({ navigate, auth }: SODUploadScreenProps) {
   async function handleFileCapture(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!gps) { setError('GPS lock required before capturing photo.'); return; }
     setUploading(true);
     setError(null);
     try {
+      // Don't throw the photo away if GPS hasn't locked yet — wait for a fix.
+      const fix = gps ?? await ensureGps();
       const committed = await uploadApi.uploadPhoto(
         file, selectedType, safeAuth.convoy.id, 'sod',
-        gps.lat, gps.lng, gps.accuracy, currentPlate, safeAuth.token,
+        fix.lat, fix.lng, fix.accuracy, currentPlate, safeAuth.token,
       );
       setUploadedPhotos(prev => [...prev.filter(p => p.photo_type !== selectedType), committed]);
       const idx = SOD_TYPES.findIndex(t => t.key === selectedType);

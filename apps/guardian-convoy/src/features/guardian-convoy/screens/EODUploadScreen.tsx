@@ -102,7 +102,7 @@ export function EODUploadScreen({ navigate, auth }: EODUploadScreenProps) {
   const [uploadingHandover, setUploadingHandover] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const handoverInputRef = useRef<HTMLInputElement>(null);
-  const { gps, loading: gpsLoading } = useGPSStamp();
+  const { gps, loading: gpsLoading, ensure: ensureGps } = useGPSStamp();
 
   if (!auth) return null;
   const safeAuth = auth;
@@ -136,13 +136,14 @@ export function EODUploadScreen({ navigate, auth }: EODUploadScreenProps) {
   async function handleFileCapture(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !arrivalConfirmed) return;
-    if (!gps) { setError('GPS lock required.'); return; }
     setUploading(true);
     setError(null);
     try {
+      // Wait for a GPS fix rather than discarding the captured photo.
+      const fix = gps ?? await ensureGps();
       const committed = await uploadApi.uploadPhoto(
         file, selectedType, safeAuth.convoy.id, 'eod',
-        gps.lat, gps.lng, gps.accuracy, currentPlate, safeAuth.token,
+        fix.lat, fix.lng, fix.accuracy, currentPlate, safeAuth.token,
       );
       setUploadedPhotos(prev => [...prev.filter(p => p.photo_type !== selectedType), committed]);
       const idx = EOD_TYPES.findIndex(t => t.key === selectedType);

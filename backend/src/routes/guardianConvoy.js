@@ -31,6 +31,25 @@ async function jwtAuth(req, res, next) {
   }
 }
 
+// Best-effort insert of a single GPS point into convoy_waypoints (used to
+// anchor the route with the SOD/EOD positions). Never throws — a failed anchor
+// must not fail the report submission.
+async function persistConvoyPoint(convoyId, gps, at) {
+  if (!convoyId || !gps || gps.lat == null || gps.lng == null) return;
+  const lat = parseFloat(gps.lat), lng = parseFloat(gps.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+  const when = at ? new Date(at) : new Date();
+  try {
+    await query(
+      `INSERT INTO convoy_waypoints (convoy_id, lat, lng, accuracy_m, recorded_at)
+       VALUES ($1::uuid, $2, $3, $4, $5)`,
+      [convoyId, lat, lng, gps.accuracy != null ? parseFloat(gps.accuracy) : null, isNaN(when.getTime()) ? new Date() : when]
+    );
+  } catch (err) {
+    logger.warn(`persistConvoyPoint failed for convoy ${convoyId}: ${err.message}`);
+  }
+}
+
 function getR2Client() {
   const { R2_ACCOUNT_ID, R2_ACCESS_KEY, R2_SECRET_KEY } = process.env;
   if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY || !R2_SECRET_KEY) return null;
@@ -354,6 +373,52 @@ router.get('/convoys/:id/position', jwtAuth, async (req, res, next) => {
   }
 });
 
+// POST /track — the CFO device streams its live GPS pings here while a convoy
+// is active. This is what finally populates convoy_waypoints (previously never
+// written to, so every report's route track was empty and fell back to the
+// planned route). speed_kmh feeds the report's route analytics directly.
+router.post('/track', jwtAuth, async (req, res, next) => {
+  try {
+    const { convoy_id, points } = req.body;
+    if (!convoy_id) return res.status(400).json({ error: 'convoy_id is required' });
+    if (!Array.isArray(points) || points.length === 0) {
+      return res.status(400).json({ error: 'points must be a non-empty array' });
+    }
+    // Bound each request so a buggy/hostile client can't flood the table.
+    const clean = points.slice(0, 200).map(p => {
+      const lat = parseFloat(p.lat), lng = parseFloat(p.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+      // Accept km/h directly, or convert a raw m/s reading from the Geolocation API.
+      let speedKmh = null;
+      if (p.speed_kmh != null && Number.isFinite(parseFloat(p.speed_kmh))) speedKmh = parseFloat(p.speed_kmh);
+      else if (p.speed != null && Number.isFinite(parseFloat(p.speed))) speedKmh = parseFloat(p.speed) * 3.6;
+      const heading = p.heading != null && Number.isFinite(parseFloat(p.heading)) ? parseFloat(p.heading) : null;
+      const accuracy = p.accuracy != null && Number.isFinite(parseFloat(p.accuracy)) ? parseFloat(p.accuracy) : null;
+      const at = p.recorded_at ? new Date(p.recorded_at) : new Date();
+      return { lat, lng, speedKmh: speedKmh != null ? Math.max(0, Math.round(speedKmh * 10) / 10) : null,
+        heading, accuracy, at: isNaN(at.getTime()) ? new Date() : at };
+    }).filter(Boolean);
+    if (!clean.length) return res.status(400).json({ error: 'no valid points' });
+
+    // Multi-row insert. convoy_waypoints.convoy_id is UUID; the CFO's convoy_id
+    // is the real convoy id (login validated it), so cast text -> uuid. Six
+    // bound params per point after $1 (the shared convoy_id).
+    const rows = [];
+    const params = [convoy_id];
+    clean.forEach((p, i) => {
+      const b = i * 6 + 2;
+      rows.push(`($1::uuid, $${b}, $${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5})`);
+      params.push(p.lat, p.lng, p.speedKmh, p.heading, p.accuracy, p.at);
+    });
+    await query(
+      `INSERT INTO convoy_waypoints (convoy_id, lat, lng, speed_kmh, heading, accuracy_m, recorded_at)
+       VALUES ${rows.join(',')}`,
+      params
+    );
+    return res.json({ accepted: clean.length });
+  } catch (err) { next(err); }
+});
+
 // GET /convoy-reports/:convoy_id — get or create today's report
 router.get('/convoy-reports/:convoy_id', jwtAuth, async (req, res, next) => {
   try {
@@ -425,6 +490,10 @@ router.post('/convoy-reports/:id/sod', jwtAuth, async (req, res, next) => {
     );
     const report = result.rows[0];
 
+    // Anchor the day's track with the SOD position so the route has a start
+    // point even when live tracking didn't run.
+    await persistConvoyPoint(report.convoy_id, gps, submitted_at);
+
     publish(`convoy:${report.convoy_id}:report`, {
       event: 'sod_submitted', report_id: report.id, convoy_id: report.convoy_id,
       cfo_id: report.cfo_id, status: report.status, sod_submitted_at: report.sod_submitted_at,
@@ -455,6 +524,9 @@ router.post('/convoy-reports/:id/eod', jwtAuth, async (req, res, next) => {
       [submitted_at ? new Date(submitted_at) : new Date(), req.params.id, req.cfo.id]
     );
     const report = result.rows[0];
+
+    // Anchor the day's track with the EOD position (end point).
+    await persistConvoyPoint(report.convoy_id, gps, submitted_at);
 
     try {
       const { getQueues } = require('../config/queue');
