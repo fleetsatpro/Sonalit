@@ -3066,6 +3066,46 @@ async function processLocationBatch(device, points) {
     }
   }
 
+  // If this device is rostered on an active convoy, mirror the GPS batch into
+  // convoy_waypoints so the convoy report's live route track populates straight
+  // from the Guardian Agent — the same data the (now folded-in) Guardian Convoy
+  // app's /track endpoint used to write. convoy_cfos.guardian_device_id is the
+  // device→convoy link. Best-effort: a failure here must never break the device
+  // location batch, which drives the live map.
+  try {
+    const convoyRow = await query(
+      `SELECT cc.convoy_id
+         FROM convoy_cfos cc
+         JOIN convoys c ON c.id = cc.convoy_id
+        WHERE cc.guardian_device_id = $1
+          AND c.status IN ('active', 'completing')
+          AND c.deleted_at IS NULL
+        ORDER BY c.start_date DESC
+        LIMIT 1`,
+      [deviceId]
+    );
+    const convoyId = convoyRow.rows[0]?.convoy_id;
+    if (convoyId) {
+      const nowIso = new Date().toISOString();
+      // device_locations stores raw m/s (Android Location.speed); the convoy
+      // route track wants km/h. Null speeds stay null.
+      const speedsKmh = speeds.map((s) =>
+        s == null ? null : Math.max(0, Math.round(s * 3.6 * 10) / 10)
+      );
+      const recordedAt = timestamps.map((t) => t || nowIso);
+      await query(
+        `INSERT INTO convoy_waypoints (convoy_id, lat, lng, speed_kmh, heading, accuracy_m, recorded_at)
+         SELECT $1::uuid, unnest($2::decimal[]), unnest($3::decimal[]),
+                unnest($4::decimal[]), unnest($5::decimal[]),
+                unnest($6::decimal[]), unnest($7::timestamptz[])`,
+        [convoyId, lats, lngs, speedsKmh, headings, accuracies, recordedAt]
+      );
+      logger.info(`Batch location → convoy_waypoints: device=${deviceId} convoy=${convoyId} points=${accepted}`);
+    }
+  } catch (err) {
+    logger.warn(`convoy_waypoints mirror failed for device ${deviceId}: ${err.message}`);
+  }
+
   logger.info(`Batch location: device=${deviceId} accepted=${accepted}/${points.length}`);
   return { accepted, total: points.length };
 }
