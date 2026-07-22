@@ -2470,12 +2470,29 @@ router.post('/capture-photo', deviceAuth, async (req, res, next) => {
       return res.status(400).json({ error: 'public_url is required' });
     }
     const orgId = req.device.org_id || null;
+
+    // Where the photo was taken. Prefer the device's live fix at capture time
+    // (body lat/lng), fall back to its last known position so the pin still lands
+    // on a real place. A fresh fix also refreshes the device's stored position.
+    const bLat = parseFloat(req.body.lat), bLng = parseFloat(req.body.lng);
+    const hasFix = Number.isFinite(bLat) && Number.isFinite(bLng) && Math.abs(bLat) <= 90 && Math.abs(bLng) <= 180;
+    const lat = hasFix ? bLat : (req.device.last_lat != null ? parseFloat(req.device.last_lat) : null);
+    const lng = hasFix ? bLng : (req.device.last_lng != null ? parseFloat(req.device.last_lng) : null);
+
     const ins = await query(
-      `INSERT INTO guardian_captures (org_id, device_id, command_id, url, storage_key)
-       VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at`,
-      [orgId, req.device.id, command_id != null ? String(command_id) : null, public_url, key || null]
+      `INSERT INTO guardian_captures (org_id, device_id, command_id, url, storage_key, lat, lng)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, created_at`,
+      [orgId, req.device.id, command_id != null ? String(command_id) : null, public_url, key || null, lat, lng]
     );
     const row = ins.rows[0];
+
+    if (hasFix) {
+      await query(
+        `UPDATE guardian_devices SET last_lat = $2, last_lng = $3, last_seen = NOW(), updated_at = NOW() WHERE id = $1`,
+        [req.device.id, bLat, bLng]
+      ).catch(e => logger.warn(`capture-photo position update failed: ${e.message}`));
+    }
+
     const payload = {
       type: 'guardian_capture_photo',
       device_id: req.device.id,
@@ -2483,6 +2500,7 @@ router.post('/capture-photo', deviceAuth, async (req, res, next) => {
       capture_id: row.id,
       url: public_url,
       created_at: row.created_at,
+      lat, lng,
     };
     if (orgId) publish(`org#${orgId}`, payload); else publish('device:capture', payload);
     res.status(201).json({ id: row.id, created_at: row.created_at });

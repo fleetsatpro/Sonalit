@@ -271,9 +271,15 @@ class GuardianService : Service() {
         }
         runCatching {
             promoteForeground(withCamera = true)
-            CameraCaptureController(this, api, okHttp).capture(lens) {
-                // Back to location-only so we don't keep holding the camera type.
-                promoteForeground(withCamera = false)
+            // Tag the photo with the device's latest fix so it lands as a located
+            // pin on the Surveillance map (backend falls back to last-known too).
+            scope.launch {
+                val fix = runCatching { db.gpsFixDao().getLatest() }.getOrNull()
+                CameraCaptureController(this@GuardianService, api, okHttp)
+                    .capture(lens, fix?.lat, fix?.lon) {
+                        // Back to location-only so we don't keep holding the camera type.
+                        promoteForeground(withCamera = false)
+                    }
             }
         }.onFailure {
             Log.e(TAG, "captureCovertly failed: ${it.message}")

@@ -369,7 +369,7 @@ router.get('/devices/:id/captures', async (req, res, next) => {
   try {
     const orgId = req.user.org_id;
     const { rows } = await query(
-      `SELECT id, url, command_id, created_at
+      `SELECT id, url, command_id, created_at, lat, lng
        FROM guardian_captures
        WHERE device_id = $1 AND org_id = $2
        ORDER BY created_at DESC
@@ -402,19 +402,25 @@ router.get('/captures/recent', async (req, res, next) => {
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `SELECT c.id, c.device_id, c.url, c.created_at,
-                COALESCE(fo.name, d.name) AS device_name
+                COALESCE(c.lat, d.last_lat) AS lat,
+                COALESCE(c.lng, d.last_lng) AS lng,
+                COALESCE(fo.name, d.name) AS device_name,
+                fo.name AS officer_name
          FROM guardian_captures c
          LEFT JOIN guardian_devices d ON d.id = c.device_id
          LEFT JOIN field_officers fo ON fo.device_id = c.device_id
          WHERE c.org_id = $1
          ORDER BY c.created_at DESC
-         LIMIT 60`,
+         LIMIT 200`,
         [orgId]
       );
       await client.query('COMMIT');
       res.json({ data: rows.map(r => ({
         id: r.id, device_id: r.device_id, url: r.url,
         created_at: r.created_at, device_name: r.device_name ?? 'Device',
+        officer_name: r.officer_name ?? null,
+        lat: r.lat != null ? parseFloat(r.lat) : null,
+        lng: r.lng != null ? parseFloat(r.lng) : null,
       })) });
     } finally { client.release(); }
   } catch (err) { next(err); }

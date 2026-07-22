@@ -41,7 +41,7 @@ class CameraCaptureController(
     override val lifecycle: Lifecycle get() = registry
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    fun capture(lens: String, onComplete: () -> Unit) {
+    fun capture(lens: String, lat: Double? = null, lng: Double? = null, onComplete: () -> Unit) {
         val selector = if (lens == "front") CameraSelector.DEFAULT_FRONT_CAMERA
                        else CameraSelector.DEFAULT_BACK_CAMERA
         val future = ProcessCameraProvider.getInstance(context)
@@ -67,7 +67,7 @@ class CameraCaptureController(
                     override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                         runCatching { provider.unbindAll() }
                         scope.launch {
-                            runCatching { uploadAndReport(file) }
+                            runCatching { uploadAndReport(file, lat, lng) }
                                 .onFailure { Log.e(TAG, "capture upload failed: ${it.message}") }
                             runCatching { file.delete() }
                             onComplete()
@@ -82,7 +82,7 @@ class CameraCaptureController(
         }, ContextCompat.getMainExecutor(context))
     }
 
-    private suspend fun uploadAndReport(file: File) {
+    private suspend fun uploadAndReport(file: File, lat: Double?, lng: Double?) {
         if (!file.exists() || file.length() == 0L) throw IllegalStateException("empty capture file")
         val presign = api.capturePhotoUrl()
         val put = Request.Builder()
@@ -92,7 +92,12 @@ class CameraCaptureController(
         okHttp.newCall(put).execute().use { resp ->
             if (!resp.isSuccessful) error("R2 PUT failed: ${resp.code}")
         }
-        api.capturePhoto(mapOf("public_url" to presign.public_url, "key" to presign.key))
+        val body = buildMap {
+            put("public_url", presign.public_url)
+            put("key", presign.key)
+            if (lat != null && lng != null) { put("lat", lat.toString()); put("lng", lng.toString()) }
+        }
+        api.capturePhoto(body)
     }
 
     companion object { private const val TAG = "CameraCapture" }
