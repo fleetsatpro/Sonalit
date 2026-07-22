@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Camera, ShieldAlert, X, RefreshCw, ExternalLink, MapPin, Search, LayoutGrid, Map as MapIcon, Crosshair } from 'lucide-react';
+import { Camera, ShieldAlert, X, RefreshCw, ExternalLink, MapPin, Search, LayoutGrid, Map as MapIcon, Crosshair, Siren } from 'lucide-react';
 import { api } from '../lib/api.js';
 
 // Surveillance — the covert-capture console. Every photo a Guardian device took
@@ -14,6 +14,7 @@ import { api } from '../lib/api.js';
 interface Capture {
   id: string; device_id: string; url: string; created_at: string;
   device_name: string; officer_name?: string | null;
+  trigger_reason?: string | null;
   lat?: number | null; lng?: number | null;
 }
 interface Device { id: string; name: string; officer_name?: string | null; status?: string }
@@ -252,6 +253,11 @@ export default function Surveillance() {
                   className="group relative overflow-hidden rounded-xl border border-white/[0.08] bg-black/40 text-left"
                 >
                   <img src={c.url} alt={`Capture from ${c.device_name}`} loading="lazy" className="aspect-square w-full object-cover transition group-hover:scale-[1.03]" />
+                  {c.trigger_reason === 'panic' && (
+                    <div className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-red-600/90 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white shadow-lg" title="Auto-captured on panic">
+                      <Siren size={10} /> SOS
+                    </div>
+                  )}
                   {c.lat != null && c.lng != null && (
                     <div className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-violet-600/90 text-white shadow-lg" title="Located">
                       <MapPin size={13} />
@@ -299,8 +305,8 @@ function CaptureMap({ captures, onPick, selectedId }: { captures: Capture[]; onP
     for (const c of captures) {
       const lat = c.lat!, lng = c.lng!;
       const wrap = document.createElement('button');
-      wrap.className = 'sv-pin';
-      wrap.title = `${c.device_name} · ${relTime(c.created_at)}`;
+      wrap.className = c.trigger_reason === 'panic' ? 'sv-pin is-sos' : 'sv-pin';
+      wrap.title = `${c.device_name} · ${relTime(c.created_at)}${c.trigger_reason === 'panic' ? ' · SOS' : ''}`;
       wrap.innerHTML = `<img src="${c.url}" alt="" loading="lazy"/>`;
       wrap.addEventListener('click', (e) => { e.stopPropagation(); onPick(c); });
       const marker = new maplibregl.Marker({ element: wrap, anchor: 'bottom' }).setLngLat([lng, lat]).addTo(map);
@@ -329,6 +335,7 @@ function CaptureMap({ captures, onPick, selectedId }: { captures: Capture[]; onP
         .sv-pin{width:46px;height:46px;padding:0;border:2px solid rgba(183,157,255,.9);border-radius:10px;
           overflow:hidden;cursor:pointer;background:#0b0b12;box-shadow:0 6px 18px -6px #000;line-height:0;transition:transform .12s,border-color .12s}
         .sv-pin:hover{transform:scale(1.12);border-color:#fff;z-index:2}
+        .sv-pin.is-sos{border-color:#ff3b5c;box-shadow:0 0 0 2px rgba(255,59,92,.35),0 6px 18px -6px #000}
         .sv-pin.is-sel{border-color:#fff;box-shadow:0 0 0 3px rgba(183,157,255,.5),0 6px 18px -6px #000;transform:scale(1.15);z-index:3}
         .sv-pin img{width:100%;height:100%;object-fit:cover}
         .maplibregl-ctrl-attrib,.maplibregl-ctrl-logo{display:none!important}
@@ -347,7 +354,14 @@ function Lightbox({ capture, onClose }: { capture: Capture; onClose: () => void 
         <img src={capture.url} alt={`Capture from ${capture.device_name}`} className="max-h-[76vh] w-auto rounded-lg" />
         <div className="mt-2 flex items-start gap-3">
           <div className="mr-auto min-w-0">
-            <div className="text-sm font-bold text-white">{capture.device_name}</div>
+            <div className="flex items-center gap-2">
+              <div className="text-sm font-bold text-white">{capture.device_name}</div>
+              {capture.trigger_reason === 'panic' && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-red-600/90 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white">
+                  <Siren size={10} /> SOS burst
+                </span>
+              )}
+            </div>
             <div className="text-[11px] font-mono text-neutral-400">{relTime(capture.created_at)} · {new Date(capture.created_at).toLocaleString()}</div>
             {hasLoc ? (
               <div className="mt-1 flex items-center gap-1.5 text-[12px] text-violet-300">
