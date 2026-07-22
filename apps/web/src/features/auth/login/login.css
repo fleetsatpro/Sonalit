@@ -40,8 +40,12 @@
 .sonalit-login-root{
   position:fixed;inset:0;
   background:var(--bg);color:var(--text);font-family:var(--body);
-  overflow:hidden;-webkit-font-smoothing:antialiased;
-  z-index:1;
+  overflow:hidden;z-index:1;
+  /* crisp type on every engine — antialiased on WebKit, grayscale on macOS
+     Firefox, plus kerning/ligatures so the display face renders sharp, not VGA */
+  -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+  text-rendering:optimizeLegibility;font-kerning:normal;
+  -webkit-tap-highlight-color:transparent;
 }
 .sonalit-login-root ::selection{background:var(--gold-dim);color:var(--gold);}
 
@@ -221,9 +225,10 @@
 
 /* ================= THE CHAIN : hash-chained ledger (signature) ================= */
 .chain{
-  background:var(--bg-2);
+  background:linear-gradient(180deg,#080C15 0%,var(--bg-2) 30%);
   border-right:1px solid var(--border);
   display:flex;flex-direction:column;overflow:hidden;position:relative;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.03);
 }
 .chain-head{padding:20px 20px 15px;border-bottom:1px solid var(--border);}
 .chain-title{font-family:var(--mono);font-size:10px;letter-spacing:2.6px;color:var(--gold);display:flex;align-items:center;gap:9px;}
@@ -283,9 +288,14 @@
 
 /* ================= THE CONSOLE : operator access ================= */
 .console{
-  background:linear-gradient(180deg,var(--panel-2) 0%,var(--panel) 26%,var(--panel) 100%);
+  background:
+    radial-gradient(120% 80% at 82% 0%, rgba(240,180,41,.05), transparent 60%),
+    linear-gradient(180deg,var(--panel-2) 0%,var(--panel) 26%,var(--panel) 100%);
   display:flex;flex-direction:column;overflow-y:auto;
   padding:36px 46px 24px;position:relative;
+  /* lift the access panel off the ledger with a soft dimensional seam +
+     a hairline inner highlight along the top edge (milled-metal feel) */
+  box-shadow:-18px 0 48px rgba(0,0,0,.42), inset 1px 1px 0 rgba(255,255,255,.04);
 }
 /* centre the access stack in the panel; auto-margins collapse to 0 when the
    content is taller than the panel, so nothing clips on short viewports */
@@ -324,8 +334,8 @@
 
 .field{margin-bottom:18px;}
 .field-label{font-family:var(--mono);font-size:10px;letter-spacing:1.6px;color:var(--text-faint);display:block;margin-bottom:9px;cursor:text;}
-.field-input-row{display:flex;align-items:center;background:transparent;border:none;border-bottom:1px solid var(--border-strong);padding:0 2px;transition:border-color .15s;}
-.field-input-row:focus-within{border-bottom-color:var(--gold);}
+.field-input-row{display:flex;align-items:center;background:transparent;border:none;border-bottom:1px solid var(--border-strong);padding:0 2px;transition:border-color .15s,box-shadow .2s;}
+.field-input-row:focus-within{border-bottom-color:var(--gold);box-shadow:0 8px 18px -14px rgba(240,180,41,.6);}
 .field-input-row.error{border-bottom-color:var(--danger);}
 .field-input-row input{flex:1;background:none;border:none;outline:none;color:var(--text);font-family:var(--body);font-size:15px;padding:10px 0 12px;}
 .field-input-row input::placeholder{color:var(--text-faint);}
@@ -346,22 +356,24 @@
 .forgot-link:hover{text-decoration:underline;}
 
 .cta{
-  width:100%;padding:15px;border:none;background:var(--gold);color:#191200;
+  width:100%;padding:15px;border:none;color:#191200;
+  background:linear-gradient(180deg,var(--gold-hot) 0%,var(--gold) 52%,#DFA31E 100%);
   font-family:var(--disp);font-weight:800;font-size:15px;letter-spacing:2.6px;
   cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;
-  transition:background .15s,transform .08s;position:relative;overflow:hidden;
+  transition:filter .15s,transform .08s,box-shadow .15s;position:relative;overflow:hidden;
+  box-shadow:0 8px 22px rgba(240,180,41,.24), inset 0 1px 0 rgba(255,255,255,.45);
   clip-path:polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
 }
 .cta::after{content:'';position:absolute;top:0;bottom:0;width:60px;left:-80px;background:linear-gradient(105deg,transparent,rgba(255,255,255,.45),transparent);transform:skewX(-18deg);}
 .cta:hover::after{animation:sheen .7s ease;}
 @keyframes sheen{to{left:130%;}}
-.cta:hover{background:var(--gold-hot);}
+.cta:hover:not(:disabled){filter:brightness(1.06);box-shadow:0 10px 28px rgba(240,180,41,.34), inset 0 1px 0 rgba(255,255,255,.5);}
 .cta:active{transform:scale(.99);}
-.cta:disabled{opacity:.5;cursor:not-allowed;}
+.cta:disabled{opacity:.5;cursor:not-allowed;box-shadow:none;}
 .cta svg{width:16px;height:16px;transition:transform .2s;}
 .cta:hover:not(:disabled) svg.arrow{transform:translateX(3px);}
-.cta.success{background:var(--success);color:#052B14;}
-.cta.error{background:var(--danger);color:#3A0007;}
+.cta.success{background:var(--success);color:#052B14;box-shadow:0 8px 22px rgba(61,220,132,.26), inset 0 1px 0 rgba(255,255,255,.4);}
+.cta.error{background:var(--danger);color:#3A0007;box-shadow:0 8px 22px rgba(255,93,108,.26), inset 0 1px 0 rgba(255,255,255,.35);}
 .spinner{width:16px;height:16px;border-radius:50%;border:2px solid rgba(25,18,0,.3);border-top-color:#191200;animation:spin .7s linear infinite;display:none;}
 .cta.loading .spinner{display:block;}
 .cta.loading .cta-label,.cta.loading svg.arrow{display:none;}
