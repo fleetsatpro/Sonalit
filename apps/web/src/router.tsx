@@ -90,6 +90,7 @@ const executiveRoute = createRoute({ getParentRoute: () => authRoute, path: '/ex
 const devicesRoute = createRoute({ getParentRoute: () => authRoute, path: '/devices', component: lazyRouteComponent(() => import('./pages/Devices.js')) });
 const guardianRoute = createRoute({ getParentRoute: () => authRoute, path: '/guardian', component: lazyRouteComponent(() => import('./pages/Guardian.js')) });
 const surveillanceRoute = createRoute({ getParentRoute: () => authRoute, path: '/surveillance', component: lazyRouteComponent(() => import('./pages/Surveillance.js')) });
+const replayRoute = createRoute({ getParentRoute: () => authRoute, path: '/replay', component: lazyRouteComponent(() => import('./pages/Replay.js')) });
 const knoxRemoteSessionRoute = createRoute({ getParentRoute: () => authRoute, path: '/guardian/devices/$deviceId/remote', component: lazyRouteComponent(() => import('./pages/KnoxRemoteSession.js')) });
 const aiDecisionRoute = createRoute({ getParentRoute: () => authRoute, path: '/ai', component: lazyRouteComponent(() => import('./pages/AIDecision.js')) });
 const copilotRoute = createRoute({ getParentRoute: () => authRoute, path: '/copilot', component: lazyRouteComponent(() => import('./pages/Copilot.js')) });
@@ -140,7 +141,7 @@ const routeTree = rootRoute.addChildren([
     riskIntelRoute, rulesRoute, fieldOfficersRoute,
     executiveRoute, devicesRoute, guardianRoute, knoxRemoteSessionRoute,
     aiDecisionRoute, copilotRoute, settingsRoute, routeAnalysisRoute, cargoPortalRoute,
-    surveillanceRoute,
+    surveillanceRoute, replayRoute,
   ]),
 ]);
 

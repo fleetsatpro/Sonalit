@@ -1,0 +1,84 @@
+/* 4D Ops Replay — self-contained dark tokens (independent of the console theme). */
+.rp{
+  --void:#05070e; --panel:rgba(12,18,30,.82); --panel2:rgba(16,24,40,.94);
+  --rim:rgba(132,160,204,.18); --rim2:rgba(150,182,228,.36);
+  --ink:#eaf1ff; --ink2:#aebbd6; --ink3:#6d7d9c;
+  --cyan:#37e6ff; --green:#2bf0a6; --amber:#ffb23e; --violet:#b79dff; --red:#ff3b5c;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Roboto Mono",monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  height:100%; display:flex; background:var(--void); color:var(--ink); font-family:var(--sans); overflow:hidden;
+}
+.rp *{box-sizing:border-box}
+
+/* map + transport */
+.rp-main{position:relative; flex:1; min-width:0; height:100%}
+.rp-map{position:absolute; inset:0; width:100%; height:100%}
+.rp-map .maplibregl-ctrl-attrib,.rp-map .maplibregl-ctrl-logo{display:none!important}
+.rp-clock{position:absolute; top:14px; left:14px; z-index:3; padding:8px 13px; border-radius:10px;
+  background:var(--panel2); border:1px solid var(--rim2); backdrop-filter:blur(14px);
+  font:800 13px/1 var(--mono); letter-spacing:.04em; color:var(--green); font-variant-numeric:tabular-nums;
+  text-shadow:0 0 18px rgba(43,240,166,.4)}
+.rp-loading{position:absolute; top:14px; left:50%; transform:translateX(-50%); z-index:3; padding:7px 13px; border-radius:999px;
+  background:var(--panel2); border:1px solid var(--rim); font:700 11px/1 var(--mono); letter-spacing:.1em; color:var(--ink2)}
+
+.rp-transport{position:absolute; left:14px; right:14px; bottom:14px; z-index:4; display:flex; align-items:center; gap:10px;
+  padding:12px 14px; border-radius:16px; background:var(--panel2); border:1px solid var(--rim2);
+  backdrop-filter:blur(18px); box-shadow:0 20px 50px -24px #000}
+.rp-btn{flex:none; display:grid; place-items:center; width:38px; height:38px; border-radius:10px; cursor:pointer;
+  background:rgba(255,255,255,.05); border:1px solid var(--rim); color:var(--ink)}
+.rp-btn:hover{border-color:var(--rim2); color:#fff}
+.rp-btn.play{background:var(--cyan); color:#04070e; border:none; width:44px; height:44px}
+.rp-btn.play:hover{filter:brightness(1.08)}
+.rp-btn.speed{width:auto; padding:0 12px; font:900 12px/1 var(--mono); letter-spacing:.02em}
+
+.rp-scrub{position:relative; flex:1; height:38px; cursor:pointer; border-radius:8px;
+  background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02)); border:1px solid var(--rim); overflow:hidden}
+.rp-scrub-fill{position:absolute; left:0; top:0; bottom:0; background:linear-gradient(90deg,rgba(55,230,255,.10),rgba(55,230,255,.22)); pointer-events:none}
+.rp-tick{position:absolute; top:6px; bottom:6px; width:2px; margin-left:-1px; background:var(--tc); box-shadow:0 0 8px var(--tc); opacity:.85; pointer-events:none}
+.rp-knob{position:absolute; top:-3px; bottom:-3px; width:3px; margin-left:-1.5px; background:#fff; box-shadow:0 0 12px #fff, 0 0 4px #fff; pointer-events:none}
+.rp-range{flex:none; display:flex; flex-direction:column; gap:3px; text-align:right; font:700 9px/1.2 var(--mono); color:var(--ink3); white-space:nowrap}
+
+/* side panel */
+.rp-side{flex:none; width:320px; height:100%; display:flex; flex-direction:column; border-left:1px solid var(--rim);
+  background:linear-gradient(180deg,rgba(10,15,26,.6),rgba(6,9,16,.6))}
+.rp-head{display:flex; align-items:flex-start; gap:10px; padding:16px 16px 12px}
+.rp-head h1{margin:0; font:900 18px/1 var(--sans); letter-spacing:-.01em}
+.rp-sub{margin-top:5px; font:800 9.5px/1 var(--mono); letter-spacing:.16em; color:var(--ink3); text-transform:uppercase}
+.rp-wins{margin-left:auto; display:flex; gap:5px}
+.rp-wins button{padding:6px 10px; border-radius:8px; cursor:pointer; background:rgba(255,255,255,.04); border:1px solid var(--rim);
+  color:var(--ink2); font:800 11px/1 var(--mono)}
+.rp-wins button.on{background:rgba(55,230,255,.14); border-color:color-mix(in srgb,var(--cyan) 55%,transparent); color:var(--cyan)}
+.rp-legend{display:flex; gap:16px; padding:0 16px 10px}
+.rp-legend span{display:inline-flex; align-items:center; gap:7px; font:700 10.5px/1 var(--mono); letter-spacing:.05em; color:var(--ink2)}
+.rp-legend i{width:9px; height:9px; border-radius:50%}
+.rp-count{padding:0 16px 12px; font:700 10.5px/1 var(--mono); letter-spacing:.06em; color:var(--ink3); border-bottom:1px solid var(--rim)}
+
+.rp-events{flex:1; min-height:0; overflow-y:auto; padding:10px; display:flex; flex-direction:column; gap:8px}
+.rp-events::-webkit-scrollbar{width:8px}
+.rp-events::-webkit-scrollbar-thumb{background:rgba(140,175,220,.24); border-radius:4px}
+.rp-empty{margin:auto; padding:30px 14px; text-align:center; font:600 12px/1.5 var(--sans); color:var(--ink3)}
+.rp-ev{display:flex; gap:10px; padding:11px 12px; border-radius:12px; cursor:pointer;
+  background:rgba(255,255,255,.03); border:1px solid var(--rim); transition:transform .12s, border-color .12s, background .12s}
+.rp-ev:hover{background:rgba(255,255,255,.07)}
+.rp-ev.sel{border-color:var(--rim2)}
+.rp-ev.active{border-color:#fff; box-shadow:0 0 22px -12px #fff}
+.rp-ev.panic.active{border-color:var(--red); box-shadow:0 0 22px -10px var(--red)}
+.rp-ev-ic{flex:none; width:24px; height:24px; display:grid; place-items:center; border-radius:7px; background:rgba(255,255,255,.05); margin-top:1px}
+.rp-ev-main{flex:1; min-width:0}
+.rp-ev-label{font:800 12.5px/1.3 var(--sans); color:#fff; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical}
+.rp-ev-sub{margin-top:2px; font:600 10px/1.3 var(--mono); color:var(--ink3); letter-spacing:.02em}
+.rp-ev-play{margin-top:8px; display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:7px; cursor:pointer;
+  background:color-mix(in srgb,var(--amber) 16%,transparent); border:1px solid color-mix(in srgb,var(--amber) 45%,transparent);
+  color:var(--amber); font:800 10px/1 var(--mono)}
+.rp-ev-play svg{fill:currentColor}
+.rp-ev-thumb{display:block; margin-top:8px; width:100%; max-width:150px; border-radius:8px; overflow:hidden; border:1px solid var(--rim2); line-height:0}
+.rp-ev-thumb img{width:100%; height:auto; max-height:110px; object-fit:cover; display:block}
+
+@media (max-width:820px){
+  .rp{flex-direction:column}
+  .rp-main{height:56%}
+  .rp-side{width:100%; height:44%; border-left:none; border-top:1px solid var(--rim)}
+  .rp-transport{left:8px; right:8px; bottom:8px; gap:7px; padding:9px 10px}
+  .rp-range{display:none}
+}
+@media (prefers-reduced-motion:reduce){.rp-knob{transition:none}}

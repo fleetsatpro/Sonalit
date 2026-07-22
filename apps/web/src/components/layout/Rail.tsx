@@ -7,7 +7,7 @@ import {
   Package, Link2, BarChart2, DollarSign, Settings,
   MessageSquare, Bot, FileText, FileBarChart,
   ClipboardList, Cpu, BookOpen, Star, CalendarClock,
-  Camera,
+  Camera, History,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/auth.js';
@@ -28,6 +28,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { path: '/command',         icon: LayoutDashboard, label: 'Command Center' },
       { path: '/gps',             icon: MapPin,          label: 'GPS Live' },
+      { path: '/replay',          icon: History,         label: 'Ops Replay' },
       { path: '/panic-center',    icon: Siren,           label: 'Panic Center' },
       { path: '/messages',        icon: MessageSquare,   label: 'Messages' },
       { path: '/ai',              icon: Bot,             label: 'AI Decision' },
