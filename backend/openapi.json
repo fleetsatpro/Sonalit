@@ -384,6 +384,16 @@
         }
       }
     },
+    "/api/v1/convoys/{id}/report-days": {
+      "get": {
+        "operationId": "get_api_v1_convoys_id_report_days",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/convoys/{id}/reports/{date}/detail": {
       "get": {
         "operationId": "get_api_v1_convoys_id_reports_date_detail",

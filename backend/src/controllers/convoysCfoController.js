@@ -606,7 +606,10 @@ const getConvoyReports = asyncHandler(async (req, res) => {
 
 // E5 — trigger PDF re-generation for a specific date
 const regenerateReport = asyncHandler(async (req, res) => {
-  const convoy = await query('SELECT id FROM convoys WHERE id = $1 AND deleted_at IS NULL', [req.params.id]);
+  const convoy = await query(
+    'SELECT id, start_date, end_date FROM convoys WHERE id = $1 AND deleted_at IS NULL',
+    [req.params.id]
+  );
   if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
 
   const { date } = req.params;
@@ -618,14 +621,35 @@ const regenerateReport = asyncHandler(async (req, res) => {
   );
 
   if (!report.rows.length) {
-    // No row yet — check if real photo data exists for this date in
-    // convoy_truck_photos (the table the live CFO app actually writes to;
-    // photo_uploads is a legacy/unused table from an earlier upload path).
-    const photoCount = await query(
-      `SELECT COUNT(*)::int AS n FROM convoy_truck_photos WHERE convoy_id = $1 AND report_date = $2`,
+    // No row yet. Operators can now generate a report for ANY day the convoy
+    // was running, not only days that already had photos — so if the date is
+    // within the convoy's window we materialize a row (recount computes the
+    // required count from assigned trucks; received starts at whatever exists,
+    // possibly zero). Only reject dates before the convoy started or in the
+    // future, which can't have a legitimate report.
+    const cv = convoy.rows[0];
+    const startOk = !cv.start_date || date >= String(cv.start_date).slice(0, 10);
+    const today = new Date().toISOString().slice(0, 10);
+    if (!startOk || date > today) {
+      return res.status(400).json({ error: 'Date is outside the convoy operating window' });
+    }
+    const { recountPhotos } = require('../workers/convoyReportWorker');
+    await recountPhotos(req.params.id, date);
+    // recountPhotos only inserts a row when the convoy has assigned trucks; if
+    // it didn't, create a minimal placeholder row so the day is still
+    // generatable (it will read as pending/exceptions, which is honest).
+    const check = await query(
+      'SELECT id FROM convoy_daily_reports WHERE convoy_id = $1 AND report_date = $2',
       [req.params.id, date]
     );
-    if (!photoCount.rows[0].n) return res.status(404).json({ error: 'No report data for this date' });
+    if (!check.rows.length) {
+      await query(
+        `INSERT INTO convoy_daily_reports (convoy_id, report_date, required_photo_count, received_photo_count, status)
+         VALUES ($1, $2, 0, 0, 'pending')
+         ON CONFLICT (convoy_id, report_date) DO NOTHING`,
+        [req.params.id, date]
+      );
+    }
   }
 
   // Recompute required/received via the shared, slot-capped counter (not a
@@ -860,6 +884,63 @@ const getConvoyReportsOverview = asyncHandler(async (req, res) => {
   res.json({ data });
 });
 
+// ─── Per-convoy report-day index ─────────────────────────────────────────────
+// Returns the convoy plus every persisted daily-report row (they never expire),
+// so the Convoy Reports page can show a folder-per-convoy with an expandable
+// day list. The frontend fills in the calendar days between start/end that have
+// no row yet (generatable-on-demand) — this endpoint only carries what exists.
+const getConvoyReportDays = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const convoyRes = await query(
+    `SELECT c.id, c.name, c.status, c.timezone, c.start_date, c.end_date,
+            c.seal_count_per_truck,
+            cl.name AS client_name, cl.company AS client_company,
+            (SELECT COUNT(*) FROM convoy_trucks ct WHERE ct.convoy_id = c.id)::int AS truck_count
+     FROM convoys c
+     LEFT JOIN cargo_clients cl ON cl.id = c.client_id
+     WHERE c.id = $1 AND c.org_id = $2 AND c.deleted_at IS NULL`,
+    [id, req.user.org_id]
+  );
+  if (!convoyRes.rows.length) return res.status(404).json({ error: 'Convoy not found' });
+  const convoy = convoyRes.rows[0];
+
+  const [daysRes, mismatchRes] = await Promise.all([
+    query(
+      `SELECT report_date::text AS report_date, status,
+              required_photo_count, received_photo_count,
+              pdf_url, generated_at, generation_error, updated_at
+       FROM convoy_daily_reports
+       WHERE convoy_id = $1
+         AND ($2::date IS NULL OR report_date >= $2::date)
+       ORDER BY report_date DESC`,
+      [id, convoy.start_date]
+    ),
+    query(
+      `SELECT report_date::text AS report_date, COUNT(*)::int AS mismatch_count
+       FROM convoy_truck_photos WHERE convoy_id = $1 AND location_mismatch = true
+       GROUP BY report_date`,
+      [id]
+    ),
+  ]);
+  const mismatchMap = new Map(mismatchRes.rows.map(m => [String(m.report_date).slice(0, 10), m.mismatch_count]));
+
+  const days = daysRes.rows.map(r => {
+    const d = String(r.report_date).slice(0, 10);
+    return {
+      report_date: d,
+      status: r.status,
+      required_photo_count: r.required_photo_count,
+      received_photo_count: r.received_photo_count,
+      pdf_url: r.pdf_url ?? null,
+      generated_at: r.generated_at ?? null,
+      generation_error: r.generation_error ?? null,
+      location_mismatch_count: mismatchMap.get(d) ?? 0,
+    };
+  });
+
+  res.json({ data: { convoy, days } });
+});
+
 // ─── E6: Per-date Report Detail ──────────────────────────────────────────────
 
 async function getConvoyReportDetail(req, res, next) {
@@ -1057,4 +1138,5 @@ module.exports = {
   downloadReport,
   linkDevice,
   getConvoyReportsOverview,
+  getConvoyReportDays,
 };
