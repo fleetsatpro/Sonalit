@@ -2,6 +2,7 @@ const PDFDocument = require('pdfkit');
 const sharp = require('sharp');
 const logger = require('./logger');
 const { geocode, renderRouteMapImage } = require('./routeMapRenderer');
+const { assessConvoy } = require('./convoyIntegrity');
 const C = {
   dark: '#0b1220', dark2: '#152238', navy: '#1a2a4a', accent: '#d97706', gold: '#f5a623',
   green: '#16a34a', greenBg: '#dcfce7', greenBorder: '#86efac',
@@ -888,7 +889,7 @@ function cfoPhotosTable(ctx, cfoPhotos) {
 // plus signature lines for whichever CFOs are actually assigned to this
 // convoy — mirrors the polish of the "Enhanced Convoy Report" sample the
 // user shared, using only fields this pipeline already has in hand.
-function summarySection(ctx, received, required, mismatchCount, cfos, report, convoy) {
+function summarySection(ctx, received, required, mismatchCount, cfos, report, convoy, assessment) {
   ensureSpace(ctx, 120);
   sectionHead(ctx, nextLetter(ctx), 'Summary & Certification');
   const doc = ctx.doc;
@@ -940,6 +941,108 @@ function summarySection(ctx, received, required, mismatchCount, cfos, report, co
     t(doc, label, sx, sigY + 26, { width: sigW });
   });
   doc.y = sigY + 40;
+
+  // Chain-of-custody / tamper-evidence band. The evidence digest is a SHA-256
+  // over the underlying photos, seals, and track (not the PDF bytes), so it can
+  // be recomputed to prove the evidence set behind this report is unaltered.
+  if (assessment?.evidenceDigest) {
+    ensureSpace(ctx, 44);
+    const cy = doc.y;
+    doc.save().rect(M, cy, CW, 38).lineWidth(0.6).fillAndStroke(C.dark, C.dark).restore();
+    doc.rect(M, cy, 5, 38).fill(C.gold);
+    doc.fill(C.gold).fontSize(6).font('Helvetica-Bold');
+    t(doc, 'CHAIN OF CUSTODY — EVIDENCE ATTESTATION', M + 14, cy + 6, { width: CW - 28 });
+    doc.fill('#c7ced9').fontSize(6.5).font('Helvetica');
+    t(doc, 'This report was generated automatically by the Sonalit Guardian CFO system from field-captured evidence. Its authenticity is verifiable against the evidence fingerprint below.',
+      M + 14, cy + 15, { width: CW - 28 });
+    doc.fill(C.white).fontSize(6.5).font('Courier-Bold');
+    t(doc, `SHA-256  ${assessment.evidenceDigest}`, M + 14, cy + 28, { width: CW - 28 });
+    doc.y = cy + 46;
+  }
+}
+
+function fmtDur(mins) {
+  if (mins == null) return '--';
+  const h = Math.floor(mins / 60), m = Math.round(mins % 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+// The industrial-grade headline: a synthesized verdict + integrity score, a
+// ranked findings register, and route analytics — the security read a client
+// wants before flipping through photos. All from convoyIntegrity.assessConvoy.
+function integritySection(ctx, a) {
+  const doc = ctx.doc;
+  ensureSpace(ctx, 130);
+  sectionHead(ctx, nextLetter(ctx), 'Integrity Assessment');
+
+  const vmap = {
+    cleared:    { label: 'CLEARED',      fg: C.green, bg: C.greenBg, border: C.greenBorder, blurb: 'Full evidence coverage; no anomalies detected.' },
+    review:     { label: 'UNDER REVIEW', fg: C.amber, bg: C.amberBg, border: '#fcd34d',     blurb: 'Minor gaps or anomalies require dispatcher review.' },
+    exceptions: { label: 'EXCEPTIONS',   fg: C.red,   bg: C.redBg,   border: C.redBorder,   blurb: 'Critical anomalies detected — escalate before sign-off.' },
+  };
+  const v = vmap[a.verdict] || vmap.review;
+
+  // Verdict banner
+  const bY = doc.y, bH = 50;
+  doc.save().rect(M, bY, CW, bH).lineWidth(0.8).fillAndStroke(v.bg, v.border).restore();
+  doc.rect(M, bY, 5, bH).fill(v.fg);
+  doc.fill(v.fg).fontSize(6).font('Helvetica-Bold'); t(doc, 'CONVOY INTEGRITY VERDICT', M + 16, bY + 8, { width: 320 });
+  doc.fill(v.fg).fontSize(19).font('Helvetica-Bold'); t(doc, v.label, M + 16, bY + 17, { width: 320 });
+  doc.fill(C.sub).fontSize(7).font('Helvetica'); t(doc, v.blurb, M + 16, bY + 39, { width: CW - 190 });
+  // Score, right
+  doc.fill(C.muted).fontSize(6).font('Helvetica-Bold'); t(doc, 'INTEGRITY SCORE', M + CW - 140, bY + 9, { width: 128, align: 'right' });
+  doc.fill(v.fg).fontSize(23).font('Helvetica-Bold'); t(doc, `${a.score}`, M + CW - 140, bY + 18, { width: 108, align: 'right' });
+  doc.fill(C.muted).fontSize(9).font('Helvetica-Bold'); t(doc, '/100', M + CW - 30, bY + 30, { width: 30 });
+  doc.y = bY + bH + 10;
+
+  // Findings register
+  const sevColor = { critical: C.red, warning: C.amber, info: C.muted };
+  if (!a.findings.length) {
+    ensureSpace(ctx, 18);
+    dot(doc, M + 5, doc.y + 5, 3, C.green);
+    doc.fill(C.green).fontSize(8).font('Helvetica-Bold');
+    t(doc, 'No exceptions — all coverage, seal, and route checks passed.', M + 14, doc.y + 1, { width: CW - 20 });
+    doc.y += 18;
+  } else {
+    ensureSpace(ctx, 26);
+    doc.fill(C.muted).fontSize(6.5).font('Helvetica-Bold');
+    t(doc, `FINDINGS REGISTER — ${a.counts.critical} CRITICAL · ${a.counts.warning} WARNING · ${a.counts.info} INFO`, M, doc.y, { width: CW });
+    doc.y += 12;
+    a.findings.slice(0, 14).forEach((f, i) => {
+      if (doc.y + 22 > BODY_BOTTOM) newPage(ctx);
+      const ry = doc.y;
+      if (i % 2 === 0) doc.rect(M, ry, CW, 22).fill(C.stripe);
+      dot(doc, M + 8, ry + 8, 3, sevColor[f.severity] || C.muted);
+      doc.fill(sevColor[f.severity] || C.muted).fontSize(5.5).font('Helvetica-Bold');
+      t(doc, f.severity.toUpperCase(), M + 15, ry + 4, { width: 46 });
+      doc.fill(C.text).fontSize(8).font('Helvetica-Bold');
+      t(doc, f.title, M + 66, ry + 3, { width: CW - 76 });
+      doc.fill(C.muted).fontSize(6.5).font('Helvetica');
+      t(doc, f.detail, M + 66, ry + 12, { width: CW - 76 });
+      doc.y = ry + 22;
+    });
+    if (a.findings.length > 14) {
+      doc.fill(C.light).fontSize(7).font('Helvetica');
+      t(doc, `+ ${a.findings.length - 14} further finding(s)`, M, doc.y + 2, { width: CW });
+      doc.y += 14;
+    }
+  }
+
+  // Route analytics
+  if (a.route.hasTrack) {
+    ensureSpace(ctx, 46);
+    doc.fill(C.muted).fontSize(6.5).font('Helvetica-Bold');
+    t(doc, 'ROUTE ANALYTICS', M, doc.y + 2, { width: 200 });
+    doc.y += 13;
+    detailGrid(doc, [
+      { label: 'Distance', value: `${a.route.distanceKm} km` },
+      { label: 'Duration', value: fmtDur(a.route.durationMin) },
+      { label: 'Avg Speed', value: a.route.avgSpeedKmh != null ? `${a.route.avgSpeedKmh} km/h` : '--' },
+      { label: 'Peak Speed', value: a.route.maxSpeedKmh != null ? `${a.route.maxSpeedKmh} km/h` : '--', color: a.route.overspeedCount > 0 ? C.red : C.text },
+      { label: 'Stops', value: String(a.route.stops) },
+      { label: 'Max Deviation', value: a.route.deviationKm != null ? `${a.route.deviationKm} km` : '--', color: (a.route.deviationKm != null && a.route.deviationKm > 8) ? C.red : C.text },
+    ], 6);
+  }
 }
 
 async function generateDailyReport(convoy, trucks, cfos, photos, report, reportDate, cfoPhotos = [], waypoints = [], namedWaypoints = []) {
@@ -947,6 +1050,19 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
   const pct = report.required_photo_count > 0
     ? Math.round((report.received_photo_count / report.required_photo_count) * 100) : 0;
   const mismatchCount = photos.filter(p => p.location_mismatch).length;
+  const sealCountPerTruckTop = convoy.seal_count_per_truck ?? 3;
+  // Synthesized integrity read (verdict / score / findings / route analytics),
+  // shared with the web report so both show the same assessment.
+  const assessment = assessConvoy({
+    convoy, trucks, photos, seals: [], waypoints, namedWaypoints, report,
+    reportDate, sealCountPerTruck: sealCountPerTruckTop,
+  });
+  const verdictStyleMap = {
+    cleared: { label: 'CLEARED', fg: C.green, bg: C.greenBg },
+    review: { label: 'REVIEW', fg: C.amber, bg: C.amberBg },
+    exceptions: { label: 'EXCEPTIONS', fg: C.red, bg: C.redBg },
+  };
+  const vStyle = verdictStyleMap[assessment.verdict] || verdictStyleMap.review;
   // Fetched up front (PDFKit's drawing calls are synchronous) so truckDetail
   // can embed the actual photo bytes instead of a text "Present" indicator.
   const [photoBuffers, routeMapImage] = await Promise.all([
@@ -976,16 +1092,17 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
       subtitle: convoy.name || '--',
       routeLine: `${convoy.route_origin || '--'}  ->  ${convoy.route_destination || '--'}`,
       reportRef: report.id ? `RPT-${String(report.id).slice(0, 8).toUpperCase()} · ${reportDate}` : reportDate,
-      statusLabel: `${st.label} · ${pct}%`, statusFg: st.fg, statusBg: st.bg,
+      // Cover badge now leads with the integrity verdict, not just PDF status.
+      statusLabel: `${vStyle.label} · ${assessment.score}/100`, statusFg: vStyle.fg, statusBg: vStyle.bg,
       generatedAt,
       pct,
       stats: [
-        { label: 'Report Date', value: reportDate },
+        { label: 'Verdict', value: vStyle.label, color: vStyle.fg === C.green ? '#4ade80' : vStyle.fg === C.red ? '#fca5a5' : C.gold },
+        { label: 'Integrity', value: `${assessment.score}/100` },
         { label: 'Client', value: convoy.client_name || '--' },
         { label: 'Lead CFO', value: cfos[0]?.cfo_name || '--', color: C.gold },
         { label: 'Vehicles', value: `${trucks.length} truck${trucks.length === 1 ? '' : 's'}` },
         { label: 'Total Photos', value: `${report.received_photo_count}/${report.required_photo_count}`, color: pct >= 100 ? '#4ade80' : C.white },
-        { label: 'Convoy Status', value: (convoy.status || '--').toUpperCase() },
       ],
       checklist: [
         { label: 'Details', ok: true },
@@ -995,6 +1112,8 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
         { label: 'Summary', ok: report.status === 'generated' || report.status === 'complete' },
       ],
     });
+
+    integritySection(ctx, assessment);
 
     sectionHead(ctx, nextLetter(ctx), 'Convoy Details', `${pct}% Complete`);
     detailGrid(doc, [
@@ -1062,7 +1181,7 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
     cfoPhotosTable(ctx, cfoPhotos);
 
     summarySection(ctx, report.received_photo_count, report.required_photo_count, mismatchCount,
-      cfos, report, { ...convoy, truckCount: trucks.length });
+      cfos, report, { ...convoy, truckCount: trucks.length }, assessment);
   });
 }
 

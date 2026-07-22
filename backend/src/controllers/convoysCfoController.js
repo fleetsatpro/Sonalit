@@ -1001,11 +1001,31 @@ async function getConvoyReportDetail(req, res, next) {
       };
     }
 
+    // Synthesized integrity read — same module the PDF uses, so the on-screen
+    // report and the client PDF always show the same verdict / score / findings.
+    let integrity = null;
+    try {
+      const { assessConvoy } = require('../utils/convoyIntegrity');
+      integrity = assessConvoy({
+        convoy: convoyRes.rows[0],
+        trucks: trucksRes.rows,
+        photos: photosRes.rows,
+        seals: sealsRes.rows,
+        waypoints: waypointsRes.rows,
+        namedWaypoints: namedWaypointsRes.rows,
+        report: { ...(dailyReport || {}), report_date: date },
+        sealCountPerTruck: convoyRes.rows[0].seal_count_per_truck ?? 0,
+      });
+    } catch (assessErr) {
+      logger.error(`getConvoyReportDetail: integrity assessment failed (non-fatal): ${assessErr.message}`);
+    }
+
     res.json({
       data: {
         convoy: convoyRes.rows[0],
         report_date: date,
         daily_report: dailyReport,
+        integrity,
         trucks: trucksRes.rows.map(t => ({
           ...t,
           photos: photosByTruck[t.id] || [],
