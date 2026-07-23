@@ -1,9 +1,12 @@
 const router = require('express').Router();
+const { query } = require('../config/database');
 const { authenticate } = require('../middleware/auth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 const { publish } = require('../realtime/centrifugo');
 const requireIdempotencyKey = require('../middleware/idempotency');
+const { buildIncidentTimeline } = require('../services/incidents/timeline');
+const { sealTimeline } = require('../services/incidents/integrity');
 
 router.use(authenticate, attachOrgDb);
 
@@ -76,6 +79,38 @@ router.post('/:id/comments', asyncHandler(async (req, res) => {
 
   publish(`org#${req.user.org_id}`, { type: 'incident.updated', incidentId: rows[0].id });
   res.json({ data: rows[0] });
+}));
+
+// GET /:deviceId/reconstruct?from=&to= — incident dossier for a Guardian device.
+// Fuses SOS panics, covert captures, dispatch commands, two-way voice and the
+// GPS trail (condensed to unscheduled stops) into one chronological, tamper-
+// sealed timeline. Defaults to the last 24h. Device ownership is verified
+// against the caller's org before any telemetry is read.
+router.get('/:deviceId/reconstruct', asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+  const to = req.query.to ? new Date(req.query.to) : new Date();
+  const from = req.query.from ? new Date(req.query.from) : new Date(to.getTime() - 24 * 3600 * 1000);
+  if (isNaN(from.getTime()) || isNaN(to.getTime())) {
+    return res.status(400).json({ error: 'invalid from/to' });
+  }
+  if (from >= to) return res.status(400).json({ error: 'from must be before to' });
+
+  const dev = await query(
+    `SELECT id, name FROM guardian_devices WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
+    [req.params.deviceId, orgId]
+  );
+  if (!dev.rows.length) return res.status(404).json({ error: 'Device not found' });
+
+  const events = await buildIncidentTimeline({
+    query, deviceId: req.params.deviceId, from: from.toISOString(), to: to.toISOString(),
+  });
+  const integrity = sealTimeline(events);
+
+  res.json({ data: {
+    device: { id: dev.rows[0].id, name: dev.rows[0].name },
+    window: { from: from.toISOString(), to: to.toISOString() },
+    events, integrity,
+  } });
 }));
 
 module.exports = router;

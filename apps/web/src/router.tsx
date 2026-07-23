@@ -62,7 +62,7 @@ const alertsRoute = createRoute({ getParentRoute: () => authRoute, path: '/alert
 // incidents are the same "something bad happened" concept split across two
 // under-maintained tables/pages) — keep these as redirects so old links and
 // nav bookmarks still land somewhere instead of 404ing.
-const incidentsRoute = createRoute({ getParentRoute: () => authRoute, path: '/incidents', beforeLoad: () => { throw redirect({ to: '/alerts' }); } });
+const incidentsRoute = createRoute({ getParentRoute: () => authRoute, path: '/incidents', component: lazyRouteComponent(() => import('./pages/Incident.js')) });
 const incidentCenterRoute = createRoute({ getParentRoute: () => authRoute, path: '/incident-center', beforeLoad: () => { throw redirect({ to: '/alerts' }); } });
 const panicCenterRoute = createRoute({ getParentRoute: () => authRoute, path: '/panic-center', component: lazyRouteComponent(() => import('./pages/PanicCenter.js')) });
 const messagesRoute = createRoute({ getParentRoute: () => authRoute, path: '/messages', component: lazyRouteComponent(() => import('./pages/Messages.js')) });
