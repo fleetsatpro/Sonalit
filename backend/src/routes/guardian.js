@@ -227,6 +227,23 @@ async function ensureTables() {
       )
     `);
 
+    await query(`
+      CREATE TABLE IF NOT EXISTS guardian_crash_reports (
+        id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        device_id       UUID REFERENCES guardian_devices(id) ON DELETE CASCADE,
+        org_id          UUID,
+        app_version     TEXT,
+        app_build       BIGINT,
+        android_version TEXT,
+        sdk_int         INT,
+        device_model    TEXT,
+        thread          TEXT,
+        stack_trace     TEXT,
+        occurred_at     TIMESTAMPTZ,
+        created_at      TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
     // v2 columns — safe to run repeatedly
     await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS org_id UUID`);
     await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS convoy_code TEXT`);
@@ -3122,6 +3139,30 @@ router.post('/location/batch', deviceAuth, async (req, res, next) => {
     if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
     next(err);
   }
+});
+
+// POST /crash-report — a Guardian device uploads a captured crash (stack trace
+// + device/app metadata) so field crashes are diagnosable server-side instead
+// of being invisible. Best-effort store + error log; never fail loudly.
+router.post('/crash-report', deviceAuth, async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const orgId = req.device.org_id || null;
+    const stack = typeof b.stack_trace === 'string' ? b.stack_trace.slice(0, 20000) : null;
+    const appBuild = Number.isFinite(Number(b.app_build)) ? Number(b.app_build) : null;
+    const sdkInt = Number.isFinite(Number(b.sdk_int)) ? Number(b.sdk_int) : null;
+    const occurredAt = b.occurred_at ? new Date(b.occurred_at) : null;
+    await query(
+      `INSERT INTO guardian_crash_reports
+         (device_id, org_id, app_version, app_build, android_version, sdk_int, device_model, thread, stack_trace, occurred_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [req.device.id, orgId, b.app_version ?? null, appBuild, b.android_version ?? null, sdkInt,
+       b.device_model ?? null, b.thread ?? null, stack, occurredAt && !isNaN(occurredAt.getTime()) ? occurredAt : null]
+    );
+    const firstLine = (stack || '').split('\n')[0].slice(0, 300);
+    logger.error(`Guardian crash: device=${req.device.id} v${b.app_version} (${b.device_model}, Android ${b.android_version}) — ${firstLine}`);
+    res.json({ received: true });
+  } catch (err) { next(err); }
 });
 
 module.exports = router;

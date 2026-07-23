@@ -15,11 +15,14 @@ import com.google.firebase.messaging.FirebaseMessaging
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.tasks.await
+import io.sonalit.guardian.CrashReporter
 import io.sonalit.guardian.data.local.HeartbeatStatusStore
 import io.sonalit.guardian.data.remote.GuardianApi
 import io.sonalit.guardian.data.remote.HeartbeatRequest
 import io.sonalit.guardian.service.CommandExecutor
 import io.sonalit.guardian.service.GuardianService
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
 @HiltWorker
@@ -81,6 +84,8 @@ class HeartbeatWorker @AssistedInject constructor(
             // if check-ins stop (device dark), the server escalates to a silent
             // SOS once the DMS timeout passes.
             runCatching { api.checkin() }
+            // Ship any crash reports captured since the last beat (best-effort).
+            flushCrashReports()
             // Fallback delivery path for commands FCM couldn't wake the device for —
             // the heartbeat only ever hands back commands it just marked 'sent', so
             // this is the one chance to execute+ack them if the push never arrived.
@@ -95,6 +100,18 @@ class HeartbeatWorker @AssistedInject constructor(
             Result.success()
         } catch (e: Exception) {
             if (runAttemptCount < 3) Result.retry() else Result.failure()
+        }
+    }
+
+    /** Upload any crash reports captured since the last beat, then drop them.
+     *  Each POST carries the device token via the OkHttp auth interceptor; a
+     *  failure keeps the file for the next attempt. */
+    private suspend fun flushCrashReports() {
+        for (file in CrashReporter.pending(applicationContext)) {
+            runCatching {
+                api.reportCrash(file.readText().toRequestBody("application/json".toMediaType()))
+                file.delete()
+            }
         }
     }
 
