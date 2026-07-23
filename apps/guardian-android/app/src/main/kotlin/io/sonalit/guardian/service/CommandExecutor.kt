@@ -94,20 +94,32 @@ class CommandExecutor @Inject constructor(
                 val lens = payload?.let { p -> runCatching { JSONObject(p).optString("camera") }.getOrNull() }
                     ?.takeIf { it.isNotBlank() } ?: "back"
 
+                val isDeviceOwner = runCatching {
+                    devicePolicyManager.isDeviceOwnerApp(context.packageName)
+                }.getOrDefault(false)
+
                 // Device owner? grant CAMERA silently so the covert path needs no prompt.
-                runCatching {
-                    if (devicePolicyManager.isDeviceOwnerApp(context.packageName)) {
-                        devicePolicyManager.setPermissionGrantState(
-                            adminComponent, context.packageName, Manifest.permission.CAMERA,
-                            DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED,
-                        )
-                    }
+                if (isDeviceOwner) runCatching {
+                    devicePolicyManager.setPermissionGrantState(
+                        adminComponent, context.packageName, Manifest.permission.CAMERA,
+                        DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED,
+                    )
                 }
 
                 val hasCamera = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
                     PackageManager.PERMISSION_GRANTED
 
-                val silent = hasCamera && runCatching {
+                // Truly-silent background capture only works where the OS lets a
+                // camera foreground service run from the background: a Device Owner
+                // install (exempt from the FGS background-start limits) or pre-
+                // Android-12 (before those limits). On an ordinary modern install
+                // Android blocks the background camera and the shot would silently
+                // no-op — so route to the tap-to-capture prompt the officer
+                // completes on screen, where the foreground camera is allowed.
+                val canSilent = hasCamera &&
+                    (isDeviceOwner || Build.VERSION.SDK_INT < Build.VERSION_CODES.S)
+
+                val delivered = canSilent && runCatching {
                     // Deliver into the running GuardianService (an existing FGS can
                     // touch the camera without a blocked background start).
                     val toService = Intent(context, GuardianService::class.java)
@@ -117,7 +129,7 @@ class CommandExecutor @Inject constructor(
                     else context.startService(toService)
                 }.isSuccess
 
-                if (!silent) startCaptureFallback(lens)
+                if (!delivered) startCaptureFallback(lens)
                 true
             }
             // Operator text from the dashboard (Live Fleet "Msg" action).
@@ -264,13 +276,17 @@ class CommandExecutor @Inject constructor(
      *  12, or inside an FCM start window), and if even that is denied, drop to a
      *  tap-to-capture notification the officer completes on screen. */
     private fun startCaptureFallback(lens: String) {
-        val intent = Intent(context, PhotoCaptureService::class.java)
-            .putExtra(PhotoCaptureService.EXTRA_LENS, lens)
-        val started = runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
-            else context.startService(intent)
-        }.isSuccess
-        if (!started) postCaptureRequestNotification()
+        // Pre-Android-12 a standalone background camera FGS still works. On 12+
+        // the OS blocks it — startForegroundService "succeeds" but the service
+        // can't promote to the camera type and the shot no-ops — so don't trust
+        // that start; go straight to the tap-to-capture prompt the officer
+        // completes in the foreground.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            val intent = Intent(context, PhotoCaptureService::class.java)
+                .putExtra(PhotoCaptureService.EXTRA_LENS, lens)
+            if (runCatching { context.startForegroundService(intent) }.isSuccess) return
+        }
+        postCaptureRequestNotification()
     }
 
     /** Fallback for capture_photo when the covert service can't start: a
