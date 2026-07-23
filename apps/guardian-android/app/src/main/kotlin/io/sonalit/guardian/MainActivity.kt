@@ -238,8 +238,8 @@ private fun RequestCorePermissionsOnFirstLaunch() {
 }
 
 /**
- * GuardianService (GPS buffering, the volume-key SOS receiver registered at
- * runtime inside it, and the voice trigger) is only alive at all as long as
+ * GuardianService (GPS buffering, and the volume-key SOS receiver registered
+ * at runtime inside it) is only alive at all as long as
  * Android doesn't kill the process — and without this exemption, stock
  * Android's own Doze/App Standby, on top of most OEMs' much more aggressive
  * background-app killers (Xiaomi/MIUI, Oppo/ColorOS, Vivo, Huawei/EMUI

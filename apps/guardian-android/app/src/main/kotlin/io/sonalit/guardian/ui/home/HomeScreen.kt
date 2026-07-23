@@ -20,8 +20,6 @@ import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Groups
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
@@ -172,8 +170,6 @@ fun HomeScreen(
                 Text("Hold for 3 seconds to arm", style = MaterialTheme.typography.titleSmall)
                 Spacer(Modifier.height(8.dp))
                 PanicButtonScreen()
-                Spacer(Modifier.height(10.dp))
-                VoiceTriggerChip(armed = state.voiceTriggerArmed, onClick = { onNavigate(NavDestination.Settings) })
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "Sends a silent SOS with your last known location to dispatch.",
@@ -316,30 +312,6 @@ private fun fmtDistance(km: Double): String = when {
 }
 
 // ── Panic-section extras ──────────────────────────────────────────────────────
-
-@Composable
-private fun VoiceTriggerChip(armed: Boolean, onClick: () -> Unit) {
-    val color = if (armed) Glass.success else Glass.textMuted
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(100))
-            .background(color.copy(alpha = 0.14f))
-            .border(1.dp, color.copy(alpha = 0.32f), RoundedCornerShape(100))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            if (armed) Icons.Default.Mic else Icons.Default.MicOff,
-            contentDescription = null, tint = color, modifier = Modifier.size(13.dp),
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            if (armed) "Voice trigger armed" else "Voice trigger disarmed",
-            style = MaterialTheme.typography.labelMedium, color = color, fontWeight = FontWeight.Bold,
-        )
-    }
-}
 
 @Composable
 private fun CallDispatchButton(phoneNumber: String?) {

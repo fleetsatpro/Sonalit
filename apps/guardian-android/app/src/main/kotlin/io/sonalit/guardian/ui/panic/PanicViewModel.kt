@@ -38,9 +38,8 @@ class PanicViewModel @Inject constructor(
      *
      * `mode` defaults to "silent" (the normal hardware-trigger case — volume keys, in-app
      * button) but callers that know *why* this fired (e.g. PanicActivity reading a
-     * "panic_mode" intent extra set by VoiceTriggerService) can pass one of the other
-     * backend-recognized modes so the dashboard can react differently (a distinct siren
-     * for "voice_distress" — see apps/web/src/lib/siren.ts).
+     * "panic_mode" intent extra) can pass one of the other backend-recognized modes so the
+     * dashboard can react differently (a distinct siren per mode — see apps/web/src/lib/siren.ts).
      */
     fun activatePanic(context: Context, mode: String = "silent") {
         showCancelDialog.value = true

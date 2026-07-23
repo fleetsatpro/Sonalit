@@ -15,7 +15,6 @@
     <!-- Foreground Service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- Camera FGS for covert capture_photo (dispatcher "remote eyes") -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
 
@@ -180,15 +179,6 @@
             android:name=".service.PhotoCaptureService"
             android:exported="false"
             android:foregroundServiceType="camera" />
-
-        <!-- Voice panic trigger — listens offline (Vosk) for "PAN PAN PAN" and
-             launches PanicActivity, same as VolumeKeySOSReceiver. Opt-in only:
-             started/stopped from Settings (VoiceTriggerViewModel), never runs
-             unless the operator has explicitly enabled it. -->
-        <service
-            android:name=".service.VoiceTriggerService"
-            android:exported="false"
-            android:foregroundServiceType="microphone" />
 
         <!-- Panic Quick Settings Tile -->
         <service
