@@ -7,7 +7,7 @@ import {
   Package, Link2, BarChart2, DollarSign, Settings,
   MessageSquare, Bot, FileText, FileBarChart,
   ClipboardList, Cpu, BookOpen, Star, CalendarClock,
-  Camera, History, FileSearch, RadioTower, Radar,
+  Camera, History, FileSearch, RadioTower, Radar, Film,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/auth.js';
@@ -55,6 +55,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { path: '/surveillance', icon: Camera,     label: 'Covert Captures' },
       { path: '/incidents',    icon: FileSearch, label: 'Incident Replay' },
+      { path: '/drive',        icon: Film,       label: '3D Drive Replay' },
       { path: '/guardian',     icon: Eye,        label: 'Guardian AI' },
     ],
   },
