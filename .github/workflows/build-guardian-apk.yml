@@ -97,6 +97,43 @@ jobs:
           path: apps/guardian-android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
 
+      # Publish the APK to Cloudflare R2 (the same storage that already holds
+      # capture photos) so /download links to it directly — no GitHub release in
+      # the download path. Skips cleanly if the R2 secrets aren't configured yet,
+      # in which case the Railway step below falls back to the GitHub release.
+      - name: Publish APK to Cloudflare R2
+        id: r2
+        if: github.ref == 'refs/heads/main' && github.event.inputs.upload_only != 'true'
+        continue-on-error: true
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY }}
+          R2_SECRET_KEY: ${{ secrets.R2_SECRET_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
+        run: |
+          if [ -z "$R2_ACCESS_KEY" ] || [ -z "$R2_BUCKET" ] || [ -z "$R2_PUBLIC_URL" ]; then
+            echo "R2 secrets not set — skipping R2 publish (download falls back to the GitHub release)."
+            exit 0
+          fi
+          APK=apps/guardian-android/app/build/outputs/apk/debug/app-debug.apk
+          export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY"
+          export AWS_SECRET_ACCESS_KEY="$R2_SECRET_KEY"
+          export AWS_DEFAULT_REGION=auto
+          ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          BASE="${R2_PUBLIC_URL%/}"
+          # Stable "latest" object the download link always points at, plus a
+          # versioned archive copy for history.
+          aws s3 cp "$APK" "s3://${R2_BUCKET}/apk/sonalit-guardian.apk" \
+            --endpoint-url "$ENDPOINT" \
+            --content-type application/vnd.android.package-archive \
+            --cache-control "public, max-age=60"
+          aws s3 cp "$APK" "s3://${R2_BUCKET}/apk/sonalit-guardian-v${{ github.run_number }}.apk" \
+            --endpoint-url "$ENDPOINT" \
+            --content-type application/vnd.android.package-archive
+          echo "apk_url=${BASE}/apk/sonalit-guardian.apk" >> "$GITHUB_OUTPUT"
+          echo "Published APK → ${BASE}/apk/sonalit-guardian.apk"
+
       - name: Create Release (on main push)
         id: release
         if: github.ref == 'refs/heads/main' && github.event.inputs.upload_only != 'true'
@@ -121,7 +158,12 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
-          APK_URL="https://github.com/fleetsatpro/Sonalit/releases/download/guardian-v${{ github.run_number }}/app-debug.apk"
+          # Prefer the R2-hosted copy (off GitHub); fall back to the release
+          # asset if R2 wasn't configured/published this run.
+          APK_URL="${{ steps.r2.outputs.apk_url }}"
+          if [ -z "$APK_URL" ]; then
+            APK_URL="https://github.com/fleetsatpro/Sonalit/releases/download/guardian-v${{ github.run_number }}/app-debug.apk"
+          fi
           echo "Setting APK_REDIRECT_URL → $APK_URL"
 
           DISCOVER=$(curl -sf -X POST https://backboard.railway.com/graphql/v2 \
