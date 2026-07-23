@@ -2678,6 +2678,16 @@
         }
       }
     },
+    "/api/v1/guardian/signal/health": {
+      "get": {
+        "operationId": "get_api_v1_guardian_signal_health",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/devices/{id}/remote-session/start": {
       "post": {
         "operationId": "post_api_v1_guardian_devices_id_remote_session_start",

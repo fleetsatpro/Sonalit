@@ -1094,7 +1094,8 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
       await query(
         `UPDATE guardian_devices
          SET last_seen = NOW(), status = 'active',
-             last_lat = $2, last_lng = $3, last_speed = $4, updated_at = NOW()
+             last_lat = $2, last_lng = $3, last_speed = $4,
+             last_fix_at = NOW(), updated_at = NOW()
          WHERE id = $1`,
         [deviceId, lat, lng, speed ?? null]
       );
@@ -1347,7 +1348,7 @@ router.post('/location', deviceAuth, locationLimiter, async (req, res, next) => 
     await query(
       `UPDATE guardian_devices
        SET last_lat = $2, last_lng = $3, last_speed = $4,
-           last_seen = NOW(), updated_at = NOW()
+           last_seen = NOW(), last_fix_at = NOW(), updated_at = NOW()
        WHERE id = $1`,
       [deviceId, lat, lng, speed ?? null]
     );

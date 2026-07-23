@@ -8,6 +8,7 @@ const jwt = require('jsonwebtoken');
 const { sendCommandPush } = require('../utils/fcm');
 const { signCommand } = require('../utils/commandSigning');
 const captureVision = require('../utils/captureVision');
+const { classifySignal, bySeverity } = require('../services/signal/anomalies');
 
 router.use(authenticate);
 
@@ -782,6 +783,39 @@ router.post('/devices/:deviceId/ws-token', async (req, res, next) => {
       { expiresIn: '24h', algorithm: 'HS256' }
     );
     res.json({ token });
+  } catch (err) { next(err); }
+});
+
+// GET /signal/health — fleet-wide signal-integrity scan. Flags the pre-hijack
+// signatures: comms blackout (device dark) and GPS freeze (still heartbeating
+// but no satellite fix — classic GPS jamming). Worst-first, escalated for
+// devices on an active convoy. Cheap enough to poll from the dispatch console.
+router.get('/signal/health', async (req, res, next) => {
+  try {
+    const orgId = req.user.org_id;
+    const { rows } = await query(
+      `SELECT d.id, d.name, d.status, d.last_seen, d.last_fix_at,
+              fo.name AS officer_name,
+              EXISTS (
+                SELECT 1 FROM convoy_cfos cc
+                  JOIN convoys c ON c.id = cc.convoy_id
+                 WHERE cc.guardian_device_id = d.id
+                   AND c.status = 'active' AND c.deleted_at IS NULL
+              ) AS on_active_convoy
+         FROM guardian_devices d
+         LEFT JOIN field_officers fo ON fo.device_id = d.id
+        WHERE d.org_id = $1 AND d.deleted_at IS NULL AND d.status <> 'revoked'`,
+      [orgId]
+    );
+    const now = Date.now();
+    const devices = rows.map(d => ({
+      id: d.id, name: d.name, officer_name: d.officer_name ?? null,
+      on_active_convoy: d.on_active_convoy,
+      last_seen: d.last_seen, last_fix_at: d.last_fix_at,
+      ...classifySignal(d, now),
+    })).sort(bySeverity);
+    const summary = devices.reduce((a, v) => { a[v.state] = (a[v.state] || 0) + 1; return a; }, {});
+    res.json({ data: { devices, summary, scanned_at: new Date(now).toISOString() } });
   } catch (err) { next(err); }
 });
 
