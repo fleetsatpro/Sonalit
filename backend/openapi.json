@@ -2538,6 +2538,16 @@
         }
       }
     },
+    "/api/v1/guardian/captures/{id}": {
+      "delete": {
+        "operationId": "delete_api_v1_guardian_captures_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/devices/{id}/voice-messages/{msgId}/audio": {
       "get": {
         "operationId": "get_api_v1_guardian_devices_id_voice_messages_msgId_audio",

@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const { query, pool } = require('../config/database');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, authorize } = require('../middleware/auth');
 const { publish } = require('../realtime/centrifugo');
 const { getQueues } = require('../config/queue');
 const logger = require('../utils/logger');
@@ -481,6 +481,46 @@ router.post('/captures/analyze-untagged', async (req, res, next) => {
       if (tags) analyzed++;
     }
     res.json({ data: { requested: rows.length, analyzed } });
+  } catch (err) { next(err); }
+});
+
+// DELETE /captures/:id — admin removes a covert capture (photo). Deletes the
+// stored R2 object (best-effort) and the DB row, then tells the org channel so
+// open Surveillance consoles drop it live. Admin-only: destroying surveillance
+// evidence is a privileged action.
+router.delete('/captures/:id', authorize('admin'), async (req, res, next) => {
+  try {
+    const orgId = req.user.org_id;
+    const { rows } = await query(
+      `SELECT id, storage_key FROM guardian_captures WHERE id = $1 AND org_id = $2`,
+      [req.params.id, orgId]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Capture not found' });
+
+    // Best-effort object delete — a storage failure must not block removing the
+    // record from the gallery.
+    const key = rows[0].storage_key;
+    if (key) {
+      try {
+        const { R2_ACCOUNT_ID, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET } = process.env;
+        if (R2_ACCOUNT_ID && R2_ACCESS_KEY && R2_SECRET_KEY && R2_BUCKET) {
+          const { S3Client, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+          const s3 = new S3Client({
+            region: 'auto',
+            endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+            credentials: { accessKeyId: R2_ACCESS_KEY, secretAccessKey: R2_SECRET_KEY },
+          });
+          await s3.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+        }
+      } catch (e) {
+        logger.warn(`R2 object delete failed for capture ${req.params.id}: ${e.message}`);
+      }
+    }
+
+    await query(`DELETE FROM guardian_captures WHERE id = $1 AND org_id = $2`, [req.params.id, orgId]);
+    publish(`org#${orgId}`, { type: 'capture.deleted', id: req.params.id });
+    logger.info(`Capture ${req.params.id} deleted by admin ${req.user.id} (org ${orgId})`);
+    res.json({ deleted: true, id: req.params.id });
   } catch (err) { next(err); }
 });
 
