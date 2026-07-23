@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Camera, ShieldAlert, X, RefreshCw, ExternalLink, MapPin, Search, LayoutGrid, Map as MapIcon, Crosshair, Siren, Sparkles, Users, Car, Loader } from 'lucide-react';
+import { Camera, ShieldAlert, X, RefreshCw, ExternalLink, MapPin, Search, LayoutGrid, Map as MapIcon, Crosshair, Siren, Sparkles, Users, Car, Loader, Trash2 } from 'lucide-react';
 import { api } from '../lib/api.js';
+import { useAuthStore } from '../stores/auth.js';
 
 // Surveillance — the covert-capture console. Every photo a Guardian device took
 // in response to a capture_photo command (org-wide), now located: each capture
@@ -78,6 +79,9 @@ function useAddress(lat?: number | null, lng?: number | null) {
 
 export default function Surveillance() {
   const qc = useQueryClient();
+  // Deleting a covert capture destroys surveillance evidence — admin only,
+  // mirroring the backend authorize('admin') gate on DELETE /captures/:id.
+  const isAdmin = useAuthStore((s) => s.user?.role) === 'admin';
   const [deviceId, setDeviceId] = useState<string>('');
   const [lightbox, setLightbox] = useState<Capture | null>(null);
   const [note, setNote] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
@@ -129,6 +133,23 @@ export default function Surveillance() {
     },
     onError: () => setNote({ kind: 'err', text: 'Backfill failed — check the AI vision configuration.' }),
   });
+
+  // Admin: permanently delete a capture (photo + record). Optimistically drops
+  // it from the gallery; the backend also deletes the stored R2 object.
+  const deleteCapture = useMutation({
+    mutationFn: (id: string) => api.delete(`/guardian/captures/${id}`),
+    onSuccess: (_r, id) => {
+      setLightbox((lb) => (lb && lb.id === id ? null : lb));
+      qc.setQueryData<Capture[]>(['captures-recent'], (prev) => (prev ?? []).filter((c) => c.id !== id));
+      setNote({ kind: 'ok', text: 'Capture deleted.' });
+    },
+    onError: () => setNote({ kind: 'err', text: 'Failed to delete the capture.' }),
+  });
+  function confirmDelete(c: Capture) {
+    if (window.confirm('Delete this capture permanently? This removes the photo and its record for everyone.')) {
+      deleteCapture.mutate(c.id);
+    }
+  }
 
   const guardianDevices = useMemo(() => (devices ?? []).filter(d => !!d.name), [devices]);
   const configured = status?.configured !== false;
@@ -335,11 +356,11 @@ export default function Surveillance() {
           <div className="h-full overflow-y-auto">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {filtered.map(c => (
-                <button
+                <div
                   key={c.id}
-                  onClick={() => setLightbox(c)}
-                  className="group relative overflow-hidden rounded-xl border border-white/[0.08] bg-black/40 text-left"
+                  className="group relative overflow-hidden rounded-xl border border-white/[0.08] bg-black/40"
                 >
+                  <button type="button" onClick={() => setLightbox(c)} className="block w-full text-left">
                   <img src={c.url} alt={`Capture from ${c.device_name}`} loading="lazy" className="aspect-square w-full object-cover transition group-hover:scale-[1.03]" />
                   {c.trigger_reason === 'panic' && (
                     <div className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-red-600/90 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-white shadow-lg" title="Auto-captured on panic">
@@ -347,7 +368,7 @@ export default function Surveillance() {
                     </div>
                   )}
                   {c.lat != null && c.lng != null && (
-                    <div className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-violet-600/90 text-white shadow-lg" title="Located">
+                    <div className={`absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-violet-600/90 text-white shadow-lg ${isAdmin ? 'transition group-hover:opacity-0' : ''}`} title="Located">
                       <MapPin size={13} />
                     </div>
                   )}
@@ -380,7 +401,20 @@ export default function Surveillance() {
                         : <Sparkles size={10} className="text-neutral-600" />}
                     </div>
                   </div>
-                </button>
+                  </button>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      title="Delete capture"
+                      aria-label="Delete capture"
+                      onClick={(e) => { e.stopPropagation(); confirmDelete(c); }}
+                      disabled={deleteCapture.isPending}
+                      className="absolute right-2 top-2 z-20 flex h-6 w-6 items-center justify-center rounded-full bg-red-600/90 text-white opacity-0 shadow-lg transition group-hover:opacity-100 hover:bg-red-500 disabled:opacity-40"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
           </div>
@@ -394,6 +428,8 @@ export default function Surveillance() {
           analyzing={analyzeOne.isPending}
           onAnalyze={() => analyzeOne.mutate(lightbox.id)}
           onClose={() => setLightbox(null)}
+          canDelete={isAdmin}
+          onDelete={() => confirmDelete(lightbox)}
         />
       )}
     </div>
@@ -466,8 +502,9 @@ function CaptureMap({ captures, onPick, selectedId }: { captures: Capture[]; onP
 }
 
 // ── Lightbox ─────────────────────────────────────────────────────────────────
-function Lightbox({ capture, aiConfigured, analyzing, onAnalyze, onClose }: {
+function Lightbox({ capture, aiConfigured, analyzing, onAnalyze, onClose, canDelete, onDelete }: {
   capture: Capture; aiConfigured: boolean; analyzing: boolean; onAnalyze: () => void; onClose: () => void;
+  canDelete: boolean; onDelete: () => void;
 }) {
   const { data: geo, isLoading } = useAddress(capture.lat, capture.lng);
   const hasLoc = capture.lat != null && capture.lng != null;
@@ -547,6 +584,11 @@ function Lightbox({ capture, aiConfigured, analyzing, onAnalyze, onClose }: {
           <a href={capture.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-md border border-white/15 px-3 py-1.5 text-xs font-semibold text-neutral-200 hover:text-white">
             <ExternalLink size={13} /> Full size
           </a>
+          {canDelete && (
+            <button onClick={onDelete} className="inline-flex items-center gap-1.5 rounded-md border border-red-500/40 bg-red-600/10 px-3 py-1.5 text-xs font-semibold text-red-300 hover:bg-red-600/20 hover:text-red-200">
+              <Trash2 size={13} /> Delete
+            </button>
+          )}
           <button onClick={onClose} className="grid h-8 w-8 flex-none place-items-center rounded-md border border-white/15 text-neutral-300 hover:text-white">
             <X size={16} />
           </button>
