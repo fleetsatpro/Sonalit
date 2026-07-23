@@ -787,8 +787,10 @@ router.post('/devices/:deviceId/ws-token', async (req, res, next) => {
 });
 
 // GET /devices/:id/track — a device's ordered GPS trail over a window, for the
-// 3D drive-replay. Points come from convoy_waypoints (mirrored from the device's
-// location batches). Capped so a long run can't return an unbounded payload.
+// 3D drive-replay. Reads device_locations, which captures EVERY location batch
+// the device uploads — all activity, not only movement during an active convoy
+// (convoy_waypoints is a convoy-scoped subset). Capped so a long run can't
+// return an unbounded payload.
 router.get('/devices/:id/track', async (req, res, next) => {
   try {
     const orgId = req.user.org_id;
@@ -805,10 +807,10 @@ router.get('/devices/:id/track', async (req, res, next) => {
     }
 
     const { rows } = await query(
-      `SELECT lat, lng, speed_kmh, heading, recorded_at
-         FROM convoy_waypoints
-        WHERE guardian_device_id = $1 AND recorded_at BETWEEN $2 AND $3
-        ORDER BY recorded_at ASC
+      `SELECT lat, lng, speed, heading, "timestamp"
+         FROM device_locations
+        WHERE device_id = $1 AND "timestamp" BETWEEN $2 AND $3
+        ORDER BY "timestamp" ASC
         LIMIT 5000`,
       [req.params.id, from.toISOString(), to.toISOString()]
     );
@@ -817,9 +819,9 @@ router.get('/devices/:id/track', async (req, res, next) => {
       from: from.toISOString(), to: to.toISOString(),
       points: rows.map(r => ({
         lat: Number(r.lat), lng: Number(r.lng),
-        speed: r.speed_kmh == null ? null : Number(r.speed_kmh),
+        speed: r.speed == null ? null : Number(r.speed),
         heading: r.heading == null ? null : Number(r.heading),
-        ts: new Date(r.recorded_at).toISOString(),
+        ts: new Date(r.timestamp).toISOString(),
       })),
     } });
   } catch (err) { next(err); }

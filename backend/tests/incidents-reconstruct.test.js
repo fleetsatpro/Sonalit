@@ -80,9 +80,9 @@ describe('buildIncidentTimeline', () => {
       guardian_captures: [{ id: 'c1', url: 'https://x/y.jpg', lat: 1, lng: 2, camera: 'front', created_at: '2026-01-01T00:11:00Z', ai_summary: 'person', ai_threat_level: 'high', ai_has_weapon: true }],
       guardian_voice_messages: [{ id: 'v1', direction: 'from_device', duration_ms: 4200, created_at: '2026-01-01T00:05:00Z' }],
       device_commands: [{ id: 'd1', command_type: 'trigger_siren', status: 'executed', issued_at: '2026-01-01T00:09:00Z' }],
-      convoy_waypoints: [
-        { lat: 1, lng: 2, speed_kmh: 0, recorded_at: '2026-01-01T00:00:00Z' },
-        { lat: 1, lng: 2, speed_kmh: 0, recorded_at: '2026-01-01T00:20:00Z' },
+      device_locations: [
+        { lat: 1, lng: 2, speed: 0, timestamp: '2026-01-01T00:00:00Z' },
+        { lat: 1, lng: 2, speed: 0, timestamp: '2026-01-01T00:20:00Z' },
       ],
     };
     const query = (sql) => {

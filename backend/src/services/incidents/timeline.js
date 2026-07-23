@@ -82,10 +82,10 @@ async function buildIncidentTimeline({ query, deviceId, from, to }) {
     query(`SELECT id, command_type, status, issued_at
              FROM device_commands
             WHERE device_id = $1 AND issued_at BETWEEN $2 AND $3`, win),
-    query(`SELECT lat, lng, speed_kmh, recorded_at
-             FROM convoy_waypoints
-            WHERE guardian_device_id = $1 AND recorded_at BETWEEN $2 AND $3
-            ORDER BY recorded_at ASC`, win),
+    query(`SELECT lat, lng, speed, "timestamp"
+             FROM device_locations
+            WHERE device_id = $1 AND "timestamp" BETWEEN $2 AND $3
+            ORDER BY "timestamp" ASC`, win),
   ]);
 
   const events = [];
@@ -129,8 +129,8 @@ async function buildIncidentTimeline({ query, deviceId, from, to }) {
 
   const stops = detectStops(waypoints.rows.map(w => ({
     lat: Number(w.lat), lng: Number(w.lng),
-    speed_kmh: w.speed_kmh == null ? null : Number(w.speed_kmh),
-    ts: new Date(w.recorded_at).getTime(),
+    speed_kmh: w.speed == null ? null : Number(w.speed),
+    ts: new Date(w.timestamp).getTime(),
   })));
   for (const s of stops) {
     const long = s.durationMs >= 900000; // 15 min+
