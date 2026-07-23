@@ -42,6 +42,23 @@ class CameraCaptureController(
     override val lifecycle: Lifecycle get() = registry
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    /**
+     * Captures from each lens in [lenses] one after another (rear then front by
+     * default), driving them off a single controller/lifecycle, and only invokes
+     * [onComplete] once the whole sequence is done. Most hardware can't open two
+     * cameras at once, so this is sequential rather than parallel. Must be entered
+     * on the main thread (same as [capture]).
+     */
+    fun captureSequence(lenses: List<String>, lat: Double? = null, lng: Double? = null, onComplete: () -> Unit) {
+        val queue = ArrayDeque(lenses)
+        fun step() {
+            val lens = queue.removeFirstOrNull()
+            if (lens == null) { onComplete(); return }
+            capture(lens, lat, lng) { step() }
+        }
+        step()
+    }
+
     fun capture(lens: String, lat: Double? = null, lng: Double? = null, onComplete: () -> Unit) {
         report("cc_start", "lens=$lens sdk=${Build.VERSION.SDK_INT}")
         val selector = if (lens == "front") CameraSelector.DEFAULT_FRONT_CAMERA
@@ -72,8 +89,8 @@ class CameraCaptureController(
                         report("cc_saved", "bytes=${file.length()}")
                         runCatching { provider.unbindAll() }
                         scope.launch {
-                            runCatching { uploadAndReport(file, lat, lng) }
-                                .onSuccess { report("cc_uploaded") }
+                            runCatching { uploadAndReport(file, lens, lat, lng) }
+                                .onSuccess { report("cc_uploaded", "lens=$lens") }
                                 .onFailure { Log.e(TAG, "capture upload failed: ${it.message}"); report("cc_upload_fail", it.message ?: "") }
                             runCatching { file.delete() }
                             onComplete()
@@ -93,7 +110,7 @@ class CameraCaptureController(
         scope.launch { runCatching { api.captureEvent(mapOf("stage" to stage, "detail" to detail)) } }
     }
 
-    private suspend fun uploadAndReport(file: File, lat: Double?, lng: Double?) {
+    private suspend fun uploadAndReport(file: File, lens: String, lat: Double?, lng: Double?) {
         if (!file.exists() || file.length() == 0L) throw IllegalStateException("empty capture file")
         val presign = api.capturePhotoUrl()
         val put = Request.Builder()
@@ -103,9 +120,12 @@ class CameraCaptureController(
         okHttp.newCall(put).execute().use { resp ->
             if (!resp.isSuccessful) error("R2 PUT failed: ${resp.code}")
         }
+        // "front"/"back" so dispatch can tell the selfie frame from the scene one.
+        val camera = if (lens == "front") "front" else "back"
         val body = buildMap {
             put("public_url", presign.public_url)
             put("key", presign.key)
+            put("camera", camera)
             if (lat != null && lng != null) { put("lat", lat.toString()); put("lng", lng.toString()) }
         }
         api.capturePhoto(body)

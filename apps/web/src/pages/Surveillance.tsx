@@ -25,6 +25,7 @@ interface Capture {
   id: string; device_id: string; url: string; created_at: string;
   device_name: string; officer_name?: string | null;
   trigger_reason?: string | null;
+  camera?: string | null;
   lat?: number | null; lng?: number | null;
   ai?: CaptureAI | null;
 }
@@ -395,7 +396,14 @@ export default function Surveillance() {
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent p-2">
                     <div className="truncate text-[12px] font-bold text-white">{c.device_name}</div>
                     <div className="flex items-center justify-between gap-2">
-                      <div className="text-[10px] font-mono text-neutral-300">{relTime(c.created_at)}</div>
+                      <div className="flex items-center gap-1.5">
+                        {c.camera && (
+                          <span className="rounded bg-white/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-neutral-100" title={c.camera === 'front' ? 'Front (selfie) camera' : 'Rear camera'}>
+                            {c.camera === 'front' ? 'Front' : 'Rear'}
+                          </span>
+                        )}
+                        <div className="text-[10px] font-mono text-neutral-300">{relTime(c.created_at)}</div>
+                      </div>
                       {c.ai
                         ? <span className={`text-[9px] font-black uppercase ${THREAT_COLOR[c.ai.threat_level] ?? 'text-neutral-400'}`}>{c.ai.threat_level}</span>
                         : <Sparkles size={10} className="text-neutral-600" />}
