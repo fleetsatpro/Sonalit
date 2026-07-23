@@ -7,7 +7,7 @@ import {
   Package, Link2, BarChart2, DollarSign, Settings,
   MessageSquare, Bot, FileText, FileBarChart,
   ClipboardList, Cpu, BookOpen, Star, CalendarClock,
-  Camera, History, FileSearch,
+  Camera, History, FileSearch, RadioTower,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/auth.js';
@@ -40,6 +40,7 @@ export const NAV_GROUPS: NavGroup[] = [
     hue: '255,59,92',
     items: [
       { path: '/alerts',         icon: Bell,          label: 'Alerts & Incidents' },
+      { path: '/signal-health',  icon: RadioTower,    label: 'Signal Integrity' },
       { path: '/risk-intel',     icon: AlertTriangle, label: 'Risk Intel' },
       { path: '/guardian',       icon: Eye,           label: 'Guardian AI' },
       { path: '/geofences',      icon: Map,           label: 'Geofences' },
