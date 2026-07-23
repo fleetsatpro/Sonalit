@@ -205,6 +205,10 @@ interface GuardianApi {
     @POST("guardian/location/batch")
     suspend fun locationBatch(@Body batch: LocationBatchRequest): Map<String, Any>
 
+    // Upload a captured crash report (raw JSON body written by CrashReporter).
+    @POST("guardian/crash-report")
+    suspend fun reportCrash(@Body body: okhttp3.RequestBody): Map<String, Any>
+
     /** Field officer -> dispatch voice note. Body is raw audio bytes (see
      *  CommandExecutor's replayVoiceMessage for the reverse/download side) —
      *  X-Device-Token is injected by NetworkModule's interceptor like every
