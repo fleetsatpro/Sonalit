@@ -209,6 +209,11 @@ interface GuardianApi {
     @POST("guardian/crash-report")
     suspend fun reportCrash(@Body body: okhttp3.RequestBody): Map<String, Any>
 
+    // Covert-capture pipeline breadcrumbs — { stage, detail } — for diagnosing a
+    // shot that silently fails on a field device.
+    @POST("guardian/capture-event")
+    suspend fun captureEvent(@Body body: Map<String, String>): Map<String, Any>
+
     /** Field officer -> dispatch voice note. Body is raw audio bytes (see
      *  CommandExecutor's replayVoiceMessage for the reverse/download side) —
      *  X-Device-Token is injected by NetworkModule's interceptor like every

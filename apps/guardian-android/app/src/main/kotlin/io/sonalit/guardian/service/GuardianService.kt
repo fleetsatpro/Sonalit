@@ -278,12 +278,15 @@ class GuardianService : Service() {
      *  otherwise it no-ops rather than crash the location service, and the
      *  caller's tap-fallback covers the non-silent case. */
     private fun captureCovertly(lens: String) {
+        reportCapture("gs_enter", "sdk=${Build.VERSION.SDK_INT}")
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             Log.w(TAG, "capture_photo: CAMERA permission not granted — skipping silent capture")
+            reportCapture("gs_no_camera_perm")
             return
         }
         runCatching {
             promoteForeground(withCamera = true)
+            reportCapture("gs_promoted")
             // Tag the photo with the device's latest fix so it lands as a located
             // pin on the Surveillance map (backend falls back to last-known too).
             scope.launch {
@@ -296,8 +299,13 @@ class GuardianService : Service() {
             }
         }.onFailure {
             Log.e(TAG, "captureCovertly failed: ${it.message}")
+            reportCapture("gs_covert_fail", it.message ?: "")
             promoteForeground(withCamera = false)
         }
+    }
+
+    private fun reportCapture(stage: String, detail: String = "") {
+        scope.launch { runCatching { api.captureEvent(mapOf("stage" to stage, "detail" to detail)) } }
     }
 
     @Suppress("MissingPermission")
