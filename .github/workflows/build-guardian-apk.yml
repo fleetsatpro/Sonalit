@@ -86,25 +86,6 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x apps/guardian-android/gradlew
 
-      - name: Download Vosk speech model
-        run: |
-          MODEL_DIR="apps/guardian-android/app/src/main/assets/model-en-us"
-          mkdir -p "$MODEL_DIR"
-          # Only download if the model files are absent (they're gitignored — just the README is committed)
-          if [ ! -f "$MODEL_DIR/am/final.mdl" ]; then
-            echo "Fetching vosk-model-small-en-us-0.15.zip …"
-            curl -fsSL "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip" \
-              -o /tmp/vosk-model.zip
-            # Unzip contents directly into model-en-us/ (strip the top-level folder)
-            unzip -q /tmp/vosk-model.zip -d /tmp/vosk-model-extracted
-            INNER=$(find /tmp/vosk-model-extracted -mindepth 1 -maxdepth 1 -type d | head -1)
-            cp -r "$INNER"/. "$MODEL_DIR/"
-            rm -rf /tmp/vosk-model.zip /tmp/vosk-model-extracted
-            echo "Model installed: $(du -sh "$MODEL_DIR" | cut -f1)"
-          else
-            echo "Model already present — skipping download"
-          fi
-
       - name: Build debug APK
         working-directory: apps/guardian-android
         run: ./gradlew assembleDebug --no-daemon --stacktrace
@@ -128,7 +109,6 @@ jobs:
 
             **Install**: Download and open on an Android 10+ device (enable "Install unknown apps" in settings).
             **Enroll**: Open the app and enter your badge number (operator code) — device appears as Pending in the Guardian dashboard for approval.
-            **Voice trigger**: Say "PAN PAN PAN" to fire a panic alert hands-free (enable in Settings after enrollment).
           files: apps/guardian-android/app/build/outputs/apk/debug/app-debug.apk
           draft: false
           prerelease: false

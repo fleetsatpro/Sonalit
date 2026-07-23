@@ -150,10 +150,4 @@ dependencies {
     // Coroutines
     implementation(libs.kotlinx.coroutines.play)
     implementation(libs.kotlinx.serialization)
-
-    // Vosk offline speech recognition (voice panic trigger — VoiceTriggerService).
-    // jna needs the `@aar` artifact classifier on Android, which isn't
-    // expressible in the version-catalog TOML format.
-    implementation(libs.vosk.android)
-    implementation("net.java.dev.jna:jna:${libs.versions.jna.get()}@aar")
 }

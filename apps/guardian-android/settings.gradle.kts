@@ -18,9 +18,6 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven { url = uri("https://jitpack.io") }
-        // Vosk offline speech recognition (voice panic trigger) — publishes here
-        // in addition to/instead of Maven Central depending on release.
-        maven { url = uri("https://alphacephei.com/maven/") }
     }
 }
 

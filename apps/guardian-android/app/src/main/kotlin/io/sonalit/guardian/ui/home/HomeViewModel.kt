@@ -16,7 +16,6 @@ import io.sonalit.guardian.data.local.DispatchMessageDao
 import io.sonalit.guardian.data.local.DispatchMessageEntity
 import io.sonalit.guardian.data.local.HeartbeatStatusStore
 import io.sonalit.guardian.data.local.SyncStatusStore
-import io.sonalit.guardian.data.local.VoiceTriggerStore
 import io.sonalit.guardian.data.remote.ConvoyMember
 import io.sonalit.guardian.data.remote.GuardianApi
 import io.sonalit.guardian.service.CommandExecutor
@@ -86,7 +85,6 @@ data class HomeUiState(
     val recentActivity: List<ActivityItem> = emptyList(),
     val dispatchMessages: List<DispatchMessageUi> = emptyList(),
     val unreadDispatchCount: Int = 0,
-    val voiceTriggerArmed: Boolean = false,
     val dispatchPhoneNumber: String? = null,
     val isRecordingVoiceNote: Boolean = false,
     val voiceNoteElapsedMs: Long = 0,
@@ -102,7 +100,6 @@ class HomeViewModel @Inject constructor(
     private val api: GuardianApi,
     private val activityEventDao: ActivityEventDao,
     private val dispatchMessageDao: DispatchMessageDao,
-    private val voiceTriggerStore: VoiceTriggerStore,
     private val commandExecutor: CommandExecutor,
 ) : ViewModel() {
 
@@ -339,7 +336,6 @@ class HomeViewModel @Inject constructor(
                 // missed cycles (~35 min) plus retry backoff.
                 heartbeatState = heartbeatState,
                 gpsState = gpsState,
-                voiceTriggerArmed = voiceTriggerStore.isEnabled(),
             )
         }
     }
