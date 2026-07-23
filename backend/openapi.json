@@ -3581,6 +3581,26 @@
           }
         }
       }
+    },
+    "/download/apk": {
+      "get": {
+        "operationId": "get_download_apk",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/download,/get": {
+      "get": {
+        "operationId": "get_download_get",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }
