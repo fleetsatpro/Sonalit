@@ -291,11 +291,25 @@ class GuardianService : Service() {
             // pin on the Surveillance map (backend falls back to last-known too).
             scope.launch {
                 val fix = runCatching { db.gpsFixDao().getLatest() }.getOrNull()
-                CameraCaptureController(this@GuardianService, api, okHttp)
-                    .capture(lens, fix?.lat, fix?.lon) {
-                        // Back to location-only so we don't keep holding the camera type.
-                        promoteForeground(withCamera = false)
+                // CameraCaptureController owns a LifecycleRegistry whose construction and
+                // STARTED transition MUST run on the main thread; building it on this IO
+                // coroutine throws "must be called on the main thread", which was silently
+                // killing every capture right after gs_promoted (cc_start never fired).
+                // CameraX bindToLifecycle is a main-thread API anyway. Wrapped so any
+                // failure here surfaces as gs_covert_fail instead of a swallowed crash.
+                runCatching {
+                    withContext(Dispatchers.Main) {
+                        CameraCaptureController(this@GuardianService, api, okHttp)
+                            .capture(lens, fix?.lat, fix?.lon) {
+                                // Back to location-only so we don't keep holding the camera type.
+                                promoteForeground(withCamera = false)
+                            }
                     }
+                }.onFailure {
+                    Log.e(TAG, "covert capture dispatch failed: ${it.message}")
+                    reportCapture("gs_covert_fail", it.message ?: "")
+                    promoteForeground(withCamera = false)
+                }
             }
         }.onFailure {
             Log.e(TAG, "captureCovertly failed: ${it.message}")
