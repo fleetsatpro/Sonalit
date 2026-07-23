@@ -11,6 +11,15 @@ interface TrackResp { device: { id: string; name: string }; from: string; to: st
 
 const SPEEDS = [1, 8, 30, 60];
 
+// Top-down car marker (points "up" = its front); aligned to travel direction.
+const CAR_ICON = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="76" viewBox="0 0 40 76">' +
+  '<rect x="6" y="4" width="28" height="68" rx="11" fill="#f59e0b" stroke="#fff7e6" stroke-width="2.5"/>' +
+  '<rect x="10" y="11" width="20" height="15" rx="5" fill="#141109" opacity="0.9"/>' +
+  '<rect x="10" y="45" width="20" height="13" rx="5" fill="#141109" opacity="0.7"/>' +
+  '<circle cx="13" cy="7.5" r="2" fill="#fff"/><circle cx="27" cy="7.5" r="2" fill="#fff"/>' +
+  '</svg>');
+
 // Owns the Cesium viewer and drives a vehicle along the trail with a chase cam.
 function CesiumDrive({ points }: { points: TrackPoint[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -27,13 +36,15 @@ function CesiumDrive({ points }: { points: TrackPoint[] }) {
     const token = (import.meta.env['VITE_CESIUM_ION_TOKEN'] as string | undefined) ?? '';
     Cesium.Ion.defaultAccessToken = token;
 
-    const osm = new Cesium.UrlTemplateImageryProvider({
-      url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-      credit: new Cesium.Credit('© OpenStreetMap contributors', false),
+    // Real satellite/aerial imagery by default (free, no key) — a big step up
+    // from flat street tiles. Upgraded further below when keys are present.
+    const esri = new Cesium.UrlTemplateImageryProvider({
+      url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      credit: new Cesium.Credit('Esri, Maxar, Earthstar Geographics', false),
       maximumLevel: 19,
     });
     const viewer = new Cesium.Viewer(containerRef.current, {
-      baseLayer: new Cesium.ImageryLayer(osm),
+      baseLayer: new Cesium.ImageryLayer(esri),
       terrainProvider: new Cesium.EllipsoidTerrainProvider(),
       animation: false, timeline: true, baseLayerPicker: false, fullscreenButton: false,
       geocoder: false, homeButton: false, infoBox: false, sceneModePicker: false,
@@ -41,15 +52,32 @@ function CesiumDrive({ points }: { points: TrackPoint[] }) {
       navigationInstructionsInitiallyVisible: false, creditContainer: document.createElement('div'),
     });
     viewer.scene.globe.enableLighting = true;
+    if (viewer.scene.skyAtmosphere) viewer.scene.skyAtmosphere.show = true;
     viewerRef.current = viewer;
 
-    // Upgrade to photoreal relief + city blocks when an Ion token is configured.
-    if (token) {
-      (async () => {
+    const googleKey = (import.meta.env['VITE_GOOGLE_MAPS_API_KEY'] as string | undefined) ?? '';
+    (async () => {
+      // Best realism: Google Photorealistic 3D Tiles — true textured 3D of the
+      // real world. Replaces the globe entirely.
+      if (googleKey) {
+        try {
+          (Cesium as unknown as { GoogleMaps: { defaultApiKey: string } }).GoogleMaps.defaultApiKey = googleKey;
+          viewer.scene.primitives.add(await Cesium.createGooglePhotorealistic3DTileset());
+          viewer.scene.globe.show = false;
+          return;
+        } catch { /* fall through to Ion / Esri */ }
+      }
+      // With a Cesium Ion token: Bing aerial + world-terrain relief + 3D buildings.
+      if (token) {
+        try {
+          const bing = await Cesium.createWorldImageryAsync();
+          viewer.imageryLayers.removeAll();
+          viewer.imageryLayers.addImageryProvider(bing);
+        } catch { /* keep Esri satellite */ }
         try { viewer.terrainProvider = await Cesium.createWorldTerrainAsync(); } catch { /* keep ellipsoid */ }
         try { viewer.scene.primitives.add(await Cesium.createOsmBuildingsAsync()); } catch { /* no buildings */ }
-      })();
-    }
+      }
+    })();
 
     return () => { if (!viewer.isDestroyed()) viewer.destroy(); viewerRef.current = null; };
   }, []);
@@ -74,31 +102,32 @@ function CesiumDrive({ points }: { points: TrackPoint[] }) {
     const start = Cesium.JulianDate.fromIso8601(points[0]!.ts);
     const stop = Cesium.JulianDate.fromIso8601(points[points.length - 1]!.ts);
 
-    // Full route ribbon.
+    // Full route — a thin, restrained line so a dense city trail doesn't read
+    // as a spiky mess.
     viewer.entities.add({
       polyline: {
         positions: points.map(p => Cesium.Cartesian3.fromDegrees(p.lng, p.lat, 0)),
-        width: 3, clampToGround: true,
-        material: new Cesium.PolylineGlowMaterialProperty({
-          glowPower: 0.18, color: Cesium.Color.fromCssColorString('#38bdf8'),
-        }),
+        width: 2, clampToGround: true,
+        material: Cesium.Color.fromCssColorString('#38bdf8').withAlpha(0.55),
       },
     });
 
-    // The vehicle: a box oriented along its velocity, with a fading trail.
+    // The vehicle: a car marker that stays readable at any zoom, points the way
+    // it's travelling, and always draws on top — with a short fading trail.
     const vehicle = viewer.entities.add({
       availability: new Cesium.TimeIntervalCollection([new Cesium.TimeInterval({ start, stop })]),
       position: sampled,
-      orientation: new Cesium.VelocityOrientationProperty(sampled),
-      box: {
-        dimensions: new Cesium.Cartesian3(24, 10, 8),
-        material: Cesium.Color.fromCssColorString('#f59e0b'),
-        outline: true, outlineColor: Cesium.Color.WHITE,
+      billboard: {
+        image: CAR_ICON,
+        scale: 0.6,
+        alignedAxis: new Cesium.VelocityVectorProperty(sampled, true),
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        scaleByDistance: new Cesium.NearFarScalar(150, 1.0, 6000, 0.4),
       },
       path: {
-        resolution: 1, width: 6, leadTime: 0, trailTime: 120,
+        resolution: 1, width: 5, leadTime: 0, trailTime: 90,
         material: new Cesium.PolylineGlowMaterialProperty({
-          glowPower: 0.3, color: Cesium.Color.fromCssColorString('#f59e0b'),
+          glowPower: 0.25, color: Cesium.Color.fromCssColorString('#f59e0b'),
         }),
       },
     });
