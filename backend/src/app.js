@@ -271,6 +271,56 @@ catch (e) { logger.warn("Broadcast route failed: " + e.message); }
 try { app.use("/api/v1", require("./routes/claims")); logger.info("Route loaded: /api/v1 (claims)"); }
 catch (e) { logger.warn("Claims route failed: " + e.message); }
 
+// ─── Public APK download page ────────────────────────────────────────────────
+// A phone-friendly install page for Sonalit Guardian, reachable from any device
+// at /download — no auth, no GitHub. The button hits /api/v1/guardian/apk/download,
+// which redirects to the APK on Cloudflare R2 (or a fallback) via APK_REDIRECT_URL.
+app.get("/download/apk", (req, res) => res.redirect(302, "/api/v1/guardian/apk/download"));
+app.get(["/download", "/get"], (req, res) => {
+  const apk = "/api/v1/guardian/apk/download";
+  res.type("html").send(`<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Install Sonalit Guardian</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+    background:#0a0e14; color:#e8ecf1; font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    padding:24px; }
+  .card { width:100%; max-width:420px; background:linear-gradient(180deg,#111722,#0c1119);
+    border:1px solid rgba(255,255,255,.08); border-radius:20px; padding:32px 28px;
+    box-shadow:0 20px 60px rgba(0,0,0,.5); text-align:center; }
+  .mark { width:56px; height:56px; border-radius:14px; margin:0 auto 18px;
+    background:linear-gradient(135deg,#d9a441,#b8801f); display:flex; align-items:center; justify-content:center;
+    font-weight:800; font-size:26px; color:#0a0e14; }
+  h1 { margin:0 0 6px; font-size:22px; letter-spacing:.2px; }
+  .sub { margin:0 0 26px; color:#9aa7b6; font-size:14px; }
+  .btn { display:block; width:100%; padding:16px; border-radius:14px; text-decoration:none;
+    font-weight:700; font-size:17px; color:#0a0e14; background:linear-gradient(135deg,#e6b455,#c8901f);
+    box-shadow:0 8px 24px rgba(200,144,31,.35); }
+  .btn:active { transform:translateY(1px); }
+  ol { text-align:left; margin:26px 0 0; padding-left:20px; color:#b8c2cf; font-size:13.5px; }
+  ol li { margin:8px 0; }
+  .foot { margin-top:22px; font-size:11.5px; color:#5f6b7a; }
+</style></head>
+<body>
+  <div class="card">
+    <div class="mark">S</div>
+    <h1>Sonalit Guardian</h1>
+    <p class="sub">Field officer app · Android 10+</p>
+    <a class="btn" href="${apk}" download>Download APK</a>
+    <ol>
+      <li>Tap <b>Download APK</b> above.</li>
+      <li>Open the downloaded file. If Android warns you, allow <b>Install unknown apps</b> for your browser, then tap <b>Install</b>.</li>
+      <li>Open <b>Sonalit Guardian</b> and enter your operator code to enrol.</li>
+    </ol>
+    <div class="foot">Company-issued devices only. Installing means you accept your organisation's monitoring policy.</div>
+  </div>
+</body></html>`);
+});
+
 app.use((req, res) => res.status(404).json({ error: req.method + " " + req.path + " not found" }));
 if (process.env.SENTRY_DSN) Sentry.setupExpressErrorHandler(app);
 app.use(errorHandler);
