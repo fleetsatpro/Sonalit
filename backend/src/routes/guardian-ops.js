@@ -9,6 +9,7 @@ const { sendCommandPush } = require('../utils/fcm');
 const { signCommand } = require('../utils/commandSigning');
 const captureVision = require('../utils/captureVision');
 const { classifySignal, bySeverity } = require('../services/signal/anomalies');
+const { snapToRoads } = require('../services/geo/mapMatch');
 
 router.use(authenticate);
 
@@ -814,15 +815,29 @@ router.get('/devices/:id/track', async (req, res, next) => {
         LIMIT 5000`,
       [req.params.id, from.toISOString(), to.toISOString()]
     );
+    const raw = rows.map(r => ({
+      lat: Number(r.lat), lng: Number(r.lng),
+      speed: r.speed == null ? null : Number(r.speed),
+      heading: r.heading == null ? null : Number(r.heading),
+      ts: new Date(r.timestamp).toISOString(),
+    }));
+
+    // Snap the trail to real roads so it stops ghosting through buildings (raw
+    // phone GPS drifts 10–30 m). Timestamps are preserved, so the replay's timing
+    // is unchanged — only the coordinates move onto the road. Best-effort: if the
+    // matcher is unset/unreachable it falls back to the raw trail. ?snap=raw
+    // bypasses it entirely.
+    const osrmUrl = process.env.OSRM_URL || 'https://router.project-osrm.org';
+    let points = raw, snapped = false;
+    if (raw.length >= 2 && req.query.snap !== 'raw') {
+      const r = await snapToRoads(raw, { osrmUrl });
+      points = r.points; snapped = r.snapped;
+    }
+
     res.json({ data: {
       device: dev.rows[0],
       from: from.toISOString(), to: to.toISOString(),
-      points: rows.map(r => ({
-        lat: Number(r.lat), lng: Number(r.lng),
-        speed: r.speed == null ? null : Number(r.speed),
-        heading: r.heading == null ? null : Number(r.heading),
-        ts: new Date(r.timestamp).toISOString(),
-      })),
+      snapped, points,
     } });
   } catch (err) { next(err); }
 });
