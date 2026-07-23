@@ -424,6 +424,16 @@
         }
       }
     },
+    "/api/v1/convoys/{id}/corridor": {
+      "get": {
+        "operationId": "get_api_v1_convoys_id_corridor",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/alerts/": {
       "get": {
         "operationId": "get_api_v1_alerts",
