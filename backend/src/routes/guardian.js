@@ -2947,55 +2947,83 @@ router.get('/convoy-codes', authenticate, async (req, res, next) => {
 });
 
 // ─── APK Download ─────────────────────────────────────────────────────────────
-// Serve the Guardian Agent APK. Configure via env:
-//   APK_FILE_PATH  — absolute path to a pre-built APK on the server
-//   APK_REDIRECT_URL — URL to redirect to (e.g. a GitHub release asset)
+// Serve the current Guardian APK. The source of truth is the LATEST GitHub
+// release asset (app-debug.apk), resolved live from the public releases API and
+// streamed through the backend. This is deliberately NOT driven by
+// APK_REDIRECT_URL: that env var had gone stale on Railway and was serving an
+// ancient pre-rewrite build ("Guardian Agent" / com.fleetops.guardian) long
+// after the app became "Sonalit Guardian" — resolving the latest release each
+// time can never drift. APK_REDIRECT_URL / a local file remain as fallbacks.
+//   APK_RELEASE_REPO — owner/repo to read releases from (default fleetsatpro/Sonalit)
+//   APK_REDIRECT_URL — explicit fallback URL if the release lookup fails
+//   APK_FILE_PATH    — local file fallback
+
+let _latestApk = { url: null, at: 0 };
+async function resolveLatestApkUrl() {
+  // Cache 10 min so a burst of downloads makes at most ~6 unauthenticated
+  // GitHub API calls/hour (well under the 60/hr limit).
+  if (_latestApk.url && Date.now() - _latestApk.at < 600_000) return _latestApk.url;
+  const repo = process.env.APK_RELEASE_REPO || 'fleetsatpro/Sonalit';
+  const resp = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+    headers: { 'User-Agent': 'Sonalit-Guardian', 'Accept': 'application/vnd.github+json' },
+  });
+  if (!resp.ok) throw new Error(`releases API HTTP ${resp.status}`);
+  const rel = await resp.json();
+  const asset = (rel.assets || []).find(a => a.name === 'app-debug.apk') || (rel.assets || [])[0];
+  if (!asset || !asset.browser_download_url) throw new Error('no APK asset on latest release');
+  _latestApk = { url: asset.browser_download_url, at: Date.now() };
+  return _latestApk.url;
+}
+
+// Streams an upstream APK URL to the client with an exact Content-Length (a bare
+// 302 through GitHub's redirect chain makes mobile browsers hang at 100%).
+async function streamApk(res, url) {
+  const upstream = await fetch(url, { headers: { 'User-Agent': 'Sonalit-Guardian' }, redirect: 'follow' });
+  if (!upstream.ok || !upstream.body) throw new Error(`upstream HTTP ${upstream.status}`);
+  res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+  res.setHeader('Content-Disposition', 'attachment; filename="SonalitGuardian.apk"');
+  const len = upstream.headers.get('content-length');
+  if (len) res.setHeader('Content-Length', len);
+  res.setHeader('Cache-Control', 'no-store');
+  require('stream').Readable.fromWeb(upstream.body).pipe(res);
+}
 
 router.get('/apk/download', async (req, res) => {
   const fs = require('fs');
   const path = require('path');
 
-  // Option 1: an external URL (R2, GitHub release, ...). Stream it *through* the
-  // backend with an exact Content-Length instead of a bare 302. A redirect chain
-  // (our 302 → GitHub release → signed storage URL) makes mobile browsers hang at
-  // 100%: they receive every byte but never get a clean end-of-stream, so the
-  // .apk sits "downloading" forever. Proxying it is one connection that ends
-  // cleanly with a known length. Falls back to a redirect if the fetch fails.
+  // Primary: the latest published release (always the current app).
+  try {
+    return await streamApk(res, await resolveLatestApkUrl());
+  } catch (err) {
+    if (res.headersSent) return; // stream already started, nothing to fall back to
+    logger.warn(`APK latest-release resolve/stream failed (${err.message}) — trying fallbacks`);
+  }
+
+  // Fallback 1: an explicitly configured URL.
   if (process.env.APK_REDIRECT_URL) {
     try {
-      const upstream = await fetch(process.env.APK_REDIRECT_URL, {
-        headers: { 'User-Agent': 'Sonalit-Guardian' },
-        redirect: 'follow',
-      });
-      if (!upstream.ok) throw new Error(`upstream HTTP ${upstream.status}`);
-      const buf = Buffer.from(await upstream.arrayBuffer());
-      res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-      res.setHeader('Content-Disposition', 'attachment; filename="SonalitGuardian.apk"');
-      res.setHeader('Content-Length', buf.length);
-      res.setHeader('Cache-Control', 'no-store');
-      return res.end(buf);
+      return await streamApk(res, process.env.APK_REDIRECT_URL);
     } catch (err) {
-      logger.warn(`APK proxy failed (${err.message}) — falling back to redirect`);
-      return res.redirect(302, process.env.APK_REDIRECT_URL);
+      if (res.headersSent) return;
+      logger.warn(`APK redirect-url stream failed (${err.message}) — falling back`);
     }
   }
 
-  // Option 2: serve a local file
+  // Fallback 2: a local file.
   const apkPath = process.env.APK_FILE_PATH
     || path.join(__dirname, '../../static/guardian-agent.apk');
 
   if (!fs.existsSync(apkPath)) {
-    return res.status(404).json({
-      error: 'APK not yet built',
-      message: 'The Guardian Agent APK must be compiled before it can be downloaded. Build it with: cd guardian-agent && ./gradlew assembleDebug',
-      apk_path: apkPath,
-      build_instructions: 'https://developer.android.com/studio',
+    return res.status(503).json({
+      error: 'APK temporarily unavailable',
+      message: 'Could not resolve the latest Guardian release. Please try again shortly.',
     });
   }
 
   const stat = fs.statSync(apkPath);
   res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-  res.setHeader('Content-Disposition', 'attachment; filename="FleetOps-Guardian.apk"');
+  res.setHeader('Content-Disposition', 'attachment; filename="SonalitGuardian.apk"');
   res.setHeader('Content-Length', stat.size);
   fs.createReadStream(apkPath).pipe(res);
 });
