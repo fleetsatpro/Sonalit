@@ -3165,6 +3165,18 @@ router.post('/crash-report', deviceAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /capture-event — breadcrumb telemetry for the covert capture pipeline so
+// a shot that silently fails on a field device is diagnosable server-side.
+// Body: { stage, detail }. Logged, not stored — this is transient diagnostics.
+router.post('/capture-event', deviceAuth, async (req, res, next) => {
+  try {
+    const stage = String(req.body?.stage || '').slice(0, 60);
+    const detail = String(req.body?.detail || '').slice(0, 400);
+    logger.info(`Guardian capture: device=${req.device.id} stage=${stage} ${detail}`);
+    res.json({ received: true });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;
 module.exports.deviceAuth = deviceAuth;
 module.exports.processLocationBatch = processLocationBatch;

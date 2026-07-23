@@ -1,6 +1,7 @@
 package io.sonalit.guardian.service
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -42,6 +43,7 @@ class CameraCaptureController(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     fun capture(lens: String, lat: Double? = null, lng: Double? = null, onComplete: () -> Unit) {
+        report("cc_start", "lens=$lens sdk=${Build.VERSION.SDK_INT}")
         val selector = if (lens == "front") CameraSelector.DEFAULT_FRONT_CAMERA
                        else CameraSelector.DEFAULT_BACK_CAMERA
         val future = ProcessCameraProvider.getInstance(context)
@@ -49,7 +51,8 @@ class CameraCaptureController(
             val provider = try {
                 future.get()
             } catch (e: Exception) {
-                Log.e(TAG, "camera provider unavailable: ${e.message}"); onComplete(); return@addListener
+                Log.e(TAG, "camera provider unavailable: ${e.message}")
+                report("cc_provider_fail", e.message ?: ""); onComplete(); return@addListener
             }
             val imageCapture = ImageCapture.Builder()
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
@@ -58,28 +61,36 @@ class CameraCaptureController(
                 provider.unbindAll()
                 provider.bindToLifecycle(this, selector, imageCapture)
             } catch (e: Exception) {
-                Log.e(TAG, "bindToLifecycle failed: ${e.message}"); onComplete(); return@addListener
+                Log.e(TAG, "bindToLifecycle failed: ${e.message}")
+                report("cc_bind_fail", "${e.javaClass.simpleName}: ${e.message}"); onComplete(); return@addListener
             }
             val file = File(context.cacheDir, "capture_${System.currentTimeMillis()}.jpg")
             val opts = ImageCapture.OutputFileOptions.Builder(file).build()
             imageCapture.takePicture(opts, ContextCompat.getMainExecutor(context),
                 object : ImageCapture.OnImageSavedCallback {
                     override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                        report("cc_saved", "bytes=${file.length()}")
                         runCatching { provider.unbindAll() }
                         scope.launch {
                             runCatching { uploadAndReport(file, lat, lng) }
-                                .onFailure { Log.e(TAG, "capture upload failed: ${it.message}") }
+                                .onSuccess { report("cc_uploaded") }
+                                .onFailure { Log.e(TAG, "capture upload failed: ${it.message}"); report("cc_upload_fail", it.message ?: "") }
                             runCatching { file.delete() }
                             onComplete()
                         }
                     }
                     override fun onError(exc: ImageCaptureException) {
                         Log.e(TAG, "takePicture error: ${exc.message}")
+                        report("cc_take_error", "code=${exc.imageCaptureError} ${exc.message}")
                         runCatching { provider.unbindAll() }
                         onComplete()
                     }
                 })
         }, ContextCompat.getMainExecutor(context))
+    }
+
+    private fun report(stage: String, detail: String = "") {
+        scope.launch { runCatching { api.captureEvent(mapOf("stage" to stage, "detail" to detail)) } }
     }
 
     private suspend fun uploadAndReport(file: File, lat: Double?, lng: Double?) {

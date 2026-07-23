@@ -1620,6 +1620,16 @@
         }
       }
     },
+    "/api/v1/guardian/capture-event": {
+      "post": {
+        "operationId": "post_api_v1_guardian_capture_event",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/realtime/token": {
       "post": {
         "operationId": "post_api_v1_realtime_token",
