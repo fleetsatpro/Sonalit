@@ -786,6 +786,45 @@ router.post('/devices/:deviceId/ws-token', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /devices/:id/track — a device's ordered GPS trail over a window, for the
+// 3D drive-replay. Points come from convoy_waypoints (mirrored from the device's
+// location batches). Capped so a long run can't return an unbounded payload.
+router.get('/devices/:id/track', async (req, res, next) => {
+  try {
+    const orgId = req.user.org_id;
+    const dev = await query(
+      `SELECT id, name FROM guardian_devices WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
+      [req.params.id, orgId]
+    );
+    if (!dev.rows.length) return res.status(404).json({ error: 'Device not found' });
+
+    const to = req.query.to ? new Date(req.query.to) : new Date();
+    const from = req.query.from ? new Date(req.query.from) : new Date(to.getTime() - 24 * 3600 * 1000);
+    if (isNaN(from.getTime()) || isNaN(to.getTime()) || from >= to) {
+      return res.status(400).json({ error: 'invalid from/to' });
+    }
+
+    const { rows } = await query(
+      `SELECT lat, lng, speed_kmh, heading, recorded_at
+         FROM convoy_waypoints
+        WHERE guardian_device_id = $1 AND recorded_at BETWEEN $2 AND $3
+        ORDER BY recorded_at ASC
+        LIMIT 5000`,
+      [req.params.id, from.toISOString(), to.toISOString()]
+    );
+    res.json({ data: {
+      device: dev.rows[0],
+      from: from.toISOString(), to: to.toISOString(),
+      points: rows.map(r => ({
+        lat: Number(r.lat), lng: Number(r.lng),
+        speed: r.speed_kmh == null ? null : Number(r.speed_kmh),
+        heading: r.heading == null ? null : Number(r.heading),
+        ts: new Date(r.recorded_at).toISOString(),
+      })),
+    } });
+  } catch (err) { next(err); }
+});
+
 // GET /signal/health — fleet-wide signal-integrity scan. Flags the pre-hijack
 // signatures: comms blackout (device dark) and GPS freeze (still heartbeating
 // but no satellite fix — classic GPS jamming). Worst-first, escalated for
