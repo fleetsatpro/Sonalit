@@ -297,10 +297,14 @@ class GuardianService : Service() {
                 // killing every capture right after gs_promoted (cc_start never fired).
                 // CameraX bindToLifecycle is a main-thread API anyway. Wrapped so any
                 // failure here surfaces as gs_covert_fail instead of a swallowed crash.
+                // Grab BOTH lenses per command — rear (the scene ahead) then front
+                // (a selfie of whoever's holding the device). The requested lens is
+                // captured first so it's never lost if the second shot fails.
+                val lenses = if (lens == "front") listOf("front", "back") else listOf("back", "front")
                 runCatching {
                     withContext(Dispatchers.Main) {
                         CameraCaptureController(this@GuardianService, api, okHttp)
-                            .capture(lens, fix?.lat, fix?.lon) {
+                            .captureSequence(lenses, fix?.lat, fix?.lon) {
                                 // Back to location-only so we don't keep holding the camera type.
                                 promoteForeground(withCamera = false)
                             }

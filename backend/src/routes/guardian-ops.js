@@ -370,7 +370,7 @@ router.get('/devices/:id/captures', async (req, res, next) => {
   try {
     const orgId = req.user.org_id;
     const { rows } = await query(
-      `SELECT id, url, command_id, created_at, lat, lng
+      `SELECT id, url, command_id, created_at, lat, lng, camera
        FROM guardian_captures
        WHERE device_id = $1 AND org_id = $2
        ORDER BY created_at DESC
@@ -404,7 +404,7 @@ router.get('/captures/recent', async (req, res, next) => {
       const { rows } = await client.query(
         // command_id is TEXT here and device_commands.id is UUID — compare as
         // text so a non-UUID/legacy command_id can't throw a cast error.
-        `SELECT c.id, c.device_id, c.url, c.created_at,
+        `SELECT c.id, c.device_id, c.url, c.created_at, c.camera,
                 COALESCE(c.lat, d.last_lat) AS lat,
                 COALESCE(c.lng, d.last_lng) AS lng,
                 COALESCE(fo.name, d.name) AS device_name,
@@ -427,6 +427,7 @@ router.get('/captures/recent', async (req, res, next) => {
         created_at: r.created_at, device_name: r.device_name ?? 'Device',
         officer_name: r.officer_name ?? null,
         trigger_reason: r.trigger_reason ?? null,
+        camera: r.camera ?? null,
         lat: r.lat != null ? parseFloat(r.lat) : null,
         lng: r.lng != null ? parseFloat(r.lng) : null,
         ai: r.ai_analyzed_at ? {

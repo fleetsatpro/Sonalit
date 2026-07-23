@@ -2534,6 +2534,10 @@ router.post('/capture-photo', deviceAuth, async (req, res, next) => {
       return res.status(400).json({ error: 'public_url is required' });
     }
     const orgId = req.device.org_id || null;
+    // Which lens this shot came from — a capture_photo command fires both, so
+    // this is what lets dispatch tell the rear (scene) frame from the front
+    // (selfie) one. Anything unexpected is stored as NULL rather than trusted.
+    const camera = (req.body.camera === 'front' || req.body.camera === 'back') ? req.body.camera : null;
 
     // Where the photo was taken. Prefer the device's live fix at capture time
     // (body lat/lng), fall back to its last known position so the pin still lands
@@ -2544,9 +2548,9 @@ router.post('/capture-photo', deviceAuth, async (req, res, next) => {
     const lng = hasFix ? bLng : (req.device.last_lng != null ? parseFloat(req.device.last_lng) : null);
 
     const ins = await query(
-      `INSERT INTO guardian_captures (org_id, device_id, command_id, url, storage_key, lat, lng)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, created_at`,
-      [orgId, req.device.id, command_id != null ? String(command_id) : null, public_url, key || null, lat, lng]
+      `INSERT INTO guardian_captures (org_id, device_id, command_id, url, storage_key, lat, lng, camera)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, created_at`,
+      [orgId, req.device.id, command_id != null ? String(command_id) : null, public_url, key || null, lat, lng, camera]
     );
     const row = ins.rows[0];
 
@@ -2564,7 +2568,7 @@ router.post('/capture-photo', deviceAuth, async (req, res, next) => {
       capture_id: row.id,
       url: public_url,
       created_at: row.created_at,
-      lat, lng,
+      lat, lng, camera,
     };
     if (orgId) publish(`org#${orgId}`, payload); else publish('device:capture', payload);
     // Auto-tag the photo (people / weapons / vehicles / plates) the moment it
