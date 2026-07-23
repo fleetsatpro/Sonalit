@@ -2951,13 +2951,33 @@ router.get('/convoy-codes', authenticate, async (req, res, next) => {
 //   APK_FILE_PATH  — absolute path to a pre-built APK on the server
 //   APK_REDIRECT_URL — URL to redirect to (e.g. a GitHub release asset)
 
-router.get('/apk/download', (req, res) => {
+router.get('/apk/download', async (req, res) => {
   const fs = require('fs');
   const path = require('path');
 
-  // Option 1: redirect to an external URL (GitHub release, S3, etc.)
+  // Option 1: an external URL (R2, GitHub release, ...). Stream it *through* the
+  // backend with an exact Content-Length instead of a bare 302. A redirect chain
+  // (our 302 → GitHub release → signed storage URL) makes mobile browsers hang at
+  // 100%: they receive every byte but never get a clean end-of-stream, so the
+  // .apk sits "downloading" forever. Proxying it is one connection that ends
+  // cleanly with a known length. Falls back to a redirect if the fetch fails.
   if (process.env.APK_REDIRECT_URL) {
-    return res.redirect(302, process.env.APK_REDIRECT_URL);
+    try {
+      const upstream = await fetch(process.env.APK_REDIRECT_URL, {
+        headers: { 'User-Agent': 'Sonalit-Guardian' },
+        redirect: 'follow',
+      });
+      if (!upstream.ok) throw new Error(`upstream HTTP ${upstream.status}`);
+      const buf = Buffer.from(await upstream.arrayBuffer());
+      res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+      res.setHeader('Content-Disposition', 'attachment; filename="SonalitGuardian.apk"');
+      res.setHeader('Content-Length', buf.length);
+      res.setHeader('Cache-Control', 'no-store');
+      return res.end(buf);
+    } catch (err) {
+      logger.warn(`APK proxy failed (${err.message}) — falling back to redirect`);
+      return res.redirect(302, process.env.APK_REDIRECT_URL);
+    }
   }
 
   // Option 2: serve a local file
