@@ -109,15 +109,17 @@ class CommandExecutor @Inject constructor(
                 val hasCamera = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
                     PackageManager.PERMISSION_GRANTED
 
-                // Truly-silent background capture only works where the OS lets a
-                // camera foreground service run from the background: a Device Owner
-                // install (exempt from the FGS background-start limits) or pre-
-                // Android-12 (before those limits). On an ordinary modern install
-                // Android blocks the background camera and the shot would silently
-                // no-op — so route to the tap-to-capture prompt the officer
-                // completes on screen, where the foreground camera is allowed.
+                // Silent covert capture works whenever the OS lets us drive the
+                // camera from an already-running foreground service in the
+                // background. That's true up to Android 13 (promoting the running
+                // FGS to add the camera type is not a new background start, and the
+                // FGS "while-in-use" type restriction that blocks it only arrived
+                // in Android 14). On Android 14+ only a Device Owner install is
+                // exempt; otherwise the OS hard-blocks background camera and the
+                // shot would silently no-op — so, and only then, drop to the
+                // tap-to-capture prompt as the last resort.
                 val canSilent = hasCamera &&
-                    (isDeviceOwner || Build.VERSION.SDK_INT < Build.VERSION_CODES.S)
+                    (isDeviceOwner || Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 
                 val delivered = canSilent && runCatching {
                     // Deliver into the running GuardianService (an existing FGS can
