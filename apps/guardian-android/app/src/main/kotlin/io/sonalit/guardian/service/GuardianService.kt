@@ -249,7 +249,7 @@ class GuardianService : Service() {
      *  new camera-FGS start. */
     private fun promoteForeground(withCamera: Boolean) {
         val n = buildNotification()
-        runCatching {
+        val ok = runCatching {
             when {
                 withCamera && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ->
                     startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA)
@@ -257,7 +257,20 @@ class GuardianService : Service() {
                     startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
                 else -> startForeground(1, n)
             }
-        }.onFailure { Log.e(TAG, "startForeground(withCamera=$withCamera) failed: ${it.message}") }
+        }.onFailure { Log.e(TAG, "startForeground(withCamera=$withCamera) failed: ${it.message}") }.isSuccess
+        // The OS routinely refuses adding the camera type when a service is
+        // promoted from the background (Android 14+). If that happens, fall back
+        // to a plain LOCATION foreground so the service stays validly foreground
+        // and still satisfies the startForeground() contract — otherwise it
+        // lingers un-foregrounded and the system kills it with the uncatchable
+        // ForegroundServiceDidNotStartInTimeException.
+        if (!ok && withCamera) {
+            runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                    startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+                else startForeground(1, n)
+            }.onFailure { Log.e(TAG, "startForeground LOCATION fallback failed: ${it.message}") }
+        }
     }
 
     /** Covert capture from inside this running FGS. Requires CAMERA already
@@ -339,6 +352,14 @@ class GuardianService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Every startForegroundService() call — MainActivity's poke and the
+        // covert-capture delivery below — re-arms the system's "must call
+        // startForeground() in time" timer. Assert foreground up front with the
+        // plain LOCATION type the service can always satisfy, so a later camera
+        // promotion the OS refuses in the background can never leave this command
+        // without a foreground call and crash the app with the uncatchable
+        // ForegroundServiceDidNotStartInTimeException.
+        promoteForeground(withCamera = false)
         // MainActivity pokes the service (startForegroundService on an already-
         // running instance) right after the location permission is granted —
         // this is what picks the grant up immediately instead of waiting for
