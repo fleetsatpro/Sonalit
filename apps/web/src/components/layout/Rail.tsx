@@ -7,7 +7,7 @@ import {
   Package, Link2, BarChart2, DollarSign, Settings,
   MessageSquare, Bot, FileText, FileBarChart,
   ClipboardList, Cpu, BookOpen, Star, CalendarClock,
-  Camera, History,
+  Camera, History, FileSearch,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/auth.js';
@@ -51,8 +51,9 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Surveillance',
     hue: '183,157,255',
     items: [
-      { path: '/surveillance', icon: Camera, label: 'Covert Captures' },
-      { path: '/guardian',     icon: Eye,    label: 'Guardian AI' },
+      { path: '/surveillance', icon: Camera,     label: 'Covert Captures' },
+      { path: '/incidents',    icon: FileSearch, label: 'Incident Replay' },
+      { path: '/guardian',     icon: Eye,        label: 'Guardian AI' },
     ],
   },
   {

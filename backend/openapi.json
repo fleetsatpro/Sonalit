@@ -940,6 +940,16 @@
         }
       }
     },
+    "/api/v1/incidents/{deviceId}/reconstruct": {
+      "get": {
+        "operationId": "get_api_v1_incidents_deviceId_reconstruct",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/rules/": {
       "get": {
         "operationId": "get_api_v1_rules",
