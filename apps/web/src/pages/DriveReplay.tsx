@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 import { api } from '../lib/api.js';
-import { Film, ChevronDown, Play, Pause, RotateCcw, Video, Loader2 } from 'lucide-react';
+import { Film, ChevronDown, Play, Pause, RotateCcw, Video, Loader2, User, Bike, Car, Truck, Sparkles } from 'lucide-react';
+import { dominantMode, computeSpeeds, iconAt, type TravelMode, type PhysicalMode } from '../lib/travelMode.js';
 
 interface Device { id: string; name: string; officer_name?: string | null }
 interface TrackPoint { lat: number; lng: number; speed: number | null; heading: number | null; ts: string }
@@ -11,14 +12,13 @@ interface TrackResp { device: { id: string; name: string }; from: string; to: st
 
 const SPEEDS = [1, 8, 30, 60];
 
-// Top-down car marker (points "up" = its front); aligned to travel direction.
-const CAR_ICON = 'data:image/svg+xml;utf8,' + encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="76" viewBox="0 0 40 76">' +
-  '<rect x="6" y="4" width="28" height="68" rx="11" fill="#f59e0b" stroke="#fff7e6" stroke-width="2.5"/>' +
-  '<rect x="10" y="11" width="20" height="15" rx="5" fill="#141109" opacity="0.9"/>' +
-  '<rect x="10" y="45" width="20" height="13" rx="5" fill="#141109" opacity="0.7"/>' +
-  '<circle cx="13" cy="7.5" r="2" fill="#fff"/><circle cx="27" cy="7.5" r="2" fill="#fff"/>' +
-  '</svg>');
+const MODE_OPTIONS: { id: TravelMode; label: string; Icon: typeof User }[] = [
+  { id: 'auto', label: 'Auto', Icon: Sparkles },
+  { id: 'foot', label: 'Foot', Icon: User },
+  { id: 'bicycle', label: 'Bike', Icon: Bike },
+  { id: 'car', label: 'Car', Icon: Car },
+  { id: 'truck', label: 'Truck', Icon: Truck },
+];
 
 // Owns the Cesium viewer and drives a vehicle along the trail with a chase cam.
 function CesiumDrive({ points }: { points: TrackPoint[] }) {
@@ -28,6 +28,9 @@ function CesiumDrive({ points }: { points: TrackPoint[] }) {
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState(8);
   const [follow, setFollow] = useState(true);
+  const [mode, setMode] = useState<TravelMode>('auto');
+  const modeRef = useRef<TravelMode>('auto');
+  const [autoMode, setAutoMode] = useState<PhysicalMode>('car');
   const [hud, setHud] = useState<{ t: string; kmh: number | null; pct: number }>({ t: '', kmh: null, pct: 0 });
 
   // Init viewer once.
@@ -102,6 +105,24 @@ function CesiumDrive({ points }: { points: TrackPoint[] }) {
     const start = Cesium.JulianDate.fromIso8601(points[0]!.ts);
     const stop = Cesium.JulianDate.fromIso8601(points[points.length - 1]!.ts);
 
+    // Speed profile → drives which marker (person / bike / car / truck) shows.
+    const dominant = dominantMode(points);
+    setAutoMode(dominant);
+    const speeds = computeSpeeds(points);
+    const sampleTimes = points.map(p => Cesium.JulianDate.fromIso8601(p.ts));
+    const speedAt = (time: Cesium.JulianDate) => {
+      let best = Infinity, kmh = 0;
+      for (let i = 0; i < sampleTimes.length; i++) {
+        const d = Math.abs(Cesium.JulianDate.secondsDifference(sampleTimes[i]!, time));
+        if (d < best) { best = d; kmh = speeds[i] ?? 0; }
+      }
+      return kmh;
+    };
+    // Time-varying marker image: re-picked each frame from the selected mode
+    // (read live via the ref, so switching modes needs no rebuild) and speed.
+    const markerImage = new Cesium.CallbackProperty(
+      (time) => iconAt(modeRef.current, dominant, speedAt(time as Cesium.JulianDate)), false);
+
     // Full route — a thin, restrained line so a dense city trail doesn't read
     // as a spiky mess.
     viewer.entities.add({
@@ -118,7 +139,7 @@ function CesiumDrive({ points }: { points: TrackPoint[] }) {
       availability: new Cesium.TimeIntervalCollection([new Cesium.TimeInterval({ start, stop })]),
       position: sampled,
       billboard: {
-        image: CAR_ICON,
+        image: markerImage,
         scale: 0.6,
         alignedAxis: new Cesium.VelocityVectorProperty(sampled, true),
         disableDepthTestDistance: Number.POSITIVE_INFINITY,
@@ -184,6 +205,10 @@ function CesiumDrive({ points }: { points: TrackPoint[] }) {
     const next = !follow; setFollow(next);
     v.trackedEntity = next ? (vehicleRef.current ?? undefined) : undefined;
   };
+  const pickMode = (m: TravelMode) => {
+    setMode(m); modeRef.current = m;
+    viewerRef.current?.scene.requestRender(); // reflect immediately, even paused
+  };
 
   return (
     <div className="relative h-full w-full">
@@ -208,6 +233,16 @@ function CesiumDrive({ points }: { points: TrackPoint[] }) {
           className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-bold ${follow ? 'bg-cyan-500 text-black' : 'bg-white/10 text-neutral-300 hover:text-white'}`}>
           <Video size={13} /> {follow ? 'Chase cam' : 'Free look'}
         </button>
+        <div className="mx-1 h-6 w-px bg-white/10" />
+        <div className="flex overflow-hidden rounded-full border border-white/10">
+          {MODE_OPTIONS.map(({ id, label, Icon }) => (
+            <button key={id} onClick={() => pickMode(id)}
+              title={id === 'auto' ? `Auto — detected: ${autoMode}` : label}
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold ${mode === id ? 'bg-emerald-500 text-black' : 'text-neutral-300 hover:text-white'}`}>
+              <Icon size={13} /> <span className="hidden sm:inline">{id === 'auto' ? `Auto·${autoMode}` : label}</span>
+            </button>
+          ))}
+        </div>
       </div>
       {/* HUD */}
       <div className="pointer-events-none absolute left-4 top-4 rounded-lg border border-white/10 bg-black/70 px-3 py-2 font-mono text-xs text-white backdrop-blur">

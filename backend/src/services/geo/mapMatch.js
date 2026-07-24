@@ -51,6 +51,75 @@ function chunk(arr, size) {
   return out;
 }
 
+function speedKmh(a, b) {
+  const dt = (new Date(b.ts).getTime() - new Date(a.ts).getTime()) / 1000;
+  if (dt <= 0) return Infinity;
+  return (haversineM(a.lat, a.lng, b.lat, b.lng) / dt) * 3.6;
+}
+
+/**
+ * Drop teleport spikes: a single fix that's impossibly fast to reach AND to
+ * leave, while its neighbours are consistent with each other, is GPS noise —
+ * one bad point drawing a long straight line across the map. Genuine fast
+ * travel (both the point and its neighbours move) is kept.
+ */
+function rejectSpikes(points, { maxKmh = 180 } = {}) {
+  if (points.length <= 2) return points.slice();
+  const out = [points[0]];
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = out[out.length - 1], cur = points[i], next = points[i + 1];
+    if (speedKmh(prev, cur) > maxKmh && speedKmh(cur, next) > maxKmh && speedKmh(prev, next) <= maxKmh) {
+      continue; // lone spike — skip it
+    }
+    out.push(cur);
+  }
+  out.push(points[points.length - 1]);
+  return out;
+}
+
+/**
+ * Collapse stationary jitter. When a device sits still, GPS drifts 10–30 m per
+ * fix and a plotted trail explodes into a star. This detects a run of fixes
+ * that all stay within `radiusM` of where the run started and, if it's a real
+ * dwell (≥3 fixes spanning ≥`minRunMs`), replaces the whole run with its
+ * centroid — emitted twice, at the run's first and last timestamps, so the
+ * marker sits perfectly still for the dwell (speed 0) instead of spraying.
+ * Moving stretches pass through untouched.
+ */
+function collapseStationary(points, { radiusM = 25, minRunMs = 20000 } = {}) {
+  if (points.length <= 2) return points.slice();
+  const out = [];
+  let i = 0;
+  while (i < points.length) {
+    let j = i;
+    while (j + 1 < points.length &&
+      haversineM(points[i].lat, points[i].lng, points[j + 1].lat, points[j + 1].lng) <= radiusM) {
+      j++;
+    }
+    const runLen = j - i + 1;
+    const spanMs = new Date(points[j].ts).getTime() - new Date(points[i].ts).getTime();
+    if (runLen >= 3 && spanMs >= minRunMs) {
+      let sLat = 0, sLng = 0;
+      for (let k = i; k <= j; k++) { sLat += points[k].lat; sLng += points[k].lng; }
+      const lat = sLat / runLen, lng = sLng / runLen;
+      out.push({ ...points[i], lat, lng, speed: 0 });
+      out.push({ ...points[j], lat, lng, speed: 0 });
+    } else {
+      for (let k = i; k <= j; k++) out.push(points[k]);
+    }
+    i = j + 1;
+  }
+  return out;
+}
+
+/**
+ * Pre-clean a raw GPS trail so it's fit to plot/match: kill teleport spikes,
+ * then fold stationary jitter into single anchored dwells.
+ */
+function cleanTrail(points, opts = {}) {
+  return collapseStationary(rejectSpikes(points, opts.spikes), opts.stationary);
+}
+
 /**
  * Map an OSRM /match response back onto the input points: tracepoints[i] holds
  * the snapped [lng,lat] for input i (or null when OSRM couldn't place it).
@@ -88,7 +157,10 @@ async function matchChunkOsrm(base, pts, { radiusM = 30, fetchImpl }) {
 async function snapToRoads(points, opts = {}) {
   const base = opts.osrmUrl;
   const fetchImpl = opts.fetchImpl || globalThis.fetch;
-  const thinned = downsample(points, opts.downsample);
+  // Clean first (spikes + stationary jitter), THEN thin. This runs even when no
+  // matcher is available, so the raw fallback is already de-sprayed.
+  const cleaned = cleanTrail(points, opts.clean);
+  const thinned = downsample(cleaned, opts.downsample);
   if (!base || !fetchImpl || thinned.length < 2) return { points: thinned, snapped: false };
 
   try {
@@ -113,4 +185,7 @@ async function snapToRoads(points, opts = {}) {
   }
 }
 
-module.exports = { snapToRoads, downsample, chunk, applyOsrmTracepoints, haversineM };
+module.exports = {
+  snapToRoads, downsample, chunk, applyOsrmTracepoints, haversineM,
+  rejectSpikes, collapseStationary, cleanTrail, speedKmh,
+};

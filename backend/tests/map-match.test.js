@@ -1,6 +1,9 @@
 'use strict';
 
-const { snapToRoads, downsample, chunk, applyOsrmTracepoints } = require('../src/services/geo/mapMatch');
+const {
+  snapToRoads, downsample, chunk, applyOsrmTracepoints,
+  rejectSpikes, collapseStationary, cleanTrail,
+} = require('../src/services/geo/mapMatch');
 
 const mkTrail = (n, t0 = Date.UTC(2026, 0, 1)) =>
   Array.from({ length: n }, (_, i) => ({
@@ -39,6 +42,70 @@ describe('applyOsrmTracepoints', () => {
   });
   test('all null when tracepoints missing', () => {
     expect(applyOsrmTracepoints({}, 2)).toEqual([null, null]);
+  });
+});
+
+describe('rejectSpikes', () => {
+  const t0 = Date.UTC(2026, 0, 1);
+  test('drops a lone teleport fix but keeps its neighbours', () => {
+    const pts = [
+      { lat: 1.0000, lng: 1.0000, speed: 40, ts: new Date(t0).toISOString() },
+      { lat: 9.0000, lng: 9.0000, speed: 40, ts: new Date(t0 + 10000).toISOString() }, // teleport
+      { lat: 1.0002, lng: 1.0002, speed: 40, ts: new Date(t0 + 20000).toISOString() },
+    ];
+    const out = rejectSpikes(pts, { maxKmh: 180 });
+    expect(out).toHaveLength(2);
+    expect(out.every(p => p.lat < 2)).toBe(true);
+  });
+  test('keeps genuine fast travel (all points advance)', () => {
+    const pts = Array.from({ length: 4 }, (_, i) => ({
+      lat: 1 + i * 0.01, lng: 1, speed: 100, ts: new Date(t0 + i * 60000).toISOString(),
+    }));
+    expect(rejectSpikes(pts, { maxKmh: 180 })).toHaveLength(4);
+  });
+});
+
+describe('collapseStationary', () => {
+  const t0 = Date.UTC(2026, 0, 1);
+  test('folds a jittery parked run into two coincident dwell points', () => {
+    // 6 fixes drifting within ~15 m over 50 s, then two moving fixes.
+    const parked = Array.from({ length: 6 }, (_, i) => ({
+      lat: 1 + (i % 2) * 0.0001, lng: 1 + (i % 2) * 0.0001, speed: 0,
+      ts: new Date(t0 + i * 10000).toISOString(),
+    }));
+    const moving = [
+      { lat: 1.01, lng: 1.01, speed: 40, ts: new Date(t0 + 80000).toISOString() },
+      { lat: 1.02, lng: 1.02, speed: 40, ts: new Date(t0 + 140000).toISOString() },
+    ];
+    const out = collapseStationary([...parked, ...moving], { radiusM: 25, minRunMs: 20000 });
+    // dwell → 2 identical points, then the 2 moving points pass through
+    expect(out).toHaveLength(4);
+    expect(out[0].lat).toBeCloseTo(out[1].lat, 9);
+    expect(out[0].lng).toBeCloseTo(out[1].lng, 9);
+    expect(out[0].speed).toBe(0);
+    expect(new Date(out[1].ts).getTime()).toBe(t0 + 50000); // last dwell ts preserved
+  });
+  test('leaves a genuinely moving trail alone', () => {
+    const pts = Array.from({ length: 5 }, (_, i) => ({
+      lat: 1 + i * 0.01, lng: 1, speed: 50, ts: new Date(t0 + i * 30000).toISOString(),
+    }));
+    expect(collapseStationary(pts)).toHaveLength(5);
+  });
+});
+
+describe('cleanTrail', () => {
+  test('de-sprays: spike removed and parked cluster collapsed', () => {
+    const t0 = Date.UTC(2026, 0, 1);
+    const pts = [
+      ...Array.from({ length: 5 }, (_, i) => ({
+        lat: 1 + (i % 2) * 0.0001, lng: 1, speed: 0, ts: new Date(t0 + i * 10000).toISOString(),
+      })),
+      { lat: 40, lng: 40, speed: 0, ts: new Date(t0 + 50000).toISOString() }, // spike
+      { lat: 1.001, lng: 1, speed: 40, ts: new Date(t0 + 110000).toISOString() },
+    ];
+    const out = cleanTrail(pts);
+    expect(out.every(p => p.lat < 2)).toBe(true); // spike gone
+    expect(out.length).toBeLessThan(pts.length);  // cluster collapsed
   });
 });
 
