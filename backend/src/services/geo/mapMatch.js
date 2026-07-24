@@ -158,37 +158,81 @@ function applyOsrmTracepoints(json, n) {
   });
 }
 
-async function matchChunkOsrm(base, pts, { radiusM = 30, fetchImpl }) {
+/**
+ * Build a map-matching URL for a provider. Mapbox's Map Matching API is
+ * OSRM-derived, so both speak the same `/match` tracepoints response (aligned
+ * 1:1 with inputs) — only the host, path and auth differ. `tidy=false` on both
+ * so points are never dropped/reordered and the 1:1 alignment (and our
+ * timestamps) survives.
+ */
+function buildMatchUrl(prov, pts, radiusM) {
   const coords = pts.map(p => `${p.lng},${p.lat}`).join(';');
   const radii = pts.map(() => radiusM).join(';');
-  const url = `${base.replace(/\/$/, '')}/match/v1/driving/${coords}` +
+  if (prov.name === 'mapbox') {
+    return 'https://api.mapbox.com/matching/v5/mapbox/driving/' + coords +
+      `?geometries=geojson&overview=false&tidy=false&radiuses=${radii}` +
+      `&access_token=${encodeURIComponent(prov.token)}`;
+  }
+  return `${prov.base.replace(/\/$/, '')}/match/v1/driving/${coords}` +
     `?geometries=geojson&overview=false&tidy=false&gaps=ignore&radiuses=${radii}`;
-  const resp = await fetchImpl(url, { headers: { 'User-Agent': 'Sonalit-Guardian' } });
-  if (!resp.ok) throw new Error(`OSRM HTTP ${resp.status}`);
-  const json = await resp.json();
-  if (json.code && json.code !== 'Ok' && json.code !== 'NoMatch') throw new Error(`OSRM ${json.code}`);
-  return applyOsrmTracepoints(json, pts.length);
+}
+
+// Best matching confidence in a /match response (both providers report it). No
+// matchings array → no signal, so don't penalise (return 1).
+function matchConfidence(json) {
+  const ms = json && Array.isArray(json.matchings) ? json.matchings : null;
+  if (!ms || ms.length === 0) return 1;
+  return Math.max(...ms.map(m => (typeof m.confidence === 'number' ? m.confidence : 1)));
 }
 
 /**
- * Snap a trail to roads. Returns { points, snapped }. On any failure returns the
- * (downsampled) input unchanged with snapped:false.
+ * Snap one chunk, trying each provider in order (Mapbox first for quality, OSRM
+ * as the always-on fallback) until one returns a confident match. Returns
+ * snapped [lng,lat]|null per input; all-null if every provider fails.
+ */
+async function matchChunk(providers, pts, { radiusM = 30, minConfidence = 0.2, fetchImpl }) {
+  for (const prov of providers) {
+    try {
+      const resp = await fetchImpl(buildMatchUrl(prov, pts, radiusM), {
+        headers: { 'User-Agent': 'Sonalit-Guardian' },
+      });
+      if (!resp.ok) continue;
+      const json = await resp.json();
+      if (json.code && json.code !== 'Ok' && json.code !== 'NoMatch') continue;
+      if (matchConfidence(json) < minConfidence) continue;
+      const snapped = applyOsrmTracepoints(json, pts.length);
+      if (snapped.some(Boolean)) return snapped;
+    } catch { /* try the next provider */ }
+  }
+  return new Array(pts.length).fill(null);
+}
+
+/**
+ * Snap a trail to roads using Mapbox and/or OSRM. Returns { points, snapped }.
+ * Providers are tried per-chunk in order (Mapbox first, OSRM fallback); on any
+ * failure returns the cleaned+downsampled input with snapped:false.
  * @param {Array<{lat,lng,speed?,heading?,ts:string}>} points
+ * @param {{osrmUrl?:string, mapboxToken?:string, fetchImpl?:Function}} opts
  */
 async function snapToRoads(points, opts = {}) {
-  const base = opts.osrmUrl;
   const fetchImpl = opts.fetchImpl || globalThis.fetch;
+  const providers = [];
+  if (opts.mapboxToken) providers.push({ name: 'mapbox', token: opts.mapboxToken });
+  if (opts.osrmUrl) providers.push({ name: 'osrm', base: opts.osrmUrl });
+
   // Clean first (spikes + stationary jitter), THEN thin. This runs even when no
   // matcher is available, so the raw fallback is already de-sprayed.
   const cleaned = cleanTrail(points, opts.clean);
   const thinned = downsample(cleaned, opts.downsample);
-  if (!base || !fetchImpl || thinned.length < 2) return { points: thinned, snapped: false };
+  if (!fetchImpl || providers.length === 0 || thinned.length < 2) return { points: thinned, snapped: false };
 
   try {
     const batches = chunk(thinned, opts.chunkSize || 90);
     const snappedCoords = [];
     for (const b of batches) {
-      const res = await matchChunkOsrm(base, b, { radiusM: opts.radiusM ?? 30, fetchImpl });
+      const res = await matchChunk(providers, b, {
+        radiusM: opts.radiusM ?? 30, minConfidence: opts.minConfidence ?? 0.2, fetchImpl,
+      });
       for (let i = 0; i < b.length; i++) snappedCoords.push(res[i]);
     }
     let hits = 0;
@@ -209,4 +253,5 @@ async function snapToRoads(points, opts = {}) {
 module.exports = {
   snapToRoads, downsample, chunk, applyOsrmTracepoints, haversineM,
   rejectSpikes, collapseStationary, cleanTrail, speedKmh,
+  buildMatchUrl, matchConfidence, medianCenter,
 };

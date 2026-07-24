@@ -158,4 +158,50 @@ describe('snapToRoads', () => {
     });
     expect(snapped).toBe(false);
   });
+
+  test('prefers Mapbox when a token is present', async () => {
+    const pts = mkTrail(6);
+    const hosts = [];
+    const fetchImpl = async (url) => {
+      hosts.push(url);
+      return { ok: true, json: async () => ({ code: 'Ok', matchings: [{ confidence: 0.9 }], tracepoints: pts.map(p => ({ location: [p.lng, p.lat] })) }) };
+    };
+    const { snapped } = await snapToRoads(pts, {
+      mapboxToken: 'tok', osrmUrl: 'http://osrm.test', fetchImpl, downsample: { minGapM: 0, minGapMs: 0 },
+    });
+    expect(snapped).toBe(true);
+    expect(hosts[0]).toContain('api.mapbox.com'); // Mapbox tried first
+    expect(hosts.some(u => u.includes('osrm.test'))).toBe(false); // OSRM not needed
+  });
+
+  test('falls back to OSRM when Mapbox fails', async () => {
+    const pts = mkTrail(6);
+    const hosts = [];
+    const fetchImpl = async (url) => {
+      hosts.push(url);
+      if (url.includes('api.mapbox.com')) return { ok: false, status: 429, json: async () => ({}) };
+      return { ok: true, json: async () => ({ code: 'Ok', tracepoints: pts.map(p => ({ location: [p.lng, p.lat] })) }) };
+    };
+    const { snapped } = await snapToRoads(pts, {
+      mapboxToken: 'tok', osrmUrl: 'http://osrm.test', fetchImpl, downsample: { minGapM: 0, minGapMs: 0 },
+    });
+    expect(snapped).toBe(true);
+    expect(hosts.some(u => u.includes('api.mapbox.com'))).toBe(true);
+    expect(hosts.some(u => u.includes('osrm.test'))).toBe(true);
+  });
+
+  test('rejects a low-confidence match and tries the next provider', async () => {
+    const pts = mkTrail(6);
+    const fetchImpl = async (url) => {
+      if (url.includes('api.mapbox.com')) {
+        return { ok: true, json: async () => ({ code: 'Ok', matchings: [{ confidence: 0.02 }], tracepoints: pts.map(p => ({ location: [9, 9] })) }) };
+      }
+      return { ok: true, json: async () => ({ code: 'Ok', tracepoints: pts.map(p => ({ location: [p.lng, p.lat] })) }) };
+    };
+    const { points, snapped } = await snapToRoads(pts, {
+      mapboxToken: 'tok', osrmUrl: 'http://osrm.test', fetchImpl, downsample: { minGapM: 0, minGapMs: 0 },
+    });
+    expect(snapped).toBe(true);
+    expect(points[0].lng).toBeCloseTo(pts[0].lng, 6); // OSRM's answer, not the 9,9 junk
+  });
 });

@@ -827,10 +827,14 @@ router.get('/devices/:id/track', async (req, res, next) => {
     // is unchanged — only the coordinates move onto the road. Best-effort: if the
     // matcher is unset/unreachable it falls back to the raw trail. ?snap=raw
     // bypasses it entirely.
+    // Two matchers: Mapbox first (higher quality) when MAPBOX_TOKEN is set, OSRM
+    // as the always-on fallback. Set OSRM_URL to a dedicated matcher for
+    // lane-level accuracy; the public demo server is the last resort.
     const osrmUrl = process.env.OSRM_URL || 'https://router.project-osrm.org';
+    const mapboxToken = process.env.MAPBOX_TOKEN || process.env.MAPBOX_ACCESS_TOKEN || '';
     let points = raw, snapped = false;
     if (raw.length >= 2 && req.query.snap !== 'raw') {
-      const r = await snapToRoads(raw, { osrmUrl });
+      const r = await snapToRoads(raw, { osrmUrl, mapboxToken });
       points = r.points; snapped = r.snapped;
     }
 
