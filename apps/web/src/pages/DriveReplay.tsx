@@ -3,9 +3,11 @@ import { useQuery } from '@tanstack/react-query';
 import * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 import { api } from '../lib/api.js';
-import { Film, ChevronDown, Play, Pause, Video, Loader2, User, Bike, Car, Truck, Sparkles,
-  SkipBack, SkipForward, Rewind, FastForward } from 'lucide-react';
-import { dominantMode, computeSpeeds, iconAt, type TravelMode, type PhysicalMode } from '../lib/travelMode.js';
+import { Film, ChevronDown, Play, Pause, Loader2, User, Bike, Car, Truck, Sparkles,
+  SkipBack, SkipForward, Rewind, FastForward, Video, Map as MapIcon, Move } from 'lucide-react';
+import { dominantMode, iconAt, type TravelMode, type PhysicalMode } from '../lib/travelMode.js';
+import { clampSpikes, speedsKmh, cumulativeMeters, trailStats, speedColor, speedBucket,
+  detectStops, headingsDeg, fmtDuration, SPEED_LEGEND, type TP } from '../lib/driveTrail.js';
 
 interface Device { id: string; name: string; officer_name?: string | null }
 interface TrackPoint { lat: number; lng: number; speed: number | null; heading: number | null; ts: string }
@@ -15,6 +17,7 @@ interface TrackResp {
 }
 
 const SPEEDS = [1, 8, 30, 60];
+type CamMode = 'chase' | 'top' | 'free';
 
 const MODE_OPTIONS: { id: TravelMode; label: string; Icon: typeof User }[] = [
   { id: 'auto', label: 'Auto', Icon: Sparkles },
@@ -23,20 +26,27 @@ const MODE_OPTIONS: { id: TravelMode; label: string; Icon: typeof User }[] = [
   { id: 'car', label: 'Car', Icon: Car },
   { id: 'truck', label: 'Truck', Icon: Truck },
 ];
+const CAMS: { id: CamMode; label: string; Icon: typeof Video }[] = [
+  { id: 'chase', label: 'Chase', Icon: Video },
+  { id: 'top', label: 'Top', Icon: MapIcon },
+  { id: 'free', label: 'Free', Icon: Move },
+];
 
-// Owns the Cesium viewer and drives a vehicle along the trail with a chase cam.
+interface Hud { time: string; kmh: number; distKm: number; totalKm: number; pct: number; remainMs: number; avgKmh: number; maxKmh: number }
+
+// Owns the Cesium viewer: a spike-free, speed-graded, cinematic drive replay.
 function CesiumDrive({ points, snapped, provider, confidence }:
   { points: TrackPoint[]; snapped?: boolean | undefined; provider?: string | null | undefined; confidence?: number | undefined }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Cesium.Viewer | null>(null);
-  const vehicleRef = useRef<Cesium.Entity | null>(null);
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState(8);
-  const [follow, setFollow] = useState(true);
+  const [camMode, setCamMode] = useState<CamMode>('chase');
+  const camRef = useRef<CamMode>('chase');
   const [mode, setMode] = useState<TravelMode>('auto');
   const modeRef = useRef<TravelMode>('auto');
   const [autoMode, setAutoMode] = useState<PhysicalMode>('car');
-  const [hud, setHud] = useState<{ t: string; kmh: number | null; pct: number }>({ t: '', kmh: null, pct: 0 });
+  const [hud, setHud] = useState<Hud>({ time: '', kmh: 0, distKm: 0, totalKm: 0, pct: 0, remainMs: 0, avgKmh: 0, maxKmh: 0 });
 
   // Init viewer once.
   useEffect(() => {
@@ -44,8 +54,6 @@ function CesiumDrive({ points, snapped, provider, confidence }:
     const token = (import.meta.env['VITE_CESIUM_ION_TOKEN'] as string | undefined) ?? '';
     Cesium.Ion.defaultAccessToken = token;
 
-    // Real satellite/aerial imagery by default (free, no key) — a big step up
-    // from flat street tiles. Upgraded further below when keys are present.
     const esri = new Cesium.UrlTemplateImageryProvider({
       url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
       credit: new Cesium.Credit('Esri, Maxar, Earthstar Geographics', false),
@@ -61,27 +69,25 @@ function CesiumDrive({ points, snapped, provider, confidence }:
     });
     viewer.scene.globe.enableLighting = true;
     if (viewer.scene.skyAtmosphere) viewer.scene.skyAtmosphere.show = true;
+    viewer.scene.globe.depthTestAgainstTerrain = true;
     viewerRef.current = viewer;
 
     const googleKey = (import.meta.env['VITE_GOOGLE_MAPS_API_KEY'] as string | undefined) ?? '';
     (async () => {
-      // Best realism: Google Photorealistic 3D Tiles — true textured 3D of the
-      // real world. Replaces the globe entirely.
       if (googleKey) {
         try {
           (Cesium as unknown as { GoogleMaps: { defaultApiKey: string } }).GoogleMaps.defaultApiKey = googleKey;
           viewer.scene.primitives.add(await Cesium.createGooglePhotorealistic3DTileset());
           viewer.scene.globe.show = false;
           return;
-        } catch { /* fall through to Ion / Esri */ }
+        } catch { /* fall through */ }
       }
-      // With a Cesium Ion token: Bing aerial + world-terrain relief + 3D buildings.
       if (token) {
         try {
           const bing = await Cesium.createWorldImageryAsync();
           viewer.imageryLayers.removeAll();
           viewer.imageryLayers.addImageryProvider(bing);
-        } catch { /* keep Esri satellite */ }
+        } catch { /* keep Esri */ }
         try { viewer.terrainProvider = await Cesium.createWorldTerrainAsync(); } catch { /* keep ellipsoid */ }
         try { viewer.scene.primitives.add(await Cesium.createOsmBuildingsAsync()); } catch { /* no buildings */ }
       }
@@ -90,74 +96,118 @@ function CesiumDrive({ points, snapped, provider, confidence }:
     return () => { if (!viewer.isDestroyed()) viewer.destroy(); viewerRef.current = null; };
   }, []);
 
-  // (Re)build the animated vehicle whenever the trail changes.
+  // (Re)build the animated drive whenever the trail changes.
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
     viewer.entities.removeAll();
-    vehicleRef.current = null;
     if (points.length < 2) return;
 
-    const sampled = new Cesium.SampledPositionProperty();
-    for (const p of points) {
-      sampled.addSample(Cesium.JulianDate.fromIso8601(p.ts), Cesium.Cartesian3.fromDegrees(p.lng, p.lat, 0));
-    }
-    sampled.setInterpolationOptions({
-      interpolationDegree: 2,
-      interpolationAlgorithm: Cesium.LagrangePolynomialApproximation,
-    });
-
-    const start = Cesium.JulianDate.fromIso8601(points[0]!.ts);
-    const stop = Cesium.JulianDate.fromIso8601(points[points.length - 1]!.ts);
-
-    // Speed profile → drives which marker (person / bike / car / truck) shows.
-    const dominant = dominantMode(points);
+    // Final spike guard, then everything derives from the clean trail P.
+    const P: TP[] = clampSpikes(points as TP[]);
+    if (P.length < 2) return;
+    const spd = speedsKmh(P);
+    const cum = cumulativeMeters(P);
+    const heads = headingsDeg(P);
+    const stats = trailStats(P);
+    const dominant = dominantMode(P);
     setAutoMode(dominant);
-    const speeds = computeSpeeds(points);
-    const sampleTimes = points.map(p => Cesium.JulianDate.fromIso8601(p.ts));
-    const speedAt = (time: Cesium.JulianDate) => {
-      let best = Infinity, kmh = 0;
+
+    // Motion: LINEAR interpolation — never overshoots, so no phantom spikes
+    // between samples (the old Lagrange curve was drawing them).
+    const sampled = new Cesium.SampledPositionProperty();
+    let lastMs = -Infinity;
+    const sampleTimes: Cesium.JulianDate[] = [];
+    for (const p of P) {
+      const t = new Date(p.ts).getTime();
+      if (t <= lastMs) continue; // strictly increasing — dupes explode interpolation
+      lastMs = t;
+      const jd = Cesium.JulianDate.fromIso8601(p.ts);
+      sampleTimes.push(jd);
+      sampled.addSample(jd, Cesium.Cartesian3.fromDegrees(p.lng, p.lat, 0));
+    }
+    sampled.setInterpolationOptions({ interpolationDegree: 1, interpolationAlgorithm: Cesium.LinearApproximation });
+
+    const start = sampleTimes[0]!;
+    const stop = sampleTimes[sampleTimes.length - 1]!;
+    const nearestIdx = (now: Cesium.JulianDate) => {
+      let best = Infinity, idx = 0;
       for (let i = 0; i < sampleTimes.length; i++) {
-        const d = Math.abs(Cesium.JulianDate.secondsDifference(sampleTimes[i]!, time));
-        if (d < best) { best = d; kmh = speeds[i] ?? 0; }
+        const d = Math.abs(Cesium.JulianDate.secondsDifference(sampleTimes[i]!, now));
+        if (d < best) { best = d; idx = i; }
       }
-      return kmh;
+      return idx;
     };
-    // Time-varying marker image: re-picked each frame from the selected mode
-    // (read live via the ref, so switching modes needs no rebuild) and speed.
+
+    // Speed-graded route ribbon: one coloured segment per contiguous speed band.
+    const cart = P.map(p => Cesium.Cartesian3.fromDegrees(p.lng, p.lat));
+    let s = 0;
+    for (let i = 1; i <= P.length; i++) {
+      const changed = i === P.length || speedBucket(spd[i]!) !== speedBucket(spd[s]!);
+      if (changed) {
+        const positions = cart.slice(s, Math.min(P.length, i + 1));
+        if (positions.length >= 2) {
+          viewer.entities.add({ polyline: {
+            positions, width: 5, clampToGround: true,
+            material: Cesium.Color.fromCssColorString(speedColor(spd[s]!)).withAlpha(0.92),
+          } });
+        }
+        s = i;
+      }
+    }
+
+    // Stop markers — where the vehicle sat still, with dwell time.
+    for (const st of detectStops(P, { minStopMs: 120000 })) {
+      viewer.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(st.lng, st.lat),
+        point: {
+          pixelSize: 11, color: Cesium.Color.fromCssColorString('#ef4444'),
+          outlineColor: Cesium.Color.WHITE, outlineWidth: 2,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        label: {
+          text: `⏸ ${fmtDuration(st.durationMs)}`, font: '600 12px sans-serif',
+          fillColor: Cesium.Color.WHITE, showBackground: true,
+          backgroundColor: Cesium.Color.fromCssColorString('#7f1d1d').withAlpha(0.85),
+          pixelOffset: new Cesium.Cartesian2(0, -20), disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          scaleByDistance: new Cesium.NearFarScalar(500, 1, 9000, 0.4),
+        },
+      });
+    }
+
+    // Time-varying marker: person/bike/car/truck by mode + speed.
     const markerImage = new Cesium.CallbackProperty(
-      (time) => iconAt(modeRef.current, dominant, speedAt(time as Cesium.JulianDate)), false);
-
-    // Full route — a thin, restrained line so a dense city trail doesn't read
-    // as a spiky mess.
-    viewer.entities.add({
-      polyline: {
-        positions: points.map(p => Cesium.Cartesian3.fromDegrees(p.lng, p.lat, 0)),
-        width: 2, clampToGround: true,
-        material: Cesium.Color.fromCssColorString('#38bdf8').withAlpha(0.55),
-      },
-    });
-
-    // The vehicle: a car marker that stays readable at any zoom, points the way
-    // it's travelling, and always draws on top — with a short fading trail.
+      (time) => iconAt(modeRef.current, dominant, spd[nearestIdx(time as Cesium.JulianDate)] ?? 0), false);
     const vehicle = viewer.entities.add({
       availability: new Cesium.TimeIntervalCollection([new Cesium.TimeInterval({ start, stop })]),
       position: sampled,
       billboard: {
-        image: markerImage,
-        scale: 0.6,
+        image: markerImage, scale: 0.62,
         alignedAxis: new Cesium.VelocityVectorProperty(sampled, true),
         disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        scaleByDistance: new Cesium.NearFarScalar(150, 1.0, 6000, 0.4),
+        scaleByDistance: new Cesium.NearFarScalar(120, 1.0, 6000, 0.4),
       },
       path: {
-        resolution: 1, width: 5, leadTime: 0, trailTime: 90,
+        resolution: 1, width: 6, leadTime: 0, trailTime: 70,
         material: new Cesium.PolylineGlowMaterialProperty({
-          glowPower: 0.25, color: Cesium.Color.fromCssColorString('#f59e0b'),
+          glowPower: 0.3, color: Cesium.Color.fromCssColorString('#22d3ee'),
         }),
       },
     });
-    vehicleRef.current = vehicle;
+
+    // Camera: chase (behind, follows heading), top-down, or free.
+    const applyCamera = (now: Cesium.JulianDate) => {
+      const m = camRef.current;
+      if (m === 'free') return;
+      const pos = sampled.getValue(now);
+      if (!pos) return;
+      if (m === 'top') {
+        viewer.camera.lookAt(pos, new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-89), 900));
+      } else {
+        const hd = heads[nearestIdx(now)] ?? 0;
+        viewer.camera.lookAt(pos, new Cesium.HeadingPitchRange(Cesium.Math.toRadians(hd + 180), Cesium.Math.toRadians(-28), 170));
+      }
+    };
 
     viewer.clock.startTime = start.clone();
     viewer.clock.stopTime = stop.clone();
@@ -167,24 +217,25 @@ function CesiumDrive({ points, snapped, provider, confidence }:
     viewer.clock.shouldAnimate = true;
     if (viewer.timeline) viewer.timeline.zoomTo(start, stop);
     setPlaying(true);
-    viewer.trackedEntity = follow ? vehicle : undefined;
+    void vehicle;
+    viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+    applyCamera(start);
 
-    // HUD ticker: current time, interpolated speed (from nearest sample), progress.
     const total = Cesium.JulianDate.secondsDifference(stop, start) || 1;
     const onTick = () => {
       const now = viewer.clock.currentTime;
       const elapsed = Cesium.JulianDate.secondsDifference(now, start);
-      // nearest sample for a speed readout
-      let nearest = points[0]!;
-      let best = Infinity;
-      for (const p of points) {
-        const d = Math.abs(Cesium.JulianDate.secondsDifference(Cesium.JulianDate.fromIso8601(p.ts), now));
-        if (d < best) { best = d; nearest = p; }
-      }
+      const idx = nearestIdx(now);
+      applyCamera(now);
       setHud({
-        t: Cesium.JulianDate.toDate(now).toLocaleString(),
-        kmh: nearest.speed,
+        time: Cesium.JulianDate.toDate(now).toLocaleTimeString(),
+        kmh: spd[idx] ?? 0,
+        distKm: (cum[idx] ?? 0) / 1000,
+        totalKm: stats.distanceKm,
         pct: Math.max(0, Math.min(100, (elapsed / total) * 100)),
+        remainMs: Math.max(0, (total - elapsed) * 1000),
+        avgKmh: stats.avgMovingKmh,
+        maxKmh: stats.maxKmh,
       });
     };
     viewer.clock.onTick.addEventListener(onTick);
@@ -200,8 +251,6 @@ function CesiumDrive({ points, snapped, provider, confidence }:
     v.clock.shouldAnimate = !v.clock.shouldAnimate;
     setPlaying(v.clock.shouldAnimate);
   };
-  // Nudge the playhead by ±seconds, clamped to the trail's bounds. Works while
-  // paused (re-renders the frame) and while playing (scrubs live).
   const skip = (seconds: number) => {
     const v = viewerRef.current; if (!v) return;
     const c = v.clock;
@@ -223,14 +272,15 @@ function CesiumDrive({ points, snapped, provider, confidence }:
     v.clock.shouldAnimate = false; setPlaying(false);
     v.scene.requestRender();
   };
-  const toggleFollow = () => {
+  const pickCam = (m: CamMode) => {
+    setCamMode(m); camRef.current = m;
     const v = viewerRef.current; if (!v) return;
-    const next = !follow; setFollow(next);
-    v.trackedEntity = next ? (vehicleRef.current ?? undefined) : undefined;
+    if (m === 'free') v.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+    v.scene.requestRender();
   };
   const pickMode = (m: TravelMode) => {
     setMode(m); modeRef.current = m;
-    viewerRef.current?.scene.requestRender(); // reflect immediately, even paused
+    viewerRef.current?.scene.requestRender();
   };
 
   // Keyboard transport: Space play/pause, ←/→ scrub 5s (Shift = 30s), Home/End.
@@ -255,35 +305,66 @@ function CesiumDrive({ points, snapped, provider, confidence }:
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
+
+      {/* Instrument HUD */}
+      <div className="pointer-events-none absolute left-4 top-4 w-52 rounded-xl border border-white/10 bg-black/70 p-3 text-white backdrop-blur">
+        <div className="font-mono text-[11px] text-neutral-400">{hud.time || '—'}</div>
+        <div className="mt-0.5 flex items-baseline gap-1">
+          <span className="font-mono text-3xl font-bold tabular-nums" style={{ color: speedColor(hud.kmh) }}>{hud.kmh.toFixed(0)}</span>
+          <span className="text-xs text-neutral-400">km/h</span>
+        </div>
+        <div className="mt-2 h-1.5 w-full overflow-hidden rounded bg-white/15">
+          <div className="h-full bg-cyan-400" style={{ width: `${hud.pct}%` }} />
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[11px]">
+          <span className="text-neutral-400">dist</span><span className="text-right tabular-nums">{hud.distKm.toFixed(1)}/{hud.totalKm.toFixed(1)} km</span>
+          <span className="text-neutral-400">left</span><span className="text-right tabular-nums">{fmtDuration(hud.remainMs)}</span>
+          <span className="text-neutral-400">avg</span><span className="text-right tabular-nums">{hud.avgKmh.toFixed(0)} km/h</span>
+          <span className="text-neutral-400">max</span><span className="text-right tabular-nums">{hud.maxKmh.toFixed(0)} km/h</span>
+        </div>
+        <div className="mt-2 flex items-center gap-1.5 border-t border-white/10 pt-2 font-mono text-[11px]">
+          <span className={`inline-block h-1.5 w-1.5 rounded-full ${snapped ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+          {snapped
+            ? <span className="text-emerald-300">roads · {provider ?? 'osrm'}{confidence ? ` ${confidence.toFixed(2)}` : ''}</span>
+            : <span className="text-amber-300">raw GPS</span>}
+        </div>
+      </div>
+
+      {/* Speed legend */}
+      <div className="pointer-events-none absolute right-4 top-4 rounded-lg border border-white/10 bg-black/70 px-3 py-2 backdrop-blur">
+        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-500">Speed</div>
+        <div className="flex flex-col gap-1">
+          {SPEED_LEGEND.map(l => (
+            <div key={l.label} className="flex items-center gap-1.5 text-[11px] text-neutral-300">
+              <span className="h-2 w-4 rounded-sm" style={{ background: l.hex }} /> {l.label}
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Control bar */}
       <div className="pointer-events-auto absolute inset-x-0 bottom-8 mx-auto flex w-fit max-w-[95vw] flex-wrap items-center justify-center gap-2 rounded-3xl border border-white/10 bg-black/70 px-3 py-2 backdrop-blur">
-        <button onClick={jumpToStart} className="rounded-full bg-white/10 p-2 text-white hover:bg-white/20" title="Restart (Home)">
-          <SkipBack size={16} />
-        </button>
-        <button onClick={() => skip(-10)} className="rounded-full bg-white/10 p-2 text-white hover:bg-white/20" title="Rewind 10s (←)">
-          <Rewind size={16} />
-        </button>
+        <button onClick={jumpToStart} className="rounded-full bg-white/10 p-2 text-white hover:bg-white/20" title="Restart (Home)"><SkipBack size={16} /></button>
+        <button onClick={() => skip(-10)} className="rounded-full bg-white/10 p-2 text-white hover:bg-white/20" title="Rewind 10s (←)"><Rewind size={16} /></button>
         <button onClick={togglePlay} className="rounded-full bg-white/10 p-2 text-white hover:bg-white/20" title={playing ? 'Pause (Space)' : 'Play (Space)'}>
           {playing ? <Pause size={16} /> : <Play size={16} />}
         </button>
-        <button onClick={() => skip(10)} className="rounded-full bg-white/10 p-2 text-white hover:bg-white/20" title="Fast-forward 10s (→)">
-          <FastForward size={16} />
-        </button>
-        <button onClick={jumpToEnd} className="rounded-full bg-white/10 p-2 text-white hover:bg-white/20" title="Jump to end (End)">
-          <SkipForward size={16} />
-        </button>
+        <button onClick={() => skip(10)} className="rounded-full bg-white/10 p-2 text-white hover:bg-white/20" title="Fast-forward 10s (→)"><FastForward size={16} /></button>
+        <button onClick={jumpToEnd} className="rounded-full bg-white/10 p-2 text-white hover:bg-white/20" title="Jump to end (End)"><SkipForward size={16} /></button>
         <div className="flex overflow-hidden rounded-full border border-white/10">
-          {SPEEDS.map(s => (
-            <button key={s} onClick={() => setMultiplier(s)}
-              className={`px-2.5 py-1 text-xs font-bold ${speed === s ? 'bg-amber-500 text-black' : 'text-neutral-300 hover:text-white'}`}>
-              {s}×
+          {SPEEDS.map(sp => (
+            <button key={sp} onClick={() => setMultiplier(sp)}
+              className={`px-2.5 py-1 text-xs font-bold ${speed === sp ? 'bg-amber-500 text-black' : 'text-neutral-300 hover:text-white'}`}>{sp}×</button>
+          ))}
+        </div>
+        <div className="flex overflow-hidden rounded-full border border-white/10">
+          {CAMS.map(({ id, label, Icon }) => (
+            <button key={id} onClick={() => pickCam(id)} title={`${label} camera`}
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold ${camMode === id ? 'bg-cyan-500 text-black' : 'text-neutral-300 hover:text-white'}`}>
+              <Icon size={13} /> <span className="hidden sm:inline">{label}</span>
             </button>
           ))}
         </div>
-        <button onClick={toggleFollow}
-          className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-bold ${follow ? 'bg-cyan-500 text-black' : 'bg-white/10 text-neutral-300 hover:text-white'}`}>
-          <Video size={13} /> {follow ? 'Chase cam' : 'Free look'}
-        </button>
         <div className="mx-1 h-6 w-px bg-white/10" />
         <div className="flex overflow-hidden rounded-full border border-white/10">
           {MODE_OPTIONS.map(({ id, label, Icon }) => (
@@ -293,21 +374,6 @@ function CesiumDrive({ points, snapped, provider, confidence }:
               <Icon size={13} /> <span className="hidden sm:inline">{id === 'auto' ? `Auto·${autoMode}` : label}</span>
             </button>
           ))}
-        </div>
-      </div>
-      {/* HUD */}
-      <div className="pointer-events-none absolute left-4 top-4 rounded-lg border border-white/10 bg-black/70 px-3 py-2 font-mono text-xs text-white backdrop-blur">
-        <div>{hud.t || '—'}</div>
-        <div className="text-amber-300">{hud.kmh != null ? `${hud.kmh.toFixed(0)} km/h` : '—'}</div>
-        <div className="mt-1 h-1 w-40 overflow-hidden rounded bg-white/15">
-          <div className="h-full bg-amber-400" style={{ width: `${hud.pct}%` }} />
-        </div>
-        {/* Snap badge — is the trace on real roads, and via which matcher? */}
-        <div className="mt-1.5 flex items-center gap-1.5">
-          <span className={`inline-block h-1.5 w-1.5 rounded-full ${snapped ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-          {snapped
-            ? <span className="text-emerald-300">roads · {provider ?? 'osrm'}{confidence ? ` ${confidence.toFixed(2)}` : ''}</span>
-            : <span className="text-amber-300">raw GPS</span>}
         </div>
       </div>
     </div>
