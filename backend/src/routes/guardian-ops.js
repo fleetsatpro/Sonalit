@@ -10,6 +10,8 @@ const { signCommand } = require('../utils/commandSigning');
 const captureVision = require('../utils/captureVision');
 const { classifySignal, bySeverity } = require('../services/signal/anomalies');
 const { snapToRoads } = require('../services/geo/mapMatch');
+const { planRoute } = require('../services/geo/routePlan');
+const geoEnv = require('../services/geo/providerEnv');
 
 router.use(authenticate);
 
@@ -830,8 +832,8 @@ router.get('/devices/:id/track', async (req, res, next) => {
     // Two matchers: Mapbox first (higher quality) when MAPBOX_TOKEN is set, OSRM
     // as the always-on fallback. Set OSRM_URL to a dedicated matcher for
     // lane-level accuracy; the public demo server is the last resort.
-    const osrmUrl = process.env.OSRM_URL || 'https://router.project-osrm.org';
-    const mapboxToken = process.env.MAPBOX_TOKEN || process.env.MAPBOX_ACCESS_TOKEN || '';
+    const osrmUrl = geoEnv.osrmUrl();
+    const mapboxToken = geoEnv.mapboxToken();
     let points = raw, snapped = false, provider = null, confidence = 0;
     if (raw.length >= 2 && req.query.snap !== 'raw') {
       const r = await snapToRoads(raw, { osrmUrl, mapboxToken });
@@ -843,6 +845,28 @@ router.get('/devices/:id/track', async (req, res, next) => {
       from: from.toISOString(), to: to.toISOString(),
       snapped, provider, confidence, points,
     } });
+  } catch (err) { next(err); }
+});
+
+// GET /guardian/geo/status — diagnostics: which routing providers are wired, and
+// (with ?probe=1) a live check that actually snaps a tiny 2-point route so you
+// can confirm the Mapbox token works. Never returns the token itself.
+router.get('/geo/status', async (req, res, next) => {
+  try {
+    const mapboxToken = geoEnv.mapboxToken();
+    const osrmUrl = geoEnv.osrmUrl();
+    const out = { mapbox_configured: !!mapboxToken, osrm_url: osrmUrl, probe: null };
+    if (req.query.probe === '1') {
+      // Route between two points ~1.5 km apart. planRoute tries Mapbox first, so
+      // probe.provider === 'mapbox' confirms the token works; 'osrm' means Mapbox
+      // was configured but did not serve (bad/mis-scoped token); null means neither.
+      const r = await planRoute(
+        [{ lat: 51.5074, lng: -0.1278 }, { lat: 51.5155, lng: -0.1410 }],
+        { osrmUrl, mapboxToken },
+      );
+      out.probe = { routed: r.routed, provider: r.provider, distance_km: r.distance_km };
+    }
+    res.json({ data: out });
   } catch (err) { next(err); }
 });
 

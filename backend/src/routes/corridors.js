@@ -11,6 +11,7 @@ const { authenticate } = require('../middleware/auth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 const { planRoute } = require('../services/geo/routePlan');
+const geoEnv = require('../services/geo/providerEnv');
 
 router.use(authenticate, attachOrgDb);
 
@@ -74,9 +75,7 @@ router.post('/:id/corridor', asyncHandler(async (req, res) => {
   const wantPlan = value.plan === true ||
     (value.plan !== false && value.from_analysis !== true && routeLine.length <= 25);
   if (wantPlan) {
-    const osrmUrl = process.env.OSRM_URL || 'https://router.project-osrm.org';
-    const mapboxToken = process.env.MAPBOX_TOKEN || process.env.MAPBOX_ACCESS_TOKEN || '';
-    const r = await planRoute(routeLine, { osrmUrl, mapboxToken });
+    const r = await planRoute(routeLine, { osrmUrl: geoEnv.osrmUrl(), mapboxToken: geoEnv.mapboxToken() });
     if (r.routed && r.route.length >= 2) { routeLine = r.route; planned = r; }
   }
 
