@@ -11,6 +11,7 @@ const captureVision = require('../utils/captureVision');
 const { classifySignal, bySeverity } = require('../services/signal/anomalies');
 const { snapToRoads } = require('../services/geo/mapMatch');
 const { planRoute } = require('../services/geo/routePlan');
+const { geocode } = require('../services/geo/geocode');
 const geoEnv = require('../services/geo/providerEnv');
 
 router.use(authenticate);
@@ -867,6 +868,22 @@ router.get('/geo/status', async (req, res, next) => {
       out.probe = { routed: r.routed, provider: r.provider, distance_km: r.distance_km };
     }
     res.json({ data: out });
+  } catch (err) { next(err); }
+});
+
+// GET /guardian/geo/geocode?q=…&limit=5 — resolve a typed place name to
+// candidate coordinates, for the corridor planner. Uses the backend Mapbox
+// token, so the browser needs no key. Empty results when unconfigured.
+router.get('/geo/geocode', async (req, res, next) => {
+  try {
+    const proximity = (req.query.lat != null && req.query.lng != null)
+      ? { lat: Number(req.query.lat), lng: Number(req.query.lng) } : undefined;
+    const { results, provider } = await geocode(String(req.query.q || ''), {
+      mapboxToken: geoEnv.mapboxToken(),
+      limit: Number(req.query.limit) || 5,
+      proximity,
+    });
+    res.json({ data: { provider, results } });
   } catch (err) { next(err); }
 });
 
