@@ -77,35 +77,56 @@ function rejectSpikes(points, { maxKmh = 180 } = {}) {
   return out;
 }
 
+function median(nums) {
+  const s = [...nums].sort((a, b) => a - b);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
 /**
- * Collapse stationary jitter. When a device sits still, GPS drifts 10–30 m per
- * fix and a plotted trail explodes into a star. This detects a run of fixes
- * that all stay within `radiusM` of where the run started and, if it's a real
- * dwell (≥3 fixes spanning ≥`minRunMs`), replaces the whole run with its
- * centroid — emitted twice, at the run's first and last timestamps, so the
- * marker sits perfectly still for the dwell (speed 0) instead of spraying.
- * Moving stretches pass through untouched.
+ * Robust centre of a cluster: the component-wise median. GPS multipath throws
+ * a few fixes hundreds of metres out — a mean would be dragged toward them, the
+ * median shrugs them off and lands on where the device actually is.
  */
-function collapseStationary(points, { radiusM = 25, minRunMs = 20000 } = {}) {
+function medianCenter(pts) {
+  return { lat: median(pts.map(p => p.lat)), lng: median(pts.map(p => p.lng)) };
+}
+
+// A fix belongs to a stationary run when the device reports it's barely moving,
+// or (speed unknown) it's still within `radiusM` of the run's anchor. Keying on
+// the reported speed is what catches VIOLENT jitter — a parked phone reports
+// 0 km/h even while its plotted position flails hundreds of metres.
+function isStopped(p, anchor, stoppedKmh, radiusM) {
+  if (anchor && haversineM(anchor.lat, anchor.lng, p.lat, p.lng) <= radiusM) return true;
+  if (p.speed != null && p.speed >= 0) return p.speed < stoppedKmh;
+  return !anchor;
+}
+
+/**
+ * Collapse stationary jitter. When a device sits still its GPS can spray fixes
+ * far and wide, exploding the trail into a star. This groups consecutive fixes
+ * the device reports as stopped (speed under `stoppedKmh`) and, for a real dwell
+ * (≥`minRun` fixes over ≥`minRunMs`), pins the whole run to its MEDIAN centre —
+ * emitted twice, at the run's first and last timestamps, so the marker sits
+ * perfectly still (speed 0) instead of spraying. Moving stretches pass through.
+ */
+function collapseStationary(points, { stoppedKmh = 3, radiusM = 40, minRun = 3, minRunMs = 15000 } = {}) {
   if (points.length <= 2) return points.slice();
   const out = [];
   let i = 0;
   while (i < points.length) {
+    if (!isStopped(points[i], null, stoppedKmh, radiusM)) { out.push(points[i]); i++; continue; }
     let j = i;
-    while (j + 1 < points.length &&
-      haversineM(points[i].lat, points[i].lng, points[j + 1].lat, points[j + 1].lng) <= radiusM) {
-      j++;
-    }
-    const runLen = j - i + 1;
+    const anchor = points[i];
+    while (j + 1 < points.length && isStopped(points[j + 1], anchor, stoppedKmh, radiusM)) j++;
+    const run = points.slice(i, j + 1);
     const spanMs = new Date(points[j].ts).getTime() - new Date(points[i].ts).getTime();
-    if (runLen >= 3 && spanMs >= minRunMs) {
-      let sLat = 0, sLng = 0;
-      for (let k = i; k <= j; k++) { sLat += points[k].lat; sLng += points[k].lng; }
-      const lat = sLat / runLen, lng = sLng / runLen;
-      out.push({ ...points[i], lat, lng, speed: 0 });
-      out.push({ ...points[j], lat, lng, speed: 0 });
+    if (run.length >= minRun && spanMs >= minRunMs) {
+      const c = medianCenter(run);
+      out.push({ ...points[i], lat: c.lat, lng: c.lng, speed: 0 });
+      out.push({ ...points[j], lat: c.lat, lng: c.lng, speed: 0 });
     } else {
-      for (let k = i; k <= j; k++) out.push(points[k]);
+      for (const p of run) out.push(p);
     }
     i = j + 1;
   }
