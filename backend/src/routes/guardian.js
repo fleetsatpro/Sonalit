@@ -3219,13 +3219,21 @@ router.post('/crash-report', deviceAuth, async (req, res, next) => {
 });
 
 // POST /capture-event — breadcrumb telemetry for the covert capture pipeline so
-// a shot that silently fails on a field device is diagnosable server-side.
-// Body: { stage, detail }. Logged, not stored — this is transient diagnostics.
+// a shot that silently fails on a field device is diagnosable from the console.
+// Body: { stage, detail }. Logged AND persisted (best-effort) so the operator
+// can see exactly which stage a capture stopped at.
 router.post('/capture-event', deviceAuth, async (req, res, next) => {
   try {
     const stage = String(req.body?.stage || '').slice(0, 60);
     const detail = String(req.body?.detail || '').slice(0, 400);
     logger.info(`Guardian capture: device=${req.device.id} stage=${stage} ${detail}`);
+    // Persist for the diagnostics view — never let a telemetry write break the
+    // device's report.
+    query(
+      `INSERT INTO guardian_capture_events (device_id, org_id, stage, detail)
+       VALUES ($1, $2, $3, $4)`,
+      [req.device.id, req.device.org_id || null, stage, detail || null],
+    ).catch((e) => logger.warn(`capture-event persist failed: ${e.message}`));
     res.json({ received: true });
   } catch (err) { next(err); }
 });

@@ -887,6 +887,54 @@ router.get('/geo/geocode', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// Plain-English diagnosis for each covert-capture pipeline stage, so "the photo
+// isn't working" becomes a concrete, actionable reason.
+const CAPTURE_STAGE = {
+  cc_uploaded:      { ok: true,  msg: 'Capture succeeded — photo uploaded.' },
+  cc_saved:         { ok: false, msg: 'Photo taken but the upload has not completed yet.' },
+  cc_upload_fail:   { ok: false, msg: 'Photo taken but the upload to storage failed (check R2 / connectivity).' },
+  cc_take_error:    { ok: false, msg: 'The camera failed to take the shot.' },
+  cc_bind_fail:     { ok: false, msg: 'Camera is busy or blocked — another app holds it, or a background-camera start was denied.' },
+  cc_provider_fail: { ok: false, msg: 'Camera hardware was unavailable on the device.' },
+  cc_start:         { ok: false, msg: 'Capture started but did not finish — likely interrupted.' },
+  gs_promoted:      { ok: false, msg: 'Foreground camera mode was requested but no shot followed — background start blocked (Android 14+) or camera denied.' },
+  gs_enter:         { ok: false, msg: 'Command received but the capture never started.' },
+  gs_no_camera_perm:{ ok: false, msg: 'Camera permission is not granted to Guardian — grant it, or enrol the device as Device Owner.' },
+  gs_covert_fail:   { ok: false, msg: 'Covert capture crashed on the device.' },
+};
+
+// GET /devices/:id/capture-events — recent covert-capture breadcrumbs for a
+// device plus a plain-English verdict on the latest attempt, so an operator can
+// see exactly why a capture did or didn't work.
+router.get('/devices/:id/capture-events', async (req, res, next) => {
+  try {
+    const dev = await query(
+      `SELECT id, name FROM guardian_devices WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
+      [req.params.id, req.user.org_id],
+    );
+    if (!dev.rows.length) return res.status(404).json({ error: 'Device not found' });
+
+    const limit = Math.min(100, parseInt(req.query.limit, 10) || 40);
+    const { rows } = await query(
+      `SELECT stage, detail, created_at FROM guardian_capture_events
+        WHERE device_id = $1 ORDER BY created_at DESC LIMIT $2`,
+      [req.params.id, limit],
+    );
+
+    const latest = rows[0];
+    const known = latest ? CAPTURE_STAGE[latest.stage] : null;
+    const verdict = latest ? {
+      ok: known ? known.ok : false,
+      stage: latest.stage,
+      message: known ? known.msg : `Stopped at ${latest.stage}.`,
+      detail: latest.detail || null,
+      at: latest.created_at,
+    } : null;
+
+    res.json({ data: { device: dev.rows[0], verdict, events: rows } });
+  } catch (err) { next(err); }
+});
+
 // GET /signal/health — fleet-wide signal-integrity scan. Flags the pre-hijack
 // signatures: comms blackout (device dark) and GPS freeze (still heartbeating
 // but no satellite fix — classic GPS jamming). Worst-first, escalated for
