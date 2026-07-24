@@ -10,6 +10,7 @@ const Joi = require('joi');
 const { authenticate } = require('../middleware/auth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
+const { planRoute } = require('../services/geo/routePlan');
 
 router.use(authenticate, attachOrgDb);
 
@@ -25,17 +26,30 @@ router.get('/:id/corridor', asyncHandler(async (req, res) => {
 }));
 
 // POST /api/v1/convoys/:id/corridor
+const pt = Joi.object({ lat: Joi.number().required(), lng: Joi.number().required() });
 const corridorSchema = Joi.object({
-  route_line: Joi.array().items(Joi.object({ lat: Joi.number().required(), lng: Joi.number().required() })).min(2),
+  route_line: Joi.array().items(pt).min(2),
+  origin: pt,
+  destination: pt,
+  via: Joi.array().items(pt).default([]),
   width_km: Joi.number().positive().default(2.0),
   from_analysis: Joi.boolean(),
-});
+  // Auto-plan road-following waypoints via a routing engine. Defaults on for a
+  // sparse seed (endpoints ± a few vias); set false to store the seed verbatim.
+  plan: Joi.boolean(),
+}).oxor('route_line', 'origin'); // don't accept a full line AND an origin
 
 router.post('/:id/corridor', asyncHandler(async (req, res) => {
   const { error, value } = corridorSchema.validate(req.body);
   if (error) return res.status(400).json({ error: error.message });
 
   let routeLine = value.route_line;
+
+  // Origin + destination (+ optional vias) — the common case where the operator
+  // knows the endpoints but not the road between them.
+  if (value.origin && value.destination) {
+    routeLine = [value.origin, ...value.via, value.destination];
+  }
 
   // Copy geometry from an existing route_analysis if requested
   if (value.from_analysis && !routeLine) {
@@ -50,7 +64,20 @@ router.post('/:id/corridor', asyncHandler(async (req, res) => {
   }
 
   if (!routeLine || routeLine.length < 2) {
-    return res.status(400).json({ error: 'route_line must have at least 2 points' });
+    return res.status(400).json({ error: 'Provide route_line (2+ points), or origin + destination' });
+  }
+
+  // Figure out the real road between the seed points. On by default for a sparse
+  // seed (≤25 points) unless it came from a dense analysis or plan:false. Falls
+  // back to the seed if no router is reachable, so this never blocks creation.
+  let planned = null;
+  const wantPlan = value.plan === true ||
+    (value.plan !== false && value.from_analysis !== true && routeLine.length <= 25);
+  if (wantPlan) {
+    const osrmUrl = process.env.OSRM_URL || 'https://router.project-osrm.org';
+    const mapboxToken = process.env.MAPBOX_TOKEN || process.env.MAPBOX_ACCESS_TOKEN || '';
+    const r = await planRoute(routeLine, { osrmUrl, mapboxToken });
+    if (r.routed && r.route.length >= 2) { routeLine = r.route; planned = r; }
   }
 
   const convoyCheck = await req.db(
@@ -69,7 +96,14 @@ router.post('/:id/corridor', asyncHandler(async (req, res) => {
     [req.params.id, JSON.stringify(routeLine), value.width_km],
   );
 
-  res.status(201).json({ data: result.rows[0] });
+  res.status(201).json({ data: {
+    ...result.rows[0],
+    planned: !!planned,
+    routing_provider: planned ? planned.provider : null,
+    distance_km: planned ? planned.distance_km : null,
+    duration_min: planned ? planned.duration_min : null,
+    waypoint_count: routeLine.length,
+  } });
 }));
 
 // GET /api/v1/convoys/:id/corridor/deviations
