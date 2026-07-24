@@ -188,7 +188,9 @@ function matchConfidence(json) {
 /**
  * Snap one chunk, trying each provider in order (Mapbox first for quality, OSRM
  * as the always-on fallback) until one returns a confident match. Returns
- * snapped [lng,lat]|null per input; all-null if every provider fails.
+ * { coords, provider, confidence }: coords is [lng,lat]|null per input (all-null
+ * if every provider fails), provider is the winner's name (or null), confidence
+ * is that provider's best matching confidence.
  */
 async function matchChunk(providers, pts, { radiusM = 30, minConfidence = 0.2, fetchImpl }) {
   for (const prov of providers) {
@@ -199,18 +201,20 @@ async function matchChunk(providers, pts, { radiusM = 30, minConfidence = 0.2, f
       if (!resp.ok) continue;
       const json = await resp.json();
       if (json.code && json.code !== 'Ok' && json.code !== 'NoMatch') continue;
-      if (matchConfidence(json) < minConfidence) continue;
-      const snapped = applyOsrmTracepoints(json, pts.length);
-      if (snapped.some(Boolean)) return snapped;
+      const confidence = matchConfidence(json);
+      if (confidence < minConfidence) continue;
+      const coords = applyOsrmTracepoints(json, pts.length);
+      if (coords.some(Boolean)) return { coords, provider: prov.name, confidence };
     } catch { /* try the next provider */ }
   }
-  return new Array(pts.length).fill(null);
+  return { coords: new Array(pts.length).fill(null), provider: null, confidence: 0 };
 }
 
 /**
- * Snap a trail to roads using Mapbox and/or OSRM. Returns { points, snapped }.
- * Providers are tried per-chunk in order (Mapbox first, OSRM fallback); on any
- * failure returns the cleaned+downsampled input with snapped:false.
+ * Snap a trail to roads using Mapbox and/or OSRM. Returns
+ * { points, snapped, provider, confidence }. Providers are tried per-chunk in
+ * order (Mapbox first, OSRM fallback); on any failure returns the
+ * cleaned+downsampled input with snapped:false and provider:null.
  * @param {Array<{lat,lng,speed?,heading?,ts:string}>} points
  * @param {{osrmUrl?:string, mapboxToken?:string, fetchImpl?:Function}} opts
  */
@@ -224,16 +228,20 @@ async function snapToRoads(points, opts = {}) {
   // matcher is available, so the raw fallback is already de-sprayed.
   const cleaned = cleanTrail(points, opts.clean);
   const thinned = downsample(cleaned, opts.downsample);
-  if (!fetchImpl || providers.length === 0 || thinned.length < 2) return { points: thinned, snapped: false };
+  const unsnapped = { points: thinned, snapped: false, provider: null, confidence: 0 };
+  if (!fetchImpl || providers.length === 0 || thinned.length < 2) return unsnapped;
 
   try {
     const batches = chunk(thinned, opts.chunkSize || 90);
     const snappedCoords = [];
+    const winners = {};        // provider name → chunks won
+    let confSum = 0, confN = 0;
     for (const b of batches) {
       const res = await matchChunk(providers, b, {
         radiusM: opts.radiusM ?? 30, minConfidence: opts.minConfidence ?? 0.2, fetchImpl,
       });
-      for (let i = 0; i < b.length; i++) snappedCoords.push(res[i]);
+      for (let i = 0; i < b.length; i++) snappedCoords.push(res.coords[i]);
+      if (res.provider) { winners[res.provider] = (winners[res.provider] || 0) + 1; confSum += res.confidence; confN++; }
     }
     let hits = 0;
     const merged = thinned.map((p, i) => {
@@ -243,10 +251,13 @@ async function snapToRoads(points, opts = {}) {
     });
     // If almost nothing matched, the trail probably isn't on a road network we
     // know (rural track) — don't pretend; return raw.
-    if (hits < Math.max(2, thinned.length * 0.3)) return { points: thinned, snapped: false };
-    return { points: merged, snapped: true };
+    if (hits < Math.max(2, thinned.length * 0.3)) return unsnapped;
+    // Report the provider that snapped the most chunks and the mean confidence.
+    const provider = Object.keys(winners).sort((a, b) => winners[b] - winners[a])[0] || null;
+    const confidence = confN ? confSum / confN : 0;
+    return { points: merged, snapped: true, provider, confidence };
   } catch {
-    return { points: thinned, snapped: false };
+    return unsnapped;
   }
 }
 

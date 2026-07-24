@@ -174,6 +174,18 @@ describe('snapToRoads', () => {
     expect(hosts.some(u => u.includes('osrm.test'))).toBe(false); // OSRM not needed
   });
 
+  test('reports which provider snapped and the mean confidence', async () => {
+    const pts = mkTrail(6);
+    const fetchImpl = async () => ({
+      ok: true, json: async () => ({ code: 'Ok', matchings: [{ confidence: 0.8 }], tracepoints: pts.map(p => ({ location: [p.lng, p.lat] })) }),
+    });
+    const r = await snapToRoads(pts, {
+      mapboxToken: 'tok', osrmUrl: 'http://osrm.test', fetchImpl, downsample: { minGapM: 0, minGapMs: 0 },
+    });
+    expect(r.provider).toBe('mapbox');
+    expect(r.confidence).toBeCloseTo(0.8, 6);
+  });
+
   test('falls back to OSRM when Mapbox fails', async () => {
     const pts = mkTrail(6);
     const hosts = [];
