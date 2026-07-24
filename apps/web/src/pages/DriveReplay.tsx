@@ -9,7 +9,10 @@ import { dominantMode, computeSpeeds, iconAt, type TravelMode, type PhysicalMode
 
 interface Device { id: string; name: string; officer_name?: string | null }
 interface TrackPoint { lat: number; lng: number; speed: number | null; heading: number | null; ts: string }
-interface TrackResp { device: { id: string; name: string }; from: string; to: string; points: TrackPoint[] }
+interface TrackResp {
+  device: { id: string; name: string }; from: string; to: string; points: TrackPoint[];
+  snapped?: boolean; provider?: string | null; confidence?: number;
+}
 
 const SPEEDS = [1, 8, 30, 60];
 
@@ -22,7 +25,8 @@ const MODE_OPTIONS: { id: TravelMode; label: string; Icon: typeof User }[] = [
 ];
 
 // Owns the Cesium viewer and drives a vehicle along the trail with a chase cam.
-function CesiumDrive({ points }: { points: TrackPoint[] }) {
+function CesiumDrive({ points, snapped, provider, confidence }:
+  { points: TrackPoint[]; snapped?: boolean | undefined; provider?: string | null | undefined; confidence?: number | undefined }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Cesium.Viewer | null>(null);
   const vehicleRef = useRef<Cesium.Entity | null>(null);
@@ -298,6 +302,13 @@ function CesiumDrive({ points }: { points: TrackPoint[] }) {
         <div className="mt-1 h-1 w-40 overflow-hidden rounded bg-white/15">
           <div className="h-full bg-amber-400" style={{ width: `${hud.pct}%` }} />
         </div>
+        {/* Snap badge — is the trace on real roads, and via which matcher? */}
+        <div className="mt-1.5 flex items-center gap-1.5">
+          <span className={`inline-block h-1.5 w-1.5 rounded-full ${snapped ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+          {snapped
+            ? <span className="text-emerald-300">roads · {provider ?? 'osrm'}{confidence ? ` ${confidence.toFixed(2)}` : ''}</span>
+            : <span className="text-amber-300">raw GPS</span>}
+        </div>
       </div>
     </div>
   );
@@ -368,7 +379,9 @@ export default function DriveReplay() {
             Not enough GPS points in this window to replay a drive.
           </div>
         )}
-        {deviceId && points.length >= 2 && <CesiumDrive points={points} />}
+        {deviceId && points.length >= 2 && (
+          <CesiumDrive points={points} snapped={track?.snapped} provider={track?.provider} confidence={track?.confidence} />
+        )}
       </div>
     </div>
   );

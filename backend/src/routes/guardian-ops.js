@@ -832,16 +832,16 @@ router.get('/devices/:id/track', async (req, res, next) => {
     // lane-level accuracy; the public demo server is the last resort.
     const osrmUrl = process.env.OSRM_URL || 'https://router.project-osrm.org';
     const mapboxToken = process.env.MAPBOX_TOKEN || process.env.MAPBOX_ACCESS_TOKEN || '';
-    let points = raw, snapped = false;
+    let points = raw, snapped = false, provider = null, confidence = 0;
     if (raw.length >= 2 && req.query.snap !== 'raw') {
       const r = await snapToRoads(raw, { osrmUrl, mapboxToken });
-      points = r.points; snapped = r.snapped;
+      points = r.points; snapped = r.snapped; provider = r.provider; confidence = r.confidence;
     }
 
     res.json({ data: {
       device: dev.rows[0],
       from: from.toISOString(), to: to.toISOString(),
-      snapped, points,
+      snapped, provider, confidence, points,
     } });
   } catch (err) { next(err); }
 });
