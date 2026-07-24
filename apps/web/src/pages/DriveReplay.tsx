@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 import { api } from '../lib/api.js';
-import { Film, ChevronDown, Play, Pause, RotateCcw, Video, Loader2, User, Bike, Car, Truck, Sparkles } from 'lucide-react';
+import { Film, ChevronDown, Play, Pause, Video, Loader2, User, Bike, Car, Truck, Sparkles,
+  SkipBack, SkipForward, Rewind, FastForward } from 'lucide-react';
 import { dominantMode, computeSpeeds, iconAt, type TravelMode, type PhysicalMode } from '../lib/travelMode.js';
 
 interface Device { id: string; name: string; officer_name?: string | null }
@@ -195,10 +196,28 @@ function CesiumDrive({ points }: { points: TrackPoint[] }) {
     v.clock.shouldAnimate = !v.clock.shouldAnimate;
     setPlaying(v.clock.shouldAnimate);
   };
-  const restart = () => {
+  // Nudge the playhead by ±seconds, clamped to the trail's bounds. Works while
+  // paused (re-renders the frame) and while playing (scrubs live).
+  const skip = (seconds: number) => {
+    const v = viewerRef.current; if (!v) return;
+    const c = v.clock;
+    let next = Cesium.JulianDate.addSeconds(c.currentTime, seconds, new Cesium.JulianDate());
+    if (Cesium.JulianDate.lessThan(next, c.startTime)) next = c.startTime.clone();
+    if (Cesium.JulianDate.greaterThan(next, c.stopTime)) next = c.stopTime.clone();
+    c.currentTime = next;
+    v.scene.requestRender();
+  };
+  const jumpToStart = () => {
     const v = viewerRef.current; if (!v) return;
     v.clock.currentTime = v.clock.startTime.clone();
     v.clock.shouldAnimate = true; setPlaying(true);
+    v.scene.requestRender();
+  };
+  const jumpToEnd = () => {
+    const v = viewerRef.current; if (!v) return;
+    v.clock.currentTime = v.clock.stopTime.clone();
+    v.clock.shouldAnimate = false; setPlaying(false);
+    v.scene.requestRender();
   };
   const toggleFollow = () => {
     const v = viewerRef.current; if (!v) return;
@@ -210,16 +229,44 @@ function CesiumDrive({ points }: { points: TrackPoint[] }) {
     viewerRef.current?.scene.requestRender(); // reflect immediately, even paused
   };
 
+  // Keyboard transport: Space play/pause, ←/→ scrub 5s (Shift = 30s), Home/End.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+      const big = e.shiftKey ? 30 : 5;
+      switch (e.key) {
+        case ' ': e.preventDefault(); togglePlay(); break;
+        case 'ArrowLeft': e.preventDefault(); skip(-big); break;
+        case 'ArrowRight': e.preventDefault(); skip(big); break;
+        case 'Home': e.preventDefault(); jumpToStart(); break;
+        case 'End': e.preventDefault(); jumpToEnd(); break;
+        default: break;
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
       {/* Control bar */}
-      <div className="pointer-events-auto absolute inset-x-0 bottom-8 mx-auto flex w-fit items-center gap-2 rounded-full border border-white/10 bg-black/70 px-3 py-2 backdrop-blur">
-        <button onClick={togglePlay} className="rounded-full bg-white/10 p-2 text-white hover:bg-white/20" title={playing ? 'Pause' : 'Play'}>
+      <div className="pointer-events-auto absolute inset-x-0 bottom-8 mx-auto flex w-fit max-w-[95vw] flex-wrap items-center justify-center gap-2 rounded-3xl border border-white/10 bg-black/70 px-3 py-2 backdrop-blur">
+        <button onClick={jumpToStart} className="rounded-full bg-white/10 p-2 text-white hover:bg-white/20" title="Restart (Home)">
+          <SkipBack size={16} />
+        </button>
+        <button onClick={() => skip(-10)} className="rounded-full bg-white/10 p-2 text-white hover:bg-white/20" title="Rewind 10s (←)">
+          <Rewind size={16} />
+        </button>
+        <button onClick={togglePlay} className="rounded-full bg-white/10 p-2 text-white hover:bg-white/20" title={playing ? 'Pause (Space)' : 'Play (Space)'}>
           {playing ? <Pause size={16} /> : <Play size={16} />}
         </button>
-        <button onClick={restart} className="rounded-full bg-white/10 p-2 text-white hover:bg-white/20" title="Restart">
-          <RotateCcw size={16} />
+        <button onClick={() => skip(10)} className="rounded-full bg-white/10 p-2 text-white hover:bg-white/20" title="Fast-forward 10s (→)">
+          <FastForward size={16} />
+        </button>
+        <button onClick={jumpToEnd} className="rounded-full bg-white/10 p-2 text-white hover:bg-white/20" title="Jump to end (End)">
+          <SkipForward size={16} />
         </button>
         <div className="flex overflow-hidden rounded-full border border-white/10">
           {SPEEDS.map(s => (

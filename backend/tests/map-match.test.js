@@ -77,13 +77,25 @@ describe('collapseStationary', () => {
       { lat: 1.01, lng: 1.01, speed: 40, ts: new Date(t0 + 80000).toISOString() },
       { lat: 1.02, lng: 1.02, speed: 40, ts: new Date(t0 + 140000).toISOString() },
     ];
-    const out = collapseStationary([...parked, ...moving], { radiusM: 25, minRunMs: 20000 });
+    const out = collapseStationary([...parked, ...moving], { stoppedKmh: 3, minRunMs: 15000 });
     // dwell → 2 identical points, then the 2 moving points pass through
     expect(out).toHaveLength(4);
     expect(out[0].lat).toBeCloseTo(out[1].lat, 9);
     expect(out[0].lng).toBeCloseTo(out[1].lng, 9);
     expect(out[0].speed).toBe(0);
     expect(new Date(out[1].ts).getTime()).toBe(t0 + 50000); // last dwell ts preserved
+  });
+  test('pins violent 0 km/h jitter (fixes flung far) to the median, not a star', () => {
+    // Device reports 0 km/h but position is thrown up to ~500 m out on alternate
+    // fixes — the multipath case. Median must land on the true (dense) location.
+    const pts = Array.from({ length: 10 }, (_, i) => ({
+      lat: i % 3 === 0 ? 1.005 : 1.0, // 1/3 of fixes flung ~550 m north
+      lng: 2.0, speed: 0, ts: new Date(t0 + i * 6000).toISOString(),
+    }));
+    const out = collapseStationary(pts, { stoppedKmh: 3 });
+    expect(out).toHaveLength(2);              // one dwell, entered + left
+    expect(out[0].lat).toBeCloseTo(1.0, 6);   // median ignores the flung fixes
+    expect(out[0].lat).toBe(out[1].lat);
   });
   test('leaves a genuinely moving trail alone', () => {
     const pts = Array.from({ length: 5 }, (_, i) => ({
@@ -145,5 +157,51 @@ describe('snapToRoads', () => {
       osrmUrl: 'http://osrm.test', fetchImpl, downsample: { minGapM: 0, minGapMs: 0 },
     });
     expect(snapped).toBe(false);
+  });
+
+  test('prefers Mapbox when a token is present', async () => {
+    const pts = mkTrail(6);
+    const hosts = [];
+    const fetchImpl = async (url) => {
+      hosts.push(url);
+      return { ok: true, json: async () => ({ code: 'Ok', matchings: [{ confidence: 0.9 }], tracepoints: pts.map(p => ({ location: [p.lng, p.lat] })) }) };
+    };
+    const { snapped } = await snapToRoads(pts, {
+      mapboxToken: 'tok', osrmUrl: 'http://osrm.test', fetchImpl, downsample: { minGapM: 0, minGapMs: 0 },
+    });
+    expect(snapped).toBe(true);
+    expect(hosts[0]).toContain('api.mapbox.com'); // Mapbox tried first
+    expect(hosts.some(u => u.includes('osrm.test'))).toBe(false); // OSRM not needed
+  });
+
+  test('falls back to OSRM when Mapbox fails', async () => {
+    const pts = mkTrail(6);
+    const hosts = [];
+    const fetchImpl = async (url) => {
+      hosts.push(url);
+      if (url.includes('api.mapbox.com')) return { ok: false, status: 429, json: async () => ({}) };
+      return { ok: true, json: async () => ({ code: 'Ok', tracepoints: pts.map(p => ({ location: [p.lng, p.lat] })) }) };
+    };
+    const { snapped } = await snapToRoads(pts, {
+      mapboxToken: 'tok', osrmUrl: 'http://osrm.test', fetchImpl, downsample: { minGapM: 0, minGapMs: 0 },
+    });
+    expect(snapped).toBe(true);
+    expect(hosts.some(u => u.includes('api.mapbox.com'))).toBe(true);
+    expect(hosts.some(u => u.includes('osrm.test'))).toBe(true);
+  });
+
+  test('rejects a low-confidence match and tries the next provider', async () => {
+    const pts = mkTrail(6);
+    const fetchImpl = async (url) => {
+      if (url.includes('api.mapbox.com')) {
+        return { ok: true, json: async () => ({ code: 'Ok', matchings: [{ confidence: 0.02 }], tracepoints: pts.map(p => ({ location: [9, 9] })) }) };
+      }
+      return { ok: true, json: async () => ({ code: 'Ok', tracepoints: pts.map(p => ({ location: [p.lng, p.lat] })) }) };
+    };
+    const { points, snapped } = await snapToRoads(pts, {
+      mapboxToken: 'tok', osrmUrl: 'http://osrm.test', fetchImpl, downsample: { minGapM: 0, minGapMs: 0 },
+    });
+    expect(snapped).toBe(true);
+    expect(points[0].lng).toBeCloseTo(pts[0].lng, 6); // OSRM's answer, not the 9,9 junk
   });
 });
