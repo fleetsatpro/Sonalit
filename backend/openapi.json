@@ -2698,6 +2698,16 @@
         }
       }
     },
+    "/api/v1/guardian/geo/status": {
+      "get": {
+        "operationId": "get_api_v1_guardian_geo_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/signal/health": {
       "get": {
         "operationId": "get_api_v1_guardian_signal_health",
