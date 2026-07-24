@@ -30,6 +30,8 @@ interface Capture {
   ai?: CaptureAI | null;
 }
 interface Device { id: string; name: string; officer_name?: string | null; status?: string }
+interface CaptureVerdict { ok: boolean; stage: string; message: string; detail: string | null; at: string }
+interface CaptureDiag { verdict: CaptureVerdict | null; events: { stage: string; detail: string | null; created_at: string }[] }
 
 type Facet = 'people' | 'weapon' | 'vehicle';
 const FACETS: Array<{ k: Facet; label: string; icon: typeof Users }> = [
@@ -106,6 +108,16 @@ export default function Surveillance() {
     queryKey: ['guardian-devices-list'],
     queryFn: async () => (await api.get<{ data: Device[] }>('/guardian/devices')).data.data ?? [],
     staleTime: 30_000,
+  });
+
+  // Live capture diagnosis for the selected device — turns "the photo isn't
+  // working" into the exact stage it stopped at.
+  const { data: capDiag } = useQuery<CaptureDiag>({
+    queryKey: ['capture-events', deviceId],
+    enabled: !!deviceId,
+    refetchInterval: 5_000,
+    queryFn: async () =>
+      (await api.get<{ data: CaptureDiag }>(`/guardian/devices/${deviceId}/capture-events?limit=12`)).data.data,
   });
 
   const request = useMutation({
@@ -333,6 +345,22 @@ export default function Surveillance() {
       </div>
       {note && (
         <div className={`-mt-2 text-[12px] ${note.kind === 'ok' ? 'text-emerald-400' : 'text-red-400'}`}>{note.text}</div>
+      )}
+      {deviceId && capDiag?.verdict && (
+        <div className={`-mt-1 flex items-start gap-2 rounded-md border px-3 py-2 text-[12px] ${capDiag.verdict.ok ? 'border-emerald-500/30 bg-emerald-500/[0.06] text-emerald-300' : 'border-amber-500/30 bg-amber-500/[0.06] text-amber-300'}`}>
+          <span className="mt-0.5">{capDiag.verdict.ok ? '✓' : '⚠'}</span>
+          <div className="min-w-0">
+            <div><span className="font-semibold">Last capture:</span> {capDiag.verdict.message}</div>
+            <div className="mt-0.5 truncate font-mono text-[10px] text-neutral-500">
+              stage {capDiag.verdict.stage}{capDiag.verdict.detail ? ` · ${capDiag.verdict.detail}` : ''} · {new Date(capDiag.verdict.at).toLocaleString()}
+            </div>
+          </div>
+        </div>
+      )}
+      {deviceId && capDiag && !capDiag.verdict && (
+        <div className="-mt-1 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-[12px] text-neutral-400">
+          No capture attempts recorded for this device yet — request one to see live diagnostics.
+        </div>
       )}
 
       {/* Content */}

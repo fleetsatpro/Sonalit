@@ -2718,6 +2718,16 @@
         }
       }
     },
+    "/api/v1/guardian/devices/{id}/capture-events": {
+      "get": {
+        "operationId": "get_api_v1_guardian_devices_id_capture_events",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/signal/health": {
       "get": {
         "operationId": "get_api_v1_guardian_signal_health",
