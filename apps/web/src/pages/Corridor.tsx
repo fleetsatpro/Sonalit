@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
-import { Radar, Route as RouteIcon, ChevronDown, Loader2, Truck, Clock, Navigation } from 'lucide-react';
+import { Radar, Route as RouteIcon, ChevronDown, Loader2, Truck, Clock, Navigation, MapPinned } from 'lucide-react';
+import CorridorPlanner from '../components/geofences/CorridorPlanner.js';
 
 interface ConvoyRow { id: string; name: string; status: string }
 interface Member {
@@ -38,6 +39,8 @@ function schedText(min?: number | null): string {
 
 export default function Corridor() {
   const [convoyId, setConvoyId] = useState<string>('');
+  const [planning, setPlanning] = useState(false);
+  const queryClient = useQueryClient();
 
   const { data: convoys } = useQuery<ConvoyRow[]>({
     queryKey: ['convoys-for-corridor'],
@@ -66,17 +69,33 @@ export default function Corridor() {
         {isFetching && <Loader2 size={16} className="animate-spin text-neutral-500" />}
       </div>
 
-      <div className="mb-6 relative inline-block">
-        <select
-          value={convoyId}
-          onChange={e => setConvoyId(e.target.value)}
-          className="appearance-none rounded-lg border border-white/10 bg-black/40 py-2 pl-3 pr-9 text-sm text-white"
-        >
-          <option value="">Select a convoy…</option>
-          {monitorable.map(c => <option key={c.id} value={c.id}>{c.name} · {c.status}</option>)}
-        </select>
-        <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <div className="relative inline-block">
+          <select
+            value={convoyId}
+            onChange={e => { setConvoyId(e.target.value); setPlanning(false); }}
+            className="appearance-none rounded-lg border border-white/10 bg-black/40 py-2 pl-3 pr-9 text-sm text-white"
+          >
+            <option value="">Select a convoy…</option>
+            {monitorable.map(c => <option key={c.id} value={c.id}>{c.name} · {c.status}</option>)}
+          </select>
+          <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+        </div>
+        {convoyId && (
+          <button onClick={() => setPlanning(p => !p)}
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold ${planning ? 'border-violet-500/50 bg-violet-500/10 text-violet-300' : 'border-white/10 bg-black/40 text-neutral-300 hover:text-white'}`}>
+            <MapPinned size={14} /> {data ? 'Update route' : 'Plan route'}
+          </button>
+        )}
       </div>
+
+      {convoyId && planning && (
+        <div className="mb-6">
+          <CorridorPlanner convoyId={convoyId} onSaved={() => {
+            queryClient.invalidateQueries({ queryKey: ['convoy-corridor', convoyId] });
+          }} />
+        </div>
+      )}
 
       {data && (
         <div className="mb-5 flex flex-wrap items-center gap-4 rounded-lg border border-white/10 bg-black/30 p-3 text-xs text-neutral-400">
