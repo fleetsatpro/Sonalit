@@ -3018,6 +3018,25 @@ async function streamApk(res, url) {
 // minimal shape so the page still renders (and the download still works) when
 // the release API is briefly unreachable.
 router.get('/apk/info', async (req, res) => {
+  // ?probe=1 — diagnose which APK source is reachable from this server (status
+  // codes only, no secrets). Turns the download 503 into a concrete cause.
+  if (req.query.probe) {
+    const repo = process.env.APK_RELEASE_REPO || 'fleetsatpro/Sonalit';
+    const probe = async (label, url, opts) => {
+      const t0 = Date.now();
+      try {
+        const r = await fetch(url, { redirect: 'manual', headers: { 'User-Agent': 'Sonalit-Guardian' }, ...opts });
+        return { label, status: r.status, ms: Date.now() - t0, location: (r.headers.get('location') || '').slice(0, 120) || undefined };
+      } catch (e) { return { label, error: (e.message || String(e)).slice(0, 120), ms: Date.now() - t0 }; }
+    };
+    const r2Set = !!process.env.R2_PUBLIC_URL;
+    const [githubStable, githubApi, r2] = await Promise.all([
+      probe('github_stable', `https://github.com/${repo}/releases/latest/download/${process.env.APK_ASSET_NAME || 'app-debug.apk'}`, { method: 'HEAD' }),
+      probe('github_api', `https://api.github.com/repos/${repo}/releases/latest`, { method: 'GET', headers: { 'User-Agent': 'Sonalit-Guardian', Accept: 'application/vnd.github+json' } }),
+      r2Set ? probe('r2', `${process.env.R2_PUBLIC_URL.replace(/\/$/, '')}/apk/sonalit-guardian.apk`, { method: 'HEAD' }) : Promise.resolve({ label: 'r2', skipped: 'R2_PUBLIC_URL unset' }),
+    ]);
+    return res.json({ probe: { r2_public_url_set: r2Set, apk_redirect_url_set: !!process.env.APK_REDIRECT_URL, github_token_set: !!(process.env.GITHUB_TOKEN || process.env.GH_TOKEN), sources: [githubStable, githubApi, r2] } });
+  }
   try {
     const i = await resolveLatestApkInfo();
     res.set('Cache-Control', 'public, max-age=300');
