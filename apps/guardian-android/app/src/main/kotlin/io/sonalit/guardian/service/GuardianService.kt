@@ -29,6 +29,7 @@ import io.sonalit.guardian.data.remote.LocationPoint
 import io.sonalit.guardian.receiver.VolumeKeySOSReceiver
 import kotlinx.coroutines.*
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -52,6 +53,30 @@ class GuardianService : Service() {
     // True once requestLocationUpdates has been successfully handed to the
     // fused client. Reset on registration failure so the ticker retries.
     @Volatile private var locationUpdatesActive = false
+
+    // Covert capture is single-flight: a capture_photo command arrives twice (FCM
+    // push + command poll) and concurrent runs unbind each other's camera.
+    private val captureInFlight = AtomicBoolean(false)
+    @Volatile private var activeCapture: CameraCaptureController? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    /** Never let a dropped CameraX callback latch the single-flight flag on — that
+     *  would silently disable every future capture. */
+    private val captureWatchdog = Runnable {
+        if (captureInFlight.get()) {
+            Log.w(TAG, "covert capture watchdog fired — releasing stuck capture")
+            reportCapture("gs_capture_timeout")
+            activeCapture?.release()
+            finishCapture()
+        }
+    }
+
+    private fun finishCapture() {
+        mainHandler.removeCallbacks(captureWatchdog)
+        activeCapture = null
+        promoteForeground(withCamera = false)
+        captureInFlight.set(false)
+    }
 
     private val devicePrefs by lazy {
         val masterKey = androidx.security.crypto.MasterKey.Builder(applicationContext)
@@ -284,6 +309,15 @@ class GuardianService : Service() {
             reportCapture("gs_no_camera_perm")
             return
         }
+        // One capture at a time. A single capture_photo command reaches us twice —
+        // once via the FCM push and again off the command poll — and the second run
+        // would unbind the camera out from under the first, failing both with
+        // ERROR_CAMERA_CLOSED. Whoever gets here first owns the camera.
+        if (!captureInFlight.compareAndSet(false, true)) {
+            reportCapture("gs_busy", "capture already running")
+            return
+        }
+        mainHandler.postDelayed(captureWatchdog, CAPTURE_TIMEOUT_MS)
         runCatching {
             promoteForeground(withCamera = true)
             reportCapture("gs_promoted")
@@ -292,7 +326,7 @@ class GuardianService : Service() {
             scope.launch {
                 val fix = runCatching { db.gpsFixDao().getLatest() }.getOrNull()
                 // CameraCaptureController owns a LifecycleRegistry whose construction and
-                // STARTED transition MUST run on the main thread; building it on this IO
+                // state transitions MUST run on the main thread; building it on this IO
                 // coroutine throws "must be called on the main thread", which was silently
                 // killing every capture right after gs_promoted (cc_start never fired).
                 // CameraX bindToLifecycle is a main-thread API anyway. Wrapped so any
@@ -303,22 +337,28 @@ class GuardianService : Service() {
                 val lenses = if (lens == "front") listOf("front", "back") else listOf("back", "front")
                 runCatching {
                     withContext(Dispatchers.Main) {
-                        CameraCaptureController(this@GuardianService, api, okHttp)
-                            .captureSequence(lenses, fix?.lat, fix?.lon) {
-                                // Back to location-only so we don't keep holding the camera type.
-                                promoteForeground(withCamera = false)
-                            }
+                        // Held in a field for the life of the sequence: the capture is
+                        // callback-driven, so a local would be the only reference and
+                        // CameraX holds its owner only weakly.
+                        val controller = CameraCaptureController(this@GuardianService, api, okHttp)
+                        activeCapture = controller
+                        controller.captureSequence(lenses, fix?.lat, fix?.lon) {
+                            // Back to location-only so we don't keep holding the camera type.
+                            finishCapture()
+                        }
                     }
                 }.onFailure {
                     Log.e(TAG, "covert capture dispatch failed: ${it.message}")
                     reportCapture("gs_covert_fail", it.message ?: "")
-                    promoteForeground(withCamera = false)
+                    activeCapture?.release()
+                    finishCapture()
                 }
             }
         }.onFailure {
             Log.e(TAG, "captureCovertly failed: ${it.message}")
             reportCapture("gs_covert_fail", it.message ?: "")
-            promoteForeground(withCamera = false)
+            activeCapture?.release()
+            finishCapture()
         }
     }
 
@@ -415,5 +455,7 @@ class GuardianService : Service() {
         /** Deliver a covert capture_photo to the running service (see CommandExecutor). */
         const val ACTION_CAPTURE_PHOTO = "io.sonalit.guardian.action.CAPTURE_PHOTO"
         const val EXTRA_LENS = "lens"
+        /** Ceiling for a whole two-lens capture (open waits, retries, two uploads). */
+        private const val CAPTURE_TIMEOUT_MS = 90_000L
     }
 }
