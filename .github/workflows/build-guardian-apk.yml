@@ -90,12 +90,17 @@ jobs:
         working-directory: apps/guardian-android
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
+      # Convenience copy for on-device QA only — the real download path is the R2
+      # publish below. A full artifact bucket must not fail the job: this step is
+      # not the compile gate, and a red X here hides a green Kotlin build. Short
+      # retention keeps ~75 MB per run from refilling the quota.
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: SonalitGuardian-debug
           path: apps/guardian-android/app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 30
+          retention-days: 7
 
       # Publish the APK to Cloudflare R2 (the same storage that already holds
       # capture photos) so /download links to it directly — no GitHub release in
