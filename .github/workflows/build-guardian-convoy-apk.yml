@@ -94,12 +94,16 @@ jobs:
         working-directory: apps/guardian-convoy/android
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
+      # Convenience copy for on-device QA. The GitHub Release below is the real
+      # delivery path, so a failed upload (e.g. artifact storage quota hit) must
+      # not block it — same posture as build-guardian-apk.yml.
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: GuardianConvoy-debug
           path: apps/guardian-convoy/android/app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 30
+          retention-days: 7
 
       - name: Create GitHub Release
         if: github.ref == 'refs/heads/main'
