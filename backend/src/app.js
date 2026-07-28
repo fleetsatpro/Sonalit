@@ -278,31 +278,44 @@ catch (e) { logger.warn("Claims route failed: " + e.message); }
 app.get("/download/apk", (req, res) => res.redirect(302, "/api/v1/guardian/apk/download"));
 app.get(["/download", "/get"], (req, res) => {
   const apk = "/api/v1/guardian/apk/download";
+  const info = "/api/v1/guardian/apk/info";
   res.type("html").send(`<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Install Sonalit Guardian</title>
+<title>Sonalit Guardian — Download</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
   body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
-    background:#0a0e14; color:#e8ecf1; font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-    padding:24px; }
-  .card { width:100%; max-width:420px; background:linear-gradient(180deg,#111722,#0c1119);
-    border:1px solid rgba(255,255,255,.08); border-radius:20px; padding:32px 28px;
-    box-shadow:0 20px 60px rgba(0,0,0,.5); text-align:center; }
-  .mark { width:56px; height:56px; border-radius:14px; margin:0 auto 18px;
+    background:radial-gradient(1200px 600px at 50% -10%,#152033,#0a0e14 60%); color:#e8ecf1;
+    font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; padding:24px; }
+  .card { width:100%; max-width:440px; background:linear-gradient(180deg,#111722,#0c1119);
+    border:1px solid rgba(255,255,255,.08); border-radius:22px; padding:32px 28px;
+    box-shadow:0 24px 70px rgba(0,0,0,.55); text-align:center; }
+  .mark { width:60px; height:60px; border-radius:16px; margin:0 auto 18px;
     background:linear-gradient(135deg,#d9a441,#b8801f); display:flex; align-items:center; justify-content:center;
-    font-weight:800; font-size:26px; color:#0a0e14; }
-  h1 { margin:0 0 6px; font-size:22px; letter-spacing:.2px; }
-  .sub { margin:0 0 26px; color:#9aa7b6; font-size:14px; }
+    font-weight:800; font-size:28px; color:#0a0e14; box-shadow:0 8px 24px rgba(200,144,31,.3); }
+  h1 { margin:0 0 6px; font-size:23px; letter-spacing:.2px; }
+  .sub { margin:0 0 18px; color:#9aa7b6; font-size:14px; }
+  .meta { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:0 0 22px; min-height:26px; }
+  .chip { font-size:12px; font-weight:600; color:#cbd5e1; background:rgba(255,255,255,.05);
+    border:1px solid rgba(255,255,255,.08); border-radius:999px; padding:4px 11px; }
+  .chip.live { color:#34d399; border-color:rgba(52,211,153,.3); background:rgba(52,211,153,.08); }
+  .chip .dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:#34d399;
+    margin-right:6px; vertical-align:middle; animation:p 1.8s infinite; }
+  @keyframes p { 0%,100%{opacity:1} 50%{opacity:.35} }
   .btn { display:block; width:100%; padding:16px; border-radius:14px; text-decoration:none;
     font-weight:700; font-size:17px; color:#0a0e14; background:linear-gradient(135deg,#e6b455,#c8901f);
     box-shadow:0 8px 24px rgba(200,144,31,.35); }
   .btn:active { transform:translateY(1px); }
-  ol { text-align:left; margin:26px 0 0; padding-left:20px; color:#b8c2cf; font-size:13.5px; }
+  ol { text-align:left; margin:24px 0 0; padding-left:20px; color:#b8c2cf; font-size:13.5px; }
   ol li { margin:8px 0; }
+  details { margin-top:18px; text-align:left; }
+  details summary { cursor:pointer; color:#9aa7b6; font-size:13px; }
+  details pre { white-space:pre-wrap; word-break:break-word; color:#98a6b6; font-size:12px;
+    background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); border-radius:10px;
+    padding:12px; margin-top:10px; max-height:220px; overflow:auto; }
   .foot { margin-top:22px; font-size:11.5px; color:#5f6b7a; }
 </style></head>
 <body>
@@ -310,14 +323,39 @@ app.get(["/download", "/get"], (req, res) => {
     <div class="mark">S</div>
     <h1>Sonalit Guardian</h1>
     <p class="sub">Field officer app · Android 10+</p>
+    <div class="meta" id="meta"><span class="chip live"><span class="dot"></span>Always the latest build</span></div>
     <a class="btn" href="${apk}" download>Download APK</a>
     <ol>
       <li>Tap <b>Download APK</b> above.</li>
-      <li>Open the downloaded file. If Android warns you, allow <b>Install unknown apps</b> for your browser, then tap <b>Install</b>.</li>
+      <li>Open the downloaded file. If Android warns you, allow <b>Install unknown apps</b> for your browser, then tap <b>Install</b>. Installing over an existing copy keeps your enrolment.</li>
       <li>Open <b>Sonalit Guardian</b> and enter your operator code to enrol.</li>
     </ol>
+    <details id="notesWrap" hidden><summary>What's new</summary><pre id="notes"></pre></details>
     <div class="foot">Company-issued devices only. Installing means you accept your organisation's monitoring policy.</div>
   </div>
+  <script>
+    (function(){
+      var meta = document.getElementById('meta');
+      function fmtSize(b){ if(!b) return null; var mb=b/1048576; return (mb>=100?Math.round(mb):mb.toFixed(1))+' MB'; }
+      function fmtWhen(iso){ if(!iso) return null; var d=new Date(iso); if(isNaN(d)) return null;
+        var days=Math.floor((Date.now()-d.getTime())/86400000);
+        if(days<=0) return 'updated today'; if(days===1) return 'updated yesterday';
+        if(days<30) return 'updated '+days+' days ago';
+        return 'updated '+d.toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}); }
+      function chip(t,live){ var s=document.createElement('span'); s.className='chip'+(live?' live':'');
+        if(live){ s.innerHTML='<span class="dot"></span>'; s.appendChild(document.createTextNode(t)); }
+        else s.textContent=t; return s; }
+      fetch('${info}').then(function(r){return r.json();}).then(function(d){
+        meta.innerHTML='';
+        meta.appendChild(chip('Latest build',true));
+        if(d && d.version) meta.appendChild(chip(String(d.version)));
+        var w=d&&fmtWhen(d.published_at); if(w) meta.appendChild(chip(w));
+        var s=d&&fmtSize(d.size); if(s) meta.appendChild(chip(s));
+        if(d && d.notes){ document.getElementById('notes').textContent=String(d.notes).slice(0,4000);
+          document.getElementById('notesWrap').hidden=false; }
+      }).catch(function(){ /* keep the default chip; the button still works */ });
+    })();
+  </script>
 </body></html>`);
 });
 
