@@ -2991,6 +2991,15 @@ async function resolveLatestApkInfo() {
 }
 async function resolveLatestApkUrl() { return (await resolveLatestApkInfo()).url; }
 
+// The stable "latest release" asset URL. GitHub 302-redirects it to the current
+// release's asset, served from its release CDN — this is NOT the api.github.com
+// rate limit, so it keeps working when the API is throttled. Needs no token.
+function githubLatestApkUrl() {
+  const repo = process.env.APK_RELEASE_REPO || 'fleetsatpro/Sonalit';
+  const asset = process.env.APK_ASSET_NAME || 'app-debug.apk';
+  return `https://github.com/${repo}/releases/latest/download/${asset}`;
+}
+
 // Streams an upstream APK URL to the client with an exact Content-Length (a bare
 // 302 through GitHub's redirect chain makes mobile browsers hang at 100%).
 async function streamApk(res, url) {
@@ -3015,7 +3024,19 @@ router.get('/apk/info', async (req, res) => {
     res.json({ version: i.version, name: i.name, published_at: i.published_at, size: i.size, notes: i.notes });
   } catch (err) {
     logger.warn(`APK info unavailable (${err.message})`);
-    res.status(200).json({ version: null, name: null, published_at: null, size: null, notes: null });
+    // Best-effort version from the stable redirect (no API, no rate limit): the
+    // releases/latest page 302s to /releases/tag/guardian-vN.
+    let version = null;
+    try {
+      const repo = process.env.APK_RELEASE_REPO || 'fleetsatpro/Sonalit';
+      const r = await fetch(`https://github.com/${repo}/releases/latest`, {
+        method: 'HEAD', redirect: 'manual', headers: { 'User-Agent': 'Sonalit-Guardian' },
+      });
+      const loc = r.headers.get('location') || '';
+      const m = loc.match(/\/tag\/([^/?#]+)/);
+      if (m) version = decodeURIComponent(m[1]);
+    } catch { /* leave version null */ }
+    res.status(200).json({ version, name: null, published_at: null, size: null, notes: null });
   }
 });
 
@@ -3036,7 +3057,18 @@ router.get('/apk/download', async (req, res) => {
     }
   }
 
-  // Fallback 1: the latest published GitHub release.
+  // Fallback 1: the stable GitHub "latest release" download URL. Served from the
+  // release CDN (not the rate-limited api.github.com), so this works even when
+  // the API is throttled — which is the common failure mode.
+  try {
+    return await streamApk(res, githubLatestApkUrl());
+  } catch (err) {
+    if (res.headersSent) return;
+    logger.warn(`APK latest-download stream failed (${err.message}) — trying the release API`);
+  }
+
+  // Fallback 2: resolve the asset via the releases API (needs the API, which may
+  // be rate-limited, but returns the exact asset when it works).
   try {
     return await streamApk(res, await resolveLatestApkUrl());
   } catch (err) {
@@ -3044,7 +3076,7 @@ router.get('/apk/download', async (req, res) => {
     logger.warn(`APK latest-release resolve/stream failed (${err.message}) — trying fallbacks`);
   }
 
-  // Fallback 2: an explicitly configured URL.
+  // Fallback 3: an explicitly configured URL.
   if (process.env.APK_REDIRECT_URL) {
     try {
       return await streamApk(res, process.env.APK_REDIRECT_URL);
@@ -3054,7 +3086,7 @@ router.get('/apk/download', async (req, res) => {
     }
   }
 
-  // Fallback 3: a local file.
+  // Fallback 4: a local file.
   const apkPath = process.env.APK_FILE_PATH
     || path.join(__dirname, '../../static/guardian-agent.apk');
 
