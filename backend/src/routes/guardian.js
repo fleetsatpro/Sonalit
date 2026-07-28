@@ -2965,9 +2965,13 @@ async function resolveLatestApkInfo() {
   // GitHub API calls/hour (well under the 60/hr limit).
   if (_latestApk.info && Date.now() - _latestApk.at < 600_000) return _latestApk.info;
   const repo = process.env.APK_RELEASE_REPO || 'fleetsatpro/Sonalit';
-  const resp = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
-    headers: { 'User-Agent': 'Sonalit-Guardian', 'Accept': 'application/vnd.github+json' },
-  });
+  // Authenticate the release lookup when a token is present — the unauthenticated
+  // GitHub API is 60 req/hr per IP (shared on Railway), which runs out and makes
+  // the version chips blank; a token raises it to 5000/hr.
+  const ghHeaders = { 'User-Agent': 'Sonalit-Guardian', 'Accept': 'application/vnd.github+json' };
+  const ghToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  if (ghToken) ghHeaders.Authorization = `Bearer ${ghToken}`;
+  const resp = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, { headers: ghHeaders });
   if (!resp.ok) throw new Error(`releases API HTTP ${resp.status}`);
   const rel = await resp.json();
   const asset = (rel.assets || []).find(a => a.name === 'app-debug.apk') || (rel.assets || [])[0];
@@ -3019,7 +3023,20 @@ router.get('/apk/download', async (req, res) => {
   const fs = require('fs');
   const path = require('path');
 
-  // Primary: the latest published release (always the current app).
+  // Primary: the stable R2 object the build publishes on every main push. It's
+  // always the latest APK, CDN-backed, and — unlike the GitHub release API —
+  // has no rate limit, so this is the reliable path.
+  if (process.env.R2_PUBLIC_URL) {
+    const r2Url = `${process.env.R2_PUBLIC_URL.replace(/\/$/, '')}/apk/sonalit-guardian.apk`;
+    try {
+      return await streamApk(res, r2Url);
+    } catch (err) {
+      if (res.headersSent) return;
+      logger.warn(`APK R2 stream failed (${err.message}) — trying the GitHub release`);
+    }
+  }
+
+  // Fallback 1: the latest published GitHub release.
   try {
     return await streamApk(res, await resolveLatestApkUrl());
   } catch (err) {
@@ -3027,7 +3044,7 @@ router.get('/apk/download', async (req, res) => {
     logger.warn(`APK latest-release resolve/stream failed (${err.message}) — trying fallbacks`);
   }
 
-  // Fallback 1: an explicitly configured URL.
+  // Fallback 2: an explicitly configured URL.
   if (process.env.APK_REDIRECT_URL) {
     try {
       return await streamApk(res, process.env.APK_REDIRECT_URL);
@@ -3037,7 +3054,7 @@ router.get('/apk/download', async (req, res) => {
     }
   }
 
-  // Fallback 2: a local file.
+  // Fallback 3: a local file.
   const apkPath = process.env.APK_FILE_PATH
     || path.join(__dirname, '../../static/guardian-agent.apk');
 
