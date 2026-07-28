@@ -73,11 +73,17 @@ function CesiumDrive({ points, snapped, provider, confidence }:
     viewerRef.current = viewer;
 
     const googleKey = (import.meta.env['VITE_GOOGLE_MAPS_API_KEY'] as string | undefined) ?? '';
+    // Every await below can resolve after the user has navigated away, so each
+    // one re-checks the viewer before touching it — otherwise the upgrade lands
+    // on a destroyed viewer and throws from a promise nobody is watching.
     (async () => {
+      const alive = () => !viewer.isDestroyed();
       if (googleKey) {
         try {
           (Cesium as unknown as { GoogleMaps: { defaultApiKey: string } }).GoogleMaps.defaultApiKey = googleKey;
-          viewer.scene.primitives.add(await Cesium.createGooglePhotorealistic3DTileset());
+          const tileset = await Cesium.createGooglePhotorealistic3DTileset();
+          if (!alive()) return;
+          viewer.scene.primitives.add(tileset);
           viewer.scene.globe.show = false;
           return;
         } catch { /* fall through */ }
@@ -85,11 +91,20 @@ function CesiumDrive({ points, snapped, provider, confidence }:
       if (token) {
         try {
           const bing = await Cesium.createWorldImageryAsync();
+          if (!alive()) return;
           viewer.imageryLayers.removeAll();
           viewer.imageryLayers.addImageryProvider(bing);
         } catch { /* keep Esri */ }
-        try { viewer.terrainProvider = await Cesium.createWorldTerrainAsync(); } catch { /* keep ellipsoid */ }
-        try { viewer.scene.primitives.add(await Cesium.createOsmBuildingsAsync()); } catch { /* no buildings */ }
+        try {
+          const terrain = await Cesium.createWorldTerrainAsync();
+          if (!alive()) return;
+          viewer.terrainProvider = terrain;
+        } catch { /* keep ellipsoid */ }
+        try {
+          const buildings = await Cesium.createOsmBuildingsAsync();
+          if (!alive()) return;
+          viewer.scene.primitives.add(buildings);
+        } catch { /* no buildings */ }
       }
     })();
 
@@ -223,6 +238,8 @@ function CesiumDrive({ points, snapped, provider, confidence }:
 
     const total = Cesium.JulianDate.secondsDifference(stop, start) || 1;
     const onTick = () => {
+      // A tick can still be dispatched while the viewer is being torn down.
+      if (viewer.isDestroyed()) return;
       const now = viewer.clock.currentTime;
       const elapsed = Cesium.JulianDate.secondsDifference(now, start);
       const idx = nearestIdx(now);
@@ -239,7 +256,11 @@ function CesiumDrive({ points, snapped, provider, confidence }:
       });
     };
     viewer.clock.onTick.addEventListener(onTick);
-    return () => { viewer.clock.onTick.removeEventListener(onTick); };
+    // React runs effect cleanups in declaration order, so the viewer-init effect
+    // above has ALREADY destroyed the viewer by the time this runs on unmount.
+    // Touching viewer.clock then reads _cesiumWidget.clock off an undefined
+    // widget — "Cannot read properties of undefined (reading 'clock')".
+    return () => { if (!viewer.isDestroyed()) viewer.clock.onTick.removeEventListener(onTick); };
   }, [points]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setMultiplier = (m: number) => {
