@@ -58,8 +58,13 @@ jobs:
       - name: Build web
         run: pnpm --filter @sonalit/web build
 
+      # --forceExit for the same reason the integration step below has it: a suite
+      # leaks a handle, so jest reports all tests green and then never exits,
+      # hanging the job indefinitely (reproducible locally — 172 tests pass in
+      # ~5s, then the process sits forever). Results are final before the exit,
+      # so forcing it loses no signal.
       - name: Backend unit tests
-        run: pnpm --filter fleetops-backend exec jest --testPathIgnorePatterns=integration --no-coverage
+        run: pnpm --filter fleetops-backend exec jest --testPathIgnorePatterns=integration --no-coverage --forceExit
         env:
           JWT_SECRET: ci-test-jwt-secret
           DATABASE_URL: ""
