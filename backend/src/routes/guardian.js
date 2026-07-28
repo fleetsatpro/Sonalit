@@ -2959,11 +2959,11 @@ router.get('/convoy-codes', authenticate, async (req, res, next) => {
 //   APK_REDIRECT_URL — explicit fallback URL if the release lookup fails
 //   APK_FILE_PATH    — local file fallback
 
-let _latestApk = { url: null, at: 0 };
-async function resolveLatestApkUrl() {
+let _latestApk = { info: null, at: 0 };
+async function resolveLatestApkInfo() {
   // Cache 10 min so a burst of downloads makes at most ~6 unauthenticated
   // GitHub API calls/hour (well under the 60/hr limit).
-  if (_latestApk.url && Date.now() - _latestApk.at < 600_000) return _latestApk.url;
+  if (_latestApk.info && Date.now() - _latestApk.at < 600_000) return _latestApk.info;
   const repo = process.env.APK_RELEASE_REPO || 'fleetsatpro/Sonalit';
   const resp = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
     headers: { 'User-Agent': 'Sonalit-Guardian', 'Accept': 'application/vnd.github+json' },
@@ -2972,9 +2972,20 @@ async function resolveLatestApkUrl() {
   const rel = await resp.json();
   const asset = (rel.assets || []).find(a => a.name === 'app-debug.apk') || (rel.assets || [])[0];
   if (!asset || !asset.browser_download_url) throw new Error('no APK asset on latest release');
-  _latestApk = { url: asset.browser_download_url, at: Date.now() };
-  return _latestApk.url;
+  _latestApk = {
+    info: {
+      version: rel.tag_name || rel.name || null,
+      name: rel.name || null,
+      published_at: rel.published_at || null,
+      notes: rel.body || null,
+      size: asset.size || null,
+      url: asset.browser_download_url,
+    },
+    at: Date.now(),
+  };
+  return _latestApk.info;
 }
+async function resolveLatestApkUrl() { return (await resolveLatestApkInfo()).url; }
 
 // Streams an upstream APK URL to the client with an exact Content-Length (a bare
 // 302 through GitHub's redirect chain makes mobile browsers hang at 100%).
@@ -2988,6 +2999,21 @@ async function streamApk(res, url) {
   res.setHeader('Cache-Control', 'no-store');
   require('stream').Readable.fromWeb(upstream.body).pipe(res);
 }
+
+// Public metadata for the download site — current version, release date, size.
+// No auth: the download page reads it to show what's on offer. Falls back to a
+// minimal shape so the page still renders (and the download still works) when
+// the release API is briefly unreachable.
+router.get('/apk/info', async (req, res) => {
+  try {
+    const i = await resolveLatestApkInfo();
+    res.set('Cache-Control', 'public, max-age=300');
+    res.json({ version: i.version, name: i.name, published_at: i.published_at, size: i.size, notes: i.notes });
+  } catch (err) {
+    logger.warn(`APK info unavailable (${err.message})`);
+    res.status(200).json({ version: null, name: null, published_at: null, size: null, notes: null });
+  }
+});
 
 router.get('/apk/download', async (req, res) => {
   const fs = require('fs');
