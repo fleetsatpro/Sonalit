@@ -58,8 +58,13 @@ jobs:
       - name: Build web
         run: pnpm --filter @sonalit/web build
 
+      # --forceExit for the same reason the integration step below has it: a suite
+      # leaks a handle, so jest reports all tests green and then never exits,
+      # hanging the job indefinitely (reproducible locally — 172 tests pass in
+      # ~5s, then the process sits forever). Results are final before the exit,
+      # so forcing it loses no signal.
       - name: Backend unit tests
-        run: pnpm --filter fleetops-backend exec jest --testPathIgnorePatterns=integration --no-coverage
+        run: pnpm --filter fleetops-backend exec jest --testPathIgnorePatterns=integration --no-coverage --forceExit
         env:
           JWT_SECRET: ci-test-jwt-secret
           DATABASE_URL: ""
@@ -102,8 +107,13 @@ jobs:
         env:
           CI: "true"
 
+      # Debugging aid, not a gate: the E2E result is already recorded in the step
+      # above. A full artifact bucket must not turn a green run red — which is
+      # exactly what happened here (107 E2E tests passed, then CreateArtifact
+      # failed on "Artifact storage quota has been hit").
       - name: Upload Playwright report
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
