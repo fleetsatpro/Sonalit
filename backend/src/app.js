@@ -276,10 +276,10 @@ catch (e) { logger.warn("Claims route failed: " + e.message); }
 // at /download — no auth, no GitHub. The button hits /api/v1/guardian/apk/download,
 // which redirects to the APK on Cloudflare R2 (or a fallback) via APK_REDIRECT_URL.
 app.get("/download/apk", (req, res) => res.redirect(302, "/api/v1/guardian/apk/download"));
-app.get(["/download", "/get"], (req, res) => {
+function renderDownloadPage() {
   const apk = "/api/v1/guardian/apk/download";
   const info = "/api/v1/guardian/apk/info";
-  res.type("html").send(`<!doctype html>
+  return `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
@@ -356,7 +356,20 @@ app.get(["/download", "/get"], (req, res) => {
       }).catch(function(){ /* keep the default chip; the button still works */ });
     })();
   </script>
-</body></html>`);
+</body></html>`;
+}
+
+app.get(["/download", "/get"], (req, res) => res.type("html").send(renderDownloadPage()));
+
+// Dedicated download host (get.sonalit.com): serve the install page at the bare
+// root so the short link works with no path. Any other host keeps its normal
+// behaviour (the API domain's "/" still 404s as before). Railway forwards the
+// requested Host, so req.headers.host is the real domain here.
+app.get("/", (req, res, next) => {
+  const host = String(req.headers.host || "").toLowerCase().split(":")[0];
+  const apkHost = (process.env.APK_DOWNLOAD_HOST || "get.sonalit.com").toLowerCase();
+  if (host === apkHost || host.startsWith("get.")) return res.type("html").send(renderDownloadPage());
+  next();
 });
 
 app.use((req, res) => res.status(404).json({ error: req.method + " " + req.path + " not found" }));
