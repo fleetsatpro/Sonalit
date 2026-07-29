@@ -126,7 +126,8 @@
             android:exported="false"
             android:excludeFromRecents="true"
             android:launchMode="singleInstance"
-            android:theme="@style/Theme.GuardianApp" />
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <!-- Enrollment Activity alias for deep link -->
         <activity-alias
