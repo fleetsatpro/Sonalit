@@ -46,18 +46,20 @@ function capPoints(route, max = 300) {
  * Build a driving-directions URL. Mapbox Directions and OSRM /route return the
  * same GeoJSON geometry shape, so only host/path/auth differ.
  */
-function buildRouteUrl(prov, waypoints) {
+function buildRouteUrl(prov, waypoints, opts = {}) {
   const coords = waypoints.map(w => `${w.lng},${w.lat}`).join(';');
+  // Both engines only offer alternatives for a plain origin→destination pair;
+  // asking with vias in between is silently ignored, so don't bother.
+  const alts = opts.alternatives && waypoints.length === 2 ? '&alternatives=true' : '';
   if (prov.name === 'mapbox') {
     return 'https://api.mapbox.com/directions/v5/mapbox/driving/' + coords +
-      `?geometries=geojson&overview=full&access_token=${encodeURIComponent(prov.token)}`;
+      `?geometries=geojson&overview=full${alts}&access_token=${encodeURIComponent(prov.token)}`;
   }
   return `${prov.base.replace(/\/$/, '')}/route/v1/driving/${coords}` +
-    '?geometries=geojson&overview=full';
+    '?geometries=geojson&overview=full' + alts;
 }
 
-function parseRoute(json) {
-  const r = json && Array.isArray(json.routes) ? json.routes[0] : null;
+function parseOne(r) {
   const coords = r && r.geometry && Array.isArray(r.geometry.coordinates) ? r.geometry.coordinates : null;
   if (!coords || coords.length < 2) return null;
   const route = coords
@@ -65,6 +67,17 @@ function parseRoute(json) {
     .map(([lng, lat]) => ({ lat: Number(lat), lng: Number(lng) }));
   if (route.length < 2) return null;
   return { route, distanceKm: (r.distance || 0) / 1000, durationMin: (r.duration || 0) / 60 };
+}
+
+function parseRoute(json) {
+  const r = json && Array.isArray(json.routes) ? json.routes[0] : null;
+  return parseOne(r);
+}
+
+/** Every route in the response, not just the engine's preferred one. */
+function parseRoutes(json) {
+  const rs = json && Array.isArray(json.routes) ? json.routes : [];
+  return rs.map(parseOne).filter(Boolean);
 }
 
 /**
@@ -102,4 +115,46 @@ async function planRoute(waypoints, opts = {}) {
   return fallback;
 }
 
-module.exports = { planRoute, buildRouteUrl, parseRoute, capPoints, haversineM };
+/**
+ * Ask for every road the engine is willing to offer between two points, so the
+ * caller can choose on its own criteria (risk, not just speed) rather than
+ * accepting whichever one the router happened to prefer.
+ *
+ * Returns [] when nothing is reachable — unlike planRoute there is no
+ * straight-line fallback, because a caller comparing routes needs to know it
+ * has nothing real to compare.
+ *
+ * @param {Array<{lat:number,lng:number}>} waypoints
+ * @param {{osrmUrl?:string, mapboxToken?:string, maxPoints?:number, fetchImpl?:Function}} opts
+ * @returns {Promise<Array<{route:Array, distance_km:number, duration_min:number, provider:string}>>}
+ */
+async function planRouteAlternatives(waypoints, opts = {}) {
+  const fetchImpl = opts.fetchImpl || globalThis.fetch;
+  const providers = [];
+  if (opts.mapboxToken) providers.push({ name: 'mapbox', token: opts.mapboxToken });
+  if (opts.osrmUrl) providers.push({ name: 'osrm', base: opts.osrmUrl });
+  if (!fetchImpl || providers.length === 0 || !waypoints || waypoints.length < 2) return [];
+
+  for (const prov of providers) {
+    try {
+      const url = buildRouteUrl(prov, waypoints, { alternatives: true });
+      const resp = await fetchImpl(url, { headers: { 'User-Agent': 'Sonalit-Guardian' } });
+      if (!resp.ok) continue;
+      const json = await resp.json();
+      if (json.code && json.code !== 'Ok') continue;
+      const parsed = parseRoutes(json);
+      if (!parsed.length) continue;
+      return parsed.map(p => ({
+        route: capPoints(p.route, opts.maxPoints ?? 300),
+        provider: prov.name,
+        distance_km: Math.round(p.distanceKm * 100) / 100,
+        duration_min: Math.round(p.durationMin),
+      }));
+    } catch { /* try the next provider */ }
+  }
+  return [];
+}
+
+module.exports = {
+  planRoute, planRouteAlternatives, buildRouteUrl, parseRoute, parseRoutes, capPoints, haversineM,
+};

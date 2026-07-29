@@ -48,7 +48,9 @@ const ROAD = [
   { lat: 0.63, lng: 34.28 }, { lat: 0.28, lng: 34.75 }, { lat: -1.29, lng: 36.82 },
   { lat: -2.36, lng: 37.66 }, { lat: -4.04, lng: 39.67 },
 ];
+jest.mock('../src/services/geo/geocode', () => ({ geocode: jest.fn() }));
 jest.mock('../src/services/geo/routePlan', () => ({
+  planRouteAlternatives: jest.fn(),
   planRoute: jest.fn(async () => ({
     route: [
       { lat: 0.63, lng: 34.28 }, { lat: 0.28, lng: 34.75 }, { lat: -1.29, lng: 36.82 },
@@ -189,4 +191,103 @@ describe('GET /api/v1/convoys/:id/corridor', () => {
 test('app.js mounts the corridors router under /api/v1/convoys', () => {
   const appSrc = fs.readFileSync(path.join(__dirname, '../src/app.js'), 'utf8');
   expect(appSrc).toMatch(/app\.use\(\s*["']\/api\/v1\/convoys["']\s*,\s*require\(["']\.\/routes\/corridors["']\)/);
+});
+
+// ── Auto-plan from convoy details ────────────────────────────────────────────
+// The convoy already knows where it is going, so the operator should not have
+// to retype it — and the system, not the router, should pick which road.
+describe('POST /api/v1/convoys/:id/corridor/auto', () => {
+  const SAFE = { route: [{ lat: 0.5, lng: 0 }, { lat: 0.5, lng: 1 }], distance_km: 150, duration_min: 130, provider: 'osrm' };
+  const FAST = { route: [{ lat: 0, lng: 0 }, { lat: 0, lng: 1 }], distance_km: 111, duration_min: 90, provider: 'osrm' };
+  const HOTSPOT = { id: 'z1', name: 'Bandit stretch', risk_level: 'critical', zone_type: 'theft_hotspot', lat: 0, lng: 0.5, radius_km: 10 };
+
+  function stubOrg({ convoy, zones = [] }) {
+    mockOrgQuery.mockImplementation(async (sql) => {
+      if (/FROM convoys\b/.test(sql)) return { rows: convoy ? [convoy] : [] };
+      if (/risk_zones/.test(sql)) return { rows: zones };
+      return { rows: [{ id: 'corr-1', width_km: '2.0' }] };
+    });
+  }
+
+  beforeEach(() => {
+    const { planRouteAlternatives } = require('../src/services/geo/routePlan');
+    planRouteAlternatives.mockReset();
+    planRouteAlternatives.mockResolvedValue([FAST, SAFE]);
+    const { geocode } = require('../src/services/geo/geocode');
+    geocode.mockReset();
+    geocode.mockImplementation(async (q) => ({
+      provider: 'mapbox',
+      results: [{ name: `${q} (resolved)`, lat: /Kisumu/.test(q) ? 0 : 0, lng: /Kisumu/.test(q) ? 0 : 1 }],
+    }));
+  });
+
+  test('routes around a critical hotspot rather than taking the fastest road', async () => {
+    stubOrg({
+      convoy: { id: CONVOY, name: 'PE13', route_origin: 'Kisumu', route_destination: 'Mombasa' },
+      zones: [HOTSPOT],
+    });
+
+    const res = await request(buildApp()).post(`/api/v1/convoys/${CONVOY}/corridor/auto`).send({ width_km: 2 });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.chosen.index).toBe(1);          // the detour, not the fast road
+    expect(res.body.data.chosen.exposed_km).toBe(0);
+    expect(res.body.data.candidates).toHaveLength(2);
+    // The rejected road is still reported, with the reason it lost.
+    const rejected = res.body.data.candidates.find(c => c.index === 0);
+    expect(rejected.worst_risk).toBe('critical');
+    expect(rejected.exposures[0].name).toBe('Bandit stretch');
+  });
+
+  test('takes the fastest road when nothing is in the way', async () => {
+    stubOrg({ convoy: { id: CONVOY, route_origin: 'Kisumu', route_destination: 'Mombasa' }, zones: [] });
+    const res = await request(buildApp()).post(`/api/v1/convoys/${CONVOY}/corridor/auto`).send({});
+    expect(res.status).toBe(201);
+    expect(res.body.data.chosen.index).toBe(0);
+    expect(res.body.data.zones_considered).toBe(0);
+  });
+
+  test('422s with a usable message when the convoy has no endpoints set', async () => {
+    stubOrg({ convoy: { id: CONVOY, route_origin: null, route_destination: null } });
+    const res = await request(buildApp()).post(`/api/v1/convoys/${CONVOY}/corridor/auto`).send({});
+    expect(res.status).toBe(422);
+    expect(res.body.missing).toEqual({ origin: true, destination: true });
+  });
+
+  test('422s when a place name cannot be geocoded', async () => {
+    stubOrg({ convoy: { id: CONVOY, route_origin: 'Xyzzy', route_destination: 'Mombasa' } });
+    const { geocode } = require('../src/services/geo/geocode');
+    geocode.mockImplementation(async (q) => ({
+      provider: 'mapbox',
+      results: /Xyzzy/.test(q) ? [] : [{ name: q, lat: 0, lng: 1 }],
+    }));
+    const res = await request(buildApp()).post(`/api/v1/convoys/${CONVOY}/corridor/auto`).send({});
+    expect(res.status).toBe(422);
+    expect(res.body.error).toMatch(/Xyzzy/);
+  });
+
+  test('502s rather than storing a straight line when no router answers', async () => {
+    stubOrg({ convoy: { id: CONVOY, route_origin: 'Kisumu', route_destination: 'Mombasa' } });
+    const { planRouteAlternatives } = require('../src/services/geo/routePlan');
+    planRouteAlternatives.mockResolvedValue([]);
+    const res = await request(buildApp()).post(`/api/v1/convoys/${CONVOY}/corridor/auto`).send({});
+    expect(res.status).toBe(502);
+  });
+
+  test('flags it when every available road is blocked', async () => {
+    stubOrg({
+      convoy: { id: CONVOY, route_origin: 'Kisumu', route_destination: 'Mombasa' },
+      zones: [{ ...HOTSPOT, risk_level: 'no_go', lat: 0.25, radius_km: 200 }],
+    });
+    const res = await request(buildApp()).post(`/api/v1/convoys/${CONVOY}/corridor/auto`).send({});
+    expect(res.status).toBe(201);
+    expect(res.body.data.all_blocked).toBe(true);
+    expect(res.body.data.chosen.blocked).toBe(true);
+  });
+
+  test('404s for a convoy in another org', async () => {
+    stubOrg({ convoy: null });
+    const res = await request(buildApp()).post(`/api/v1/convoys/${CONVOY}/corridor/auto`).send({});
+    expect(res.status).toBe(404);
+  });
 });
