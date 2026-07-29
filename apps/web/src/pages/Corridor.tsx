@@ -1,8 +1,12 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
-import { Radar, Route as RouteIcon, ChevronDown, Loader2, Truck, Clock, Navigation, MapPinned } from 'lucide-react';
+import {
+  Radar, Route as RouteIcon, ChevronDown, Loader2, Truck, Clock, Navigation,
+  MapPinned, Gauge, Flag, Signal, AlertTriangle,
+} from 'lucide-react';
 import CorridorPlanner from '../components/geofences/CorridorPlanner.js';
+import CorridorMap from '../components/geofences/CorridorMap.js';
 
 interface ConvoyRow { id: string; name: string; status: string }
 interface Member {
@@ -22,19 +26,85 @@ interface CorridorResp {
   evaluated_at: string;
 }
 
-const OFF = { label: 'Off route', ring: 'border-red-500/50', text: 'text-red-400', bg: 'bg-red-500' };
-const STATUS: Record<string, { label: string; ring: string; text: string; bg: string }> = {
+const OFF = { label: 'Off route', ring: 'border-red-500/50', text: 'text-red-400', bg: 'bg-red-500', glow: 'shadow-[0_0_12px_-2px_rgba(239,68,68,0.6)]' };
+const STATUS: Record<string, { label: string; ring: string; text: string; bg: string; glow: string }> = {
   off_route: OFF,
-  behind: { label: 'Behind schedule', ring: 'border-amber-500/50', text: 'text-amber-400', bg: 'bg-amber-500' },
-  ahead: { label: 'Ahead of escort', ring: 'border-cyan-500/50', text: 'text-cyan-400', bg: 'bg-cyan-500' },
-  on_track: { label: 'On track', ring: 'border-emerald-500/40', text: 'text-emerald-400', bg: 'bg-emerald-500' },
-  no_fix: { label: 'No GPS fix', ring: 'border-white/10', text: 'text-neutral-500', bg: 'bg-neutral-600' },
+  behind: { label: 'Behind schedule', ring: 'border-amber-500/50', text: 'text-amber-400', bg: 'bg-amber-500', glow: 'shadow-[0_0_12px_-2px_rgba(245,158,11,0.6)]' },
+  ahead: { label: 'Ahead of escort', ring: 'border-cyan-500/50', text: 'text-cyan-400', bg: 'bg-cyan-500', glow: 'shadow-[0_0_12px_-2px_rgba(34,211,238,0.6)]' },
+  on_track: { label: 'On track', ring: 'border-emerald-500/40', text: 'text-emerald-400', bg: 'bg-emerald-500', glow: '' },
+  no_fix: { label: 'No GPS fix', ring: 'border-white/10', text: 'text-neutral-500', bg: 'bg-neutral-600', glow: '' },
 };
+
+// Worst-first: an off-route truck must never be below an on-track one.
+const RANK: Record<string, number> = { off_route: 0, behind: 1, ahead: 2, no_fix: 3, on_track: 4 };
+
+const CHIPS = [
+  { key: 'off_route', label: 'Off route', cls: 'text-red-400' },
+  { key: 'behind', label: 'Behind', cls: 'text-amber-400' },
+  { key: 'ahead', label: 'Ahead', cls: 'text-cyan-400' },
+  { key: 'on_track', label: 'On track', cls: 'text-emerald-400' },
+  { key: 'no_fix', label: 'No fix', cls: 'text-neutral-500' },
+];
 
 function schedText(min?: number | null): string {
   if (min == null || min === 0) return 'on schedule';
   const a = Math.abs(min);
-  return min < 0 ? `${a} min behind` : `${a} min ahead`;
+  const t = a >= 60 ? `${Math.floor(a / 60)}h ${a % 60}m` : `${a} min`;
+  return min < 0 ? `${t} behind` : `${t} ahead`;
+}
+
+function fixAge(iso: string | null): string {
+  if (!iso) return 'never';
+  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (!Number.isFinite(m)) return 'never';
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  return `${Math.floor(m / 60)}h ${m % 60}m ago`;
+}
+
+/**
+ * The 4th dimension, drawn: how far along the route the truck actually is
+ * (filled bar) against where the schedule says it should be by now (marker).
+ * The gap between them is the whole point of the page.
+ */
+function ProgressRail({ m, bg }: { m: Member; bg: string }) {
+  const len = m.route_len_km ?? 0;
+  if (!(len > 0)) return null;
+  const pct = (v: number) => Math.max(0, Math.min(100, (v / len) * 100));
+  const actual = pct(m.along_km ?? 0);
+  const expected = pct(m.expected_along_km ?? 0);
+
+  return (
+    <div className="mt-3">
+      <div className="relative h-1.5 w-full overflow-visible rounded-full bg-white/[0.07]">
+        <div className={`h-full rounded-full ${bg} opacity-80`} style={{ width: `${actual}%` }} />
+        <span
+          className="absolute -top-1 h-3.5 w-0.5 rounded bg-white/70"
+          style={{ left: `calc(${expected}% - 1px)` }}
+          title="where the schedule says it should be"
+        />
+      </div>
+      <div className="mt-1.5 flex justify-between text-[10px] font-mono text-neutral-600">
+        <span>{(m.along_km ?? 0).toFixed(0)} km</span>
+        <span className="text-neutral-500">expected {(m.expected_along_km ?? 0).toFixed(0)} km</span>
+        <span>{len.toFixed(0)} km</span>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ Icon, label, value, tone = 'text-neutral-200' }: {
+  Icon: typeof Gauge; label: string; value: string; tone?: string;
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-2.5 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2.5">
+      <Icon size={15} className="shrink-0 text-neutral-500" />
+      <div className="min-w-0">
+        <p className="truncate text-[10px] uppercase tracking-wide text-neutral-500">{label}</p>
+        <p className={`truncate text-sm font-semibold ${tone}`}>{value}</p>
+      </div>
+    </div>
+  );
 }
 
 export default function Corridor() {
@@ -52,29 +122,46 @@ export default function Corridor() {
     queryKey: ['convoy-corridor', convoyId],
     enabled: !!convoyId,
     refetchInterval: 15_000,
+    retry: false,
     queryFn: async () => (await api.get<{ data: CorridorResp }>(`/convoys/${convoyId}/corridor`)).data.data,
   });
 
   const monitorable = (convoys ?? []).filter(c => c.status === 'active' || c.status === 'planned');
-  const members = data?.members ?? [];
+  const members = [...(data?.members ?? [])].sort(
+    (a, b) => (RANK[a.status] ?? 9) - (RANK[b.status] ?? 9) || a.name.localeCompare(b.name),
+  );
+  const routeKm = data?.members?.[0]?.route_len_km ?? 0;
+  const flagged = members.filter(m => m.status === 'off_route' || m.status === 'behind').length;
 
   return (
-    <div className="mx-auto max-w-4xl p-6">
-      <div className="mb-6 flex items-center gap-3">
-        <Radar className="text-violet-400" />
-        <div className="flex-1">
-          <h1 className="text-xl font-bold text-white">4D Geofence · Route Corridor</h1>
-          <p className="text-sm text-neutral-400">The planned route swept over time — flags trucks that stray off-corridor, fall behind, stall, or outrun their escort.</p>
+    <div className="mx-auto max-w-5xl p-4 sm:p-6">
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <div className="mb-5 flex items-start gap-3">
+        <span className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-violet-500/25 bg-violet-500/10">
+          <Radar size={19} className="text-violet-400" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-lg font-bold tracking-tight text-white sm:text-xl">4D Geofence · Route Corridor</h1>
+          <p className="mt-0.5 text-[13px] leading-snug text-neutral-400">
+            The planned route swept over time — flags trucks that stray off-corridor, fall behind, stall, or outrun their escort.
+          </p>
         </div>
-        {isFetching && <Loader2 size={16} className="animate-spin text-neutral-500" />}
+        {data && (
+          <span className="hidden shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-black/40 px-2.5 py-1 text-[11px] text-neutral-400 sm:inline-flex">
+            <span className={`h-1.5 w-1.5 rounded-full bg-emerald-500 ${isFetching ? 'animate-pulse' : ''}`} />
+            live · 15s
+          </span>
+        )}
+        {isFetching && !data && <Loader2 size={16} className="mt-2 animate-spin text-neutral-500" />}
       </div>
 
-      <div className="mb-6 flex flex-wrap items-center gap-3">
+      {/* ── Convoy picker ──────────────────────────────────────────────────── */}
+      <div className="mb-5 flex flex-wrap items-center gap-2.5">
         <div className="relative inline-block">
           <select
             value={convoyId}
             onChange={e => { setConvoyId(e.target.value); setPlanning(false); }}
-            className="appearance-none rounded-lg border border-white/10 bg-black/40 py-2 pl-3 pr-9 text-sm text-white"
+            className="appearance-none rounded-lg border border-white/10 bg-black/40 py-2 pl-3 pr-9 text-sm font-medium text-white outline-none focus:border-violet-500/50"
           >
             <option value="">Select a convoy…</option>
             {monitorable.map(c => <option key={c.id} value={c.id}>{c.name} · {c.status}</option>)}
@@ -83,63 +170,114 @@ export default function Corridor() {
         </div>
         {convoyId && (
           <button onClick={() => setPlanning(p => !p)}
-            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold ${planning ? 'border-violet-500/50 bg-violet-500/10 text-violet-300' : 'border-white/10 bg-black/40 text-neutral-300 hover:text-white'}`}>
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${planning
+              ? 'border-violet-500/50 bg-violet-500/10 text-violet-300'
+              : 'border-white/10 bg-black/40 text-neutral-300 hover:border-white/20 hover:text-white'}`}>
             <MapPinned size={14} /> {data ? 'Update route' : 'Plan route'}
           </button>
+        )}
+        {flagged > 0 && (
+          <span className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-500/25 bg-red-500/[0.07] px-3 py-2 text-sm font-semibold text-red-300 sm:ml-auto sm:w-auto">
+            <AlertTriangle size={14} /> {flagged} needing attention
+          </span>
         )}
       </div>
 
       {convoyId && planning && (
-        <div className="mb-6">
+        <div className="mb-5">
           <CorridorPlanner convoyId={convoyId} onSaved={() => {
             queryClient.invalidateQueries({ queryKey: ['convoy-corridor', convoyId] });
+            setPlanning(false);
           }} />
         </div>
       )}
 
+      {/* ── Live corridor ──────────────────────────────────────────────────── */}
       {data && (
-        <div className="mb-5 flex flex-wrap items-center gap-4 rounded-lg border border-white/10 bg-black/30 p-3 text-xs text-neutral-400">
-          <span className="inline-flex items-center gap-1"><RouteIcon size={13} /> {data.route.length} waypoints · {(members[0]?.route_len_km ?? 0).toFixed(0)} km</span>
-          <span className="inline-flex items-center gap-1"><Navigation size={13} /> corridor ±{data.config.corridor_km} km</span>
-          <span className="inline-flex items-center gap-1"><Clock size={13} /> {data.config.schedule_known ? `pace ${data.config.avg_speed_kmh} km/h` : 'schedule not started'}</span>
+        <>
+          {/* Two-up on a phone: four across truncated every label to "ROU… 9…". */}
+          <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Stat Icon={RouteIcon} label="Route" value={`${routeKm.toFixed(0)} km · ${data.route.length} pts`} />
+            <Stat Icon={Navigation} label="Corridor" value={`±${data.config.corridor_km} km`} tone="text-violet-300" />
+            <Stat Icon={Gauge} label="Planned pace" value={`${data.config.avg_speed_kmh} km/h`} />
+            <Stat
+              Icon={Clock}
+              label="Schedule"
+              value={data.config.schedule_known ? 'running' : 'not started'}
+              tone={data.config.schedule_known ? 'text-emerald-300' : 'text-neutral-500'}
+            />
+          </div>
+
+          <div className="mb-4">
+            <CorridorMap route={data.route} corridorKm={data.config.corridor_km} members={members} />
+          </div>
+
+          <div className="mb-4 flex flex-wrap gap-2">
+            {CHIPS.map(c => (
+              <div key={c.key} className="rounded-lg border border-white/10 bg-black/40 px-3 py-1.5 text-sm">
+                <span className={`font-bold ${c.cls}`}>{data.summary[c.key] ?? 0}</span>
+                <span className="ml-2 text-[13px] text-neutral-400">{c.label}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* ── States ─────────────────────────────────────────────────────────── */}
+      {!convoyId && (
+        <div className="rounded-xl border border-white/[0.06] bg-black/30 p-10 text-center">
+          <Radar size={26} className="mx-auto mb-3 text-neutral-700" />
+          <p className="text-sm text-neutral-500">Pick a convoy to watch its live 4D corridor.</p>
         </div>
       )}
 
-      {!convoyId && (
-        <div className="rounded-xl border border-white/[0.06] bg-black/30 p-10 text-center text-sm text-neutral-500">
-          Pick a convoy to watch its live 4D corridor.
-        </div>
-      )}
       {error && !planning && (
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-6 text-center text-sm text-amber-300">
-          <p>This convoy has no corridor yet, or it couldn't be loaded.</p>
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.05] p-8 text-center">
+          <Flag size={24} className="mx-auto mb-3 text-amber-400/70" />
+          <p className="text-sm font-medium text-amber-200">No corridor for this convoy yet</p>
+          <p className="mx-auto mt-1.5 max-w-sm text-[13px] leading-relaxed text-amber-200/60">
+            Plan one from an origin and destination and the road between them is routed automatically.
+          </p>
           <button onClick={() => setPlanning(true)}
-            className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/10">
-            <MapPinned size={13} /> Plan the route
+            className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500">
+            <MapPinned size={14} /> Plan the route
           </button>
         </div>
       )}
 
+      {/* ── Members ────────────────────────────────────────────────────────── */}
       {members.length > 0 && (
-        <ul className="space-y-3">
+        <ul className="space-y-2.5">
           {members.map(m => {
             const st = STATUS[m.status] ?? OFF;
             return (
-              <li key={m.id} className={`rounded-xl border ${st.ring} bg-black/40 p-4`}>
+              <li key={m.id} className={`rounded-xl border ${st.ring} bg-black/40 p-4 transition-colors`}>
                 <div className="flex items-start gap-3">
-                  <span className={`mt-1.5 h-3 w-3 shrink-0 rounded-full ${st.bg}`} />
+                  <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${st.bg} ${st.glow}`} />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <Truck size={14} className="text-neutral-400" />
-                      <span className="truncate font-semibold text-white">{m.officer_name ? `${m.officer_name} · ${m.name}` : m.name}</span>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <Truck size={14} className="shrink-0 text-neutral-400" />
+                      <span className="truncate font-semibold text-white">
+                        {m.officer_name ? `${m.officer_name} · ${m.name}` : m.name}
+                      </span>
+                      <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${st.ring} ${st.text}`}>
+                        {st.label}
+                      </span>
                     </div>
-                    <p className={`mt-0.5 text-sm font-medium ${st.text}`}>{st.label}</p>
-                    {m.status !== 'no_fix' && (
-                      <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-[11px] font-mono text-neutral-500">
-                        <span>{(m.cross_track_km ?? 0).toFixed(2)} km off route</span>
-                        <span>{schedText(m.schedule_delta_min)}</span>
-                        <span>{(m.along_km ?? 0).toFixed(0)} / {(m.route_len_km ?? 0).toFixed(0)} km along</span>
-                      </div>
+
+                    {m.status === 'no_fix' ? (
+                      <p className="mt-1.5 flex items-center gap-1.5 text-[12px] text-neutral-500">
+                        <Signal size={12} /> last fix {fixAge(m.last_fix_at)}
+                      </p>
+                    ) : (
+                      <>
+                        <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-neutral-400">
+                          <span><span className="font-mono text-neutral-300">{(m.cross_track_km ?? 0).toFixed(2)}</span> km off route</span>
+                          <span className={m.schedule_delta_min && Math.abs(m.schedule_delta_min) > 0 ? st.text : ''}>{schedText(m.schedule_delta_min)}</span>
+                          <span className="text-neutral-500">fix {fixAge(m.last_fix_at)}</span>
+                        </div>
+                        <ProgressRail m={m} bg={st.bg} />
+                      </>
                     )}
                   </div>
                 </div>
@@ -149,9 +287,10 @@ export default function Corridor() {
         </ul>
       )}
 
-      {data && members.length === 0 && !error && (
-        <div className="rounded-xl border border-white/[0.06] bg-black/30 p-10 text-center text-sm text-neutral-500">
-          No Guardian devices assigned to this convoy yet.
+      {data && members.length === 0 && (
+        <div className="rounded-xl border border-white/[0.06] bg-black/30 p-10 text-center">
+          <Truck size={24} className="mx-auto mb-3 text-neutral-700" />
+          <p className="text-sm text-neutral-500">The corridor is live, but no Guardian devices are assigned to this convoy yet.</p>
         </div>
       )}
 
