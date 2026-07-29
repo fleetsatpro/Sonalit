@@ -1926,6 +1926,16 @@
         }
       }
     },
+    "/api/v1/convoys/{id}/corridor/auto": {
+      "post": {
+        "operationId": "post_api_v1_convoys_id_corridor_auto",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/convoys/{id}/corridor/deviations": {
       "get": {
         "operationId": "get_api_v1_convoys_id_corridor_deviations",

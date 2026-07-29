@@ -3,12 +3,14 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
 import {
   Radar, Route as RouteIcon, ChevronDown, Loader2, Truck, Clock, Navigation,
-  MapPinned, Gauge, Flag, Signal, AlertTriangle,
+  MapPinned, Gauge, Flag, Signal, AlertTriangle, ShieldAlert,
 } from 'lucide-react';
 import CorridorPlanner from '../components/geofences/CorridorPlanner.js';
-import CorridorMap from '../components/geofences/CorridorMap.js';
+import CorridorGlobe from '../components/geofences/CorridorGlobe.js';
+import AutoPlanPanel from '../components/geofences/AutoPlanPanel.js';
 
 interface ConvoyRow { id: string; name: string; status: string }
+interface ConvoyDetail { id: string; route_origin: string | null; route_destination: string | null }
 interface Member {
   id: string; name: string; officer_name?: string | null;
   lat: number | null; lng: number | null; last_fix_at: string | null;
@@ -17,12 +19,21 @@ interface Member {
   schedule_delta_min?: number | null; along_km?: number | null;
   expected_along_km?: number | null; route_len_km?: number | null;
 }
+interface RiskZone {
+  zone_id: string | null; name: string | null; risk_level: string;
+  zone_type: string | null; km_inside: number; nearest_km: number | null;
+  lat: number; lng: number; radius_km: number;
+}
 interface CorridorResp {
-  convoy: { id: string; name: string; status: string; departure_time: string | null };
+  convoy: {
+    id: string; name: string; status: string; departure_time: string | null;
+    route_origin: string | null; route_destination: string | null;
+  };
   config: { avg_speed_kmh: number; corridor_km: number; schedule_tol_km: number; started_at: string | null; schedule_known: boolean };
   route: { lat: number; lng: number; name: string | null; seq: number }[];
   members: Member[];
   summary: Record<string, number>;
+  risk: { zones: RiskZone[]; exposed_km: number; worst: string | null; blocked: boolean };
   evaluated_at: string;
 }
 
@@ -37,6 +48,14 @@ const STATUS: Record<string, { label: string; ring: string; text: string; bg: st
 
 // Worst-first: an off-route truck must never be below an on-track one.
 const RANK: Record<string, number> = { off_route: 0, behind: 1, ahead: 2, no_fix: 3, on_track: 4 };
+
+const RISK_CHIP: Record<string, string> = {
+  no_go:    'border-red-500/40 bg-red-500/10 text-red-300',
+  critical: 'border-red-500/40 bg-red-500/10 text-red-300',
+  high:     'border-orange-500/40 bg-orange-500/10 text-orange-300',
+  medium:   'border-yellow-500/40 bg-yellow-500/10 text-yellow-300',
+  low:      'border-lime-500/40 bg-lime-500/10 text-lime-300',
+};
 
 const CHIPS = [
   { key: 'off_route', label: 'Off route', cls: 'text-red-400' },
@@ -110,6 +129,7 @@ function Stat({ Icon, label, value, tone = 'text-neutral-200' }: {
 export default function Corridor() {
   const [convoyId, setConvoyId] = useState<string>('');
   const [planning, setPlanning] = useState(false);
+  const [focusId, setFocusId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data: convoys } = useQuery<ConvoyRow[]>({
@@ -125,6 +145,21 @@ export default function Corridor() {
     retry: false,
     queryFn: async () => (await api.get<{ data: CorridorResp }>(`/convoys/${convoyId}/corridor`)).data.data,
   });
+
+  // The convoy's own endpoints, fetched separately: the corridor call 422s
+  // before a corridor exists, which is exactly when auto-planning is needed.
+  const { data: convoyDetail } = useQuery<ConvoyDetail>({
+    queryKey: ['convoy-endpoints', convoyId],
+    enabled: !!convoyId,
+    staleTime: 60_000,
+    retry: false,
+    queryFn: async () => (await api.get<{ data: ConvoyDetail }>(`/convoys/${convoyId}`)).data.data,
+  });
+
+  const afterPlan = () => {
+    queryClient.invalidateQueries({ queryKey: ['convoy-corridor', convoyId] });
+    setPlanning(false);
+  };
 
   const monitorable = (convoys ?? []).filter(c => c.status === 'active' || c.status === 'planned');
   const members = [...(data?.members ?? [])].sort(
@@ -184,11 +219,28 @@ export default function Corridor() {
       </div>
 
       {convoyId && planning && (
-        <div className="mb-5">
-          <CorridorPlanner convoyId={convoyId} onSaved={() => {
-            queryClient.invalidateQueries({ queryKey: ['convoy-corridor', convoyId] });
-            setPlanning(false);
-          }} />
+        <div className="mb-5 space-y-3">
+          <AutoPlanPanel
+            convoyId={convoyId}
+            origin={convoyDetail?.route_origin ?? null}
+            destination={convoyDetail?.route_destination ?? null}
+            widthKm={data?.config.corridor_km ?? 2}
+            onPlanned={afterPlan}
+          />
+
+          {/* Manual entry stays available, but folded away — auto-planning is
+              the path for a convoy that already knows where it is going. */}
+          <details className="group rounded-xl border border-white/10 bg-black/30">
+            <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-neutral-400 hover:text-white">
+              <span className="inline-flex items-center gap-2">
+                <MapPinned size={14} /> Or set the endpoints by hand
+                <ChevronDown size={14} className="transition-transform group-open:rotate-180" />
+              </span>
+            </summary>
+            <div className="border-t border-white/[0.07] p-1">
+              <CorridorPlanner convoyId={convoyId} onSaved={afterPlan} />
+            </div>
+          </details>
         </div>
       )}
 
@@ -208,8 +260,33 @@ export default function Corridor() {
             />
           </div>
 
+          {data.risk && data.risk.zones.length > 0 && (
+            <div className={`mb-4 rounded-xl border p-3 ${data.risk.blocked
+              ? 'border-red-500/30 bg-red-500/[0.06]' : 'border-amber-500/25 bg-amber-500/[0.05]'}`}>
+              <p className={`flex items-center gap-1.5 text-xs font-semibold ${data.risk.blocked ? 'text-red-300' : 'text-amber-200'}`}>
+                <ShieldAlert size={13} />
+                {data.risk.blocked ? 'This corridor crosses a no-go zone' : 'Risk zones on this corridor'}
+                <span className="ml-auto font-mono font-normal text-neutral-400">{data.risk.exposed_km} km exposed</span>
+              </p>
+              <ul className="mt-2 flex flex-wrap gap-1.5">
+                {data.risk.zones.map((z, i) => (
+                  <li key={`${z.zone_id}-${i}`}
+                    className={`rounded-md border px-2 py-1 text-[11px] ${RISK_CHIP[z.risk_level] ?? RISK_CHIP['medium']}`}>
+                    {z.name ?? 'Risk zone'} · <span className="font-mono">{z.km_inside} km</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <div className="mb-4">
-            <CorridorMap route={data.route} corridorKm={data.config.corridor_km} members={members} />
+            <CorridorGlobe
+              route={data.route}
+              corridorKm={data.config.corridor_km}
+              members={members}
+              zones={data.risk?.zones ?? []}
+              focusId={focusId}
+            />
           </div>
 
           <div className="mb-4 flex flex-wrap gap-2">
@@ -251,7 +328,15 @@ export default function Corridor() {
           {members.map(m => {
             const st = STATUS[m.status] ?? OFF;
             return (
-              <li key={m.id} className={`rounded-xl border ${st.ring} bg-black/40 p-4 transition-colors`}>
+              <li key={m.id}>
+                <button
+                  type="button"
+                  onClick={() => setFocusId(m.lat != null ? m.id : null)}
+                  disabled={m.lat == null}
+                  aria-label={`Show ${m.name} on the globe`}
+                  className={`w-full rounded-xl border ${st.ring} bg-black/40 p-4 text-left transition-colors ${
+                    focusId === m.id ? 'ring-1 ring-violet-400/50' : ''
+                  } ${m.lat != null ? 'hover:border-white/25' : 'cursor-default'}`}>
                 <div className="flex items-start gap-3">
                   <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${st.bg} ${st.glow}`} />
                   <div className="min-w-0 flex-1">
@@ -281,6 +366,7 @@ export default function Corridor() {
                     )}
                   </div>
                 </div>
+                </button>
               </li>
             );
           })}

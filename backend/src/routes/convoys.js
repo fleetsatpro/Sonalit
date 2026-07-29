@@ -7,6 +7,8 @@ const { auditLog } = require('../middleware/audit');
 const requireIdempotencyKey = require('../middleware/idempotency');
 const { query } = require('../config/database');
 const { evaluateCorridor } = require('../services/geofence/corridor');
+const { scoreRoute } = require('../services/geo/routeRisk');
+const logger = require('../utils/logger');
 
 const convoyReportRegenerateLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -73,7 +75,7 @@ router.get('/:id/corridor', async (req, res, next) => {
     const convoyId = req.params.id;
 
     const cv = await query(
-      `SELECT id, name, departure_time, status FROM convoys
+      `SELECT id, name, departure_time, status, route_origin, route_destination FROM convoys
         WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
       [convoyId, orgId]
     );
@@ -150,12 +152,42 @@ router.get('/:id/corridor', async (req, res, next) => {
       return { ...base, ...verdict };
     });
 
+    // Risk zones the corridor actually touches, so the 3D view can show what
+    // the convoy is driving into rather than every zone on the continent.
+    // Best-effort: intel is an overlay, never a reason to fail the page.
+    let risk = { zones: [], exposed_km: 0, worst: null, blocked: false };
+    try {
+      const rz = await query(
+        `SELECT id, name, risk_level, zone_type, lat, lng, radius_km
+           FROM risk_zones
+          WHERE active = true
+            AND (org_id = $1 OR org_id IS NULL)
+            AND (valid_from  IS NULL OR valid_from  <= now())
+            AND (valid_until IS NULL OR valid_until >= now())`,
+        [orgId]
+      );
+      const scored = scoreRoute(route, rz.rows);
+      const byId = new Map(rz.rows.map(z => [String(z.id), z]));
+      risk = {
+        zones: scored.exposures.map(e => {
+          const z = byId.get(String(e.zone_id));
+          return { ...e, lat: Number(z.lat), lng: Number(z.lng), radius_km: Number(z.radius_km) };
+        }),
+        exposed_km: scored.exposed_km,
+        worst: scored.worst,
+        blocked: scored.blocked,
+      };
+    } catch (e) {
+      logger.warn(`corridor risk overlay unavailable: ${e.message}`);
+    }
+
     const summary = members.reduce((a, m) => { a[m.status] = (a[m.status] || 0) + 1; return a; }, {});
     res.json({ data: {
-      convoy: { id: convoy.id, name: convoy.name, status: convoy.status, departure_time: convoy.departure_time },
+      convoy: { id: convoy.id, name: convoy.name, status: convoy.status, departure_time: convoy.departure_time,
+        route_origin: convoy.route_origin ?? null, route_destination: convoy.route_destination ?? null },
       config: { ...cfg, started_at: startedAt && !isNaN(startedAt.getTime()) ? startedAt.toISOString() : null,
         schedule_known: elapsedMs > 0 },
-      route, members, summary, evaluated_at: new Date(now).toISOString(),
+      route, members, summary, risk, evaluated_at: new Date(now).toISOString(),
     } });
   } catch (err) { next(err); }
 });
