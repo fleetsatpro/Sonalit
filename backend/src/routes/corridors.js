@@ -1,9 +1,12 @@
 /**
  * Convoy route corridor endpoints.
- * Mounted at /api/v1/convoys so that:
- *   GET  /api/v1/convoys/:id/corridor
+ * Mounted at /api/v1/convoys, AFTER routes/convoys.js, so that:
  *   POST /api/v1/convoys/:id/corridor
  *   GET  /api/v1/convoys/:id/corridor/deviations
+ *
+ * GET /:id/corridor deliberately lives in routes/convoys.js instead: the 4D
+ * Geofence page needs the live per-device evaluation against the corridor, not
+ * the raw stored row. That handler reads the centre-line this router writes.
  */
 const router = require('express').Router({ mergeParams: true });
 const Joi = require('joi');
@@ -14,17 +17,6 @@ const { planRoute } = require('../services/geo/routePlan');
 const geoEnv = require('../services/geo/providerEnv');
 
 router.use(authenticate, attachOrgDb);
-
-// GET /api/v1/convoys/:id/corridor
-router.get('/:id/corridor', asyncHandler(async (req, res) => {
-  const result = await req.db(
-    `SELECT * FROM convoy_route_corridors WHERE convoy_id = $1`,
-    [req.params.id],
-  );
-  if (!result.rows.length) return res.status(404).json({ error: 'No corridor for this convoy' });
-  const row = result.rows[0];
-  res.json({ data: { ...row, route_line: typeof row.route_line === 'string' ? JSON.parse(row.route_line) : row.route_line } });
-}));
 
 // POST /api/v1/convoys/:id/corridor
 const pt = Joi.object({ lat: Joi.number().required(), lng: Joi.number().required() });
@@ -43,6 +35,14 @@ const corridorSchema = Joi.object({
 router.post('/:id/corridor', asyncHandler(async (req, res) => {
   const { error, value } = corridorSchema.validate(req.body);
   if (error) return res.status(400).json({ error: error.message });
+
+  // Ownership first: a bad/foreign convoy id must 404 immediately rather than
+  // after a routing round-trip we would only throw away.
+  const convoyCheck = await req.db(
+    `SELECT id FROM convoys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
+    [req.params.id, req.user.org_id],
+  );
+  if (!convoyCheck.rows.length) return res.status(404).json({ error: 'Convoy not found' });
 
   let routeLine = value.route_line;
 
@@ -78,12 +78,6 @@ router.post('/:id/corridor', asyncHandler(async (req, res) => {
     const r = await planRoute(routeLine, { osrmUrl: geoEnv.osrmUrl(), mapboxToken: geoEnv.mapboxToken() });
     if (r.routed && r.route.length >= 2) { routeLine = r.route; planned = r; }
   }
-
-  const convoyCheck = await req.db(
-    `SELECT id, org_id FROM convoys WHERE id = $1 AND deleted_at IS NULL`,
-    [req.params.id],
-  );
-  if (!convoyCheck.rows.length) return res.status(404).json({ error: 'Convoy not found' });
 
   const result = await req.db(
     `INSERT INTO convoy_route_corridors (org_id, convoy_id, route_line, width_km)

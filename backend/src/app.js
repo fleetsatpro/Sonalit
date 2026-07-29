@@ -204,6 +204,15 @@ app.get("/metrics", async (req, res) => {
   "fuel", "shifts", "traffic"]
   .forEach(r => app.use("/api/v1/" + r, require("./routes/" + r)));
 
+// 4D-geofence corridor writes: POST /api/v1/convoys/:id/corridor (the "Plan
+// corridor" button) and GET /api/v1/convoys/:id/corridor/deviations. This router
+// was written but never mounted, so planning a corridor 404'd. It MUST stay
+// after routes/convoys above, which owns GET /:id/corridor (the live per-device
+// evaluation the 4D Geofence page reads); this one only serves the paths
+// convoys.js does not define.
+try { app.use("/api/v1/convoys", require("./routes/corridors")); logger.info("Route loaded: /api/v1/convoys (corridors)"); }
+catch (e) { logger.warn("Corridors route failed: " + e.message); }
+
 try { app.use("/api/v1/guardian/cfo", require("./routes/guardianCfo")); logger.info("Route loaded: /api/v1/guardian/cfo"); }
 catch (e) { logger.warn("Guardian CFO route failed: " + e.message); }
 
