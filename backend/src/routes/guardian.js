@@ -2975,7 +2975,7 @@ async function resolveLatestApkInfo() {
   if (!resp.ok) throw new Error(`releases API HTTP ${resp.status}`);
   const rel = await resp.json();
   const asset = (rel.assets || []).find(a => a.name === 'app-debug.apk') || (rel.assets || [])[0];
-  if (!asset || !asset.browser_download_url) throw new Error('no APK asset on latest release');
+  if (!asset || !asset.url) throw new Error('no APK asset on latest release');
   _latestApk = {
     info: {
       version: rel.tag_name || rel.name || null,
@@ -2983,13 +2983,51 @@ async function resolveLatestApkInfo() {
       published_at: rel.published_at || null,
       notes: rel.body || null,
       size: asset.size || null,
-      url: asset.browser_download_url,
+      // Public browser URL — works only for public repos.
+      url: asset.browser_download_url || null,
+      // API asset URL — with a token this streams even for a PRIVATE repo.
+      apiUrl: asset.url,
     },
     at: Date.now(),
   };
   return _latestApk.info;
 }
 async function resolveLatestApkUrl() { return (await resolveLatestApkInfo()).url; }
+
+// Streams a release asset through the authenticated GitHub API. This is the only
+// method that works for a PRIVATE repo — browser_download_url / the stable
+// /releases/latest/download URL 404 without a browser session, but the asset API
+// honours a Bearer token. The API 302s to a short-lived signed CDN URL, which
+// must be fetched WITHOUT the Authorization header (the CDN rejects it).
+async function streamGithubAsset(res, apiAssetUrl) {
+  const ghToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  if (!ghToken) throw new Error('no GitHub token for authenticated asset');
+  const meta = await fetch(apiAssetUrl, {
+    headers: {
+      'User-Agent': 'Sonalit-Guardian',
+      Accept: 'application/octet-stream',
+      Authorization: `Bearer ${ghToken}`,
+    },
+    redirect: 'manual',
+  });
+  let upstream;
+  if (meta.status >= 300 && meta.status < 400) {
+    const loc = meta.headers.get('location');
+    if (!loc) throw new Error('asset redirect had no location');
+    upstream = await fetch(loc, { headers: { 'User-Agent': 'Sonalit-Guardian' }, redirect: 'follow' });
+  } else if (meta.ok && meta.body) {
+    upstream = meta;
+  } else {
+    throw new Error(`asset API HTTP ${meta.status}`);
+  }
+  if (!upstream.ok || !upstream.body) throw new Error(`asset upstream HTTP ${upstream.status}`);
+  res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+  res.setHeader('Content-Disposition', 'attachment; filename="SonalitGuardian.apk"');
+  const len = upstream.headers.get('content-length');
+  if (len) res.setHeader('Content-Length', len);
+  res.setHeader('Cache-Control', 'no-store');
+  require('stream').Readable.fromWeb(upstream.body).pipe(res);
+}
 
 // The stable "latest release" asset URL. GitHub 302-redirects it to the current
 // release's asset, served from its release CDN — this is NOT the api.github.com
@@ -3030,12 +3068,18 @@ router.get('/apk/info', async (req, res) => {
       } catch (e) { return { label, error: (e.message || String(e)).slice(0, 120), ms: Date.now() - t0 }; }
     };
     const r2Set = !!process.env.R2_PUBLIC_URL;
-    const [githubStable, githubApi, r2] = await Promise.all([
+    const ghToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+    // Authenticated API probe — mirrors the real download path for a private repo.
+    const githubAuth = ghToken
+      ? probe('github_api_auth', `https://api.github.com/repos/${repo}/releases/latest`, { method: 'GET', headers: { 'User-Agent': 'Sonalit-Guardian', Accept: 'application/vnd.github+json', Authorization: `Bearer ${ghToken}` } })
+      : Promise.resolve({ label: 'github_api_auth', skipped: 'GITHUB_TOKEN unset' });
+    const [githubStable, githubApi, githubApiAuth, r2] = await Promise.all([
       probe('github_stable', `https://github.com/${repo}/releases/latest/download/${process.env.APK_ASSET_NAME || 'app-debug.apk'}`, { method: 'HEAD' }),
       probe('github_api', `https://api.github.com/repos/${repo}/releases/latest`, { method: 'GET', headers: { 'User-Agent': 'Sonalit-Guardian', Accept: 'application/vnd.github+json' } }),
+      githubAuth,
       r2Set ? probe('r2', `${process.env.R2_PUBLIC_URL.replace(/\/$/, '')}/apk/sonalit-guardian.apk`, { method: 'HEAD' }) : Promise.resolve({ label: 'r2', skipped: 'R2_PUBLIC_URL unset' }),
     ]);
-    return res.json({ probe: { r2_public_url_set: r2Set, apk_redirect_url_set: !!process.env.APK_REDIRECT_URL, github_token_set: !!(process.env.GITHUB_TOKEN || process.env.GH_TOKEN), sources: [githubStable, githubApi, r2] } });
+    return res.json({ probe: { r2_public_url_set: r2Set, apk_redirect_url_set: !!process.env.APK_REDIRECT_URL, github_token_set: !!ghToken, sources: [githubStable, githubApi, githubApiAuth, r2] } });
   }
   try {
     const i = await resolveLatestApkInfo();
@@ -3062,6 +3106,21 @@ router.get('/apk/info', async (req, res) => {
 router.get('/apk/download', async (req, res) => {
   const fs = require('fs');
   const path = require('path');
+
+  // Preferred when a GitHub token is configured: stream the release asset via the
+  // authenticated GitHub API. This is the ONLY source that works for a PRIVATE
+  // repo (the public stable/browser URLs 404 without a browser session), and it
+  // needs nothing but GITHUB_TOKEN — no R2, no Railway. The build already uploads
+  // app-debug.apk to every release, so this is always the latest.
+  if (process.env.GITHUB_TOKEN || process.env.GH_TOKEN) {
+    try {
+      const info = await resolveLatestApkInfo();
+      if (info.apiUrl) return await streamGithubAsset(res, info.apiUrl);
+    } catch (err) {
+      if (res.headersSent) return;
+      logger.warn(`APK authenticated GitHub asset stream failed (${err.message}) — trying other sources`);
+    }
+  }
 
   // Primary: the stable R2 object the build publishes on every main push. It's
   // always the latest APK, CDN-backed, and — unlike the GitHub release API —
