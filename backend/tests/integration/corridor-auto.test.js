@@ -20,9 +20,16 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
 
 const { Pool } = require('pg');
+const { probeProviders, describeWhen } = require('./live-providers');
 
 const HAS_DB = !!process.env.DATABASE_URL;
 const d = HAS_DB ? describe : describe.skip;
+
+// OSRM and Nominatim are free shared services; an outage on their side must not
+// fail this repo's CI. Probed once, synchronously, before describes register.
+const LIVE = HAS_DB ? probeProviders(process.env.OSRM_URL) : { router: false, geocoder: false };
+const dRouter = HAS_DB ? describeWhen(LIVE.router, 'the real routing engine') : describe.skip;
+const dGeocoder = HAS_DB ? describeWhen(LIVE.geocoder, 'the real geocoder') : describe.skip;
 
 // Kisumu -> Mombasa: a real ~800 km trunk route with genuine alternatives.
 const ORIGIN = 'Kisumu, Kenya';
@@ -125,7 +132,7 @@ d('the real database', () => {
   });
 });
 
-d('the real routing engine', () => {
+dRouter('the real routing engine', () => {
   // A live network call to a public router; give it room.
   jest.setTimeout(90_000);
 
@@ -230,7 +237,7 @@ d('the real routing engine', () => {
   });
 });
 
-d('the real geocoder', () => {
+dGeocoder('the real geocoder', () => {
   jest.setTimeout(60_000);
 
   test('resolves the convoy\'s own endpoints with whatever provider is configured', async () => {
