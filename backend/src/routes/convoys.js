@@ -80,15 +80,40 @@ router.get('/:id/corridor', async (req, res, next) => {
     if (!cv.rows.length) return res.status(404).json({ error: 'Convoy not found' });
     const convoy = cv.rows[0];
 
-    const rw = await query(
-      `SELECT seq, name, lat, lng FROM convoy_route_waypoints
-        WHERE convoy_id = $1 AND lat IS NOT NULL AND lng IS NOT NULL
-        ORDER BY seq ASC`,
-      [convoyId]
+    // Centre-line, in priority order:
+    //  1. the corridor planned on the 4D Geofence page (origin → destination
+    //     snapped to real roads, stored by POST /:id/corridor), which also
+    //     carries the operator's chosen corridor width;
+    //  2. the dispatcher's named route waypoints (towns/checkpoints).
+    // Reading only (2) was why a freshly planned corridor still reported
+    // "no planned route" — the planner writes (1).
+    const cr = await query(
+      `SELECT route_line, width_km FROM convoy_route_corridors
+        WHERE convoy_id = $1 AND org_id = $2 AND active = true`,
+      [convoyId, orgId]
     );
-    const route = rw.rows.map(r => ({ lat: Number(r.lat), lng: Number(r.lng), name: r.name, seq: r.seq }));
+    let route = [];
+    let plannedWidthKm = null;
+    if (cr.rows.length) {
+      const raw = cr.rows[0].route_line;
+      const line = typeof raw === 'string' ? safeJsonArray(raw) : (Array.isArray(raw) ? raw : []);
+      route = line
+        .map((p, i) => ({ lat: Number(p && p.lat), lng: Number(p && p.lng), name: (p && p.name) || null, seq: i }))
+        .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+      if (route.length >= 2) plannedWidthKm = Number(cr.rows[0].width_km);
+    }
+
     if (route.length < 2) {
-      return res.status(422).json({ error: 'Convoy has no planned route (need at least two waypoints) to form a corridor.' });
+      const rw = await query(
+        `SELECT seq, name, lat, lng FROM convoy_route_waypoints
+          WHERE convoy_id = $1 AND lat IS NOT NULL AND lng IS NOT NULL
+          ORDER BY seq ASC`,
+        [convoyId]
+      );
+      route = rw.rows.map(r => ({ lat: Number(r.lat), lng: Number(r.lng), name: r.name, seq: r.seq }));
+    }
+    if (route.length < 2) {
+      return res.status(422).json({ error: 'Convoy has no planned route yet — plan one from an origin and destination, or add at least two route waypoints.' });
     }
 
     const mem = await query(
@@ -103,7 +128,9 @@ router.get('/:id/corridor', async (req, res, next) => {
     const num = v => (v == null ? null : Number(v));
     const cfg = {
       avg_speed_kmh: clampNum(req.query.avg_speed_kmh, 45, 5, 120),
-      corridor_km: clampNum(req.query.corridor_km, 2, 0.2, 50),
+      // An explicit ?corridor_km wins; otherwise use the width the operator set
+      // on the slider when planning this corridor.
+      corridor_km: clampNum(req.query.corridor_km, plannedWidthKm ?? 2, 0.2, 50),
       schedule_tol_km: clampNum(req.query.schedule_tol_km, 8, 1, 100),
     };
     const startedAt = req.query.started_at ? new Date(req.query.started_at)
@@ -135,7 +162,15 @@ router.get('/:id/corridor', async (req, res, next) => {
 
 function clampNum(v, def, lo, hi) {
   const n = parseFloat(v);
-  return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : def;
+  const chosen = Number.isFinite(n) ? n : parseFloat(def);
+  return Number.isFinite(chosen) ? Math.max(lo, Math.min(hi, chosen)) : def;
+}
+
+// route_line is JSONB, so pg hands it back parsed; a legacy row stored as text
+// still has to survive a malformed value without 500-ing the whole page.
+function safeJsonArray(text) {
+  try { const v = JSON.parse(text); return Array.isArray(v) ? v : []; }
+  catch { return []; }
 }
 
 module.exports = router;

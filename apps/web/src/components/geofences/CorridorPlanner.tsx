@@ -5,6 +5,13 @@ import { MapPin, X, Loader2, Route as RouteIcon, Flag, Navigation } from 'lucide
 interface Place { name: string; lat: number; lng: number }
 interface PlanResult { routing_provider: string | null; distance_km: number | null; duration_min: number | null; waypoint_count: number; planned: boolean }
 
+// Prefer the API's own message, then axios' — a silent "no matches" hid real
+// failures (a 404 on the endpoint, an expired session) behind a token hint.
+function errText(e: unknown, fallback: string): string {
+  const err = e as { response?: { status?: number; data?: { error?: string } }; message?: string };
+  return err?.response?.data?.error || err?.message || fallback;
+}
+
 // A place-name search box, geocoded server-side (backend Mapbox token) so the
 // browser needs no key. Picks a single {name,lat,lng}.
 function PlaceSearch({ label, Icon, selected, onSelect }: {
@@ -14,21 +21,29 @@ function PlaceSearch({ label, Icon, selected, onSelect }: {
   const [results, setResults] = useState<Place[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [lookupError, setLookupError] = useState('');
   const boxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (selected) return;
+    if (selected) { setLoading(false); return; }
     const query = q.trim();
-    if (query.length < 3) { setResults([]); setOpen(false); return; }
+    if (query.length < 3) { setResults([]); setLookupError(''); setOpen(false); setLoading(false); return; }
     setLoading(true);
+    // Keystrokes can outrun responses; only the newest lookup may write state.
+    let live = true;
     const t = setTimeout(async () => {
       try {
-        const r = await api.get<{ data: { results: Place[] } }>(`/guardian/geo/geocode?q=${encodeURIComponent(query)}`);
-        setResults(r.data.data.results ?? []); setOpen(true);
-      } catch { setResults([]); }
-      finally { setLoading(false); }
+        const r = await api.get<{ data: { results: Place[] } }>('/guardian/geo/geocode', { params: { q: query } });
+        if (!live) return;
+        setResults(r.data.data.results ?? []); setLookupError(''); setOpen(true);
+      } catch (e) {
+        if (!live) return;
+        setResults([]);
+        setLookupError(errText(e, 'Place lookup failed.'));
+        setOpen(true);
+      } finally { if (live) setLoading(false); }
     }, 350);
-    return () => clearTimeout(t);
+    return () => { live = false; clearTimeout(t); };
   }, [q, selected]);
 
   useEffect(() => {
@@ -73,7 +88,9 @@ function PlaceSearch({ label, Icon, selected, onSelect }: {
             </ul>
           )}
           {open && !loading && q.trim().length >= 3 && results.length === 0 && (
-            <p className="mt-1 px-1 text-xs text-neutral-600">No matches — check the backend Mapbox token, or type a fuller name.</p>
+            lookupError
+              ? <p className="mt-1 px-1 text-xs text-red-400">{lookupError}</p>
+              : <p className="mt-1 px-1 text-xs text-neutral-600">No matches — check the backend Mapbox token, or type a fuller name.</p>
           )}
         </>
       )}
@@ -105,8 +122,7 @@ export default function CorridorPlanner({ convoyId, onSaved }: { convoyId: strin
       setResult(r.data.data);
       onSaved();
     } catch (e) {
-      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setError(msg || 'Could not plan the corridor. Try again.');
+      setError(errText(e, 'Could not plan the corridor. Try again.'));
     } finally { setSaving(false); }
   };
 

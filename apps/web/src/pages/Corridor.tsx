@@ -16,7 +16,7 @@ interface Member {
 interface CorridorResp {
   convoy: { id: string; name: string; status: string; departure_time: string | null };
   config: { avg_speed_kmh: number; corridor_km: number; schedule_tol_km: number; started_at: string | null; schedule_known: boolean };
-  route: { lat: number; lng: number; name: string; seq: number }[];
+  route: { lat: number; lng: number; name: string | null; seq: number }[];
   members: Member[];
   summary: Record<string, number>;
   evaluated_at: string;
@@ -110,9 +110,13 @@ export default function Corridor() {
           Pick a convoy to watch its live 4D corridor.
         </div>
       )}
-      {error && (
+      {error && !planning && (
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-6 text-center text-sm text-amber-300">
-          This convoy has no planned route yet (add at least two route waypoints), or it couldn't be loaded.
+          <p>This convoy has no corridor yet, or it couldn't be loaded.</p>
+          <button onClick={() => setPlanning(true)}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-amber-500/40 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/10">
+            <MapPinned size={13} /> Plan the route
+          </button>
         </div>
       )}
 
