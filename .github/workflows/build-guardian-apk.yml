@@ -1,4 +1,5 @@
 name: Build Guardian Agent APK
+# Re-run to publish the APK to R2 now that the R2/RAILWAY credentials are wired.
 
 on:
   push:
