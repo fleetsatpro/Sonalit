@@ -23,8 +23,18 @@ const jwt = require('jsonwebtoken');
 const express = require('express');
 const request = require('supertest');
 
+const { probeProviders, describeWhen } = require('./live-providers');
+
 const HAS_DB = !!process.env.DATABASE_URL;
 const d = HAS_DB ? describe : describe.skip;
+
+// Every route here calls a live provider, so gate on both being up rather than
+// letting someone else's rate limit redden this pipeline.
+const LIVE = HAS_DB ? probeProviders(process.env.OSRM_URL) : { router: false, geocoder: false };
+const dRoute = HAS_DB ? describeWhen(LIVE.router, 'corridor routes needing the router') : describe.skip;
+const dAuto = HAS_DB
+  ? describeWhen(LIVE.router && LIVE.geocoder, 'corridor auto-plan needing router + geocoder')
+  : describe.skip;
 
 const ORG = 'dddddddd-0000-0000-0000-00000000d00d';
 const USER = 'dddddddd-0000-0000-0001-00000000d00d';
@@ -86,7 +96,7 @@ afterAll(async () => {
   await pool.end();
 });
 
-d('POST /api/v1/convoys/:id/corridor — real router, real DB', () => {
+dRoute('POST /api/v1/convoys/:id/corridor — real router, real DB', () => {
   jest.setTimeout(120_000);
 
   test('rejects an unauthenticated caller', async () => {
@@ -128,7 +138,7 @@ d('POST /api/v1/convoys/:id/corridor — real router, real DB', () => {
   });
 });
 
-d('POST /api/v1/convoys/:id/corridor/auto — the whole thing, for real', () => {
+dAuto('POST /api/v1/convoys/:id/corridor/auto — the whole thing, for real', () => {
   jest.setTimeout(180_000);
 
   test('geocodes the convoy\'s own endpoints, compares real roads, stores the pick', async () => {
@@ -189,7 +199,7 @@ d('POST /api/v1/convoys/:id/corridor/auto — the whole thing, for real', () => 
   });
 });
 
-d('GET /api/v1/convoys/:id/corridor — live evaluation over the stored corridor', () => {
+dRoute('GET /api/v1/convoys/:id/corridor — live evaluation over the stored corridor', () => {
   jest.setTimeout(120_000);
 
   test('evaluates a real device against the corridor it was just given', async () => {
