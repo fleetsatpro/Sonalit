@@ -267,3 +267,82 @@ dRoute('GET /api/v1/convoys/:id/corridor — live evaluation over the stored cor
     expect(res.body.data.summary.off_route).toBeGreaterThanOrEqual(1);
   });
 });
+
+dRoute('GET /api/v1/convoys/:id/corridor/replay — the 4th dimension, scrubable', () => {
+  jest.setTimeout(120_000);
+
+  // A trail that starts on the road and wanders off it partway through, so the
+  // replay has a status transition to find rather than a single flat state.
+  beforeAll(async () => {
+    if (!HAS_DB) return;
+    await auth(request(app).post(`/api/v1/convoys/${CONVOY}/corridor`))
+      .send({ origin: KISUMU, destination: MOMBASA, width_km: 2 });
+
+    const { rows } = await pool.query(
+      'SELECT route_line FROM convoy_route_corridors WHERE convoy_id = $1', [CONVOY],
+    );
+    const line = rows[0].route_line;
+
+    await pool.query('DELETE FROM device_locations WHERE device_id = $1', [DEVICE]);
+    const now = Date.now();
+    for (let i = 0; i < 10; i++) {
+      const p = line[Math.floor((i / 10) * line.length)];
+      // Last three fixes are pushed ~55 km north of the road.
+      const off = i >= 7 ? 0.5 : 0;
+      await pool.query(
+        `INSERT INTO device_locations (device_id, lat, lng, timestamp)
+         VALUES ($1, $2, $3, to_timestamp($4))`,
+        [DEVICE, p.lat + off, p.lng, (now - (10 - i) * 30 * 60_000) / 1000],
+      );
+    }
+  });
+
+  afterAll(async () => {
+    if (!pool) return;
+    await pool.query('DELETE FROM device_locations WHERE device_id = $1', [DEVICE]);
+  });
+
+  test('replays real recorded fixes as evaluated frames', async () => {
+    const res = await auth(request(app).get(`/api/v1/convoys/${CONVOY}/corridor/replay?hours=6&frames=24`));
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.frames).toHaveLength(24);
+    expect(res.body.data.fix_count).toBe(10);
+    expect(res.body.data.device_count).toBe(1);
+    expect(res.body.data.route.length).toBeGreaterThan(50);
+
+    // Frames are ordered and span the requested window.
+    const times = res.body.data.frames.map(f => Date.parse(f.t));
+    expect(times).toEqual([...times].sort((a, b) => a - b));
+    expect(times[0]).toBe(Date.parse(res.body.data.since));
+    expect(times[times.length - 1]).toBe(Date.parse(res.body.data.until));
+  });
+
+  test('each truck is judged by where it was at that moment, not where it ended', async () => {
+    const res = await auth(request(app).get(`/api/v1/convoys/${CONVOY}/corridor/replay?hours=6&frames=48`));
+    const seen = res.body.data.frames
+      .map(f => f.members.find(m => m.id === DEVICE))
+      .filter(Boolean);
+
+    expect(seen.length).toBeGreaterThan(5);
+    // The trail begins on the road and ends well off it, so both states appear.
+    expect(seen.some(m => m.cross_track_km < 1)).toBe(true);
+    expect(seen.some(m => m.status === 'off_route')).toBe(true);
+    // And it only leaves the corridor once, late — never flapping back.
+    const firstOff = seen.findIndex(m => m.status === 'off_route');
+    expect(seen.slice(firstOff).every(m => m.status === 'off_route')).toBe(true);
+  });
+
+  test('frames before the first recorded fix carry no ghost position', async () => {
+    const res = await auth(request(app).get(`/api/v1/convoys/${CONVOY}/corridor/replay?hours=48&frames=40`));
+    // The window opens 48h back but the trail only starts ~5h ago.
+    expect(res.body.data.frames[0].members).toHaveLength(0);
+    expect(res.body.data.frames[res.body.data.frames.length - 1].members).toHaveLength(1);
+  });
+
+  test('422s when there is no corridor to replay against', async () => {
+    await pool.query('DELETE FROM convoy_route_corridors WHERE convoy_id = $1', [CONVOY]);
+    const res = await auth(request(app).get(`/api/v1/convoys/${CONVOY}/corridor/replay`));
+    expect(res.status).toBe(422);
+  });
+});

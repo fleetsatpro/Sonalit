@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
-import { Globe2, Mountain, Layers, Compass } from 'lucide-react';
+import { Globe2, Layers, Compass } from 'lucide-react';
 
 export interface LatLng { lat: number; lng: number }
 export interface GlobeMember {
@@ -87,14 +87,22 @@ function nearOnly(maxM: number): Cesium.DistanceDisplayCondition {
 
 /**
  * A 4D geofence rendered as what it actually is: a walled volume swept along
- * the planned road, with the trucks inside or outside it, over real terrain.
+ * the planned road, with the trucks inside or outside it, over satellite imagery.
  * A flat line on a flat map cannot show "outside the fence" — a wall can.
  */
-export default function CorridorGlobe({ route, corridorKm, members, zones, ceilingM = 0, focusId = null }: {
+export default function CorridorGlobe({
+  route, corridorKm, members, zones, ceilingM = 0, focusId = null, trail, onSelect, fill = false,
+}: {
   route: LatLng[]; corridorKm: number; members: GlobeMember[];
-  zones?: RiskZone[]; ceilingM?: number;
+  zones?: RiskZone[] | undefined; ceilingM?: number | undefined;
   /** Fly down to this device — the only altitude where corridor walls read. */
-  focusId?: string | null;
+  focusId?: string | null | undefined;
+  /** Where the focused truck has actually been, drawn against the corridor. */
+  trail?: LatLng[] | undefined;
+  /** Clicking a truck on the globe selects it, same as clicking its card. */
+  onSelect?: ((id: string | null) => void) | undefined;
+  /** Fill the parent instead of a fixed height — for the full-page layout. */
+  fill?: boolean | undefined;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Cesium.Viewer | null>(null);
@@ -102,8 +110,10 @@ export default function CorridorGlobe({ route, corridorKm, members, zones, ceili
   const memberRef = useRef<Cesium.Entity[]>([]);
   const zoneRef = useRef<Cesium.Entity[]>([]);
   const memberById = useRef<Map<string, Cesium.Entity>>(new Map());
+  const trailRef = useRef<Cesium.Entity | null>(null);
+  const selectHandler = useRef<((id: string | null) => void) | undefined>(onSelect);
+  selectHandler.current = onSelect;
   const framedRef = useRef('');
-  const [terrain, setTerrain] = useState(false);
   const [satellite, setSatellite] = useState(true);
   const [failed, setFailed] = useState(false);
 
@@ -131,7 +141,19 @@ export default function CorridorGlobe({ route, corridorKm, members, zones, ceili
     viewer.scene.globe.baseColor = css('#0b0f19');
     viewer.cesiumWidget.creditContainer.setAttribute('style', 'display:none');
 
+    // Clicking a truck selects it. Entity ids are set to the device id below,
+    // so a pick maps straight back to a roster row.
+    const clicks = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+    clicks.setInputAction((movement: { position: Cesium.Cartesian2 }) => {
+      const picked = viewer.scene.pick(movement.position);
+      const id = picked && picked.id && typeof picked.id.id === 'string' ? picked.id.id : null;
+      // Only device entities carry a dev: prefix; corridor and zone picks
+      // should clear the selection rather than select something meaningless.
+      selectHandler.current?.(id && id.startsWith('dev:') ? id.slice(4) : null);
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
     return () => {
+      clicks.destroy();
       corridorRef.current = []; memberRef.current = []; zoneRef.current = [];
       framedRef.current = '';
       if (!viewer.isDestroyed()) viewer.destroy();
@@ -153,22 +175,11 @@ export default function CorridorGlobe({ route, corridorKm, members, zones, ceili
     }
   }, [satellite]);
 
-  // World terrain is a big download, so it stays opt-in.
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer || viewer.isDestroyed()) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        viewer.terrainProvider = terrain
-          ? await Cesium.createWorldTerrainAsync()
-          : new Cesium.EllipsoidTerrainProvider();
-      } catch {
-        if (!cancelled) setTerrain(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [terrain]);
+  // No world-terrain toggle here on purpose: Cesium World Terrain is fetched
+  // from api.cesium.com, which this app's CSP does not allow (and which would
+  // also mean leaning on Cesium's shared demo Ion token). A button that
+  // silently does nothing is worse than no button. Adding it back means an
+  // owned Ion token plus a connect-src entry.
 
   // ── The geofence volume ────────────────────────────────────────────────────
   useEffect(() => {
@@ -283,6 +294,7 @@ export default function CorridorGlobe({ route, corridorKm, members, zones, ceili
       .map(m => {
         const color = STATUS_COLOR[m.status] ?? STATUS_COLOR['off_route']!;
         const ent = viewer.entities.add({
+          id: `dev:${m.id}`,
           position: Cesium.Cartesian3.fromDegrees(m.lng, m.lat, FLOAT),
           point: { pixelSize: 13, color: css(color), outlineColor: Cesium.Color.WHITE, outlineWidth: 2,
             disableDepthTestDistance: Number.POSITIVE_INFINITY },
@@ -305,6 +317,22 @@ export default function CorridorGlobe({ route, corridorKm, members, zones, ceili
       });
   }, [members, wallM]);
 
+  // Where the focused truck has actually been — the recorded track laid against
+  // the planned corridor, so a detour is visible as a shape, not a number.
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+    if (trailRef.current) { viewer.entities.remove(trailRef.current); trailRef.current = null; }
+    if (!trail || trail.length < 2) return;
+    trailRef.current = viewer.entities.add({
+      polyline: {
+        positions: Cesium.Cartesian3.fromDegreesArray(trail.flatMap(p => [p.lng, p.lat])),
+        width: 3, clampToGround: true,
+        material: new Cesium.PolylineDashMaterialProperty({ color: css('#fbbf24', 0.9) }),
+      },
+    });
+  }, [trail]);
+
   // Focus: drop the camera beside a truck, low and tilted, which is the only
   // altitude where the corridor walls are legible as walls.
   useEffect(() => {
@@ -325,22 +353,25 @@ export default function CorridorGlobe({ route, corridorKm, members, zones, ceili
 
   if (failed) {
     return (
-      <div className="flex h-[380px] items-center justify-center rounded-xl border border-white/10 bg-black/40 p-6 text-center text-sm text-neutral-500">
+      <div className={`flex items-center justify-center bg-black/40 p-6 text-center text-sm text-neutral-500 ${
+        fill ? 'h-full w-full' : 'h-[380px] rounded-xl border border-white/10'}`}>
         This device can&apos;t render the 3D globe (WebGL unavailable).
       </div>
     );
   }
 
   return (
-    <div className="relative overflow-hidden rounded-xl border border-white/10">
-      <div ref={boxRef} className="h-[380px] w-full sm:h-[520px]" />
+    <div className={fill
+      ? 'relative h-full w-full overflow-hidden'
+      : 'relative overflow-hidden rounded-xl border border-white/10'}>
+      <div ref={boxRef} className={fill ? 'h-full w-full' : 'h-[380px] w-full sm:h-[520px]'} />
 
       <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap gap-x-3 gap-y-1 rounded-lg bg-black/70 px-2.5 py-1.5 text-[10px] font-medium backdrop-blur">
         <span className="flex items-center gap-1.5 text-violet-300">
           <span className="h-2.5 w-2.5 rounded-sm border border-violet-400 bg-violet-500/30" /> corridor ±{corridorKm} km
         </span>
         {(['on_track', 'behind', 'ahead', 'off_route'] as const).map(k => (
-          <span key={k} className="flex items-center gap-1.5 text-neutral-300">
+          <span key={k} className="hidden items-center gap-1.5 text-neutral-300 sm:flex">
             <span className="h-2 w-2 rounded-full" style={{ background: STATUS_COLOR[k] }} />
             {k.replace('_', ' ')}
           </span>
@@ -350,8 +381,6 @@ export default function CorridorGlobe({ route, corridorKm, members, zones, ceili
       <div className="absolute right-3 top-3 flex flex-col gap-1.5">
         <GlobeBtn active={satellite} onClick={() => setSatellite(s => !s)}
           title={satellite ? 'Satellite imagery' : 'Dark basemap'} Icon={satellite ? Globe2 : Layers} />
-        <GlobeBtn active={terrain} onClick={() => setTerrain(t => !t)}
-          title={terrain ? '3D terrain on' : '3D terrain off'} Icon={Mountain} />
       </div>
 
       <div className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-1.5 rounded-lg bg-black/70 px-2.5 py-1.5 text-[10px] text-neutral-400 backdrop-blur">

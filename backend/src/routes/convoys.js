@@ -149,7 +149,16 @@ router.get('/:id/corridor', async (req, res, next) => {
         route, lat, lng, elapsedMs,
         avgSpeedKmh: cfg.avg_speed_kmh, corridorKm: cfg.corridor_km, scheduleTolKm: cfg.schedule_tol_km,
       });
-      return { ...base, ...verdict };
+      // Remaining distance and an arrival estimate at the planned pace — the
+      // roster should answer "when does it get there", not only "where is it".
+      const remainingKm = Math.max(0, (verdict.route_len_km ?? 0) - (verdict.along_km ?? 0));
+      const etaMs = cfg.avg_speed_kmh > 0 ? (remainingKm / cfg.avg_speed_kmh) * 3600000 : null;
+      return {
+        ...base, ...verdict,
+        remaining_km: Math.round(remainingKm * 100) / 100,
+        eta: etaMs == null ? null : new Date(now + etaMs).toISOString(),
+        eta_min: etaMs == null ? null : Math.round(etaMs / 60000),
+      };
     });
 
     // Risk zones the corridor actually touches, so the 3D view can show what

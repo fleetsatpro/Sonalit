@@ -1936,6 +1936,16 @@
         }
       }
     },
+    "/api/v1/convoys/{id}/corridor/replay": {
+      "get": {
+        "operationId": "get_api_v1_convoys_id_corridor_replay",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/convoys/{id}/corridor/deviations": {
       "get": {
         "operationId": "get_api_v1_convoys_id_corridor_deviations",

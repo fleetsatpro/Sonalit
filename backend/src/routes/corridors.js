@@ -16,6 +16,7 @@ const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 const { planRoute, planRouteAlternatives } = require('../services/geo/routePlan');
 const { rankRoutes } = require('../services/geo/routeRisk');
+const { evaluateCorridor } = require('../services/geofence/corridor');
 const { geocode } = require('../services/geo/geocode');
 const geoEnv = require('../services/geo/providerEnv');
 
@@ -217,6 +218,121 @@ function summarise(c) {
     waypoint_count: c.route.length,
     exposures: c.exposures,
   };
+}
+
+// GET /api/v1/convoys/:id/corridor/replay?hours=12&frames=60
+//
+// The 4th dimension, made scrubable. The live view answers "where is the convoy
+// now"; this answers "where was it at 06:40, and was it already off-corridor
+// then". Each device's recorded fixes are replayed against the corridor, and
+// every frame is evaluated with the elapsed time *as at that moment* — so a
+// truck that was on schedule at dawn and an hour down by noon reads correctly
+// at both points rather than being judged by its final state.
+router.get('/:id/corridor/replay', asyncHandler(async (req, res) => {
+  const hours = Math.min(72, Math.max(1, parseFloat(req.query.hours) || 12));
+  const frames = Math.min(240, Math.max(2, parseInt(req.query.frames, 10) || 60));
+
+  const cv = await req.db(
+    `SELECT id, departure_time FROM convoys
+      WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
+    [req.params.id, req.user.org_id],
+  );
+  if (!cv.rows.length) return res.status(404).json({ error: 'Convoy not found' });
+
+  const corridor = await req.db(
+    `SELECT route_line, width_km FROM convoy_route_corridors
+      WHERE convoy_id = $1 AND active = true`,
+    [req.params.id],
+  );
+  if (!corridor.rows.length) {
+    return res.status(422).json({ error: 'No corridor to replay against. Plan one first.' });
+  }
+  const raw = corridor.rows[0].route_line;
+  const route = (typeof raw === 'string' ? JSON.parse(raw) : raw)
+    .map(p => ({ lat: Number(p.lat), lng: Number(p.lng) }))
+    .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+  if (route.length < 2) return res.status(422).json({ error: 'Stored corridor is unusable.' });
+
+  const until = new Date();
+  const since = new Date(until.getTime() - hours * 3600_000);
+
+  const fixes = await req.db(
+    `SELECT dl.device_id, dl.lat, dl.lng, dl.timestamp,
+            d.name, fo.name AS officer_name
+       FROM device_locations dl
+       JOIN convoy_cfos cc ON cc.guardian_device_id = dl.device_id
+       JOIN guardian_devices d ON d.id = dl.device_id
+       LEFT JOIN field_officers fo ON fo.device_id = d.id
+      WHERE cc.convoy_id = $1
+        AND dl.timestamp BETWEEN $2 AND $3
+        AND dl.lat IS NOT NULL AND dl.lng IS NOT NULL
+      ORDER BY dl.device_id, dl.timestamp ASC`,
+    [req.params.id, since, until],
+  );
+
+  // Group by device, preserving time order.
+  const byDevice = new Map();
+  for (const r of fixes.rows) {
+    const key = String(r.device_id);
+    if (!byDevice.has(key)) {
+      byDevice.set(key, { id: key, name: r.name, officer_name: r.officer_name ?? null, fixes: [] });
+    }
+    byDevice.get(key).fixes.push({ lat: Number(r.lat), lng: Number(r.lng), t: new Date(r.timestamp).getTime() });
+  }
+
+  const cfg = {
+    avgSpeedKmh: clampNum(req.query.avg_speed_kmh, 45, 5, 120),
+    corridorKm: clampNum(req.query.corridor_km, Number(corridor.rows[0].width_km) || 2, 0.2, 50),
+    scheduleTolKm: clampNum(req.query.schedule_tol_km, 8, 1, 100),
+  };
+  const departedAt = cv.rows[0].departure_time ? new Date(cv.rows[0].departure_time).getTime() : since.getTime();
+
+  const step = (until.getTime() - since.getTime()) / (frames - 1);
+  const cursors = new Map([...byDevice.keys()].map(k => [k, 0]));
+
+  const out = [];
+  for (let f = 0; f < frames; f++) {
+    const t = since.getTime() + step * f;
+    const members = [];
+
+    for (const [key, dev] of byDevice) {
+      // Advance a per-device cursor instead of re-scanning: frames only ever
+      // move forward, so the whole pass stays linear in the number of fixes.
+      let i = cursors.get(key);
+      while (i + 1 < dev.fixes.length && dev.fixes[i + 1].t <= t) i++;
+      cursors.set(key, i);
+
+      const fix = dev.fixes[i];
+      // Nothing recorded yet at this instant, or the trail has gone stale.
+      if (!fix || fix.t > t) continue;
+
+      const verdict = evaluateCorridor({
+        route, lat: fix.lat, lng: fix.lng,
+        elapsedMs: Math.max(0, t - departedAt),
+        ...cfg,
+      });
+      members.push({
+        id: dev.id, name: dev.name, officer_name: dev.officer_name,
+        lat: fix.lat, lng: fix.lng, fix_age_ms: t - fix.t, ...verdict,
+      });
+    }
+
+    out.push({ t: new Date(t).toISOString(), members });
+  }
+
+  res.json({ data: {
+    route, width_km: cfg.corridorKm,
+    since: since.toISOString(), until: until.toISOString(),
+    frames: out,
+    device_count: byDevice.size,
+    fix_count: fixes.rows.length,
+  } });
+}));
+
+function clampNum(v, def, lo, hi) {
+  const n = parseFloat(v);
+  const chosen = Number.isFinite(n) ? n : parseFloat(def);
+  return Number.isFinite(chosen) ? Math.max(lo, Math.min(hi, chosen)) : def;
 }
 
 // GET /api/v1/convoys/:id/corridor/deviations
