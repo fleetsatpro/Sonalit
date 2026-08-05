@@ -1,10 +1,23 @@
 name: CI
 
+# A push to a claude/** branch with an open PR used to match BOTH triggers, so
+# every commit ran this whole pipeline twice — two identical ~12-minute runs for
+# one result. Dropping claude/** from `push` leaves `pull_request` to cover
+# those branches exactly once. The trade-off is that a claude/** branch gets no
+# CI until its PR is opened, which is the moment the result first matters.
 on:
   push:
-    branches: ["main", "claude/**"]
+    branches: ["main"]
   pull_request:
     branches: ["main"]
+
+# Superseded runs are wasted minutes: push twice in five minutes and the first
+# run's verdict is already stale. Cancel it on PRs, but never on main — the
+# OpenAPI drift check below is gated to main, and a release lane should not be
+# killed mid-flight. Same shape as the three APK workflows.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
