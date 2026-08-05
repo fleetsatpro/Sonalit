@@ -3,7 +3,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { Search, Mic, X, Settings, Home, LayoutDashboard, ShieldAlert, Truck, Briefcase, Activity, ChevronRight, Play, ShieldCheck, Radio, MapPin, Camera, type LucideIcon } from 'lucide-react';
+import { Search, Mic, X, Settings, Home, LayoutDashboard, ShieldAlert, Truck, Briefcase, Activity, ChevronRight, Play, ShieldCheck, Radio, MapPin, Camera, Container, type LucideIcon } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useDashboardStore, type DashboardOverview } from '../stores/dashboardStore.js';
 import { NAV_GROUPS } from '../components/layout/Rail.js';
@@ -20,7 +20,7 @@ import '../styles/orbit.css';
 // floating over it.
 
 const GROUP_COVER: Record<string, LucideIcon> = {
-  Command: LayoutDashboard, Security: ShieldAlert, Surveillance: Camera, Fleet: Truck, Business: Briefcase,
+  Command: LayoutDashboard, Security: ShieldAlert, Surveillance: Camera, Fleet: Truck, Business: Briefcase, 'Container Delivery': Container,
 };
 
 interface MapConvoy { id: string; name: string; status: string; lat: number | null; lng: number | null; heading?: number }

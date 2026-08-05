@@ -261,12 +261,12 @@ button.o-rail-row:hover{background:rgba(255,255,255,.08)}
 .o-pv{margin-top:7px;font:900 27px/1 var(--o-sans);letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:#fff}
 .o-pd{margin-top:4px;font:700 10.5px/1 var(--o-mono);color:var(--o-t2)}
 
-.o-launch{display:flex;flex-direction:column;gap:12px;width:100%;max-width:800px}
+.o-launch{display:flex;flex-direction:column;gap:12px;width:100%;max-width:860px}
 .o-lh{display:flex;align-items:center;gap:9px;justify-content:center;flex-wrap:wrap}
 .o-lh b{font:800 11px/1 var(--o-mono);letter-spacing:.18em;color:var(--o-t1);text-transform:uppercase;text-shadow:var(--o-sh)}
 .o-lh span{font:700 10.5px/1 var(--o-mono);color:var(--o-t2);text-shadow:var(--o-sh)}
-.o-groups{display:flex;gap:16px;justify-content:center;flex-wrap:wrap}
-.o-grp{position:relative;width:172px;padding:22px 16px 18px;border-radius:22px;cursor:pointer;text-align:center;color:var(--o-t1);
+.o-groups{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;width:100%}
+.o-grp{position:relative;padding:22px 16px 18px;border-radius:22px;cursor:pointer;text-align:center;color:var(--o-t1);
   background:linear-gradient(180deg,rgba(20,28,44,.9),rgba(11,16,27,.9));
   border:1.5px solid color-mix(in srgb,var(--gc) 55%,transparent);
   backdrop-filter:blur(26px);-webkit-backdrop-filter:blur(26px);
