@@ -1,5 +1,6 @@
 packages:
   - 'apps/web'
+  - 'apps/container-delivery-system'
   - 'backend'
   - 'services/*'
   - 'packages/*'
