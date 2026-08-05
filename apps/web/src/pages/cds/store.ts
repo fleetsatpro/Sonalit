@@ -11,9 +11,11 @@ interface CDSUIState {
   drawerTitle: string;
   drawerContent: React.ReactNode | null;
   toasts: Toast[];
+  viewMode: 'kanban' | 'list';
   openDrawer: (title: string, content: React.ReactNode) => void;
   closeDrawer: () => void;
   addToast: (message: string, type?: Toast['type']) => void;
+  toggleViewMode: () => void;
 }
 
 let toastCounter = 0;
@@ -23,6 +25,7 @@ export const useCDSStore = create<CDSUIState>()((set) => ({
   drawerTitle: '',
   drawerContent: null,
   toasts: [],
+  viewMode: 'kanban' as const,
   openDrawer: (title, content) =>
     set({ drawerOpen: true, drawerTitle: title, drawerContent: content }),
   closeDrawer: () =>
@@ -34,4 +37,6 @@ export const useCDSStore = create<CDSUIState>()((set) => ({
       set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
     }, 3000);
   },
+  toggleViewMode: () =>
+    set((s) => ({ viewMode: s.viewMode === 'kanban' ? 'list' : 'kanban' })),
 }));

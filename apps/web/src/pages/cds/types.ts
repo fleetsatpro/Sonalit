@@ -4,14 +4,21 @@ export type ShipmentStatus =
   | 'container_assigned'
   | 'vehicle_assigned'
   | 'driver_assigned'
+  | 'awaiting_lock'
+  | 'locked'
   | 'lock_assigned'
   | 'tracking_active'
+  | 'dispatched'
   | 'in_transit'
   | 'checkpoint'
+  | 'delayed'
   | 'border_crossing'
+  | 'at_port'
   | 'arrived'
   | 'unlock_authorized'
   | 'delivered'
+  | 'lock_removed'
+  | 'completed'
   | 'container_returned'
   | 'closed'
   | 'archived';
@@ -426,4 +433,34 @@ export interface SearchFilters {
   sortOrder?: 'asc' | 'desc';
   page?: number;
   pageSize?: number;
+}
+
+export type PipelineStage =
+  | 'received'
+  | 'clamping'
+  | 'in_transit'
+  | 'at_port'
+  | 'unclamping'
+  | 'completed';
+
+export interface BookingPipelineItem {
+  id: string;
+  booking_number: string;
+  reference: string | null;
+  status: string;
+  customer_id: string | null;
+  customer_name: string | null;
+  pickup_location: string | null;
+  delivery_location: string | null;
+  commodity: string | null;
+  container_type: string | null;
+  container_size: string | null;
+  shipping_line: string | null;
+  eta: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  trip_count: number;
+  trips_completed: number;
+  pipeline_stage: PipelineStage;
 }

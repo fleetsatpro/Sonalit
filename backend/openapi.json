@@ -3820,6 +3820,36 @@
         }
       }
     },
+    "/api/v1/cds/trips/{id}/clamp": {
+      "post": {
+        "operationId": "post_api_v1_cds_trips_id_clamp",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/trips/{id}/unclamp": {
+      "post": {
+        "operationId": "post_api_v1_cds_trips_id_unclamp",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/bookings/pipeline": {
+      "get": {
+        "operationId": "get_api_v1_cds_bookings_pipeline",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/cds/bookings": {
       "get": {
         "operationId": "get_api_v1_cds_bookings",
