@@ -102,6 +102,12 @@ const routeAnalysisRoute = createRoute({ getParentRoute: () => authRoute, path: 
 const cargoPortalRoute = createRoute({ getParentRoute: () => authRoute, path: '/cargo-portal', component: lazyRouteComponent(() => import('./pages/CargoPortal.js')) });
 const portalViewRoute = createRoute({ getParentRoute: () => rootRoute, path: '/portal-view', component: lazyRouteComponent(() => import('./pages/PortalView.js')) });
 
+const cdsRoute = createRoute({
+  getParentRoute: () => authFullscreenRoute,
+  path: '/cds/$',
+  component: lazyRouteComponent(() => import('./pages/CDSRedirect.js')),
+});
+
 // Portal client routes
 const portalRootRoute = createRoute({ getParentRoute: () => rootRoute, id: 'portal-root', component: lazyRouteComponent(() => import('./pages/portal/PortalLayout.js')) });
 const portalLoginRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/login', component: lazyRouteComponent(() => import('./pages/portal/PortalLogin.js')) });
@@ -133,6 +139,7 @@ const routeTree = rootRoute.addChildren([
     orbitRoute,
     convoyReportsRoute,
     driveReplayRoute,
+    cdsRoute,
   ]),
   authRoute.addChildren([
     commandRoute,
