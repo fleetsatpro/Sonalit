@@ -103,25 +103,11 @@ const cargoPortalRoute = createRoute({ getParentRoute: () => authRoute, path: '/
 const portalViewRoute = createRoute({ getParentRoute: () => rootRoute, path: '/portal-view', component: lazyRouteComponent(() => import('./pages/PortalView.js')) });
 
 // ─── Container Delivery System — inline pages under the main AppShell ────────
-const cdsDashRoute      = createRoute({ getParentRoute: () => authRoute, path: '/cds',              component: lazyRouteComponent(() => import('./pages/cds/CDSDashboard.js')) });
-const cdsShipmentsRoute = createRoute({ getParentRoute: () => authRoute, path: '/cds/shipments',    component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSShipments }))) });
-const cdsLiveRoute      = createRoute({ getParentRoute: () => authRoute, path: '/cds/live',         component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSLive }))) });
-const cdsContainersRoute= createRoute({ getParentRoute: () => authRoute, path: '/cds/containers',   component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSContainers }))) });
-const cdsLocksRoute     = createRoute({ getParentRoute: () => authRoute, path: '/cds/locks',        component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSLocks }))) });
-const cdsDriversRoute   = createRoute({ getParentRoute: () => authRoute, path: '/cds/drivers',      component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSDrivers }))) });
-const cdsVehiclesRoute  = createRoute({ getParentRoute: () => authRoute, path: '/cds/vehicles',     component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSVehicles }))) });
-const cdsTransRoute     = createRoute({ getParentRoute: () => authRoute, path: '/cds/transporters', component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSTransporters }))) });
-const cdsCustomersRoute = createRoute({ getParentRoute: () => authRoute, path: '/cds/customers',    component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSCustomers }))) });
-const cdsDeliveryRoute  = createRoute({ getParentRoute: () => authRoute, path: '/cds/delivery',     component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSDelivery }))) });
-const cdsGeofencesRoute = createRoute({ getParentRoute: () => authRoute, path: '/cds/geofences',    component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSGeofences }))) });
-const cdsInboxRoute     = createRoute({ getParentRoute: () => authRoute, path: '/cds/inbox',        component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSInbox }))) });
-const cdsIncidentsRoute = createRoute({ getParentRoute: () => authRoute, path: '/cds/incidents',    component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSIncidents }))) });
-const cdsAlertsRoute    = createRoute({ getParentRoute: () => authRoute, path: '/cds/alerts',       component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSAlerts }))) });
-const cdsReportsRoute   = createRoute({ getParentRoute: () => authRoute, path: '/cds/reports',      component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSReports }))) });
-const cdsAnalyticsRoute = createRoute({ getParentRoute: () => authRoute, path: '/cds/analytics',    component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSAnalytics }))) });
-const cdsDocumentsRoute = createRoute({ getParentRoute: () => authRoute, path: '/cds/documents',    component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSDocuments }))) });
-const cdsAuditRoute     = createRoute({ getParentRoute: () => authRoute, path: '/cds/audit',        component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSAudit }))) });
-const cdsSettingsRoute  = createRoute({ getParentRoute: () => authRoute, path: '/cds/settings',     component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSSettings }))) });
+const cdsDashRoute     = createRoute({ getParentRoute: () => authRoute, path: '/cds',            component: lazyRouteComponent(() => import('./pages/cds/CDSDashboard.js')) });
+const cdsClampRoute    = createRoute({ getParentRoute: () => authRoute, path: '/cds/clamp',      component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSClamp }))) });
+const cdsUnclampRoute  = createRoute({ getParentRoute: () => authRoute, path: '/cds/unclamp',    component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSUnclamp }))) });
+const cdsReportsRoute  = createRoute({ getParentRoute: () => authRoute, path: '/cds/reports',    component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSReports }))) });
+const cdsSettingsRoute = createRoute({ getParentRoute: () => authRoute, path: '/cds/settings',   component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSSettings }))) });
 
 // Portal client routes
 const portalRootRoute = createRoute({ getParentRoute: () => rootRoute, id: 'portal-root', component: lazyRouteComponent(() => import('./pages/portal/PortalLayout.js')) });
@@ -167,10 +153,7 @@ const routeTree = rootRoute.addChildren([
     executiveRoute, devicesRoute, guardianRoute, knoxRemoteSessionRoute,
     aiDecisionRoute, copilotRoute, settingsRoute, routeAnalysisRoute, cargoPortalRoute,
     surveillanceRoute, replayRoute, signalHealthRoute, corridorRoute,
-    cdsDashRoute, cdsShipmentsRoute, cdsLiveRoute, cdsContainersRoute, cdsLocksRoute,
-    cdsDriversRoute, cdsVehiclesRoute, cdsTransRoute, cdsCustomersRoute, cdsDeliveryRoute,
-    cdsGeofencesRoute, cdsInboxRoute, cdsIncidentsRoute, cdsAlertsRoute,
-    cdsReportsRoute, cdsAnalyticsRoute, cdsDocumentsRoute, cdsAuditRoute, cdsSettingsRoute,
+    cdsDashRoute, cdsClampRoute, cdsUnclampRoute, cdsReportsRoute, cdsSettingsRoute,
   ]),
 ]);
 
