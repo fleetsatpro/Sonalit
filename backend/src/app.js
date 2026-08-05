@@ -274,6 +274,9 @@ app.use("/api/v1/sync", (req, res) => res.json({ ok: true, processed: 0 }));
 // webhook. It was previously never mounted at all, so the whole feature (and the
 // Meta webhook) was dead. Its own /whatsapp/webhook falls through the earlier
 // /api/v1/guardian routers (which don't define it) to here.
+try { app.use("/api/v1/cds", require("./routes/cds")); logger.info("Route loaded: /api/v1/cds"); }
+catch (e) { logger.warn("CDS route failed: " + e.message); }
+
 try { app.use("/api/v1", require("./routes/broadcast")); logger.info("Route loaded: /api/v1 (broadcast/whatsapp)"); }
 catch (e) { logger.warn("Broadcast route failed: " + e.message); }
 
