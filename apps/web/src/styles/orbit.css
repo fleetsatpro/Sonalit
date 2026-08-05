@@ -303,7 +303,7 @@ button.o-rail-row:hover{background:rgba(255,255,255,.08)}
 /* folder overlay */
 .o-scrim{position:absolute;inset:0;z-index:8;background:rgba(4,6,12,.6);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);
   display:flex;align-items:center;justify-content:center;padding:20px;animation:o-fade .2s}
-.o-folderpanel{width:min(560px,94vw);background:var(--o-glass2);border:1px solid var(--gc,var(--o-rim2));border-radius:24px;padding:22px;
+.o-folderpanel{width:min(560px,94vw);max-height:min(80vh,640px);overflow-y:auto;scrollbar-width:thin;background:var(--o-glass2);border:1px solid var(--gc,var(--o-rim2));border-radius:24px;padding:22px;
   box-shadow:0 40px 100px -30px rgba(0,0,0,.9),0 0 60px -20px var(--gc);animation:o-pop .22s}
 .o-fp-head{display:flex;align-items:center;gap:13px;margin-bottom:17px}
 .o-fi{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;border:1.5px solid var(--gc);color:var(--gc);
