@@ -1,0 +1,37 @@
+import { create } from 'zustand';
+
+interface Toast {
+  id: string;
+  message: string;
+  type: 'success' | 'error' | 'info' | 'warning';
+}
+
+interface CDSUIState {
+  drawerOpen: boolean;
+  drawerTitle: string;
+  drawerContent: React.ReactNode | null;
+  toasts: Toast[];
+  openDrawer: (title: string, content: React.ReactNode) => void;
+  closeDrawer: () => void;
+  addToast: (message: string, type?: Toast['type']) => void;
+}
+
+let toastCounter = 0;
+
+export const useCDSStore = create<CDSUIState>()((set) => ({
+  drawerOpen: false,
+  drawerTitle: '',
+  drawerContent: null,
+  toasts: [],
+  openDrawer: (title, content) =>
+    set({ drawerOpen: true, drawerTitle: title, drawerContent: content }),
+  closeDrawer: () =>
+    set({ drawerOpen: false, drawerTitle: '', drawerContent: null }),
+  addToast: (message, type = 'success') => {
+    const id = `toast-${++toastCounter}`;
+    set((s) => ({ toasts: [...s.toasts, { id, message, type }] }));
+    setTimeout(() => {
+      set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
+    }, 3000);
+  },
+}));
