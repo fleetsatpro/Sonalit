@@ -535,3 +535,24 @@ BEGIN
     );
   END LOOP;
 END $$;
+
+-- ── Row-Level Security (tenant isolation via app.current_org_id) ─────────────
+DO $$
+DECLARE
+  tbl TEXT;
+BEGIN
+  FOREACH tbl IN ARRAY ARRAY[
+    'cds_customers','cds_transporters','cds_vehicles','cds_drivers',
+    'cds_containers','cds_electronic_locks','cds_lock_events',
+    'cds_bookings','cds_trips','cds_trip_events',
+    'cds_gps_history','cds_geofences','cds_alerts','cds_incidents',
+    'cds_documents','cds_notifications','cds_audit_logs',
+    'cds_activity_feed','cds_reports'
+  ] LOOP
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
+    EXECUTE format(
+      'CREATE POLICY IF NOT EXISTS org_isolation_%s ON %I USING (org_id = current_setting(''app.current_org_id'')::UUID)',
+      tbl, tbl
+    );
+  END LOOP;
+END $$;
