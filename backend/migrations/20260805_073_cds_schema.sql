@@ -1,7 +1,10 @@
 -- CDS (Container Delivery System) schema
 -- All DDL uses IF NOT EXISTS — safe to re-run.
-
-CREATE EXTENSION IF NOT EXISTS "postgis";
+--
+-- No PostGIS: this schema stores geometry as JSONB (route_geometry, zones.geometry)
+-- and does no spatial querying, matching the rest of the codebase — see the
+-- plain-SQL Haversine in src/routes/dashboard.js. Requiring the extension broke
+-- migrations on any database without it, CI included.
 
 -- ── Customers ────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS cds_customers (
