@@ -32,14 +32,25 @@ const NAV_SECTIONS: { label: string; ids: string[] }[] = [
   { label: 'System', ids: ['settings'] },
 ];
 
-function ShipIcon() {
+function TruckIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <path d="M3 17l1.5-5H20l1.5 5" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-      <path d="M5 12V8h5V5h4v3h5v4" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-      <path d="M2 20c2 1.5 4 1.5 6 0s4-1.5 6 0 4 1.5 6 0" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-      <rect x="9" y="8" width="2.5" height="4" rx="0.3" fill="currentColor" opacity="0.5" />
-      <rect x="12.5" y="8" width="2.5" height="4" rx="0.3" fill="currentColor" opacity="0.5" />
+    <svg width="18" height="18" viewBox="0 0 36 20" fill="none">
+      {/* container */}
+      <rect x="1" y="3" width="20" height="12" rx="1" stroke="currentColor" strokeWidth="1.2" fill="none" />
+      <line x1="8" y1="3" x2="8" y2="15" stroke="currentColor" strokeWidth="0.7" opacity="0.5" />
+      <line x1="14" y1="3" x2="14" y2="15" stroke="currentColor" strokeWidth="0.7" opacity="0.5" />
+      {/* cab */}
+      <path d="M21 7 L21 15 L35 15 L35 11 L29 7 Z" stroke="currentColor" strokeWidth="1.2" fill="none" />
+      {/* windshield */}
+      <path d="M29 7 L35 11" stroke="currentColor" strokeWidth="0.8" opacity="0.6" />
+      {/* headlight */}
+      <rect x="33" y="10" width="2" height="3.5" rx="0.5" fill="currentColor" opacity="0.8" />
+      {/* chassis */}
+      <line x1="1" y1="15" x2="35" y2="15" stroke="currentColor" strokeWidth="1.2" />
+      {/* wheels */}
+      <circle cx="7" cy="17.5" r="2.2" stroke="currentColor" strokeWidth="1.2" fill="none" />
+      <circle cx="15" cy="17.5" r="2.2" stroke="currentColor" strokeWidth="1.2" fill="none" />
+      <circle cx="28" cy="17.5" r="2.2" stroke="currentColor" strokeWidth="1.2" fill="none" />
     </svg>
   );
 }
@@ -93,7 +104,7 @@ export default function CDSApp() {
             title="Back to Sonalit"
             style={{ width: 32, height: 32, background: 'linear-gradient(135deg, #F0B429, #ff7a00)', border: 'none', cursor: 'pointer' }}
           >
-            <ShipIcon />
+            <TruckIcon />
           </button>
           {expanded && (
             <div className="min-w-0">
