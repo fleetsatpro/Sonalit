@@ -73,7 +73,7 @@ export default function CDSApp() {
           </button>
           {expanded && (
             <div className="min-w-0">
-              <div className="text-[13px] font-bold tracking-wide text-white/90">E-LOCK OPS</div>
+              <div className="text-[13px] font-bold tracking-wide text-white/90">CONTAINER MANAGEMENT</div>
               <div className="text-[9px] font-mono tracking-widest text-white/30 mt-px">CONTAINER DELIVERY</div>
             </div>
           )}
