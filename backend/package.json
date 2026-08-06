@@ -49,11 +49,13 @@
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.7",
     "openai": "^6.48.0",
+    "pdf-parse": "^2.4.5",
     "pdfkit": "^0.15.0",
     "pg": "^8.11.3",
     "sharp": "^0.35.3",
     "socket.io": "^4.7.2",
     "telegram": "^2.26.22",
+    "tesseract.js": "^7.0.0",
     "uuid": "^9.0.0",
     "winston": "^3.11.0"
   },
