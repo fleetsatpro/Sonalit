@@ -230,7 +230,18 @@ export function BookingsView() {
           }
           if (partial) setWarning(`Partially readable — ${extracted_count}/${total_fields} fields extracted. Verify and complete missing fields.`);
         },
-        onError: () => setError('Could not extract from document. Please fill in manually.'),
+        onError: (e: unknown) => {
+          // Show what actually went wrong. "Could not extract" gave no way to tell
+          // an unconfigured API key from a document that genuinely won't scan.
+          const r = (e as { response?: { status?: number; data?: { error?: string; message?: string } } }).response;
+          if (r?.data?.error === 'extraction_not_configured') {
+            setError('Document reading is not set up on the server — no AI provider key is configured. Fill in manually for now.');
+          } else if (r?.data?.message) {
+            setError(`Could not read the document — ${r.data.message} Please fill in manually.`);
+          } else {
+            setError('Could not extract from document. Please fill in manually.');
+          }
+        },
       });
     };
     reader.readAsDataURL(file);

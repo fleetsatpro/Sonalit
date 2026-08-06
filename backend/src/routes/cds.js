@@ -466,8 +466,18 @@ router.get('/bookings/:id', asyncHandler(async (req, res) => {
 router.post('/bookings/extract', asyncHandler(async (req, res) => {
   const { data: fileData, mediaType } = req.body;
   if (!fileData) return res.status(400).json({ error: 'no_file_data' });
-  const result = await extractBookingData(fileData, mediaType || 'image/jpeg');
-  res.json(result);
+  try {
+    const result = await extractBookingData(fileData, mediaType || 'image/jpeg');
+    return res.json(result);
+  } catch (err) {
+    // 503 when no provider is wired up (an ops fix), 422 when providers ran but
+    // couldn't read the document (a user fix — rescan, or type it in).
+    return res.status(err.allUnconfigured ? 503 : 422).json({
+      error: err.allUnconfigured ? 'extraction_not_configured' : 'extraction_failed',
+      message: err.message,
+      failures: err.failures ?? [],
+    });
+  }
 }));
 
 router.post('/bookings', asyncHandler(async (req, res) => {
