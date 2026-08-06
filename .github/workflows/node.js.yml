@@ -10,6 +10,12 @@ on:
     branches: ["main"]
   pull_request:
     branches: ["main"]
+  # Manual escape hatch. On 2026-08-06 both automatic triggers silently stopped
+  # dispatching — no run was created for four consecutive PR pushes or for a
+  # push to main, while Vercel/Cloudflare/Supabase kept responding to the same
+  # events. With no way to run CI on demand there was no way to tell a broken
+  # pipeline from a broken repo, and nothing could be verified before merging.
+  workflow_dispatch:
 
 # Superseded runs are wasted minutes: push twice in five minutes and the first
 # run's verdict is already stale. Cancel it on PRs, but never on main — the
