@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Card, KPICard, Button, StatusBadge, DataTable, DrawerField, FilterChip, Badge } from './components.js';
-import { useLocks, useTrips, useBookings } from './hooks.js';
+import { useLocks, useTrips, useBookings, useMarkBilled } from './hooks.js';
 import { useCDSStore } from './store.js';
 import { LoadingState } from './CDSDashboard.js';
 
@@ -307,52 +307,75 @@ export function InboxView() {
 }
 
 export function BillingView() {
-  const [filter, setFilter] = useState('all');
-  const invoices = [
-    { id: 'INV-2026-0321', ref: 'SL-BK-2026-001', client: 'Dormans Coffee', containers: 'TGHU3456789', amount: 185000, date: 'Aug 1', status: 'paid' },
-    { id: 'INV-2026-0322', ref: 'SL-BK-2026-002', client: 'KTDA', containers: 'MSCU7712340, TCLU9988123', amount: 340000, date: 'Jul 30', status: 'pending' },
-    { id: 'INV-2026-0323', ref: 'SL-BK-2026-003', client: 'Kakuzi Ltd', containers: 'FCIU2234561', amount: 165000, date: 'Jul 25', status: 'overdue' },
-    { id: 'INV-2026-0324', ref: 'SL-BK-2026-004', client: 'Kenya Nut Company', containers: 'MSKU4456780', amount: 195000, date: 'Jul 29', status: 'paid' },
-  ];
+  const [filter, setFilter] = useState<'all' | 'delivered' | 'completed' | 'billed'>('all');
+  const { data, isLoading } = useBookings();
+  const markBilled = useMarkBilled();
+  const { addToast } = useCDSStore();
+  if (isLoading) return <LoadingState />;
 
-  const paid = invoices.filter(i => i.status === 'paid').reduce((a, i) => a + i.amount, 0);
-  const pending = invoices.filter(i => i.status === 'pending').reduce((a, i) => a + i.amount, 0);
-  const overdue = invoices.filter(i => i.status === 'overdue').reduce((a, i) => a + i.amount, 0);
-  const filtered = filter === 'all' ? invoices : invoices.filter(i => i.status === filter);
+  const all = (data?.data ?? []) as Row[];
+  const billingRows = all.filter(r => ['delivered', 'completed', 'billed'].includes(s(r['status'])));
+  const filtered = filter === 'all' ? billingRows : billingRows.filter(r => r['status'] === filter);
+  const readyCount = billingRows.filter(r => ['delivered', 'completed'].includes(s(r['status']))).length;
+  const billedCount = billingRows.filter(r => r['status'] === 'billed').length;
 
   return (
     <div className="p-5 max-w-[1600px] mx-auto">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
-        <KPICard label="PAID (30D)" value={`KES ${paid.toLocaleString()}`} delta={`${invoices.filter(i => i.status === 'paid').length} invoices`} trend="up" />
-        <KPICard label="PENDING" value={`KES ${pending.toLocaleString()}`} delta={`${invoices.filter(i => i.status === 'pending').length} invoices`} trend="down" />
-        <KPICard label="OVERDUE" value={`KES ${overdue.toLocaleString()}`} delta={`${invoices.filter(i => i.status === 'overdue').length} invoices`} trend="down" />
+        <KPICard label="READY TO BILL" value={String(readyCount)} delta="completed bookings" trend="up" />
+        <KPICard label="BILLED" value={String(billedCount)} delta="processed" trend="up" />
+        <KPICard label="TOTAL" value={String(billingRows.length)} delta="in billing cycle" trend="up" />
       </div>
       <div className="flex gap-1 mb-4">
-        {['all', 'paid', 'pending', 'overdue'].map(f => (
-          <FilterChip key={f} label={f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)} active={filter === f} onClick={() => setFilter(f)} />
+        {(['all', 'delivered', 'completed', 'billed'] as const).map(f => (
+          <FilterChip key={f} label={f === 'all' ? 'All' : f.toUpperCase()} active={filter === f} onClick={() => setFilter(f)} />
         ))}
       </div>
       <Card className="overflow-hidden">
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-[rgba(255,255,255,.06)]">
-              {['Invoice', 'Booking Ref', 'Client', 'Containers', 'Amount', 'Date', 'Status'].map(h => (
+              {['Booking #', 'Customer', 'Reference', 'Commodity', 'Status', 'Date', 'Action'].map(h => (
                 <th key={h} className="text-left px-4 py-3 text-text-2 font-mono text-[10px] tracking-wider">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {filtered.map(inv => (
-              <tr key={inv.id} className="border-b border-[rgba(255,255,255,.04)] hover:bg-[rgba(255,255,255,.02)]">
-                <td className="px-4 py-3 font-mono">{inv.id}</td>
-                <td className="px-4 py-3 font-mono text-cds-orange">{inv.ref}</td>
-                <td className="px-4 py-3">{inv.client}</td>
-                <td className="px-4 py-3 font-mono">{inv.containers}</td>
-                <td className="px-4 py-3 font-mono">KES {inv.amount.toLocaleString()}</td>
-                <td className="px-4 py-3 font-mono">{inv.date}</td>
-                <td className="px-4 py-3"><Badge variant={inv.status === 'paid' ? 'ok' : inv.status === 'pending' ? 'warn' : 'bad'}>{inv.status.toUpperCase()}</Badge></td>
+            {filtered.map(row => (
+              <tr key={s(row['id'])} className="border-b border-[rgba(255,255,255,.04)] hover:bg-[rgba(255,255,255,.02)]">
+                <td className="px-4 py-3 font-mono text-cds-orange">{s(row['booking_number'])}</td>
+                <td className="px-4 py-3">{s(row['customer_name'])}</td>
+                <td className="px-4 py-3 font-mono">{s(row['reference'])}</td>
+                <td className="px-4 py-3">{s(row['commodity'])}</td>
+                <td className="px-4 py-3"><StatusBadge status={s(row['status'])} /></td>
+                <td className="px-4 py-3 font-mono text-text-2">
+                  {row['created_at'] ? new Date(s(row['created_at'])).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '—'}
+                </td>
+                <td className="px-4 py-3">
+                  {['delivered', 'completed'].includes(s(row['status'])) && (
+                    <button
+                      onClick={() => markBilled.mutate(s(row['id']), {
+                        onSuccess: () => addToast(`Booking ${s(row['booking_number'])} marked as billed`, 'success'),
+                      })}
+                      disabled={markBilled.isPending}
+                      className="px-2.5 py-1 rounded-md text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/25 transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      Mark Billed
+                    </button>
+                  )}
+                  {s(row['status']) === 'billed' && (
+                    <span className="text-[10px] font-mono text-text-2">Processed</span>
+                  )}
+                </td>
               </tr>
             ))}
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={7} className="px-4 py-10 text-center text-text-2 font-mono text-[11px]">
+                  No billing records. Completed bookings appear here automatically.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </Card>
