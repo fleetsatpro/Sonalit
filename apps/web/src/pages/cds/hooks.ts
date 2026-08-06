@@ -159,6 +159,20 @@ export function useBookings(filters?: SearchFilters) {
   });
 }
 
+export function useCreateBooking() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: Record<string, unknown>) => {
+      const { data } = await cdsApi.post('/bookings', payload);
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
+    },
+  });
+}
+
 export function useBookingPipeline() {
   return useQuery({
     queryKey: ['cds', 'bookings', 'pipeline'],
