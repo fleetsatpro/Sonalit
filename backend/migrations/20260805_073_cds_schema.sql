@@ -1,7 +1,11 @@
 -- CDS (Container Delivery System) schema
 -- All DDL uses IF NOT EXISTS — safe to re-run.
 
-CREATE EXTENSION IF NOT EXISTS "postgis";
+DO $$ BEGIN
+  CREATE EXTENSION IF NOT EXISTS "postgis";
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'postgis not available — skipping (geo columns use JSONB)';
+END $$;
 
 -- ── Customers ────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS cds_customers (
