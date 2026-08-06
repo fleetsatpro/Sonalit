@@ -86,6 +86,7 @@ export function BookingsView() {
   const [form, setForm] = useState<Record<string, string>>({});
   const [customerId, setCustomerId] = useState('');
   const [error, setError] = useState('');
+  const [warning, setWarning] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
   if (isLoading) return <LoadingState />;
@@ -96,16 +97,20 @@ export function BookingsView() {
     const file = e.target.files?.[0];
     if (!file) return;
     setError('');
+    setWarning('');
     const reader = new FileReader();
     reader.onload = () => {
       const base64 = ((reader.result as string).split(',')[1]) ?? '';
       extractBooking.mutate({ data: base64, mediaType: file.type.length > 0 ? file.type : 'image/jpeg' }, {
-        onSuccess: (extracted) => {
+        onSuccess: ({ data: extracted, partial, extracted_count, total_fields }) => {
           const updates: Record<string, string> = {};
           for (const [k, v] of Object.entries(extracted)) {
             if (v !== null && v !== undefined) updates[k] = String(v);
           }
           setForm(prev => ({ ...prev, ...updates }));
+          if (partial) {
+            setWarning(`Document partially readable — ${extracted_count} of ${total_fields} fields extracted. Please verify and complete the missing fields.`);
+          }
         },
         onError: () => setError('Could not extract data from document. Please fill in manually.'),
       });
@@ -117,6 +122,7 @@ export function BookingsView() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setWarning('');
     if (!customerId) { setError('Please select a customer'); return; }
     const payload: Record<string, unknown> = { customer_id: customerId };
     for (const f of BOOKING_FIELDS) {
@@ -132,7 +138,7 @@ export function BookingsView() {
     });
   };
 
-  const resetForm = () => { setShowForm(false); setForm({}); setCustomerId(''); setError(''); };
+  const resetForm = () => { setShowForm(false); setForm({}); setCustomerId(''); setError(''); setWarning(''); };
 
   return (
     <div className="p-5 max-w-[1600px] mx-auto">
@@ -252,6 +258,9 @@ export function BookingsView() {
 
             {/* footer */}
             <div className="px-5 py-4 border-t border-white/[.06] space-y-2">
+              {warning && (
+                <p className="text-[11px] font-mono px-1" style={{ color: '#ffb020' }}>{warning}</p>
+              )}
               {error && (
                 <p className="text-[11px] text-red-400 font-mono px-1">{error}</p>
               )}

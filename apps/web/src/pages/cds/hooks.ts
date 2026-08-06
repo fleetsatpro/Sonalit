@@ -177,7 +177,7 @@ export function useExtractBooking() {
   return useMutation({
     mutationFn: async ({ data, mediaType }: { data: string; mediaType: string }) => {
       const { data: res } = await cdsApi.post('/bookings/extract', { data, mediaType });
-      return res.data as Record<string, unknown>;
+      return res as { data: Record<string, unknown>; partial: boolean; extracted_count: number; total_fields: number };
     },
   });
 }
