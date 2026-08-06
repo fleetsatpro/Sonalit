@@ -7,7 +7,9 @@ const OpenAI = require('openai');
 const logger = require('./logger');
 const { hasAnthropic, hasGroqFallback, getAnthropicClient } = require('./aiClient');
 
-const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL || 'llama-3.2-90b-vision-preview';
+// llama-3.2-*-vision-preview were retired by Groq — calls 404 with model_not_found.
+// Override with GROQ_VISION_MODEL if this one is rotated out too.
+const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct';
 
 const PROMPT = `Extract shipping/booking details from this document. Return ONLY a JSON object with these exact keys (null for missing):
 {
@@ -133,6 +135,7 @@ async function extractBookingData(base64, mediaType) {
     ['mistral-pixtral', tier3],
     ['anthropic-haiku', tier4],
   ];
+  const failures = [];
   for (const [name, fn] of tiers) {
     try {
       const result = await fn(base64, mediaType);
@@ -147,10 +150,28 @@ async function extractBookingData(base64, mediaType) {
         total_fields: BOOKING_KEYS.length,
       };
     } catch (err) {
-      logger.warn(`extraction: ${name} failed — ${err.message}`);
+      // err.status is set by the OpenAI/Anthropic SDKs; keep it, a 401 vs 404 vs
+      // 429 is the difference between a bad key, a retired model, and a rate limit.
+      // First line only — MODULE_NOT_FOUND appends a whole require stack.
+      const firstLine = String(err.message || 'unknown error').split('\n')[0].trim();
+      const reason = err.status ? `${err.status} ${firstLine}` : firstLine;
+      logger.warn(`extraction: ${name} failed — ${reason}`);
+      failures.push({ tier: name, reason });
     }
   }
-  throw new Error('all extraction tiers exhausted');
+
+  // Every tier is gated on a provider key, so "not configured" everywhere means
+  // this is an ops problem, not an unreadable document. Say which it is —
+  // otherwise both look identical to whoever is staring at the upload dialog.
+  const unconfigured = failures.filter(f => /not configured/.test(f.reason));
+  const err = new Error(
+    unconfigured.length === failures.length
+      ? `No extraction provider is configured (${failures.map(f => f.tier).join(', ')}). Set GROQ_API_KEY, MISTRAL_API_KEY or ANTHROPIC_API_KEY.`
+      : `All extraction tiers failed — ${failures.map(f => `${f.tier}: ${f.reason}`).join(' | ')}`
+  );
+  err.failures = failures;
+  err.allUnconfigured = unconfigured.length === failures.length;
+  throw err;
 }
 
 module.exports = { extractBookingData };

@@ -20,7 +20,7 @@ import '../styles/orbit.css';
 // floating over it.
 
 const GROUP_COVER: Record<string, LucideIcon> = {
-  Command: LayoutDashboard, Security: ShieldAlert, Surveillance: Camera, Fleet: Truck, Business: Briefcase, 'Container Delivery': Ship,
+  Command: LayoutDashboard, Security: ShieldAlert, Surveillance: Camera, Fleet: Truck, Business: Briefcase, 'Container Management': Ship,
 };
 
 interface MapConvoy { id: string; name: string; status: string; lat: number | null; lng: number | null; heading?: number }
