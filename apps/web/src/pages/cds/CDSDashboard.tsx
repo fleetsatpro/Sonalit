@@ -15,6 +15,7 @@ import {
   LocksView, PortView, PulseView, InboxView,
   BillingView, ReportsView, AnalyticsView, SettingsView,
 } from './pages.js';
+import { CDSIntro } from './CDSIntro.js';
 
 const VIEW_ICONS: Record<string, LucideIcon> = {
   dashboard: LayoutDashboard, live: MapPin, containers: Package,
@@ -38,6 +39,10 @@ export default function CDSApp() {
   const [expanded, setExpanded] = useState(() => {
     try { return localStorage.getItem('cds-rail') !== '0'; } catch { return true; }
   });
+  // Once per session, not once per navigation.
+  const [showIntro, setShowIntro] = useState(() => {
+    try { return !sessionStorage.getItem('cds-intro-seen'); } catch { return false; }
+  });
   useEffect(() => {
     try { localStorage.setItem('cds-rail', expanded ? '1' : '0'); } catch { /* */ }
   }, [expanded]);
@@ -49,11 +54,16 @@ export default function CDSApp() {
     return () => clearInterval(id);
   }, []);
 
+  const endIntro = () => {
+    try { sessionStorage.setItem('cds-intro-seen', '1'); } catch { /* */ }
+    setShowIntro(false);
+  };
   const currentView = CDS_VIEWS.find(v => v.id === activeView);
   const railW = expanded ? 210 : 64;
 
   return (
     <div className="flex h-dvh bg-[#0c0e12] text-white overflow-hidden">
+      {showIntro && <CDSIntro onDone={endIntro} />}
       {/* ── sidebar ── */}
       <nav
         className="flex flex-col flex-shrink-0 bg-[#08090d] border-r border-white/[.06] overflow-y-auto overflow-x-hidden"
@@ -74,7 +84,7 @@ export default function CDSApp() {
           {expanded && (
             <div className="min-w-0">
               <div className="text-[13px] font-bold tracking-wide text-white/90">CONTAINER MANAGEMENT</div>
-              <div className="text-[9px] font-mono tracking-widest text-white/30 mt-px">CONTAINER DELIVERY</div>
+              <div className="text-[9px] font-mono tracking-widest text-white/30 mt-px">CONTAINERISED LOGISTICS</div>
             </div>
           )}
         </div>

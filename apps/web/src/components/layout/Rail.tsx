@@ -90,7 +90,7 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: 'Container Delivery',
+    label: 'Container Management',
     hue: '255,122,0',
     items: [
       { path: '/cds', icon: Lock, label: 'Container Management' },
