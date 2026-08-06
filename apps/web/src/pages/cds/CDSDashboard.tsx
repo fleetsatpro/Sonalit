@@ -4,7 +4,7 @@ import {
   LayoutDashboard, MapPin, Package, FileText, Lock,
   Anchor, Activity, MessageSquare, DollarSign, FileBarChart,
   BarChart2, Settings, Search, Bell, ChevronLeft, PanelLeftClose,
-  PanelLeft, Plus, type LucideIcon,
+  PanelLeft, Plus, Truck, type LucideIcon,
 } from 'lucide-react';
 import { KPICard, CDSDrawer, CDSToastContainer } from './components.js';
 import { useDashboardKPIs, useActivity, useTrips } from './hooks.js';
@@ -15,7 +15,6 @@ import {
   LocksView, PortView, PulseView, InboxView,
   BillingView, ReportsView, AnalyticsView, SettingsView,
 } from './pages.js';
-import { CDSIntro } from './CDSIntro.js';
 
 const VIEW_ICONS: Record<string, LucideIcon> = {
   dashboard: LayoutDashboard, live: MapPin, containers: Package,
@@ -32,29 +31,6 @@ const NAV_SECTIONS: { label: string; ids: string[] }[] = [
   { label: 'System', ids: ['settings'] },
 ];
 
-function TruckIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 36 20" fill="none">
-      {/* container */}
-      <rect x="1" y="3" width="20" height="12" rx="1" stroke="currentColor" strokeWidth="1.2" fill="none" />
-      <line x1="8" y1="3" x2="8" y2="15" stroke="currentColor" strokeWidth="0.7" opacity="0.5" />
-      <line x1="14" y1="3" x2="14" y2="15" stroke="currentColor" strokeWidth="0.7" opacity="0.5" />
-      {/* cab */}
-      <path d="M21 7 L21 15 L35 15 L35 11 L29 7 Z" stroke="currentColor" strokeWidth="1.2" fill="none" />
-      {/* windshield */}
-      <path d="M29 7 L35 11" stroke="currentColor" strokeWidth="0.8" opacity="0.6" />
-      {/* headlight */}
-      <rect x="33" y="10" width="2" height="3.5" rx="0.5" fill="currentColor" opacity="0.8" />
-      {/* chassis */}
-      <line x1="1" y1="15" x2="35" y2="15" stroke="currentColor" strokeWidth="1.2" />
-      {/* wheels */}
-      <circle cx="7" cy="17.5" r="2.2" stroke="currentColor" strokeWidth="1.2" fill="none" />
-      <circle cx="15" cy="17.5" r="2.2" stroke="currentColor" strokeWidth="1.2" fill="none" />
-      <circle cx="28" cy="17.5" r="2.2" stroke="currentColor" strokeWidth="1.2" fill="none" />
-    </svg>
-  );
-}
-
 export default function CDSApp() {
   const { activeView, setActiveView } = useCDSStore();
   const nav = useNavigate();
@@ -62,10 +38,6 @@ export default function CDSApp() {
   const [expanded, setExpanded] = useState(() => {
     try { return localStorage.getItem('cds-rail') !== '0'; } catch { return true; }
   });
-  const [showIntro, setShowIntro] = useState(() => {
-    try { return !sessionStorage.getItem('cds-intro-seen'); } catch { return false; }
-  });
-
   useEffect(() => {
     try { localStorage.setItem('cds-rail', expanded ? '1' : '0'); } catch { /* */ }
   }, [expanded]);
@@ -76,13 +48,6 @@ export default function CDSApp() {
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, []);
-
-  const handleIntroEnd = () => {
-    try { sessionStorage.setItem('cds-intro-seen', '1'); } catch { /* */ }
-    setShowIntro(false);
-  };
-
-  if (showIntro) return <CDSIntro onDone={handleIntroEnd} />;
 
   const currentView = CDS_VIEWS.find(v => v.id === activeView);
   const railW = expanded ? 210 : 64;
@@ -104,7 +69,7 @@ export default function CDSApp() {
             title="Back to Sonalit"
             style={{ width: 32, height: 32, background: 'linear-gradient(135deg, #F0B429, #ff7a00)', border: 'none', cursor: 'pointer' }}
           >
-            <TruckIcon />
+            <Truck size={18} />
           </button>
           {expanded && (
             <div className="min-w-0">
