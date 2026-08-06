@@ -554,9 +554,16 @@ BEGIN
     'cds_activity_feed','cds_reports'
   ] LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
-    EXECUTE format(
-      'CREATE POLICY IF NOT EXISTS org_isolation_%s ON %I USING (org_id = current_setting(''app.current_org_id'')::UUID)',
-      tbl, tbl
-    );
+    -- Postgres has no CREATE POLICY IF NOT EXISTS, so guard on pg_policies to
+    -- keep this re-runnable — same shape as 20260604_036_risk_intel.sql.
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_policies
+      WHERE tablename = tbl AND policyname = 'org_isolation_' || tbl
+    ) THEN
+      EXECUTE format(
+        'CREATE POLICY org_isolation_%s ON %I USING (org_id = current_setting(''app.current_org_id'', true)::UUID)',
+        tbl, tbl
+      );
+    END IF;
   END LOOP;
 END $$;
