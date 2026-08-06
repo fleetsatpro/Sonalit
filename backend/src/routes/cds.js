@@ -471,17 +471,81 @@ router.post('/bookings/extract', asyncHandler(async (req, res) => {
 }));
 
 router.post('/bookings', asyncHandler(async (req, res) => {
-  await createRow(req, res, 'cds_bookings',
-    ['customer_id', 'pickup_location', 'delivery_location', 'commodity', 'weight_kg', 'seal_number',
-     'container_type', 'container_size', 'shipping_line', 'vessel', 'voyage', 'eta', 'reference', 'notes'],
-    { genField: 'booking_number', genPrefix: 'BK' }
-  );
+  const { containers, ...body } = req.body;
+  const fields = ['customer_id', 'pickup_location', 'delivery_location', 'commodity', 'weight_kg',
+    'seal_number', 'container_type', 'container_size', 'shipping_line', 'vessel', 'voyage', 'eta', 'reference', 'notes'];
+  const cols = ['booking_number', ...fields, 'org_id'];
+  const vals = [genCode('BK'), ...fields.map(f => body[f] ?? null), req.user.org_id];
+  const phs = vals.map((_, i) => `$${i + 1}`).join(',');
+  const bk = await req.db(`INSERT INTO cds_bookings (${cols.join(',')}) VALUES (${phs}) RETURNING *`, vals);
+  const booking = bk.rows[0];
+  if (Array.isArray(containers) && containers.length > 0) {
+    for (const c of containers) {
+      await req.db(
+        `INSERT INTO cds_booking_containers (org_id, booking_id, container_number, iso_type, seal_number, weight_kg, notes)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [req.user.org_id, booking.id, c.container_number || null, c.iso_type || '20GP',
+         c.seal_number || null, c.weight_kg || null, c.notes || null]
+      );
+    }
+  }
+  res.status(201).json({ data: booking });
 }));
 router.patch('/bookings/:id', asyncHandler(async (req, res) => {
   await updateRow(req, res, 'cds_bookings',
     ['customer_id', 'pickup_location', 'delivery_location', 'commodity', 'weight_kg',
      'container_type', 'container_size', 'shipping_line', 'eta', 'status', 'notes']
   );
+}));
+
+// Booking containers sub-resource
+router.get('/bookings/:id/containers', asyncHandler(async (req, res) => {
+  const result = await req.db(
+    `SELECT bc.*, t.trip_number, t.status AS trip_status
+     FROM cds_booking_containers bc
+     LEFT JOIN cds_trips t ON t.id = bc.trip_id
+     WHERE bc.booking_id=$1 AND bc.org_id=$2 AND bc.deleted_at IS NULL
+     ORDER BY bc.created_at`,
+    [req.params.id, req.orgId]
+  );
+  res.json({ data: result.rows, total: result.rows.length });
+}));
+router.post('/bookings/:id/containers', asyncHandler(async (req, res) => {
+  const items = Array.isArray(req.body) ? req.body : [req.body];
+  const inserted = [];
+  for (const c of items) {
+    const r = await req.db(
+      `INSERT INTO cds_booking_containers (org_id, booking_id, container_number, iso_type, seal_number, weight_kg, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [req.orgId, req.params.id, c.container_number || null, c.iso_type || '20GP',
+       c.seal_number || null, c.weight_kg || null, c.notes || null]
+    );
+    inserted.push(r.rows[0]);
+  }
+  res.status(201).json({ data: inserted });
+}));
+router.patch('/bookings/:id/containers/:cid', asyncHandler(async (req, res) => {
+  const allowed = ['container_number', 'iso_type', 'seal_number', 'weight_kg', 'notes', 'status'];
+  const sets = []; const params = [];
+  for (const k of allowed) {
+    if (req.body[k] !== undefined) { params.push(req.body[k]); sets.push(`${k}=$${params.length}`); }
+  }
+  if (!sets.length) return res.status(400).json({ error: 'nothing_to_update' });
+  params.push(req.params.cid, req.orgId);
+  const r = await req.db(
+    `UPDATE cds_booking_containers SET ${sets.join(',')}, updated_at=NOW()
+     WHERE id=$${params.length - 1} AND org_id=$${params.length} AND deleted_at IS NULL RETURNING *`,
+    params
+  );
+  if (!r.rows.length) return res.status(404).json({ error: 'not_found' });
+  res.json({ data: r.rows[0] });
+}));
+router.delete('/bookings/:id/containers/:cid', asyncHandler(async (req, res) => {
+  await req.db(
+    `UPDATE cds_booking_containers SET deleted_at=NOW() WHERE id=$1 AND org_id=$2`,
+    [req.params.cid, req.orgId]
+  );
+  res.json({ ok: true });
 }));
 
 // ══════════════════════════════════════════════════════════════

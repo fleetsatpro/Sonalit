@@ -3896,6 +3896,42 @@
         }
       }
     },
+    "/api/v1/cds/bookings/{id}/containers": {
+      "get": {
+        "operationId": "get_api_v1_cds_bookings_id_containers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_cds_bookings_id_containers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/bookings/{id}/containers/{cid}": {
+      "patch": {
+        "operationId": "patch_api_v1_cds_bookings_id_containers_cid",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_cds_bookings_id_containers_cid",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/cds/alerts": {
       "get": {
         "operationId": "get_api_v1_cds_alerts",
