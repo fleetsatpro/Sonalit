@@ -6,26 +6,32 @@ interface Toast {
   type: 'success' | 'error' | 'info' | 'warning';
 }
 
+export type CDSView =
+  | 'dashboard' | 'live' | 'containers' | 'bookings' | 'locks'
+  | 'drivers' | 'transporters' | 'port' | 'pulse' | 'inbox'
+  | 'billing' | 'reports' | 'analytics' | 'settings';
+
 interface CDSUIState {
+  activeView: CDSView;
+  setActiveView: (view: CDSView) => void;
   drawerOpen: boolean;
   drawerTitle: string;
   drawerContent: React.ReactNode | null;
   toasts: Toast[];
-  viewMode: 'kanban' | 'list';
   openDrawer: (title: string, content: React.ReactNode) => void;
   closeDrawer: () => void;
   addToast: (message: string, type?: Toast['type']) => void;
-  toggleViewMode: () => void;
 }
 
 let toastCounter = 0;
 
 export const useCDSStore = create<CDSUIState>()((set) => ({
+  activeView: 'dashboard' as CDSView,
+  setActiveView: (view) => set({ activeView: view }),
   drawerOpen: false,
   drawerTitle: '',
   drawerContent: null,
   toasts: [],
-  viewMode: 'kanban' as const,
   openDrawer: (title, content) =>
     set({ drawerOpen: true, drawerTitle: title, drawerContent: content }),
   closeDrawer: () =>
@@ -37,6 +43,4 @@ export const useCDSStore = create<CDSUIState>()((set) => ({
       set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
     }, 3000);
   },
-  toggleViewMode: () =>
-    set((s) => ({ viewMode: s.viewMode === 'kanban' ? 'list' : 'kanban' })),
 }));

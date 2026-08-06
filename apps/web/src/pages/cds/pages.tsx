@@ -1,478 +1,550 @@
-import React, { useState } from 'react';
-import {
-  Card,
-  KPICard,
-  Button,
-  StatusBadge,
-  DataTable,
-  DrawerField,
-} from './components.js';
-import {
-  useTrips,
-  useClampTrip,
-  useUnclampTrip,
-  useTransitionTrip,
-  useReports,
-} from './hooks.js';
+import { useState } from 'react';
+import { Card, KPICard, Button, StatusBadge, DataTable, DrawerField, FilterChip, Badge } from './components.js';
+import { useLocks, useTrips, useBookings } from './hooks.js';
 import { useCDSStore } from './store.js';
-import type { Shipment } from './types.js';
+import { LoadingState } from './CDSDashboard.js';
 
-function PageShell({
-  title,
-  sub,
-  children,
-}: {
-  title: string;
-  sub: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="p-6 max-w-[1400px] mx-auto">
-      <div className="mb-5">
-        <h1 className="text-[22px] font-extrabold text-white">{title}</h1>
-        <p className="text-xs text-text-2 mt-1 font-mono tracking-[.08em]">
-          {sub}
-        </p>
-      </div>
-      {children}
-    </div>
-  );
-}
+type Row = Record<string, unknown>;
+const s = (v: unknown) => String(v ?? '—');
 
-const CLAMP_FIELDS = [
-  { key: 'container_number', label: 'Container Number', placeholder: 'e.g. MAEU1234567' },
-  { key: 'lock_serial', label: 'Lock Serial (E-Lock)', placeholder: 'e.g. SL-001' },
-  { key: 'host_vehicle', label: 'Host Vehicle Reg', placeholder: 'e.g. KBX 123A' },
-  { key: 'trailer_number', label: 'Trailer Number', placeholder: 'e.g. KCT 456B' },
-  { key: 'driver_name', label: 'Driver Name', placeholder: 'Full name' },
-  { key: 'driver_phone', label: 'Driver Phone', placeholder: '+254...' },
-  { key: 'transporter_name', label: 'Transporter', placeholder: 'Company name' },
-  { key: 'commodity', label: 'Commodity', placeholder: 'Cargo description' },
-  { key: 'seal_number', label: 'Seal Number', placeholder: 'Optional' },
-] as const;
+export function LocksView() {
+  const [filter, setFilter] = useState('all');
+  const [view, setView] = useState<'table' | 'grid'>('table');
+  const { data, isLoading } = useLocks();
+  const { openDrawer } = useCDSStore();
+  if (isLoading) return <LoadingState />;
 
-function ClampForm({
-  tripId,
-  tripRef,
-  onDone,
-}: {
-  tripId: string;
-  tripRef: string;
-  onDone: () => void;
-}) {
-  const clamp = useClampTrip();
-  const { addToast } = useCDSStore();
-  const [form, setForm] = useState<Record<string, string>>({});
+  const all = (data?.data ?? []) as Row[];
+  const healthState = (l: Row) => l['tamper'] ? 'tamper' : s(l['signal']) === 'offline' ? 'offline' : Number(l['battery'] ?? 100) < 25 ? 'low' : 'online';
+  const online = all.filter(l => healthState(l) === 'online').length;
+  const low = all.filter(l => healthState(l) === 'low').length;
+  const tamper = all.filter(l => healthState(l) === 'tamper').length;
+  const offline = all.filter(l => healthState(l) === 'offline').length;
+  const rows = filter === 'all' ? all : all.filter(l => healthState(l) === filter);
+  const battColor = (b: number) => b >= 60 ? '#33d6a8' : b >= 25 ? '#ffb020' : '#ff5c5c';
 
-  const handleSubmit = () => {
-    clamp.mutate(
-      { id: tripId, ...form },
-      {
-        onSuccess: () => {
-          addToast('Trip clamped successfully');
-          onDone();
-        },
-        onError: () => addToast('Clamp failed', 'error'),
-      },
-    );
-  };
-
-  return (
-    <div className="space-y-3">
-      {CLAMP_FIELDS.map(({ key, label, placeholder }) => (
-        <div key={key}>
-          <label className="text-[11px] text-text-2 font-mono block mb-1">
-            {label}
-          </label>
-          <input
-            className="w-full h-9 rounded-lg bg-ink-2 border border-[rgba(255,255,255,0.07)] px-3 text-text-0 text-xs outline-none focus:border-cds-orange/40 transition-colors"
-            placeholder={placeholder}
-            value={form[key] ?? ''}
-            onChange={(e) =>
-              setForm((prev) => ({ ...prev, [key]: e.target.value }))
-            }
-          />
-        </div>
-      ))}
-      <Button
-        className="w-full mt-2"
-        onClick={handleSubmit}
-        disabled={clamp.isPending}
-      >
-        {clamp.isPending ? 'Clamping...' : `Clamp ${tripRef}`}
-      </Button>
-    </div>
-  );
-}
-
-export function CDSClamp() {
-  const { data } = useTrips();
-  const transition = useTransitionTrip();
-  const { openDrawer, closeDrawer, addToast } = useCDSStore();
-  const clampStatuses = [
-    'created',
-    'vehicle_assigned',
-    'driver_assigned',
-    'awaiting_lock',
+  const kpis = [
+    { label: 'TOTAL LOCKS', value: String(all.length), delta: 'onboarded', trend: 'up' as const },
+    { label: 'ONLINE', value: String(online), delta: 'reporting', trend: 'up' as const },
+    { label: 'LOW BATTERY', value: String(low), delta: 'below 25%', trend: 'down' as const },
+    { label: 'TAMPER ALERTS', value: String(tamper), delta: 'active', trend: 'down' as const },
+    { label: 'OFFLINE', value: String(offline), delta: 'no signal', trend: 'down' as const },
   ];
-  const pending = (data?.data ?? []).filter((r) =>
-    clampStatuses.includes(r.status),
-  );
-  const locked = (data?.data ?? []).filter((r) => r.status === 'locked');
-  const rows = [...pending, ...locked];
-
-  const openClampForm = (trip: Shipment) => {
-    openDrawer(
-      `Clamp — ${trip.reference}`,
-      <ClampForm tripId={trip.id} tripRef={trip.reference} onDone={closeDrawer} />,
-    );
-  };
 
   return (
-    <PageShell title="Clamping" sub="GROUND TEAM — LOCK & DISPATCH">
-      <div className="grid grid-cols-3 gap-3 mb-5">
-        <KPICard
-          label="PENDING"
-          value={String(pending.length)}
-          delta="awaiting clamp"
-          trend="up"
-        />
-        <KPICard
-          label="LOCKED"
-          value={String(locked.length)}
-          delta="ready to dispatch"
-          trend="up"
-        />
-        <KPICard
-          label="TOTAL QUEUE"
-          value={String(rows.length)}
-          delta="in pipeline"
-          trend="up"
-        />
+    <div className="p-5 max-w-[1600px] mx-auto">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
+        {kpis.map(k => <KPICard key={k.label} {...k} />)}
       </div>
-      <DataTable
-        columns={[
-          {
-            id: 'ref',
-            header: 'Trip #',
-            accessor: (r) => (
-              <span className="font-mono font-bold text-cds-orange text-xs">
-                {r.reference}
-              </span>
-            ),
-          },
-          {
-            id: 'status',
-            header: 'Status',
-            accessor: (r) => <StatusBadge status={r.status} />,
-          },
-          {
-            id: 'customer',
-            header: 'Customer',
-            accessor: (r) => r.customerName ?? '—',
-          },
-          {
-            id: 'origin',
-            header: 'Origin',
-            accessor: (r) => r.origin ?? '—',
-          },
-          {
-            id: 'dest',
-            header: 'Destination',
-            accessor: (r) => r.destination ?? '—',
-          },
-          {
-            id: 'actions',
-            header: 'Action',
-            accessor: (r) => {
-              if (r.status === 'locked')
-                return (
-                  <Button
-                    size="sm"
-                    variant="success"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      transition.mutate(
-                        { id: r.id, to_status: 'dispatched' },
-                        {
-                          onSuccess: () => addToast('Dispatched'),
-                          onError: () => addToast('Failed', 'error'),
-                        },
-                      );
-                    }}
-                  >
-                    Dispatch
-                  </Button>
-                );
-              return (
-                <Button
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openClampForm(r);
-                  }}
-                >
-                  Clamp
-                </Button>
-              );
-            },
-          },
-        ]}
-        data={rows}
-        keyExtractor={(r) => r.id}
-        searchable
-        onRowClick={openClampForm}
-      />
-    </PageShell>
-  );
-}
-
-export function CDSUnclamp() {
-  const { data } = useTrips();
-  const unclamp = useUnclampTrip();
-  const transition = useTransitionTrip();
-  const { openDrawer, addToast } = useCDSStore();
-  const unclampStatuses = ['at_port', 'delivered', 'lock_removed'];
-  const rows = (data?.data ?? []).filter((r) =>
-    unclampStatuses.includes(r.status),
-  );
-
-  return (
-    <PageShell title="Unclamping" sub="PORT TEAM — LOCK REMOVAL">
-      <div className="grid grid-cols-3 gap-3 mb-5">
-        <KPICard
-          label="AT PORT"
-          value={String(rows.filter((r) => r.status === 'at_port').length)}
-          delta="arrived"
-          trend="up"
-        />
-        <KPICard
-          label="DELIVERED"
-          value={String(rows.filter((r) => r.status === 'delivered').length)}
-          delta="awaiting unclamp"
-          trend="up"
-        />
-        <KPICard
-          label="UNCLAMPED"
-          value={String(
-            rows.filter((r) => r.status === 'lock_removed').length,
-          )}
-          delta="locks removed"
-          trend="up"
-        />
-      </div>
-      <DataTable
-        columns={[
-          {
-            id: 'ref',
-            header: 'Trip #',
-            accessor: (r) => (
-              <span className="font-mono font-bold text-cds-orange text-xs">
-                {r.reference}
-              </span>
-            ),
-          },
-          {
-            id: 'status',
-            header: 'Status',
-            accessor: (r) => <StatusBadge status={r.status} />,
-          },
-          {
-            id: 'customer',
-            header: 'Customer',
-            accessor: (r) => r.customerName ?? '—',
-          },
-          {
-            id: 'dest',
-            header: 'Destination',
-            accessor: (r) => r.destination ?? '—',
-          },
-          {
-            id: 'arrived',
-            header: 'Arrived',
-            accessor: (r) =>
-              r.deliveredAt
-                ? new Date(r.deliveredAt).toLocaleString([], {
-                    month: 'short',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })
-                : '—',
-          },
-          {
-            id: 'actions',
-            header: 'Action',
-            accessor: (r) => {
-              if (r.status === 'delivered')
-                return (
-                  <Button
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      unclamp.mutate(
-                        { id: r.id },
-                        {
-                          onSuccess: () => addToast('Lock removed'),
-                          onError: () => addToast('Failed', 'error'),
-                        },
-                      );
-                    }}
-                  >
-                    Unclamp
-                  </Button>
-                );
-              if (r.status === 'lock_removed')
-                return (
-                  <Button
-                    size="sm"
-                    variant="success"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      transition.mutate(
-                        { id: r.id, to_status: 'completed' },
-                        {
-                          onSuccess: () => addToast('Completed'),
-                          onError: () => addToast('Failed', 'error'),
-                        },
-                      );
-                    }}
-                  >
-                    Complete
-                  </Button>
-                );
-              return <span className="text-text-2 text-xs">—</span>;
-            },
-          },
-        ]}
-        data={rows}
-        keyExtractor={(r) => r.id}
-        searchable
-        onRowClick={(r) =>
-          openDrawer(`Trip ${r.reference}`, (
-            <>
-              <DrawerField
-                label="Status"
-                value={<StatusBadge status={r.status} />}
-              />
-              <DrawerField label="Customer" value={r.customerName ?? '—'} />
-              <DrawerField label="Driver" value={r.driverName ?? '—'} />
-              <DrawerField label="Vehicle" value={r.vehicleReg ?? '—'} />
-              <DrawerField label="Origin" value={r.origin ?? '—'} />
-              <DrawerField
-                label="Destination"
-                value={r.destination ?? '—'}
-              />
-            </>
-          ))
-        }
-      />
-    </PageShell>
-  );
-}
-
-export function CDSReports() {
-  const { data } = useReports();
-  const rows = data?.data ?? [];
-  return (
-    <PageShell title="Reports" sub="GENERATE & EXPORT">
-      <Card className="p-5 mb-4">
-        <h2 className="text-sm font-bold text-text-0 mb-3">Generate Report</h2>
-        <div className="flex gap-2 flex-wrap">
-          {['Daily Summary', 'Weekly Fleet', 'Monthly Analytics', 'Custom'].map(
-            (t) => (
-              <Button key={t} size="sm" variant="ghost">
-                {t}
-              </Button>
-            ),
-          )}
-        </div>
-      </Card>
-      <DataTable
-        columns={[
-          { id: 'name', header: 'Name', accessor: (r) => r.name },
-          { id: 'type', header: 'Type', accessor: (r) => r.type },
-          {
-            id: 'format',
-            header: 'Format',
-            accessor: (r) => r.format.toUpperCase(),
-          },
-          {
-            id: 'status',
-            header: 'Status',
-            accessor: (r) => <StatusBadge status={r.status} />,
-          },
-          {
-            id: 'by',
-            header: 'Generated By',
-            accessor: (r) => r.generatedBy,
-          },
-          { id: 'date', header: 'Date', accessor: (r) => r.generatedAt },
-        ]}
-        data={rows}
-        keyExtractor={(r) => r.id}
-        searchable
-      />
-    </PageShell>
-  );
-}
-
-export function CDSSettings() {
-  return (
-    <PageShell title="Settings" sub="ACCOUNT & PLATFORM PREFERENCES">
-      <div className="space-y-4">
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
         {[
-          {
-            title: 'Profile',
-            fields: ['Company Name', 'Contact Email', 'Phone', 'Address'],
-          },
-          {
-            title: 'Notifications',
-            fields: [
-              'Email Alerts',
-              'SMS Alerts',
-              'Push Notifications',
-              'Alert Threshold',
-            ],
-          },
-          {
-            title: 'Integrations',
-            fields: [
-              'WhatsApp Business API',
-              'GPS Provider',
-              'ERP System',
-              'Port Systems',
-            ],
-          },
-          {
-            title: 'Security',
-            fields: [
-              'Two-Factor Auth',
-              'Session Timeout',
-              'API Key Management',
-              'Audit Retention',
-            ],
-          },
-        ].map((section) => (
-          <Card key={section.title} className="p-5">
-            <h2 className="text-sm font-bold text-text-0 mb-3">
-              {section.title}
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {section.fields.map((f) => (
-                <div key={f}>
-                  <label className="text-[11px] text-text-2 font-mono block mb-1">
-                    {f}
-                  </label>
-                  <div className="h-9 rounded-lg bg-ink-2 border border-[rgba(255,255,255,0.07)] px-3 flex items-center text-text-1 text-xs">
-                    &mdash;
+          { id: 'all', label: `All (${all.length})` },
+          { id: 'online', label: `Online (${online})` },
+          { id: 'low', label: `Low battery (${low})` },
+          { id: 'tamper', label: `Tamper (${tamper})` },
+          { id: 'offline', label: `Offline (${offline})` },
+        ].map(f => <FilterChip key={f.id} label={f.label} active={filter === f.id} onClick={() => setFilter(f.id)} />)}
+        <div className="ml-auto flex gap-0 border border-[rgba(255,255,255,.1)] rounded-lg overflow-hidden">
+          <button className={`px-3 py-1.5 text-[11px] font-mono border-none cursor-pointer ${view === 'table' ? 'bg-ink-3 text-text-0' : 'bg-transparent text-text-2'}`} onClick={() => setView('table')}>Table</button>
+          <button className={`px-3 py-1.5 text-[11px] font-mono border-none cursor-pointer ${view === 'grid' ? 'bg-ink-3 text-text-0' : 'bg-transparent text-text-2'}`} onClick={() => setView('grid')}>Cards</button>
+        </div>
+      </div>
+
+      {view === 'table' ? (
+        <DataTable
+          columns={[
+            { id: 'id', header: 'Lock ID', accessor: (r: Row) => <span className="font-mono font-bold text-xs">{s(r['serial_number'] ?? r['lock_id'])}</span> },
+            { id: 'battery', header: 'Battery', accessor: (r: Row) => {
+              const b = Number(r['battery'] ?? 0);
+              return (
+                <div className="flex items-center gap-1.5">
+                  <div className="w-[50px] h-1.5 rounded bg-ink-3 overflow-hidden">
+                    <div className="h-full rounded" style={{ width: `${b}%`, background: battColor(b) }} />
+                  </div>
+                  <span className="font-mono text-[10px]" style={{ color: battColor(b) }}>{b}%</span>
+                </div>
+              );
+            }},
+            { id: 'signal', header: 'Signal', accessor: (r: Row) => <span className="font-mono text-xs" style={{ color: s(r['signal']) === 'strong' ? '#33d6a8' : s(r['signal']) === 'weak' ? '#ffb020' : '#ff5c5c' }}>{s(r['signal'])}</span> },
+            { id: 'container', header: 'Container', accessor: (r: Row) => <span className="font-mono text-xs">{s(r['container_number'] ?? r['container_id'])}</span> },
+            { id: 'status', header: 'Status', accessor: (r: Row) => <StatusBadge status={s(r['status'])} /> },
+          ]}
+          data={rows}
+          keyExtractor={(r: Row) => s(r['id'])}
+          searchable
+          searchPlaceholder="Search locks…"
+          onRowClick={(r: Row) => openDrawer(`Lock ${s(r['serial_number'] ?? r['lock_id'])}`, (
+            <>
+              <DrawerField label="Serial" value={s(r['serial_number'] ?? r['lock_id'])} />
+              <DrawerField label="Battery" value={`${r['battery'] ?? 0}%`} />
+              <DrawerField label="Signal" value={s(r['signal'])} />
+              <DrawerField label="Container" value={s(r['container_number'] ?? r['container_id'])} />
+              <DrawerField label="Status" value={<StatusBadge status={s(r['status'])} />} />
+              <DrawerField label="Provider" value={s(r['provider'])} />
+              <DrawerField label="Last Heartbeat" value={r['last_heartbeat'] ? new Date(s(r['last_heartbeat'])).toLocaleString() : '—'} />
+            </>
+          ))}
+        />
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          {rows.map(l => {
+            const b = Number(l['battery'] ?? 0);
+            const hs = healthState(l);
+            const dotColor = hs === 'tamper' || hs === 'offline' ? '#ff5c5c' : hs === 'low' ? '#ffb020' : '#33d6a8';
+            return (
+              <Card key={s(l['id'])} className="p-4 cursor-pointer hover:border-[rgba(255,255,255,.15)]" onClick={() => openDrawer(`Lock ${s(l['serial_number'] ?? l['lock_id'])}`, (
+                <>
+                  <DrawerField label="Battery" value={`${b}%`} />
+                  <DrawerField label="Signal" value={s(l['signal'])} />
+                  <DrawerField label="Container" value={s(l['container_number'] ?? l['container_id'])} />
+                  <DrawerField label="Status" value={<StatusBadge status={s(l['status'])} />} />
+                </>
+              ))}>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="font-mono font-bold text-xs text-text-0">{s(l['serial_number'] ?? l['lock_id'])}</span>
+                  <span className="w-2 h-2 rounded-full" style={{ background: dotColor, boxShadow: `0 0 8px ${dotColor}` }} />
+                </div>
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="relative w-10 h-10 flex-none">
+                    <svg width="40" height="40" viewBox="0 0 40 40" style={{ transform: 'rotate(-90deg)' }}>
+                      <circle cx="20" cy="20" r="15" fill="none" stroke="rgba(255,255,255,.06)" strokeWidth="4" />
+                      <circle cx="20" cy="20" r="15" fill="none" stroke={battColor(b)} strokeWidth="4" strokeLinecap="round"
+                        strokeDasharray={`${(b / 100) * 94.2} ${94.2 - (b / 100) * 94.2}`} />
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center font-mono text-[9px] font-bold" style={{ color: battColor(b) }}>{b}</div>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[11px] text-text-2 font-mono truncate">{s(l['provider'])}</div>
                   </div>
                 </div>
-              ))}
+                <div className="text-[11px] text-text-2">{s(l['container_number'] ?? l['container_id'])}</div>
+                {hs === 'tamper' && <div className="mt-2"><Badge variant="bad">TAMPER ALERT</Badge></div>}
+              </Card>
+            );
+          })}
+          {rows.length === 0 && <div className="col-span-full text-center text-text-2 text-xs py-8 font-mono">No locks match</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function PortView() {
+  const { data, isLoading } = useTrips({ status: 'at_port' });
+  const { openDrawer, addToast } = useCDSStore();
+  if (isLoading) return <LoadingState />;
+  const rows = (data?.data ?? []) as Row[];
+
+  return (
+    <div className="p-5 max-w-[1600px] mx-auto">
+      <DataTable
+        columns={[
+          { id: 'container', header: 'Container', accessor: (r: Row) => <span className="font-mono text-xs">{s(r['container_number'])}</span> },
+          { id: 'truck', header: 'Truck', accessor: (r: Row) => <span className="font-mono text-xs">{s(r['vehicle_reg'])}</span> },
+          { id: 'dest', header: 'Terminal', accessor: (r: Row) => s(r['destination']) },
+          { id: 'arrived', header: 'Arrived', accessor: (r: Row) => r['delivered_at'] ? new Date(s(r['delivered_at'])).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—' },
+          { id: 'status', header: 'Status', accessor: (r: Row) => <StatusBadge status={s(r['status'])} /> },
+          { id: 'action', header: '', accessor: (r: Row) => (
+            <Button size="sm" onClick={(e) => { e.stopPropagation(); addToast(`Unclamp initiated for ${s(r['container_number'])}`); }}>
+              Unclamp
+            </Button>
+          )},
+        ]}
+        data={rows}
+        keyExtractor={(r: Row) => s(r['id'])}
+        searchable
+        searchPlaceholder="Search port queue…"
+        onRowClick={(r: Row) => openDrawer(`Port — ${s(r['container_number'])}`, (
+          <>
+            <DrawerField label="Container" value={s(r['container_number'])} />
+            <DrawerField label="Truck" value={s(r['vehicle_reg'])} />
+            <DrawerField label="Driver" value={s(r['driver_name'])} />
+            <DrawerField label="Status" value={<StatusBadge status={s(r['status'])} />} />
+            <DrawerField label="Destination" value={s(r['destination'])} />
+          </>
+        ))}
+      />
+    </div>
+  );
+}
+
+export function PulseView() {
+  const { data, isLoading } = useBookings();
+  const { openDrawer, addToast } = useCDSStore();
+  if (isLoading) return <LoadingState />;
+  const rows = (data?.data ?? []) as Row[];
+
+  return (
+    <div className="p-5 max-w-[1600px] mx-auto">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+        <KPICard label="BOOKINGS ON PULSE" value={String(rows.length)} delta="active" trend="up" />
+        <KPICard label="SENT TODAY" value="0" delta="auto-sent" trend="up" />
+        <KPICard label="SUPPRESSED" value="0" delta="no material change" trend="up" />
+        <KPICard label="EXCEPTIONS FIRED" value="0" delta="instant alerts" trend="down" />
+      </div>
+      <DataTable
+        columns={[
+          { id: 'ref', header: 'Booking Ref', accessor: (r: Row) => <span className="font-mono font-bold text-cds-orange text-xs">{s(r['booking_number'])}</span> },
+          { id: 'client', header: 'Client', accessor: (r: Row) => s(r['customer_name']) },
+          { id: 'status', header: 'Status', accessor: (r: Row) => <StatusBadge status={s(r['status'])} /> },
+          { id: 'action', header: '', accessor: (r: Row) => (
+            <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); addToast(`Pulse sent for ${s(r['booking_number'])}`); }}>
+              Send now
+            </Button>
+          )},
+        ]}
+        data={rows}
+        keyExtractor={(r: Row) => s(r['id'])}
+        searchable
+        searchPlaceholder="Search bookings…"
+        onRowClick={(r: Row) => openDrawer(`Pulse — ${s(r['booking_number'])}`, (
+          <>
+            <DrawerField label="Booking" value={s(r['booking_number'])} />
+            <DrawerField label="Client" value={s(r['customer_name'])} />
+            <DrawerField label="Status" value={<StatusBadge status={s(r['status'])} />} />
+          </>
+        ))}
+      />
+    </div>
+  );
+}
+
+export function InboxView() {
+  const [activeConv, setActiveConv] = useState(0);
+  const conversations = [
+    { id: 'c1', name: 'Ground Team — Nakuru', initials: 'GT', status: 'review', preview: 'Clamp completed at 09:17, truck KDK 456P departing…', time: '14:18', unread: 3,
+      messages: [
+        { mine: false, time: '09:12', text: 'Starting clamp on truck KDK 456P for container TGHU3456789.' },
+        { mine: false, time: '09:15', text: 'Driver John Kamau, transporter Kentrans Logistics, commodity Coffee. Booking ref MSC56789.' },
+        { mine: false, time: '09:17', text: 'Lock SL23891 attached. Seal number SN-88213.' },
+        { mine: true, time: '09:18', text: 'Received — extraction complete. Safe travels.' },
+      ],
+      fields: [['Container', 'TGHU3456789'], ['Booking', 'MSC56789'], ['Driver', 'John Kamau'], ['Lock', 'SL23891']] as [string, string][] },
+    { id: 'c2', name: 'Port Team — Mombasa', initials: 'PT', status: 'synced', preview: 'Lock SL23881 removed, container cleared for vessel', time: '13:54', unread: 0,
+      messages: [
+        { mine: false, time: '13:40', text: 'Container MSCU7712340 arrived at gate 4.' },
+        { mine: false, time: '13:54', text: 'Lock SL23881 removed, container cleared for vessel MV Nordic Star.' },
+        { mine: true, time: '13:55', text: 'Logged and synced to voyage manifest. Thank you.' },
+      ],
+      fields: [['Container', 'MSCU7712340'], ['Vessel', 'MV Nordic Star'], ['Lock', 'SL23881']] as [string, string][] },
+    { id: 'c3', name: 'Supervisor — J. Mwangi', initials: 'SP', status: 'pending', preview: 'Please confirm ETA for booking MSC56789', time: '13:40', unread: 1,
+      messages: [{ mine: false, time: '13:40', text: 'Please confirm ETA for booking MSC56789.' }],
+      fields: [['Booking', 'MSC56789']] as [string, string][] },
+  ];
+  const conv = conversations[activeConv]!;
+
+  return (
+    <div className="flex h-full" style={{ minHeight: 0 }}>
+      <div className="w-[280px] flex-none border-r border-[rgba(255,255,255,.06)] flex flex-col">
+        <div className="p-4 border-b border-[rgba(255,255,255,.06)]">
+          <div className="font-bold text-sm text-text-0">Conversations</div>
+          <div className="text-[11px] text-text-2 mt-1">{conversations.reduce((a, c) => a + c.unread, 0)} unread</div>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {conversations.map((c, i) => (
+            <div key={c.id} onClick={() => setActiveConv(i)}
+              className={`flex items-start gap-3 px-4 py-3 cursor-pointer border-b border-[rgba(255,255,255,.04)] transition-colors ${i === activeConv ? 'bg-[rgba(255,255,255,.04)]' : 'hover:bg-[rgba(255,255,255,.02)]'}`}>
+              <div className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-ink flex-none"
+                style={{ background: c.status === 'synced' ? 'linear-gradient(140deg,#33d6a8,#1fae86)' : 'linear-gradient(140deg,#F0B429,#FFCE6B)' }}>
+                {c.initials}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-text-0 truncate">{c.name}</span>
+                  <span className="text-[10px] text-text-2 flex-none ml-2">{c.time}</span>
+                </div>
+                <div className="text-[11px] text-text-2 truncate mt-0.5">{c.preview}</div>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <Badge variant={c.status === 'synced' ? 'ok' : c.status === 'review' ? 'warn' : 'bad'}>{c.status.toUpperCase()}</Badge>
+                  {c.unread > 0 && <span className="text-[9px] bg-cds-orange text-ink rounded-full w-4 h-4 flex items-center justify-center font-bold">{c.unread}</span>}
+                </div>
+              </div>
             </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex-1 flex flex-col min-w-0">
+        <div className="px-4 py-3 border-b border-[rgba(255,255,255,.06)] flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-ink flex-none"
+            style={{ background: conv.status === 'synced' ? 'linear-gradient(140deg,#33d6a8,#1fae86)' : 'linear-gradient(140deg,#F0B429,#FFCE6B)' }}>
+            {conv.initials}
+          </div>
+          <div>
+            <div className="text-sm font-semibold text-text-0">{conv.name}</div>
+            <div className="text-[10px] text-text-2">{conv.status === 'synced' ? 'Synced' : 'AI extracting'}</div>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {conv.messages.map((m, i) => (
+            <div key={i} className={`flex ${m.mine ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-[75%] rounded-xl px-3.5 py-2.5 text-xs ${m.mine ? 'bg-[rgba(255,255,255,.06)] text-text-1' : 'bg-ink-2 border border-[rgba(255,255,255,.06)] text-text-0'}`}>
+                <div>{m.text}</div>
+                <div className="text-[10px] text-text-2 mt-1 text-right font-mono">{m.time}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="w-[280px] flex-none border-l border-[rgba(255,255,255,.06)] p-4 overflow-y-auto">
+        <div className="font-bold text-sm text-text-0 mb-3">AI Extraction</div>
+        <div className="space-y-2">
+          {conv.fields.map(([label, value]) => (
+            <div key={label} className="flex items-center justify-between py-2 border-b border-[rgba(255,255,255,.04)]">
+              <span className="text-[10px] text-text-2 font-mono">{label}</span>
+              <span className="text-xs text-text-0 font-mono">{value}</span>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 flex gap-2">
+          <Button size="sm" variant="ghost" className="flex-1">Reject</Button>
+          <Button size="sm" className="flex-1">Approve</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function BillingView() {
+  const [filter, setFilter] = useState('all');
+  const invoices = [
+    { id: 'INV-2026-0321', ref: 'SL-BK-2026-001', client: 'Dormans Coffee', containers: 'TGHU3456789', amount: 185000, date: 'Aug 1', status: 'paid' },
+    { id: 'INV-2026-0322', ref: 'SL-BK-2026-002', client: 'KTDA', containers: 'MSCU7712340, TCLU9988123', amount: 340000, date: 'Jul 30', status: 'pending' },
+    { id: 'INV-2026-0323', ref: 'SL-BK-2026-003', client: 'Kakuzi Ltd', containers: 'FCIU2234561', amount: 165000, date: 'Jul 25', status: 'overdue' },
+    { id: 'INV-2026-0324', ref: 'SL-BK-2026-004', client: 'Kenya Nut Company', containers: 'MSKU4456780', amount: 195000, date: 'Jul 29', status: 'paid' },
+  ];
+
+  const paid = invoices.filter(i => i.status === 'paid').reduce((a, i) => a + i.amount, 0);
+  const pending = invoices.filter(i => i.status === 'pending').reduce((a, i) => a + i.amount, 0);
+  const overdue = invoices.filter(i => i.status === 'overdue').reduce((a, i) => a + i.amount, 0);
+  const filtered = filter === 'all' ? invoices : invoices.filter(i => i.status === filter);
+
+  return (
+    <div className="p-5 max-w-[1600px] mx-auto">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+        <KPICard label="PAID (30D)" value={`KES ${paid.toLocaleString()}`} delta={`${invoices.filter(i => i.status === 'paid').length} invoices`} trend="up" />
+        <KPICard label="PENDING" value={`KES ${pending.toLocaleString()}`} delta={`${invoices.filter(i => i.status === 'pending').length} invoices`} trend="down" />
+        <KPICard label="OVERDUE" value={`KES ${overdue.toLocaleString()}`} delta={`${invoices.filter(i => i.status === 'overdue').length} invoices`} trend="down" />
+      </div>
+      <div className="flex gap-1 mb-4">
+        {['all', 'paid', 'pending', 'overdue'].map(f => (
+          <FilterChip key={f} label={f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)} active={filter === f} onClick={() => setFilter(f)} />
+        ))}
+      </div>
+      <Card className="overflow-hidden">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-[rgba(255,255,255,.06)]">
+              {['Invoice', 'Booking Ref', 'Client', 'Containers', 'Amount', 'Date', 'Status'].map(h => (
+                <th key={h} className="text-left px-4 py-3 text-text-2 font-mono text-[10px] tracking-wider">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map(inv => (
+              <tr key={inv.id} className="border-b border-[rgba(255,255,255,.04)] hover:bg-[rgba(255,255,255,.02)]">
+                <td className="px-4 py-3 font-mono">{inv.id}</td>
+                <td className="px-4 py-3 font-mono text-cds-orange">{inv.ref}</td>
+                <td className="px-4 py-3">{inv.client}</td>
+                <td className="px-4 py-3 font-mono">{inv.containers}</td>
+                <td className="px-4 py-3 font-mono">KES {inv.amount.toLocaleString()}</td>
+                <td className="px-4 py-3 font-mono">{inv.date}</td>
+                <td className="px-4 py-3"><Badge variant={inv.status === 'paid' ? 'ok' : inv.status === 'pending' ? 'warn' : 'bad'}>{inv.status.toUpperCase()}</Badge></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+    </div>
+  );
+}
+
+export function ReportsView() {
+  const [selected, setSelected] = useState('daily');
+  const { addToast } = useCDSStore();
+  const types = [
+    { id: 'daily', label: 'Daily Report', desc: 'PDF summary' },
+    { id: 'weekly', label: 'Weekly Report', desc: 'Excel export' },
+    { id: 'monthly', label: 'Monthly Report', desc: 'Full analytics' },
+    { id: 'manager', label: 'Manager Deck', desc: 'Slide summary' },
+  ];
+
+  return (
+    <div className="p-5 max-w-[1600px] mx-auto">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+        {types.map(t => (
+          <Card key={t.id} className={`p-4 cursor-pointer transition-colors ${selected === t.id ? 'border-cds-orange/50' : ''}`} onClick={() => setSelected(t.id)}>
+            <div className="font-bold text-sm text-text-0">{t.label}</div>
+            <div className="text-[11px] text-text-2 mt-1">{t.desc}</div>
           </Card>
         ))}
       </div>
-    </PageShell>
+      <div className="flex gap-2 mb-5">
+        <Button onClick={() => addToast('Report generating…')}>Generate report</Button>
+        <Button variant="ghost" onClick={() => addToast('Excel export started')}>Excel export</Button>
+        <Button variant="ghost" onClick={() => addToast('PDF export started')}>PDF export</Button>
+      </div>
+      <Card className="p-4">
+        <div className="font-bold text-sm text-text-0 mb-3">Generated Reports</div>
+        {[
+          { name: 'Daily Ops Summary — Aug 1', type: 'PDF', date: 'Aug 1, 2026' },
+          { name: 'Weekly Transporter Performance', type: 'Excel', date: 'Jul 28, 2026' },
+          { name: 'Monthly Manager Deck', type: 'PowerPoint', date: 'Jul 1, 2026' },
+        ].map(r => (
+          <div key={r.name} className="flex items-center gap-3 py-3 border-b border-[rgba(255,255,255,.04)] last:border-0">
+            <span className="text-lg">{r.type === 'PDF' ? '\u{1F4C4}' : r.type === 'Excel' ? '\u{1F4CA}' : '\u{1F4FD}'}</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs text-text-0">{r.name}</div>
+              <div className="text-[10px] text-text-2 font-mono mt-0.5">{r.type} · {r.date}</div>
+            </div>
+            <Button size="sm" variant="ghost" onClick={() => addToast(`Downloading ${r.name}`)}>Download</Button>
+          </div>
+        ))}
+      </Card>
+    </div>
+  );
+}
+
+export function AnalyticsView() {
+  const commodities = [
+    { label: 'Coffee', pct: 34, color: '#F0B429' },
+    { label: 'Tea', pct: 28, color: '#33d6a8' },
+    { label: 'Avocado', pct: 16, color: '#FF9A3C' },
+    { label: 'Textiles', pct: 12, color: '#8a8f9a' },
+    { label: 'Other', pct: 10, color: '#5a5f68' },
+  ];
+
+  const bars = [
+    { label: 'Avg clamp time', value: '6m 40s', pct: 62, color: 'bg-cds-orange' },
+    { label: 'Avg unclamp time', value: '4m 12s', pct: 44, color: 'bg-cds-teal' },
+    { label: 'Late deliveries', value: '18%', pct: 18, color: 'bg-cds-red' },
+    { label: 'Lock utilization', value: '81%', pct: 81, color: 'bg-cds-orange' },
+  ];
+
+  return (
+    <div className="p-5 max-w-[1600px] mx-auto">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card className="p-5">
+          <div className="font-bold text-sm text-text-0 mb-4">Trips by Commodity</div>
+          <div className="flex flex-wrap gap-2 mb-4">
+            {commodities.map(c => (
+              <div key={c.label} className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full" style={{ background: c.color }} />
+                <span className="text-xs text-text-1">{c.label} — {c.pct}%</span>
+              </div>
+            ))}
+          </div>
+          <div className="space-y-2">
+            {commodities.map(c => (
+              <div key={c.label} className="flex items-center gap-3">
+                <span className="text-xs text-text-2 w-16">{c.label}</span>
+                <div className="flex-1 h-2 rounded bg-ink-3 overflow-hidden">
+                  <div className="h-full rounded" style={{ width: `${c.pct}%`, background: c.color }} />
+                </div>
+                <span className="text-xs font-mono text-text-1 w-8 text-right">{c.pct}%</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card className="p-5">
+          <div className="font-bold text-sm text-text-0 mb-4">Avg Clamp vs Unclamp Time</div>
+          <div className="space-y-3">
+            {bars.map(b => (
+              <div key={b.label} className="flex items-center gap-3">
+                <span className="text-xs text-text-2 w-28">{b.label}</span>
+                <div className="flex-1 h-2 rounded bg-ink-3 overflow-hidden">
+                  <div className={`h-full rounded ${b.color}`} style={{ width: `${b.pct}%` }} />
+                </div>
+                <span className="text-xs font-mono text-text-1 w-14 text-right">{b.value}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card className="p-5 md:col-span-2">
+          <div className="font-bold text-sm text-text-0 mb-2">Peak Operating Hours</div>
+          <div className="text-[11px] text-text-2 mb-4">Clamp events by hour of day</div>
+          <div className="h-[140px] rounded-xl bg-ink-3/50 flex items-end px-4 pb-2 gap-1">
+            {[6, 14, 22, 38, 54, 71, 88, 95, 80, 62, 48, 30].map((v, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                <div className="w-full rounded-t" style={{ height: `${v * 1.2}px`, background: 'linear-gradient(180deg, #F0B429, rgba(240,180,41,.2))' }} />
+                <span className="text-[8px] font-mono text-text-2">{(6 + i * 1.5).toFixed(0)}h</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+export function SettingsView() {
+  const [tab, setTab] = useState('profile');
+  const tabs = ['profile', 'notifications', 'integrations', 'team', 'security'];
+
+  const panels: Record<string, { label: string; value: string }[]> = {
+    profile: [
+      { label: 'Full name', value: 'R. Kariuki' },
+      { label: 'Role', value: 'OPS CONTROLLER' },
+      { label: 'Shift', value: 'Bravo · 06:00–18:00' },
+      { label: 'Timezone', value: 'EAT (UTC+3)' },
+    ],
+    notifications: [
+      { label: 'Auto WhatsApp on clamp/unclamp', value: 'On' },
+      { label: 'Delayed trip alerts', value: 'On' },
+      { label: 'Tamper alerts', value: 'On' },
+      { label: 'Low battery warnings', value: 'On' },
+      { label: 'Daily report email', value: 'Off' },
+    ],
+    integrations: [
+      { label: 'Targa Telematics', value: 'Connected' },
+      { label: 'Securisat', value: 'Connected' },
+      { label: 'WhatsApp Business API', value: 'Connected' },
+      { label: 'Excel / SharePoint sync', value: 'Connected' },
+      { label: 'GPS beacon network', value: 'Connected' },
+      { label: 'SAP freight module', value: 'Not connected' },
+    ],
+    team: [
+      { label: 'Ops Controllers', value: '6 members' },
+      { label: 'Security Analysts', value: '4 members' },
+      { label: 'Dispatch Officers', value: '8 members' },
+      { label: 'Field & Port Teams', value: '42 members' },
+    ],
+    security: [
+      { label: 'Two-factor authentication', value: 'Required' },
+      { label: 'Session timeout', value: '15 min' },
+      { label: 'Audit log retention', value: '7 years' },
+    ],
+  };
+
+  return (
+    <div className="p-5 max-w-[1600px] mx-auto">
+      <div className="flex gap-4" style={{ minHeight: 400 }}>
+        <div className="w-[180px] flex-none space-y-1">
+          {tabs.map(t => (
+            <button key={t} onClick={() => setTab(t)}
+              className={`w-full text-left px-4 py-2.5 rounded-lg text-xs font-semibold border-none cursor-pointer transition-colors ${tab === t ? 'bg-[rgba(255,255,255,.06)] text-cds-orange' : 'bg-transparent text-text-2 hover:text-text-1'}`}>
+              {t.charAt(0).toUpperCase() + t.slice(1)}
+            </button>
+          ))}
+        </div>
+        <Card className="flex-1 p-5">
+          <div className="space-y-0">
+            {(panels[tab] ?? []).map((row, i) => (
+              <div key={row.label} className={`flex items-center justify-between py-3.5 ${i < (panels[tab]?.length ?? 0) - 1 ? 'border-b border-[rgba(255,255,255,.05)]' : ''}`}>
+                <div>
+                  <div className="text-xs text-text-0">{row.label}</div>
+                </div>
+                <span className={`text-xs font-mono ${row.value === 'Not connected' ? 'text-text-2' : row.value === 'Connected' || row.value === 'On' || row.value === 'Required' ? 'text-cds-teal' : 'text-text-1'}`}>
+                  {row.value}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    </div>
   );
 }

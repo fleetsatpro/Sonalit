@@ -102,12 +102,8 @@ const routeAnalysisRoute = createRoute({ getParentRoute: () => authRoute, path: 
 const cargoPortalRoute = createRoute({ getParentRoute: () => authRoute, path: '/cargo-portal', component: lazyRouteComponent(() => import('./pages/CargoPortal.js')) });
 const portalViewRoute = createRoute({ getParentRoute: () => rootRoute, path: '/portal-view', component: lazyRouteComponent(() => import('./pages/PortalView.js')) });
 
-// ─── Container Delivery System — inline pages under the main AppShell ────────
-const cdsDashRoute     = createRoute({ getParentRoute: () => authRoute, path: '/cds',            component: lazyRouteComponent(() => import('./pages/cds/CDSDashboard.js')) });
-const cdsClampRoute    = createRoute({ getParentRoute: () => authRoute, path: '/cds/clamp',      component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSClamp }))) });
-const cdsUnclampRoute  = createRoute({ getParentRoute: () => authRoute, path: '/cds/unclamp',    component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSUnclamp }))) });
-const cdsReportsRoute  = createRoute({ getParentRoute: () => authRoute, path: '/cds/reports',    component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSReports }))) });
-const cdsSettingsRoute = createRoute({ getParentRoute: () => authRoute, path: '/cds/settings',   component: lazyRouteComponent(() => import('./pages/cds/pages.js').then(m => ({ default: m.CDSSettings }))) });
+// ─── Container Delivery System — fullscreen with its own rail + chrome ────────
+const cdsDashRoute = createRoute({ getParentRoute: () => authFullscreenRoute, path: '/cds', component: lazyRouteComponent(() => import('./pages/cds/CDSDashboard.js')) });
 
 // Portal client routes
 const portalRootRoute = createRoute({ getParentRoute: () => rootRoute, id: 'portal-root', component: lazyRouteComponent(() => import('./pages/portal/PortalLayout.js')) });
@@ -140,6 +136,7 @@ const routeTree = rootRoute.addChildren([
     orbitRoute,
     convoyReportsRoute,
     driveReplayRoute,
+    cdsDashRoute,
   ]),
   authRoute.addChildren([
     commandRoute,
@@ -153,7 +150,6 @@ const routeTree = rootRoute.addChildren([
     executiveRoute, devicesRoute, guardianRoute, knoxRemoteSessionRoute,
     aiDecisionRoute, copilotRoute, settingsRoute, routeAnalysisRoute, cargoPortalRoute,
     surveillanceRoute, replayRoute, signalHealthRoute, corridorRoute,
-    cdsDashRoute, cdsClampRoute, cdsUnclampRoute, cdsReportsRoute, cdsSettingsRoute,
   ]),
 ]);
 
