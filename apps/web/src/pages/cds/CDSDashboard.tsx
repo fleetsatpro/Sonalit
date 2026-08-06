@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import {
-  LayoutDashboard, MapPin, Package, FileText, Lock, Users, Truck,
+  LayoutDashboard, MapPin, Package, FileText, Lock,
   Anchor, Activity, MessageSquare, DollarSign, FileBarChart,
   BarChart2, Settings, Search, Bell, ChevronLeft, PanelLeftClose,
-  PanelLeft, Plus,
-  type LucideIcon,
+  PanelLeft, Plus, type LucideIcon,
 } from 'lucide-react';
 import { KPICard, CDSDrawer, CDSToastContainer } from './components.js';
 import { useDashboardKPIs, useActivity, useTrips } from './hooks.js';
@@ -16,21 +15,34 @@ import {
   LocksView, PortView, PulseView, InboxView,
   BillingView, ReportsView, AnalyticsView, SettingsView,
 } from './pages.js';
+import { CDSIntro } from './CDSIntro.js';
 
 const VIEW_ICONS: Record<string, LucideIcon> = {
   dashboard: LayoutDashboard, live: MapPin, containers: Package,
-  bookings: FileText, locks: Lock, drivers: Users, transporters: Truck,
+  bookings: FileText, locks: Lock,
   port: Anchor, pulse: Activity, inbox: MessageSquare, billing: DollarSign,
   reports: FileBarChart, analytics: BarChart2, settings: Settings,
 };
 
 const NAV_SECTIONS: { label: string; ids: string[] }[] = [
   { label: 'Overview', ids: ['dashboard', 'live'] },
-  { label: 'Operations', ids: ['containers', 'bookings', 'locks', 'drivers', 'transporters'] },
+  { label: 'Operations', ids: ['containers', 'bookings', 'locks'] },
   { label: 'Workflow', ids: ['port', 'pulse', 'inbox'] },
   { label: 'Business', ids: ['billing', 'reports', 'analytics'] },
   { label: 'System', ids: ['settings'] },
 ];
+
+function ShipIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+      <path d="M3 17l1.5-5H20l1.5 5" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M5 12V8h5V5h4v3h5v4" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      <path d="M2 20c2 1.5 4 1.5 6 0s4-1.5 6 0 4 1.5 6 0" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <rect x="9" y="8" width="2.5" height="4" rx="0.3" fill="currentColor" opacity="0.5" />
+      <rect x="12.5" y="8" width="2.5" height="4" rx="0.3" fill="currentColor" opacity="0.5" />
+    </svg>
+  );
+}
 
 export default function CDSApp() {
   const { activeView, setActiveView } = useCDSStore();
@@ -38,6 +50,9 @@ export default function CDSApp() {
   const [clock, setClock] = useState('');
   const [expanded, setExpanded] = useState(() => {
     try { return localStorage.getItem('cds-rail') !== '0'; } catch { return true; }
+  });
+  const [showIntro, setShowIntro] = useState(() => {
+    try { return !sessionStorage.getItem('cds-intro-seen'); } catch { return false; }
   });
 
   useEffect(() => {
@@ -51,6 +66,13 @@ export default function CDSApp() {
     return () => clearInterval(id);
   }, []);
 
+  const handleIntroEnd = () => {
+    try { sessionStorage.setItem('cds-intro-seen', '1'); } catch { /* */ }
+    setShowIntro(false);
+  };
+
+  if (showIntro) return <CDSIntro onDone={handleIntroEnd} />;
+
   const currentView = CDS_VIEWS.find(v => v.id === activeView);
   const railW = expanded ? 210 : 64;
 
@@ -61,21 +83,17 @@ export default function CDSApp() {
         className="flex flex-col flex-shrink-0 bg-[#08090d] border-r border-white/[.06] overflow-y-auto overflow-x-hidden"
         style={{ width: railW, transition: 'width .2s ease', scrollbarWidth: 'none' }}
       >
-        {/* brand + home */}
+        {/* brand */}
         <div className="flex items-center gap-2.5 border-b border-white/[.06] flex-shrink-0"
           style={{ padding: expanded ? '14px 14px 12px' : '14px 0 12px', justifyContent: expanded ? 'flex-start' : 'center' }}
         >
           <button
             onClick={() => nav({ to: '/' })}
-            className="flex items-center justify-center flex-shrink-0 rounded-lg"
+            className="flex items-center justify-center flex-shrink-0 rounded-lg text-[#0c0e12]"
             title="Back to Sonalit"
-            style={{
-              width: 32, height: 32,
-              background: 'linear-gradient(135deg, #F0B429, #ff7a00)',
-              border: 'none', cursor: 'pointer',
-            }}
+            style={{ width: 32, height: 32, background: 'linear-gradient(135deg, #F0B429, #ff7a00)', border: 'none', cursor: 'pointer' }}
           >
-            <span className="font-black text-[14px] text-[#0c0e12]">S</span>
+            <ShipIcon />
           </button>
           {expanded && (
             <div className="min-w-0">
@@ -85,7 +103,6 @@ export default function CDSApp() {
           )}
         </div>
 
-        {/* back to home link */}
         <button
           onClick={() => nav({ to: '/' })}
           className="flex items-center gap-2 mx-2 mt-2 mb-1 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/[.04] transition-colors"
@@ -95,7 +112,6 @@ export default function CDSApp() {
           {expanded && <span className="text-[11px] font-medium">Back to Sonalit</span>}
         </button>
 
-        {/* nav sections */}
         <div className="flex-1 py-1">
           {NAV_SECTIONS.map(section => (
             <div key={section.label} className="mb-1">
@@ -128,9 +144,7 @@ export default function CDSApp() {
                     }}
                   >
                     {Icon && <Icon size={17} strokeWidth={active ? 2.2 : 1.5} className="flex-shrink-0" />}
-                    {expanded && (
-                      <span className="text-[12.5px] font-medium truncate">{v.label}</span>
-                    )}
+                    {expanded && <span className="text-[12.5px] font-medium truncate">{v.label}</span>}
                   </button>
                 );
               })}
@@ -138,7 +152,6 @@ export default function CDSApp() {
           ))}
         </div>
 
-        {/* collapse toggle */}
         <button
           onClick={() => setExpanded(e => !e)}
           className="flex items-center justify-center gap-2 mx-2 mb-3 py-2 rounded-lg text-white/25 hover:text-white/50 hover:bg-white/[.04] transition-colors border-none cursor-pointer bg-transparent"
@@ -148,50 +161,36 @@ export default function CDSApp() {
         </button>
       </nav>
 
-      {/* ── main content ── */}
+      {/* ── main ── */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* header */}
         <header className="h-[52px] flex-shrink-0 bg-[#0c0e12]/95 backdrop-blur-xl border-b border-white/[.06] flex items-center px-5 gap-4">
-          <div className="flex-1 min-w-0 flex items-center gap-3">
-            <div>
-              <div className="font-bold text-[15px] text-white leading-tight">
-                {currentView?.label ?? 'Dashboard'}
-              </div>
-              <div className="text-[10px] font-mono tracking-wider text-white/30 mt-0.5">
-                {currentView?.sub ?? ''}
-              </div>
-            </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-bold text-[15px] text-white leading-tight">{currentView?.label ?? 'Dashboard'}</div>
+            <div className="text-[10px] font-mono tracking-wider text-white/30 mt-0.5">{currentView?.sub ?? ''}</div>
           </div>
 
           {activeView === 'bookings' && (
             <button
-              onClick={() => { /* TODO: open booking form */ }}
+              onClick={() => { /* BookingsView handles own form */ }}
               className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-[12px] font-semibold border-none cursor-pointer transition-all hover:brightness-110"
               style={{ background: 'linear-gradient(135deg, #ff7a00, #F0B429)', color: '#0c0e12' }}
             >
-              <Plus size={14} strokeWidth={2.5} />
-              New Booking
+              <Plus size={14} strokeWidth={2.5} /> New Booking
             </button>
           )}
 
           <div className="flex items-center gap-2 bg-white/[.04] border border-white/[.07] rounded-lg px-2.5 h-8">
             <Search size={13} className="text-white/30 flex-shrink-0" />
-            <input
-              placeholder="Search..."
-              className="bg-transparent border-none outline-none text-white text-[12px] w-32 md:w-44"
-            />
+            <input placeholder="Search…" className="bg-transparent border-none outline-none text-white text-[12px] w-32 md:w-44" />
           </div>
 
-          <div className="font-mono text-[12px] text-white/40 tracking-wider hidden sm:block">
-            {clock}
-          </div>
+          <div className="font-mono text-[12px] text-white/40 tracking-wider hidden sm:block">{clock}</div>
 
           <button className="w-8 h-8 rounded-lg bg-white/[.04] border border-white/[.06] text-white/40 cursor-pointer flex items-center justify-center hover:text-white/60 transition-colors">
             <Bell size={15} />
           </button>
         </header>
 
-        {/* content area */}
         <div className="flex-1 overflow-y-auto" style={{ overscrollBehavior: 'contain' }}>
           {activeView === 'dashboard' && <DashboardView />}
           {activeView === 'live' && <LiveView />}
@@ -221,25 +220,31 @@ function DashboardView() {
   const { data: activity } = useActivity(20);
   if (isLoading) return <LoadingState />;
 
+  const kv = (k: string) => String(kpis?.[k] ?? 0);
   const cards = [
-    { label: 'ACTIVE CONTAINERS', value: String(kpis?.['active_containers'] ?? 0), delta: 'fleet capacity', trend: 'up' as const },
-    { label: 'IN TRANSIT', value: String(kpis?.['in_transit'] ?? 0), delta: 'on the road', trend: 'up' as const },
-    { label: 'DELIVERED TODAY', value: String(kpis?.['delivered_today'] ?? 0), delta: 'completed', trend: 'up' as const },
-    { label: 'ACTIVE LOCKS', value: String(kpis?.['active_locks'] ?? 0), delta: 'deployed', trend: 'up' as const },
-    { label: 'DELAYED', value: String(kpis?.['delayed_trips'] ?? 0), delta: 'needs attention', trend: 'down' as const },
-    { label: 'AVG TRANSIT', value: `${kpis?.['avg_transit_hours'] ?? 0}h`, delta: 'hours average', trend: 'up' as const },
+    { label: 'ACTIVE BOOKINGS', value: kv('active_bookings'), delta: 'open orders', trend: 'up' as const, accent: '#F0B429' },
+    { label: 'CONTAINERS IN YARD', value: kv('active_containers'), delta: 'fleet total', trend: 'up' as const, accent: '#33d6a8' },
+    { label: 'CLAMPED', value: kv('clamped'), delta: 'e-lock secured', trend: 'up' as const, accent: '#33d6a8' },
+    { label: 'IN TRANSIT', value: kv('in_transit'), delta: 'on road now', trend: 'up' as const, accent: '#37e6ff' },
+    { label: 'AT PORT', value: kv('at_port'), delta: 'awaiting unclamp', trend: 'up' as const, accent: '#ffb020' },
+    { label: 'AWAITING UNCLAMP', value: kv('awaiting_unclamp'), delta: 'port queue', trend: 'down' as const, accent: '#ffb020' },
+    { label: 'UNCLAMPED', value: kv('unclamped'), delta: 'lock removed', trend: 'up' as const, accent: '#a78bfa' },
+    { label: 'COMPLETED TODAY', value: kv('delivered_today'), delta: 'delivered', trend: 'up' as const, accent: '#22c55e' },
+    { label: 'DELAYED', value: kv('delayed_trips'), delta: 'needs attention', trend: 'down' as const, accent: '#ff5c5c' },
+    { label: 'ACTIVE ALERTS', value: kv('active_alerts'), delta: 'unacknowledged', trend: 'down' as const, accent: '#ff5c5c' },
   ];
 
   const actIcons: Record<string, string> = {
-    clamp: '\u{1F512}', depart: '\u{1F69B}', checkpoint: '\u{1F4CD}', sync: '\u{1F504}',
-    arrival: '✅', unclamp: '\u{1F513}', ai: '\u{1F916}', alert: '⚠️',
+    clamp: '🔒', depart: '🚛', checkpoint: '📍', sync: '🔄',
+    arrival: '✅', unclamp: '🔓', ai: '🤖', alert: '⚠️',
   };
 
   return (
     <div className="p-5 max-w-[1600px] mx-auto">
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
-        {cards.map(k => <KPICard key={k.label} {...k} />)}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
+        {cards.map(k => <KPICard key={k.label} label={k.label} value={k.value} delta={k.delta} trend={k.trend} />)}
       </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
           <div className="font-bold text-sm text-text-0 mb-3">Live Map</div>
@@ -252,9 +257,7 @@ function DashboardView() {
           <div className="space-y-0 max-h-[340px] overflow-y-auto">
             {(activity ?? []).map((item, i) => (
               <div key={String(item['id'] ?? i)} className="flex items-start gap-2.5 py-2 border-b border-white/[.05]">
-                <span className="text-sm flex-none mt-0.5">
-                  {actIcons[String(item['icon'] ?? item['type'] ?? '')] ?? '\u{1F4CB}'}
-                </span>
+                <span className="text-sm flex-none mt-0.5">{actIcons[String(item['icon'] ?? item['type'] ?? '')] ?? '📋'}</span>
                 <div className="min-w-0 flex-1">
                   <div className="text-xs text-text-0 truncate">{String(item['description'] ?? item['text'] ?? '—')}</div>
                   <div className="text-[10px] text-text-2 font-mono mt-0.5">
@@ -313,23 +316,12 @@ export function LoadingState() {
     <div className="flex flex-col items-center justify-center h-64 gap-3">
       <div className="flex gap-1.5">
         {[0, 1, 2].map(i => (
-          <div
-            key={i}
-            className="w-2 h-2 rounded-full bg-[#F0B429]"
-            style={{
-              animation: 'cds-pulse 1s ease-in-out infinite',
-              animationDelay: `${i * 0.15}s`,
-            }}
-          />
+          <div key={i} className="w-2 h-2 rounded-full bg-[#F0B429]"
+            style={{ animation: 'cds-pulse 1s ease-in-out infinite', animationDelay: `${i * 0.15}s` }} />
         ))}
       </div>
       <div className="text-text-2 font-mono text-xs">Loading data...</div>
-      <style>{`
-        @keyframes cds-pulse {
-          0%, 100% { opacity: 0.2; transform: scale(0.8); }
-          50% { opacity: 1; transform: scale(1.2); }
-        }
-      `}</style>
+      <style>{`@keyframes cds-pulse { 0%,100%{opacity:.2;transform:scale(.8)} 50%{opacity:1;transform:scale(1.2)} }`}</style>
     </div>
   );
 }
