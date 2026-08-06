@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { X, Plus } from 'lucide-react';
 import { DataTable, DrawerField, StatusBadge, FilterChip } from './components.js';
-import { useContainers, useBookings, useCDSDrivers, useCDSTransporters } from './hooks.js';
+import { useContainers, useBookings, useCreateBooking, useCDSDrivers, useCDSTransporters } from './hooks.js';
 import { useCDSStore } from './store.js';
 import { LoadingState } from './CDSDashboard.js';
 
@@ -56,14 +57,59 @@ export function ContainersView() {
   );
 }
 
+const BOOKING_FIELDS: { key: string; label: string; type?: string; required?: boolean; placeholder?: string }[] = [
+  { key: 'reference', label: 'Reference', required: true, placeholder: 'e.g. PO-2026-001' },
+  { key: 'pickup_location', label: 'Pickup Location', required: true, placeholder: 'e.g. Mombasa Port' },
+  { key: 'delivery_location', label: 'Delivery Location', required: true, placeholder: 'e.g. Nairobi ICD' },
+  { key: 'commodity', label: 'Commodity', required: true, placeholder: 'e.g. Tea, Electronics' },
+  { key: 'weight_kg', label: 'Weight (kg)', type: 'number', placeholder: '0' },
+  { key: 'container_type', label: 'Container Type', placeholder: 'e.g. 20GP, 40HC' },
+  { key: 'container_size', label: 'Container Size', placeholder: 'e.g. 20ft, 40ft' },
+  { key: 'shipping_line', label: 'Shipping Line', placeholder: 'e.g. Maersk, MSC' },
+  { key: 'vessel', label: 'Vessel', placeholder: 'Vessel name' },
+  { key: 'voyage', label: 'Voyage', placeholder: 'Voyage number' },
+  { key: 'seal_number', label: 'Seal Number', placeholder: 'Seal #' },
+  { key: 'eta', label: 'ETA', type: 'date' },
+  { key: 'notes', label: 'Notes', placeholder: 'Additional notes...' },
+];
+
 export function BookingsView() {
   const { data, isLoading } = useBookings();
   const { openDrawer } = useCDSStore();
+  const createBooking = useCreateBooking();
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState<Record<string, string>>({});
   if (isLoading) return <LoadingState />;
   const rows = (data?.data ?? []) as Row[];
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload: Record<string, unknown> = {};
+    for (const f of BOOKING_FIELDS) {
+      const val = form[f.key];
+      if (val) payload[f.key] = f.type === 'number' ? Number(val) : val;
+    }
+    createBooking.mutate(payload, {
+      onSuccess: () => { setShowForm(false); setForm({}); },
+    });
+  };
+
   return (
     <div className="p-5 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-base font-bold text-text-0">Bookings</h2>
+          <p className="text-[11px] text-text-2 font-mono mt-0.5">{rows.length} total bookings</p>
+        </div>
+        <button
+          onClick={() => setShowForm(true)}
+          className="flex items-center gap-1.5 px-3.5 h-9 rounded-lg text-[12px] font-semibold border-none cursor-pointer transition-all hover:brightness-110"
+          style={{ background: 'linear-gradient(135deg, #ff7a00, #F0B429)', color: '#0c0e12' }}
+        >
+          <Plus size={15} strokeWidth={2.5} />
+          New Booking
+        </button>
+      </div>
       <DataTable
         columns={[
           { id: 'num', header: 'Booking #', accessor: (r: Row) => <span className="font-mono font-bold text-cds-orange text-xs">{s(r['booking_number'])}</span> },
@@ -94,6 +140,56 @@ export function BookingsView() {
           </>
         ))}
       />
+
+      {/* New Booking Modal */}
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) setShowForm(false); }}>
+          <form
+            onSubmit={handleSubmit}
+            className="w-full max-w-lg mx-4 rounded-2xl border border-white/[.08] bg-[#12141a] shadow-2xl overflow-hidden"
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[.06]">
+              <div>
+                <h3 className="text-[15px] font-bold text-white">New Booking</h3>
+                <p className="text-[10px] text-white/40 font-mono mt-0.5">Fill in the shipment details</p>
+              </div>
+              <button type="button" onClick={() => setShowForm(false)} className="w-8 h-8 rounded-lg bg-white/[.04] border border-white/[.06] text-white/40 hover:text-white/70 flex items-center justify-center cursor-pointer transition-colors">
+                <X size={15} />
+              </button>
+            </div>
+            <div className="px-5 py-4 max-h-[60vh] overflow-y-auto space-y-3">
+              {BOOKING_FIELDS.map(f => (
+                <div key={f.key}>
+                  <label className="block text-[11px] font-medium text-white/50 mb-1">
+                    {f.label}{f.required && <span className="text-cds-orange ml-0.5">*</span>}
+                  </label>
+                  <input
+                    type={f.type ?? 'text'}
+                    required={f.required}
+                    placeholder={f.placeholder}
+                    value={form[f.key] ?? ''}
+                    onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+                    className="w-full h-9 px-3 rounded-lg bg-white/[.04] border border-white/[.08] text-white text-[13px] outline-none focus:border-[#F0B429]/50 transition-colors placeholder:text-white/20"
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-white/[.06]">
+              <button type="button" onClick={() => setShowForm(false)} className="px-4 h-9 rounded-lg text-[12px] font-medium text-white/50 bg-white/[.04] border border-white/[.06] cursor-pointer hover:text-white/70 transition-colors">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={createBooking.isPending}
+                className="px-5 h-9 rounded-lg text-[12px] font-semibold border-none cursor-pointer transition-all hover:brightness-110 disabled:opacity-50"
+                style={{ background: 'linear-gradient(135deg, #ff7a00, #F0B429)', color: '#0c0e12' }}
+              >
+                {createBooking.isPending ? 'Creating...' : 'Create Booking'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

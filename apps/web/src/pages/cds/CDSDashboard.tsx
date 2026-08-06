@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Link } from '@tanstack/react-router';
+import { useNavigate } from '@tanstack/react-router';
 import {
   LayoutDashboard, MapPin, Package, FileText, Lock, Users, Truck,
   Anchor, Activity, MessageSquare, DollarSign, FileBarChart,
-  BarChart2, Settings, Search, Bell,
+  BarChart2, Settings, Search, Bell, ChevronLeft, PanelLeftClose,
+  PanelLeft, Plus,
   type LucideIcon,
 } from 'lucide-react';
 import { KPICard, CDSDrawer, CDSToastContainer } from './components.js';
@@ -23,14 +24,25 @@ const VIEW_ICONS: Record<string, LucideIcon> = {
   reports: FileBarChart, analytics: BarChart2, settings: Settings,
 };
 
-const gold = '#F0B429';
-const goldDim = 'rgba(240,180,41,.12)';
-const ink = '#0c0e12';
-const rim = 'rgba(255,255,255,.06)';
+const NAV_SECTIONS: { label: string; ids: string[] }[] = [
+  { label: 'Overview', ids: ['dashboard', 'live'] },
+  { label: 'Operations', ids: ['containers', 'bookings', 'locks', 'drivers', 'transporters'] },
+  { label: 'Workflow', ids: ['port', 'pulse', 'inbox'] },
+  { label: 'Business', ids: ['billing', 'reports', 'analytics'] },
+  { label: 'System', ids: ['settings'] },
+];
 
 export default function CDSApp() {
   const { activeView, setActiveView } = useCDSStore();
+  const nav = useNavigate();
   const [clock, setClock] = useState('');
+  const [expanded, setExpanded] = useState(() => {
+    try { return localStorage.getItem('cds-rail') !== '0'; } catch { return true; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem('cds-rail', expanded ? '1' : '0'); } catch { /* */ }
+  }, [expanded]);
 
   useEffect(() => {
     const tick = () => setClock(new Date().toLocaleTimeString('en-GB', { hour12: false }) + ' EAT');
@@ -40,93 +52,147 @@ export default function CDSApp() {
   }, []);
 
   const currentView = CDS_VIEWS.find(v => v.id === activeView);
+  const railW = expanded ? 210 : 64;
 
   return (
-    <div style={{ display: 'flex', height: '100dvh', background: ink }}>
-      <nav style={{
-        width: 72, flexShrink: 0, background: '#0a0c10',
-        borderRight: `1px solid ${rim}`, display: 'flex',
-        flexDirection: 'column', overflowY: 'auto', scrollbarWidth: 'none',
-      }}>
-        <Link to="/" style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          height: 56, borderBottom: `1px solid ${rim}`, textDecoration: 'none',
-        }}>
-          <div style={{
-            width: 30, height: 30, borderRadius: 8,
-            background: `linear-gradient(135deg, ${gold}, #ff7a00)`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontWeight: 900, fontSize: 15, color: ink,
-          }}>S</div>
-        </Link>
-        <div style={{ flex: 1, padding: '8px 0' }}>
-          {CDS_VIEWS.map(v => {
-            const Icon = VIEW_ICONS[v.id];
-            const active = activeView === v.id;
-            return (
-              <button
-                key={v.id}
-                onClick={() => setActiveView(v.id as CDSView)}
-                title={v.label}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  width: '100%', height: 44, padding: 0,
-                  background: active ? goldDim : 'transparent',
-                  border: 'none',
-                  borderLeft: active ? `3px solid ${gold}` : '3px solid transparent',
-                  color: active ? gold : 'rgba(255,255,255,.4)',
-                  cursor: 'pointer', transition: 'all .15s',
-                }}
-              >
-                {Icon && <Icon size={18} strokeWidth={active ? 2.2 : 1.5} />}
-              </button>
-            );
-          })}
+    <div className="flex h-dvh bg-[#0c0e12] text-white overflow-hidden">
+      {/* ── sidebar ── */}
+      <nav
+        className="flex flex-col flex-shrink-0 bg-[#08090d] border-r border-white/[.06] overflow-y-auto overflow-x-hidden"
+        style={{ width: railW, transition: 'width .2s ease', scrollbarWidth: 'none' }}
+      >
+        {/* brand + home */}
+        <div className="flex items-center gap-2.5 border-b border-white/[.06] flex-shrink-0"
+          style={{ padding: expanded ? '14px 14px 12px' : '14px 0 12px', justifyContent: expanded ? 'flex-start' : 'center' }}
+        >
+          <button
+            onClick={() => nav({ to: '/' })}
+            className="flex items-center justify-center flex-shrink-0 rounded-lg"
+            title="Back to Sonalit"
+            style={{
+              width: 32, height: 32,
+              background: 'linear-gradient(135deg, #F0B429, #ff7a00)',
+              border: 'none', cursor: 'pointer',
+            }}
+          >
+            <span className="font-black text-[14px] text-[#0c0e12]">S</span>
+          </button>
+          {expanded && (
+            <div className="min-w-0">
+              <div className="text-[13px] font-bold tracking-wide text-white/90">E-LOCK OPS</div>
+              <div className="text-[9px] font-mono tracking-widest text-white/30 mt-px">CONTAINER DELIVERY</div>
+            </div>
+          )}
         </div>
+
+        {/* back to home link */}
+        <button
+          onClick={() => nav({ to: '/' })}
+          className="flex items-center gap-2 mx-2 mt-2 mb-1 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/[.04] transition-colors"
+          style={{ padding: expanded ? '8px 10px' : '8px 0', justifyContent: expanded ? 'flex-start' : 'center' }}
+        >
+          <ChevronLeft size={14} strokeWidth={2} />
+          {expanded && <span className="text-[11px] font-medium">Back to Sonalit</span>}
+        </button>
+
+        {/* nav sections */}
+        <div className="flex-1 py-1">
+          {NAV_SECTIONS.map(section => (
+            <div key={section.label} className="mb-1">
+              {expanded && (
+                <div className="px-4 pt-3 pb-1 text-[9px] font-semibold font-mono tracking-[.14em] uppercase text-white/20">
+                  {section.label}
+                </div>
+              )}
+              {!expanded && section !== NAV_SECTIONS[0] && (
+                <div className="mx-3 my-1.5 border-t border-white/[.06]" />
+              )}
+              {section.ids.map(id => {
+                const v = CDS_VIEWS.find(x => x.id === id);
+                if (!v) return null;
+                const Icon = VIEW_ICONS[id];
+                const active = activeView === id;
+                return (
+                  <button
+                    key={id}
+                    onClick={() => setActiveView(id as CDSView)}
+                    title={expanded ? undefined : v.label}
+                    className="flex items-center w-full border-none cursor-pointer transition-all duration-150"
+                    style={{
+                      gap: expanded ? 10 : 0,
+                      padding: expanded ? '9px 14px' : '9px 0',
+                      justifyContent: expanded ? 'flex-start' : 'center',
+                      background: active ? 'rgba(240,180,41,.10)' : 'transparent',
+                      borderLeft: active ? '3px solid #F0B429' : '3px solid transparent',
+                      color: active ? '#F0B429' : 'rgba(255,255,255,.45)',
+                    }}
+                  >
+                    {Icon && <Icon size={17} strokeWidth={active ? 2.2 : 1.5} className="flex-shrink-0" />}
+                    {expanded && (
+                      <span className="text-[12.5px] font-medium truncate">{v.label}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+
+        {/* collapse toggle */}
+        <button
+          onClick={() => setExpanded(e => !e)}
+          className="flex items-center justify-center gap-2 mx-2 mb-3 py-2 rounded-lg text-white/25 hover:text-white/50 hover:bg-white/[.04] transition-colors border-none cursor-pointer bg-transparent"
+        >
+          {expanded ? <PanelLeftClose size={15} /> : <PanelLeft size={15} />}
+          {expanded && <span className="text-[11px]">Collapse</span>}
+        </button>
       </nav>
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        <header style={{
-          height: 52, flexShrink: 0,
-          background: 'rgba(12,14,18,.95)', backdropFilter: 'blur(20px)',
-          borderBottom: `1px solid ${rim}`,
-          display: 'flex', alignItems: 'center', padding: '0 20px', gap: 16,
-        }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: 16, color: '#fff' }}>
-              {currentView?.label ?? 'Dashboard'}
+      {/* ── main content ── */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* header */}
+        <header className="h-[52px] flex-shrink-0 bg-[#0c0e12]/95 backdrop-blur-xl border-b border-white/[.06] flex items-center px-5 gap-4">
+          <div className="flex-1 min-w-0 flex items-center gap-3">
+            <div>
+              <div className="font-bold text-[15px] text-white leading-tight">
+                {currentView?.label ?? 'Dashboard'}
+              </div>
+              <div className="text-[10px] font-mono tracking-wider text-white/30 mt-0.5">
+                {currentView?.sub ?? ''}
+              </div>
             </div>
-            <div style={{
-              fontSize: 10, fontFamily: 'monospace',
-              letterSpacing: '.08em', color: 'rgba(255,255,255,.35)', marginTop: 1,
-            }}>{currentView?.sub ?? ''}</div>
           </div>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.07)',
-            borderRadius: 8, padding: '0 10px', height: 32,
-          }}>
-            <Search size={13} color="rgba(255,255,255,.35)" />
-            <input placeholder="Search or AI command…" style={{
-              background: 'transparent', border: 'none', outline: 'none',
-              color: '#fff', fontSize: 12, width: 200,
-            }} />
+
+          {activeView === 'bookings' && (
+            <button
+              onClick={() => { /* TODO: open booking form */ }}
+              className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-[12px] font-semibold border-none cursor-pointer transition-all hover:brightness-110"
+              style={{ background: 'linear-gradient(135deg, #ff7a00, #F0B429)', color: '#0c0e12' }}
+            >
+              <Plus size={14} strokeWidth={2.5} />
+              New Booking
+            </button>
+          )}
+
+          <div className="flex items-center gap-2 bg-white/[.04] border border-white/[.07] rounded-lg px-2.5 h-8">
+            <Search size={13} className="text-white/30 flex-shrink-0" />
+            <input
+              placeholder="Search..."
+              className="bg-transparent border-none outline-none text-white text-[12px] w-32 md:w-44"
+            />
           </div>
-          <div style={{
-            fontFamily: 'monospace', fontSize: 12,
-            color: 'rgba(255,255,255,.5)', letterSpacing: '.06em',
-          }}>{clock}</div>
-          <button style={{
-            width: 32, height: 32, borderRadius: 8,
-            background: 'rgba(255,255,255,.04)', border: `1px solid ${rim}`,
-            color: 'rgba(255,255,255,.5)', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
+
+          <div className="font-mono text-[12px] text-white/40 tracking-wider hidden sm:block">
+            {clock}
+          </div>
+
+          <button className="w-8 h-8 rounded-lg bg-white/[.04] border border-white/[.06] text-white/40 cursor-pointer flex items-center justify-center hover:text-white/60 transition-colors">
             <Bell size={15} />
           </button>
         </header>
 
-        <div style={{ flex: 1, overflowY: 'auto', overscrollBehavior: 'contain' }}>
+        {/* content area */}
+        <div className="flex-1 overflow-y-auto" style={{ overscrollBehavior: 'contain' }}>
           {activeView === 'dashboard' && <DashboardView />}
           {activeView === 'live' && <LiveView />}
           {activeView === 'containers' && <ContainersView />}
@@ -175,17 +241,17 @@ function DashboardView() {
         {cards.map(k => <KPICard key={k.label} {...k} />)}
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 rounded-2xl border border-[rgba(255,255,255,.07)] bg-[rgba(255,255,255,.02)] p-4">
+        <div className="lg:col-span-2 rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
           <div className="font-bold text-sm text-text-0 mb-3">Live Map</div>
           <div className="h-[300px] rounded-xl bg-ink-3 flex items-center justify-center text-text-2 text-xs font-mono">
             Map integration — GPS feed renders here
           </div>
         </div>
-        <div className="rounded-2xl border border-[rgba(255,255,255,.07)] bg-[rgba(255,255,255,.02)] p-4">
+        <div className="rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
           <div className="font-bold text-sm text-text-0 mb-3">Recent Activity</div>
           <div className="space-y-0 max-h-[340px] overflow-y-auto">
             {(activity ?? []).map((item, i) => (
-              <div key={String(item['id'] ?? i)} className="flex items-start gap-2.5 py-2 border-b border-[rgba(255,255,255,.05)]">
+              <div key={String(item['id'] ?? i)} className="flex items-start gap-2.5 py-2 border-b border-white/[.05]">
                 <span className="text-sm flex-none mt-0.5">
                   {actIcons[String(item['icon'] ?? item['type'] ?? '')] ?? '\u{1F4CB}'}
                 </span>
@@ -214,17 +280,17 @@ function LiveView() {
 
   return (
     <div className="p-5 max-w-[1600px] mx-auto">
-      <div className="rounded-2xl border border-[rgba(255,255,255,.07)] bg-[rgba(255,255,255,.02)] p-4 mb-4">
+      <div className="rounded-2xl border border-white/[.07] bg-white/[.02] p-4 mb-4">
         <div className="font-bold text-sm text-text-0 mb-3">Live Fleet Tracking</div>
         <div className="h-[350px] rounded-xl bg-ink-3 flex items-center justify-center text-text-2 text-xs font-mono">
           Real-time GPS map — vehicle positions rendered here
         </div>
       </div>
-      <div className="rounded-2xl border border-[rgba(255,255,255,.07)] bg-[rgba(255,255,255,.02)] p-4">
+      <div className="rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
         <div className="font-bold text-sm text-text-0 mb-3">Active Trips ({trips.length})</div>
         <div className="space-y-2 max-h-[300px] overflow-y-auto">
           {trips.map((t, i) => (
-            <div key={String(t['id'] ?? i)} className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-ink-2/50 border border-[rgba(255,255,255,.06)]">
+            <div key={String(t['id'] ?? i)} className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-ink-2/50 border border-white/[.06]">
               <div className="w-2 h-2 rounded-full bg-cds-teal shadow-[0_0_8px_rgba(51,214,168,.6)] flex-none" />
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-mono font-bold text-cds-orange">{String(t['reference'] ?? t['trip_number'] ?? '—')}</div>
@@ -243,5 +309,27 @@ function LiveView() {
 }
 
 export function LoadingState() {
-  return <div className="flex items-center justify-center h-64 text-text-2 font-mono text-sm">Loading…</div>;
+  return (
+    <div className="flex flex-col items-center justify-center h-64 gap-3">
+      <div className="flex gap-1.5">
+        {[0, 1, 2].map(i => (
+          <div
+            key={i}
+            className="w-2 h-2 rounded-full bg-[#F0B429]"
+            style={{
+              animation: 'cds-pulse 1s ease-in-out infinite',
+              animationDelay: `${i * 0.15}s`,
+            }}
+          />
+        ))}
+      </div>
+      <div className="text-text-2 font-mono text-xs">Loading data...</div>
+      <style>{`
+        @keyframes cds-pulse {
+          0%, 100% { opacity: 0.2; transform: scale(0.8); }
+          50% { opacity: 1; transform: scale(1.2); }
+        }
+      `}</style>
+    </div>
+  );
 }
