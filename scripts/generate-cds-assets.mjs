@@ -160,8 +160,39 @@ if (SKIP_VIDEO) {
   console.log('\nSKIP_VIDEO=1 — skipping the intro film.');
 } else {
   console.log(`\nIntro film — ${VIDEO_MODEL} (minutes per shot)`);
+  let videoUnavailable = false;
+
   for (const shot of SHOTS) {
-    try { await generateVideo(shot); } catch (e) { console.error(`  ${shot.file} FAILED — ${e.message}`); failed.push(shot.file); }
+    if (videoUnavailable) break;
+    try {
+      await generateVideo(shot);
+    } catch (e) {
+      console.error(`  ${shot.file} FAILED — ${e.message}`);
+      // Sora access is tier-gated. If the model isn't reachable at all there's
+      // no point burning four attempts on it — fall the whole set over to
+      // photoreal stills, which the player animates with a camera move. Still
+      // real photography; just moving the camera instead of the subject.
+      if (/model_not_found|does not (exist|have access)|unsupported|404/i.test(e.message)) {
+        console.error('  → video model unavailable on this account; falling back to photoreal stills');
+        videoUnavailable = true;
+      } else {
+        failed.push(shot.file);
+      }
+    }
+  }
+
+  if (videoUnavailable) {
+    console.log(`\nIntro stills — ${IMAGE_MODEL}`);
+    for (const shot of SHOTS) {
+      const still = {
+        file: shot.file.replace(/\.mp4$/, '.png'),
+        size: '1536x1024',
+        // Same prompt minus the camera-move language, which only means
+        // something to a video model.
+        prompt: shot.prompt.replace(/^(Slow [^.]+\. |Slow [^,]+, )/, ''),
+      };
+      try { await generateImage(still); } catch (e) { console.error(`  ${still.file} FAILED — ${e.message}`); failed.push(still.file); }
+    }
   }
 }
 
