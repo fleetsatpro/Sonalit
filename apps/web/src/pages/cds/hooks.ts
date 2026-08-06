@@ -173,6 +173,26 @@ export function useCreateBooking() {
   });
 }
 
+export function useExtractBooking() {
+  return useMutation({
+    mutationFn: async ({ data, mediaType }: { data: string; mediaType: string }) => {
+      const { data: res } = await cdsApi.post('/bookings/extract', { data, mediaType });
+      return res.data as Record<string, unknown>;
+    },
+  });
+}
+
+export function useMarkBilled() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data } = await cdsApi.patch(`/bookings/${id}`, { status: 'billed' });
+      return data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['cds', 'bookings'] }),
+  });
+}
+
 export function useBookingPipeline() {
   return useQuery({
     queryKey: ['cds', 'bookings', 'pipeline'],

@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { authenticate } = require('../middleware/auth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
+const aiClient = require('../utils/aiClient');
 
 router.use(authenticate, attachOrgDb);
 router.use((req, res, next) => {
@@ -462,6 +463,35 @@ router.get('/bookings/:id', asyncHandler(async (req, res) => {
     selectCols: 't.*, cu.company_name AS customer_name',
   });
 }));
+router.post('/bookings/extract', asyncHandler(async (req, res) => {
+  const { data: fileData, mediaType } = req.body;
+  if (!fileData) return res.status(400).json({ error: 'no_file_data' });
+  if (!aiClient.hasAnthropic()) return res.status(503).json({ error: 'ai_unavailable' });
+  const isPdf = mediaType === 'application/pdf';
+  const sourceBlock = isPdf
+    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileData } }
+    : { type: 'image', source: { type: 'base64', media_type: mediaType || 'image/jpeg', data: fileData } };
+  const response = await aiClient.createMessage({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 1024,
+    messages: [{
+      role: 'user',
+      content: [
+        sourceBlock,
+        { type: 'text', text: 'Extract shipping/booking details from this document. Return ONLY a JSON object with these exact keys (null for missing): reference, pickup_location, delivery_location, commodity, weight_kg (number), container_type (e.g. "20GP"), container_size (number), shipping_line, vessel, voyage, seal_number, eta (ISO 8601 date string), notes. JSON only, no markdown or explanation.' },
+      ],
+    }],
+  }, { allowFallback: false });
+  const text = (response.content[0]?.text ?? '').trim();
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) return res.status(422).json({ error: 'extraction_failed' });
+  try {
+    res.json({ data: JSON.parse(match[0]) });
+  } catch {
+    res.status(422).json({ error: 'invalid_json' });
+  }
+}));
+
 router.post('/bookings', asyncHandler(async (req, res) => {
   await createRow(req, res, 'cds_bookings',
     ['customer_id', 'pickup_location', 'delivery_location', 'commodity', 'weight_kg', 'seal_number',

@@ -1,7 +1,10 @@
-import { useState } from 'react';
-import { X, Plus } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { X, Plus, Upload, Loader2 } from 'lucide-react';
 import { DataTable, DrawerField, StatusBadge, FilterChip } from './components.js';
-import { useContainers, useBookings, useCreateBooking, useCDSDrivers, useCDSTransporters } from './hooks.js';
+import {
+  useContainers, useBookings, useCreateBooking, useCDSDrivers,
+  useCDSTransporters, useCustomers, useExtractBooking,
+} from './hooks.js';
 import { useCDSStore } from './store.js';
 import { LoadingState } from './CDSDashboard.js';
 
@@ -64,7 +67,7 @@ const BOOKING_FIELDS: { key: string; label: string; type?: string; required?: bo
   { key: 'commodity', label: 'Commodity', required: true, placeholder: 'e.g. Tea, Electronics' },
   { key: 'weight_kg', label: 'Weight (kg)', type: 'number', placeholder: '0' },
   { key: 'container_type', label: 'Container Type', placeholder: 'e.g. 20GP, 40HC' },
-  { key: 'container_size', label: 'Container Size', placeholder: 'e.g. 20ft, 40ft' },
+  { key: 'container_size', label: 'Container Size', placeholder: 'e.g. 20' },
   { key: 'shipping_line', label: 'Shipping Line', placeholder: 'e.g. Maersk, MSC' },
   { key: 'vessel', label: 'Vessel', placeholder: 'Vessel name' },
   { key: 'voyage', label: 'Voyage', placeholder: 'Voyage number' },
@@ -75,24 +78,61 @@ const BOOKING_FIELDS: { key: string; label: string; type?: string; required?: bo
 
 export function BookingsView() {
   const { data, isLoading } = useBookings();
+  const { data: customers } = useCustomers();
   const { openDrawer } = useCDSStore();
   const createBooking = useCreateBooking();
+  const extractBooking = useExtractBooking();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
+  const [customerId, setCustomerId] = useState('');
+  const [error, setError] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+
   if (isLoading) return <LoadingState />;
   const rows = (data?.data ?? []) as Row[];
+  const customerList = (customers?.data ?? []) as Row[];
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError('');
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = ((reader.result as string).split(',')[1]) ?? '';
+      extractBooking.mutate({ data: base64, mediaType: file.type.length > 0 ? file.type : 'image/jpeg' }, {
+        onSuccess: (extracted) => {
+          const updates: Record<string, string> = {};
+          for (const [k, v] of Object.entries(extracted)) {
+            if (v !== null && v !== undefined) updates[k] = String(v);
+          }
+          setForm(prev => ({ ...prev, ...updates }));
+        },
+        onError: () => setError('Could not extract data from document. Please fill in manually.'),
+      });
+    };
+    reader.readAsDataURL(file);
+    if (fileRef.current) fileRef.current.value = '';
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const payload: Record<string, unknown> = {};
+    setError('');
+    if (!customerId) { setError('Please select a customer'); return; }
+    const payload: Record<string, unknown> = { customer_id: customerId };
     for (const f of BOOKING_FIELDS) {
       const val = form[f.key];
       if (val) payload[f.key] = f.type === 'number' ? Number(val) : val;
     }
     createBooking.mutate(payload, {
-      onSuccess: () => { setShowForm(false); setForm({}); },
+      onSuccess: () => { setShowForm(false); setForm({}); setCustomerId(''); setError(''); },
+      onError: (err: unknown) => {
+        const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+        setError(msg ?? 'Failed to create booking. Please try again.');
+      },
     });
   };
+
+  const resetForm = () => { setShowForm(false); setForm({}); setCustomerId(''); setError(''); };
 
   return (
     <div className="p-5 max-w-[1600px] mx-auto">
@@ -141,23 +181,58 @@ export function BookingsView() {
         ))}
       />
 
-      {/* New Booking Modal */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) setShowForm(false); }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) resetForm(); }}>
           <form
             onSubmit={handleSubmit}
             className="w-full max-w-lg mx-4 rounded-2xl border border-white/[.08] bg-[#12141a] shadow-2xl overflow-hidden"
           >
+            {/* header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-white/[.06]">
               <div>
                 <h3 className="text-[15px] font-bold text-white">New Booking</h3>
-                <p className="text-[10px] text-white/40 font-mono mt-0.5">Fill in the shipment details</p>
+                <p className="text-[10px] text-white/40 font-mono mt-0.5">Fill in details or upload a shipping document</p>
               </div>
-              <button type="button" onClick={() => setShowForm(false)} className="w-8 h-8 rounded-lg bg-white/[.04] border border-white/[.06] text-white/40 hover:text-white/70 flex items-center justify-center cursor-pointer transition-colors">
-                <X size={15} />
-              </button>
+              <div className="flex items-center gap-2">
+                <input ref={fileRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleFileUpload} />
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={extractBooking.isPending}
+                  className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-[11px] font-semibold border border-white/[.12] bg-white/[.04] text-white/60 hover:text-white/90 hover:bg-white/[.07] transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {extractBooking.isPending
+                    ? <Loader2 size={13} className="animate-spin" />
+                    : <Upload size={13} />
+                  }
+                  {extractBooking.isPending ? 'Extracting…' : 'Upload Doc'}
+                </button>
+                <button type="button" onClick={resetForm} className="w-8 h-8 rounded-lg bg-white/[.04] border border-white/[.06] text-white/40 hover:text-white/70 flex items-center justify-center cursor-pointer transition-colors">
+                  <X size={15} />
+                </button>
+              </div>
             </div>
+
+            {/* fields */}
             <div className="px-5 py-4 max-h-[60vh] overflow-y-auto space-y-3">
+              {/* customer selector */}
+              <div>
+                <label className="block text-[11px] font-medium text-white/50 mb-1">
+                  Customer<span className="text-cds-orange ml-0.5">*</span>
+                </label>
+                <select
+                  required
+                  value={customerId}
+                  onChange={e => setCustomerId(e.target.value)}
+                  className="w-full h-9 px-3 rounded-lg bg-white/[.04] border border-white/[.08] text-white text-[13px] outline-none focus:border-[#F0B429]/50 transition-colors cursor-pointer"
+                >
+                  <option value="">Select customer…</option>
+                  {customerList.map(c => (
+                    <option key={s(c['id'])} value={s(c['id'])}>{s(c['company_name'])}</option>
+                  ))}
+                </select>
+              </div>
+
               {BOOKING_FIELDS.map(f => (
                 <div key={f.key}>
                   <label className="block text-[11px] font-medium text-white/50 mb-1">
@@ -174,18 +249,25 @@ export function BookingsView() {
                 </div>
               ))}
             </div>
-            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-white/[.06]">
-              <button type="button" onClick={() => setShowForm(false)} className="px-4 h-9 rounded-lg text-[12px] font-medium text-white/50 bg-white/[.04] border border-white/[.06] cursor-pointer hover:text-white/70 transition-colors">
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={createBooking.isPending}
-                className="px-5 h-9 rounded-lg text-[12px] font-semibold border-none cursor-pointer transition-all hover:brightness-110 disabled:opacity-50"
-                style={{ background: 'linear-gradient(135deg, #ff7a00, #F0B429)', color: '#0c0e12' }}
-              >
-                {createBooking.isPending ? 'Creating...' : 'Create Booking'}
-              </button>
+
+            {/* footer */}
+            <div className="px-5 py-4 border-t border-white/[.06] space-y-2">
+              {error && (
+                <p className="text-[11px] text-red-400 font-mono px-1">{error}</p>
+              )}
+              <div className="flex items-center justify-end gap-2">
+                <button type="button" onClick={resetForm} className="px-4 h-9 rounded-lg text-[12px] font-medium text-white/50 bg-white/[.04] border border-white/[.06] cursor-pointer hover:text-white/70 transition-colors">
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={createBooking.isPending}
+                  className="px-5 h-9 rounded-lg text-[12px] font-semibold border-none cursor-pointer transition-all hover:brightness-110 disabled:opacity-50"
+                  style={{ background: 'linear-gradient(135deg, #ff7a00, #F0B429)', color: '#0c0e12' }}
+                >
+                  {createBooking.isPending ? 'Creating…' : 'Create Booking'}
+                </button>
+              </div>
             </div>
           </form>
         </div>
