@@ -30,6 +30,8 @@ export function CDSIntroScene() {
         @keyframes cds-shimmer  { 0%,100% { opacity: .28 } 50% { opacity: .55 } }
         @keyframes cds-beacon   { 0%,92%,100% { opacity: .25 } 96% { opacity: 1 } }
         @keyframes cds-grain    { 0%{transform:translate(0,0)} 25%{transform:translate(-2%,1%)} 50%{transform:translate(1%,-2%)} 75%{transform:translate(2%,2%)} 100%{transform:translate(0,0)} }
+        @keyframes cds-truck    { from { transform: translateX(115vw) } to { transform: translateX(-45vw) } }
+        @keyframes cds-headlamp { 0%,100% { opacity: .85 } 50% { opacity: 1 } }
       `}</style>
 
       {/* One camera move over the whole plate — the parallax reads as depth
@@ -135,6 +137,10 @@ export function CDSIntroScene() {
             </g>
           </g>
 
+          {/* ── quayside dock ── */}
+          <rect y="614" width="1600" height="34" fill="#0c1520"/>
+          <rect y="636" width="1600" height="4" fill="#162232" opacity="0.5"/>
+
           {/* ── sea ── */}
           <rect y="640" width="1600" height="260" fill="url(#sea)" />
           {/* sun column on the water — broken into slats so it reads as swell */}
@@ -166,6 +172,53 @@ export function CDSIntroScene() {
               </g>
             </g>
           </g>
+        </svg>
+      </div>
+
+      {/* Container truck — HTML layer so vw-based translation crosses the scene */}
+      <div style={{ position:'absolute', left:0, bottom:'28%', animation:'cds-truck 13s linear forwards', width:'clamp(220px,65vw,400px)', zIndex:2, pointerEvents:'none' }}>
+        <svg viewBox="0 0 240 82" width="100%" style={{ display:'block', overflow:'visible' }}>
+          {/* ground shadow */}
+          <ellipse cx="120" cy="80" rx="116" ry="4" fill="rgba(0,0,0,0.5)"/>
+          {/* trailer body */}
+          <rect x="62" y="4" width="174" height="55" rx="1" fill="#09111e"/>
+          {/* corrugation ridges */}
+          {[82,100,118,136,154,172,190,210,228].map(x => (
+            <rect key={x} x={x} y="4" width="1.5" height="55" fill="#0e1c2e" opacity="0.7"/>
+          ))}
+          {/* tail light */}
+          <rect x="234" y="30" width="3" height="18" rx="1" fill="#cc1e1e" opacity="0.85"/>
+          {/* chassis rail */}
+          <rect x="0" y="58" width="240" height="4" fill="#05080f"/>
+          {/* cab body (front = left, truck travels left) */}
+          <path d="M0,12 L5,4 L52,4 L62,4 L62,59 L0,59 Z" fill="#08101c"/>
+          {/* windshield */}
+          <path d="M7,16 L48,6 L58,6 L58,46 L7,48 Z" fill="#04090e" opacity="0.65"/>
+          {/* roof visor */}
+          <rect x="4" y="-4" width="56" height="9" rx="1" fill="#0a1525"/>
+          {/* exhaust stack */}
+          <rect x="36" y="-20" width="5" height="22" rx="2" fill="#07090f"/>
+          {/* headlights */}
+          <rect x="0" y="27" width="4" height="22" rx="1.5" fill="#ffd9a0" opacity="0.95" style={{ animation:'cds-headlamp 3s ease-in-out infinite' }}/>
+          {/* headlight cone */}
+          <ellipse cx="-2" cy="38" rx="32" ry="13" fill="#ffd9a0" opacity="0.2"/>
+          {/* amber marker */}
+          <circle cx="9" cy="3" r="2.5" fill="#F0B429" opacity="0.75"/>
+          {/* steer wheel */}
+          <circle cx="15" cy="68" r="13" fill="#070b14"/>
+          <circle cx="15" cy="68" r="5"  fill="#0c1422"/>
+          {/* drive axle A */}
+          <circle cx="52" cy="68" r="15" fill="#070b14"/>
+          <circle cx="52" cy="68" r="7"  fill="#0c1422"/>
+          {/* drive axle B */}
+          <circle cx="75" cy="68" r="15" fill="#070b14"/>
+          <circle cx="75" cy="68" r="7"  fill="#0c1422"/>
+          {/* trailer axle A */}
+          <circle cx="178" cy="68" r="13" fill="#070b14"/>
+          <circle cx="178" cy="68" r="5"  fill="#0c1422"/>
+          {/* trailer axle B */}
+          <circle cx="204" cy="68" r="13" fill="#070b14"/>
+          <circle cx="204" cy="68" r="5"  fill="#0c1422"/>
         </svg>
       </div>
 
