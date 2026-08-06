@@ -1,35 +1,33 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import cdsApi from './api.js';
-import type {
-  Shipment,
-  ElectronicLock,
-  Report,
-  PaginatedResponse,
-  SearchFilters,
-  BookingPipelineItem,
-} from './types.js';
+import type { SearchFilters, Report } from './types.js';
 
-/* ------------------------------------------------------------------ */
-/*  Booking Pipeline                                                    */
-/* ------------------------------------------------------------------ */
+interface ApiList { data: Record<string, unknown>[]; total: number }
 
-export function useBookingPipeline() {
-  return useQuery<BookingPipelineItem[]>({
-    queryKey: ['cds', 'bookings', 'pipeline'],
+export function useDashboardKPIs() {
+  return useQuery({
+    queryKey: ['cds', 'dashboard'],
     queryFn: async () => {
-      const { data } = await cdsApi.get('/bookings/pipeline');
-      return data.data;
+      const { data } = await cdsApi.get('/dashboard');
+      return data.data as Record<string, unknown>;
+    },
+    refetchInterval: 30_000,
+  });
+}
+
+export function useActivity(limit = 30) {
+  return useQuery({
+    queryKey: ['cds', 'activity', limit],
+    queryFn: async () => {
+      const { data } = await cdsApi.get('/activity', { params: { limit } });
+      return data as Record<string, unknown>[];
     },
     refetchInterval: 20_000,
   });
 }
 
-/* ------------------------------------------------------------------ */
-/*  Trips                                                               */
-/* ------------------------------------------------------------------ */
-
 export function useTrips(filters?: SearchFilters) {
-  return useQuery<PaginatedResponse<Shipment>>({
+  return useQuery<ApiList>({
     queryKey: ['cds', 'trips', filters],
     queryFn: async () => {
       const { data } = await cdsApi.get('/trips', { params: filters });
@@ -39,7 +37,7 @@ export function useTrips(filters?: SearchFilters) {
 }
 
 export function useTripById(id: string) {
-  return useQuery<Shipment>({
+  return useQuery({
     queryKey: ['cds', 'trip', id],
     queryFn: async () => {
       const { data } = await cdsApi.get(`/trips/${id}`);
@@ -49,52 +47,16 @@ export function useTripById(id: string) {
   });
 }
 
-export function useCreateTrip() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (payload: Partial<Shipment>) => {
-      const { data } = await cdsApi.post('/trips', payload);
-      return data;
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['cds', 'trips'] }),
-  });
-}
-
-export function useUpdateTrip() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
-      id,
-      ...payload
-    }: Partial<Shipment> & { id: string }) => {
-      const { data } = await cdsApi.patch(`/trips/${id}`, payload);
-      return data;
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['cds', 'trips'] }),
-  });
-}
-
 export function useTransitionTrip() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({
-      id,
-      to_status,
-      notes,
-    }: {
-      id: string;
-      to_status: string;
-      notes?: string;
-    }) => {
-      const { data } = await cdsApi.post(`/trips/${id}/transition`, {
-        to_status,
-        notes,
-      });
+    mutationFn: async ({ id, to_status, notes }: { id: string; to_status: string; notes?: string }) => {
+      const { data } = await cdsApi.post(`/trips/${id}/transition`, { to_status, notes });
       return data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['cds', 'trips'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'bookings', 'pipeline'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
     },
   });
 }
@@ -102,19 +64,13 @@ export function useTransitionTrip() {
 export function useClampTrip() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({
-      id,
-      ...payload
-    }: {
-      id: string;
-      [key: string]: unknown;
-    }) => {
+    mutationFn: async ({ id, ...payload }: { id: string; [key: string]: unknown }) => {
       const { data } = await cdsApi.post(`/trips/${id}/clamp`, payload);
       return data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['cds', 'trips'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'bookings', 'pipeline'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
     },
   });
 }
@@ -128,17 +84,23 @@ export function useUnclampTrip() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['cds', 'trips'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'bookings', 'pipeline'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
     },
   });
 }
 
-/* ------------------------------------------------------------------ */
-/*  Electronic Locks                                                    */
-/* ------------------------------------------------------------------ */
+export function useContainers(filters?: SearchFilters) {
+  return useQuery<ApiList>({
+    queryKey: ['cds', 'containers', filters],
+    queryFn: async () => {
+      const { data } = await cdsApi.get('/containers', { params: filters });
+      return data;
+    },
+  });
+}
 
 export function useLocks(filters?: SearchFilters) {
-  return useQuery<PaginatedResponse<ElectronicLock>>({
+  return useQuery<ApiList>({
     queryKey: ['cds', 'locks', filters],
     queryFn: async () => {
       const { data } = await cdsApi.get('/locks', { params: filters });
@@ -147,23 +109,48 @@ export function useLocks(filters?: SearchFilters) {
   });
 }
 
-export function useLockById(id: string) {
-  return useQuery<ElectronicLock>({
-    queryKey: ['cds', 'lock', id],
+export function useCDSDrivers(filters?: SearchFilters) {
+  return useQuery<ApiList>({
+    queryKey: ['cds', 'drivers', filters],
     queryFn: async () => {
-      const { data } = await cdsApi.get(`/locks/${id}`);
+      const { data } = await cdsApi.get('/drivers', { params: filters });
       return data;
     },
-    enabled: !!id,
   });
 }
 
-/* ------------------------------------------------------------------ */
-/*  Bookings                                                            */
-/* ------------------------------------------------------------------ */
+export function useCDSTransporters(filters?: SearchFilters) {
+  return useQuery<ApiList>({
+    queryKey: ['cds', 'transporters', filters],
+    queryFn: async () => {
+      const { data } = await cdsApi.get('/transporters', { params: filters });
+      return data;
+    },
+  });
+}
+
+export function useVehicles(filters?: SearchFilters) {
+  return useQuery<ApiList>({
+    queryKey: ['cds', 'vehicles', filters],
+    queryFn: async () => {
+      const { data } = await cdsApi.get('/vehicles', { params: filters });
+      return data;
+    },
+  });
+}
+
+export function useCustomers(filters?: SearchFilters) {
+  return useQuery<ApiList>({
+    queryKey: ['cds', 'customers', filters],
+    queryFn: async () => {
+      const { data } = await cdsApi.get('/customers', { params: filters });
+      return data;
+    },
+  });
+}
 
 export function useBookings(filters?: SearchFilters) {
-  return useQuery<PaginatedResponse<Record<string, unknown>>>({
+  return useQuery<ApiList>({
     queryKey: ['cds', 'bookings', filters],
     queryFn: async () => {
       const { data } = await cdsApi.get('/bookings', { params: filters });
@@ -172,53 +159,29 @@ export function useBookings(filters?: SearchFilters) {
   });
 }
 
-export function useBookingById(id: string) {
-  return useQuery<Record<string, unknown>>({
-    queryKey: ['cds', 'booking', id],
+export function useBookingPipeline() {
+  return useQuery({
+    queryKey: ['cds', 'bookings', 'pipeline'],
     queryFn: async () => {
-      const { data } = await cdsApi.get(`/bookings/${id}`);
-      return data;
+      const { data } = await cdsApi.get('/bookings/pipeline');
+      return data.data as Record<string, unknown>[];
     },
-    enabled: !!id,
+    refetchInterval: 20_000,
   });
 }
 
-export function useCreateBooking() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (payload: Record<string, unknown>) => {
-      const { data } = await cdsApi.post('/bookings', payload);
+export function useAlerts(filters?: SearchFilters) {
+  return useQuery<ApiList>({
+    queryKey: ['cds', 'alerts', filters],
+    queryFn: async () => {
+      const { data } = await cdsApi.get('/alerts', { params: filters });
       return data;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
     },
   });
 }
-
-export function useUpdateBooking() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
-      id,
-      ...payload
-    }: Record<string, unknown> & { id: string }) => {
-      const { data } = await cdsApi.patch(`/bookings/${id}`, payload);
-      return data;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'bookings', 'pipeline'] });
-    },
-  });
-}
-
-/* ------------------------------------------------------------------ */
-/*  Reports                                                             */
-/* ------------------------------------------------------------------ */
 
 export function useReports(filters?: SearchFilters) {
-  return useQuery<PaginatedResponse<Report>>({
+  return useQuery<{ data: Report[]; total: number }>({
     queryKey: ['cds', 'reports', filters],
     queryFn: async () => {
       const { data } = await cdsApi.get('/reports', { params: filters });
@@ -227,26 +190,24 @@ export function useReports(filters?: SearchFilters) {
   });
 }
 
-export function useReportById(id: string) {
-  return useQuery<Report>({
-    queryKey: ['cds', 'report', id],
-    queryFn: async () => {
-      const { data } = await cdsApi.get(`/reports/${id}`);
-      return data;
-    },
-    enabled: !!id,
-  });
-}
-
 export function useGenerateReport() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (
-      payload: Pick<Report, 'name' | 'type' | 'format' | 'parameters'>,
-    ) => {
+    mutationFn: async (payload: Pick<Report, 'name' | 'type' | 'format' | 'parameters'>) => {
       const { data } = await cdsApi.post('/reports', payload);
       return data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['cds', 'reports'] }),
+  });
+}
+
+export function useAcknowledgeAlert() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data } = await cdsApi.post(`/alerts/${id}/acknowledge`);
+      return data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['cds', 'alerts'] }),
   });
 }

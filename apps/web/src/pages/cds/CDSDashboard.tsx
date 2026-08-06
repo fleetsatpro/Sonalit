@@ -1,354 +1,247 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect } from 'react';
+import { Link } from '@tanstack/react-router';
 import {
-  StatusBadge,
-  CDSDrawer,
-  CDSToastContainer,
-  DrawerField,
-} from './components.js';
-import { useBookingPipeline } from './hooks.js';
-import { useCDSStore } from './store.js';
-import { PIPELINE_STAGES } from './constants.js';
-import type { BookingPipelineItem } from './types.js';
+  LayoutDashboard, MapPin, Package, FileText, Lock, Users, Truck,
+  Anchor, Activity, MessageSquare, DollarSign, FileBarChart,
+  BarChart2, Settings, Search, Bell,
+  type LucideIcon,
+} from 'lucide-react';
+import { KPICard, CDSDrawer, CDSToastContainer } from './components.js';
+import { useDashboardKPIs, useActivity, useTrips } from './hooks.js';
+import { useCDSStore, type CDSView } from './store.js';
+import { CDS_VIEWS } from './constants.js';
+import { ContainersView, BookingsView, DriversView, TransportersView } from './CDSDataPage.js';
+import {
+  LocksView, PortView, PulseView, InboxView,
+  BillingView, ReportsView, AnalyticsView, SettingsView,
+} from './pages.js';
 
-function BookingCard({
-  item,
-  onClick,
-}: {
-  item: BookingPipelineItem;
-  onClick: () => void;
-}) {
-  const progress =
-    item.trip_count > 0
-      ? Math.round((item.trips_completed / item.trip_count) * 100)
-      : 0;
-  return (
-    <div
-      className="p-3 rounded-xl bg-ink-2/50 border border-[rgba(255,255,255,0.06)] cursor-pointer hover:border-[rgba(255,255,255,0.12)] transition-colors"
-      onClick={onClick}
-      role="button"
-      tabIndex={0}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <span className="font-mono text-[11px] font-bold text-cds-orange truncate">
-          {item.booking_number}
-        </span>
-        {item.trip_count > 0 && (
-          <span className="text-[10px] font-mono text-text-2 whitespace-nowrap">
-            {item.trips_completed}/{item.trip_count}
-          </span>
-        )}
-      </div>
-      <div className="text-[12px] text-text-0 font-medium mt-1 truncate">
-        {item.customer_name ?? '—'}
-      </div>
-      {item.reference && (
-        <div className="text-[10px] text-text-2 font-mono mt-0.5 truncate">
-          REF: {item.reference}
-        </div>
-      )}
-      <div className="flex items-center justify-between mt-2">
-        <span className="text-[10px] text-text-2 truncate">
-          {item.delivery_location ?? '—'}
-        </span>
-        {item.eta && (
-          <span className="text-[10px] font-mono text-text-2">
-            {new Date(item.eta).toLocaleDateString([], {
-              month: 'short',
-              day: 'numeric',
-            })}
-          </span>
-        )}
-      </div>
-      {item.trip_count > 0 && (
-        <div className="mt-2 h-1 rounded bg-ink-3 overflow-hidden">
-          <div
-            className="h-full rounded bg-cds-teal"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
+const VIEW_ICONS: Record<string, LucideIcon> = {
+  dashboard: LayoutDashboard, live: MapPin, containers: Package,
+  bookings: FileText, locks: Lock, drivers: Users, transporters: Truck,
+  port: Anchor, pulse: Activity, inbox: MessageSquare, billing: DollarSign,
+  reports: FileBarChart, analytics: BarChart2, settings: Settings,
+};
 
-function KanbanView({
-  grouped,
-  onCardClick,
-}: {
-  grouped: Record<string, BookingPipelineItem[]>;
-  onCardClick: (item: BookingPipelineItem) => void;
-}) {
+const gold = '#F0B429';
+const goldDim = 'rgba(240,180,41,.12)';
+const ink = '#0c0e12';
+const rim = 'rgba(255,255,255,.06)';
+
+export default function CDSApp() {
+  const { activeView, setActiveView } = useCDSStore();
+  const [clock, setClock] = useState('');
+
+  useEffect(() => {
+    const tick = () => setClock(new Date().toLocaleTimeString('en-GB', { hour12: false }) + ' EAT');
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const currentView = CDS_VIEWS.find(v => v.id === activeView);
+
   return (
-    <div className="grid grid-cols-6 gap-3 min-h-[400px]">
-      {PIPELINE_STAGES.map((stage) => {
-        const items = grouped[stage.id] ?? [];
-        return (
-          <div key={stage.id} className="flex flex-col min-w-0">
-            <div className="flex items-center gap-2 mb-3 px-1">
-              <div className={`w-2 h-2 rounded-full ${stage.dot}`} />
-              <span className="text-[11px] font-display font-bold text-text-1 uppercase tracking-wide">
-                {stage.label}
-              </span>
-              <span
-                className={`inline-flex items-center justify-center min-w-[20px] h-5 rounded-full text-[10px] font-mono font-bold px-1.5 ${stage.dim} ${stage.text}`}
+    <div style={{ display: 'flex', height: '100dvh', background: ink }}>
+      <nav style={{
+        width: 72, flexShrink: 0, background: '#0a0c10',
+        borderRight: `1px solid ${rim}`, display: 'flex',
+        flexDirection: 'column', overflowY: 'auto', scrollbarWidth: 'none',
+      }}>
+        <Link to="/" style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          height: 56, borderBottom: `1px solid ${rim}`, textDecoration: 'none',
+        }}>
+          <div style={{
+            width: 30, height: 30, borderRadius: 8,
+            background: `linear-gradient(135deg, ${gold}, #ff7a00)`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontWeight: 900, fontSize: 15, color: ink,
+          }}>S</div>
+        </Link>
+        <div style={{ flex: 1, padding: '8px 0' }}>
+          {CDS_VIEWS.map(v => {
+            const Icon = VIEW_ICONS[v.id];
+            const active = activeView === v.id;
+            return (
+              <button
+                key={v.id}
+                onClick={() => setActiveView(v.id as CDSView)}
+                title={v.label}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: '100%', height: 44, padding: 0,
+                  background: active ? goldDim : 'transparent',
+                  border: 'none',
+                  borderLeft: active ? `3px solid ${gold}` : '3px solid transparent',
+                  color: active ? gold : 'rgba(255,255,255,.4)',
+                  cursor: 'pointer', transition: 'all .15s',
+                }}
               >
-                {items.length}
-              </span>
+                {Icon && <Icon size={18} strokeWidth={active ? 2.2 : 1.5} />}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <header style={{
+          height: 52, flexShrink: 0,
+          background: 'rgba(12,14,18,.95)', backdropFilter: 'blur(20px)',
+          borderBottom: `1px solid ${rim}`,
+          display: 'flex', alignItems: 'center', padding: '0 20px', gap: 16,
+        }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 16, color: '#fff' }}>
+              {currentView?.label ?? 'Dashboard'}
             </div>
-            <div className="flex-1 space-y-2 overflow-y-auto max-h-[calc(100vh-260px)] pr-1">
-              {items.length === 0 && (
-                <div className="text-[11px] text-text-2 text-center py-8 font-mono">
-                  No bookings
-                </div>
-              )}
-              {items.map((item) => (
-                <BookingCard
-                  key={item.id}
-                  item={item}
-                  onClick={() => onCardClick(item)}
-                />
-              ))}
-            </div>
+            <div style={{
+              fontSize: 10, fontFamily: 'monospace',
+              letterSpacing: '.08em', color: 'rgba(255,255,255,.35)', marginTop: 1,
+            }}>{currentView?.sub ?? ''}</div>
           </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function ListView({
-  grouped,
-  onCardClick,
-}: {
-  grouped: Record<string, BookingPipelineItem[]>;
-  onCardClick: (item: BookingPipelineItem) => void;
-}) {
-  const [activeTab, setActiveTab] = useState<string>(PIPELINE_STAGES[0].id);
-  const items = grouped[activeTab] ?? [];
-  return (
-    <div>
-      <div className="flex gap-1 mb-4 overflow-x-auto pb-1">
-        {PIPELINE_STAGES.map((stage) => {
-          const count = (grouped[stage.id] ?? []).length;
-          const active = activeTab === stage.id;
-          return (
-            <button
-              key={stage.id}
-              className={`text-[11px] font-mono px-3 py-1.5 rounded-lg cursor-pointer border transition-colors whitespace-nowrap flex items-center gap-1.5 ${
-                active
-                  ? `${stage.dim} ${stage.text} border-transparent`
-                  : 'text-text-2 border-[rgba(255,255,255,0.1)] bg-ink-2 hover:bg-ink-3'
-              }`}
-              onClick={() => setActiveTab(stage.id)}
-            >
-              {stage.label}
-              <span className="opacity-60">{count}</span>
-            </button>
-          );
-        })}
-      </div>
-      <div className="border border-[rgba(255,255,255,0.07)] rounded-[14px] bg-gradient-to-b from-[rgba(255,255,255,0.025)] to-[rgba(255,255,255,0.008)] overflow-x-auto">
-        <table className="w-full border-collapse text-[12.5px]">
-          <thead>
-            <tr>
-              {['Booking #', 'Reference', 'Customer', 'Destination', 'Trips', 'ETA'].map(
-                (h) => (
-                  <th
-                    key={h}
-                    className="text-left font-mono text-[10px] tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium"
-                  >
-                    {h}
-                  </th>
-                ),
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {items.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={6}
-                  className="p-8 text-center text-text-2 font-mono text-sm"
-                >
-                  No bookings in this stage.
-                </td>
-              </tr>
-            ) : (
-              items.map((item) => (
-                <tr
-                  key={item.id}
-                  className="border-t border-[rgba(255,255,255,0.07)] cursor-pointer hover:bg-ink-2 transition-colors"
-                  onClick={() => onCardClick(item)}
-                >
-                  <td className="px-3.5 py-3 text-cds-orange font-mono font-semibold text-xs">
-                    {item.booking_number}
-                  </td>
-                  <td className="px-3.5 py-3 text-text-0 font-mono text-xs">
-                    {item.reference ?? '—'}
-                  </td>
-                  <td className="px-3.5 py-3 text-text-0">
-                    {item.customer_name ?? '—'}
-                  </td>
-                  <td className="px-3.5 py-3 text-text-1">
-                    {item.delivery_location ?? '—'}
-                  </td>
-                  <td className="px-3.5 py-3 text-text-1 font-mono">
-                    {item.trips_completed}/{item.trip_count}
-                  </td>
-                  <td className="px-3.5 py-3 text-text-2 font-mono text-xs">
-                    {item.eta
-                      ? new Date(item.eta).toLocaleDateString([], {
-                          month: 'short',
-                          day: 'numeric',
-                        })
-                      : '—'}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-export default function CDSDashboard() {
-  const { data: pipeline, isLoading } = useBookingPipeline();
-  const { viewMode, toggleViewMode, openDrawer } = useCDSStore();
-
-  const grouped = useMemo(() => {
-    const g: Record<string, BookingPipelineItem[]> = {};
-    for (const stage of PIPELINE_STAGES) g[stage.id] = [];
-    for (const item of pipeline ?? []) {
-      const key = item.pipeline_stage ?? 'received';
-      (g[key] ??= []).push(item);
-    }
-    return g;
-  }, [pipeline]);
-
-  const totalActive = (pipeline ?? []).filter(
-    (b) => b.pipeline_stage !== 'completed',
-  ).length;
-  const totalCompleted = (grouped['completed'] ?? []).length;
-
-  const handleCardClick = (item: BookingPipelineItem) => {
-    openDrawer(`Booking ${item.booking_number}`, (
-      <>
-        <DrawerField label="Booking #" value={item.booking_number} />
-        <DrawerField label="Reference" value={item.reference ?? '—'} />
-        <DrawerField label="Customer" value={item.customer_name ?? '—'} />
-        <DrawerField
-          label="Status"
-          value={<StatusBadge status={item.status} />}
-        />
-        <DrawerField label="Stage" value={item.pipeline_stage} />
-        <DrawerField label="Pickup" value={item.pickup_location ?? '—'} />
-        <DrawerField
-          label="Delivery"
-          value={item.delivery_location ?? '—'}
-        />
-        <DrawerField label="Commodity" value={item.commodity ?? '—'} />
-        <DrawerField
-          label="Container"
-          value={
-            `${item.container_size ?? ''} ${item.container_type ?? ''}`.trim() ||
-            '—'
-          }
-        />
-        <DrawerField
-          label="Shipping Line"
-          value={item.shipping_line ?? '—'}
-        />
-        <DrawerField
-          label="ETA"
-          value={item.eta ? new Date(item.eta).toLocaleDateString() : '—'}
-        />
-        <DrawerField
-          label="Trips"
-          value={`${item.trips_completed} / ${item.trip_count}`}
-        />
-        <DrawerField
-          label="Created"
-          value={new Date(item.created_at).toLocaleDateString()}
-        />
-      </>
-    ));
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64 text-text-2 font-mono text-sm">
-        Loading pipeline...
-      </div>
-    );
-  }
-
-  return (
-    <div className="px-4 py-5 max-w-[1600px] mx-auto">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="font-display font-extrabold text-[20px] text-text-0">
-            Booking Pipeline
-          </h1>
-          <p className="font-mono text-[11px] text-text-2 tracking-[0.08em] mt-0.5">
-            {totalActive} ACTIVE &middot; {totalCompleted} COMPLETED
-          </p>
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            className={`text-[11px] font-mono px-3 py-1.5 rounded-lg border transition-colors ${
-              viewMode === 'kanban'
-                ? 'bg-cds-orange/15 text-cds-orange border-cds-orange/20'
-                : 'text-text-2 border-[rgba(255,255,255,0.1)] bg-ink-2'
-            }`}
-            onClick={() => viewMode !== 'kanban' && toggleViewMode()}
-          >
-            Board
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.07)',
+            borderRadius: 8, padding: '0 10px', height: 32,
+          }}>
+            <Search size={13} color="rgba(255,255,255,.35)" />
+            <input placeholder="Search or AI command…" style={{
+              background: 'transparent', border: 'none', outline: 'none',
+              color: '#fff', fontSize: 12, width: 200,
+            }} />
+          </div>
+          <div style={{
+            fontFamily: 'monospace', fontSize: 12,
+            color: 'rgba(255,255,255,.5)', letterSpacing: '.06em',
+          }}>{clock}</div>
+          <button style={{
+            width: 32, height: 32, borderRadius: 8,
+            background: 'rgba(255,255,255,.04)', border: `1px solid ${rim}`,
+            color: 'rgba(255,255,255,.5)', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Bell size={15} />
           </button>
-          <button
-            className={`text-[11px] font-mono px-3 py-1.5 rounded-lg border transition-colors ${
-              viewMode === 'list'
-                ? 'bg-cds-orange/15 text-cds-orange border-cds-orange/20'
-                : 'text-text-2 border-[rgba(255,255,255,0.1)] bg-ink-2'
-            }`}
-            onClick={() => viewMode !== 'list' && toggleViewMode()}
-          >
-            List
-          </button>
+        </header>
+
+        <div style={{ flex: 1, overflowY: 'auto', overscrollBehavior: 'contain' }}>
+          {activeView === 'dashboard' && <DashboardView />}
+          {activeView === 'live' && <LiveView />}
+          {activeView === 'containers' && <ContainersView />}
+          {activeView === 'bookings' && <BookingsView />}
+          {activeView === 'locks' && <LocksView />}
+          {activeView === 'drivers' && <DriversView />}
+          {activeView === 'transporters' && <TransportersView />}
+          {activeView === 'port' && <PortView />}
+          {activeView === 'pulse' && <PulseView />}
+          {activeView === 'inbox' && <InboxView />}
+          {activeView === 'billing' && <BillingView />}
+          {activeView === 'reports' && <ReportsView />}
+          {activeView === 'analytics' && <AnalyticsView />}
+          {activeView === 'settings' && <SettingsView />}
         </div>
       </div>
-
-      <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
-        {PIPELINE_STAGES.filter((s) => s.id !== 'completed').map((stage) => {
-          const count = (grouped[stage.id] ?? []).length;
-          return (
-            <div
-              key={stage.id}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg ${stage.dim}`}
-            >
-              <div className={`w-1.5 h-1.5 rounded-full ${stage.dot}`} />
-              <span className={`text-[11px] font-mono ${stage.text}`}>
-                {stage.label}
-              </span>
-              <span
-                className={`text-[11px] font-bold font-mono ${stage.text}`}
-              >
-                {count}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-
-      {viewMode === 'kanban' ? (
-        <KanbanView grouped={grouped} onCardClick={handleCardClick} />
-      ) : (
-        <ListView grouped={grouped} onCardClick={handleCardClick} />
-      )}
 
       <CDSDrawer />
       <CDSToastContainer />
     </div>
   );
+}
+
+function DashboardView() {
+  const { data: kpis, isLoading } = useDashboardKPIs();
+  const { data: activity } = useActivity(20);
+  if (isLoading) return <LoadingState />;
+
+  const cards = [
+    { label: 'ACTIVE CONTAINERS', value: String(kpis?.['active_containers'] ?? 0), delta: 'fleet capacity', trend: 'up' as const },
+    { label: 'IN TRANSIT', value: String(kpis?.['in_transit'] ?? 0), delta: 'on the road', trend: 'up' as const },
+    { label: 'DELIVERED TODAY', value: String(kpis?.['delivered_today'] ?? 0), delta: 'completed', trend: 'up' as const },
+    { label: 'ACTIVE LOCKS', value: String(kpis?.['active_locks'] ?? 0), delta: 'deployed', trend: 'up' as const },
+    { label: 'DELAYED', value: String(kpis?.['delayed_trips'] ?? 0), delta: 'needs attention', trend: 'down' as const },
+    { label: 'AVG TRANSIT', value: `${kpis?.['avg_transit_hours'] ?? 0}h`, delta: 'hours average', trend: 'up' as const },
+  ];
+
+  const actIcons: Record<string, string> = {
+    clamp: '\u{1F512}', depart: '\u{1F69B}', checkpoint: '\u{1F4CD}', sync: '\u{1F504}',
+    arrival: '✅', unclamp: '\u{1F513}', ai: '\u{1F916}', alert: '⚠️',
+  };
+
+  return (
+    <div className="p-5 max-w-[1600px] mx-auto">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
+        {cards.map(k => <KPICard key={k.label} {...k} />)}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2 rounded-2xl border border-[rgba(255,255,255,.07)] bg-[rgba(255,255,255,.02)] p-4">
+          <div className="font-bold text-sm text-text-0 mb-3">Live Map</div>
+          <div className="h-[300px] rounded-xl bg-ink-3 flex items-center justify-center text-text-2 text-xs font-mono">
+            Map integration — GPS feed renders here
+          </div>
+        </div>
+        <div className="rounded-2xl border border-[rgba(255,255,255,.07)] bg-[rgba(255,255,255,.02)] p-4">
+          <div className="font-bold text-sm text-text-0 mb-3">Recent Activity</div>
+          <div className="space-y-0 max-h-[340px] overflow-y-auto">
+            {(activity ?? []).map((item, i) => (
+              <div key={String(item['id'] ?? i)} className="flex items-start gap-2.5 py-2 border-b border-[rgba(255,255,255,.05)]">
+                <span className="text-sm flex-none mt-0.5">
+                  {actIcons[String(item['icon'] ?? item['type'] ?? '')] ?? '\u{1F4CB}'}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs text-text-0 truncate">{String(item['description'] ?? item['text'] ?? '—')}</div>
+                  <div className="text-[10px] text-text-2 font-mono mt-0.5">
+                    {String(item['meta'] ?? (item['created_at'] ? new Date(String(item['created_at'])).toLocaleTimeString() : ''))}
+                  </div>
+                </div>
+              </div>
+            ))}
+            {(activity ?? []).length === 0 && (
+              <div className="text-xs text-text-2 text-center py-8 font-mono">No recent activity</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LiveView() {
+  const { data, isLoading } = useTrips({ status: 'dispatched' });
+  if (isLoading) return <LoadingState />;
+  const trips = (data?.data ?? []) as Record<string, unknown>[];
+
+  return (
+    <div className="p-5 max-w-[1600px] mx-auto">
+      <div className="rounded-2xl border border-[rgba(255,255,255,.07)] bg-[rgba(255,255,255,.02)] p-4 mb-4">
+        <div className="font-bold text-sm text-text-0 mb-3">Live Fleet Tracking</div>
+        <div className="h-[350px] rounded-xl bg-ink-3 flex items-center justify-center text-text-2 text-xs font-mono">
+          Real-time GPS map — vehicle positions rendered here
+        </div>
+      </div>
+      <div className="rounded-2xl border border-[rgba(255,255,255,.07)] bg-[rgba(255,255,255,.02)] p-4">
+        <div className="font-bold text-sm text-text-0 mb-3">Active Trips ({trips.length})</div>
+        <div className="space-y-2 max-h-[300px] overflow-y-auto">
+          {trips.map((t, i) => (
+            <div key={String(t['id'] ?? i)} className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-ink-2/50 border border-[rgba(255,255,255,.06)]">
+              <div className="w-2 h-2 rounded-full bg-cds-teal shadow-[0_0_8px_rgba(51,214,168,.6)] flex-none" />
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-mono font-bold text-cds-orange">{String(t['reference'] ?? t['trip_number'] ?? '—')}</div>
+                <div className="text-[11px] text-text-1 truncate">{String(t['customer_name'] ?? '—')} → {String(t['destination'] ?? '—')}</div>
+              </div>
+              <div className="text-[10px] text-text-2 font-mono">{String(t['vehicleReg'] ?? t['vehicle_reg'] ?? '—')}</div>
+            </div>
+          ))}
+          {trips.length === 0 && (
+            <div className="text-xs text-text-2 text-center py-8 font-mono">No active trips</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function LoadingState() {
+  return <div className="flex items-center justify-center h-64 text-text-2 font-mono text-sm">Loading…</div>;
 }

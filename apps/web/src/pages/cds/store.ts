@@ -6,7 +6,14 @@ interface Toast {
   type: 'success' | 'error' | 'info' | 'warning';
 }
 
+export type CDSView =
+  | 'dashboard' | 'live' | 'containers' | 'bookings' | 'locks'
+  | 'drivers' | 'transporters' | 'port' | 'pulse' | 'inbox'
+  | 'billing' | 'reports' | 'analytics' | 'settings';
+
 interface CDSUIState {
+  activeView: CDSView;
+  setActiveView: (view: CDSView) => void;
   drawerOpen: boolean;
   drawerTitle: string;
   drawerContent: React.ReactNode | null;
@@ -21,6 +28,8 @@ interface CDSUIState {
 let toastCounter = 0;
 
 export const useCDSStore = create<CDSUIState>()((set) => ({
+  activeView: 'dashboard' as CDSView,
+  setActiveView: (view) => set({ activeView: view }),
   drawerOpen: false,
   drawerTitle: '',
   drawerContent: null,
