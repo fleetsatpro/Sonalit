@@ -65,16 +65,15 @@ const BOOKING_FIELDS: { key: string; label: string; type?: string; required?: bo
   { key: 'pickup_location', label: 'Pickup Location', required: true, placeholder: 'e.g. Mombasa Port' },
   { key: 'delivery_location', label: 'Delivery Location', required: true, placeholder: 'e.g. Nairobi ICD' },
   { key: 'commodity', label: 'Commodity', required: true, placeholder: 'e.g. Tea, Electronics' },
-  { key: 'weight_kg', label: 'Weight (kg)', type: 'number', placeholder: '0' },
-  { key: 'container_type', label: 'Container Type', placeholder: 'e.g. 20GP, 40HC' },
-  { key: 'container_size', label: 'Container Size', placeholder: 'e.g. 20' },
   { key: 'shipping_line', label: 'Shipping Line', placeholder: 'e.g. Maersk, MSC' },
   { key: 'vessel', label: 'Vessel', placeholder: 'Vessel name' },
   { key: 'voyage', label: 'Voyage', placeholder: 'Voyage number' },
-  { key: 'seal_number', label: 'Seal Number', placeholder: 'Seal #' },
   { key: 'eta', label: 'ETA', type: 'date' },
   { key: 'notes', label: 'Notes', placeholder: 'Additional notes...' },
 ];
+
+const ISO_TYPES = ['20GP', '40GP', '40HC', '45HC', '20RF', '40RF', '20OT', '40OT'];
+type ContainerRow = { container_number: string; iso_type: string; seal_number: string; weight_kg: string };
 
 export function BookingsView() {
   const { data, isLoading } = useBookings();
@@ -85,6 +84,7 @@ export function BookingsView() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
   const [customerId, setCustomerId] = useState('');
+  const [containers, setContainers] = useState<ContainerRow[]>([]);
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
@@ -92,6 +92,11 @@ export function BookingsView() {
   if (isLoading) return <LoadingState />;
   const rows = (data?.data ?? []) as Row[];
   const customerList = (customers?.data ?? []) as Row[];
+
+  const updateContainer = (i: number, patch: Partial<ContainerRow>) =>
+    setContainers(prev => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r));
+  const removeContainer = (i: number) => setContainers(prev => prev.filter((_, idx) => idx !== i));
+  const addContainer = () => setContainers(prev => [...prev, { container_number: '', iso_type: '20GP', seal_number: '', weight_kg: '' }]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -102,12 +107,20 @@ export function BookingsView() {
     reader.onload = () => {
       const base64 = ((reader.result as string).split(',')[1]) ?? '';
       extractBooking.mutate({ data: base64, mediaType: file.type.length > 0 ? file.type : 'image/jpeg' }, {
-        onSuccess: ({ data: extracted, partial, extracted_count, total_fields }) => {
+        onSuccess: ({ data: extracted, containers: extracted_containers, partial, extracted_count, total_fields }) => {
           const updates: Record<string, string> = {};
           for (const [k, v] of Object.entries(extracted)) {
             if (v !== null && v !== undefined) updates[k] = String(v);
           }
           setForm(prev => ({ ...prev, ...updates }));
+          if (Array.isArray(extracted_containers) && extracted_containers.length > 0) {
+            setContainers(extracted_containers.map((c: Record<string, unknown>) => ({
+              container_number: String(c['container_number'] ?? ''),
+              iso_type: String(c['iso_type'] ?? '20GP'),
+              seal_number: String(c['seal_number'] ?? ''),
+              weight_kg: c['weight_kg'] != null ? String(c['weight_kg']) : '',
+            })));
+          }
           if (partial) {
             setWarning(`Document partially readable — ${extracted_count} of ${total_fields} fields extracted. Please verify and complete the missing fields.`);
           }
@@ -127,10 +140,18 @@ export function BookingsView() {
     const payload: Record<string, unknown> = { customer_id: customerId };
     for (const f of BOOKING_FIELDS) {
       const val = form[f.key];
-      if (val) payload[f.key] = f.type === 'number' ? Number(val) : val;
+      if (val) payload[f.key] = val;
+    }
+    if (containers.length > 0) {
+      payload['containers'] = containers.map(c => ({
+        container_number: c.container_number || null,
+        iso_type: c.iso_type || '20GP',
+        seal_number: c.seal_number || null,
+        weight_kg: c.weight_kg ? Number(c.weight_kg) : null,
+      }));
     }
     createBooking.mutate(payload, {
-      onSuccess: () => { setShowForm(false); setForm({}); setCustomerId(''); setError(''); },
+      onSuccess: () => { setShowForm(false); setForm({}); setCustomerId(''); setContainers([]); setError(''); },
       onError: (err: unknown) => {
         const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
         setError(msg ?? 'Failed to create booking. Please try again.');
@@ -138,7 +159,7 @@ export function BookingsView() {
     });
   };
 
-  const resetForm = () => { setShowForm(false); setForm({}); setCustomerId(''); setError(''); setWarning(''); };
+  const resetForm = () => { setShowForm(false); setForm({}); setCustomerId(''); setContainers([]); setError(''); setWarning(''); };
 
   return (
     <div className="p-5 max-w-[1600px] mx-auto">
@@ -254,6 +275,73 @@ export function BookingsView() {
                   />
                 </div>
               ))}
+
+              {/* containers */}
+              <div className="pt-1">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-[11px] font-semibold text-white/60 uppercase tracking-wider">
+                    Containers
+                    {containers.length > 0 && <span className="ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: '#ff7a0022', color: '#ff7a00' }}>{containers.length}</span>}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={addContainer}
+                    className="flex items-center gap-1 px-2.5 h-6 rounded text-[10px] font-semibold bg-white/[.04] border border-white/[.08] text-white/50 hover:text-white/80 hover:border-white/20 cursor-pointer transition-colors"
+                  >
+                    <Plus size={10} strokeWidth={2.5} /> Add Container
+                  </button>
+                </div>
+                {containers.length === 0 ? (
+                  <p className="text-[10px] text-white/25 font-mono italic px-0.5">No containers — add manually or upload a document to auto-extract.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    <div className="grid grid-cols-[1fr_72px_72px_60px_20px] gap-1 px-0.5 mb-0.5">
+                      {['Container #', 'Type', 'Seal #', 'kg', ''].map(h => (
+                        <span key={h} className="text-[9px] font-medium text-white/30 uppercase tracking-wider">{h}</span>
+                      ))}
+                    </div>
+                    {containers.map((c, i) => (
+                      <div key={i} className="grid grid-cols-[1fr_72px_72px_60px_20px] gap-1 items-center">
+                        <input
+                          type="text"
+                          placeholder="MSCU1234560"
+                          value={c.container_number}
+                          onChange={e => updateContainer(i, { container_number: e.target.value })}
+                          className="h-7 px-2 rounded bg-white/[.04] border border-white/[.07] text-white text-[11px] font-mono outline-none focus:border-[#F0B429]/40 placeholder:text-white/15 transition-colors"
+                        />
+                        <select
+                          value={c.iso_type}
+                          onChange={e => updateContainer(i, { iso_type: e.target.value })}
+                          className="h-7 px-1 rounded bg-white/[.04] border border-white/[.07] text-white text-[10px] outline-none focus:border-[#F0B429]/40 cursor-pointer transition-colors"
+                        >
+                          {ISO_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                        <input
+                          type="text"
+                          placeholder="Seal #"
+                          value={c.seal_number}
+                          onChange={e => updateContainer(i, { seal_number: e.target.value })}
+                          className="h-7 px-2 rounded bg-white/[.04] border border-white/[.07] text-white text-[11px] font-mono outline-none focus:border-[#F0B429]/40 placeholder:text-white/15 transition-colors"
+                        />
+                        <input
+                          type="number"
+                          placeholder="0"
+                          value={c.weight_kg}
+                          onChange={e => updateContainer(i, { weight_kg: e.target.value })}
+                          className="h-7 px-2 rounded bg-white/[.04] border border-white/[.07] text-white text-[11px] outline-none focus:border-[#F0B429]/40 placeholder:text-white/15 transition-colors"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeContainer(i)}
+                          className="w-5 h-5 flex items-center justify-center rounded text-white/25 hover:text-red-400 hover:bg-red-400/10 cursor-pointer transition-colors"
+                        >
+                          <X size={11} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* footer */}

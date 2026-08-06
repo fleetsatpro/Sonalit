@@ -177,7 +177,31 @@ export function useExtractBooking() {
   return useMutation({
     mutationFn: async ({ data, mediaType }: { data: string; mediaType: string }) => {
       const { data: res } = await cdsApi.post('/bookings/extract', { data, mediaType });
-      return res as { data: Record<string, unknown>; partial: boolean; extracted_count: number; total_fields: number };
+      return res as { data: Record<string, unknown>; containers: Array<Record<string, unknown>>; partial: boolean; extracted_count: number; total_fields: number };
+    },
+  });
+}
+
+export function useBookingContainers(bookingId: string) {
+  return useQuery<ApiList>({
+    queryKey: ['cds', 'booking-containers', bookingId],
+    queryFn: async () => {
+      const { data } = await cdsApi.get(`/bookings/${bookingId}/containers`);
+      return data;
+    },
+    enabled: !!bookingId,
+  });
+}
+
+export function useAddBookingContainers() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ bookingId, containers }: { bookingId: string; containers: Record<string, unknown>[] }) => {
+      const { data } = await cdsApi.post(`/bookings/${bookingId}/containers`, containers);
+      return data;
+    },
+    onSuccess: (_data, { bookingId }) => {
+      qc.invalidateQueries({ queryKey: ['cds', 'booking-containers', bookingId] });
     },
   });
 }

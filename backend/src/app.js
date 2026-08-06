@@ -527,6 +527,26 @@ try {
   logger.info("GDPR weekly purge scheduled (Sundays 04:00 UTC, BL-010)");
 } catch (e) { logger.warn("GDPR purge cron not started: " + e.message); }
 
+// CDS Operations Intelligence: Groq/Llama scans live operational data every 15 min
+// and writes alerts for overdue trips, stalled bookings, capacity gaps, etc.
+if (!process.env.GENERATE_OPENAPI && process.env.NODE_ENV !== 'test')
+try {
+  const cron = require("node-cron");
+  const { runIntelligenceScan } = require("./utils/cdsIntelligence");
+  cron.schedule("*/15 * * * *", async () => {
+    try {
+      const { rows } = await dbQuery(
+        `SELECT DISTINCT org_id FROM cds_trips WHERE deleted_at IS NULL
+         UNION SELECT DISTINCT org_id FROM cds_bookings WHERE deleted_at IS NULL LIMIT 50`
+      );
+      for (const { org_id } of rows) {
+        await runIntelligenceScan(dbQuery, org_id);
+      }
+    } catch (err) { logger.error("CDS intelligence scan error: " + err.message); }
+  });
+  logger.info("CDS operations intelligence scheduled (*/15 * * * *)");
+} catch (e) { logger.warn("CDS intelligence scan not scheduled: " + e.message); }
+
 // ─── Start server ─────────────────────────────────────────────────────────────
 // GENERATE_OPENAPI=1 skips server.listen so the script can introspect routes safely
 // NODE_ENV=test skips listen/queues/cron so integration tests don't collide on port 5000

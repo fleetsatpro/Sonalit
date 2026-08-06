@@ -9,7 +9,27 @@ const { hasAnthropic, hasGroqFallback, getAnthropicClient } = require('./aiClien
 
 const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL || 'llama-3.2-90b-vision-preview';
 
-const PROMPT = 'Extract shipping/booking details from this document. Return ONLY a JSON object with these exact keys (null for missing): reference, pickup_location, delivery_location, commodity, weight_kg (number), container_type (e.g. "20GP"), container_size (number), shipping_line, vessel, voyage, seal_number, eta (ISO 8601 date string), notes. JSON only, no markdown or explanation.';
+const PROMPT = `Extract shipping/booking details from this document. Return ONLY a JSON object with these exact keys (null for missing):
+{
+  "reference": string|null,
+  "pickup_location": string|null,
+  "delivery_location": string|null,
+  "commodity": string|null,
+  "shipping_line": string|null,
+  "vessel": string|null,
+  "voyage": string|null,
+  "eta": "ISO 8601 date string"|null,
+  "notes": string|null,
+  "containers": [
+    {
+      "container_number": string|null,
+      "iso_type": "20GP|40GP|40HC|45HC etc"|null,
+      "seal_number": string|null,
+      "weight_kg": number|null
+    }
+  ]
+}
+The "containers" array must include ALL containers listed in the document (there may be many). If no containers are listed, use an empty array. JSON only, no markdown or explanation.`;
 
 function parseJson(text) {
   const match = (text || '').trim().match(/\{[\s\S]*\}/);
@@ -24,7 +44,7 @@ function makeGroqClient() {
 async function groqText(text) {
   const res = await makeGroqClient().chat.completions.create({
     model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
-    max_completion_tokens: 1024,
+    max_completion_tokens: 4096,
     messages: [{ role: 'user', content: `${PROMPT}\n\nDocument text:\n${text}` }],
   });
   const result = parseJson(res.choices?.[0]?.message?.content || '');
@@ -44,7 +64,7 @@ async function tier1(base64, mediaType) {
   }
   const res = await makeGroqClient().chat.completions.create({
     model: GROQ_VISION_MODEL,
-    max_completion_tokens: 1024,
+    max_completion_tokens: 4096,
     messages: [{ role: 'user', content: [
       { type: 'image_url', image_url: { url: `data:${mediaType};base64,${base64}` } },
       { type: 'text', text: PROMPT },
@@ -73,7 +93,7 @@ async function tier3(base64, mediaType) {
   const mistral = new OpenAI({ apiKey: key, baseURL: 'https://api.mistral.ai/v1' });
   const res = await mistral.chat.completions.create({
     model: 'pixtral-12b-2409',
-    max_tokens: 1024,
+    max_tokens: 4096,
     messages: [{ role: 'user', content: [
       { type: 'image_url', image_url: { url: `data:${mediaType};base64,${base64}` } },
       { type: 'text', text: PROMPT },
@@ -93,7 +113,7 @@ async function tier4(base64, mediaType) {
     : { type: 'image', source: { type: 'base64', media_type: mediaType || 'image/jpeg', data: base64 } };
   const response = await getAnthropicClient().messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1024,
+    max_tokens: 4096,
     messages: [{ role: 'user', content: [sourceBlock, { type: 'text', text: PROMPT }] }],
   });
   const result = parseJson(response.content[0]?.text || '');
@@ -101,10 +121,9 @@ async function tier4(base64, mediaType) {
   return result;
 }
 
-const EXPECTED_KEYS = [
+const BOOKING_KEYS = [
   'reference', 'pickup_location', 'delivery_location', 'commodity',
-  'weight_kg', 'container_type', 'container_size', 'shipping_line',
-  'vessel', 'voyage', 'seal_number', 'eta', 'notes',
+  'shipping_line', 'vessel', 'voyage', 'eta', 'notes',
 ];
 
 async function extractBookingData(base64, mediaType) {
@@ -117,13 +136,15 @@ async function extractBookingData(base64, mediaType) {
   for (const [name, fn] of tiers) {
     try {
       const result = await fn(base64, mediaType);
-      const extractedCount = EXPECTED_KEYS.filter(k => result[k] !== null && result[k] !== undefined).length;
-      logger.info(`extraction: ${name} succeeded (${extractedCount}/${EXPECTED_KEYS.length} fields)`);
+      const containers = Array.isArray(result.containers) ? result.containers : [];
+      const extractedCount = BOOKING_KEYS.filter(k => result[k] !== null && result[k] !== undefined).length;
+      logger.info(`extraction: ${name} succeeded (${extractedCount}/${BOOKING_KEYS.length} booking fields, ${containers.length} containers)`);
       return {
         data: result,
-        partial: extractedCount < Math.ceil(EXPECTED_KEYS.length / 2),
+        containers,
+        partial: extractedCount < Math.ceil(BOOKING_KEYS.length / 2) && containers.length === 0,
         extracted_count: extractedCount,
-        total_fields: EXPECTED_KEYS.length,
+        total_fields: BOOKING_KEYS.length,
       };
     } catch (err) {
       logger.warn(`extraction: ${name} failed — ${err.message}`);
