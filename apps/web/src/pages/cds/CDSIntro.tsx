@@ -43,7 +43,7 @@ export function CDSIntro({ onDone }: { onDone: () => void }) {
         @keyframes cdsflicker { 0%,100%{opacity:.9}40%{opacity:.5}50%{opacity:1}70%{opacity:.7} }
       `}</style>
 
-      <div style={{ opacity: fading ? 0 : 1, transition: 'opacity .4s ease' }}>
+      <div className="absolute inset-0" style={{ opacity: fading ? 0 : 1, transition: 'opacity .4s ease' }}>
         {scene === 0 && <SceneHighway />}
         {scene === 1 && <SceneForest />}
         {scene === 2 && <ScenePort />}
