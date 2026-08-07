@@ -118,6 +118,14 @@ const authRefreshLimiter = rateLimit({ windowMs: 900_000, max: 30, standardHeade
 app.use("/api/v1/auth/login", authLoginLimiter);
 app.use("/api/v1/auth/refresh", authRefreshLimiter);
 
+// CDS document extraction sends base64-encoded files — needs a higher limit
+// than the global 64KB. Mount this BEFORE the global parser so the body is
+// consumed at the larger limit; the global parser then skips the already-read stream.
+app.use("/api/v1/cds/bookings/extract", express.json({
+  limit: "20mb",
+  verify: (req, _res, buf) => { req.rawBody = buf; },
+}));
+
 // Body parser AFTER rate limit. Capture the raw body so HMAC webhook signature
 // checks (e.g. the WhatsApp webhook's X-Hub-Signature-256 verification) can hash
 // exactly what was received — express.json otherwise discards it.

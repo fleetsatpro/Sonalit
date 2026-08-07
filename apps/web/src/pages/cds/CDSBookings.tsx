@@ -185,6 +185,7 @@ export function BookingsView() {
   const [search, setSearch] = useState('');
   const [form, setForm] = useState<Record<string, string>>({});
   const [customerId, setCustomerId] = useState('');
+  const [customerName, setCustomerName] = useState('');
   const [containers, setContainers] = useState<CRow[]>([]);
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
@@ -250,8 +251,10 @@ export function BookingsView() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault(); setError(''); setWarning('');
-    if (!customerId) { setError('Please select a customer'); return; }
-    const payload: Record<string, unknown> = { customer_id: customerId };
+    if (!customerId && !customerName.trim()) { setError('Please select or enter a customer'); return; }
+    const payload: Record<string, unknown> = customerId
+      ? { customer_id: customerId }
+      : { customer_name: customerName.trim() };
     for (const f of BOOKING_FIELDS) { const v = form[f.key]; if (v) payload[f.key] = v; }
     if (containers.length > 0) {
       payload['containers'] = containers.map(c => ({
@@ -260,7 +263,7 @@ export function BookingsView() {
       }));
     }
     createBooking.mutate(payload, {
-      onSuccess: () => { setShowForm(false); setForm({}); setCustomerId(''); setContainers([]); },
+      onSuccess: () => { setShowForm(false); setForm({}); setCustomerId(''); setCustomerName(''); setContainers([]); },
       onError: (err: unknown) => {
         const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
         setError(msg ?? 'Failed to create booking.');
@@ -268,7 +271,7 @@ export function BookingsView() {
     });
   };
 
-  const reset = () => { setShowForm(false); setForm({}); setCustomerId(''); setContainers([]); setError(''); setWarning(''); };
+  const reset = () => { setShowForm(false); setForm({}); setCustomerId(''); setCustomerName(''); setContainers([]); setError(''); setWarning(''); };
 
   return (
     <div className="p-5 max-w-[1600px] mx-auto">
@@ -330,11 +333,24 @@ export function BookingsView() {
             <div className="px-5 py-4 max-h-[60vh] overflow-y-auto space-y-3">
               <div>
                 <label className="block text-[11px] font-medium text-white/50 mb-1">Customer<span className="text-cds-orange ml-0.5">*</span></label>
-                <select required value={customerId} onChange={e => setCustomerId(e.target.value)}
-                  className="w-full h-9 px-3 rounded-lg bg-white/[.04] border border-white/[.08] text-white text-[13px] outline-none focus:border-[#F0B429]/50 transition-colors cursor-pointer">
-                  <option value="">Select customer…</option>
-                  {customerList.map(c => <option key={s(c['id'])} value={s(c['id'])}>{s(c['company_name'])}</option>)}
-                </select>
+                {customerList.length > 0 ? (
+                  <div className="space-y-1.5">
+                    <select value={customerId} onChange={e => { setCustomerId(e.target.value); if (e.target.value) setCustomerName(''); }}
+                      className="w-full h-9 px-3 rounded-lg bg-white/[.04] border border-white/[.08] text-white text-[13px] outline-none focus:border-[#F0B429]/50 transition-colors cursor-pointer">
+                      <option value="">Select customer…</option>
+                      {customerList.map(c => <option key={s(c['id'])} value={s(c['id'])}>{s(c['company_name'])}</option>)}
+                    </select>
+                    {!customerId && (
+                      <input type="text" placeholder="…or type a new customer name" value={customerName}
+                        onChange={e => setCustomerName(e.target.value)}
+                        className="w-full h-9 px-3 rounded-lg bg-white/[.04] border border-white/[.08] text-white text-[13px] outline-none focus:border-[#F0B429]/50 transition-colors placeholder:text-white/20" />
+                    )}
+                  </div>
+                ) : (
+                  <input type="text" required placeholder="Customer / company name" value={customerName}
+                    onChange={e => setCustomerName(e.target.value)}
+                    className="w-full h-9 px-3 rounded-lg bg-white/[.04] border border-white/[.08] text-white text-[13px] outline-none focus:border-[#F0B429]/50 transition-colors placeholder:text-white/20" />
+                )}
               </div>
               {BOOKING_FIELDS.map(f => (
                 <div key={f.key}>

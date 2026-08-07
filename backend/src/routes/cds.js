@@ -482,6 +482,24 @@ router.post('/bookings/extract', asyncHandler(async (req, res) => {
 
 router.post('/bookings', asyncHandler(async (req, res) => {
   const { containers, ...body } = req.body;
+
+  // Auto-create customer when user types a name instead of picking from the list
+  if (!body.customer_id && body.customer_name) {
+    const name = body.customer_name.trim();
+    let cu = await req.db(
+      'SELECT id FROM cds_customers WHERE company_name ILIKE $1 AND deleted_at IS NULL LIMIT 1', [name]
+    );
+    if (!cu.rows.length) {
+      cu = await req.db(
+        'INSERT INTO cds_customers (company_name, code, org_id) VALUES ($1,$2,$3) RETURNING id',
+        [name, genCode('CU'), req.user.org_id]
+      );
+    }
+    body.customer_id = cu.rows[0].id;
+  }
+
+  if (!body.customer_id) return res.status(400).json({ error: 'Customer is required' });
+
   const fields = ['customer_id', 'pickup_location', 'delivery_location', 'commodity', 'weight_kg',
     'seal_number', 'container_type', 'container_size', 'shipping_line', 'vessel', 'voyage', 'eta', 'reference', 'notes'];
   const cols = ['booking_number', ...fields, 'org_id'];
