@@ -2,39 +2,11 @@
 -- Production has no organizations table; org isolation is enforced by RLS only.
 -- Migration 030 created these tables with the FK; this migration removes it safely.
 
-DO $$
-DECLARE
-  r RECORD;
-BEGIN
-  -- Drop any FK constraints on cargo_clients that reference organizations
-  FOR r IN
-    SELECT conname FROM pg_constraint
-     WHERE conrelid = 'cargo_clients'::regclass AND contype = 'f'
-       AND confrelid = (SELECT oid FROM pg_class WHERE relname = 'organizations' LIMIT 1)
-  LOOP
-    EXECUTE format('ALTER TABLE cargo_clients DROP CONSTRAINT %I', r.conname);
-  END LOOP;
-
-  -- Drop any FK constraints on cargo_client_links that reference organizations
-  FOR r IN
-    SELECT conname FROM pg_constraint
-     WHERE conrelid = 'cargo_client_links'::regclass AND contype = 'f'
-       AND confrelid = (SELECT oid FROM pg_class WHERE relname = 'organizations' LIMIT 1)
-  LOOP
-    EXECUTE format('ALTER TABLE cargo_client_links DROP CONSTRAINT %I', r.conname);
-  END LOOP;
-
-  -- Drop any FK constraints on client_magic_links that reference organizations
-  FOR r IN
-    SELECT conname FROM pg_constraint
-     WHERE conrelid = 'client_magic_links'::regclass AND contype = 'f'
-       AND confrelid = (SELECT oid FROM pg_class WHERE relname = 'organizations' LIMIT 1)
-  LOOP
-    EXECUTE format('ALTER TABLE client_magic_links DROP CONSTRAINT %I', r.conname);
-  END LOOP;
-END $$;
-
--- Also ensure tables exist if migration 030 never ran (production may have missed it)
+-- Ensure the tables exist first. They may not: this migration exists precisely
+-- for a database that missed 030, and the constraint sweep below reads
+-- pg_constraint by regclass — a cast that RAISES on an absent relation rather
+-- than returning NULL, which aborted the whole (single-transaction) migration
+-- before it could bootstrap anything. Creating first makes the sweep total.
 CREATE TABLE IF NOT EXISTS cargo_clients (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id UUID NOT NULL,
@@ -67,6 +39,26 @@ CREATE TABLE IF NOT EXISTS client_magic_links (
   used_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Drop any FK to organizations left over from 030. Production has no
+-- organizations table, so that reference is unsatisfiable there; org isolation
+-- is enforced by RLS only.
+DO $$
+DECLARE
+  tbl TEXT;
+  r RECORD;
+BEGIN
+  FOREACH tbl IN ARRAY ARRAY['cargo_clients', 'cargo_client_links', 'client_magic_links']
+  LOOP
+    FOR r IN
+      SELECT conname FROM pg_constraint
+       WHERE conrelid = tbl::regclass AND contype = 'f'
+         AND confrelid = (SELECT oid FROM pg_class WHERE relname = 'organizations' LIMIT 1)
+    LOOP
+      EXECUTE format('ALTER TABLE %I DROP CONSTRAINT %I', tbl, r.conname);
+    END LOOP;
+  END LOOP;
+END $$;
 
 -- RLS (idempotent)
 ALTER TABLE cargo_clients ENABLE ROW LEVEL SECURITY;
