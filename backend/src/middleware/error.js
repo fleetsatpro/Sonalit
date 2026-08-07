@@ -21,7 +21,8 @@ function errorHandler(err, req, res, next) {
   }
   // Postgres NOT NULL violation
   if (err.code === '23502') {
-    return res.status(400).json({ error: 'Required field missing' });
+    const col = err.column ? ` (${err.column})` : '';
+    return res.status(400).json({ error: `Required field missing${col}` });
   }
   // Postgres invalid input syntax (e.g. bad UUID, bad enum value)
   if (err.code === '22P02') {

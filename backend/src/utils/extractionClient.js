@@ -18,8 +18,9 @@ const GROQ_VISION_CANDIDATES = [
 ];
 const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL;
 
-const PROMPT = `Extract shipping/booking details from this document. Return ONLY a JSON object with these exact keys (null for missing):
+const PROMPT = `Extract ALL shipping/booking details from this document. Return ONLY a JSON object with these exact keys (null for missing):
 {
+  "customer_name": string|null,
   "reference": string|null,
   "pickup_location": string|null,
   "delivery_location": string|null,
@@ -38,7 +39,16 @@ const PROMPT = `Extract shipping/booking details from this document. Return ONLY
     }
   ]
 }
-The "containers" array must include ALL containers listed in the document (there may be many). If no containers are listed, use an empty array. JSON only, no markdown or explanation.`;
+IMPORTANT extraction rules:
+- "customer_name": the shipper, consignee, or customer company name
+- "containers" array MUST include ALL containers in the document — there may be many
+- For each container, extract the seal number (often labeled "Seal No", "Seal", "S/N", or near the container number)
+- Container numbers follow ISO 6346 format (4 letters + 7 digits, e.g. MSCU1234567)
+- "iso_type": the container size/type code (20GP, 40GP, 40HC, 45HC, 20RF, 40RF, 20OT, 40OT)
+- "weight_kg": gross weight or VGM weight in kilograms
+- "pickup_location" and "delivery_location": port/depot/yard names, include city
+- If no containers are listed, use an empty array
+- JSON only, no markdown fences or explanation.`;
 
 function parseJson(text) {
   const match = (text || '').trim().match(/\{[\s\S]*\}/);
@@ -144,7 +154,7 @@ async function tier4(base64, mediaType) {
 }
 
 const BOOKING_KEYS = [
-  'reference', 'pickup_location', 'delivery_location', 'commodity',
+  'customer_name', 'reference', 'pickup_location', 'delivery_location', 'commodity',
   'shipping_line', 'vessel', 'voyage', 'eta', 'notes',
 ];
 

@@ -220,6 +220,10 @@ export function BookingsView() {
         onSuccess: ({ data: ex, containers: exC, partial, extracted_count, total_fields }) => {
           const up: Record<string, string> = {};
           for (const [k, v] of Object.entries(ex)) { if (v != null) up[k] = String(v); }
+          if (up['customer_name'] && !customerId) {
+            setCustomerName(up['customer_name']);
+            delete up['customer_name'];
+          }
           setForm(p => ({ ...p, ...up }));
           if (Array.isArray(exC) && exC.length > 0) {
             setContainers(exC.map((c: Record<string, unknown>) => ({
