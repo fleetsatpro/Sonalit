@@ -451,11 +451,33 @@ router.get('/bookings/pipeline', asyncHandler(async (req, res) => {
 }));
 
 router.get('/bookings', asyncHandler(async (req, res) => {
-  await listRows(req, res, 'cds_bookings', {
-    joins: 'LEFT JOIN cds_customers cu ON cu.id=t.customer_id',
-    selectCols: 't.*, cu.company_name AS customer_name',
-    searchCols: ['t.booking_number', 'cu.company_name'],
-  });
+  const { limit, offset } = paginate(req.query);
+  const filters = ['t.deleted_at IS NULL'];
+  const params = [];
+  if (req.query.status) { params.push(req.query.status); filters.push(`t.status=$${params.length}`); }
+  if (req.query.search) {
+    params.push(`%${req.query.search}%`);
+    filters.push(`(t.booking_number ILIKE $${params.length} OR cu.company_name ILIKE $${params.length})`);
+  }
+  const where = filters.join(' AND ');
+  params.push(limit, offset);
+  const result = await req.db(
+    `SELECT t.*, cu.company_name AS customer_name,
+       COUNT(bc.id)::int AS container_count,
+       COUNT(bc.id) FILTER (WHERE bc.status='delivered')::int AS delivered_count
+     FROM cds_bookings t
+     LEFT JOIN cds_customers cu ON cu.id=t.customer_id
+     LEFT JOIN cds_booking_containers bc ON bc.booking_id=t.id AND bc.deleted_at IS NULL
+     WHERE ${where}
+     GROUP BY t.id, cu.company_name
+     ORDER BY t.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`, params
+  );
+  const total = await req.db(
+    `SELECT COUNT(DISTINCT t.id) FROM cds_bookings t
+     LEFT JOIN cds_customers cu ON cu.id=t.customer_id
+     WHERE ${where}`, params.slice(0, -2)
+  );
+  res.json({ data: result.rows, total: parseInt(total.rows[0].count, 10) });
 }));
 router.get('/bookings/:id', asyncHandler(async (req, res) => {
   await getRow(req, res, 'cds_bookings', {
@@ -534,7 +556,7 @@ router.get('/bookings/:id/containers', asyncHandler(async (req, res) => {
      LEFT JOIN cds_trips t ON t.id = bc.trip_id
      WHERE bc.booking_id=$1 AND bc.org_id=$2 AND bc.deleted_at IS NULL
      ORDER BY bc.created_at`,
-    [req.params.id, req.orgId]
+    [req.params.id, req.user.org_id]
   );
   res.json({ data: result.rows, total: result.rows.length });
 }));
@@ -545,7 +567,7 @@ router.post('/bookings/:id/containers', asyncHandler(async (req, res) => {
     const r = await req.db(
       `INSERT INTO cds_booking_containers (org_id, booking_id, container_number, iso_type, seal_number, weight_kg, notes)
        VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [req.orgId, req.params.id, c.container_number || null, c.iso_type || '20GP',
+      [req.user.org_id, req.params.id, c.container_number || null, c.iso_type || '20GP',
        c.seal_number || null, c.weight_kg || null, c.notes || null]
     );
     inserted.push(r.rows[0]);
@@ -559,7 +581,7 @@ router.patch('/bookings/:id/containers/:cid', asyncHandler(async (req, res) => {
     if (req.body[k] !== undefined) { params.push(req.body[k]); sets.push(`${k}=$${params.length}`); }
   }
   if (!sets.length) return res.status(400).json({ error: 'nothing_to_update' });
-  params.push(req.params.cid, req.orgId);
+  params.push(req.params.cid, req.user.org_id);
   const r = await req.db(
     `UPDATE cds_booking_containers SET ${sets.join(',')}, updated_at=NOW()
      WHERE id=$${params.length - 1} AND org_id=$${params.length} AND deleted_at IS NULL RETURNING *`,
@@ -571,7 +593,7 @@ router.patch('/bookings/:id/containers/:cid', asyncHandler(async (req, res) => {
 router.delete('/bookings/:id/containers/:cid', asyncHandler(async (req, res) => {
   await req.db(
     `UPDATE cds_booking_containers SET deleted_at=NOW() WHERE id=$1 AND org_id=$2`,
-    [req.params.cid, req.orgId]
+    [req.params.cid, req.user.org_id]
   );
   res.json({ ok: true });
 }));

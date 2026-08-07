@@ -168,6 +168,7 @@ export function useCreateBooking() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'booking-containers'] });
       qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
     },
   });
