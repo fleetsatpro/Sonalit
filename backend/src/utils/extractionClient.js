@@ -7,9 +7,16 @@ const OpenAI = require('openai');
 const logger = require('./logger');
 const { hasAnthropic, hasGroqFallback, getAnthropicClient } = require('./aiClient');
 
-// llama-3.2-*-vision-preview were retired by Groq — calls 404 with model_not_found.
-// Override with GROQ_VISION_MODEL if this one is rotated out too.
-const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct';
+// Vision model on Groq — try several known IDs in order.
+// Override with GROQ_VISION_MODEL to pin a specific one.
+const GROQ_VISION_CANDIDATES = [
+  'meta-llama/llama-4-scout-17b-16e-instruct',
+  'llama-4-scout-17b-16e-instruct',
+  'meta-llama/llama-4-maverick-17b-128e-instruct',
+  'llama-3.2-90b-vision-preview',
+  'llama-3.2-11b-vision-preview',
+];
+const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL;
 
 const PROMPT = `Extract shipping/booking details from this document. Return ONLY a JSON object with these exact keys (null for missing):
 {
@@ -55,7 +62,7 @@ async function groqText(text) {
 }
 
 // T1: pdf-parse for PDFs (embedded text → Groq text model)
-//     Groq Vision for images (Llama 3.2 — open-source, free)
+//     Groq Vision for images — tries multiple model candidates
 async function tier1(base64, mediaType) {
   if (!hasGroqFallback()) throw new Error('groq not configured');
   if (mediaType === 'application/pdf') {
@@ -64,17 +71,30 @@ async function tier1(base64, mediaType) {
     if (!text || text.trim().length < 20) throw new Error('pdf text too short');
     return groqText(text);
   }
-  const res = await makeGroqClient().chat.completions.create({
-    model: GROQ_VISION_MODEL,
-    max_completion_tokens: 4096,
-    messages: [{ role: 'user', content: [
-      { type: 'image_url', image_url: { url: `data:${mediaType};base64,${base64}` } },
-      { type: 'text', text: PROMPT },
-    ]}],
-  });
-  const result = parseJson(res.choices?.[0]?.message?.content || '');
-  if (!result) throw new Error('json parse failed');
-  return result;
+  const models = GROQ_VISION_MODEL ? [GROQ_VISION_MODEL] : GROQ_VISION_CANDIDATES;
+  let lastErr;
+  for (const model of models) {
+    try {
+      const res = await makeGroqClient().chat.completions.create({
+        model,
+        max_completion_tokens: 4096,
+        messages: [{ role: 'user', content: [
+          { type: 'image_url', image_url: { url: `data:${mediaType};base64,${base64}` } },
+          { type: 'text', text: PROMPT },
+        ]}],
+      });
+      const result = parseJson(res.choices?.[0]?.message?.content || '');
+      if (!result) throw new Error('json parse failed');
+      logger.info(`extraction: groq vision model ${model} worked`);
+      return result;
+    } catch (err) {
+      lastErr = err;
+      const isModelErr = err.status === 404 || /model.*not.*found|not.*available/i.test(err.message);
+      if (!isModelErr) throw err;
+      logger.warn(`extraction: groq vision model ${model} not available, trying next`);
+    }
+  }
+  throw lastErr;
 }
 
 // T2: Tesseract.js local OCR → Groq text model

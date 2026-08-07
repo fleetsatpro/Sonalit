@@ -463,22 +463,26 @@ router.get('/bookings/:id', asyncHandler(async (req, res) => {
     selectCols: 't.*, cu.company_name AS customer_name',
   });
 }));
-router.post('/bookings/extract', asyncHandler(async (req, res) => {
-  const { data: fileData, mediaType } = req.body;
-  if (!fileData) return res.status(400).json({ error: 'no_file_data' });
-  try {
-    const result = await extractBookingData(fileData, mediaType || 'image/jpeg');
-    return res.json(result);
-  } catch (err) {
-    // 503 when no provider is wired up (an ops fix), 422 when providers ran but
-    // couldn't read the document (a user fix — rescan, or type it in).
-    return res.status(err.allUnconfigured ? 503 : 422).json({
-      error: err.allUnconfigured ? 'extraction_not_configured' : 'extraction_failed',
-      message: err.message,
-      failures: err.failures ?? [],
-    });
-  }
-}));
+router.post('/bookings/extract',
+  require('express').json({ limit: '20mb' }),
+  asyncHandler(async (req, res) => {
+    const body = req.body || {};
+    const fileData = body.data;
+    const mediaType = body.mediaType;
+    if (!fileData) {
+      return res.status(400).json({ error: 'no_file_data', message: 'No file data received. The upload may be too large or the request was malformed.' });
+    }
+    try {
+      const result = await extractBookingData(fileData, mediaType || 'image/jpeg');
+      return res.json(result);
+    } catch (err) {
+      return res.status(err.allUnconfigured ? 503 : 422).json({
+        error: err.allUnconfigured ? 'extraction_not_configured' : 'extraction_failed',
+        message: err.message,
+        failures: err.failures ?? [],
+      });
+    }
+  }));
 
 router.post('/bookings', asyncHandler(async (req, res) => {
   const { containers, ...body } = req.body;
