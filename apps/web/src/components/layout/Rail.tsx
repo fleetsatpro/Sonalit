@@ -8,7 +8,7 @@ import {
   MessageSquare, Bot, FileText, FileBarChart,
   ClipboardList, Cpu, BookOpen, Star, CalendarClock,
   Camera, History, FileSearch, RadioTower, Radar, Film,
-  Lock,
+  Ship,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/auth.js';
@@ -93,7 +93,11 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Container Management',
     hue: '255,122,0',
     items: [
-      { path: '/cds', icon: Lock, label: 'Container Management' },
+      // Ship, not a padlock — the padlock was E-lock Ops, and it survived the
+      // rename. Orbit reads NAV_GROUPS, so this glyph is also the app tile
+      // inside the folder and the row in search; GROUP_COVER already uses Ship
+      // for the folder itself, so they now agree.
+      { path: '/cds', icon: Ship, label: 'Container Management' },
     ],
   },
 ];
