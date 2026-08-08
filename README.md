@@ -1,504 +1,85 @@
-Sonalit v4
+# Sonalit
 
-<p align="center">
-  <h3 align="center">Fleet Operations. Convoy Intelligence. Logistics Command.</h3>
-  <p align="center">
-    Enterprise-grade platform for fleet management, convoy coordination, telemetry, operational security, and AI-assisted logistics.
-  </p>
-</p>---
+Sonalit is a containerised logistics platform focused on container tracking, bookings and e-lock management. This repository contains a full-stack monorepo with web UIs, APIs, and services.
 
-Overview
+## Quick start (development)
 
-Sonalit is a modern fleet operations and logistics command platform built for organizations operating complex vehicle fleets, field assets, security convoys, humanitarian missions, and large-scale logistics networks.
+1. Install dependencies
 
-The platform combines real-time fleet visibility, telemetry processing, convoy orchestration, operational intelligence, AI-powered assistance, and security monitoring into a unified operational ecosystem.
+   pnpm install
 
-Unlike traditional fleet tracking solutions, Sonalit is designed as a scalable operational platform capable of supporting multi-tenant deployments, distributed teams, mission-critical workflows, and data-driven decision making.
+2. Start the web app
 
----
+   cd apps/web
+   pnpm dev
 
-Why Sonalit
-
-Modern fleet operations require more than GPS tracking.
-
-Organizations need:
-
-- Real-time operational awareness
-- Intelligent dispatch and coordination
-- Telemetry-driven decision making
-- Fleet security and risk monitoring
-- AI-powered operational support
-- High-availability infrastructure
-- Enterprise-grade scalability
-
-Sonalit delivers all of these capabilities through a unified platform architecture.
+3. Open http://localhost:3000 and use the sidebar to navigate to the Container Management (CDS) section.
 
 ---
 
-Core Platform Capabilities
+## CDS — Container Management
 
-Fleet Management
+The CDS (Container Data System) is the sub-app inside the web frontend used to manage containers, drivers, transporters, bookings and related operational views.
 
-Comprehensive fleet lifecycle management.
+Location
 
-Features
+- apps/web/src/pages/cds — the CDS pages and views
 
-- Vehicle registry management
-- Driver management
-- Asset assignment
-- Fleet utilization monitoring
-- Maintenance scheduling
-- Fuel tracking
-- Compliance monitoring
-- Operational reporting
+Key files
 
----
+- apps/web/src/pages/cds/CDSDashboard.tsx — main CDS UI (sidebar, header, dashboard, live map and view router)
+- apps/web/src/pages/cds/CDSDataPage.tsx — data views for Containers, Drivers, Transporters and Bookings
+- apps/web/src/pages/cds/components.js — shared UI primitives used by the CDS pages (DataTable, DrawerField, StatusBadge, FilterChip, KPICard, CDSDrawer, CDSToastContainer, etc.)
+- apps/web/src/pages/cds/hooks.js — data hooks (useContainers, useCDSDrivers, useCDSTransporters, useDashboardKPIs, useActivity, useTrips)
+- apps/web/src/pages/cds/store.js — lightweight UI store for active view / drawer state
+- apps/web/src/pages/cds/constants.js — CDS view definitions (CDS_VIEWS) used to build the rail/sidebar
 
-Convoy Intelligence
+Running the CDS locally
 
-Purpose-built convoy coordination capabilities.
+1. Start the web app (see Quick start above).
+2. Open the web UI and click the truck icon then navigate to the Container Management (CDS) section in the left rail.
+3. The Dashboard provides a Live Map, KPIs and Recent Activity. Use the "Live" and "Containers" views for real-time fleet and container lists.
 
-Features
+Developer notes
 
-- Mission planning
-- Convoy creation
-- Vehicle grouping
-- Route management
-- Waypoint monitoring
-- Checkpoint verification
-- Convoy status visibility
-- Incident reporting
+- Views and navigation: CDSDashboard imports CDS_VIEWS from `constants.js` and maps view ids to components. To add a new CDS view:
+  - Add an entry to `CDS_VIEWS` in `constants.js` with an `id`, `label` and `sub` text.
+  - Add the component import to `CDSDashboard.tsx` and include it in the main render switch (the list of `activeView === '...'` checks).
+  - Add an icon to `VIEW_ICONS` mapping in `CDSDashboard.tsx`.
 
----
+- Data tables & drawers: `CDSDataPage.tsx` contains the table layouts and drawer detail views for Containers, Drivers and Transporters. Data access is provided by hooks in `hooks.js`. Mantain the `keyExtractor` and `searchable` props on `DataTable` components for consistent behaviour.
 
-Real-Time Operations Center
+- State & drawer: The `useCDSStore()` hook exposes `activeView` and `openDrawer` utilities used across the CDS app. Use `openDrawer(title, content)` to show the standard right-side drawer for item details.
 
-Unified command and control environment.
+- Styling & tokens: The CDS pages use shared CSS variables and tailwind-like utility classes. Keep UI snippets compact and prefer small, focused components for new fields.
 
-Features
+- Tests & linting: Run the same monorepo test/lint commands when changing CDS code:
 
-- Live operational dashboards
-- Fleet status monitoring
-- Geographic visualization
-- Operational alerts
-- Event management
-- Mission oversight
-- Multi-team coordination
+  pnpm lint
+  pnpm test
+
+Useful links
+
+- CDS dashboard source: apps/web/src/pages/cds/CDSDashboard.tsx
+- CDS data views: apps/web/src/pages/cds/CDSDataPage.tsx
 
 ---
 
-Telemetry Platform
+## Repo layout (short)
 
-High-throughput telemetry ingestion and processing.
+- apps/web — React/TypeScript web application (dashboard, CDS sub-app)
+- apps/api — backend services (if present)
+- packages/* — shared libraries and components
 
-Features
+## Contributing
 
-- GPS ingestion
-- Vehicle telemetry
-- Sensor integrations
-- Real-time event processing
-- Device management
-- Telemetry analytics
-- Historical playback
+- Fork the repo and submit PRs against the default branch.
+- Run linters and tests before opening a PR.
 
----
+## License
 
-AI Copilot
-
-AI-powered operational assistance.
-
-Capabilities
-
-- Natural language queries
-- Fleet intelligence
-- Operational recommendations
-- Incident analysis
-- Report generation
-- Workflow assistance
-- Decision support
-
-Example:
-
-Show delayed vehicles in Nairobi.
-
-Identify fuel anomalies this week.
-
-Generate a convoy readiness report.
-
-Summarize today's incidents.
+Add license info here (e.g., MIT).
 
 ---
-
-Guardian Security Layer
-
-Operational security and risk management services.
-
-Features
-
-- Threat monitoring
-- Security events
-- Access auditing
-- Identity enforcement
-- Role-based permissions
-- Incident workflows
-- Compliance visibility
-
----
-
-Analytics & Intelligence
-
-Transform operational data into actionable insights.
-
-Features
-
-- Executive dashboards
-- Fleet KPIs
-- Operational metrics
-- Trend analysis
-- Historical reporting
-- Predictive analytics
-- Performance benchmarking
-
----
-
-Architecture
-
-Sonalit follows a distributed microservices architecture designed for scalability, resilience, and operational isolation.
-
-flowchart TD
-
-    User[Users]
-
-    User --> Web[Web Platform]
-
-    Web --> Gateway[API Gateway]
-
-    Gateway --> Fleet[Fleet Service]
-    Gateway --> Convoy[Convoy Service]
-    Gateway --> Guardian[Guardian Service]
-    Gateway --> Analytics[Analytics Service]
-    Gateway --> Telemetry[Telemetry Service]
-    Gateway --> Copilot[AI Copilot]
-
-    Fleet --> PostgreSQL[(PostgreSQL)]
-    Convoy --> PostgreSQL
-
-    Telemetry --> NATS[NATS]
-    Telemetry --> Redis[(Redis)]
-
-    Analytics --> PostgreSQL
-    Analytics --> Redis
-
-    Copilot --> AI[AI Models]
-
-    Fleet --> Observability
-    Convoy --> Observability
-    Telemetry --> Observability
-    Analytics --> Observability
-
-    Observability[OpenTelemetry]
-
----
-
-Technology Stack
-
-Frontend
-
-- React 18
-- TypeScript
-- Modern SPA Architecture
-- Component-driven UI
-
-Backend
-
-- Node.js
-- TypeScript
-- Domain-oriented microservices
-
-Databases
-
-- PostgreSQL
-- Redis
-
-Messaging & Events
-
-- NATS
-
-Observability
-
-- OpenTelemetry
-- Distributed tracing
-- Metrics collection
-- Structured logging
-
-AI Layer
-
-- Sonalit Copilot
-- Operational Intelligence Services
-
-Infrastructure
-
-- Docker
-- CI/CD Pipelines
-- Containerized Services
-- Automated Deployments
-
----
-
-Repository Structure
-
-sonalit/
-
-├── apps/
-│   ├── web
-│   ├── admin
-│   └── operations
-│
-├── services/
-│   ├── fleet-service
-│   ├── convoy-service
-│   ├── telemetry-service
-│   ├── analytics-service
-│   ├── guardian-service
-│   ├── copilot-service
-│   └── gateway-service
-│
-├── packages/
-│   ├── shared
-│   ├── ui
-│   ├── types
-│   └── utilities
-│
-├── infrastructure/
-│   ├── docker
-│   ├── monitoring
-│   ├── deployment
-│   └── automation
-│
-└── docs/
-
----
-
-Getting Started
-
-Prerequisites
-
-- Node.js 20+
-- PNPM
-- PostgreSQL
-- Redis
-- Docker
-
----
-
-Installation
-
-Clone the repository:
-
-git clone https://github.com/fleetsatpro/Sonalit.git
-cd Sonalit
-
-Install dependencies:
-
-pnpm install
-
-Configure environment variables:
-
-cp .env.example .env
-
----
-
-Running Development Environment
-
-Start all services:
-
-pnpm dev
-
-Run individual services:
-
-pnpm --filter fleet-service dev
-pnpm --filter convoy-service dev
-pnpm --filter telemetry-service dev
-pnpm --filter analytics-service dev
-
----
-
-Production Build
-
-pnpm build
-
----
-
-Testing
-
-Run all tests:
-
-pnpm test
-
-Run service-specific tests:
-
-pnpm test --filter fleet-service
-
----
-
-Security Model
-
-Security is built into every layer of the platform.
-
-Authentication
-
-- Secure user authentication
-- Token-based access control
-- Session management
-
-Authorization
-
-- Role-based access control (RBAC)
-- Fine-grained permissions
-- Multi-tenant isolation
-
-Auditability
-
-- Audit trails
-- Event tracking
-- Compliance reporting
-
----
-
-Observability
-
-Sonalit provides enterprise-grade monitoring capabilities.
-
-Included
-
-- Service health monitoring
-- Distributed tracing
-- Metrics aggregation
-- Log analysis
-- Performance diagnostics
-- Incident visibility
-
----
-
-Deployment Options
-
-Cloud
-
-Deploy to public cloud providers.
-
-- AWS
-- Azure
-- Google Cloud
-
-Hybrid
-
-Support for mixed cloud and on-premise environments.
-
-On-Premise
-
-Deploy within customer infrastructure.
-
-Ideal for:
-
-- Government
-- Security organizations
-- Regulated industries
-- Mission-critical operations
-
----
-
-Product Roadmap
-
-Sonalit v4
-
-In Progress
-
-- Enhanced AI Copilot
-- Advanced telemetry analytics
-- Expanded convoy workflows
-- Operational intelligence engine
-- Improved observability
-
-Planned
-
-- Predictive maintenance
-- Route optimization
-- Fleet risk scoring
-- Mobile operations suite
-- Satellite telemetry integrations
-
----
-
-Sonalit v5
-
-Future platform vision:
-
-- Autonomous fleet orchestration
-- AI mission planning
-- Geospatial intelligence engine
-- Digital twin operations
-- Multi-region command architecture
-- Advanced operational simulations
-
----
-
-Use Cases
-
-Logistics Companies
-
-Manage fleets, drivers, deliveries, and operational performance.
-
-Security Operations
-
-Coordinate convoys, monitor risks, and manage field assets.
-
-Humanitarian Missions
-
-Track vehicles, monitor routes, and improve mission visibility.
-
-Government Agencies
-
-Manage operational fleets with security, compliance, and accountability.
-
-Enterprise Mobility
-
-Optimize fleet utilization and operational efficiency.
-
----
-
-Contributing
-
-We welcome contributions from developers, operators, designers, and domain experts.
-
-Workflow
-
-1. Fork repository
-2. Create feature branch
-3. Commit changes
-4. Submit pull request
-5. Pass review process
-
----
-
-License
 
 Copyright © Sonalit.
-
-All rights reserved.
-
-This repository contains proprietary software and intellectual property.
-
-Unauthorized use, modification, distribution, or reproduction is prohibited without written permission.
-
----
-
-Mission
-
-«Build the operating system for fleet, convoy, and field operations across Africa and the world.»
-
----
-
-<p align="center">
-  <strong>Sonalit</strong><br/>
-  Enterprise Fleet Operations Platform
-</p>
