@@ -479,6 +479,76 @@ router.get('/bookings', asyncHandler(async (req, res) => {
   );
   res.json({ data: result.rows, total: parseInt(total.rows[0].count, 10) });
 }));
+// Container manifest — the yard's working view: one row per container rather
+// than per booking, flattened across booking, trip, transporter, vehicle,
+// driver and lock so the whole sheet comes back in a single round trip.
+//
+// Each of the four assignment columns COALESCEs the container's own value over
+// the trip-derived one. A container sits clamped in the yard with a driver
+// written against it long before a trip exists; once dispatched, the trip is
+// the better source. This reads correctly in both states.
+//
+// Declared before /bookings/:id so Express doesn't match "manifest" as an :id.
+router.get('/bookings/manifest', asyncHandler(async (req, res) => {
+  const { limit, offset } = paginate(req.query);
+  const filters = ['bc.deleted_at IS NULL', 'b.deleted_at IS NULL'];
+  const params = [];
+  // Scope containers explicitly, as the sibling container routes do. The join
+  // to cds_bookings already limits rows to this org's bookings via that table's
+  // RLS, but that would still surface a container carrying another org's
+  // org_id if one were ever attached to this org's booking — and this row
+  // carries driver name, contact and lock number. 076 adds the missing policy
+  // on cds_booking_containers; this is the belt to that pair of braces.
+  params.push(req.user.org_id);
+  filters.push(`bc.org_id=$${params.length}`);
+  if (req.query.booking_id) { params.push(req.query.booking_id); filters.push(`bc.booking_id=$${params.length}`); }
+  if (req.query.yard_status) { params.push(req.query.yard_status); filters.push(`bc.yard_status=$${params.length}`); }
+  if (req.query.status) { params.push(req.query.status); filters.push(`bc.status=$${params.length}`); }
+  if (req.query.search) {
+    params.push(`%${req.query.search}%`);
+    filters.push(`(bc.container_number ILIKE $${params.length} OR bc.seal_number ILIKE $${params.length}
+                   OR b.booking_number ILIKE $${params.length} OR b.reference ILIKE $${params.length}
+                   OR b.vessel ILIKE $${params.length})`);
+  }
+  const where = filters.join(' AND ');
+
+  const FROM = `
+    FROM cds_booking_containers bc
+    JOIN cds_bookings b ON b.id = bc.booking_id
+    LEFT JOIN cds_customers cu ON cu.id = b.customer_id
+    LEFT JOIN cds_trips t ON t.id = bc.trip_id
+    LEFT JOIN cds_transporters tr ON tr.id = t.transporter_id
+    LEFT JOIN cds_vehicles v ON v.id = t.vehicle_id
+    LEFT JOIN cds_drivers d ON d.id = t.driver_id
+    LEFT JOIN cds_electronic_locks el ON el.id = t.lock_id
+    WHERE ${where}`;
+
+  params.push(limit, offset);
+  const result = await req.db(
+    `SELECT bc.id, bc.booking_id, bc.container_number, bc.seal_number, bc.iso_type,
+            bc.weight_kg, bc.status, bc.notes,
+            bc.clamped_at, bc.unclamped_at, bc.terminal, bc.yard_status, bc.invoiced,
+            bc.trailer_reg,
+            b.booking_number, b.reference AS file_reference, b.vessel, b.commodity,
+            b.controller, cu.company_name AS customer_name,
+            t.trip_number, t.status AS trip_status,
+            COALESCE(bc.transporter_name, tr.company_name) AS transporter,
+            COALESCE(bc.horse_reg,        v.registration)  AS horse_reg,
+            COALESCE(bc.driver_name,      d.name)          AS driver_name,
+            COALESCE(bc.driver_contact,   d.phone)         AS driver_contact,
+            COALESCE(bc.lock_number,      el.serial)       AS lock_number
+     ${FROM}
+     -- Newest booking first, but a booking's containers stay contiguous and in
+     -- container order. Sorting by clamp time instead would scatter the
+     -- containers of one booking across the sheet, which is the opposite of how
+     -- it gets read — you check a booking's containers together.
+     ORDER BY b.created_at DESC, b.booking_number, bc.container_number
+     LIMIT $${params.length - 1} OFFSET $${params.length}`, params
+  );
+  const total = await req.db(`SELECT COUNT(*) ${FROM}`, params.slice(0, -2));
+  res.json({ data: result.rows, total: parseInt(total.rows[0].count, 10) });
+}));
+
 router.get('/bookings/:id', asyncHandler(async (req, res) => {
   await getRow(req, res, 'cds_bookings', {
     joins: 'LEFT JOIN cds_customers cu ON cu.id=t.customer_id',
@@ -549,7 +619,10 @@ router.post('/bookings', asyncHandler(async (req, res) => {
 router.patch('/bookings/:id', asyncHandler(async (req, res) => {
   await updateRow(req, res, 'cds_bookings',
     ['customer_id', 'pickup_location', 'delivery_location', 'commodity', 'weight_kg',
-     'container_type', 'container_size', 'shipping_line', 'eta', 'status', 'notes']
+     'container_type', 'container_size', 'shipping_line', 'eta', 'status', 'notes',
+     // Manifest columns: vessel and the AW file ref are shown per container row,
+     // and the controller owns the booking on the desk.
+     'vessel', 'voyage', 'reference', 'controller']
   );
 }));
 
@@ -580,7 +653,13 @@ router.post('/bookings/:id/containers', asyncHandler(async (req, res) => {
   res.status(201).json({ data: inserted });
 }));
 router.patch('/bookings/:id/containers/:cid', asyncHandler(async (req, res) => {
-  const allowed = ['container_number', 'iso_type', 'seal_number', 'weight_kg', 'notes', 'status'];
+  const allowed = [
+    'container_number', 'iso_type', 'seal_number', 'weight_kg', 'notes', 'status',
+    // Manifest columns — see 20260807_076_cds_container_ops.sql.
+    'clamped_at', 'unclamped_at', 'terminal', 'yard_status', 'invoiced',
+    'lock_number', 'transporter_name', 'horse_reg', 'trailer_reg',
+    'driver_name', 'driver_contact',
+  ];
   const sets = []; const params = [];
   for (const k of allowed) {
     if (req.body[k] !== undefined) { params.push(req.body[k]); sets.push(`${k}=$${params.length}`); }
