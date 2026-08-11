@@ -183,6 +183,38 @@ export function useExtractBooking() {
   });
 }
 
+// The yard sheet: one row per container, already joined across booking, trip,
+// transporter, vehicle, driver and lock. Separate from useBookingContainers,
+// which is scoped to a single booking's expanded card.
+export function useBookingManifest(filters?: SearchFilters) {
+  return useQuery<ApiList>({
+    queryKey: ['cds', 'manifest', filters],
+    queryFn: async () => {
+      const { data } = await cdsApi.get('/bookings/manifest', { params: filters });
+      return data;
+    },
+  });
+}
+
+// Manifest cells are edited in place, so invalidate the manifest as well as the
+// per-booking container list — the same row appears in both.
+export function useUpdateBookingContainer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ bookingId, containerId, patch }: {
+      bookingId: string; containerId: string; patch: Record<string, unknown>;
+    }) => {
+      const { data } = await cdsApi.patch(`/bookings/${bookingId}/containers/${containerId}`, patch);
+      return data;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['cds', 'manifest'] });
+      void qc.invalidateQueries({ queryKey: ['cds', 'booking-containers'] });
+      void qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
+    },
+  });
+}
+
 export function useBookingContainers(bookingId: string) {
   return useQuery<ApiList>({
     queryKey: ['cds', 'booking-containers', bookingId],

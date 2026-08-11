@@ -6,6 +6,7 @@ import {
   useExtractBooking, useBookingContainers,
 } from './hooks.js';
 import { LoadingState } from './CDSDashboard.js';
+import { BookingManifest } from './BookingManifest.js';
 
 type Row = Record<string, unknown>;
 const s = (v: unknown) => String(v ?? '—');
@@ -181,6 +182,10 @@ export function BookingsView() {
   const createBooking = useCreateBooking();
   const extractBooking = useExtractBooking();
   const [showForm, setShowForm] = useState(false);
+  // Manifest first: the yard works off the container sheet, and a booking is
+  // only ever a header for the containers under it. Cards stay available for
+  // the per-booking lifecycle view.
+  const [view, setView] = useState<'manifest' | 'cards'>('manifest');
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [form, setForm] = useState<Record<string, string>>({});
@@ -302,18 +307,32 @@ export function BookingsView() {
         </div>
       </div>
 
-      <div className="flex gap-1.5 mb-4 flex-wrap">
-        {statuses.map(st => (
+      <div className="flex gap-1.5 mb-4 flex-wrap items-center">
+        {(['manifest', 'cards'] as const).map(v => (
+          <button key={v} onClick={() => setView(v)}
+            className="px-2.5 py-1 rounded-full text-[11px] font-semibold capitalize transition-colors cursor-pointer"
+            style={view === v
+              ? { color: '#0c0e12', background: '#F0B429', border: '1px solid #F0B429' }
+              : { color: '#94a3b8', background: 'transparent', border: '1px solid rgba(255,255,255,.1)' }}>
+            {v}
+          </button>
+        ))}
+        <span className="w-px h-4 bg-white/10 mx-1" />
+        {/* Status chips filter bookings, which the manifest does not list — it
+            has its own yard-state filter over containers. */}
+        {view === 'cards' && statuses.map(st => (
           <FilterChip key={st} label={st === 'all' ? 'All' : st.charAt(0).toUpperCase() + st.slice(1)} active={filter === st} onClick={() => setFilter(st)} />
         ))}
       </div>
 
-      <div className="space-y-2">
-        {rows.map(r => <BookingCard key={s(r['id'])} booking={r} />)}
-        {rows.length === 0 && (
-          <div className="text-center py-16 text-text-2 font-mono text-sm">No bookings found</div>
-        )}
-      </div>
+      {view === 'manifest' ? <BookingManifest /> : (
+        <div className="space-y-2">
+          {rows.map(r => <BookingCard key={s(r['id'])} booking={r} />)}
+          {rows.length === 0 && (
+            <div className="text-center py-16 text-text-2 font-mono text-sm">No bookings found</div>
+          )}
+        </div>
+      )}
 
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) reset(); }}>
