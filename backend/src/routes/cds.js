@@ -493,6 +493,14 @@ router.get('/bookings/manifest', asyncHandler(async (req, res) => {
   const { limit, offset } = paginate(req.query);
   const filters = ['bc.deleted_at IS NULL', 'b.deleted_at IS NULL'];
   const params = [];
+  // Scope containers explicitly, as the sibling container routes do. The join
+  // to cds_bookings already limits rows to this org's bookings via that table's
+  // RLS, but that would still surface a container carrying another org's
+  // org_id if one were ever attached to this org's booking — and this row
+  // carries driver name, contact and lock number. 076 adds the missing policy
+  // on cds_booking_containers; this is the belt to that pair of braces.
+  params.push(req.user.org_id);
+  filters.push(`bc.org_id=$${params.length}`);
   if (req.query.booking_id) { params.push(req.query.booking_id); filters.push(`bc.booking_id=$${params.length}`); }
   if (req.query.yard_status) { params.push(req.query.yard_status); filters.push(`bc.yard_status=$${params.length}`); }
   if (req.query.status) { params.push(req.query.status); filters.push(`bc.status=$${params.length}`); }

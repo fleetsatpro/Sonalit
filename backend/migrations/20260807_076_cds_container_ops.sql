@@ -46,6 +46,31 @@ END $$;
 ALTER TABLE cds_bookings
   ADD COLUMN IF NOT EXISTS controller VARCHAR(100);
 
+-- cds_booking_containers has no RLS. 073 enabled it on all 19 cds_* tables, but
+-- this table was created afterwards in 075 and never joined that list, so it is
+-- the one CDS table with no org_isolation policy. Every route compensates with
+-- an explicit org_id filter, which works right up until one forgets.
+--
+-- Same shape as 073: guard on pg_policies because Postgres has no
+-- CREATE POLICY IF NOT EXISTS.
+--
+-- Safe to enable. withOrg() switches to the non-owner role sonalit_app so the
+-- policy binds, while the intelligence cron in app.js queries through the raw
+-- pool as owner and bypasses RLS — exactly as it already does against
+-- cds_bookings, which has carried this same policy since 073.
+ALTER TABLE cds_booking_containers ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+     WHERE tablename = 'cds_booking_containers'
+       AND policyname = 'org_isolation_cds_booking_containers'
+  ) THEN
+    CREATE POLICY org_isolation_cds_booking_containers ON cds_booking_containers
+      USING (org_id = current_setting('app.current_org_id', true)::UUID);
+  END IF;
+END $$;
+
 -- The manifest sorts by clamp time and filters by yard state, so index both.
 CREATE INDEX IF NOT EXISTS idx_cds_booking_containers_clamped
   ON cds_booking_containers(clamped_at DESC) WHERE deleted_at IS NULL;

@@ -169,6 +169,10 @@ export function useCreateBooking() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
       qc.invalidateQueries({ queryKey: ['cds', 'booking-containers'] });
+      // The manifest is the default Bookings view, so a booking created with
+      // containers must refresh it — otherwise the modal closes onto a table
+      // that still doesn't show the rows just added.
+      qc.invalidateQueries({ queryKey: ['cds', 'manifest'] });
       qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
     },
   });
