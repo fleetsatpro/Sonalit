@@ -1,4 +1,3 @@
-```tsx
 import React, { useEffect, useRef, useState } from "react";
 
 const SHOTS = [
@@ -74,7 +73,10 @@ export function CDSIntro({ onDone }: CDSIntroProps) {
     };
   }, [shot]);
 
-  const currentShot: Shot = SHOTS[shot];
+  // shot starts at 0 and only advances while shot < SHOTS.length - 1, so the
+  // index is always in bounds; noUncheckedIndexedAccess can't see that, and
+  // the fallback is unreachable rather than a real default.
+  const currentShot: Shot = SHOTS[shot] ?? SHOTS[0];
 
   return (
     <div className="fixed inset-0 z-[9999] overflow-hidden bg-black">
@@ -1215,4 +1217,3 @@ if (typeof document !== "undefined") {
   }
 
 }
-```
