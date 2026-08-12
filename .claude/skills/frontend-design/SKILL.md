@@ -16,9 +16,11 @@ triggers:
   - tailwind
   - style
 related_skills:
+  - frontend-design/accessibility
   - frontend-design/dark-theme-mastery
   - frontend-design/data-dense-design
   - frontend-design/design-review
+  - frontend-design/frontend-stack
   - frontend-design/map-ux
   - frontend-design/motion-design
   - frontend-design/responsive-layout
