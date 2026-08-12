@@ -18,6 +18,7 @@ triggers:
 related_skills:
   - frontend-design/design-review
   - frontend-design/motion-design
+  - frontend-design/ui-ux-pro
   - frontend-patterns
 ---
 
