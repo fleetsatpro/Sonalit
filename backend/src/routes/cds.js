@@ -683,6 +683,289 @@ router.delete('/bookings/:id/containers/:cid', asyncHandler(async (req, res) => 
 }));
 
 // ══════════════════════════════════════════════════════════════
+// 9b. Field ops — Yard & Port teams (mobile APK)
+// ══════════════════════════════════════════════════════════════
+
+// Queue for the Yard team: containers still pending clamp on active bookings.
+router.get('/field/yard-queue', asyncHandler(async (req, res) => {
+  const result = await req.db(`
+    SELECT b.id AS booking_id, b.booking_number, b.pickup_location, b.delivery_location,
+           b.commodity, b.shipping_line, b.vessel, b.eta, cu.company_name AS customer_name,
+           COUNT(bc.id)::int AS pending_containers,
+           COUNT(bc2.id)::int AS total_containers
+      FROM cds_bookings b
+      LEFT JOIN cds_customers cu ON cu.id = b.customer_id
+      LEFT JOIN cds_booking_containers bc  ON bc.booking_id = b.id AND bc.deleted_at IS NULL AND bc.status = 'pending'
+      LEFT JOIN cds_booking_containers bc2 ON bc2.booking_id = b.id AND bc2.deleted_at IS NULL
+     WHERE b.deleted_at IS NULL
+       AND b.status NOT IN ('cancelled','completed','billed')
+     GROUP BY b.id, cu.company_name
+    HAVING COUNT(bc.id) > 0
+     ORDER BY b.eta NULLS LAST, b.created_at DESC
+     LIMIT 100
+  `);
+  res.json({ data: result.rows });
+}));
+
+// Queue for the Port team: containers dispatched and heading to / arrived at port.
+router.get('/field/port-queue', asyncHandler(async (req, res) => {
+  const result = await req.db(`
+    SELECT bc.id, bc.container_number, bc.iso_type, bc.seal_number, bc.weight_kg,
+           bc.status, bc.updated_at,
+           b.id AS booking_id, b.booking_number, b.delivery_location, cu.company_name AS customer_name,
+           t.id AS trip_id, t.trip_number, t.status AS trip_status,
+           t.departed_at,
+           v.registration AS vehicle_reg,
+           d.name AS driver_name, d.phone AS driver_phone,
+           l.serial AS lock_serial, l.location AS lock_location,
+           gps.lat AS last_lat, gps.lng AS last_lng, gps.device_time AS last_seen
+      FROM cds_booking_containers bc
+      JOIN cds_bookings b ON b.id = bc.booking_id
+      LEFT JOIN cds_customers cu ON cu.id = b.customer_id
+      LEFT JOIN cds_trips t ON t.id = bc.trip_id AND t.deleted_at IS NULL
+      LEFT JOIN cds_vehicles v ON v.id = t.vehicle_id
+      LEFT JOIN cds_drivers d ON d.id = t.driver_id
+      LEFT JOIN cds_electronic_locks l ON l.id = t.lock_id
+      LEFT JOIN LATERAL (
+        SELECT lat, lng, device_time
+          FROM cds_gps_history
+         WHERE vehicle_id = t.vehicle_id
+         ORDER BY device_time DESC
+         LIMIT 1
+      ) gps ON true
+     WHERE bc.deleted_at IS NULL
+       AND bc.status IN ('assigned','in_transit','at_port')
+     ORDER BY bc.updated_at DESC
+     LIMIT 200
+  `);
+  res.json({ data: result.rows });
+}));
+
+// Yard team clamps an e-lock onto one container of a booking.
+// Auto-creates supporting rows (transporter, driver, vehicle, container, lock, trip)
+// so the mobile UI only needs to send free-text names and numbers.
+router.post('/bookings/:id/containers/:cid/clamp', asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+  const { id: bookingId, cid: bcId } = req.params;
+  const {
+    lock_serial, transporter_name, truck_reg, trailer_reg,
+    driver_name, driver_phone, notes, lat, lng,
+  } = req.body || {};
+
+  if (!lock_serial || !truck_reg || !driver_name) {
+    return res.status(400).json({ error: 'lock_serial, truck_reg and driver_name are required' });
+  }
+
+  const bc = await req.db(
+    `SELECT bc.*, b.booking_number, b.customer_id
+       FROM cds_booking_containers bc
+       JOIN cds_bookings b ON b.id = bc.booking_id
+      WHERE bc.id=$1 AND bc.booking_id=$2 AND bc.deleted_at IS NULL`,
+    [bcId, bookingId]
+  );
+  if (!bc.rows.length) return res.status(404).json({ error: 'Booking container not found' });
+  if (bc.rows[0].status !== 'pending' && bc.rows[0].status !== 'assigned') {
+    return res.status(409).json({ error: `Container already ${bc.rows[0].status}` });
+  }
+
+  // Upsert transporter
+  let transporterId = null;
+  if (transporter_name) {
+    const t = await req.db(
+      'SELECT id FROM cds_transporters WHERE company_name ILIKE $1 AND deleted_at IS NULL LIMIT 1',
+      [transporter_name.trim()]
+    );
+    if (t.rows.length) transporterId = t.rows[0].id;
+    else {
+      const ins = await req.db(
+        `INSERT INTO cds_transporters (company_name, code, org_id) VALUES ($1,$2,$3) RETURNING id`,
+        [transporter_name.trim(), genCode('TR'), orgId]
+      );
+      transporterId = ins.rows[0].id;
+    }
+  }
+
+  // Upsert driver
+  const dr = await req.db(
+    'SELECT id FROM cds_drivers WHERE name ILIKE $1 AND deleted_at IS NULL LIMIT 1',
+    [driver_name.trim()]
+  );
+  const driverId = dr.rows.length ? dr.rows[0].id : (await req.db(
+    `INSERT INTO cds_drivers (name, phone, transporter_id, org_id) VALUES ($1,$2,$3,$4) RETURNING id`,
+    [driver_name.trim(), driver_phone || null, transporterId, orgId]
+  )).rows[0].id;
+
+  // Upsert vehicle (truck horse)
+  const ve = await req.db(
+    'SELECT id FROM cds_vehicles WHERE registration ILIKE $1 AND deleted_at IS NULL LIMIT 1',
+    [truck_reg.trim()]
+  );
+  const vehicleId = ve.rows.length ? ve.rows[0].id : (await req.db(
+    `INSERT INTO cds_vehicles (registration, fleet_number, transporter_id, org_id) VALUES ($1,$2,$3,$4) RETURNING id`,
+    [truck_reg.trim(), genCode('FL'), transporterId, orgId]
+  )).rows[0].id;
+
+  // Upsert physical container (in cds_containers) so it can be tracked on the map
+  let containerId = null;
+  if (bc.rows[0].container_number) {
+    const co = await req.db(
+      'SELECT id FROM cds_containers WHERE number ILIKE $1 AND deleted_at IS NULL LIMIT 1',
+      [bc.rows[0].container_number]
+    );
+    containerId = co.rows.length ? co.rows[0].id : (await req.db(
+      `INSERT INTO cds_containers (number, iso_type, org_id) VALUES ($1,$2,$3) RETURNING id`,
+      [bc.rows[0].container_number, bc.rows[0].iso_type || '20GP', orgId]
+    )).rows[0].id;
+  }
+
+  // Upsert e-lock and put it into 'locked' state on this container/vehicle
+  const lk = await req.db(
+    'SELECT id FROM cds_electronic_locks WHERE serial ILIKE $1 AND deleted_at IS NULL LIMIT 1',
+    [lock_serial.trim()]
+  );
+  const lockId = lk.rows.length ? lk.rows[0].id : (await req.db(
+    `INSERT INTO cds_electronic_locks (serial, provider, status, org_id) VALUES ($1,$2,$3,$4) RETURNING id`,
+    [lock_serial.trim(), 'SecuriSat', 'assigned', orgId]
+  )).rows[0].id;
+  await req.db(
+    `UPDATE cds_electronic_locks SET status='locked', container_id=$1, vehicle_id=$2, updated_at=NOW() WHERE id=$3`,
+    [containerId, vehicleId, lockId]
+  );
+
+  // Create the trip and link it back to the booking container
+  const trailerNote = trailer_reg ? `Trailer: ${trailer_reg.trim()}${notes ? ' | ' + notes : ''}` : (notes || null);
+  const trip = await req.db(
+    `INSERT INTO cds_trips
+      (trip_number, customer_id, driver_id, vehicle_id, container_id, lock_id, transporter_id,
+       origin, destination, commodity, seal_number, weight_kg, booking_id, notes, status, org_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'locked',$15) RETURNING *`,
+    [
+      genCode('CDS'), bc.rows[0].customer_id, driverId, vehicleId, containerId, lockId, transporterId,
+      null, null, null, bc.rows[0].seal_number, bc.rows[0].weight_kg,
+      bookingId, trailerNote, orgId,
+    ]
+  );
+
+  await req.db(
+    `UPDATE cds_booking_containers
+        SET status='in_transit', trip_id=$1, updated_at=NOW()
+      WHERE id=$2`,
+    [trip.rows[0].id, bcId]
+  );
+
+  // Bump booking to 'assigned' if still in draft/pending
+  await req.db(
+    `UPDATE cds_bookings
+        SET status = CASE WHEN status IN ('draft','pending') THEN 'assigned' ELSE status END,
+            updated_at = NOW()
+      WHERE id=$1`,
+    [bookingId]
+  );
+
+  // Fire alert so supervisors see it in real-time
+  await req.db(
+    `INSERT INTO cds_alerts (org_id, type, severity, title, message, entity_type, entity_id, escalation_level)
+     VALUES ($1,'container_clamped','info',$2,$3,'container',$4,'operator')`,
+    [orgId,
+     `Container clamped — ${bc.rows[0].container_number || bc.rows[0].booking_number}`,
+     `${req.user.name || 'Yard team'} clamped e-lock ${lock_serial} on ${bc.rows[0].container_number || bcId} for booking ${bc.rows[0].booking_number} (${truck_reg} / ${driver_name}).`,
+     bcId]
+  );
+
+  await req.db(
+    `INSERT INTO cds_audit_logs (action, entity_type, entity_id, user_id, user_name, after_data, org_id)
+     VALUES ('clamp','booking_container',$1,$2,$3,$4,$5)`,
+    [bcId, req.user.id, req.user.name || null,
+     JSON.stringify({ lock_serial, transporter_name, truck_reg, trailer_reg, driver_name, driver_phone, lat, lng }),
+     orgId]
+  );
+
+  res.json({ data: { trip: trip.rows[0], booking_container_id: bcId } });
+}));
+
+// Port team unclamps the e-lock — container has arrived and been delivered.
+router.post('/bookings/:id/containers/:cid/unclamp', asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+  const { id: bookingId, cid: bcId } = req.params;
+  const { notes, lat, lng } = req.body || {};
+
+  const bc = await req.db(
+    `SELECT bc.*, b.booking_number, t.id AS trip_id, t.lock_id
+       FROM cds_booking_containers bc
+       JOIN cds_bookings b ON b.id = bc.booking_id
+       LEFT JOIN cds_trips t ON t.id = bc.trip_id
+      WHERE bc.id=$1 AND bc.booking_id=$2 AND bc.deleted_at IS NULL`,
+    [bcId, bookingId]
+  );
+  if (!bc.rows.length) return res.status(404).json({ error: 'Booking container not found' });
+  if (bc.rows[0].status === 'delivered' || bc.rows[0].status === 'completed') {
+    return res.status(409).json({ error: 'Container already delivered' });
+  }
+
+  const now = new Date();
+
+  if (bc.rows[0].lock_id) {
+    await req.db(
+      `UPDATE cds_electronic_locks
+          SET status='available', container_id=NULL, vehicle_id=NULL, updated_at=NOW()
+        WHERE id=$1`,
+      [bc.rows[0].lock_id]
+    );
+  }
+
+  if (bc.rows[0].trip_id) {
+    await req.db(
+      `UPDATE cds_trips
+          SET status='lock_removed', delivered_at=COALESCE(delivered_at, NOW()), updated_at=NOW()
+        WHERE id=$1`,
+      [bc.rows[0].trip_id]
+    );
+  }
+
+  await req.db(
+    `UPDATE cds_booking_containers
+        SET status='delivered', updated_at=$1
+      WHERE id=$2`,
+    [now, bcId]
+  );
+
+  // If every container on the booking is delivered, mark the booking delivered too.
+  const remaining = await req.db(
+    `SELECT COUNT(*)::int AS c FROM cds_booking_containers
+      WHERE booking_id=$1 AND deleted_at IS NULL AND status NOT IN ('delivered','completed')`,
+    [bookingId]
+  );
+  if (remaining.rows[0].c === 0) {
+    await req.db(`UPDATE cds_bookings SET status='delivered', updated_at=NOW() WHERE id=$1`, [bookingId]);
+  }
+
+  // Notify CDS controllers / supervisors
+  await req.db(
+    `INSERT INTO cds_alerts (org_id, type, severity, title, message, entity_type, entity_id, escalation_level)
+     VALUES ($1,'container_delivered','info',$2,$3,'container',$4,'supervisor')`,
+    [orgId,
+     `Container unclamped at port — ${bc.rows[0].container_number || bc.rows[0].booking_number}`,
+     `${req.user.name || 'Port team'} unclamped container ${bc.rows[0].container_number || bcId} on booking ${bc.rows[0].booking_number} at ${now.toISOString()}.${notes ? ' Notes: ' + notes : ''}`,
+     bcId]
+  );
+
+  await req.db(
+    `INSERT INTO cds_audit_logs (action, entity_type, entity_id, user_id, user_name, after_data, org_id)
+     VALUES ('unclamp','booking_container',$1,$2,$3,$4,$5)`,
+    [bcId, req.user.id, req.user.name || null,
+     JSON.stringify({ notes, lat, lng, unclamped_at: now.toISOString() }),
+     orgId]
+  );
+
+  res.json({
+    data: {
+      booking_container_id: bcId, status: 'delivered', unclamped_at: now.toISOString(),
+      unclamped_by: req.user.name || req.user.email || 'unknown',
+    },
+  });
+}));
+
+// ══════════════════════════════════════════════════════════════
 // 10. Alerts
 // ══════════════════════════════════════════════════════════════
 

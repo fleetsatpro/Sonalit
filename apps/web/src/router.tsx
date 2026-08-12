@@ -105,6 +105,12 @@ const portalViewRoute = createRoute({ getParentRoute: () => rootRoute, path: '/p
 // ─── Container Delivery System — fullscreen with its own rail + chrome ────────
 const cdsDashRoute = createRoute({ getParentRoute: () => authFullscreenRoute, path: '/cds', component: lazyRouteComponent(() => import('./pages/cds/CDSDashboard.js')) });
 
+// ─── CDS Field ops (Yard/Port teams — mobile / APK) ───────────────────────────
+// Fullscreen, no chrome. Same auth as everything else.
+const fieldHomeRoute = createRoute({ getParentRoute: () => authFullscreenRoute, path: '/field', component: lazyRouteComponent(() => import('./pages/field/FieldHome.js')) });
+const fieldYardRoute = createRoute({ getParentRoute: () => authFullscreenRoute, path: '/field/yard', component: lazyRouteComponent(() => import('./pages/field/YardApp.js')) });
+const fieldPortRoute = createRoute({ getParentRoute: () => authFullscreenRoute, path: '/field/port', component: lazyRouteComponent(() => import('./pages/field/PortApp.js')) });
+
 // Portal client routes
 const portalRootRoute = createRoute({ getParentRoute: () => rootRoute, id: 'portal-root', component: lazyRouteComponent(() => import('./pages/portal/PortalLayout.js')) });
 const portalLoginRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/login', component: lazyRouteComponent(() => import('./pages/portal/PortalLogin.js')) });
@@ -137,6 +143,7 @@ const routeTree = rootRoute.addChildren([
     convoyReportsRoute,
     driveReplayRoute,
     cdsDashRoute,
+    fieldHomeRoute, fieldYardRoute, fieldPortRoute,
   ]),
   authRoute.addChildren([
     commandRoute,

@@ -230,6 +230,57 @@ export function useBookingContainers(bookingId: string) {
   });
 }
 
+export function useYardQueue() {
+  return useQuery<{ data: Record<string, unknown>[] }>({
+    queryKey: ['cds', 'field', 'yard-queue'],
+    queryFn: async () => (await cdsApi.get('/field/yard-queue')).data,
+    refetchInterval: 15_000,
+  });
+}
+
+export function usePortQueue() {
+  return useQuery<{ data: Record<string, unknown>[] }>({
+    queryKey: ['cds', 'field', 'port-queue'],
+    queryFn: async () => (await cdsApi.get('/field/port-queue')).data,
+    refetchInterval: 15_000,
+  });
+}
+
+export function useClampBookingContainer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ bookingId, cid, ...payload }: { bookingId: string; cid: string; [k: string]: unknown }) => {
+      const { data } = await cdsApi.post(`/bookings/${bookingId}/containers/${cid}/clamp`, payload);
+      return data;
+    },
+    onSuccess: (_d, { bookingId }) => {
+      qc.invalidateQueries({ queryKey: ['cds', 'field'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'booking-containers', bookingId] });
+      qc.invalidateQueries({ queryKey: ['cds', 'trips'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
+    },
+  });
+}
+
+export function useUnclampBookingContainer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ bookingId, cid, ...payload }: { bookingId: string; cid: string; [k: string]: unknown }) => {
+      const { data } = await cdsApi.post(`/bookings/${bookingId}/containers/${cid}/unclamp`, payload);
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cds', 'field'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'booking-containers'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'trips'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'alerts'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
+    },
+  });
+}
+
 export function useAddBookingContainers() {
   const qc = useQueryClient();
   return useMutation({

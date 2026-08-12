@@ -18,6 +18,11 @@ import type { CapacitorConfig } from '@capacitor/cli';
  * To move off the default Vercel production alias, change `server.url` to your
  * custom domain (e.g. https://app.sonalit.io).
  */
+// Root URL is the same web deployment used by the admin/desktop app. Field
+// crews (Yard + Port) navigate to /field once signed in — a launcher screen
+// there picks their role and drops them into the mobile-first clamp/unclamp
+// flow. Keeping the shell pointed at the site root (not /field) means the
+// same APK also works for anyone who opens the admin URL on their phone.
 const PROD_URL = 'https://sonalit.vercel.app';
 
 const config: CapacitorConfig = {

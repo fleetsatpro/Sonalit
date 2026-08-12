@@ -3942,6 +3942,46 @@
         }
       }
     },
+    "/api/v1/cds/field/yard-queue": {
+      "get": {
+        "operationId": "get_api_v1_cds_field_yard_queue",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/field/port-queue": {
+      "get": {
+        "operationId": "get_api_v1_cds_field_port_queue",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/bookings/{id}/containers/{cid}/clamp": {
+      "post": {
+        "operationId": "post_api_v1_cds_bookings_id_containers_cid_clamp",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/bookings/{id}/containers/{cid}/unclamp": {
+      "post": {
+        "operationId": "post_api_v1_cds_bookings_id_containers_cid_unclamp",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/cds/alerts": {
       "get": {
         "operationId": "get_api_v1_cds_alerts",
