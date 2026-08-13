@@ -1,10 +1,8 @@
-import React from 'react';
-
 interface SearchInputProps {
   value: string;
   onChange: (value: string) => void;
-  placeholder?: string;
-  className?: string;
+  placeholder?: string | undefined;
+  className?: string | undefined;
 }
 
 export function SearchInput({ value, onChange, placeholder = 'Search…', className = '' }: SearchInputProps) {

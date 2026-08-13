@@ -81,7 +81,7 @@ export default function Incidents() {
             </thead>
             <tbody>
               {filtered.map((inc) => {
-                const sev = severityColors[inc.severity] ?? severityColors.medium;
+                const sev = severityColors[inc.severity] ?? severityColors['medium']!;
                 return (
                   <tr key={inc.id} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors">
                     <td className="px-3.5 py-3 font-mono font-semibold text-text-0">{inc.id}</td>

@@ -100,9 +100,9 @@ function ConfidenceRing({ value, size = 32 }: { value: number; size?: number }) 
 }
 
 export default function AIInbox() {
-  const [selectedId, setSelectedId] = useState(conversations[0].id);
+  const [selectedId, setSelectedId] = useState(conversations[0]!.id);
   const [search, setSearch] = useState('');
-  const selected = conversations.find((c) => c.id === selectedId) ?? conversations[0];
+  const selected = conversations.find((c) => c.id === selectedId) ?? conversations[0]!;
 
   const filteredConversations = search
     ? conversations.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()) || c.preview.toLowerCase().includes(search.toLowerCase()))
@@ -143,7 +143,7 @@ export default function AIInbox() {
                 <div className="text-2xs text-text-2 truncate mt-0.5">{c.preview}</div>
                 <div className="flex items-center gap-1.5 mt-1">
                   <span className="text-[9px] font-mono text-text-2 bg-ink-3 px-1.5 py-0.5 rounded">{categoryLabels[c.category]}</span>
-                  <Badge variant={statusVariants[c.status]}>{c.status.toUpperCase()}</Badge>
+                  <Badge variant={statusVariants[c.status] ?? 'neutral'}>{c.status.toUpperCase()}</Badge>
                   {c.unread > 0 && (
                     <span className="ml-auto bg-cds-orange text-white text-[9px] font-bold w-[16px] h-[16px] rounded-full flex items-center justify-center">{c.unread}</span>
                   )}
@@ -162,7 +162,7 @@ export default function AIInbox() {
               <div className="text-[13px] font-semibold text-text-0">{selected.name}</div>
               <div className="text-2xs text-text-2 font-mono">{selected.phone} · {selected.online ? <span className="text-cds-teal">Online</span> : 'Offline'}</div>
             </div>
-            <Badge variant={statusVariants[selected.status]}>{selected.status.toUpperCase()}</Badge>
+            <Badge variant={statusVariants[selected.status] ?? 'neutral'}>{selected.status.toUpperCase()}</Badge>
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">

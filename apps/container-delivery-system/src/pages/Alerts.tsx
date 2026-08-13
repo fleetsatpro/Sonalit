@@ -74,7 +74,7 @@ export default function Alerts() {
       <div className="glass p-0 mt-4">
         <div className="space-y-0">
           {filtered.map((a) => {
-            const style = severityStyles[a.severity] ?? severityStyles.info;
+            const style = severityStyles[a.severity] ?? severityStyles['info']!;
             return (
               <div key={a.id} className={`flex items-start gap-3 px-4 py-3.5 border-b border-hair cursor-pointer hover:bg-ink-2 transition-colors ${!a.acknowledged ? 'bg-ink-1' : ''}`}>
                 <div className={`w-2 h-2 rounded-full mt-1.5 flex-none ${style.dot} ${!a.acknowledged ? 'animate-pulse-dot' : 'opacity-40'}`} />

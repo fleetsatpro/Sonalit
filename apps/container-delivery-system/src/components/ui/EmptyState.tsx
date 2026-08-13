@@ -1,11 +1,11 @@
-import React from 'react';
+import type { ReactNode } from 'react';
 import { Button } from './Button.js';
 
 interface EmptyStateProps {
-  icon?: React.ReactNode;
+  icon?: ReactNode | undefined;
   title: string;
-  description?: string;
-  action?: { label: string; onClick: () => void };
+  description?: string | undefined;
+  action?: { label: string; onClick: () => void } | undefined;
 }
 
 export function EmptyState({ icon, title, description, action }: EmptyStateProps) {

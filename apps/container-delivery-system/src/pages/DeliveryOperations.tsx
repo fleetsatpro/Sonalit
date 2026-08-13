@@ -87,7 +87,7 @@ export default function DeliveryOperations() {
                       <td className="px-3.5 py-3 font-mono text-text-1">{q.arrivalTime}</td>
                       <td className="px-3.5 py-3 font-mono text-cds-amber">{q.waitTime}</td>
                       <td className="px-3.5 py-3 font-mono text-text-0">{q.bay}</td>
-                      <td className="px-3.5 py-3"><Badge variant={s.variant}>{s.label}</Badge></td>
+                      <td className="px-3.5 py-3"><Badge variant={s?.variant ?? 'neutral'}>{s?.label ?? q.status.toUpperCase()}</Badge></td>
                       <td className="px-3.5 py-3">
                         <div className="flex gap-1.5">
                           {q.status === 'awaiting_bay' && <Button size="sm">Assign Bay</Button>}

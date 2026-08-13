@@ -86,7 +86,7 @@ export default function Dashboard() {
               <div className="w-[26px] h-[26px] rounded-lg flex-none flex items-center justify-center bg-ink-3 text-cds-orange">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                   {a.icon === 'checkpoint' && <circle cx="12" cy="12" r="9" />}
-                  <path d={iconPaths[a.icon] ?? iconPaths.checkpoint} />
+                  <path d={iconPaths[a.icon] ?? iconPaths['checkpoint']!} />
                 </svg>
               </div>
               <div>

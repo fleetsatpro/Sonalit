@@ -34,7 +34,7 @@ export default function LiveOperations() {
               <path d="M50,60 C 180,140 260,220 340,280 S 520,380 560,420" fill="none" stroke="#ff7a00" strokeWidth="2" strokeDasharray="6 5" opacity="0.55" />
             </svg>
             {activeTrips.filter((t) => t.status !== 'delivered').map((_, i) => (
-              <div key={i} className="absolute w-[11px] h-[11px] rounded-full bg-cds-orange shadow-[0_0_0_4px_rgba(255,122,0,0.13),0_0_14px_rgba(255,122,0,0.35)] animate-pulse-dot" style={{ left: `${12 + i * 11}%`, top: `${18 + (i % 5) * 15}%`, animationDelay: `${i * 0.3}s` }} title={activeTrips[i].id} />
+              <div key={i} className="absolute w-[11px] h-[11px] rounded-full bg-cds-orange shadow-[0_0_0_4px_rgba(255,122,0,0.13),0_0_14px_rgba(255,122,0,0.35)] animate-pulse-dot" style={{ left: `${12 + i * 11}%`, top: `${18 + (i % 5) * 15}%`, animationDelay: `${i * 0.3}s` }} title={activeTrips[i]?.id} />
             ))}
             <div className="absolute w-[9px] h-[9px] rounded-sm bg-cds-teal shadow-glow-teal" style={{ left: '92%', top: '88%' }} />
             <div className="absolute bottom-3.5 left-4 flex gap-3.5 z-10 text-2xs text-text-1 font-mono">

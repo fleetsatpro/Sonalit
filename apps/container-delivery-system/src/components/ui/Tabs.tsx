@@ -1,5 +1,3 @@
-import React from 'react';
-
 interface Tab {
   id: string;
   label: string;

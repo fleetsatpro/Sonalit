@@ -1,4 +1,3 @@
-import React from 'react';
 import { useUIStore } from '@/stores/ui.js';
 
 const dotColors: Record<string, string> = {
@@ -20,7 +19,7 @@ export function ToastContainer() {
           className="bg-ink-3 border border-glass-border-strong rounded-xl px-4 py-3 flex items-center gap-2.5 text-sm-tight text-text-0 shadow-toast animate-fade-in-up cursor-pointer hover:bg-ink-4 transition-colors"
           onClick={() => removeToast(toast.id)}
         >
-          <span className={`w-2 h-2 rounded-full flex-none ${dotColors[toast.type] ?? dotColors.success}`} />
+          <span className={`w-2 h-2 rounded-full flex-none ${dotColors[toast.type] ?? dotColors['success']}`} />
           {toast.message}
         </div>
       ))}
