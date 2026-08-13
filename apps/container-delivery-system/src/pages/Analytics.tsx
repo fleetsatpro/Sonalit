@@ -1,5 +1,6 @@
 import React from 'react';
 import { Card } from '@/components/ui/Card.js';
+import { PageHeader } from '@/components/ui/PageHeader.js';
 
 const deliveryData = [
   { month: 'Aug', delivered: 142, delayed: 8 },
@@ -64,7 +65,7 @@ function DonutChart({ data, size = 140 }: { data: { label: string; value: number
       </svg>
       <div className="space-y-1.5">
         {data.map((d) => (
-          <div key={d.label} className="flex items-center gap-2 text-[11px]">
+          <div key={d.label} className="flex items-center gap-2 text-2xs">
             <span className="w-2 h-2 rounded-full flex-none" style={{ background: d.color }} />
             <span className="text-text-1">{d.label}</span>
             <span className="font-mono text-text-0 ml-auto">{d.value}%</span>
@@ -78,10 +79,10 @@ function DonutChart({ data, size = 140 }: { data: { label: string; value: number
 export default function Analytics() {
   return (
     <div className="p-6 pb-10 animate-fade-in">
-      <div className="mb-4">
-        <h2 className="font-display font-bold text-[17px] m-0">Analytics</h2>
-        <p className="text-[12px] text-text-2 m-0 mt-1">Fleet performance, delivery trends, and operational insights — last 30 days.</p>
-      </div>
+      <PageHeader
+        title="Analytics"
+        description="Fleet performance, delivery trends, and operational insights — last 30 days."
+      />
 
       <div className="grid grid-cols-4 gap-3 mb-4">
         {[
@@ -91,16 +92,16 @@ export default function Analytics() {
           { label: 'Incidents', value: '7', delta: '-3', up: true },
         ].map((kpi) => (
           <Card key={kpi.label} className="p-3.5">
-            <div className="text-[10px] font-mono text-text-2 uppercase tracking-wider">{kpi.label}</div>
+            <div className="text-2xs font-mono text-text-2 uppercase tracking-wider">{kpi.label}</div>
             <div className="text-[22px] font-display font-bold text-text-0 mt-1">{kpi.value}</div>
-            <div className={`text-[11px] font-mono mt-0.5 ${kpi.up ? 'text-cds-teal' : 'text-cds-red'}`}>{kpi.delta} vs prev period</div>
+            <div className={`text-2xs font-mono mt-0.5 ${kpi.up ? 'text-cds-teal' : 'text-cds-red'}`}>{kpi.delta} vs prev period</div>
           </Card>
         ))}
       </div>
 
       <div className="grid grid-cols-2 gap-4 mb-4">
         <Card className="p-4">
-          <div className="font-display font-bold text-[13px] mb-3">Delivery Trends (6 months)</div>
+          <div className="font-display font-bold text-sm-tight mb-3">Delivery Trends (6 months)</div>
           <div className="flex items-end gap-2 h-[160px]">
             {deliveryData.map((d) => (
               <div key={d.month} className="flex-1 flex flex-col items-center gap-1">
@@ -114,36 +115,36 @@ export default function Analytics() {
                     style={{ height: `${(d.delayed / maxDelivered) * 120}px` }}
                   />
                 </div>
-                <span className="text-[10px] font-mono text-text-2">{d.month}</span>
+                <span className="text-2xs font-mono text-text-2">{d.month}</span>
               </div>
             ))}
           </div>
-          <div className="flex gap-4 mt-3 text-[10.5px] font-mono text-text-1">
+          <div className="flex gap-4 mt-3 text-2xs font-mono text-text-1">
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-cds-orange" />Delivered</span>
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-cds-red" />Delayed</span>
           </div>
         </Card>
 
         <Card className="p-4">
-          <div className="font-display font-bold text-[13px] mb-4">Fleet Utilization</div>
+          <div className="font-display font-bold text-sm-tight mb-4">Fleet Utilization</div>
           <DonutChart data={fleetUtil} />
         </Card>
       </div>
 
       <div className="grid grid-cols-2 gap-4 mb-4">
         <Card className="p-4">
-          <div className="font-display font-bold text-[13px] mb-4">Lock Health Distribution</div>
+          <div className="font-display font-bold text-sm-tight mb-4">Lock Health Distribution</div>
           <DonutChart data={lockHealth} />
         </Card>
 
         <Card className="p-4">
-          <div className="font-display font-bold text-[13px] mb-3">Route Performance</div>
+          <div className="font-display font-bold text-sm-tight mb-3">Route Performance</div>
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[12px]">
+            <table className="w-full border-collapse text-xs-tight">
               <thead>
                 <tr>
                   {['Route', 'Trips', 'Avg Time', 'On-Time', 'Score'].map((h) => (
-                    <th key={h} className="text-left font-mono text-[9.5px] tracking-wider text-text-2 uppercase pb-2 font-medium">{h}</th>
+                    <th key={h} className="text-left font-mono text-2xs tracking-wider text-text-2 uppercase pb-2 font-medium">{h}</th>
                   ))}
                 </tr>
               </thead>

@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Card } from '@/components/ui/Card.js';
 import { Button } from '@/components/ui/Button.js';
 import { StatusBadge, RiskBadge } from '@/components/ui/Badge.js';
 import { FilterChip } from '@/components/ui/DataTable.js';
 import { ProgressBar } from '@/components/ui/ProgressBar.js';
-import { DrawerField } from '@/components/ui/Drawer.js';
+import { DrawerField, DrawerSection } from '@/components/ui/Drawer.js';
+import { PageHeader } from '@/components/ui/PageHeader.js';
+import { SearchInput } from '@/components/ui/SearchInput.js';
 import { useUIStore } from '@/stores/ui.js';
 import type { ShipmentStatus } from '@/types/index.js';
 
@@ -38,21 +39,25 @@ export default function Shipments() {
   const openShipmentDrawer = (s: typeof shipments[0]) => {
     openDrawer(s.id, (
       <div>
-        <div className="text-[11px] text-text-2 font-mono mb-4">{s.commodity} · {s.transporter}</div>
-        <DrawerField label="Status" value={<StatusBadge status={s.status} />} />
-        <DrawerField label="Customer" value={s.customer} />
-        <DrawerField label="Container" value={s.container ?? '—'} />
-        <DrawerField label="Vehicle" value={s.vehicle ?? '—'} />
-        <DrawerField label="Driver" value={s.driver ?? '—'} />
-        <DrawerField label="Lock" value={s.lock ?? '—'} />
-        <DrawerField label="Booking Ref" value={s.bookingRef} />
-        <DrawerField label="Seal Number" value={s.sealNumber ?? '—'} />
-        <DrawerField label="Origin" value={s.origin} />
-        <DrawerField label="Destination" value={s.destination} />
-        <DrawerField label="ETA" value={s.eta} />
-        <DrawerField label="Risk" value={<RiskBadge risk={s.risk} />} />
-        <DrawerField label="Progress" value={`${s.progress}%`} />
-        <div className="flex gap-2 mt-4">
+        <div className="text-2xs text-text-2 font-mono mb-4">{s.commodity} · {s.transporter}</div>
+        <DrawerSection title="Shipment Details">
+          <DrawerField label="Status" value={<StatusBadge status={s.status} />} />
+          <DrawerField label="Customer" value={s.customer} />
+          <DrawerField label="Container" value={s.container ?? '—'} />
+          <DrawerField label="Vehicle" value={s.vehicle ?? '—'} />
+          <DrawerField label="Driver" value={s.driver ?? '—'} />
+          <DrawerField label="Lock" value={s.lock ?? '—'} />
+        </DrawerSection>
+        <DrawerSection title="Route">
+          <DrawerField label="Booking Ref" value={s.bookingRef} />
+          <DrawerField label="Seal Number" value={s.sealNumber ?? '—'} />
+          <DrawerField label="Origin" value={s.origin} />
+          <DrawerField label="Destination" value={s.destination} />
+          <DrawerField label="ETA" value={s.eta} />
+          <DrawerField label="Risk" value={<RiskBadge risk={s.risk} />} />
+          <DrawerField label="Progress" value={<ProgressBar value={s.progress} showLabel />} />
+        </DrawerSection>
+        <div className="flex gap-2 mt-5">
           <Button className="flex-1" onClick={() => addToast('Route exported as PDF')}>Export PDF</Button>
           <Button variant="ghost" className="flex-1" onClick={() => addToast('AI summary generated')}>AI Summary</Button>
         </div>
@@ -62,45 +67,42 @@ export default function Shipments() {
 
   return (
     <div className="p-6 pb-10 animate-fade-in">
-      <div className="flex items-center justify-between mb-1">
-        <div>
-          <h2 className="font-display font-bold text-[17px] m-0">Shipments</h2>
-          <p className="text-[12px] text-text-2 m-0 mt-1">{shipments.length} shipments across all stages of the delivery lifecycle.</p>
-        </div>
-        <Button icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>}>
-          New Shipment
-        </Button>
-      </div>
+      <PageHeader
+        title="Shipments"
+        description={`${shipments.length} shipments across all stages of the delivery lifecycle.`}
+        actions={
+          <Button icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>}>
+            New Shipment
+          </Button>
+        }
+      />
 
-      <div className="flex items-center gap-2.5 mt-4 mb-4 flex-wrap">
+      <div className="flex items-center gap-2.5 mb-4 flex-wrap">
         <FilterChip label={`All (${shipments.length})`} active={filter === 'all'} onClick={() => setFilter('all')} />
         <FilterChip label={`In Transit (${shipments.filter((s) => s.status === 'in_transit').length})`} active={filter === 'in_transit'} onClick={() => setFilter('in_transit')} />
         <FilterChip label={`Delivered (${shipments.filter((s) => s.status === 'delivered').length})`} active={filter === 'delivered'} onClick={() => setFilter('delivered')} />
         <FilterChip label={`Created (${shipments.filter((s) => s.status === 'created').length})`} active={filter === 'created'} onClick={() => setFilter('created')} />
-        <div className="h-[34px] rounded-[9px] bg-ink-2 border border-[rgba(255,255,255,0.07)] flex items-center gap-[7px] px-[11px] text-text-2 text-[12.5px] ml-auto min-w-[220px]">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
-          <input className="bg-transparent border-none outline-none text-text-0 font-sans flex-1" placeholder="Search shipments…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        </div>
+        <SearchInput value={search} onChange={setSearch} placeholder="Search shipments…" className="ml-auto" />
       </div>
 
-      <Card className="p-0">
+      <div className="glass p-0">
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[12.5px]">
+          <table className="w-full border-collapse text-xs-tight">
             <thead>
               <tr>
                 {['Shipment', 'Status', 'Customer', 'Container', 'Vehicle / Driver', 'Commodity', 'Progress', 'Risk', 'ETA'].map((h) => (
-                  <th key={h} className="text-left font-mono text-[10px] tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">{h}</th>
+                  <th key={h} className="text-left font-mono text-2xs tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {filtered.map((s) => (
-                <tr key={s.id} className="border-t border-[rgba(255,255,255,0.07)] cursor-pointer hover:bg-ink-2 transition-colors" onClick={() => openShipmentDrawer(s)}>
-                  <td className="px-3.5 py-3 font-mono text-text-0">{s.id}<div className="text-[10.5px] text-text-2 mt-0.5">{s.reference}</div></td>
+                <tr key={s.id} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors" onClick={() => openShipmentDrawer(s)}>
+                  <td className="px-3.5 py-3 font-mono text-text-0">{s.id}<div className="text-2xs text-text-2 mt-0.5">{s.reference}</div></td>
                   <td className="px-3.5 py-3"><StatusBadge status={s.status} /></td>
                   <td className="px-3.5 py-3 text-text-0">{s.customer}</td>
                   <td className="px-3.5 py-3 font-mono text-text-0">{s.container ?? '—'}</td>
-                  <td className="px-3.5 py-3 text-text-0">{s.vehicle ?? '—'}<div className="text-[10.5px] text-text-2 mt-0.5">{s.driver ?? '—'}</div></td>
+                  <td className="px-3.5 py-3 text-text-0">{s.vehicle ?? '—'}<div className="text-2xs text-text-2 mt-0.5">{s.driver ?? '—'}</div></td>
                   <td className="px-3.5 py-3 text-text-0">{s.commodity}</td>
                   <td className="px-3.5 py-3"><ProgressBar value={s.progress} color={s.risk === 'high' ? 'bg-cds-red' : 'bg-cds-orange'} /></td>
                   <td className="px-3.5 py-3"><RiskBadge risk={s.risk} /></td>
@@ -113,7 +115,7 @@ export default function Shipments() {
             </tbody>
           </table>
         </div>
-      </Card>
+      </div>
     </div>
   );
 }

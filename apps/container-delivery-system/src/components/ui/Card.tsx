@@ -10,10 +10,11 @@ interface CardProps {
 export function Card({ children, className = '', onClick, hover = false }: CardProps) {
   return (
     <div
-      className={`bg-gradient-to-b from-[rgba(255,255,255,0.025)] to-[rgba(255,255,255,0.008)] border border-[rgba(255,255,255,0.07)] rounded-[14px] ${hover ? 'cursor-pointer transition-colors hover:border-[rgba(255,255,255,0.12)]' : ''} ${className}`}
+      className={`glass ${hover ? 'glass-hover cursor-pointer' : ''} ${onClick ? 'cursor-pointer' : ''} ${className}`}
       onClick={onClick}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
     >
       {children}
     </div>

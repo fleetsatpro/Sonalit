@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Card } from '@/components/ui/Card.js';
-import { Badge } from '@/components/ui/Badge.js';
 import { Button } from '@/components/ui/Button.js';
+import { PageHeader } from '@/components/ui/PageHeader.js';
+import { SearchInput } from '@/components/ui/SearchInput.js';
 
 const auditLogs = [
   { id: 'AUD-10041', action: 'lock.assign', entity: 'SSL-2218', entityType: 'lock', user: 'John Kamau', detail: 'Lock SSL-2218 assigned to container TGHU3456789', ip: '196.201.xx.xx', time: '14:30:22' },
@@ -34,35 +34,27 @@ export default function AuditLogs() {
 
   return (
     <div className="p-6 pb-10 animate-fade-in">
-      <div className="flex items-center justify-between mb-1">
-        <div>
-          <h2 className="font-display font-bold text-[17px] m-0">Audit Logs</h2>
-          <p className="text-[12px] text-text-2 m-0 mt-1">Complete operational audit trail. Every action is recorded.</p>
-        </div>
-        <div className="flex gap-2">
+      <PageHeader
+        title="Audit Logs"
+        description="Complete operational audit trail. Every action is recorded."
+        actions={
           <Button variant="ghost" icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>}>
             Export
           </Button>
-        </div>
-      </div>
+        }
+      />
 
       <div className="mt-4 mb-3">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search actions, users, entities..."
-          className="w-full max-w-md bg-ink-2 border border-hair rounded-lg px-3.5 py-2 text-[12.5px] placeholder:text-text-2"
-        />
+        <SearchInput value={search} onChange={setSearch} placeholder="Search actions, users, entities..." className="max-w-md" />
       </div>
 
-      <Card className="p-0">
+      <div className="glass p-0">
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[12.5px]">
+          <table className="w-full border-collapse text-xs-tight">
             <thead>
               <tr>
                 {['Time', 'Action', 'Entity', 'User', 'Detail', 'IP'].map((h) => (
-                  <th key={h} className="text-left font-mono text-[10px] tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">{h}</th>
+                  <th key={h} className="text-left font-mono text-2xs tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -71,35 +63,35 @@ export default function AuditLogs() {
                 const color = actionColors[log.entityType] ?? '#6b7380';
                 return (
                   <tr key={log.id} className="border-t border-hair hover:bg-ink-2 transition-colors">
-                    <td className="px-3.5 py-2.5 font-mono text-text-2 text-[11px] whitespace-nowrap">{log.time}</td>
+                    <td className="px-3.5 py-2.5 font-mono text-text-2 text-2xs whitespace-nowrap">{log.time}</td>
                     <td className="px-3.5 py-2.5">
                       <span
-                        className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold"
+                        className="px-2 py-0.5 rounded text-2xs font-mono font-semibold"
                         style={{ background: `${color}18`, color }}
                       >
                         {log.action}
                       </span>
                     </td>
-                    <td className="px-3.5 py-2.5 font-mono text-text-0 text-[11.5px]">{log.entity}</td>
+                    <td className="px-3.5 py-2.5 font-mono text-text-0 text-2xs">{log.entity}</td>
                     <td className="px-3.5 py-2.5 text-text-0">{log.user}</td>
                     <td className="px-3.5 py-2.5 text-text-1 max-w-[320px] truncate">{log.detail}</td>
-                    <td className="px-3.5 py-2.5 font-mono text-text-2 text-[11px]">{log.ip}</td>
+                    <td className="px-3.5 py-2.5 font-mono text-text-2 text-2xs">{log.ip}</td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
-        <div className="px-4 py-3 border-t border-hair flex items-center justify-between text-[11px] text-text-2">
+        <div className="px-4 py-3 border-t border-hair flex items-center justify-between text-2xs text-text-2">
           <span>Showing {filtered.length} of {auditLogs.length} entries</span>
           <div className="flex gap-1">
-            <button className="px-2.5 py-1 rounded bg-ink-3 text-text-1 hover:text-text-0">Prev</button>
+            <button className="px-2.5 py-1 rounded bg-ink-3 text-text-1 hover:text-text-0 transition-colors">Prev</button>
             <button className="px-2.5 py-1 rounded bg-cds-orange text-white">1</button>
-            <button className="px-2.5 py-1 rounded bg-ink-3 text-text-1 hover:text-text-0">2</button>
-            <button className="px-2.5 py-1 rounded bg-ink-3 text-text-1 hover:text-text-0">Next</button>
+            <button className="px-2.5 py-1 rounded bg-ink-3 text-text-1 hover:text-text-0 transition-colors">2</button>
+            <button className="px-2.5 py-1 rounded bg-ink-3 text-text-1 hover:text-text-0 transition-colors">Next</button>
           </div>
         </div>
-      </Card>
+      </div>
     </div>
   );
 }

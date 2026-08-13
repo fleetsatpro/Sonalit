@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { Card } from '@/components/ui/Card.js';
-import { Badge, StatusBadge } from '@/components/ui/Badge.js';
+import { Badge } from '@/components/ui/Badge.js';
 import { Button } from '@/components/ui/Button.js';
-
-type Tab = 'queue' | 'completed' | 'returned';
+import { Tabs } from '@/components/ui/Tabs.js';
+import { PageHeader } from '@/components/ui/PageHeader.js';
 
 const queueItems = [
   { id: 'TGHU3456789', customer: 'Kenya Coffee Board', container: 'TGHU 345678-9', truck: 'KDK 456P', driver: 'John Kamau', arrivalTime: '14:22', waitTime: '2h 18m', bay: 'Bay 3', status: 'awaiting_unclamp' },
@@ -26,21 +26,21 @@ const statusLabels: Record<string, { label: string; variant: 'ok' | 'warn' | 'ne
 };
 
 export default function DeliveryOperations() {
-  const [tab, setTab] = useState<Tab>('queue');
+  const [tab, setTab] = useState('queue');
 
   return (
     <div className="p-6 pb-10 animate-fade-in">
-      <div className="flex items-center justify-between mb-1">
-        <div>
-          <h2 className="font-display font-bold text-[17px] m-0">Delivery Operations</h2>
-          <p className="text-[12px] text-text-2 m-0 mt-1">Port & destination unclamp queue, bay assignment, and delivery confirmation.</p>
-        </div>
-        <Button icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>}>
-          Manual Entry
-        </Button>
-      </div>
+      <PageHeader
+        title="Delivery Operations"
+        description="Port & destination unclamp queue, bay assignment, and delivery confirmation."
+        actions={
+          <Button icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>}>
+            Manual Entry
+          </Button>
+        }
+      />
 
-      <div className="grid grid-cols-4 gap-3 mt-4">
+      <div className="grid grid-cols-4 gap-3 mb-5">
         {[
           { label: 'In Queue', value: queueItems.length.toString(), color: 'text-cds-orange' },
           { label: 'Avg Wait', value: '1h 20m', color: 'text-cds-amber' },
@@ -48,32 +48,31 @@ export default function DeliveryOperations() {
           { label: 'Bays Active', value: '3 / 8', color: 'text-text-0' },
         ].map((kpi) => (
           <Card key={kpi.label} className="p-3.5">
-            <div className="text-[10px] font-mono text-text-2 uppercase tracking-wider">{kpi.label}</div>
+            <div className="text-2xs font-mono text-text-2 uppercase tracking-wider">{kpi.label}</div>
             <div className={`text-[22px] font-display font-bold mt-1 ${kpi.color}`}>{kpi.value}</div>
           </Card>
         ))}
       </div>
 
-      <div className="flex gap-2 mt-5 mb-3">
-        {(['queue', 'completed', 'returned'] as Tab[]).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-3.5 py-1.5 rounded-full text-[12px] font-medium transition-colors ${tab === t ? 'bg-cds-orange text-white' : 'bg-ink-3 text-text-1 hover:text-text-0'}`}
-          >
-            {t === 'queue' ? `Queue (${queueItems.length})` : t === 'completed' ? `Completed (${completedItems.length})` : 'Returns (0)'}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        tabs={[
+          { id: 'queue', label: 'Queue', count: queueItems.length },
+          { id: 'completed', label: 'Completed', count: completedItems.length },
+          { id: 'returned', label: 'Returns', count: 0 },
+        ]}
+        activeId={tab}
+        onChange={setTab}
+        variant="pills"
+      />
 
-      <Card className="p-0">
+      <div className="glass p-0 mt-4">
         <div className="overflow-x-auto">
           {tab === 'queue' && (
-            <table className="w-full border-collapse text-[12.5px]">
+            <table className="w-full border-collapse text-xs-tight">
               <thead>
                 <tr>
                   {['Container', 'Customer', 'Truck / Driver', 'Arrival', 'Wait Time', 'Bay', 'Status', 'Actions'].map((h) => (
-                    <th key={h} className="text-left font-mono text-[10px] tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">{h}</th>
+                    <th key={h} className="text-left font-mono text-2xs tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -84,7 +83,7 @@ export default function DeliveryOperations() {
                     <tr key={q.id} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors">
                       <td className="px-3.5 py-3 font-mono font-semibold text-text-0">{q.container}</td>
                       <td className="px-3.5 py-3 text-text-0">{q.customer}</td>
-                      <td className="px-3.5 py-3 text-text-0">{q.truck}<div className="text-[10.5px] text-text-2 mt-0.5">{q.driver}</div></td>
+                      <td className="px-3.5 py-3 text-text-0">{q.truck}<div className="text-2xs text-text-2 mt-0.5">{q.driver}</div></td>
                       <td className="px-3.5 py-3 font-mono text-text-1">{q.arrivalTime}</td>
                       <td className="px-3.5 py-3 font-mono text-cds-amber">{q.waitTime}</td>
                       <td className="px-3.5 py-3 font-mono text-text-0">{q.bay}</td>
@@ -104,11 +103,11 @@ export default function DeliveryOperations() {
           )}
 
           {tab === 'completed' && (
-            <table className="w-full border-collapse text-[12.5px]">
+            <table className="w-full border-collapse text-xs-tight">
               <thead>
                 <tr>
                   {['Container', 'Customer', 'Completed At', 'Duration', 'Bay', 'Status'].map((h) => (
-                    <th key={h} className="text-left font-mono text-[10px] tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">{h}</th>
+                    <th key={h} className="text-left font-mono text-2xs tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -128,10 +127,10 @@ export default function DeliveryOperations() {
           )}
 
           {tab === 'returned' && (
-            <div className="flex items-center justify-center h-40 text-text-2 text-[13px]">No pending container returns.</div>
+            <div className="flex items-center justify-center h-40 text-text-2 text-sm-tight">No pending container returns.</div>
           )}
         </div>
-      </Card>
+      </div>
     </div>
   );
 }

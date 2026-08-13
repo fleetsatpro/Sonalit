@@ -1,5 +1,6 @@
 import React from 'react';
 import { useRouter } from '@tanstack/react-router';
+import { useUIStore } from '@/stores/ui.js';
 
 const navSections = [
   { items: [
@@ -35,6 +36,8 @@ const bottomItems = [
 export function Rail() {
   const router = useRouter();
   const currentPath = router.state.location.pathname;
+  const collapsed = useUIStore((s) => s.sidebarCollapsed);
+  const toggleSidebar = useUIStore((s) => s.toggleSidebar);
 
   const isActive = (path: string) => {
     if (path === '/cds') return currentPath === '/cds';
@@ -45,53 +48,61 @@ export function Rail() {
     router.navigate({ to: path });
   };
 
+  const renderItem = (item: typeof navSections[0]['items'][0]) => (
+    <button
+      key={item.id}
+      className={`${collapsed ? 'w-11 h-11 justify-center' : 'w-full h-9 px-3 gap-2.5 justify-start'} rounded-xl flex items-center cursor-pointer relative transition-all border-none bg-transparent ${isActive(item.path) ? 'text-cds-orange bg-cds-orange/12' : 'text-text-2 hover:text-text-0 hover:bg-ink-3'}`}
+      onClick={() => navigate(item.path)}
+      title={collapsed ? item.title : undefined}
+    >
+      {isActive(item.path) && (
+        <span className="absolute -left-[13px] top-1/2 -translate-y-1/2 w-[3px] h-[18px] rounded bg-cds-orange shadow-glow" />
+      )}
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="flex-none">
+        {item.icon}
+      </svg>
+      {!collapsed && (
+        <span className="text-[11.5px] font-medium truncate">{item.title}</span>
+      )}
+    </button>
+  );
+
   return (
-    <div className="w-[76px] bg-ink-1 border-r border-[rgba(255,255,255,0.07)] flex flex-col items-center py-5 gap-1.5 overflow-y-auto scrollbar-thin flex-none">
-      <div
-        className="w-[38px] h-[38px] rounded-[11px] bg-gradient-to-br from-cds-orange to-[#ff9d3d] flex items-center justify-center font-display font-extrabold text-[15px] text-[#0a0a0a] shadow-[0_0_0_1px_rgba(255,255,255,0.13)_inset,0_8px_24px_-8px_rgba(255,122,0,0.35)] mb-5 cursor-pointer flex-none"
-        onClick={() => navigate('/cds')}
-        title="CDS Home"
-      >
-        S
+    <div className={`${collapsed ? 'w-[76px]' : 'w-[200px]'} bg-ink-1 border-r border-hair flex flex-col items-center py-4 gap-0.5 overflow-y-auto scrollbar-thin flex-none transition-all duration-200`}>
+      <div className="flex items-center gap-2.5 mb-4 px-3 w-full">
+        <div
+          className="w-[34px] h-[34px] rounded-[10px] bg-gradient-to-br from-cds-orange to-[#ff9d3d] flex items-center justify-center font-display font-extrabold text-[14px] text-[#0a0a0a] shadow-glow cursor-pointer flex-none"
+          onClick={() => navigate('/cds')}
+          title="CDS Home"
+        >
+          S
+        </div>
+        {!collapsed && (
+          <span className="font-display font-bold text-[13px] text-text-0 truncate">Sonalit CDS</span>
+        )}
       </div>
 
-      {navSections.map((section, si) => (
-        <React.Fragment key={si}>
-          {si > 0 && <div className="w-8 h-px bg-[rgba(255,255,255,0.07)] my-1" />}
-          {section.items.map((item) => (
-            <button
-              key={item.id}
-              className={`w-11 h-11 rounded-xl flex items-center justify-center cursor-pointer relative transition-all border-none bg-transparent ${isActive(item.path) ? 'text-cds-orange bg-cds-orange/15' : 'text-text-2 hover:text-text-0 hover:bg-ink-3'}`}
-              onClick={() => navigate(item.path)}
-              title={item.title}
-            >
-              {isActive(item.path) && (
-                <span className="absolute -left-[13px] top-1/2 -translate-y-1/2 w-[3px] h-[18px] rounded bg-cds-orange shadow-[0_0_12px_rgba(255,122,0,0.35)]" />
-              )}
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
-                {item.icon}
-              </svg>
-            </button>
-          ))}
-        </React.Fragment>
-      ))}
+      <button
+        onClick={toggleSidebar}
+        className={`${collapsed ? 'w-11 h-7' : 'w-full h-7 px-3'} flex items-center justify-center rounded-lg text-text-2 hover:text-text-0 hover:bg-ink-3 border-none bg-transparent cursor-pointer transition-colors mb-2`}
+        title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+          {collapsed ? <><path d="M9 18l6-6-6-6" /></> : <><path d="M15 18l-6-6 6-6" /></>}
+        </svg>
+      </button>
 
-      <div className="mt-auto flex flex-col items-center gap-3.5 pt-2">
-        {bottomItems.map((item) => (
-          <button
-            key={item.id}
-            className={`w-11 h-11 rounded-xl flex items-center justify-center cursor-pointer relative transition-all border-none bg-transparent ${isActive(item.path) ? 'text-cds-orange bg-cds-orange/15' : 'text-text-2 hover:text-text-0 hover:bg-ink-3'}`}
-            onClick={() => navigate(item.path)}
-            title={item.title}
-          >
-            {isActive(item.path) && (
-              <span className="absolute -left-[13px] top-1/2 -translate-y-1/2 w-[3px] h-[18px] rounded bg-cds-orange shadow-[0_0_12px_rgba(255,122,0,0.35)]" />
-            )}
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
-              {item.icon}
-            </svg>
-          </button>
+      <div className={`w-full ${collapsed ? 'px-3.5' : 'px-2.5'} flex flex-col gap-0.5 flex-1`}>
+        {navSections.map((section, si) => (
+          <React.Fragment key={si}>
+            {si > 0 && <div className={`${collapsed ? 'mx-1' : ''} h-px bg-hair my-1.5`} />}
+            {section.items.map(renderItem)}
+          </React.Fragment>
         ))}
+      </div>
+
+      <div className={`w-full ${collapsed ? 'px-3.5' : 'px-2.5'} flex flex-col gap-0.5 pt-2 border-t border-hair mt-2`}>
+        {bottomItems.map(renderItem)}
       </div>
     </div>
   );

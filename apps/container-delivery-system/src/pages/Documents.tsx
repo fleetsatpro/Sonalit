@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Card } from '@/components/ui/Card.js';
 import { Badge } from '@/components/ui/Badge.js';
 import { Button } from '@/components/ui/Button.js';
+import { Tabs } from '@/components/ui/Tabs.js';
+import { PageHeader } from '@/components/ui/PageHeader.js';
 
 type DocFilter = 'all' | 'shipping' | 'customs' | 'inspection' | 'insurance';
 
@@ -26,35 +27,36 @@ export default function Documents() {
 
   return (
     <div className="p-6 pb-10 animate-fade-in">
-      <div className="flex items-center justify-between mb-1">
-        <div>
-          <h2 className="font-display font-bold text-[17px] m-0">Documents</h2>
-          <p className="text-[12px] text-text-2 m-0 mt-1">{documents.length} documents · {documents.filter((d) => d.status === 'pending').length} pending verification</p>
-        </div>
-        <Button icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>}>
-          Upload Document
-        </Button>
-      </div>
+      <PageHeader
+        title="Documents"
+        description={`${documents.length} documents · ${documents.filter((d) => d.status === 'pending').length} pending verification`}
+        actions={
+          <Button icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>}>
+            Upload Document
+          </Button>
+        }
+      />
 
-      <div className="flex gap-2 mt-4 mb-3">
-        {(['all', 'shipping', 'customs', 'inspection', 'insurance'] as DocFilter[]).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`px-3.5 py-1.5 rounded-full text-[12px] font-medium capitalize transition-colors ${filter === f ? 'bg-cds-orange text-white' : 'bg-ink-3 text-text-1 hover:text-text-0'}`}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        tabs={[
+          { id: 'all', label: 'All', count: documents.length },
+          { id: 'shipping', label: 'Shipping' },
+          { id: 'customs', label: 'Customs' },
+          { id: 'inspection', label: 'Inspection' },
+          { id: 'insurance', label: 'Insurance' },
+        ]}
+        activeId={filter}
+        onChange={(id) => setFilter(id as DocFilter)}
+        variant="pills"
+      />
 
-      <Card className="p-0">
+      <div className="glass p-0 mt-4">
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[12.5px]">
+          <table className="w-full border-collapse text-xs-tight">
             <thead>
               <tr>
                 {['Document', 'Type', 'Shipment', 'Size', 'Uploaded By', 'Date', 'Status', ''].map((h) => (
-                  <th key={h} className="text-left font-mono text-[10px] tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">{h}</th>
+                  <th key={h} className="text-left font-mono text-2xs tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -64,14 +66,14 @@ export default function Documents() {
                   <td className="px-3.5 py-3">
                     <div className="flex items-center gap-2.5">
                       <div
-                        className="w-[28px] h-[28px] rounded-lg flex items-center justify-center text-[11px] font-bold flex-none"
+                        className="w-[28px] h-[28px] rounded-lg flex items-center justify-center text-2xs font-bold flex-none"
                         style={{ background: `${typeColors[doc.type]}18`, color: typeColors[doc.type] }}
                       >
                         {typeIcons[doc.type]}
                       </div>
                       <div>
                         <div className="text-text-0 font-medium">{doc.name}</div>
-                        <div className="text-[10.5px] text-text-2 font-mono mt-0.5">{doc.id} · {doc.format}</div>
+                        <div className="text-2xs text-text-2 font-mono mt-0.5">{doc.id} · {doc.format}</div>
                       </div>
                     </div>
                   </td>
@@ -79,7 +81,7 @@ export default function Documents() {
                   <td className="px-3.5 py-3 font-mono text-text-1">{doc.shipment ?? <span className="text-text-2">—</span>}</td>
                   <td className="px-3.5 py-3 font-mono text-text-1">{doc.size}</td>
                   <td className="px-3.5 py-3 text-text-0">{doc.uploadedBy}</td>
-                  <td className="px-3.5 py-3 font-mono text-text-2 text-[11px]">{doc.uploadedAt}</td>
+                  <td className="px-3.5 py-3 font-mono text-text-2 text-2xs">{doc.uploadedAt}</td>
                   <td className="px-3.5 py-3"><Badge variant={statusVariants[doc.status] ?? 'neutral'}>{doc.status.toUpperCase()}</Badge></td>
                   <td className="px-3.5 py-3">
                     <Button size="sm" variant="ghost">
@@ -91,7 +93,7 @@ export default function Documents() {
             </tbody>
           </table>
         </div>
-      </Card>
+      </div>
     </div>
   );
 }

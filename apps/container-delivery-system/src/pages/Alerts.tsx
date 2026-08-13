@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { Card } from '@/components/ui/Card.js';
 import { Badge } from '@/components/ui/Badge.js';
 import { Button } from '@/components/ui/Button.js';
-
-type SeverityFilter = 'all' | 'critical' | 'high' | 'medium' | 'low';
+import { Tabs } from '@/components/ui/Tabs.js';
+import { PageHeader } from '@/components/ui/PageHeader.js';
 
 const alerts = [
   { id: 'ALT-0041', severity: 'critical', type: 'Tamper Detected', entity: 'TGHU3456789', message: 'Lock sensor tamper detected — container door may have been opened.', time: '2m ago', acknowledged: false },
@@ -25,26 +25,26 @@ const severityStyles: Record<string, { dot: string; badge: 'bad' | 'warn' | 'ok'
 };
 
 export default function Alerts() {
-  const [filter, setFilter] = useState<SeverityFilter>('all');
+  const [filter, setFilter] = useState('all');
   const filtered = filter === 'all' ? alerts : alerts.filter((a) => a.severity === filter);
   const unacked = alerts.filter((a) => !a.acknowledged).length;
 
   return (
     <div className="p-6 pb-10 animate-fade-in">
-      <div className="flex items-center justify-between mb-1">
-        <div>
-          <h2 className="font-display font-bold text-[17px] m-0">Alerts</h2>
-          <p className="text-[12px] text-text-2 m-0 mt-1">{unacked} unacknowledged · {alerts.length} total in last 24h</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="ghost">Mark All Read</Button>
-          <Button icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z" /><circle cx="12" cy="12" r="3" /></svg>}>
-            Alert Rules
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Alerts"
+        description={`${unacked} unacknowledged · ${alerts.length} total in last 24h`}
+        actions={
+          <div className="flex gap-2">
+            <Button variant="ghost">Mark All Read</Button>
+            <Button icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z" /><circle cx="12" cy="12" r="3" /></svg>}>
+              Alert Rules
+            </Button>
+          </div>
+        }
+      />
 
-      <div className="grid grid-cols-4 gap-3 mt-4">
+      <div className="grid grid-cols-4 gap-3 mb-5">
         {[
           { label: 'Critical', value: alerts.filter((a) => a.severity === 'critical').length, color: 'text-cds-red' },
           { label: 'High', value: alerts.filter((a) => a.severity === 'high').length, color: 'text-cds-red' },
@@ -52,25 +52,26 @@ export default function Alerts() {
           { label: 'Low', value: alerts.filter((a) => a.severity === 'low').length, color: 'text-cds-teal' },
         ].map((kpi) => (
           <Card key={kpi.label} className="p-3.5">
-            <div className="text-[10px] font-mono text-text-2 uppercase tracking-wider">{kpi.label}</div>
+            <div className="text-2xs font-mono text-text-2 uppercase tracking-wider">{kpi.label}</div>
             <div className={`text-[22px] font-display font-bold mt-1 ${kpi.color}`}>{kpi.value}</div>
           </Card>
         ))}
       </div>
 
-      <div className="flex gap-2 mt-5 mb-3">
-        {(['all', 'critical', 'high', 'medium', 'low'] as SeverityFilter[]).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`px-3.5 py-1.5 rounded-full text-[12px] font-medium capitalize transition-colors ${filter === f ? 'bg-cds-orange text-white' : 'bg-ink-3 text-text-1 hover:text-text-0'}`}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        tabs={[
+          { id: 'all', label: 'All' },
+          { id: 'critical', label: 'Critical' },
+          { id: 'high', label: 'High' },
+          { id: 'medium', label: 'Medium' },
+          { id: 'low', label: 'Low' },
+        ]}
+        activeId={filter}
+        onChange={setFilter}
+        variant="pills"
+      />
 
-      <Card className="p-0">
+      <div className="glass p-0 mt-4">
         <div className="space-y-0">
           {filtered.map((a) => {
             const style = severityStyles[a.severity] ?? severityStyles.info;
@@ -79,12 +80,12 @@ export default function Alerts() {
                 <div className={`w-2 h-2 rounded-full mt-1.5 flex-none ${style.dot} ${!a.acknowledged ? 'animate-pulse-dot' : 'opacity-40'}`} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-[12.5px] font-semibold text-text-0">{a.type}</span>
-                    <span className="text-[10.5px] font-mono text-text-2">{a.entity}</span>
+                    <span className="text-xs-tight font-semibold text-text-0">{a.type}</span>
+                    <span className="text-2xs font-mono text-text-2">{a.entity}</span>
                     <Badge variant={style.badge}>{a.severity.toUpperCase()}</Badge>
                   </div>
-                  <div className="text-[12px] text-text-1 mt-0.5">{a.message}</div>
-                  <div className="text-[10.5px] text-text-2 font-mono mt-1">{a.id} · {a.time}</div>
+                  <div className="text-xs text-text-1 mt-0.5">{a.message}</div>
+                  <div className="text-2xs text-text-2 font-mono mt-1">{a.id} · {a.time}</div>
                 </div>
                 {!a.acknowledged && (
                   <Button size="sm" variant="ghost">ACK</Button>
@@ -93,7 +94,7 @@ export default function Alerts() {
             );
           })}
         </div>
-      </Card>
+      </div>
     </div>
   );
 }

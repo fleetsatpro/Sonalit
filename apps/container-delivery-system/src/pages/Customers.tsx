@@ -1,7 +1,7 @@
 import React from 'react';
-import { Card } from '@/components/ui/Card.js';
 import { Badge } from '@/components/ui/Badge.js';
 import { Button } from '@/components/ui/Button.js';
+import { PageHeader } from '@/components/ui/PageHeader.js';
 
 const customers = [
   { name: 'Kenya Coffee Board', code: 'KCB', contact: 'Dr. Agnes Muthoni', phone: '+254 720 •• 010', email: 'ops@kcb.co.ke', city: 'Nairobi', activeShipments: 3, totalShipments: 245, sla: 97, rating: 4.9, status: 'active' },
@@ -15,44 +15,44 @@ const customers = [
 export default function Customers() {
   return (
     <div className="p-6 pb-10 animate-fade-in">
-      <div className="flex items-center justify-between mb-1">
-        <div>
-          <h2 className="font-display font-bold text-[17px] m-0">Customers</h2>
-          <p className="text-[12px] text-text-2 m-0 mt-1">{customers.length} registered customers · {customers.reduce((a, c) => a + c.activeShipments, 0)} active shipments</p>
-        </div>
-        <Button icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>}>
-          Add Customer
-        </Button>
-      </div>
+      <PageHeader
+        title="Customers"
+        description={`${customers.length} registered customers · ${customers.reduce((a, c) => a + c.activeShipments, 0)} active shipments`}
+        actions={
+          <Button icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>}>
+            Add Customer
+          </Button>
+        }
+      />
 
-      <Card className="p-0 mt-4">
+      <div className="glass p-0">
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[12.5px]">
+          <table className="w-full border-collapse text-xs-tight">
             <thead>
               <tr>
                 {['Customer', 'Code', 'Contact', 'City', 'Active', 'Total Shipments', 'SLA %', 'Rating', 'Status'].map((h) => (
-                  <th key={h} className="text-left font-mono text-[10px] tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">{h}</th>
+                  <th key={h} className="text-left font-mono text-2xs tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {customers.map((c) => (
-                <tr key={c.code} className="border-t border-[rgba(255,255,255,0.07)] cursor-pointer hover:bg-ink-2 transition-colors">
+                <tr key={c.code} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors">
                   <td className="px-3.5 py-3 text-text-0 font-semibold">{c.name}</td>
                   <td className="px-3.5 py-3 font-mono text-text-1">{c.code}</td>
-                  <td className="px-3.5 py-3 text-text-0">{c.contact}<div className="text-[10.5px] text-text-2 mt-0.5">{c.phone}</div></td>
+                  <td className="px-3.5 py-3 text-text-0">{c.contact}<div className="text-2xs text-text-2 mt-0.5">{c.phone}</div></td>
                   <td className="px-3.5 py-3 text-text-0">{c.city}</td>
                   <td className="px-3.5 py-3 font-mono text-text-0">{c.activeShipments}</td>
                   <td className="px-3.5 py-3 font-mono text-text-0">{c.totalShipments}</td>
                   <td className="px-3.5 py-3 font-mono text-text-0">{c.sla}%</td>
-                  <td className="px-3.5 py-3 font-mono text-text-0">★ {c.rating}</td>
+                  <td className="px-3.5 py-3 font-mono text-text-0">{c.rating}</td>
                   <td className="px-3.5 py-3"><Badge variant="ok">ACTIVE</Badge></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </Card>
+      </div>
     </div>
   );
 }
