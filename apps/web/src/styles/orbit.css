@@ -3,13 +3,14 @@
    Type is deliberately heavy and high-contrast: labels sit over a bright,
    moving globe, so weight + glass backing + shadow carry legibility. */
 .orbit{
-  --o-void:#04060c;
-  --o-glass:rgba(10,16,27,.64); --o-glass2:rgba(14,21,35,.84);
-  --o-rim:rgba(130,160,200,.2); --o-rim2:rgba(140,175,220,.34);
-  --o-amber:#ffb23e; --o-cyan:#37e6ff; --o-red:#ff3b5c; --o-green:#2bf0a6; --o-violet:#b79dff;
-  --o-t1:#f4f8ff; --o-t2:#c2d0e8; --o-t3:#8698ba;
-  --o-mono:ui-monospace,"SF Mono",Menlo,Consolas,"Roboto Mono",monospace;
-  --o-sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --o-void:#030711;
+  --o-glass:rgba(13,20,40,.58); --o-glass2:rgba(16,24,46,.86);
+  --o-rim:rgba(140,170,255,.18); --o-rim2:rgba(140,170,255,.32);
+  --o-amber:#ffc93f; --o-cyan:#22e8ff; --o-red:#ff3b5c; --o-green:#29ffb0; --o-violet:#8b6bff;
+  --o-t1:#eaf2ff; --o-t2:#a9b6d6; --o-t3:#7c8aae;
+  --o-mono:'Space Mono',ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --o-sans:'Sora',system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --o-display:'Michroma','Sora',sans-serif;
   --o-sh:0 1px 3px rgba(0,0,0,.7);
   position:fixed; inset:0; height:100dvh; background:var(--o-void); color:var(--o-t1);
   font-family:var(--o-sans); overflow:hidden;
@@ -17,13 +18,14 @@
 /* The launcher overlay reuses the .o-* tiles on deep pages (outside .orbit),
    so the same tokens must resolve there too. */
 .o-overlay{
-  --o-void:#04060c;
-  --o-glass:rgba(10,16,27,.64); --o-glass2:rgba(14,21,35,.84);
-  --o-rim:rgba(130,160,200,.2); --o-rim2:rgba(140,175,220,.34);
-  --o-amber:#ffb23e; --o-cyan:#37e6ff; --o-red:#ff3b5c; --o-green:#2bf0a6; --o-violet:#b79dff;
-  --o-t1:#f4f8ff; --o-t2:#c2d0e8; --o-t3:#8698ba;
-  --o-mono:ui-monospace,"SF Mono",Menlo,Consolas,"Roboto Mono",monospace;
-  --o-sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --o-void:#030711;
+  --o-glass:rgba(13,20,40,.58); --o-glass2:rgba(16,24,46,.86);
+  --o-rim:rgba(140,170,255,.18); --o-rim2:rgba(140,170,255,.32);
+  --o-amber:#ffc93f; --o-cyan:#22e8ff; --o-red:#ff3b5c; --o-green:#29ffb0; --o-violet:#8b6bff;
+  --o-t1:#eaf2ff; --o-t2:#a9b6d6; --o-t3:#7c8aae;
+  --o-mono:'Space Mono',ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --o-sans:'Sora',system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --o-display:'Michroma','Sora',sans-serif;
   position:fixed; inset:0; z-index:400; display:flex; align-items:center; justify-content:center; padding:22px;
   background:rgba(4,6,12,.66); backdrop-filter:blur(9px); -webkit-backdrop-filter:blur(9px); animation:o-fade .2s;
 }
@@ -48,7 +50,7 @@
   border-radius:999px;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
 .o-avatar{width:32px;height:32px;border-radius:50%;flex:none;background:conic-gradient(from 210deg,#f07020,#ffb23e,#f07020);
   display:grid;place-items:center;font:800 12px/1 var(--o-mono);color:#1a1206}
-.o-brand b{font:800 13.5px/1 var(--o-sans);letter-spacing:.01em;color:var(--o-t1)}
+.o-brand b{font:400 12.5px/1 var(--o-display);letter-spacing:.06em;color:var(--o-t1)}
 .o-brand span{font:700 9.5px/1.2 var(--o-mono);letter-spacing:.13em;color:var(--o-t2);text-transform:uppercase}
 .o-spacer{flex:1}
 .o-clockwrap{text-align:center}

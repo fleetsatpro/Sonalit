@@ -62,9 +62,9 @@ const SAT_STYLE: maplibregl.StyleSpecification = {
 const STATUS_COLOR_EXPR: maplibregl.ExpressionSpecification = [
   'match', ['get', 'status'],
   'panic',   '#ff1e1e',
-  'alert',   '#ff4422',
-  'warn',    '#ff9040',
-  'moving',  '#22c55e',
+  'alert',   '#ff3b5c',
+  'warn',    '#ffc93f',
+  'moving',  '#29ffb0',
   'idle',    '#888888',
   'offline', '#444444',
   '#666666',
@@ -374,8 +374,8 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
 
   const selectedVehicle = vehicles?.find(v => v.id === selectedVehicleId) ?? vehicles?.[0] ?? null;
   const panicActive = useDashboardStore((s) => s.panicState?.status === 'active');
-  // Radar color: red during panic, green normally
-  const rc  = panicActive ? '255,30,30'  : '34,197,94';
+  // Radar color: red during panic, cyan normally
+  const rc  = panicActive ? '255,30,30'  : '34,232,255';
   const sig = panicActive ? '#ff1e1e'    : 'var(--d-sig)';
 
   // Resize map when container size changes (e.g. expand/collapse)
@@ -414,9 +414,9 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
         <span style={{ fontFamily: 'Orbitron, sans-serif', fontWeight: 700, fontSize: 11, letterSpacing: '.12em', color: 'var(--d-t1)' }}>TACTICAL MAP</span>
         <span style={{ fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--d-t3)' }}>East Africa · Live</span>
         <div style={{ flex: 1 }} />
-        <LegendDot color='#22c55e' label='OK' />
-        <LegendDot color='#ff9040' label='WARN' />
-        <LegendDot color='#ff4422' label='ALERT' />
+        <LegendDot color='#29ffb0' label='OK' />
+        <LegendDot color='#ffc93f' label='WARN' />
+        <LegendDot color='#ff3b5c' label='ALERT' />
         <LegendDot color='#ff1e1e' label='PANIC' />
         <LegendDot color='#888888' label='IDLE' />
         {/* Traffic toggle — hidden entirely if no TOMTOM_API_KEY is configured server-side */}
@@ -433,7 +433,7 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
         <button
           onClick={() => setMapStyle(s => s === 'street' ? 'satellite' : 'street')}
           title={mapStyle === 'street' ? 'Switch to satellite view' : 'Switch to street view'}
-          style={{ background: mapStyle === 'satellite' ? 'rgba(249,115,22,.15)' : 'var(--d-lift2)', border: `1px solid ${mapStyle === 'satellite' ? 'var(--d-orange)' : 'var(--d-rim2)'}`, borderRadius: 6, color: mapStyle === 'satellite' ? 'var(--d-orange)' : 'var(--d-t2)', cursor: 'pointer', padding: '4px 8px', fontSize: 10, fontFamily: 'IBM Plex Mono, monospace', letterSpacing: '.06em', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}
+          style={{ background: mapStyle === 'satellite' ? 'rgba(139,107,255,.15)' : 'var(--d-lift2)', border: `1px solid ${mapStyle === 'satellite' ? 'var(--d-orange)' : 'var(--d-rim2)'}`, borderRadius: 6, color: mapStyle === 'satellite' ? 'var(--d-orange)' : 'var(--d-t2)', cursor: 'pointer', padding: '4px 8px', fontSize: 10, fontFamily: 'IBM Plex Mono, monospace', letterSpacing: '.06em', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}
         >
           {mapStyle === 'street' ? 'SAT' : 'STR'}
         </button>

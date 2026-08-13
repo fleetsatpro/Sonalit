@@ -1,39 +1,44 @@
 /*
- * Sonalit login — bespoke ops-wall styles.
+ * Sonalit login — Holoframe ops-wall styles.
  * Everything below is scoped under `.sonalit-login-root` so nothing leaks into
- * the rest of the app (the app's tailwind palette redefines `gold` as cyan; we
- * keep Sonalit's real gold local). See ./README.md for tunables.
+ * the rest of the app. `--gold` keeps its name (38 call sites) but now carries
+ * the Holoframe cyan/violet accent instead of literal gold, matching Orbit and
+ * Command. See ./README.md for tunables.
  */
 
 .sonalit-login-root{
-  --bg:#05070D;
-  --bg-2:#070B13;
-  --panel:#0A0F1A;
-  --panel-2:#0D1420;
-  --elevated:#121A2B;
-  --elevated-2:#1A2438;
-  --border:rgba(255,255,255,0.07);
-  --border-mid:rgba(255,255,255,0.11);
-  --border-strong:rgba(255,255,255,0.16);
-  --gold:#F0B429;
-  --gold-hot:#FFC94A;
-  --gold-dim:#F0B42920;
-  --gold-line:#F0B42933;
-  --text:#EAEFF6;
-  --text-dim:#8A93A6;
-  --text-faint:#5B6478;
-  --text-ghost:#3A4356;
-  --danger:#FF5D6C;
-  --danger-dim:#E2374420;
-  --warn:#EF9F27;
-  --success:#3DDC84;
-  --focus:#7CC3FF;
-  --air:#4A9EFF;
-  --sea:#35C4D7;
-  --chain:#5FE0C8;
+  --bg:#030711;
+  --bg-2:#060b18;
+  --panel:#0a1120;
+  --panel-2:#0d1428;
+  --elevated:#101a30;
+  --elevated-2:#16213a;
+  --border:rgba(140,170,255,0.09);
+  --border-mid:rgba(140,170,255,0.16);
+  --border-strong:rgba(140,170,255,0.28);
+  --gold:#22e8ff;
+  --gold-hot:#8b6bff;
+  --gold-dim:#22e8ff20;
+  --gold-line:#22e8ff33;
+  --text:#eaf2ff;
+  --text-dim:#8a93a6;
+  --text-faint:#5b6478;
+  --text-ghost:#3a4356;
+  --danger:#ff3b5c;
+  --danger-dim:#ff3b5c20;
+  --warn:#ffc93f;
+  --success:#29ffb0;
+  --focus:#7cc3ff;
+  --air:#4a9eff;
+  --sea:#35c4d7;
+  --chain:#5fe0c8;
+  /* Michroma is wide — wrong fit for .headline's 72px/12ch hero text, which
+     needs Barlow Condensed's width efficiency. Kept as-is; Michroma is used
+     directly (not via --disp) on the couple of short fixed-width labels
+     where it doesn't risk overflow (see .brand .wm below). */
   --disp:'Barlow Condensed',sans-serif;
-  --body:'Inter',sans-serif;
-  --mono:'JetBrains Mono',monospace;
+  --body:'Sora',sans-serif;
+  --mono:'Space Mono',monospace;
 }
 .sonalit-login-root,
 .sonalit-login-root *{box-sizing:border-box;}
@@ -143,7 +148,10 @@
 }
 .brand{display:flex;align-items:center;gap:11px;margin-bottom:38px;pointer-events:auto;}
 .brand svg{width:26px;height:26px;}
-.brand .wm{font-family:var(--disp);font-weight:800;font-size:21px;letter-spacing:5px;}
+/* Michroma directly (not via --disp) — short fixed brand string only, safe
+   at this size. --disp stays Barlow Condensed for the large hero headline
+   elsewhere, which needs its width efficiency. */
+.brand .wm{font-family:'Michroma',var(--disp);font-weight:400;font-size:16px;letter-spacing:3px;}
 .brand .wm b{color:var(--gold);}
 .brand .brand-div{width:1px;height:20px;background:var(--border-strong);margin:0 4px;}
 .brand .brand-sub{font-family:var(--mono);font-size:9px;letter-spacing:2.4px;color:var(--text-faint);line-height:1.5;}
@@ -165,7 +173,7 @@
 .headline .ln:nth-child(3) span{animation-delay:.2s;}
 @keyframes rise{to{transform:translateY(0);}}
 .headline .dim{color:#CAD3E2;}
-.headline .stroke{color:var(--gold);text-shadow:0 0 34px rgba(240,180,41,.35),0 2px 32px rgba(3,5,9,.55);}
+.headline .stroke{color:var(--gold);text-shadow:0 0 34px rgba(34,232,255,.35),0 2px 32px rgba(3,5,9,.55);}
 
 /* positioning sub-line under the hero */
 .lede{
@@ -205,7 +213,7 @@
 .telemetry .tlabel{
   flex-shrink:0;padding:0 14px;height:100%;display:flex;align-items:center;gap:7px;
   font-family:var(--mono);font-size:9px;letter-spacing:1.8px;color:var(--gold);
-  border-right:1px solid var(--border);background:rgba(240,180,41,.05);
+  border-right:1px solid var(--border);background:rgba(34,232,255,.05);
 }
 .telemetry .tlabel .d{width:5px;height:5px;border-radius:50%;background:var(--gold);animation:blink 1.6s infinite;}
 .tstream{flex:1;overflow:hidden;position:relative;height:100%;}
@@ -298,7 +306,7 @@
 /* ================= THE CONSOLE : operator access ================= */
 .console{
   background:
-    radial-gradient(120% 80% at 82% 0%, rgba(240,180,41,.05), transparent 60%),
+    radial-gradient(120% 80% at 82% 0%, rgba(34,232,255,.05), transparent 60%),
     linear-gradient(180deg,var(--panel-2) 0%,var(--panel) 26%,var(--panel) 100%);
   display:flex;flex-direction:column;overflow-y:auto;
   padding:36px 46px 24px;position:relative;
@@ -344,7 +352,7 @@
 .field{margin-bottom:18px;}
 .field-label{font-family:var(--mono);font-size:10px;letter-spacing:1.6px;color:var(--text-faint);display:block;margin-bottom:9px;cursor:text;}
 .field-input-row{display:flex;align-items:center;background:transparent;border:none;border-bottom:1px solid var(--border-strong);padding:0 2px;transition:border-color .15s,box-shadow .2s;}
-.field-input-row:focus-within{border-bottom-color:var(--gold);box-shadow:0 8px 18px -14px rgba(240,180,41,.6);}
+.field-input-row:focus-within{border-bottom-color:var(--gold);box-shadow:0 8px 18px -14px rgba(34,232,255,.6);}
 .field-input-row.error{border-bottom-color:var(--danger);}
 .field-input-row input{flex:1;background:none;border:none;outline:none;color:var(--text);font-family:var(--body);font-size:15px;padding:10px 0 12px;}
 .field-input-row input::placeholder{color:var(--text-faint);}
@@ -365,18 +373,18 @@
 .forgot-link:hover{text-decoration:underline;}
 
 .cta{
-  width:100%;padding:15px;border:none;color:#191200;
-  background:linear-gradient(180deg,var(--gold-hot) 0%,var(--gold) 52%,#DFA31E 100%);
+  width:100%;padding:15px;border:none;color:#04121a;
+  background:linear-gradient(102deg,var(--gold) 0%,var(--gold-hot) 100%);
   font-family:var(--disp);font-weight:800;font-size:15px;letter-spacing:2.6px;
   cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;
   transition:filter .15s,transform .08s,box-shadow .15s;position:relative;overflow:hidden;
-  box-shadow:0 8px 22px rgba(240,180,41,.24), inset 0 1px 0 rgba(255,255,255,.45);
+  box-shadow:0 8px 22px rgba(34,232,255,.24), inset 0 1px 0 rgba(255,255,255,.45);
   clip-path:polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
 }
 .cta::after{content:'';position:absolute;top:0;bottom:0;width:60px;left:-80px;background:linear-gradient(105deg,transparent,rgba(255,255,255,.45),transparent);transform:skewX(-18deg);}
 .cta:hover::after{animation:sheen .7s ease;}
 @keyframes sheen{to{left:130%;}}
-.cta:hover:not(:disabled){filter:brightness(1.06);box-shadow:0 10px 28px rgba(240,180,41,.34), inset 0 1px 0 rgba(255,255,255,.5);}
+.cta:hover:not(:disabled){filter:brightness(1.06);box-shadow:0 10px 28px rgba(34,232,255,.34), inset 0 1px 0 rgba(255,255,255,.5);}
 .cta:active{transform:scale(.99);}
 .cta:disabled{opacity:.5;cursor:not-allowed;box-shadow:none;}
 .cta svg{width:16px;height:16px;transition:transform .2s;}
@@ -398,7 +406,7 @@
 
 .sso-row{display:flex;gap:10px;}
 .sso-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:9px;background:transparent;border:1px solid var(--border-strong);padding:12px;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--text-dim);transition:background .15s,border-color .15s;font-family:inherit;}
-.sso-btn:hover{background:var(--elevated);border-color:#F0B42950;color:var(--text);}
+.sso-btn:hover{background:var(--elevated);border-color:#22e8ff50;color:var(--text);}
 .sso-btn:disabled{opacity:.6;cursor:not-allowed;}
 .sso-btn svg{width:16px;height:16px;flex-shrink:0;}
 

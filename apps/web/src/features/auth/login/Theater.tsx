@@ -96,8 +96,8 @@ export default function Theater(): React.ReactElement {
       <div className="theater-hud">
         <div className="brand">
           <svg viewBox="0 0 24 24" fill="none">
-            <path d="M12 2 3 6v6c0 5 3.8 8.7 9 10 5.2-1.3 9-5 9-10V6l-9-4Z" stroke="#F0B429" strokeWidth="1.8" strokeLinejoin="round" />
-            <path d="M8.5 12.2l2.3 2.3 4.7-4.9" stroke="#F0B429" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M12 2 3 6v6c0 5 3.8 8.7 9 10 5.2-1.3 9-5 9-10V6l-9-4Z" stroke="#22e8ff" strokeWidth="1.8" strokeLinejoin="round" />
+            <path d="M8.5 12.2l2.3 2.3 4.7-4.9" stroke="#22e8ff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           <span className="wm">SON<b>A</b>LIT</span>
           <span className="brand-div" />

@@ -1,48 +1,48 @@
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;800;900&family=IBM+Plex+Mono:wght@300;400;500;600&family=DM+Sans:wght@300;400;500;600&display=swap');
-
 :root {
-  /* System-wide font — single typeface everywhere, standardized after
-     visibility complaints about the mixed Orbitron/IBM Plex Mono/DM Sans/
-     Barlow Condensed setup. Inter is designed for screen legibility at
-     small sizes, which is what an ops dashboard actually needs. */
-  --d-font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  /* Backgrounds */
-  --d-void: #010407;
-  --d-carbon: #050910;
-  --d-deep: #080e18;
-  --d-well: #0c1522;
-  --d-surf: #101926;
-  --d-lift: #182030;
-  --d-lift2: #1e2a3e;
-  /* Borders */
-  --d-rim: rgba(255,255,255,.05);
-  --d-rim2: rgba(255,255,255,.10);
-  --d-rim3: rgba(255,255,255,.22);
-  /* Signal / accent */
-  --d-sig: #22c55e;
-  --d-sig2: #16a34a;
-  --d-sig3: #15803d;
-  --d-sg: rgba(34,197,94,.13);
-  --d-sg2: rgba(34,197,94,.07);
-  --d-sglow: rgba(34,197,94,.6);
-  /* Orange accent */
-  --d-orange: #f97316;
-  --d-og: rgba(249,115,22,.13);
-  --d-oglow: rgba(249,115,22,.6);
+  /* Holoframe — self-hosted via @fontsource (see index.css), not a Google
+     Fonts CDN @import. Sora carries names/body text; Space Mono (referenced
+     directly where needed, e.g. timestamps/IDs) is the data face; Michroma
+     is reserved for short eyebrow/instrumentation labels only. */
+  --d-font: 'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --d-font-display: 'Michroma', 'Sora', sans-serif;
+  --d-font-mono: 'Space Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  /* Backgrounds — deep space navy, not flat black */
+  --d-void: #030711;
+  --d-carbon: #060b18;
+  --d-deep: #0a1120;
+  --d-well: #0d1428;
+  --d-surf: #101a30;
+  --d-lift: #16213a;
+  --d-lift2: #1c2a48;
+  /* Borders — cool violet-blue hairline, not pure white */
+  --d-rim: rgba(140,170,255,.09);
+  --d-rim2: rgba(140,170,255,.17);
+  --d-rim3: rgba(140,170,255,.32);
+  /* Signal / accent — holographic cyan (was green) */
+  --d-sig: #22e8ff;
+  --d-sig2: #17b8cc;
+  --d-sig3: #128a9c;
+  --d-sg: rgba(34,232,255,.13);
+  --d-sg2: rgba(34,232,255,.07);
+  --d-sglow: rgba(34,232,255,.6);
+  /* Violet accent (was orange) — pairs with sig for the holographic gradient */
+  --d-orange: #8b6bff;
+  --d-og: rgba(139,107,255,.14);
+  --d-oglow: rgba(139,107,255,.6);
   /* Status */
-  --d-fire: #ff4422;
-  --d-fg: rgba(255,68,34,.15);
-  --d-fglow: rgba(255,68,34,.55);
-  --d-warn: #ffbe2e;
-  --d-wg: rgba(255,190,46,.13);
-  --d-ok: #9dff3c;
-  --d-okg: rgba(157,255,60,.12);
-  --d-purple: #a855f7;
-  /* Text */
-  --d-t1: #edf3ff;
-  --d-t2: #8595b4;
-  --d-t3: #374c6a;
-  --d-t4: #1c2a3e;
+  --d-fire: #ff3b5c;
+  --d-fg: rgba(255,59,92,.15);
+  --d-fglow: rgba(255,59,92,.55);
+  --d-warn: #ffc93f;
+  --d-wg: rgba(255,201,63,.13);
+  --d-ok: #29ffb0;
+  --d-okg: rgba(41,255,176,.12);
+  --d-purple: #ff4fd8;
+  /* Text — cool ink, not neutral grey */
+  --d-t1: #eaf2ff;
+  --d-t2: #7c8aae;
+  --d-t3: #3e4a6b;
+  --d-t4: #1a2338;
   /* Layout */
   --d-nav-h: 68px;
   --d-rail-w: 232px;
@@ -132,11 +132,23 @@ html, body, #root, * {
   font-weight: 800 !important;
 }
 
+/* ── Holoframe typography overrides ──────────────────────────────────────
+   The blanket `* { font-family: var(--d-font) !important }` rule above
+   wins over any plain inline font-family, so a deliberate typeface switch
+   (eyebrow labels in Michroma, data/timestamps in Space Mono) needs a class
+   at least as specific — same pattern as .d-rail-navlabel/.d-rail-wordmark. */
+.d-font-display {
+  font-family: 'Michroma', var(--d-font) !important;
+}
+.d-font-mono {
+  font-family: 'Space Mono', ui-monospace, 'SF Mono', Menlo, monospace !important;
+}
+
 /* ── Animations ─────────────────────────────────────────────────────────── */
 @keyframes d-glitch {
   0%,100% { text-shadow: none; transform: none; }
-  2% { text-shadow: -2px 0 #ff4422, 2px 0 #22c55e; transform: skewX(-1deg); }
-  4% { text-shadow: 2px 0 #ff4422, -2px 0 #22c55e; transform: skewX(1deg); }
+  2% { text-shadow: -2px 0 #ff3b5c, 2px 0 #22e8ff; transform: skewX(-1deg); }
+  4% { text-shadow: 2px 0 #ff3b5c, -2px 0 #22e8ff; transform: skewX(1deg); }
   6% { text-shadow: none; transform: none; }
   98% { text-shadow: none; transform: none; }
 }
@@ -166,8 +178,8 @@ html, body, #root, * {
 }
 
 @keyframes d-crit {
-  0%,100% { border-color: rgba(255,68,34,.28); box-shadow: none; }
-  50% { border-color: rgba(255,68,34,.6); box-shadow: 0 0 22px rgba(255,68,34,.25); }
+  0%,100% { border-color: rgba(255,59,92,.28); box-shadow: none; }
+  50% { border-color: rgba(255,59,92,.6); box-shadow: 0 0 22px rgba(255,59,92,.25); }
 }
 
 @keyframes radar-turn {

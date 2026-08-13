@@ -77,13 +77,14 @@ const Topbar = React.memo(function Topbar({ onMenuOpen }: TopbarProps) {
 
       {/* Center clock */}
       <div style={{
-        fontFamily: 'Orbitron, sans-serif',
+        fontFamily: 'Space Mono, ui-monospace, monospace',
         fontWeight: 700,
         fontSize: 20,
         color: 'var(--d-sig)',
         letterSpacing: '.08em',
-        textShadow: '0 0 20px rgba(34,197,94,.5), 0 0 40px rgba(34,197,94,.2)',
+        textShadow: '0 0 20px var(--d-sglow), 0 0 40px var(--d-sg)',
         userSelect: 'none',
+        fontVariantNumeric: 'tabular-nums',
       }}>
         {time}
       </div>
