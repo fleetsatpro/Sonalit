@@ -1,7 +1,8 @@
 import React from 'react';
-import { Card } from '@/components/ui/Card.js';
 import { Badge } from '@/components/ui/Badge.js';
 import { Button } from '@/components/ui/Button.js';
+import { ProgressBar } from '@/components/ui/ProgressBar.js';
+import { PageHeader } from '@/components/ui/PageHeader.js';
 
 const vehicles = [
   { reg: 'KDK 456P', type: 'Truck', make: 'Scania', model: 'R450', year: 2023, transporter: 'Kentrans Logistics', driver: 'John Kamau', status: 'in_use', odometer: 142500, fuelLevel: 72 },
@@ -17,29 +18,29 @@ const vehicles = [
 export default function Vehicles() {
   return (
     <div className="p-6 pb-10 animate-fade-in">
-      <div className="flex items-center justify-between mb-1">
-        <div>
-          <h2 className="font-display font-bold text-[17px] m-0">Vehicles</h2>
-          <p className="text-[12px] text-text-2 m-0 mt-1">{vehicles.length} vehicles in fleet · {vehicles.filter((v) => v.status === 'in_use').length} active · {vehicles.filter((v) => v.status === 'maintenance').length} in maintenance</p>
-        </div>
-        <Button icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>}>
-          Add Vehicle
-        </Button>
-      </div>
+      <PageHeader
+        title="Vehicles"
+        description={`${vehicles.length} vehicles in fleet · ${vehicles.filter((v) => v.status === 'in_use').length} active · ${vehicles.filter((v) => v.status === 'maintenance').length} in maintenance`}
+        actions={
+          <Button icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>}>
+            Add Vehicle
+          </Button>
+        }
+      />
 
-      <Card className="p-0 mt-4">
+      <div className="glass p-0">
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[12.5px]">
+          <table className="w-full border-collapse text-xs-tight">
             <thead>
               <tr>
                 {['Registration', 'Make / Model', 'Year', 'Transporter', 'Driver', 'Odometer', 'Fuel', 'Status'].map((h) => (
-                  <th key={h} className="text-left font-mono text-[10px] tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">{h}</th>
+                  <th key={h} className="text-left font-mono text-2xs tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {vehicles.map((v) => (
-                <tr key={v.reg} className="border-t border-[rgba(255,255,255,0.07)] cursor-pointer hover:bg-ink-2 transition-colors">
+                <tr key={v.reg} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors">
                   <td className="px-3.5 py-3 font-mono font-semibold text-text-0">{v.reg}</td>
                   <td className="px-3.5 py-3 text-text-0">{v.make} {v.model}</td>
                   <td className="px-3.5 py-3 font-mono text-text-1">{v.year}</td>
@@ -47,12 +48,7 @@ export default function Vehicles() {
                   <td className="px-3.5 py-3 text-text-0">{v.driver ?? <span className="text-text-2">Unassigned</span>}</td>
                   <td className="px-3.5 py-3 font-mono text-text-1">{v.odometer.toLocaleString()} km</td>
                   <td className="px-3.5 py-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-12 h-1.5 rounded bg-ink-3 overflow-hidden">
-                        <div className={`h-full rounded ${v.fuelLevel >= 50 ? 'bg-cds-teal' : v.fuelLevel >= 25 ? 'bg-cds-amber' : 'bg-cds-red'}`} style={{ width: `${v.fuelLevel}%` }} />
-                      </div>
-                      <span className="font-mono text-[11px] text-text-1">{v.fuelLevel}%</span>
-                    </div>
+                    <ProgressBar value={v.fuelLevel} color={v.fuelLevel >= 50 ? 'bg-cds-teal' : v.fuelLevel >= 25 ? 'bg-cds-amber' : 'bg-cds-red'} showLabel />
                   </td>
                   <td className="px-3.5 py-3">
                     {v.status === 'in_use' ? <Badge variant="ok">IN USE</Badge> : v.status === 'available' ? <Badge variant="neutral">AVAILABLE</Badge> : <Badge variant="warn">MAINTENANCE</Badge>}
@@ -62,7 +58,7 @@ export default function Vehicles() {
             </tbody>
           </table>
         </div>
-      </Card>
+      </div>
     </div>
   );
 }

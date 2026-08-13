@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Card } from '@/components/ui/Card.js';
 import { Badge } from '@/components/ui/Badge.js';
 import { Button } from '@/components/ui/Button.js';
+import { Tabs } from '@/components/ui/Tabs.js';
+import { PageHeader } from '@/components/ui/PageHeader.js';
 
 const geofences = [
   { id: 'gf-1', name: 'Mombasa Port', type: 'polygon', category: 'port', radius: null, alerts: ['entry', 'exit'], active: true, vehiclesInside: 3, lastTriggered: '10m ago' },
@@ -18,8 +20,6 @@ const categoryColors: Record<string, string> = {
   warehouse: 'text-cds-teal',
   border: 'text-cds-amber',
   corridor: 'text-text-1',
-  customer: 'text-cds-teal',
-  restricted: 'text-cds-red',
 };
 
 const alertLabels: Record<string, string> = {
@@ -32,29 +32,29 @@ const alertLabels: Record<string, string> = {
 };
 
 export default function Geofences() {
-  const [filter, setFilter] = useState<string>('all');
+  const [filter, setFilter] = useState('all');
   const filtered = filter === 'all' ? geofences : geofences.filter((g) => g.category === filter);
 
   return (
     <div className="p-6 pb-10 animate-fade-in">
-      <div className="flex items-center justify-between mb-1">
-        <div>
-          <h2 className="font-display font-bold text-[17px] m-0">Geofences</h2>
-          <p className="text-[12px] text-text-2 m-0 mt-1">{geofences.length} zones configured · {geofences.filter((g) => g.active).length} active · {geofences.reduce((a, g) => a + g.vehiclesInside, 0)} vehicles inside zones</p>
-        </div>
-        <Button icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>}>
-          Create Geofence
-        </Button>
-      </div>
+      <PageHeader
+        title="Geofences"
+        description={`${geofences.length} zones configured · ${geofences.filter((g) => g.active).length} active · ${geofences.reduce((a, g) => a + g.vehiclesInside, 0)} vehicles inside zones`}
+        actions={
+          <Button icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>}>
+            Create Geofence
+          </Button>
+        }
+      />
 
-      <div className="grid grid-cols-[1.6fr_1fr] gap-4 mt-4 items-start">
+      <div className="grid grid-cols-[1.6fr_1fr] gap-4 items-start">
         <Card className="h-[420px] p-0 relative overflow-hidden">
           <div className="w-full h-full relative" style={{
             background: 'linear-gradient(rgba(255,255,255,0.07) 1px, transparent 1px) 0 0/40px 40px, linear-gradient(90deg, rgba(255,255,255,0.07) 1px, transparent 1px) 0 0/40px 40px, radial-gradient(400px 200px at 50% 50%, rgba(51,214,168,0.06), transparent), #14171b',
           }}>
             <div className="absolute top-3.5 left-4 z-10">
               <div className="font-display font-bold text-[13px]">Geofence Map View</div>
-              <div className="text-[10.5px] text-text-2 font-mono">{filtered.length} zones visible · Real-time vehicle overlay</div>
+              <div className="text-2xs text-text-2 font-mono">{filtered.length} zones visible · Real-time vehicle overlay</div>
             </div>
             {filtered.filter((g) => g.active).map((g, i) => (
               <div
@@ -71,7 +71,7 @@ export default function Geofences() {
                 }}
               />
             ))}
-            <div className="absolute bottom-3.5 left-4 flex gap-3.5 z-10 text-[10.5px] text-text-1 font-mono">
+            <div className="absolute bottom-3.5 left-4 flex gap-3.5 z-10 text-2xs text-text-1 font-mono">
               <span className="flex items-center gap-[5px]"><span className="w-[7px] h-[7px] rounded-full bg-cds-orange" />Port</span>
               <span className="flex items-center gap-[5px]"><span className="w-[7px] h-[7px] rounded-full bg-cds-teal" />Warehouse</span>
               <span className="flex items-center gap-[5px]"><span className="w-[7px] h-[7px] rounded-full bg-cds-amber" />Checkpoint</span>
@@ -80,25 +80,26 @@ export default function Geofences() {
         </Card>
 
         <div className="space-y-3">
-          <div className="flex gap-1.5 flex-wrap">
-            {['all', 'port', 'warehouse', 'border', 'corridor'].map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setFilter(cat)}
-                className={`px-3 py-1 rounded-full text-[11px] font-medium transition-colors capitalize ${filter === cat ? 'bg-cds-orange text-white' : 'bg-ink-3 text-text-1 hover:text-text-0'}`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
+          <Tabs
+            tabs={[
+              { id: 'all', label: 'All' },
+              { id: 'port', label: 'Port' },
+              { id: 'warehouse', label: 'Warehouse' },
+              { id: 'border', label: 'Border' },
+              { id: 'corridor', label: 'Corridor' },
+            ]}
+            activeId={filter}
+            onChange={setFilter}
+            variant="pills"
+          />
 
           <div className="space-y-2 max-h-[360px] overflow-y-auto">
             {filtered.map((g) => (
-              <Card key={g.id} className="p-3 cursor-pointer hover:bg-ink-3 transition-colors">
+              <Card key={g.id} hover className="p-3">
                 <div className="flex items-start justify-between">
                   <div>
-                    <div className="text-[12.5px] font-semibold text-text-0">{g.name}</div>
-                    <div className="text-[10.5px] text-text-2 font-mono mt-0.5">
+                    <div className="text-xs-tight font-semibold text-text-0">{g.name}</div>
+                    <div className="text-2xs text-text-2 font-mono mt-0.5">
                       <span className={categoryColors[g.category]}>{g.category.toUpperCase()}</span> · {g.type}{g.radius ? ` · ${g.radius}` : ''}
                     </div>
                   </div>
@@ -109,7 +110,7 @@ export default function Geofences() {
                     <span key={a} className="px-1.5 py-0.5 rounded bg-ink-3 text-[9.5px] font-mono text-text-1">{alertLabels[a] ?? a}</span>
                   ))}
                 </div>
-                <div className="flex items-center justify-between mt-2 text-[10.5px] text-text-2 font-mono">
+                <div className="flex items-center justify-between mt-2 text-2xs text-text-2 font-mono">
                   <span>{g.vehiclesInside} vehicles inside</span>
                   <span>Last: {g.lastTriggered}</span>
                 </div>

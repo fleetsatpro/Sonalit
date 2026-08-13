@@ -33,12 +33,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.16);
 }
 
 ::selection {
@@ -63,7 +63,7 @@ textarea,
 select {
   background: #14171b;
   border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 8px 12px;
   outline: none;
   transition: border-color 0.15s;
@@ -86,5 +86,33 @@ table {
   .no-scrollbar {
     -ms-overflow-style: none;
     scrollbar-width: none;
+  }
+  .glass {
+    background: linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.025),
+      rgba(255, 255, 255, 0.008)
+    );
+    border: 1px solid rgba(255, 255, 255, 0.07);
+  }
+  .glass-hover:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.04) 25%,
+      rgba(255, 255, 255, 0.08) 50%,
+      rgba(255, 255, 255, 0.04) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+    border-radius: 6px;
   }
 }

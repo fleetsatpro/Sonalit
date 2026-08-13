@@ -61,7 +61,7 @@ export default function Dashboard() {
           }}>
             <div className="absolute top-3.5 left-4 z-10">
               <div className="font-display font-bold text-[13px]">Live Operations Map</div>
-              <div className="text-[10.5px] text-text-2 font-mono">54 trucks in motion</div>
+              <div className="text-2xs text-text-2 font-mono">54 trucks in motion</div>
             </div>
             <svg className="absolute inset-0 w-full h-full" viewBox="0 0 600 360" preserveAspectRatio="none">
               <path d="M60,60 C 200,120 260,180 340,200 S 520,280 560,300" fill="none" stroke="#ff7a00" strokeWidth="2" strokeDasharray="6 5" opacity="0.55" />
@@ -70,9 +70,9 @@ export default function Dashboard() {
             {[{ left: '22%', top: '38%' }, { left: '48%', top: '56%' }, { left: '71%', top: '29%' }, { left: '34%', top: '74%' }].map((pos, i) => (
               <div key={i} className="absolute w-[11px] h-[11px] rounded-full bg-cds-orange shadow-[0_0_0_4px_rgba(255,122,0,0.13),0_0_14px_rgba(255,122,0,0.35)] animate-pulse-dot" style={{ left: pos.left, top: pos.top, animationDelay: `${i * 0.3}s` }} />
             ))}
-            <div className="absolute w-[9px] h-[9px] rounded-sm bg-cds-teal shadow-[0_0_10px_rgba(51,214,168,0.6)]" style={{ left: '92%', top: '83%' }} />
-            <div className="absolute w-[9px] h-[9px] rounded-sm bg-cds-teal shadow-[0_0_10px_rgba(51,214,168,0.6)]" style={{ left: '8%', top: '12%' }} />
-            <div className="absolute bottom-3.5 left-4 flex gap-3.5 z-10 text-[10.5px] text-text-1 font-mono">
+            <div className="absolute w-[9px] h-[9px] rounded-sm bg-cds-teal shadow-glow-teal" style={{ left: '92%', top: '83%' }} />
+            <div className="absolute w-[9px] h-[9px] rounded-sm bg-cds-teal shadow-glow-teal" style={{ left: '8%', top: '12%' }} />
+            <div className="absolute bottom-3.5 left-4 flex gap-3.5 z-10 text-2xs text-text-1 font-mono">
               <span className="flex items-center gap-[5px]"><span className="w-[7px] h-[7px] rounded-full bg-cds-orange" />Truck en route</span>
               <span className="flex items-center gap-[5px]"><span className="w-[7px] h-[7px] rounded-full bg-cds-teal" />Port / warehouse</span>
             </div>
@@ -82,16 +82,16 @@ export default function Dashboard() {
         <Card className="p-4 max-h-[360px] overflow-y-auto">
           <div className="font-display font-bold text-[13px] mb-1.5">Recent Activity</div>
           {activities.map((a, i) => (
-            <div key={i} className="flex gap-2.5 py-2.5 border-b border-[rgba(255,255,255,0.07)] last:border-b-0">
+            <div key={i} className="flex gap-2.5 py-2.5 border-b border-hair last:border-b-0">
               <div className="w-[26px] h-[26px] rounded-lg flex-none flex items-center justify-center bg-ink-3 text-cds-orange">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                   {a.icon === 'checkpoint' && <circle cx="12" cy="12" r="9" />}
-                  <path d={iconPaths[a.icon] ?? iconPaths.checkpoint} />
+                  <path d={iconPaths[a.icon] ?? iconPaths['checkpoint']!} />
                 </svg>
               </div>
               <div>
-                <div className="text-[12.5px] text-text-0">{a.text}</div>
-                <div className="text-[10.5px] text-text-2 mt-0.5 font-mono">{a.meta}</div>
+                <div className="text-xs-tight text-text-0">{a.text}</div>
+                <div className="text-2xs text-text-2 mt-0.5 font-mono">{a.meta}</div>
               </div>
             </div>
           ))}
@@ -100,30 +100,30 @@ export default function Dashboard() {
 
       <div className="mt-5">
         <h3 className="font-display font-bold text-[15px] mb-3">Active Shipments</h3>
-        <Card className="p-0">
-          <table className="w-full border-collapse text-[12.5px]">
-            <thead>
-              <tr>
-                <th className="text-left font-mono text-[10px] tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">Container</th>
-                <th className="text-left font-mono text-[10px] tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">Status</th>
-                <th className="text-left font-mono text-[10px] tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">Truck / Driver</th>
-                <th className="text-left font-mono text-[10px] tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">Route</th>
-                <th className="text-left font-mono text-[10px] tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">ETA</th>
-              </tr>
-            </thead>
-            <tbody>
-              {containers.map((c) => (
-                <tr key={c.id} className="border-t border-[rgba(255,255,255,0.07)] cursor-pointer hover:bg-ink-2 transition-colors" onClick={() => addToast(`Viewing ${c.id}`)}>
-                  <td className="px-3.5 py-3 font-mono text-text-0">{c.id}</td>
-                  <td className="px-3.5 py-3"><StatusBadge status={c.status} /></td>
-                  <td className="px-3.5 py-3 text-text-0">{c.truck}<div className="text-[10.5px] text-text-2 mt-0.5">{c.driver}</div></td>
-                  <td className="px-3.5 py-3 text-text-0">{c.origin} → {c.dest}</td>
-                  <td className={`px-3.5 py-3 font-mono ${c.status === 'delayed' ? 'text-cds-red' : 'text-text-1'}`}>{c.eta}</td>
+        <div className="glass p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-xs-tight">
+              <thead>
+                <tr>
+                  {['Container', 'Status', 'Truck / Driver', 'Route', 'ETA'].map((h) => (
+                    <th key={h} className="text-left font-mono text-2xs tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">{h}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
+              </thead>
+              <tbody>
+                {containers.map((c) => (
+                  <tr key={c.id} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors" onClick={() => addToast(`Viewing ${c.id}`)}>
+                    <td className="px-3.5 py-3 font-mono text-text-0">{c.id}</td>
+                    <td className="px-3.5 py-3"><StatusBadge status={c.status} /></td>
+                    <td className="px-3.5 py-3 text-text-0">{c.truck}<div className="text-2xs text-text-2 mt-0.5">{c.driver}</div></td>
+                    <td className="px-3.5 py-3 text-text-0">{c.origin} → {c.dest}</td>
+                    <td className={`px-3.5 py-3 font-mono ${c.status === 'delayed' ? 'text-cds-red' : 'text-text-1'}`}>{c.eta}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   );

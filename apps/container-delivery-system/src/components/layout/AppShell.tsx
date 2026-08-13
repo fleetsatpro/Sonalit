@@ -4,6 +4,7 @@ import { Rail } from './Rail.js';
 import { Topbar } from './Topbar.js';
 import { Drawer } from '@/components/ui/Drawer.js';
 import { ToastContainer } from '@/components/ui/Toast.js';
+import { useUIStore } from '@/stores/ui.js';
 
 const routeMeta: Record<string, { title: string; subtitle: string }> = {
   '/cds': { title: 'Dashboard', subtitle: "TODAY'S OPERATIONS OVERVIEW" },
@@ -31,9 +32,10 @@ export function CDSAppShell() {
   const matches = useMatches();
   const currentPath = matches[matches.length - 1]?.pathname ?? '/cds';
   const meta = routeMeta[currentPath] ?? { title: 'Container Delivery System', subtitle: 'SONALIT CDS' };
+  const collapsed = useUIStore((s) => s.sidebarCollapsed);
 
   return (
-    <div className="h-screen grid grid-cols-[76px_1fr] bg-ink-0 text-text-0 font-sans overflow-hidden">
+    <div className={`h-screen grid ${collapsed ? 'grid-cols-[76px_1fr]' : 'grid-cols-[200px_1fr]'} bg-ink-0 text-text-0 font-sans overflow-hidden transition-all duration-200`}>
       <Rail />
       <div className="flex flex-col min-w-0">
         <Topbar title={meta.title} subtitle={meta.subtitle} />
