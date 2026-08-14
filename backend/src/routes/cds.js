@@ -19,12 +19,18 @@ router.use((req, res, next) => {
 // handing a shared yard/port device a least-privilege login.
 const CLAMP_PATH = /^\/bookings\/[^/]+\/containers\/[^/]+\/clamp$/;
 const UNCLAMP_PATH = /^\/bookings\/[^/]+\/containers\/[^/]+\/unclamp$/;
+// The Yard app's container-pick screen (YardApp.tsx ContainerPick) lists a
+// chosen booking's containers before clamping one — GET only, so listing
+// stays read-only and adding/editing containers on that same path (POST)
+// is still out of reach.
+const BOOKING_CONTAINERS_LIST_PATH = /^\/bookings\/[^/]+\/containers$/;
 router.use((req, res, next) => {
   const role = req.user.role;
   if (role !== 'yard_agent' && role !== 'port_agent') return next();
 
   const allowed = role === 'yard_agent'
-    ? (req.path === '/field/yard-queue' || CLAMP_PATH.test(req.path))
+    ? (req.path === '/field/yard-queue' || CLAMP_PATH.test(req.path)
+       || (req.method === 'GET' && BOOKING_CONTAINERS_LIST_PATH.test(req.path)))
     : (req.path === '/field/port-queue' || UNCLAMP_PATH.test(req.path));
 
   if (!allowed) {
@@ -392,8 +398,11 @@ router.post('/trips/:id/clamp', asyncHandler(async (req, res) => {
         [lock_serial.trim(), 'SecuriSat', orgId]);
     }
     lockId = lk.rows[0].id;
+    // 'installed' — not 'locked', which isn't a value cds_electronic_locks_status_check
+    // allows. Matches the dashboard's active_locks KPI just below (status IN
+    // ('assigned','installed')), which already assumed this was the value in use.
     await req.db('UPDATE cds_electronic_locks SET status=$1, container_id=$2, vehicle_id=$3, updated_at=NOW() WHERE id=$4',
-      ['locked', containerId, vehicleId, lockId]);
+      ['installed', containerId, vehicleId, lockId]);
   }
 
   const trailerNote = trailer_number ? `Trailer: ${trailer_number.trim()}` : null;
@@ -782,7 +791,7 @@ router.post('/bookings/:id/containers/:cid/clamp', asyncHandler(async (req, res)
   }
 
   const bc = await req.db(
-    `SELECT bc.*, b.booking_number, b.customer_id
+    `SELECT bc.*, b.booking_number, b.customer_id, b.pickup_location, b.delivery_location
        FROM cds_booking_containers bc
        JOIN cds_bookings b ON b.id = bc.booking_id
       WHERE bc.id=$1 AND bc.booking_id=$2 AND bc.deleted_at IS NULL`,
@@ -793,7 +802,10 @@ router.post('/bookings/:id/containers/:cid/clamp', asyncHandler(async (req, res)
     return res.status(409).json({ error: `Container already ${bc.rows[0].status}` });
   }
 
-  // Upsert transporter
+  // Upsert transporter. contact_person/phone are NOT NULL on cds_transporters
+  // but the clamp form only collects a company name — same fallback the
+  // customer auto-create above uses (the name doubles as the placeholder
+  // contact until someone fills in the real one from the transporters view).
   let transporterId = null;
   if (transporter_name) {
     const t = await req.db(
@@ -803,21 +815,25 @@ router.post('/bookings/:id/containers/:cid/clamp', asyncHandler(async (req, res)
     if (t.rows.length) transporterId = t.rows[0].id;
     else {
       const ins = await req.db(
-        `INSERT INTO cds_transporters (company_name, code, org_id) VALUES ($1,$2,$3) RETURNING id`,
-        [transporter_name.trim(), genCode('TR'), orgId]
+        `INSERT INTO cds_transporters (company_name, contact_person, phone, code, org_id) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+        [transporter_name.trim(), transporter_name.trim(), '-', genCode('TR'), orgId]
       );
       transporterId = ins.rows[0].id;
     }
   }
 
-  // Upsert driver
+  // Upsert driver. license_number/license_expiry are NOT NULL on cds_drivers
+  // but the clamp form doesn't collect them — placeholder + a generous expiry
+  // so the row is valid until ops backfills the real license from the
+  // drivers view; not a compliance record, just enough to satisfy the schema.
   const dr = await req.db(
     'SELECT id FROM cds_drivers WHERE name ILIKE $1 AND deleted_at IS NULL LIMIT 1',
     [driver_name.trim()]
   );
   const driverId = dr.rows.length ? dr.rows[0].id : (await req.db(
-    `INSERT INTO cds_drivers (name, phone, transporter_id, org_id) VALUES ($1,$2,$3,$4) RETURNING id`,
-    [driver_name.trim(), driver_phone || null, transporterId, orgId]
+    `INSERT INTO cds_drivers (name, phone, license_number, license_expiry, transporter_id, org_id)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+    [driver_name.trim(), driver_phone || '-', 'PENDING', new Date(Date.now() + 365 * 24 * 3600 * 1000), transporterId, orgId]
   )).rows[0].id;
 
   // Upsert vehicle (truck horse)
@@ -852,8 +868,10 @@ router.post('/bookings/:id/containers/:cid/clamp', asyncHandler(async (req, res)
     `INSERT INTO cds_electronic_locks (serial, provider, status, org_id) VALUES ($1,$2,$3,$4) RETURNING id`,
     [lock_serial.trim(), 'SecuriSat', 'assigned', orgId]
   )).rows[0].id;
+  // 'installed', matching cds_electronic_locks_status_check and the desktop
+  // clamp handler above — 'locked' isn't a value the constraint allows.
   await req.db(
-    `UPDATE cds_electronic_locks SET status='locked', container_id=$1, vehicle_id=$2, updated_at=NOW() WHERE id=$3`,
+    `UPDATE cds_electronic_locks SET status='installed', container_id=$1, vehicle_id=$2, updated_at=NOW() WHERE id=$3`,
     [containerId, vehicleId, lockId]
   );
 
@@ -866,7 +884,7 @@ router.post('/bookings/:id/containers/:cid/clamp', asyncHandler(async (req, res)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'locked',$15) RETURNING *`,
     [
       genCode('CDS'), bc.rows[0].customer_id, driverId, vehicleId, containerId, lockId, transporterId,
-      null, null, null, bc.rows[0].seal_number, bc.rows[0].weight_kg,
+      bc.rows[0].pickup_location, bc.rows[0].delivery_location, null, bc.rows[0].seal_number, bc.rows[0].weight_kg,
       bookingId, trailerNote, orgId,
     ]
   );
