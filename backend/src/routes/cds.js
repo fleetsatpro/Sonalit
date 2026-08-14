@@ -725,8 +725,8 @@ router.get('/field/yard-queue', asyncHandler(async (req, res) => {
   const result = await req.db(`
     SELECT b.id AS booking_id, b.booking_number, b.pickup_location, b.delivery_location,
            b.commodity, b.shipping_line, b.vessel, b.eta, cu.company_name AS customer_name,
-           COUNT(bc.id)::int AS pending_containers,
-           COUNT(bc2.id)::int AS total_containers
+           COUNT(DISTINCT bc.id)::int AS pending_containers,
+           COUNT(DISTINCT bc2.id)::int AS total_containers
       FROM cds_bookings b
       LEFT JOIN cds_customers cu ON cu.id = b.customer_id
       LEFT JOIN cds_booking_containers bc  ON bc.booking_id = b.id AND bc.deleted_at IS NULL AND bc.status = 'pending'
@@ -734,7 +734,11 @@ router.get('/field/yard-queue', asyncHandler(async (req, res) => {
      WHERE b.deleted_at IS NULL
        AND b.status NOT IN ('cancelled','completed','billed')
      GROUP BY b.id, cu.company_name
-    HAVING COUNT(bc.id) > 0
+    -- bc and bc2 are separately-filtered joins to the same table, so any
+    -- booking with more than one container in each set fans out into a
+    -- cross product of matching rows — plain COUNT(bc.id) then counts each
+    -- pending container once per total-container row instead of once.
+    HAVING COUNT(DISTINCT bc.id) > 0
      ORDER BY b.eta NULLS LAST, b.created_at DESC
      LIMIT 100
   `);
