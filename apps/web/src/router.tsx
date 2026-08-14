@@ -106,10 +106,22 @@ const portalViewRoute = createRoute({ getParentRoute: () => rootRoute, path: '/p
 const cdsDashRoute = createRoute({ getParentRoute: () => authFullscreenRoute, path: '/cds', component: lazyRouteComponent(() => import('./pages/cds/CDSDashboard.js')) });
 
 // ─── CDS Field ops (Yard/Port teams — mobile / APK) ───────────────────────────
-// Fullscreen, no chrome. Same auth as everything else.
+// Fullscreen, no chrome. Same token/session auth as everything else, plus a
+// role check: yard_agent/port_agent are scoped logins (migration 077 +
+// backend/src/routes/cds.js field-role gating) whose API calls 403 outside
+// their own flow, so a wrong-team URL should bounce at the router rather than
+// land on a screen that can't load anything.
+const fieldRoleCheck = (allowed: Set<string>) => () => {
+  authCheck();
+  const role = useAuthStore.getState().user?.role ?? '';
+  if (!allowed.has(role)) throw redirect({ to: '/field' });
+};
+const CAN_YARD = new Set(['admin', 'dispatcher', 'operator', 'yard_agent']);
+const CAN_PORT = new Set(['admin', 'dispatcher', 'operator', 'port_agent']);
+
 const fieldHomeRoute = createRoute({ getParentRoute: () => authFullscreenRoute, path: '/field', component: lazyRouteComponent(() => import('./pages/field/FieldHome.js')) });
-const fieldYardRoute = createRoute({ getParentRoute: () => authFullscreenRoute, path: '/field/yard', component: lazyRouteComponent(() => import('./pages/field/YardApp.js')) });
-const fieldPortRoute = createRoute({ getParentRoute: () => authFullscreenRoute, path: '/field/port', component: lazyRouteComponent(() => import('./pages/field/PortApp.js')) });
+const fieldYardRoute = createRoute({ getParentRoute: () => authFullscreenRoute, path: '/field/yard', beforeLoad: fieldRoleCheck(CAN_YARD), component: lazyRouteComponent(() => import('./pages/field/YardApp.js')) });
+const fieldPortRoute = createRoute({ getParentRoute: () => authFullscreenRoute, path: '/field/port', beforeLoad: fieldRoleCheck(CAN_PORT), component: lazyRouteComponent(() => import('./pages/field/PortApp.js')) });
 
 // Portal client routes
 const portalRootRoute = createRoute({ getParentRoute: () => rootRoute, id: 'portal-root', component: lazyRouteComponent(() => import('./pages/portal/PortalLayout.js')) });

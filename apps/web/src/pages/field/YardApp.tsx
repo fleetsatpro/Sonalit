@@ -1,6 +1,7 @@
-import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { ArrowLeft, ChevronRight, Package, Loader2, Check, X } from 'lucide-react';
+import { useState } from 'react';
+
 import { useYardQueue, useBookingContainers, useClampBookingContainer } from '../cds/hooks.js';
 
 type Row = Record<string, unknown>;
@@ -24,16 +25,16 @@ export default function YardApp() {
 
 function TopBar({ title, back, subtitle }: { title: string; back: string; subtitle?: string }) {
   return (
-    <header className="sticky top-0 z-10 bg-[#0B111C]/95 backdrop-blur border-b border-white/[.06] px-4 py-3 flex items-center gap-3">
+    <header className="sticky top-0 z-10 bg-ink-0/95 backdrop-blur border-b border-white/[.06] px-4 py-3 flex items-center gap-3">
       <Link
         to={back}
-        className="w-9 h-9 rounded-lg bg-white/[.05] border border-white/10 text-white/70 flex items-center justify-center"
+        className="w-9 h-9 rounded-lg bg-white/[.05] border border-white/10 text-text-1 flex items-center justify-center"
       >
         <ArrowLeft size={16} />
       </Link>
       <div className="flex-1 min-w-0">
-        <div className="text-[15px] font-bold text-white leading-tight truncate">{title}</div>
-        {subtitle && <div className="text-[11px] text-white/40 font-mono mt-0.5 truncate">{subtitle}</div>}
+        <div className="text-[15px] font-bold text-text-0 leading-tight truncate">{title}</div>
+        {subtitle && <div className="text-[11px] text-text-2 font-mono mt-0.5 truncate">{subtitle}</div>}
       </div>
     </header>
   );
@@ -44,10 +45,10 @@ function BookingPick({ onPick }: { onPick: (b: Row) => void }) {
   const rows = (data?.data ?? []) as Row[];
 
   return (
-    <div className="min-h-screen bg-[#0B111C] text-white">
+    <div className="min-h-screen bg-ink-0 text-text-0">
       <TopBar title="Select booking" back="/field" subtitle="Bookings with containers pending clamp" />
       <div className="p-4 space-y-2">
-        {isLoading && <Center><Loader2 className="animate-spin text-white/40" /></Center>}
+        {isLoading && <Center><Loader2 className="animate-spin text-text-2" /></Center>}
         {error && <Empty text="Could not load bookings. Pull down or retry." />}
         {!isLoading && !error && rows.length === 0 && <Empty text="No bookings pending clamp right now." />}
         {rows.map(b => (
@@ -59,16 +60,16 @@ function BookingPick({ onPick }: { onPick: (b: Row) => void }) {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-mono text-[13px] font-bold text-cds-orange">{s(b['booking_number'])}</span>
-                <span className="text-[11px] text-white/60 truncate">{s(b['customer_name'])}</span>
+                <span className="text-[11px] text-text-1 truncate">{s(b['customer_name'])}</span>
               </div>
-              <div className="text-[11px] text-white/50 mt-1 truncate">
+              <div className="text-[11px] text-text-2 mt-1 truncate">
                 {s(b['pickup_location'])} → {s(b['delivery_location'])}
               </div>
-              <div className="text-[10px] font-mono text-white/40 mt-1 flex items-center gap-2">
+              <div className="text-[10px] font-mono text-text-2 mt-1 flex items-center gap-2">
                 <Package size={10} /> {s(b['pending_containers'])} pending · {s(b['total_containers'])} total
               </div>
             </div>
-            <ChevronRight size={16} className="text-white/30" />
+            <ChevronRight size={16} className="text-text-2" />
           </button>
         ))}
       </div>
@@ -83,22 +84,22 @@ function ContainerPick({ booking, onBack, onPick }: { booking: Row; onBack: () =
   const pending = rows.filter(c => s(c['status']) === 'pending');
 
   return (
-    <div className="min-h-screen bg-[#0B111C] text-white">
-      <header className="sticky top-0 z-10 bg-[#0B111C]/95 backdrop-blur border-b border-white/[.06] px-4 py-3 flex items-center gap-3">
+    <div className="min-h-screen bg-ink-0 text-text-0">
+      <header className="sticky top-0 z-10 bg-ink-0/95 backdrop-blur border-b border-white/[.06] px-4 py-3 flex items-center gap-3">
         <button
           onClick={onBack}
-          className="w-9 h-9 rounded-lg bg-white/[.05] border border-white/10 text-white/70 flex items-center justify-center"
+          className="w-9 h-9 rounded-lg bg-white/[.05] border border-white/10 text-text-1 flex items-center justify-center"
         >
           <ArrowLeft size={16} />
         </button>
         <div className="flex-1 min-w-0">
-          <div className="text-[15px] font-bold text-white truncate">{s(booking['booking_number'])}</div>
-          <div className="text-[11px] text-white/40 font-mono truncate">{s(booking['customer_name'])}</div>
+          <div className="text-[15px] font-bold text-text-0 truncate">{s(booking['booking_number'])}</div>
+          <div className="text-[11px] text-text-2 font-mono truncate">{s(booking['customer_name'])}</div>
         </div>
       </header>
 
       <div className="p-4 space-y-2">
-        {isLoading && <Center><Loader2 className="animate-spin text-white/40" /></Center>}
+        {isLoading && <Center><Loader2 className="animate-spin text-text-2" /></Center>}
         {!isLoading && pending.length === 0 && (
           <Empty text="All containers on this booking are already clamped." />
         )}
@@ -113,11 +114,11 @@ function ContainerPick({ booking, onBack, onPick }: { booking: Row; onBack: () =
                 <span className="font-mono text-[14px] font-bold text-cds-orange">
                   {s(c['container_number']) || 'No number'}
                 </span>
-                <span className="text-[10px] font-mono text-white/60 bg-white/[.08] px-1.5 py-0.5 rounded">
+                <span className="text-[10px] font-mono text-text-1 bg-white/[.08] px-1.5 py-0.5 rounded">
                   {s(c['iso_type'])}
                 </span>
               </div>
-              <div className="text-[11px] text-white/50 mt-1">
+              <div className="text-[11px] text-text-2 mt-1">
                 {s(c['seal_number']) && <>Seal {s(c['seal_number'])} · </>}
                 {c['weight_kg'] != null && <>{s(c['weight_kg'])} kg</>}
               </div>
@@ -184,27 +185,27 @@ function ClampForm({ booking, container, onClose, onDone }: {
   };
 
   if (success) return (
-    <div className="min-h-screen bg-[#0B111C] text-white flex flex-col items-center justify-center p-6">
-      <div className="w-16 h-16 rounded-full bg-emerald-400/20 border border-emerald-400/40 flex items-center justify-center mb-4">
-        <Check size={32} className="text-emerald-400" strokeWidth={2.5} />
+    <div className="min-h-screen bg-ink-0 text-text-0 flex flex-col items-center justify-center p-6">
+      <div className="w-16 h-16 rounded-full bg-cds-teal/20 border border-cds-teal/40 flex items-center justify-center mb-4">
+        <Check size={32} className="text-cds-teal" strokeWidth={2.5} />
       </div>
       <div className="text-lg font-bold">Clamped</div>
-      <div className="text-[12px] text-white/50 font-mono mt-1">Trip created · CDS notified</div>
+      <div className="text-[12px] text-text-2 font-mono mt-1">Trip created · CDS notified</div>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-[#0B111C] text-white">
-      <header className="sticky top-0 z-10 bg-[#0B111C]/95 backdrop-blur border-b border-white/[.06] px-4 py-3 flex items-center gap-3">
+    <div className="min-h-screen bg-ink-0 text-text-0">
+      <header className="sticky top-0 z-10 bg-ink-0/95 backdrop-blur border-b border-white/[.06] px-4 py-3 flex items-center gap-3">
         <button
           onClick={onClose}
-          className="w-9 h-9 rounded-lg bg-white/[.05] border border-white/10 text-white/70 flex items-center justify-center"
+          className="w-9 h-9 rounded-lg bg-white/[.05] border border-white/10 text-text-1 flex items-center justify-center"
         >
           <X size={16} />
         </button>
         <div className="flex-1 min-w-0">
-          <div className="text-[13px] font-bold text-white truncate">Clamp e-lock</div>
-          <div className="text-[10px] font-mono text-white/40 truncate">
+          <div className="text-[13px] font-bold text-text-0 truncate">Clamp e-lock</div>
+          <div className="text-[10px] font-mono text-text-2 truncate">
             {s(booking['booking_number'])} · {s(container['container_number']) || '(no number)'}
           </div>
         </div>
@@ -224,17 +225,17 @@ function ClampForm({ booking, container, onClose, onDone }: {
         <Field label="Driver phone" value={driverPhone} onChange={setDriverPhone}
           placeholder="+254…" inputMode="tel" />
         <div>
-          <label className="block text-[11px] font-medium text-white/50 mb-1">Notes</label>
+          <label className="block text-[11px] font-medium text-text-2 mb-1">Notes</label>
           <textarea
             value={notes} onChange={e => setNotes(e.target.value)}
-            className="w-full min-h-[68px] px-3 py-2 rounded-lg bg-white/[.04] border border-white/[.08] text-white text-[14px] outline-none focus:border-cds-orange/50"
+            className="w-full min-h-[68px] px-3 py-2 rounded-lg bg-white/[.04] border border-white/[.08] text-text-0 text-[14px] outline-none focus:border-cds-orange/50"
             placeholder="Optional"
           />
         </div>
-        {error && <p className="text-[12px] text-red-400 font-mono">{error}</p>}
+        {error && <p className="text-[12px] text-cds-red font-mono">{error}</p>}
       </form>
 
-      <div className="fixed left-0 right-0 bottom-0 bg-[#0B111C] border-t border-white/[.06] p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
+      <div className="fixed left-0 right-0 bottom-0 bg-ink-0 border-t border-white/[.06] p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
         <button
           onClick={submit as unknown as (e: React.MouseEvent<HTMLButtonElement>) => void}
           disabled={clamp.isPending}
@@ -254,11 +255,11 @@ function Field({ label, value, onChange, ...rest }: {
 } & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'>) {
   return (
     <div>
-      <label className="block text-[11px] font-medium text-white/50 mb-1">{label}</label>
+      <label className="block text-[11px] font-medium text-text-2 mb-1">{label}</label>
       <input
         value={value}
         onChange={e => onChange(e.target.value)}
-        className="w-full h-11 px-3 rounded-lg bg-white/[.04] border border-white/[.08] text-white text-[15px] outline-none focus:border-cds-orange/50 transition-colors"
+        className="w-full h-11 px-3 rounded-lg bg-white/[.04] border border-white/[.08] text-text-0 text-[15px] outline-none focus:border-cds-orange/50 transition-colors"
         {...rest}
       />
     </div>
@@ -266,7 +267,7 @@ function Field({ label, value, onChange, ...rest }: {
 }
 
 function Empty({ text }: { text: string }) {
-  return <div className="py-16 text-center text-[12px] font-mono text-white/40">{text}</div>;
+  return <div className="py-16 text-center text-[12px] font-mono text-text-2">{text}</div>;
 }
 function Center({ children }: { children: React.ReactNode }) {
   return <div className="py-16 flex justify-center">{children}</div>;

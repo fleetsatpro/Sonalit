@@ -52,6 +52,12 @@ async function authenticate(req, res, next) {
 /**
  * Role-based access control.
  * @param {string[]} allowedRoles - Array of roles that may access the route.
+ *
+ * Two ways in: an exact match against `allowedRoles` always passes, which is
+ * how scoped roles outside ROLE_HIERARCHY (yard_agent, port_agent — see
+ * migration 077) get through routes that explicitly list them, without
+ * gaining anything via the hierarchy fallback below. Failing that, the usual
+ * hierarchy check applies for admin/dispatcher/operator/analyst/cfo.
  */
 function authorize(...allowedRoles) {
   const roles = allowedRoles.flat();
@@ -59,8 +65,9 @@ function authorize(...allowedRoles) {
     if (!req.user) {
       return res.status(401).json({ error: 'Authentication required' });
     }
+    if (roles.includes(req.user.role)) return next();
     const userLevel = ROLE_HIERARCHY[req.user.role] || 0;
-    const hasAccess = roles.some((r) => ROLE_HIERARCHY[r] <= userLevel);
+    const hasAccess = roles.some((r) => ROLE_HIERARCHY[r] !== undefined && ROLE_HIERARCHY[r] <= userLevel);
     if (!hasAccess) {
       return res.status(403).json({
         error: `Access denied. Required: ${roles.join(' or ')}. Your role: ${req.user.role}`,

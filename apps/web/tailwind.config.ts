@@ -46,10 +46,16 @@ export default {
         'cds-teal': '#33d6a8',
         'cds-amber': '#ffb020',
         'cds-red': '#ff5c5c',
+        // Port's accent — already used ad hoc as a raw #37e6ff literal in
+        // BookingManifest (YARD_COLOR.inbound), CDSBookings (LIFECYCLE
+        // Dispatched/In Transit) and the field app. Named here so those spots
+        // and the field app can share one token instead of repeating the hex.
+        'cds-cyan': '#37e6ff',
         'cds-orange-dim': 'rgba(255,122,0,0.12)',
         'cds-teal-dim': 'rgba(51,214,168,0.12)',
         'cds-amber-dim': 'rgba(255,176,32,0.12)',
         'cds-red-dim': 'rgba(255,92,92,0.12)',
+        'cds-cyan-dim': 'rgba(55,230,255,0.12)',
       },
       // Single system-wide font (Inter) — orbitron/mono keys are kept so
       // existing font-orbitron/font-mono classNames don't need touching,

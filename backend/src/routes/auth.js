@@ -36,7 +36,12 @@ router.get('/users', authenticate, authorize('admin', 'dispatcher'), async (req,
 });
 
 // ─── POST /api/v1/auth/users ──────────────────────────────────────────────────
-const VALID_ROLES = ['admin', 'dispatcher', 'operator', 'analyst', 'driver', 'cfo'];
+// yard_agent/port_agent are scoped CDS field-crew roles — see
+// backend/migrations/20260814_077_cds_field_agent_roles.sql and the
+// authorize()/field-role gating in backend/src/routes/cds.js. They sit
+// outside ROLE_HIERARCHY on purpose: least privilege, not a rung on the
+// admin>dispatcher>operator ladder.
+const VALID_ROLES = ['admin', 'dispatcher', 'operator', 'analyst', 'driver', 'cfo', 'yard_agent', 'port_agent'];
 
 router.post('/users', authenticate, authorize('admin'), async (req, res) => {
   try {

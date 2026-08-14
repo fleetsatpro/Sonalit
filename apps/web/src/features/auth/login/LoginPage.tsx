@@ -47,6 +47,17 @@ function safeRedirectTarget(param: unknown): string | null {
   }
 }
 
+// Yard/port field-crew accounts (see migration 077) have no use for the Orbit
+// launcher — everything there 403s for them — so an explicit ?redirect= wins
+// (the Sonalit Field APK already sends one, ?redirect=/field), otherwise a
+// scoped field role lands straight on its own screen instead of '/'.
+function resolveRedirect(explicit: string | null, role: string | undefined): string {
+  if (explicit) return explicit;
+  if (role === 'yard_agent') return '/field/yard';
+  if (role === 'port_agent') return '/field/port';
+  return '/';
+}
+
 export default function LoginPage(): React.ReactElement | null {
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
@@ -55,10 +66,10 @@ export default function LoginPage(): React.ReactElement | null {
   // is defined without a validator, so we fall back to reading window.location.
   const search = useSearch({ strict: false }) as Record<string, unknown>;
   const redirectFromSearch = safeRedirectTarget(search?.['redirect']);
-  const redirectTo: string =
+  const explicitRedirect =
     redirectFromSearch ??
-    safeRedirectTarget(new URLSearchParams(window.location.search).get('redirect')) ??
-    '/';
+    safeRedirectTarget(new URLSearchParams(window.location.search).get('redirect'));
+  const redirectTo: string = resolveRedirect(explicitRedirect, user?.role);
 
   const { toastProps, fire } = useLoginToast();
   const [forgotOpen, setForgotOpen] = useState<boolean>(false);
@@ -82,8 +93,14 @@ export default function LoginPage(): React.ReactElement | null {
 
   if (getAccessToken() || user) return null;
 
+  // setAuth() runs synchronously in AuthConsole's mutation onSuccess just
+  // before this fires, so the store already has the freshly-logged-in user —
+  // but this closure was created on the prior (logged-out) render, where
+  // `redirectTo` still resolved off a null role. Read the store directly
+  // instead of trusting the stale closure.
   function onLoginSuccess(): void {
-    void navigate({ to: redirectTo });
+    const freshUser = useAuthStore.getState().user;
+    void navigate({ to: resolveRedirect(explicitRedirect, freshUser?.role) });
   }
 
   return (
