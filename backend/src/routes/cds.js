@@ -11,6 +11,31 @@ router.use((req, res, next) => {
   next();
 });
 
+// Yard/port field-crew accounts (see migration 077) are scoped to exactly the
+// clamp/unclamp flow — nothing else in this router. Every other route here is
+// reachable by any authenticated user (admin/dispatcher/operator/analyst/cfo)
+// with no per-route authorize(), so without this check a yard_agent or
+// port_agent would inherit that same full CDS surface, defeating the point of
+// handing a shared yard/port device a least-privilege login.
+const CLAMP_PATH = /^\/bookings\/[^/]+\/containers\/[^/]+\/clamp$/;
+const UNCLAMP_PATH = /^\/bookings\/[^/]+\/containers\/[^/]+\/unclamp$/;
+router.use((req, res, next) => {
+  const role = req.user.role;
+  if (role !== 'yard_agent' && role !== 'port_agent') return next();
+
+  const allowed = role === 'yard_agent'
+    ? (req.path === '/field/yard-queue' || CLAMP_PATH.test(req.path))
+    : (req.path === '/field/port-queue' || UNCLAMP_PATH.test(req.path));
+
+  if (!allowed) {
+    return res.status(403).json({
+      error: 'field_role_restricted',
+      message: `${role === 'yard_agent' ? 'Yard' : 'Port'} field accounts can only use the ${role === 'yard_agent' ? 'clamp' : 'unclamp'} flow.`,
+    });
+  }
+  next();
+});
+
 function genCode(prefix) {
   const ts = Date.now().toString(36).toUpperCase();
   const rand = crypto.randomBytes(3).toString('hex').toUpperCase();
