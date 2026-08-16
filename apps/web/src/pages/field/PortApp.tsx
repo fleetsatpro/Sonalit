@@ -1,8 +1,8 @@
 import { Link } from '@tanstack/react-router';
 import {
   ArrowLeft, Check, ChevronRight, CloudOff, Hash, List as ListIcon, Loader2, Lock,
-  Map as MapIcon, MapPin, Package, Phone, ShieldCheck, StickyNote, Truck,
-  UserRound, X,
+  Map as MapIcon, MapPin, Package, Phone, ShieldAlert, ShieldCheck, StickyNote,
+  Truck, UserRound, X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import Map, { Marker, NavigationControl } from 'react-map-gl/maplibre';
@@ -198,15 +198,23 @@ function ContainerRow({ row, onOpen }: { row: Row; onOpen: () => void }) {
   );
 }
 
-const CONDITION_CHIPS = ['Seal intact', 'Minor damage', 'Missing seal', 'Wet cargo'] as const;
+// 'Seal intact' is deliberately absent — the seal is now its own required
+// verification step rather than one optional chip among several, so recording
+// it here too would let a crew tick the chip while skipping the actual check.
+const CONDITION_CHIPS = ['Minor damage', 'Wet cargo', 'Door damage', 'Late arrival'] as const;
+
+type SealCheck = null | 'match' | 'mismatch';
 
 function UnclampForm({ row, onClose, onDone }: { row: Row; onClose: () => void; onDone: () => void }) {
   const unclamp = useUnclampBookingContainer();
   const offline = !useOfflineQueue().online;
   const [notes, setNotes] = useState('');
   const [tags, setTags] = useState<Set<string>>(new Set());
+  const [sealCheck, setSealCheck] = useState<SealCheck>(null);
+  const [observedSeal, setObservedSeal] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState<null | 'submitted' | 'queued'>(null);
+  const expectedSeal = s(row['seal_number']);
 
   const toggleTag = (tag: string) => setTags(prev => {
     const next = new Set(prev);
@@ -216,6 +224,12 @@ function UnclampForm({ row, onClose, onDone }: { row: Row; onClose: () => void; 
 
   const submit = () => {
     setError('');
+    // The seal check is the reason the seal exists — refuse to record a
+    // delivery without it rather than defaulting to "fine".
+    if (sealCheck === null) {
+      setError('Check the seal before unclamping — confirm it matches or report a discrepancy.');
+      return;
+    }
     const bookingId = s(row['booking_id']);
     const containerId = s(row['id']);
     const label = s(row['container_number']) || 'Container';
@@ -224,6 +238,11 @@ function UnclampForm({ row, onClose, onDone }: { row: Row; onClose: () => void; 
       const payload = {
         notes: (tagPrefix + notes.trim()).trim() || null,
         lat, lng,
+        seal_intact: sealCheck === 'match',
+        // Sent on a match too: the server re-compares against the seal recorded
+        // at clamp, so a crew that ticks "matches" against the wrong number
+        // still gets caught.
+        observed_seal: observedSeal.trim() || (sealCheck === 'match' ? expectedSeal : null),
       };
 
       const queueIt = () => {
@@ -260,7 +279,12 @@ function UnclampForm({ row, onClose, onDone }: { row: Row; onClose: () => void; 
   // acts on.
   if (success) {
     const queued = success === 'queued';
-    const accent = queued ? '#ffb020' : '#37e6ff';
+    const tamper = sealCheck === 'mismatch';
+    // A seal discrepancy is not a happy path. Showing the usual green-lit
+    // "Delivered" would tell the crew the job closed cleanly when they have in
+    // fact just reported a possible break-in, so the tamper outcome keeps its
+    // own colour and wording even though the unclamp itself succeeded.
+    const accent = queued ? '#ffb020' : tamper ? '#ff5c5c' : '#37e6ff';
     return (
       <div className="min-h-screen bg-ink-0 text-text-0 flex flex-col items-center justify-center p-6 relative overflow-hidden">
         <div className="pointer-events-none absolute inset-0 opacity-30"
@@ -269,14 +293,22 @@ function UnclampForm({ row, onClose, onDone }: { row: Row; onClose: () => void; 
           style={{ background: `${accent}26`, border: `2px solid ${accent}80`, boxShadow: `0 0 40px -8px ${accent}99` }}>
           {queued
             ? <CloudOff size={34} style={{ color: accent }} strokeWidth={2.2} />
-            : <Check size={38} style={{ color: accent }} strokeWidth={2.5} />}
+            : tamper
+              ? <ShieldAlert size={36} style={{ color: accent }} strokeWidth={2.3} />
+              : <Check size={38} style={{ color: accent }} strokeWidth={2.5} />}
         </div>
-        <div className="relative text-xl font-bold">{queued ? 'Saved on device' : 'Unclamped · Delivered'}</div>
-        <div className="relative text-[12px] font-mono text-text-2 mt-1.5">
+        <div className="relative text-xl font-bold text-center">
+          {queued ? 'Saved on device' : tamper ? 'Seal discrepancy reported' : 'Unclamped · Delivered'}
+        </div>
+        <div className="relative text-[12px] font-mono text-text-2 mt-1.5 text-center">
           {s(row['container_number']) || 'Container'} {queued ? '· not yet sent' : 'released'}
         </div>
-        <div className="relative text-[10px] font-mono text-text-2/60 mt-0.5">
-          {queued ? 'Will sync automatically when back online' : 'CDS control room notified'}
+        <div className="relative text-[10px] font-mono text-text-2/60 mt-0.5 text-center max-w-[260px]">
+          {queued
+            ? 'Will sync automatically when back online'
+            : tamper
+              ? 'Escalated to management and written to the custody chain'
+              : 'CDS control room notified'}
         </div>
       </div>
     );
@@ -312,11 +344,60 @@ function UnclampForm({ row, onClose, onDone }: { row: Row; onClose: () => void; 
 
         <div className="rounded-2xl border border-white/[.08] bg-white/[.03] p-4 space-y-2.5">
           <InfoRow icon={<Hash size={12} />} label="Type" value={s(row['iso_type']) || '—'} mono />
-          <InfoRow icon={<ShieldCheck size={12} />} label="Seal" value={s(row['seal_number']) || '—'} mono />
           <InfoRow icon={<Lock size={12} />} label="Lock" value={s(row['lock_serial']) || '—'} mono />
           <InfoRow icon={<Truck size={12} />} label="Truck" value={s(row['vehicle_reg']) || '—'} />
           <InfoRow icon={<UserRound size={12} />} label="Driver" value={s(row['driver_name']) || '—'} />
           {row['driver_phone'] != null && <InfoRow icon={<Phone size={12} />} label="Phone" value={s(row['driver_phone'])} mono />}
+        </div>
+
+        {/* The seal check is the security purpose of the whole trip, so it gets
+            its own prominent step rather than sitting in the info list — the
+            crew has to look at the physical seal and answer. */}
+        <div>
+          <div className="text-[10px] font-bold font-mono uppercase tracking-widest text-cds-cyan/80 mb-2">
+            Seal check <span className="text-cds-red">*</span>
+          </div>
+          <div className="rounded-2xl border border-white/[.08] bg-white/[.03] p-4">
+            <div className="text-[11px] text-text-2">Seal recorded at clamp</div>
+            <div className="font-mono text-[20px] font-bold text-text-0 tracking-wide mt-1 mb-3 break-all">
+              {expectedSeal || '(none recorded)'}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => { setSealCheck('match'); setObservedSeal(''); }}
+                className="flex items-center justify-center gap-1.5 h-11 rounded-xl text-[12px] font-bold border transition-colors cursor-pointer"
+                style={sealCheck === 'match'
+                  ? { color: '#062018', background: '#33d6a8', borderColor: '#33d6a8' }
+                  : { color: 'rgba(255,255,255,.55)', background: 'rgba(255,255,255,.03)', borderColor: 'rgba(255,255,255,.12)' }}>
+                <ShieldCheck size={14} /> Matches
+              </button>
+              <button type="button" onClick={() => setSealCheck('mismatch')}
+                className="flex items-center justify-center gap-1.5 h-11 rounded-xl text-[12px] font-bold border transition-colors cursor-pointer"
+                style={sealCheck === 'mismatch'
+                  ? { color: '#2b0000', background: '#ff5c5c', borderColor: '#ff5c5c' }
+                  : { color: 'rgba(255,255,255,.55)', background: 'rgba(255,255,255,.03)', borderColor: 'rgba(255,255,255,.12)' }}>
+                <ShieldAlert size={14} /> Broken / different
+              </button>
+            </div>
+
+            {sealCheck === 'mismatch' && (
+              <div className="mt-3">
+                <label htmlFor="observedSeal" className="block text-[11px] font-medium text-text-2 mb-1">
+                  Seal actually found (leave blank if missing)
+                </label>
+                <input
+                  id="observedSeal"
+                  value={observedSeal}
+                  onChange={e => setObservedSeal(e.target.value)}
+                  placeholder="e.g. SEAL-099"
+                  autoCapitalize="characters"
+                  className="w-full h-11 px-3 rounded-lg bg-white/[.04] border border-cds-red/40 text-text-0 text-[15px] font-mono outline-none focus:border-cds-red transition-colors"
+                />
+                <p className="text-[10px] text-cds-red mt-2 leading-snug">
+                  This raises a critical tamper alert to management and is recorded permanently in the container&apos;s custody chain.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
 
         <div>
@@ -359,12 +440,17 @@ function UnclampForm({ row, onClose, onDone }: { row: Row; onClose: () => void; 
           onClick={submit}
           disabled={unclamp.isPending}
           className="w-full h-14 rounded-xl text-[14px] font-bold border-none disabled:opacity-50 transition-all active:brightness-110 flex items-center justify-center gap-2"
-          style={{ background: 'linear-gradient(135deg, #37e6ff, #7ce8ff)', color: '#0c0e12' }}
+          style={sealCheck === 'mismatch'
+            ? { background: 'linear-gradient(135deg, #ff5c5c, #ff8a8a)', color: '#2b0000' }
+            : { background: 'linear-gradient(135deg, #37e6ff, #7ce8ff)', color: '#0c0e12' }}
         >
           {unclamp.isPending
             ? <Loader2 size={16} className="animate-spin" />
             : offline ? <CloudOff size={16} strokeWidth={2.5} /> : <Check size={16} strokeWidth={2.5} />}
-          {unclamp.isPending ? 'Submitting…' : offline ? 'Save on device' : 'Confirm unclamp'}
+          {unclamp.isPending ? 'Submitting…'
+            : offline ? 'Save on device'
+            : sealCheck === 'mismatch' ? 'Report & unclamp'
+            : 'Confirm unclamp'}
         </button>
       </div>
     </div>
