@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { authenticate } = require('../middleware/auth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
+const requireIdempotencyKey = require('../middleware/idempotency');
 const { extractBookingData } = require('../utils/extractionClient');
 
 router.use(authenticate, attachOrgDb);
@@ -782,7 +783,12 @@ router.get('/field/port-queue', asyncHandler(async (req, res) => {
 // Yard team clamps an e-lock onto one container of a booking.
 // Auto-creates supporting rows (transporter, driver, vehicle, container, lock, trip)
 // so the mobile UI only needs to send free-text names and numbers.
-router.post('/bookings/:id/containers/:cid/clamp', asyncHandler(async (req, res) => {
+// requireIdempotencyKey is a no-op unless the caller sends x-idempotency-key,
+// so nothing changes for the online path. The field app's offline queue does
+// send one, and it must: a clamp creates a trip and upserts a driver/vehicle/
+// lock, so a queued submission retried after a flaky-network timeout would
+// otherwise create a second trip for the same container.
+router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
   const { id: bookingId, cid: bcId } = req.params;
   const {
@@ -931,7 +937,8 @@ router.post('/bookings/:id/containers/:cid/clamp', asyncHandler(async (req, res)
 }));
 
 // Port team unclamps the e-lock — container has arrived and been delivered.
-router.post('/bookings/:id/containers/:cid/unclamp', asyncHandler(async (req, res) => {
+// Idempotent for the same reason as clamp — see the note there.
+router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
   const { id: bookingId, cid: bcId } = req.params;
   const { notes, lat, lng } = req.body || {};

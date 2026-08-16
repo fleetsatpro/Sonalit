@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import {
-  ArrowLeft, Check, ChevronRight, Hash, List as ListIcon, Loader2, Lock,
+  ArrowLeft, Check, ChevronRight, CloudOff, Hash, List as ListIcon, Loader2, Lock,
   Map as MapIcon, MapPin, Package, Phone, ShieldCheck, StickyNote, Truck,
   UserRound, X,
 } from 'lucide-react';
@@ -9,6 +9,9 @@ import Map, { Marker, NavigationControl } from 'react-map-gl/maplibre';
 
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { usePortQueue, useUnclampBookingContainer } from '../cds/hooks.js';
+
+import { OfflineBanner, useOfflineQueue } from './OfflineBanner.js';
+import { enqueue, isOnline } from './offlineQueue.js';
 
 type Row = Record<string, unknown>;
 const s = (v: unknown) => v == null ? '' : String(v);
@@ -106,6 +109,8 @@ export default function PortApp() {
         </div>
       </header>
 
+      <OfflineBanner />
+
       {tab === 'list' ? (
         <div className="flex-1 p-4 space-y-2.5">
           {isLoading && <Center><Loader2 className="animate-spin text-text-2" /></Center>}
@@ -197,10 +202,11 @@ const CONDITION_CHIPS = ['Seal intact', 'Minor damage', 'Missing seal', 'Wet car
 
 function UnclampForm({ row, onClose, onDone }: { row: Row; onClose: () => void; onDone: () => void }) {
   const unclamp = useUnclampBookingContainer();
+  const offline = !useOfflineQueue().online;
   const [notes, setNotes] = useState('');
   const [tags, setTags] = useState<Set<string>>(new Set());
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
+  const [success, setSuccess] = useState<null | 'submitted' | 'queued'>(null);
 
   const toggleTag = (tag: string) => setTags(prev => {
     const next = new Set(prev);
@@ -211,18 +217,31 @@ function UnclampForm({ row, onClose, onDone }: { row: Row; onClose: () => void; 
   const submit = () => {
     setError('');
     const bookingId = s(row['booking_id']);
+    const containerId = s(row['id']);
+    const label = s(row['container_number']) || 'Container';
     const tagPrefix = tags.size ? `[${Array.from(tags).join(', ')}] ` : '';
     const doSubmit = (lat?: number, lng?: number) => {
-      unclamp.mutate({
-        bookingId,
-        cid: s(row['id']),
+      const payload = {
         notes: (tagPrefix + notes.trim()).trim() || null,
         lat, lng,
-      }, {
-        onSuccess: () => { setSuccess(true); setTimeout(onDone, 1100); },
+      };
+
+      const queueIt = () => {
+        enqueue({ kind: 'unclamp', bookingId, containerId, label, payload });
+        setSuccess('queued');
+        setTimeout(onDone, 1400);
+      };
+
+      // See the matching note in YardApp: don't fire a request that can only
+      // time out, and treat a response-less failure as queueable.
+      if (!isOnline()) { queueIt(); return; }
+
+      unclamp.mutate({ bookingId, cid: containerId, ...payload }, {
+        onSuccess: () => { setSuccess('submitted'); setTimeout(onDone, 1100); },
         onError: (err: unknown) => {
-          const m = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-          setError(m || 'Could not submit unclamp.');
+          const ax = err as { response?: { data?: { error?: string } } };
+          if (!ax.response) { queueIt(); return; }
+          setError(ax.response.data?.error || 'Could not submit unclamp.');
         },
       });
     };
@@ -235,19 +254,33 @@ function UnclampForm({ row, onClose, onDone }: { row: Row; onClose: () => void; 
     } else doSubmit();
   };
 
-  if (success) return (
-    <div className="min-h-screen bg-ink-0 text-text-0 flex flex-col items-center justify-center p-6 relative overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 opacity-30"
-        style={{ background: 'radial-gradient(circle at 50% 45%, rgba(55,230,255,.25), transparent 55%)' }} />
-      <div className="relative w-20 h-20 rounded-full bg-cds-cyan/15 border-2 border-cds-cyan/50 flex items-center justify-center mb-5"
-        style={{ boxShadow: '0 0 40px -8px rgba(55,230,255,.6)' }}>
-        <Check size={38} className="text-cds-cyan" strokeWidth={2.5} />
+  // Queued and delivered are different facts — see the matching note on
+  // YardApp's ClampSuccess. Claiming "Delivered · control room notified" for
+  // something still sitting in the device queue would be a lie the worker
+  // acts on.
+  if (success) {
+    const queued = success === 'queued';
+    const accent = queued ? '#ffb020' : '#37e6ff';
+    return (
+      <div className="min-h-screen bg-ink-0 text-text-0 flex flex-col items-center justify-center p-6 relative overflow-hidden">
+        <div className="pointer-events-none absolute inset-0 opacity-30"
+          style={{ background: `radial-gradient(circle at 50% 45%, ${accent}40, transparent 55%)` }} />
+        <div className="relative w-20 h-20 rounded-full flex items-center justify-center mb-5"
+          style={{ background: `${accent}26`, border: `2px solid ${accent}80`, boxShadow: `0 0 40px -8px ${accent}99` }}>
+          {queued
+            ? <CloudOff size={34} style={{ color: accent }} strokeWidth={2.2} />
+            : <Check size={38} style={{ color: accent }} strokeWidth={2.5} />}
+        </div>
+        <div className="relative text-xl font-bold">{queued ? 'Saved on device' : 'Unclamped · Delivered'}</div>
+        <div className="relative text-[12px] font-mono text-text-2 mt-1.5">
+          {s(row['container_number']) || 'Container'} {queued ? '· not yet sent' : 'released'}
+        </div>
+        <div className="relative text-[10px] font-mono text-text-2/60 mt-0.5">
+          {queued ? 'Will sync automatically when back online' : 'CDS control room notified'}
+        </div>
       </div>
-      <div className="relative text-xl font-bold">Unclamped · Delivered</div>
-      <div className="relative text-[12px] font-mono text-text-2 mt-1.5">{s(row['container_number']) || 'Container'} released</div>
-      <div className="relative text-[10px] font-mono text-text-2/60 mt-0.5">CDS control room notified</div>
-    </div>
-  );
+    );
+  }
 
   return (
     <div className="min-h-screen bg-ink-0 text-text-0">
@@ -328,8 +361,10 @@ function UnclampForm({ row, onClose, onDone }: { row: Row; onClose: () => void; 
           className="w-full h-14 rounded-xl text-[14px] font-bold border-none disabled:opacity-50 transition-all active:brightness-110 flex items-center justify-center gap-2"
           style={{ background: 'linear-gradient(135deg, #37e6ff, #7ce8ff)', color: '#0c0e12' }}
         >
-          {unclamp.isPending ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} strokeWidth={2.5} />}
-          {unclamp.isPending ? 'Submitting…' : 'Confirm unclamp'}
+          {unclamp.isPending
+            ? <Loader2 size={16} className="animate-spin" />
+            : offline ? <CloudOff size={16} strokeWidth={2.5} /> : <Check size={16} strokeWidth={2.5} />}
+          {unclamp.isPending ? 'Submitting…' : offline ? 'Save on device' : 'Confirm unclamp'}
         </button>
       </div>
     </div>

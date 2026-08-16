@@ -5,6 +5,8 @@ import { useEffect, useMemo } from 'react';
 import { useAuthStore } from '../../stores/auth.js';
 import { usePortQueue, useYardQueue } from '../cds/hooks.js';
 
+import { OfflineBanner } from './OfflineBanner.js';
+
 // yard_agent/port_agent are scoped, single-purpose logins (see migration 077
 // + the field-role gating in backend/src/routes/cds.js) — a device carrying
 // one of those accounts has no use for the other team's tile, since the API
@@ -100,6 +102,10 @@ export default function FieldHome() {
             {ROLE_LABEL[role] ?? role} · {user?.email}
           </div>
         </div>
+      </div>
+
+      <div className="relative -mx-1">
+        <OfflineBanner />
       </div>
 
       <main className="relative flex-1 px-5 space-y-3">

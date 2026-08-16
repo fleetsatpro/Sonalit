@@ -1,11 +1,14 @@
 import { Link } from '@tanstack/react-router';
 import {
-  ArrowLeft, ArrowRight, Building2, Check, ChevronRight, Lock, Loader2,
+  ArrowLeft, ArrowRight, Building2, Check, ChevronRight, CloudOff, Lock, Loader2,
   MapPin, Package, Phone, StickyNote, Truck, UserRound, X,
 } from 'lucide-react';
 import { useState } from 'react';
 
 import { useYardQueue, useBookingContainers, useClampBookingContainer } from '../cds/hooks.js';
+
+import { OfflineBanner, useOfflineQueue } from './OfflineBanner.js';
+import { enqueue, isOnline } from './offlineQueue.js';
 
 type Row = Record<string, unknown>;
 const s = (v: unknown) => v == null ? '' : String(v);
@@ -79,6 +82,10 @@ function TopBar({ title, back, subtitle, step }: {
         </div>
       </div>
       <StepBar step={step} />
+      {/* Lives in the shared bar so every step of the flow reports sync state,
+          not just the first screen — a worker who queued a clamp two steps ago
+          should still be able to see that it hasn't gone anywhere yet. */}
+      <OfflineBanner />
     </header>
   );
 }
@@ -137,7 +144,7 @@ function BookingPick({ onPick }: { onPick: (b: Row) => void }) {
 
 function ContainerPick({ booking, onBack, onPick }: { booking: Row; onBack: () => void; onPick: (c: Row) => void }) {
   const bookingId = s(booking['booking_id']);
-  const { data, isLoading } = useBookingContainers(bookingId);
+  const { data, isLoading } = useBookingContainers(bookingId, { offline: true });
   const rows = (data?.data ?? []) as Row[];
   const pending = rows.filter(c => s(c['status']) === 'pending');
 
@@ -185,6 +192,7 @@ function ClampForm({ booking, container, onClose, onDone }: {
   booking: Row; container: Row; onClose: () => void; onDone: () => void;
 }) {
   const clamp = useClampBookingContainer();
+  const offline = !useOfflineQueue().online;
   const [lockSerial, setLockSerial] = useState('');
   const [transporter, setTransporter] = useState('');
   const [truckReg, setTruckReg] = useState('');
@@ -193,7 +201,7 @@ function ClampForm({ booking, container, onClose, onDone }: {
   const [driverPhone, setDriverPhone] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
+  const [success, setSuccess] = useState<null | 'submitted' | 'queued'>(null);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -202,10 +210,12 @@ function ClampForm({ booking, container, onClose, onDone }: {
       setError('E-lock serial, truck reg and driver name are required.');
       return;
     }
+    const bookingId = s(booking['booking_id']);
+    const containerId = s(container['id']);
+    const label = s(container['container_number']) || 'Container';
+
     const doSubmit = (lat?: number, lng?: number) => {
-      clamp.mutate({
-        bookingId: s(booking['booking_id']),
-        cid: s(container['id']),
+      const payload = {
         lock_serial: lockSerial.trim(),
         transporter_name: transporter.trim() || null,
         truck_reg: truckReg.trim(),
@@ -214,14 +224,30 @@ function ClampForm({ booking, container, onClose, onDone }: {
         driver_phone: driverPhone.trim() || null,
         notes: notes.trim() || null,
         lat, lng,
-      }, {
+      };
+
+      const queueIt = () => {
+        enqueue({ kind: 'clamp', bookingId, containerId, label, payload });
+        setSuccess('queued');
+        setTimeout(onDone, 1400);
+      };
+
+      // Known-offline: don't bother firing a request that can only fail, and
+      // don't make the worker wait out a timeout to find that out.
+      if (!isOnline()) { queueIt(); return; }
+
+      clamp.mutate({ bookingId, cid: containerId, ...payload }, {
         onSuccess: () => {
-          setSuccess(true);
+          setSuccess('submitted');
           setTimeout(onDone, 1100);
         },
         onError: (err: unknown) => {
-          const m = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-          setError(m || 'Could not submit clamp.');
+          const ax = err as { response?: { data?: { error?: string } } };
+          // No response at all means the request never landed (dead zone,
+          // timeout) — that's queueable. A real HTTP error is a genuine
+          // rejection and must be shown, not silently retried forever.
+          if (!ax.response) { queueIt(); return; }
+          setError(ax.response.data?.error || 'Could not submit clamp.');
         },
       });
     };
@@ -234,19 +260,7 @@ function ClampForm({ booking, container, onClose, onDone }: {
     } else doSubmit();
   };
 
-  if (success) return (
-    <div className="min-h-screen bg-ink-0 text-text-0 flex flex-col items-center justify-center p-6 relative overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 opacity-30"
-        style={{ background: 'radial-gradient(circle at 50% 45%, rgba(51,214,168,.25), transparent 55%)' }} />
-      <div className="relative w-20 h-20 rounded-full bg-cds-teal/15 border-2 border-cds-teal/50 flex items-center justify-center mb-5"
-        style={{ boxShadow: '0 0 40px -8px rgba(51,214,168,.6)' }}>
-        <Check size={38} className="text-cds-teal" strokeWidth={2.5} />
-      </div>
-      <div className="relative text-xl font-bold">Clamped</div>
-      <div className="relative text-[12px] font-mono text-text-2 mt-1.5">{s(container['container_number']) || 'Container'} · Trip created</div>
-      <div className="relative text-[10px] font-mono text-text-2/60 mt-0.5">CDS control room notified</div>
-    </div>
-  );
+  if (success) return <ClampSuccess mode={success} label={s(container['container_number']) || 'Container'} />;
 
   return (
     <div className="min-h-screen bg-ink-0 text-text-0">
@@ -312,9 +326,46 @@ function ClampForm({ booking, container, onClose, onDone }: {
           className="w-full h-14 rounded-xl text-[14px] font-bold border-none disabled:opacity-50 transition-all active:brightness-110 flex items-center justify-center gap-2"
           style={{ background: 'linear-gradient(135deg, #ff7a00, #F0B429)', color: '#0c0e12' }}
         >
-          {clamp.isPending ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} strokeWidth={2.5} />}
-          {clamp.isPending ? 'Submitting…' : 'Confirm clamp'}
+          {clamp.isPending
+            ? <Loader2 size={16} className="animate-spin" />
+            : offline ? <CloudOff size={16} strokeWidth={2.5} /> : <Check size={16} strokeWidth={2.5} />}
+          {/* Say up front where this is going. Finding out only afterwards
+              that it was saved rather than sent is a nasty surprise on a
+              custody record. */}
+          {clamp.isPending ? 'Submitting…' : offline ? 'Save on device' : 'Confirm clamp'}
         </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Two genuinely different outcomes, deliberately not blurred into one.
+ *
+ * "Clamped" claims a trip exists in CDS and the control room can see it.
+ * When the action is only sitting in the device queue, saying that would be a
+ * lie the worker acts on — they'd walk away believing dispatch knows. The
+ * queued variant is reassuring but precise about what has and hasn't happened.
+ */
+function ClampSuccess({ mode, label }: { mode: 'submitted' | 'queued'; label: string }) {
+  const queued = mode === 'queued';
+  const accent = queued ? '#ffb020' : '#33d6a8';
+  return (
+    <div className="min-h-screen bg-ink-0 text-text-0 flex flex-col items-center justify-center p-6 relative overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 opacity-30"
+        style={{ background: `radial-gradient(circle at 50% 45%, ${accent}40, transparent 55%)` }} />
+      <div className="relative w-20 h-20 rounded-full flex items-center justify-center mb-5"
+        style={{ background: `${accent}26`, border: `2px solid ${accent}80`, boxShadow: `0 0 40px -8px ${accent}99` }}>
+        {queued
+          ? <CloudOff size={34} style={{ color: accent }} strokeWidth={2.2} />
+          : <Check size={38} style={{ color: accent }} strokeWidth={2.5} />}
+      </div>
+      <div className="relative text-xl font-bold">{queued ? 'Saved on device' : 'Clamped'}</div>
+      <div className="relative text-[12px] font-mono text-text-2 mt-1.5">
+        {label} · {queued ? 'not yet sent' : 'Trip created'}
+      </div>
+      <div className="relative text-[10px] font-mono text-text-2/60 mt-0.5">
+        {queued ? 'Will sync automatically when back online' : 'CDS control room notified'}
       </div>
     </div>
   );
