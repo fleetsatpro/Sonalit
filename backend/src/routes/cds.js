@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { authenticate } = require('../middleware/auth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
+const requireIdempotencyKey = require('../middleware/idempotency');
 const { extractBookingData } = require('../utils/extractionClient');
 
 router.use(authenticate, attachOrgDb);
@@ -19,12 +20,18 @@ router.use((req, res, next) => {
 // handing a shared yard/port device a least-privilege login.
 const CLAMP_PATH = /^\/bookings\/[^/]+\/containers\/[^/]+\/clamp$/;
 const UNCLAMP_PATH = /^\/bookings\/[^/]+\/containers\/[^/]+\/unclamp$/;
+// The Yard app's container-pick screen (YardApp.tsx ContainerPick) lists a
+// chosen booking's containers before clamping one — GET only, so listing
+// stays read-only and adding/editing containers on that same path (POST)
+// is still out of reach.
+const BOOKING_CONTAINERS_LIST_PATH = /^\/bookings\/[^/]+\/containers$/;
 router.use((req, res, next) => {
   const role = req.user.role;
   if (role !== 'yard_agent' && role !== 'port_agent') return next();
 
   const allowed = role === 'yard_agent'
-    ? (req.path === '/field/yard-queue' || CLAMP_PATH.test(req.path))
+    ? (req.path === '/field/yard-queue' || CLAMP_PATH.test(req.path)
+       || (req.method === 'GET' && BOOKING_CONTAINERS_LIST_PATH.test(req.path)))
     : (req.path === '/field/port-queue' || UNCLAMP_PATH.test(req.path));
 
   if (!allowed) {
@@ -40,6 +47,114 @@ function genCode(prefix) {
   const ts = Date.now().toString(36).toUpperCase();
   const rand = crypto.randomBytes(3).toString('hex').toUpperCase();
   return `${prefix}-${ts}-${rand}`;
+}
+
+/**
+ * Canonical string form of a coordinate for hashing, at the precision the
+ * NUMERIC(10,7) column stores.
+ *
+ * Both the append and the verify path must run values through this or the
+ * chain reports tampering on untouched rows. The write sends -4.05 while the
+ * read gets it back as a float (config/database.js installs a NUMERIC type
+ * parser), and "-4.05" hashes differently from "-4.0500000" — so neither the
+ * raw input nor the raw DB value is safe to hash directly.
+ */
+function normCoord(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isNaN(n) ? null : n.toFixed(7);
+}
+
+/**
+ * The exact bytes that get hashed for a custody event.
+ *
+ * Written once and used by both the append path and the verify path, because
+ * the moment those two disagree by so much as a key order the chain reports
+ * tampering on records nobody touched. Every value here must be in the same
+ * form it will have when read back out of Postgres — see the coordinate
+ * normalisation in appendCustodyEvent.
+ */
+function custodyPayload({
+  seq, kind, bookingContainerId, orgId, actorUserId, actorName,
+  sealNumber, sealIntact, lockSerial, lat, lng, notes, prevHash,
+}) {
+  return JSON.stringify({
+    seq, kind,
+    booking_container_id: bookingContainerId,
+    org_id: orgId,
+    actor_user_id: actorUserId ?? null,
+    actor_name: actorName ?? null,
+    seal_number: sealNumber ?? null,
+    seal_intact: sealIntact ?? null,
+    lock_serial: lockSerial ?? null,
+    lat: lat ?? null,
+    lng: lng ?? null,
+    notes: notes ?? null,
+    prev_hash: prevHash ?? null,
+  });
+}
+
+/**
+ * Append a link to a container's tamper-evident custody chain.
+ *
+ * Mirrors the convoy chain in routes/portalCustody.js: each event hashes its
+ * own contents together with the previous event's hash, so editing or removing
+ * any historical link invalidates every hash after it.
+ *
+ * The read of the tail is FOR UPDATE so two concurrent appends can't both take
+ * the same prev_hash and fork the chain. That only locks an existing row, so
+ * the very first two events on a container could still race — the
+ * UNIQUE (booking_container_id, seq) constraint is the backstop there, turning
+ * a would-be fork into a failed insert.
+ *
+ * Never throws into the caller's response path: a custody event is a record of
+ * something that already physically happened, so failing to write it must not
+ * roll back or 500 the clamp/unclamp the worker just performed. It is logged
+ * loudly instead, and the chain's own gap in seq makes the omission visible.
+ */
+async function appendCustodyEvent(req, {
+  bookingContainerId, tripId = null, kind, sealNumber = null, sealIntact = null,
+  lockSerial = null, lat = null, lng = null, notes = null,
+}) {
+  try {
+    const orgId = req.user.org_id;
+    const tail = await req.db(
+      `SELECT hash, seq FROM cds_custody_events
+        WHERE booking_container_id = $1 ORDER BY seq DESC LIMIT 1 FOR UPDATE`,
+      [bookingContainerId]
+    );
+    const prevHash = tail.rows[0]?.hash ?? null;
+    const seq = (tail.rows[0]?.seq ?? -1) + 1;
+    const actorName = req.user.name || req.user.email || null;
+
+    // Coordinates are hashed at exactly the precision the NUMERIC(10,7) column
+    // stores. Hashing the raw JS number instead would make the chain
+    // unverifiable: -4.05 goes in, "-4.0500000" comes back out, and every
+    // recomputation would report tampering on untouched rows.
+    const latN = normCoord(lat);
+    const lngN = normCoord(lng);
+
+    const payload = custodyPayload({
+      seq, kind, bookingContainerId, orgId,
+      actorUserId: req.user.id ?? null, actorName,
+      sealNumber, sealIntact, lockSerial,
+      lat: latN, lng: lngN, notes, prevHash,
+    });
+    const hash = crypto.createHash('sha256').update(payload).digest('hex');
+
+    await req.db(
+      `INSERT INTO cds_custody_events
+         (org_id, booking_container_id, trip_id, seq, kind, actor_user_id, actor_name,
+          lat, lng, seal_number, seal_intact, lock_serial, notes, hash, prev_hash)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+      [orgId, bookingContainerId, tripId, seq, kind, req.user.id ?? null, actorName,
+       latN, lngN, sealNumber, sealIntact, lockSerial, notes, hash, prevHash]
+    );
+  } catch (err) {
+    require('../utils/logger').error(
+      `custody chain append failed (container=${bookingContainerId}, kind=${kind}): ${err.message}`
+    );
+  }
 }
 
 function paginate(query) {
@@ -392,8 +507,11 @@ router.post('/trips/:id/clamp', asyncHandler(async (req, res) => {
         [lock_serial.trim(), 'SecuriSat', orgId]);
     }
     lockId = lk.rows[0].id;
+    // 'installed' — not 'locked', which isn't a value cds_electronic_locks_status_check
+    // allows. Matches the dashboard's active_locks KPI just below (status IN
+    // ('assigned','installed')), which already assumed this was the value in use.
     await req.db('UPDATE cds_electronic_locks SET status=$1, container_id=$2, vehicle_id=$3, updated_at=NOW() WHERE id=$4',
-      ['locked', containerId, vehicleId, lockId]);
+      ['installed', containerId, vehicleId, lockId]);
   }
 
   const trailerNote = trailer_number ? `Trailer: ${trailer_number.trim()}` : null;
@@ -707,6 +825,53 @@ router.delete('/bookings/:id/containers/:cid', asyncHandler(async (req, res) => 
   res.json({ ok: true });
 }));
 
+// The container's custody ledger, re-verified on every read.
+//
+// A hash chain nobody checks is decoration, so this doesn't just return the
+// rows: it recomputes each event's hash from its stored fields and re-links it
+// to its predecessor. `verified` false means that row's contents no longer
+// match its hash (edited in place); `chain_broken` means the link to the
+// previous event doesn't line up (a row was removed or reordered).
+router.get('/bookings/:id/containers/:cid/custody', asyncHandler(async (req, res) => {
+  const result = await req.db(
+    `SELECT seq, kind, actor_user_id, actor_name, lat, lng, seal_number, seal_intact,
+            lock_serial, notes, hash, prev_hash, trip_id, created_at
+       FROM cds_custody_events
+      WHERE booking_container_id = $1 AND org_id = $2
+      ORDER BY seq ASC`,
+    [req.params.cid, req.user.org_id]
+  );
+
+  let tampered = false;
+  const events = result.rows.map((r, i) => {
+    const recomputed = crypto.createHash('sha256').update(custodyPayload({
+      seq: r.seq, kind: r.kind,
+      bookingContainerId: req.params.cid,
+      orgId: req.user.org_id,
+      actorUserId: r.actor_user_id, actorName: r.actor_name,
+      sealNumber: r.seal_number, sealIntact: r.seal_intact,
+      lockSerial: r.lock_serial,
+      lat: normCoord(r.lat), lng: normCoord(r.lng),
+      notes: r.notes, prevHash: r.prev_hash,
+    })).digest('hex');
+
+    const verified = recomputed === r.hash;
+    const expectedPrev = i === 0 ? null : result.rows[i - 1].hash;
+    const chainBroken = (r.prev_hash ?? null) !== expectedPrev;
+    if (!verified || chainBroken) tampered = true;
+
+    return {
+      seq: r.seq, kind: r.kind, actor: r.actor_name, timestamp: r.created_at,
+      lat: r.lat, lng: r.lng, seal_number: r.seal_number, seal_intact: r.seal_intact,
+      lock_serial: r.lock_serial, notes: r.notes, trip_id: r.trip_id,
+      hash: r.hash, prev_hash: r.prev_hash,
+      verified, chain_broken: chainBroken,
+    };
+  });
+
+  res.json({ data: events, total: events.length, chain_intact: !tampered });
+}));
+
 // ══════════════════════════════════════════════════════════════
 // 9b. Field ops — Yard & Port teams (mobile APK)
 // ══════════════════════════════════════════════════════════════
@@ -716,8 +881,8 @@ router.get('/field/yard-queue', asyncHandler(async (req, res) => {
   const result = await req.db(`
     SELECT b.id AS booking_id, b.booking_number, b.pickup_location, b.delivery_location,
            b.commodity, b.shipping_line, b.vessel, b.eta, cu.company_name AS customer_name,
-           COUNT(bc.id)::int AS pending_containers,
-           COUNT(bc2.id)::int AS total_containers
+           COUNT(DISTINCT bc.id)::int AS pending_containers,
+           COUNT(DISTINCT bc2.id)::int AS total_containers
       FROM cds_bookings b
       LEFT JOIN cds_customers cu ON cu.id = b.customer_id
       LEFT JOIN cds_booking_containers bc  ON bc.booking_id = b.id AND bc.deleted_at IS NULL AND bc.status = 'pending'
@@ -725,7 +890,11 @@ router.get('/field/yard-queue', asyncHandler(async (req, res) => {
      WHERE b.deleted_at IS NULL
        AND b.status NOT IN ('cancelled','completed','billed')
      GROUP BY b.id, cu.company_name
-    HAVING COUNT(bc.id) > 0
+    -- bc and bc2 are separately-filtered joins to the same table, so any
+    -- booking with more than one container in each set fans out into a
+    -- cross product of matching rows — plain COUNT(bc.id) then counts each
+    -- pending container once per total-container row instead of once.
+    HAVING COUNT(DISTINCT bc.id) > 0
      ORDER BY b.eta NULLS LAST, b.created_at DESC
      LIMIT 100
   `);
@@ -769,7 +938,12 @@ router.get('/field/port-queue', asyncHandler(async (req, res) => {
 // Yard team clamps an e-lock onto one container of a booking.
 // Auto-creates supporting rows (transporter, driver, vehicle, container, lock, trip)
 // so the mobile UI only needs to send free-text names and numbers.
-router.post('/bookings/:id/containers/:cid/clamp', asyncHandler(async (req, res) => {
+// requireIdempotencyKey is a no-op unless the caller sends x-idempotency-key,
+// so nothing changes for the online path. The field app's offline queue does
+// send one, and it must: a clamp creates a trip and upserts a driver/vehicle/
+// lock, so a queued submission retried after a flaky-network timeout would
+// otherwise create a second trip for the same container.
+router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
   const { id: bookingId, cid: bcId } = req.params;
   const {
@@ -782,7 +956,7 @@ router.post('/bookings/:id/containers/:cid/clamp', asyncHandler(async (req, res)
   }
 
   const bc = await req.db(
-    `SELECT bc.*, b.booking_number, b.customer_id
+    `SELECT bc.*, b.booking_number, b.customer_id, b.pickup_location, b.delivery_location
        FROM cds_booking_containers bc
        JOIN cds_bookings b ON b.id = bc.booking_id
       WHERE bc.id=$1 AND bc.booking_id=$2 AND bc.deleted_at IS NULL`,
@@ -793,7 +967,10 @@ router.post('/bookings/:id/containers/:cid/clamp', asyncHandler(async (req, res)
     return res.status(409).json({ error: `Container already ${bc.rows[0].status}` });
   }
 
-  // Upsert transporter
+  // Upsert transporter. contact_person/phone are NOT NULL on cds_transporters
+  // but the clamp form only collects a company name — same fallback the
+  // customer auto-create above uses (the name doubles as the placeholder
+  // contact until someone fills in the real one from the transporters view).
   let transporterId = null;
   if (transporter_name) {
     const t = await req.db(
@@ -803,21 +980,25 @@ router.post('/bookings/:id/containers/:cid/clamp', asyncHandler(async (req, res)
     if (t.rows.length) transporterId = t.rows[0].id;
     else {
       const ins = await req.db(
-        `INSERT INTO cds_transporters (company_name, code, org_id) VALUES ($1,$2,$3) RETURNING id`,
-        [transporter_name.trim(), genCode('TR'), orgId]
+        `INSERT INTO cds_transporters (company_name, contact_person, phone, code, org_id) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+        [transporter_name.trim(), transporter_name.trim(), '-', genCode('TR'), orgId]
       );
       transporterId = ins.rows[0].id;
     }
   }
 
-  // Upsert driver
+  // Upsert driver. license_number/license_expiry are NOT NULL on cds_drivers
+  // but the clamp form doesn't collect them — placeholder + a generous expiry
+  // so the row is valid until ops backfills the real license from the
+  // drivers view; not a compliance record, just enough to satisfy the schema.
   const dr = await req.db(
     'SELECT id FROM cds_drivers WHERE name ILIKE $1 AND deleted_at IS NULL LIMIT 1',
     [driver_name.trim()]
   );
   const driverId = dr.rows.length ? dr.rows[0].id : (await req.db(
-    `INSERT INTO cds_drivers (name, phone, transporter_id, org_id) VALUES ($1,$2,$3,$4) RETURNING id`,
-    [driver_name.trim(), driver_phone || null, transporterId, orgId]
+    `INSERT INTO cds_drivers (name, phone, license_number, license_expiry, transporter_id, org_id)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+    [driver_name.trim(), driver_phone || '-', 'PENDING', new Date(Date.now() + 365 * 24 * 3600 * 1000), transporterId, orgId]
   )).rows[0].id;
 
   // Upsert vehicle (truck horse)
@@ -852,8 +1033,10 @@ router.post('/bookings/:id/containers/:cid/clamp', asyncHandler(async (req, res)
     `INSERT INTO cds_electronic_locks (serial, provider, status, org_id) VALUES ($1,$2,$3,$4) RETURNING id`,
     [lock_serial.trim(), 'SecuriSat', 'assigned', orgId]
   )).rows[0].id;
+  // 'installed', matching cds_electronic_locks_status_check and the desktop
+  // clamp handler above — 'locked' isn't a value the constraint allows.
   await req.db(
-    `UPDATE cds_electronic_locks SET status='locked', container_id=$1, vehicle_id=$2, updated_at=NOW() WHERE id=$3`,
+    `UPDATE cds_electronic_locks SET status='installed', container_id=$1, vehicle_id=$2, updated_at=NOW() WHERE id=$3`,
     [containerId, vehicleId, lockId]
   );
 
@@ -866,7 +1049,7 @@ router.post('/bookings/:id/containers/:cid/clamp', asyncHandler(async (req, res)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'locked',$15) RETURNING *`,
     [
       genCode('CDS'), bc.rows[0].customer_id, driverId, vehicleId, containerId, lockId, transporterId,
-      null, null, null, bc.rows[0].seal_number, bc.rows[0].weight_kg,
+      bc.rows[0].pickup_location, bc.rows[0].delivery_location, null, bc.rows[0].seal_number, bc.rows[0].weight_kg,
       bookingId, trailerNote, orgId,
     ]
   );
@@ -886,6 +1069,20 @@ router.post('/bookings/:id/containers/:cid/clamp', asyncHandler(async (req, res)
       WHERE id=$1`,
     [bookingId]
   );
+
+  // Open this container's custody chain. The clamp is the handoff: a sealed
+  // box leaves the yard in a transporter's hands, and the seal recorded here
+  // is what the port crew is later required to verify against.
+  await appendCustodyEvent(req, {
+    bookingContainerId: bcId,
+    tripId: trip.rows[0].id,
+    kind: 'clamped',
+    sealNumber: bc.rows[0].seal_number,
+    sealIntact: true,
+    lockSerial: lock_serial.trim(),
+    lat, lng,
+    notes: `Clamped by ${req.user.name || 'yard team'} · ${truck_reg} / ${driver_name}`,
+  });
 
   // Fire alert so supervisors see it in real-time
   await req.db(
@@ -909,10 +1106,11 @@ router.post('/bookings/:id/containers/:cid/clamp', asyncHandler(async (req, res)
 }));
 
 // Port team unclamps the e-lock — container has arrived and been delivered.
-router.post('/bookings/:id/containers/:cid/unclamp', asyncHandler(async (req, res) => {
+// Idempotent for the same reason as clamp — see the note there.
+router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
   const { id: bookingId, cid: bcId } = req.params;
-  const { notes, lat, lng } = req.body || {};
+  const { notes, lat, lng, seal_intact, observed_seal } = req.body || {};
 
   const bc = await req.db(
     `SELECT bc.*, b.booking_number, t.id AS trip_id, t.lock_id
@@ -926,6 +1124,23 @@ router.post('/bookings/:id/containers/:cid/unclamp', asyncHandler(async (req, re
   if (bc.rows[0].status === 'delivered' || bc.rows[0].status === 'completed') {
     return res.status(409).json({ error: 'Container already delivered' });
   }
+
+  // Seal verification. A seal is only worth anything if somebody compares it at
+  // the far end, so the decision is made here rather than trusting the client's
+  // verdict: even when the crew reports "intact", an observed seal that doesn't
+  // match the one recorded at clamp is a tamper. Older clients that send
+  // neither field still work — the outcome is then simply unverified (null),
+  // which is honest rather than a false "intact".
+  const expectedSeal = bc.rows[0].seal_number;
+  const observed = typeof observed_seal === 'string' ? observed_seal.trim() : null;
+  let sealVerdict = null;                      // null = not checked
+  if (seal_intact === false) {
+    sealVerdict = false;
+  } else if (seal_intact === true) {
+    const mismatched = expectedSeal && observed && observed.toUpperCase() !== String(expectedSeal).toUpperCase();
+    sealVerdict = !mismatched;
+  }
+  const sealTampered = sealVerdict === false;
 
   const now = new Date();
 
@@ -964,6 +1179,50 @@ router.post('/bookings/:id/containers/:cid/unclamp', asyncHandler(async (req, re
     await req.db(`UPDATE cds_bookings SET status='delivered', updated_at=NOW() WHERE id=$1`, [bookingId]);
   }
 
+  // Close the custody chain for this container. seal_intact is the whole point
+  // of the ledger: it records what the port crew actually found, against what
+  // the yard sealed.
+  const sealNote = sealVerdict === false
+    ? `Seal FAILED verification. Expected ${expectedSeal || '(none recorded)'}, found ${observed || '(reported broken/missing)'}.`
+    : sealVerdict === true ? 'Seal verified against clamp record.' : 'Seal not verified.';
+  await appendCustodyEvent(req, {
+    bookingContainerId: bcId,
+    tripId: bc.rows[0].trip_id,
+    kind: 'unclamped',
+    sealNumber: observed || expectedSeal,
+    sealIntact: sealVerdict,
+    lat, lng,
+    notes: `${sealNote}${notes ? ` Notes: ${notes}` : ''}`,
+  });
+
+  // A broken or swapped seal means the load may have been opened in transit.
+  // That is a security incident, not a delivery note — escalate it to a
+  // critical alert and record it against the lock's own event history so it
+  // shows up in tamper reporting alongside device-reported tampers.
+  if (sealTampered) {
+    await req.db(
+      `INSERT INTO cds_alerts (org_id, type, severity, title, message, entity_type, entity_id, escalation_level)
+       VALUES ($1,'lock_tamper','critical',$2,$3,'container',$4,'manager')`,
+      [orgId,
+       `SEAL MISMATCH — ${bc.rows[0].container_number || bc.rows[0].booking_number}`,
+       `${req.user.name || 'Port team'} reported a seal discrepancy unclamping ${bc.rows[0].container_number || bcId} on booking ${bc.rows[0].booking_number}. ${sealNote}`,
+       bcId]
+    );
+    if (bc.rows[0].lock_id) {
+      await req.db(
+        `INSERT INTO cds_lock_events (org_id, lock_id, type, lat, lng, data)
+         VALUES ($1,$2,'tamper',$3,$4,$5)`,
+        [orgId, bc.rows[0].lock_id, lat ?? null, lng ?? null,
+         JSON.stringify({
+           source: 'seal_verification',
+           expected_seal: expectedSeal, observed_seal: observed,
+           reported_by: req.user.name || req.user.email || null,
+           booking_container_id: bcId, note: sealNote,
+         })]
+      );
+    }
+  }
+
   // Notify CDS controllers / supervisors
   await req.db(
     `INSERT INTO cds_alerts (org_id, type, severity, title, message, entity_type, entity_id, escalation_level)
@@ -978,7 +1237,8 @@ router.post('/bookings/:id/containers/:cid/unclamp', asyncHandler(async (req, re
     `INSERT INTO cds_audit_logs (action, entity_type, entity_id, user_id, user_name, after_data, org_id)
      VALUES ('unclamp','booking_container',$1,$2,$3,$4,$5)`,
     [bcId, req.user.id, req.user.name || null,
-     JSON.stringify({ notes, lat, lng, unclamped_at: now.toISOString() }),
+     JSON.stringify({ notes, lat, lng, unclamped_at: now.toISOString(),
+                     seal_expected: expectedSeal, seal_observed: observed, seal_intact: sealVerdict }),
      orgId]
   );
 
@@ -986,6 +1246,10 @@ router.post('/bookings/:id/containers/:cid/unclamp', asyncHandler(async (req, re
     data: {
       booking_container_id: bcId, status: 'delivered', unclamped_at: now.toISOString(),
       unclamped_by: req.user.name || req.user.email || 'unknown',
+      // Echoed so the app can confirm to the crew that a discrepancy was in
+      // fact escalated, rather than leaving them unsure whether it registered.
+      seal_intact: sealVerdict,
+      seal_tamper_reported: sealTampered,
     },
   });
 }));

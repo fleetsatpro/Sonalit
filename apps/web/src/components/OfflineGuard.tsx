@@ -1,8 +1,26 @@
-import { useState, useEffect } from 'react';
 import { WifiOff } from 'lucide-react';
+import { useState, useEffect } from 'react';
+
+/**
+ * Surfaces are exempt from the offline takeover when they are built to keep
+ * working without a connection. The Yard/Port field app is the whole reason
+ * this exists: a container yard is a dead zone by nature, and blanking the
+ * screen there would strand a worker mid-clamp with nothing but a Retry
+ * button — while its own queue (pages/field/offlineQueue.ts) is perfectly
+ * capable of saving the action and syncing it later.
+ *
+ * Everything else genuinely can't do useful work offline — a live fleet map or
+ * a dashboard of stale numbers is worse than an honest "you're offline".
+ */
+const OFFLINE_CAPABLE = [/^\/field(\/|$)/];
+
+function isOfflineCapable(pathname: string): boolean {
+  return OFFLINE_CAPABLE.some(re => re.test(pathname));
+}
 
 export default function OfflineGuard({ children }: { children: React.ReactNode }) {
   const [online, setOnline] = useState(navigator.onLine);
+  const [, tick] = useState(0);
 
   useEffect(() => {
     const onOnline = () => setOnline(true);
@@ -12,11 +30,25 @@ export default function OfflineGuard({ children }: { children: React.ReactNode }
     return () => { window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOffline); };
   }, []);
 
-  if (!online) {
+  // This component sits above the router, so there's no router context to read
+  // the current route from — poll instead, but only while offline, and only to
+  // re-render. The path itself is read fresh during render below.
+  useEffect(() => {
+    if (online) return;
+    const id = window.setInterval(() => { tick(n => n + 1); }, 500);
+    return () => { window.clearInterval(id); };
+  }, [online]);
+
+  // Read the live location rather than holding it in state. Holding it meant
+  // the value captured at mount (/login) was still there when the offline
+  // event fired on /field/yard — so the guard blanked the screen for a single
+  // render before correcting itself, and that one frame unmounted the whole
+  // tree and wiped the worker's half-filled clamp form.
+  if (!online && !isOfflineCapable(window.location.pathname)) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-white gap-4">
         <WifiOff size={48} className="text-slate-400" />
-        <h1 className="text-2xl font-bold">You're offline</h1>
+        <h1 className="text-2xl font-bold">You&apos;re offline</h1>
         <p className="text-slate-400 text-center max-w-sm">
           Check your internet connection. Cached pages are still available.
         </p>

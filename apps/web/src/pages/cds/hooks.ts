@@ -1,5 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+import { withOfflineFallback } from '../field/fieldCache.js';
+
 import cdsApi from './api.js';
+
 import type { SearchFilters, Report } from './types.js';
 
 interface ApiList { data: Record<string, unknown>[]; total: number }
@@ -219,12 +223,21 @@ export function useUpdateBookingContainer() {
   });
 }
 
-export function useBookingContainers(bookingId: string) {
+/**
+ * `offline` is opt-in rather than always-on: the field app needs the last
+ * good container list to survive a dead zone, but the control-room Bookings
+ * view does not want a network blip silently replaced with stale data — and
+ * caching every booking a desktop operator expands would bloat localStorage
+ * for no benefit.
+ */
+export function useBookingContainers(bookingId: string, opts: { offline?: boolean } = {}) {
   return useQuery<ApiList>({
     queryKey: ['cds', 'booking-containers', bookingId],
     queryFn: async () => {
-      const { data } = await cdsApi.get(`/bookings/${bookingId}/containers`);
-      return data;
+      const fetcher = async () => (await cdsApi.get<ApiList>(`/bookings/${bookingId}/containers`)).data;
+      return opts.offline
+        ? withOfflineFallback(`booking-containers:${bookingId}`, fetcher)
+        : fetcher();
     },
     enabled: !!bookingId,
   });
@@ -233,7 +246,8 @@ export function useBookingContainers(bookingId: string) {
 export function useYardQueue() {
   return useQuery<{ data: Record<string, unknown>[] }>({
     queryKey: ['cds', 'field', 'yard-queue'],
-    queryFn: async () => (await cdsApi.get('/field/yard-queue')).data,
+    queryFn: () => withOfflineFallback('yard-queue', async () =>
+      (await cdsApi.get<{ data: Record<string, unknown>[] }>('/field/yard-queue')).data),
     refetchInterval: 15_000,
   });
 }
@@ -241,7 +255,8 @@ export function useYardQueue() {
 export function usePortQueue() {
   return useQuery<{ data: Record<string, unknown>[] }>({
     queryKey: ['cds', 'field', 'port-queue'],
-    queryFn: async () => (await cdsApi.get('/field/port-queue')).data,
+    queryFn: () => withOfflineFallback('port-queue', async () =>
+      (await cdsApi.get<{ data: Record<string, unknown>[] }>('/field/port-queue')).data),
     refetchInterval: 15_000,
   });
 }

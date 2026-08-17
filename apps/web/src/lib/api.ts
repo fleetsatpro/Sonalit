@@ -1,7 +1,11 @@
-import axios from 'axios';
 import { context, propagation, trace } from '@opentelemetry/api';
+import axios from 'axios';
+
 import { useAuthStore, getAccessToken, setAccessToken } from '../stores/auth.js';
+
 import { getCsrfToken } from './csrf.js';
+
+import type { AuthUser } from '../stores/auth.js';
 
 const API_BASE = import.meta.env['VITE_API_BASE_URL'] ?? '/api/v1';
 
@@ -46,38 +50,68 @@ api.interceptors.request.use((config) => {
 let refreshPromise: Promise<string> | null = null;
 
 async function refreshAccessToken(): Promise<string> {
-  const { data } = await axios.post<{ token: string; user: import('../stores/auth.js').AuthUser }>(
+  // /auth/refresh is NOT in the backend's CSRF skip list (unlike /auth/login),
+  // so it needs the double-submit header like any other mutating call. Without
+  // it every refresh 403s, and since a failed refresh clears auth and bounces
+  // to /login, the symptom is being logged out on any page reload — the
+  // in-memory access token is gone, the first 401 triggers a refresh, and the
+  // refresh can never succeed. This is a bare axios call rather than `api`, so
+  // it doesn't inherit the request interceptor that would have added it.
+  const csrf = getCsrfToken();
+  const { data } = await axios.post<{ token: string; user: AuthUser }>(
     `${API_BASE}/auth/refresh`,
     {},
-    { withCredentials: true },
+    { withCredentials: true, headers: csrf ? { 'X-CSRF-Token': csrf } : {} },
   );
   setAccessToken(data.token);
   useAuthStore.getState().setAuth(data.token, data.user);
   return data.token;
 }
 
-api.interceptors.response.use(
-  (res) => res,
-  async (err) => {
-    const original = err.config as typeof err.config & { _retry?: boolean };
+/**
+ * Attach the 401 → refresh → replay behaviour to an axios instance.
+ *
+ * Exported so other instances (notably the CDS client in pages/cds/api.ts)
+ * get the same treatment instead of hard-failing the moment an access token
+ * expires. They deliberately share the module-scoped `refreshPromise` above,
+ * so two instances 401-ing at once still make exactly one /auth/refresh call.
+ *
+ * `redirectOnFailure` is opt-out for callers that must not have the page
+ * yanked out from under them on a failed refresh — the field app's offline
+ * queue flushes in the background, and bouncing a yard worker to /login
+ * mid-shift would discard queued work they can still complete.
+ */
+export function attachRefreshInterceptor(
+  instance: typeof api,
+  { redirectOnFailure = true }: { redirectOnFailure?: boolean } = {},
+): void {
+  instance.interceptors.response.use(
+    (res) => res,
+    async (err) => {
+      const original = err.config as typeof err.config & { _retry?: boolean };
 
-    if (err.response?.status === 401 && !original._retry) {
-      original._retry = true;
+      if (err.response?.status === 401 && original && !original._retry) {
+        original._retry = true;
 
-      try {
-        if (!refreshPromise) {
-          refreshPromise = refreshAccessToken().finally(() => { refreshPromise = null; });
+        try {
+          if (!refreshPromise) {
+            refreshPromise = refreshAccessToken().finally(() => { refreshPromise = null; });
+          }
+          const token = await refreshPromise;
+          original.headers['Authorization'] = `Bearer ${token}`;
+          return instance(original);
+        } catch {
+          if (redirectOnFailure) {
+            useAuthStore.getState().clearAuth();
+            window.location.href = '/login';
+          }
+          throw err;
         }
-        const token = await refreshPromise;
-        original.headers['Authorization'] = `Bearer ${token}`;
-        return api(original);
-      } catch {
-        useAuthStore.getState().clearAuth();
-        window.location.href = '/login';
-        return Promise.reject(err);
       }
-    }
 
-    return Promise.reject(err);
-  },
-);
+      throw err;
+    },
+  );
+}
+
+attachRefreshInterceptor(api);

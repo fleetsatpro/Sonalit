@@ -20,12 +20,20 @@ function requireIdempotencyKey(req, res, next) {
       const origJson = res.json.bind(res);
       res.json = function (body) {
         const sc = res.statusCode || 200;
-        query(
-          `INSERT INTO idempotency_keys (key, org_id, status_code, response, expires_at)
-           VALUES ($1, $2, $3, $4, NOW() + INTERVAL '24 hours')
-           ON CONFLICT (key, org_id) DO NOTHING`,
-          [key, orgId, sc, JSON.stringify(body)]
-        ).catch(() => {});
+        // Never cache a 5xx. The point of an idempotency key is "don't repeat
+        // the side effect", but a 5xx means the side effect may not have
+        // happened at all — and caching it would replay that failure for the
+        // full 24h TTL, so a single transient blip would permanently block the
+        // client from ever retrying that action. 2xx/4xx are deterministic
+        // outcomes and stay cached.
+        if (sc < 500) {
+          query(
+            `INSERT INTO idempotency_keys (key, org_id, status_code, response, expires_at)
+             VALUES ($1, $2, $3, $4, NOW() + INTERVAL '24 hours')
+             ON CONFLICT (key, org_id) DO NOTHING`,
+            [key, orgId, sc, JSON.stringify(body)]
+          ).catch(() => {});
+        }
         return origJson(body);
       };
       next();
