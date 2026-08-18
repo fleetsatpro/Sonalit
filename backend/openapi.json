@@ -4016,6 +4016,16 @@
         }
       }
     },
+    "/api/v1/cds/bookings/manifest/anomalies": {
+      "get": {
+        "operationId": "get_api_v1_cds_bookings_manifest_anomalies",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/cds/bookings/{id}": {
       "get": {
         "operationId": "get_api_v1_cds_bookings_id",

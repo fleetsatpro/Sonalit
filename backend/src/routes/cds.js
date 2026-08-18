@@ -6,6 +6,8 @@ const { asyncHandler } = require('../middleware/error');
 const requireIdempotencyKey = require('../middleware/idempotency');
 const { extractBookingData } = require('../utils/extractionClient');
 const { publish } = require('../realtime/centrifugo');
+const { allocateBookingReference } = require('../utils/bookingReference');
+const { scanManifest } = require('../utils/manifestAnomalies');
 const logger = require('../utils/logger');
 
 // dualAuthenticate, not authenticate: this router serves both the operator
@@ -740,7 +742,9 @@ router.get('/bookings/manifest', asyncHandler(async (req, res) => {
             bc.clamped_at, bc.unclamped_at, bc.terminal, bc.yard_status, bc.invoiced,
             bc.trailer_reg,
             b.booking_number, b.reference AS file_reference, b.vessel, b.commodity,
-            b.controller, cu.company_name AS customer_name,
+            b.controller, b.country_code, b.direction, b.status AS booking_status,
+            b.pickup_location, b.delivery_location, b.eta, b.created_at AS booking_created_at,
+            cu.company_name AS customer_name,
             t.trip_number, t.status AS trip_status,
             COALESCE(bc.transporter_name, tr.company_name) AS transporter,
             COALESCE(bc.horse_reg,        v.registration)  AS horse_reg,
@@ -757,6 +761,62 @@ router.get('/bookings/manifest', asyncHandler(async (req, res) => {
   );
   const total = await req.db(`SELECT COUNT(*) ${FROM}`, params.slice(0, -2));
   res.json({ data: result.rows, total: parseInt(total.rows[0].count, 10) });
+}));
+
+// ─── Manifest integrity scan ─────────────────────────────────────────────────
+// Declared before /bookings/:id for the same reason /bookings/manifest is:
+// Express would otherwise match "manifest" as an :id.
+//
+// Scans the whole org rather than the page the user is looking at. Duplicate
+// detection that only sees 200 rows is worse than none — it would clear a
+// container whose twin happens to be on the next page, which is precisely the
+// case a controller most needs told about.
+const ANOMALY_SCAN_CAP = 5000;
+
+router.get('/bookings/manifest/anomalies', asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+
+  const rows = await req.db(
+    `SELECT bc.id, bc.booking_id, bc.container_number, bc.seal_number, bc.status,
+            bc.clamped_at, bc.unclamped_at, bc.yard_status,
+            COALESCE(bc.lock_number, el.serial)      AS lock_number,
+            COALESCE(bc.horse_reg,   v.registration) AS horse_reg,
+            b.booking_number
+       FROM cds_booking_containers bc
+       JOIN cds_bookings b ON b.id = bc.booking_id AND b.deleted_at IS NULL
+       LEFT JOIN cds_trips t ON t.id = bc.trip_id
+       LEFT JOIN cds_electronic_locks el ON el.id = t.lock_id
+       LEFT JOIN cds_vehicles v ON v.id = t.vehicle_id
+      WHERE bc.org_id = $1 AND bc.deleted_at IS NULL
+      ORDER BY bc.created_at DESC
+      LIMIT $2`,
+    [orgId, ANOMALY_SCAN_CAP + 1]
+  );
+
+  const bookings = await req.db(
+    `SELECT id, booking_number, reference FROM cds_bookings
+      WHERE org_id = $1 AND deleted_at IS NULL
+      ORDER BY created_at DESC LIMIT $2`,
+    [orgId, ANOMALY_SCAN_CAP + 1]
+  );
+
+  const truncated = rows.rows.length > ANOMALY_SCAN_CAP;
+  const findings = scanManifest(rows.rows.slice(0, ANOMALY_SCAN_CAP), bookings.rows.slice(0, ANOMALY_SCAN_CAP));
+
+  const bySeverity = findings.reduce((acc, f) => {
+    acc[f.severity] = (acc[f.severity] || 0) + 1;
+    return acc;
+  }, {});
+
+  res.json({
+    data: findings,
+    total: findings.length,
+    scanned_containers: Math.min(rows.rows.length, ANOMALY_SCAN_CAP),
+    by_severity: bySeverity,
+    // Surfaced rather than silently swallowed: a partial scan that claims to be
+    // a full one is the failure mode that makes an integrity check untrustworthy.
+    truncated,
+  });
 }));
 
 router.get('/bookings/:id', asyncHandler(async (req, res) => {
@@ -807,10 +867,18 @@ router.post('/bookings', asyncHandler(async (req, res) => {
 
   if (!body.customer_id) return res.status(400).json({ error: 'Customer is required' });
 
+  // Structured reference — TZ_26_08_OB_00123910 — instead of the old opaque
+  // BK-<ts36>-<rand>. See utils/bookingReference.js and migration 080.
+  const ref = await allocateBookingReference(req.db, req.user.org_id, {
+    country: body.country_code,
+    direction: body.direction,
+  });
+
   const fields = ['customer_id', 'pickup_location', 'delivery_location', 'commodity', 'weight_kg',
     'seal_number', 'container_type', 'container_size', 'shipping_line', 'vessel', 'voyage', 'eta', 'reference', 'notes'];
-  const cols = ['booking_number', ...fields, 'org_id'];
-  const vals = [genCode('BK'), ...fields.map(f => body[f] ?? null), req.user.org_id];
+  const cols = ['booking_number', 'country_code', 'direction', ...fields, 'org_id'];
+  const vals = [ref.booking_number, ref.country_code, ref.direction,
+    ...fields.map(f => body[f] ?? null), req.user.org_id];
   const phs = vals.map((_, i) => `$${i + 1}`).join(',');
   const bk = await req.db(`INSERT INTO cds_bookings (${cols.join(',')}) VALUES (${phs}) RETURNING *`, vals);
   const booking = bk.rows[0];
@@ -840,7 +908,10 @@ router.patch('/bookings/:id', asyncHandler(async (req, res) => {
      'container_type', 'container_size', 'shipping_line', 'eta', 'status', 'notes',
      // Manifest columns: vessel and the AW file ref are shown per container row,
      // and the controller owns the booking on the desk.
-     'vessel', 'voyage', 'reference', 'controller']
+     'vessel', 'voyage', 'reference', 'controller',
+     // Editable after the fact: the reference itself is immutable once issued,
+     // but a booking mis-filed as outbound still has to be correctable.
+     'direction', 'country_code']
   );
   // updateRow owns the response; this only fans the change out afterwards.
   publishCds(req, 'cds.booking.updated', { booking_id: req.params.id });

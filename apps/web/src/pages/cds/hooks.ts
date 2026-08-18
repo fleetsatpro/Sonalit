@@ -216,6 +216,25 @@ export function useBookingManifest(filters?: SearchFilters) {
   });
 }
 
+/**
+ * The manifest's integrity scan (backend/src/utils/manifestAnomalies.js).
+ *
+ * Deliberately a separate query from the manifest rows: it scans the whole org
+ * rather than the visible page, so it must not be re-run every time somebody
+ * types in the search box. It rides the same realtime invalidation as the
+ * manifest, so a duplicate created by a clamp surfaces immediately.
+ */
+export function useManifestAnomalies() {
+  return useQuery<ApiList & { by_severity?: Record<string, number>; truncated?: boolean; scanned_containers?: number }>({
+    queryKey: ['cds', 'manifest', 'anomalies'],
+    queryFn: async () => {
+      const { data } = await cdsApi.get('/bookings/manifest/anomalies');
+      return data;
+    },
+    refetchInterval: CONTROL_ROOM_REFETCH_MS,
+  });
+}
+
 // Manifest cells are edited in place, so invalidate the manifest as well as the
 // per-booking container list — the same row appears in both.
 export function useUpdateBookingContainer() {
