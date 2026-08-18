@@ -1,8 +1,15 @@
 const router = require('express').Router();
 const jwt = require('jsonwebtoken');
-const { authenticate } = require('../middleware/auth');
+const { dualAuthenticate } = require('../middleware/fieldAuth');
 
-router.use(authenticate);
+// dualAuthenticate, not authenticate: yard and port tablets need this token
+// too. Without it the field app could only ever poll, which is exactly the
+// lag the CDS realtime fan-out (routes/cds.js publishCds) exists to remove —
+// a controller correcting a seal number, or a yard clamp arriving in the port
+// queue, would still take a full poll cycle to reach the crew holding the
+// device. The token below is keyed by org either way, so a field session
+// subscribes to precisely the same channel with precisely the same scope.
+router.use(dualAuthenticate);
 
 router.post('/token', (req, res) => {
   const secret = process.env.CENTRIFUGO_TOKEN_HMAC_SECRET;

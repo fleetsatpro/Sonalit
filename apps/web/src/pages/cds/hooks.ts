@@ -30,6 +30,13 @@ export function useActivity(limit = 30) {
   });
 }
 
+// Realtime (useCDSRealtime) invalidates these the instant the yard or port
+// acts, so the interval below is a safety floor, not the mechanism: if
+// Centrifugo is down or the socket drops, a control-room board still refreshes
+// on its own instead of freezing on a snapshot — which is what these five
+// queries did before, having had no refetch at all.
+const CONTROL_ROOM_REFETCH_MS = 60_000;
+
 export function useTrips(filters?: SearchFilters) {
   return useQuery<ApiList>({
     queryKey: ['cds', 'trips', filters],
@@ -37,6 +44,7 @@ export function useTrips(filters?: SearchFilters) {
       const { data } = await cdsApi.get('/trips', { params: filters });
       return data;
     },
+    refetchInterval: CONTROL_ROOM_REFETCH_MS,
   });
 }
 
@@ -100,6 +108,7 @@ export function useContainers(filters?: SearchFilters) {
       const { data } = await cdsApi.get('/containers', { params: filters });
       return data;
     },
+    refetchInterval: CONTROL_ROOM_REFETCH_MS,
   });
 }
 
@@ -110,6 +119,7 @@ export function useLocks(filters?: SearchFilters) {
       const { data } = await cdsApi.get('/locks', { params: filters });
       return data;
     },
+    refetchInterval: CONTROL_ROOM_REFETCH_MS,
   });
 }
 
@@ -160,6 +170,7 @@ export function useBookings(filters?: SearchFilters) {
       const { data } = await cdsApi.get('/bookings', { params: filters });
       return data;
     },
+    refetchInterval: CONTROL_ROOM_REFETCH_MS,
   });
 }
 
@@ -201,6 +212,7 @@ export function useBookingManifest(filters?: SearchFilters) {
       const { data } = await cdsApi.get('/bookings/manifest', { params: filters });
       return data;
     },
+    refetchInterval: CONTROL_ROOM_REFETCH_MS,
   });
 }
 
@@ -344,6 +356,7 @@ export function useAlerts(filters?: SearchFilters) {
       const { data } = await cdsApi.get('/alerts', { params: filters });
       return data;
     },
+    refetchInterval: CONTROL_ROOM_REFETCH_MS,
   });
 }
 

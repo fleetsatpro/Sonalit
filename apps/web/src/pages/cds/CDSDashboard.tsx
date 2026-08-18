@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import {
   LayoutDashboard, MapPin, Package, FileText, Lock,
@@ -6,16 +5,21 @@ import {
   BarChart2, Settings, Search, Bell, ChevronLeft, PanelLeftClose,
   PanelLeft, Plus, Truck, type LucideIcon,
 } from 'lucide-react';
-import { KPICard, CDSDrawer, CDSToastContainer } from './components.js';
-import { useDashboardKPIs, useActivity, useTrips } from './hooks.js';
-import { useCDSStore, type CDSView } from './store.js';
-import { CDS_VIEWS } from './constants.js';
+import { useState, useEffect } from 'react';
+
+import { useAuthStore } from '../../stores/auth.js';
+
 import { ContainersView, BookingsView, DriversView, TransportersView } from './CDSDataPage.js';
+import { CDSIntro } from './CDSIntro.js';
+import { KPICard, CDSDrawer, CDSToastContainer } from './components.js';
+import { CDS_VIEWS } from './constants.js';
+import { useDashboardKPIs, useActivity, useTrips } from './hooks.js';
 import {
   LocksView, PortView, PulseView, InboxView,
   BillingView, ReportsView, AnalyticsView, SettingsView,
 } from './pages.js';
-import { CDSIntro } from './CDSIntro.js';
+import { useCDSStore, type CDSView } from './store.js';
+import { useCDSRealtime } from './useCDSRealtime.js';
 
 const VIEW_ICONS: Record<string, LucideIcon> = {
   dashboard: LayoutDashboard, live: MapPin, containers: Package,
@@ -33,8 +37,23 @@ const NAV_SECTIONS: { label: string; ids: string[] }[] = [
 ];
 
 export default function CDSApp() {
-  const { activeView, setActiveView } = useCDSStore();
+  const { activeView, setActiveView, addToast } = useCDSStore();
   const nav = useNavigate();
+  // Mounted once for the whole control room rather than per view, so a
+  // controller who leaves Trips open all shift sees the yard's clamps land
+  // live — and so switching views doesn't churn the subscription.
+  const orgId = useAuthStore(s => s.user?.org_id);
+  useCDSRealtime(orgId, {
+    onEvent: (e) => {
+      // Only surface what a controller would want interrupting them. Routine
+      // traffic still refreshes the boards silently — a toast per clamp on a
+      // busy gate would be noise they learn to ignore, which is worse than
+      // nothing when a real one arrives.
+      if (e.type === 'cds.container.unclamped' && e.tamper) {
+        addToast(`SEAL MISMATCH — ${e.container_number ?? 'container'} reported by ${e.actor ?? 'port team'}`);
+      }
+    },
+  });
   const [clock, setClock] = useState('');
   const [expanded, setExpanded] = useState(() => {
     try { return localStorage.getItem('cds-rail') !== '0'; } catch { return true; }
@@ -48,7 +67,7 @@ export default function CDSApp() {
   }, [expanded]);
 
   useEffect(() => {
-    const tick = () => setClock(new Date().toLocaleTimeString('en-GB', { hour12: false }) + ' EAT');
+    const tick = () => setClock(`${new Date().toLocaleTimeString('en-GB', { hour12: false })  } EAT`);
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
