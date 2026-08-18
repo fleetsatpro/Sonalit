@@ -20,6 +20,8 @@ const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL;
 
 const PROMPT = `Extract ALL shipping/booking details from this document. Return ONLY a JSON object with these exact keys (null for missing):
 {
+  "booking_number": string|null,
+  "carrier_reference": string|null,
   "customer_name": string|null,
   "reference": string|null,
   "pickup_location": string|null,
@@ -33,17 +35,29 @@ const PROMPT = `Extract ALL shipping/booking details from this document. Return 
   "containers": [
     {
       "container_number": string|null,
+      "packing_list_no": string|null,
       "iso_type": "20GP|40GP|40HC|45HC etc"|null,
       "seal_number": string|null,
+      "seal_number_2": string|null,
       "weight_kg": number|null
     }
   ]
 }
 IMPORTANT extraction rules:
+- "booking_number": the booking's OWN reference, labelled "Booking Reference" or "Booking No"
+  (e.g. TZ_26_08_OB_00123910). This is the primary identifier — capture it exactly as printed,
+  keeping underscores and case. Do NOT confuse it with the carrier reference below.
+- "carrier_reference": a SEPARATE reference labelled "Carrier Booking Reference" or "Carrier Ref"
+  (e.g. 274570179) — the shipping line's own booking number, distinct from booking_number.
 - "customer_name": the shipper, consignee, or customer company name
-- "containers" array MUST include ALL containers in the document — there may be many
-- For each container, extract the seal number (often labeled "Seal No", "Seal", "S/N", or near the container number)
-- Container numbers follow ISO 6346 format (4 letters + 7 digits, e.g. MSCU1234567)
+- "vessel": the vessel and voyage (e.g. "MAERSK PHUKET -635N")
+- "containers" array MUST include ALL container rows in the document — there may be many
+- "container_number": the box number, often in a column labelled "Conveyance No" or "Container No",
+  ISO 6346 format (4 letters + 7 digits, e.g. UETU2951320)
+- "packing_list_no": a per-row reference in a "Packing List No" column (e.g. TZ_DAR_01-PL-305984)
+- A container often carries TWO seals in columns "Seal1"/"Seal2" (a line seal and a shipper/customs
+  seal). Put the first in "seal_number" and the second in "seal_number_2"; leave seal_number_2 null
+  if there is only one.
 - "iso_type": the container size/type code (20GP, 40GP, 40HC, 45HC, 20RF, 40RF, 20OT, 40OT)
 - "weight_kg": gross weight or VGM weight in kilograms
 - "pickup_location" and "delivery_location": port/depot/yard names, include city

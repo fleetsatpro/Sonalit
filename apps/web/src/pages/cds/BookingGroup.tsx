@@ -27,6 +27,7 @@ export interface BookingGroupData {
   vessel: string;
   customer_name: string;
   file_reference: string;
+  carrier_reference: string;
   controller: string;
   commodity: string;
   pickup_location: string;
@@ -195,6 +196,15 @@ export function BookingGroup({
                 {monthName(ref.mm)} 20{ref.yy}
               </span>
             )}
+            {/* The line's own reference, printed alongside ours on the sheet.
+                Dimmed and labelled so it reads as a secondary identifier, not
+                a second booking number. */}
+            {group.carrier_reference && (
+              <span className="text-[9.5px] font-mono text-text-2">
+                <span className="opacity-60">carrier</span>{' '}
+                <span className="text-text-1">{group.carrier_reference}</span>
+              </span>
+            )}
           </span>
           <span className="text-[11px] text-text-2 truncate">
             {[group.customer_name, group.vessel, route].filter(Boolean).join(' · ') || 'No vessel or route recorded'}
@@ -273,7 +283,7 @@ export function BookingGroup({
                       const value = c.render ? c.render(r) : str(r[c.key]);
                       const flagged = issues.some(a =>
                         (a.code.includes('container') && c.key === 'container_number') ||
-                        (a.code.includes('seal') && c.key === 'seal_number') ||
+                        (a.code.includes('seal') && (c.key === 'seal_number' || c.key === 'seal_number_2')) ||
                         (a.code.includes('lock') && c.key === 'lock_number') ||
                         (a.code.includes('truck') && c.key === 'horse_reg'));
                       return (

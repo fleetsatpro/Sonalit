@@ -140,9 +140,11 @@ export interface Col { key: string; label: string; w: number; render?: (r: Row) 
  * booking is exactly the pile-up this redesign is undoing.
  */
 export const CONTAINER_COLS: Col[] = [
+  { key: 'packing_list_no',  label: 'PACKING LIST NO', w: 150 },
   { key: 'container_number', label: 'CONTAINER NO',   w: 130 },
   { key: 'iso_type',         label: 'TYPE',           w: 72 },
-  { key: 'seal_number',      label: 'SHIPPING SEAL',  w: 128 },
+  { key: 'seal_number',      label: 'SEAL 1',         w: 128 },
+  { key: 'seal_number_2',    label: 'SEAL 2',         w: 128 },
   { key: 'status',           label: 'STAGE',          w: 104 },
   { key: 'clamped_at',       label: 'DATE CLAMPED',   w: 108, render: r => shortDate(r['clamped_at']) },
   { key: 'clamped_at_t',     label: 'TIME CLAMPED',   w: 106, render: r => hrs(r['clamped_at']) },
@@ -160,11 +162,12 @@ export const CONTAINER_COLS: Col[] = [
 
 /** The flat sheet keeps the booking-identifying columns, since it has no header to carry them. */
 export const FLAT_COLS: Col[] = [
-  { key: 'booking_number', label: 'AW BOOKING REF NO', w: 190 },
-  { key: 'vessel',         label: 'VESSEL',            w: 160 },
-  { key: 'file_reference', label: 'AW FILE REF NO',    w: 118 },
-  { key: 'controller',     label: 'CONTROLLER',        w: 104 },
-  { key: 'commodity',      label: 'COMMODITY',         w: 110 },
+  { key: 'booking_number',    label: 'BOOKING NO',       w: 190 },
+  { key: 'carrier_reference', label: 'CARRIER REF',      w: 118 },
+  { key: 'vessel',            label: 'VESSEL',           w: 160 },
+  { key: 'file_reference',    label: 'AW FILE REF NO',   w: 118 },
+  { key: 'controller',        label: 'CONTROLLER',       w: 104 },
+  { key: 'commodity',         label: 'COMMODITY',        w: 110 },
   ...CONTAINER_COLS,
 ];
 
@@ -173,6 +176,7 @@ export const FLAT_COLS: Col[] = [
  * checking a container against a physical plate, so they get a mono face.
  */
 export const MONO = new Set([
-  'booking_number', 'file_reference', 'container_number', 'seal_number',
-  'lock_number', 'horse_reg', 'trailer_reg', 'driver_contact', 'commodity', 'iso_type',
+  'booking_number', 'file_reference', 'carrier_reference', 'container_number', 'seal_number',
+  'seal_number_2', 'packing_list_no', 'lock_number', 'horse_reg', 'trailer_reg',
+  'driver_contact', 'commodity', 'iso_type',
 ]);

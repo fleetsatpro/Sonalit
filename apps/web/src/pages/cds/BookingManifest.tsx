@@ -36,6 +36,7 @@ function groupRows(rows: Row[]): BookingGroupData[] {
         vessel: str(r['vessel']),
         customer_name: str(r['customer_name']),
         file_reference: str(r['file_reference']),
+        carrier_reference: str(r['carrier_reference']),
         controller: str(r['controller']),
         commodity: str(r['commodity']),
         pickup_location: str(r['pickup_location']),

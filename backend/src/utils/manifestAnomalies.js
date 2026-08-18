@@ -87,12 +87,26 @@ function scanManifest(rows, bookings = []) {
 
   // A shipping seal is single-use by definition — the same number on two boxes
   // means one was mis-recorded, or a seal was reused, and both matter to the
-  // custody chain the port crew verifies against.
-  for (const [seal, group] of groupBy(rows, r => r.seal_number)) {
+  // custody chain the port crew verifies against. A container carries two
+  // seals (line + shipper/customs), and a number colliding across either
+  // column is the same problem, so both are folded into one seal namespace: a
+  // seal1 on box A that reappears as a seal2 on box B still gets caught.
+  const sealMap = new Map();
+  for (const r of rows) {
+    for (const s of [r.seal_number, r.seal_number_2]) {
+      const k = keyOf(s);
+      if (!k) continue;
+      if (!sealMap.has(k)) sealMap.set(k, []);
+      // A container listing the same seal in both its own columns is a data
+      // entry quirk, not a collision — dedupe per container.
+      if (!sealMap.get(k).some(x => x.id === r.id)) sealMap.get(k).push(r);
+    }
+  }
+  for (const [seal, group] of sealMap) {
     if (group.length < 2) continue;
     for (const r of group) {
       add({
-        id: `duplicate_seal:${r.id}`,
+        id: `duplicate_seal:${r.id}:${seal}`,
         code: 'duplicate_seal',
         severity: 'high',
         title: 'Seal number used more than once',

@@ -87,6 +87,50 @@ async function allocateBookingReference(db, orgId, { country, direction, now = n
   };
 }
 
+/**
+ * Reconcile a booking number that came in ON a sheet.
+ *
+ * This is the primary path — a booking sheet arrives carrying its own number,
+ * and that number is authoritative. Our only jobs are to normalise it, read
+ * back the country and direction it already encodes (so the manifest can group
+ * and colour it without a second source of truth), and — crucially — advance
+ * the org counter past it, so a later auto-allocated booking can never be
+ * handed the same running number and collide.
+ *
+ * A number that isn't in our structured form (a legacy or third-party
+ * reference) is accepted verbatim: it is still the real identifier on the
+ * document, and refusing it because it doesn't match our grammar would block
+ * ingesting the very sheets this exists to ingest. It just doesn't touch the
+ * counter, because there is no sequence in it to keep clear of.
+ */
+async function reconcileProvidedReference(db, orgId, providedNumber) {
+  const clean = String(providedNumber || '').trim().toUpperCase();
+  if (!clean) return null;
+
+  const parsed = parseBookingReference(clean);
+  if (parsed) {
+    // Move the counter to at least one past this sequence. GREATEST keeps it
+    // monotonic — a sheet with a lower number than we've already reached must
+    // not roll the counter backwards.
+    await db(
+      `INSERT INTO cds_booking_counters (org_id, next_seq)
+       VALUES ($1, $2)
+       ON CONFLICT (org_id) DO UPDATE
+          SET next_seq = GREATEST(cds_booking_counters.next_seq, $2), updated_at = NOW()`,
+      [orgId, parsed.sequence + 1]
+    );
+    return {
+      booking_number: clean,
+      country_code: parsed.country,
+      direction: parsed.direction,
+      sequence: parsed.sequence,
+      structured: true,
+    };
+  }
+
+  return { booking_number: clean, country_code: null, direction: null, sequence: null, structured: false };
+}
+
 /** Parse a reference back into its parts, or null if it isn't structured. */
 function parseBookingReference(raw) {
   const m = BOOKING_REF_RE.exec(String(raw || '').toUpperCase());
@@ -102,6 +146,7 @@ function parseBookingReference(raw) {
 
 module.exports = {
   allocateBookingReference,
+  reconcileProvidedReference,
   parseBookingReference,
   normaliseCountry,
   normaliseDirection,

@@ -6,7 +6,7 @@ const { asyncHandler } = require('../middleware/error');
 const requireIdempotencyKey = require('../middleware/idempotency');
 const { extractBookingData } = require('../utils/extractionClient');
 const { publish } = require('../realtime/centrifugo');
-const { allocateBookingReference } = require('../utils/bookingReference');
+const { allocateBookingReference, reconcileProvidedReference } = require('../utils/bookingReference');
 const { scanManifest } = require('../utils/manifestAnomalies');
 const logger = require('../utils/logger');
 
@@ -737,12 +737,13 @@ router.get('/bookings/manifest', asyncHandler(async (req, res) => {
 
   params.push(limit, offset);
   const result = await req.db(
-    `SELECT bc.id, bc.booking_id, bc.container_number, bc.seal_number, bc.iso_type,
+    `SELECT bc.id, bc.booking_id, bc.container_number, bc.seal_number, bc.seal_number_2,
+            bc.packing_list_no, bc.iso_type,
             bc.weight_kg, bc.status, bc.notes,
             bc.clamped_at, bc.unclamped_at, bc.terminal, bc.yard_status, bc.invoiced,
             bc.trailer_reg,
             b.booking_number, b.reference AS file_reference, b.vessel, b.commodity,
-            b.controller, b.country_code, b.direction, b.status AS booking_status,
+            b.controller, b.country_code, b.direction, b.carrier_reference, b.status AS booking_status,
             b.pickup_location, b.delivery_location, b.eta, b.created_at AS booking_created_at,
             cu.company_name AS customer_name,
             t.trip_number, t.status AS trip_status,
@@ -777,7 +778,7 @@ router.get('/bookings/manifest/anomalies', asyncHandler(async (req, res) => {
   const orgId = req.user.org_id;
 
   const rows = await req.db(
-    `SELECT bc.id, bc.booking_id, bc.container_number, bc.seal_number, bc.status,
+    `SELECT bc.id, bc.booking_id, bc.container_number, bc.seal_number, bc.seal_number_2, bc.status,
             bc.clamped_at, bc.unclamped_at, bc.yard_status,
             COALESCE(bc.lock_number, el.serial)      AS lock_number,
             COALESCE(bc.horse_reg,   v.registration) AS horse_reg,
@@ -867,28 +868,60 @@ router.post('/bookings', asyncHandler(async (req, res) => {
 
   if (!body.customer_id) return res.status(400).json({ error: 'Customer is required' });
 
-  // Structured reference — TZ_26_08_OB_00123910 — instead of the old opaque
-  // BK-<ts36>-<rand>. See utils/bookingReference.js and migration 080.
-  const ref = await allocateBookingReference(req.db, req.user.org_id, {
+  // The booking number is captured, not generated, whenever the sheet carries
+  // one (TZ_26_08_OB_00123910 is printed on the customer/line's booking sheet —
+  // see the extraction prompt). Only a booking raised in-app with no document
+  // falls through to allocation. See utils/bookingReference.js and migration 080.
+  const provided = body.booking_number
+    ? await reconcileProvidedReference(req.db, req.user.org_id, body.booking_number)
+    : null;
+  const ref = provided ?? await allocateBookingReference(req.db, req.user.org_id, {
     country: body.country_code,
     direction: body.direction,
   });
+  // A sheet-provided structured number encodes its own country/direction; a
+  // free-form provided number keeps whatever the form/body said (or the org
+  // default), since there is nothing to read out of it.
+  const countryCode = ref.country_code ?? body.country_code ?? null;
+  const direction = ref.direction ?? body.direction ?? null;
 
   const fields = ['customer_id', 'pickup_location', 'delivery_location', 'commodity', 'weight_kg',
-    'seal_number', 'container_type', 'container_size', 'shipping_line', 'vessel', 'voyage', 'eta', 'reference', 'notes'];
-  const cols = ['booking_number', 'country_code', 'direction', ...fields, 'org_id'];
-  const vals = [ref.booking_number, ref.country_code, ref.direction,
+    'seal_number', 'container_type', 'container_size', 'shipping_line', 'vessel', 'voyage', 'eta',
+    'reference', 'carrier_reference', 'notes'];
+  const cols = ['booking_number', ...(countryCode ? ['country_code'] : []), ...(direction ? ['direction'] : []),
+    ...fields, 'org_id'];
+  const vals = [ref.booking_number, ...(countryCode ? [countryCode] : []), ...(direction ? [direction] : []),
     ...fields.map(f => body[f] ?? null), req.user.org_id];
   const phs = vals.map((_, i) => `$${i + 1}`).join(',');
-  const bk = await req.db(`INSERT INTO cds_bookings (${cols.join(',')}) VALUES (${phs}) RETURNING *`, vals);
+
+  let bk;
+  try {
+    bk = await req.db(`INSERT INTO cds_bookings (${cols.join(',')}) VALUES (${phs}) RETURNING *`, vals);
+  } catch (err) {
+    // A duplicate booking number is not a server error — it is the single most
+    // important thing to catch at ingest: the same sheet keyed twice, or two
+    // sheets that really do share a reference. Surface it as a conflict the UI
+    // can act on rather than a 500.
+    if (err.code === '23505') {
+      return res.status(409).json({
+        error: 'duplicate_booking_number',
+        message: `Booking ${ref.booking_number} already exists. It may have been entered already, or two sheets share this reference.`,
+        booking_number: ref.booking_number,
+      });
+    }
+    throw err;
+  }
   const booking = bk.rows[0];
   if (Array.isArray(containers) && containers.length > 0) {
     for (const c of containers) {
       await req.db(
-        `INSERT INTO cds_booking_containers (org_id, booking_id, container_number, iso_type, seal_number, weight_kg, notes)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        `INSERT INTO cds_booking_containers
+           (org_id, booking_id, container_number, iso_type, seal_number, seal_number_2,
+            packing_list_no, weight_kg, notes)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
         [req.user.org_id, booking.id, c.container_number || null, c.iso_type || '20GP',
-         c.seal_number || null, c.weight_kg || null, c.notes || null]
+         c.seal_number || null, c.seal_number_2 || null, c.packing_list_no || null,
+         c.weight_kg || null, c.notes || null]
       );
     }
   }
@@ -911,7 +944,7 @@ router.patch('/bookings/:id', asyncHandler(async (req, res) => {
      'vessel', 'voyage', 'reference', 'controller',
      // Editable after the fact: the reference itself is immutable once issued,
      // but a booking mis-filed as outbound still has to be correctable.
-     'direction', 'country_code']
+     'direction', 'country_code', 'carrier_reference']
   );
   // updateRow owns the response; this only fans the change out afterwards.
   publishCds(req, 'cds.booking.updated', { booking_id: req.params.id });
@@ -934,10 +967,13 @@ router.post('/bookings/:id/containers', asyncHandler(async (req, res) => {
   const inserted = [];
   for (const c of items) {
     const r = await req.db(
-      `INSERT INTO cds_booking_containers (org_id, booking_id, container_number, iso_type, seal_number, weight_kg, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      `INSERT INTO cds_booking_containers
+         (org_id, booking_id, container_number, iso_type, seal_number, seal_number_2,
+          packing_list_no, weight_kg, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
       [req.user.org_id, req.params.id, c.container_number || null, c.iso_type || '20GP',
-       c.seal_number || null, c.weight_kg || null, c.notes || null]
+       c.seal_number || null, c.seal_number_2 || null, c.packing_list_no || null,
+       c.weight_kg || null, c.notes || null]
     );
     inserted.push(r.rows[0]);
   }
@@ -949,7 +985,8 @@ router.post('/bookings/:id/containers', asyncHandler(async (req, res) => {
 }));
 router.patch('/bookings/:id/containers/:cid', asyncHandler(async (req, res) => {
   const allowed = [
-    'container_number', 'iso_type', 'seal_number', 'weight_kg', 'notes', 'status',
+    'container_number', 'iso_type', 'seal_number', 'seal_number_2', 'packing_list_no',
+    'weight_kg', 'notes', 'status',
     // Manifest columns — see 20260807_076_cds_container_ops.sql.
     'clamped_at', 'unclamped_at', 'terminal', 'yard_status', 'invoiced',
     'lock_number', 'transporter_name', 'horse_reg', 'trailer_reg',
