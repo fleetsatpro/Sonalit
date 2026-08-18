@@ -1,12 +1,8 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Trash2, KeyRound, Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
-
-import { api } from '../../lib/api.js';
-import { useAuthStore } from '../../stores/auth.js';
 
 import { LoadingState } from './CDSDashboard.js';
 import { Card, KPICard, Button, StatusBadge, DataTable, DrawerField, FilterChip, Badge } from './components.js';
+import FieldAccessPanel from './FieldAccessPanel.js';
 import { useLocks, useTrips, useBookings, useMarkBilled } from './hooks.js';
 import { useCDSStore } from './store.js';
 
@@ -512,11 +508,11 @@ export function AnalyticsView() {
 
 export function SettingsView() {
   const [tab, setTab] = useState('profile');
-  // 'field agents' replaced what used to be a hardcoded "Field & Port Teams:
+  // 'field access' replaced what used to be a hardcoded "Field & Port Teams:
   // 42 members" row — that number came from nowhere. This tab is real: it
-  // lists and provisions the yard_agent/port_agent accounts added in
-  // migration 077, the same way GuardianConvoySettings does for CFOs.
-  const tabs = ['profile', 'notifications', 'integrations', 'field agents', 'security'];
+  // enrols the tablets the Field app runs on and issues the PINs crews sign
+  // in with (backend/src/routes/field.js).
+  const tabs = ['profile', 'notifications', 'integrations', 'field access', 'security'];
 
   const panels: Record<string, { label: string; value: string }[]> = {
     profile: [
@@ -558,8 +554,8 @@ export function SettingsView() {
             </button>
           ))}
         </div>
-        {tab === 'field agents' ? (
-          <FieldAgentsPanel />
+        {tab === 'field access' ? (
+          <FieldAccessPanel />
         ) : (
           <Card className="flex-1 p-5">
             <div className="space-y-0">
@@ -578,183 +574,5 @@ export function SettingsView() {
         )}
       </div>
     </div>
-  );
-}
-
-type FieldAgent = { id: string; name: string; email: string; role: 'yard_agent' | 'port_agent'; status: string };
-
-function isValidEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
-}
-
-// Mirrors GuardianConvoySettings' CFO account panel (components/GuardianConvoySettings.tsx)
-// — same POST /auth/users + role field, same admin-only PATCH/DELETE — but
-// for the two CDS field-crew roles instead of 'cfo'.
-function FieldAgentsPanel() {
-  const qc = useQueryClient();
-  const { addToast } = useCDSStore();
-  const myRole = useAuthStore(s => s.user?.role);
-  const isAdmin = myRole === 'admin';
-  // GET /auth/users is authorize('admin','dispatcher') server-side — same
-  // gate GuardianConvoySettings relies on for the CFO list.
-  const canView = isAdmin || myRole === 'dispatcher';
-  const [showForm, setShowForm] = useState(false);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'yard_agent' | 'port_agent'>('yard_agent');
-  const [error, setError] = useState('');
-  const [resetFor, setResetFor] = useState<string | null>(null);
-  const [newPassword, setNewPassword] = useState('');
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['field-agents'],
-    queryFn: async () => {
-      const [yard, port] = await Promise.all([
-        api.get<{ data: FieldAgent[] }>('/auth/users', { params: { role: 'yard_agent', limit: 200 } }),
-        api.get<{ data: FieldAgent[] }>('/auth/users', { params: { role: 'port_agent', limit: 200 } }),
-      ]);
-      return [...yard.data.data, ...port.data.data];
-    },
-    enabled: canView,
-  });
-  const agents = data ?? [];
-
-  const reset = () => { setShowForm(false); setName(''); setEmail(''); setPassword(''); setRole('yard_agent'); setError(''); };
-
-  // Hooks must run unconditionally, so these sit above the !canView return
-  // even though a dispatcher (view-only, no mutate access server-side) will
-  // never actually trigger them from the UI below.
-  const createMut = useMutation({
-    mutationFn: () => api.post('/auth/users', { name: name.trim(), email: email.trim(), password, role }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['field-agents'] });
-      addToast(`${role === 'yard_agent' ? 'Yard' : 'Port'} agent account created`);
-      reset();
-    },
-    onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      setError(msg ?? 'Failed to create account.');
-    },
-  });
-
-  const deleteMut = useMutation({
-    mutationFn: (id: string) => api.delete(`/auth/users/${id}`),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['field-agents'] }); addToast('Account removed'); },
-  });
-
-  const resetPasswordMut = useMutation({
-    mutationFn: ({ id, password: p }: { id: string; password: string }) => api.patch(`/auth/users/${id}`, { password: p }),
-    onSuccess: () => { addToast('Password reset'); setResetFor(null); setNewPassword(''); },
-  });
-
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    if (!name.trim() || !isValidEmail(email) || password.length < 8) {
-      setError('Name, a valid email, and a password of at least 8 characters are required.');
-      return;
-    }
-    createMut.mutate();
-  };
-
-  if (!canView) {
-    return (
-      <Card className="flex-1 p-5">
-        <p className="text-[12px] text-text-2 font-mono py-6 text-center">
-          Only admins and dispatchers can manage field accounts.
-        </p>
-      </Card>
-    );
-  }
-
-  return (
-    <Card className="flex-1 p-5">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <div className="text-sm font-bold text-text-0">Yard &amp; Port field accounts</div>
-          <p className="text-[11px] text-text-2 mt-0.5">
-            Scoped logins for shared yard/port devices — a Yard account can only clamp, a Port account can only unclamp.
-          </p>
-        </div>
-        {isAdmin && (
-          <Button size="sm" icon={<Plus size={13} />} onClick={() => setShowForm(v => !v)}>New account</Button>
-        )}
-      </div>
-
-      {showForm && isAdmin && (
-        <form onSubmit={submit} className="mb-4 p-3 rounded-lg border border-white/[.08] bg-white/[.02] space-y-2">
-          <div className="grid grid-cols-2 gap-2">
-            <input required placeholder="Full name" value={name} onChange={e => setName(e.target.value)}
-              className="h-9 px-3 rounded-lg bg-white/[.04] border border-white/[.08] text-text-0 text-[13px] outline-none focus:border-cds-orange/50" />
-            <select value={role} onChange={e => setRole(e.target.value as 'yard_agent' | 'port_agent')}
-              className="h-9 px-3 rounded-lg bg-white/[.04] border border-white/[.08] text-text-0 text-[13px] outline-none cursor-pointer">
-              <option value="yard_agent">Yard agent</option>
-              <option value="port_agent">Port agent</option>
-            </select>
-          </div>
-          <input required type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)}
-            className="w-full h-9 px-3 rounded-lg bg-white/[.04] border border-white/[.08] text-text-0 text-[13px] outline-none focus:border-cds-orange/50" />
-          <input required type="password" placeholder="Password (min 8 characters)" value={password} onChange={e => setPassword(e.target.value)}
-            className="w-full h-9 px-3 rounded-lg bg-white/[.04] border border-white/[.08] text-text-0 text-[13px] outline-none focus:border-cds-orange/50" />
-          {error && <p className="text-[11px] text-cds-red font-mono">{error}</p>}
-          <div className="flex justify-end gap-2 pt-1">
-            <Button type="button" variant="ghost" size="sm" onClick={reset}>Cancel</Button>
-            <Button type="submit" size="sm" disabled={createMut.isPending}>
-              {createMut.isPending ? <Loader2 size={13} className="animate-spin" /> : 'Create account'}
-            </Button>
-          </div>
-        </form>
-      )}
-
-      {isLoading ? (
-        <LoadingState />
-      ) : agents.length === 0 ? (
-        <p className="text-[12px] text-text-2 font-mono italic py-6 text-center">No Yard or Port field accounts yet.</p>
-      ) : (
-        <div className="divide-y divide-white/[.05]">
-          {agents.map(a => (
-            <div key={a.id} className="py-3 space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[13px] font-medium text-text-0 truncate">{a.name}</span>
-                    <Badge variant={a.role === 'yard_agent' ? 'warn' : 'ok'}>
-                      {a.role === 'yard_agent' ? 'YARD' : 'PORT'}
-                    </Badge>
-                    <StatusBadge status={a.status} />
-                  </div>
-                  <p className="text-[11px] text-text-2 mt-0.5 truncate">{a.email}</p>
-                </div>
-                {isAdmin && (
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <button onClick={() => { setResetFor(resetFor === a.id ? null : a.id); setNewPassword(''); }}
-                      title="Reset password"
-                      className="w-7 h-7 rounded-lg bg-white/[.04] border border-white/[.08] text-text-2 hover:text-text-0 flex items-center justify-center cursor-pointer">
-                      <KeyRound size={13} />
-                    </button>
-                    <button onClick={() => { if (confirm(`Remove field account for ${a.name}?`)) deleteMut.mutate(a.id); }}
-                      title="Remove account"
-                      className="w-7 h-7 rounded-lg bg-white/[.04] border border-white/[.08] text-text-2 hover:text-cds-red flex items-center justify-center cursor-pointer">
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                )}
-              </div>
-              {resetFor === a.id && (
-                <div className="flex items-center gap-2 pl-1">
-                  <input type="password" placeholder="New password" value={newPassword} onChange={e => setNewPassword(e.target.value)}
-                    className="h-8 px-3 rounded-lg bg-white/[.04] border border-white/[.08] text-text-0 text-[12px] outline-none focus:border-cds-orange/50 flex-1" />
-                  <Button size="sm" disabled={newPassword.length < 8 || resetPasswordMut.isPending}
-                    onClick={() => resetPasswordMut.mutate({ id: a.id, password: newPassword })}>
-                    Set
-                  </Button>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </Card>
   );
 }

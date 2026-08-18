@@ -227,6 +227,11 @@ catch (e) { logger.warn("Guardian CFO route failed: " + e.message); }
 try { app.use("/api/v1/guardian/convoy", require("./routes/guardianConvoy")); logger.info("Route loaded: /api/v1/guardian/convoy"); }
 catch (err) { logger.error("Failed to load route /api/v1/guardian/convoy: " + err.message); }
 
+// Field app auth (device pairing + per-worker PIN). Entirely separate from
+// /api/v1/auth — see routes/field.js and middleware/fieldAuth.js.
+try { app.use("/api/v1/field", require("./routes/field")); logger.info("Route loaded: /api/v1/field"); }
+catch (e) { logger.warn("Field auth route failed: " + e.message); }
+
 try { app.use("/api/v1/telemetry", require("./routes/telemetry")); logger.info("Route loaded: /api/v1/telemetry (legacy Guardian sync compat)"); }
 catch (e) { logger.warn("Telemetry compat route failed: " + e.message); }
 

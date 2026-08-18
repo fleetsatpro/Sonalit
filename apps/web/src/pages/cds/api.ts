@@ -2,6 +2,7 @@ import axios from 'axios';
 
 import { attachRefreshInterceptor } from '../../lib/api.js';
 import { getCsrfToken } from '../../lib/csrf.js';
+import { announceFieldSessionExpired, fieldAuthHeaders } from '../../lib/fieldSession.js';
 import { getAccessToken } from '../../stores/auth.js';
 
 const cdsApi = axios.create({
@@ -12,6 +13,20 @@ const cdsApi = axios.create({
 });
 
 cdsApi.interceptors.request.use((config) => {
+  // The Field app reaches the same clamp/unclamp routes as the dashboard, but
+  // on device + PIN credentials (lib/fieldSession.ts, backend/src/middleware/
+  // fieldAuth.js). When those are present they are the *only* credentials
+  // sent: no Bearer token, no CSRF header, and cookies switched off for the
+  // request. A yard tablet must never be able to act on an operator session
+  // that happens to be alive in the same browser — that isolation is the
+  // whole point of the separate login.
+  const field = fieldAuthHeaders();
+  if (Object.keys(field).length > 0) {
+    for (const [k, v] of Object.entries(field)) config.headers[k] = v;
+    config.withCredentials = false;
+    return config;
+  }
+
   const token = getAccessToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
 
@@ -22,6 +37,29 @@ cdsApi.interceptors.request.use((config) => {
   }
   return config;
 });
+
+// A rejected field session must not fall through to the operator refresh flow
+// below — /auth/refresh would either fail or, worse, hand a yard tablet an
+// operator token. Clear the shift session and let the field app drop to its
+// PIN screen instead.
+cdsApi.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    const status = err?.response?.status;
+    const sentFieldAuth = Boolean(err?.config?.headers?.['X-Field-Token']);
+    if (sentFieldAuth && (status === 401 || status === 403)) {
+      // 403 covers a revoked device and a role change mid-shift; both mean the
+      // worker has to sign in again rather than retry.
+      announceFieldSessionExpired();
+      // Mark it retried so the refresh interceptor registered below leaves it
+      // alone. Interceptor order would do that today, but relying on order for
+      // a rule as consequential as "never trade a field 401 for an operator
+      // token" is the kind of thing a later edit silently breaks.
+      if (err.config) err.config._retry = true;
+    }
+    throw err;
+  },
+);
 
 // Without this, an expired access token turned every CDS call into a dead 401
 // — which matters most in the field app, where a device can sit offline past

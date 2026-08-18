@@ -1,12 +1,20 @@
 const router = require('express').Router();
 const crypto = require('crypto');
-const { authenticate } = require('../middleware/auth');
+const { dualAuthenticate } = require('../middleware/fieldAuth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 const requireIdempotencyKey = require('../middleware/idempotency');
 const { extractBookingData } = require('../utils/extractionClient');
+const { publish } = require('../realtime/centrifugo');
+const { allocateBookingReference, reconcileProvidedReference } = require('../utils/bookingReference');
+const { scanManifest } = require('../utils/manifestAnomalies');
+const logger = require('../utils/logger');
 
-router.use(authenticate, attachOrgDb);
+// dualAuthenticate, not authenticate: this router serves both the operator
+// dashboard (JWT) and the Field app (X-Field-Device + X-Field-Token — see
+// middleware/fieldAuth.js). Either credential produces the same req.user, so
+// everything below, including the yard/port role gate, is unchanged.
+router.use(dualAuthenticate, attachOrgDb);
 router.use((req, res, next) => {
   if (!req.db) return res.status(403).json({ error: 'org_scope_required' });
   next();
@@ -42,6 +50,43 @@ router.use((req, res, next) => {
   }
   next();
 });
+
+// ─── Realtime fan-out ────────────────────────────────────────────────────────
+/**
+ * Push a CDS state change to every screen in the org, right now.
+ *
+ * Yard, Port and the control room are three views of one shipment, and until
+ * this existed they only ever learned about each other by polling: 15s on the
+ * two field queues, 20-30s on the dashboard, and *never* on Trips, Containers,
+ * Locks, Bookings or Alerts, which had no refetch at all. So a clamp at the
+ * gate could sit invisible on a controller's Trips board indefinitely, and the
+ * port crew would not see an inbound container until their next poll. Worse,
+ * a seal-mismatch alert — the one event where seconds matter — reached the
+ * control room no faster than a routine one.
+ *
+ * `org#<org_id>` is the same user-limited channel the rest of the platform
+ * already publishes on (alerts, incidents, convoys, panic — see
+ * routes/incidents.js and controllers/alertController.js), so field devices
+ * and dashboards share one connection and one authorisation rule.
+ *
+ * Fire-and-forget on purpose: realtime is an accelerator, not the source of
+ * truth. The poll intervals on the client stay as the floor, so a Centrifugo
+ * outage degrades the system to exactly what it was before rather than
+ * breaking a clamp. Nothing here is ever awaited into the response path.
+ */
+function publishCds(req, type, payload) {
+  const orgId = req.user && req.user.org_id;
+  if (!orgId) return;
+  Promise.resolve(
+    publish(`org#${orgId}`, {
+      type,
+      at: new Date().toISOString(),
+      actor: (req.user.name || req.user.email || null),
+      actor_role: req.user.role || null,
+      ...payload,
+    })
+  ).catch((err) => logger.warn(`CDS realtime publish failed (${type}): ${err.message}`));
+}
 
 function genCode(prefix) {
   const ts = Date.now().toString(36).toUpperCase();
@@ -324,6 +369,14 @@ router.post('/trips/:id/transition', asyncHandler(async (req, res) => {
      req.user.org_id]
   );
 
+  publishCds(req, 'cds.trip.updated', {
+    trip_id: result.rows[0].id,
+    trip_number: result.rows[0].trip_number,
+    booking_id: result.rows[0].booking_id,
+    from_status: current.rows[0].status,
+    status: to_status,
+  });
+
   res.json({ data: result.rows[0] });
 }));
 
@@ -533,6 +586,14 @@ router.post('/trips/:id/clamp', asyncHandler(async (req, res) => {
      orgId]
   );
 
+  publishCds(req, 'cds.trip.updated', {
+    trip_id: result.rows[0].id,
+    trip_number: result.rows[0].trip_number,
+    booking_id: result.rows[0].booking_id,
+    from_status: trip.rows[0].status,
+    status: 'locked',
+  });
+
   res.json({ data: result.rows[0] });
 }));
 
@@ -561,6 +622,14 @@ router.post('/trips/:id/unclamp', asyncHandler(async (req, res) => {
      JSON.stringify({ status: 'lock_removed', notes: req.body.notes }),
      req.user.org_id]
   );
+
+  publishCds(req, 'cds.trip.updated', {
+    trip_id: result.rows[0].id,
+    trip_number: result.rows[0].trip_number,
+    booking_id: result.rows[0].booking_id,
+    from_status: trip.rows[0].status,
+    status: 'lock_removed',
+  });
 
   res.json({ data: result.rows[0] });
 }));
@@ -668,12 +737,15 @@ router.get('/bookings/manifest', asyncHandler(async (req, res) => {
 
   params.push(limit, offset);
   const result = await req.db(
-    `SELECT bc.id, bc.booking_id, bc.container_number, bc.seal_number, bc.iso_type,
+    `SELECT bc.id, bc.booking_id, bc.container_number, bc.seal_number, bc.seal_number_2,
+            bc.packing_list_no, bc.iso_type,
             bc.weight_kg, bc.status, bc.notes,
             bc.clamped_at, bc.unclamped_at, bc.terminal, bc.yard_status, bc.invoiced,
             bc.trailer_reg,
             b.booking_number, b.reference AS file_reference, b.vessel, b.commodity,
-            b.controller, cu.company_name AS customer_name,
+            b.controller, b.country_code, b.direction, b.carrier_reference, b.status AS booking_status,
+            b.pickup_location, b.delivery_location, b.eta, b.created_at AS booking_created_at,
+            cu.company_name AS customer_name,
             t.trip_number, t.status AS trip_status,
             COALESCE(bc.transporter_name, tr.company_name) AS transporter,
             COALESCE(bc.horse_reg,        v.registration)  AS horse_reg,
@@ -690,6 +762,62 @@ router.get('/bookings/manifest', asyncHandler(async (req, res) => {
   );
   const total = await req.db(`SELECT COUNT(*) ${FROM}`, params.slice(0, -2));
   res.json({ data: result.rows, total: parseInt(total.rows[0].count, 10) });
+}));
+
+// ─── Manifest integrity scan ─────────────────────────────────────────────────
+// Declared before /bookings/:id for the same reason /bookings/manifest is:
+// Express would otherwise match "manifest" as an :id.
+//
+// Scans the whole org rather than the page the user is looking at. Duplicate
+// detection that only sees 200 rows is worse than none — it would clear a
+// container whose twin happens to be on the next page, which is precisely the
+// case a controller most needs told about.
+const ANOMALY_SCAN_CAP = 5000;
+
+router.get('/bookings/manifest/anomalies', asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+
+  const rows = await req.db(
+    `SELECT bc.id, bc.booking_id, bc.container_number, bc.seal_number, bc.seal_number_2, bc.status,
+            bc.clamped_at, bc.unclamped_at, bc.yard_status,
+            COALESCE(bc.lock_number, el.serial)      AS lock_number,
+            COALESCE(bc.horse_reg,   v.registration) AS horse_reg,
+            b.booking_number
+       FROM cds_booking_containers bc
+       JOIN cds_bookings b ON b.id = bc.booking_id AND b.deleted_at IS NULL
+       LEFT JOIN cds_trips t ON t.id = bc.trip_id
+       LEFT JOIN cds_electronic_locks el ON el.id = t.lock_id
+       LEFT JOIN cds_vehicles v ON v.id = t.vehicle_id
+      WHERE bc.org_id = $1 AND bc.deleted_at IS NULL
+      ORDER BY bc.created_at DESC
+      LIMIT $2`,
+    [orgId, ANOMALY_SCAN_CAP + 1]
+  );
+
+  const bookings = await req.db(
+    `SELECT id, booking_number, reference FROM cds_bookings
+      WHERE org_id = $1 AND deleted_at IS NULL
+      ORDER BY created_at DESC LIMIT $2`,
+    [orgId, ANOMALY_SCAN_CAP + 1]
+  );
+
+  const truncated = rows.rows.length > ANOMALY_SCAN_CAP;
+  const findings = scanManifest(rows.rows.slice(0, ANOMALY_SCAN_CAP), bookings.rows.slice(0, ANOMALY_SCAN_CAP));
+
+  const bySeverity = findings.reduce((acc, f) => {
+    acc[f.severity] = (acc[f.severity] || 0) + 1;
+    return acc;
+  }, {});
+
+  res.json({
+    data: findings,
+    total: findings.length,
+    scanned_containers: Math.min(rows.rows.length, ANOMALY_SCAN_CAP),
+    by_severity: bySeverity,
+    // Surfaced rather than silently swallowed: a partial scan that claims to be
+    // a full one is the failure mode that makes an integrity check untrustworthy.
+    truncated,
+  });
 }));
 
 router.get('/bookings/:id', asyncHandler(async (req, res) => {
@@ -740,23 +868,71 @@ router.post('/bookings', asyncHandler(async (req, res) => {
 
   if (!body.customer_id) return res.status(400).json({ error: 'Customer is required' });
 
+  // The booking number is captured, not generated, whenever the sheet carries
+  // one (TZ_26_08_OB_00123910 is printed on the customer/line's booking sheet —
+  // see the extraction prompt). Only a booking raised in-app with no document
+  // falls through to allocation. See utils/bookingReference.js and migration 080.
+  const provided = body.booking_number
+    ? await reconcileProvidedReference(req.db, req.user.org_id, body.booking_number)
+    : null;
+  const ref = provided ?? await allocateBookingReference(req.db, req.user.org_id, {
+    country: body.country_code,
+    direction: body.direction,
+  });
+  // A sheet-provided structured number encodes its own country/direction; a
+  // free-form provided number keeps whatever the form/body said (or the org
+  // default), since there is nothing to read out of it.
+  const countryCode = ref.country_code ?? body.country_code ?? null;
+  const direction = ref.direction ?? body.direction ?? null;
+
   const fields = ['customer_id', 'pickup_location', 'delivery_location', 'commodity', 'weight_kg',
-    'seal_number', 'container_type', 'container_size', 'shipping_line', 'vessel', 'voyage', 'eta', 'reference', 'notes'];
-  const cols = ['booking_number', ...fields, 'org_id'];
-  const vals = [genCode('BK'), ...fields.map(f => body[f] ?? null), req.user.org_id];
+    'seal_number', 'container_type', 'container_size', 'shipping_line', 'vessel', 'voyage', 'eta',
+    'reference', 'carrier_reference', 'notes'];
+  const cols = ['booking_number', ...(countryCode ? ['country_code'] : []), ...(direction ? ['direction'] : []),
+    ...fields, 'org_id'];
+  const vals = [ref.booking_number, ...(countryCode ? [countryCode] : []), ...(direction ? [direction] : []),
+    ...fields.map(f => body[f] ?? null), req.user.org_id];
   const phs = vals.map((_, i) => `$${i + 1}`).join(',');
-  const bk = await req.db(`INSERT INTO cds_bookings (${cols.join(',')}) VALUES (${phs}) RETURNING *`, vals);
+
+  let bk;
+  try {
+    bk = await req.db(`INSERT INTO cds_bookings (${cols.join(',')}) VALUES (${phs}) RETURNING *`, vals);
+  } catch (err) {
+    // A duplicate booking number is not a server error — it is the single most
+    // important thing to catch at ingest: the same sheet keyed twice, or two
+    // sheets that really do share a reference. Surface it as a conflict the UI
+    // can act on rather than a 500.
+    if (err.code === '23505') {
+      return res.status(409).json({
+        error: 'duplicate_booking_number',
+        message: `Booking ${ref.booking_number} already exists. It may have been entered already, or two sheets share this reference.`,
+        booking_number: ref.booking_number,
+      });
+    }
+    throw err;
+  }
   const booking = bk.rows[0];
   if (Array.isArray(containers) && containers.length > 0) {
     for (const c of containers) {
       await req.db(
-        `INSERT INTO cds_booking_containers (org_id, booking_id, container_number, iso_type, seal_number, weight_kg, notes)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        `INSERT INTO cds_booking_containers
+           (org_id, booking_id, container_number, iso_type, seal_number, seal_number_2,
+            packing_list_no, weight_kg, notes)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
         [req.user.org_id, booking.id, c.container_number || null, c.iso_type || '20GP',
-         c.seal_number || null, c.weight_kg || null, c.notes || null]
+         c.seal_number || null, c.seal_number_2 || null, c.packing_list_no || null,
+         c.weight_kg || null, c.notes || null]
       );
     }
   }
+  // A new booking is work arriving for the yard: their queue should show it
+  // without waiting out a poll.
+  publishCds(req, 'cds.booking.updated', {
+    booking_id: booking.id,
+    booking_number: booking.booking_number,
+    status: booking.status,
+    created: true,
+  });
   res.status(201).json({ data: booking });
 }));
 router.patch('/bookings/:id', asyncHandler(async (req, res) => {
@@ -765,8 +941,13 @@ router.patch('/bookings/:id', asyncHandler(async (req, res) => {
      'container_type', 'container_size', 'shipping_line', 'eta', 'status', 'notes',
      // Manifest columns: vessel and the AW file ref are shown per container row,
      // and the controller owns the booking on the desk.
-     'vessel', 'voyage', 'reference', 'controller']
+     'vessel', 'voyage', 'reference', 'controller',
+     // Editable after the fact: the reference itself is immutable once issued,
+     // but a booking mis-filed as outbound still has to be correctable.
+     'direction', 'country_code', 'carrier_reference']
   );
+  // updateRow owns the response; this only fans the change out afterwards.
+  publishCds(req, 'cds.booking.updated', { booking_id: req.params.id });
 }));
 
 // Booking containers sub-resource
@@ -786,18 +967,26 @@ router.post('/bookings/:id/containers', asyncHandler(async (req, res) => {
   const inserted = [];
   for (const c of items) {
     const r = await req.db(
-      `INSERT INTO cds_booking_containers (org_id, booking_id, container_number, iso_type, seal_number, weight_kg, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      `INSERT INTO cds_booking_containers
+         (org_id, booking_id, container_number, iso_type, seal_number, seal_number_2,
+          packing_list_no, weight_kg, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
       [req.user.org_id, req.params.id, c.container_number || null, c.iso_type || '20GP',
-       c.seal_number || null, c.weight_kg || null, c.notes || null]
+       c.seal_number || null, c.seal_number_2 || null, c.packing_list_no || null,
+       c.weight_kg || null, c.notes || null]
     );
     inserted.push(r.rows[0]);
   }
+  publishCds(req, 'cds.container.updated', {
+    booking_id: req.params.id,
+    added: inserted.length,
+  });
   res.status(201).json({ data: inserted });
 }));
 router.patch('/bookings/:id/containers/:cid', asyncHandler(async (req, res) => {
   const allowed = [
-    'container_number', 'iso_type', 'seal_number', 'weight_kg', 'notes', 'status',
+    'container_number', 'iso_type', 'seal_number', 'seal_number_2', 'packing_list_no',
+    'weight_kg', 'notes', 'status',
     // Manifest columns — see 20260807_076_cds_container_ops.sql.
     'clamped_at', 'unclamped_at', 'terminal', 'yard_status', 'invoiced',
     'lock_number', 'transporter_name', 'horse_reg', 'trailer_reg',
@@ -815,6 +1004,15 @@ router.patch('/bookings/:id/containers/:cid', asyncHandler(async (req, res) => {
     params
   );
   if (!r.rows.length) return res.status(404).json({ error: 'not_found' });
+  // Controller edits reach the field too — a corrected seal number or a
+  // container pulled back to 'pending' has to show up on the tablet that is
+  // about to act on it, not one poll later.
+  publishCds(req, 'cds.container.updated', {
+    booking_id: req.params.id,
+    booking_container_id: r.rows[0].id,
+    container_number: r.rows[0].container_number,
+    status: r.rows[0].status,
+  });
   res.json({ data: r.rows[0] });
 }));
 router.delete('/bookings/:id/containers/:cid', asyncHandler(async (req, res) => {
@@ -822,6 +1020,11 @@ router.delete('/bookings/:id/containers/:cid', asyncHandler(async (req, res) => 
     `UPDATE cds_booking_containers SET deleted_at=NOW() WHERE id=$1 AND org_id=$2`,
     [req.params.cid, req.user.org_id]
   );
+  publishCds(req, 'cds.container.updated', {
+    booking_id: req.params.id,
+    booking_container_id: req.params.cid,
+    removed: true,
+  });
   res.json({ ok: true });
 }));
 
@@ -1054,11 +1257,37 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     ]
   );
 
+  // Fill the manifest columns the control room actually reads.
+  //
+  // GET /bookings/manifest selects bc.clamped_at, bc.lock_number,
+  // bc.transporter_name, bc.horse_reg, bc.trailer_reg, bc.driver_name and
+  // bc.driver_contact — and clamped_at has no fallback join at all. Writing
+  // only status and trip_id here meant a container the yard had physically
+  // clamped still showed a blank DATE CLAMPED, no lock and no driver on the
+  // controller's sheet: the yard knew, the port knew, and the desk did not.
+  //
+  // These overwrite rather than COALESCE on purpose. Anything already in these
+  // columns is what a controller *expected* — the crew at the gate is
+  // reporting what actually left, and the manifest has to show the truck that
+  // really took the box, not the one that was planned. Manual corrections made
+  // after the clamp still stick, because this only ever runs at clamp time.
   await req.db(
     `UPDATE cds_booking_containers
-        SET status='in_transit', trip_id=$1, updated_at=NOW()
+        SET status='in_transit', trip_id=$1, clamped_at=NOW(),
+            lock_number=$3, transporter_name=$4, horse_reg=$5,
+            trailer_reg=COALESCE($6, trailer_reg),
+            driver_name=$7, driver_contact=COALESCE($8, driver_contact),
+            updated_at=NOW()
       WHERE id=$2`,
-    [trip.rows[0].id, bcId]
+    [
+      trip.rows[0].id, bcId,
+      lock_serial.trim(),
+      transporter_name ? String(transporter_name).trim() : null,
+      truck_reg ? String(truck_reg).trim() : null,
+      trailer_reg ? String(trailer_reg).trim() : null,
+      driver_name ? String(driver_name).trim() : null,
+      driver_phone ? String(driver_phone).trim() : null,
+    ]
   );
 
   // Bump booking to 'assigned' if still in draft/pending
@@ -1101,6 +1330,23 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
      JSON.stringify({ lock_serial, transporter_name, truck_reg, trailer_reg, driver_name, driver_phone, lat, lng }),
      orgId]
   );
+
+  // The moment that matters to the other two surfaces: the port crew gains an
+  // inbound container, the yard queue loses one, and the control room gets a
+  // new trip on the board.
+  publishCds(req, 'cds.container.clamped', {
+    booking_id: bookingId,
+    booking_number: bc.rows[0].booking_number,
+    booking_container_id: bcId,
+    container_number: bc.rows[0].container_number,
+    trip_id: trip.rows[0].id,
+    trip_number: trip.rows[0].trip_number,
+    lock_serial: lock_serial.trim(),
+    truck_reg,
+    driver_name,
+    lat: lat ?? null,
+    lng: lng ?? null,
+  });
 
   res.json({ data: { trip: trip.rows[0], booking_container_id: bcId } });
 }));
@@ -1162,9 +1408,12 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
     );
   }
 
+  // unclamped_at is the manifest's TIME UNCLAMPED column and had the same
+  // problem clamped_at did — nothing ever set it, so the desk could not tell a
+  // delivered container from one still on the road except by its status chip.
   await req.db(
     `UPDATE cds_booking_containers
-        SET status='delivered', updated_at=$1
+        SET status='delivered', unclamped_at=$1, updated_at=$1
       WHERE id=$2`,
     [now, bcId]
   );
@@ -1241,6 +1490,25 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
                      seal_expected: expectedSeal, seal_observed: observed, seal_intact: sealVerdict }),
      orgId]
   );
+
+  // A seal mismatch is the one event on this router where latency is a safety
+  // property, not a nicety — a controller finding out 30 seconds later is 30
+  // seconds of a possibly-opened load still moving. It rides the same channel
+  // as the routine delivery so the control room needs no second subscription,
+  // and carries `tamper` so the UI can escalate without a follow-up fetch.
+  publishCds(req, 'cds.container.unclamped', {
+    booking_id: bookingId,
+    booking_number: bc.rows[0].booking_number,
+    booking_container_id: bcId,
+    container_number: bc.rows[0].container_number,
+    trip_id: bc.rows[0].trip_id,
+    seal_intact: sealVerdict,
+    seal_expected: expectedSeal || null,
+    seal_observed: observed || null,
+    tamper: sealTampered,
+    lat: lat ?? null,
+    lng: lng ?? null,
+  });
 
   res.json({
     data: {

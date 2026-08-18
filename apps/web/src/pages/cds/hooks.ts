@@ -30,6 +30,13 @@ export function useActivity(limit = 30) {
   });
 }
 
+// Realtime (useCDSRealtime) invalidates these the instant the yard or port
+// acts, so the interval below is a safety floor, not the mechanism: if
+// Centrifugo is down or the socket drops, a control-room board still refreshes
+// on its own instead of freezing on a snapshot — which is what these five
+// queries did before, having had no refetch at all.
+const CONTROL_ROOM_REFETCH_MS = 60_000;
+
 export function useTrips(filters?: SearchFilters) {
   return useQuery<ApiList>({
     queryKey: ['cds', 'trips', filters],
@@ -37,6 +44,7 @@ export function useTrips(filters?: SearchFilters) {
       const { data } = await cdsApi.get('/trips', { params: filters });
       return data;
     },
+    refetchInterval: CONTROL_ROOM_REFETCH_MS,
   });
 }
 
@@ -100,6 +108,7 @@ export function useContainers(filters?: SearchFilters) {
       const { data } = await cdsApi.get('/containers', { params: filters });
       return data;
     },
+    refetchInterval: CONTROL_ROOM_REFETCH_MS,
   });
 }
 
@@ -110,6 +119,7 @@ export function useLocks(filters?: SearchFilters) {
       const { data } = await cdsApi.get('/locks', { params: filters });
       return data;
     },
+    refetchInterval: CONTROL_ROOM_REFETCH_MS,
   });
 }
 
@@ -160,6 +170,7 @@ export function useBookings(filters?: SearchFilters) {
       const { data } = await cdsApi.get('/bookings', { params: filters });
       return data;
     },
+    refetchInterval: CONTROL_ROOM_REFETCH_MS,
   });
 }
 
@@ -201,6 +212,26 @@ export function useBookingManifest(filters?: SearchFilters) {
       const { data } = await cdsApi.get('/bookings/manifest', { params: filters });
       return data;
     },
+    refetchInterval: CONTROL_ROOM_REFETCH_MS,
+  });
+}
+
+/**
+ * The manifest's integrity scan (backend/src/utils/manifestAnomalies.js).
+ *
+ * Deliberately a separate query from the manifest rows: it scans the whole org
+ * rather than the visible page, so it must not be re-run every time somebody
+ * types in the search box. It rides the same realtime invalidation as the
+ * manifest, so a duplicate created by a clamp surfaces immediately.
+ */
+export function useManifestAnomalies() {
+  return useQuery<ApiList & { by_severity?: Record<string, number>; truncated?: boolean; scanned_containers?: number }>({
+    queryKey: ['cds', 'manifest', 'anomalies'],
+    queryFn: async () => {
+      const { data } = await cdsApi.get('/bookings/manifest/anomalies');
+      return data;
+    },
+    refetchInterval: CONTROL_ROOM_REFETCH_MS,
   });
 }
 
@@ -243,21 +274,27 @@ export function useBookingContainers(bookingId: string, opts: { offline?: boolea
   });
 }
 
-export function useYardQueue() {
+// `enabled` because a field account only ever holds one of the two roles, and
+// the backend gate in routes/cds.js 403s the other queue outright — polling it
+// every 15s just to throw the answer away spends a yard tablet's battery on a
+// guaranteed rejection.
+export function useYardQueue(enabled = true) {
   return useQuery<{ data: Record<string, unknown>[] }>({
     queryKey: ['cds', 'field', 'yard-queue'],
     queryFn: () => withOfflineFallback('yard-queue', async () =>
       (await cdsApi.get<{ data: Record<string, unknown>[] }>('/field/yard-queue')).data),
     refetchInterval: 15_000,
+    enabled,
   });
 }
 
-export function usePortQueue() {
+export function usePortQueue(enabled = true) {
   return useQuery<{ data: Record<string, unknown>[] }>({
     queryKey: ['cds', 'field', 'port-queue'],
     queryFn: () => withOfflineFallback('port-queue', async () =>
       (await cdsApi.get<{ data: Record<string, unknown>[] }>('/field/port-queue')).data),
     refetchInterval: 15_000,
+    enabled,
   });
 }
 
@@ -338,6 +375,7 @@ export function useAlerts(filters?: SearchFilters) {
       const { data } = await cdsApi.get('/alerts', { params: filters });
       return data;
     },
+    refetchInterval: CONTROL_ROOM_REFETCH_MS,
   });
 }
 

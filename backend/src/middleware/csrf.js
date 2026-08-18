@@ -22,6 +22,11 @@ const SKIP_PREFIXES = [
   // CSRF is redundant. Portal pages also use bare fetch() without the CSRF header.
   '/api/v1/portal/',
   '/api/v1/guardian/',          // X-Device-Token auth
+  // Field app device/session endpoints: X-Field-Device / X-Field-Token auth,
+  // no cookies involved at all, so there is no ambient credential to forge.
+  // Only the /app/ half is exempt — /field/admin/* is ordinary operator JWT
+  // and stays behind double-submit like the rest of the dashboard.
+  '/api/v1/field/app/',
   '/api/v1/webhooks/',          // Convoy / external webhook callbacks
   '/api/v1/fuel/webhook/',                 // Fuel-card webhook — HMAC-verified (RULE D)
   '/api/v1/guardian/whatsapp/webhook',     // WhatsApp webhook — HMAC-verified (RULE D)
@@ -40,6 +45,14 @@ function csrf(req, res, next) {
 
   if (SAFE_METHODS.has(req.method)) return next();
   if (SKIP_PREFIXES.some(p => req.path.startsWith(p))) return next();
+
+  // Field app requests to shared routers (notably /api/v1/cds/**, which serves
+  // both the dashboard and the yard/port tablets). The credential is a custom
+  // header the browser will not attach on its own, so the request cannot be
+  // forged cross-site the way a cookie-authenticated one can — the same
+  // reasoning that exempts the Guardian X-Device-Token API above. Presenting
+  // the header does not grant anything: fieldAuth still has to resolve it.
+  if (req.headers['x-field-token'] || req.headers['x-field-device']) return next();
 
   const header = req.headers[CSRF_HEADER];
   const tokenBuf = Buffer.from(token);
