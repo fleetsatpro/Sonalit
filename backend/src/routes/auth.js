@@ -178,6 +178,14 @@ router.post('/refresh', async (req, res) => {
     if (row.status !== 'active') {
       return res.status(403).json({ error: 'Account is not active' });
     }
+    // Field roles are barred from POST /auth/login (see authController), but a
+    // refresh cookie minted before that rule existed — or before an account
+    // was moved to a field role — would otherwise keep renewing an operator
+    // session indefinitely.
+    if (row.role === 'yard_agent' || row.role === 'port_agent') {
+      res.clearCookie(RT_COOKIE, { ...COOKIE_OPTS, maxAge: 0 });
+      return res.status(403).json({ error: 'field_account' });
+    }
 
     // Rotate: mark old token used, issue new httpOnly cookie
     await query('UPDATE refresh_tokens SET used_at = NOW() WHERE id = $1', [row.id]);

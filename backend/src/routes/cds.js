@@ -1,12 +1,16 @@
 const router = require('express').Router();
 const crypto = require('crypto');
-const { authenticate } = require('../middleware/auth');
+const { dualAuthenticate } = require('../middleware/fieldAuth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 const requireIdempotencyKey = require('../middleware/idempotency');
 const { extractBookingData } = require('../utils/extractionClient');
 
-router.use(authenticate, attachOrgDb);
+// dualAuthenticate, not authenticate: this router serves both the operator
+// dashboard (JWT) and the Field app (X-Field-Device + X-Field-Token — see
+// middleware/fieldAuth.js). Either credential produces the same req.user, so
+// everything below, including the yard/port role gate, is unchanged.
+router.use(dualAuthenticate, attachOrgDb);
 router.use((req, res, next) => {
   if (!req.db) return res.status(403).json({ error: 'org_scope_required' });
   next();

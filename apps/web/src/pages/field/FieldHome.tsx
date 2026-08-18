@@ -1,22 +1,17 @@
-import { Link, useNavigate } from '@tanstack/react-router';
+import { Link } from '@tanstack/react-router';
 import { Anchor, ChevronRight, LogOut, Package, Truck } from 'lucide-react';
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 
-import { useAuthStore } from '../../stores/auth.js';
 import { usePortQueue, useYardQueue } from '../cds/hooks.js';
 
+import { useFieldAuth } from './fieldAuth.js';
 import { OfflineBanner } from './OfflineBanner.js';
 
-// yard_agent/port_agent are scoped, single-purpose logins (see migration 077
-// + the field-role gating in backend/src/routes/cds.js) — a device carrying
-// one of those accounts has no use for the other team's tile, since the API
-// would 403 it anyway. admin/dispatcher/operator keep both: they're the
-// roles a supervisor actually carries between yard and port.
-const CAN_YARD = new Set(['admin', 'dispatcher', 'operator', 'yard_agent']);
-const CAN_PORT = new Set(['admin', 'dispatcher', 'operator', 'port_agent']);
-
+// A field account is one team, by construction: the backend gate in
+// routes/cds.js lets a yard_agent reach only the clamp flow and a port_agent
+// only the unclamp flow, so showing the other tile would be showing a screen
+// whose every request 403s.
 const ROLE_LABEL: Record<string, string> = {
-  admin: 'Supervisor', dispatcher: 'Dispatcher', operator: 'Operator',
   yard_agent: 'Yard Team', port_agent: 'Port Team',
 };
 
@@ -37,30 +32,27 @@ function initials(name: string): string {
 }
 
 export default function FieldHome() {
-  const user = useAuthStore(s => s.user);
-  const clearAuth = useAuthStore(s => s.clearAuth);
-  const navigate = useNavigate();
-  const role = user?.role ?? '';
-  const canYard = CAN_YARD.has(role);
-  const canPort = CAN_PORT.has(role);
+  const worker = useFieldAuth(s => s.worker);
+  const device = useFieldAuth(s => s.device);
+  const signOut = useFieldAuth(s => s.signOut);
+  const role = worker?.role ?? '';
+  const canYard = role === 'yard_agent';
+  const canPort = role === 'port_agent';
 
-  const yardQueue = useYardQueue();
-  const portQueue = usePortQueue();
+  const yardQueue = useYardQueue(canYard);
+  const portQueue = usePortQueue(canPort);
   const pendingClamp = useMemo(
     () => (yardQueue.data?.data ?? []).reduce((n, b) => n + Number(b['pending_containers'] ?? 0), 0),
     [yardQueue.data]
   );
   const inTransit = portQueue.data?.data?.length ?? 0;
 
-  // A single-tile account skips the picker — there's nothing to pick.
-  useEffect(() => {
-    if (canYard && !canPort) void navigate({ to: '/field/yard' });
-    else if (canPort && !canYard) void navigate({ to: '/field/port' });
-  }, [canYard, canPort, navigate]);
-
-  if ((canYard && !canPort) || (canPort && !canYard)) return null;
-
-  const name = user?.name || user?.email || 'Field crew';
+  // Deliberately no auto-redirect into the single tile. On a shared tablet the
+  // first thing that matters is *who the device thinks you are* — every clamp
+  // from here is signed into the custody chain under this name, so the crew
+  // gets one screen to notice they're still signed in as the last shift
+  // before they act.
+  const name = worker?.name || 'Field crew';
 
   return (
     <div className="min-h-screen w-full bg-ink-0 text-text-0 flex flex-col relative overflow-hidden">
@@ -83,9 +75,9 @@ export default function FieldHome() {
           </div>
         </div>
         <button
-          onClick={() => { clearAuth(); window.location.href = '/login'; }}
+          onClick={() => { void signOut(); }}
           className="w-9 h-9 rounded-lg bg-white/[.05] border border-white/10 text-text-1 flex items-center justify-center active:scale-95 transition-transform cursor-pointer"
-          aria-label="Sign out"
+          aria-label="Hand over device"
         >
           <LogOut size={16} />
         </button>
@@ -99,7 +91,7 @@ export default function FieldHome() {
         <div className="min-w-0">
           <div className="text-[19px] font-bold leading-tight truncate">{greeting()}, {name.split(' ')[0]}</div>
           <div className="text-[11px] font-mono text-text-2 mt-0.5">
-            {ROLE_LABEL[role] ?? role} · {user?.email}
+            {ROLE_LABEL[role] ?? role}{device ? ` · ${[device.label, device.site].filter(Boolean).join(' · ')}` : ''}
           </div>
         </div>
       </div>
@@ -135,7 +127,7 @@ export default function FieldHome() {
         )}
         {!canYard && !canPort && (
           <div className="rounded-2xl border border-white/[.08] bg-white/[.03] p-5 text-[12px] text-text-2">
-            Your account isn't set up for Yard or Port field ops. Ask an admin to assign the Yard Agent or Port Agent role.
+            This account isn't set up for Yard or Port field ops. Ask a supervisor to assign the Yard Agent or Port Agent role.
           </div>
         )}
       </main>

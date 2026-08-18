@@ -42,6 +42,9 @@ async function setRefreshCookie(res, userId, reuseToken) {
   return raw;
 }
 
+/** Roles whose only sign-in path is the Field app's device + PIN flow. */
+const FIELD_ONLY_ROLES = ['yard_agent', 'port_agent'];
+
 const loginSchema = Joi.object({
   email: Joi.string().required(),
   password: Joi.string().min(6).required(),
@@ -69,6 +72,20 @@ const login = asyncHandler(async (req, res) => {
   }
   if (user.status !== 'active') {
     return res.status(403).json({ error: 'Account is suspended' });
+  }
+
+  // Field crew do not have an operator session at all. Their credential is a
+  // PIN on a paired device (routes/field.js), and letting the same account
+  // also trade an email + password for a dashboard JWT would make that
+  // separation cosmetic: a leaked field password would be a leaked operator
+  // token, on an account nobody expects to be able to reach the dashboard.
+  // The check sits after the password comparison so it cannot be used to
+  // enumerate which addresses are field accounts.
+  if (FIELD_ONLY_ROLES.includes(user.role)) {
+    return res.status(403).json({
+      error: 'field_account',
+      message: 'Field accounts sign in on the Sonalit Field app with a PIN, not here.',
+    });
   }
 
   // Access token: short-lived, lives in memory on the client (not localStorage)

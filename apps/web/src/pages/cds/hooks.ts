@@ -243,21 +243,27 @@ export function useBookingContainers(bookingId: string, opts: { offline?: boolea
   });
 }
 
-export function useYardQueue() {
+// `enabled` because a field account only ever holds one of the two roles, and
+// the backend gate in routes/cds.js 403s the other queue outright — polling it
+// every 15s just to throw the answer away spends a yard tablet's battery on a
+// guaranteed rejection.
+export function useYardQueue(enabled = true) {
   return useQuery<{ data: Record<string, unknown>[] }>({
     queryKey: ['cds', 'field', 'yard-queue'],
     queryFn: () => withOfflineFallback('yard-queue', async () =>
       (await cdsApi.get<{ data: Record<string, unknown>[] }>('/field/yard-queue')).data),
     refetchInterval: 15_000,
+    enabled,
   });
 }
 
-export function usePortQueue() {
+export function usePortQueue(enabled = true) {
   return useQuery<{ data: Record<string, unknown>[] }>({
     queryKey: ['cds', 'field', 'port-queue'],
     queryFn: () => withOfflineFallback('port-queue', async () =>
       (await cdsApi.get<{ data: Record<string, unknown>[] }>('/field/port-queue')).data),
     refetchInterval: 15_000,
+    enabled,
   });
 }
 

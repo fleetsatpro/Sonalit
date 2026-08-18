@@ -2136,6 +2136,144 @@
         }
       }
     },
+    "/api/v1/field/app/pair": {
+      "post": {
+        "operationId": "post_api_v1_field_app_pair",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/app/device": {
+      "get": {
+        "operationId": "get_api_v1_field_app_device",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/app/workers": {
+      "get": {
+        "operationId": "get_api_v1_field_app_workers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/app/sign-in": {
+      "post": {
+        "operationId": "post_api_v1_field_app_sign_in",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/app/me": {
+      "get": {
+        "operationId": "get_api_v1_field_app_me",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/app/pin": {
+      "post": {
+        "operationId": "post_api_v1_field_app_pin",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/app/sign-out": {
+      "post": {
+        "operationId": "post_api_v1_field_app_sign_out",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/admin/devices": {
+      "get": {
+        "operationId": "get_api_v1_field_admin_devices",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_field_admin_devices",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/admin/devices/{id}/rotate": {
+      "post": {
+        "operationId": "post_api_v1_field_admin_devices_id_rotate",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/admin/devices/{id}": {
+      "delete": {
+        "operationId": "delete_api_v1_field_admin_devices_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/admin/workers": {
+      "get": {
+        "operationId": "get_api_v1_field_admin_workers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/admin/workers/{userId}/pin": {
+      "put": {
+        "operationId": "put_api_v1_field_admin_workers_userId_pin",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/admin/workers/{userId}/unlock": {
+      "post": {
+        "operationId": "post_api_v1_field_admin_workers_userId_unlock",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/telemetry/batch": {
       "post": {
         "operationId": "post_api_v1_telemetry_batch",

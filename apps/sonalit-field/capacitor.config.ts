@@ -13,14 +13,18 @@ import type { CapacitorConfig } from '@capacitor/cli';
  * — installed devices never reinstall for /field changes; only native/plugin
  * changes (Geolocation, new Capacitor plugins) trigger a new APK.
  *
- * We enter the site via /login?redirect=/field so authenticated crews land
- * straight on the role picker, and unauthenticated crews get bounced through
- * login and then back to /field on success.
+ * We open /field directly — no longer /login?redirect=/field. The Field app
+ * has its own login system now (device pairing + a per-worker PIN, see
+ * apps/web/src/pages/field/fieldAuth.ts): /field is served outside the
+ * operator route tree and shows its own pairing or PIN screen when it needs
+ * one. Routing through /login would have asked a yard crew for an operator
+ * password they are not issued and the backend would refuse anyway.
  *
  * appId is intentionally different from io.sonalit.app so both apps can be
- * installed side-by-side on the same device (a supervisor may hold both).
+ * installed side-by-side on the same device — and because the two sessions no
+ * longer share any storage, a supervisor can be signed into each independently.
  */
-const FIELD_URL = 'https://sonalit.vercel.app/login?redirect=/field';
+const FIELD_URL = 'https://sonalit.vercel.app/field';
 
 const config: CapacitorConfig = {
   appId: 'io.sonalit.field',
