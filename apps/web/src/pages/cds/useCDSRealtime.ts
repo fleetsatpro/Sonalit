@@ -107,6 +107,11 @@ export function useCDSRealtime(orgId: string | undefined, opts: CDSRealtimeOptio
           void qc.invalidateQueries({ queryKey: ['cds', 'manifest'] });
           void qc.invalidateQueries({ queryKey: ['cds', 'field'] });
           void qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
+          void qc.invalidateQueries({ queryKey: ['cds', 'activity'] });
+          void qc.invalidateQueries({ queryKey: ['cds', 'alerts'] });
+          if (msg.booking_id) {
+            void qc.invalidateQueries({ queryKey: ['cds', 'booking-containers', msg.booking_id] });
+          }
           break;
         }
 
