@@ -81,8 +81,15 @@ export function useClampTrip() {
       return data;
     },
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cds', 'field'] });
       qc.invalidateQueries({ queryKey: ['cds', 'trips'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'locks'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'containers'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'manifest'] });
       qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'activity'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'alerts'] });
     },
   });
 }
@@ -95,8 +102,15 @@ export function useUnclampTrip() {
       return data;
     },
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cds', 'field'] });
       qc.invalidateQueries({ queryKey: ['cds', 'trips'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'locks'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'containers'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'manifest'] });
       qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'activity'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'alerts'] });
     },
   });
 }
@@ -307,10 +321,15 @@ export function useClampBookingContainer() {
     },
     onSuccess: (_d, { bookingId }) => {
       qc.invalidateQueries({ queryKey: ['cds', 'field'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'trips'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'locks'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'containers'] });
       qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
       qc.invalidateQueries({ queryKey: ['cds', 'booking-containers', bookingId] });
-      qc.invalidateQueries({ queryKey: ['cds', 'trips'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'manifest'] });
       qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'activity'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'alerts'] });
     },
   });
 }
@@ -322,13 +341,17 @@ export function useUnclampBookingContainer() {
       const { data } = await cdsApi.post(`/bookings/${bookingId}/containers/${cid}/unclamp`, payload);
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (_d, { bookingId }) => {
       qc.invalidateQueries({ queryKey: ['cds', 'field'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'booking-containers'] });
       qc.invalidateQueries({ queryKey: ['cds', 'trips'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'alerts'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'locks'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'containers'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'booking-containers', bookingId] });
+      qc.invalidateQueries({ queryKey: ['cds', 'manifest'] });
       qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'activity'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'alerts'] });
     },
   });
 }
