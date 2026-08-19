@@ -304,21 +304,14 @@ function WorkersSection({ isAdmin }: { isAdmin: boolean }) {
   const workers = data ?? [];
   const refresh = () => qc.invalidateQueries({ queryKey: ['field-workers'] });
 
-  // Two calls, because the account and its field credential are separate
-  // things by design: POST /auth/users creates the identity the custody chain
-  // will name, and the PIN is a Field-only credential stored elsewhere.
   const createMut = useMutation({
     mutationFn: async () => {
-      const { data: created } = await api.post<{ data: { id: string } }>('/auth/users', {
+      await api.post('/field/admin/workers', {
         name: name.trim(),
         email: email.trim(),
         role,
-        // Field accounts cannot sign in with a password at all — the backend
-        // rejects these roles at /auth/login — but the users table still
-        // requires a hash, so this is a deliberately unusable one.
-        password: crypto.randomUUID() + crypto.randomUUID(),
+        pin,
       });
-      await api.put(`/field/admin/workers/${created.data.id}/pin`, { pin });
     },
     onSuccess: () => {
       const roleLabel = role === 'yard_agent' ? 'Yard' : role === 'port_agent' ? 'Port' : 'Response Crew';

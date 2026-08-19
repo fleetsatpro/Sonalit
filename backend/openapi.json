@@ -2245,6 +2245,14 @@
       }
     },
     "/api/v1/field/admin/workers": {
+      "post": {
+        "operationId": "post_api_v1_field_admin_workers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
       "get": {
         "operationId": "get_api_v1_field_admin_workers",
         "responses": {

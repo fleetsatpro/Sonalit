@@ -14,7 +14,7 @@ export const CDS_VIEWS: CDSViewDef[] = [
   { id: 'transporters', label: 'Transporters', sub: 'CONTRACTED PARTNERS' },
   { id: 'port', label: 'Port Operations', sub: 'MOMBASA PORT UNCLAMP QUEUE' },
   { id: 'pulse', label: 'Client Pulse', sub: 'HOURLY AUTO-UPDATES · EXCEPTION ALERTS' },
-  { id: 'inbox', label: 'AI Inbox', sub: 'WHATSAPP INTAKE · AUTO-EXTRACTION' },
+  { id: 'inbox', label: 'Comms Centre', sub: 'FIELD MESSAGES · DISPATCH LOG' },
   { id: 'billing', label: 'Billing', sub: 'BILLED BY BOOKING REFERENCE' },
   { id: 'reports', label: 'Reports', sub: 'GENERATE & EXPORT' },
   { id: 'analytics', label: 'Analytics', sub: 'FLEET PERFORMANCE, LAST 30 DAYS' },
