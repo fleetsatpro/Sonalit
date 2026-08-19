@@ -1,9 +1,9 @@
 import { useNavigate } from '@tanstack/react-router';
 import {
-  LayoutDashboard, MapPin, Package, FileText, Lock,
-  Anchor, Activity, MessageSquare, DollarSign, FileBarChart,
-  BarChart2, Settings, Search, Bell, ChevronLeft, PanelLeftClose,
-  PanelLeft, Plus, Truck, type LucideIcon,
+  Gauge, Radar, Container, ClipboardList, ShieldCheck,
+  Ship, HeartPulse, BotMessageSquare, Receipt, ChartNoAxesCombined,
+  TrendingUpDown, SlidersHorizontal, Search, Bell, ChevronLeft, PanelLeftClose,
+  PanelLeft, Plus, Boxes, type LucideIcon,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
@@ -22,10 +22,10 @@ import { useCDSStore, type CDSView } from './store.js';
 import { useCDSRealtime } from './useCDSRealtime.js';
 
 const VIEW_ICONS: Record<string, LucideIcon> = {
-  dashboard: LayoutDashboard, live: MapPin, containers: Package,
-  bookings: FileText, locks: Lock,
-  port: Anchor, pulse: Activity, inbox: MessageSquare, billing: DollarSign,
-  reports: FileBarChart, analytics: BarChart2, settings: Settings,
+  dashboard: Gauge, live: Radar, containers: Container,
+  bookings: ClipboardList, locks: ShieldCheck,
+  port: Ship, pulse: HeartPulse, inbox: BotMessageSquare, billing: Receipt,
+  reports: ChartNoAxesCombined, analytics: TrendingUpDown, settings: SlidersHorizontal,
 };
 
 const NAV_SECTIONS: { label: string; ids: string[] }[] = [
@@ -98,7 +98,7 @@ export default function CDSApp() {
             title="Back to Sonalit"
             style={{ width: 32, height: 32, background: 'linear-gradient(135deg, #F0B429, #ff7a00)', border: 'none', cursor: 'pointer' }}
           >
-            <Truck size={18} />
+            <Boxes size={18} />
           </button>
           {expanded && (
             <div className="min-w-0">
