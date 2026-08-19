@@ -210,8 +210,14 @@ export function BookingGroup({
         <span className="ml-auto flex items-center gap-3 flex-shrink-0">
           <StageRail rows={group.rows} />
           <span className="text-[11px] font-mono text-text-1 whitespace-nowrap">
-            {group.rows.length} {group.rows.length === 1 ? 'container' : 'containers'}
+            {group.rows.length} {group.rows.length === 1 ? 'ctn' : 'ctns'}
           </span>
+          {group.eta && (
+            <span className="text-[10px] font-mono text-text-2 whitespace-nowrap px-1.5 py-0.5 rounded"
+              style={{ background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)' }}>
+              ETA {new Date(group.eta).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+            </span>
+          )}
           <AnomalyBadge items={groupAnomalies} />
         </span>
       </button>

@@ -180,3 +180,61 @@ export const MONO = new Set([
   'seal_number_2', 'packing_list_no', 'lock_number', 'horse_reg', 'trailer_reg',
   'driver_contact', 'commodity', 'iso_type',
 ]);
+
+// ─── Sort ──────────────────────────────────────────────────────────────────
+
+export type SortDir = 'asc' | 'desc';
+export interface SortState { key: string; dir: SortDir }
+
+const STAGE_RANK: Record<string, number> = Object.fromEntries(
+  CONTAINER_STAGES.map((s, i) => [s.id, i])
+);
+
+export function sortRows(rows: Row[], sort: SortState | null): Row[] {
+  if (!sort) return rows;
+  const { key, dir } = sort;
+  const m = dir === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    if (key === 'status') {
+      return m * ((STAGE_RANK[str(a[key])] ?? 99) - (STAGE_RANK[str(b[key])] ?? 99));
+    }
+    if (key === 'clamped_at' || key === 'unclamped_at' || key === 'clamped_at_t' || key === 'eta') {
+      const da = new Date(str(a[key === 'clamped_at_t' ? 'clamped_at' : key])).getTime() || 0;
+      const db = new Date(str(b[key === 'clamped_at_t' ? 'clamped_at' : key])).getTime() || 0;
+      return m * (da - db);
+    }
+    if (key === 'weight_kg') {
+      return m * ((Number(a[key]) || 0) - (Number(b[key]) || 0));
+    }
+    return m * str(a[key]).localeCompare(str(b[key]));
+  });
+}
+
+// ─── Pipeline stats ─────────────────────────────────────────────────────────
+
+export interface PipelineStats {
+  total: number;
+  byStage: Record<string, number>;
+  byYard: Record<string, number>;
+  byDirection: Record<string, number>;
+  invoiced: number;
+  notInvoiced: number;
+}
+
+export function computePipelineStats(rows: Row[]): PipelineStats {
+  const byStage: Record<string, number> = {};
+  const byYard: Record<string, number> = {};
+  const byDirection: Record<string, number> = {};
+  let invoiced = 0;
+  let notInvoiced = 0;
+  for (const r of rows) {
+    const s = str(r['status']) || 'pending';
+    byStage[s] = (byStage[s] ?? 0) + 1;
+    const y = str(r['yard_status']) || 'yard';
+    byYard[y] = (byYard[y] ?? 0) + 1;
+    const d = (str(r['direction']) || 'OB').toUpperCase();
+    byDirection[d] = (byDirection[d] ?? 0) + 1;
+    if (r['invoiced']) invoiced++; else notInvoiced++;
+  }
+  return { total: rows.length, byStage, byYard, byDirection, invoiced, notInvoiced };
+}

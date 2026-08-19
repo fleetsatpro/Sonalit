@@ -676,7 +676,7 @@ export default function Orbit() {
           ))}
         </div>
         <div className="o-launch">
-          <div className="o-lh"><b>Mission apps</b><span>· tap a folder to open its apps</span></div>
+          <div className="o-lh"><b>Mission apps</b><span>· select a module</span></div>
           <div className="o-groups">
             {NAV_GROUPS.map((gr, gi) => {
               const Cover = GROUP_COVER[gr.label] ?? LayoutDashboard;

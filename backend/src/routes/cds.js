@@ -702,7 +702,8 @@ router.get('/bookings', asyncHandler(async (req, res) => {
 //
 // Declared before /bookings/:id so Express doesn't match "manifest" as an :id.
 router.get('/bookings/manifest', asyncHandler(async (req, res) => {
-  const { limit, offset } = paginate(req.query);
+  const limit = Math.min(2000, parseInt(req.query.limit) || 200);
+  const offset = parseInt(req.query.offset) || 0;
   const filters = ['bc.deleted_at IS NULL', 'b.deleted_at IS NULL'];
   const params = [];
   // Scope containers explicitly, as the sibling container routes do. The join
@@ -716,6 +717,7 @@ router.get('/bookings/manifest', asyncHandler(async (req, res) => {
   if (req.query.booking_id) { params.push(req.query.booking_id); filters.push(`bc.booking_id=$${params.length}`); }
   if (req.query.yard_status) { params.push(req.query.yard_status); filters.push(`bc.yard_status=$${params.length}`); }
   if (req.query.status) { params.push(req.query.status); filters.push(`bc.status=$${params.length}`); }
+  if (req.query.direction) { params.push(req.query.direction); filters.push(`b.direction=$${params.length}`); }
   if (req.query.search) {
     params.push(`%${req.query.search}%`);
     filters.push(`(bc.container_number ILIKE $${params.length} OR bc.seal_number ILIKE $${params.length}
@@ -917,8 +919,8 @@ router.post('/bookings', asyncHandler(async (req, res) => {
       await req.db(
         `INSERT INTO cds_booking_containers
            (org_id, booking_id, container_number, iso_type, seal_number, seal_number_2,
-            packing_list_no, weight_kg, notes)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+            packing_list_no, weight_kg, notes, yard_status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'yard')`,
         [req.user.org_id, booking.id, c.container_number || null, c.iso_type || '20GP',
          c.seal_number || null, c.seal_number_2 || null, c.packing_list_no || null,
          c.weight_kg || null, c.notes || null]
@@ -969,8 +971,8 @@ router.post('/bookings/:id/containers', asyncHandler(async (req, res) => {
     const r = await req.db(
       `INSERT INTO cds_booking_containers
          (org_id, booking_id, container_number, iso_type, seal_number, seal_number_2,
-          packing_list_no, weight_kg, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+          packing_list_no, weight_kg, notes, yard_status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'yard') RETURNING *`,
       [req.user.org_id, req.params.id, c.container_number || null, c.iso_type || '20GP',
        c.seal_number || null, c.seal_number_2 || null, c.packing_list_no || null,
        c.weight_kg || null, c.notes || null]
@@ -1159,7 +1161,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
   }
 
   const bc = await req.db(
-    `SELECT bc.*, b.booking_number, b.customer_id, b.pickup_location, b.delivery_location
+    `SELECT bc.*, b.booking_number, b.customer_id, b.pickup_location, b.delivery_location, b.direction
        FROM cds_booking_containers bc
        JOIN cds_bookings b ON b.id = bc.booking_id
       WHERE bc.id=$1 AND bc.booking_id=$2 AND bc.deleted_at IS NULL`,
@@ -1271,12 +1273,14 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
   // reporting what actually left, and the manifest has to show the truck that
   // really took the box, not the one that was planned. Manual corrections made
   // after the clamp still stick, because this only ever runs at clamp time.
+  const yardStatus = (bc.rows[0].direction || '').toUpperCase() === 'IB' ? 'inbound' : 'outbound';
   await req.db(
     `UPDATE cds_booking_containers
         SET status='in_transit', trip_id=$1, clamped_at=NOW(),
             lock_number=$3, transporter_name=$4, horse_reg=$5,
             trailer_reg=COALESCE($6, trailer_reg),
             driver_name=$7, driver_contact=COALESCE($8, driver_contact),
+            yard_status=$9,
             updated_at=NOW()
       WHERE id=$2`,
     [
@@ -1287,6 +1291,7 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
       trailer_reg ? String(trailer_reg).trim() : null,
       driver_name ? String(driver_name).trim() : null,
       driver_phone ? String(driver_phone).trim() : null,
+      yardStatus,
     ]
   );
 
@@ -1413,7 +1418,7 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
   // delivered container from one still on the road except by its status chip.
   await req.db(
     `UPDATE cds_booking_containers
-        SET status='delivered', unclamped_at=$1, updated_at=$1
+        SET status='delivered', unclamped_at=$1, yard_status='complete', updated_at=$1
       WHERE id=$2`,
     [now, bcId]
   );
