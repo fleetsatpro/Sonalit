@@ -41,7 +41,7 @@ router.get('/users', authenticate, authorize('admin', 'dispatcher'), async (req,
 // authorize()/field-role gating in backend/src/routes/cds.js. They sit
 // outside ROLE_HIERARCHY on purpose: least privilege, not a rung on the
 // admin>dispatcher>operator ladder.
-const VALID_ROLES = ['admin', 'dispatcher', 'operator', 'analyst', 'driver', 'cfo', 'yard_agent', 'port_agent'];
+const VALID_ROLES = ['admin', 'dispatcher', 'operator', 'analyst', 'driver', 'cfo', 'yard_agent', 'port_agent', 'response_crew'];
 
 router.post('/users', authenticate, authorize('admin'), async (req, res) => {
   try {

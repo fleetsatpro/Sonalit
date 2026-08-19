@@ -26,7 +26,7 @@ import { LoadingState } from './CDSDashboard.js';
 import { Badge, Button, Card, StatusBadge } from './components.js';
 import { useCDSStore } from './store.js';
 
-type FieldRole = 'yard_agent' | 'port_agent';
+type FieldRole = 'yard_agent' | 'port_agent' | 'response_crew';
 
 interface Worker {
   id: string; name: string; email: string; role: FieldRole; status: string;
@@ -321,7 +321,8 @@ function WorkersSection({ isAdmin }: { isAdmin: boolean }) {
       await api.put(`/field/admin/workers/${created.data.id}/pin`, { pin });
     },
     onSuccess: () => {
-      addToast(`${role === 'yard_agent' ? 'Yard' : 'Port'} account created`);
+      const roleLabel = role === 'yard_agent' ? 'Yard' : role === 'port_agent' ? 'Port' : 'Response Crew';
+      addToast(`${roleLabel} account created`);
       setShowForm(false); setName(''); setEmail(''); setPin(''); setError('');
       void refresh();
     },
@@ -363,11 +364,11 @@ function WorkersSection({ isAdmin }: { isAdmin: boolean }) {
     <Card className="p-5">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <div className="text-sm font-bold text-text-0">Yard &amp; Port crew</div>
+          <div className="text-sm font-bold text-text-0">Field crew</div>
           <p className="text-[11px] text-text-2 mt-0.5 max-w-xl leading-snug">
             These accounts sign in only on a paired field device, with a PIN. They have no dashboard
-            password — a Yard account can only clamp, a Port account can only unclamp, and every
-            action is recorded against the name here.
+            password — a Yard account can only clamp, a Port account can only unclamp, Response Crew
+            receive intercept dispatches, and every action is recorded against the name here.
           </p>
         </div>
         {isAdmin && (
@@ -382,6 +383,7 @@ function WorkersSection({ isAdmin }: { isAdmin: boolean }) {
             <select value={role} onChange={e => setRole(e.target.value as FieldRole)} className={`${inputCls} cursor-pointer`}>
               <option value="yard_agent">Yard agent</option>
               <option value="port_agent">Port agent</option>
+              <option value="response_crew">Response crew</option>
             </select>
           </div>
           <input required type="email" placeholder="Email (identity only — not used to sign in)"
@@ -402,7 +404,7 @@ function WorkersSection({ isAdmin }: { isAdmin: boolean }) {
       )}
 
       {isLoading ? <LoadingState /> : workers.length === 0 ? (
-        <p className="text-[12px] text-text-2 font-mono italic py-6 text-center">No Yard or Port crew accounts yet.</p>
+        <p className="text-[12px] text-text-2 font-mono italic py-6 text-center">No field crew accounts yet.</p>
       ) : (
         <div className="divide-y divide-white/[.05]">
           {workers.map(w => {
