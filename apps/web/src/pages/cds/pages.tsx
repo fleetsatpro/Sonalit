@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import { useAuthStore } from '../../stores/auth.js';
 import { LoadingState } from './CDSDashboard.js';
 import { Card, KPICard, Button, StatusBadge, DataTable, DrawerField, FilterChip, Badge } from './components.js';
 import FieldAccessPanel from './FieldAccessPanel.js';
@@ -508,40 +509,7 @@ export function AnalyticsView() {
 
 export function SettingsView() {
   const [tab, setTab] = useState('profile');
-  // 'field access' replaced what used to be a hardcoded "Field & Port Teams:
-  // 42 members" row — that number came from nowhere. This tab is real: it
-  // enrols the tablets the Field app runs on and issues the PINs crews sign
-  // in with (backend/src/routes/field.js).
-  const tabs = ['profile', 'notifications', 'integrations', 'field access', 'security'];
-
-  const panels: Record<string, { label: string; value: string }[]> = {
-    profile: [
-      { label: 'Full name', value: 'R. Kariuki' },
-      { label: 'Role', value: 'OPS CONTROLLER' },
-      { label: 'Shift', value: 'Bravo · 06:00–18:00' },
-      { label: 'Timezone', value: 'EAT (UTC+3)' },
-    ],
-    notifications: [
-      { label: 'Auto WhatsApp on clamp/unclamp', value: 'On' },
-      { label: 'Delayed trip alerts', value: 'On' },
-      { label: 'Tamper alerts', value: 'On' },
-      { label: 'Low battery warnings', value: 'On' },
-      { label: 'Daily report email', value: 'Off' },
-    ],
-    integrations: [
-      { label: 'Targa Telematics', value: 'Connected' },
-      { label: 'Securisat', value: 'Connected' },
-      { label: 'WhatsApp Business API', value: 'Connected' },
-      { label: 'Excel / SharePoint sync', value: 'Connected' },
-      { label: 'GPS beacon network', value: 'Connected' },
-      { label: 'SAP freight module', value: 'Not connected' },
-    ],
-    security: [
-      { label: 'Two-factor authentication', value: 'Required' },
-      { label: 'Session timeout', value: '15 min' },
-      { label: 'Audit log retention', value: '7 years' },
-    ],
-  };
+  const tabs = ['profile', 'field access'];
 
   return (
     <div className="p-5 max-w-[1600px] mx-auto">
@@ -557,22 +525,32 @@ export function SettingsView() {
         {tab === 'field access' ? (
           <FieldAccessPanel />
         ) : (
-          <Card className="flex-1 p-5">
-            <div className="space-y-0">
-              {(panels[tab] ?? []).map((row, i) => (
-                <div key={row.label} className={`flex items-center justify-between py-3.5 ${i < (panels[tab]?.length ?? 0) - 1 ? 'border-b border-[rgba(255,255,255,.05)]' : ''}`}>
-                  <div>
-                    <div className="text-xs text-text-0">{row.label}</div>
-                  </div>
-                  <span className={`text-xs font-mono ${row.value === 'Not connected' ? 'text-text-2' : row.value === 'Connected' || row.value === 'On' || row.value === 'Required' ? 'text-cds-teal' : 'text-text-1'}`}>
-                    {row.value}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </Card>
+          <ProfilePanel />
         )}
       </div>
     </div>
+  );
+}
+
+function ProfilePanel() {
+  const user = useAuthStore(s => s.user);
+  if (!user) return null;
+  const rows = [
+    { label: 'Full name', value: user.name ?? '—' },
+    { label: 'Email', value: user.email ?? '—' },
+    { label: 'Role', value: (user.role ?? '—').toUpperCase().replace('_', ' ') },
+    { label: 'Organisation ID', value: user.org_id ?? '—' },
+  ];
+  return (
+    <Card className="flex-1 p-5">
+      <div className="space-y-0">
+        {rows.map((row, i) => (
+          <div key={row.label} className={`flex items-center justify-between py-3.5 ${i < rows.length - 1 ? 'border-b border-[rgba(255,255,255,.05)]' : ''}`}>
+            <div className="text-xs text-text-0">{row.label}</div>
+            <span className="text-xs font-mono text-text-1">{row.value}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
