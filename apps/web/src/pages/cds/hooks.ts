@@ -68,7 +68,9 @@ export function useTransitionTrip() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['cds', 'trips'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'field'] });
       qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'activity'] });
     },
   });
 }
@@ -81,8 +83,15 @@ export function useClampTrip() {
       return data;
     },
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cds', 'field'] });
       qc.invalidateQueries({ queryKey: ['cds', 'trips'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'locks'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'containers'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'manifest'] });
       qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'activity'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'alerts'] });
     },
   });
 }
@@ -95,8 +104,15 @@ export function useUnclampTrip() {
       return data;
     },
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cds', 'field'] });
       qc.invalidateQueries({ queryKey: ['cds', 'trips'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'locks'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'containers'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'manifest'] });
       qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'activity'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'alerts'] });
     },
   });
 }
@@ -184,10 +200,8 @@ export function useCreateBooking() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
       qc.invalidateQueries({ queryKey: ['cds', 'booking-containers'] });
-      // The manifest is the default Bookings view, so a booking created with
-      // containers must refresh it — otherwise the modal closes onto a table
-      // that still doesn't show the rows just added.
       qc.invalidateQueries({ queryKey: ['cds', 'manifest'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'field'] });
       qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
     },
   });
@@ -250,6 +264,8 @@ export function useUpdateBookingContainer() {
       void qc.invalidateQueries({ queryKey: ['cds', 'manifest'] });
       void qc.invalidateQueries({ queryKey: ['cds', 'booking-containers'] });
       void qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
+      void qc.invalidateQueries({ queryKey: ['cds', 'field'] });
+      void qc.invalidateQueries({ queryKey: ['cds', 'containers'] });
     },
   });
 }
@@ -307,10 +323,15 @@ export function useClampBookingContainer() {
     },
     onSuccess: (_d, { bookingId }) => {
       qc.invalidateQueries({ queryKey: ['cds', 'field'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'trips'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'locks'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'containers'] });
       qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
       qc.invalidateQueries({ queryKey: ['cds', 'booking-containers', bookingId] });
-      qc.invalidateQueries({ queryKey: ['cds', 'trips'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'manifest'] });
       qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'activity'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'alerts'] });
     },
   });
 }
@@ -322,13 +343,17 @@ export function useUnclampBookingContainer() {
       const { data } = await cdsApi.post(`/bookings/${bookingId}/containers/${cid}/unclamp`, payload);
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (_d, { bookingId }) => {
       qc.invalidateQueries({ queryKey: ['cds', 'field'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'booking-containers'] });
       qc.invalidateQueries({ queryKey: ['cds', 'trips'] });
-      qc.invalidateQueries({ queryKey: ['cds', 'alerts'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'locks'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'containers'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'booking-containers', bookingId] });
+      qc.invalidateQueries({ queryKey: ['cds', 'manifest'] });
       qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'activity'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'alerts'] });
     },
   });
 }
