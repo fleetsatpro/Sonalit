@@ -42,20 +42,20 @@ export interface FieldDevice {
   id: string;
   label: string;
   site: string | null;
-  scope: 'yard' | 'port' | null;
+  scope: 'yard' | 'port' | 'response' | null;
 }
 
 export interface FieldWorker {
   id: string;
   name: string;
-  role: 'yard_agent' | 'port_agent';
+  role: 'yard_agent' | 'port_agent' | 'response_crew';
   org_id?: string;
 }
 
 export interface RosterEntry {
   id: string;
   name: string;
-  role: 'yard_agent' | 'port_agent';
+  role: 'yard_agent' | 'port_agent' | 'response_crew';
   has_pin: boolean;
   locked: boolean;
 }

@@ -30,6 +30,7 @@ export * from './schemas/maintenance.js';
 export * from './schemas/shipment.js';
 export * from './schemas/route.js';
 export * from './schemas/portal.js';
+export * from './schemas/response-crew.js';
 
 // Events
 export * from './events/subjects.js';

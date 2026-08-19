@@ -2274,6 +2274,26 @@
         }
       }
     },
+    "/api/v1/field/response-crew/dispatches": {
+      "get": {
+        "operationId": "get_api_v1_field_response_crew_dispatches",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/response-crew/dispatches/{id}/status": {
+      "patch": {
+        "operationId": "patch_api_v1_field_response_crew_dispatches_id_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/telemetry/batch": {
       "post": {
         "operationId": "post_api_v1_telemetry_batch",
@@ -2997,6 +3017,64 @@
     "/api/v1/guardian/devices/{id}/remote-session/mdm-action": {
       "post": {
         "operationId": "post_api_v1_guardian_devices_id_remote_session_mdm_action",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/response-crew/teams": {
+      "get": {
+        "operationId": "get_api_v1_response_crew_teams",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_response_crew_teams",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/response-crew/dispatches": {
+      "get": {
+        "operationId": "get_api_v1_response_crew_dispatches",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/response-crew/dispatches/mine": {
+      "get": {
+        "operationId": "get_api_v1_response_crew_dispatches_mine",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/response-crew/dispatch": {
+      "post": {
+        "operationId": "post_api_v1_response_crew_dispatch",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/response-crew/dispatches/{id}/status": {
+      "patch": {
+        "operationId": "patch_api_v1_response_crew_dispatches_id_status",
         "responses": {
           "200": {
             "description": "OK"

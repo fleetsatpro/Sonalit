@@ -23,7 +23,7 @@ const { authenticate } = require('./auth');
 const logger = require('../utils/logger');
 
 /** Roles that may hold a Field session at all. */
-const FIELD_ROLES = ['yard_agent', 'port_agent'];
+const FIELD_ROLES = ['yard_agent', 'port_agent', 'response_crew'];
 
 /** How long a shift session lasts before the worker has to re-enter their PIN. */
 const SESSION_HOURS = 12;

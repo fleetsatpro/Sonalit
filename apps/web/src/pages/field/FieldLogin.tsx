@@ -6,7 +6,7 @@
  * pairing code, and no email field anywhere: on a shared device, typing an
  * address at every handover is the thing crews stop doing.
  */
-import { Delete, KeyRound, Loader2, RefreshCw, ShieldCheck, Truck, Anchor } from 'lucide-react';
+import { Delete, KeyRound, Loader2, RefreshCw, ShieldCheck, Truck, Anchor, Siren } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { changeOwnPin, fetchRoster, fieldError, useFieldAuth } from './fieldAuth.js';
@@ -16,6 +16,7 @@ import type { RosterEntry } from './fieldAuth.js';
 const ROLE_META = {
   yard_agent: { label: 'Yard', accent: '#ff7a00', icon: Truck },
   port_agent: { label: 'Port', accent: '#37e6ff', icon: Anchor },
+  response_crew: { label: 'Response', accent: '#dc2626', icon: Siren },
 } as const;
 
 function initials(name: string): string {

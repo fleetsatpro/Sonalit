@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api.js';
 import { useDashboardStore } from '../../stores/dashboardStore.js';
 import type { DashboardAlert } from '../../stores/dashboardStore.js';
+
+const ResponseCrewPanel = lazy(() => import('./ResponseCrewPanel.js'));
 
 // One priority queue: panic, alerts, voice notes & feed events fold into a
 // single urgency-ranked list — SOS locked to the top with a target-lock
@@ -180,6 +182,13 @@ const PriorityQueue = React.memo(function PriorityQueue() {
           </button>
         </div>
       )}
+
+      {/* Response Crew dispatch panel */}
+      <div style={{ padding: '0 14px 10px' }}>
+        <Suspense fallback={null}>
+          <ResponseCrewPanel />
+        </Suspense>
+      </div>
 
       {/* Ranked feed */}
       <div style={{ flex: 1, padding: '0 14px' }}>

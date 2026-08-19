@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router';
-import { Anchor, ChevronRight, LogOut, Package, Truck } from 'lucide-react';
-import { useMemo } from 'react';
+import { Anchor, ChevronRight, LogOut, Package, Siren, Truck } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { usePortQueue, useYardQueue } from '../cds/hooks.js';
 
@@ -11,8 +11,10 @@ import { OfflineBanner } from './OfflineBanner.js';
 // routes/cds.js lets a yard_agent reach only the clamp flow and a port_agent
 // only the unclamp flow, so showing the other tile would be showing a screen
 // whose every request 403s.
+import { fieldApi } from './fieldAuth.js';
+
 const ROLE_LABEL: Record<string, string> = {
-  yard_agent: 'Yard Team', port_agent: 'Port Team',
+  yard_agent: 'Yard Team', port_agent: 'Port Team', response_crew: 'Response Crew',
 };
 
 function greeting(): string {
@@ -38,9 +40,18 @@ export default function FieldHome() {
   const role = worker?.role ?? '';
   const canYard = role === 'yard_agent';
   const canPort = role === 'port_agent';
+  const canResponse = role === 'response_crew';
 
   const yardQueue = useYardQueue(canYard);
   const portQueue = usePortQueue(canPort);
+
+  const [activeDispatches, setActiveDispatches] = useState(0);
+  useEffect(() => {
+    if (!canResponse) return;
+    fieldApi.get<{ data: unknown[] }>('/response-crew/dispatches')
+      .then(r => setActiveDispatches(r.data.data?.length ?? 0))
+      .catch(() => {});
+  }, [canResponse]);
   const pendingClamp = useMemo(
     () => (yardQueue.data?.data ?? []).reduce((n, b) => n + Number(b['pending_containers'] ?? 0), 0),
     [yardQueue.data]
@@ -125,9 +136,21 @@ export default function FieldHome() {
             urgent={inTransit > 0}
           />
         )}
-        {!canYard && !canPort && (
+        {canResponse && (
+          <RoleTile
+            to="/field/response"
+            title="Response Crew"
+            subtitle="Intercept & respond to flagged vehicles and containers"
+            icon={<Siren size={26} strokeWidth={1.8} />}
+            accent="#dc2626"
+            stat={activeDispatches > 0 ? `${activeDispatches} active dispatch${activeDispatches > 1 ? 'es' : ''}` : 'Standing by'}
+            statLoading={false}
+            urgent={activeDispatches > 0}
+          />
+        )}
+        {!canYard && !canPort && !canResponse && (
           <div className="rounded-2xl border border-white/[.08] bg-white/[.03] p-5 text-[12px] text-text-2">
-            This account isn't set up for Yard or Port field ops. Ask a supervisor to assign the Yard Agent or Port Agent role.
+            This account isn't set up for field ops. Ask a supervisor to assign a role.
           </div>
         )}
       </main>
