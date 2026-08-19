@@ -42,6 +42,14 @@ export interface CDSEvent {
   lock_serial?: string;
   seal_intact?: boolean | null;
   tamper?: boolean;
+  // Lock telemetry events (cds.lock.telemetry / cds.lock.tamper).
+  lock_id?: string;
+  serial?: string;
+  lat?: number | null;
+  lng?: number | null;
+  battery_level?: number | null;
+  signal_strength?: string | null;
+  tamper_status?: string | null;
 }
 
 /** Events this hook understands. Anything else on the channel is ignored. */
@@ -117,6 +125,19 @@ export function useCDSRealtime(orgId: string | undefined, opts: CDSRealtimeOptio
           void qc.invalidateQueries({ queryKey: ['cds', 'containers'] });
           if (msg.booking_id) {
             void qc.invalidateQueries({ queryKey: ['cds', 'booking-containers', msg.booking_id] });
+          }
+          break;
+        }
+
+        case 'cds.lock.telemetry':
+        case 'cds.lock.tamper': {
+          // Live e-lock telemetry from the Securisat feed. The tracking board
+          // and the Locks view read these; a tamper also lands a critical alert.
+          void qc.invalidateQueries({ queryKey: ['cds', 'locks'] });
+          void qc.invalidateQueries({ queryKey: ['cds', 'locks-live'] });
+          if (msg.type === 'cds.lock.tamper') {
+            void qc.invalidateQueries({ queryKey: ['cds', 'alerts'] });
+            void qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
           }
           break;
         }

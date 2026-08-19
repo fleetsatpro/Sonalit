@@ -123,6 +123,38 @@ export function useLocks(filters?: SearchFilters) {
   });
 }
 
+/**
+ * Live e-lock tracking board — every lock with its latest Securisat telemetry
+ * and the container/booking it's securing. Invalidated in real time by
+ * useCDSRealtime on each cds.lock.telemetry event, so the map moves as the
+ * locks move; the interval is only the dead-socket floor.
+ */
+export function useLocksLive() {
+  return useQuery<ApiList>({
+    queryKey: ['cds', 'locks-live'],
+    queryFn: async () => (await cdsApi.get('/locks/live')).data,
+    refetchInterval: 20_000,
+  });
+}
+
+/** The GPS breadcrumb trail for one lock (oldest-first), for drawing its path. */
+export function useLockTrail(lockId: string | null) {
+  return useQuery<{ data: { lat: number; lng: number; type: string; at: string }[] }>({
+    queryKey: ['cds', 'lock-trail', lockId],
+    queryFn: async () => (await cdsApi.get(`/locks/${lockId}/trail`)).data,
+    enabled: Boolean(lockId),
+  });
+}
+
+/** The org's telemetry source config + health (for the integrations screen). */
+export function useTelemetrySource() {
+  return useQuery<{ data: Record<string, unknown> | null; provider_configured: boolean }>({
+    queryKey: ['cds', 'telemetry-source'],
+    queryFn: async () => (await cdsApi.get('/telemetry/source')).data,
+    refetchInterval: 30_000,
+  });
+}
+
 export function useCDSDrivers(filters?: SearchFilters) {
   return useQuery<ApiList>({
     queryKey: ['cds', 'drivers', filters],

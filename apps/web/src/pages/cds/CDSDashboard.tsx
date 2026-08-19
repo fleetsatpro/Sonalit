@@ -13,7 +13,8 @@ import { ContainersView, BookingsView, DriversView, TransportersView } from './C
 import { CDSIntro } from './CDSIntro.js';
 import { KPICard, CDSDrawer, CDSToastContainer } from './components.js';
 import { CDS_VIEWS } from './constants.js';
-import { useDashboardKPIs, useActivity, useTrips } from './hooks.js';
+import { useDashboardKPIs, useActivity } from './hooks.js';
+import { LiveTrackingView } from './LiveTracking.js';
 import {
   LocksView, PortView, PulseView, InboxView,
   BillingView, ReportsView, AnalyticsView, SettingsView,
@@ -198,7 +199,7 @@ export default function CDSApp() {
 
         <div className="flex-1 overflow-y-auto" style={{ overscrollBehavior: 'contain' }}>
           {activeView === 'dashboard' && <DashboardView />}
-          {activeView === 'live' && <LiveView />}
+          {activeView === 'live' && <LiveTrackingView />}
           {activeView === 'containers' && <ContainersView />}
           {activeView === 'bookings' && <BookingsView />}
           {activeView === 'locks' && <LocksView />}
@@ -281,40 +282,8 @@ function DashboardView() {
   );
 }
 
-function LiveView() {
-  const { data, isLoading } = useTrips({ status: 'dispatched' });
-  if (isLoading) return <LoadingState />;
-  const trips = (data?.data ?? []) as Record<string, unknown>[];
-
-  return (
-    <div className="p-5 max-w-[1600px] mx-auto">
-      <div className="rounded-2xl border border-white/[.07] bg-white/[.02] p-4 mb-4">
-        <div className="font-bold text-sm text-text-0 mb-3">Live Fleet Tracking</div>
-        <div className="h-[350px] rounded-xl bg-ink-3 flex items-center justify-center text-text-2 text-xs font-mono">
-          Real-time GPS map — vehicle positions rendered here
-        </div>
-      </div>
-      <div className="rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
-        <div className="font-bold text-sm text-text-0 mb-3">Active Trips ({trips.length})</div>
-        <div className="space-y-2 max-h-[300px] overflow-y-auto">
-          {trips.map((t, i) => (
-            <div key={String(t['id'] ?? i)} className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-ink-2/50 border border-white/[.06]">
-              <div className="w-2 h-2 rounded-full bg-cds-teal shadow-[0_0_8px_rgba(51,214,168,.6)] flex-none" />
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-mono font-bold text-cds-orange">{String(t['reference'] ?? t['trip_number'] ?? '—')}</div>
-                <div className="text-[11px] text-text-1 truncate">{String(t['customer_name'] ?? '—')} → {String(t['destination'] ?? '—')}</div>
-              </div>
-              <div className="text-[10px] text-text-2 font-mono">{String(t['vehicleReg'] ?? t['vehicle_reg'] ?? '—')}</div>
-            </div>
-          ))}
-          {trips.length === 0 && (
-            <div className="text-xs text-text-2 text-center py-8 font-mono">No active trips</div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
+// LiveView (the placeholder "GPS map rendered here" card) was replaced by the
+// real e-lock tracking board — see LiveTracking.tsx, rendered above.
 
 export function LoadingState() {
   return (

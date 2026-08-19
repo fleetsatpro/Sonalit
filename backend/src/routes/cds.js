@@ -8,6 +8,8 @@ const { extractBookingData } = require('../utils/extractionClient');
 const { publish } = require('../realtime/centrifugo');
 const { allocateBookingReference, reconcileProvidedReference } = require('../utils/bookingReference');
 const { scanManifest } = require('../utils/manifestAnomalies');
+const { ingestBatch } = require('../utils/telemetry/ingest');
+const viasat = require('../utils/telemetry/viasatAdapter');
 const logger = require('../utils/logger');
 
 // dualAuthenticate, not authenticate: this router serves both the operator
@@ -404,6 +406,31 @@ router.patch('/containers/:id', asyncHandler(async (req, res) => {
 router.get('/locks', asyncHandler(async (req, res) => {
   await listRows(req, res, 'cds_electronic_locks', { searchCols: ['t.serial', 't.provider'] });
 }));
+
+// Live tracking board: every lock with its latest telemetry and, when it's on a
+// trip, the container/booking it's securing. Declared BEFORE /locks/:id so
+// Express doesn't match "live" as an :id.
+router.get('/locks/live', asyncHandler(async (req, res) => {
+  const result = await req.db(
+    `SELECT l.id, l.serial, l.provider, l.external_device_id, l.status,
+            l.battery_level, l.solar_charging, l.signal_strength, l.temperature,
+            l.lat, l.lng, l.speed_kmh, l.heading, l.location,
+            l.tamper_detected, l.tamper_status, l.last_telemetry_at, l.last_heartbeat,
+            t.id AS trip_id, t.trip_number, t.status AS trip_status,
+            t.origin, t.destination,
+            bc.id AS booking_container_id, bc.container_number, bc.booking_id,
+            b.booking_number
+       FROM cds_electronic_locks l
+       LEFT JOIN cds_trips t ON t.lock_id = l.id AND t.deleted_at IS NULL
+       LEFT JOIN cds_booking_containers bc ON bc.trip_id = t.id AND bc.deleted_at IS NULL
+       LEFT JOIN cds_bookings b ON b.id = bc.booking_id
+      WHERE l.org_id = $1 AND l.deleted_at IS NULL
+      ORDER BY l.tamper_detected DESC, l.last_telemetry_at DESC NULLS LAST`,
+    [req.user.org_id]
+  );
+  res.json({ data: result.rows, total: result.rows.length });
+}));
+
 router.get('/locks/:id', asyncHandler(async (req, res) => { await getRow(req, res, 'cds_electronic_locks'); }));
 router.post('/locks', asyncHandler(async (req, res) => {
   await createRow(req, res, 'cds_electronic_locks',
@@ -411,7 +438,24 @@ router.post('/locks', asyncHandler(async (req, res) => {
 }));
 router.patch('/locks/:id', asyncHandler(async (req, res) => {
   await updateRow(req, res, 'cds_electronic_locks',
-    ['serial', 'provider', 'firmware_version', 'status', 'battery_level', 'container_id', 'vehicle_id', 'location']);
+    ['serial', 'provider', 'firmware_version', 'status', 'battery_level', 'container_id', 'vehicle_id',
+     'location', 'external_device_id']);
+}));
+
+// The GPS breadcrumb trail for one lock, for drawing its recent path.
+router.get('/locks/:id/trail', asyncHandler(async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 200, 1000);
+  const result = await req.db(
+    `SELECT lat, lng, type, COALESCE(recorded_at, created_at) AS at
+       FROM cds_lock_events
+      WHERE lock_id = $1 AND lat IS NOT NULL AND lng IS NOT NULL
+        AND type IN ('gps_update','heartbeat','lock','unlock','tamper')
+      ORDER BY COALESCE(recorded_at, created_at) DESC
+      LIMIT $2`,
+    [req.params.id, limit]
+  );
+  // Oldest-first so the client can draw a polyline without reversing.
+  res.json({ data: result.rows.reverse(), total: result.rows.length });
 }));
 router.get('/locks/:id/events', asyncHandler(async (req, res) => {
   const { limit, offset } = paginate(req.query);
@@ -431,6 +475,63 @@ router.post('/locks/:id/events', asyncHandler(async (req, res) => {
     [req.params.id, type, lat || null, lng || null, JSON.stringify(data || {}), req.user.org_id]
   );
   res.status(201).json({ data: result.rows[0] });
+}));
+
+// ── Securisat telemetry: source config + health, and a test injector ─────────
+// These sit on the shared CDS router, so the field-role gate already keeps
+// yard/port accounts out. Config and injection are further limited to admins in
+// the handlers — a dispatcher can watch the feed but not rewire or spoof it.
+function isCdsAdmin(req) { return req.user.role === 'admin'; }
+
+router.get('/telemetry/source', asyncHandler(async (req, res) => {
+  const r = await req.db(
+    `SELECT id, provider, external_account_id, base_url, enabled, poll_interval_seconds,
+            last_polled_at, last_success_at, last_error, devices_seen, updated_at
+       FROM cds_telemetry_sources WHERE org_id = $1 ORDER BY provider LIMIT 1`,
+    [req.user.org_id]
+  );
+  // Never expose the API key — it lives in env, and whether the integration is
+  // usable at all is a server fact, so report it as a boolean, not the secret.
+  res.json({
+    data: r.rows[0] || null,
+    provider_configured: viasat.isConfigured(),
+  });
+}));
+
+router.put('/telemetry/source', asyncHandler(async (req, res) => {
+  if (!isCdsAdmin(req)) return res.status(403).json({ error: 'admin_required' });
+  const { provider = 'securisat', external_account_id, base_url, enabled, poll_interval_seconds } = req.body || {};
+  const interval = Math.max(15, Math.min(3600, Number(poll_interval_seconds) || 60));
+  const r = await req.db(
+    `INSERT INTO cds_telemetry_sources (org_id, provider, external_account_id, base_url, enabled, poll_interval_seconds)
+     VALUES ($1,$2,$3,$4,$5,$6)
+     ON CONFLICT (org_id, provider) DO UPDATE
+        SET external_account_id = EXCLUDED.external_account_id,
+            base_url = EXCLUDED.base_url,
+            enabled = EXCLUDED.enabled,
+            poll_interval_seconds = EXCLUDED.poll_interval_seconds,
+            updated_at = NOW()
+     RETURNING id, provider, external_account_id, base_url, enabled, poll_interval_seconds`,
+    [req.user.org_id, provider, external_account_id || null, base_url || null,
+     enabled === undefined ? true : Boolean(enabled), interval]
+  );
+  res.json({ data: r.rows[0] });
+}));
+
+// Inject normalized telemetry samples straight into the ingest core.
+//
+// Two uses: the control room's "simulate telemetry" affordance, and end-to-end
+// verification of the whole pipeline (update → event → tamper → realtime)
+// without waiting on the live Securisat feed. Admin-only and provider-agnostic:
+// it accepts the same normalized shape the adapters emit, so it exercises
+// exactly the production path, not a parallel one.
+router.post('/telemetry/test', requireIdempotencyKey, asyncHandler(async (req, res) => {
+  if (!isCdsAdmin(req)) return res.status(403).json({ error: 'admin_required' });
+  const body = req.body || {};
+  const samples = Array.isArray(body) ? body : (Array.isArray(body.samples) ? body.samples : [body]);
+  if (!samples.length) return res.status(400).json({ error: 'no samples' });
+  const results = await ingestBatch(req.db, req.user.org_id, samples);
+  res.json({ data: results, ingested: results.filter(r => r && r.lock_id && !r.skipped).length });
 }));
 
 // ══════════════════════════════════════════════════════════════

@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { LoadingState } from './CDSDashboard.js';
 import { Card, KPICard, Button, StatusBadge, DataTable, DrawerField, FilterChip, Badge } from './components.js';
 import FieldAccessPanel from './FieldAccessPanel.js';
-import { useLocks, useTrips, useBookings, useMarkBilled } from './hooks.js';
+import { useLocks, useTrips, useBookings, useMarkBilled, useTelemetrySource, useLocksLive } from './hooks.js';
 import { useCDSStore } from './store.js';
 
 
@@ -530,7 +530,6 @@ export function SettingsView() {
     ],
     integrations: [
       { label: 'Targa Telematics', value: 'Connected' },
-      { label: 'Securisat', value: 'Connected' },
       { label: 'WhatsApp Business API', value: 'Connected' },
       { label: 'Excel / SharePoint sync', value: 'Connected' },
       { label: 'GPS beacon network', value: 'Connected' },
@@ -556,6 +555,8 @@ export function SettingsView() {
         </div>
         {tab === 'field access' ? (
           <FieldAccessPanel />
+        ) : tab === 'integrations' ? (
+          <IntegrationsPanel rows={panels['integrations'] ?? []} />
         ) : (
           <Card className="flex-1 p-5">
             <div className="space-y-0">
@@ -574,5 +575,81 @@ export function SettingsView() {
         )}
       </div>
     </div>
+  );
+}
+
+
+// The integrations tab: static rows for the connectors that are still
+// placeholders, plus a REAL Securisat panel driven by the telemetry source
+// health (backend GET /cds/telemetry/source) — so "Connected" reflects whether
+// the feed is actually delivering, not a hardcoded label.
+function IntegrationsPanel({ rows }: { rows: { label: string; value: string }[] }) {
+  const { data: src } = useTelemetrySource();
+  const { data: live } = useLocksLive();
+  const source = src?.data as Record<string, unknown> | null | undefined;
+  const configured = Boolean(src?.provider_configured);
+  const locks = (live?.data ?? []) as Row[];
+  const reporting = locks.filter(l => l['last_telemetry_at']).length;
+
+  const lastSync = source?.['last_success_at'] ? new Date(String(source['last_success_at'])) : null;
+  const syncMins = lastSync ? Math.floor((Date.now() - lastSync.getTime()) / 60000) : null;
+  const healthy = configured && Boolean(source?.['enabled']) && !source?.['last_error'] && reporting > 0;
+  const status = !configured ? 'Not configured'
+    : !source?.['enabled'] ? 'Disabled'
+    : source?.['last_error'] ? 'Error'
+    : reporting > 0 ? 'Live' : 'Idle';
+  const statusColor = status === 'Live' ? 'text-cds-teal'
+    : status === 'Error' ? 'text-cds-red'
+    : status === 'Not configured' || status === 'Disabled' ? 'text-text-2' : 'text-cds-amber';
+
+  return (
+    <Card className="flex-1 p-5">
+      {/* Securisat e-lock telemetry — the real one */}
+      <div className="rounded-xl p-4 mb-4" style={{ border: '1px solid rgba(255,122,0,.28)', background: 'rgba(255,122,0,.05)' }}>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-bold text-text-0">Securisat / Viasat Connect e-locks</div>
+            <p className="text-[11px] text-text-2 mt-0.5">Live solar e-lock telemetry — position, battery, signal and tamper, pulled straight into CDS.</p>
+          </div>
+          <span className={`text-xs font-mono font-bold ${statusColor}`}>{status}</span>
+        </div>
+        <div className="grid grid-cols-3 gap-3 mt-3">
+          <div>
+            <div className="text-[9px] font-mono uppercase tracking-widest text-text-2">Locks reporting</div>
+            <div className="text-[15px] font-bold text-text-0 mt-0.5">{reporting}<span className="text-text-2 text-[11px] font-normal"> / {locks.length}</span></div>
+          </div>
+          <div>
+            <div className="text-[9px] font-mono uppercase tracking-widest text-text-2">Last sync</div>
+            <div className="text-[13px] font-mono text-text-1 mt-1">{syncMins == null ? '—' : syncMins < 1 ? 'just now' : `${syncMins}m ago`}</div>
+          </div>
+          <div>
+            <div className="text-[9px] font-mono uppercase tracking-widest text-text-2">Poll interval</div>
+            <div className="text-[13px] font-mono text-text-1 mt-1">{source?.['poll_interval_seconds'] ? `${source['poll_interval_seconds']}s` : '—'}</div>
+          </div>
+        </div>
+        {!configured && (
+          <p className="text-[11px] text-cds-amber font-mono mt-3">
+            Set SECURISAT_API_KEY (and the source account) to start the feed. Until then the pipeline is idle.
+          </p>
+        )}
+        {Boolean(source?.['last_error']) && (
+          <p className="text-[11px] text-cds-red font-mono mt-3 truncate" title={String(source?.['last_error'])}>
+            Last error: {String(source?.['last_error'])}
+          </p>
+        )}
+        {healthy && (
+          <p className="text-[11px] text-cds-teal font-mono mt-3">Feed healthy — telemetry is flowing into the tracking board.</p>
+        )}
+      </div>
+
+      <div className="space-y-0">
+        {rows.map((row, i) => (
+          <div key={row.label} className={`flex items-center justify-between py-3.5 ${i < rows.length - 1 ? 'border-b border-[rgba(255,255,255,.05)]' : ''}`}>
+            <div className="text-xs text-text-0">{row.label}</div>
+            <span className={`text-xs font-mono ${row.value === 'Not connected' ? 'text-text-2' : row.value === 'Connected' ? 'text-cds-teal' : 'text-text-1'}`}>{row.value}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }

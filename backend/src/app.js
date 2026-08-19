@@ -287,6 +287,12 @@ app.use("/api/v1/sync", (req, res) => res.json({ ok: true, processed: 0 }));
 // webhook. It was previously never mounted at all, so the whole feature (and the
 // Meta webhook) was dead. Its own /whatsapp/webhook falls through the earlier
 // /api/v1/guardian routers (which don't define it) to here.
+// Securisat e-lock telemetry webhook — HMAC-verified, no JWT/CSRF. Mounted
+// before the authenticated CDS router so /securisat/webhook doesn't fall through
+// it. See routes/securisat.js.
+try { app.use("/api/v1/securisat", require("./routes/securisat")); logger.info("Route loaded: /api/v1/securisat"); }
+catch (e) { logger.warn("Securisat webhook route failed: " + e.message); }
+
 try { app.use("/api/v1/cds", require("./routes/cds")); logger.info("Route loaded: /api/v1/cds"); }
 catch (e) { logger.warn("CDS route failed: " + e.message); }
 
@@ -446,6 +452,19 @@ try {
   rollPartitions().catch(err => logger.warn("Partition roller startup run: " + err.message));
   logger.info("Partition roller scheduled (hourly, T3.2) + archival (daily 03:00, T6.5)");
 } catch (e) { logger.warn("Partition roller not started: " + e.message); }
+
+// ─── Securisat e-lock telemetry poller ────────────────────────────────────────
+// Pulls live telemetry from the Securisat/Viasat Connect Fleet API into CDS.
+// Inert unless SECURISAT_API_KEY is set — the poller self-gates per source's
+// poll_interval_seconds, so this fixed 15s tick is just "check what's due".
+if (!process.env.GENERATE_OPENAPI && process.env.NODE_ENV !== 'test' && process.env.SECURISAT_API_KEY)
+try {
+  const cron = require("node-cron");
+  const { pollOnce } = require("./utils/telemetry/poller");
+  cron.schedule("*/15 * * * * *", () =>
+    pollOnce().catch(err => logger.error("Securisat telemetry poll error: " + err.message)));
+  logger.info("Securisat telemetry poller scheduled (checks due sources every 15s)");
+} catch (e) { logger.warn("Securisat telemetry poller not started: " + e.message); }
 
 // T3.7: Photo backfill cron removed — data URI writes are now blocked at the
 // boundary and a DB CHECK constraint is in migration 008. Run the backfill

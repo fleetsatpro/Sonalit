@@ -3668,6 +3668,16 @@
         }
       }
     },
+    "/api/v1/securisat/webhook": {
+      "post": {
+        "operationId": "post_api_v1_securisat_webhook",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/cds/dashboard": {
       "get": {
         "operationId": "get_api_v1_cds_dashboard",
@@ -3778,6 +3788,16 @@
         }
       }
     },
+    "/api/v1/cds/locks/live": {
+      "get": {
+        "operationId": "get_api_v1_cds_locks_live",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/cds/locks/{id}": {
       "get": {
         "operationId": "get_api_v1_cds_locks_id",
@@ -3796,6 +3816,16 @@
         }
       }
     },
+    "/api/v1/cds/locks/{id}/trail": {
+      "get": {
+        "operationId": "get_api_v1_cds_locks_id_trail",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/cds/locks/{id}/events": {
       "get": {
         "operationId": "get_api_v1_cds_locks_id_events",
@@ -3807,6 +3837,34 @@
       },
       "post": {
         "operationId": "post_api_v1_cds_locks_id_events",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/telemetry/source": {
+      "get": {
+        "operationId": "get_api_v1_cds_telemetry_source",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_cds_telemetry_source",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/telemetry/test": {
+      "post": {
+        "operationId": "post_api_v1_cds_telemetry_test",
         "responses": {
           "200": {
             "description": "OK"
