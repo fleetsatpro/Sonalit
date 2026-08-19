@@ -77,6 +77,20 @@ export interface FeedItem {
   imageUrl?: string; // e.g. a covert capture_photo result — renders as a thumbnail
 }
 
+export interface CrewDispatch {
+  id: string;
+  team_id: string;
+  team_name: string;
+  team_callsign: string | null;
+  priority: 'critical' | 'high' | 'medium';
+  status: 'dispatched' | 'acknowledged' | 'en_route' | 'on_scene' | 'resolved' | 'cancelled';
+  reason: string;
+  target_lat: number;
+  target_lng: number;
+  target_label: string | null;
+  dispatched_at: string;
+}
+
 export interface VoiceNoteAlert {
   id: string; // = voiceId, doubles as the toast's React key
   deviceId: string;
@@ -99,6 +113,7 @@ interface DashboardStore {
   selectedVehicleId: string | null;
   tickerEvents: Array<{ id: string; severity: string; message: string }>;
   voiceNoteAlert: VoiceNoteAlert | null;
+  crewDispatches: CrewDispatch[];
 
   setOverview: (o: DashboardOverview) => void;
   setAlerts: (a: DashboardAlert[]) => void;
@@ -115,6 +130,7 @@ interface DashboardStore {
   setSelectedVehicle: (id: string | null) => void;
   appendTickerEvent: (e: { id: string; severity: string; message: string }) => void;
   setVoiceNoteAlert: (a: VoiceNoteAlert | null) => void;
+  upsertCrewDispatch: (d: CrewDispatch) => void;
 }
 
 export const useDashboardStore = create<DashboardStore>((set) => ({
@@ -128,6 +144,7 @@ export const useDashboardStore = create<DashboardStore>((set) => ({
   selectedVehicleId: null,
   tickerEvents: [],
   voiceNoteAlert: null,
+  crewDispatches: [],
 
   setOverview: (overview) => set({ overview }),
 
@@ -197,4 +214,13 @@ export const useDashboardStore = create<DashboardStore>((set) => ({
     set((s) => ({ tickerEvents: [...s.tickerEvents, e].slice(-40) })),
 
   setVoiceNoteAlert: (voiceNoteAlert) => set({ voiceNoteAlert }),
+
+  upsertCrewDispatch: (d) =>
+    set((s) => {
+      const exists = s.crewDispatches.some((c) => c.id === d.id);
+      if (exists) {
+        return { crewDispatches: s.crewDispatches.map((c) => (c.id === d.id ? { ...c, ...d } : c)) };
+      }
+      return { crewDispatches: [d, ...s.crewDispatches].slice(0, 20) };
+    }),
 }));

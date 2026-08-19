@@ -46,7 +46,8 @@ export default function FieldShell() {
   const wrongTeam = Boolean(
     worker && (
       (path.startsWith('/field/yard') && worker.role !== 'yard_agent') ||
-      (path.startsWith('/field/port') && worker.role !== 'port_agent')
+      (path.startsWith('/field/port') && worker.role !== 'port_agent') ||
+      (path.startsWith('/field/response') && worker.role !== 'response_crew')
     ),
   );
   useEffect(() => {

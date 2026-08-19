@@ -460,4 +460,73 @@ router.post('/admin/workers/:userId/unlock', authorize('admin', 'dispatcher'), a
   res.json({ data: { ok: true } });
 }));
 
+// ── Response Crew field endpoints (device-authenticated) ─────────────────────
+
+const { publish } = require('../realtime/centrifugo');
+
+/** GET /api/v1/field/response-crew/dispatches — active dispatches for this crew member's team. */
+router.get('/response-crew/dispatches', requireDevice, fieldAuthenticate, asyncHandler(async (req, res) => {
+  if (req.fieldUser.role !== 'response_crew') return res.status(403).json({ error: 'Response crew only' });
+  const memberR = await query(
+    `SELECT team_id FROM response_crew_members WHERE user_id = $1 AND active = true LIMIT 1`,
+    [req.fieldUser.id]
+  );
+  const teamId = memberR.rows[0]?.team_id;
+  if (!teamId) return res.json({ data: [] });
+
+  const r = await query(
+    `SELECT d.id, d.priority, d.status, d.reason, d.target_lat, d.target_lng, d.target_label,
+            d.dispatched_at, d.acknowledged_at, d.arrived_at,
+            t.name AS team_name, t.callsign AS team_callsign
+     FROM intercept_dispatches d
+     JOIN response_teams t ON t.id = d.team_id
+     WHERE d.team_id = $1 AND d.status IN ('dispatched','acknowledged','en_route','on_scene')
+     ORDER BY CASE d.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 ELSE 2 END,
+              d.dispatched_at DESC
+     LIMIT 20`, [teamId]
+  );
+  res.json({ data: r.rows });
+}));
+
+/** PATCH /api/v1/field/response-crew/dispatches/:id/status — update dispatch status from field device. */
+router.patch('/response-crew/dispatches/:id/status', requireDevice, fieldAuthenticate, asyncHandler(async (req, res) => {
+  if (req.fieldUser.role !== 'response_crew') return res.status(403).json({ error: 'Response crew only' });
+  const { id } = req.params;
+  const { status } = req.body;
+  const valid = ['acknowledged', 'en_route', 'on_scene', 'resolved'];
+  if (!valid.includes(status)) return res.status(400).json({ error: `status must be one of: ${valid.join(', ')}` });
+
+  const tsCol = status === 'acknowledged' ? 'acknowledged_at'
+    : status === 'resolved' ? 'resolved_at'
+    : status === 'on_scene' ? 'arrived_at' : null;
+  const setClauses = ['status = $2'];
+  if (tsCol) setClauses.push(`${tsCol} = now()`);
+
+  const r = await query(
+    `UPDATE intercept_dispatches SET ${setClauses.join(', ')} WHERE id = $1 RETURNING *`,
+    [id, status]
+  );
+  if (!r.rows.length) return res.status(404).json({ error: 'Dispatch not found' });
+  const dispatch = r.rows[0];
+
+  if (status === 'resolved') {
+    await query(`UPDATE response_teams SET status = 'standby', updated_at = now() WHERE id = $1`, [dispatch.team_id]);
+  }
+
+  const teamR = await query(`SELECT name, callsign FROM response_teams WHERE id = $1`, [dispatch.team_id]);
+  publish(`org#${dispatch.org_id}`, {
+    type: 'crew.status_update',
+    dispatch_id: dispatch.id,
+    team_id: dispatch.team_id,
+    team_name: teamR.rows[0]?.name,
+    team_callsign: teamR.rows[0]?.callsign,
+    status,
+    target_lat: parseFloat(dispatch.target_lat),
+    target_lng: parseFloat(dispatch.target_lng),
+    updated_at: new Date().toISOString(),
+  });
+
+  res.json({ data: dispatch });
+}));
+
 module.exports = router;

@@ -5,7 +5,7 @@ import { UuidSchema, IsoDateTimeSchema } from './common.js';
 // Enums
 // ---------------------------------------------------------------------------
 
-export const ShiftRoleSchema = z.enum(['dispatcher', 'analyst', 'supervisor', 'field_officer']);
+export const ShiftRoleSchema = z.enum(['dispatcher', 'analyst', 'supervisor', 'field_officer', 'response_crew']);
 export type ShiftRole = z.infer<typeof ShiftRoleSchema>;
 
 // ---------------------------------------------------------------------------

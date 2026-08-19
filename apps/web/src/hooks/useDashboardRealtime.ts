@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { subscribe } from '../lib/centrifuge.js';
 import { useDashboardStore } from '../stores/dashboardStore.js';
-import type { DashboardAlert, ConvoyUpdate, IncidentUpdate, PanicEvent, VoiceNoteAlert } from '../stores/dashboardStore.js';
+import type { DashboardAlert, ConvoyUpdate, IncidentUpdate, PanicEvent, VoiceNoteAlert, CrewDispatch } from '../stores/dashboardStore.js';
 import { playSiren, sirenForAlert } from '../lib/siren.js';
 import { startTabTitleFlash, notifyIfHidden } from '../lib/tabAlert.js';
 
@@ -96,6 +96,32 @@ interface GuardianVoiceMessageMsg {
 }
 
 // Published by POST /guardian/capture-photo the moment a covert still lands.
+interface CrewDispatchedMsg {
+  type: 'crew.dispatched';
+  dispatch_id: string;
+  team_id: string;
+  team_name: string;
+  team_callsign: string | null;
+  priority: 'critical' | 'high' | 'medium';
+  reason: string;
+  target_lat: number;
+  target_lng: number;
+  target_label: string | null;
+  dispatched_at: string;
+}
+
+interface CrewStatusUpdateMsg {
+  type: 'crew.status_update';
+  dispatch_id: string;
+  team_id: string;
+  team_name: string;
+  team_callsign: string | null;
+  status: string;
+  target_lat: number;
+  target_lng: number;
+  updated_at: string;
+}
+
 interface GuardianCapturePhotoMsg {
   type: 'guardian_capture_photo';
   device_id: string;
@@ -118,6 +144,8 @@ type OrgMsg =
   | IncidentMsg
   | GuardianVoiceMessageMsg
   | GuardianCapturePhotoMsg
+  | CrewDispatchedMsg
+  | CrewStatusUpdateMsg
   | { type: string; [key: string]: unknown };
 
 // Per-vehicle throttle: max 1 position update per 500ms
@@ -135,6 +163,7 @@ export function useDashboardRealtime(orgId: string): void {
     prependFeedItem,
     appendTickerEvent,
     setVoiceNoteAlert,
+    upsertCrewDispatch,
   } = useDashboardStore.getState();
   const orgRef = useRef(orgId);
   orgRef.current = orgId;
@@ -353,11 +382,75 @@ export function useDashboardRealtime(orgId: string): void {
           break;
         }
 
+        case 'crew.dispatched': {
+          const m = msg as CrewDispatchedMsg;
+          const d: CrewDispatch = {
+            id: m.dispatch_id,
+            team_id: m.team_id,
+            team_name: m.team_name,
+            team_callsign: m.team_callsign,
+            priority: m.priority,
+            status: 'dispatched',
+            reason: m.reason,
+            target_lat: m.target_lat,
+            target_lng: m.target_lng,
+            target_label: m.target_label,
+            dispatched_at: m.dispatched_at,
+          };
+          upsertCrewDispatch(d);
+          prependFeedItem({
+            id: d.id,
+            type: 'crew_dispatch',
+            message: `CREW DISPATCHED — ${m.team_name}${m.team_callsign ? ` (${m.team_callsign})` : ''}: ${m.reason}`,
+            severity: m.priority === 'critical' ? 'critical' : 'high',
+            timestamp: m.dispatched_at,
+          });
+          appendTickerEvent({
+            id: d.id,
+            severity: m.priority === 'critical' ? 'critical' : 'high',
+            message: `Response crew ${m.team_name} dispatched`,
+          });
+          if (useDashboardStore.getState().panicState?.status !== 'active') {
+            playSiren('klaxon', { loop: false });
+          }
+          startTabTitleFlash(`🚨 Crew dispatched: ${m.team_name}`);
+          notifyIfHidden('Crew Dispatched', `${m.team_name} dispatched: ${m.reason}`);
+          break;
+        }
+
+        case 'crew.status_update': {
+          const m = msg as CrewStatusUpdateMsg;
+          upsertCrewDispatch({
+            id: m.dispatch_id,
+            team_id: m.team_id,
+            team_name: m.team_name,
+            team_callsign: m.team_callsign,
+            priority: 'high',
+            status: m.status as CrewDispatch['status'],
+            reason: '',
+            target_lat: m.target_lat,
+            target_lng: m.target_lng,
+            target_label: null,
+            dispatched_at: m.updated_at,
+          });
+          const label = m.status === 'en_route' ? 'EN ROUTE'
+            : m.status === 'on_scene' ? 'ON SCENE'
+            : m.status === 'resolved' ? 'RESOLVED'
+            : m.status.toUpperCase();
+          prependFeedItem({
+            id: `${m.dispatch_id}-${m.status}`,
+            type: 'crew_dispatch',
+            message: `Crew ${m.team_name}: ${label}`,
+            timestamp: m.updated_at,
+          });
+          break;
+        }
+
         default:
           break;
       }
     });
 
     return unsub;
-  }, [orgId, updateVehiclePosition, prependAlert, updateConvoy, updateIncident, updatePanicState, acknowledgePanicState, escalatePanicState, prependFeedItem, appendTickerEvent, setVoiceNoteAlert]);
+  }, [orgId, updateVehiclePosition, prependAlert, updateConvoy, updateIncident, updatePanicState, acknowledgePanicState, escalatePanicState, prependFeedItem, appendTickerEvent, setVoiceNoteAlert, upsertCrewDispatch]);
 }
