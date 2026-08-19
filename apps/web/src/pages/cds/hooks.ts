@@ -68,7 +68,9 @@ export function useTransitionTrip() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['cds', 'trips'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'field'] });
       qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'activity'] });
     },
   });
 }
@@ -198,10 +200,8 @@ export function useCreateBooking() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
       qc.invalidateQueries({ queryKey: ['cds', 'booking-containers'] });
-      // The manifest is the default Bookings view, so a booking created with
-      // containers must refresh it — otherwise the modal closes onto a table
-      // that still doesn't show the rows just added.
       qc.invalidateQueries({ queryKey: ['cds', 'manifest'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'field'] });
       qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
     },
   });
@@ -264,6 +264,8 @@ export function useUpdateBookingContainer() {
       void qc.invalidateQueries({ queryKey: ['cds', 'manifest'] });
       void qc.invalidateQueries({ queryKey: ['cds', 'booking-containers'] });
       void qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
+      void qc.invalidateQueries({ queryKey: ['cds', 'field'] });
+      void qc.invalidateQueries({ queryKey: ['cds', 'containers'] });
     },
   });
 }
