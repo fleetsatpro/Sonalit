@@ -70,7 +70,10 @@ router.post('/users', authenticate, authorize('admin'), async (req, res) => {
     res.status(201).json({ data: result.rows[0] });
   } catch (err) {
     if (err.code === '23505') {
-      return res.status(409).json({ error: 'Email already in use' });
+      return res.status(409).json({
+        error: 'duplicate_email',
+        message: 'An account with this email address already exists. If you need to change the role of an existing account, edit the account directly rather than creating a new one.',
+      });
     }
     logger.error(`POST /auth/users error: ${err.message}`);
     res.status(500).json({ error: 'Internal server error' });

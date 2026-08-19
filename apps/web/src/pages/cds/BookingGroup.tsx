@@ -196,16 +196,12 @@ export function BookingGroup({
                 {monthName(ref.mm)} 20{ref.yy}
               </span>
             )}
-            {/* The line's own reference, printed alongside ours on the sheet.
-                Dimmed and labelled so it reads as a secondary identifier, not
-                a second booking number. */}
-            {group.carrier_reference && (
-              <span className="text-[9.5px] font-mono text-text-2">
-                <span className="opacity-60">carrier</span>{' '}
-                <span className="text-text-1">{group.carrier_reference}</span>
-              </span>
-            )}
           </span>
+          {group.carrier_reference && (
+            <span className="text-[9px] font-mono text-text-2 opacity-50">
+              carrier {group.carrier_reference}
+            </span>
+          )}
           <span className="text-[11px] text-text-2 truncate">
             {[group.customer_name, group.vessel, route].filter(Boolean).join(' · ') || 'No vessel or route recorded'}
           </span>

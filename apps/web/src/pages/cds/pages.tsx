@@ -214,97 +214,13 @@ export function PulseView() {
 }
 
 export function InboxView() {
-  const [activeConv, setActiveConv] = useState(0);
-  const conversations = [
-    { id: 'c1', name: 'Ground Team — Nakuru', initials: 'GT', status: 'review', preview: 'Clamp completed at 09:17, truck KDK 456P departing…', time: '14:18', unread: 3,
-      messages: [
-        { mine: false, time: '09:12', text: 'Starting clamp on truck KDK 456P for container TGHU3456789.' },
-        { mine: false, time: '09:15', text: 'Driver John Kamau, transporter Kentrans Logistics, commodity Coffee. Booking ref MSC56789.' },
-        { mine: false, time: '09:17', text: 'Lock SL23891 attached. Seal number SN-88213.' },
-        { mine: true, time: '09:18', text: 'Received — extraction complete. Safe travels.' },
-      ],
-      fields: [['Container', 'TGHU3456789'], ['Booking', 'MSC56789'], ['Driver', 'John Kamau'], ['Lock', 'SL23891']] as [string, string][] },
-    { id: 'c2', name: 'Port Team — Mombasa', initials: 'PT', status: 'synced', preview: 'Lock SL23881 removed, container cleared for vessel', time: '13:54', unread: 0,
-      messages: [
-        { mine: false, time: '13:40', text: 'Container MSCU7712340 arrived at gate 4.' },
-        { mine: false, time: '13:54', text: 'Lock SL23881 removed, container cleared for vessel MV Nordic Star.' },
-        { mine: true, time: '13:55', text: 'Logged and synced to voyage manifest. Thank you.' },
-      ],
-      fields: [['Container', 'MSCU7712340'], ['Vessel', 'MV Nordic Star'], ['Lock', 'SL23881']] as [string, string][] },
-    { id: 'c3', name: 'Supervisor — J. Mwangi', initials: 'SP', status: 'pending', preview: 'Please confirm ETA for booking MSC56789', time: '13:40', unread: 1,
-      messages: [{ mine: false, time: '13:40', text: 'Please confirm ETA for booking MSC56789.' }],
-      fields: [['Booking', 'MSC56789']] as [string, string][] },
-  ];
-  const conv = conversations[activeConv]!;
-
   return (
-    <div className="flex h-full" style={{ minHeight: 0 }}>
-      <div className="w-[280px] flex-none border-r border-[rgba(255,255,255,.06)] flex flex-col">
-        <div className="p-4 border-b border-[rgba(255,255,255,.06)]">
-          <div className="font-bold text-sm text-text-0">Conversations</div>
-          <div className="text-[11px] text-text-2 mt-1">{conversations.reduce((a, c) => a + c.unread, 0)} unread</div>
-        </div>
-        <div className="flex-1 overflow-y-auto">
-          {conversations.map((c, i) => (
-            <div key={c.id} onClick={() => setActiveConv(i)}
-              className={`flex items-start gap-3 px-4 py-3 cursor-pointer border-b border-[rgba(255,255,255,.04)] transition-colors ${i === activeConv ? 'bg-[rgba(255,255,255,.04)]' : 'hover:bg-[rgba(255,255,255,.02)]'}`}>
-              <div className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-ink flex-none"
-                style={{ background: c.status === 'synced' ? 'linear-gradient(140deg,#33d6a8,#1fae86)' : 'linear-gradient(140deg,#F0B429,#FFCE6B)' }}>
-                {c.initials}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-text-0 truncate">{c.name}</span>
-                  <span className="text-[10px] text-text-2 flex-none ml-2">{c.time}</span>
-                </div>
-                <div className="text-[11px] text-text-2 truncate mt-0.5">{c.preview}</div>
-                <div className="flex items-center gap-1.5 mt-1">
-                  <Badge variant={c.status === 'synced' ? 'ok' : c.status === 'review' ? 'warn' : 'bad'}>{c.status.toUpperCase()}</Badge>
-                  {c.unread > 0 && <span className="text-[9px] bg-cds-orange text-ink rounded-full w-4 h-4 flex items-center justify-center font-bold">{c.unread}</span>}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="flex-1 flex flex-col min-w-0">
-        <div className="px-4 py-3 border-b border-[rgba(255,255,255,.06)] flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-ink flex-none"
-            style={{ background: conv.status === 'synced' ? 'linear-gradient(140deg,#33d6a8,#1fae86)' : 'linear-gradient(140deg,#F0B429,#FFCE6B)' }}>
-            {conv.initials}
-          </div>
-          <div>
-            <div className="text-sm font-semibold text-text-0">{conv.name}</div>
-            <div className="text-[10px] text-text-2">{conv.status === 'synced' ? 'Synced' : 'AI extracting'}</div>
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {conv.messages.map((m, i) => (
-            <div key={i} className={`flex ${m.mine ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[75%] rounded-xl px-3.5 py-2.5 text-xs ${m.mine ? 'bg-[rgba(255,255,255,.06)] text-text-1' : 'bg-ink-2 border border-[rgba(255,255,255,.06)] text-text-0'}`}>
-                <div>{m.text}</div>
-                <div className="text-[10px] text-text-2 mt-1 text-right font-mono">{m.time}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="w-[280px] flex-none border-l border-[rgba(255,255,255,.06)] p-4 overflow-y-auto">
-        <div className="font-bold text-sm text-text-0 mb-3">AI Extraction</div>
-        <div className="space-y-2">
-          {conv.fields.map(([label, value]) => (
-            <div key={label} className="flex items-center justify-between py-2 border-b border-[rgba(255,255,255,.04)]">
-              <span className="text-[10px] text-text-2 font-mono">{label}</span>
-              <span className="text-xs text-text-0 font-mono">{value}</span>
-            </div>
-          ))}
-        </div>
-        <div className="mt-4 flex gap-2">
-          <Button size="sm" variant="ghost" className="flex-1">Reject</Button>
-          <Button size="sm" className="flex-1">Approve</Button>
-        </div>
+    <div className="flex items-center justify-center h-full" style={{ minHeight: 400 }}>
+      <div className="text-center max-w-sm">
+        <div className="text-[11px] text-text-2 font-mono uppercase tracking-widest mb-2">Comms Centre</div>
+        <p className="text-[12px] text-text-2 leading-relaxed">
+          Field messages and dispatch logs will appear here once operations are running.
+        </p>
       </div>
     </div>
   );
@@ -434,74 +350,13 @@ export function ReportsView() {
 }
 
 export function AnalyticsView() {
-  const commodities = [
-    { label: 'Coffee', pct: 34, color: '#F0B429' },
-    { label: 'Tea', pct: 28, color: '#33d6a8' },
-    { label: 'Avocado', pct: 16, color: '#FF9A3C' },
-    { label: 'Textiles', pct: 12, color: '#8a8f9a' },
-    { label: 'Other', pct: 10, color: '#5a5f68' },
-  ];
-
-  const bars = [
-    { label: 'Avg clamp time', value: '6m 40s', pct: 62, color: 'bg-cds-orange' },
-    { label: 'Avg unclamp time', value: '4m 12s', pct: 44, color: 'bg-cds-teal' },
-    { label: 'Late deliveries', value: '18%', pct: 18, color: 'bg-cds-red' },
-    { label: 'Lock utilization', value: '81%', pct: 81, color: 'bg-cds-orange' },
-  ];
-
   return (
-    <div className="p-5 max-w-[1600px] mx-auto">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="p-5">
-          <div className="font-bold text-sm text-text-0 mb-4">Trips by Commodity</div>
-          <div className="flex flex-wrap gap-2 mb-4">
-            {commodities.map(c => (
-              <div key={c.label} className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full" style={{ background: c.color }} />
-                <span className="text-xs text-text-1">{c.label} — {c.pct}%</span>
-              </div>
-            ))}
-          </div>
-          <div className="space-y-2">
-            {commodities.map(c => (
-              <div key={c.label} className="flex items-center gap-3">
-                <span className="text-xs text-text-2 w-16">{c.label}</span>
-                <div className="flex-1 h-2 rounded bg-ink-3 overflow-hidden">
-                  <div className="h-full rounded" style={{ width: `${c.pct}%`, background: c.color }} />
-                </div>
-                <span className="text-xs font-mono text-text-1 w-8 text-right">{c.pct}%</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-
-        <Card className="p-5">
-          <div className="font-bold text-sm text-text-0 mb-4">Avg Clamp vs Unclamp Time</div>
-          <div className="space-y-3">
-            {bars.map(b => (
-              <div key={b.label} className="flex items-center gap-3">
-                <span className="text-xs text-text-2 w-28">{b.label}</span>
-                <div className="flex-1 h-2 rounded bg-ink-3 overflow-hidden">
-                  <div className={`h-full rounded ${b.color}`} style={{ width: `${b.pct}%` }} />
-                </div>
-                <span className="text-xs font-mono text-text-1 w-14 text-right">{b.value}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-
-        <Card className="p-5 md:col-span-2">
-          <div className="font-bold text-sm text-text-0 mb-2">Peak Operating Hours</div>
-          <div className="text-[11px] text-text-2 mb-4">Clamp events by hour of day</div>
-          <div className="h-[140px] rounded-xl bg-ink-3/50 flex items-end px-4 pb-2 gap-1">
-            {[6, 14, 22, 38, 54, 71, 88, 95, 80, 62, 48, 30].map((v, i) => (
-              <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                <div className="w-full rounded-t" style={{ height: `${v * 1.2}px`, background: 'linear-gradient(180deg, #F0B429, rgba(240,180,41,.2))' }} />
-                <span className="text-[8px] font-mono text-text-2">{(6 + i * 1.5).toFixed(0)}h</span>
-              </div>
-            ))}
-          </div>
-        </Card>
+    <div className="flex items-center justify-center h-full" style={{ minHeight: 400 }}>
+      <div className="text-center max-w-sm">
+        <div className="text-[11px] text-text-2 font-mono uppercase tracking-widest mb-2">Analytics</div>
+        <p className="text-[12px] text-text-2 leading-relaxed">
+          Fleet performance metrics will populate here once enough operational data has been recorded.
+        </p>
       </div>
     </div>
   );

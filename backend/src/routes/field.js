@@ -15,10 +15,11 @@
  * cookies. That is the whole point: signing into the Field app must not sign
  * anyone in or out of the operator app, in either direction.
  */
+const crypto = require('crypto');
 const router = require('express').Router();
 const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
-const { query } = require('../config/database');
+const { pool, query } = require('../config/database');
 const { authenticate, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/error');
 const {
@@ -394,6 +395,56 @@ router.delete('/admin/devices/:id', authorize('admin'), asyncHandler(async (req,
   res.status(204).end();
 }));
 
+/** POST /api/v1/field/admin/workers — create a field account with PIN in one transaction. */
+router.post('/admin/workers', authorize('admin'), asyncHandler(async (req, res) => {
+  const { name, email, pin, role } = req.body || {};
+  if (!name || !email || !pin || !role) {
+    return res.status(400).json({ error: 'name, email, pin, and role are required' });
+  }
+  if (!FIELD_ROLES.includes(role)) {
+    return res.status(400).json({ error: `role must be one of: ${FIELD_ROLES.join(', ')}` });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+    return res.status(400).json({ error: 'email must be a valid email address' });
+  }
+  const pinProblem = validatePin(pin);
+  if (pinProblem) return res.status(400).json({ error: 'weak_pin', message: pinProblem });
+
+  const emailClean = email.trim().toLowerCase();
+  const passwordHash = await bcrypt.hash(crypto.randomUUID() + crypto.randomUUID(), 10);
+  const pinHash = await bcrypt.hash(String(pin), 10);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const userResult = await client.query(
+      `INSERT INTO users (name, email, password_hash, role, status, org_id)
+       VALUES ($1, $2, $3, $4, 'active', $5)
+       RETURNING id, email, name, role, status`,
+      [name.trim(), emailClean, passwordHash, role, req.user.org_id]
+    );
+    const userId = userResult.rows[0].id;
+    await client.query(
+      `INSERT INTO field_agent_pins (user_id, org_id, pin_hash, must_change, set_by)
+       VALUES ($1, $2, $3, TRUE, $4)`,
+      [userId, req.user.org_id, pinHash, req.user.id]
+    );
+    await client.query('COMMIT');
+    res.status(201).json({ data: userResult.rows[0] });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    if (err.code === '23505') {
+      return res.status(409).json({
+        error: 'duplicate_email',
+        message: 'An account with this email address already exists. If you need a field account for this person, change their existing account role instead.',
+      });
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+}));
+
 /** GET /api/v1/field/admin/workers — field accounts with their PIN state. */
 router.get('/admin/workers', authorize('admin', 'dispatcher'), asyncHandler(async (req, res) => {
   const result = await query(
@@ -424,7 +475,7 @@ router.put('/admin/workers/:userId/pin', authorize('admin'), asyncHandler(async 
   );
   if (!target.rows.length) return res.status(404).json({ error: 'User not found' });
   if (!FIELD_ROLES.includes(target.rows[0].role)) {
-    return res.status(400).json({ error: 'Only yard_agent and port_agent accounts use field PINs' });
+    return res.status(400).json({ error: 'Only field roles (yard_agent, port_agent, response_crew) use field PINs' });
   }
 
   await query(
