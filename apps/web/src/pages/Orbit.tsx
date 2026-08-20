@@ -7,6 +7,7 @@ import { Search, Mic, X, Settings, Home, LayoutDashboard, ShieldAlert, Truck, Br
 import { api } from '../lib/api.js';
 import { useDashboardStore, type DashboardOverview } from '../stores/dashboardStore.js';
 import { NAV_GROUPS } from '../components/layout/Rail.js';
+import { AccordionGallery, type AccordionGalleryItem } from '../components/AccordionGallery/index.js';
 import {
   trafficTransformRequest, addTrafficLayers, setTrafficLayersVisible, setTrafficIncidents,
   bboxFromMap, useTrafficIncidents, useTrafficStatus,
@@ -22,6 +23,39 @@ import '../styles/orbit.css';
 const GROUP_COVER: Record<string, LucideIcon> = {
   Command: LayoutDashboard, Security: ShieldAlert, Surveillance: Camera, Fleet: Truck, Business: Briefcase, 'Container Management': Ship,
 };
+
+// Mission-app cover art for the homepage gallery — an inline SVG gradient
+// tinted to each group's own hue, so no image assets are needed and the
+// glow always matches the folder grid below it.
+function groupCover(hue: string): string {
+  const rgb = `rgb(${hue})`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="800" viewBox="0 0 640 800">
+    <defs>
+      <linearGradient id="g" x1="0" y1="0" x2="0.7" y2="1">
+        <stop offset="0%" stop-color="${rgb}" stop-opacity="0.5"/>
+        <stop offset="55%" stop-color="#060010" stop-opacity="1"/>
+        <stop offset="100%" stop-color="#020208" stop-opacity="1"/>
+      </linearGradient>
+      <radialGradient id="r" cx="28%" cy="18%" r="70%">
+        <stop offset="0%" stop-color="${rgb}" stop-opacity="0.9"/>
+        <stop offset="100%" stop-color="${rgb}" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <rect width="640" height="800" fill="url(#g)"/>
+    <rect width="640" height="800" fill="url(#r)"/>
+    <g stroke="${rgb}" stroke-opacity="0.3" stroke-width="1.5">
+      <line x1="0" y1="742" x2="640" y2="742"/>
+      <line x1="0" y1="706" x2="640" y2="668"/>
+    </g>
+  </svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+const MISSION_GALLERY: AccordionGalleryItem[] = NAV_GROUPS.map(gr => ({
+  image: groupCover(gr.hue),
+  label: gr.label,
+  alt: `${gr.label} — ${gr.items.length} apps`,
+}));
 
 interface MapConvoy { id: string; name: string; status: string; lat: number | null; lng: number | null; heading?: number }
 interface MapVehicle { id: string; registration: string; lat: number; lng: number; status: string; speed_kmh?: number }
@@ -668,6 +702,22 @@ export default function Orbit() {
 
       {/* floating deck */}
       <div className="o-float">
+        <div className="o-gallery">
+          <AccordionGallery
+            items={MISSION_GALLERY}
+            defaultIndex={0}
+            height={132}
+            gap={8}
+            radius={14}
+            expandRatio={0.46}
+            trigger="hover"
+            tilt={6}
+            parallax={0.4}
+            accentColor="#22e8ff"
+            overlayColor="#060010"
+            textColor="#eaf2ff"
+          />
+        </div>
         <div className="o-glance">
           {glances.map(g => (
             <div key={g.l} className="o-pod" style={{ '--c': g.c } as CSSProperties}>
