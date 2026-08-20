@@ -1062,7 +1062,7 @@ function integritySection(ctx, a) {
   }
 }
 
-async function generateDailyReport(convoy, trucks, cfos, photos, report, reportDate, cfoPhotos = [], waypoints = [], namedWaypoints = []) {
+async function generateDailyReport(convoy, trucks, cfos, photos, report, reportDate, cfoPhotos = [], waypoints = [], namedWaypoints = [], handovers = []) {
   const generatedAt = new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
   const pct = report.required_photo_count > 0
     ? Math.round((report.received_photo_count / report.required_photo_count) * 100) : 0;
@@ -1082,9 +1082,10 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
   const vStyle = verdictStyleMap[assessment.verdict] || verdictStyleMap.review;
   // Fetched up front (PDFKit's drawing calls are synchronous) so truckDetail
   // can embed the actual photo bytes instead of a text "Present" indicator.
-  const [photoBuffers, routeMapImage] = await Promise.all([
+  const [photoBuffers, routeMapImage, handoverBuffers] = await Promise.all([
     prefetchPhotoBuffers(photos),
     prefetchRouteMap(convoy, waypoints, namedWaypoints),
+    prefetchHandoverBuffers(handovers),
   ]);
 
   const statusMap = {
@@ -1196,6 +1197,11 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
     });
 
     cfoPhotosTable(ctx, cfoPhotos);
+
+    // Only once there's actually a handover to show — most daily reports are
+    // for a day before the convoy closed, and printing "No handover on
+    // record" on every one of those would just be noise.
+    if (handovers.length) handoverSection(ctx, handovers, trucks, handoverBuffers);
 
     summarySection(ctx, report.received_photo_count, report.required_photo_count, mismatchCount,
       cfos, report, { ...convoy, truckCount: trucks.length }, assessment);
