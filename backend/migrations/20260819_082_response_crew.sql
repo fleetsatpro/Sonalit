@@ -1,12 +1,15 @@
 -- Response Crew: tables for response teams, crew members, and intercept dispatches.
 -- Formalises the response_teams table already queried by dashboard.js §2.12.
+-- org_id has no FK — production has no organisations/organizations table;
+-- org isolation is enforced by RLS only (see migration 035's fix for the
+-- same thing on cargo_clients).
 
 BEGIN;
 
 -- ── response_teams (already referenced but never formally migrated) ──────────
 CREATE TABLE IF NOT EXISTS response_teams (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id        UUID NOT NULL REFERENCES organisations(id),
+  org_id        UUID NOT NULL,
   name          TEXT NOT NULL,
   type          TEXT NOT NULL DEFAULT 'reaction',
   callsign      TEXT,
@@ -24,7 +27,7 @@ CREATE INDEX IF NOT EXISTS idx_response_teams_org ON response_teams(org_id) WHER
 -- ── response_crew_members ────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS response_crew_members (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id        UUID NOT NULL REFERENCES organisations(id),
+  org_id        UUID NOT NULL,
   team_id       UUID NOT NULL REFERENCES response_teams(id) ON DELETE CASCADE,
   user_id       UUID REFERENCES users(id),
   name          TEXT NOT NULL,
@@ -38,7 +41,7 @@ CREATE INDEX IF NOT EXISTS idx_crew_members_team ON response_crew_members(team_i
 -- ── intercept_dispatches ─────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS intercept_dispatches (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id        UUID NOT NULL REFERENCES organisations(id),
+  org_id        UUID NOT NULL,
   team_id       UUID NOT NULL REFERENCES response_teams(id),
   alert_id      UUID,
   panic_id      UUID,

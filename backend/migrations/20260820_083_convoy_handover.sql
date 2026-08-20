@@ -12,9 +12,12 @@ ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE users ADD CONSTRAINT users_role_check
   CHECK (role IN ('admin','dispatcher','operator','analyst','cfo','yard_agent','port_agent','response_crew','handover_officer'));
 
+-- org_id has no FK — production has no organisations/organizations table;
+-- org isolation is enforced by RLS only (see migration 035's fix for the
+-- same thing on cargo_clients).
 CREATE TABLE IF NOT EXISTS convoy_handovers (
   id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id                 UUID NOT NULL REFERENCES organisations(id),
+  org_id                 UUID NOT NULL,
   convoy_id              UUID NOT NULL REFERENCES convoys(id) ON DELETE CASCADE,
   -- NULL = whole-convoy handover. Set = this truck only (convoys handed over
   -- truck-by-truck as each peels off at a different destination).
