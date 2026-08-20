@@ -76,6 +76,7 @@ All v4 services import `@sonalit/contracts` for shared Zod schemas and NATS subj
 | `apps/guardian-convoy` | React + Vite + Capacitor | CFO convoy companion app (built and bundled into web deploy as `/convoy.html`) |
 | `apps/sonalit-app` | Capacitor shell | Wraps the hosted web app as an installable Android APK (no local UI code) |
 | `apps/sonalit-field` | Capacitor shell | Wraps the `/field` surface for yard/port teams (separate appId: `io.sonalit.field`) |
+| `apps/sonalit-handover` | Capacitor shell | Wraps the `/handover` surface for Handover Officers (separate appId: `io.sonalit.handover`) |
 | `apps/guardian-android` | Kotlin + Jetpack Compose + Hilt | Native Guardian device agent APK |
 
 ### Web app internals
