@@ -63,7 +63,7 @@ async function uploadToR2(key, buffer, contentType) {
 // ─── DB Helpers ───────────────────────────────────────────────────────────────
 
 async function fetchReportData(convoy_id, report_date) {
-  const [convoyRes, trucksRes, cfosRes, photosRes, reportRes, cfoPhotosRes, waypointsRes, namedWaypointsRes] = await Promise.all([
+  const [convoyRes, trucksRes, cfosRes, photosRes, reportRes, cfoPhotosRes, waypointsRes, namedWaypointsRes, handoversRes] = await Promise.all([
     query(
       `SELECT c.*, cl.name AS client_name, cl.company AS client_company
        FROM convoys c LEFT JOIN cargo_clients cl ON cl.id = c.client_id
@@ -118,6 +118,16 @@ async function fetchReportData(convoy_id, report_date) {
       `SELECT seq, name, lat, lng FROM convoy_route_waypoints WHERE convoy_id = $1 ORDER BY seq`,
       [convoy_id]
     ),
+    // Convoy-level, not date-scoped — a handover isn't tied to a specific
+    // report_date, so it shows up in whichever daily report the reader
+    // happens to open once the convoy has one (in practice, the final day's).
+    query(
+      `SELECT ch.*, u.name AS handed_over_by_name
+       FROM convoy_handovers ch LEFT JOIN users u ON u.id = ch.handed_over_by_user_id
+       WHERE ch.convoy_id = $1 AND ch.deleted_at IS NULL
+       ORDER BY ch.signed_off_at`,
+      [convoy_id]
+    ),
   ]);
   return {
     convoy: convoyRes.rows[0],
@@ -128,6 +138,7 @@ async function fetchReportData(convoy_id, report_date) {
     cfoPhotos: cfoPhotosRes.rows,
     waypoints: waypointsRes.rows,
     namedWaypoints: namedWaypointsRes.rows,
+    handovers: handoversRes.rows,
   };
 }
 
@@ -199,7 +210,7 @@ async function handleCheckProgress({ convoy_id, report_date }) {
 }
 
 async function handleGenerateReport({ convoy_id, report_date, force }) {
-  const { convoy, trucks, cfos, photos, report, cfoPhotos, waypoints, namedWaypoints } = await fetchReportData(convoy_id, report_date);
+  const { convoy, trucks, cfos, photos, report, cfoPhotos, waypoints, namedWaypoints, handovers } = await fetchReportData(convoy_id, report_date);
   if (!convoy) throw new Error(`Convoy ${convoy_id} not found`);
   if (!report) {
     logger.warn(`[convoyReport] No daily report row for ${convoy_id} ${report_date} — running recount`);
@@ -211,7 +222,7 @@ async function handleGenerateReport({ convoy_id, report_date, force }) {
     return;
   }
 
-  const pdfBuffer = await generateDailyReport(convoy, trucks, cfos, photos, report, report_date, cfoPhotos, waypoints, namedWaypoints);
+  const pdfBuffer = await generateDailyReport(convoy, trucks, cfos, photos, report, report_date, cfoPhotos, waypoints, namedWaypoints, handovers);
   // Every regenerate reused the exact same R2 key/URL for a given
   // convoy+date, so once Cloudflare's edge (which fronts the R2 custom
   // domain) cached that URL, "Regenerate" kept overwriting the R2 origin
