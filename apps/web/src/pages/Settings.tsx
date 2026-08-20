@@ -4,6 +4,7 @@ import { api } from '../lib/api.js';
 import { useAuthStore, getAccessToken } from '../stores/auth.js';
 import { Settings as SettingsIcon, Key, Shield, Copy, Trash2, Plus, X, MessageCircle, Palette } from 'lucide-react';
 import { GuardianConvoySettings } from '../components/GuardianConvoySettings.js';
+import { HandoverOfficerSettings } from '../components/HandoverOfficerSettings.js';
 import { useUIStore } from '../stores/ui.js';
 
 interface ApiKey {
@@ -473,6 +474,7 @@ export default function Settings() {
       <TotpSection />
       <WhatsAppSection />
       <GuardianConvoySettings />
+      <HandoverOfficerSettings />
     </div>
   );
 }
