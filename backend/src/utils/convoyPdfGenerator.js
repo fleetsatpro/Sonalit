@@ -238,6 +238,19 @@ async function prefetchPhotoBuffers(photos) {
   return map;
 }
 
+// Same idea for handover forms — keyed by convoy_handovers.id. Only image
+// forms are fetched; a PDF form can't be decoded by fetchImageBuffer (it goes
+// through sharp), so handoverSection links out to it instead of embedding it.
+async function prefetchHandoverBuffers(handovers) {
+  const map = new Map();
+  await Promise.all(handovers.map(async (h) => {
+    if (/\.pdf(\?|$)/i.test(h.form_url || '')) return;
+    const buf = await fetchImageBuffer(h.form_url);
+    if (buf) map.set(h.id, buf);
+  }));
+  return map;
+}
+
 // Renders a real map image (OSM tiles + route overlay) for the day's
 // movement section, preferring live GPS pings when there are any and
 // falling back to the dispatcher-entered known-town route otherwise. Never
@@ -1189,13 +1202,85 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
   });
 }
 
-async function generateArchiveReport(convoy, trucks, cfos, reports, allPhotos) {
+// Renders the signed handover form(s) this convoy was completed against —
+// one per truck for a truck-by-truck handover, or a single whole-convoy one.
+// Image forms are embedded inline (bytes already fetched by
+// prefetchHandoverBuffers); a PDF form is linked out to instead, since
+// PDFKit can't embed pages from another PDF.
+function handoverSection(ctx, handovers, trucks, formBuffers) {
+  const doc = ctx.doc;
+  ensureSpace(ctx, 40);
+  sectionHead(ctx, nextLetter(ctx), 'Handover');
+
+  if (!handovers.length) {
+    doc.fill(C.muted).fontSize(7.5).font('Helvetica');
+    t(doc, 'No handover on record for this convoy.', M, doc.y, { width: CW });
+    doc.y += 16;
+    return;
+  }
+
+  handovers.forEach((h) => {
+    const truck = h.convoy_truck_id ? trucks.find((tk) => tk.id === h.convoy_truck_id) : null;
+    const label = truck
+      ? `Truck ${truck.position} — ${truck.plate_number || String(truck.id).slice(0, 8)}`
+      : 'Whole Convoy';
+    const roleLabel = h.handed_over_by_role === 'cfo' ? 'CFO (self-handover)' : 'Handover Officer';
+    const byName = h.handed_over_by_name || 'Unknown';
+    const signedAt = h.signed_off_at
+      ? new Date(h.signed_off_at).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : '--';
+
+    const buf = formBuffers.get(h.id);
+    const isPdfForm = !buf && /\.pdf(\?|$)/i.test(h.form_url || '');
+    const boxW = 220, boxH = 170;
+    ensureSpace(ctx, (buf ? boxH : 0) + 60);
+
+    doc.fill(C.text).fontSize(8.5).font('Helvetica-Bold');
+    t(doc, label, M, doc.y, { width: CW });
+    doc.y += 12;
+    doc.fill(C.muted).fontSize(7).font('Helvetica');
+    t(doc, `${byName} · ${roleLabel} · signed off ${signedAt}`, M, doc.y, { width: CW });
+    doc.y += 12;
+
+    if (h.notes) {
+      doc.fill(C.sub).fontSize(7).font('Helvetica-Oblique');
+      t(doc, h.notes, M, doc.y, { width: CW });
+      doc.y += 12;
+    }
+
+    if (buf) {
+      doc.save().rect(M, doc.y, boxW, boxH).lineWidth(0.6).stroke(C.border).restore();
+      try {
+        doc.save();
+        doc.rect(M, doc.y, boxW, boxH).clip();
+        doc.image(buf, M, doc.y, { fit: [boxW, boxH], align: 'center', valign: 'center' });
+        doc.restore();
+      } catch {
+        drawNoPhotoText(doc, M, doc.y, boxW, boxH);
+      }
+      doc.y += boxH + 8;
+    } else if (isPdfForm && h.form_url) {
+      doc.fill(C.amber).fontSize(7.5).font('Helvetica-Bold');
+      t(doc, 'Handover form (PDF) — tap to open', M, doc.y, { width: CW, link: h.form_url, underline: true });
+      doc.y += 16;
+    } else {
+      doc.fill(C.light).fontSize(7).font('Helvetica');
+      t(doc, 'Form unavailable', M, doc.y, { width: CW });
+      doc.y += 16;
+    }
+    doc.y += 10;
+  });
+}
+
+async function generateArchiveReport(convoy, trucks, cfos, reports, allPhotos, handovers = []) {
   const generatedAt = new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
   const totalReq = reports.reduce((s, r) => s + (r.required_photo_count || 0), 0);
   const totalRecv = reports.reduce((s, r) => s + (r.received_photo_count || 0), 0);
   const overallPct = totalReq > 0 ? Math.round((totalRecv / totalReq) * 100) : 0;
   const sealCount = convoy.seal_count_per_truck ?? 3;
   const perTruckRequired = (2 + sealCount) * 2;
+  // Fetched up front (PDFKit's drawing calls are synchronous) so
+  // handoverSection can embed the actual form bytes below.
+  const handoverBuffers = await prefetchHandoverBuffers(handovers);
 
   const ctx = { doc: null, pageNum: 0, generatedAt, letterIdx: 0,
     title: convoy.name || 'Convoy Report', subtitle: `${convoy.name || 'Convoy'} · Archive Report` };
@@ -1241,6 +1326,9 @@ async function generateArchiveReport(convoy, trucks, cfos, reports, allPhotos) {
       { label: 'Trucks', value: String(trucks.length) },
       { label: 'CFOs', value: String(cfos.length) },
     ]);
+
+    handoverSection(ctx, handovers, trucks, handoverBuffers);
+
     sectionHead(ctx, nextLetter(ctx), `Overall Completion (${overallPct}%)`);
     progressBar(doc, totalRecv, totalReq);
 
