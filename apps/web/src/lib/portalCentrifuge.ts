@@ -16,6 +16,18 @@ async function fetchPortalToken(): Promise<string> {
   return json.data.token;
 }
 
+async function fetchPortalSubToken(channel: string): Promise<string> {
+  const res = await fetch(`${API}/portal/auth/rt-sub-token`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ channel }),
+  });
+  if (!res.ok) throw new Error('Subscription token unavailable');
+  const json = await res.json() as { data: { token: string } };
+  return json.data.token;
+}
+
 export function getPortalCentrifuge(): Centrifuge {
   if (!client) {
     client = new Centrifuge(
@@ -30,7 +42,10 @@ export function getPortalCentrifuge(): Centrifuge {
 export function subscribePortal<T>(channel: string, handler: (data: T) => void): () => void {
   const c = getPortalCentrifuge();
   const existing = c.getSubscription(channel);
-  const sub = existing ?? c.newSubscription(channel, { recoverable: true });
+  const sub = existing ?? c.newSubscription(channel, {
+    recoverable: true,
+    getToken: () => fetchPortalSubToken(channel),
+  });
   const pubHandler = (ctx: PublicationContext) => handler(ctx.data as T);
   sub.on('publication', pubHandler);
   if (!existing) sub.subscribe();

@@ -186,4 +186,23 @@ router.get('/rt-token', clientAuth, asyncHandler(async (req, res) => {
   res.json({ data: { token: cfToken } });
 }));
 
+// POST /portal/auth/rt-sub-token — Centrifugo subscription token for a specific channel
+router.post('/rt-sub-token', clientAuth, asyncHandler(async (req, res) => {
+  const secret = process.env.CENTRIFUGO_TOKEN_HMAC_SECRET;
+  if (!secret) return res.status(503).json({ error: 'Realtime not configured' });
+
+  const { channel } = req.body;
+  if (!channel || typeof channel !== 'string') {
+    return res.status(400).json({ error: 'channel required' });
+  }
+
+  const sub = `portal_client:${req.client.client_id}`;
+  const token = jwt.sign(
+    { sub, channel },
+    secret,
+    { expiresIn: '1h', algorithm: 'HS256' },
+  );
+  res.json({ data: { token } });
+}));
+
 module.exports = router;

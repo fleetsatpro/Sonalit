@@ -8,6 +8,7 @@ services:
       CENTRIFUGO_API_KEY: ${CENTRIFUGO_API_KEY:-dev-api-key-change-in-prod}
       CENTRIFUGO_ADMIN: "false"
       CENTRIFUGO_LOG_LEVEL: debug
+      CENTRIFUGO_ALLOW_SUBSCRIBE_FOR_CLIENT: "true"
     command: centrifugo --port=8000
     restart: unless-stopped
 
