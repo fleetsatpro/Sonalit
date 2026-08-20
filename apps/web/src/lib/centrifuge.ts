@@ -16,23 +16,26 @@ let client: Centrifuge | null = null;
 type AnyHandler = (data: unknown) => void;
 const channelSubs = new Map<string, { sub: Subscription; handlers: Set<AnyHandler> }>();
 
-async function fetchConnectionToken(): Promise<string> {
-  // The Field app shares this client but not the operator's credentials, so
-  // ask for the token the same way pages/cds/api.ts asks for data: field
-  // headers when a shift session is live, cookies and Bearer otherwise. Only
-  // one of the two is ever active in a given tab (see lib/fieldSession.ts),
-  // so there is no ambiguity about which identity the token belongs to.
+async function realtimePost(path: string, body: Record<string, unknown> = {}): Promise<string> {
   const field = fieldAuthHeaders();
   if (Object.keys(field).length > 0) {
     const { data } = await axios.post<{ token: string }>(
-      `${import.meta.env['VITE_API_BASE_URL'] ?? '/api/v1'}/realtime/token`,
-      {},
+      `${import.meta.env['VITE_API_BASE_URL'] ?? '/api/v1'}/realtime${path}`,
+      body,
       { headers: field, withCredentials: false },
     );
     return data.token;
   }
-  const { data } = await api.post<{ token: string }>('/realtime/token');
+  const { data } = await api.post<{ token: string }>(`/realtime${path}`, body);
   return data.token;
+}
+
+async function fetchConnectionToken(): Promise<string> {
+  return realtimePost('/token');
+}
+
+async function fetchSubscriptionToken(channel: string): Promise<string> {
+  return realtimePost('/subscription-token', { channel });
 }
 
 export function getCentrifuge(): Centrifuge {
@@ -58,7 +61,10 @@ export function subscribe<T>(channel: string, handler: (data: T) => void): () =>
   let entry = channelSubs.get(channel);
   if (!entry) {
     const handlers = new Set<AnyHandler>();
-    const sub = c.newSubscription(channel, { recoverable: true });
+    const sub = c.newSubscription(channel, {
+      recoverable: true,
+      getToken: () => fetchSubscriptionToken(channel),
+    });
     sub.on('publication', (ctx: PublicationContext) => {
       for (const h of handlers) h(ctx.data);
     });

@@ -1678,6 +1678,16 @@
         }
       }
     },
+    "/api/v1/realtime/subscription-token": {
+      "post": {
+        "operationId": "post_api_v1_realtime_subscription_token",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/admin/queues": {
       "get": {
         "operationId": "get_api_v1_admin_queues",
@@ -3249,6 +3259,16 @@
     "/api/v1/portal/auth/rt-token": {
       "get": {
         "operationId": "get_api_v1_portal_auth_rt_token",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/auth/rt-sub-token": {
+      "post": {
+        "operationId": "post_api_v1_portal_auth_rt_sub_token",
         "responses": {
           "200": {
             "description": "OK"
