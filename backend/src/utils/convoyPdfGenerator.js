@@ -757,7 +757,11 @@ function drawMapImageBox(doc, mapResult, boxH) {
 
 function routeSection(ctx, waypoints, convoy, namedWaypoints = [], mapImage = null) {
   const doc = ctx.doc;
-  ensureSpace(ctx, 60);
+  // Reserve room for the heading together with the map/table that follows it,
+  // not just the heading alone — checking only 60pt here let a page break land
+  // between the two, stranding "Day's Movement — Route Track" by itself at the
+  // bottom of an otherwise-blank page while the map rendered on the next one.
+  ensureSpace(ctx, 240);
   sectionHead(ctx, nextLetter(ctx), "Day's Movement — Route Track");
 
   if (!waypoints.length) {
