@@ -287,7 +287,7 @@ async function handleGenerateArchive({ convoy_id }) {
   )).rows[0];
   if (!convoy) throw new Error(`Convoy ${convoy_id} not found`);
 
-  const [trucks, cfos, reports, allPhotos] = await Promise.all([
+  const [trucks, cfos, reports, allPhotos, handovers] = await Promise.all([
     query(
       `SELECT ct.*, COALESCE(ct.registration, v.registration) AS plate_number
        FROM convoy_trucks ct
@@ -307,9 +307,16 @@ async function handleGenerateArchive({ convoy_id }) {
       [convoy_id]
     ),
     query('SELECT * FROM convoy_truck_photos WHERE convoy_id = $1', [convoy_id]),
+    query(
+      `SELECT ch.*, u.name AS handed_over_by_name
+       FROM convoy_handovers ch LEFT JOIN users u ON u.id = ch.handed_over_by_user_id
+       WHERE ch.convoy_id = $1 AND ch.deleted_at IS NULL
+       ORDER BY ch.signed_off_at`,
+      [convoy_id]
+    ),
   ]);
 
-  const pdfBuffer = await generateArchiveReport(convoy, trucks.rows, cfos.rows, reports.rows, allPhotos.rows);
+  const pdfBuffer = await generateArchiveReport(convoy, trucks.rows, cfos.rows, reports.rows, allPhotos.rows, handovers.rows);
   // Same content-hashed key fix as handleGenerateReport — a static key
   // reused on every regeneration lets a fronting CDN keep serving a stale
   // cached copy forever regardless of how many times the R2 origin object
