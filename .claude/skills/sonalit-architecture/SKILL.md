@@ -35,6 +35,7 @@ apps/container-delivery-system → CDS standalone app
 apps/guardian-convoy        → CFO convoy companion (Capacitor, bundled into web)
 apps/sonalit-app            → Android APK shell wrapping hosted web
 apps/sonalit-field          → Android APK shell for /field surface (appId: io.sonalit.field)
+apps/sonalit-handover       → Android APK shell for /handover surface (appId: io.sonalit.handover)
 apps/guardian-android       → Native Kotlin Guardian device agent (Jetpack Compose + Hilt)
 
 backend/                    → Express monolith (CJS, plain JS, Railway)

@@ -7,8 +7,14 @@ import LoginPage from './pages/Login.js';
 
 const rootRoute = createRootRoute({ component: Outlet, errorComponent: RootErrorComponent });
 
+// Preserves the page that triggered the redirect (via ?redirect=) so a
+// dedicated shell (e.g. the Handover Capacitor app, pointed straight at
+// /handover) lands back where it opened after login instead of the home
+// launcher — LoginPage already reads and honors this param.
 const authCheck = () => {
-  if (!getAccessToken() && !useAuthStore.getState().user) throw redirect({ to: '/login' });
+  if (!getAccessToken() && !useAuthStore.getState().user) {
+    throw redirect({ to: '/login', search: { redirect: window.location.pathname + window.location.search } });
+  }
 };
 
 // Every authenticated page wears the same chrome — AppShell provides the Rail
