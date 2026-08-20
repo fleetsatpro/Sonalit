@@ -255,6 +255,9 @@ catch (e) { logger.warn("guardian-knox route failed: " + e.message); }
 try { app.use("/api/v1/response-crew", require("./routes/response-crew")); logger.info("Route loaded: /api/v1/response-crew"); }
 catch (e) { logger.warn("Response crew route failed: " + e.message); }
 
+try { app.use("/api/v1/convoy-handovers", require("./routes/convoyHandover")); logger.info("Route loaded: /api/v1/convoy-handovers"); }
+catch (e) { logger.warn("Convoy handover route failed: " + e.message); }
+
 try { app.use("/api/v1/risk", require("./routes/risk")); logger.info("Route loaded: /api/v1/risk"); }
 catch (e) { logger.warn("Risk route failed: " + e.message); }
 

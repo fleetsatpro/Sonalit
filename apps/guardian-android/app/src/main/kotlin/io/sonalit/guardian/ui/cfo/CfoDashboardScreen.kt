@@ -63,6 +63,26 @@ fun CfoDashboardScreen(viewModel: CfoViewModel) {
 
         Spacer(Modifier.height(12.dp))
 
+        if (state.convoyEnded) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+            ) {
+                Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.CheckCircle, contentDescription = null,
+                        modifier = Modifier.size(40.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Spacer(Modifier.height(10.dp))
+                    Text("Convoy Ended", style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Spacer(Modifier.height(4.dp))
+                    Text("Handover form submitted. This convoy is complete.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f))
+                }
+            }
+            return@Column
+        }
+
         if (state.contextError != null) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -202,6 +222,43 @@ fun CfoDashboardScreen(viewModel: CfoViewModel) {
                         Spacer(Modifier.height(4.dp))
                         Text("Report PDF generated", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+
+        // Local-consignment convoys hand over through the CFO, not a handover
+        // officer — this is what turns "photos uploaded" into "convoy ended".
+        if (ctx.convoy.local_consignment && ctx.convoy.status == "completing") {
+            if (ctx.handover != null) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                ) {
+                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.CheckCircle, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Handover form submitted", color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    }
+                }
+            } else {
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable { viewModel.navigate(CfoNavScreen.HANDOVER) },
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+                ) {
+                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.AssignmentTurnedIn, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text("Upload Handover Form", fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer)
+                            Text("Ends this convoy once submitted",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer)
+                        }
                     }
                 }
             }

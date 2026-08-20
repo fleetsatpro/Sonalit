@@ -3,7 +3,7 @@ const { query } = require('../config/database');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const logger = require('../utils/logger');
 
-const ROLE_HIERARCHY = { admin: 4, dispatcher: 3, operator: 2, analyst: 1, cfo: 1, response_crew: 1 };
+const ROLE_HIERARCHY = { admin: 4, dispatcher: 3, operator: 2, analyst: 1, cfo: 1, response_crew: 1, handover_officer: 1 };
 
 /**
  * Verifies Bearer JWT and attaches req.user (full DB row including org_id).

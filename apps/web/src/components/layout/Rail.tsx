@@ -8,7 +8,7 @@ import {
   MessageSquare, Bot, FileText, FileBarChart,
   ClipboardList, Cpu, BookOpen, Star, CalendarClock,
   Camera, History, FileSearch, RadioTower, Radar, Film,
-  Ship,
+  Ship, FileCheck2,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/auth.js';
@@ -65,6 +65,7 @@ export const NAV_GROUPS: NavGroup[] = [
     hue: '55,230,255',
     items: [
       { path: '/convoys',        icon: Route,   label: 'Convoys' },
+      { path: '/handover',       icon: FileCheck2, label: 'Handover' },
       { path: '/fleet',          icon: Truck,   label: 'Fleet' },
       { path: '/drivers',        icon: Users,   label: 'Drivers' },
       { path: '/field-officers', icon: Users,   label: 'Field Officers' },

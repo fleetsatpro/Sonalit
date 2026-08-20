@@ -275,8 +275,8 @@ router.get('/context', deviceAuth, async (req, res, next) => {
     // this endpoint to finish EOD photos/reports for that day before the
     // convoy reaches its terminal 'completed' state.
     let assignmentResult = await query(
-      `SELECT cc.convoy_id, cc.cfo_user_id, c.name, c.status, c.timezone,
-              c.start_date, c.end_date, c.seal_count_per_truck
+      `SELECT cc.convoy_id, cc.cfo_user_id, c.org_id, c.name, c.status, c.timezone,
+              c.start_date, c.end_date, c.seal_count_per_truck, c.local_consignment
        FROM convoy_cfos cc
        JOIN convoys c ON c.id = cc.convoy_id
        WHERE cc.guardian_device_id = $1
@@ -291,8 +291,8 @@ router.get('/context', deviceAuth, async (req, res, next) => {
     // UUIDs are specific enough and requiring 'user' type blocked legitimately enrolled devices)
     if (!assignmentResult.rows.length && req.device.assignment_id) {
       assignmentResult = await query(
-        `SELECT cc.convoy_id, cc.cfo_user_id, c.name, c.status, c.timezone,
-                c.start_date, c.end_date, c.seal_count_per_truck
+        `SELECT cc.convoy_id, cc.cfo_user_id, c.org_id, c.name, c.status, c.timezone,
+                c.start_date, c.end_date, c.seal_count_per_truck, c.local_consignment
          FROM convoy_cfos cc
          JOIN convoys c ON c.id = cc.convoy_id
          WHERE cc.cfo_user_id = $1
@@ -315,7 +315,7 @@ router.get('/context', deviceAuth, async (req, res, next) => {
       return res.status(404).json({ error: 'No active convoy assignment for this device' });
     }
 
-    const { convoy_id, cfo_user_id, ...convoyFields } = assignmentResult.rows[0];
+    const { convoy_id, cfo_user_id, org_id, ...convoyFields } = assignmentResult.rows[0];
 
     // Self-heal orphaned trucks: convoysCfoController's addConvoyTruck auto-assigns
     // a newly-added truck to the sole CFO (see comment there), but that only covers
@@ -377,10 +377,23 @@ router.get('/context', deviceAuth, async (req, res, next) => {
 
     const dailyReport = reportResult.rows[0] || null;
 
+    // Whole-convoy handover record, if the CFO already submitted one — only
+    // meaningful for local_consignment convoys (see /handover-upload-url).
+    let handover = null;
+    if (convoyFields.local_consignment) {
+      const handoverResult = await query(
+        `SELECT form_url, signed_off_at FROM convoy_handovers
+         WHERE convoy_id = $1 AND convoy_truck_id IS NULL AND deleted_at IS NULL`,
+        [convoy_id]
+      );
+      handover = handoverResult.rows[0] || null;
+    }
+
     res.json({
       data: {
         convoy: { id: convoy_id, ...convoyFields },
         cfo_user_id,
+        handover,
         assigned_trucks: trucksResult.rows,
         report_date: reportDate,
         today_date: todayDate,
@@ -714,6 +727,134 @@ router.post('/photos', deviceAuth, async (req, res, next) => {
       { convoy_id, convoy_truck_id, photo_type, session }, req.ip);
 
     res.status(201).json({ data: insertResult.rows[0] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── C6: CFO Self-Handover (local_consignment convoys only) ──────────────────
+//
+// Most convoys are handed over by a dedicated handover_officer (see
+// convoyHandover.js). A convoy created/marked as local_consignment skips
+// that — the CFO hands it over themselves, uploading the same handover form
+// from this app once their EOD photos are in. Uploading it is the terminal
+// action: it satisfies convoy_handovers' completion gate immediately, so the
+// convoy flips straight to 'completed' (see finalizeConvoyCompletion) and
+// this endpoint's response is what turns "Photo Progress 20/20" into
+// "Convoy Ended" on the dashboard.
+
+/**
+ * POST /api/v1/guardian/cfo/handover-upload-url
+ * Returns a 5-minute presigned R2 PUT URL for the handover form (image or PDF).
+ */
+router.post('/handover-upload-url', deviceAuth, photoUploadLimiter, async (req, res, next) => {
+  try {
+    if (!await requireCfoModule(res)) return;
+
+    const { convoy_id, content_type } = req.body;
+    if (!convoy_id || typeof convoy_id !== 'string') {
+      return res.status(400).json({ error: 'convoy_id is required' });
+    }
+    const isPdf = content_type === 'application/pdf';
+    if (content_type && !isPdf && content_type !== 'image/jpeg') {
+      return res.status(400).json({ error: 'content_type must be image/jpeg or application/pdf' });
+    }
+
+    const cfoUserId = await resolveCfoUserId(req.device, convoy_id);
+    if (!cfoUserId) return res.status(403).json({ error: 'device_not_authorised_for_this_convoy' });
+
+    const convoyResult = await query(
+      `SELECT status, local_consignment FROM convoys WHERE id = $1 AND deleted_at IS NULL`,
+      [convoy_id]
+    );
+    if (!convoyResult.rows.length) return res.status(404).json({ error: 'Convoy not found' });
+    if (!convoyResult.rows[0].local_consignment) {
+      return res.status(403).json({ error: 'not_local_consignment', detail: 'This convoy is handed over by a handover officer, not the CFO.' });
+    }
+    if (convoyResult.rows[0].status !== 'completing') {
+      return res.status(422).json({ error: 'convoy_not_completing', detail: 'Handover can only be uploaded once the convoy is in the completing stage.' });
+    }
+
+    const { R2_ACCOUNT_ID, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET, R2_PUBLIC_URL } = process.env;
+    if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY || !R2_SECRET_KEY || !R2_BUCKET) {
+      return res.status(501).json({ error: 'Handover storage not configured on this server' });
+    }
+    if (!R2_PUBLIC_URL) {
+      return res.status(501).json({ error: 'Storage public URL (R2_PUBLIC_URL) not configured on this server' });
+    }
+
+    let S3Client, PutObjectCommand, getSignedUrl;
+    try {
+      ({ S3Client, PutObjectCommand } = require('@aws-sdk/client-s3'));
+      ({ getSignedUrl } = require('@aws-sdk/s3-request-presigner'));
+    } catch {
+      return res.status(501).json({ error: 'Storage SDK not installed' });
+    }
+
+    const ext = isPdf ? 'pdf' : 'jpg';
+    const key = `cfo/${convoy_id}/handover/handover_${uuidv4()}.${ext}`;
+    const s3 = new S3Client({
+      region: 'auto',
+      endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      credentials: { accessKeyId: R2_ACCESS_KEY, secretAccessKey: R2_SECRET_KEY },
+    });
+    const command = new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, ContentType: isPdf ? 'application/pdf' : 'image/jpeg' });
+    const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
+
+    res.json({ upload_url: uploadUrl, public_url: `${R2_PUBLIC_URL}/${key}`, key });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/v1/guardian/cfo/handover
+ * Commits the uploaded handover form and, since a local_consignment convoy's
+ * only handover requirement is this one whole-convoy record, immediately
+ * completes the convoy.
+ */
+router.post('/handover', deviceAuth, async (req, res, next) => {
+  try {
+    if (!await requireCfoModule(res)) return;
+
+    const { convoy_id, form_key, form_url, notes } = req.body;
+    if (!convoy_id || !form_key || !form_url) {
+      return res.status(400).json({ error: 'convoy_id, form_key, form_url required' });
+    }
+
+    const cfoUserId = await resolveCfoUserId(req.device, convoy_id);
+    if (!cfoUserId) return res.status(403).json({ error: 'device_not_authorised_for_this_convoy' });
+
+    const convoyResult = await query(
+      `SELECT org_id, status, local_consignment FROM convoys WHERE id = $1 AND deleted_at IS NULL`,
+      [convoy_id]
+    );
+    if (!convoyResult.rows.length) return res.status(404).json({ error: 'Convoy not found' });
+    const convoy = convoyResult.rows[0];
+    if (!convoy.local_consignment) {
+      return res.status(403).json({ error: 'not_local_consignment', detail: 'This convoy is handed over by a handover officer, not the CFO.' });
+    }
+    if (convoy.status !== 'completing') {
+      return res.status(422).json({ error: 'convoy_not_completing', detail: 'Handover can only be uploaded once the convoy is in the completing stage.' });
+    }
+
+    const handoverResult = await query(
+      `INSERT INTO convoy_handovers
+         (org_id, convoy_id, convoy_truck_id, handed_over_by_role, handed_over_by_user_id, form_key, form_url, notes)
+       VALUES ($1,$2,NULL,'cfo',$3,$4,$5,$6)
+       ON CONFLICT (convoy_id) WHERE convoy_truck_id IS NULL AND deleted_at IS NULL
+       DO UPDATE SET form_key = EXCLUDED.form_key, form_url = EXCLUDED.form_url,
+         notes = EXCLUDED.notes, signed_off_at = NOW()
+       RETURNING *`,
+      [convoy.org_id, convoy_id, cfoUserId, form_key, form_url, notes || null]
+    );
+
+    const { finalizeConvoyCompletion } = require('../controllers/convoyController');
+    const completed = await finalizeConvoyCompletion(convoy_id, convoy.org_id, cfoUserId);
+
+    gAudit(req.device.id, 'cfo_handover_submitted', 'convoy', convoy_id, { form_url }, req.ip);
+
+    res.status(201).json({ data: handoverResult.rows[0], convoy_completed: !!completed });
   } catch (err) {
     next(err);
   }

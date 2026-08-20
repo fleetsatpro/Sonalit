@@ -25,6 +25,7 @@ fun CfoScreen(viewModel: CfoViewModel = hiltViewModel()) {
         CfoNavScreen.SOD, CfoNavScreen.EOD -> CfoSodEodScreen(viewModel = viewModel)
         CfoNavScreen.SEALS -> CfoSealsScreen(viewModel = viewModel)
         CfoNavScreen.HISTORY -> CfoHistoryScreen(viewModel = viewModel)
+        CfoNavScreen.HANDOVER -> CfoHandoverScreen(viewModel = viewModel, onBack = { viewModel.navigate(CfoNavScreen.DASHBOARD) })
     }
 }
 

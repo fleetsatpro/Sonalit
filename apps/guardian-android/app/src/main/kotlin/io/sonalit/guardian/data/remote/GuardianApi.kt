@@ -102,11 +102,19 @@ data class ConvoyInfo(
     val start_date: String?,
     val end_date: String?,
     val seal_count_per_truck: Int,
+    // True when this convoy's CFO hands it over themselves (uploads the
+    // handover form from this app) rather than a dedicated handover officer.
+    val local_consignment: Boolean = false,
 )
+
+/** Whole-convoy handover the CFO already submitted, if any — only ever
+ *  populated for local_consignment convoys. */
+data class HandoverInfo(val form_url: String, val signed_off_at: String)
 
 data class CfoContextData(
     val convoy: ConvoyInfo,
     val cfo_user_id: String,
+    val handover: HandoverInfo? = null,
     val assigned_trucks: List<AssignedTruck>,
     val report_date: String,
     val today_date: String = report_date,
@@ -115,6 +123,18 @@ data class CfoContextData(
     val daily_report: DailyReportStatus?,
 )
 data class CfoContextResponse(val data: CfoContextData)
+
+data class HandoverUploadUrlRequest(val convoy_id: String, val content_type: String)
+data class HandoverUploadUrlResponse(val upload_url: String, val public_url: String, val key: String)
+
+data class HandoverCommitRequest(
+    val convoy_id: String,
+    val form_key: String,
+    val form_url: String,
+    val notes: String?,
+)
+data class HandoverRecord(val id: String, val form_url: String, val signed_off_at: String)
+data class HandoverCommitResponse(val data: HandoverRecord, val convoy_completed: Boolean)
 
 data class PhotoUploadUrlRequest(
     val convoy_id: String,
@@ -265,4 +285,19 @@ interface GuardianApi {
         @Header("X-Device-Token") deviceToken: String,
         @Body req: CommitPhotoRequest,
     ): Map<String, Any>
+
+    /** Presigns a one-shot R2 PUT for the handover form document — local_consignment convoys only. */
+    @POST("guardian/cfo/handover-upload-url")
+    suspend fun cfoHandoverUploadUrl(
+        @Header("X-Device-Token") deviceToken: String,
+        @Body req: HandoverUploadUrlRequest,
+    ): HandoverUploadUrlResponse
+
+    /** Commits the uploaded handover form. On success the convoy is immediately
+     *  completed server-side — convoy_completed in the response reflects that. */
+    @POST("guardian/cfo/handover")
+    suspend fun cfoHandoverCommit(
+        @Header("X-Device-Token") deviceToken: String,
+        @Body req: HandoverCommitRequest,
+    ): HandoverCommitResponse
 }

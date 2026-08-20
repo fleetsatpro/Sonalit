@@ -31,6 +31,7 @@ const convoyFormSchema = z.object({
   estimatedArrival: z.string().optional(),
   description: z.string().max(500).optional(),
   clientId: z.string().optional(),
+  localConsignment: z.boolean().default(false),
   vehicle_ids: z.array(z.string()).default([]),
   cfo_ids: z.array(z.string()).default([]),
 });
@@ -630,6 +631,7 @@ export default function CfoConvoyForm(): React.ReactElement {
           ? String(existing['estimated_arrival']).slice(0, 16) : undefined,
         description: String(existing['description'] ?? ''),
         clientId: existing['client_id'] ? String(existing['client_id']) : undefined,
+        localConsignment: Boolean(existing['local_consignment']),
         vehicle_ids: [...lockedVehicleIds],
         cfo_ids: [...lockedCfoIds],
       },
@@ -773,6 +775,18 @@ export default function CfoConvoyForm(): React.ReactElement {
                 )}
               />
             </Field>
+            <label className="flex items-start gap-2.5 pt-1 cursor-pointer">
+              <input
+                type="checkbox"
+                {...register('localConsignment')}
+                className="mt-0.5 w-3.5 h-3.5 rounded border-[#1c2a3a] bg-[#0a0f18] text-orange-500 focus:ring-orange-500/50 cursor-pointer"
+              />
+              <span className="text-xs font-mono text-[#8299b3]">
+                <span className="text-[#c3d3e3]">Local consignment</span> — the CFO hands this convoy
+                over themselves and uploads the handover form from their app. Skips the handover
+                officer queue entirely.
+              </span>
+            </label>
           </Section>
 
           {/* Route */}
