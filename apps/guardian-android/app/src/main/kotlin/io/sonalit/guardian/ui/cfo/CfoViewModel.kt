@@ -33,7 +33,7 @@ import javax.inject.Inject
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-enum class CfoNavScreen { LOGIN, DASHBOARD, SOD, EOD, SEALS, HISTORY }
+enum class CfoNavScreen { LOGIN, DASHBOARD, SOD, EOD, SEALS, HISTORY, HANDOVER }
 
 data class UploadState(
     val eventUuid: String,
@@ -59,6 +59,14 @@ data class CfoUiState(
     val selectedTruckId: String? = null,
     val uploads: List<UploadState> = emptyList(),
     val pendingCount: Int = 0,
+    val handoverUploading: Boolean = false,
+    val handoverError: String? = null,
+    // Set directly from a handover commit's convoy_completed flag — the
+    // convoy's status flips server-side the instant this succeeds, but
+    // /context excludes 'completed' convoys, so a subsequent poll would just
+    // 404 rather than confirm it. This is the dashboard's only source of
+    // truth for "the convoy just ended".
+    val convoyEnded: Boolean = false,
 ) {
     /** True when browsing a past report_date rather than the live convoy day. */
     val isViewingHistory: Boolean
@@ -117,7 +125,7 @@ class CfoViewModel @Inject constructor(
             while (isActive) {
                 delay(30_000)
                 val s = _state.value
-                if (s.loggedInUser != null && s.screen != CfoNavScreen.LOGIN && !s.contextLoading) {
+                if (s.loggedInUser != null && s.screen != CfoNavScreen.LOGIN && !s.contextLoading && !s.convoyEnded) {
                     loadContext(s.selectedDate)
                 }
             }
@@ -310,6 +318,44 @@ class CfoViewModel @Inject constructor(
 
     fun clearUploadHistory() {
         _state.update { it.copy(uploads = it.uploads.filter { u -> u.status != UploadStatus.DONE }) }
+    }
+
+    // ── Handover (local_consignment convoys only) ────────────────────────────
+
+    /** Uploads the handover form and, on success, ends the convoy client-side —
+     *  see CfoUiState.convoyEnded. No offline queue here: unlike routine field
+     *  photos, this is a single deliberate action the CFO performs once, in
+     *  hand, at the end of the day — worth surfacing a failure immediately so
+     *  they can just retry, rather than silently queuing it for later. */
+    fun uploadHandover(file: File, notes: String?) {
+        val ctx = _state.value.context ?: return
+        _state.update { it.copy(handoverUploading = true, handoverError = null) }
+        viewModelScope.launch {
+            runCatching {
+                val contentType = if (file.extension.equals("pdf", ignoreCase = true)) "application/pdf" else "image/jpeg"
+                val urlResp = api.cfoHandoverUploadUrl(deviceToken, HandoverUploadUrlRequest(ctx.convoy.id, contentType))
+
+                val putRequest = Request.Builder()
+                    .url(urlResp.upload_url)
+                    .put(file.asRequestBody(contentType.toMediaType()))
+                    .build()
+                withContext(Dispatchers.IO) {
+                    okHttp.newCall(putRequest).execute().use { resp ->
+                        if (!resp.isSuccessful) error("Upload failed: ${resp.code}")
+                    }
+                }
+
+                api.cfoHandoverCommit(
+                    deviceToken,
+                    HandoverCommitRequest(ctx.convoy.id, urlResp.key, urlResp.public_url, notes)
+                )
+            }.onSuccess { resp ->
+                _state.update { it.copy(handoverUploading = false, convoyEnded = resp.convoy_completed) }
+            }.onFailure { e ->
+                Log.w("CfoViewModel", "Handover upload failed: ${e.message}")
+                _state.update { it.copy(handoverUploading = false, handoverError = e.message ?: "Handover upload failed") }
+            }
+        }
     }
 
     private fun refreshPendingCount() {

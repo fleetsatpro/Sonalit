@@ -2006,6 +2006,26 @@
         }
       }
     },
+    "/api/v1/guardian/cfo/handover-upload-url": {
+      "post": {
+        "operationId": "post_api_v1_guardian_cfo_handover_upload_url",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/cfo/handover": {
+      "post": {
+        "operationId": "post_api_v1_guardian_cfo_handover",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/convoy/login": {
       "post": {
         "operationId": "post_api_v1_guardian_convoy_login",
@@ -3093,6 +3113,46 @@
     "/api/v1/response-crew/dispatches/{id}/status": {
       "patch": {
         "operationId": "patch_api_v1_response_crew_dispatches_id_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoy-handovers/queue": {
+      "get": {
+        "operationId": "get_api_v1_convoy_handovers_queue",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoy-handovers/{convoyId}": {
+      "get": {
+        "operationId": "get_api_v1_convoy_handovers_convoyId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoy-handovers/{convoyId}/upload-url": {
+      "post": {
+        "operationId": "post_api_v1_convoy_handovers_convoyId_upload_url",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoy-handovers/{convoyId}/commit": {
+      "post": {
+        "operationId": "post_api_v1_convoy_handovers_convoyId_commit",
         "responses": {
           "200": {
             "description": "OK"

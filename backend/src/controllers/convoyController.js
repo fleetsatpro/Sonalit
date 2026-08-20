@@ -22,6 +22,13 @@ const convoySchema = Joi.object({
   routeOrigin: Joi.string().max(100).required(),
   routeDestination: Joi.string().max(100).required(),
   clientId: Joi.string().uuid().allow('', null),
+  // Local consignment: this convoy's CFO hands it over themselves (uploads the
+  // handover form directly from the field app) instead of a dedicated
+  // handover_officer — see updateConvoyStatus's completion gate. No .default()
+  // here deliberately: this schema is also .fork()'d for updateConvoy, where an
+  // omitted field must stay untouched (via COALESCE), not get defaulted to false
+  // and silently reset on every unrelated edit.
+  localConsignment: Joi.boolean(),
 });
 
 // Confirms a client belongs to the requesting org before it's attached to a
@@ -139,12 +146,12 @@ const createConvoy = asyncHandler(async (req, res) => {
   const result = await query(
     `INSERT INTO convoys
        (name, region, priority, description, departure_time, estimated_arrival,
-        route_origin, route_destination, client_id, status, created_by, org_id, created_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'planned',$10,$11,NOW(),NOW())
+        route_origin, route_destination, client_id, local_consignment, status, created_by, org_id, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'planned',$11,$12,NOW(),NOW())
      RETURNING *`,
     [value.name, value.region, value.priority, value.description || null,
      value.departureTime || null, value.estimatedArrival || null,
-     value.routeOrigin, value.routeDestination, clientId, req.user.id, req.user.org_id]
+     value.routeOrigin, value.routeDestination, clientId, value.localConsignment ?? false, req.user.id, req.user.org_id]
   );
 
   req.auditAction = 'INSERT';
@@ -175,11 +182,12 @@ const updateConvoy = asyncHandler(async (req, res) => {
        route_origin = COALESCE($7, route_origin),
        route_destination = COALESCE($8, route_destination),
        client_id = COALESCE($9, client_id),
+       local_consignment = COALESCE($10, local_consignment),
        updated_at = NOW()
-     WHERE id = $10 AND org_id = $11 AND deleted_at IS NULL RETURNING *`,
+     WHERE id = $11 AND org_id = $12 AND deleted_at IS NULL RETURNING *`,
     [value.name, value.region, value.priority, value.description,
      value.departureTime, value.estimatedArrival, value.routeOrigin,
-     value.routeDestination, clientId, req.params.id, req.user.org_id]
+     value.routeDestination, clientId, value.localConsignment, req.params.id, req.user.org_id]
   );
 
   req.auditAction = 'UPDATE';
@@ -203,6 +211,31 @@ const updateConvoyStatus = asyncHandler(async (req, res) => {
     return res.status(422).json({
       error: `Invalid status transition: ${currentStatus} → ${value.status}. Allowed: ${VALID_TRANSITIONS[currentStatus].join(', ') || 'none'}`,
     });
+  }
+
+  // A convoy can't reach 'completed' without a signed-off handover: either one
+  // whole-convoy record, or every one of its trucks individually covered
+  // (some convoys hand off truck-by-truck as each peels off at a different
+  // destination). See convoy_handovers (migration 083) and its upload routes
+  // in guardianCfo.js (CFO self-handover, local_consignment convoys only) and
+  // convoyHandover.js (handover_officer / admin / dispatcher).
+  if (value.status === 'completed') {
+    const handoverCheck = await query(
+      `SELECT
+         EXISTS (SELECT 1 FROM convoy_handovers WHERE convoy_id = $1 AND convoy_truck_id IS NULL AND deleted_at IS NULL) AS convoy_wide,
+         NOT EXISTS (
+           SELECT 1 FROM convoy_trucks ct WHERE ct.convoy_id = $1
+             AND NOT EXISTS (SELECT 1 FROM convoy_handovers ch WHERE ch.convoy_truck_id = ct.id AND ch.deleted_at IS NULL)
+         ) AS all_trucks_covered`,
+      [req.params.id]
+    );
+    const { convoy_wide, all_trucks_covered } = handoverCheck.rows[0];
+    if (!convoy_wide && !all_trucks_covered) {
+      return res.status(422).json({
+        error: 'handover_required',
+        detail: 'Upload a handover form (whole-convoy or per-truck) before marking this convoy completed.',
+      });
+    }
   }
 
   const setDeparture = value.status === 'active';
@@ -239,6 +272,54 @@ const updateConvoyStatus = asyncHandler(async (req, res) => {
 
   res.json({ data: result.rows[0] });
 });
+
+// Shared by the handover upload routes: once a qualifying convoy_handovers
+// row makes a 'completing' convoy's handover gate satisfied (see the check
+// in updateConvoyStatus above), flip it straight to 'completed' rather than
+// making someone come back and click a separate "mark completed" button —
+// the handover *is* the completing action. The `status = 'completing'` guard
+// makes this safe to call from a race (e.g. the last two trucks of a
+// truck-by-truck handover finishing within moments of each other): only the
+// first call's UPDATE actually matches a row.
+async function finalizeConvoyCompletion(convoyId, orgId, actorUserId) {
+  const result = await query(
+    `UPDATE convoys SET status = 'completed', arrival_time = NOW(), updated_at = NOW()
+     WHERE id = $1 AND org_id = $2 AND status = 'completing' RETURNING *`,
+    [convoyId, orgId]
+  );
+  if (!result.rows.length) return null;
+
+  publish(`org#${orgId}`, { type: 'convoy.update', convoyId, status: 'completed', updatedBy: actorUserId ?? null });
+
+  try {
+    const { getQueues } = require('../config/queue');
+    const { convoyArchiveQueue } = getQueues();
+    if (convoyArchiveQueue) {
+      convoyArchiveQueue.add('generateArchive', { convoy_id: convoyId },
+        { jobId: `archive:${convoyId}`, removeOnComplete: { count: 100 } }
+      ).catch(() => {});
+    }
+  } catch {}
+
+  return result.rows[0];
+}
+
+// Re-runs the same convoy_handovers coverage check updateConvoyStatus uses,
+// standalone so the upload routes can decide whether to call
+// finalizeConvoyCompletion after recording a handover.
+async function isConvoyHandoverComplete(convoyId) {
+  const result = await query(
+    `SELECT
+       EXISTS (SELECT 1 FROM convoy_handovers WHERE convoy_id = $1 AND convoy_truck_id IS NULL AND deleted_at IS NULL) AS convoy_wide,
+       NOT EXISTS (
+         SELECT 1 FROM convoy_trucks ct WHERE ct.convoy_id = $1
+           AND NOT EXISTS (SELECT 1 FROM convoy_handovers ch WHERE ch.convoy_truck_id = ct.id AND ch.deleted_at IS NULL)
+       ) AS all_trucks_covered`,
+    [convoyId]
+  );
+  const { convoy_wide, all_trucks_covered } = result.rows[0];
+  return convoy_wide || all_trucks_covered;
+}
 
 const assignVehicles = asyncHandler(async (req, res) => {
   const schema = Joi.object({ vehicleIds: Joi.array().items(Joi.string().uuid()).min(1).required() });
@@ -347,4 +428,7 @@ const dispatchConvoy = asyncHandler(async (req, res) => {
   res.status(201).json({ data: convoy.rows[0] });
 });
 
-module.exports = { getConvoys, getConvoy, createConvoy, updateConvoy, updateConvoyStatus, assignVehicles, deleteConvoy, getConvoyEvents, dispatchConvoy };
+module.exports = {
+  getConvoys, getConvoy, createConvoy, updateConvoy, updateConvoyStatus, assignVehicles, deleteConvoy, getConvoyEvents, dispatchConvoy,
+  finalizeConvoyCompletion, isConvoyHandoverComplete,
+};
