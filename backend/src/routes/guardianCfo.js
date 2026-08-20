@@ -270,13 +270,17 @@ router.get('/context', deviceAuth, async (req, res, next) => {
   try {
     if (!await requireCfoModule(res)) return;
 
+    // 'completing' is included alongside 'planned'/'active': dispatch moves a
+    // convoy there the instant "End Convoy" is pressed, but CFOs still need
+    // this endpoint to finish EOD photos/reports for that day before the
+    // convoy reaches its terminal 'completed' state.
     let assignmentResult = await query(
       `SELECT cc.convoy_id, cc.cfo_user_id, c.name, c.status, c.timezone,
               c.start_date, c.end_date, c.seal_count_per_truck
        FROM convoy_cfos cc
        JOIN convoys c ON c.id = cc.convoy_id
        WHERE cc.guardian_device_id = $1
-         AND c.status IN ('planned','active')
+         AND c.status IN ('planned','active','completing')
          AND c.deleted_at IS NULL
        ORDER BY c.start_date DESC
        LIMIT 1`,
@@ -292,7 +296,7 @@ router.get('/context', deviceAuth, async (req, res, next) => {
          FROM convoy_cfos cc
          JOIN convoys c ON c.id = cc.convoy_id
          WHERE cc.cfo_user_id = $1
-           AND c.status IN ('planned','active')
+           AND c.status IN ('planned','active','completing')
            AND c.deleted_at IS NULL
          ORDER BY c.start_date DESC
          LIMIT 1`,
