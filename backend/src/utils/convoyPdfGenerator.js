@@ -3,29 +3,27 @@ const sharp = require('sharp');
 const logger = require('./logger');
 const { geocode, renderRouteMapImage } = require('./routeMapRenderer');
 const { assessConvoy } = require('./convoyIntegrity');
-// Redesign notes: one brand color (Sonalit orange, matching apps/web's
-// --p-orange) instead of the old accent/gold pair — those were two near-
-// identical muddy golds (#d97706 vs #f5a623) that also sat too close to the
-// amber "warning" status color, so brand chrome and an actual warning read
-// as almost the same color. Amber is now visibly more yellow/olive than
-// brand orange so the two can never be confused at a glance. `radius` is a
-// shared corner radius for badges/pills/photo frames — the old flat-rect
-// chips were the single biggest "looks dated" cue in the previous version.
+
+// Redesign v2 — formal "intelligence report" / white-paper style matching the
+// Sonalit Convoy Intelligence Report HTML mockup. Navy/gold accents on white
+// paper; full cover page with ink stamp + verification glyph; chain-of-custody
+// certification with SHA-256 evidence digest.
 const C = {
-  dark: '#0b1220', dark2: '#16213a', navy: '#1c2c4d',
-  brand: '#ea580c', brandDeep: '#9a3412', brandBg: '#fff1e6',
-  green: '#15803d', greenBg: '#dcfce7', greenBorder: '#86efac',
-  red: '#b91c1c', redBg: '#fee2e2', redBorder: '#fca5a5',
-  amber: '#a16207', amberBg: '#fef3c7', amberBorder: '#fde68a',
-  muted: '#64748b', light: '#94a3b8',
-  stripe: '#f8fafc', border: '#e2e8f0', text: '#0f172a', sub: '#334155', white: '#ffffff',
-  radius: 4,
+  paper: '#ffffff', paper2: '#fafaf8',
+  ink: '#12151c', inkSoft: '#3c4250', inkFaint: '#4b5563',
+  line: '#d8dbe0', lineStrong: '#b9bec7',
+  navy: '#1b2a4a',
+  gold: '#9c6f16', goldBg: '#fbf3e2',
+  red: '#9c1f24', redBg: '#fbebec',
+  green: '#1e6b45', greenBg: '#eaf4ef',
+  amber: '#a16207', amberBg: '#fef3c7',
+  white: '#ffffff',
 };
 
 const PW = 595.28, PH = 841.89, M = 40, CW = PW - M * 2;
-const BODY_TOP = 68, BODY_BOTTOM = PH - 50;
-const COVER_H = 118, STAT_H = 46, CHECK_H = 46;
-const COVER_BODY_TOP = COVER_H + STAT_H + CHECK_H + 22;
+const LH_H = 56;
+const BODY_TOP = LH_H + 12;
+const BODY_BOTTOM = PH - 34;
 
 function t(doc, str, x, y, opts) {
   doc.text(String(str ?? ''), x, y, { ...opts, lineBreak: false });
@@ -33,15 +31,6 @@ function t(doc, str, x, y, opts) {
 
 function makePdf(buildFn) {
   return new Promise((resolve, reject) => {
-    // bottom: 0 — the footer band is drawn at an absolute y around 816-830,
-    // outside a uniform 40pt margin (whose bottom boundary sits at ~802).
-    // PDFKit's own auto-pagination treats any text draw past that boundary
-    // as overflow and silently inserts an extra blank page to continue it —
-    // it has no way to know this was an intentional fixed-position footer.
-    // This file already does all its own pagination manually (ensureSpace /
-    // newPage / BODY_BOTTOM), so PDFKit's built-in margin-triggered paging
-    // is pure interference here; disabling just the bottom margin removes it
-    // without affecting the manual layout logic, which never relied on it.
     const doc = new PDFDocument({
       margins: { top: M, bottom: 0, left: M, right: M },
       size: 'A4',
@@ -56,16 +45,6 @@ function makePdf(buildFn) {
   });
 }
 
-function pill(doc, x, y, w, label, fg, bg) {
-  doc.save().roundedRect(x, y, w, 14, 7).fill(bg).restore();
-  doc.fill(fg).fontSize(6.5).font('Helvetica-Bold');
-  t(doc, label, x, y + 4, { width: w, align: 'center' });
-}
-
-// Small bullet/status dot drawn as a vector shape rather than a "●"/"✓"
-// text glyph — PDFKit's standard 14 fonts only cover WinAnsi (CP1252), which
-// has no bullet, check mark, or arrow glyphs, so those render as garbage
-// (e.g. "%Ï") instead of the intended symbol.
 function dot(doc, x, y, r, color, hollow) {
   doc.save();
   if (hollow) doc.circle(x, y, r).lineWidth(0.8).stroke(color);
@@ -73,189 +52,31 @@ function dot(doc, x, y, r, color, hollow) {
   doc.restore();
 }
 
-// Tall branded banner + quick-stat strip + completion checklist — replaces
-// the plain slim header on the report's first page only. Every field here
-// comes from data the pipeline already fetches (convoy/report/cfos/photos);
-// nothing here depends on integrations we don't have (weather, elevation,
-// fuel logs) so this can ship without any backend changes.
-function drawCoverHeader(ctx, meta) {
-  const doc = ctx.doc;
-  doc.rect(0, 0, PW, COVER_H).fill(C.dark);
-  doc.rect(0, COVER_H, PW, 3).fill(C.brand);
+// ── Photo / map prefetch (unchanged) ────────────────────────────────────────
 
-  const badgeW = 230;
-  doc.save().roundedRect(M, 14, badgeW, 14, 7).lineWidth(0.6).strokeColor(C.brand).stroke().restore();
-  dot(doc, M + 10, 21, 2, C.brand);
-  doc.fill(C.brand).fontSize(6.5).font('Helvetica-Bold');
-  t(doc, meta.eyebrow, M + 16, 18, { width: badgeW - 22 });
-
-  doc.fill(C.white).fontSize(19).font('Helvetica-Bold');
-  t(doc, meta.title, M, 33, { width: CW - 170 });
-  doc.fill(C.brand).fontSize(10).font('Helvetica-Bold');
-  t(doc, meta.subtitle, M, 56, { width: CW - 170 });
-  doc.fill('#c7ced9').fontSize(8).font('Helvetica');
-  t(doc, meta.routeLine, M, 70, { width: CW - 170 });
-
-  // brand mark, top right
-  const rx = PW - M - 110;
-  doc.save().roundedRect(rx, 14, 24, 24, 6).fill(C.brand).restore();
-  doc.fill(C.dark).fontSize(9).font('Helvetica-Bold');
-  t(doc, 'SL', rx, 21, { width: 24, align: 'center' });
-  doc.fill(C.white).fontSize(11).font('Helvetica-Bold');
-  t(doc, 'SONALIT', rx + 30, 19, { width: 80 });
-  doc.fill('#9ca3af').fontSize(6).font('Helvetica');
-  t(doc, 'GUARDIAN CFO SYSTEM', rx - 6, 33, { width: 116, align: 'right' });
-
-  t(doc, meta.reportRef, rx - 90, 50, { width: 200, align: 'right' });
-  pill(doc, rx - 30, 60, 116, meta.statusLabel, meta.statusFg, meta.statusBg);
-  doc.fill('#9ca3af').fontSize(6).font('Helvetica');
-  t(doc, `Generated ${meta.generatedAt}`, rx - 90, 78, { width: 200, align: 'right' });
-
-  // Quick-stat strip
-  const sy = COVER_H + 3, cols = meta.stats.length, colW = CW / cols;
-  doc.rect(0, sy, PW, STAT_H).fill(C.dark2);
-  meta.stats.forEach((s, i) => {
-    const x = M + i * colW;
-    doc.fill(C.light).fontSize(6).font('Helvetica');
-    t(doc, s.label.toUpperCase(), x, sy + 8, { width: colW - 10 });
-    doc.fill(s.color || C.white).fontSize(11).font('Helvetica-Bold');
-    t(doc, s.value, x, sy + 20, { width: colW - 10 });
-  });
-
-  // Completion bar (row 1) + checklist chips (row 2) — kept on separate rows
-  // since the bar + all five chips don't fit on one line within page width.
-  const cy = sy + STAT_H + 8;
-  const barW = 220;
-  doc.fill(C.muted).fontSize(6.5).font('Helvetica-Bold');
-  t(doc, 'REPORT COMPLETENESS', M, cy + 3, { width: 110 });
-  doc.save().roundedRect(M + 122, cy, barW, 8, 4).lineWidth(0.5).fillAndStroke('#e5e7eb', C.border).restore();
-  const bw = Math.max(0, Math.min(1, meta.pct / 100)) * barW;
-  if (bw > 0) {
-    doc.save().roundedRect(M + 122, cy, barW, 8, 4).clip();
-    doc.rect(M + 122, cy, bw, 8).fill(meta.pct >= 100 ? C.green : meta.pct >= 50 ? C.amber : C.red);
-    doc.restore();
-  }
-  doc.fill(C.text).fontSize(7.5).font('Helvetica-Bold');
-  t(doc, `${meta.pct}%`, M + 122 + barW + 6, cy + 1, { width: 34 });
-
-  const cy2 = cy + 18, chipW = CW / meta.checklist.length;
-  meta.checklist.forEach((item, i) => {
-    const cx = M + i * chipW;
-    dot(doc, cx + 3, cy2 + 4.5, 3, item.ok ? C.green : C.light, !item.ok);
-    doc.fill(item.ok ? C.green : C.light).fontSize(7).font('Helvetica-Bold');
-    t(doc, item.label, cx + 10, cy2 + 1, { width: chipW - 12 });
-  });
-
-  ctx.doc.y = COVER_BODY_TOP;
-}
-
-function drawHeader(ctx) {
-  const doc = ctx.doc, rx = PW - M - 80;
-  doc.rect(0, 0, PW, 55).fill(C.dark);
-  doc.rect(0, 55, PW, 2).fill(C.brand);
-  doc.fill(C.white).fontSize(13).font('Helvetica-Bold');
-  t(doc, 'CONVOY INTELLIGENCE REPORT', M, 12, { width: CW - 100 });
-  doc.fill('#9ca3af').fontSize(8).font('Helvetica');
-  t(doc, ctx.subtitle || '', M, 30, { width: CW - 100 });
-  doc.fill(C.brand).fontSize(16).font('Helvetica-Bold');
-  t(doc, 'SONALIT', rx, 12, { width: 80, align: 'right' });
-  doc.fill('#9ca3af').fontSize(6).font('Helvetica');
-  t(doc, 'GUARDIAN CFO SYSTEM', rx, 30, { width: 80, align: 'right' });
-}
-
-function drawFooter(ctx) {
-  const doc = ctx.doc;
-  const fy = PH - 26;
-  doc.rect(0, fy, PW, 26).fill(C.dark);
-  doc.fill(C.muted).fontSize(6.5).font('Helvetica');
-  t(doc, `Generated ${ctx.generatedAt}`, M, fy + 9, { width: 250 });
-  t(doc, `Page ${ctx.pageNum}`, PW - M - 60, fy + 9, { width: 60, align: 'right' });
-}
-
-function newPage(ctx) {
-  ctx.doc.addPage();
-  ctx.pageNum++;
-  drawHeader(ctx);
-  drawFooter(ctx);
-  ctx.doc.y = BODY_TOP;
-}
-
-function ensureSpace(ctx, needed) {
-  if (ctx.doc.y + needed > BODY_BOTTOM) newPage(ctx);
-}
-
-function nextLetter(ctx) {
-  const idx = ctx.letterIdx || 0;
-  ctx.letterIdx = idx + 1;
-  return String.fromCharCode(65 + idx);
-}
-
-// Fetches a photo's bytes for embedding in the PDF — the report previously
-// only showed a text "Present/MISSING" indicator per photo, never the actual
-// image, which defeats the point of a report meant to be visual proof of
-// vehicle/seal condition. Failures return null so one bad/slow URL degrades
-// to a placeholder box instead of failing the whole report.
-//
-// Downscaled + recompressed via sharp before returning: raw camera photos
-// (several MB each, full resolution) were being embedded as-is even though
-// they only ever render as a small thumbnail — a 5-page report with ~20
-// photos came out to 23.7MB. 640px wide at JPEG q70 is plenty for a printed
-// thumbnail and is typically tens of KB instead of multiple MB.
 async function fetchImageBuffer(url) {
   if (!url || !/^https?:\/\//.test(url)) return null;
   let raw;
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
-    if (!res.ok) {
-      logger.warn(`[convoyPdf] photo fetch non-2xx (${res.status}): ${url}`);
-      return null;
-    }
+    if (!res.ok) { logger.warn(`[convoyPdf] photo fetch non-2xx (${res.status}): ${url}`); return null; }
     raw = Buffer.from(await res.arrayBuffer());
-  } catch (err) {
-    logger.warn(`[convoyPdf] photo fetch failed: ${url} -- ${err.message}`);
-    return null;
-  }
+  } catch (err) { logger.warn(`[convoyPdf] photo fetch failed: ${url} -- ${err.message}`); return null; }
   try {
-    // failOn: 'none' — some Guardian devices produce JPEGs with malformed
-    // SOS markers ("Invalid SOS parameters for sequential JPEG") that
-    // libvips' default strict mode rejects outright even though the image
-    // is perfectly viewable in a browser. Confirmed from production logs:
-    // every photo on a report was failing this exact way, falling back to
-    // raw un-recompressed bytes that PDFKit's own (stricter) JPEG parser
-    // then also rejected, ending up as "NO PHOTO" despite the photo being
-    // genuinely present. Telling sharp to attempt a best-effort decode
-    // instead of erroring fixes it at the source.
     return await sharp(raw, { failOn: 'none' })
-      .rotate() // apply EXIF orientation before stripping metadata
-      .resize({ width: 640, withoutEnlargement: true })
-      .jpeg({ quality: 70 })
-      .toBuffer();
+      .rotate().resize({ width: 640, withoutEnlargement: true }).jpeg({ quality: 70 }).toBuffer();
   } catch (err) {
-    // Still failed even with lenient parsing (e.g. truly corrupt/truncated
-    // data) — fall back to the original fetched bytes rather than dropping
-    // a real, present photo down to a "NO PHOTO" placeholder. PDFKit can
-    // only embed JPEG/PNG directly; if the raw bytes aren't one of those,
-    // it still fails when drawPhotoCard tries doc.image(), but that's
-    // caught there.
     logger.warn(`[convoyPdf] sharp processing failed, using raw bytes: ${url} -- ${err.message}`);
     return raw;
   }
 }
 
-// Prefetches every present photo's bytes in parallel, keyed by photo id, so
-// truckDetail() can synchronously embed images while laying out the PDF.
 async function prefetchPhotoBuffers(photos) {
   const map = new Map();
-  await Promise.all(photos.map(async (p) => {
-    const buf = await fetchImageBuffer(p.photo_url);
-    if (buf) map.set(p.id, buf);
-  }));
+  await Promise.all(photos.map(async (p) => { const buf = await fetchImageBuffer(p.photo_url); if (buf) map.set(p.id, buf); }));
   return map;
 }
 
-// Same idea for handover forms — keyed by convoy_handovers.id. Only image
-// forms are fetched; a PDF form can't be decoded by fetchImageBuffer (it goes
-// through sharp), so handoverSection links out to it instead of embedding it.
 async function prefetchHandoverBuffers(handovers) {
   const map = new Map();
   await Promise.all(handovers.map(async (h) => {
@@ -266,19 +87,10 @@ async function prefetchHandoverBuffers(handovers) {
   return map;
 }
 
-// Renders a real map image (OSM tiles + route overlay) for the day's
-// movement section, preferring live GPS pings when there are any and
-// falling back to the dispatcher-entered known-town route otherwise. Never
-// throws — any failure (geocoding miss, tile fetch down, etc.) returns null
-// so routeSection falls back to its vector schematic instead of losing the
-// section entirely.
 async function prefetchRouteMap(convoy, waypoints, namedWaypoints) {
   try {
     let points;
     if (waypoints.length > 0) {
-      // Subsample so the overlay SVG stays a reasonable size — a full day
-      // of GPS pings (up to 500, per the query limit) is far more detail
-      // than a page-width map can usefully show.
       const maxPoints = 40;
       const step = Math.max(1, Math.floor(waypoints.length / maxPoints));
       points = waypoints
@@ -291,46 +103,323 @@ async function prefetchRouteMap(convoy, waypoints, namedWaypoints) {
       const trim = (s) => (s || '').trim().toLowerCase();
       const stops = [{ name: convoy.route_origin }, ...namedWaypoints, { name: convoy.route_destination }]
         .filter((s, i, arr) => i === 0 || trim(s.name) !== trim(arr[i - 1].name));
-      points = stops
-        .map((s) => {
-          const g = geocode(s.name);
-          return g ? { lat: g[0], lng: g[1], label: s.name } : null;
-        })
-        .filter(Boolean);
-    } else {
-      return null;
-    }
+      points = stops.map((s) => { const g = geocode(s.name); return g ? { lat: g[0], lng: g[1], label: s.name } : null; }).filter(Boolean);
+    } else { return null; }
     if (points.length < 2) return null;
     return await renderRouteMapImage(points);
-  } catch (err) {
-    logger.warn(`[convoyPdf] route map prefetch failed: ${err.message}`);
+  } catch (err) { logger.warn(`[convoyPdf] route map prefetch failed: ${err.message}`); return null; }
+}
+
+// ── Verification glyph — deterministic QR-like pattern from SHA-256 ─────────
+
+function renderGlyph(doc, x, y, hash, size) {
+  const GRID = 16, cell = size / GRID;
+  const finderPositions = [[0, 0], [GRID - 7, 0], [0, GRID - 7]];
+  function inFinder(gx, gy) {
+    for (const [fx, fy] of finderPositions) {
+      if (gx >= fx && gx < fx + 7 && gy >= fy && gy < fy + 7) return [fx, fy];
+    }
     return null;
   }
+  function finderFill(gx, gy, fx, fy) {
+    const lx = gx - fx, ly = gy - fy;
+    if (lx === 0 || lx === 6 || ly === 0 || ly === 6) return true;
+    if (lx === 1 || lx === 5 || ly === 1 || ly === 5) return false;
+    return true;
+  }
+  doc.save();
+  doc.rect(x - 1, y - 1, size + 2, size + 2).lineWidth(0.6).stroke(C.lineStrong);
+  for (let gy = 0; gy < GRID; gy++) {
+    for (let gx = 0; gx < GRID; gx++) {
+      const f = inFinder(gx, gy);
+      let fill;
+      if (f) fill = finderFill(gx, gy, f[0], f[1]);
+      else {
+        const bitIndex = (gy * GRID + gx) % (hash.length * 4);
+        const hexChar = hash[Math.floor(bitIndex / 4)];
+        const bitPos = bitIndex % 4;
+        fill = ((parseInt(hexChar, 16) >> bitPos) & 1) === 1;
+      }
+      if (fill) doc.rect(x + gx * cell, y + gy * cell, cell, cell).fill(C.navy);
+    }
+  }
+  doc.restore();
 }
+
+// ── Ink stamp (circular verdict seal) ───────────────────────────────────────
+
+function drawInkStamp(doc, cx, cy, r, verdict, score) {
+  doc.save();
+  doc.circle(cx, cy, r).lineWidth(2.5).stroke(C.gold);
+  doc.circle(cx, cy, r * 0.87).lineWidth(1.2).stroke(C.gold);
+  // Arc text
+  const arcText = 'SONALIT CONVOY SYSTEM • CHAIN OF CUSTODY •';
+  const arcR = r * 0.78;
+  doc.fontSize(5).font('Helvetica-Bold').fill(C.gold);
+  const charSpacing = 0.105;
+  const totalArc = arcText.length * charSpacing;
+  let angle = -Math.PI / 2 - totalArc / 2;
+  for (const ch of arcText) {
+    angle += charSpacing / 2;
+    const px = cx + arcR * Math.cos(angle);
+    const py = cy + arcR * Math.sin(angle);
+    doc.save();
+    doc.translate(px, py);
+    doc.rotate((angle + Math.PI / 2) * 180 / Math.PI);
+    doc.text(ch, -2.5, -3, { lineBreak: false });
+    doc.restore();
+    angle += charSpacing / 2;
+  }
+  // Center verdict text
+  const lines = verdict.toUpperCase().split(' ');
+  let ty = cy - (lines.length * 13) / 2 - 2;
+  doc.fill(C.gold).fontSize(11).font('Helvetica-Bold');
+  lines.forEach(line => { t(doc, line, cx - 40, ty, { width: 80, align: 'center' }); ty += 13; });
+  doc.fill(C.gold).fontSize(6).font('Helvetica');
+  t(doc, `SCORE ${score}/100`, cx - 40, ty + 2, { width: 80, align: 'center' });
+  doc.restore();
+}
+
+// ── Cover page ──────────────────────────────────────────────────────────────
+
+function drawCoverPage(doc, meta) {
+  doc.addPage();
+  // Subtle grid background
+  doc.save().strokeColor(C.navy).strokeOpacity(0.05).lineWidth(0.5);
+  for (let gx = 0; gx < PW; gx += 26) doc.moveTo(gx, 0).lineTo(gx, PH).stroke();
+  for (let gy = 0; gy < PH; gy += 26) doc.moveTo(0, gy).lineTo(PW, gy).stroke();
+  doc.restore();
+
+  let y = 42;
+
+  // Letterhead: mark + name (left) + classification badge (right)
+  doc.rect(M, y, 34, 34).fill(C.navy);
+  doc.fill(C.white).fontSize(17).font('Helvetica-Bold');
+  t(doc, 'S', M, y + 9, { width: 34, align: 'center' });
+  doc.fill(C.navy).fontSize(16).font('Helvetica-Bold');
+  t(doc, 'SONALIT', M + 46, y + 4, { width: 200 });
+  doc.fill(C.inkFaint).fontSize(7).font('Helvetica');
+  t(doc, 'Sonalit Convoy System · Chain-of-Custody Freight Intelligence', M + 46, y + 21, { width: 300 });
+  // Classification badge
+  const classW = doc.widthOfString(meta.classification) + 18;
+  doc.save().rect(PW - M - classW, y + 2, classW, 18).lineWidth(1).stroke(C.red).restore();
+  doc.fill(C.red).fontSize(7).font('Helvetica-Bold');
+  t(doc, meta.classification, PW - M - classW, y + 7, { width: classW, align: 'center' });
+
+  // Navy rule
+  y += 48;
+  doc.save().moveTo(M, y).lineTo(PW - M, y).lineWidth(2.5).strokeColor(C.navy).stroke().restore();
+
+  // Hero section
+  y += 22;
+  doc.fill(C.gold).fontSize(8).font('Helvetica');
+  t(doc, 'CONVOY INTELLIGENCE REPORT', M, y, { width: CW });
+  y += 18;
+  doc.fill(C.ink).fontSize(30).font('Helvetica-Bold');
+  const titleLines = doc.heightOfString(`${meta.convoyId}\n${meta.origin} → ${meta.destination}`, { width: CW * 0.7 });
+  t(doc, meta.convoyId, M, y, { width: CW * 0.7 });
+  y += 30;
+  doc.fill(C.ink).fontSize(22).font('Helvetica-Bold');
+  t(doc, `${meta.origin} → ${meta.destination}`, M, y, { width: CW * 0.7 });
+
+  // Route arrow
+  y += 32;
+  doc.fill(C.navy).fontSize(12).font('Helvetica-Bold');
+  t(doc, (meta.origin || '').toUpperCase(), M, y + 2, { width: 120 });
+  const arrowX = M + 130, arrowW = 100;
+  doc.save().moveTo(arrowX, y + 7).lineTo(arrowX + arrowW, y + 7).lineWidth(1).strokeColor(C.lineStrong).stroke().restore();
+  // Arrowhead
+  doc.save().moveTo(arrowX + arrowW - 1, y + 4).lineTo(arrowX + arrowW + 5, y + 7).lineTo(arrowX + arrowW - 1, y + 10)
+    .lineWidth(1.2).strokeColor(C.navy).stroke().restore();
+  doc.fill(C.navy).fontSize(12).font('Helvetica-Bold');
+  t(doc, (meta.destination || '').toUpperCase(), arrowX + arrowW + 12, y + 2, { width: 160 });
+
+  // Split: route map box + ink stamp
+  y += 34;
+  const mapBoxW = CW * 0.6, mapBoxH = 120, stampW = CW - mapBoxW - 18;
+  doc.save().rect(M, y, mapBoxW, mapBoxH).lineWidth(0.6).stroke(C.lineStrong).restore();
+  doc.fill(C.inkFaint).fontSize(7).font('Helvetica-Bold');
+  t(doc, 'ROUTE OVERVIEW — GPS TRACE', M + 10, y + 10, { width: mapBoxW - 20 });
+  // Mini schematic in map box
+  if (meta.mapImage) {
+    try {
+      doc.save();
+      doc.rect(M + 2, y + 24, mapBoxW - 4, mapBoxH - 34).clip();
+      doc.image(meta.mapImage.buffer, M + 2, y + 24, { fit: [mapBoxW - 4, mapBoxH - 34], align: 'center', valign: 'center' });
+      doc.restore();
+    } catch { /* fall through to text fallback */ }
+  } else {
+    doc.fill(C.inkFaint).fontSize(6.5).font('Helvetica');
+    t(doc, 'See Section B for full analysis', M + 10, y + mapBoxH / 2, { width: mapBoxW - 20 });
+  }
+  doc.fill(C.inkFaint).fontSize(6).font('Helvetica');
+  t(doc, `${meta.distanceKm} km logged · ${meta.gpsPoints} GPS points`, M + 10, y + mapBoxH - 14, { width: mapBoxW - 20 });
+
+  // Ink stamp
+  const stampCx = M + mapBoxW + 18 + stampW / 2, stampCy = y + mapBoxH / 2;
+  doc.save().rect(M + mapBoxW + 18, y, stampW, mapBoxH).lineWidth(0.6).stroke(C.lineStrong).restore();
+  drawInkStamp(doc, stampCx, stampCy, Math.min(stampW, mapBoxH) / 2 - 8, meta.verdict, meta.score);
+
+  // Cargo summary strip (3 blocks)
+  y += mapBoxH + 12;
+  const cargoBlockW = CW / 3;
+  meta.cargoBlocks.forEach((blk, i) => {
+    const bx = M + i * cargoBlockW;
+    doc.save().rect(bx, y, cargoBlockW, 36).lineWidth(0.6).stroke(C.line).restore();
+    if (i > 0) doc.save().moveTo(bx, y).lineTo(bx, y + 36).lineWidth(0.6).strokeColor(C.line).stroke().restore();
+    doc.fill(C.inkFaint).fontSize(6.5).font('Helvetica');
+    t(doc, blk.label.toUpperCase(), bx + 10, y + 6, { width: cargoBlockW - 20 });
+    doc.fill(blk.color || C.ink).fontSize(9).font('Helvetica-Bold');
+    t(doc, blk.value, bx + 10, y + 19, { width: cargoBlockW - 20 });
+  });
+
+  // Vehicle table
+  y += 48;
+  doc.fill(C.inkFaint).fontSize(7).font('Helvetica-Bold');
+  t(doc, 'VEHICLES & PERSONNEL', M, y, { width: CW });
+  y += 12;
+  const vCols = [M, M + 40, M + 140, M + 240, M + 310, M + 410];
+  const vWidths = [36, 96, 96, 66, 96, CW - 410];
+  const vHeaders = ['Unit', 'Driver', 'Plate / Reg', 'License', 'Seals (SOD → EOD)', 'Photos'];
+  // Header row
+  doc.rect(M, y, CW, 14).fill(C.paper2);
+  doc.save().rect(M, y, CW, 14).lineWidth(0.6).stroke(C.line).restore();
+  vHeaders.forEach((h, i) => {
+    doc.fill(C.inkFaint).fontSize(6).font('Helvetica-Bold');
+    t(doc, h.toUpperCase(), vCols[i] + 4, y + 4, { width: vWidths[i] });
+  });
+  y += 14;
+  meta.vehicleRows.forEach((row) => {
+    doc.save().rect(M, y, CW, 16).lineWidth(0.4).stroke(C.line).restore();
+    row.forEach((v, j) => {
+      doc.fill(j === 5 ? C.green : C.inkSoft).fontSize(7).font(j === 0 ? 'Courier' : 'Helvetica');
+      t(doc, v, vCols[j] + 4, y + 4, { width: vWidths[j] });
+    });
+    y += 16;
+  });
+
+  // Key facts strip (4 blocks)
+  y += 10;
+  const factW = CW / 4;
+  doc.save().rect(M, y, CW, 38).lineWidth(0.6).stroke(C.lineStrong).restore();
+  meta.facts.forEach((f, i) => {
+    const fx = M + i * factW;
+    if (i > 0) doc.save().moveTo(fx, y).lineTo(fx, y + 38).lineWidth(0.6).strokeColor(C.line).stroke().restore();
+    doc.fill(C.inkFaint).fontSize(6.5).font('Helvetica');
+    t(doc, f.label.toUpperCase(), fx + 12, y + 8, { width: factW - 24 });
+    doc.fill(C.ink).fontSize(10).font('Helvetica-Bold');
+    t(doc, f.value, fx + 12, y + 20, { width: factW - 24 });
+  });
+
+  // Contents index
+  y += 50;
+  doc.save().moveTo(M, y).lineTo(PW - M, y).lineWidth(0.6).strokeColor(C.line).stroke().restore();
+  y += 10;
+  doc.fill(C.inkFaint).fontSize(7).font('Helvetica-Bold');
+  t(doc, 'REPORT CONTENTS', M, y, { width: CW });
+  y += 12;
+  const sections = meta.contents || [];
+  const secW = CW / 5;
+  sections.forEach((s, i) => {
+    const sx = M + (i % 5) * secW;
+    const sy = y + Math.floor(i / 5) * 16;
+    doc.rect(sx, sy, 14, 14).fill(C.navy);
+    doc.fill(C.white).fontSize(7).font('Helvetica-Bold');
+    t(doc, s.letter, sx, sy + 4, { width: 14, align: 'center' });
+    doc.fill(C.inkSoft).fontSize(7.5).font('Helvetica');
+    t(doc, s.label, sx + 18, sy + 3, { width: secW - 22 });
+  });
+  y += Math.ceil(sections.length / 5) * 16 + 8;
+
+  // Cover footer
+  y = PH - 42;
+  doc.save().moveTo(M, y).lineTo(PW - M, y).lineWidth(0.6).strokeColor(C.line).stroke().restore();
+  y += 8;
+  doc.fill(C.inkFaint).fontSize(7).font('Helvetica');
+  t(doc, `Prepared for ${meta.clientName || 'Client'} · Field Compliance Officer ${meta.leadOfficer || '--'}`, M, y, { width: CW * 0.7 });
+  doc.fill(C.inkFaint).fontSize(7).font('Helvetica');
+  t(doc, `Generated ${meta.generatedAt}`, M, y, { width: CW, align: 'right' });
+}
+
+// ── Inner page chrome ───────────────────────────────────────────────────────
+
+function drawLetterhead(ctx) {
+  const doc = ctx.doc;
+  // Navy top rule
+  doc.save().moveTo(M, 14).lineTo(PW - M, 14).lineWidth(2.5).strokeColor(C.navy).stroke().restore();
+  // Mark + name
+  doc.rect(M, 18, 22, 22).fill(C.navy);
+  doc.fill(C.white).fontSize(11).font('Helvetica-Bold');
+  t(doc, 'S', M, 24, { width: 22, align: 'center' });
+  doc.fill(C.navy).fontSize(12).font('Helvetica-Bold');
+  t(doc, 'SONALIT', M + 28, 22, { width: 100 });
+  doc.fill(C.inkFaint).fontSize(6).font('Helvetica');
+  t(doc, 'Sonalit Convoy System · Chain-of-Custody Freight Intelligence', M + 28, 34, { width: 280 });
+  // Report ref + classification
+  doc.fill(C.ink).fontSize(8).font('Courier');
+  t(doc, `REPORT NO. ${ctx.reportRef || ''}`, PW - M - 200, 22, { width: 200, align: 'right' });
+  if (ctx.classification) {
+    const cw = doc.widthOfString(ctx.classification) + 14;
+    doc.save().rect(PW - M - cw, 33, cw, 13).lineWidth(0.6).stroke(C.red).restore();
+    doc.fill(C.red).fontSize(5.5).font('Helvetica-Bold');
+    t(doc, ctx.classification, PW - M - cw, 37, { width: cw, align: 'center' });
+  }
+  // Subheader
+  const sy = 48;
+  doc.save().moveTo(M, sy).lineTo(PW - M, sy).lineWidth(0.6).strokeColor(C.line).stroke().restore();
+  doc.fill(C.inkFaint).fontSize(7).font('Helvetica');
+  t(doc, `Convoy Intelligence Report · Generated ${ctx.generatedAt}`, M, sy + 3, { width: CW * 0.7 });
+  t(doc, ctx.subtitle || '', M, sy + 3, { width: CW, align: 'right' });
+}
+
+function drawPageFooter(ctx) {
+  const doc = ctx.doc, fy = PH - 26;
+  doc.save().moveTo(M, fy).lineTo(PW - M, fy).lineWidth(0.6).strokeColor(C.line).stroke().restore();
+  doc.fill(C.inkFaint).fontSize(6.5).font('Helvetica');
+  t(doc, `SONALIT CONVOY SYSTEM — ${ctx.reportRef || ''}`, M, fy + 6, { width: CW * 0.6 });
+  t(doc, `Generated ${ctx.generatedAt}`, M, fy + 6, { width: CW, align: 'right' });
+}
+
+function newPage(ctx) {
+  ctx.doc.addPage();
+  ctx.pageNum++;
+  drawLetterhead(ctx);
+  drawPageFooter(ctx);
+  ctx.doc.y = BODY_TOP;
+}
+
+function ensureSpace(ctx, needed) { if (ctx.doc.y + needed > BODY_BOTTOM) newPage(ctx); }
+function nextLetter(ctx) { const idx = ctx.letterIdx || 0; ctx.letterIdx = idx + 1; return String.fromCharCode(65 + idx); }
+
+// ── Section head — navy-bordered with letter badge and ghost watermark ──────
 
 function sectionHead(ctx, letter, label, status) {
   ensureSpace(ctx, 30);
-  const doc = ctx.doc;
-  const y = doc.y + 6;
+  const doc = ctx.doc, y = doc.y + 8;
+  // Ghost watermark letter
   if (letter) {
-    doc.save().roundedRect(M, y, 16, 16, C.radius).fill(C.brand).restore();
-    doc.fill(C.white).fontSize(8.5).font('Helvetica-Bold');
-    t(doc, letter, M, y + 4, { width: 16, align: 'center' });
+    doc.save().fill(C.navy).fillOpacity(0.055).fontSize(52).font('Helvetica-Bold');
+    t(doc, letter, PW - M - 36, y - 32, { width: 36, align: 'right' });
+    doc.restore();
   }
-  const textX = letter ? M + 24 : M;
-  doc.fill(C.text).fontSize(9).font('Helvetica-Bold');
-  t(doc, label.toUpperCase(), textX, y + 4, { width: CW - (letter ? 202 : 178) });
+  // Letter badge
+  if (letter) {
+    doc.fill(C.navy).fontSize(10).font('Helvetica-Bold');
+    t(doc, letter, M, y + 2, { width: 14 });
+  }
+  const textX = letter ? M + 16 : M;
+  doc.fill(C.navy).fontSize(10).font('Helvetica-Bold');
+  t(doc, label.toUpperCase(), textX, y + 2, { width: CW - (letter ? 180 : 160) });
   if (status) {
-    doc.fill(C.muted).fontSize(7).font('Helvetica');
+    doc.fill(C.inkFaint).fontSize(7).font('Helvetica');
     t(doc, status, M + CW - 160, y + 4, { width: 160, align: 'right' });
   }
-  doc.save().moveTo(M, y + 20).lineTo(M + CW, y + 20).lineWidth(0.75).strokeColor(C.border).stroke().restore();
-  doc.y = y + 26;
+  doc.save().moveTo(M, y + 18).lineTo(M + CW, y + 18).lineWidth(1.5).strokeColor(C.navy).stroke().restore();
+  doc.y = y + 24;
 }
 
-// Slim navy banner used for sub-groupings nested inside a lettered section
-// (e.g. per-truck SOD/EOD photo evidence) — mirrors the sectionHead style at
-// a smaller scale so nested groups still read as structured, not bolted-on.
+// ── Layout helpers ──────────────────────────────────────────────────────────
+
 function subBanner(ctx, label, status) {
   ensureSpace(ctx, 26);
   const doc = ctx.doc, y = doc.y;
@@ -348,15 +437,15 @@ function detailGrid(doc, items, cols = 2) {
   const cellW = CW / cols, rowH = 30;
   const rows = Math.ceil(items.length / cols);
   const top = doc.y;
-  doc.save().rect(M, top, CW, rows * rowH).lineWidth(0.6).strokeColor(C.border).stroke().restore();
+  doc.save().rect(M, top, CW, rows * rowH).lineWidth(0.6).strokeColor(C.line).stroke().restore();
   items.forEach((item, i) => {
     const col = i % cols, row = Math.floor(i / cols);
     const x = M + col * cellW, y = top + row * rowH;
-    if (col > 0) doc.save().moveTo(x, y).lineTo(x, y + rowH).lineWidth(0.6).strokeColor(C.border).stroke().restore();
-    if (row > 0) doc.save().moveTo(x, y).lineTo(x + cellW, y).lineWidth(0.6).strokeColor(C.border).stroke().restore();
-    doc.fill(C.light).fontSize(6).font('Helvetica');
+    if (col > 0) doc.save().moveTo(x, y).lineTo(x, y + rowH).lineWidth(0.6).strokeColor(C.line).stroke().restore();
+    if (row > 0) doc.save().moveTo(x, y).lineTo(x + cellW, y).lineWidth(0.6).strokeColor(C.line).stroke().restore();
+    doc.fill(C.inkFaint).fontSize(6.5).font('Helvetica');
     t(doc, (item.label || '').toUpperCase(), x + 10, y + 5, { width: cellW - 20 });
-    doc.fill(item.color || C.text).fontSize(9.5).font('Helvetica-Bold');
+    doc.fill(item.color || C.ink).fontSize(9.5).font('Helvetica-Bold');
     t(doc, item.value ?? '--', x + 10, y + 15, { width: cellW - 20 });
   });
   doc.y = top + rows * rowH + 8;
@@ -364,24 +453,315 @@ function detailGrid(doc, items, cols = 2) {
 
 function progressBar(doc, received, required) {
   const pct = required > 0 ? Math.min(1, received / required) : 0, y = doc.y;
-  doc.save().roundedRect(M, y, CW, 10, 5).lineWidth(0.5).fillAndStroke('#e5e7eb', C.border).restore();
-  if (pct > 0) {
-    doc.save().roundedRect(M, y, CW, 10, 5).clip();
-    doc.rect(M, y, CW * pct, 10).fill(pct >= 1 ? C.green : pct >= 0.5 ? C.amber : C.red);
-    doc.restore();
-  }
-  doc.fill(C.text).fontSize(7).font('Helvetica-Bold');
+  doc.save().rect(M, y, CW, 10).lineWidth(0.5).fillAndStroke('#e5e7eb', C.line).restore();
+  if (pct > 0) doc.rect(M, y, CW * pct, 10).fill(pct >= 1 ? C.green : pct >= 0.5 ? C.amber : C.red);
+  doc.fill(C.ink).fontSize(7).font('Helvetica-Bold');
   t(doc, `${received} / ${required}  (${Math.round(pct * 100)}%)`, M + 4, y + 2, { width: CW - 8 });
   doc.y = y + 18;
 }
 
 function tableHeader(doc, cols, widths, headers) {
   const y = doc.y;
-  doc.rect(M, y, CW, 15).fill(C.stripe);
-  doc.save().moveTo(M, y + 15).lineTo(M + CW, y + 15).lineWidth(0.5).strokeColor(C.border).stroke().restore();
-  headers.forEach((h, i) => { doc.fill(C.muted).fontSize(6.5).font('Helvetica-Bold'); t(doc, h.toUpperCase(), cols[i] + 3, y + 4, { width: widths[i] }); });
+  doc.rect(M, y, CW, 15).fill(C.paper2);
+  doc.save().rect(M, y, CW, 15).lineWidth(0.5).stroke(C.line).restore();
+  headers.forEach((h, i) => { doc.fill(C.inkFaint).fontSize(6.5).font('Helvetica-Bold'); t(doc, h.toUpperCase(), cols[i] + 3, y + 4, { width: widths[i] }); });
   doc.y = y + 17;
 }
+
+// ── Integrity section — verdict box + findings register ─────────────────────
+
+function fmtDur(mins) {
+  if (mins == null) return '--';
+  const h = Math.floor(mins / 60), m = Math.round(mins % 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function integritySection(ctx, a) {
+  const doc = ctx.doc;
+  ensureSpace(ctx, 130);
+  sectionHead(ctx, nextLetter(ctx), 'Integrity Assessment');
+
+  const vmap = {
+    cleared:    { label: 'CLEARED',      fg: C.green, bg: C.greenBg, border: '#86efac' },
+    review:     { label: 'UNDER REVIEW', fg: C.gold,  bg: C.goldBg,  border: C.gold },
+    exceptions: { label: 'EXCEPTIONS',   fg: C.red,   bg: C.redBg,   border: '#fca5a5' },
+  };
+  const v = vmap[a.verdict] || vmap.review;
+
+  // Verdict box — bordered card matching HTML .verdict-box
+  const bY = doc.y, bH = 54;
+  doc.save().rect(M, bY, CW, bH).lineWidth(1).stroke(C.lineStrong).restore();
+  doc.rect(M + 1, bY + 1, CW - 2, bH - 2).fill(C.paper2);
+  // Status badge
+  const badgeW = doc.widthOfString(v.label) + 20;
+  doc.save().rect(M + 14, bY + 10, badgeW, 20).lineWidth(1).fillAndStroke(v.bg, v.fg).restore();
+  doc.fill(v.fg).fontSize(9).font('Helvetica-Bold');
+  t(doc, v.label, M + 14, bY + 15, { width: badgeW, align: 'center' });
+  // Score
+  doc.fill(C.inkSoft).fontSize(8).font('Courier');
+  t(doc, `Integrity Score: ${a.score} / 100  ·  ${a.counts.critical} Critical · ${a.counts.warning} Warning · ${a.counts.info} Info`,
+    M + badgeW + 30, bY + 15, { width: CW - badgeW - 50 });
+  // Blurb
+  const blurbMap = {
+    cleared: 'Full evidence coverage; no anomalies detected.',
+    review: 'Minor gaps or anomalies require dispatcher review.',
+    exceptions: 'Critical anomalies detected — escalate before sign-off.',
+  };
+  doc.fill(C.inkSoft).fontSize(7.5).font('Helvetica');
+  t(doc, blurbMap[a.verdict] || '', M + 14, bY + 36, { width: CW - 28 });
+  doc.y = bY + bH + 10;
+
+  // Findings register table
+  const sevColor = { critical: C.red, warning: C.gold, info: C.inkFaint };
+  if (!a.findings.length) {
+    ensureSpace(ctx, 18);
+    dot(doc, M + 5, doc.y + 5, 3, C.green);
+    doc.fill(C.green).fontSize(8).font('Helvetica-Bold');
+    t(doc, 'No exceptions — all coverage, seal, and route checks passed.', M + 14, doc.y + 1, { width: CW - 20 });
+    doc.y += 18;
+  } else {
+    ensureSpace(ctx, 26 + a.findings.length * 16);
+    // Table header
+    const fCols = [M, M + 50, M + 130], fWidths = [46, 76, CW - 130];
+    tableHeader(doc, fCols, fWidths, ['ID', 'Severity', 'Finding']);
+    a.findings.slice(0, 14).forEach((f, i) => {
+      if (doc.y + 16 > BODY_BOTTOM) newPage(ctx);
+      const ry = doc.y;
+      if (i % 2 === 0) doc.rect(M, ry, CW, 16).fill(C.paper2);
+      doc.save().rect(M, ry, CW, 16).lineWidth(0.3).stroke(C.line).restore();
+      doc.fill(C.inkSoft).fontSize(7).font('Courier');
+      t(doc, `F-${String(i + 1).padStart(2, '0')}`, fCols[0] + 3, ry + 4, { width: fWidths[0] });
+      const sc = sevColor[f.severity] || C.inkFaint;
+      const sevW = doc.widthOfString(f.severity.toUpperCase()) + 12;
+      doc.save().rect(fCols[1] + 3, ry + 3, sevW, 11).lineWidth(0.6).fillAndStroke(f.severity === 'warning' ? C.goldBg : f.severity === 'critical' ? C.redBg : '#eef1f5', sc).restore();
+      doc.fill(sc).fontSize(6).font('Helvetica-Bold');
+      t(doc, f.severity.toUpperCase(), fCols[1] + 3, ry + 5, { width: sevW, align: 'center' });
+      doc.fill(C.ink).fontSize(7.5).font('Helvetica-Bold');
+      t(doc, f.title, fCols[2] + 3, ry + 1, { width: fWidths[2] - 6 });
+      doc.fill(C.inkSoft).fontSize(6.5).font('Helvetica');
+      t(doc, f.detail, fCols[2] + 3, ry + 9, { width: fWidths[2] - 6 });
+      doc.y = ry + 16;
+    });
+  }
+
+  // Data integrity advisory
+  if (a.advisory) {
+    ensureSpace(ctx, 40);
+    const ay = doc.y + 4;
+    doc.save().moveTo(M, ay).lineTo(M, ay + 30).lineWidth(3).strokeColor(C.gold).stroke().restore();
+    doc.rect(M + 3, ay, CW - 3, 30).fill(C.goldBg);
+    doc.fill(C.ink).fontSize(7).font('Helvetica-Bold');
+    t(doc, 'Data integrity advisory.', M + 10, ay + 4, { width: CW - 20 });
+    doc.fill(C.inkSoft).fontSize(6.5).font('Helvetica');
+    doc.text(a.advisory, M + 10, ay + 14, { width: CW - 20, lineBreak: true, height: 14 });
+    doc.y = ay + 36;
+  }
+
+  // Route analytics
+  if (a.route.hasTrack) {
+    ensureSpace(ctx, 46);
+    doc.fill(C.inkFaint).fontSize(6.5).font('Helvetica-Bold');
+    t(doc, 'ROUTE ANALYTICS', M, doc.y + 2, { width: 200 });
+    doc.y += 13;
+    detailGrid(doc, [
+      { label: 'Distance', value: `${a.route.distanceKm} km` },
+      { label: 'Duration', value: fmtDur(a.route.durationMin) },
+      { label: 'Avg Speed', value: a.route.avgSpeedKmh != null ? `${a.route.avgSpeedKmh} km/h` : '--' },
+      { label: 'Peak Speed', value: a.route.maxSpeedKmh != null ? `${a.route.maxSpeedKmh} km/h` : '--', color: a.route.overspeedCount > 0 ? C.red : C.ink },
+      { label: 'Stops', value: String(a.route.stops) },
+      { label: 'Max Deviation', value: a.route.deviationKm != null ? `${a.route.deviationKm} km` : '--', color: (a.route.deviationKm != null && a.route.deviationKm > 8) ? C.red : C.ink },
+    ], 6);
+  }
+}
+
+// ── Route section ───────────────────────────────────────────────────────────
+
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371, dLat = (lat2 - lat1) * Math.PI / 180, dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.asin(Math.sqrt(a));
+}
+
+function drawMapImageBox(doc, mapResult, boxH) {
+  const y = doc.y;
+  doc.save().rect(M, y, CW, boxH).lineWidth(0.6).stroke(C.lineStrong).restore();
+  try {
+    doc.save();
+    doc.rect(M, y, CW, boxH).clip();
+    doc.image(mapResult.buffer, M, y, { fit: [CW, boxH], align: 'center', valign: 'center' });
+    doc.restore();
+    const scale = Math.min(CW / mapResult.width, boxH / mapResult.height);
+    const offX = M + (CW - mapResult.width * scale) / 2;
+    const offY = y + (boxH - mapResult.height * scale) / 2;
+    mapResult.points.forEach((p) => {
+      if (!p.label) return;
+      const px = offX + p.x * scale, py = offY + p.y * scale;
+      const lw = 92, lh = 12, lx = px - lw / 2, ly = py - 26;
+      doc.save().rect(lx, ly, lw, lh).fill(C.white).restore();
+      doc.fill(C.ink).fontSize(6.5).font('Helvetica-Bold');
+      t(doc, p.label, lx, ly + 2, { width: lw, align: 'center' });
+    });
+  } catch {
+    doc.fill(C.inkFaint).fontSize(7).font('Helvetica');
+    t(doc, 'Map image unavailable', M, y + boxH / 2 - 4, { width: CW, align: 'center' });
+  }
+  doc.fill(C.inkFaint).fontSize(5.5).font('Helvetica');
+  t(doc, '(c) OpenStreetMap contributors', M, y + boxH + 3, { width: CW });
+  doc.y = y + boxH + 14;
+}
+
+function plannedRouteMap(ctx, convoy, namedWaypoints) {
+  const doc = ctx.doc;
+  const trim = (s) => (s || '').trim().toLowerCase();
+  const stops = [
+    { name: convoy.route_origin || 'Origin' },
+    ...namedWaypoints,
+    { name: convoy.route_destination || 'Destination' },
+  ].filter((s, i, arr) => i === 0 || trim(s.name) !== trim(arr[i - 1].name));
+  const perRow = 5, rowH = 62;
+  const rows = Math.ceil(stops.length / perRow);
+  const mapH = Math.max(120, 34 + rows * rowH);
+  ensureSpace(ctx, mapH + 20);
+  const mapY = doc.y, padX = 34;
+
+  // Route panel box (styled like HTML .route-panel)
+  doc.save().rect(M, mapY, CW, mapH).lineWidth(0.6).stroke(C.lineStrong).restore();
+  // Header
+  doc.rect(M, mapY, CW, 22).fill(C.paper2);
+  doc.save().moveTo(M, mapY + 22).lineTo(M + CW, mapY + 22).lineWidth(0.5).strokeColor(C.line).stroke().restore();
+  doc.fill(C.inkSoft).fontSize(7).font('Helvetica-Bold');
+  t(doc, 'PLANNED ROUTE', M + 10, mapY + 6, { width: 200 });
+  doc.fill(C.inkFaint).fontSize(6).font('Helvetica');
+  t(doc, 'Dispatcher-entered, not GPS-verified', M + 10, mapY + 14, { width: 250 });
+
+  const chipW = 70, chipH = 24, chipX = M + CW - chipW - 8, chipY = mapY + 28;
+  doc.save().rect(chipX, chipY, chipW, chipH).lineWidth(0.6).fillAndStroke(C.white, C.line).restore();
+  doc.fill(C.inkFaint).fontSize(6).font('Helvetica'); t(doc, 'STOPS', chipX + 8, chipY + 4, { width: chipW - 16 });
+  doc.fill(C.ink).fontSize(11).font('Helvetica-Bold'); t(doc, String(stops.length), chipX + 8, chipY + 13, { width: chipW - 16 });
+
+  const usableW = CW - padX * 2;
+  const positions = stops.map((s, i) => {
+    const row = Math.floor(i / perRow), idxInRow = i % perRow;
+    const itemsInRow = Math.min(perRow, stops.length - row * perRow);
+    const ltr = row % 2 === 0;
+    const displayIdx = ltr ? idxInRow : itemsInRow - 1 - idxInRow;
+    const rowColW = itemsInRow > 1 ? usableW / (itemsInRow - 1) : 0;
+    const x = M + padX + (itemsInRow > 1 ? displayIdx * rowColW : usableW / 2);
+    const y = mapY + 40 + row * rowH + rowH / 2;
+    return { x, y, name: s.name, endpoint: i === 0 || i === stops.length - 1 };
+  });
+
+  doc.save().lineWidth(1.4).strokeColor(C.navy);
+  for (let i = 1; i < positions.length; i++) doc.moveTo(positions[i - 1].x, positions[i - 1].y).lineTo(positions[i].x, positions[i].y);
+  doc.stroke().restore();
+  positions.forEach((p, i) => {
+    dot(doc, p.x, p.y, p.endpoint ? 4 : 3, p.endpoint ? C.navy : C.inkFaint);
+    doc.fill(C.ink).fontSize(6.5).font('Helvetica-Bold');
+    t(doc, p.name, p.x - 45, i % 2 === 0 ? p.y - 17 : p.y + 6, { width: 90, align: 'center' });
+  });
+  doc.y = mapY + mapH + 8;
+}
+
+function routeSection(ctx, waypoints, convoy, namedWaypoints = [], mapImage = null) {
+  const doc = ctx.doc;
+  ensureSpace(ctx, 240);
+  sectionHead(ctx, nextLetter(ctx), "Route Analytics");
+
+  if (!waypoints.length) {
+    doc.fill(C.inkFaint).fontSize(7.5).font('Helvetica');
+    t(doc, 'No GPS waypoints logged for this date.', M, doc.y, { width: CW });
+    doc.y += 14;
+    if (!namedWaypoints.length) {
+      doc.fill(C.inkFaint).fontSize(7).font('Helvetica');
+      t(doc, 'No known route waypoints configured for this convoy either.', M, doc.y, { width: CW });
+      doc.y += 16;
+      return;
+    }
+    if (mapImage) {
+      ensureSpace(ctx, 215);
+      doc.fill(C.inkSoft).fontSize(7).font('Helvetica-Bold');
+      t(doc, 'PLANNED ROUTE (dispatcher-entered, not GPS-verified)', M, doc.y, { width: CW });
+      doc.y += 12;
+      drawMapImageBox(doc, mapImage, 190);
+    } else {
+      plannedRouteMap(ctx, convoy, namedWaypoints);
+    }
+    return;
+  }
+
+  let distanceKm = 0;
+  for (let i = 1; i < waypoints.length; i++) distanceKm += haversineKm(waypoints[i - 1].lat, waypoints[i - 1].lng, waypoints[i].lat, waypoints[i].lng);
+  const speeds = waypoints.map(w => w.speed_kmh).filter(v => v != null);
+  const peakSpeed = speeds.length ? Math.max(...speeds) : null;
+  const avgSpeed = speeds.length ? speeds.reduce((a, b) => a + b, 0) / speeds.length : null;
+  const first = new Date(waypoints[0].recorded_at), last = new Date(waypoints[waypoints.length - 1].recorded_at);
+  const driveMs = Math.max(0, last - first);
+  const driveHrs = Math.floor(driveMs / 3600000), driveMin = Math.round((driveMs % 3600000) / 60000);
+
+  // Stats table (styled like HTML .stat-table)
+  const statItems = [
+    { label: 'Distance Logged', value: `${distanceKm.toFixed(1)} km` },
+    { label: 'Peak Speed', value: peakSpeed != null ? `${peakSpeed.toFixed(0)} km/h` : '--', color: peakSpeed > 90 ? C.red : C.ink },
+    { label: 'Avg Speed', value: avgSpeed != null ? `${avgSpeed.toFixed(0)} km/h` : '--' },
+    { label: 'Drive Time', value: `${driveHrs}h ${driveMin}m` },
+    { label: 'GPS Points', value: String(waypoints.length) },
+  ];
+  detailGrid(doc, statItems, 5);
+
+  ensureSpace(ctx, 190);
+  if (mapImage) {
+    drawMapImageBox(doc, mapImage, 150);
+  } else {
+    const mapH = 150, mapY = doc.y, padPx = 16;
+    doc.save().rect(M, mapY, CW, mapH).lineWidth(0.6).stroke(C.lineStrong).restore();
+    const lats = waypoints.map(w => w.lat), lngs = waypoints.map(w => w.lng);
+    const minLat = Math.min(...lats), maxLat = Math.max(...lats), minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+    const latRange = Math.max(maxLat - minLat, 0.0005), lngRange = Math.max(maxLng - minLng, 0.0005);
+    const project = (lat, lng) => [
+      M + padPx + ((lng - minLng) / lngRange) * (CW - padPx * 2),
+      mapY + padPx + (1 - (lat - minLat) / latRange) * (mapH - padPx * 2),
+    ];
+    doc.save().lineWidth(1.4).strokeColor(C.navy);
+    waypoints.forEach((w, i) => { const [x, y] = project(w.lat, w.lng); if (i === 0) doc.moveTo(x, y); else doc.lineTo(x, y); });
+    doc.stroke().restore();
+    const [sx, sy] = project(waypoints[0].lat, waypoints[0].lng);
+    const [ex, ey] = project(waypoints[waypoints.length - 1].lat, waypoints[waypoints.length - 1].lng);
+    dot(doc, sx, sy, 3.5, C.green);
+    dot(doc, ex, ey, 3.5, C.red);
+    // Legend
+    doc.fill(C.inkFaint).fontSize(6).font('Helvetica');
+    t(doc, 'Schematic route track (not to scale) — start (green) to last logged position (red)', M, mapY + mapH + 4, { width: CW });
+    doc.y = mapY + mapH + 16;
+  }
+
+  // GPS sample table
+  const sampleCount = Math.min(8, waypoints.length);
+  const step = Math.max(1, Math.floor(waypoints.length / sampleCount));
+  const samples = [];
+  for (let i = 0; i < waypoints.length && samples.length < sampleCount; i += step) samples.push(waypoints[i]);
+  const lastPoint = waypoints[waypoints.length - 1];
+  if (samples[samples.length - 1] !== lastPoint) samples.push(lastPoint);
+  ensureSpace(ctx, 20 + samples.length * 14);
+  const gCols = [M, M + 90, M + 220, M + 340], gW = [86, 126, 116, 166];
+  tableHeader(doc, gCols, gW, ['Time (UTC)', 'Lat, Lng', 'Speed', 'Heading']);
+  let gy = doc.y;
+  samples.forEach((w, i) => {
+    if (gy + 14 > BODY_BOTTOM) { newPage(ctx); gy = ctx.doc.y; }
+    if (i % 2 === 0) doc.rect(M, gy, CW, 14).fill(C.paper2);
+    doc.save().rect(M, gy, CW, 14).lineWidth(0.3).stroke(C.line).restore();
+    const time = new Date(w.recorded_at).toISOString().replace('T', ' ').slice(0, 19);
+    const spd = w.speed_kmh != null ? `${w.speed_kmh.toFixed(0)} km/h` : '--';
+    const hdg = w.heading != null ? `${Math.round(w.heading)} deg` : '--';
+    [time, `${w.lat.toFixed(4)}, ${w.lng.toFixed(4)}`, spd, hdg].forEach((v, j) => {
+      doc.fill(C.inkSoft).fontSize(7).font(j === 0 ? 'Courier' : 'Helvetica');
+      t(doc, v, gCols[j] + 3, gy + 3, { width: gW[j] });
+    });
+    gy += 14;
+  });
+  doc.y = gy + 6;
+}
+
+// ── Photo evidence sections ─────────────────────────────────────────────────
 
 function photoMatrix(ctx, trucks) {
   const doc = ctx.doc;
@@ -390,11 +770,9 @@ function photoMatrix(ctx, trucks) {
   const cols = ['FR', 'RR', 'SEALS'];
   const sessionW = cols.length * (cellW + gap);
   const rowH = cellH + 5;
-
   let y = doc.y;
-  doc.fill(C.muted).fontSize(6.5).font('Helvetica-Bold');
+  doc.fill(C.inkFaint).fontSize(6.5).font('Helvetica-Bold');
   t(doc, 'TRUCK / DRIVER', M, y + 4, { width: labelW });
-
   let x = M + labelW;
   ['START OF DAY', 'END OF DAY'].forEach(s => {
     doc.rect(x, y, sessionW, 13).fill(C.navy);
@@ -403,28 +781,24 @@ function photoMatrix(ctx, trucks) {
     x += sessionW + 8;
   });
   y += 15;
-
   x = M + labelW;
   [0, 1].forEach(() => {
     cols.forEach((cl, idx) => {
-      doc.fill(C.light).fontSize(5.5).font('Helvetica');
+      doc.fill(C.inkFaint).fontSize(5.5).font('Helvetica');
       t(doc, cl, x + idx * (cellW + gap), y + 1, { width: cellW, align: 'center' });
     });
     x += sessionW + 8;
   });
   y += 10;
-
   trucks.forEach((truck, ti) => {
     if (y + rowH > BODY_BOTTOM) { newPage(ctx); y = ctx.doc.y; }
-    if (ti % 2 === 0) doc.rect(M, y, CW, rowH).fill(C.stripe);
-
-    doc.fill(C.text).fontSize(8).font('Helvetica-Bold');
+    if (ti % 2 === 0) doc.rect(M, y, CW, rowH).fill(C.paper2);
+    doc.fill(C.ink).fontSize(8).font('Helvetica-Bold');
     t(doc, `T${truck.position}`, M + 2, y + 3, { width: 18 });
-    doc.fill(C.sub).fontSize(7).font('Helvetica');
+    doc.fill(C.inkSoft).fontSize(7).font('Helvetica');
     t(doc, truck.driver_name || '--', M + 20, y + 2, { width: labelW - 24 });
-    doc.fill(C.light).fontSize(6);
+    doc.fill(C.inkFaint).fontSize(6);
     t(doc, truck.plate_number || '--', M + 20, y + 11, { width: labelW - 24 });
-
     x = M + labelW;
     ['sod', 'eod'].forEach(session => {
       const sd = truck[session] || { front: false, rear: false, sealHave: 0, sealTotal: 0 };
@@ -436,7 +810,7 @@ function photoMatrix(ctx, trucks) {
       cells.forEach((c, idx) => {
         const sx = x + idx * (cellW + gap);
         doc.save().rect(sx, y + 1, cellW, cellH).lineWidth(0.4)
-          .fillAndStroke(c.ok ? C.greenBg : C.redBg, c.ok ? C.greenBorder : C.redBorder).restore();
+          .fillAndStroke(c.ok ? C.greenBg : C.redBg, c.ok ? '#86efac' : '#fca5a5').restore();
         doc.fill(c.ok ? C.green : C.red).fontSize(8).font('Helvetica-Bold');
         t(doc, c.txt, sx, y + 5, { width: cellW, align: 'center' });
       });
@@ -452,143 +826,122 @@ function mismatchTable(ctx, photos) {
   if (!mm.length) return;
   ensureSpace(ctx, 35 + mm.length * 14);
   sectionHead(ctx, nextLetter(ctx), `Location Mismatches (${mm.length})`);
-  const doc = ctx.doc, cols = [M,M+100,M+200,M+290,M+390], colW = [96,96,86,96,80];
-  tableHeader(doc, cols, colW, ['Truck','Photo Type','Session','Uploaded','Flag']);
+  const doc = ctx.doc, cols = [M, M + 100, M + 200, M + 290, M + 390], colW = [96, 96, 86, 96, 80];
+  tableHeader(doc, cols, colW, ['Truck', 'Photo Type', 'Session', 'Uploaded', 'Flag']);
   let y = doc.y;
   mm.forEach((p, i) => {
     if (y + 14 > BODY_BOTTOM) { newPage(ctx); y = ctx.doc.y; }
     if (i % 2 === 0) doc.rect(M, y, CW, 14).fill(C.amberBg);
-    [String(p.convoy_truck_id).slice(-8), `${p.photo_type}${p.seal_position?' #'+p.seal_position:''}`,
-     (p.session||'').toUpperCase(), p.uploaded_at?new Date(p.uploaded_at).toISOString().slice(0,16).replace('T',' '):'--', 'GPS >2km',
-    ].forEach((v,j) => { doc.fill(C.sub).fontSize(7).font('Helvetica'); t(doc,v,cols[j]+3,y+3,{width:colW[j]}); });
+    [String(p.convoy_truck_id).slice(-8), `${p.photo_type}${p.seal_position ? ' #' + p.seal_position : ''}`,
+      (p.session || '').toUpperCase(), p.uploaded_at ? new Date(p.uploaded_at).toISOString().slice(0, 16).replace('T', ' ') : '--', 'GPS >2km',
+    ].forEach((v, j) => { doc.fill(C.inkSoft).fontSize(7).font('Helvetica'); t(doc, v, cols[j] + 3, y + 3, { width: colW[j] }); });
     y += 14;
   });
   doc.y = y + 4;
 }
 
+function drawPhotoCard(doc, x, y, w, photoH, captionH, slot, match, photoBuffers) {
+  doc.save().rect(x, y, w, photoH).lineWidth(0.6).fillAndStroke(C.paper2, C.lineStrong).restore();
+  const buf = match ? photoBuffers.get(match.id) : null;
+  if (buf) {
+    try {
+      doc.save();
+      doc.rect(x, y, w, photoH).clip();
+      doc.image(buf, x, y, { fit: [w, photoH], align: 'center', valign: 'center' });
+      doc.restore();
+    } catch { drawNoPhotoText(doc, x, y, w, photoH); }
+  } else { drawNoPhotoText(doc, x, y, w, photoH); }
+  // Status badge
+  const present = !!match;
+  const badgeW = 52, badgeH = 12;
+  doc.save().rect(x + w - badgeW - 4, y + 4, badgeW, badgeH).lineWidth(0.6)
+    .fillAndStroke(present ? C.greenBg : C.redBg, present ? C.green : C.red).restore();
+  doc.fill(present ? C.green : C.red).fontSize(6).font('Helvetica-Bold');
+  t(doc, present ? 'VERIFIED' : 'MISSING', x + w - badgeW - 4, y + 7, { width: badgeW, align: 'center' });
+  // Caption
+  let cy = y + photoH + 4;
+  doc.fill(C.ink).fontSize(7.5).font('Helvetica-Bold');
+  t(doc, slot.label, x, cy, { width: w });
+  cy += 11;
+  doc.fill(C.inkFaint).fontSize(6).font('Courier');
+  const uploaded = match?.uploaded_at ? new Date(match.uploaded_at).toISOString().replace('T', ' ').slice(0, 16) : '--';
+  t(doc, uploaded, x, cy, { width: w });
+  cy += 9;
+  const gps = match?.lat != null && match?.lng != null
+    ? `${parseFloat(match.lat).toFixed(4)}, ${parseFloat(match.lng).toFixed(4)}` : 'GPS --';
+  doc.fill(match?.location_mismatch ? C.amber : C.inkFaint).fontSize(6);
+  t(doc, gps, x, cy, { width: w });
+}
+
+function drawNoPhotoText(doc, x, y, w, h) {
+  doc.fill(C.inkFaint).fontSize(7.5).font('Helvetica');
+  t(doc, 'NO PHOTO', x, y + h / 2 - 4, { width: w, align: 'center' });
+}
+
 function truckDetail(ctx, truck, truckPhotos, sealCountPerTruck, photoBuffers) {
-  // Deliberate: every truck always starts on its own fresh page, even if
-  // that leaves the previous page partly blank. Each truck's photo
-  // evidence is meant to be reviewed as a self-contained block, and mixing
-  // the tail end of one truck's grid with the start of another's on the
-  // same page is worse than an underused page.
   newPage(ctx);
   const doc = ctx.doc;
-
-  // A truck has exactly sealCountPerTruck physical seal slots. seal_position
-  // is CFO-entered free text though, not a fixed slot index, so a reseal
-  // between SOD and EOD (a normal, expected occurrence, not a data error)
-  // legitimately uses different codes for the same slots — SOD's and EOD's
-  // distinct codes must be capped and displayed *independently*, or a truck
-  // could show up to 2x sealCountPerTruck cards.
-  //
-  // displaySealCap trims that further, on purpose: the PDF only ever shows
-  // up to 2 seal cards per session regardless of sealCountPerTruck, so the
-  // hero photos + seal grid reliably fit on one page with no overflow to a
-  // continuation page. This is a print-layout choice, not a data change —
-  // completeness counts elsewhere (matrix, summary) still use the true
-  // sealCountPerTruck.
   const displaySealCap = Math.min(sealCountPerTruck, 2);
   const sealCodesFor = (session) => Array.from(new Set(
     truckPhotos.filter(p => p.session === session && p.photo_type === 'seal').map(p => String(p.seal_position))
   )).sort().slice(0, displaySealCap);
-  const sodSealCodes = sealCodesFor('sod');
-  const eodSealCodes = sealCodesFor('eod');
+  const sodSealCodes = sealCodesFor('sod'), eodSealCodes = sealCodesFor('eod');
   const expectedTotal = (2 + sealCountPerTruck) * 2;
   const receivedTotal = ['sod', 'eod'].reduce((sum, session) => {
     const sp = truckPhotos.filter(p => p.session === session);
-    const frontRear = (sp.some(p => p.photo_type === 'front') ? 1 : 0)
-      + (sp.some(p => p.photo_type === 'rear') ? 1 : 0);
-    const sealCount = Math.min(
-      new Set(sp.filter(p => p.photo_type === 'seal').map(p => String(p.seal_position))).size,
-      sealCountPerTruck
-    );
+    const frontRear = (sp.some(p => p.photo_type === 'front') ? 1 : 0) + (sp.some(p => p.photo_type === 'rear') ? 1 : 0);
+    const sealCount = Math.min(new Set(sp.filter(p => p.photo_type === 'seal').map(p => String(p.seal_position))).size, sealCountPerTruck);
     return sum + frontRear + sealCount;
   }, 0);
 
   subBanner(ctx, `Truck ${truck.position} — ${truck.driver_name || 'Unknown Driver'}`, `${receivedTotal}/${expectedTotal} Photos`);
-
   detailGrid(doc, [
     { label: 'Plate / Reg', value: truck.plate_number || '--' },
     { label: 'Driver Phone', value: truck.driver_phone || '--' },
     { label: 'License No', value: truck.driver_license_no || '--' },
-    {
-      label: `Seal Codes (${displaySealCap} of ${sealCountPerTruck} shown)`,
+    { label: `Seal Codes (${displaySealCap} of ${sealCountPerTruck} shown)`,
       value: (sodSealCodes.length || eodSealCodes.length)
-        ? `SOD: ${sodSealCodes.join(', ') || '--'}  ·  EOD: ${eodSealCodes.join(', ') || '--'}`
-        : '--',
-    },
+        ? `SOD: ${sodSealCodes.join(', ') || '--'}  ·  EOD: ${eodSealCodes.join(', ') || '--'}` : '--' },
   ]);
 
-  // A truck's whole day reads as one page: SOD on the left half, EOD on the
-  // right half, Front stacked over Rear in each half (the primary visual-
-  // inspection evidence), with seals — a per-position checklist rather than
-  // a single "how does the truck look" shot — as a smaller grid underneath
-  // each half.
-  const colGap = 16;
-  const colW = (CW - colGap) / 2;
-  const cols = [
+  const colGap = 16, colW = (CW - colGap) / 2;
+  const colDefs = [
     { x: M, label: 'START OF DAY (SOD)', session: 'sod' },
     { x: M + colW + colGap, label: 'END OF DAY (EOD)', session: 'eod' },
   ];
-
-  const bannerH = 18;
-  const photoH = 145, captionH = 28, photoGap = 10;
+  const bannerH = 18, photoH = 145, captionH = 28, photoGap = 10;
   const heroPairH = (photoH + 6 + captionH) * 2 + photoGap;
-
   const sealCols = 2, sealGap = 8;
   const sealCardW = (colW - sealGap * (sealCols - 1)) / sealCols;
-  const sealPhotoH = 78, sealCaptionH = 24;
-  const sealRowStride = sealPhotoH + 6 + sealCaptionH + 10;
-  // Fixed to displaySealCap (at most 2), not sealCountPerTruck and not
-  // however many distinct codes the data happens to contain — this keeps
-  // SOD's and EOD's grids the same size regardless of reseals, and keeps
-  // the seal grid to a single row so it reliably fits under the hero
-  // photos with no continuation page.
+  const sealPhotoH = 78, sealCaptionH = 24, sealRowStride = sealPhotoH + 6 + sealCaptionH + 10;
   const sealRows = Math.ceil(displaySealCap / sealCols);
 
-  // The hero pair (banner + Front + Rear, both columns) always follows
-  // straight after the truck's own fresh page, so it's virtually guaranteed
-  // to fit — this ensureSpace is a safety net, not the primary pagination.
   ensureSpace(ctx, bannerH + 8 + heroPairH + 20);
-
   const topY = doc.y;
-  cols.forEach(col => {
+  colDefs.forEach(col => {
     doc.rect(col.x, topY, colW, bannerH).fill(C.navy);
     doc.fill(C.white).fontSize(7.5).font('Helvetica-Bold');
     t(doc, col.label, col.x + 8, topY + 5, { width: colW - 16 });
   });
-
   const heroY = topY + bannerH + 8;
-  cols.forEach(col => {
+  colDefs.forEach(col => {
     const sp = truckPhotos.filter(p => p.session === col.session);
-    const frontMatch = sp.find(p => p.photo_type === 'front');
-    const rearMatch = sp.find(p => p.photo_type === 'rear');
     drawPhotoCard(doc, col.x, heroY, colW, photoH, captionH,
-      { label: 'FRONT', photoType: 'front', sealPos: null }, frontMatch, photoBuffers);
-    const rearY = heroY + photoH + 6 + captionH + photoGap;
-    drawPhotoCard(doc, col.x, rearY, colW, photoH, captionH,
-      { label: 'REAR', photoType: 'rear', sealPos: null }, rearMatch, photoBuffers);
+      { label: 'FRONT', photoType: 'front', sealPos: null }, sp.find(p => p.photo_type === 'front'), photoBuffers);
+    drawPhotoCard(doc, col.x, heroY + photoH + 6 + captionH + photoGap, colW, photoH, captionH,
+      { label: 'REAR', photoType: 'rear', sealPos: null }, sp.find(p => p.photo_type === 'rear'), photoBuffers);
   });
   doc.y = heroY + heroPairH + 12;
 
   if (displaySealCap <= 0) return;
   const sealCodesByCol = { sod: sodSealCodes, eod: eodSealCodes };
-  // Seal rows paginate on their own (unlike the hero pair above) as a
-  // safety net, but with displaySealCap capped at 2 and sealCols at 2 this
-  // is always exactly one row — the seal grid should never actually spill
-  // to a continuation page in practice.
   for (let row = 0; row < sealRows; row++) {
     const pageBefore = ctx.pageNum;
     ensureSpace(ctx, sealRowStride + 10);
     if (ctx.pageNum !== pageBefore) {
-      // A bare row of seal cards with no header context, spilled onto a
-      // fresh page, reads as an unrelated truck rather than a continuation
-      // of this one — confirmed confusing in practice. Re-identify whose
-      // seals these are before drawing more.
       subBanner(ctx, `Truck ${truck.position} — ${truck.driver_name || 'Unknown Driver'} (seals, continued)`);
       const contY = doc.y;
-      cols.forEach(col => {
+      colDefs.forEach(col => {
         doc.rect(col.x, contY, colW, bannerH).fill(C.navy);
         doc.fill(C.white).fontSize(7.5).font('Helvetica-Bold');
         t(doc, col.label, col.x + 8, contY + 5, { width: colW - 16 });
@@ -596,15 +949,12 @@ function truckDetail(ctx, truck, truckPhotos, sealCountPerTruck, photoBuffers) {
       doc.y = contY + bannerH + 8;
     }
     const rowY = doc.y;
-    cols.forEach(col => {
+    colDefs.forEach(col => {
       const sp = truckPhotos.filter(p => p.session === col.session);
       const codes = sealCodesByCol[col.session];
       for (let sc = 0; sc < sealCols; sc++) {
         const idx = row * sealCols + sc;
         if (idx >= displaySealCap) break;
-        // The slot always exists (up to sealCountPerTruck) even if this
-        // session has no code for it yet — draw it as MISSING rather than
-        // skipping it, so both columns' grids stay the same shape.
         const pos = codes[idx] || null;
         const slot = { label: pos ? `SEAL ${pos}` : `SEAL ${idx + 1}`, photoType: 'seal', sealPos: pos };
         const match = pos ? sp.find(p => p.photo_type === 'seal' && String(p.seal_position) === pos) : null;
@@ -615,484 +965,229 @@ function truckDetail(ctx, truck, truckPhotos, sealCountPerTruck, photoBuffers) {
   }
 }
 
-function drawPhotoCard(doc, x, y, w, photoH, captionH, slot, match, photoBuffers) {
-  doc.save().roundedRect(x, y, w, photoH, C.radius).lineWidth(0.6).fillAndStroke(C.stripe, C.border).restore();
-
-  const buf = match ? photoBuffers.get(match.id) : null;
-  if (buf) {
-    try {
-      doc.save();
-      doc.roundedRect(x, y, w, photoH, C.radius).clip();
-      doc.image(buf, x, y, { fit: [w, photoH], align: 'center', valign: 'center' });
-      doc.restore();
-    } catch {
-      drawNoPhotoText(doc, x, y, w, photoH);
-    }
-  } else {
-    drawNoPhotoText(doc, x, y, w, photoH);
-  }
-
-  // Status badge, overlaid top-right corner of the photo
-  const present = !!match;
-  const badgeW = 54, badgeH = 13;
-  doc.save().roundedRect(x + w - badgeW - 4, y + 4, badgeW, badgeH, badgeH / 2)
-    .fill(present ? C.greenBg : C.redBg).restore();
-  doc.fill(present ? C.green : C.red).fontSize(6).font('Helvetica-Bold');
-  t(doc, present ? 'PRESENT' : 'MISSING', x + w - badgeW - 4, y + 7, { width: badgeW, align: 'center' });
-
-  // Caption: label, timestamp, GPS
-  let cy = y + photoH + 4;
-  doc.fill(C.text).fontSize(7.5).font('Helvetica-Bold');
-  t(doc, slot.label, x, cy, { width: w });
-  cy += 11;
-  doc.fill(C.muted).fontSize(6).font('Helvetica');
-  const uploaded = match?.uploaded_at
-    ? new Date(match.uploaded_at).toISOString().replace('T', ' ').slice(0, 16) : '--';
-  t(doc, uploaded, x, cy, { width: w });
-  cy += 9;
-  const gps = match?.lat != null && match?.lng != null
-    ? `${parseFloat(match.lat).toFixed(4)}, ${parseFloat(match.lng).toFixed(4)}` : 'GPS --';
-  doc.fill(match?.location_mismatch ? C.amber : C.light).fontSize(6);
-  t(doc, gps, x, cy, { width: w });
-}
-
-function drawNoPhotoText(doc, x, y, w, h) {
-  doc.fill(C.light).fontSize(7.5).font('Helvetica');
-  t(doc, 'NO PHOTO', x, y + h / 2 - 4, { width: w, align: 'center' });
-}
-
-function haversineKm(lat1, lng1, lat2, lng2) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2
-    + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.asin(Math.sqrt(a));
-}
-
-// Day's movement section — plots the convoy's actual logged GPS waypoints as
-// a schematic path (lat/lng scaled to fit a box; not a to-scale/tiled map,
-// which would need a basemap-tile integration we don't have) plus real
-// distance/speed/drive-time stats computed from those same points, and a
-// sampled route log table. All from convoy_waypoints, already populated by
-// the Guardian app's live tracking — no new data source required.
-// Most convoys have no continuous device tracking, so live GPS pings
-// (convoy_waypoints) are the exception rather than the rule — a plain "No
-// GPS waypoints logged" message left the section empty for the common case.
-// When there's no live track for the day, fall back to the dispatcher-keyed
-// known towns/checkpoints for the route (convoy_route_waypoints) so the
-// report still shows the intended path, clearly labeled as planned rather
-// than GPS-verified.
-// Renders the dispatcher-entered stops as an actual route diagram — a
-// connected line of checkpoints wrapping left-to-right / right-to-left in
-// successive rows (like a metro map), rather than a plain bulleted list.
-// Once Guardian devices are logging live GPS per truck, routeSection's own
-// lat/lng-projected track (above this fallback in the call order) takes
-// over automatically; this is only ever shown for days with no live ping.
-function plannedRouteMap(ctx, convoy, namedWaypoints) {
-  const doc = ctx.doc;
-  const trim = (s) => (s || '').trim().toLowerCase();
-  const stops = [
-    { name: convoy.route_origin || 'Origin' },
-    ...namedWaypoints,
-    { name: convoy.route_destination || 'Destination' },
-  // Collapse a duplicate stop where a dispatcher's last keyed-in waypoint is
-  // effectively the same place as the origin/destination already shown
-  // (e.g. "Dar es salaam" entered as a stop when the destination is already
-  // "Dar es Salaam") — same name, different casing, back to back.
-  ].filter((s, i, arr) => i === 0 || trim(s.name) !== trim(arr[i - 1].name));
-
-  const perRow = 5;
-  const rowH = 62;
-  const rows = Math.ceil(stops.length / perRow);
-  const mapH = Math.max(120, 34 + rows * rowH);
-  ensureSpace(ctx, mapH + 20);
-  const mapY = doc.y, padX = 34;
-  doc.save().roundedRect(M, mapY, CW, mapH, 6).lineWidth(0.6).fillAndStroke('#f0fdf4', C.border).restore();
-
-  doc.fill(C.sub).fontSize(6.5).font('Helvetica-Bold');
-  t(doc, 'PLANNED ROUTE', M + 12, mapY + 9, { width: 200 });
-  doc.fill(C.light).fontSize(6).font('Helvetica');
-  t(doc, 'Dispatcher-entered, not GPS-verified', M + 12, mapY + 18, { width: 250 });
-
-  const chipW = 90, chipH = 30, chipX = M + CW - chipW - 10, chipY = mapY + 8;
-  doc.save().roundedRect(chipX, chipY, chipW, chipH, C.radius).lineWidth(0.6).fillAndStroke(C.white, C.border).restore();
-  doc.fill(C.light).fontSize(6).font('Helvetica');
-  t(doc, 'STOPS', chipX + 8, chipY + 5, { width: chipW - 16 });
-  doc.fill(C.text).fontSize(12).font('Helvetica-Bold');
-  t(doc, String(stops.length), chipX + 8, chipY + 15, { width: chipW - 16 });
-
-  const usableW = CW - padX * 2;
-  const positions = stops.map((s, i) => {
-    const row = Math.floor(i / perRow);
-    const idxInRow = i % perRow;
-    const itemsInRow = Math.min(perRow, stops.length - row * perRow);
-    const ltr = row % 2 === 0;
-    const displayIdx = ltr ? idxInRow : itemsInRow - 1 - idxInRow;
-    const rowColW = itemsInRow > 1 ? usableW / (itemsInRow - 1) : 0;
-    const x = M + padX + (itemsInRow > 1 ? displayIdx * rowColW : usableW / 2);
-    const y = mapY + 40 + row * rowH + rowH / 2;
-    return { x, y, name: s.name, endpoint: i === 0 || i === stops.length - 1 };
-  });
-
-  doc.save().lineWidth(1.4).strokeColor(C.brand);
-  for (let i = 1; i < positions.length; i++) {
-    doc.moveTo(positions[i - 1].x, positions[i - 1].y).lineTo(positions[i].x, positions[i].y);
-  }
-  doc.stroke().restore();
-
-  positions.forEach((p, i) => {
-    dot(doc, p.x, p.y, p.endpoint ? 4 : 3, p.endpoint ? C.brand : C.light);
-    const above = i % 2 === 0;
-    doc.fill(C.text).fontSize(6.5).font('Helvetica-Bold');
-    t(doc, p.name, p.x - 45, above ? p.y - 17 : p.y + 6, { width: 90, align: 'center' });
-  });
-
-  doc.y = mapY + mapH + 8;
-}
-
-// Embeds a real, pre-rendered map image (OSM tiles + route overlay — see
-// routeMapRenderer.js) in place of the vector schematic. OSM's tile usage
-// policy requires visible attribution on any rendered output.
-function drawMapImageBox(doc, mapResult, boxH) {
-  const y = doc.y;
-  doc.save().roundedRect(M, y, CW, boxH, 6).lineWidth(0.6).stroke(C.border).restore();
-  try {
-    doc.save();
-    doc.roundedRect(M, y, CW, boxH, 6).clip();
-    doc.image(mapResult.buffer, M, y, { fit: [CW, boxH], align: 'center', valign: 'center' });
-    doc.restore();
-
-    // Labels are drawn here with PDFKit's own built-in font rather than
-    // baked into the raster (see routeMapRenderer.js) — reproject each
-    // point through the same fit-into-box scale/center PDFKit just applied
-    // to the whole image, using the pixel positions the renderer returned.
-    const scale = Math.min(CW / mapResult.width, boxH / mapResult.height);
-    const offX = M + (CW - mapResult.width * scale) / 2;
-    const offY = y + (boxH - mapResult.height * scale) / 2;
-    mapResult.points.forEach((p) => {
-      if (!p.label) return;
-      const px = offX + p.x * scale, py = offY + p.y * scale;
-      const lw = 92, lh = 12, lx = px - lw / 2, ly = py - 26;
-      doc.save().rect(lx, ly, lw, lh).fill('#ffffff').restore();
-      doc.fill(C.text).fontSize(6.5).font('Helvetica-Bold');
-      t(doc, p.label, lx, ly + 2, { width: lw, align: 'center' });
-    });
-  } catch {
-    doc.fill(C.light).fontSize(7).font('Helvetica');
-    t(doc, 'Map image unavailable', M, y + boxH / 2 - 4, { width: CW, align: 'center' });
-  }
-  doc.fill(C.light).fontSize(5.5).font('Helvetica');
-  t(doc, '(c) OpenStreetMap contributors', M, y + boxH + 3, { width: CW });
-  doc.y = y + boxH + 14;
-}
-
-function routeSection(ctx, waypoints, convoy, namedWaypoints = [], mapImage = null) {
-  const doc = ctx.doc;
-  // Reserve room for the heading together with the map/table that follows it,
-  // not just the heading alone — checking only 60pt here let a page break land
-  // between the two, stranding "Day's Movement — Route Track" by itself at the
-  // bottom of an otherwise-blank page while the map rendered on the next one.
-  ensureSpace(ctx, 240);
-  sectionHead(ctx, nextLetter(ctx), "Day's Movement — Route Track");
-
-  if (!waypoints.length) {
-    doc.fill(C.muted).fontSize(7.5).font('Helvetica');
-    t(doc, 'No GPS waypoints logged for this date.', M, doc.y, { width: CW });
-    doc.y += 14;
-    if (!namedWaypoints.length) {
-      doc.fill(C.light).fontSize(7).font('Helvetica');
-      t(doc, 'No known route waypoints configured for this convoy either — add them on the convoy setup page to show a planned route here.',
-        M, doc.y, { width: CW });
-      doc.y += 16;
-      return;
-    }
-    if (mapImage) {
-      ensureSpace(ctx, 215);
-      doc.fill(C.sub).fontSize(7).font('Helvetica-Bold');
-      t(doc, 'PLANNED ROUTE (dispatcher-entered, not GPS-verified)', M, doc.y, { width: CW });
-      doc.y += 12;
-      drawMapImageBox(doc, mapImage, 190);
-    } else {
-      plannedRouteMap(ctx, convoy, namedWaypoints);
-    }
-    return;
-  }
-
-  let distanceKm = 0;
-  for (let i = 1; i < waypoints.length; i++) {
-    distanceKm += haversineKm(waypoints[i - 1].lat, waypoints[i - 1].lng, waypoints[i].lat, waypoints[i].lng);
-  }
-  const speeds = waypoints.map(w => w.speed_kmh).filter(v => v != null);
-  const peakSpeed = speeds.length ? Math.max(...speeds) : null;
-  const avgSpeed = speeds.length ? speeds.reduce((a, b) => a + b, 0) / speeds.length : null;
-  const first = new Date(waypoints[0].recorded_at), last = new Date(waypoints[waypoints.length - 1].recorded_at);
-  const driveMs = Math.max(0, last - first);
-  const driveHrs = Math.floor(driveMs / 3600000), driveMin = Math.round((driveMs % 3600000) / 60000);
-
-  ensureSpace(ctx, 190);
-  if (mapImage) {
-    drawMapImageBox(doc, mapImage, 150);
-  } else {
-    const mapH = 150, mapY = doc.y, padPx = 16;
-    doc.save().roundedRect(M, mapY, CW, mapH, 6).lineWidth(0.6).fillAndStroke('#f0fdf4', C.border).restore();
-
-    const lats = waypoints.map(w => w.lat), lngs = waypoints.map(w => w.lng);
-    const minLat = Math.min(...lats), maxLat = Math.max(...lats);
-    const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
-    const latRange = Math.max(maxLat - minLat, 0.0005);
-    const lngRange = Math.max(maxLng - minLng, 0.0005);
-    const project = (lat, lng) => [
-      M + padPx + ((lng - minLng) / lngRange) * (CW - padPx * 2),
-      mapY + padPx + (1 - (lat - minLat) / latRange) * (mapH - padPx * 2),
-    ];
-
-    doc.save().lineWidth(1.4).strokeColor(C.brand);
-    waypoints.forEach((w, i) => {
-      const [x, y] = project(w.lat, w.lng);
-      if (i === 0) doc.moveTo(x, y); else doc.lineTo(x, y);
-    });
-    doc.stroke().restore();
-
-    const [sx, sy] = project(waypoints[0].lat, waypoints[0].lng);
-    const [ex, ey] = project(waypoints[waypoints.length - 1].lat, waypoints[waypoints.length - 1].lng);
-    dot(doc, sx, sy, 3.5, C.green);
-    dot(doc, ex, ey, 3.5, C.red);
-    doc.fill(C.muted).fontSize(6).font('Helvetica');
-    t(doc, 'Schematic route track (not to scale) -- start (green) to last logged position (red)',
-      M, mapY + mapH + 4, { width: CW });
-    doc.y = mapY + mapH + 16;
-  }
-
-  detailGrid(doc, [
-    { label: 'Distance Logged', value: `${distanceKm.toFixed(1)} km` },
-    { label: 'Peak Speed', value: peakSpeed != null ? `${peakSpeed.toFixed(0)} km/h` : '--' },
-    { label: 'Avg Speed', value: avgSpeed != null ? `${avgSpeed.toFixed(0)} km/h` : '--' },
-    { label: 'Drive Time', value: `${driveHrs}h ${driveMin}m` },
-    { label: 'GPS Points', value: String(waypoints.length) },
-  ], 5);
-
-  const sampleCount = Math.min(8, waypoints.length);
-  const step = Math.max(1, Math.floor(waypoints.length / sampleCount));
-  const samples = [];
-  for (let i = 0; i < waypoints.length && samples.length < sampleCount; i += step) samples.push(waypoints[i]);
-  const lastPoint = waypoints[waypoints.length - 1];
-  if (samples[samples.length - 1] !== lastPoint) samples.push(lastPoint);
-
-  ensureSpace(ctx, 20 + samples.length * 14);
-  const cols = [M, M + 90, M + 220, M + 340], colW = [86, 126, 116, 166];
-  tableHeader(doc, cols, colW, ['Time (UTC)', 'Lat, Lng', 'Speed', 'Heading']);
-  let y = doc.y;
-  samples.forEach((w, i) => {
-    if (y + 14 > BODY_BOTTOM) { newPage(ctx); y = ctx.doc.y; }
-    if (i % 2 === 0) doc.rect(M, y, CW, 14).fill(C.stripe);
-    const time = new Date(w.recorded_at).toISOString().replace('T', ' ').slice(0, 19);
-    [time, `${w.lat.toFixed(4)}, ${w.lng.toFixed(4)}`,
-     w.speed_kmh != null ? `${w.speed_kmh.toFixed(0)} km/h` : '--',
-     w.heading != null ? `${Math.round(w.heading)} deg` : '--',
-    ].forEach((v, j) => {
-      doc.fill(C.sub).fontSize(7).font('Helvetica');
-      t(doc, v, cols[j] + 3, y + 3, { width: colW[j] });
-    });
-    y += 14;
-  });
-  doc.y = y + 6;
-}
+// ── CFO photos + handover ───────────────────────────────────────────────────
 
 function cfoPhotosTable(ctx, cfoPhotos) {
   if (!cfoPhotos.length) return;
   ensureSpace(ctx, 60 + Math.min(cfoPhotos.length, 10) * 14);
   sectionHead(ctx, nextLetter(ctx), `CFO App Photos (${cfoPhotos.length} uploaded)`);
-  const doc = ctx.doc, cols = [M,M+55,M+130,M+230,M+310,M+390], colW = [51,71,96,76,76,115];
-  tableHeader(doc, cols, colW, ['Phase','Type','Plate','Lat','Lng','Time (UTC)']);
+  const doc = ctx.doc, cols = [M, M + 55, M + 130, M + 230, M + 310, M + 390], colW = [51, 71, 96, 76, 76, 115];
+  tableHeader(doc, cols, colW, ['Phase', 'Type', 'Plate', 'Lat', 'Lng', 'Time (UTC)']);
   let y = doc.y;
   cfoPhotos.forEach((p, i) => {
     if (y + 14 > BODY_BOTTOM) { newPage(ctx); y = ctx.doc.y; }
-    if (i % 2 === 0) doc.rect(M, y, CW, 14).fill(C.stripe);
-    const at = p.taken_at ? new Date(p.taken_at).toISOString().replace('T',' ').slice(0,16) : '--';
-    [(p.session||'').toUpperCase()||'--', p.photo_type||'--', p.plate_number||'--',
-     p.lat!=null?parseFloat(p.lat).toFixed(4):'--', p.lng!=null?parseFloat(p.lng).toFixed(4):'--', at,
-    ].forEach((v,j) => {
-      doc.fill(j===0?(p.session==='sod'?C.green:C.brand):C.sub).fontSize(7).font(j===0?'Helvetica-Bold':'Helvetica');
-      t(doc, v, cols[j]+3, y+3, {width:colW[j]});
+    if (i % 2 === 0) doc.rect(M, y, CW, 14).fill(C.paper2);
+    doc.save().rect(M, y, CW, 14).lineWidth(0.3).stroke(C.line).restore();
+    const at = p.taken_at ? new Date(p.taken_at).toISOString().replace('T', ' ').slice(0, 16) : '--';
+    [(p.session || '').toUpperCase() || '--', p.photo_type || '--', p.plate_number || '--',
+      p.lat != null ? parseFloat(p.lat).toFixed(4) : '--', p.lng != null ? parseFloat(p.lng).toFixed(4) : '--', at,
+    ].forEach((v, j) => {
+      doc.fill(j === 0 ? (p.session === 'sod' ? C.green : C.gold) : C.inkSoft).fontSize(7).font(j === 0 ? 'Helvetica-Bold' : 'Helvetica');
+      t(doc, v, cols[j] + 3, y + 3, { width: colW[j] });
     });
     y += 14;
   });
   doc.y = y + 4;
 }
 
-// Reference-style 3-up footer card (metrics / trip performance / metadata)
-// plus signature lines for whichever CFOs are actually assigned to this
-// convoy — mirrors the polish of the "Enhanced Convoy Report" sample the
-// user shared, using only fields this pipeline already has in hand.
-function summarySection(ctx, received, required, mismatchCount, cfos, report, convoy, assessment) {
-  ensureSpace(ctx, 120);
-  sectionHead(ctx, nextLetter(ctx), 'Summary & Certification');
+function handoverSection(ctx, handovers, trucks, formBuffers) {
   const doc = ctx.doc;
-  const pct = required > 0 ? Math.round((received / required) * 100) : 0;
-  const colW = CW / 3 - 6, y = doc.y;
+  ensureSpace(ctx, 40);
+  sectionHead(ctx, nextLetter(ctx), 'Handover');
+  if (!handovers.length) {
+    doc.fill(C.inkFaint).fontSize(7.5).font('Helvetica');
+    t(doc, 'No handover on record for this convoy.', M, doc.y, { width: CW });
+    doc.y += 16;
+    return;
+  }
+  handovers.forEach((h) => {
+    const truck = h.convoy_truck_id ? trucks.find((tk) => tk.id === h.convoy_truck_id) : null;
+    const label = truck ? `Truck ${truck.position} — ${truck.plate_number || String(truck.id).slice(0, 8)}` : 'Whole Convoy';
+    const roleLabel = h.handed_over_by_role === 'cfo' ? 'CFO (self-handover)' : 'Handover Officer';
+    const byName = h.handed_over_by_name || 'Unknown';
+    const signedAt = h.signed_off_at ? new Date(h.signed_off_at).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : '--';
+    const buf = formBuffers.get(h.id);
+    const isPdfForm = !buf && /\.pdf(\?|$)/i.test(h.form_url || '');
+    const boxW = 220, boxH = 170;
+    ensureSpace(ctx, (buf ? boxH : 0) + 60);
+    doc.fill(C.ink).fontSize(8.5).font('Helvetica-Bold');
+    t(doc, label, M, doc.y, { width: CW });
+    doc.y += 12;
+    doc.fill(C.inkFaint).fontSize(7).font('Helvetica');
+    t(doc, `${byName} · ${roleLabel} · signed off ${signedAt}`, M, doc.y, { width: CW });
+    doc.y += 12;
+    if (h.notes) { doc.fill(C.inkSoft).fontSize(7).font('Helvetica-Oblique'); t(doc, h.notes, M, doc.y, { width: CW }); doc.y += 12; }
+    if (buf) {
+      doc.save().rect(M, doc.y, boxW, boxH).lineWidth(0.6).stroke(C.lineStrong).restore();
+      try {
+        doc.save(); doc.rect(M, doc.y, boxW, boxH).clip();
+        doc.image(buf, M, doc.y, { fit: [boxW, boxH], align: 'center', valign: 'center' });
+        doc.restore();
+      } catch { drawNoPhotoText(doc, M, doc.y, boxW, boxH); }
+      doc.y += boxH + 8;
+    } else if (isPdfForm && h.form_url) {
+      doc.fill(C.navy).fontSize(7.5).font('Helvetica-Bold');
+      t(doc, 'Handover form (PDF) — tap to open', M, doc.y, { width: CW, link: h.form_url, underline: true });
+      doc.y += 16;
+    } else {
+      doc.fill(C.inkFaint).fontSize(7).font('Helvetica');
+      t(doc, 'Form unavailable', M, doc.y, { width: CW });
+      doc.y += 16;
+    }
+    doc.y += 10;
+  });
+}
 
-  const cards = [
-    { title: 'COMPLETENESS METRICS', rows: [
-      ['Photos', `${received}/${required}`],
-      ['Location Anomalies', String(mismatchCount)],
-      ['Report Status', (report.status || '').toUpperCase() || '--'],
-    ] },
-    { title: 'CONVOY SUMMARY', rows: [
-      ['Vehicles', String(convoy.truckCount ?? '--')],
-      ['Seals / Truck', String(convoy.seal_count_per_truck ?? '--')],
-      ['Region', convoy.region || '--'],
-    ] },
-    { title: 'REPORT METADATA', rows: [
-      ['Report ID', report.id ? `RPT-${String(report.id).slice(0, 8).toUpperCase()}` : '--'],
-      ['Generated', report.generated_at ? new Date(report.generated_at).toISOString().slice(0, 16).replace('T', ' ') : '--'],
-      ['System', 'Sonalit Guardian CFO'],
-    ] },
+// ── Chain of Custody & Certification section ────────────────────────────────
+
+function certificationSection(ctx, received, required, mismatchCount, cfos, report, convoy, assessment) {
+  ensureSpace(ctx, 120);
+  sectionHead(ctx, nextLetter(ctx), 'Chain of Custody & Certification');
+  const doc = ctx.doc;
+
+  // Certification block (styled like HTML .cert-block)
+  const certY = doc.y;
+  doc.save().rect(M, certY, CW, 18).fill(C.navy).restore();
+  doc.fill(C.white).fontSize(9).font('Helvetica-Bold');
+  t(doc, 'CHAIN OF CUSTODY CERTIFICATION', M + 12, certY + 5, { width: CW - 24 });
+  doc.y = certY + 24;
+
+  // Statement
+  const stmt = `This report certifies that the photo, seal, and telemetry evidence was captured in the field via the Sonalit Convoy System and is bound to the fingerprint below. Any post-generation alteration invalidates this certification.`;
+  doc.fill(C.inkSoft).fontSize(7.5).font('Helvetica');
+  doc.text(stmt, M + 12, doc.y, { width: CW - 24, lineBreak: true });
+  doc.y += 34;
+
+  // Custody chain strip
+  const reportId = report.id ? `RPT-${String(report.id).slice(0, 8).toUpperCase()}` : '--';
+  const generatedAt = report.generated_at ? new Date(report.generated_at).toISOString().replace('T', ' ').slice(0, 16) : '--';
+  const chain = [
+    { who: cfos[0]?.cfo_name || 'CFO', what: 'Captured', when: report.generated_at ? new Date(report.generated_at).toISOString().slice(11, 16) : '--' },
+    { who: 'Sonalit Platform', what: 'Hashed & Sealed', when: generatedAt.slice(11, 16) || '--' },
+    { who: 'Sonalit Platform', what: 'Report Issued', when: generatedAt.slice(11, 16) || '--' },
+    { who: 'Dispatcher', what: 'Review Pending', when: '—', pending: true },
   ];
-  cards.forEach((card, i) => {
-    const x = M + i * (colW + 9);
-    doc.save().roundedRect(x, y, colW, 58, C.radius).lineWidth(0.6).fillAndStroke(C.stripe, C.border).restore();
-    doc.fill(C.text).fontSize(6.5).font('Helvetica-Bold');
-    t(doc, card.title, x + 8, y + 6, { width: colW - 16 });
+  doc.fill(C.inkFaint).fontSize(6.5).font('Helvetica-Bold');
+  t(doc, 'CUSTODY CHAIN', M + 12, doc.y, { width: CW - 24 });
+  doc.y += 10;
+  const chainY = doc.y, stepW = 105;
+  chain.forEach((step, i) => {
+    const sx = M + 12 + i * (stepW + 16);
+    if (sx + stepW > PW - M) return;
+    const bg = step.pending ? C.goldBg : C.paper2;
+    const border = step.pending ? C.gold : C.lineStrong;
+    doc.save().rect(sx, chainY, stepW, 36).lineWidth(0.6).fillAndStroke(bg, border).restore();
+    doc.fill(C.ink).fontSize(7.5).font('Helvetica-Bold');
+    t(doc, step.who, sx + 8, chainY + 5, { width: stepW - 16 });
+    doc.fill(C.inkSoft).fontSize(6.5).font('Helvetica');
+    t(doc, step.what, sx + 8, chainY + 16, { width: stepW - 16 });
+    doc.fill(C.inkFaint).fontSize(6.5).font('Courier');
+    t(doc, step.when, sx + 8, chainY + 26, { width: stepW - 16 });
+    if (i < chain.length - 1 && sx + stepW + 16 < PW - M) {
+      doc.fill(C.inkFaint).fontSize(10).font('Helvetica');
+      t(doc, '→', sx + stepW + 3, chainY + 12, { width: 14 });
+    }
+  });
+  doc.y = chainY + 46;
+
+  // Glyph + hash
+  if (assessment?.evidenceDigest) {
+    ensureSpace(ctx, 80);
+    const glyphSize = 56;
+    const glyphY = doc.y;
+    renderGlyph(doc, M + 14, glyphY, assessment.evidenceDigest, glyphSize);
+    doc.fill(C.ink).fontSize(7.5).font('Helvetica-Bold');
+    t(doc, 'Verification Glyph', M + 14 + glyphSize + 14, glyphY + 2, { width: CW - glyphSize - 40 });
+    doc.fill(C.inkFaint).fontSize(6.5).font('Helvetica');
+    doc.text(
+      'A visual pattern deterministically derived from the SHA-256 fingerprint, for quick cross-check against the platform record. Not a scannable barcode.',
+      M + 14 + glyphSize + 14, glyphY + 13, { width: CW - glyphSize - 60, lineBreak: true }
+    );
+    doc.y = glyphY + glyphSize + 8;
+
+    // Hash row
+    const hashY = doc.y;
+    doc.save().rect(M + 12, hashY, CW - 24, 28).lineWidth(0.6).fillAndStroke(C.paper2, C.line).restore();
+    doc.fill(C.inkFaint).fontSize(5.5).font('Helvetica-Bold');
+    t(doc, 'SHA-256 DIGITAL FINGERPRINT — VERIFY AGAINST PLATFORM RECORD', M + 20, hashY + 4, { width: CW - 40 });
+    doc.fill(C.inkSoft).fontSize(7).font('Courier');
+    t(doc, assessment.evidenceDigest, M + 20, hashY + 14, { width: CW - 40 });
+    doc.y = hashY + 36;
+  }
+
+  // Signature grid
+  ensureSpace(ctx, 50);
+  const sigY = doc.y;
+  const sigLabels = cfos.length
+    ? [cfos[0]?.cfo_name || 'Field Compliance Officer', 'Dispatcher Review — Sign & Date']
+    : ['Field Compliance Officer', 'Dispatcher Review — Sign & Date'];
+  const sigW = CW / 2 - 20;
+  sigLabels.forEach((label, i) => {
+    const sx = M + 12 + i * (sigW + 30);
+    doc.fill(C.inkFaint).fontSize(6.5).font('Helvetica');
+    t(doc, label, sx, sigY, { width: sigW });
+    doc.save().moveTo(sx, sigY + 22).lineTo(sx + sigW, sigY + 22).lineWidth(0.5).strokeColor(C.ink).stroke().restore();
+    if (i === 0 && cfos.length) {
+      doc.fill(C.ink).fontSize(7.5).font('Helvetica');
+      t(doc, cfos[0]?.cfo_name || '', sx, sigY + 26, { width: sigW });
+      doc.fill(C.inkFaint).fontSize(6).font('Helvetica');
+      t(doc, cfos[0]?.cfo_email || '', sx, sigY + 36, { width: sigW });
+    }
+  });
+  doc.y = sigY + 46;
+
+  // Scope & limitations
+  ensureSpace(ctx, 40);
+  doc.save().moveTo(M + 12, doc.y).lineTo(M + CW - 12, doc.y).lineWidth(0.5).strokeColor(C.line).stroke().restore();
+  doc.y += 6;
+  doc.fill(C.inkSoft).fontSize(6).font('Helvetica-Bold');
+  t(doc, 'Scope & Limitations.', M + 12, doc.y, { width: CW - 24 });
+  doc.y += 8;
+  doc.fill(C.inkFaint).fontSize(6).font('Helvetica');
+  doc.text(
+    'This report certifies the completeness, integrity, and custody of digitally captured evidence (photo, seal, and GPS telemetry) for the referenced convoy. It does not constitute a physical cargo condition survey, weight verification, customs declaration, or insurance assessment.',
+    M + 12, doc.y, { width: CW - 24, lineBreak: true }
+  );
+  doc.y += 30;
+
+  // Completeness metrics (compact cards replacing old summarySection cards)
+  ensureSpace(ctx, 60);
+  const pct = required > 0 ? Math.round((received / required) * 100) : 0;
+  const metricY = doc.y;
+  const metricW = CW / 3 - 6;
+  const metrics = [
+    { title: 'COMPLETENESS', rows: [['Photos', `${received}/${required}`], ['Location Anomalies', String(mismatchCount)], ['Report Status', (report.status || '').toUpperCase() || '--']] },
+    { title: 'CONVOY SUMMARY', rows: [['Vehicles', String(convoy.truckCount ?? '--')], ['Seals / Truck', String(convoy.seal_count_per_truck ?? '--')], ['Region', convoy.region || '--']] },
+    { title: 'REPORT METADATA', rows: [['Report ID', reportId], ['Generated', generatedAt], ['System', 'Sonalit Convoy']] },
+  ];
+  metrics.forEach((card, i) => {
+    const cx = M + i * (metricW + 9);
+    doc.save().rect(cx, metricY, metricW, 54).lineWidth(0.6).fillAndStroke(C.paper2, C.line).restore();
+    doc.fill(C.ink).fontSize(6.5).font('Helvetica-Bold');
+    t(doc, card.title, cx + 8, metricY + 6, { width: metricW - 16 });
     card.rows.forEach((r, ri) => {
-      const ry = y + 18 + ri * 12;
-      doc.fill(C.muted).fontSize(6.5).font('Helvetica');
-      t(doc, r[0], x + 8, ry, { width: colW / 2 });
-      doc.fill(C.text).fontSize(6.5).font('Helvetica-Bold');
-      t(doc, r[1], x + colW / 2, ry, { width: colW / 2 - 8, align: 'right' });
+      const ry = metricY + 18 + ri * 11;
+      doc.fill(C.inkFaint).fontSize(6.5).font('Helvetica');
+      t(doc, r[0], cx + 8, ry, { width: metricW / 2 });
+      doc.fill(C.ink).fontSize(6.5).font('Helvetica-Bold');
+      t(doc, r[1], cx + metricW / 2, ry, { width: metricW / 2 - 8, align: 'right' });
     });
   });
-  doc.y = y + 66;
+  doc.y = metricY + 62;
   progressBar(doc, received, required);
 
-  doc.y += 16;
-  const sigLabels = cfos.length
-    ? cfos.slice(0, 2).map(c => c.cfo_name || 'CFO').concat(['Date'])
-    : ['Dispatcher Signature', 'CFO Lead Signature', 'Date'];
-  const sigY = doc.y, sigW = CW / 3 - 8;
-  sigLabels.forEach((label, i) => {
-    const sx = M + i * (sigW + 12);
-    doc.save().moveTo(sx, sigY + 22).lineTo(sx + sigW, sigY + 22).lineWidth(0.5).strokeColor(C.sub).stroke().restore();
-    doc.fill(C.light).fontSize(6.5).font('Helvetica');
-    t(doc, label, sx, sigY + 26, { width: sigW });
-  });
-  doc.y = sigY + 40;
-
-  // Chain-of-custody / tamper-evidence band. The evidence digest is a SHA-256
-  // over the underlying photos, seals, and track (not the PDF bytes), so it can
-  // be recomputed to prove the evidence set behind this report is unaltered.
-  if (assessment?.evidenceDigest) {
-    ensureSpace(ctx, 44);
-    const cy = doc.y;
-    doc.save();
-    doc.roundedRect(M, cy, CW, 38, 6).clip();
-    doc.rect(M, cy, CW, 38).fill(C.dark);
-    doc.rect(M, cy, 5, 38).fill(C.brand);
-    doc.restore();
-    doc.fill(C.brand).fontSize(6).font('Helvetica-Bold');
-    t(doc, 'CHAIN OF CUSTODY — EVIDENCE ATTESTATION', M + 14, cy + 6, { width: CW - 28 });
-    doc.fill('#c7ced9').fontSize(6.5).font('Helvetica');
-    t(doc, 'This report was generated automatically by the Sonalit Guardian CFO system from field-captured evidence. Its authenticity is verifiable against the evidence fingerprint below.',
-      M + 14, cy + 15, { width: CW - 28 });
-    doc.fill(C.white).fontSize(6.5).font('Courier-Bold');
-    t(doc, `SHA-256  ${assessment.evidenceDigest}`, M + 14, cy + 28, { width: CW - 28 });
-    doc.y = cy + 46;
-  }
+  // Legal footer
+  doc.y += 6;
+  doc.save().moveTo(M, doc.y).lineTo(PW - M, doc.y).lineWidth(0.5).strokeColor(C.line).stroke().restore();
+  doc.y += 6;
+  doc.fill(C.inkFaint).fontSize(5.5).font('Helvetica');
+  doc.text(
+    'This document is issued by the Sonalit Convoy System based on field-captured telemetry, photographic, and seal-verification evidence at the time of transmission. It is confidential and intended solely for the named client’s use in verifying chain-of-custody for the referenced convoy. Sonalit’s liability in connection with this report is limited to the terms of the governing service agreement.',
+    M, doc.y, { width: CW, lineBreak: true }
+  );
 }
 
-function fmtDur(mins) {
-  if (mins == null) return '--';
-  const h = Math.floor(mins / 60), m = Math.round(mins % 60);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
-
-// The industrial-grade headline: a synthesized verdict + integrity score, a
-// ranked findings register, and route analytics — the security read a client
-// wants before flipping through photos. All from convoyIntegrity.assessConvoy.
-function integritySection(ctx, a) {
-  const doc = ctx.doc;
-  ensureSpace(ctx, 130);
-  sectionHead(ctx, nextLetter(ctx), 'Integrity Assessment');
-
-  const vmap = {
-    cleared:    { label: 'CLEARED',      fg: C.green, bg: C.greenBg, border: C.greenBorder, blurb: 'Full evidence coverage; no anomalies detected.' },
-    review:     { label: 'UNDER REVIEW', fg: C.amber, bg: C.amberBg, border: '#fcd34d',     blurb: 'Minor gaps or anomalies require dispatcher review.' },
-    exceptions: { label: 'EXCEPTIONS',   fg: C.red,   bg: C.redBg,   border: C.redBorder,   blurb: 'Critical anomalies detected — escalate before sign-off.' },
-  };
-  const v = vmap[a.verdict] || vmap.review;
-
-  // Verdict banner — the single most important fact in the report, so it
-  // gets the most deliberate treatment: a rounded card with a colored left
-  // tab, both clipped to the same rounded boundary so the tab's corners
-  // follow the card's rather than poking past it.
-  const bY = doc.y, bH = 50, bR = 6;
-  doc.save();
-  doc.roundedRect(M, bY, CW, bH, bR).clip();
-  doc.rect(M, bY, CW, bH).fill(v.bg);
-  doc.rect(M, bY, 5, bH).fill(v.fg);
-  doc.restore();
-  doc.save().roundedRect(M, bY, CW, bH, bR).lineWidth(0.8).stroke(v.border).restore();
-  doc.fill(v.fg).fontSize(6).font('Helvetica-Bold'); t(doc, 'CONVOY INTEGRITY VERDICT', M + 16, bY + 8, { width: 320 });
-  doc.fill(v.fg).fontSize(19).font('Helvetica-Bold'); t(doc, v.label, M + 16, bY + 17, { width: 320 });
-  doc.fill(C.sub).fontSize(7).font('Helvetica'); t(doc, v.blurb, M + 16, bY + 39, { width: CW - 190 });
-  // Divider between the verdict text and the score, so the score reads as
-  // its own figure rather than trailing off the blurb text.
-  doc.save().moveTo(M + CW - 150, bY + 10).lineTo(M + CW - 150, bY + bH - 10).lineWidth(0.6).strokeColor(v.border).stroke().restore();
-  // Score, right
-  doc.fill(C.muted).fontSize(6).font('Helvetica-Bold'); t(doc, 'INTEGRITY SCORE', M + CW - 140, bY + 9, { width: 128, align: 'right' });
-  doc.fill(v.fg).fontSize(23).font('Helvetica-Bold'); t(doc, `${a.score}`, M + CW - 140, bY + 18, { width: 108, align: 'right' });
-  doc.fill(C.muted).fontSize(9).font('Helvetica-Bold'); t(doc, '/100', M + CW - 30, bY + 30, { width: 30 });
-  doc.y = bY + bH + 10;
-
-  // Findings register
-  const sevColor = { critical: C.red, warning: C.amber, info: C.muted };
-  if (!a.findings.length) {
-    ensureSpace(ctx, 18);
-    dot(doc, M + 5, doc.y + 5, 3, C.green);
-    doc.fill(C.green).fontSize(8).font('Helvetica-Bold');
-    t(doc, 'No exceptions — all coverage, seal, and route checks passed.', M + 14, doc.y + 1, { width: CW - 20 });
-    doc.y += 18;
-  } else {
-    ensureSpace(ctx, 26);
-    doc.fill(C.muted).fontSize(6.5).font('Helvetica-Bold');
-    t(doc, `FINDINGS REGISTER — ${a.counts.critical} CRITICAL · ${a.counts.warning} WARNING · ${a.counts.info} INFO`, M, doc.y, { width: CW });
-    doc.y += 12;
-    a.findings.slice(0, 14).forEach((f, i) => {
-      if (doc.y + 22 > BODY_BOTTOM) newPage(ctx);
-      const ry = doc.y;
-      if (i % 2 === 0) doc.rect(M, ry, CW, 22).fill(C.stripe);
-      dot(doc, M + 8, ry + 8, 3, sevColor[f.severity] || C.muted);
-      doc.fill(sevColor[f.severity] || C.muted).fontSize(5.5).font('Helvetica-Bold');
-      t(doc, f.severity.toUpperCase(), M + 15, ry + 4, { width: 46 });
-      doc.fill(C.text).fontSize(8).font('Helvetica-Bold');
-      t(doc, f.title, M + 66, ry + 3, { width: CW - 76 });
-      doc.fill(C.muted).fontSize(6.5).font('Helvetica');
-      t(doc, f.detail, M + 66, ry + 12, { width: CW - 76 });
-      doc.y = ry + 22;
-    });
-    if (a.findings.length > 14) {
-      doc.fill(C.light).fontSize(7).font('Helvetica');
-      t(doc, `+ ${a.findings.length - 14} further finding(s)`, M, doc.y + 2, { width: CW });
-      doc.y += 14;
-    }
-  }
-
-  // Route analytics
-  if (a.route.hasTrack) {
-    ensureSpace(ctx, 46);
-    doc.fill(C.muted).fontSize(6.5).font('Helvetica-Bold');
-    t(doc, 'ROUTE ANALYTICS', M, doc.y + 2, { width: 200 });
-    doc.y += 13;
-    detailGrid(doc, [
-      { label: 'Distance', value: `${a.route.distanceKm} km` },
-      { label: 'Duration', value: fmtDur(a.route.durationMin) },
-      { label: 'Avg Speed', value: a.route.avgSpeedKmh != null ? `${a.route.avgSpeedKmh} km/h` : '--' },
-      { label: 'Peak Speed', value: a.route.maxSpeedKmh != null ? `${a.route.maxSpeedKmh} km/h` : '--', color: a.route.overspeedCount > 0 ? C.red : C.text },
-      { label: 'Stops', value: String(a.route.stops) },
-      { label: 'Max Deviation', value: a.route.deviationKm != null ? `${a.route.deviationKm} km` : '--', color: (a.route.deviationKm != null && a.route.deviationKm > 8) ? C.red : C.text },
-    ], 6);
-  }
-}
+// ── Main generators ─────────────────────────────────────────────────────────
 
 async function generateDailyReport(convoy, trucks, cfos, photos, report, reportDate, cfoPhotos = [], waypoints = [], namedWaypoints = [], handovers = []) {
   const generatedAt = new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
@@ -1100,68 +1195,85 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
     ? Math.round((report.received_photo_count / report.required_photo_count) * 100) : 0;
   const mismatchCount = photos.filter(p => p.location_mismatch).length;
   const sealCountPerTruckTop = convoy.seal_count_per_truck ?? 3;
-  // Synthesized integrity read (verdict / score / findings / route analytics),
-  // shared with the web report so both show the same assessment.
-  const assessment = assessConvoy({
-    convoy, trucks, photos, seals: [], waypoints, namedWaypoints, report,
-    reportDate, sealCountPerTruck: sealCountPerTruckTop,
-  });
-  const verdictStyleMap = {
-    cleared: { label: 'CLEARED', fg: C.green, bg: C.greenBg },
-    review: { label: 'REVIEW', fg: C.amber, bg: C.amberBg },
-    exceptions: { label: 'EXCEPTIONS', fg: C.red, bg: C.redBg },
-  };
-  const vStyle = verdictStyleMap[assessment.verdict] || verdictStyleMap.review;
-  // Fetched up front (PDFKit's drawing calls are synchronous) so truckDetail
-  // can embed the actual photo bytes instead of a text "Present" indicator.
+  const assessment = assessConvoy({ convoy, trucks, photos, seals: [], waypoints, namedWaypoints, report, reportDate, sealCountPerTruck: sealCountPerTruckTop });
+  const verdictLabelMap = { cleared: 'Cleared', review: 'Under Review', exceptions: 'Exceptions' };
+
   const [photoBuffers, routeMapImage, handoverBuffers] = await Promise.all([
     prefetchPhotoBuffers(photos),
     prefetchRouteMap(convoy, waypoints, namedWaypoints),
     prefetchHandoverBuffers(handovers),
   ]);
 
-  const statusMap = {
-    generated: { label: 'FULLY GENERATED', fg: C.green, bg: C.greenBg },
-    complete: { label: 'FULLY GENERATED', fg: C.green, bg: C.greenBg },
-    partial: { label: 'PARTIAL', fg: C.amber, bg: C.amberBg },
-    pending: { label: 'PENDING', fg: C.muted, bg: C.stripe },
-    failed: { label: 'FAILED', fg: C.red, bg: C.redBg },
-  };
-  const st = statusMap[report.status] || statusMap.pending;
+  const reportRef = report.id ? `RPT-${String(report.id).slice(0, 8).toUpperCase()}` : `RPT-${reportDate}`;
+  const sealCountPerTruck = convoy.seal_count_per_truck ?? 3;
 
-  const ctx = { doc: null, pageNum: 0, generatedAt, letterIdx: 0,
+  // Seal codes for cover page vehicle table
+  const truckSealSummary = (truck) => {
+    const tp = photos.filter(p => p.convoy_truck_id === truck.id);
+    const sodCodes = Array.from(new Set(tp.filter(p => p.session === 'sod' && p.photo_type === 'seal').map(p => String(p.seal_position)))).sort().slice(0, 2);
+    const eodCodes = Array.from(new Set(tp.filter(p => p.session === 'eod' && p.photo_type === 'seal').map(p => String(p.seal_position)))).sort().slice(0, 2);
+    return `${sodCodes.join(', ') || '--'} → ${eodCodes.join(', ') || '--'}`;
+  };
+
+  const sections = [];
+  let secIdx = 0;
+  const addSec = (label) => { sections.push({ letter: String.fromCharCode(65 + secIdx++), label }); };
+  addSec('Integrity Assessment');
+  addSec('Convoy Details');
+  addSec('Route Analytics');
+  if (cfos.length) addSec('Field Officers');
+  addSec('Photo Status Matrix');
+  addSec('Photo & Seal Evidence');
+  if (cfoPhotos.length) addSec('CFO App Photos');
+  if (handovers.length) addSec('Handover');
+  addSec('Chain of Custody');
+
+  const ctx = { doc: null, pageNum: 0, generatedAt, letterIdx: 0, reportRef, classification: 'Confidential — Client Use Only',
     title: convoy.name || 'Convoy Report', subtitle: `${convoy.name || 'Convoy'} · ${reportDate}` };
+
   return makePdf(doc => {
     ctx.doc = doc;
-    doc.addPage();
-    ctx.pageNum = 1;
-    drawFooter(ctx);
-    drawCoverHeader(ctx, {
-      eyebrow: 'DAILY CONVOY REPORT',
-      title: 'CONVOY REPORT',
-      subtitle: convoy.name || '--',
-      routeLine: `${convoy.route_origin || '--'}  ->  ${convoy.route_destination || '--'}`,
-      reportRef: report.id ? `RPT-${String(report.id).slice(0, 8).toUpperCase()} · ${reportDate}` : reportDate,
-      // Cover badge now leads with the integrity verdict, not just PDF status.
-      statusLabel: `${vStyle.label} · ${assessment.score}/100`, statusFg: vStyle.fg, statusBg: vStyle.bg,
+
+    // ── Cover page ──
+    drawCoverPage(doc, {
+      classification: 'Confidential — Client Use Only',
+      convoyId: convoy.name || '--',
+      origin: convoy.route_origin || '--',
+      destination: convoy.route_destination || '--',
+      verdict: verdictLabelMap[assessment.verdict] || 'Under Review',
+      score: assessment.score,
+      mapImage: routeMapImage,
+      distanceKm: waypoints.length > 1 ? (() => {
+        let d = 0;
+        for (let i = 1; i < waypoints.length; i++) d += haversineKm(waypoints[i - 1].lat, waypoints[i - 1].lng, waypoints[i].lat, waypoints[i].lng);
+        return d.toFixed(1);
+      })() : '0',
+      gpsPoints: waypoints.length,
+      cargoBlocks: [
+        { label: 'Commodity', value: 'As declared', color: C.inkFaint },
+        { label: 'Total Seals Verified', value: `${report.received_photo_count > 0 ? 'SOD → EOD matched' : '--'}`, color: C.green },
+        { label: 'Route Distance (Declared)', value: `≈ ${convoy.route_distance_km || '--'} km`, color: C.ink },
+      ],
+      vehicleRows: trucks.map(tk => [
+        `T${tk.position}`, tk.driver_name || '--', tk.plate_number || '--',
+        tk.driver_license_no || '--', truckSealSummary(tk),
+        `${photos.filter(p => p.convoy_truck_id === tk.id).length}/${(2 + sealCountPerTruck) * 2}`,
+      ]),
+      facts: [
+        { label: 'Report No.', value: reportRef },
+        { label: 'Report Date', value: reportDate },
+        { label: 'Vehicles', value: `${trucks.length} Trucks` },
+        { label: 'Region', value: convoy.region || '--' },
+      ],
+      contents: sections,
+      clientName: convoy.client_name || 'Unassigned',
+      leadOfficer: cfos[0]?.cfo_name || '--',
       generatedAt,
-      pct,
-      stats: [
-        { label: 'Verdict', value: vStyle.label, color: vStyle.fg === C.green ? '#4ade80' : vStyle.fg === C.red ? '#fca5a5' : C.brand },
-        { label: 'Integrity', value: `${assessment.score}/100` },
-        { label: 'Client', value: convoy.client_name || '--' },
-        { label: 'Lead CFO', value: cfos[0]?.cfo_name || '--', color: C.brand },
-        { label: 'Vehicles', value: `${trucks.length} truck${trucks.length === 1 ? '' : 's'}` },
-        { label: 'Total Photos', value: `${report.received_photo_count}/${report.required_photo_count}`, color: pct >= 100 ? '#4ade80' : C.white },
-      ],
-      checklist: [
-        { label: 'Details', ok: true },
-        { label: 'Route', ok: waypoints.length > 0 || namedWaypoints.length > 0 },
-        { label: 'Officers', ok: cfos.length > 0 },
-        { label: 'Photos', ok: pct >= 100 },
-        { label: 'Summary', ok: report.status === 'generated' || report.status === 'complete' },
-      ],
     });
+    ctx.pageNum = 1;
+
+    // ── Inner pages ──
+    newPage(ctx);
 
     integritySection(ctx, assessment);
 
@@ -1172,7 +1284,7 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
       { label: 'Report Date', value: reportDate },
       { label: 'Origin', value: convoy.route_origin || '--' },
       { label: 'Destination', value: convoy.route_destination || '--' },
-      { label: 'Convoy Status', value: (convoy.status || '').toUpperCase() || '--', color: convoy.status === 'completed' ? C.green : C.text },
+      { label: 'Convoy Status', value: (convoy.status || '').toUpperCase() || '--', color: convoy.status === 'completed' ? C.green : C.ink },
       { label: 'Timezone', value: convoy.timezone || 'UTC' },
       { label: 'Start / End Date', value: `${convoy.start_date ? String(convoy.start_date).slice(0, 10) : '--'} – ${convoy.end_date ? String(convoy.end_date).slice(0, 10) : '--'}` },
       { label: 'Seals / Truck', value: String(convoy.seal_count_per_truck ?? '--') },
@@ -1184,40 +1296,25 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
       sectionHead(ctx, nextLetter(ctx), 'Field Officers');
       let y = doc.y;
       cfos.forEach((c, i) => {
-        if (i % 2 === 0) doc.rect(M, y, CW, 16).fill(C.stripe);
-        doc.fill(C.text).fontSize(8).font('Helvetica-Bold');
+        if (i % 2 === 0) doc.rect(M, y, CW, 16).fill(C.paper2);
+        doc.save().rect(M, y, CW, 16).lineWidth(0.3).stroke(C.line).restore();
+        doc.fill(C.ink).fontSize(8).font('Helvetica-Bold');
         t(doc, c.cfo_name || c.cfo_user_id?.slice(-8) || '--', M + 4, y + 4, { width: CW / 2 - 8 });
-        doc.fill(C.muted).fontSize(7.5).font('Helvetica');
+        doc.fill(C.inkFaint).fontSize(7.5).font('Helvetica');
         t(doc, c.cfo_email || '', M + CW / 2, y + 4, { width: CW / 2 - 4 });
         y += 16;
       });
       doc.y = y + 6;
     }
 
-    // Was an unconditional newPage regardless of how much room was left on
-    // the current page — a short Field Officers list (or none) left most of
-    // page 1 blank before jumping to a fresh page for this. ensureSpace only
-    // pages when the matrix + its header rows genuinely won't fit.
     ensureSpace(ctx, 70 + trucks.length * 23);
     sectionHead(ctx, nextLetter(ctx), 'Photo Status Matrix');
-    const sealCountPerTruck = convoy.seal_count_per_truck ?? 3;
     const truckMatrix = trucks.map(truck => {
       const tp = photos.filter(p => p.convoy_truck_id === truck.id);
       const buildSession = (session) => {
         const sp = tp.filter(p => p.session === session);
-        // Cap at the convoy's actual configured seal count, not the number
-        // of distinct seal_position values ever seen for this truck+session
-        // — seal_position is CFO-entered free text, so a drifted code
-        // shouldn't read as "6 seals required" when the convoy has 3.
-        const sealHave = Math.min(
-          new Set(sp.filter(p => p.photo_type === 'seal').map(p => String(p.seal_position))).size,
-          sealCountPerTruck
-        );
-        return {
-          front: sp.some(p => p.photo_type === 'front'),
-          rear: sp.some(p => p.photo_type === 'rear'),
-          sealHave, sealTotal: sealCountPerTruck,
-        };
+        const sealHave = Math.min(new Set(sp.filter(p => p.photo_type === 'seal').map(p => String(p.seal_position))).size, sealCountPerTruck);
+        return { front: sp.some(p => p.photo_type === 'front'), rear: sp.some(p => p.photo_type === 'rear'), sealHave, sealTotal: sealCountPerTruck };
       };
       return { ...truck, sod: buildSession('sod'), eod: buildSession('eod') };
     });
@@ -1229,83 +1326,10 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
     });
 
     cfoPhotosTable(ctx, cfoPhotos);
-
-    // Only once there's actually a handover to show — most daily reports are
-    // for a day before the convoy closed, and printing "No handover on
-    // record" on every one of those would just be noise.
     if (handovers.length) handoverSection(ctx, handovers, trucks, handoverBuffers);
 
-    summarySection(ctx, report.received_photo_count, report.required_photo_count, mismatchCount,
+    certificationSection(ctx, report.received_photo_count, report.required_photo_count, mismatchCount,
       cfos, report, { ...convoy, truckCount: trucks.length }, assessment);
-  });
-}
-
-// Renders the signed handover form(s) this convoy was completed against —
-// one per truck for a truck-by-truck handover, or a single whole-convoy one.
-// Image forms are embedded inline (bytes already fetched by
-// prefetchHandoverBuffers); a PDF form is linked out to instead, since
-// PDFKit can't embed pages from another PDF.
-function handoverSection(ctx, handovers, trucks, formBuffers) {
-  const doc = ctx.doc;
-  ensureSpace(ctx, 40);
-  sectionHead(ctx, nextLetter(ctx), 'Handover');
-
-  if (!handovers.length) {
-    doc.fill(C.muted).fontSize(7.5).font('Helvetica');
-    t(doc, 'No handover on record for this convoy.', M, doc.y, { width: CW });
-    doc.y += 16;
-    return;
-  }
-
-  handovers.forEach((h) => {
-    const truck = h.convoy_truck_id ? trucks.find((tk) => tk.id === h.convoy_truck_id) : null;
-    const label = truck
-      ? `Truck ${truck.position} — ${truck.plate_number || String(truck.id).slice(0, 8)}`
-      : 'Whole Convoy';
-    const roleLabel = h.handed_over_by_role === 'cfo' ? 'CFO (self-handover)' : 'Handover Officer';
-    const byName = h.handed_over_by_name || 'Unknown';
-    const signedAt = h.signed_off_at
-      ? new Date(h.signed_off_at).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : '--';
-
-    const buf = formBuffers.get(h.id);
-    const isPdfForm = !buf && /\.pdf(\?|$)/i.test(h.form_url || '');
-    const boxW = 220, boxH = 170;
-    ensureSpace(ctx, (buf ? boxH : 0) + 60);
-
-    doc.fill(C.text).fontSize(8.5).font('Helvetica-Bold');
-    t(doc, label, M, doc.y, { width: CW });
-    doc.y += 12;
-    doc.fill(C.muted).fontSize(7).font('Helvetica');
-    t(doc, `${byName} · ${roleLabel} · signed off ${signedAt}`, M, doc.y, { width: CW });
-    doc.y += 12;
-
-    if (h.notes) {
-      doc.fill(C.sub).fontSize(7).font('Helvetica-Oblique');
-      t(doc, h.notes, M, doc.y, { width: CW });
-      doc.y += 12;
-    }
-
-    if (buf) {
-      doc.save().roundedRect(M, doc.y, boxW, boxH, C.radius).lineWidth(0.6).stroke(C.border).restore();
-      try {
-        doc.save();
-        doc.roundedRect(M, doc.y, boxW, boxH, C.radius).clip();
-        doc.image(buf, M, doc.y, { fit: [boxW, boxH], align: 'center', valign: 'center' });
-        doc.restore();
-      } catch {
-        drawNoPhotoText(doc, M, doc.y, boxW, boxH);
-      }
-      doc.y += boxH + 8;
-    } else if (isPdfForm && h.form_url) {
-      doc.fill(C.brand).fontSize(7.5).font('Helvetica-Bold');
-      t(doc, 'Handover form (PDF) — tap to open', M, doc.y, { width: CW, link: h.form_url, underline: true });
-      doc.y += 16;
-    } else {
-      doc.fill(C.light).fontSize(7).font('Helvetica');
-      t(doc, 'Form unavailable', M, doc.y, { width: CW });
-      doc.y += 16;
-    }
-    doc.y += 10;
   });
 }
 
@@ -1316,41 +1340,54 @@ async function generateArchiveReport(convoy, trucks, cfos, reports, allPhotos, h
   const overallPct = totalReq > 0 ? Math.round((totalRecv / totalReq) * 100) : 0;
   const sealCount = convoy.seal_count_per_truck ?? 3;
   const perTruckRequired = (2 + sealCount) * 2;
-  // Fetched up front (PDFKit's drawing calls are synchronous) so
-  // handoverSection can embed the actual form bytes below.
   const handoverBuffers = await prefetchHandoverBuffers(handovers);
 
-  const ctx = { doc: null, pageNum: 0, generatedAt, letterIdx: 0,
+  const reportRef = `ARCHIVE-${(convoy.name || 'RPT').toUpperCase()}`;
+  const ctx = { doc: null, pageNum: 0, generatedAt, letterIdx: 0, reportRef, classification: 'Confidential',
     title: convoy.name || 'Convoy Report', subtitle: `${convoy.name || 'Convoy'} · Archive Report` };
+
   return makePdf(doc => {
     ctx.doc = doc;
-    doc.addPage();
-    ctx.pageNum = 1;
-    drawFooter(ctx);
-    drawCoverHeader(ctx, {
-      eyebrow: 'CONVOY ARCHIVE REPORT',
-      title: 'ARCHIVE REPORT',
-      subtitle: convoy.name || '--',
-      routeLine: `${convoy.route_origin || '--'}  ->  ${convoy.route_destination || '--'}`,
-      reportRef: `${reports.length} report day${reports.length === 1 ? '' : 's'}`,
-      statusLabel: `${overallPct}% OVERALL`, statusFg: overallPct >= 100 ? C.green : C.amber,
-      statusBg: overallPct >= 100 ? C.greenBg : C.amberBg,
-      generatedAt,
-      pct: overallPct,
-      stats: [
-        { label: 'Client', value: convoy.client_name || '--' },
-        { label: 'Region', value: convoy.region || '--' },
-        { label: 'Vehicles', value: `${trucks.length} truck${trucks.length === 1 ? '' : 's'}` },
+
+    // Cover page for archive
+    drawCoverPage(doc, {
+      classification: 'Confidential — Client Use Only',
+      convoyId: convoy.name || '--',
+      origin: convoy.route_origin || '--',
+      destination: convoy.route_destination || '--',
+      verdict: overallPct >= 100 ? 'Complete' : 'Partial',
+      score: overallPct,
+      mapImage: null,
+      distanceKm: '0', gpsPoints: 0,
+      cargoBlocks: [
+        { label: 'Report Days', value: `${reports.length} day${reports.length === 1 ? '' : 's'}`, color: C.ink },
+        { label: 'Total Photos', value: `${totalRecv}/${totalReq}`, color: overallPct >= 100 ? C.green : C.gold },
+        { label: 'Convoy Status', value: (convoy.status || '--').toUpperCase(), color: C.ink },
+      ],
+      vehicleRows: trucks.map(tk => [
+        `T${tk.position}`, tk.driver_name || '--', tk.plate_number || '--', tk.driver_license_no || '--', '--',
+        `${allPhotos.filter(p => p.convoy_truck_id === tk.id).length}`,
+      ]),
+      facts: [
+        { label: 'Archive', value: reportRef },
+        { label: 'Vehicles', value: `${trucks.length} Trucks` },
         { label: 'CFOs', value: String(cfos.length) },
-        { label: 'Photos', value: `${totalRecv}/${totalReq}`, color: overallPct >= 100 ? '#4ade80' : C.white },
-        { label: 'Convoy Status', value: (convoy.status || '--').toUpperCase() },
+        { label: 'Region', value: convoy.region || '--' },
       ],
-      checklist: [
-        { label: 'Days Logged', ok: reports.length > 0 },
-        { label: 'Photos', ok: overallPct >= 100 },
-        { label: 'Summary', ok: true },
+      contents: [
+        { letter: 'A', label: 'Archive Summary' },
+        { letter: 'B', label: 'Handover' },
+        { letter: 'C', label: 'Overall Completion' },
+        { letter: 'D', label: 'Daily Summary' },
+        { letter: 'E', label: 'Per-Day Truck Photos' },
       ],
+      clientName: convoy.client_name || 'Unassigned',
+      leadOfficer: cfos[0]?.cfo_name || '--',
+      generatedAt,
     });
+    ctx.pageNum = 1;
+
+    newPage(ctx);
 
     sectionHead(ctx, nextLetter(ctx), 'Archive Summary');
     detailGrid(doc, [
@@ -1374,19 +1411,18 @@ async function generateArchiveReport(convoy, trucks, cfos, reports, allPhotos, h
     const hCols = [M, M + 80, M + 160, M + 260, M + 335, M + 420];
     const hW = [76, 76, 96, 71, 81, 76];
     tableHeader(doc, hCols, hW, ['Date', 'Status', 'Photos', 'Mismatch', 'PDF', 'Generated']);
-
     let y = doc.y;
     reports.forEach((r, i) => {
       if (y + 16 > BODY_BOTTOM) { newPage(ctx); y = ctx.doc.y; }
-      if (i % 2 === 0) doc.rect(M, y, CW, 16).fill(C.stripe);
+      if (i % 2 === 0) doc.rect(M, y, CW, 16).fill(C.paper2);
+      doc.save().rect(M, y, CW, 16).lineWidth(0.3).stroke(C.line).restore();
       const dateStr = String(r.report_date).slice(0, 10);
       const photoPct = r.required_photo_count > 0
-        ? `${r.received_photo_count}/${r.required_photo_count} (${Math.round(r.received_photo_count / r.required_photo_count * 100)}%)`
-        : '--';
+        ? `${r.received_photo_count}/${r.required_photo_count} (${Math.round(r.received_photo_count / r.required_photo_count * 100)}%)` : '--';
       const dm = allPhotos.filter(p => String(p.report_date).slice(0, 10) === dateStr && p.location_mismatch).length;
       const genAt = r.generated_at ? new Date(r.generated_at).toISOString().slice(0, 10) : '--';
-      [dateStr, (r.status||'').toUpperCase(), photoPct, dm > 0 ? `!! ${dm}` : '0', r.pdf_url ? 'Yes' : 'No', genAt].forEach((v, j) => {
-        const color = j === 1 ? (r.status === 'generated' ? C.green : C.amber) : j === 3 && dm > 0 ? C.amber : C.sub;
+      [dateStr, (r.status || '').toUpperCase(), photoPct, dm > 0 ? `!! ${dm}` : '0', r.pdf_url ? 'Yes' : 'No', genAt].forEach((v, j) => {
+        const color = j === 1 ? (r.status === 'generated' ? C.green : C.amber) : j === 3 && dm > 0 ? C.amber : C.inkSoft;
         doc.fill(color).fontSize(7.5).font(j === 1 ? 'Helvetica-Bold' : 'Helvetica');
         t(doc, v, hCols[j] + 3, y + 4, { width: hW[j] });
       });
@@ -1405,21 +1441,21 @@ async function generateArchiveReport(convoy, trucks, cfos, reports, allPhotos, h
         let dy = doc.y + 1;
         doc.rect(M, dy, CW, 14).fill(C.navy);
         doc.fill(C.white).fontSize(7).font('Helvetica-Bold');
-        t(doc, `${dateStr}  ${(rpt.status||'').toUpperCase()} -- ${rpt.received_photo_count}/${rpt.required_photo_count}`,
+        t(doc, `${dateStr}  ${(rpt.status || '').toUpperCase()} -- ${rpt.received_photo_count}/${rpt.required_photo_count}`,
           M + 4, dy + 3, { width: CW - 8 });
         dy += 15;
         trucks.forEach((tk, ti) => {
           const cnt = dayPhotos.filter(p => p.convoy_truck_id === tk.id).length;
-          if (ti % 2 === 0) doc.rect(M, dy, CW, 11).fill(C.stripe);
+          if (ti % 2 === 0) doc.rect(M, dy, CW, 11).fill(C.paper2);
           const bW = perTruckRequired > 0 ? Math.min(barMaxW, barMaxW * cnt / perTruckRequired) : 0;
-          doc.fill(C.text).fontSize(6.5).font('Helvetica-Bold');
+          doc.fill(C.ink).fontSize(6.5).font('Helvetica-Bold');
           t(doc, `T${tk.position}`, M + 2, dy + 2, { width: 16 });
-          doc.fill(C.muted).font('Helvetica');
+          doc.fill(C.inkFaint).font('Helvetica');
           t(doc, tk.driver_name, M + 20, dy + 2, { width: 128 });
-          doc.save().rect(M+152, dy+1, barMaxW, 8).lineWidth(0.4).fillAndStroke('#e5e7eb',C.border).restore();
-          if (bW > 0) doc.rect(M+152, dy+1, bW, 8).fill(cnt >= perTruckRequired ? C.green : C.amber);
-          doc.fill(C.sub).fontSize(6.5).font('Helvetica-Bold');
-          t(doc, `${cnt}/${perTruckRequired}`, M+152+barMaxW+3, dy+2, { width: 40 });
+          doc.save().rect(M + 152, dy + 1, barMaxW, 8).lineWidth(0.4).fillAndStroke('#e5e7eb', C.line).restore();
+          if (bW > 0) doc.rect(M + 152, dy + 1, bW, 8).fill(cnt >= perTruckRequired ? C.green : C.amber);
+          doc.fill(C.inkSoft).fontSize(6.5).font('Helvetica-Bold');
+          t(doc, `${cnt}/${perTruckRequired}`, M + 152 + barMaxW + 3, dy + 2, { width: 40 });
           dy += 11;
         });
         doc.y = dy + 3;
