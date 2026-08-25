@@ -46,7 +46,14 @@ async function query(text, params) {
     }
     return result;
   } catch (err) {
-    logger.error(`Database query error: ${err.message}\nQuery: ${text}`);
+    // Log the pg error code and detail, not just the message: some driver-level
+    // failures surface with an empty message, which left no way to tell what
+    // actually broke.
+    const code = err.code ? `[pg:${err.code}] ` : '';
+    const detail = err.detail ? `\nDetail: ${err.detail}` : '';
+    logger.error(
+      `Database query error: ${code}${err.message || `(empty message, ${err.name || typeof err})`}${detail}\nQuery: ${text}`
+    );
     throw err;
   }
 }
