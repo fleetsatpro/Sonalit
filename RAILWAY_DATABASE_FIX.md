@@ -3,9 +3,9 @@
 ## Configuration Verified
 
 **Postgres Service DATABASE_URL:**
-```
-postgresql://postgres:WjOGmejuzzbgKdgvrqpBgQRgbuRksMDp@viaduct.proxy.rlwy.net:24188/railway
-```
+- Owned by the Postgres service; read it from the Railway dashboard when needed.
+- Never copy the resolved connection string (it contains the password) into
+  files, commits, or issue comments — reference the variable instead.
 
 **Backend Service DATABASE_URL:**
 - Configuration: `${{Postgres.DATABASE_URL}}`
@@ -37,7 +37,7 @@ The backend correctly reads the DATABASE_URL from environment variables:
 
 ## Migrations Applied ✅
 
-**Status**: All 84 migrations successfully applied
+**Status**: All 87 migrations successfully applied
 
 ### Migration Summary
 - **Range**: 000_base_schema through 083_convoy_handover
@@ -59,7 +59,7 @@ The backend correctly reads the DATABASE_URL from environment variables:
 ### Verification
 ```
 ✅ npm run db:migrate — Nothing to apply — schema up to date
-✅ npm run db:status — All 84 migrations [applied]
+✅ npm run db:status — All 87 migrations [applied]
 ```
 
 ## Task Complete
