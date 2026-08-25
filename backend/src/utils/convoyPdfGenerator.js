@@ -201,9 +201,10 @@ function drawCoverPage(doc, meta) {
   doc.fill(C.inkFaint).fontSize(7).font('Helvetica');
   t(doc, 'Sonalit Convoy System · Chain-of-Custody Freight Intelligence', M + 46, y + 21, { width: 300 });
   // Classification badge
+  doc.fontSize(7).font('Helvetica-Bold');
   const classW = doc.widthOfString(meta.classification) + 18;
   doc.save().rect(PW - M - classW, y + 2, classW, 18).lineWidth(1).stroke(C.red).restore();
-  doc.fill(C.red).fontSize(7).font('Helvetica-Bold');
+  doc.fill(C.red);
   t(doc, meta.classification, PW - M - classW, y + 7, { width: classW, align: 'center' });
 
   // Navy rule
@@ -216,7 +217,6 @@ function drawCoverPage(doc, meta) {
   t(doc, 'CONVOY INTELLIGENCE REPORT', M, y, { width: CW });
   y += 18;
   doc.fill(C.ink).fontSize(30).font('Helvetica-Bold');
-  const titleLines = doc.heightOfString(`${meta.convoyId}\n${meta.origin} → ${meta.destination}`, { width: CW * 0.7 });
   t(doc, meta.convoyId, M, y, { width: CW * 0.7 });
   y += 30;
   doc.fill(C.ink).fontSize(22).font('Helvetica-Bold');
@@ -1223,6 +1223,7 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
   addSec('Route Analytics');
   if (cfos.length) addSec('Field Officers');
   addSec('Photo Status Matrix');
+  if (mismatchCount > 0) addSec('Location Mismatches');
   addSec('Photo & Seal Evidence');
   if (cfoPhotos.length) addSec('CFO App Photos');
   if (handovers.length) addSec('Handover');
@@ -1321,6 +1322,7 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
     photoMatrix(ctx, truckMatrix);
     mismatchTable(ctx, photos);
 
+    sectionHead(ctx, nextLetter(ctx), 'Photo & Seal Evidence', `${trucks.length} Trucks`);
     trucks.forEach(truck => {
       truckDetail(ctx, truck, photos.filter(p => p.convoy_truck_id === truck.id), sealCountPerTruck, photoBuffers);
     });
@@ -1380,6 +1382,7 @@ async function generateArchiveReport(convoy, trucks, cfos, reports, allPhotos, h
         { letter: 'C', label: 'Overall Completion' },
         { letter: 'D', label: 'Daily Summary' },
         { letter: 'E', label: 'Per-Day Truck Photos' },
+        { letter: 'F', label: 'Chain of Custody' },
       ],
       clientName: convoy.client_name || 'Unassigned',
       leadOfficer: cfos[0]?.cfo_name || '--',
@@ -1461,6 +1464,11 @@ async function generateArchiveReport(convoy, trucks, cfos, reports, allPhotos, h
         doc.y = dy + 3;
       });
     }
+
+    const mismatchCount = allPhotos.filter(p => p.location_mismatch).length;
+    const archiveReport = reports[0] || { id: null, generated_at: new Date().toISOString(), status: 'generated' };
+    certificationSection(ctx, totalRecv, totalReq, mismatchCount,
+      cfos, archiveReport, { ...convoy, truckCount: trucks.length }, null);
   });
 }
 
