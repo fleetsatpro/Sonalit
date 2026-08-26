@@ -10,21 +10,21 @@ import { bgRenderers, miniRenderers, appVizRenderers, type BgType, type VizType 
 import '../styles/orbit.css';
 
 interface ChannelCfg {
-  color: string; code: string; bgType: BgType; vizType: VizType;
+  color: string; bgType: BgType; vizType: VizType;
   statusLabel: string; statusColor: string; statusGlow: string;
 }
 
 const CHANNEL_CFG: Record<string, ChannelCfg> = {
-  Command:              { color: '#e8a020', code: 'CMD',  bgType: 'radar',     vizType: 'signalBars',    statusLabel: 'Operational', statusColor: '#2dd4a8', statusGlow: 'rgba(45,212,168,.5)' },
-  Security:             { color: '#ff2d55', code: 'SEC',  bgType: 'shield',    vizType: 'threatArc',     statusLabel: 'Monitoring',  statusColor: '#ff2d55', statusGlow: 'rgba(255,45,85,.5)' },
-  Surveillance:         { color: '#8b6bff', code: 'SURV', bgType: 'camera',    vizType: 'waveform',      statusLabel: 'Recording',   statusColor: '#2dd4a8', statusGlow: 'rgba(45,212,168,.5)' },
-  Fleet:                { color: '#22d4e6', code: 'FLT',  bgType: 'route',     vizType: 'routeProgress', statusLabel: 'Active',      statusColor: '#2dd4a8', statusGlow: 'rgba(45,212,168,.5)' },
-  'Executive & Reporting': { color: '#2dd4a8', code: 'EXEC', bgType: 'chart', vizType: 'donut',         statusLabel: 'Synced',      statusColor: '#2dd4a8', statusGlow: 'rgba(45,212,168,.5)' },
-  'Container Management':  { color: '#ff7a00', code: 'CDS',  bgType: 'container', vizType: 'fillLevel', statusLabel: 'Tracking',    statusColor: '#2dd4a8', statusGlow: 'rgba(45,212,168,.5)' },
+  Command:              { color: '#e8a020', bgType: 'radar',     vizType: 'signalBars',    statusLabel: 'Operational', statusColor: '#2dd4a8', statusGlow: 'rgba(45,212,168,.5)' },
+  Security:             { color: '#ff2d55', bgType: 'shield',    vizType: 'threatArc',     statusLabel: 'Monitoring',  statusColor: '#ff2d55', statusGlow: 'rgba(255,45,85,.5)' },
+  Surveillance:         { color: '#8b6bff', bgType: 'camera',    vizType: 'waveform',      statusLabel: 'Recording',   statusColor: '#2dd4a8', statusGlow: 'rgba(45,212,168,.5)' },
+  Fleet:                { color: '#22d4e6', bgType: 'route',     vizType: 'routeProgress', statusLabel: 'Active',      statusColor: '#2dd4a8', statusGlow: 'rgba(45,212,168,.5)' },
+  'Executive & Reporting': { color: '#2dd4a8', bgType: 'chart', vizType: 'donut',         statusLabel: 'Synced',      statusColor: '#2dd4a8', statusGlow: 'rgba(45,212,168,.5)' },
+  'Container Management':  { color: '#ff7a00', bgType: 'container', vizType: 'fillLevel', statusLabel: 'Tracking',    statusColor: '#2dd4a8', statusGlow: 'rgba(45,212,168,.5)' },
 };
 
 const BOOT_LINES = [
-  { text: 'SONALIT MERIDIAN v3.1.0', hl: true },
+  { text: 'SONALIT v3.1.0', hl: true },
   { text: 'Initializing secure channel...' },
   { text: 'Loading intelligence modules.......... OK' },
   { text: 'Establishing encrypted uplink......... OK' },
@@ -300,7 +300,7 @@ export default function Orbit() {
       <div className={`m-console ${booted ? 'live' : ''}`}>
         {/* Top bar */}
         <header className="m-bar m-bar--top">
-          <Link to="/" style={{ textDecoration: 'none' }}><span className="m-bar-brand">MERIDIAN</span></Link>
+          <Link to="/" style={{ textDecoration: 'none' }}><span className="m-bar-brand">SONALIT</span></Link>
           <span className="m-bar-sep">|</span>
           <span><span className="pip pip--on" />System Online</span>
           <span className="m-bar-sep m-hide-mobile">|</span>
@@ -327,8 +327,7 @@ export default function Orbit() {
                 {hasAlerts && <div className="m-strip-active-dot" />}
                 <div className="m-strip-head">
                   <span className="m-strip-pip" />
-                  <span className="m-strip-code">{cfg.code}</span>
-                  <span className="m-strip-name">{group.label}</span>
+                  <span className="m-strip-code">{group.label}</span>
                   <span className="m-strip-count">{String(group.items.length).padStart(2, '0')}</span>
                 </div>
                 <div className="m-strip-body">
