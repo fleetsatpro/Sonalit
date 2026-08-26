@@ -278,7 +278,8 @@ export default function Orbit() {
 
   return (
     <div className="meridian">
-      {/* Noise + scanlines */}
+      {/* Ambient aurora + noise + scanlines */}
+      <div className="m-ambient" />
       <svg className="m-noise" aria-hidden="true" width="100%" height="100%">
         <filter id="mnoise"><feTurbulence baseFrequency=".65" numOctaves="3" stitchTiles="stitch" /></filter>
         <rect width="100%" height="100%" filter="url(#mnoise)" />
