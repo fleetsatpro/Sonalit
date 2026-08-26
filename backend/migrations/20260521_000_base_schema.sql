@@ -599,9 +599,13 @@ CREATE TABLE IF NOT EXISTS convoy_cfos (
 CREATE INDEX IF NOT EXISTS idx_convoy_cfos_cfo_user_id ON convoy_cfos(cfo_user_id);
 
 CREATE TABLE IF NOT EXISTS convoy_cfo_truck_assignments (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  convoy_id   UUID NOT NULL REFERENCES convoys(id) ON DELETE CASCADE,
-  cfo_user_id UUID NOT NULL REFERENCES users(id)
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  convoy_id       UUID NOT NULL REFERENCES convoys(id) ON DELETE CASCADE,
+  cfo_user_id     UUID NOT NULL REFERENCES users(id),
+  convoy_truck_id UUID NOT NULL REFERENCES convoy_trucks(id) ON DELETE CASCADE,
+  created_at      TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (convoy_id, cfo_user_id, convoy_truck_id),
+  UNIQUE (convoy_truck_id)
 );
 
 CREATE TABLE IF NOT EXISTS convoy_truck_photos (
