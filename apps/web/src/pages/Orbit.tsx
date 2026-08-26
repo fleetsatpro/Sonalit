@@ -5,7 +5,7 @@ import { ShieldCheck, Play, MapPin, Activity, Radio, ChevronRight } from 'lucide
 import { api } from '../lib/api.js';
 import { useDashboardStore, type DashboardOverview } from '../stores/dashboardStore.js';
 import { NAV_GROUPS } from '../components/layout/Rail.js';
-import { meridianIcon } from './meridianIcons.js';
+import { meridianIconSrc } from './meridianIcons.js';
 import { bgRenderers, miniRenderers, appVizRenderers, type BgType, type VizType } from './meridianRenderers.js';
 import '../styles/orbit.css';
 
@@ -333,7 +333,9 @@ export default function Orbit() {
                 <div className="m-strip-body">
                   {group.items.map((item, ii) => (
                     <Link key={item.path} to={item.path} className="m-app">
-                      <span className="m-app-icon" dangerouslySetInnerHTML={{ __html: meridianIcon(item.label, cfg.color) }} />
+                      <span className="m-app-icon">
+                        <img src={meridianIconSrc(item.label, group.label)} alt={item.label} className="m-icon-tile" draggable={false} />
+                      </span>
                       <span className="m-app-info">
                         <span className="m-app-name">{item.label}</span>
                         <span className="m-app-status">{cfg.statusLabel}</span>
