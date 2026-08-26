@@ -76,7 +76,7 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: 'Business',
+    label: 'Executive & Reporting',
     hue: '34,227,154',
     items: [
       { path: '/shipments',      icon: Package,      label: 'Shipments' },
