@@ -123,13 +123,58 @@ router.post('/:convoyId/upload-url', canHandover, asyncHandler(async (req, res) 
   res.json({ upload_url: uploadUrl, public_url: `${R2_PUBLIC_URL}/${key}`, key });
 }));
 
-// POST /convoy-handovers/:convoyId/commit  { truck_id?, form_key, form_url, notes? }
-// Records the handover after the form has been PUT to R2, and completes the
-// convoy immediately if this satisfies its handover requirement.
+// POST /convoy-handovers/:convoyId/selfie-url  { truck_id?, content_type? }
+// Returns a presigned R2 PUT URL for the handover selfie (sign-off photo).
+router.post('/:convoyId/selfie-url', canHandover, asyncHandler(async (req, res) => {
+  const convoyId = req.params.convoyId;
+  const { truck_id } = req.body;
+
+  const convoyResult = await req.db(
+    `SELECT id, status, local_consignment FROM convoys WHERE id = $1 AND deleted_at IS NULL`,
+    [convoyId]
+  );
+  if (!convoyResult.rows.length) return res.status(404).json({ error: 'Convoy not found' });
+  const convoy = convoyResult.rows[0];
+  if (convoy.local_consignment) {
+    return res.status(403).json({ error: 'local_consignment', detail: 'This convoy hands over through its CFO, not a handover officer.' });
+  }
+  if (convoy.status !== 'completing') {
+    return res.status(422).json({ error: 'convoy_not_completing', detail: 'This convoy is not awaiting handover.' });
+  }
+
+  const { R2_ACCOUNT_ID, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET, R2_PUBLIC_URL } = process.env;
+  if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY || !R2_SECRET_KEY || !R2_BUCKET || !R2_PUBLIC_URL) {
+    return res.status(501).json({ error: 'Storage not configured on this server' });
+  }
+
+  let S3Client, PutObjectCommand, getSignedUrl;
+  try {
+    ({ S3Client, PutObjectCommand } = require('@aws-sdk/client-s3'));
+    ({ getSignedUrl } = require('@aws-sdk/s3-request-presigner'));
+  } catch {
+    return res.status(501).json({ error: 'Storage SDK not installed' });
+  }
+
+  const key = `handover-officer/${convoyId}/${truck_id || 'convoy'}/selfie_${uuidv4()}.jpg`;
+  const s3 = new S3Client({
+    region: 'auto',
+    endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId: R2_ACCESS_KEY, secretAccessKey: R2_SECRET_KEY },
+  });
+  const command = new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, ContentType: 'image/jpeg' });
+  const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
+
+  res.json({ upload_url: uploadUrl, public_url: `${R2_PUBLIC_URL}/${key}`, key });
+}));
+
+// POST /convoy-handovers/:convoyId/commit  { truck_id?, form_key, form_url, selfie_key, selfie_url, notes? }
+// Records the handover after the form and selfie have been PUT to R2, and
+// completes the convoy immediately if this satisfies its handover requirement.
 router.post('/:convoyId/commit', canHandover, asyncHandler(async (req, res) => {
   const convoyId = req.params.convoyId;
-  const { truck_id, form_key, form_url, notes } = req.body;
+  const { truck_id, form_key, form_url, selfie_key, selfie_url, notes } = req.body;
   if (!form_key || !form_url) return res.status(400).json({ error: 'form_key, form_url required' });
+  if (!selfie_key || !selfie_url) return res.status(400).json({ error: 'selfie_key, selfie_url required' });
   const truckId = typeof truck_id === 'string' && truck_id ? truck_id : null;
 
   const convoyResult = await req.db(
@@ -152,22 +197,26 @@ router.post('/:convoyId/commit', canHandover, asyncHandler(async (req, res) => {
   const handoverResult = await req.db(
     truckId
       ? `INSERT INTO convoy_handovers
-           (org_id, convoy_id, convoy_truck_id, handed_over_by_role, handed_over_by_user_id, form_key, form_url, notes)
-         VALUES ($1,$2,$3,'handover_officer',$4,$5,$6,$7)
+           (org_id, convoy_id, convoy_truck_id, handed_over_by_role, handed_over_by_user_id,
+            form_key, form_url, selfie_key, selfie_url, notes)
+         VALUES ($1,$2,$3,'handover_officer',$4,$5,$6,$7,$8,$9)
          ON CONFLICT (convoy_id, convoy_truck_id) WHERE convoy_truck_id IS NOT NULL AND deleted_at IS NULL
          DO UPDATE SET form_key = EXCLUDED.form_key, form_url = EXCLUDED.form_url,
+           selfie_key = EXCLUDED.selfie_key, selfie_url = EXCLUDED.selfie_url,
            notes = EXCLUDED.notes, signed_off_at = NOW()
          RETURNING *`
       : `INSERT INTO convoy_handovers
-           (org_id, convoy_id, convoy_truck_id, handed_over_by_role, handed_over_by_user_id, form_key, form_url, notes)
-         VALUES ($1,$2,NULL,'handover_officer',$3,$4,$5,$6)
+           (org_id, convoy_id, convoy_truck_id, handed_over_by_role, handed_over_by_user_id,
+            form_key, form_url, selfie_key, selfie_url, notes)
+         VALUES ($1,$2,NULL,'handover_officer',$3,$4,$5,$6,$7,$8)
          ON CONFLICT (convoy_id) WHERE convoy_truck_id IS NULL AND deleted_at IS NULL
          DO UPDATE SET form_key = EXCLUDED.form_key, form_url = EXCLUDED.form_url,
+           selfie_key = EXCLUDED.selfie_key, selfie_url = EXCLUDED.selfie_url,
            notes = EXCLUDED.notes, signed_off_at = NOW()
          RETURNING *`,
     truckId
-      ? [convoy.org_id, convoyId, truckId, req.user.id, form_key, form_url, notes || null]
-      : [convoy.org_id, convoyId, req.user.id, form_key, form_url, notes || null]
+      ? [convoy.org_id, convoyId, truckId, req.user.id, form_key, form_url, selfie_key, selfie_url, notes || null]
+      : [convoy.org_id, convoyId, req.user.id, form_key, form_url, selfie_key, selfie_url, notes || null]
   );
 
   const completed = await finalizeConvoyCompletion(convoyId, convoy.org_id, req.user.id);

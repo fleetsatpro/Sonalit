@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Truck, FileCheck2, Loader2, AlertCircle, CheckCircle2,
   ChevronRight, MapPin, ArrowRight, Package, Camera, FileText,
-  RefreshCw, ClipboardCheck,
+  RefreshCw, ClipboardCheck, User, X,
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 
@@ -30,6 +30,7 @@ interface HandoverRecord {
   convoy_truck_id: string | null;
   handed_over_by_role: 'cfo' | 'handover_officer';
   form_url: string;
+  selfie_url: string | null;
   notes: string | null;
   signed_off_at: string;
 }
@@ -52,30 +53,68 @@ function UploadRow({
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [showNotes, setShowNotes] = useState(false);
+  const [selfieBlob, setSelfieBlob] = useState<Blob | null>(null);
+  const [selfiePreview, setSelfiePreview] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const selfieRef = useRef<HTMLInputElement>(null);
+
+  const clearSelfie = () => {
+    setSelfieBlob(null);
+    if (selfiePreview) { URL.revokeObjectURL(selfiePreview); setSelfiePreview(null); }
+  };
+
+  const onSelfieCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) {
+      setSelfieBlob(file);
+      setSelfiePreview(URL.createObjectURL(file));
+      setError(null);
+    }
+  };
 
   const submit = useMutation({
     mutationFn: async (file: File) => {
+      if (!selfieBlob) throw new Error('Selfie sign-off is required before uploading the form');
       const content_type = file.type === 'application/pdf' ? 'application/pdf' : 'image/jpeg';
-      const { data: presign } = await api.post<{ upload_url: string; public_url: string; key: string }>(
-        `/convoy-handovers/${convoyId}/upload-url`,
-        { truck_id: truckId, content_type },
-      );
-      const put = await fetch(presign.upload_url, { method: 'PUT', body: file, headers: { 'Content-Type': content_type } });
-      if (!put.ok) throw new Error(`Upload failed (${put.status})`);
+
+      const [formPresign, selfiePresign] = await Promise.all([
+        api.post<{ upload_url: string; public_url: string; key: string }>(
+          `/convoy-handovers/${convoyId}/upload-url`,
+          { truck_id: truckId, content_type },
+        ).then(r => r.data),
+        api.post<{ upload_url: string; public_url: string; key: string }>(
+          `/convoy-handovers/${convoyId}/selfie-url`,
+          { truck_id: truckId },
+        ).then(r => r.data),
+      ]);
+
+      const [putForm, putSelfie] = await Promise.all([
+        fetch(formPresign.upload_url, { method: 'PUT', body: file, headers: { 'Content-Type': content_type } }),
+        fetch(selfiePresign.upload_url, { method: 'PUT', body: selfieBlob, headers: { 'Content-Type': 'image/jpeg' } }),
+      ]);
+      if (!putForm.ok) throw new Error(`Form upload failed (${putForm.status})`);
+      if (!putSelfie.ok) throw new Error(`Selfie upload failed (${putSelfie.status})`);
+
       await api.post(`/convoy-handovers/${convoyId}/commit`, {
-        truck_id: truckId, form_key: presign.key, form_url: presign.public_url,
+        truck_id: truckId,
+        form_key: formPresign.key, form_url: formPresign.public_url,
+        selfie_key: selfiePresign.key, selfie_url: selfiePresign.public_url,
         notes: notes || undefined,
       });
     },
-    onSuccess: () => { setNotes(''); setShowNotes(false); onDone(); },
+    onSuccess: () => { setNotes(''); setShowNotes(false); clearSelfie(); onDone(); },
     onError: (err: Error) => setError(err.message || 'Upload failed'),
   });
 
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
-    if (file) { setError(null); submit.mutate(file); }
+    if (file) {
+      if (!selfieBlob) { setError('Take your selfie sign-off first'); return; }
+      setError(null);
+      submit.mutate(file);
+    }
   };
 
   if (alreadyDone) {
@@ -95,22 +134,48 @@ function UploadRow({
     <div className="ho-row">
       <div className="ho-row-icon"><Truck size={16} /></div>
       <div className="ho-row-body">
-        <div className="ho-row-top">
-          <div className="ho-row-info">
-            <div className="ho-row-label">{label}</div>
-            {subtitle && <div className="ho-row-sub">{subtitle}</div>}
-          </div>
-          <button
-            className="ho-upload-btn"
-            disabled={submit.isPending}
-            onClick={() => fileRef.current?.click()}
-          >
-            {submit.isPending
-              ? <><Loader2 size={14} className="ho-spin" /> Uploading</>
-              : <><Camera size={14} /> Upload</>}
-          </button>
-          <input ref={fileRef} type="file" accept="image/jpeg,application/pdf" className="ho-sr-only" onChange={onFile} disabled={submit.isPending} />
+        <div className="ho-row-info" style={{ marginBottom: 10 }}>
+          <div className="ho-row-label">{label}</div>
+          {subtitle && <div className="ho-row-sub">{subtitle}</div>}
         </div>
+
+        {/* Step 1: Selfie sign-off */}
+        <div className="ho-step">
+          <div className="ho-step-num">{selfieBlob ? <CheckCircle2 size={14} /> : '1'}</div>
+          <div className="ho-step-content">
+            <div className="ho-step-label">Selfie sign-off</div>
+            {selfiePreview ? (
+              <div className="ho-selfie-preview">
+                <img src={selfiePreview} alt="Selfie" className="ho-selfie-img" />
+                <button className="ho-selfie-remove" onClick={clearSelfie} aria-label="Remove selfie"><X size={14} /></button>
+              </div>
+            ) : (
+              <button className="ho-selfie-btn" onClick={() => selfieRef.current?.click()}>
+                <User size={14} /> Take selfie
+              </button>
+            )}
+            <input ref={selfieRef} type="file" accept="image/jpeg,image/*" capture="user" className="ho-sr-only" onChange={onSelfieCapture} />
+          </div>
+        </div>
+
+        {/* Step 2: Upload form */}
+        <div className={`ho-step ${!selfieBlob ? 'ho-step-locked' : ''}`}>
+          <div className="ho-step-num">2</div>
+          <div className="ho-step-content">
+            <div className="ho-step-label">Upload handover form</div>
+            <button
+              className="ho-upload-btn"
+              disabled={submit.isPending || !selfieBlob}
+              onClick={() => fileRef.current?.click()}
+            >
+              {submit.isPending
+                ? <><Loader2 size={14} className="ho-spin" /> Uploading</>
+                : <><Camera size={14} /> Upload</>}
+            </button>
+          </div>
+          <input ref={fileRef} type="file" accept="image/jpeg,application/pdf" className="ho-sr-only" onChange={onFile} disabled={submit.isPending || !selfieBlob} />
+        </div>
+
         <button className="ho-notes-toggle" onClick={() => setShowNotes(!showNotes)}>
           <FileText size={12} /> {showNotes ? 'Hide notes' : 'Add notes'}
         </button>
@@ -675,6 +740,82 @@ function HandoverStyles() {
         font-size: 10px;
         color: var(--d-t2);
         margin-top: 2px;
+      }
+
+      /* ── Steps (selfie + form) ───────────────── */
+      .ho-step {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+      .ho-step-locked { opacity: .45; pointer-events: none; }
+      .ho-step-num {
+        width: 24px; height: 24px;
+        border-radius: 50%;
+        background: var(--d-well);
+        border: 1px solid var(--d-rim2);
+        display: flex; align-items: center; justify-content: center;
+        font-family: var(--d-font-mono);
+        font-size: 10px;
+        font-weight: 700;
+        color: var(--d-t2);
+        flex-shrink: 0;
+        margin-top: 1px;
+      }
+      .ho-step-num svg { color: var(--d-ok); }
+      .ho-step-content { flex: 1; min-width: 0; }
+      .ho-step-label {
+        font-family: var(--d-font-mono);
+        font-size: 10px;
+        font-weight: 600;
+        color: var(--d-t2);
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        margin-bottom: 6px;
+      }
+
+      .ho-selfie-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 14px;
+        border-radius: 8px;
+        border: 1px dashed var(--d-rim3);
+        background: var(--d-well);
+        color: var(--d-sig);
+        font-family: var(--d-font);
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all .15s;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .ho-selfie-btn:hover { border-color: var(--d-sig3); background: var(--d-sg2); }
+      .ho-selfie-btn:active { transform: scale(.96); }
+
+      .ho-selfie-preview {
+        position: relative;
+        width: 64px; height: 64px;
+        border-radius: 10px;
+        overflow: hidden;
+        border: 2px solid var(--d-ok);
+      }
+      .ho-selfie-img {
+        width: 100%; height: 100%;
+        object-fit: cover;
+      }
+      .ho-selfie-remove {
+        position: absolute;
+        top: 2px; right: 2px;
+        width: 22px; height: 22px;
+        border-radius: 50%;
+        background: rgba(0,0,0,.7);
+        border: none;
+        color: #fff;
+        cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        padding: 0;
       }
 
       .ho-upload-btn {
