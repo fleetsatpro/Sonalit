@@ -13,10 +13,23 @@ const GROQ_VISION_CANDIDATES = [
   'meta-llama/llama-4-scout-17b-16e-instruct',
   'llama-4-scout-17b-16e-instruct',
   'meta-llama/llama-4-maverick-17b-128e-instruct',
-  'llama-3.2-90b-vision-preview',
-  'llama-3.2-11b-vision-preview',
+  'llama-4-maverick-17b-128e-instruct',
 ];
 const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL;
+
+// Text model candidates — tried in order until one works.
+const GROQ_TEXT_CANDIDATES = [
+  'llama-3.3-70b-versatile',
+  'llama-3.3-70b-specdec',
+  'llama-3.1-70b-versatile',
+  'llama-3.1-8b-instant',
+];
+
+function isGroqModelError(err) {
+  if (err.status === 404) return true;
+  const msg = String(err.message || '');
+  return /decommissioned|no longer supported|deprecated|model.*not.*found|not.*available|does not exist|do not have access/i.test(msg);
+}
 
 const PROMPT = `Extract ALL shipping/booking details from this document. Return ONLY a JSON object with these exact keys (null for missing):
 {
@@ -75,14 +88,26 @@ function makeGroqClient() {
 }
 
 async function groqText(text) {
-  const res = await makeGroqClient().chat.completions.create({
-    model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
-    max_completion_tokens: 4096,
-    messages: [{ role: 'user', content: `${PROMPT}\n\nDocument text:\n${text}` }],
-  });
-  const result = parseJson(res.choices?.[0]?.message?.content || '');
-  if (!result) throw new Error('json parse failed');
-  return result;
+  const models = process.env.GROQ_MODEL ? [process.env.GROQ_MODEL] : GROQ_TEXT_CANDIDATES;
+  let lastErr;
+  for (const model of models) {
+    try {
+      const res = await makeGroqClient().chat.completions.create({
+        model,
+        max_completion_tokens: 4096,
+        messages: [{ role: 'user', content: `${PROMPT}\n\nDocument text:\n${text}` }],
+      });
+      const result = parseJson(res.choices?.[0]?.message?.content || '');
+      if (!result) throw new Error('json parse failed');
+      logger.info(`extraction: groq text model ${model} worked`);
+      return result;
+    } catch (err) {
+      lastErr = err;
+      if (!isGroqModelError(err)) throw err;
+      logger.warn(`extraction: groq text model ${model} not available, trying next`);
+    }
+  }
+  throw lastErr;
 }
 
 // T1: pdf-parse for PDFs (embedded text → Groq text model)
@@ -113,8 +138,7 @@ async function tier1(base64, mediaType) {
       return result;
     } catch (err) {
       lastErr = err;
-      const isModelErr = err.status === 404 || /model.*not.*found|not.*available/i.test(err.message);
-      if (!isModelErr) throw err;
+      if (!isGroqModelError(err)) throw err;
       logger.warn(`extraction: groq vision model ${model} not available, trying next`);
     }
   }
@@ -138,7 +162,7 @@ async function tier3(base64, mediaType) {
   if (!key || key.length < 20) throw new Error('mistral not configured');
   const mistral = new OpenAI({ apiKey: key, baseURL: 'https://api.mistral.ai/v1' });
   const res = await mistral.chat.completions.create({
-    model: 'pixtral-12b-2409',
+    model: process.env.MISTRAL_VISION_MODEL || 'pixtral-large-latest',
     max_tokens: 4096,
     messages: [{ role: 'user', content: [
       { type: 'image_url', image_url: { url: `data:${mediaType};base64,${base64}` } },
