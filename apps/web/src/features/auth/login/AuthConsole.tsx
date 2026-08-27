@@ -26,12 +26,13 @@ type Props = {
   onOpenForgot: () => void;
   onOpenRequestAccess: () => void;
   currentEmailRef: React.MutableRefObject<string>;
+  handover?: boolean;
 };
 
 type AttemptsNote = { kind: 'warn' | 'locked' | null; text: string };
 
 export default function AuthConsole({
-  toast, onLoginSuccess, onOpenForgot, onOpenRequestAccess, currentEmailRef,
+  toast, onLoginSuccess, onOpenForgot, onOpenRequestAccess, currentEmailRef, handover,
 }: Props): React.ReactElement {
   const setAuth = useAuthStore((s) => s.setAuth);
 
@@ -49,8 +50,9 @@ export default function AuthConsole({
   const emailRef = useRef<HTMLInputElement | null>(null);
   const passwordRef = useRef<HTMLInputElement | null>(null);
 
+  const defaultCta = handover ? 'SIGN IN' : 'ACCESS DASHBOARD';
   const [ctaState, setCtaState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const [ctaLabel, setCtaLabel] = useState<string>('ACCESS DASHBOARD');
+  const [ctaLabel, setCtaLabel] = useState<string>(defaultCta);
   const [failedAttempts, setFailedAttempts] = useState<number>(0);
   const [attemptsNote, setAttemptsNote] = useState<AttemptsNote>({ kind: null, text: '' });
   const [lockRemaining, setLockRemaining] = useState<number>(0);
@@ -108,7 +110,7 @@ export default function AuthConsole({
 
   function resetCta(): void {
     setCtaState('idle');
-    setCtaLabel('ACCESS DASHBOARD');
+    setCtaLabel(defaultCta);
   }
 
   const passwordMutation = useMutation<AuthResponse, unknown, { email: string; password: string }>({
@@ -116,7 +118,7 @@ export default function AuthConsole({
     onSuccess: (data) => {
       setAuth(data.token, data.user);
       setCtaState('success');
-      setCtaLabel('ACCESS GRANTED');
+      setCtaLabel(handover ? 'SIGNED IN' : 'ACCESS GRANTED');
       onLoginSuccess();
     },
     onError: (err) => {
@@ -248,11 +250,11 @@ export default function AuthConsole({
       <div className="console-head">
         <div className="console-eyebrow">
           <span className="box" />
-          OPERATOR ACCESS
+          {handover ? 'HANDOVER OFFICER' : 'OPERATOR ACCESS'}
           <span className="oc-clock">{clock}</span>
         </div>
-        <h1 className="console-title">Welcome back</h1>
-        <p className="console-sub">Sign in to your operations dashboard.</p>
+        <h1 className="console-title">{handover ? 'Handover Sign-in' : 'Welcome back'}</h1>
+        <p className="console-sub">{handover ? 'Sign in to submit handover forms.' : 'Sign in to your operations dashboard.'}</p>
       </div>
 
       <div className="tabs" role="tablist" aria-label="Sign-in method">

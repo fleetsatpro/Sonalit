@@ -459,6 +459,10 @@
   .modes,.feed{animation:none !important;opacity:1 !important;}
 }
 
+/* ================= HANDOVER MODE ================= */
+.handover-mode .split{display:flex;justify-content:center;align-items:center;}
+.handover-mode .console{border-right:none;border-left:none;max-width:480px;width:100%;}
+
 /* ================= RESPONSIVE ================= */
 @media (max-width:1320px){
   .split{grid-template-columns:1fr 452px;}
