@@ -62,6 +62,13 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # Default is "tools platform-tools". The obsolete "tools" package drags
+          # in the ~300MB Android Emulator, whose download intermittently arrives
+          # corrupt ("Error on ZipFile unknown archive") and fails the whole job.
+          # Nothing here emulates anything — the next step installs the build-tools
+          # and platform this build actually needs.
+          packages: 'platform-tools'
 
       - name: Accept SDK licenses
         run: yes | sdkmanager --licenses || true
