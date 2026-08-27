@@ -312,7 +312,35 @@ router.get('/context', deviceAuth, async (req, res, next) => {
     }
 
     if (!assignmentResult.rows.length) {
-      return res.status(404).json({ error: 'No active convoy assignment for this device' });
+      // No active convoy — look for the most recently completed one so the
+      // CFO app can show a "convoy completed" summary instead of a scary 404.
+      const recentResult = await query(
+        `SELECT cc.convoy_id, cc.cfo_user_id, c.org_id, c.name, c.status, c.timezone,
+                c.start_date, c.end_date, c.completed_at
+         FROM convoy_cfos cc
+         JOIN convoys c ON c.id = cc.convoy_id
+         WHERE (cc.guardian_device_id = $1 ${req.device.assignment_id ? 'OR cc.cfo_user_id = $2' : ''})
+           AND c.status = 'completed'
+           AND c.deleted_at IS NULL
+         ORDER BY c.completed_at DESC NULLS LAST, c.end_date DESC
+         LIMIT 1`,
+        req.device.assignment_id ? [req.device.id, req.device.assignment_id] : [req.device.id]
+      );
+      if (recentResult.rows.length) {
+        const r = recentResult.rows[0];
+        return res.json({
+          data: {
+            convoy: { id: r.convoy_id, name: r.name, status: r.status, timezone: r.timezone,
+                      start_date: r.start_date, end_date: r.end_date, completed_at: r.completed_at },
+            completed: true,
+            cfo_user_id: r.cfo_user_id,
+            assigned_trucks: [],
+            photos_today: [],
+            daily_report: null,
+          },
+        });
+      }
+      return res.json({ data: null, no_assignment: true });
     }
 
     const { convoy_id, cfo_user_id, org_id, ...convoyFields } = assignmentResult.rows[0];

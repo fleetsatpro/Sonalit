@@ -3150,6 +3150,16 @@
         }
       }
     },
+    "/api/v1/convoy-handovers/{convoyId}/selfie-url": {
+      "post": {
+        "operationId": "post_api_v1_convoy_handovers_convoyId_selfie_url",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/convoy-handovers/{convoyId}/commit": {
       "post": {
         "operationId": "post_api_v1_convoy_handovers_convoyId_commit",

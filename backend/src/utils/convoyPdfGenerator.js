@@ -51,6 +51,48 @@ function pill(doc, x, y, w, label, fg, bg) {
   t(doc, label, x, y + 4, { width: w, align: 'center' });
 }
 
+function drawScoreCircle(doc, cx, cy, r, score, color) {
+  doc.save();
+  doc.circle(cx, cy, r).lineWidth(2).stroke('#e5e7eb');
+  const angle = (score / 100) * Math.PI * 2;
+  const startAngle = -Math.PI / 2;
+  const endAngle = startAngle + angle;
+  const x1 = cx + r * Math.cos(startAngle), y1 = cy + r * Math.sin(startAngle);
+  const x2 = cx + r * Math.cos(endAngle), y2 = cy + r * Math.sin(endAngle);
+  const largeArc = angle > Math.PI ? 1 : 0;
+  doc.save().path(`M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2}`)
+    .lineWidth(3).strokeColor(color).stroke().restore();
+  doc.fill(color).fontSize(16).font('Helvetica-Bold');
+  t(doc, String(score), cx - 16, cy - 8, { width: 32, align: 'center' });
+  doc.fill(C.muted).fontSize(6).font('Helvetica');
+  t(doc, '/100', cx - 10, cy + 8, { width: 20, align: 'center' });
+  doc.restore();
+}
+
+function drawVerificationGlyph(doc, x, y, size, hexDigest) {
+  if (!hexDigest || hexDigest.length < 32) return;
+  const gridN = 4;
+  const cellSize = size / gridN;
+  const bytes = [];
+  for (let i = 0; i < Math.min(32, hexDigest.length); i += 2) {
+    bytes.push(parseInt(hexDigest.slice(i, i + 2), 16));
+  }
+  doc.save();
+  doc.rect(x, y, size, size).lineWidth(0.5).strokeColor(C.border).stroke();
+  for (let row = 0; row < gridN; row++) {
+    for (let col = 0; col < gridN; col++) {
+      const idx = row * gridN + col;
+      const b = bytes[idx % bytes.length];
+      const h = ((b * 137 + idx * 47) % 360);
+      const s = 40 + (b % 30);
+      const l = 35 + (b % 25);
+      const cx = x + col * cellSize, cy2 = y + row * cellSize;
+      doc.rect(cx, cy2, cellSize, cellSize).fill(`hsl(${h}, ${s}%, ${l}%)`);
+    }
+  }
+  doc.restore();
+}
+
 // Small bullet/status dot drawn as a vector shape rather than a "●"/"✓"
 // text glyph — PDFKit's standard 14 fonts only cover WinAnsi (CP1252), which
 // has no bullet, check mark, or arrow glyphs, so those render as garbage
@@ -99,6 +141,11 @@ function drawCoverHeader(ctx, meta) {
   pill(doc, rx - 30, 60, 116, meta.statusLabel, meta.statusFg, meta.statusBg);
   doc.fill('#9ca3af').fontSize(6).font('Helvetica');
   t(doc, `Generated ${meta.generatedAt}`, rx - 90, 78, { width: 200, align: 'right' });
+
+  if (meta.integrityScore != null) {
+    const scoreColor = meta.integrityScore >= 80 ? C.green : meta.integrityScore >= 50 ? C.gold : C.red;
+    drawScoreCircle(doc, PW - M - 30, 90, 18, meta.integrityScore, scoreColor);
+  }
 
   // Quick-stat strip
   const sy = COVER_H + 3, cols = meta.stats.length, colW = CW / cols;
@@ -906,7 +953,7 @@ function cfoPhotosTable(ctx, cfoPhotos) {
 // plus signature lines for whichever CFOs are actually assigned to this
 // convoy — mirrors the polish of the "Enhanced Convoy Report" sample the
 // user shared, using only fields this pipeline already has in hand.
-function summarySection(ctx, received, required, mismatchCount, cfos, report, convoy, assessment) {
+function summarySection(ctx, received, required, mismatchCount, cfos, report, convoy, assessment, handovers) {
   ensureSpace(ctx, 120);
   sectionHead(ctx, nextLetter(ctx), 'Summary & Certification');
   const doc = ctx.doc;
@@ -959,23 +1006,89 @@ function summarySection(ctx, received, required, mismatchCount, cfos, report, co
   });
   doc.y = sigY + 40;
 
-  // Chain-of-custody / tamper-evidence band. The evidence digest is a SHA-256
-  // over the underlying photos, seals, and track (not the PDF bytes), so it can
-  // be recomputed to prove the evidence set behind this report is unaltered.
-  if (assessment?.evidenceDigest) {
-    ensureSpace(ctx, 44);
-    const cy = doc.y;
-    doc.save().rect(M, cy, CW, 38).lineWidth(0.6).fillAndStroke(C.dark, C.dark).restore();
-    doc.rect(M, cy, 5, 38).fill(C.gold);
-    doc.fill(C.gold).fontSize(6).font('Helvetica-Bold');
-    t(doc, 'CHAIN OF CUSTODY — EVIDENCE ATTESTATION', M + 14, cy + 6, { width: CW - 28 });
-    doc.fill('#c7ced9').fontSize(6.5).font('Helvetica');
-    t(doc, 'This report was generated automatically by the Sonalit Guardian CFO system from field-captured evidence. Its authenticity is verifiable against the evidence fingerprint below.',
-      M + 14, cy + 15, { width: CW - 28 });
-    doc.fill(C.white).fontSize(6.5).font('Courier-Bold');
-    t(doc, `SHA-256  ${assessment.evidenceDigest}`, M + 14, cy + 28, { width: CW - 28 });
-    doc.y = cy + 46;
+  // ── Chain of Custody & Certification ──────────────────────────────────
+  chainOfCustodySection(ctx, assessment, cfos, handovers || [], convoy);
+}
+
+function chainOfCustodySection(ctx, assessment, cfos, handovers, convoy) {
+  const doc = ctx.doc;
+  ensureSpace(ctx, 140);
+  sectionHead(ctx, nextLetter(ctx), 'Chain of Custody & Certification');
+
+  // Custody chain timeline
+  const events = [];
+  if (convoy.start_date) {
+    events.push({ time: String(convoy.start_date).slice(0, 10), label: 'Convoy dispatched', role: 'Dispatcher', icon: 'D' });
   }
+  cfos.forEach(c => {
+    events.push({ time: convoy.start_date ? String(convoy.start_date).slice(0, 10) : '--', label: `CFO assigned: ${c.cfo_name || 'Unknown'}`, role: 'System', icon: 'C' });
+  });
+  handovers.forEach(h => {
+    const at = h.signed_off_at ? new Date(h.signed_off_at).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : '--';
+    const by = h.handed_over_by_name || 'Unknown';
+    const selfieNote = h.selfie_url ? ' (selfie verified)' : '';
+    events.push({ time: at, label: `Handover by ${by}${selfieNote}`, role: h.handed_over_by_role === 'cfo' ? 'CFO' : 'Handover Officer', icon: 'H' });
+  });
+
+  if (events.length > 0) {
+    doc.fill(C.muted).fontSize(6.5).font('Helvetica-Bold');
+    t(doc, 'CUSTODY CHAIN', M, doc.y, { width: 200 });
+    doc.y += 12;
+
+    events.forEach((ev, i) => {
+      ensureSpace(ctx, 22);
+      const ey = doc.y;
+      const dotX = M + 8, lineX = M + 8;
+      if (i < events.length - 1) {
+        doc.save().moveTo(lineX, ey + 6).lineTo(lineX, ey + 22).lineWidth(1).strokeColor(C.border).stroke().restore();
+      }
+      dot(doc, dotX, ey + 4, 3, C.gold);
+      doc.fill(C.text).fontSize(7.5).font('Helvetica-Bold');
+      t(doc, ev.label, M + 20, ey + 1, { width: CW - 150 });
+      doc.fill(C.muted).fontSize(6.5).font('Helvetica');
+      t(doc, `${ev.role} · ${ev.time}`, M + CW - 160, ey + 1, { width: 156, align: 'right' });
+      doc.y = ey + 18;
+    });
+    doc.y += 6;
+  }
+
+  // Evidence attestation band with verification glyph
+  if (assessment?.evidenceDigest) {
+    ensureSpace(ctx, 62);
+    const cy = doc.y;
+    const bandH = 54;
+    doc.save().rect(M, cy, CW, bandH).lineWidth(0.6).fillAndStroke(C.dark, C.dark).restore();
+    doc.rect(M, cy, 5, bandH).fill(C.gold);
+
+    doc.fill(C.gold).fontSize(6).font('Helvetica-Bold');
+    t(doc, 'DIGITAL EVIDENCE ATTESTATION', M + 14, cy + 6, { width: CW - 80 });
+    doc.fill('#c7ced9').fontSize(6.5).font('Helvetica');
+    t(doc, 'This report was generated automatically by the Sonalit Guardian CFO system from field-captured evidence. Its authenticity is verifiable against the evidence fingerprint and visual glyph below.',
+      M + 14, cy + 15, { width: CW - 80 });
+    doc.fill(C.white).fontSize(6.5).font('Courier-Bold');
+    t(doc, `SHA-256  ${assessment.evidenceDigest}`, M + 14, cy + 30, { width: CW - 80 });
+    doc.fill('#9ca3af').fontSize(5.5).font('Helvetica');
+    t(doc, 'Recompute from raw evidence to verify report integrity', M + 14, cy + 42, { width: CW - 80 });
+
+    drawVerificationGlyph(doc, M + CW - 52, cy + 6, 42, assessment.evidenceDigest);
+    doc.y = cy + bandH + 8;
+  }
+
+  // Dispatcher review block
+  ensureSpace(ctx, 40);
+  const ry = doc.y;
+  doc.save().rect(M, ry, CW, 32).lineWidth(0.6).strokeColor(C.border).stroke().restore();
+  doc.fill(C.muted).fontSize(6).font('Helvetica-Bold');
+  t(doc, 'DISPATCHER REVIEW', M + 10, ry + 6, { width: 120 });
+  doc.save().moveTo(M + 10, ry + 24).lineTo(M + CW / 2 - 20, ry + 24).lineWidth(0.4).strokeColor(C.border).stroke().restore();
+  doc.fill(C.light).fontSize(6).font('Helvetica');
+  t(doc, 'Signature', M + 10, ry + 26, { width: 80 });
+  doc.save().moveTo(M + CW / 2 + 10, ry + 24).lineTo(M + CW - 10, ry + 24).lineWidth(0.4).strokeColor(C.border).stroke().restore();
+  doc.fill(C.light).fontSize(6).font('Helvetica');
+  t(doc, 'Date', M + CW / 2 + 10, ry + 26, { width: 80 });
+  doc.fill(C.amber).fontSize(6.5).font('Helvetica-Bold');
+  t(doc, 'PENDING', M + CW - 60, ry + 6, { width: 50, align: 'right' });
+  doc.y = ry + 40;
 }
 
 function fmtDur(mins) {
@@ -1114,6 +1227,7 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
       statusLabel: `${vStyle.label} · ${assessment.score}/100`, statusFg: vStyle.fg, statusBg: vStyle.bg,
       generatedAt,
       pct,
+      integrityScore: assessment.score,
       stats: [
         { label: 'Verdict', value: vStyle.label, color: vStyle.fg === C.green ? '#4ade80' : vStyle.fg === C.red ? '#fca5a5' : C.gold },
         { label: 'Integrity', value: `${assessment.score}/100` },
@@ -1204,7 +1318,7 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
     if (handovers.length) handoverSection(ctx, handovers, trucks, handoverBuffers);
 
     summarySection(ctx, report.received_photo_count, report.required_photo_count, mismatchCount,
-      cfos, report, { ...convoy, truckCount: trucks.length }, assessment);
+      cfos, report, { ...convoy, truckCount: trucks.length }, assessment, handovers);
   });
 }
 
@@ -1246,6 +1360,13 @@ function handoverSection(ctx, handovers, trucks, formBuffers) {
     doc.fill(C.muted).fontSize(7).font('Helvetica');
     t(doc, `${byName} · ${roleLabel} · signed off ${signedAt}`, M, doc.y, { width: CW });
     doc.y += 12;
+
+    if (h.selfie_url) {
+      dot(doc, M + 3, doc.y + 4, 3, C.green);
+      doc.fill(C.green).fontSize(7).font('Helvetica-Bold');
+      t(doc, 'Selfie sign-off verified', M + 12, doc.y + 1, { width: 200 });
+      doc.y += 14;
+    }
 
     if (h.notes) {
       doc.fill(C.sub).fontSize(7).font('Helvetica-Oblique');

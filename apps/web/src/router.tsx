@@ -60,7 +60,18 @@ const commandRoute = createRoute({ getParentRoute: () => authRoute, path: '/comm
 const fleetRoute = createRoute({ getParentRoute: () => authRoute, path: '/fleet', component: lazyRouteComponent(() => import('./pages/Fleet.js')) });
 const gpsRoute = createRoute({ getParentRoute: () => authRoute, path: '/gps', component: lazyRouteComponent(() => import('./pages/GPS.js')) });
 const convoysRoute = createRoute({ getParentRoute: () => authRoute, path: '/convoys', component: lazyRouteComponent(() => import('./pages/Convoys.js')) });
-const handoverRoute = createRoute({ getParentRoute: () => authRoute, path: '/handover', component: lazyRouteComponent(() => import('./pages/Handover.js')) });
+// ─── Handover — dedicated shell, no operator chrome ─────────────────────────
+// The Capacitor APK (io.sonalit.handover) loads /handover directly. It needs
+// operator auth (email/password) but NOT the Topbar/APPS/LIVE chrome — those
+// belong to the operator dashboard, not a single-purpose handover officer app.
+// HandoverShell provides its own minimal header (branding + clock + logout).
+const handoverShellRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: 'handover-shell',
+  beforeLoad: authCheck,
+  component: lazyRouteComponent(() => import('./pages/HandoverShell.js')),
+});
+const handoverRoute = createRoute({ getParentRoute: () => handoverShellRoute, path: '/handover', component: lazyRouteComponent(() => import('./pages/Handover.js')) });
 const convoyNewRoute = createRoute({ getParentRoute: () => authRoute, path: '/convoys/new', component: lazyRouteComponent(() => import('./pages/CfoConvoyForm.js')) });
 const convoyEditRoute = createRoute({ getParentRoute: () => authRoute, path: '/convoys/$id/edit', component: lazyRouteComponent(() => import('./pages/CfoConvoyForm.js')) });
 const driversRoute = createRoute({ getParentRoute: () => authRoute, path: '/drivers', component: lazyRouteComponent(() => import('./pages/Drivers.js')) });
@@ -163,6 +174,7 @@ const routeTree = rootRoute.addChildren([
     portalTrackRoute, portalConvoyRoute, portalCustodyRoute, portalSecurityRoute,
   ]),
   fieldRoute.addChildren([fieldHomeRoute, fieldYardRoute, fieldPortRoute, fieldResponseRoute]),
+  handoverShellRoute.addChildren([handoverRoute]),
   authFullscreenRoute.addChildren([
     orbitRoute,
     convoyReportsRoute,
@@ -172,7 +184,7 @@ const routeTree = rootRoute.addChildren([
   authRoute.addChildren([
     commandRoute,
     fleetRoute, gpsRoute,
-    convoysRoute, convoyNewRoute, convoyEditRoute, handoverRoute,
+    convoysRoute, convoyNewRoute, convoyEditRoute,
     driversRoute, alertsRoute, incidentsRoute,
     incidentCenterRoute, panicCenterRoute, messagesRoute,
     analyticsRoute, reportsRoute, shipmentsRoute,
