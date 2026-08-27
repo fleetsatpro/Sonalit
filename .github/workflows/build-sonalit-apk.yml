@@ -77,6 +77,29 @@ jobs:
             sed -i 's/minSdkVersion = [0-9]*/minSdkVersion = 24/' variables.gradle
           fi
 
+      - name: Decode signing keystore
+        if: env.KEYSTORE_BASE64 != ''
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: echo "$KEYSTORE_BASE64" | base64 -d > apps/sonalit-app/android/app/release.keystore
+
+      - name: Inject release signing config
+        if: env.KEYSTORE_BASE64 != ''
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        working-directory: apps/sonalit-app/android/app
+        run: |
+          sed -i '/android {/a\
+              signingConfigs {\
+                  release {\
+                      storeFile file("release.keystore")\
+                      storePassword System.getenv("KEYSTORE_PASSWORD")\
+                      keyAlias System.getenv("KEY_ALIAS")\
+                      keyPassword System.getenv("KEY_PASSWORD")\
+                  }\
+              }' build.gradle
+          sed -i 's/signingConfig signingConfigs.debug/signingConfig signingConfigs.release/' build.gradle
+
       - name: Cache Gradle packages
         uses: actions/cache@v4
         with:
@@ -90,19 +113,35 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x apps/sonalit-app/android/gradlew
 
-      - name: Build debug APK
+      - name: Build APK
         working-directory: apps/sonalit-app/android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -f app/release.keystore ]; then
+            ./gradlew assembleRelease --no-daemon --stacktrace
+          else
+            ./gradlew assembleDebug --no-daemon --stacktrace
+          fi
 
-      # Convenience copy for on-device QA. The GitHub Release below is the real
-      # delivery path, so a failed upload (e.g. artifact storage quota hit) must
-      # not block it — same posture as build-guardian-apk.yml.
+      - name: Locate and rename APK
+        run: |
+          if [ -f apps/sonalit-app/android/app/build/outputs/apk/release/app-release.apk ]; then
+            mv apps/sonalit-app/android/app/build/outputs/apk/release/app-release.apk \
+               apps/sonalit-app/android/app/build/outputs/apk/sonalit.apk
+          else
+            mv apps/sonalit-app/android/app/build/outputs/apk/debug/app-debug.apk \
+               apps/sonalit-app/android/app/build/outputs/apk/sonalit.apk
+          fi
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         continue-on-error: true
         with:
-          name: Sonalit-debug
-          path: apps/sonalit-app/android/app/build/outputs/apk/debug/app-debug.apk
+          name: Sonalit
+          path: apps/sonalit-app/android/app/build/outputs/apk/sonalit.apk
           retention-days: 7
 
       - name: Create GitHub Release
@@ -117,7 +156,7 @@ jobs:
             **Install**: Download and open on an Android 7.0+ device (enable "Install unknown apps" in settings). Installing a newer build over an older one is an in-place update — no uninstall needed.
 
             **Updates**: This app loads the live Sonalit web app, so UI and feature updates appear automatically on next open. You only need a new APK for rare native changes.
-          files: apps/sonalit-app/android/app/build/outputs/apk/debug/app-debug.apk
+          files: apps/sonalit-app/android/app/build/outputs/apk/sonalit.apk
           draft: false
           prerelease: false
         env:
