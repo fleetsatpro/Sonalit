@@ -5,7 +5,7 @@
 const OpenAI = require('openai');
 const logger = require('./logger');
 
-const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct';
 
 function hasGroq() {
   const k = process.env.GROQ_API_KEY;
