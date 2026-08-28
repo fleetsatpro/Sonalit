@@ -27,6 +27,7 @@ const canHandover = authorize('admin', 'dispatcher', 'handover_officer');
 router.get('/queue', canHandover, asyncHandler(async (req, res) => {
   const result = await req.db(
     `SELECT c.id, c.name, c.region, c.route_origin, c.route_destination, c.status,
+            c.updated_at, COALESCE(c.updated_at, NOW()) AS waiting_since,
             (SELECT COUNT(*) FROM convoy_trucks ct WHERE ct.convoy_id = c.id) AS truck_count,
             (SELECT COUNT(*) FROM convoy_handovers ch
                WHERE ch.convoy_id = c.id AND ch.convoy_truck_id IS NOT NULL AND ch.deleted_at IS NULL) AS trucks_handed_over,
@@ -34,7 +35,7 @@ router.get('/queue', canHandover, asyncHandler(async (req, res) => {
                WHERE ch.convoy_id = c.id AND ch.convoy_truck_id IS NULL AND ch.deleted_at IS NULL) AS convoy_wide_handover
      FROM convoys c
      WHERE c.status = 'completing' AND c.local_consignment = false AND c.deleted_at IS NULL
-     ORDER BY c.updated_at DESC`
+     ORDER BY c.updated_at ASC NULLS LAST`
   );
   res.json({ data: result.rows });
 }));

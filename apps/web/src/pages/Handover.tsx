@@ -1,12 +1,22 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Truck, ClipboardCheck, Loader2, AlertCircle,
-  ArrowRight, FileText, MapPin, CircleDot,
+  ArrowRight, FileText, MapPin, CircleDot, Clock3,
   User, X, ChevronLeft, Upload, Shield, Check,
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useHandoverHeader } from './HandoverShell.js';
+
+const HANDOVER_SLA_MINUTES = 30;
+
+function formatDuration(mins: number): string {
+  if (mins < 1) return '<1m';
+  if (mins < 60) return `${Math.round(mins)}m`;
+  const h = Math.floor(mins / 60);
+  const m = Math.round(mins % 60);
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
 
 interface HandoverQueueItem {
   id: string;
@@ -17,6 +27,8 @@ interface HandoverQueueItem {
   truck_count: number;
   trucks_handed_over: number;
   convoy_wide_handover: boolean;
+  waiting_since: string | null;
+  updated_at: string | null;
 }
 
 interface HandoverTruck {
@@ -43,7 +55,7 @@ interface HandoverDetail {
 }
 
 type QueueFilter = 'all' | 'pending' | 'in_progress' | 'done';
-type Tone = 'muted' | 'accent' | 'ok' | 'warn';
+type Tone = 'muted' | 'accent' | 'ok' | 'warn' | 'danger';
 
 /* ── Badge — pill matching Grok's Badge anatomy ─────────────────────── */
 
@@ -404,10 +416,123 @@ function applyFilter(queue: HandoverQueueItem[], filter: QueueFilter): HandoverQ
   }
 }
 
-function progressTone(pct: number, isDone: boolean): Tone {
+interface SlaInfo {
+  waitMinutes: number;
+  remainingMinutes: number;
+  overdue: boolean;
+  urgent: boolean;
+}
+
+function computeSla(item: HandoverQueueItem, now: number): SlaInfo {
+  const since = item.waiting_since ?? item.updated_at;
+  const waitMinutes = since ? Math.max(0, (now - new Date(since).getTime()) / 60000) : 0;
+  const remainingMinutes = HANDOVER_SLA_MINUTES - waitMinutes;
+  const overdue = remainingMinutes < 0;
+  const urgent = !overdue && remainingMinutes <= 10;
+  return { waitMinutes, remainingMinutes, overdue, urgent };
+}
+
+function cardTone(pct: number, isDone: boolean, sla: SlaInfo): Tone {
   if (isDone) return 'ok';
+  if (sla.overdue) return 'danger';
+  if (sla.urgent) return 'warn';
   if (pct > 0) return 'accent';
   return 'muted';
+}
+
+function sortQueue(list: HandoverQueueItem[], now: number): HandoverQueueItem[] {
+  return [...list].sort((a, b) => {
+    const slaA = computeSla(a, now);
+    const slaB = computeSla(b, now);
+    if (slaA.overdue !== slaB.overdue) return slaA.overdue ? -1 : 1;
+    return slaB.waitMinutes - slaA.waitMinutes;
+  });
+}
+
+/* ── Queue card ──────────────────────────────────────────────────────── */
+
+function QueueCard({
+  item, index, now, onOpen,
+}: {
+  item: HandoverQueueItem; index: number; now: number; onOpen: () => void;
+}) {
+  const pct = item.truck_count > 0 ? Math.round((item.trucks_handed_over / item.truck_count) * 100) : 0;
+  const isDone = item.convoy_wide_handover || pct >= 100;
+  const sla = computeSla(item, now);
+  const tone = cardTone(pct, isDone, sla);
+  const label = isDone ? 'Complete' : pct > 0 ? 'In progress' : 'Pending';
+
+  return (
+    <button
+      className="ho-q-card ho-hairline ho-hairline-hover"
+      onClick={onOpen}
+      style={{ '--stagger': index } as React.CSSProperties}
+    >
+      <span className={`ho-priority-rail ho-rail-${tone}`} aria-hidden="true" />
+
+      <div className="ho-q-card-header">
+        <div className="ho-q-card-id-row">
+          <span className="ho-q-card-region-tag">{item.region}</span>
+          <Badge tone={tone}>{label}</Badge>
+        </div>
+        <StatusDot tone={tone} label={isDone ? 'Complete' : 'Awaiting'} />
+      </div>
+
+      <p className="ho-q-card-name">{item.name}</p>
+      <p className="ho-q-card-route">
+        <span>{item.route_origin}</span>
+        <ArrowRight size={9} />
+        <span>{item.route_destination}</span>
+      </p>
+
+      <div className="ho-q-card-meta">
+        <span className="ho-q-card-meta-item">
+          <Truck size={12} />
+          {item.truck_count} {item.truck_count === 1 ? 'vehicle' : 'vehicles'}
+        </span>
+        {item.convoy_wide_handover && <span className="ho-q-card-accent-tag">Convoy-wide</span>}
+      </div>
+
+      <div className="ho-q-card-progress">
+        <div className="ho-q-card-progress-row">
+          <span className="ho-q-card-progress-label">{item.trucks_handed_over} of {item.truck_count} trucks</span>
+          <span className={`ho-q-card-progress-pct ho-tone-${tone}`}>{pct}%</span>
+        </div>
+        <div className="ho-q-progress-track">
+          <div className={`ho-q-progress-fill ho-fill-${tone}`} style={{ width: `${Math.max(4, pct)}%` }} />
+        </div>
+      </div>
+
+      {!isDone && (
+        <div className="ho-q-card-sla">
+          <div className="ho-q-card-sla-row">
+            <span className="ho-q-card-sla-wait">
+              <Clock3 size={11} />
+              Waiting {formatDuration(sla.waitMinutes)}
+            </span>
+            <span className={`ho-q-card-sla-badge ho-tone-${tone}`}>
+              {sla.overdue
+                ? `SLA +${formatDuration(Math.abs(sla.remainingMinutes))}`
+                : `SLA ${formatDuration(Math.max(0, sla.remainingMinutes))}`}
+            </span>
+          </div>
+          <div className="ho-q-progress-track">
+            <div
+              className={`ho-q-progress-fill ho-fill-${tone}`}
+              style={{ width: `${Math.min(100, Math.max(4, (sla.waitMinutes / HANDOVER_SLA_MINUTES) * 100))}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="ho-q-card-footer">
+        <span className="ho-q-card-footer-region">{item.region}</span>
+        <span className="ho-q-card-open">
+          Open <ArrowRight size={12} />
+        </span>
+      </div>
+    </button>
+  );
 }
 
 /* ── Queue list — the main page ─────────────────────────────────────── */
@@ -415,8 +540,14 @@ function progressTone(pct: number, isDone: boolean): Tone {
 export default function Handover() {
   const [selected, setSelected] = useState<string | null>(null);
   const [filter, setFilter] = useState<QueueFilter>('all');
+  const [now, setNow] = useState(() => Date.now());
   const queryClient = useQueryClient();
   const setHeader = useHandoverHeader();
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 15000);
+    return () => clearInterval(id);
+  }, []);
 
   const { data: queue, isLoading, dataUpdatedAt } = useQuery({
     queryKey: ['convoy-handover-queue'],
@@ -428,15 +559,23 @@ export default function Handover() {
     void queryClient.invalidateQueries({ queryKey: ['convoy-handover-queue'] });
   }, [queryClient]);
 
+  const overdueCount = useMemo(
+    () => (queue ?? []).filter((c) => computeSla(c, now).overdue).length,
+    [queue, now],
+  );
+
   useEffect(() => {
     if (selected) return;
+    const subtitle = queue && queue.length > 0
+      ? `${queue.length} convoy${queue.length === 1 ? '' : 's'} waiting${overdueCount > 0 ? ` · ${overdueCount} overdue` : ''}`
+      : 'Convoys awaiting signed handover forms';
     setHeader({
       title: 'Handover Queue',
-      subtitle: 'Convoys awaiting signed handover forms',
+      subtitle,
       icon: <ClipboardCheck size={18} strokeWidth={2} />,
       onRefresh: manualRefresh,
     });
-  }, [selected, setHeader, manualRefresh]);
+  }, [selected, setHeader, manualRefresh, queue, overdueCount]);
 
   if (selected) {
     return (
@@ -447,7 +586,7 @@ export default function Handover() {
     );
   }
 
-  const filtered = queue ? applyFilter(queue, filter) : [];
+  const filtered = queue ? sortQueue(applyFilter(queue, filter), now) : [];
 
   return (
     <div className="ho-page">
@@ -491,66 +630,12 @@ export default function Handover() {
           </div>
         )}
 
-        {/* Queue cards — stagger-in */}
+        {/* Queue cards — stagger-in, overdue first then longest wait */}
         {!isLoading && filtered.length > 0 && (
           <div className="ho-q-list ho-stagger">
-            {filtered.map((c, i) => {
-              const pct = c.truck_count > 0 ? Math.round((c.trucks_handed_over / c.truck_count) * 100) : 0;
-              const isDone = c.convoy_wide_handover || pct >= 100;
-              const tone = progressTone(pct, isDone);
-              const label = isDone ? 'Complete' : pct > 0 ? 'In progress' : 'Pending';
-
-              return (
-                <button
-                  key={c.id}
-                  className="ho-q-card ho-hairline ho-hairline-hover"
-                  onClick={() => setSelected(c.id)}
-                  style={{ '--stagger': i } as React.CSSProperties}
-                >
-                  <span className={`ho-priority-rail ho-rail-${tone}`} aria-hidden="true" />
-
-                  <div className="ho-q-card-header">
-                    <div className="ho-q-card-id-row">
-                      <span className="ho-q-card-region-tag">{c.region}</span>
-                      <Badge tone={tone}>{label}</Badge>
-                    </div>
-                    <StatusDot tone={tone} label={isDone ? 'Complete' : 'Awaiting'} />
-                  </div>
-
-                  <p className="ho-q-card-name">{c.name}</p>
-                  <p className="ho-q-card-route">
-                    <span>{c.route_origin}</span>
-                    <ArrowRight size={9} />
-                    <span>{c.route_destination}</span>
-                  </p>
-
-                  <div className="ho-q-card-meta">
-                    <span className="ho-q-card-meta-item">
-                      <Truck size={12} />
-                      {c.truck_count} {c.truck_count === 1 ? 'vehicle' : 'vehicles'}
-                    </span>
-                    {c.convoy_wide_handover && <span className="ho-q-card-accent-tag">Convoy-wide</span>}
-                  </div>
-
-                  <div className="ho-q-card-progress">
-                    <div className="ho-q-card-progress-row">
-                      <span className="ho-q-card-progress-label">{c.trucks_handed_over} of {c.truck_count} trucks</span>
-                      <span className={`ho-q-card-progress-pct ho-tone-${tone}`}>{pct}%</span>
-                    </div>
-                    <div className="ho-q-progress-track">
-                      <div className={`ho-q-progress-fill ho-fill-${tone}`} style={{ width: `${Math.max(4, pct)}%` }} />
-                    </div>
-                  </div>
-
-                  <div className="ho-q-card-footer">
-                    <span className="ho-q-card-footer-region">{c.region}</span>
-                    <span className="ho-q-card-open">
-                      Open <ArrowRight size={12} />
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
+            {filtered.map((c, i) => (
+              <QueueCard key={c.id} item={c} index={i} now={now} onOpen={() => setSelected(c.id)} />
+            ))}
           </div>
         )}
       </div>
@@ -626,6 +711,7 @@ function HandoverStyles() {
       .ho-badge-accent { background: rgba(34,232,255,.12); color: var(--d-sig); }
       .ho-badge-ok { background: rgba(41,255,176,.12); color: var(--d-ok); }
       .ho-badge-warn { background: rgba(255,180,60,.12); color: var(--d-warn); }
+      .ho-badge-danger { background: rgba(255,59,92,.12); color: var(--d-fire); }
 
       /* ── Status dot pill (Grok StatusBadge) ───── */
       .ho-status {
@@ -653,11 +739,14 @@ function HandoverStyles() {
       .ho-status-ok .ho-status-dot { background: var(--d-ok); }
       .ho-status-warn { background: rgba(255,180,60,.1); color: var(--d-warn); }
       .ho-status-warn .ho-status-dot { background: var(--d-warn); }
+      .ho-status-danger { background: rgba(255,59,92,.1); color: var(--d-fire); }
+      .ho-status-danger .ho-status-dot { background: var(--d-fire); }
 
       .ho-tone-muted { color: var(--d-t2); }
       .ho-tone-accent { color: var(--d-sig); }
       .ho-tone-ok { color: var(--d-ok); }
       .ho-tone-warn { color: var(--d-warn); }
+      .ho-tone-danger { color: var(--d-fire); }
 
       /* ── Queue layout ────────────────────────── */
       .ho-queue {
@@ -744,6 +833,7 @@ function HandoverStyles() {
       .ho-rail-accent { background: var(--d-sig); }
       .ho-rail-muted { background: var(--d-rim3); }
       .ho-rail-warn { background: var(--d-warn); }
+      .ho-rail-danger { background: var(--d-fire); }
 
       .ho-q-card-header {
         display: flex;
@@ -849,6 +939,32 @@ function HandoverStyles() {
       .ho-fill-accent { background: var(--d-sig); }
       .ho-fill-muted { background: var(--d-t3); }
       .ho-fill-warn { background: var(--d-warn); }
+      .ho-fill-danger { background: var(--d-fire); }
+
+      .ho-q-card-sla {
+        margin-top: 10px;
+      }
+
+      .ho-q-card-sla-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 6px;
+      }
+
+      .ho-q-card-sla-wait {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        color: var(--d-t2);
+      }
+
+      .ho-q-card-sla-badge {
+        font-family: var(--d-font-mono);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+      }
 
       .ho-q-card-footer {
         display: flex;
