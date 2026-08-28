@@ -43,6 +43,7 @@
     "date-fns": "^4.1.0",
     "deck.gl": "^9.1.5",
     "dexie": "^4.0.10",
+    "exceljs": "^4.4.0",
     "gsap": "^3.15.0",
     "i18next": "^24.2.2",
     "i18next-browser-languagedetector": "^8.0.2",

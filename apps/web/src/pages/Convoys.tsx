@@ -9,6 +9,7 @@ import { api } from '../lib/api.js'
 import { subscribe } from '../lib/centrifuge.js'
 import { useAuthStore } from '../stores/auth.js'
 import { normalizeList } from '../lib/normalize.js'
+import { exportNuclearAnalytics } from '../lib/nuclearAnalyticsExport.js'
 import type { ConvoyStatus } from '@sonalit/contracts'
 import BroadcastPanel from '../components/BroadcastPanel.js'
 
@@ -205,6 +206,49 @@ function exportConvoysCsv(list: ConvoyRow[], filename: string) {
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
+}
+
+function ExportMenu({ list, filenameBase, filters }: {
+  list: ConvoyRow[]
+  filenameBase: string
+  filters?: { status?: string; client?: string; search?: string }
+}) {
+  const [open, setOpen] = useState(false)
+  const disabled = list.length === 0
+  const today = new Date().toISOString().slice(0, 10)
+
+  return (
+    <div style={{ position: 'relative', flexShrink: 0 }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        disabled={disabled}
+        className="cnv-clear"
+        style={{ display: 'flex', alignItems: 'center', gap: 5, fontFamily: MN, fontSize: 8, letterSpacing: '.1em', color: '#4e5a65', background: 'none', border: '1px solid rgba(255,255,255,.08)', borderRadius: 3, padding: '5px 8px', cursor: disabled ? 'default' : 'pointer', transition: 'all .12s', opacity: disabled ? .4 : 1 }}>
+        <Download size={10} /> EXPORT <ChevronDown size={9} />
+      </button>
+      {open && !disabled && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+          <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 41, background: '#111519', border: '1px solid rgba(255,255,255,.1)', borderRadius: 4, minWidth: 220, boxShadow: '0 8px 24px rgba(0,0,0,.5)' }}>
+            <button
+              onClick={() => { exportConvoysCsv(list, `${filenameBase}-${today}.csv`); setOpen(false) }}
+              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 12px', background: 'none', border: 'none', borderBottom: '1px solid rgba(255,255,255,.06)', cursor: 'pointer' }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(249,115,22,.08)')} onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
+              <div style={{ fontFamily: MN, fontSize: 9, letterSpacing: '.08em', color: '#dde3ea' }}>CSV — SIMPLE</div>
+              <div style={{ fontFamily: SANS, fontSize: 10, color: '#4e5a65', marginTop: 2 }}>Plain data table, no styling</div>
+            </button>
+            <button
+              onClick={() => { void exportNuclearAnalytics(list, `${filenameBase}-nuclear-analytics-${today}.xlsx`, filters); setOpen(false) }}
+              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 12px', background: 'none', border: 'none', cursor: 'pointer' }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(249,115,22,.08)')} onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
+              <div style={{ fontFamily: MN, fontSize: 9, letterSpacing: '.08em', color: '#dde3ea' }}>EXCEL — NUCLEAR ANALYTICS</div>
+              <div style={{ fontFamily: SANS, fontSize: 10, color: '#4e5a65', marginTop: 2 }}>Styled multi-sheet workbook: command center, register, risk & compliance</div>
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )
 }
 
 // ─── Bulk Broadcast ───────────────────────────────────────────────────────────
@@ -617,11 +661,7 @@ export default function Convoys() {
           </button>
         )}
 
-        <button onClick={() => exportConvoysCsv(rows, `convoys-${new Date().toISOString().slice(0,10)}.csv`)}
-          disabled={rows.length === 0}
-          className="cnv-clear" style={{ display:'flex', alignItems:'center', gap:5, fontFamily:MN, fontSize:8, letterSpacing:'.1em', color:'#4e5a65', background:'none', border:'1px solid rgba(255,255,255,.08)', borderRadius:3, padding:'5px 8px', cursor: rows.length === 0 ? 'default' : 'pointer', transition:'all .12s', flexShrink:0, opacity: rows.length === 0 ? .4 : 1 }}>
-          <Download size={10} /> EXPORT CSV
-        </button>
+        <ExportMenu list={rows} filenameBase="convoys" filters={{ status: filter, client: clientFilter, search }} />
 
         <span style={{ display:'flex', alignItems:'center', gap:5, fontFamily:MN, fontSize:9, color:'#4e5a65', marginLeft:'auto', whiteSpace:'nowrap' }}>
           <SlidersHorizontal size={10} /> {rows.length} convoy{rows.length !== 1 ? 's' : ''}
@@ -639,10 +679,7 @@ export default function Convoys() {
             style={{ display:'flex', alignItems:'center', gap:5, fontFamily:MN, fontSize:8, letterSpacing:'.1em', padding:'5px 9px', borderRadius:3, background:'none', border:'1px solid rgba(249,115,22,.35)', color: selectedActiveConvoys.length === 0 ? '#4e5a65' : '#f97316', cursor: selectedActiveConvoys.length === 0 ? 'default' : 'pointer', opacity: selectedActiveConvoys.length === 0 ? .5 : 1 }}>
             <Radio size={10} /> BROADCAST ({selectedActiveConvoys.length})
           </button>
-          <button onClick={() => exportConvoysCsv(selectedConvoys, `convoys-selected-${new Date().toISOString().slice(0,10)}.csv`)}
-            style={{ display:'flex', alignItems:'center', gap:5, fontFamily:MN, fontSize:8, letterSpacing:'.1em', padding:'5px 9px', borderRadius:3, background:'none', border:'1px solid rgba(255,255,255,.1)', color:'#8a95a0', cursor:'pointer' }}>
-            <Download size={10} /> EXPORT
-          </button>
+          <ExportMenu list={selectedConvoys} filenameBase="convoys-selected" filters={{ status: filter, client: clientFilter, search }} />
           <button onClick={() => setSelectedIds(new Set())}
             style={{ display:'flex', alignItems:'center', gap:5, fontFamily:MN, fontSize:8, letterSpacing:'.1em', padding:'5px 9px', borderRadius:3, background:'none', border:'1px solid rgba(255,255,255,.1)', color:'#4e5a65', cursor:'pointer', marginLeft:'auto' }}>
             <X size={10} /> CLEAR SELECTION
