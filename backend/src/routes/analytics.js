@@ -14,6 +14,7 @@ router.get('/dashboard', c.getDashboard);
 router.get('/fleet-utilization', c.getFleetUtilization);
 router.get('/convoy-metrics', c.getConvoyMetrics);
 router.get('/incident-heatmap', c.getIncidentHeatmap);
+router.get('/nuclear-report', c.getNuclearReport);
 
 // GET /analytics/sla — SLA KPIs for Executive dashboard (F8)
 // RULE B: all raw queries use req.db (org-scoped), no matview reads here
