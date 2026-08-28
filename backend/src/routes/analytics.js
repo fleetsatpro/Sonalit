@@ -5,6 +5,10 @@ const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 
 router.use(authenticate, attachOrgDb);
+router.use((req, res, next) => {
+  if (!req.db) return res.status(403).json({ error: 'org_scope_required' });
+  next();
+});
 
 router.get('/dashboard', c.getDashboard);
 router.get('/fleet-utilization', c.getFleetUtilization);
