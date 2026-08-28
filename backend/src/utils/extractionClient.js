@@ -10,19 +10,15 @@ const { hasAnthropic, hasGroqFallback, getAnthropicClient } = require('./aiClien
 // Vision model on Groq — try several known IDs in order.
 // Override with GROQ_VISION_MODEL to pin a specific one.
 const GROQ_VISION_CANDIDATES = [
-  'meta-llama/llama-4-scout-17b-16e-instruct',
-  'llama-4-scout-17b-16e-instruct',
-  'meta-llama/llama-4-maverick-17b-128e-instruct',
-  'llama-4-maverick-17b-128e-instruct',
+  'qwen/qwen3.8-27b',
+  'qwen/qwen3.6-27b',
 ];
 const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL;
 
 // Text model candidates — tried in order until one works.
 const GROQ_TEXT_CANDIDATES = [
-  'llama-3.3-70b-versatile',
-  'llama-3.3-70b-specdec',
-  'llama-3.1-70b-versatile',
-  'llama-3.1-8b-instant',
+  'openai/gpt-oss-120b',
+  'openai/gpt-oss-20b',
 ];
 
 function isGroqModelError(err) {
