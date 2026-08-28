@@ -1,7 +1,7 @@
 import { Outlet } from '@tanstack/react-router';
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Shield, LogOut, Signal } from 'lucide-react';
+import { Shield, LogOut, Wifi } from 'lucide-react';
 import { useAuthStore } from '../stores/auth.js';
 import { api } from '../lib/api.js';
 import GlobalPanicAlarm from '../components/layout/GlobalPanicAlarm.js';
@@ -42,8 +42,8 @@ export default function HandoverShell() {
         <div className="ho-shell">
           <Header user={user} time={time} onLogout={clearAuth} />
           <main className="ho-content">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--d-t3)' }}>
-              Loading...
+            <div className="ho-shell-loading">
+              <div className="ho-shell-loader" />
             </div>
           </main>
         </div>
@@ -94,7 +94,7 @@ function Header({
     <header className="ho-bar">
       <div className="ho-brand">
         <div className="ho-logo">
-          <Shield size={16} strokeWidth={2.2} />
+          <Shield size={15} strokeWidth={2.2} />
         </div>
         <div className="ho-titles">
           <div className="ho-app-name">
@@ -106,11 +106,11 @@ function Header({
         </div>
       </div>
       <div className="ho-status">
-        <Signal size={13} strokeWidth={2.2} />
+        <Wifi size={12} strokeWidth={2.2} />
         <span className="ho-clock">{time}</span>
       </div>
       <button className="ho-logout" onClick={onLogout} aria-label="Sign out" title="Sign out">
-        <LogOut size={16} strokeWidth={2} />
+        <LogOut size={15} strokeWidth={2} />
       </button>
     </header>
   );
@@ -134,13 +134,15 @@ function ShellStyles() {
 
       .ho-bar {
         flex-shrink: 0;
-        height: 56px;
+        height: 54px;
         display: flex;
         align-items: center;
-        gap: 12px;
-        padding: 0 16px;
+        gap: 10px;
+        padding: 0 14px;
         background: var(--d-carbon);
-        border-bottom: 1px solid var(--d-rim);
+        box-shadow: 0 1px 0 rgba(200,215,240,.06);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
       }
 
       .ho-brand {
@@ -152,11 +154,11 @@ function ShellStyles() {
       }
 
       .ho-logo {
-        width: 32px;
-        height: 32px;
+        width: 30px;
+        height: 30px;
         border-radius: 8px;
-        background: linear-gradient(135deg, rgba(34,232,255,.15), rgba(139,107,255,.15));
-        border: 1px solid rgba(34,232,255,.18);
+        background: linear-gradient(145deg, rgba(139,107,255,.15), rgba(34,232,255,.15));
+        box-shadow: 0 0 0 1px rgba(34,232,255,.12);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -171,12 +173,12 @@ function ShellStyles() {
       .ho-app-name {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 7px;
       }
 
       .ho-app-sonalit {
         font-family: var(--d-font-display);
-        font-size: 11px;
+        font-size: 10px;
         letter-spacing: .18em;
         color: var(--d-t1);
         font-weight: 600;
@@ -186,7 +188,7 @@ function ShellStyles() {
       .ho-app-sep {
         width: 1px;
         height: 10px;
-        background: var(--d-rim3);
+        background: rgba(200,215,240,.1);
       }
 
       .ho-app-label {
@@ -211,14 +213,14 @@ function ShellStyles() {
       .ho-status {
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 5px;
         color: var(--d-sig);
         flex-shrink: 0;
       }
 
       .ho-clock {
         font-family: var(--d-font-mono);
-        font-size: 13px;
+        font-size: 12px;
         font-weight: 600;
         letter-spacing: .06em;
         font-variant-numeric: tabular-nums;
@@ -230,18 +232,20 @@ function ShellStyles() {
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 36px;
-        height: 36px;
-        border-radius: 8px;
-        border: 1px solid var(--d-rim2);
-        background: none;
+        width: 34px;
+        height: 34px;
+        border-radius: 9px;
+        border: none;
+        box-shadow: 0 0 0 1px rgba(200,215,240,.08);
+        background: var(--d-deep);
         color: var(--d-t2);
         cursor: pointer;
-        transition: all .15s;
+        transition: all .2s;
       }
       .ho-logout:hover {
-        border-color: var(--d-rim3);
+        box-shadow: 0 0 0 1px rgba(200,215,240,.14);
         color: var(--d-t1);
+        background: var(--d-well);
       }
 
       .ho-content {
@@ -250,6 +254,30 @@ function ShellStyles() {
         overflow-y: auto;
         overscroll-behavior: contain;
         -webkit-overflow-scrolling: touch;
+      }
+
+      .ho-shell-loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+      }
+
+      .ho-shell-loader {
+        width: 28px;
+        height: 28px;
+        border: 2px solid rgba(200,215,240,.08);
+        border-top-color: var(--d-sig);
+        border-radius: 50%;
+        animation: ho-shell-spin .7s linear infinite;
+      }
+
+      @keyframes ho-shell-spin {
+        to { transform: rotate(360deg); }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .ho-shell-loader { animation: none; border-color: var(--d-sig); }
       }
     `}</style>
   );
