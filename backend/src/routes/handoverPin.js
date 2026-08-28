@@ -178,13 +178,20 @@ router.post('/admin/reset-pin', authenticate, authorize('admin'), asyncHandler(a
 }));
 
 // GET /handover-auth/admin/pin-status/:userId — admin checks if officer has PIN
+//
+// handover_officer_pins carries no org_id and no RLS, and query() runs on the
+// raw pool rather than through withOrg — so the join to users is the only thing
+// keeping one org's admin out of another's rows. Same shape as the sibling
+// field_agent_pins endpoints in routes/field.js.
 router.get('/admin/pin-status/:userId', authenticate, authorize('admin', 'dispatcher'), asyncHandler(async (req, res) => {
   const result = await query(
-    `SELECT user_id, must_change,
-            (locked_until IS NOT NULL AND locked_until > NOW()) AS locked,
-            updated_at
-       FROM handover_officer_pins WHERE user_id = $1`,
-    [req.params.userId]
+    `SELECT p.user_id, p.must_change,
+            (p.locked_until IS NOT NULL AND p.locked_until > NOW()) AS locked,
+            p.updated_at
+       FROM handover_officer_pins p
+       JOIN users u ON u.id = p.user_id
+      WHERE p.user_id = $1 AND u.org_id = $2`,
+    [req.params.userId, req.user.org_id]
   );
 
   const row = result.rows[0];
@@ -203,10 +210,18 @@ router.post('/admin/unlock', authenticate, authorize('admin'), asyncHandler(asyn
   const { user_id } = req.body || {};
   if (!user_id) return res.status(400).json({ error: 'user_id is required' });
 
-  await query(
-    `UPDATE handover_officer_pins SET failed_attempts = 0, locked_until = NULL WHERE user_id = $1`,
-    [user_id]
+  // Scoped through users for the same reason as pin-status above — and here it
+  // matters more: unlocking is a write that clears a brute-force lockout, so an
+  // unscoped WHERE lets an admin in one org reopen an account in another.
+  const result = await query(
+    `UPDATE handover_officer_pins p
+        SET failed_attempts = 0, locked_until = NULL, updated_at = NOW()
+       FROM users u
+      WHERE p.user_id = u.id AND p.user_id = $1 AND u.org_id = $2
+      RETURNING p.user_id`,
+    [user_id, req.user.org_id]
   );
+  if (!result.rows.length) return res.status(404).json({ error: 'No PIN set for that user' });
 
   res.json({ data: { unlocked: true } });
 }));
