@@ -770,6 +770,16 @@
         }
       }
     },
+    "/api/v1/analytics/nuclear-report": {
+      "get": {
+        "operationId": "get_api_v1_analytics_nuclear_report",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/analytics/sla": {
       "get": {
         "operationId": "get_api_v1_analytics_sla",
