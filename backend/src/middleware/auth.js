@@ -3,7 +3,18 @@ const { query } = require('../config/database');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const logger = require('../utils/logger');
 
-const ROLE_HIERARCHY = { admin: 4, dispatcher: 3, operator: 2, analyst: 1, cfo: 1, response_crew: 1, handover_officer: 1 };
+// The office ladder only. Scoped field roles (yard_agent, port_agent,
+// response_crew, handover_officer) are deliberately absent: they reach their
+// own routes by exact match, and an entry here would also hand them every route
+// that admits an equal or lower level. response_crew and handover_officer sat
+// at level 1 alongside analyst and cfo, which granted them the six convoy
+// reporting routes in routes/convoys.js — reports overview, per-convoy reports,
+// report days, report detail, report download and route waypoints — none of
+// which either role has any reason to read. Everything they are meant to reach
+// (routes/response-crew.js, routes/convoyHandover.js, the role checks in
+// routes/handoverPin.js and routes/field.js) names them explicitly and is
+// unaffected.
+const ROLE_HIERARCHY = { admin: 4, dispatcher: 3, operator: 2, analyst: 1, cfo: 1 };
 
 /**
  * Verifies Bearer JWT and attaches req.user (full DB row including org_id).

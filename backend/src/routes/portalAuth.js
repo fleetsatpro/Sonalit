@@ -187,6 +187,16 @@ router.get('/rt-token', clientAuth, asyncHandler(async (req, res) => {
 }));
 
 // POST /portal/auth/rt-sub-token — Centrifugo subscription token for a specific channel
+//
+// Centrifugo trusts whatever channel this token names, so signing an arbitrary
+// one hands the caller that channel's stream. A portal client has exactly one
+// legitimate channel shape: portal#<convoy_id>, published by gpsWorker.js and
+// portalSecurity.js, and read by the three components under components/portal.
+//
+// So the channel is checked against the same link set every portal data route
+// enforces — the §00 guard in portalConvoy.js and portalClients.js. Without it a
+// signed-in client could name portal#<any-convoy>, or an operator channel such
+// as org#<org_id>, and Centrifugo would honour it.
 router.post('/rt-sub-token', clientAuth, asyncHandler(async (req, res) => {
   const secret = process.env.CENTRIFUGO_TOKEN_HMAC_SECRET;
   if (!secret) return res.status(503).json({ error: 'Realtime not configured' });
@@ -194,6 +204,13 @@ router.post('/rt-sub-token', clientAuth, asyncHandler(async (req, res) => {
   const { channel } = req.body;
   if (!channel || typeof channel !== 'string') {
     return res.status(400).json({ error: 'channel required' });
+  }
+
+  // Match the prefix exactly rather than parsing loosely: anything that is not
+  // portal#<id> is not a channel this client has any business subscribing to.
+  const convoyId = channel.startsWith('portal#') ? channel.slice('portal#'.length) : null;
+  if (!convoyId || !req.client.convoy_ids.includes(convoyId)) {
+    return res.status(403).json({ error: 'Not authorised for this channel' });
   }
 
   const sub = `portal_client:${req.client.client_id}`;
