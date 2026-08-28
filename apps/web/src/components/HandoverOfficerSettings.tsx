@@ -1,15 +1,15 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api.js';
-import { FileCheck2, Plus, Trash2, KeyRound, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import {
+  FileCheck2, Plus, Trash2, KeyRound, ChevronDown, ChevronUp, Loader2,
+  ShieldCheck, ShieldOff, Unlock, RotateCcw,
+} from 'lucide-react';
 
 const INPUT_CLS = 'w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500';
 const BTN_PRIMARY = 'text-sm bg-orange-600 hover:bg-orange-500 disabled:opacity-40 text-white px-4 py-1.5 rounded-lg';
 const BTN_GHOST = 'text-sm text-slate-400 hover:text-white';
 
-// Mirrors GuardianConvoySettings' own note: the "New Handover Officer" button
-// is a plain onClick, not a form submit, so native type="email" validation
-// never runs — check it ourselves.
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
@@ -21,11 +21,50 @@ interface HandoverOfficerUser {
   status: string;
 }
 
+interface PinStatus {
+  has_pin: boolean;
+  must_change: boolean;
+  locked: boolean;
+  updated_at: string | null;
+}
+
 function StatusBadge({ status }: { status: string }) {
   const color = status === 'active' ? 'text-green-400 bg-green-900/30 border-green-700'
     : 'text-slate-400 bg-slate-800 border-slate-600';
   return (
     <span className={`text-xs px-2 py-0.5 rounded-full border ${color}`}>{status}</span>
+  );
+}
+
+function PinBadge({ officerId }: { officerId: string }) {
+  const { data } = useQuery({
+    queryKey: ['admin-pin-status', officerId],
+    queryFn: () => api.get<{ data: PinStatus }>(`/handover-auth/admin/pin-status/${officerId}`).then(r => r.data.data),
+    staleTime: 30_000,
+  });
+
+  if (!data) return null;
+
+  if (data.locked) {
+    return (
+      <span className="text-xs px-2 py-0.5 rounded-full border text-red-400 bg-red-900/30 border-red-700 flex items-center gap-1">
+        <ShieldOff size={10} /> Locked
+      </span>
+    );
+  }
+
+  if (data.has_pin) {
+    return (
+      <span className="text-xs px-2 py-0.5 rounded-full border text-cyan-400 bg-cyan-900/20 border-cyan-700 flex items-center gap-1">
+        <ShieldCheck size={10} /> PIN set
+      </span>
+    );
+  }
+
+  return (
+    <span className="text-xs px-2 py-0.5 rounded-full border text-amber-400 bg-amber-900/20 border-amber-700">
+      No PIN
+    </span>
   );
 }
 
@@ -77,6 +116,24 @@ export function HandoverOfficerSettings() {
     onError: (e: any) => setResetError(e?.response?.data?.error ?? 'Failed to reset password'),
   });
 
+  const resetPinMut = useMutation({
+    mutationFn: (userId: string) =>
+      api.post('/handover-auth/admin/reset-pin', { user_id: userId }),
+    onSuccess: (_data, userId) => {
+      qc.invalidateQueries({ queryKey: ['admin-pin-status', userId] });
+    },
+    onError: (e: any) => alert(e?.response?.data?.error ?? 'Failed to reset PIN'),
+  });
+
+  const unlockPinMut = useMutation({
+    mutationFn: (userId: string) =>
+      api.post('/handover-auth/admin/unlock', { user_id: userId }),
+    onSuccess: (_data, userId) => {
+      qc.invalidateQueries({ queryKey: ['admin-pin-status', userId] });
+    },
+    onError: (e: any) => alert(e?.response?.data?.error ?? 'Failed to unlock PIN'),
+  });
+
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-4">
       {/* Header */}
@@ -97,13 +154,13 @@ export function HandoverOfficerSettings() {
           {/* Action bar */}
           <div className="flex items-center justify-between">
             <p className="text-xs text-slate-500">
-              Handover officers sign in to the Sonalit Handover app with their email and password.
+              Handover officers sign in with email/password, then set a 4-8 digit PIN for quick re-auth.
             </p>
             <button
               onClick={() => { setShowCreate(v => !v); setCreateError(null); }}
               className="flex items-center gap-1 text-sm text-orange-400 hover:text-orange-300 border border-orange-700 rounded-lg px-3 py-1.5"
             >
-              <Plus size={13} /> New Handover Officer
+              <Plus size={13} /> New Officer
             </button>
           </div>
 
@@ -134,6 +191,9 @@ export function HandoverOfficerSettings() {
                 onChange={e => setCreateForm(p => ({ ...p, password: e.target.value }))}
                 className={INPUT_CLS}
               />
+              <p className="text-xs text-slate-500">
+                The officer will set their own PIN on first sign-in to the Handover app.
+              </p>
               {createError && <p className="text-red-400 text-xs">{createError}</p>}
               <div className="flex gap-3 justify-end">
                 <button onClick={() => setShowCreate(false)} className={BTN_GHOST}>Cancel</button>
@@ -142,7 +202,7 @@ export function HandoverOfficerSettings() {
                   disabled={createMut.isPending || !createForm.name || !isValidEmail(createForm.email) || !createForm.password}
                   className={BTN_PRIMARY}
                 >
-                  {createMut.isPending ? 'Creating…' : 'Create Account'}
+                  {createMut.isPending ? 'Creating...' : 'Create Account'}
                 </button>
               </div>
             </div>
@@ -151,7 +211,7 @@ export function HandoverOfficerSettings() {
           {/* Officer list */}
           {isLoading ? (
             <div className="flex items-center gap-2 text-slate-500 text-sm py-4">
-              <Loader2 size={14} className="animate-spin" /> Loading handover officer accounts…
+              <Loader2 size={14} className="animate-spin" /> Loading handover officer accounts...
             </div>
           ) : officers.length === 0 ? (
             <p className="text-sm text-slate-500 py-4 text-center">
@@ -166,6 +226,7 @@ export function HandoverOfficerSettings() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-medium text-slate-200">{officer.name}</span>
                         <StatusBadge status={officer.status} />
+                        <PinBadge officerId={officer.id} />
                       </div>
                       <p className="text-xs text-slate-500 mt-0.5">{officer.email}</p>
                     </div>
@@ -176,6 +237,25 @@ export function HandoverOfficerSettings() {
                         className="text-slate-500 hover:text-orange-400"
                       >
                         <KeyRound size={14} />
+                      </button>
+                      <button
+                        title="Reset PIN (officer will set a new one on next login)"
+                        disabled={resetPinMut.isPending}
+                        onClick={() => {
+                          if (confirm(`Reset PIN for ${officer.name}? They will need to set a new one on next login.`))
+                            resetPinMut.mutate(officer.id);
+                        }}
+                        className="text-slate-500 hover:text-cyan-400 disabled:opacity-40"
+                      >
+                        <RotateCcw size={14} />
+                      </button>
+                      <button
+                        title="Unlock PIN (if locked from too many attempts)"
+                        disabled={unlockPinMut.isPending}
+                        onClick={() => unlockPinMut.mutate(officer.id)}
+                        className="text-slate-500 hover:text-green-400 disabled:opacity-40"
+                      >
+                        <Unlock size={14} />
                       </button>
                       <button
                         title="Delete account"
@@ -204,7 +284,7 @@ export function HandoverOfficerSettings() {
                           disabled={resetPasswordMut.isPending || !newPassword}
                           className={BTN_PRIMARY}
                         >
-                          {resetPasswordMut.isPending ? 'Saving…' : 'Save'}
+                          {resetPasswordMut.isPending ? 'Saving...' : 'Save'}
                         </button>
                         <button onClick={() => { setResetFor(null); setResetError(null); }} className={BTN_GHOST}>Cancel</button>
                       </div>

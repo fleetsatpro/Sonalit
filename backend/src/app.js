@@ -258,6 +258,9 @@ catch (e) { logger.warn("Response crew route failed: " + e.message); }
 try { app.use("/api/v1/convoy-handovers", require("./routes/convoyHandover")); logger.info("Route loaded: /api/v1/convoy-handovers"); }
 catch (e) { logger.warn("Convoy handover route failed: " + e.message); }
 
+try { app.use("/api/v1/handover-auth", require("./routes/handoverPin")); logger.info("Route loaded: /api/v1/handover-auth"); }
+catch (e) { logger.warn("Handover PIN auth route failed: " + e.message); }
+
 try { app.use("/api/v1/risk", require("./routes/risk")); logger.info("Route loaded: /api/v1/risk"); }
 catch (e) { logger.warn("Risk route failed: " + e.message); }
 

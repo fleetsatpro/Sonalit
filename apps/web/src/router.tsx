@@ -65,10 +65,22 @@ const convoysRoute = createRoute({ getParentRoute: () => authRoute, path: '/conv
 // operator auth (email/password) but NOT the Topbar/APPS/LIVE chrome — those
 // belong to the operator dashboard, not a single-purpose handover officer app.
 // HandoverShell provides its own minimal header (branding + clock + logout).
+const handoverLoginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/handover/login',
+  component: lazyRouteComponent(() => import('./pages/HandoverLogin.js')),
+});
+
+const handoverAuthCheck = () => {
+  if (!getAccessToken() && !useAuthStore.getState().user) {
+    throw redirect({ to: '/handover/login' });
+  }
+};
+
 const handoverShellRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: 'handover-shell',
-  beforeLoad: authCheck,
+  beforeLoad: handoverAuthCheck,
   component: lazyRouteComponent(() => import('./pages/HandoverShell.js')),
 });
 const handoverRoute = createRoute({ getParentRoute: () => handoverShellRoute, path: '/handover', component: lazyRouteComponent(() => import('./pages/Handover.js')) });
@@ -174,6 +186,7 @@ const routeTree = rootRoute.addChildren([
     portalTrackRoute, portalConvoyRoute, portalCustodyRoute, portalSecurityRoute,
   ]),
   fieldRoute.addChildren([fieldHomeRoute, fieldYardRoute, fieldPortRoute, fieldResponseRoute]),
+  handoverLoginRoute,
   handoverShellRoute.addChildren([handoverRoute]),
   authFullscreenRoute.addChildren([
     orbitRoute,

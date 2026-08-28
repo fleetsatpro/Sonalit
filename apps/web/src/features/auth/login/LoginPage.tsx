@@ -90,14 +90,12 @@ export default function LoginPage(): React.ReactElement | null {
 
   if (getAccessToken() || user) return null;
 
-  const isHandover = redirectTo.startsWith('/handover');
-
   function onLoginSuccess(): void {
     void navigate({ to: redirectTo });
   }
 
   return (
-    <div className={`sonalit-login-root${isHandover ? ' handover-mode' : ''}`}>
+    <div className="sonalit-login-root">
       <div className="wall-frame" aria-hidden="true">
         <span className="tick tl" />
         <span className="tick tr" />
@@ -106,8 +104,8 @@ export default function LoginPage(): React.ReactElement | null {
       </div>
 
       <div className="split">
-        {!isHandover && <Theater />}
-        {!isHandover && <CustodyChainLedger />}
+        <Theater />
+        <CustodyChainLedger />
         <AuthConsole
           toast={fire}
           onLoginSuccess={onLoginSuccess}
@@ -117,7 +115,6 @@ export default function LoginPage(): React.ReactElement | null {
           }}
           onOpenRequestAccess={() => setRequestOpen(true)}
           currentEmailRef={currentEmailRef}
-          handover={isHandover}
         />
       </div>
 

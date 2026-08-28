@@ -3170,6 +3170,66 @@
         }
       }
     },
+    "/api/v1/handover-auth/pin/set": {
+      "post": {
+        "operationId": "post_api_v1_handover_auth_pin_set",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/handover-auth/pin/status": {
+      "get": {
+        "operationId": "get_api_v1_handover_auth_pin_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/handover-auth/pin/verify": {
+      "post": {
+        "operationId": "post_api_v1_handover_auth_pin_verify",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/handover-auth/admin/reset-pin": {
+      "post": {
+        "operationId": "post_api_v1_handover_auth_admin_reset_pin",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/handover-auth/admin/pin-status/{userId}": {
+      "get": {
+        "operationId": "get_api_v1_handover_auth_admin_pin_status_userId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/handover-auth/admin/unlock": {
+      "post": {
+        "operationId": "post_api_v1_handover_auth_admin_unlock",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/risk/zones": {
       "get": {
         "operationId": "get_api_v1_risk_zones",
