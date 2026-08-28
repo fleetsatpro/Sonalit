@@ -1,9 +1,10 @@
 import { useState, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Truck, FileCheck2, Loader2, AlertCircle, CheckCircle2,
-  ChevronRight, MapPin, ArrowRight, Package, Camera, FileText,
-  RefreshCw, ClipboardCheck, User, X,
+  Truck, FileCheck2, Loader2, AlertCircle,
+  ChevronRight, MapPin, ArrowRight, FileText,
+  RefreshCw, ClipboardCheck, User, X, ChevronLeft, Upload,
+  CircleDot, Shield, Clock, Check,
 } from 'lucide-react';
 import { api } from '../lib/api.js';
 
@@ -40,6 +41,8 @@ interface HandoverDetail {
   trucks: HandoverTruck[];
   handovers: HandoverRecord[];
 }
+
+type QueueFilter = 'all' | 'pending' | 'in_progress' | 'done';
 
 /* ── Upload row — one truck or whole-convoy ─────────────────────────── */
 
@@ -120,79 +123,109 @@ function UploadRow({
   if (alreadyDone) {
     return (
       <div className="ho-row ho-row-done">
-        <div className="ho-row-check"><CheckCircle2 size={18} /></div>
+        <div className="ho-row-check"><Check size={16} /></div>
         <div className="ho-row-info">
           <div className="ho-row-label">{label}</div>
           {subtitle && <div className="ho-row-sub">{subtitle}</div>}
         </div>
-        <span className="ho-badge ho-badge-done">Done</span>
+        <span className="ho-status-badge ho-status-done">
+          <span className="ho-status-dot" /> Signed off
+        </span>
       </div>
     );
   }
 
   return (
     <div className="ho-row">
-      <div className="ho-row-icon"><Truck size={16} /></div>
       <div className="ho-row-body">
-        <div className="ho-row-info" style={{ marginBottom: 10 }}>
-          <div className="ho-row-label">{label}</div>
-          {subtitle && <div className="ho-row-sub">{subtitle}</div>}
+        <div className="ho-row-top-info">
+          <div className="ho-row-icon"><Truck size={15} /></div>
+          <div className="ho-row-info">
+            <div className="ho-row-label">{label}</div>
+            {subtitle && <div className="ho-row-sub">{subtitle}</div>}
+          </div>
         </div>
 
-        {/* Step 1: Selfie sign-off */}
-        <div className="ho-step">
-          <div className="ho-step-num">{selfieBlob ? <CheckCircle2 size={14} /> : '1'}</div>
-          <div className="ho-step-content">
-            <div className="ho-step-label">Selfie sign-off</div>
-            {selfiePreview ? (
-              <div className="ho-selfie-preview">
-                <img src={selfiePreview} alt="Selfie" className="ho-selfie-img" />
-                <button className="ho-selfie-remove" onClick={clearSelfie} aria-label="Remove selfie"><X size={14} /></button>
-              </div>
-            ) : (
-              <button className="ho-selfie-btn" onClick={() => selfieRef.current?.click()}>
-                <User size={14} /> Take selfie
+        <div className="ho-steps-track">
+          <div className={`ho-step ${selfieBlob ? 'ho-step-complete' : ''}`}>
+            <div className="ho-step-indicator">
+              {selfieBlob
+                ? <Check size={14} />
+                : <span className="ho-step-num-text">1</span>}
+            </div>
+            <div className="ho-step-content">
+              <div className="ho-kicker">Selfie sign-off</div>
+              {selfiePreview ? (
+                <div className="ho-selfie-preview-wrap">
+                  <img src={selfiePreview} alt="Selfie" className="ho-selfie-img" />
+                  <button className="ho-selfie-remove" onClick={clearSelfie} aria-label="Remove selfie"><X size={12} /></button>
+                </div>
+              ) : (
+                <button className="ho-action-btn ho-action-btn-outline" onClick={() => selfieRef.current?.click()}>
+                  <User size={13} /> Take selfie
+                </button>
+              )}
+              <input ref={selfieRef} type="file" accept="image/jpeg,image/*" capture="user" className="ho-sr-only" onChange={onSelfieCapture} />
+            </div>
+          </div>
+
+          <div className="ho-step-connector" />
+
+          <div className={`ho-step ${!selfieBlob ? 'ho-step-locked' : ''}`}>
+            <div className="ho-step-indicator">
+              <span className="ho-step-num-text">2</span>
+            </div>
+            <div className="ho-step-content">
+              <div className="ho-kicker">Upload handover form</div>
+              <button
+                className="ho-action-btn ho-action-btn-primary"
+                disabled={submit.isPending || !selfieBlob}
+                onClick={() => fileRef.current?.click()}
+              >
+                {submit.isPending
+                  ? <><Loader2 size={13} className="ho-spin" /> Uploading…</>
+                  : <><Upload size={13} /> Upload form</>}
               </button>
-            )}
-            <input ref={selfieRef} type="file" accept="image/jpeg,image/*" capture="user" className="ho-sr-only" onChange={onSelfieCapture} />
+            </div>
+            <input ref={fileRef} type="file" accept="image/jpeg,application/pdf" className="ho-sr-only" onChange={onFile} disabled={submit.isPending || !selfieBlob} />
           </div>
         </div>
 
-        {/* Step 2: Upload form */}
-        <div className={`ho-step ${!selfieBlob ? 'ho-step-locked' : ''}`}>
-          <div className="ho-step-num">2</div>
-          <div className="ho-step-content">
-            <div className="ho-step-label">Upload handover form</div>
-            <button
-              className="ho-upload-btn"
-              disabled={submit.isPending || !selfieBlob}
-              onClick={() => fileRef.current?.click()}
-            >
-              {submit.isPending
-                ? <><Loader2 size={14} className="ho-spin" /> Uploading</>
-                : <><Camera size={14} /> Upload</>}
-            </button>
-          </div>
-          <input ref={fileRef} type="file" accept="image/jpeg,application/pdf" className="ho-sr-only" onChange={onFile} disabled={submit.isPending || !selfieBlob} />
+        <div className="ho-row-extras">
+          <button className="ho-notes-toggle" onClick={() => setShowNotes(!showNotes)}>
+            <FileText size={11} /> {showNotes ? 'Hide notes' : 'Add notes'}
+          </button>
+          {showNotes && (
+            <input
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Optional handover notes…"
+              className="ho-notes-input"
+            />
+          )}
+          {error && (
+            <div className="ho-error">
+              <AlertCircle size={12} /> {error}
+            </div>
+          )}
         </div>
-
-        <button className="ho-notes-toggle" onClick={() => setShowNotes(!showNotes)}>
-          <FileText size={12} /> {showNotes ? 'Hide notes' : 'Add notes'}
-        </button>
-        {showNotes && (
-          <input
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Optional handover notes…"
-            className="ho-notes-input"
-          />
-        )}
-        {error && (
-          <div className="ho-error">
-            <AlertCircle size={13} /> {error}
-          </div>
-        )}
       </div>
+    </div>
+  );
+}
+
+/* ── Skeleton loaders ──────────────────────────────────────────────── */
+
+function QueueSkeleton() {
+  return (
+    <div className="ho-q-list ho-stagger">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="ho-skel-card" style={{ '--stagger': i } as React.CSSProperties}>
+          <div className="ho-skel-line ho-skel-w60" />
+          <div className="ho-skel-line ho-skel-w40" style={{ marginTop: 8 }} />
+          <div className="ho-skel-bar" style={{ marginTop: 12 }} />
+        </div>
+      ))}
     </div>
   );
 }
@@ -214,20 +247,36 @@ function ConvoyDetail({ convoyId, onBack }: { convoyId: string; onBack: () => vo
 
   if (isLoading || !data) {
     return (
-      <div className="ho-loading">
-        <Loader2 size={22} className="ho-spin" />
-        <span>Loading convoy…</span>
+      <div className="ho-detail">
+        <button className="ho-detail-back" onClick={onBack}>
+          <ChevronLeft size={16} /> Back
+        </button>
+        <div className="ho-skel-card" style={{ padding: 20 }}>
+          <div className="ho-skel-line ho-skel-w60" />
+          <div className="ho-skel-line ho-skel-w40" style={{ marginTop: 10 }} />
+          <div className="ho-skel-bar" style={{ marginTop: 16 }} />
+        </div>
       </div>
     );
   }
 
   if (data.convoy.status !== 'completing') {
     return (
-      <div className="ho-complete-card">
-        <div className="ho-complete-icon"><CheckCircle2 size={32} /></div>
-        <div className="ho-complete-title">{data.convoy.name}</div>
-        <div className="ho-complete-sub">All trucks have been handed over successfully.</div>
-        <button className="ho-back-btn" onClick={onBack}>Back to queue</button>
+      <div className="ho-complete-wrap">
+        <div className="ho-complete-rings" aria-hidden="true">
+          <div className="ho-complete-ring ho-complete-ring-outer" />
+          <div className="ho-complete-ring ho-complete-ring-inner" />
+          <div className="ho-complete-icon-center">
+            <Check size={36} />
+          </div>
+        </div>
+        <h2 className="ho-complete-title">All clear</h2>
+        <p className="ho-complete-sub">
+          <strong>{data.convoy.name}</strong> — all trucks handed over successfully.
+        </p>
+        <button className="ho-complete-btn" onClick={onBack}>
+          <ChevronLeft size={14} /> Back to queue
+        </button>
       </div>
     );
   }
@@ -240,46 +289,72 @@ function ConvoyDetail({ convoyId, onBack }: { convoyId: string; onBack: () => vo
   return (
     <div className="ho-detail">
       <button className="ho-detail-back" onClick={onBack}>
-        <ChevronRight size={16} className="ho-flip" /> Back
+        <ChevronLeft size={16} /> Back
       </button>
 
-      <div className="ho-detail-header">
-        <div className="ho-detail-name">{data.convoy.name}</div>
-        <div className="ho-detail-route">
-          <MapPin size={12} /> {data.convoy.route_origin}
-          <ArrowRight size={12} />
-          {data.convoy.route_destination}
+      {/* Convoy info card */}
+      <div className="ho-info-card ho-hairline">
+        <div className="ho-info-top">
+          <div className="ho-info-badge">
+            <Shield size={14} />
+          </div>
+          <div className="ho-info-text">
+            <div className="ho-info-name">{data.convoy.name}</div>
+            <div className="ho-info-region">{data.convoy.region}</div>
+          </div>
         </div>
-        <div className="ho-progress">
-          <div className="ho-progress-bar">
+
+        <div className="ho-info-route">
+          <div className="ho-route-point">
+            <CircleDot size={12} />
+            <span>{data.convoy.route_origin}</span>
+          </div>
+          <div className="ho-route-line" />
+          <div className="ho-route-point ho-route-dest">
+            <MapPin size={12} />
+            <span>{data.convoy.route_destination}</span>
+          </div>
+        </div>
+
+        <div className="ho-progress-section">
+          <div className="ho-progress-header">
+            <span className="ho-kicker">{doneCount} of {data.trucks.length} trucks</span>
+            <span className="ho-progress-pct">{pct}%</span>
+          </div>
+          <div className="ho-progress-track">
             <div className="ho-progress-fill" style={{ width: `${pct}%` }} />
           </div>
-          <span className="ho-progress-label">{doneCount}/{data.trucks.length} trucks</span>
         </div>
       </div>
 
-      <div className="ho-section-label">
-        <ClipboardCheck size={13} /> Whole convoy handover
-      </div>
-      <div className="ho-card">
-        <UploadRow
-          convoyId={convoyId}
-          truckId={null}
-          label="Complete convoy"
-          subtitle="Upload one form covering all trucks"
-          alreadyDone={!!convoyWide}
-          onDone={refresh}
-        />
+      {/* Whole convoy handover */}
+      <div className="ho-section">
+        <div className="ho-kicker" style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <ClipboardCheck size={12} />
+          <span>Whole convoy handover</span>
+        </div>
+        <div className="ho-card ho-hairline">
+          <UploadRow
+            convoyId={convoyId}
+            truckId={null}
+            label="Complete convoy"
+            subtitle="Upload one form covering all trucks"
+            alreadyDone={!!convoyWide}
+            onDone={refresh}
+          />
+        </div>
       </div>
 
+      {/* Truck-by-truck */}
       {!convoyWide && data.trucks.length > 0 && (
         <>
           <div className="ho-divider-row">
             <div className="ho-divider-line" />
-            <span className="ho-divider-text">or truck by truck</span>
+            <span className="ho-kicker" style={{ flexShrink: 0, padding: '0 4px' }}>or truck by truck</span>
             <div className="ho-divider-line" />
           </div>
-          <div className="ho-card ho-truck-list">
+
+          <div className="ho-card ho-hairline">
             {data.trucks.map((t, i) => (
               <div key={t.id} className={i > 0 ? 'ho-truck-sep' : ''}>
                 <UploadRow
@@ -299,10 +374,29 @@ function ConvoyDetail({ convoyId, onBack }: { convoyId: string; onBack: () => vo
   );
 }
 
+/* ── Filter pills ──────────────────────────────────────────────────── */
+
+const FILTERS: { key: QueueFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'pending', label: 'Pending' },
+  { key: 'in_progress', label: 'In progress' },
+  { key: 'done', label: 'Done' },
+];
+
+function applyFilter(queue: HandoverQueueItem[], filter: QueueFilter): HandoverQueueItem[] {
+  switch (filter) {
+    case 'pending': return queue.filter(c => c.trucks_handed_over === 0 && !c.convoy_wide_handover);
+    case 'in_progress': return queue.filter(c => c.trucks_handed_over > 0 && c.trucks_handed_over < c.truck_count && !c.convoy_wide_handover);
+    case 'done': return queue.filter(c => c.convoy_wide_handover || c.trucks_handed_over >= c.truck_count);
+    default: return queue;
+  }
+}
+
 /* ── Queue list — the main page ─────────────────────────────────────── */
 
 export default function Handover() {
   const [selected, setSelected] = useState<string | null>(null);
+  const [filter, setFilter] = useState<QueueFilter>('all');
   const queryClient = useQueryClient();
 
   const { data: queue, isLoading, dataUpdatedAt } = useQuery({
@@ -324,75 +418,123 @@ export default function Handover() {
     );
   }
 
+  const filtered = queue ? applyFilter(queue, filter) : [];
+
   return (
     <div className="ho-page">
       <div className="ho-queue">
-        {/* Header */}
+        {/* Page header */}
         <div className="ho-q-header">
-          <div className="ho-q-icon"><FileCheck2 size={20} /></div>
-          <div>
+          <div className="ho-q-icon">
+            <FileCheck2 size={18} />
+          </div>
+          <div className="ho-q-header-text">
             <h1 className="ho-q-title">Handover Queue</h1>
             <p className="ho-q-sub">Convoys awaiting signed handover forms</p>
           </div>
           <button className="ho-refresh" onClick={manualRefresh} aria-label="Refresh">
-            <RefreshCw size={16} />
+            <RefreshCw size={15} />
           </button>
         </div>
 
-        {/* Count badge */}
+        {/* Filter pills */}
         {queue && queue.length > 0 && (
-          <div className="ho-q-count">
-            <Package size={13} />
-            <span>{queue.length} convoy{queue.length !== 1 ? 's' : ''} pending</span>
+          <div className="ho-filter-row">
+            {FILTERS.map((f) => (
+              <button
+                key={f.key}
+                className={`ho-pill ${filter === f.key ? 'ho-pill-active' : ''}`}
+                onClick={() => setFilter(f.key)}
+              >
+                {f.label}
+                {f.key !== 'all' && (
+                  <span className="ho-pill-count">
+                    {applyFilter(queue, f.key).length}
+                  </span>
+                )}
+              </button>
+            ))}
           </div>
         )}
 
-        {/* Loading */}
-        {isLoading && (
-          <div className="ho-loading">
-            <Loader2 size={22} className="ho-spin" />
-            <span>Loading queue…</span>
-          </div>
-        )}
+        {/* Skeleton loading */}
+        {isLoading && <QueueSkeleton />}
 
-        {/* Empty state */}
+        {/* Empty state — Grok double-ring pattern */}
         {!isLoading && queue?.length === 0 && (
           <div className="ho-empty">
-            <div className="ho-empty-ring">
-              <CheckCircle2 size={36} />
+            <div className="ho-empty-rings">
+              <div className="ho-empty-ring ho-empty-ring-outer" />
+              <div className="ho-empty-ring ho-empty-ring-inner" />
+              <div className="ho-empty-icon-center">
+                <Check size={28} />
+              </div>
             </div>
-            <div className="ho-empty-title">All clear</div>
-            <div className="ho-empty-sub">No convoys awaiting handover right now.<br />Queue refreshes automatically.</div>
+            <h2 className="ho-empty-title">All clear</h2>
+            <p className="ho-empty-sub">No convoys awaiting handover right now.</p>
+            <p className="ho-empty-sub" style={{ marginTop: 2 }}>Queue refreshes automatically.</p>
             {dataUpdatedAt > 0 && (
               <div className="ho-empty-ts">
-                Last checked {new Date(dataUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                <Clock size={10} />
+                <span>Last checked {new Date(dataUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
               </div>
             )}
           </div>
         )}
 
-        {/* Queue cards */}
-        {!isLoading && queue && queue.length > 0 && (
-          <div className="ho-q-list">
-            {queue.map((c) => {
+        {/* Filtered empty */}
+        {!isLoading && queue && queue.length > 0 && filtered.length === 0 && (
+          <div className="ho-empty" style={{ paddingTop: 40 }}>
+            <p className="ho-empty-sub">No convoys match this filter.</p>
+          </div>
+        )}
+
+        {/* Queue cards — stagger-in */}
+        {!isLoading && filtered.length > 0 && (
+          <div className="ho-q-list ho-stagger">
+            {filtered.map((c, i) => {
               const pct = c.truck_count > 0 ? Math.round((c.trucks_handed_over / c.truck_count) * 100) : 0;
+              const isDone = c.convoy_wide_handover || pct >= 100;
               return (
-                <button key={c.id} className="ho-q-card" onClick={() => setSelected(c.id)}>
-                  <div className="ho-q-card-top">
-                    <div className="ho-q-card-name">{c.name}</div>
-                    <ChevronRight size={16} className="ho-q-card-arrow" />
-                  </div>
-                  <div className="ho-q-card-route">
-                    <MapPin size={11} /> {c.route_origin} <ArrowRight size={10} /> {c.route_destination}
-                  </div>
-                  <div className="ho-q-card-stats">
-                    <div className="ho-q-card-trucks">
-                      <Truck size={13} />
-                      <span>{c.trucks_handed_over}/{c.truck_count} trucks</span>
-                      {c.convoy_wide_handover && <span className="ho-badge ho-badge-done">Complete</span>}
+                <button
+                  key={c.id}
+                  className="ho-q-card ho-hairline"
+                  onClick={() => setSelected(c.id)}
+                  style={{ '--stagger': i } as React.CSSProperties}
+                >
+                  {/* Priority rail */}
+                  <div className={`ho-priority-rail ${isDone ? 'ho-rail-ok' : pct > 0 ? 'ho-rail-sig' : 'ho-rail-muted'}`} />
+
+                  <div className="ho-q-card-body">
+                    <div className="ho-q-card-header">
+                      <div className="ho-q-card-name">{c.name}</div>
+                      <ChevronRight size={16} className="ho-q-card-arrow" />
                     </div>
-                    <div className="ho-q-progress-mini">
-                      <div className="ho-q-progress-fill-mini" style={{ width: `${pct}%` }} />
+
+                    <div className="ho-q-card-route">
+                      <span>{c.route_origin}</span>
+                      <ArrowRight size={9} />
+                      <span>{c.route_destination}</span>
+                    </div>
+
+                    <div className="ho-q-card-meta">
+                      <span className="ho-q-card-region">{c.region}</span>
+                      <span className="ho-q-card-trucks">
+                        <Truck size={11} />
+                        {c.trucks_handed_over}/{c.truck_count}
+                      </span>
+                      {isDone && (
+                        <span className="ho-status-badge ho-status-done">
+                          <span className="ho-status-dot" /> Complete
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="ho-q-progress-track">
+                      <div
+                        className={`ho-q-progress-fill ${isDone ? 'ho-q-progress-done' : ''}`}
+                        style={{ width: `${pct}%` }}
+                      />
                     </div>
                   </div>
                 </button>
@@ -411,106 +553,249 @@ export default function Handover() {
 function HandoverStyles() {
   return (
     <style>{`
+      /* ── Page ─────────────────────────────────── */
       .ho-page {
         min-height: 100%;
         background: var(--d-void);
         padding: 0 0 env(safe-area-inset-bottom, 0);
       }
 
-      /* ── Queue ───────────────────────────────── */
-      .ho-queue { max-width: 520px; margin: 0 auto; padding: 20px 16px 40px; }
+      /* ── Hairline (Grok box-shadow border) ────── */
+      .ho-hairline {
+        box-shadow: 0 0 0 1px rgba(200,215,240,.08);
+      }
+      .ho-hairline:hover {
+        box-shadow: 0 0 0 1px rgba(200,215,240,.14);
+      }
+
+      /* ── Kicker label (Grok pattern) ──────────── */
+      .ho-kicker {
+        font-family: var(--d-font-mono);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        color: var(--d-t2);
+        line-height: 1;
+      }
+
+      /* ── Stagger-in animation (Grok rise-in) ──── */
+      .ho-stagger > * {
+        animation: ho-rise-in .45s ease both;
+        animation-delay: calc(var(--stagger, 0) * 50ms);
+      }
+
+      @keyframes ho-rise-in {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+          filter: blur(4px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+          filter: blur(0);
+        }
+      }
+
+      /* ── Queue layout ────────────────────────── */
+      .ho-queue {
+        max-width: 520px;
+        margin: 0 auto;
+        padding: 20px 16px 40px;
+      }
+
       .ho-q-header {
         display: flex;
-        align-items: flex-start;
+        align-items: center;
         gap: 12px;
         margin-bottom: 20px;
       }
+
       .ho-q-icon {
-        width: 40px; height: 40px;
-        border-radius: 10px;
-        background: linear-gradient(135deg, var(--d-orange), var(--d-sig));
-        display: flex; align-items: center; justify-content: center;
-        color: #fff;
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        background: linear-gradient(145deg, rgba(139,107,255,.18), rgba(34,232,255,.18));
+        box-shadow: 0 0 0 1px rgba(34,232,255,.12);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--d-sig);
         flex-shrink: 0;
       }
+
+      .ho-q-header-text {
+        flex: 1;
+        min-width: 0;
+      }
+
       .ho-q-title {
         font-family: var(--d-font);
-        font-size: 18px;
+        font-size: 17px;
         font-weight: 700;
         color: var(--d-t1);
         margin: 0;
-        line-height: 1.2;
+        line-height: 1.25;
       }
+
       .ho-q-sub {
         font-family: var(--d-font-mono);
         font-size: 11px;
         color: var(--d-t2);
         margin: 3px 0 0;
+        line-height: 1.3;
       }
+
       .ho-refresh {
-        margin-left: auto;
         flex-shrink: 0;
-        width: 36px; height: 36px;
-        border-radius: 8px;
-        border: 1px solid var(--d-rim2);
-        background: none;
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        box-shadow: 0 0 0 1px rgba(200,215,240,.08);
+        background: var(--d-deep);
         color: var(--d-t2);
         cursor: pointer;
-        display: flex; align-items: center; justify-content: center;
-        transition: all .15s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all .2s;
+        border: none;
       }
-      .ho-refresh:hover { color: var(--d-sig); border-color: var(--d-rim3); }
-      .ho-refresh:active { transform: rotate(90deg); }
+      .ho-refresh:hover {
+        color: var(--d-sig);
+        box-shadow: 0 0 0 1px rgba(200,215,240,.14);
+        background: var(--d-well);
+      }
+      .ho-refresh:active {
+        transform: rotate(90deg);
+      }
 
-      .ho-q-count {
+      /* ── Filter pills (Grok pattern) ──────────── */
+      .ho-filter-row {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 16px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        padding: 2px 0;
+      }
+      .ho-filter-row::-webkit-scrollbar { display: none; }
+
+      .ho-pill {
         display: inline-flex;
         align-items: center;
-        gap: 6px;
-        padding: 5px 12px;
-        border-radius: 20px;
-        background: var(--d-sg2);
-        border: 1px solid var(--d-sg);
-        color: var(--d-sig);
-        font-family: var(--d-font-mono);
-        font-size: 11px;
+        gap: 5px;
+        padding: 6px 14px;
+        border-radius: 999px;
+        border: none;
+        background: var(--d-deep);
+        box-shadow: 0 0 0 1px rgba(200,215,240,.08);
+        color: var(--d-t2);
+        font-family: var(--d-font);
+        font-size: 12px;
         font-weight: 600;
-        margin-bottom: 16px;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all .15s;
+        -webkit-tap-highlight-color: transparent;
+        flex-shrink: 0;
+      }
+      .ho-pill:hover {
+        background: var(--d-well);
+        color: var(--d-t1);
+      }
+      .ho-pill-active {
+        background: var(--d-sig);
+        color: var(--d-void);
+        box-shadow: none;
+      }
+      .ho-pill-active:hover {
+        background: var(--d-sig);
+        color: var(--d-void);
+      }
+      .ho-pill-count {
+        font-family: var(--d-font-mono);
+        font-size: 10px;
+        font-weight: 700;
+        opacity: .7;
+      }
+      .ho-pill-active .ho-pill-count {
+        opacity: .85;
       }
 
       /* ── Queue cards ─────────────────────────── */
-      .ho-q-list { display: flex; flex-direction: column; gap: 10px; }
+      .ho-q-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
       .ho-q-card {
-        display: block;
+        display: flex;
         width: 100%;
         text-align: left;
         background: var(--d-deep);
-        border: 1px solid var(--d-rim);
-        border-radius: 12px;
-        padding: 14px 16px;
+        border: none;
+        border-radius: 14px;
+        padding: 0;
         cursor: pointer;
-        transition: all .2s;
+        transition: all .2s ease;
         -webkit-tap-highlight-color: transparent;
+        overflow: hidden;
       }
-      .ho-q-card:hover { border-color: var(--d-rim2); background: var(--d-well); }
-      .ho-q-card:active { transform: scale(.985); }
-      .ho-q-card-top {
+      .ho-q-card:hover {
+        background: var(--d-well);
+        transform: translateY(-1px);
+      }
+      .ho-q-card:active {
+        transform: scale(.985);
+      }
+
+      /* ── Priority rail (Grok convoy-card) ──────── */
+      .ho-priority-rail {
+        width: 4px;
+        flex-shrink: 0;
+        border-radius: 4px 0 0 4px;
+      }
+      .ho-rail-ok { background: var(--d-ok); }
+      .ho-rail-sig { background: var(--d-sig); }
+      .ho-rail-muted { background: var(--d-t3); opacity: .4; }
+
+      .ho-q-card-body {
+        flex: 1;
+        min-width: 0;
+        padding: 14px 16px;
+      }
+
+      .ho-q-card-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 8px;
       }
+
       .ho-q-card-name {
         font-family: var(--d-font);
         font-size: 14px;
         font-weight: 600;
         color: var(--d-t1);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
+
       .ho-q-card-arrow {
         color: var(--d-t3);
         flex-shrink: 0;
-        transition: transform .2s;
+        transition: all .2s;
       }
-      .ho-q-card:hover .ho-q-card-arrow { transform: translateX(2px); color: var(--d-sig); }
+      .ho-q-card:hover .ho-q-card-arrow {
+        transform: translateX(2px);
+        color: var(--d-sig);
+      }
+
       .ho-q-card-route {
         display: flex;
         align-items: center;
@@ -520,86 +805,158 @@ function HandoverStyles() {
         color: var(--d-t2);
         margin-top: 6px;
       }
-      .ho-q-card-stats {
+
+      .ho-q-card-meta {
         display: flex;
         align-items: center;
         gap: 10px;
         margin-top: 10px;
+        flex-wrap: wrap;
       }
+
+      .ho-q-card-region {
+        font-family: var(--d-font-mono);
+        font-size: 10px;
+        color: var(--d-t3);
+        letter-spacing: .04em;
+      }
+
       .ho-q-card-trucks {
         display: flex;
         align-items: center;
-        gap: 5px;
+        gap: 4px;
         font-family: var(--d-font-mono);
         font-size: 11px;
+        font-weight: 600;
         color: var(--d-t2);
         flex-shrink: 0;
       }
-      .ho-q-progress-mini {
-        flex: 1;
-        height: 4px;
-        border-radius: 2px;
-        background: var(--d-rim);
-        overflow: hidden;
+
+      /* ── Status badge (Grok pattern) ─────────── */
+      .ho-status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 2px 10px;
+        border-radius: 999px;
+        font-family: var(--d-font-mono);
+        font-size: 10px;
+        font-weight: 600;
+        flex-shrink: 0;
       }
-      .ho-q-progress-fill-mini {
-        height: 100%;
-        border-radius: 2px;
-        background: linear-gradient(90deg, var(--d-sig), var(--d-ok));
-        transition: width .4s ease;
+      .ho-status-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+      .ho-status-done {
+        background: rgba(41,255,176,.1);
+        color: var(--d-ok);
+      }
+      .ho-status-done .ho-status-dot {
+        background: var(--d-ok);
       }
 
-      /* ── Empty state ─────────────────────────── */
+      .ho-q-progress-track {
+        height: 3px;
+        border-radius: 2px;
+        background: rgba(200,215,240,.06);
+        overflow: hidden;
+        margin-top: 10px;
+      }
+
+      .ho-q-progress-fill {
+        height: 100%;
+        border-radius: 2px;
+        background: var(--d-sig);
+        transition: width .5s ease;
+      }
+      .ho-q-progress-done {
+        background: var(--d-ok);
+      }
+
+      /* ── Empty state (Grok double-ring) ──────── */
       .ho-empty {
         display: flex;
         flex-direction: column;
         align-items: center;
         text-align: center;
-        padding: 56px 24px 24px;
+        padding: 60px 24px 24px;
+        animation: ho-rise-in .4s ease both;
       }
+
+      .ho-empty-rings {
+        position: relative;
+        width: 80px;
+        height: 80px;
+        margin-bottom: 24px;
+      }
+
       .ho-empty-ring {
-        width: 72px; height: 72px;
+        position: absolute;
         border-radius: 50%;
-        background: var(--d-sg2);
-        border: 2px solid var(--d-sg);
-        display: flex; align-items: center; justify-content: center;
-        color: var(--d-sig);
-        margin-bottom: 20px;
       }
+
+      .ho-empty-ring-outer {
+        inset: 0;
+        border: 1.5px solid rgba(34,232,255,.15);
+        animation: ho-ring-pulse 3s ease-in-out infinite;
+      }
+
+      .ho-empty-ring-inner {
+        inset: 8px;
+        border: 1.5px solid rgba(34,232,255,.25);
+        animation: ho-ring-pulse 3s ease-in-out infinite .4s;
+      }
+
+      .ho-empty-icon-center {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--d-sig);
+      }
+
       .ho-empty-title {
         font-family: var(--d-font);
-        font-size: 17px;
-        font-weight: 700;
+        font-size: 20px;
+        font-weight: 600;
         color: var(--d-t1);
-        margin-bottom: 8px;
+        margin: 0 0 8px;
+        letter-spacing: -.01em;
       }
+
       .ho-empty-sub {
-        font-family: var(--d-font-mono);
-        font-size: 12px;
+        font-size: 13px;
         color: var(--d-t2);
-        line-height: 1.6;
+        line-height: 1.5;
+        margin: 0;
       }
+
       .ho-empty-ts {
-        margin-top: 16px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        margin-top: 20px;
         font-family: var(--d-font-mono);
         font-size: 10px;
         color: var(--d-t3);
-      }
-
-      /* ── Loading ─────────────────────────────── */
-      .ho-loading {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 10px;
-        padding: 56px 24px;
-        font-family: var(--d-font-mono);
-        font-size: 12px;
-        color: var(--d-t2);
+        padding: 4px 10px;
+        border-radius: 12px;
+        background: var(--d-deep);
+        box-shadow: 0 0 0 1px rgba(200,215,240,.06);
       }
 
       /* ── Detail view ─────────────────────────── */
-      .ho-detail { max-width: 520px; margin: 0 auto; padding: 16px 16px 40px; }
+      .ho-detail {
+        max-width: 520px;
+        margin: 0 auto;
+        padding: 16px 16px 40px;
+        animation: ho-rise-in .3s ease both;
+      }
+
       .ho-detail-back {
         display: inline-flex;
         align-items: center;
@@ -607,79 +964,137 @@ function HandoverStyles() {
         background: none;
         border: none;
         color: var(--d-sig);
-        font-family: var(--d-font-mono);
-        font-size: 12px;
+        font-family: var(--d-font);
+        font-size: 13px;
         font-weight: 600;
         cursor: pointer;
-        padding: 4px 0;
+        padding: 6px 2px;
+        margin-bottom: 16px;
+        transition: opacity .15s;
+      }
+      .ho-detail-back:hover { opacity: .8; }
+
+      /* ── Info card ───────────────────────────── */
+      .ho-info-card {
+        background: var(--d-deep);
+        border-radius: 14px;
+        padding: 18px;
+        margin-bottom: 24px;
+      }
+
+      .ho-info-top {
+        display: flex;
+        align-items: center;
+        gap: 12px;
         margin-bottom: 16px;
       }
-      .ho-detail-back:hover { text-decoration: underline; }
-      .ho-flip { transform: rotate(180deg); }
 
-      .ho-detail-header {
-        background: var(--d-deep);
-        border: 1px solid var(--d-rim);
-        border-radius: 12px;
-        padding: 16px;
-        margin-bottom: 20px;
+      .ho-info-badge {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        background: linear-gradient(145deg, rgba(139,107,255,.15), rgba(34,232,255,.15));
+        box-shadow: 0 0 0 1px rgba(34,232,255,.1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--d-sig);
+        flex-shrink: 0;
       }
-      .ho-detail-name {
+
+      .ho-info-text {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .ho-info-name {
         font-family: var(--d-font);
         font-size: 16px;
         font-weight: 700;
         color: var(--d-t1);
-      }
-      .ho-detail-route {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        font-family: var(--d-font-mono);
-        font-size: 11px;
-        color: var(--d-t2);
-        margin-top: 6px;
-      }
-      .ho-progress { margin-top: 14px; display: flex; align-items: center; gap: 10px; }
-      .ho-progress-bar {
-        flex: 1;
-        height: 6px;
-        border-radius: 3px;
-        background: var(--d-rim);
-        overflow: hidden;
-      }
-      .ho-progress-fill {
-        height: 100%;
-        border-radius: 3px;
-        background: linear-gradient(90deg, var(--d-sig), var(--d-ok));
-        transition: width .4s ease;
-      }
-      .ho-progress-label {
-        font-family: var(--d-font-mono);
-        font-size: 11px;
-        color: var(--d-t2);
-        flex-shrink: 0;
+        line-height: 1.25;
       }
 
-      .ho-section-label {
+      .ho-info-region {
+        font-family: var(--d-font-mono);
+        font-size: 10px;
+        color: var(--d-t2);
+        margin-top: 2px;
+      }
+
+      .ho-info-route {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        padding: 12px 14px;
+        background: var(--d-void);
+        border-radius: 10px;
+        margin-bottom: 16px;
+      }
+
+      .ho-route-point {
         display: flex;
         align-items: center;
         gap: 6px;
         font-family: var(--d-font-mono);
-        font-size: 10px;
-        font-weight: 600;
-        letter-spacing: .08em;
-        text-transform: uppercase;
-        color: var(--d-t2);
+        font-size: 11px;
+        color: var(--d-t1);
+        flex-shrink: 0;
+      }
+      .ho-route-point svg { color: var(--d-sig); flex-shrink: 0; }
+      .ho-route-dest svg { color: var(--d-ok); }
+
+      .ho-route-line {
+        flex: 1;
+        height: 1px;
+        min-width: 16px;
+        margin: 0 10px;
+        background: repeating-linear-gradient(90deg, var(--d-rim3) 0, var(--d-rim3) 4px, transparent 4px, transparent 8px);
+      }
+
+      .ho-progress-section { }
+
+      .ho-progress-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
         margin-bottom: 8px;
+      }
+
+      .ho-progress-pct {
+        font-family: var(--d-font-mono);
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--d-sig);
+      }
+
+      .ho-progress-track {
+        height: 6px;
+        border-radius: 3px;
+        background: rgba(200,215,240,.06);
+        overflow: hidden;
+      }
+
+      .ho-progress-fill {
+        height: 100%;
+        border-radius: 3px;
+        background: linear-gradient(90deg, var(--d-sig), var(--d-ok));
+        transition: width .5s ease;
+      }
+
+      /* ── Sections ────────────────────────────── */
+      .ho-section {
+        margin-bottom: 0;
       }
 
       .ho-card {
         background: var(--d-deep);
-        border: 1px solid var(--d-rim);
-        border-radius: 12px;
+        border-radius: 14px;
         overflow: hidden;
       }
-      .ho-truck-list .ho-truck-sep { border-top: 1px solid var(--d-rim); }
+      .ho-truck-sep {
+        border-top: 1px solid rgba(200,215,240,.06);
+      }
 
       .ho-divider-row {
         display: flex;
@@ -687,45 +1102,65 @@ function HandoverStyles() {
         gap: 12px;
         margin: 20px 0;
       }
-      .ho-divider-line { flex: 1; height: 1px; background: var(--d-rim); }
-      .ho-divider-text {
-        font-family: var(--d-font-mono);
-        font-size: 10px;
-        color: var(--d-t3);
-        text-transform: uppercase;
-        letter-spacing: .06em;
-        flex-shrink: 0;
+
+      .ho-divider-line {
+        flex: 1;
+        height: 1px;
+        background: rgba(200,215,240,.06);
       }
 
       /* ── Upload row ──────────────────────────── */
       .ho-row {
+        padding: 16px;
+      }
+
+      .ho-row-done {
         display: flex;
+        align-items: center;
         gap: 12px;
         padding: 14px 16px;
-        align-items: flex-start;
+        opacity: .7;
       }
-      .ho-row-done { opacity: .7; }
-      .ho-row-icon {
-        width: 32px; height: 32px;
-        border-radius: 8px;
-        background: var(--d-well);
-        display: flex; align-items: center; justify-content: center;
-        color: var(--d-t2);
-        flex-shrink: 0;
-        margin-top: 2px;
-      }
+
       .ho-row-check {
-        width: 32px; height: 32px;
-        border-radius: 8px;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
         background: rgba(41,255,176,.1);
-        display: flex; align-items: center; justify-content: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         color: var(--d-ok);
         flex-shrink: 0;
-        margin-top: 2px;
       }
-      .ho-row-body { flex: 1; min-width: 0; }
-      .ho-row-top { display: flex; align-items: center; gap: 10px; }
-      .ho-row-info { flex: 1; min-width: 0; }
+
+      .ho-row-body { }
+
+      .ho-row-top-info {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      .ho-row-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 9px;
+        background: var(--d-well);
+        box-shadow: 0 0 0 1px rgba(200,215,240,.06);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--d-t2);
+        flex-shrink: 0;
+      }
+
+      .ho-row-info {
+        flex: 1;
+        min-width: 0;
+      }
+
       .ho-row-label {
         font-family: var(--d-font);
         font-size: 13px;
@@ -735,6 +1170,7 @@ function HandoverStyles() {
         overflow: hidden;
         text-overflow: ellipsis;
       }
+
       .ho-row-sub {
         font-family: var(--d-font-mono);
         font-size: 10px;
@@ -742,48 +1178,70 @@ function HandoverStyles() {
         margin-top: 2px;
       }
 
-      /* ── Steps (selfie + form) ───────────────── */
+      /* ── Steps track ─────────────────────────── */
+      .ho-steps-track {
+        padding-left: 4px;
+      }
+
       .ho-step {
         display: flex;
         align-items: flex-start;
-        gap: 10px;
-        margin-bottom: 10px;
+        gap: 12px;
+        position: relative;
       }
-      .ho-step-locked { opacity: .45; pointer-events: none; }
-      .ho-step-num {
-        width: 24px; height: 24px;
+
+      .ho-step-locked {
+        opacity: .35;
+        pointer-events: none;
+      }
+
+      .ho-step-complete .ho-step-indicator {
+        background: rgba(41,255,176,.1);
+        box-shadow: 0 0 0 1px rgba(41,255,176,.25);
+        color: var(--d-ok);
+      }
+
+      .ho-step-indicator {
+        width: 26px;
+        height: 26px;
         border-radius: 50%;
         background: var(--d-well);
-        border: 1px solid var(--d-rim2);
-        display: flex; align-items: center; justify-content: center;
+        box-shadow: 0 0 0 1px rgba(200,215,240,.1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        margin-top: 1px;
+      }
+
+      .ho-step-num-text {
         font-family: var(--d-font-mono);
         font-size: 10px;
         font-weight: 700;
         color: var(--d-t2);
-        flex-shrink: 0;
-        margin-top: 1px;
-      }
-      .ho-step-num svg { color: var(--d-ok); }
-      .ho-step-content { flex: 1; min-width: 0; }
-      .ho-step-label {
-        font-family: var(--d-font-mono);
-        font-size: 10px;
-        font-weight: 600;
-        color: var(--d-t2);
-        text-transform: uppercase;
-        letter-spacing: .05em;
-        margin-bottom: 6px;
+        line-height: 1;
       }
 
-      .ho-selfie-btn {
+      .ho-step-connector {
+        width: 1px;
+        height: 12px;
+        background: rgba(200,215,240,.1);
+        margin: 2px 0 2px 12px;
+      }
+
+      .ho-step-content {
+        flex: 1;
+        min-width: 0;
+        padding-bottom: 4px;
+      }
+
+      /* ── Action buttons ──────────────────────── */
+      .ho-action-btn {
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        padding: 8px 14px;
-        border-radius: 8px;
-        border: 1px dashed var(--d-rim3);
-        background: var(--d-well);
-        color: var(--d-sig);
+        padding: 9px 16px;
+        border-radius: 10px;
         font-family: var(--d-font);
         font-size: 12px;
         font-weight: 600;
@@ -791,53 +1249,70 @@ function HandoverStyles() {
         transition: all .15s;
         -webkit-tap-highlight-color: transparent;
       }
-      .ho-selfie-btn:hover { border-color: var(--d-sig3); background: var(--d-sg2); }
-      .ho-selfie-btn:active { transform: scale(.96); }
+      .ho-action-btn:active { transform: scale(.96); }
 
-      .ho-selfie-preview {
-        position: relative;
-        width: 64px; height: 64px;
-        border-radius: 10px;
-        overflow: hidden;
-        border: 2px solid var(--d-ok);
+      .ho-action-btn-outline {
+        border: 1px dashed rgba(200,215,240,.12);
+        background: var(--d-well);
+        color: var(--d-sig);
       }
+      .ho-action-btn-outline:hover {
+        border-color: rgba(34,232,255,.3);
+        background: rgba(34,232,255,.06);
+      }
+
+      .ho-action-btn-primary {
+        border: none;
+        background: var(--d-sig);
+        color: var(--d-void);
+      }
+      .ho-action-btn-primary:hover:not(:disabled) {
+        filter: brightness(1.1);
+      }
+      .ho-action-btn-primary:disabled {
+        opacity: .5;
+        cursor: default;
+        transform: none;
+      }
+
+      /* ── Selfie preview ──────────────────────── */
+      .ho-selfie-preview-wrap {
+        position: relative;
+        width: 60px;
+        height: 60px;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 0 0 2px var(--d-ok);
+      }
+
       .ho-selfie-img {
-        width: 100%; height: 100%;
+        width: 100%;
+        height: 100%;
         object-fit: cover;
       }
+
       .ho-selfie-remove {
         position: absolute;
-        top: 2px; right: 2px;
-        width: 22px; height: 22px;
+        top: 3px;
+        right: 3px;
+        width: 20px;
+        height: 20px;
         border-radius: 50%;
-        background: rgba(0,0,0,.7);
+        background: rgba(0,0,0,.65);
         border: none;
         color: #fff;
         cursor: pointer;
-        display: flex; align-items: center; justify-content: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         padding: 0;
       }
 
-      .ho-upload-btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        padding: 8px 14px;
-        border-radius: 8px;
-        border: none;
-        background: linear-gradient(135deg, var(--d-orange), var(--d-sig));
-        color: #fff;
-        font-family: var(--d-font);
-        font-size: 12px;
-        font-weight: 600;
-        cursor: pointer;
-        flex-shrink: 0;
-        transition: all .15s;
-        -webkit-tap-highlight-color: transparent;
+      /* ── Row extras ──────────────────────────── */
+      .ho-row-extras {
+        margin-top: 8px;
+        padding-left: 38px;
       }
-      .ho-upload-btn:hover { filter: brightness(1.1); }
-      .ho-upload-btn:active { transform: scale(.96); }
-      .ho-upload-btn:disabled { opacity: .6; cursor: default; }
 
       .ho-notes-toggle {
         display: inline-flex;
@@ -850,7 +1325,6 @@ function HandoverStyles() {
         font-size: 10px;
         cursor: pointer;
         padding: 4px 0;
-        margin-top: 6px;
       }
       .ho-notes-toggle:hover { color: var(--d-t2); }
 
@@ -858,81 +1332,103 @@ function HandoverStyles() {
         display: block;
         width: 100%;
         margin-top: 6px;
-        padding: 8px 10px;
-        border-radius: 6px;
-        border: 1px solid var(--d-rim2);
+        padding: 8px 12px;
+        border-radius: 8px;
+        border: none;
+        box-shadow: 0 0 0 1px rgba(200,215,240,.08);
         background: var(--d-void);
         color: var(--d-t1);
         font-family: var(--d-font-mono);
         font-size: 11px;
         outline: none;
-        transition: border-color .15s;
+        transition: box-shadow .15s;
       }
       .ho-notes-input::placeholder { color: var(--d-t3); }
-      .ho-notes-input:focus { border-color: var(--d-sig3); }
+      .ho-notes-input:focus { box-shadow: 0 0 0 1px var(--d-sig3); }
 
       .ho-error {
         display: flex;
         align-items: center;
         gap: 6px;
-        margin-top: 6px;
+        margin-top: 8px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        background: rgba(255,59,92,.06);
+        box-shadow: 0 0 0 1px rgba(255,59,92,.15);
         font-family: var(--d-font-mono);
         font-size: 11px;
         color: var(--d-fire);
       }
 
-      .ho-badge {
-        display: inline-flex;
-        align-items: center;
-        padding: 2px 8px;
-        border-radius: 10px;
-        font-family: var(--d-font-mono);
-        font-size: 10px;
-        font-weight: 600;
-        flex-shrink: 0;
-      }
-      .ho-badge-done {
-        background: rgba(41,255,176,.12);
-        color: var(--d-ok);
-      }
-
-      /* ── Complete card ───────────────────────── */
-      .ho-complete-card {
+      /* ── Complete state (Grok double-ring) ──── */
+      .ho-complete-wrap {
+        max-width: 520px;
+        margin: 0 auto;
+        padding: 16px 16px 40px;
         display: flex;
         flex-direction: column;
         align-items: center;
         text-align: center;
-        padding: 56px 24px;
-        max-width: 520px;
-        margin: 0 auto;
+        padding-top: 80px;
+        animation: ho-rise-in .4s ease both;
       }
-      .ho-complete-icon {
-        width: 64px; height: 64px;
+
+      .ho-complete-rings {
+        position: relative;
+        width: 88px;
+        height: 88px;
+        margin-bottom: 24px;
+      }
+
+      .ho-complete-ring {
+        position: absolute;
         border-radius: 50%;
-        background: rgba(41,255,176,.12);
-        border: 2px solid rgba(41,255,176,.3);
-        display: flex; align-items: center; justify-content: center;
-        color: var(--d-ok);
-        margin-bottom: 16px;
       }
+      .ho-complete-ring-outer {
+        inset: 0;
+        border: 1.5px solid rgba(41,255,176,.15);
+        animation: ho-ring-pulse 3s ease-in-out infinite;
+      }
+      .ho-complete-ring-inner {
+        inset: 10px;
+        border: 1.5px solid rgba(41,255,176,.3);
+        animation: ho-ring-pulse 3s ease-in-out infinite .4s;
+      }
+      .ho-complete-icon-center {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--d-ok);
+      }
+
       .ho-complete-title {
         font-family: var(--d-font);
-        font-size: 17px;
-        font-weight: 700;
+        font-size: 20px;
+        font-weight: 600;
         color: var(--d-t1);
-        margin-bottom: 6px;
+        margin: 0 0 8px;
+        letter-spacing: -.01em;
       }
+
       .ho-complete-sub {
-        font-family: var(--d-font-mono);
-        font-size: 12px;
+        font-size: 13px;
         color: var(--d-t2);
+        line-height: 1.5;
+        margin: 0;
       }
-      .ho-back-btn {
-        margin-top: 20px;
+
+      .ho-complete-btn {
+        margin-top: 24px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
         padding: 10px 20px;
-        border-radius: 8px;
-        border: 1px solid var(--d-rim2);
-        background: none;
+        border-radius: 10px;
+        border: none;
+        box-shadow: 0 0 0 1px rgba(200,215,240,.1);
+        background: var(--d-deep);
         color: var(--d-sig);
         font-family: var(--d-font);
         font-size: 13px;
@@ -940,14 +1436,76 @@ function HandoverStyles() {
         cursor: pointer;
         transition: all .15s;
       }
-      .ho-back-btn:hover { border-color: var(--d-sig3); background: var(--d-sg2); }
+      .ho-complete-btn:hover {
+        box-shadow: 0 0 0 1px rgba(200,215,240,.18);
+        background: var(--d-well);
+      }
 
-      /* ── Utilities ───────────────────────────── */
-      .ho-spin { animation: ho-spin .8s linear infinite; }
-      @keyframes ho-spin { to { transform: rotate(360deg); } }
+      /* ── Skeleton loading ────────────────────── */
+      .ho-skel-card {
+        background: var(--d-deep);
+        box-shadow: 0 0 0 1px rgba(200,215,240,.06);
+        border-radius: 14px;
+        padding: 16px;
+        margin-bottom: 8px;
+      }
+
+      .ho-skel-line {
+        height: 12px;
+        border-radius: 6px;
+        background: linear-gradient(90deg, var(--d-well) 25%, var(--d-lift) 50%, var(--d-well) 75%);
+        background-size: 200% 100%;
+        animation: ho-shimmer 1.5s ease-in-out infinite;
+      }
+
+      .ho-skel-w60 { width: 60%; }
+      .ho-skel-w40 { width: 40%; }
+
+      .ho-skel-bar {
+        height: 3px;
+        border-radius: 2px;
+        width: 100%;
+        background: linear-gradient(90deg, var(--d-well) 25%, var(--d-lift) 50%, var(--d-well) 75%);
+        background-size: 200% 100%;
+        animation: ho-shimmer 1.5s ease-in-out infinite;
+      }
+
+      /* ── Animations ──────────────────────────── */
+      @keyframes ho-shimmer {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+      }
+
+      @keyframes ho-ring-pulse {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.06); opacity: .5; }
+      }
+
+      .ho-spin {
+        animation: ho-spin-anim .8s linear infinite;
+      }
+      @keyframes ho-spin-anim {
+        to { transform: rotate(360deg); }
+      }
+
       .ho-sr-only {
-        position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-        overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0,0,0,0);
+        white-space: nowrap;
+        border: 0;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .ho-spin, .ho-skel-line, .ho-skel-bar { animation: none; }
+        .ho-empty-ring-outer, .ho-empty-ring-inner { animation: none; }
+        .ho-complete-ring-outer, .ho-complete-ring-inner { animation: none; }
+        .ho-stagger > * { animation: none; }
+        .ho-detail, .ho-empty, .ho-complete-wrap { animation: none; }
       }
     `}</style>
   );
