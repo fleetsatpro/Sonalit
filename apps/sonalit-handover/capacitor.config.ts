@@ -7,12 +7,10 @@ import type { CapacitorConfig } from '@capacitor/cli';
  * no local UI code here, just a WebView pointed at the hosted /handover route.
  * Workflow changes ship on every web deploy, no new APK needed.
  *
- * Unlike /field (device pairing + PIN, no operator session at all), /handover
- * sits under the normal authRoute — a handover officer signs in with their
- * regular Sonalit email/password, same as any other operator role. If that
- * session is missing, authCheck (apps/web/src/router.tsx) redirects to
- * /login?redirect=/handover, so the app lands back on Handover — not the
- * full operator launcher — right after signing in.
+ * Handover officers have a dedicated login at /handover/login (purpose-built,
+ * no operator marketing). After email/password auth, first-time officers set
+ * a 4-8 digit PIN for quick re-auth. The handoverAuthCheck in router.tsx
+ * redirects unauthenticated users to /handover/login automatically.
  */
 const HANDOVER_URL = 'https://sonalit.vercel.app/handover';
 
