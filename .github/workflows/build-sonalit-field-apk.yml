@@ -107,7 +107,11 @@ jobs:
                       keyPassword System.getenv("KEY_PASSWORD")\
                   }\
               }' build.gradle
-          sed -i 's/signingConfig signingConfigs.debug/signingConfig signingConfigs.release/' build.gradle
+          # Capacitor's generated release buildType doesn't reliably reference
+          # signingConfigs.debug, so a text-replace sed can silently no-op and
+          # leave the release build unsigned. Assign it via the Gradle DSL
+          # instead — this works regardless of what's inside buildTypes.release.
+          echo 'android.buildTypes.release.signingConfig = android.signingConfigs.release' >> build.gradle
 
       - name: Cache Gradle packages
         uses: actions/cache@v4
@@ -137,12 +141,18 @@ jobs:
 
       - name: Locate and rename APK
         run: |
-          if [ -f apps/sonalit-field/android/app/build/outputs/apk/release/app-release.apk ]; then
-            mv apps/sonalit-field/android/app/build/outputs/apk/release/app-release.apk \
-               apps/sonalit-field/android/app/build/outputs/apk/sonalit-field.apk
+          APK_DIR=apps/sonalit-field/android/app/build/outputs/apk
+          if [ -f "$APK_DIR/release/app-release.apk" ]; then
+            mv "$APK_DIR/release/app-release.apk" "$APK_DIR/sonalit-field.apk"
+          elif [ -f "$APK_DIR/release/app-release-unsigned.apk" ]; then
+            echo "::error::Release APK is unsigned — signingConfig was not applied to buildTypes.release. Check the 'Inject release signing config' step."
+            mv "$APK_DIR/release/app-release-unsigned.apk" "$APK_DIR/sonalit-field.apk"
+          elif [ -f "$APK_DIR/debug/app-debug.apk" ]; then
+            mv "$APK_DIR/debug/app-debug.apk" "$APK_DIR/sonalit-field.apk"
           else
-            mv apps/sonalit-field/android/app/build/outputs/apk/debug/app-debug.apk \
-               apps/sonalit-field/android/app/build/outputs/apk/sonalit-field.apk
+            echo "::error::No APK found under $APK_DIR"
+            find "$APK_DIR" -name '*.apk' || true
+            exit 1
           fi
 
       - name: Upload APK artifact
