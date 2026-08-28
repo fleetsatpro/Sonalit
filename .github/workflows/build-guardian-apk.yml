@@ -9,7 +9,7 @@ on:
       - '.github/workflows/build-guardian-apk.yml'
   # Compile the app on PRs that touch it so Kotlin errors are caught before
   # merge (the release + Railway steps below stay gated to main pushes, so a PR
-  # run just builds + uploads the debug APK — handy for on-device QA too).
+  # run just builds + uploads the APK as an artifact — handy for on-device QA).
   pull_request:
     paths:
       - 'apps/guardian-android/**'
@@ -94,20 +94,42 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x apps/guardian-android/gradlew
 
-      - name: Build debug APK
-        working-directory: apps/guardian-android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+      - name: Decode signing keystore
+        if: env.KEYSTORE_BASE64 != ''
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: echo "$KEYSTORE_BASE64" | base64 -d > apps/guardian-android/app/release.keystore
 
-      # Convenience copy for on-device QA only — the real download path is the R2
-      # publish below. A full artifact bucket must not fail the job: this step is
-      # not the compile gate, and a red X here hides a green Kotlin build. Short
-      # retention keeps ~75 MB per run from refilling the quota.
+      - name: Build APK
+        working-directory: apps/guardian-android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -f app/release.keystore ]; then
+            ./gradlew assembleRelease --no-daemon --stacktrace
+          else
+            ./gradlew assembleDebug --no-daemon --stacktrace
+          fi
+
+      - name: Locate APK
+        id: apk
+        run: |
+          if [ -f apps/guardian-android/app/build/outputs/apk/release/app-release.apk ]; then
+            echo "path=apps/guardian-android/app/build/outputs/apk/release/app-release.apk" >> "$GITHUB_OUTPUT"
+            echo "name=SonalitGuardian-release" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=apps/guardian-android/app/build/outputs/apk/debug/app-debug.apk" >> "$GITHUB_OUTPUT"
+            echo "name=SonalitGuardian-debug" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         continue-on-error: true
         with:
-          name: SonalitGuardian-debug
-          path: apps/guardian-android/app/build/outputs/apk/debug/app-debug.apk
+          name: ${{ steps.apk.outputs.name }}
+          path: ${{ steps.apk.outputs.path }}
           retention-days: 7
 
       # Publish the APK to Cloudflare R2 (the same storage that already holds
@@ -176,7 +198,7 @@ jobs:
           echo "Resolved R2 creds — publishing APK."
           # Keep the fetched secrets out of the logs.
           echo "::add-mask::$R2_ACCOUNT_ID"; echo "::add-mask::$R2_ACCESS_KEY"; echo "::add-mask::$R2_SECRET_KEY"
-          APK=apps/guardian-android/app/build/outputs/apk/debug/app-debug.apk
+          APK="${{ steps.apk.outputs.path }}"
           export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY"
           export AWS_SECRET_ACCESS_KEY="$R2_SECRET_KEY"
           export AWS_DEFAULT_REGION=auto
@@ -206,7 +228,7 @@ jobs:
 
             **Install**: Download and open on an Android 10+ device (enable "Install unknown apps" in settings).
             **Enroll**: Open the app and enter your badge number (operator code) — device appears as Pending in the Guardian dashboard for approval.
-          files: apps/guardian-android/app/build/outputs/apk/debug/app-debug.apk
+          files: ${{ steps.apk.outputs.path }}
           draft: false
           prerelease: false
         env:
@@ -222,7 +244,7 @@ jobs:
           # asset if R2 wasn't configured/published this run.
           APK_URL="${{ steps.r2.outputs.apk_url }}"
           if [ -z "$APK_URL" ]; then
-            APK_URL="https://github.com/fleetsatpro/Sonalit/releases/download/guardian-v${{ github.run_number }}/app-debug.apk"
+            APK_URL="https://github.com/fleetsatpro/Sonalit/releases/download/guardian-v${{ github.run_number }}/$(basename ${{ steps.apk.outputs.path }})"
           fi
           echo "Setting APK_REDIRECT_URL → $APK_URL"
 
