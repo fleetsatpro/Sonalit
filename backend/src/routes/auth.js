@@ -41,7 +41,14 @@ router.get('/users', authenticate, authorize('admin', 'dispatcher'), async (req,
 // authorize()/field-role gating in backend/src/routes/cds.js. They sit
 // outside ROLE_HIERARCHY on purpose: least privilege, not a rung on the
 // admin>dispatcher>operator ladder.
-const VALID_ROLES = ['admin', 'dispatcher', 'operator', 'analyst', 'driver', 'cfo', 'yard_agent', 'port_agent', 'response_crew', 'handover_officer'];
+//
+// This list must stay in step with the users_role_check constraint: anything
+// here that the constraint rejects is a 500 waiting for whoever picks it.
+// 'driver' was exactly that — offered by this endpoint, rejected by the
+// database. Drivers are their own table (migration 000) and nothing reads
+// users.role === 'driver', so the stale entry goes rather than the constraint
+// growing a role that would carry no permissions and mean nothing.
+const VALID_ROLES = ['admin', 'dispatcher', 'operator', 'analyst', 'cfo', 'yard_agent', 'port_agent', 'response_crew', 'handover_officer'];
 
 router.post('/users', authenticate, authorize('admin'), async (req, res) => {
   try {
