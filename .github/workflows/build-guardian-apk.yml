@@ -164,15 +164,21 @@ jobs:
             fi
             echo "R2_* GitHub secrets not set — resolving R2 creds from Railway via RAILWAY_TOKEN."
             # Discover project / service / production-environment IDs.
+            #
+            # An expired RAILWAY_TOKEN answers 200 with {"errors":[...],"data":null},
+            # so `.…edges[]` iterates over null and jq exits 5. Under `bash -e` that
+            # kills the step before the guard below can print its warning, and
+            # continue-on-error then reports the step green. Null-safe extraction
+            # (same shape as pegagent-release.yml) keeps the guard reachable.
             DISCOVER=$(curl -sf -X POST https://backboard.railway.com/graphql/v2 \
               -H "Authorization: Bearer $RAILWAY_TOKEN" \
               -H "Content-Type: application/json" \
-              -d '{"query":"{ me { projects { edges { node { id name services { edges { node { id name } } } environments { edges { node { id name } } } } } } } }"}')
-            PROJECT_ID=$(echo "$DISCOVER" | jq -r '.data.me.projects.edges[0].node.id')
-            SERVICE_ID=$(echo "$DISCOVER" | jq -r '.data.me.projects.edges[0].node.services.edges[0].node.id')
-            ENV_ID=$(echo "$DISCOVER" | jq -r '[.data.me.projects.edges[0].node.environments.edges[] | select(.node.name == "production")] | .[0].node.id')
+              -d '{"query":"{ me { projects { edges { node { id name services { edges { node { id name } } } environments { edges { node { id name } } } } } } } }"}') || true
+            PROJECT_ID=$(echo "$DISCOVER" | jq -r '.data.me.projects.edges[0].node.id' 2>/dev/null || echo "")
+            SERVICE_ID=$(echo "$DISCOVER" | jq -r '.data.me.projects.edges[0].node.services.edges[0].node.id' 2>/dev/null || echo "")
+            ENV_ID=$(echo "$DISCOVER" | jq -r '[.data.me.projects.edges[0].node.environments.edges[] | select(.node.name == "production")] | .[0].node.id' 2>/dev/null || echo "")
             if [ "$ENV_ID" = "null" ] || [ -z "$ENV_ID" ]; then
-              ENV_ID=$(echo "$DISCOVER" | jq -r '.data.me.projects.edges[0].node.environments.edges[0].node.id')
+              ENV_ID=$(echo "$DISCOVER" | jq -r '.data.me.projects.edges[0].node.environments.edges[0].node.id' 2>/dev/null || echo "")
             fi
             if [ "$PROJECT_ID" = "null" ] || [ -z "$PROJECT_ID" ]; then
               echo "::warning title=APK not published::RAILWAY_TOKEN set but could not discover Railway project (bad/expired token?). Add R2_* GitHub secrets instead."
@@ -248,23 +254,30 @@ jobs:
           fi
           echo "Setting APK_REDIRECT_URL → $APK_URL"
 
+          # Null-safe for the same reason as the R2 step above: an expired token
+          # returns data:null, and an unguarded `.edges[]` exits 5 under `bash -e`
+          # before the guard below runs.
           DISCOVER=$(curl -sf -X POST https://backboard.railway.com/graphql/v2 \
             -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"query":"{ me { projects { edges { node { id name services { edges { node { id name } } } environments { edges { node { id name } } } } } } } }"}')
+            -d '{"query":"{ me { projects { edges { node { id name services { edges { node { id name } } } environments { edges { node { id name } } } } } } } }"}') || true
 
           echo "Discovery response: $DISCOVER"
 
-          PROJECT_ID=$(echo "$DISCOVER" | jq -r '.data.me.projects.edges[0].node.id')
-          SERVICE_ID=$(echo "$DISCOVER" | jq -r '.data.me.projects.edges[0].node.services.edges[0].node.id')
-          ENV_ID=$(echo "$DISCOVER" | jq -r '[.data.me.projects.edges[0].node.environments.edges[] | select(.node.name == "production")] | .[0].node.id')
+          PROJECT_ID=$(echo "$DISCOVER" | jq -r '.data.me.projects.edges[0].node.id' 2>/dev/null || echo "")
+          SERVICE_ID=$(echo "$DISCOVER" | jq -r '.data.me.projects.edges[0].node.services.edges[0].node.id' 2>/dev/null || echo "")
+          ENV_ID=$(echo "$DISCOVER" | jq -r '[.data.me.projects.edges[0].node.environments.edges[] | select(.node.name == "production")] | .[0].node.id' 2>/dev/null || echo "")
 
           if [ "$ENV_ID" = "null" ] || [ -z "$ENV_ID" ]; then
-            ENV_ID=$(echo "$DISCOVER" | jq -r '.data.me.projects.edges[0].node.environments.edges[0].node.id')
+            ENV_ID=$(echo "$DISCOVER" | jq -r '.data.me.projects.edges[0].node.environments.edges[0].node.id' 2>/dev/null || echo "")
           fi
 
           if [ "$PROJECT_ID" = "null" ] || [ -z "$PROJECT_ID" ]; then
-            echo "ERROR: Could not discover Railway IDs — check RAILWAY_TOKEN secret"
+            # This step is continue-on-error, so a bare echo is invisible in the
+            # run summary — the reason nobody noticed the download link going
+            # stale. An ::error annotation shows up whether or not the step is
+            # allowed to fail.
+            echo "::error title=APK redirect not updated::Could not discover Railway IDs — check the RAILWAY_TOKEN secret (the API answered Not Authorized). get.sonalit.com will keep serving the previous APK."
             exit 1
           fi
 
