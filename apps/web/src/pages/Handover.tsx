@@ -1,12 +1,12 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Truck, FileCheck2, Loader2, AlertCircle,
-  ChevronRight, MapPin, ArrowRight, FileText,
-  RefreshCw, ClipboardCheck, User, X, ChevronLeft, Upload,
-  CircleDot, Shield, Clock, Check,
+  Truck, ClipboardCheck, Loader2, AlertCircle,
+  ArrowRight, FileText, MapPin, CircleDot,
+  User, X, ChevronLeft, Upload, Shield, Check,
 } from 'lucide-react';
 import { api } from '../lib/api.js';
+import { useHandoverHeader } from './HandoverShell.js';
 
 interface HandoverQueueItem {
   id: string;
@@ -43,6 +43,22 @@ interface HandoverDetail {
 }
 
 type QueueFilter = 'all' | 'pending' | 'in_progress' | 'done';
+type Tone = 'muted' | 'accent' | 'ok' | 'warn';
+
+/* ── Badge — pill matching Grok's Badge anatomy ─────────────────────── */
+
+function Badge({ tone, children }: { tone: Tone; children: React.ReactNode }) {
+  return <span className={`ho-badge ho-badge-${tone}`}>{children}</span>;
+}
+
+function StatusDot({ tone, label }: { tone: Tone; label: string }) {
+  return (
+    <span className={`ho-status ho-status-${tone}`}>
+      <span className="ho-status-dot" />
+      {label}
+    </span>
+  );
+}
 
 /* ── Upload row — one truck or whole-convoy ─────────────────────────── */
 
@@ -128,9 +144,7 @@ function UploadRow({
           <div className="ho-row-label">{label}</div>
           {subtitle && <div className="ho-row-sub">{subtitle}</div>}
         </div>
-        <span className="ho-status-badge ho-status-done">
-          <span className="ho-status-dot" /> Signed off
-        </span>
+        <StatusDot tone="ok" label="Signed off" />
       </div>
     );
   }
@@ -234,11 +248,20 @@ function QueueSkeleton() {
 
 function ConvoyDetail({ convoyId, onBack }: { convoyId: string; onBack: () => void }) {
   const queryClient = useQueryClient();
+  const setHeader = useHandoverHeader();
   const { data, isLoading } = useQuery({
     queryKey: ['convoy-handover-detail', convoyId],
     queryFn: async () => (await api.get<{ data: HandoverDetail }>(`/convoy-handovers/${convoyId}`)).data.data,
     refetchInterval: 5000,
   });
+
+  useEffect(() => {
+    setHeader({
+      title: data?.convoy.name ?? 'Convoy',
+      subtitle: 'Trucks, route, and handover progress',
+      icon: <Shield size={18} strokeWidth={2} />,
+    });
+  }, [data?.convoy.name, setHeader]);
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['convoy-handover-detail', convoyId] });
@@ -263,15 +286,14 @@ function ConvoyDetail({ convoyId, onBack }: { convoyId: string; onBack: () => vo
   if (data.convoy.status !== 'completing') {
     return (
       <div className="ho-complete-wrap">
-        <div className="ho-complete-rings" aria-hidden="true">
-          <div className="ho-complete-ring ho-complete-ring-outer" />
-          <div className="ho-complete-ring ho-complete-ring-inner" />
-          <div className="ho-complete-icon-center">
-            <Check size={36} />
-          </div>
+        <div className="ho-empty-ring-wrap">
+          <span className="ho-empty-ring-outer" />
+          <span className="ho-empty-ring-inner ho-ring-ok">
+            <Check size={28} strokeWidth={2.2} />
+          </span>
         </div>
-        <h2 className="ho-complete-title">All clear</h2>
-        <p className="ho-complete-sub">
+        <h2 className="ho-empty-title">All clear</h2>
+        <p className="ho-empty-sub">
           <strong>{data.convoy.name}</strong> — all trucks handed over successfully.
         </p>
         <button className="ho-complete-btn" onClick={onBack}>
@@ -294,16 +316,6 @@ function ConvoyDetail({ convoyId, onBack }: { convoyId: string; onBack: () => vo
 
       {/* Convoy info card */}
       <div className="ho-info-card ho-hairline">
-        <div className="ho-info-top">
-          <div className="ho-info-badge">
-            <Shield size={14} />
-          </div>
-          <div className="ho-info-text">
-            <div className="ho-info-name">{data.convoy.name}</div>
-            <div className="ho-info-region">{data.convoy.region}</div>
-          </div>
-        </div>
-
         <div className="ho-info-route">
           <div className="ho-route-point">
             <CircleDot size={12} />
@@ -333,7 +345,7 @@ function ConvoyDetail({ convoyId, onBack }: { convoyId: string; onBack: () => vo
           <ClipboardCheck size={12} />
           <span>Whole convoy handover</span>
         </div>
-        <div className="ho-card ho-hairline">
+        <div className="ho-card-plain ho-hairline">
           <UploadRow
             convoyId={convoyId}
             truckId={null}
@@ -354,7 +366,7 @@ function ConvoyDetail({ convoyId, onBack }: { convoyId: string; onBack: () => vo
             <div className="ho-divider-line" />
           </div>
 
-          <div className="ho-card ho-hairline">
+          <div className="ho-card-plain ho-hairline">
             {data.trucks.map((t, i) => (
               <div key={t.id} className={i > 0 ? 'ho-truck-sep' : ''}>
                 <UploadRow
@@ -392,12 +404,19 @@ function applyFilter(queue: HandoverQueueItem[], filter: QueueFilter): HandoverQ
   }
 }
 
+function progressTone(pct: number, isDone: boolean): Tone {
+  if (isDone) return 'ok';
+  if (pct > 0) return 'accent';
+  return 'muted';
+}
+
 /* ── Queue list — the main page ─────────────────────────────────────── */
 
 export default function Handover() {
   const [selected, setSelected] = useState<string | null>(null);
   const [filter, setFilter] = useState<QueueFilter>('all');
   const queryClient = useQueryClient();
+  const setHeader = useHandoverHeader();
 
   const { data: queue, isLoading, dataUpdatedAt } = useQuery({
     queryKey: ['convoy-handover-queue'],
@@ -408,6 +427,16 @@ export default function Handover() {
   const manualRefresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ['convoy-handover-queue'] });
   }, [queryClient]);
+
+  useEffect(() => {
+    if (selected) return;
+    setHeader({
+      title: 'Handover Queue',
+      subtitle: 'Convoys awaiting signed handover forms',
+      icon: <ClipboardCheck size={18} strokeWidth={2} />,
+      onRefresh: manualRefresh,
+    });
+  }, [selected, setHeader, manualRefresh]);
 
   if (selected) {
     return (
@@ -423,69 +452,42 @@ export default function Handover() {
   return (
     <div className="ho-page">
       <div className="ho-queue">
-        {/* Page header */}
-        <div className="ho-q-header">
-          <div className="ho-q-icon">
-            <FileCheck2 size={18} />
-          </div>
-          <div className="ho-q-header-text">
-            <h1 className="ho-q-title">Handover Queue</h1>
-            <p className="ho-q-sub">Convoys awaiting signed handover forms</p>
-          </div>
-          <button className="ho-refresh" onClick={manualRefresh} aria-label="Refresh">
-            <RefreshCw size={15} />
-          </button>
+        {/* Filter pills — always visible, even when the queue is empty */}
+        <div className="ho-filter-row">
+          {FILTERS.map((f) => (
+            <button
+              key={f.key}
+              className={`ho-pill ${filter === f.key ? 'ho-pill-active' : ''}`}
+              onClick={() => setFilter(f.key)}
+            >
+              {f.label}
+            </button>
+          ))}
         </div>
-
-        {/* Filter pills */}
-        {queue && queue.length > 0 && (
-          <div className="ho-filter-row">
-            {FILTERS.map((f) => (
-              <button
-                key={f.key}
-                className={`ho-pill ${filter === f.key ? 'ho-pill-active' : ''}`}
-                onClick={() => setFilter(f.key)}
-              >
-                {f.label}
-                {f.key !== 'all' && (
-                  <span className="ho-pill-count">
-                    {applyFilter(queue, f.key).length}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
 
         {/* Skeleton loading */}
         {isLoading && <QueueSkeleton />}
 
         {/* Empty state — Grok double-ring pattern */}
-        {!isLoading && queue?.length === 0 && (
+        {!isLoading && filtered.length === 0 && (
           <div className="ho-empty">
-            <div className="ho-empty-rings">
-              <div className="ho-empty-ring ho-empty-ring-outer" />
-              <div className="ho-empty-ring ho-empty-ring-inner" />
-              <div className="ho-empty-icon-center">
-                <Check size={28} />
-              </div>
+            <div className="ho-empty-ring-wrap">
+              <span className="ho-empty-ring-outer" />
+              <span className="ho-empty-ring-inner">
+                <Check size={28} strokeWidth={2.2} />
+              </span>
             </div>
             <h2 className="ho-empty-title">All clear</h2>
-            <p className="ho-empty-sub">No convoys awaiting handover right now.</p>
-            <p className="ho-empty-sub" style={{ marginTop: 2 }}>Queue refreshes automatically.</p>
+            <p className="ho-empty-sub">
+              {queue && queue.length > 0
+                ? 'No convoys match this filter.'
+                : 'No convoys awaiting handover right now. Queue refreshes automatically.'}
+            </p>
             {dataUpdatedAt > 0 && (
-              <div className="ho-empty-ts">
-                <Clock size={10} />
-                <span>Last checked {new Date(dataUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-              </div>
+              <p className="ho-empty-checked">
+                Last checked {new Date(dataUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </p>
             )}
-          </div>
-        )}
-
-        {/* Filtered empty */}
-        {!isLoading && queue && queue.length > 0 && filtered.length === 0 && (
-          <div className="ho-empty" style={{ paddingTop: 40 }}>
-            <p className="ho-empty-sub">No convoys match this filter.</p>
           </div>
         )}
 
@@ -495,47 +497,56 @@ export default function Handover() {
             {filtered.map((c, i) => {
               const pct = c.truck_count > 0 ? Math.round((c.trucks_handed_over / c.truck_count) * 100) : 0;
               const isDone = c.convoy_wide_handover || pct >= 100;
+              const tone = progressTone(pct, isDone);
+              const label = isDone ? 'Complete' : pct > 0 ? 'In progress' : 'Pending';
+
               return (
                 <button
                   key={c.id}
-                  className="ho-q-card ho-hairline"
+                  className="ho-q-card ho-hairline ho-hairline-hover"
                   onClick={() => setSelected(c.id)}
                   style={{ '--stagger': i } as React.CSSProperties}
                 >
-                  {/* Priority rail */}
-                  <div className={`ho-priority-rail ${isDone ? 'ho-rail-ok' : pct > 0 ? 'ho-rail-sig' : 'ho-rail-muted'}`} />
+                  <span className={`ho-priority-rail ho-rail-${tone}`} aria-hidden="true" />
 
-                  <div className="ho-q-card-body">
-                    <div className="ho-q-card-header">
-                      <div className="ho-q-card-name">{c.name}</div>
-                      <ChevronRight size={16} className="ho-q-card-arrow" />
+                  <div className="ho-q-card-header">
+                    <div className="ho-q-card-id-row">
+                      <span className="ho-q-card-region-tag">{c.region}</span>
+                      <Badge tone={tone}>{label}</Badge>
                     </div>
+                    <StatusDot tone={tone} label={isDone ? 'Complete' : 'Awaiting'} />
+                  </div>
 
-                    <div className="ho-q-card-route">
-                      <span>{c.route_origin}</span>
-                      <ArrowRight size={9} />
-                      <span>{c.route_destination}</span>
+                  <p className="ho-q-card-name">{c.name}</p>
+                  <p className="ho-q-card-route">
+                    <span>{c.route_origin}</span>
+                    <ArrowRight size={9} />
+                    <span>{c.route_destination}</span>
+                  </p>
+
+                  <div className="ho-q-card-meta">
+                    <span className="ho-q-card-meta-item">
+                      <Truck size={12} />
+                      {c.truck_count} {c.truck_count === 1 ? 'vehicle' : 'vehicles'}
+                    </span>
+                    {c.convoy_wide_handover && <span className="ho-q-card-accent-tag">Convoy-wide</span>}
+                  </div>
+
+                  <div className="ho-q-card-progress">
+                    <div className="ho-q-card-progress-row">
+                      <span className="ho-q-card-progress-label">{c.trucks_handed_over} of {c.truck_count} trucks</span>
+                      <span className={`ho-q-card-progress-pct ho-tone-${tone}`}>{pct}%</span>
                     </div>
-
-                    <div className="ho-q-card-meta">
-                      <span className="ho-q-card-region">{c.region}</span>
-                      <span className="ho-q-card-trucks">
-                        <Truck size={11} />
-                        {c.trucks_handed_over}/{c.truck_count}
-                      </span>
-                      {isDone && (
-                        <span className="ho-status-badge ho-status-done">
-                          <span className="ho-status-dot" /> Complete
-                        </span>
-                      )}
-                    </div>
-
                     <div className="ho-q-progress-track">
-                      <div
-                        className={`ho-q-progress-fill ${isDone ? 'ho-q-progress-done' : ''}`}
-                        style={{ width: `${pct}%` }}
-                      />
+                      <div className={`ho-q-progress-fill ho-fill-${tone}`} style={{ width: `${Math.max(4, pct)}%` }} />
                     </div>
+                  </div>
+
+                  <div className="ho-q-card-footer">
+                    <span className="ho-q-card-footer-region">{c.region}</span>
+                    <span className="ho-q-card-open">
+                      Open <ArrowRight size={12} />
+                    </span>
                   </div>
                 </button>
               );
@@ -562,18 +573,18 @@ function HandoverStyles() {
 
       /* ── Hairline (Grok box-shadow border) ────── */
       .ho-hairline {
-        box-shadow: 0 0 0 1px rgba(200,215,240,.08);
+        box-shadow: 0 0 0 1px rgba(232,238,247,.08);
       }
-      .ho-hairline:hover {
-        box-shadow: 0 0 0 1px rgba(200,215,240,.14);
+      .ho-hairline-hover:hover {
+        box-shadow: 0 0 0 1px rgba(232,238,247,.14);
       }
 
       /* ── Kicker label (Grok pattern) ──────────── */
       .ho-kicker {
         font-family: var(--d-font-mono);
         font-size: 11px;
-        font-weight: 600;
-        letter-spacing: .08em;
+        font-weight: 500;
+        letter-spacing: .16em;
         text-transform: uppercase;
         color: var(--d-t2);
         line-height: 1;
@@ -581,15 +592,15 @@ function HandoverStyles() {
 
       /* ── Stagger-in animation (Grok rise-in) ──── */
       .ho-stagger > * {
-        animation: ho-rise-in .45s ease both;
-        animation-delay: calc(var(--stagger, 0) * 50ms);
+        animation: ho-rise-in 400ms cubic-bezier(0.22, 1, 0.36, 1) both;
+        animation-delay: calc(var(--stagger, 0) * 40ms);
       }
 
       @keyframes ho-rise-in {
         from {
           opacity: 0;
-          transform: translateY(10px);
-          filter: blur(4px);
+          transform: translateY(8px);
+          filter: blur(2px);
         }
         to {
           opacity: 1;
@@ -598,242 +609,26 @@ function HandoverStyles() {
         }
       }
 
-      /* ── Queue layout ────────────────────────── */
-      .ho-queue {
-        max-width: 520px;
-        margin: 0 auto;
-        padding: 20px 16px 40px;
-      }
-
-      .ho-q-header {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 20px;
-      }
-
-      .ho-q-icon {
-        width: 40px;
-        height: 40px;
-        border-radius: 12px;
-        background: linear-gradient(145deg, rgba(139,107,255,.18), rgba(34,232,255,.18));
-        box-shadow: 0 0 0 1px rgba(34,232,255,.12);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--d-sig);
-        flex-shrink: 0;
-      }
-
-      .ho-q-header-text {
-        flex: 1;
-        min-width: 0;
-      }
-
-      .ho-q-title {
-        font-family: var(--d-font);
-        font-size: 17px;
-        font-weight: 700;
-        color: var(--d-t1);
-        margin: 0;
-        line-height: 1.25;
-      }
-
-      .ho-q-sub {
-        font-family: var(--d-font-mono);
-        font-size: 11px;
-        color: var(--d-t2);
-        margin: 3px 0 0;
-        line-height: 1.3;
-      }
-
-      .ho-refresh {
-        flex-shrink: 0;
-        width: 36px;
-        height: 36px;
-        border-radius: 10px;
-        box-shadow: 0 0 0 1px rgba(200,215,240,.08);
-        background: var(--d-deep);
-        color: var(--d-t2);
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: all .2s;
-        border: none;
-      }
-      .ho-refresh:hover {
-        color: var(--d-sig);
-        box-shadow: 0 0 0 1px rgba(200,215,240,.14);
-        background: var(--d-well);
-      }
-      .ho-refresh:active {
-        transform: rotate(90deg);
-      }
-
-      /* ── Filter pills (Grok pattern) ──────────── */
-      .ho-filter-row {
-        display: flex;
-        gap: 6px;
-        margin-bottom: 16px;
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
-        padding: 2px 0;
-      }
-      .ho-filter-row::-webkit-scrollbar { display: none; }
-
-      .ho-pill {
+      /* ── Badge (Grok Badge component) ─────────── */
+      .ho-badge {
         display: inline-flex;
         align-items: center;
-        gap: 5px;
-        padding: 6px 14px;
-        border-radius: 999px;
-        border: none;
-        background: var(--d-deep);
-        box-shadow: 0 0 0 1px rgba(200,215,240,.08);
-        color: var(--d-t2);
-        font-family: var(--d-font);
-        font-size: 12px;
-        font-weight: 600;
-        cursor: pointer;
-        white-space: nowrap;
-        transition: all .15s;
-        -webkit-tap-highlight-color: transparent;
-        flex-shrink: 0;
-      }
-      .ho-pill:hover {
-        background: var(--d-well);
-        color: var(--d-t1);
-      }
-      .ho-pill-active {
-        background: var(--d-sig);
-        color: var(--d-void);
-        box-shadow: none;
-      }
-      .ho-pill-active:hover {
-        background: var(--d-sig);
-        color: var(--d-void);
-      }
-      .ho-pill-count {
-        font-family: var(--d-font-mono);
-        font-size: 10px;
-        font-weight: 700;
-        opacity: .7;
-      }
-      .ho-pill-active .ho-pill-count {
-        opacity: .85;
-      }
-
-      /* ── Queue cards ─────────────────────────── */
-      .ho-q-list {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-
-      .ho-q-card {
-        display: flex;
-        width: 100%;
-        text-align: left;
-        background: var(--d-deep);
-        border: none;
-        border-radius: 14px;
-        padding: 0;
-        cursor: pointer;
-        transition: all .2s ease;
-        -webkit-tap-highlight-color: transparent;
-        overflow: hidden;
-      }
-      .ho-q-card:hover {
-        background: var(--d-well);
-        transform: translateY(-1px);
-      }
-      .ho-q-card:active {
-        transform: scale(.985);
-      }
-
-      /* ── Priority rail (Grok convoy-card) ──────── */
-      .ho-priority-rail {
-        width: 4px;
-        flex-shrink: 0;
-        border-radius: 4px 0 0 4px;
-      }
-      .ho-rail-ok { background: var(--d-ok); }
-      .ho-rail-sig { background: var(--d-sig); }
-      .ho-rail-muted { background: var(--d-t3); opacity: .4; }
-
-      .ho-q-card-body {
-        flex: 1;
-        min-width: 0;
-        padding: 14px 16px;
-      }
-
-      .ho-q-card-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-      }
-
-      .ho-q-card-name {
-        font-family: var(--d-font);
-        font-size: 14px;
-        font-weight: 600;
-        color: var(--d-t1);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-
-      .ho-q-card-arrow {
-        color: var(--d-t3);
-        flex-shrink: 0;
-        transition: all .2s;
-      }
-      .ho-q-card:hover .ho-q-card-arrow {
-        transform: translateX(2px);
-        color: var(--d-sig);
-      }
-
-      .ho-q-card-route {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        font-family: var(--d-font-mono);
-        font-size: 10px;
-        color: var(--d-t2);
-        margin-top: 6px;
-      }
-
-      .ho-q-card-meta {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-top: 10px;
-        flex-wrap: wrap;
-      }
-
-      .ho-q-card-region {
-        font-family: var(--d-font-mono);
-        font-size: 10px;
-        color: var(--d-t3);
-        letter-spacing: .04em;
-      }
-
-      .ho-q-card-trucks {
-        display: flex;
-        align-items: center;
         gap: 4px;
-        font-family: var(--d-font-mono);
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-family: var(--d-font);
         font-size: 11px;
-        font-weight: 600;
-        color: var(--d-t2);
-        flex-shrink: 0;
+        font-weight: 500;
+        letter-spacing: .02em;
+        line-height: 1.4;
       }
+      .ho-badge-muted { background: var(--d-well); color: var(--d-t2); }
+      .ho-badge-accent { background: rgba(34,232,255,.12); color: var(--d-sig); }
+      .ho-badge-ok { background: rgba(41,255,176,.12); color: var(--d-ok); }
+      .ho-badge-warn { background: rgba(255,180,60,.12); color: var(--d-warn); }
 
-      /* ── Status badge (Grok pattern) ─────────── */
-      .ho-status-badge {
+      /* ── Status dot pill (Grok StatusBadge) ───── */
+      .ho-status {
         display: inline-flex;
         align-items: center;
         gap: 5px;
@@ -850,103 +645,299 @@ function HandoverStyles() {
         border-radius: 50%;
         display: inline-block;
       }
-      .ho-status-done {
-        background: rgba(41,255,176,.1);
-        color: var(--d-ok);
+      .ho-status-muted { background: var(--d-well); color: var(--d-t2); }
+      .ho-status-muted .ho-status-dot { background: var(--d-t2); }
+      .ho-status-accent { background: rgba(34,232,255,.1); color: var(--d-sig); }
+      .ho-status-accent .ho-status-dot { background: var(--d-sig); }
+      .ho-status-ok { background: rgba(41,255,176,.1); color: var(--d-ok); }
+      .ho-status-ok .ho-status-dot { background: var(--d-ok); }
+      .ho-status-warn { background: rgba(255,180,60,.1); color: var(--d-warn); }
+      .ho-status-warn .ho-status-dot { background: var(--d-warn); }
+
+      .ho-tone-muted { color: var(--d-t2); }
+      .ho-tone-accent { color: var(--d-sig); }
+      .ho-tone-ok { color: var(--d-ok); }
+      .ho-tone-warn { color: var(--d-warn); }
+
+      /* ── Queue layout ────────────────────────── */
+      .ho-queue {
+        max-width: 520px;
+        margin: 0 auto;
+        padding: 16px 16px 40px;
       }
-      .ho-status-done .ho-status-dot {
-        background: var(--d-ok);
+
+      /* ── Filter pills (Grok pattern) ──────────── */
+      .ho-filter-row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 16px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        padding: 2px 0;
+      }
+      .ho-filter-row::-webkit-scrollbar { display: none; }
+
+      .ho-pill {
+        display: inline-flex;
+        align-items: center;
+        height: 36px;
+        padding: 0 14px;
+        border-radius: 999px;
+        border: none;
+        background: var(--d-well);
+        color: var(--d-t2);
+        font-family: var(--d-font);
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all .15s;
+        -webkit-tap-highlight-color: transparent;
+        flex-shrink: 0;
+      }
+      .ho-pill:hover {
+        color: var(--d-t1);
+      }
+      .ho-pill-active {
+        background: var(--d-sig);
+        color: var(--d-void);
+      }
+      .ho-pill-active:hover {
+        color: var(--d-void);
+      }
+
+      /* ── Queue cards ─────────────────────────── */
+      .ho-q-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .ho-q-card {
+        position: relative;
+        display: block;
+        width: 100%;
+        text-align: left;
+        background: var(--d-deep);
+        border: none;
+        border-radius: 24px;
+        padding: 16px 16px 16px 20px;
+        cursor: pointer;
+        transition: box-shadow .15s ease, transform .15s ease;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .ho-q-card:active {
+        transform: scale(.99);
+      }
+
+      /* ── Priority rail (Grok: absolute inset-y-3 left-0 w-0.5) ── */
+      .ho-priority-rail {
+        position: absolute;
+        top: 12px;
+        bottom: 12px;
+        left: 0;
+        width: 2px;
+        border-radius: 999px;
+      }
+      .ho-rail-ok { background: var(--d-ok); }
+      .ho-rail-accent { background: var(--d-sig); }
+      .ho-rail-muted { background: var(--d-rim3); }
+      .ho-rail-warn { background: var(--d-warn); }
+
+      .ho-q-card-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .ho-q-card-id-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .ho-q-card-region-tag {
+        font-family: var(--d-font-mono);
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: .02em;
+        color: var(--d-t1);
+      }
+
+      .ho-q-card-name {
+        margin: 6px 0 0;
+        font-family: var(--d-font);
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--d-t1);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .ho-q-card-route {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        margin: 2px 0 0;
+        font-size: 12px;
+        color: var(--d-t2);
+      }
+
+      .ho-q-card-meta {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-top: 12px;
+        flex-wrap: wrap;
+      }
+
+      .ho-q-card-meta-item {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 12px;
+        color: var(--d-t2);
+      }
+
+      .ho-q-card-accent-tag {
+        font-size: 12px;
+        color: var(--d-sig);
+      }
+
+      .ho-q-card-progress {
+        margin-top: 12px;
+      }
+
+      .ho-q-card-progress-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 6px;
+      }
+
+      .ho-q-card-progress-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        color: var(--d-t2);
+      }
+
+      .ho-q-card-progress-pct {
+        font-family: var(--d-font-mono);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
       }
 
       .ho-q-progress-track {
-        height: 3px;
-        border-radius: 2px;
-        background: rgba(200,215,240,.06);
+        height: 4px;
+        border-radius: 999px;
+        background: var(--d-well);
         overflow: hidden;
-        margin-top: 10px;
       }
 
       .ho-q-progress-fill {
         height: 100%;
-        border-radius: 2px;
-        background: var(--d-sig);
+        border-radius: 999px;
         transition: width .5s ease;
       }
-      .ho-q-progress-done {
-        background: var(--d-ok);
+      .ho-fill-ok { background: var(--d-ok); }
+      .ho-fill-accent { background: var(--d-sig); }
+      .ho-fill-muted { background: var(--d-t3); }
+      .ho-fill-warn { background: var(--d-warn); }
+
+      .ho-q-card-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 12px;
       }
 
-      /* ── Empty state (Grok double-ring) ──────── */
+      .ho-q-card-footer-region {
+        font-size: 11px;
+        color: var(--d-t3);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .ho-q-card-open {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 12px;
+        color: var(--d-sig);
+        flex-shrink: 0;
+      }
+
+      /* ── Empty state (Grok EmptyClear — exact proportions) ───── */
       .ho-empty {
         display: flex;
         flex-direction: column;
         align-items: center;
         text-align: center;
-        padding: 60px 24px 24px;
+        padding: 64px 24px 16px;
         animation: ho-rise-in .4s ease both;
       }
 
-      .ho-empty-rings {
+      .ho-empty-ring-wrap {
         position: relative;
         width: 80px;
         height: 80px;
-        margin-bottom: 24px;
-      }
-
-      .ho-empty-ring {
-        position: absolute;
-        border-radius: 50%;
-      }
-
-      .ho-empty-ring-outer {
-        inset: 0;
-        border: 1.5px solid rgba(34,232,255,.15);
-        animation: ho-ring-pulse 3s ease-in-out infinite;
-      }
-
-      .ho-empty-ring-inner {
-        inset: 8px;
-        border: 1.5px solid rgba(34,232,255,.25);
-        animation: ho-ring-pulse 3s ease-in-out infinite .4s;
-      }
-
-      .ho-empty-icon-center {
-        position: absolute;
-        inset: 0;
         display: flex;
         align-items: center;
         justify-content: center;
+        flex-shrink: 0;
+      }
+
+      .ho-empty-ring-outer {
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        border: 1px solid rgba(34,232,255,.25);
+      }
+
+      .ho-empty-ring-inner {
+        position: relative;
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        border: 1.5px solid rgba(34,232,255,.5);
         color: var(--d-sig);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .ho-empty-ring-inner.ho-ring-ok {
+        border-color: rgba(41,255,176,.5);
+        color: var(--d-ok);
       }
 
       .ho-empty-title {
+        margin: 32px 0 0;
         font-family: var(--d-font);
-        font-size: 20px;
-        font-weight: 600;
+        font-size: 24px;
+        font-weight: 500;
+        letter-spacing: -.02em;
         color: var(--d-t1);
-        margin: 0 0 8px;
-        letter-spacing: -.01em;
       }
 
       .ho-empty-sub {
-        font-size: 13px;
+        margin: 8px 0 0;
+        max-width: 320px;
+        font-size: 14px;
         color: var(--d-t2);
         line-height: 1.5;
-        margin: 0;
       }
 
-      .ho-empty-ts {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        margin-top: 20px;
-        font-family: var(--d-font-mono);
-        font-size: 10px;
+      .ho-empty-checked {
+        margin: 24px 0 0;
+        font-size: 12px;
         color: var(--d-t3);
-        padding: 4px 10px;
-        border-radius: 12px;
-        background: var(--d-deep);
-        box-shadow: 0 0 0 1px rgba(200,215,240,.06);
       }
 
       /* ── Detail view ─────────────────────────── */
@@ -977,49 +968,9 @@ function HandoverStyles() {
       /* ── Info card ───────────────────────────── */
       .ho-info-card {
         background: var(--d-deep);
-        border-radius: 14px;
-        padding: 18px;
+        border-radius: 24px;
+        padding: 18px 20px;
         margin-bottom: 24px;
-      }
-
-      .ho-info-top {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 16px;
-      }
-
-      .ho-info-badge {
-        width: 36px;
-        height: 36px;
-        border-radius: 10px;
-        background: linear-gradient(145deg, rgba(139,107,255,.15), rgba(34,232,255,.15));
-        box-shadow: 0 0 0 1px rgba(34,232,255,.1);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--d-sig);
-        flex-shrink: 0;
-      }
-
-      .ho-info-text {
-        flex: 1;
-        min-width: 0;
-      }
-
-      .ho-info-name {
-        font-family: var(--d-font);
-        font-size: 16px;
-        font-weight: 700;
-        color: var(--d-t1);
-        line-height: 1.25;
-      }
-
-      .ho-info-region {
-        font-family: var(--d-font-mono);
-        font-size: 10px;
-        color: var(--d-t2);
-        margin-top: 2px;
       }
 
       .ho-info-route {
@@ -1028,7 +979,7 @@ function HandoverStyles() {
         gap: 0;
         padding: 12px 14px;
         background: var(--d-void);
-        border-radius: 10px;
+        border-radius: 14px;
         margin-bottom: 16px;
       }
 
@@ -1069,16 +1020,16 @@ function HandoverStyles() {
       }
 
       .ho-progress-track {
-        height: 6px;
-        border-radius: 3px;
-        background: rgba(200,215,240,.06);
+        height: 4px;
+        border-radius: 999px;
+        background: var(--d-well);
         overflow: hidden;
       }
 
       .ho-progress-fill {
         height: 100%;
-        border-radius: 3px;
-        background: linear-gradient(90deg, var(--d-sig), var(--d-ok));
+        border-radius: 999px;
+        background: var(--d-sig);
         transition: width .5s ease;
       }
 
@@ -1087,13 +1038,13 @@ function HandoverStyles() {
         margin-bottom: 0;
       }
 
-      .ho-card {
+      .ho-card-plain {
         background: var(--d-deep);
-        border-radius: 14px;
+        border-radius: 24px;
         overflow: hidden;
       }
       .ho-truck-sep {
-        border-top: 1px solid rgba(200,215,240,.06);
+        border-top: 1px solid rgba(232,238,247,.06);
       }
 
       .ho-divider-row {
@@ -1106,19 +1057,19 @@ function HandoverStyles() {
       .ho-divider-line {
         flex: 1;
         height: 1px;
-        background: rgba(200,215,240,.06);
+        background: rgba(232,238,247,.06);
       }
 
       /* ── Upload row ──────────────────────────── */
       .ho-row {
-        padding: 16px;
+        padding: 16px 20px;
       }
 
       .ho-row-done {
         display: flex;
         align-items: center;
         gap: 12px;
-        padding: 14px 16px;
+        padding: 14px 20px;
         opacity: .7;
       }
 
@@ -1146,9 +1097,8 @@ function HandoverStyles() {
       .ho-row-icon {
         width: 32px;
         height: 32px;
-        border-radius: 9px;
+        border-radius: 10px;
         background: var(--d-well);
-        box-shadow: 0 0 0 1px rgba(200,215,240,.06);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1206,7 +1156,7 @@ function HandoverStyles() {
         height: 26px;
         border-radius: 50%;
         background: var(--d-well);
-        box-shadow: 0 0 0 1px rgba(200,215,240,.1);
+        box-shadow: 0 0 0 1px rgba(232,238,247,.1);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1225,7 +1175,7 @@ function HandoverStyles() {
       .ho-step-connector {
         width: 1px;
         height: 12px;
-        background: rgba(200,215,240,.1);
+        background: rgba(232,238,247,.1);
         margin: 2px 0 2px 12px;
       }
 
@@ -1252,7 +1202,7 @@ function HandoverStyles() {
       .ho-action-btn:active { transform: scale(.96); }
 
       .ho-action-btn-outline {
-        border: 1px dashed rgba(200,215,240,.12);
+        border: 1px dashed rgba(232,238,247,.14);
         background: var(--d-well);
         color: var(--d-sig);
       }
@@ -1335,7 +1285,7 @@ function HandoverStyles() {
         padding: 8px 12px;
         border-radius: 8px;
         border: none;
-        box-shadow: 0 0 0 1px rgba(200,215,240,.08);
+        box-shadow: 0 0 0 1px rgba(232,238,247,.08);
         background: var(--d-void);
         color: var(--d-t1);
         font-family: var(--d-font-mono);
@@ -1360,63 +1310,16 @@ function HandoverStyles() {
         color: var(--d-fire);
       }
 
-      /* ── Complete state (Grok double-ring) ──── */
+      /* ── Complete state ──────────────────────── */
       .ho-complete-wrap {
         max-width: 520px;
         margin: 0 auto;
-        padding: 16px 16px 40px;
+        padding: 80px 24px 40px;
         display: flex;
         flex-direction: column;
         align-items: center;
         text-align: center;
-        padding-top: 80px;
         animation: ho-rise-in .4s ease both;
-      }
-
-      .ho-complete-rings {
-        position: relative;
-        width: 88px;
-        height: 88px;
-        margin-bottom: 24px;
-      }
-
-      .ho-complete-ring {
-        position: absolute;
-        border-radius: 50%;
-      }
-      .ho-complete-ring-outer {
-        inset: 0;
-        border: 1.5px solid rgba(41,255,176,.15);
-        animation: ho-ring-pulse 3s ease-in-out infinite;
-      }
-      .ho-complete-ring-inner {
-        inset: 10px;
-        border: 1.5px solid rgba(41,255,176,.3);
-        animation: ho-ring-pulse 3s ease-in-out infinite .4s;
-      }
-      .ho-complete-icon-center {
-        position: absolute;
-        inset: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--d-ok);
-      }
-
-      .ho-complete-title {
-        font-family: var(--d-font);
-        font-size: 20px;
-        font-weight: 600;
-        color: var(--d-t1);
-        margin: 0 0 8px;
-        letter-spacing: -.01em;
-      }
-
-      .ho-complete-sub {
-        font-size: 13px;
-        color: var(--d-t2);
-        line-height: 1.5;
-        margin: 0;
       }
 
       .ho-complete-btn {
@@ -1427,7 +1330,7 @@ function HandoverStyles() {
         padding: 10px 20px;
         border-radius: 10px;
         border: none;
-        box-shadow: 0 0 0 1px rgba(200,215,240,.1);
+        box-shadow: 0 0 0 1px rgba(232,238,247,.1);
         background: var(--d-deep);
         color: var(--d-sig);
         font-family: var(--d-font);
@@ -1437,16 +1340,16 @@ function HandoverStyles() {
         transition: all .15s;
       }
       .ho-complete-btn:hover {
-        box-shadow: 0 0 0 1px rgba(200,215,240,.18);
+        box-shadow: 0 0 0 1px rgba(232,238,247,.18);
         background: var(--d-well);
       }
 
       /* ── Skeleton loading ────────────────────── */
       .ho-skel-card {
         background: var(--d-deep);
-        box-shadow: 0 0 0 1px rgba(200,215,240,.06);
-        border-radius: 14px;
-        padding: 16px;
+        box-shadow: 0 0 0 1px rgba(232,238,247,.06);
+        border-radius: 24px;
+        padding: 16px 20px;
         margin-bottom: 8px;
       }
 
@@ -1462,8 +1365,8 @@ function HandoverStyles() {
       .ho-skel-w40 { width: 40%; }
 
       .ho-skel-bar {
-        height: 3px;
-        border-radius: 2px;
+        height: 4px;
+        border-radius: 999px;
         width: 100%;
         background: linear-gradient(90deg, var(--d-well) 25%, var(--d-lift) 50%, var(--d-well) 75%);
         background-size: 200% 100%;
@@ -1474,11 +1377,6 @@ function HandoverStyles() {
       @keyframes ho-shimmer {
         0% { background-position: 200% 0; }
         100% { background-position: -200% 0; }
-      }
-
-      @keyframes ho-ring-pulse {
-        0%, 100% { transform: scale(1); opacity: 1; }
-        50% { transform: scale(1.06); opacity: .5; }
       }
 
       .ho-spin {
@@ -1502,8 +1400,6 @@ function HandoverStyles() {
 
       @media (prefers-reduced-motion: reduce) {
         .ho-spin, .ho-skel-line, .ho-skel-bar { animation: none; }
-        .ho-empty-ring-outer, .ho-empty-ring-inner { animation: none; }
-        .ho-complete-ring-outer, .ho-complete-ring-inner { animation: none; }
         .ho-stagger > * { animation: none; }
         .ho-detail, .ho-empty, .ho-complete-wrap { animation: none; }
       }
