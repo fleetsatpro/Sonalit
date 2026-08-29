@@ -153,10 +153,23 @@ async function renderRouteMapImage(points, { width = 860, height = 380 } = {}) {
     const minX = Math.min(...pts.map((p) => p.x)), maxX = Math.max(...pts.map((p) => p.x));
     const minY = Math.min(...pts.map((p) => p.y)), maxY = Math.max(...pts.map((p) => p.y));
     const cropPad = 44;
-    const cropX = Math.max(0, Math.floor(minX - cropPad));
-    const cropY = Math.max(0, Math.floor(minY - cropPad));
-    const cropW = Math.min(mosaicW - cropX, Math.ceil(maxX - minX + cropPad * 2));
-    const cropH = Math.min(mosaicH - cropY, Math.ceil(maxY - minY + cropPad * 2));
+    let cropW = Math.ceil(maxX - minX + cropPad * 2);
+    let cropH = Math.ceil(maxY - minY + cropPad * 2);
+    // Never crop tighter than half the target render size, in source pixels.
+    // A tightly clustered track (e.g. a convoy idling/only ever pinging from
+    // one spot — common in practice) otherwise gets cropped down to a
+    // near-zero box around the points and then blown up to fill the target,
+    // producing an unreadably blurry, over-zoomed map with almost no street
+    // context (confirmed from a real report: a single-intersection crop
+    // magnified ~10x). Capping the resize magnification at 2x keeps the map
+    // legible regardless of how tight the actual GPS cluster is; a genuinely
+    // spread-out route already exceeds this minimum, so its crop (and this
+    // fix) is a no-op for it.
+    cropW = Math.min(mosaicW, Math.max(cropW, width * 0.5));
+    cropH = Math.min(mosaicH, Math.max(cropH, height * 0.5));
+    const centerX = (minX + maxX) / 2, centerY = (minY + maxY) / 2;
+    const cropX = Math.max(0, Math.min(Math.round(centerX - cropW / 2), mosaicW - cropW));
+    const cropY = Math.max(0, Math.min(Math.round(centerY - cropH / 2), mosaicH - cropH));
 
     // Chaining .extract()/.resize() directly onto a .composite() pipeline in
     // this sharp version throws a spurious "Image to composite must have
