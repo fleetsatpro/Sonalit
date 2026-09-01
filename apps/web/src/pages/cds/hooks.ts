@@ -207,6 +207,23 @@ export function useCreateBooking() {
   });
 }
 
+export function useUpdateBooking() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...payload }: Record<string, unknown>) => {
+      const { data } = await cdsApi.patch(`/bookings/${id}`, payload);
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cds', 'bookings'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'booking-containers'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'manifest'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'field'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
+    },
+  });
+}
+
 export function useExtractBooking() {
   return useMutation({
     mutationFn: async ({ data, mediaType }: { data: string; mediaType: string }) => {
