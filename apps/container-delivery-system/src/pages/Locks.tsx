@@ -6,54 +6,63 @@ import { DrawerField, DrawerSection } from '@/components/ui/Drawer.js';
 import { PageHeader } from '@/components/ui/PageHeader.js';
 import { ProgressBar } from '@/components/ui/ProgressBar.js';
 import { useUIStore } from '@/stores/ui.js';
+import { useLocks } from '@/hooks/useLocks.js';
 
-const locks = [
-  { id: 'SL23891', battery: 88, solar: true, signal: 'strong' as const, container: 'TGHU3456789', truck: 'KDK 456P', heartbeat: '12s ago', location: 'A8, Mariakani', temp: '26°C', tamper: false },
-  { id: 'SL23881', battery: 95, solar: true, signal: 'strong' as const, container: '—', truck: '—', heartbeat: '2m ago', location: 'Mombasa Port Gate 4', temp: '27°C', tamper: false },
-  { id: 'SL24410', battery: 34, solar: false, signal: 'weak' as const, container: 'CMAU5581223', truck: 'KDA 112B', heartbeat: '6m ago', location: 'B3, Naivasha bypass', temp: '29°C', tamper: true },
-  { id: 'SL24118', battery: 61, solar: true, signal: 'strong' as const, container: 'HLXU9903312', truck: 'KCE 771D', heartbeat: '40s ago', location: 'A104, Nakuru', temp: '25°C', tamper: false },
-  { id: 'SL23977', battery: 72, solar: true, signal: 'medium' as const, container: 'OOCL2261890', truck: 'KDG 330F', heartbeat: '1m ago', location: 'Mombasa Rd, Mtito', temp: '28°C', tamper: false },
-  { id: 'SL23652', battery: 11, solar: false, signal: 'offline' as const, container: '—', truck: '—', heartbeat: '3h ago', location: 'Unknown', temp: '—', tamper: false },
-  { id: 'SL24290', battery: 47, solar: true, signal: 'medium' as const, container: 'EGLV1129003', truck: 'KDF 887M', heartbeat: '3m ago', location: 'A8, Voi', temp: '30°C', tamper: false },
-  { id: 'SL23555', battery: 100, solar: true, signal: 'strong' as const, container: '—', truck: '—', heartbeat: '8s ago', location: 'Nakuru Depot', temp: '24°C', tamper: false },
-];
+const s = (v: unknown) => String(v ?? '—');
 
-const signalColor = (s: string) => s === 'strong' ? 'text-cds-teal' : s === 'medium' ? 'text-cds-amber' : s === 'weak' ? 'text-cds-amber' : 'text-cds-red';
+const signalColor = (sig: string) => sig === 'strong' ? 'text-cds-teal' : sig === 'medium' ? 'text-cds-amber' : sig === 'weak' ? 'text-cds-amber' : 'text-cds-red';
 const battColor = (b: number) => b >= 60 ? 'bg-cds-teal' : b >= 30 ? 'bg-cds-amber' : 'bg-cds-red';
-const healthDot = (l: typeof locks[0]) => l.tamper ? 'bg-cds-red shadow-[0_0_8px_var(--cds-red)]' : l.signal === 'offline' ? 'bg-cds-red shadow-[0_0_8px_var(--cds-red)]' : l.signal === 'strong' ? 'bg-cds-teal shadow-glow-teal' : 'bg-cds-amber shadow-[0_0_8px_rgba(255,176,32,0.6)]';
+
+function healthDot(l: Record<string, unknown>) {
+  const status = s(l['status']);
+  const signal = s(l['signal_strength']);
+  if (status === 'tamper') return 'bg-cds-red shadow-[0_0_8px_var(--cds-red)]';
+  if (signal === 'offline') return 'bg-cds-red shadow-[0_0_8px_var(--cds-red)]';
+  if (signal === 'strong') return 'bg-cds-teal shadow-glow-teal';
+  return 'bg-cds-amber shadow-[0_0_8px_rgba(255,176,32,0.6)]';
+}
 
 export default function Locks() {
   const { openDrawer, addToast } = useUIStore();
+  const { data: lockData, isLoading } = useLocks();
 
-  const openLockDrawer = (l: typeof locks[0]) => {
-    openDrawer(l.id, (
+  if (isLoading) return <div className="flex items-center justify-center h-64"><div className="text-text-2 font-mono text-xs">Loading…</div></div>;
+
+  const locks = (lockData?.data ?? []) as Record<string, unknown>[];
+
+  const openLockDrawer = (l: Record<string, unknown>) => {
+    const battery = Number(l['battery_level'] ?? 0);
+    openDrawer(s(l['serial']), (
       <div>
-        <div className="text-2xs text-text-2 font-mono mb-4">{l.location}</div>
+        <div className="text-2xs text-text-2 font-mono mb-4">{s(l['location'])}</div>
         <DrawerSection title="Device Health">
-          <DrawerField label="Battery" value={<ProgressBar value={l.battery} color={battColor(l.battery)} showLabel />} />
-          <DrawerField label="Solar charging" value={l.solar ? 'Yes' : 'No'} />
-          <DrawerField label="Signal" value={<span className={signalColor(l.signal)}>{l.signal}</span>} />
-          <DrawerField label="Last heartbeat" value={l.heartbeat} />
-          <DrawerField label="Temperature" value={l.temp} />
-          <DrawerField label="Tamper status" value={l.tamper ? <span className="text-cds-red">Alert active</span> : 'Normal'} />
+          <DrawerField label="Battery" value={<ProgressBar value={battery} color={battColor(battery)} showLabel />} />
+          <DrawerField label="Solar charging" value={l['solar_charging'] ? 'Yes' : 'No'} />
+          <DrawerField label="Signal" value={<span className={signalColor(s(l['signal_strength']))}>{s(l['signal_strength'])}</span>} />
+          <DrawerField label="Last heartbeat" value={s(l['last_heartbeat'])} />
+          <DrawerField label="Temperature" value={s(l['temperature'])} />
+          <DrawerField label="Tamper status" value={s(l['status']) === 'tamper' ? <span className="text-cds-red">Alert active</span> : 'Normal'} />
         </DrawerSection>
         <DrawerSection title="Assignment">
-          <DrawerField label="Container" value={l.container} />
-          <DrawerField label="Truck" value={l.truck} />
+          <DrawerField label="Container" value={s(l['container_number'])} />
+          <DrawerField label="Truck" value={s(l['truck'])} />
         </DrawerSection>
         <div className="flex gap-2 mt-5">
-          <Button className="flex-1" onClick={() => addToast(`Ping sent to lock ${l.id}`)}>Ping Lock</Button>
-          <Button variant="ghost" className="flex-1" onClick={() => addToast(`Lock ${l.id} flagged for maintenance`)}>Flag Maintenance</Button>
+          <Button className="flex-1" onClick={() => addToast(`Ping sent to lock ${s(l['serial'])}`)}>Ping Lock</Button>
+          <Button variant="ghost" className="flex-1" onClick={() => addToast(`Lock ${s(l['serial'])} flagged for maintenance`)}>Flag Maintenance</Button>
         </div>
       </div>
     ));
   };
 
+  const tamperCount = locks.filter((l) => s(l['status']) === 'tamper').length;
+  const offlineCount = locks.filter((l) => s(l['signal_strength']) === 'offline').length;
+
   return (
     <div className="p-6 pb-10 animate-fade-in">
       <PageHeader
         title="E-Lock Management"
-        description={`${locks.length} solar-powered locks in the fleet · ${locks.filter((l) => l.tamper).length} tamper alert · ${locks.filter((l) => l.signal === 'offline').length} offline`}
+        description={`${locks.length} solar-powered locks in the fleet · ${tamperCount} tamper alert · ${offlineCount} offline`}
         actions={
           <div className="flex gap-2">
             <Button variant="ghost" onClick={() => addToast('Bulk sync initiated')}>Sync All</Button>
@@ -65,47 +74,52 @@ export default function Locks() {
       />
 
       <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-3.5">
-        {locks.map((l) => (
-          <Card key={l.id} hover onClick={() => openLockDrawer(l)} className="p-4">
-            <div className="flex justify-between items-start mb-3">
-              <div>
-                <div className="font-mono font-bold text-sm text-text-0">{l.id}</div>
-                <div className="text-2xs text-text-2 mt-0.5">{l.location}</div>
+        {locks.map((l, i) => {
+          const battery = Number(l['battery_level'] ?? 0);
+          const signal = s(l['signal_strength']);
+          const serial = s(l['serial'] ?? i);
+          return (
+            <Card key={serial} hover onClick={() => openLockDrawer(l)} className="p-4">
+              <div className="flex justify-between items-start mb-3">
+                <div>
+                  <div className="font-mono font-bold text-sm text-text-0">{serial}</div>
+                  <div className="text-2xs text-text-2 mt-0.5">{s(l['location'])}</div>
+                </div>
+                <span className={`w-2 h-2 rounded-full flex-none ${healthDot(l)}`} />
               </div>
-              <span className={`w-2 h-2 rounded-full flex-none ${healthDot(l)}`} />
-            </div>
-            <div className="flex justify-between text-xs-tight text-text-1 py-[5px] border-t border-hair">
-              <span>Battery</span>
-              <span className="text-text-0 font-mono flex items-center gap-1.5">
-                <span className="w-[46px] h-1.5 rounded bg-ink-3 overflow-hidden">
-                  <div className={`h-full rounded ${battColor(l.battery)}`} style={{ width: `${l.battery}%` }} />
+              <div className="flex justify-between text-xs-tight text-text-1 py-[5px] border-t border-hair">
+                <span>Battery</span>
+                <span className="text-text-0 font-mono flex items-center gap-1.5">
+                  <span className="w-[46px] h-1.5 rounded bg-ink-3 overflow-hidden">
+                    <div className={`h-full rounded ${battColor(battery)}`} style={{ width: `${battery}%` }} />
+                  </span>
+                  {battery}%
                 </span>
-                {l.battery}%
-              </span>
-            </div>
-            <div className="flex justify-between text-xs-tight text-text-1 py-[5px] border-t border-hair">
-              <span>Solar</span>
-              <span className="text-text-0 font-mono">{l.solar ? 'Charging' : 'Idle'}</span>
-            </div>
-            <div className="flex justify-between text-xs-tight text-text-1 py-[5px] border-t border-hair">
-              <span>Signal</span>
-              <span className={`font-mono ${signalColor(l.signal)}`}>{l.signal}</span>
-            </div>
-            <div className="flex justify-between text-xs-tight text-text-1 py-[5px] border-t border-hair">
-              <span>Container</span>
-              <span className="text-text-0 font-mono">{l.container}</span>
-            </div>
-            <div className="flex justify-between text-xs-tight text-text-1 py-[5px] border-t border-hair">
-              <span>Heartbeat</span>
-              <span className="text-text-0 font-mono">{l.heartbeat}</span>
-            </div>
-            {l.tamper && (
-              <div className="mt-2.5">
-                <Badge variant="bad" dot>TAMPER ALERT</Badge>
               </div>
-            )}
-          </Card>
-        ))}
+              <div className="flex justify-between text-xs-tight text-text-1 py-[5px] border-t border-hair">
+                <span>Solar</span>
+                <span className="text-text-0 font-mono">{l['solar_charging'] ? 'Charging' : 'Idle'}</span>
+              </div>
+              <div className="flex justify-between text-xs-tight text-text-1 py-[5px] border-t border-hair">
+                <span>Signal</span>
+                <span className={`font-mono ${signalColor(signal)}`}>{signal}</span>
+              </div>
+              <div className="flex justify-between text-xs-tight text-text-1 py-[5px] border-t border-hair">
+                <span>Container</span>
+                <span className="text-text-0 font-mono">{s(l['container_number'])}</span>
+              </div>
+              <div className="flex justify-between text-xs-tight text-text-1 py-[5px] border-t border-hair">
+                <span>Heartbeat</span>
+                <span className="text-text-0 font-mono">{s(l['last_heartbeat'])}</span>
+              </div>
+              {s(l['status']) === 'tamper' && (
+                <div className="mt-2.5">
+                  <Badge variant="bad" dot>TAMPER ALERT</Badge>
+                </div>
+              )}
+            </Card>
+          );
+        })}
       </div>
     </div>
   );

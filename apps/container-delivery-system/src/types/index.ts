@@ -4,14 +4,21 @@ export type ShipmentStatus =
   | 'container_assigned'
   | 'vehicle_assigned'
   | 'driver_assigned'
+  | 'awaiting_lock'
+  | 'locked'
   | 'lock_assigned'
   | 'tracking_active'
+  | 'dispatched'
   | 'in_transit'
   | 'checkpoint'
+  | 'delayed'
   | 'border_crossing'
+  | 'at_port'
   | 'arrived'
   | 'unlock_authorized'
   | 'delivered'
+  | 'lock_removed'
+  | 'completed'
   | 'container_returned'
   | 'closed'
   | 'archived';
@@ -153,39 +160,39 @@ export interface Vehicle {
 
 export interface Customer {
   id: string;
-  name: string;
+  company_name: string;
   code: string;
-  contactPerson: string;
+  contact_person: string;
   phone: string;
   email: string;
   address: string;
   city: string;
   country: string;
-  totalShipments: number;
-  activeShipments: number;
-  slaCompliance: number;
+  total_shipments: number;
+  active_shipments: number;
+  sla_compliance: number;
   rating: number;
   status: 'active' | 'inactive' | 'suspended';
-  createdAt: string;
-  updatedAt: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Transporter {
   id: string;
-  name: string;
+  company_name: string;
   code: string;
-  contactPerson: string;
+  contact_person: string;
   phone: string;
   email: string;
-  totalTrucks: number;
-  activeTrips: number;
-  onTimeRate: number;
-  avgClampTime: string;
-  totalTrips: number;
+  total_trucks: number;
+  active_trips: number;
+  on_time_rate: number;
+  avg_clamp_time: string;
+  total_trips: number;
   rating: number;
   status: 'active' | 'inactive' | 'suspended';
-  createdAt: string;
-  updatedAt: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Geofence {

@@ -4,7 +4,7 @@ import { useAuthStore } from '../../stores/auth.js';
 import { LoadingState } from './CDSDashboard.js';
 import { Card, KPICard, Button, StatusBadge, DataTable, DrawerField, FilterChip, Badge } from './components.js';
 import FieldAccessPanel from './FieldAccessPanel.js';
-import { useLocks, useTrips, useBookings, useMarkBilled } from './hooks.js';
+import { useDashboardKPIs, useLocks, useTrips, useBookings, useMarkBilled, useActivity, useReports, useGenerateReport, useAlerts } from './hooks.js';
 import { useCDSStore } from './store.js';
 
 
@@ -214,14 +214,39 @@ export function PulseView() {
 }
 
 export function InboxView() {
+  const { data: activity, isLoading } = useActivity(50);
+  if (isLoading) return <LoadingState />;
+  const items = (activity ?? []) as Row[];
+
+  const iconMap: Record<string, string> = {
+    clamp: '🔒', depart: '🚛', checkpoint: '📍', sync: '🔄',
+    arrival: '✅', unclamp: '🔓', ai: '🤖', alert: '⚠️',
+    lock: '🔒', unlock: '🔓',
+  };
+
   return (
-    <div className="flex items-center justify-center h-full" style={{ minHeight: 400 }}>
-      <div className="text-center max-w-sm">
-        <div className="text-[11px] text-text-2 font-mono uppercase tracking-widest mb-2">Comms Centre</div>
-        <p className="text-[12px] text-text-2 leading-relaxed">
-          Field messages and dispatch logs will appear here once operations are running.
-        </p>
-      </div>
+    <div className="p-5 max-w-[1600px] mx-auto">
+      <Card className="p-4">
+        <div className="font-bold text-sm text-text-0 mb-3">Field Messages & Dispatch Log</div>
+        <div className="space-y-0 max-h-[600px] overflow-y-auto">
+          {items.map((item, i) => (
+            <div key={String(item['id'] ?? i)} className="flex items-start gap-2.5 py-2.5 border-b border-white/[.05] last:border-0">
+              <span className="text-sm flex-none mt-0.5">{iconMap[String(item['icon'] ?? item['type'] ?? '')] ?? '📋'}</span>
+              <div className="min-w-0 flex-1">
+                <div className="text-xs text-text-0">{String(item['description'] ?? item['text'] ?? '—')}</div>
+                <div className="text-[10px] text-text-2 font-mono mt-0.5">
+                  {item['created_at'] ? new Date(String(item['created_at'])).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : String(item['meta'] ?? '')}
+                </div>
+              </div>
+            </div>
+          ))}
+          {items.length === 0 && (
+            <div className="text-xs text-text-2 text-center py-10 font-mono">
+              No field messages yet — activity appears here as operations run.
+            </div>
+          )}
+        </div>
+      </Card>
     </div>
   );
 }
@@ -306,12 +331,23 @@ export function BillingView() {
 export function ReportsView() {
   const [selected, setSelected] = useState('daily');
   const { addToast } = useCDSStore();
+  const { data: reportData, isLoading } = useReports();
+  const generateReport = useGenerateReport();
   const types = [
-    { id: 'daily', label: 'Daily Report', desc: 'PDF summary' },
-    { id: 'weekly', label: 'Weekly Report', desc: 'Excel export' },
-    { id: 'monthly', label: 'Monthly Report', desc: 'Full analytics' },
-    { id: 'manager', label: 'Manager Deck', desc: 'Slide summary' },
+    { id: 'daily', label: 'Daily Report', desc: 'PDF summary', format: 'pdf' as const },
+    { id: 'weekly', label: 'Weekly Report', desc: 'Excel export', format: 'excel' as const },
+    { id: 'monthly', label: 'Monthly Report', desc: 'Full analytics', format: 'pdf' as const },
+    { id: 'custom', label: 'Custom Report', desc: 'Date range export', format: 'csv' as const },
   ];
+  const reports = reportData?.data ?? [];
+
+  const handleGenerate = (format: 'pdf' | 'excel' | 'csv') => {
+    const t = types.find(x => x.id === selected);
+    generateReport.mutate(
+      { name: t?.label ?? 'Report', type: selected as 'daily' | 'weekly' | 'monthly' | 'custom', format, parameters: {} },
+      { onSuccess: () => addToast('Report generating…'), onError: () => addToast('Failed to generate report', 'error') },
+    );
+  };
 
   return (
     <div className="p-5 max-w-[1600px] mx-auto">
@@ -324,39 +360,102 @@ export function ReportsView() {
         ))}
       </div>
       <div className="flex gap-2 mb-5">
-        <Button onClick={() => addToast('Report generating…')}>Generate report</Button>
-        <Button variant="ghost" onClick={() => addToast('Excel export started')}>Excel export</Button>
-        <Button variant="ghost" onClick={() => addToast('PDF export started')}>PDF export</Button>
+        <Button onClick={() => handleGenerate('pdf')} disabled={generateReport.isPending}>Generate PDF</Button>
+        <Button variant="ghost" onClick={() => handleGenerate('excel')} disabled={generateReport.isPending}>Excel export</Button>
+        <Button variant="ghost" onClick={() => handleGenerate('csv')} disabled={generateReport.isPending}>CSV export</Button>
       </div>
       <Card className="p-4">
         <div className="font-bold text-sm text-text-0 mb-3">Generated Reports</div>
-        {[
-          { name: 'Daily Ops Summary — Aug 1', type: 'PDF', date: 'Aug 1, 2026' },
-          { name: 'Weekly Transporter Performance', type: 'Excel', date: 'Jul 28, 2026' },
-          { name: 'Monthly Manager Deck', type: 'PowerPoint', date: 'Jul 1, 2026' },
-        ].map(r => (
-          <div key={r.name} className="flex items-center gap-3 py-3 border-b border-[rgba(255,255,255,.04)] last:border-0">
-            <span className="text-lg">{r.type === 'PDF' ? '\u{1F4C4}' : r.type === 'Excel' ? '\u{1F4CA}' : '\u{1F4FD}'}</span>
+        {isLoading && <div className="text-xs text-text-2 font-mono py-4 text-center">Loading reports…</div>}
+        {reports.map(r => (
+          <div key={r.id} className="flex items-center gap-3 py-3 border-b border-[rgba(255,255,255,.04)] last:border-0">
+            <span className="text-lg">{r.format === 'pdf' ? '📄' : r.format === 'excel' ? '📊' : '📋'}</span>
             <div className="flex-1 min-w-0">
               <div className="text-xs text-text-0">{r.name}</div>
-              <div className="text-[10px] text-text-2 font-mono mt-0.5">{r.type} · {r.date}</div>
+              <div className="text-[10px] text-text-2 font-mono mt-0.5">
+                {r.format.toUpperCase()} · {r.generatedAt ? new Date(r.generatedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+              </div>
             </div>
-            <Button size="sm" variant="ghost" onClick={() => addToast(`Downloading ${r.name}`)}>Download</Button>
+            <StatusBadge status={r.status} />
+            {r.status === 'ready' && r.downloadUrl && (
+              <Button size="sm" variant="ghost" onClick={() => window.open(r.downloadUrl!, '_blank')}>Download</Button>
+            )}
           </div>
         ))}
+        {!isLoading && reports.length === 0 && (
+          <div className="text-xs text-text-2 font-mono py-6 text-center">No reports generated yet. Select a type and click Generate.</div>
+        )}
       </Card>
     </div>
   );
 }
 
 export function AnalyticsView() {
+  const { data: kpis, isLoading: kpiLoading } = useDashboardKPIs();
+  const { data: alertData, isLoading: alertLoading } = useAlerts();
+  const { data: tripData } = useTrips();
+  if (kpiLoading || alertLoading) return <LoadingState />;
+
+  const kv = (k: string) => String(kpis?.[k] ?? 0);
+  const avgHrs = Number(kpis?.['avg_transit_hours'] ?? 0);
+  const avgH = Math.floor(avgHrs);
+  const avgM = Math.round((avgHrs - avgH) * 60);
+  const alerts = (alertData?.data ?? []) as Row[];
+  const trips = (tripData?.data ?? []) as Row[];
+
+  const transitCount = trips.filter(t => t['status'] === 'dispatched').length;
+  const deliveredCount = trips.filter(t => t['status'] === 'delivered').length;
+  const delayedCount = trips.filter(t => t['status'] === 'delayed').length;
+  const onTimeRate = (transitCount + deliveredCount) > 0
+    ? Math.round((deliveredCount / (deliveredCount + delayedCount || 1)) * 100) : 0;
+
   return (
-    <div className="flex items-center justify-center h-full" style={{ minHeight: 400 }}>
-      <div className="text-center max-w-sm">
-        <div className="text-[11px] text-text-2 font-mono uppercase tracking-widest mb-2">Analytics</div>
-        <p className="text-[12px] text-text-2 leading-relaxed">
-          Fleet performance metrics will populate here once enough operational data has been recorded.
-        </p>
+    <div className="p-5 max-w-[1600px] mx-auto">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+        <KPICard label="TOTAL TRIPS" value={String(tripData?.total ?? 0)} delta="all time" trend="up" />
+        <KPICard label="ON-TIME RATE" value={`${onTimeRate}%`} delta="delivery success" trend={onTimeRate >= 80 ? 'up' : 'down'} />
+        <KPICard label="AVG TRANSIT TIME" value={avgHrs ? `${avgH}h ${avgM}m` : '—'} delta="per delivery" trend="up" />
+        <KPICard label="ACTIVE ALERTS" value={String(alerts.length)} delta="unresolved" trend="down" />
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card className="p-4">
+          <div className="font-bold text-sm text-text-0 mb-3">Fleet Summary</div>
+          <div className="space-y-3">
+            {[
+              { label: 'Active Containers', value: kv('active_containers'), color: '#33d6a8' },
+              { label: 'Active Locks', value: kv('active_locks'), color: '#33d6a8' },
+              { label: 'In Transit', value: kv('in_transit'), color: '#37e6ff' },
+              { label: 'Delivered Today', value: kv('delivered_today'), color: '#22c55e' },
+              { label: 'Delayed Trips', value: kv('delayed_trips'), color: '#ff5c5c' },
+              { label: 'Pending Unclamp', value: kv('pending_unclamp'), color: '#ffb020' },
+            ].map(row => (
+              <div key={row.label} className="flex items-center justify-between py-2 border-b border-white/[.05] last:border-0">
+                <span className="text-xs text-text-1">{row.label}</span>
+                <span className="text-xs font-mono font-bold" style={{ color: row.color }}>{row.value}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+        <Card className="p-4">
+          <div className="font-bold text-sm text-text-0 mb-3">Recent Alerts</div>
+          <div className="space-y-0 max-h-[300px] overflow-y-auto">
+            {alerts.slice(0, 10).map((a, i) => (
+              <div key={String(a['id'] ?? i)} className="flex items-start gap-2 py-2.5 border-b border-white/[.05] last:border-0">
+                <span className="text-sm mt-0.5">⚠️</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs text-text-0 truncate">{String(a['title'] ?? a['message'] ?? '—')}</div>
+                  <div className="text-[10px] text-text-2 font-mono mt-0.5">
+                    {a['created_at'] ? new Date(String(a['created_at'])).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+                  </div>
+                </div>
+                <StatusBadge status={String(a['severity'] ?? 'medium')} />
+              </div>
+            ))}
+            {alerts.length === 0 && (
+              <div className="text-xs text-text-2 text-center py-8 font-mono">No active alerts</div>
+            )}
+          </div>
+        </Card>
       </div>
     </div>
   );
