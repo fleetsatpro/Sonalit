@@ -1,5 +1,6 @@
 const sharp = require('sharp');
 const logger = require('./logger');
+const { geocodePlace } = require('./geocode');
 
 const TILE_SIZE = 256;
 const TILE_SERVER = 'https://tile.openstreetmap.org';
@@ -7,11 +8,12 @@ const TILE_SERVER = 'https://tile.openstreetmap.org';
 // attribution on any rendered output — see attributionSvg() below.
 const USER_AGENT = 'SonalitGuardianCFO/1.0 (convoy report map)';
 
-// Minimal gazetteer covering common convoy-corridor towns across East/
-// Southern Africa. Deliberately not backed by a live geocoding service
-// (rate limits, usage-policy approval, another network dependency to fail
-// silently) — any stop name not listed here is simply left off the plotted
-// map and still shown in the stop list underneath it.
+// Fast local lookup for the most common convoy-corridor towns across East/
+// Southern Africa — checked first so the routine case never pays for a
+// network round trip. Anything not listed here falls through to real
+// automatic geocoding (Nominatim, via geocode.js) instead of silently
+// being dropped, so a town like "Malaba" that simply isn't in this short
+// list still resolves to real coordinates.
 const GAZETTEER = {
   'kolwezi': [-10.7167, 25.4667],
   'likasi': [-10.9814, 26.7333],
@@ -44,8 +46,17 @@ const GAZETTEER = {
   'addis ababa': [8.9806, 38.7578],
 };
 
-function geocode(name) {
-  return GAZETTEER[(name || '').trim().toLowerCase()] || null;
+// Resolves a place name to [lat, lng] automatically: the local gazetteer
+// first (instant, no network), then real geocoding (Nominatim) for anything
+// else. Never throws — geocodePlace() already swallows its own network
+// errors and returns null, so a geocoding outage degrades to "unresolved"
+// rather than breaking report generation.
+async function geocode(name) {
+  const key = (name || '').trim().toLowerCase();
+  if (!key) return null;
+  if (GAZETTEER[key]) return GAZETTEER[key];
+  const hit = await geocodePlace(name);
+  return hit ? [hit.lat, hit.lng] : null;
 }
 
 function lonLatToTile(lon, lat, zoom) {
@@ -137,7 +148,7 @@ async function renderRouteMapImage(points, { width = 860, height = 380 } = {}) {
       const p = lonLatToTile(lng, lat, zoom);
       return { x: (p.x - tileX0) * TILE_SIZE, y: (p.y - tileY0) * TILE_SIZE };
     };
-    const pts = points.map((p) => ({ ...project(p.lat, p.lng), label: p.label }));
+    const pts = points.map((p) => ({ ...project(p.lat, p.lng), label: p.label, lat: p.lat, lng: p.lng }));
     const pathD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
     const markers = pts.map((p, i) => {
       const isEnd = i === 0 || i === pts.length - 1;
@@ -198,6 +209,8 @@ async function renderRouteMapImage(points, { width = 860, height = 380 } = {}) {
       x: offX + (p.x - cropX) * scale,
       y: offY + (p.y - cropY) * scale,
       label: p.label,
+      lat: p.lat,
+      lng: p.lng,
       endpoint: i === 0 || i === pts.length - 1,
     }));
 
