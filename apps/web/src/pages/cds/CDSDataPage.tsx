@@ -22,7 +22,7 @@ export function ContainersView() {
     <div className="p-5 max-w-[1600px] mx-auto">
       <DataTable
         columns={[
-          { id: 'num', header: 'Container #', accessor: (r: Row) => <span className="font-mono font-bold text-cds-orange text-xs">{s(r['container_number'])}</span> },
+          { id: 'num', header: 'Container #', accessor: (r: Row) => <span className="font-mono font-bold text-cds-orange text-xs">{s(r['number'] ?? r['container_number'])}</span> },
           { id: 'type', header: 'Type', accessor: (r: Row) => <span className="font-mono text-xs">{s(r['iso_type'])}</span> },
           { id: 'owner', header: 'Ownership', accessor: (r: Row) => s(r['ownership']) },
           { id: 'status', header: 'Status', accessor: (r: Row) => <StatusBadge status={s(r['status'])} /> },
@@ -39,9 +39,9 @@ export function ContainersView() {
             ))}
           </div>
         }
-        onRowClick={(r: Row) => openDrawer(`Container ${s(r['container_number'])}`, (
+        onRowClick={(r: Row) => openDrawer(`Container ${s(r['number'] ?? r['container_number'])}`, (
           <>
-            <DrawerField label="Container #" value={s(r['container_number'])} />
+            <DrawerField label="Container #" value={s(r['number'] ?? r['container_number'])} />
             <DrawerField label="ISO Type" value={s(r['iso_type'])} />
             <DrawerField label="Ownership" value={s(r['ownership'])} />
             <DrawerField label="Status" value={<StatusBadge status={s(r['status'])} />} />

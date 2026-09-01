@@ -1,32 +1,45 @@
 import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Card } from '@/components/ui/Card.js';
 import { Badge } from '@/components/ui/Badge.js';
 import { Button } from '@/components/ui/Button.js';
 import { Tabs } from '@/components/ui/Tabs.js';
 import { PageHeader } from '@/components/ui/PageHeader.js';
+import { api } from '@/lib/api.js';
 
-const queueItems = [
-  { id: 'TGHU3456789', customer: 'Kenya Coffee Board', container: 'TGHU 345678-9', truck: 'KDK 456P', driver: 'John Kamau', arrivalTime: '14:22', waitTime: '2h 18m', bay: 'Bay 3', status: 'awaiting_unclamp' },
-  { id: 'OOCL2261890', customer: 'KTDA Holdings', container: 'OOCL 226189-0', truck: 'KDG 330F', driver: 'Alice Njeri', arrivalTime: '15:05', waitTime: '1h 35m', bay: 'Bay 7', status: 'unclamping' },
-  { id: 'HLXU9903312', customer: 'Sian Roses', container: 'HLXU 990331-2', truck: 'KCE 771D', driver: 'Samuel Kiptoo', arrivalTime: '15:40', waitTime: '0h 58m', bay: 'Queued', status: 'awaiting_bay' },
-  { id: 'EGLV1129003', customer: 'Kakuzi PLC', container: 'EGLV 112900-3', truck: 'KDF 887M', driver: 'Faith Chebet', arrivalTime: '16:10', waitTime: '0h 30m', bay: 'Queued', status: 'awaiting_bay' },
-];
-
-const completedItems = [
-  { id: 'MSCU7712340', customer: 'EPZ Textiles', container: 'MSCU 771234-0', completedAt: '12:45', duration: '45m', bay: 'Bay 3', status: 'delivered' },
-  { id: 'CSNU8834221', customer: 'Sasini PLC', container: 'CSNU 883422-1', completedAt: '11:20', duration: '38m', bay: 'Bay 5', status: 'delivered' },
-  { id: 'TCLU4459008', customer: 'Kenya Coffee Board', container: 'TCLU 445900-8', completedAt: '09:55', duration: '52m', bay: 'Bay 1', status: 'delivered' },
-];
+const s = (v: unknown) => String(v ?? '—');
 
 const statusLabels: Record<string, { label: string; variant: 'ok' | 'warn' | 'neutral' }> = {
   awaiting_unclamp: { label: 'AWAITING UNCLAMP', variant: 'warn' },
   unclamping: { label: 'UNCLAMPING', variant: 'ok' },
   awaiting_bay: { label: 'QUEUED', variant: 'neutral' },
+  at_port: { label: 'AT PORT', variant: 'warn' },
   delivered: { label: 'DELIVERED', variant: 'ok' },
 };
 
 export default function DeliveryOperations() {
   const [tab, setTab] = useState('queue');
+
+  const { data: queueData, isLoading: queueLoading } = useQuery<{ data: Record<string, unknown>[]; total: number }>({
+    queryKey: ['trips', 'at_port'],
+    queryFn: async () => {
+      const { data } = await api.get('/trips', { params: { status: 'at_port' } });
+      return data;
+    },
+  });
+
+  const { data: completedData, isLoading: completedLoading } = useQuery<{ data: Record<string, unknown>[]; total: number }>({
+    queryKey: ['trips', 'delivered'],
+    queryFn: async () => {
+      const { data } = await api.get('/trips', { params: { status: 'delivered' } });
+      return data;
+    },
+  });
+
+  if (queueLoading || completedLoading) return <div className="flex items-center justify-center h-64"><div className="text-text-2 font-mono text-xs">Loading…</div></div>;
+
+  const queueItems = queueData?.data ?? [];
+  const completedItems = completedData?.data ?? [];
 
   return (
     <div className="p-6 pb-10 animate-fade-in">
@@ -42,10 +55,8 @@ export default function DeliveryOperations() {
 
       <div className="grid grid-cols-4 gap-3 mb-5">
         {[
-          { label: 'In Queue', value: queueItems.length.toString(), color: 'text-cds-orange' },
-          { label: 'Avg Wait', value: '1h 20m', color: 'text-cds-amber' },
-          { label: 'Completed Today', value: completedItems.length.toString(), color: 'text-cds-teal' },
-          { label: 'Bays Active', value: '3 / 8', color: 'text-text-0' },
+          { label: 'In Queue', value: String(queueItems.length), color: 'text-cds-orange' },
+          { label: 'Completed Today', value: String(completedItems.length), color: 'text-cds-teal' },
         ].map((kpi) => (
           <Card key={kpi.label} className="p-3.5">
             <div className="text-2xs font-mono text-text-2 uppercase tracking-wider">{kpi.label}</div>
@@ -71,33 +82,36 @@ export default function DeliveryOperations() {
             <table className="w-full border-collapse text-xs-tight">
               <thead>
                 <tr>
-                  {['Container', 'Customer', 'Truck / Driver', 'Arrival', 'Wait Time', 'Bay', 'Status', 'Actions'].map((h) => (
+                  {['Container', 'Origin', 'Destination', 'Vehicle', 'Driver', 'Status', 'Actions'].map((h) => (
                     <th key={h} className="text-left font-mono text-2xs tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {queueItems.map((q) => {
-                  const s = statusLabels[q.status];
+                  const status = s(q.status);
+                  const sl = statusLabels[status];
                   return (
-                    <tr key={q.id} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors">
-                      <td className="px-3.5 py-3 font-mono font-semibold text-text-0">{q.container}</td>
-                      <td className="px-3.5 py-3 text-text-0">{q.customer}</td>
-                      <td className="px-3.5 py-3 text-text-0">{q.truck}<div className="text-2xs text-text-2 mt-0.5">{q.driver}</div></td>
-                      <td className="px-3.5 py-3 font-mono text-text-1">{q.arrivalTime}</td>
-                      <td className="px-3.5 py-3 font-mono text-cds-amber">{q.waitTime}</td>
-                      <td className="px-3.5 py-3 font-mono text-text-0">{q.bay}</td>
-                      <td className="px-3.5 py-3"><Badge variant={s?.variant ?? 'neutral'}>{s?.label ?? q.status.toUpperCase()}</Badge></td>
+                    <tr key={s(q.id)} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors">
+                      <td className="px-3.5 py-3 font-mono font-semibold text-text-0">{s(q.container_number)}</td>
+                      <td className="px-3.5 py-3 text-text-0">{s(q.origin)}</td>
+                      <td className="px-3.5 py-3 text-text-0">{s(q.destination)}</td>
+                      <td className="px-3.5 py-3 font-mono text-text-1">{s(q.vehicle_reg)}</td>
+                      <td className="px-3.5 py-3 text-text-0">{s(q.driver_name)}</td>
+                      <td className="px-3.5 py-3"><Badge variant={sl?.variant ?? 'neutral'}>{sl?.label ?? status.toUpperCase()}</Badge></td>
                       <td className="px-3.5 py-3">
                         <div className="flex gap-1.5">
-                          {q.status === 'awaiting_bay' && <Button size="sm">Assign Bay</Button>}
-                          {q.status === 'awaiting_unclamp' && <Button size="sm" variant="success">Authorize Unclamp</Button>}
-                          {q.status === 'unclamping' && <Button size="sm" variant="success">Confirm Delivery</Button>}
+                          {status === 'awaiting_bay' && <Button size="sm">Assign Bay</Button>}
+                          {status === 'awaiting_unclamp' && <Button size="sm" variant="success">Authorize Unclamp</Button>}
+                          {status === 'unclamping' && <Button size="sm" variant="success">Confirm Delivery</Button>}
                         </div>
                       </td>
                     </tr>
                   );
                 })}
+                {queueItems.length === 0 && (
+                  <tr><td colSpan={7} className="px-3.5 py-8 text-center text-text-2 text-xs">No items in queue.</td></tr>
+                )}
               </tbody>
             </table>
           )}
@@ -106,22 +120,25 @@ export default function DeliveryOperations() {
             <table className="w-full border-collapse text-xs-tight">
               <thead>
                 <tr>
-                  {['Container', 'Customer', 'Completed At', 'Duration', 'Bay', 'Status'].map((h) => (
+                  {['Container', 'Origin', 'Destination', 'Vehicle', 'Driver', 'Status'].map((h) => (
                     <th key={h} className="text-left font-mono text-2xs tracking-[0.06em] text-text-2 uppercase px-3.5 pb-2.5 pt-3 font-medium">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {completedItems.map((c) => (
-                  <tr key={c.id} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors">
-                    <td className="px-3.5 py-3 font-mono font-semibold text-text-0">{c.container}</td>
-                    <td className="px-3.5 py-3 text-text-0">{c.customer}</td>
-                    <td className="px-3.5 py-3 font-mono text-text-1">{c.completedAt}</td>
-                    <td className="px-3.5 py-3 font-mono text-cds-teal">{c.duration}</td>
-                    <td className="px-3.5 py-3 font-mono text-text-0">{c.bay}</td>
+                  <tr key={s(c.id)} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors">
+                    <td className="px-3.5 py-3 font-mono font-semibold text-text-0">{s(c.container_number)}</td>
+                    <td className="px-3.5 py-3 text-text-0">{s(c.origin)}</td>
+                    <td className="px-3.5 py-3 text-text-0">{s(c.destination)}</td>
+                    <td className="px-3.5 py-3 font-mono text-text-1">{s(c.vehicle_reg)}</td>
+                    <td className="px-3.5 py-3 text-text-0">{s(c.driver_name)}</td>
                     <td className="px-3.5 py-3"><Badge variant="ok">DELIVERED</Badge></td>
                   </tr>
                 ))}
+                {completedItems.length === 0 && (
+                  <tr><td colSpan={6} className="px-3.5 py-8 text-center text-text-2 text-xs">No completed deliveries.</td></tr>
+                )}
               </tbody>
             </table>
           )}
