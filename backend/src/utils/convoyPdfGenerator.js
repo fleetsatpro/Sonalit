@@ -146,6 +146,39 @@ function requiredActionFor(f) {
   return 'No action required — informational only';
 }
 
+// ─── Real, automatically-geocoded route progress ───────────────────────────
+// Resolves the convoy's declared origin/destination to real coordinates
+// (routeMapRenderer's geocode() — a small local gazetteer of common corridor
+// towns first, then real automatic geocoding via Nominatim for anything
+// else, e.g. "Malaba") and, from that, computes an honest measure of how far
+// along that corridor the convoy's last known GPS position actually sits:
+// the last fix's straight-line distance from the origin, as a fraction of
+// the straight-line origin->destination distance, clamped to [0,1]. This is
+// a real computed value from real coordinates — not a road-network routing
+// percentage (no routing engine is wired in here), and never a guess based
+// on convoy.status alone, which is what previously let a convoy marked
+// "completed" show its destination as "arrived" even when the actual last
+// GPS fix was hundreds of km short.
+async function computeRouteProgress(convoy, waypoints) {
+  // The raw last-known GPS fix is real regardless of whether the corridor's
+  // endpoints can be geocoded — surfaced separately so callers can still show
+  // an honest "last known position" even when pct can't be computed.
+  const lastPoint = waypoints.length ? waypoints[waypoints.length - 1] : null;
+
+  const origin = await geocode(convoy.route_origin);
+  const dest = await geocode(convoy.route_destination);
+  if (!origin || !dest) return { pct: null, declaredKm: null, origin, dest, lastPoint };
+
+  const declaredKm = haversineKm(origin[0], origin[1], dest[0], dest[1]);
+  if (declaredKm < 0.5 || !lastPoint) {
+    return { pct: null, declaredKm: Math.round(declaredKm), origin, dest, lastPoint };
+  }
+
+  const distFromOrigin = haversineKm(origin[0], origin[1], lastPoint.lat, lastPoint.lng);
+  const pct = Math.max(0, Math.min(1, distFromOrigin / declaredKm));
+  return { pct, declaredKm: Math.round(declaredKm), origin, dest, lastPoint };
+}
+
 // ─── Data-integrity advisory: compares the live GPS track against a real,
 // geocoded straight-line estimate of the declared corridor, and against the
 // photo evidence's own GPS tags. Only fires when all three real signals line
@@ -153,10 +186,10 @@ function requiredActionFor(f) {
 // declared corridor, with photo evidence sitting elsewhere) — never invents
 // a discrepancy, and stays silent for the common case where the track and
 // corridor agree or there simply isn't enough live tracking data to compare.
-function computeCorridorAdvisory(convoy, route, waypoints, photos) {
+// origin/dest are pre-resolved coordinates from computeRouteProgress(), so
+// the same geocoding result is reused rather than re-fetched.
+function computeCorridorAdvisory(convoy, route, waypoints, photos, origin, dest) {
   if (!route.hasTrack || waypoints.length < 2) return null;
-  const origin = geocode(convoy.route_origin);
-  const dest = geocode(convoy.route_destination);
   if (!origin || !dest) return null;
 
   const declaredKm = Math.round(haversineKm(origin[0], origin[1], dest[0], dest[1]));
@@ -231,30 +264,44 @@ function drawCoverPage(ctx, meta) {
   doc.fill(C.sub).fontSize(6.5).font('Helvetica-Bold');
   t(doc, 'ROUTE OVERVIEW — GPS TRACE', M + 12, boxTop + 10, { width: leftW - 24 });
 
-  if (meta.miniTrack && meta.miniTrack.points.length >= 2) {
-    const pad = 18, plotY = boxTop + 26, plotH = boxH - 26 - 26;
-    const lats = meta.miniTrack.points.map(p => p.lat), lngs = meta.miniTrack.points.map(p => p.lng);
-    const minLat = Math.min(...lats), maxLat = Math.max(...lats);
-    const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
-    const latR = Math.max(maxLat - minLat, 0.0005), lngR = Math.max(maxLng - minLng, 0.0005);
-    const proj = (lat, lng) => [
-      M + pad + ((lng - minLng) / lngR) * (leftW - pad * 2),
-      plotY + pad + (1 - (lat - minLat) / latR) * (plotH - pad * 2),
-    ];
-    doc.save().lineWidth(1.2).strokeColor(C.navy);
-    meta.miniTrack.points.forEach((p, i) => {
-      const [px, py] = proj(p.lat, p.lng);
-      if (i === 0) doc.moveTo(px, py); else doc.lineTo(px, py);
-    });
-    doc.stroke().restore();
-    const [sx, sy] = proj(meta.miniTrack.points[0].lat, meta.miniTrack.points[0].lng);
-    const [ex, ey] = proj(meta.miniTrack.points[meta.miniTrack.points.length - 1].lat, meta.miniTrack.points[meta.miniTrack.points.length - 1].lng);
-    dot(doc, sx, sy, 3, C.muted);
-    dot(doc, ex, ey, 3.5, C.green);
-    doc.fill(C.ink).fontSize(5.5).font('Helvetica-Bold');
-    t(doc, 'EVIDENCE CAPTURE SITE', ex - 60, ey - 12, { width: 120, align: 'center' });
-    doc.fill(C.muted).fontSize(5.5).font('Helvetica');
-    t(doc, 'GPS cluster, last position', sx - 55, sy + 6, { width: 110, align: 'center' });
+  const rp = meta.routeProgress;
+  const plotY = boxTop + 26, plotH = boxH - 26 - 26, lineY = plotY + plotH / 2;
+  if (rp && rp.pct != null) {
+    // Real progress along the declared corridor: how far the last known GPS
+    // fix sits between the (automatically geocoded) origin and destination —
+    // not a guess from convoy.status, which is what previously let a convoy
+    // marked "completed" show as "arrived" even when the real last fix was
+    // hundreds of km short of the destination.
+    const padX = 20, x1 = M + padX, x2 = M + leftW - padX;
+    const curX = x1 + rp.pct * (x2 - x1);
+    const arrived = rp.pct >= 0.97;
+
+    doc.save().moveTo(x1, lineY).lineTo(x2, lineY).lineWidth(2).strokeColor(C.hair2).stroke().restore();
+    doc.save().moveTo(x1, lineY).lineTo(curX, lineY).lineWidth(2).strokeColor(C.navy).stroke().restore();
+    dot(doc, x1, lineY, 4, C.navy);
+    dot(doc, x2, lineY, 4, arrived ? C.green : C.light, !arrived);
+    dot(doc, curX, lineY, 5, C.amber);
+
+    doc.fill(C.sub).fontSize(6).font('Helvetica-Bold');
+    t(doc, meta.origin.toUpperCase(), x1 - 45, lineY + 10, { width: 90, align: 'center' });
+    t(doc, meta.destination.toUpperCase(), x2 - 45, lineY + 10, { width: 90, align: 'center' });
+
+    doc.fill(C.ink).fontSize(6).font('Helvetica-Bold');
+    t(doc, arrived ? 'ARRIVED' : 'LAST PING', curX - 50, lineY - 26, { width: 100, align: 'center' });
+    doc.fill(C.muted).fontSize(5.5).font('Courier');
+    t(doc, `${rp.lastPoint.lat.toFixed(4)}, ${rp.lastPoint.lng.toFixed(4)}`, curX - 50, lineY - 17, { width: 100, align: 'center' });
+    doc.fill(C.navy).fontSize(8).font('Helvetica-Bold');
+    t(doc, `${Math.round(rp.pct * 100)}% of route`, curX - 50, lineY + 22, { width: 100, align: 'center' });
+  } else if (rp && rp.lastPoint) {
+    // Corridor endpoints couldn't be resolved automatically (geocoding
+    // failure/timeout) — still show the real raw last-known position rather
+    // than hiding it or guessing a percentage.
+    doc.fill(C.ink).fontSize(7).font('Helvetica-Bold');
+    t(doc, 'LAST KNOWN GPS POSITION', M + 12, lineY - 16, { width: leftW - 24, align: 'center' });
+    doc.fill(C.muted).fontSize(7).font('Courier');
+    t(doc, `${rp.lastPoint.lat.toFixed(4)}, ${rp.lastPoint.lng.toFixed(4)}`, M + 12, lineY - 4, { width: leftW - 24, align: 'center' });
+    doc.fill(C.light).fontSize(5.5).font('Helvetica');
+    t(doc, 'Declared corridor could not be resolved automatically — see Section ' + meta.routeSectionLetter, M + 12, lineY + 12, { width: leftW - 24, align: 'center' });
   } else {
     doc.fill(C.light).fontSize(8).font('Helvetica');
     t(doc, 'No live GPS track logged for this convoy.', M + 12, boxTop + boxH / 2 - 4, { width: leftW - 24, align: 'center' });
@@ -614,11 +661,9 @@ async function prefetchRouteMap(convoy, waypoints, namedWaypoints) {
       const trim = (s) => (s || '').trim().toLowerCase();
       const stops = [{ name: convoy.route_origin }, ...namedWaypoints, { name: convoy.route_destination }]
         .filter((s, i, arr) => i === 0 || trim(s.name) !== trim(arr[i - 1].name));
+      const resolved = await Promise.all(stops.map((s) => geocode(s.name)));
       points = stops
-        .map((s) => {
-          const g = geocode(s.name);
-          return g ? { lat: g[0], lng: g[1], label: s.name } : null;
-        })
+        .map((s, i) => (resolved[i] ? { lat: resolved[i][0], lng: resolved[i][1], label: s.name } : null))
         .filter(Boolean);
     } else {
       return null;
@@ -955,7 +1000,14 @@ function drawSealCard(doc, x, y, w, photoH, captionH, slot, match, photoBuffers)
 }
 
 // ─── Section B: corridor progress (single-row, named-waypoint line) ───────
-function drawCorridorProgress(ctx, convoy, namedWaypoints, hasLiveTrack) {
+// The origin/waypoint/destination dots are fixed reference points from the
+// convoy's declared route. The "current position" marker is placed by real,
+// computed pct (see computeRouteProgress — the last GPS fix's straight-line
+// distance from the origin, as a fraction of the declared corridor length),
+// never by trusting convoy.status alone: a convoy whose status field says
+// "completed" no longer draws as "arrived" at the destination unless its
+// actual last GPS fix is genuinely close to it.
+function drawCorridorProgress(ctx, convoy, namedWaypoints, hasLiveTrack, progress) {
   const doc = ctx.doc;
   const trim = (s) => (s || '').trim().toLowerCase();
   const stops = [
@@ -964,22 +1016,26 @@ function drawCorridorProgress(ctx, convoy, namedWaypoints, hasLiveTrack) {
     { name: convoy.route_destination || 'Destination' },
   ].filter((s, i, arr) => i === 0 || trim(s.name) !== trim(arr[i - 1].name));
 
-  const rowH = 76;
+  const rowH = 92;
   ensureSpace(ctx, rowH + 34);
   const y = doc.y;
 
-  const statusLabel = String(convoy.status).toLowerCase() === 'completed'
+  const pct = progress?.pct;
+  const arrived = pct != null && pct >= 0.97;
+  const statusLabel = arrived
     ? 'Arrived — Last Position Confirmed'
-    : String(convoy.status).toLowerCase() === 'active'
-      ? (hasLiveTrack ? 'En Route — Last Position Confirmed' : 'En Route — No Live Position')
-      : (convoy.status || '').toUpperCase() || 'PLANNED';
+    : pct != null
+      ? `En Route — ${Math.round(pct * 100)}% of Corridor`
+      : String(convoy.status).toLowerCase() === 'active'
+        ? (hasLiveTrack ? 'En Route — Corridor Unresolved' : 'En Route — No Live Position')
+        : (convoy.status || '').toUpperCase() || 'PLANNED';
 
   doc.fill(C.ink).fontSize(8).font('Helvetica-Bold');
   t(doc, `CONVOY PROGRESS — ${(convoy.route_origin || '?').toUpperCase()} -> ${(convoy.route_destination || '?').toUpperCase()} CORRIDOR`, M, y, { width: CW - 220 });
   doc.fill(C.muted).fontSize(7).font('Helvetica');
   t(doc, `Status: ${statusLabel}`, M + CW - 220, y + 1, { width: 220, align: 'right' });
 
-  const lineY = y + 40, padX = 30;
+  const lineY = y + 44, padX = 30;
   const usableW = CW - padX * 2;
   const positions = stops.map((s, i) => ({
     x: M + padX + (stops.length > 1 ? (usableW / (stops.length - 1)) * i : usableW / 2),
@@ -990,21 +1046,38 @@ function drawCorridorProgress(ctx, convoy, namedWaypoints, hasLiveTrack) {
 
   doc.save().moveTo(positions[0].x, lineY).lineTo(positions[positions.length - 1].x, lineY)
     .lineWidth(1.2).strokeColor(C.hair2).stroke().restore();
+  if (pct != null) {
+    const curX = positions[0].x + pct * (positions[positions.length - 1].x - positions[0].x);
+    doc.save().moveTo(positions[0].x, lineY).lineTo(curX, lineY).lineWidth(1.2).strokeColor(C.navy).stroke().restore();
+  }
 
   positions.forEach((p) => {
     if (p.isOrigin) dot(doc, p.x, lineY, 4, C.navy);
-    else if (p.isDest) dot(doc, p.x, lineY, 4.5, statusLabel.startsWith('Arrived') ? C.green : C.light, !statusLabel.startsWith('Arrived'));
+    else if (p.isDest) dot(doc, p.x, lineY, 4.5, arrived ? C.green : C.light, !arrived);
     else dot(doc, p.x, lineY, 3, C.light, true);
     doc.fill(C.ink).fontSize(6.5).font('Helvetica-Bold');
     t(doc, p.name.toUpperCase(), p.x - 45, lineY + 8, { width: 90, align: 'center' });
     if (p.isOrigin) { doc.fill(C.muted).fontSize(6).font('Helvetica'); t(doc, 'Origin', p.x - 45, lineY + 19, { width: 90, align: 'center' }); }
-    if (p.isDest) { doc.fill(C.muted).fontSize(6).font('Helvetica'); t(doc, statusLabel.startsWith('Arrived') ? 'Current Position' : 'Destination', p.x - 45, lineY + 19, { width: 90, align: 'center' }); }
+    if (p.isDest) { doc.fill(C.muted).fontSize(6).font('Helvetica'); t(doc, arrived ? 'Arrived' : 'Destination', p.x - 45, lineY + 19, { width: 90, align: 'center' }); }
   });
 
+  // Real current-position marker — a distinct dot from the fixed origin/
+  // destination reference points, placed and labeled from the actual last
+  // GPS fix rather than assumed to coincide with either endpoint.
+  if (pct != null && !arrived && progress.lastPoint) {
+    const curX = positions[0].x + pct * (positions[positions.length - 1].x - positions[0].x);
+    dot(doc, curX, lineY, 4.5, C.amber);
+    doc.fill(C.ink).fontSize(6).font('Helvetica-Bold');
+    t(doc, 'CURRENT POSITION', curX - 55, lineY - 28, { width: 110, align: 'center' });
+    doc.fill(C.muted).fontSize(5.5).font('Courier');
+    t(doc, `${progress.lastPoint.lat.toFixed(4)}, ${progress.lastPoint.lng.toFixed(4)}`, curX - 55, lineY - 19, { width: 110, align: 'center' });
+  }
+
   const legendY = y + rowH - 6;
-  dot(doc, M + 4, legendY, 3, C.navy); doc.fill(C.muted).fontSize(6).font('Helvetica'); t(doc, 'Origin', M + 12, legendY - 3, { width: 60 });
-  dot(doc, M + 90, legendY, 3, C.green); t(doc, 'Current / last confirmed position', M + 98, legendY - 3, { width: 160 });
-  dot(doc, M + 270, legendY, 3, C.light, true); t(doc, 'Reference waypoint — not independently GPS-verified', M + 278, legendY - 3, { width: 240 });
+  dot(doc, M + 4, legendY, 3, C.navy); doc.fill(C.muted).fontSize(6).font('Helvetica'); t(doc, 'Origin', M + 12, legendY - 3, { width: 55 });
+  dot(doc, M + 85, legendY, 3, C.amber); t(doc, 'Current position (from real GPS)', M + 93, legendY - 3, { width: 165 });
+  dot(doc, M + 275, legendY, 3, C.green); t(doc, 'Arrived', M + 283, legendY - 3, { width: 55 });
+  dot(doc, M + 345, legendY, 3, C.light, true); t(doc, 'Reference waypoint — not independently GPS-verified', M + 353, legendY - 3, { width: 240 });
 
   doc.y = y + rowH + 6;
 }
@@ -1024,10 +1097,18 @@ function drawMapImageBox(doc, mapResult, boxH) {
     mapResult.points.forEach((p) => {
       if (!p.label) return;
       const px = offX + p.x * scale, py = offY + p.y * scale;
-      const lw = 92, lh = 12, lx = px - lw / 2, ly = py - 26;
+      // Two-line label — the point's name plus its precise coordinates, so
+      // the current-position pointer reads as an exact, verifiable fix
+      // rather than a vague floating tag.
+      const hasCoord = p.lat != null && p.lng != null;
+      const lw = 100, lh = hasCoord ? 22 : 12, lx = px - lw / 2, ly = py - (hasCoord ? 36 : 26);
       doc.save().rect(lx, ly, lw, lh).fill(C.paper).restore();
       doc.fill(C.ink).fontSize(6.5).font('Helvetica-Bold');
       t(doc, p.label, lx, ly + 2, { width: lw, align: 'center' });
+      if (hasCoord) {
+        doc.fill(C.muted).fontSize(5.5).font('Courier');
+        t(doc, `${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}`, lx, ly + 12, { width: lw, align: 'center' });
+      }
     });
   } catch {
     doc.fill(C.light).fontSize(7).font('Helvetica');
@@ -1462,14 +1543,17 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
     convoy, trucks, photos, seals: [], waypoints, namedWaypoints, report,
     reportDate, sealCountPerTruck,
   });
-  const advisory = computeCorridorAdvisory(convoy, assessment.route, waypoints, photos);
   const openFindingId = assessment.findings.length ? `F-${String(1).padStart(2, '0')}` : null;
 
-  const [photoBuffers, routeMapImage, handoverBuffers] = await Promise.all([
+  const [photoBuffers, routeMapImage, handoverBuffers, routeProgress] = await Promise.all([
     prefetchPhotoBuffers(photos),
     prefetchRouteMap(convoy, waypoints, namedWaypoints),
     prefetchHandoverBuffers(handovers),
+    computeRouteProgress(convoy, waypoints),
   ]);
+  const advisory = computeCorridorAdvisory(
+    convoy, assessment.route, waypoints, photos, routeProgress.origin, routeProgress.dest,
+  );
 
   const reportNo = report.id ? `RPT-${String(report.id).slice(0, 8).toUpperCase()}` : `RPT-${reportDate}`;
   const verdictMap = {
@@ -1504,12 +1588,6 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
   sectionPlan.forEach((s, i) => { s.letter = String.fromCharCode(65 + i); });
   const letterOf = (key) => sectionPlan.find(s => s.key === key).letter;
 
-  const declaredOrigin = geocode(convoy.route_origin);
-  const declaredDest = geocode(convoy.route_destination);
-  const declaredKm = (declaredOrigin && declaredDest)
-    ? Math.round(haversineKm(declaredOrigin[0], declaredOrigin[1], declaredDest[0], declaredDest[1]))
-    : null;
-
   const sealsPerTruckMatched = trucks.map(truck => {
     const tp = photos.filter(p => p.convoy_truck_id === truck.id);
     const sod = new Set(tp.filter(p => p.session === 'sod' && p.photo_type === 'seal').map(p => String(p.seal_position)));
@@ -1538,8 +1616,6 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
     };
   });
 
-  const miniTrack = waypoints.length >= 2 ? { points: waypoints.filter((_, i) => i % Math.max(1, Math.floor(waypoints.length / 30)) === 0 || i === waypoints.length - 1) } : null;
-
   const ctx = {
     doc: null, pageNum: 0, generatedAt, reportNo,
     subtitle: `${convoy.name || 'Convoy'} · ${reportDate}`,
@@ -1554,12 +1630,13 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
       origin: convoy.route_origin || 'Origin',
       destination: convoy.route_destination || 'Destination',
       verdictLabel: vStyle.label, verdictColor: vStyle.color, integrityScore: assessment.score,
-      miniTrack, trackCaption: waypoints.length
+      routeProgress, routeSectionLetter: letterOf('route'),
+      trackCaption: waypoints.length
         ? `${assessment.route.distanceKm} km logged · ${waypoints.length} GPS points · see Section ${letterOf('route')} for full analysis`
         : 'No live GPS track logged for this date.',
       commodity: { text: 'Not declared at time of capture', italic: true },
       sealsVerified: { text: totalSealsExpected > 0 ? `${totalSealsMatched} / ${totalSealsExpected} · SOD -> EOD matched` : 'No seals configured' },
-      declaredDistance: { text: declaredKm != null ? `~ ${declaredKm} km (straight-line estimate)` : 'Not available' },
+      declaredDistance: { text: routeProgress.declaredKm != null ? `~ ${routeProgress.declaredKm} km (straight-line estimate)` : 'Not available' },
       vehicleRows,
       reportNo, reportDate, vehicleCount: `${trucks.length} Truck${trucks.length === 1 ? '' : 's'}`,
       region: convoy.region || '--',
@@ -1590,7 +1667,7 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
       t(doc, 'No GPS waypoints or planned route configured for this convoy.', M, doc.y, { width: CW });
       doc.y += 16;
     } else {
-      drawCorridorProgress(ctx, convoy, namedWaypoints, waypoints.length > 0);
+      drawCorridorProgress(ctx, convoy, namedWaypoints, waypoints.length > 0, routeProgress);
       if (waypoints.length > 1) {
         ensureSpace(ctx, 40);
         subLabel(ctx, "Today's Movement — GPS Trace");
