@@ -1,7 +1,7 @@
 const PDFDocument = require('pdfkit');
 const sharp = require('sharp');
 const logger = require('./logger');
-const { geocode, renderRouteMapImage } = require('./routeMapRenderer');
+const { geocode, renderRouteMapImage, renderCorridorMapImage } = require('./routeMapRenderer');
 const { assessConvoy, haversineKm } = require('./convoyIntegrity');
 
 // Light "chain-of-custody freight intelligence" theme — navy/gold accents on a
@@ -21,6 +21,19 @@ const C = {
 const PW = 595.28, PH = 841.89, M = 40, CW = PW - M * 2;
 const BODY_BOTTOM = PH - 46;
 const BODY_TOP_SLIM = 66;
+
+// Maps are rendered at 5 raster pixels per PDF point — ~360 DPI once placed,
+// so roads and tile lettering stay sharp in print — and at exactly their
+// box's aspect ratio, so each one fills its box instead of being letterboxed
+// into a small block inside grey bands. The px size and the draw rect must
+// stay in step, hence both come from these constants.
+const MAP_PX_PER_PT = 5;
+const COVER_MAP_BOX = { w: CW * 0.62 - 2, h: 178 };
+const TRACE_MAP_BOX = { w: CW, h: 176 };
+const mapPx = (box) => ({
+  width: Math.round(box.w * MAP_PX_PER_PT),
+  height: Math.round(box.h * MAP_PX_PER_PT),
+});
 
 function t(doc, str, x, y, opts) {
   doc.text(String(str ?? ''), x, y, { ...opts, lineBreak: false });
@@ -220,6 +233,82 @@ function computeCorridorAdvisory(convoy, route, waypoints, photos, origin, dest)
   };
 }
 
+// A small white label plate for a point on a rendered basemap — the point's
+// name, optionally with its exact coordinates underneath. Kept inside the map
+// rect so a marker near an edge doesn't push its label off the panel.
+function mapPointLabel(doc, px, py, lines, area) {
+  const lw = 100, lh = 6 + lines.length * 8;
+  // Bias the plate away from the middle of the map, so a label for a marker
+  // near a corner steps aside from the route line running through it instead
+  // of sitting on top of it.
+  const bias = (px < area.x + area.w / 2 ? -1 : 1) * lw * 0.28;
+  const lx = Math.max(area.x + 2, Math.min(px - lw / 2 + bias, area.x + area.w - lw - 2));
+  const below = py < area.y + area.h / 2;
+  // Clamped into the map rect: a marker near the top edge must not push its
+  // label out of the box and onto whatever sits above it.
+  const ly = Math.max(area.y + 2, Math.min(below ? py + 9 : py - lh - 9, area.y + area.h - lh - 2));
+  doc.save().fillOpacity(0.94).rect(lx, ly, lw, lh).fill(C.paper).restore();
+  let cy = ly + 3;
+  lines.forEach((ln) => {
+    doc.fill(ln.mono ? C.muted : C.ink).fontSize(ln.mono ? 5.5 : 6).font(ln.mono ? 'Courier' : 'Helvetica-Bold');
+    t(doc, ln.text, lx, cy, { width: lw, align: 'center' });
+    cy += 8;
+  });
+}
+
+// The cover panel's real corridor basemap: the rendered map filling the panel,
+// with origin / current position / destination labelled on top in the report's
+// own fonts, a coverage chip, and a legend distinguishing the covered leg from
+// the one still to run.
+function drawCorridorMapPanel(doc, meta, boxTop, boxH, leftW) {
+  const mr = meta.corridorMap;
+  const area = { x: M + 1, y: boxTop + 21, w: leftW - 2, h: COVER_MAP_BOX.h };
+  doc.save();
+  doc.rect(area.x, area.y, area.w, area.h).clip();
+  try {
+    doc.image(mr.buffer, area.x, area.y, { width: area.w, height: area.h });
+  } catch {
+    doc.fill(C.light).fontSize(7).font('Helvetica');
+    t(doc, 'Map image unavailable', area.x, area.y + area.h / 2 - 4, { width: area.w, align: 'center' });
+  }
+  doc.restore();
+
+  const scaleX = area.w / mr.width, scaleY = area.h / mr.height;
+  mr.points.forEach((p) => {
+    const px = area.x + p.x * scaleX, py = area.y + p.y * scaleY;
+    if (px < area.x || px > area.x + area.w || py < area.y || py > area.y + area.h) return;
+    const lines = [{ text: String(p.label || '').toUpperCase() }];
+    if (p.kind === 'current') {
+      lines[0] = { text: 'LAST CONFIRMED POSITION' };
+      lines.push({ text: `${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}`, mono: true });
+    }
+    mapPointLabel(doc, px, py, lines, area);
+  });
+
+  // Coverage chip, top-left of the map
+  const rp = meta.routeProgress;
+  const chipText = rp?.pct == null
+    ? 'NO LIVE POSITION'
+    : rp.pct >= 0.97
+      ? 'ARRIVED — 100% OF CORRIDOR'
+      : `${Math.round(rp.pct * 100)}% OF CORRIDOR COVERED`;
+  const chipW = doc.font('Helvetica-Bold').fontSize(6.5).widthOfString(chipText) + 14;
+  doc.save().fillOpacity(0.94).rect(area.x + 6, area.y + 6, chipW, 15).fill(C.paper).restore();
+  doc.fill(rp?.pct == null ? C.muted : rp.pct >= 0.97 ? C.green : C.navy).fontSize(6.5).font('Helvetica-Bold');
+  t(doc, chipText, area.x + 6, area.y + 10, { width: chipW, align: 'center' });
+
+  // Legend, bottom-left of the map
+  const lgY = area.y + area.h - 13, lgX = area.x + 6;
+  doc.save().fillOpacity(0.94).rect(lgX, lgY - 3, 148, 13).fill(C.paper).restore();
+  doc.save().moveTo(lgX + 4, lgY + 3.5).lineTo(lgX + 18, lgY + 3.5).lineWidth(1.6).strokeColor('#1d4ed8').stroke().restore();
+  doc.fill(C.sub).fontSize(5.5).font('Helvetica-Bold');
+  t(doc, 'COVERED', lgX + 21, lgY + 1, { width: 40 });
+  doc.save().dash(2.5, { space: 2 }).moveTo(lgX + 64, lgY + 3.5).lineTo(lgX + 78, lgY + 3.5)
+    .lineWidth(1.6).strokeColor('#64748b').stroke().undash().restore();
+  doc.fill(C.sub).fontSize(5.5).font('Helvetica-Bold');
+  t(doc, 'REMAINING', lgX + 81, lgY + 1, { width: 50 });
+}
+
 // ─── Cover page (page 1) — fully custom, light theme, standalone ──────────
 function drawCoverPage(ctx, meta) {
   const doc = ctx.doc;
@@ -262,11 +351,15 @@ function drawCoverPage(ctx, meta) {
   const boxTop = y, boxH = 220, leftW = CW * 0.62, gap = 12, rightW = CW - leftW - gap;
   doc.save().rect(M, boxTop, leftW, boxH).lineWidth(0.8).strokeColor(C.hair2).stroke().restore();
   doc.fill(C.sub).fontSize(6.5).font('Helvetica-Bold');
-  t(doc, 'ROUTE OVERVIEW — GPS TRACE', M + 12, boxTop + 10, { width: leftW - 24 });
+  t(doc, 'ROUTE OVERVIEW — CORRIDOR MAP', M + 12, boxTop + 10, { width: leftW - 24 });
 
   const rp = meta.routeProgress;
   const plotY = boxTop + 26, plotH = boxH - 26 - 26, lineY = plotY + plotH / 2;
-  if (rp && rp.pct != null) {
+  if (meta.corridorMap) {
+    drawCorridorMapPanel(doc, meta, boxTop, boxH, leftW);
+  } else if (rp && rp.pct != null) {
+    // Basemap tiles were unavailable — fall back to a schematic progress
+    // line so the same real percentage still reads, just without the map.
     // Real progress along the declared corridor: how far the last known GPS
     // fix sits between the (automatically geocoded) origin and destination —
     // not a guess from convoy.status, which is what previously let a convoy
@@ -308,7 +401,13 @@ function drawCoverPage(ctx, meta) {
   }
   doc.save().moveTo(M, boxTop + boxH - 18).lineTo(M + leftW, boxTop + boxH - 18).lineWidth(0.5).strokeColor(C.hair).stroke().restore();
   doc.fill(C.muted).fontSize(6).font('Helvetica');
-  t(doc, meta.trackCaption, M + 12, boxTop + boxH - 13, { width: leftW - 24 });
+  // OSM's tile usage policy requires visible attribution wherever its tiles
+  // are rendered.
+  t(
+    doc,
+    meta.corridorMap ? `${meta.trackCaption}  ·  (c) OpenStreetMap` : meta.trackCaption,
+    M + 12, boxTop + boxH - 13, { width: leftW - 24 },
+  );
 
   const stampX = M + leftW + gap, stampCx = stampX + rightW / 2, stampCy = boxTop + boxH / 2 - 8;
   doc.save().rect(stampX, boxTop, rightW, boxH).lineWidth(0.8).strokeColor(C.hair2).stroke().restore();
@@ -669,9 +768,48 @@ async function prefetchRouteMap(convoy, waypoints, namedWaypoints) {
       return null;
     }
     if (points.length < 2) return null;
-    return await renderRouteMapImage(points);
+    return await renderRouteMapImage(points, mapPx(TRACE_MAP_BOX));
   } catch (err) {
     logger.warn(`[convoyPdf] route map prefetch failed: ${err.message}`);
+    return null;
+  }
+}
+
+// Cover-page corridor map — the whole declared journey on a real basemap with
+// the covered leg highlighted. Deliberately separate from prefetchRouteMap
+// (Section B's detailed view of the day's movement): this one is framed to the
+// full origin -> destination corridor so "how far along" reads at a glance,
+// where that view is framed to the track itself.
+async function prefetchCorridorMap(convoy, progress, waypoints) {
+  try {
+    if (!progress?.origin || !progress?.dest) return null;
+    const origin = {
+      lat: progress.origin[0], lng: progress.origin[1],
+      label: convoy.route_origin || 'Origin',
+    };
+    const destination = {
+      lat: progress.dest[0], lng: progress.dest[1],
+      label: convoy.route_destination || 'Destination',
+    };
+    const current = progress.lastPoint
+      ? {
+        lat: Number(progress.lastPoint.lat),
+        lng: Number(progress.lastPoint.lng),
+        label: 'Last confirmed position',
+      }
+      : null;
+    const arrived = progress.pct != null && progress.pct >= 0.97;
+    // Subsample so a full day of pings doesn't bloat the overlay SVG.
+    const step = Math.max(1, Math.floor(waypoints.length / 60));
+    const track = waypoints
+      .filter((_, i) => i % step === 0 || i === waypoints.length - 1)
+      .map((w) => ({ lat: Number(w.lat), lng: Number(w.lng) }));
+    return await renderCorridorMapImage(
+      { origin, destination, current, arrived, track },
+      mapPx(COVER_MAP_BOX),
+    );
+  } catch (err) {
+    logger.warn(`[convoyPdf] corridor map prefetch failed: ${err.message}`);
     return null;
   }
 }
@@ -1086,29 +1224,29 @@ function drawMapImageBox(doc, mapResult, boxH) {
   const y = doc.y;
   doc.save().rect(M, y, CW, boxH).lineWidth(0.6).stroke(C.hair).restore();
   try {
+    // Drawn at the box's exact size rather than with `fit`: the raster is
+    // rendered at this box's aspect ratio, so an explicit width/height fills
+    // it edge to edge at full resolution. `fit` letterboxed it instead —
+    // which is what made a full-width map render as a small centred block.
     doc.save();
     doc.rect(M, y, CW, boxH).clip();
-    doc.image(mapResult.buffer, M, y, { fit: [CW, boxH], align: 'center', valign: 'center' });
+    doc.image(mapResult.buffer, M, y, { width: CW, height: boxH });
     doc.restore();
 
-    const scale = Math.min(CW / mapResult.width, boxH / mapResult.height);
-    const offX = M + (CW - mapResult.width * scale) / 2;
-    const offY = y + (boxH - mapResult.height * scale) / 2;
+    const scaleX = CW / mapResult.width, scaleY = boxH / mapResult.height;
+    const area = { x: M, y, w: CW, h: boxH };
     mapResult.points.forEach((p) => {
       if (!p.label) return;
-      const px = offX + p.x * scale, py = offY + p.y * scale;
+      const px = M + p.x * scaleX, py = y + p.y * scaleY;
       // Two-line label — the point's name plus its precise coordinates, so
       // the current-position pointer reads as an exact, verifiable fix
-      // rather than a vague floating tag.
-      const hasCoord = p.lat != null && p.lng != null;
-      const lw = 100, lh = hasCoord ? 22 : 12, lx = px - lw / 2, ly = py - (hasCoord ? 36 : 26);
-      doc.save().rect(lx, ly, lw, lh).fill(C.paper).restore();
-      doc.fill(C.ink).fontSize(6.5).font('Helvetica-Bold');
-      t(doc, p.label, lx, ly + 2, { width: lw, align: 'center' });
-      if (hasCoord) {
-        doc.fill(C.muted).fontSize(5.5).font('Courier');
-        t(doc, `${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}`, lx, ly + 12, { width: lw, align: 'center' });
+      // rather than a vague floating tag. Plate placement/clamping is shared
+      // with the cover map so neither can spill outside its box.
+      const lines = [{ text: p.label }];
+      if (p.lat != null && p.lng != null) {
+        lines.push({ text: `${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}`, mono: true });
       }
+      mapPointLabel(doc, px, py, lines, area);
     });
   } catch {
     doc.fill(C.light).fontSize(7).font('Helvetica');
@@ -1139,7 +1277,7 @@ function gpsTraceSection(ctx, waypoints, route, advisory, mapImage) {
   ], 6);
 
   if (mapImage) {
-    drawMapImageBox(doc, mapImage, 150);
+    drawMapImageBox(doc, mapImage, TRACE_MAP_BOX.h);
   } else {
     ensureSpace(ctx, 200);
     const boxY = doc.y, boxH = 190;
@@ -1551,6 +1689,9 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
     prefetchHandoverBuffers(handovers),
     computeRouteProgress(convoy, waypoints),
   ]);
+  // Needs the geocoded corridor endpoints, so it follows the batch above
+  // rather than joining it (the geocode results are cached by then).
+  const corridorMapImage = await prefetchCorridorMap(convoy, routeProgress, waypoints);
   const advisory = computeCorridorAdvisory(
     convoy, assessment.route, waypoints, photos, routeProgress.origin, routeProgress.dest,
   );
@@ -1631,9 +1772,10 @@ async function generateDailyReport(convoy, trucks, cfos, photos, report, reportD
       destination: convoy.route_destination || 'Destination',
       verdictLabel: vStyle.label, verdictColor: vStyle.color, integrityScore: assessment.score,
       routeProgress, routeSectionLetter: letterOf('route'),
+      corridorMap: corridorMapImage,
       trackCaption: waypoints.length
-        ? `${assessment.route.distanceKm} km logged · ${waypoints.length} GPS points · see Section ${letterOf('route')} for full analysis`
-        : 'No live GPS track logged for this date.',
+        ? `${assessment.route.distanceKm} km logged · ${waypoints.length} GPS points · legs are straight-line, not road-routed`
+        : 'No live GPS track logged for this date — declared corridor shown.',
       commodity: { text: 'Not declared at time of capture', italic: true },
       sealsVerified: { text: totalSealsExpected > 0 ? `${totalSealsMatched} / ${totalSealsExpected} · SOD -> EOD matched` : 'No seals configured' },
       declaredDistance: { text: routeProgress.declaredKm != null ? `~ ${routeProgress.declaredKm} km (straight-line estimate)` : 'Not available' },
