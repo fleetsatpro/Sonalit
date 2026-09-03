@@ -3,20 +3,29 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 /**
  * CDS opening cinematic.
  *
- * Plays the produced brand film (apps/web/public/cds-intro.mp4) — port aerial →
- * e-lock clamp → highway convoy → tracked delivery pipeline → the CDS end card.
- * The film carries its own title, HUD and tagline, so this shell adds nothing on
- * top but a Skip control. Shown once per session (see CDSDashboard).
+ * Plays the produced brand film (apps/web/public/cds-intro.mp4) — the e-lock
+ * crane lifting a container → highway convoy → tracked delivery pipeline → the
+ * CDS end card. The film carries its own title, HUD and tagline, so this shell
+ * adds nothing on top but a Skip control. Shown once per session (see
+ * CDSDashboard).
+ *
+ * Smoothness: playback is gated on `canplaythrough` (the poster — the first
+ * frame — holds meanwhile), so the film only starts once enough is buffered to
+ * run to the end without stalling. That trades a brief hold on a still frame for
+ * stutter-free motion, which matters far more on a platform intro. A fallback
+ * timer starts it anyway if buffering is slow.
  *
  * Robustness: dismisses on natural end, on Skip, on load/playback error, and on
  * a safety timeout, so a slow or blocked video can never trap the user on a
- * black screen. Respects prefers-reduced-motion by skipping straight through.
+ * still frame. Respects prefers-reduced-motion by skipping straight through.
  */
 
 const VIDEO_SRC = '/cds-intro.mp4';
 const POSTER_SRC = '/cds-intro-poster.jpg';
-// Video runs ~8s; give playback a margin, then dismiss no matter what.
-const SAFETY_MS = 11_000;
+// Start playing once buffered; if buffering is slow, start anyway after this.
+const BUFFER_WAIT_MS = 2_500;
+// Absolute upper bound (buffer wait + ~6.6s runtime + margin), then dismiss.
+const SAFETY_MS = 13_000;
 
 interface CDSIntroProps { onDone: () => void }
 
@@ -36,17 +45,29 @@ export function CDSIntro({ onDone }: CDSIntroProps) {
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { onDone(); return; }
 
+    const v = videoRef.current;
+    if (!v) return;
+
+    let started = false;
+    // Muted programmatic play() is allowed without a user gesture; if even that
+    // is blocked, don't strand the user — skip straight in.
+    const start = () => {
+      if (started) return;
+      started = true;
+      void Promise.resolve(v.play()).catch(() => finish());
+    };
+
+    // Prefer starting only when the browser judges it can play to the end
+    // without re-buffering; fall back to starting with whatever is buffered.
+    v.addEventListener('canplaythrough', start, { once: true });
+    const fallbackStart = window.setTimeout(start, BUFFER_WAIT_MS);
     const safety = window.setTimeout(finish, SAFETY_MS);
 
-    // Some mobile WebViews reject the declarative autoPlay attribute but allow a
-    // muted programmatic play(); nudge it, and if even that is blocked, don't
-    // strand the user — skip straight in.
-    const v = videoRef.current;
-    if (v) {
-      void Promise.resolve(v.play()).catch(() => finish());
-    }
-
-    return () => window.clearTimeout(safety);
+    return () => {
+      v.removeEventListener('canplaythrough', start);
+      window.clearTimeout(fallbackStart);
+      window.clearTimeout(safety);
+    };
   }, [finish, onDone]);
 
   return (
@@ -61,7 +82,6 @@ export function CDSIntro({ onDone }: CDSIntroProps) {
         className="cds-intro-video absolute inset-0 h-full w-full"
         src={VIDEO_SRC}
         poster={POSTER_SRC}
-        autoPlay
         muted
         playsInline
         preload="auto"
