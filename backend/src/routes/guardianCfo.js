@@ -947,6 +947,200 @@ async function updateDailyReport(convoy_id, report_date) {
   );
 }
 
+// ─── Hybrid Tracking — CFO QR issuance ───────────────────────────────────────
+//
+// Guardian authenticates with X-Device-Token, which /api/v1/tracking/qr cannot
+// accept: that router runs dualAuthenticate (operator JWT or field device), so
+// a CFO in the field had no way to mint a tracking QR for a truck in their own
+// convoy. This closes that gap without duplicating any QR logic — token
+// generation, hashing, lifecycle and audit all still happen in
+// utils/trackingEngine, exactly as they do for the yard and the dashboard.
+//
+// Authorisation is the point of doing it here rather than widening the other
+// router: the truck must belong to the convoy this device's CFO is actually
+// assigned to. Possession of a device token authorises nothing on its own.
+
+/** Resolve the convoy this CFO device is assigned to, or null. */
+async function cfoConvoyForDevice(device) {
+  let result = await query(
+    `SELECT cc.convoy_id, cc.cfo_user_id, c.org_id, c.name, c.status
+       FROM convoy_cfos cc
+       JOIN convoys c ON c.id = cc.convoy_id
+      WHERE cc.guardian_device_id = $1
+        AND c.status IN ('planned','active','completing')
+        AND c.deleted_at IS NULL
+      ORDER BY c.start_date DESC LIMIT 1`,
+    [device.id]
+  );
+  if (!result.rows.length && device.assignment_id) {
+    result = await query(
+      `SELECT cc.convoy_id, cc.cfo_user_id, c.org_id, c.name, c.status
+         FROM convoy_cfos cc
+         JOIN convoys c ON c.id = cc.convoy_id
+        WHERE cc.cfo_user_id = $1
+          AND c.status IN ('planned','active','completing')
+          AND c.deleted_at IS NULL
+        ORDER BY c.start_date DESC LIMIT 1`,
+      [device.assignment_id]
+    );
+  }
+  return result.rows[0] || null;
+}
+
+/**
+ * POST /api/v1/guardian/cfo/tracking-qr — mint a tracking QR for one convoy truck.
+ *
+ * Returns the raw token exactly once, for rendering. It is stored only as a
+ * hash, so a QR that is never displayed can only be replaced, never recovered.
+ */
+router.post('/tracking-qr', deviceAuth, async (req, res, next) => {
+  try {
+    if (!await requireCfoModule(res)) return;
+
+    const assignment = await cfoConvoyForDevice(req.device);
+    if (!assignment) return res.status(404).json({ error: 'No active convoy assigned to this device' });
+
+    const { convoy_truck_id } = req.body || {};
+    if (!convoy_truck_id) return res.status(400).json({ error: 'convoy_truck_id is required' });
+
+    // The truck must be in THIS CFO's convoy. Without this a valid device token
+    // would mint QRs for any truck in the org.
+    const truck = await query(
+      `SELECT ct.id, ct.vehicle_id, ct.driver_name, ct.position, v.registration
+         FROM convoy_trucks ct
+         LEFT JOIN vehicles v ON v.id = ct.vehicle_id
+        WHERE ct.id = $1 AND ct.convoy_id = $2`,
+      [convoy_truck_id, assignment.convoy_id]
+    );
+    if (!truck.rows.length) return res.status(404).json({ error: 'Truck not found in this convoy' });
+    const t = truck.rows[0];
+
+    const T = require('../utils/trackingEngine');
+    const db = T.dbForOrg(assignment.org_id);
+
+    // Regenerating supersedes any earlier code for this truck, so a convoy can
+    // never have two scannable links in circulation for one vehicle.
+    await T.supersedeOpenQrs(db, { convoyId: assignment.convoy_id, vehicleId: t.vehicle_id });
+
+    const { qr, token, url } = await T.issueQr(db, assignment.org_id, {
+      purpose: 'convoy_vehicle',
+      // The convoy owns this journey's end — see onConvoyEnded().
+      terminationPolicy: 'convoy_ended',
+      convoyId: assignment.convoy_id,
+      vehicleId: t.vehicle_id,
+      issuedBy: assignment.cfo_user_id,
+      display: {
+        vehicle: t.registration || null,
+        driver: t.driver_name || null,
+        convoy: assignment.name || null,
+        position: t.position ?? null,
+      },
+    });
+
+    await T.recordEvent(db, assignment.org_id, {
+      qrCodeId: qr.id, eventType: 'QR_GENERATED', actorType: 'guardian',
+      actorId: assignment.cfo_user_id,
+      payload: { convoy_id: assignment.convoy_id, convoy_truck_id, source: 'guardian_cfo' },
+    });
+
+    T.publishTracking(assignment.org_id, 'tracking.qr.generated', {
+      qr_id: qr.id, convoy_id: assignment.convoy_id, vehicle_id: t.vehicle_id,
+    });
+
+    res.status(201).json({
+      data: {
+        qr_id: qr.id,
+        token,
+        url,
+        display: qr.display,
+        termination_policy: qr.termination_policy,
+      },
+    });
+  } catch (err) { next(err); }
+});
+
+/**
+ * GET /api/v1/guardian/cfo/tracking-status — the CFO's live board.
+ *
+ * Deliberately lists every truck in the convoy, including those with no QR and
+ * those that have not scanned: a vehicle that never started tracking is the
+ * most operationally interesting row on the screen, and omitting it would make
+ * the board quietly lie by showing only what happens to be working.
+ */
+router.get('/tracking-status', deviceAuth, async (req, res, next) => {
+  try {
+    if (!await requireCfoModule(res)) return;
+
+    const assignment = await cfoConvoyForDevice(req.device);
+    if (!assignment) return res.status(404).json({ error: 'No active convoy assigned to this device' });
+
+    const T = require('../utils/trackingEngine');
+    const db = T.dbForOrg(assignment.org_id);
+
+    const trucks = await query(
+      `SELECT ct.id AS convoy_truck_id, ct.vehicle_id, ct.driver_name, ct.position, v.registration
+         FROM convoy_trucks ct
+         LEFT JOIN vehicles v ON v.id = ct.vehicle_id
+        WHERE ct.convoy_id = $1
+        ORDER BY ct.position`,
+      [assignment.convoy_id]
+    );
+
+    const sessions = await db(
+      `SELECT * FROM tracking_sessions
+        WHERE convoy_id = $1 AND deleted_at IS NULL
+        ORDER BY started_at DESC`,
+      [assignment.convoy_id]
+    );
+    const qrs = await db(
+      `SELECT id, vehicle_id, status, issued_at, scanned_at FROM tracking_qr_codes
+        WHERE convoy_id = $1 AND deleted_at IS NULL
+        ORDER BY issued_at DESC`,
+      [assignment.convoy_id]
+    );
+
+    const now = Date.now();
+    const byVehicle = new Map();
+    for (const s of sessions.rows) {
+      if (!byVehicle.has(String(s.vehicle_id))) byVehicle.set(String(s.vehicle_id), s);
+    }
+    const qrByVehicle = new Map();
+    for (const q of qrs.rows) {
+      if (!qrByVehicle.has(String(q.vehicle_id))) qrByVehicle.set(String(q.vehicle_id), q);
+    }
+
+    res.json({
+      data: {
+        convoy: { id: assignment.convoy_id, name: assignment.name, status: assignment.status },
+        vehicles: trucks.rows.map((t) => {
+          const session = byVehicle.get(String(t.vehicle_id)) || null;
+          const qrRow = qrByVehicle.get(String(t.vehicle_id)) || null;
+          const health = session ? T.computeHealth(session, now) : 'not_started';
+          return {
+            convoy_truck_id: t.convoy_truck_id,
+            vehicle_id: t.vehicle_id,
+            registration: t.registration,
+            driver_name: t.driver_name,
+            position: t.position,
+            qr_status: qrRow ? qrRow.status : null,
+            // Distinguishes "no QR yet" from "issued, nobody scanned" from
+            // "scanned but never activated" — three different interventions.
+            tracking_state: session
+              ? health
+              : (qrRow ? (qrRow.status === 'scanned' ? 'scanned_not_activated' : 'qr_not_scanned') : 'no_qr'),
+            last_update_seconds: session && session.last_location_at
+              ? Math.round((now - new Date(session.last_location_at).getTime()) / 1000)
+              : null,
+            capability: session ? T.capabilityOf(session, health) : null,
+            confidence: session ? session.current_confidence : null,
+            source: session ? session.current_source : null,
+          };
+        }),
+      },
+    });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;
 // Exposed for unit testing the EXIF GPS parser.
 module.exports.extractExifLatLng = extractExifLatLng;

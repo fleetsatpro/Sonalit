@@ -33,7 +33,7 @@ import javax.inject.Inject
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-enum class CfoNavScreen { LOGIN, DASHBOARD, SOD, EOD, SEALS, HISTORY, HANDOVER }
+enum class CfoNavScreen { LOGIN, DASHBOARD, SOD, EOD, SEALS, HISTORY, HANDOVER, TRACKING }
 
 data class UploadState(
     val eventUuid: String,

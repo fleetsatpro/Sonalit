@@ -138,6 +138,9 @@ dependencies {
     // Location
     implementation(libs.play.location)
 
+    // QR rendering (tracking activation) — encoder only, no scanner.
+    implementation(libs.zxing.core)
+
     // CameraX
     implementation(libs.camerax.core)
     implementation(libs.camerax.camera2)
