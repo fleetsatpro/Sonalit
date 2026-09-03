@@ -1,83 +1,53 @@
 import { useParams } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+
+import { selectProvider } from '../lib/trackingProviders.js';
+
+import type { Capability, TrackingFix, TrackingProvider } from '../lib/trackingProviders.js';
 import type { CSSProperties, ReactNode } from 'react';
 
 /**
  * Driver tracking activation — the entire driver-facing surface of Sonalit.
  *
- * The product rule is that the driver has almost nothing to do: scan, grant
- * location access, drive. So this page deliberately has no map, no journey
- * detail, no telemetry readout and no "stop tracking" button. The operational
- * journey ends the session (container delivered, convoy ended); a driver cannot
- * end it by accident, and there is nothing here worth staying on.
+ * Scan, grant location, drive. No map, no journey detail, no telemetry readout
+ * and no "stop tracking" button: the operational journey ends the session, so a
+ * driver cannot end one by accident and has no reason to stay here.
  *
- * After activation the UI collapses to an ambient confirmation rather than a
- * dashboard. It stays on screen for one honest reason: on the open web,
- * geolocation only runs while the page is alive. We therefore report our real
- * background capability to the server instead of claiming one we don't have —
- * Guardian would rather see "reliability at risk" than a green light that lies.
+ * Location capture is delegated to a TrackingProvider (see lib/trackingProviders),
+ * so the native background path is a different adapter rather than a different
+ * screen. What this page will not do is overstate the adapter it got: on the
+ * open web it says plainly that the page must stay open, because a browser tab
+ * genuinely stops producing fixes once it is backgrounded. Guardian is told the
+ * same thing through the capability block.
  *
- * Nothing is shown as LIVE until a real fix exists: activation puts the session
- * in `awaiting_location`, and this page holds on "Starting…" until the first
- * position lands.
+ * Nothing reads as activated until a real fix arrives — permission granted is
+ * not the same as GPS working.
  */
 
 const API = (import.meta.env['VITE_API_BASE_URL'] as string | undefined) ?? '/api/v1';
 
 type Phase =
-  | 'loading'
-  | 'invalid'
-  | 'ended'
-  | 'permission'
-  | 'permission_denied'
-  | 'services_off'
-  | 'activating'
-  | 'awaiting_fix'
-  | 'active'
-  | 'completed';
+  | 'loading' | 'invalid' | 'ended'
+  | 'permission' | 'permission_denied' | 'services_off'
+  | 'activating' | 'awaiting_fix' | 'active' | 'completed';
 
 interface Journey {
   vehicle?: string | null;
-  driver?: string | null;
   container?: string | null;
   destination?: string | null;
-  booking?: string | null;
   containers?: number | null;
 }
 
-interface QueuedFix {
-  lat: number; lng: number;
-  accuracy_m: number | null; altitude_m: number | null;
-  speed_kph: number | null; heading: number | null;
-  device_time: string; battery_level: number | null;
-  network_status: string; buffered: boolean;
-}
-
 const BUFFER_KEY = 'sonalit-track-buffer';
-const TOKEN_KEY = 'sonalit-track-session';
 
-/** Capacitor shells can hold location in the background; a browser tab cannot. */
-function isNativeShell(): boolean {
-  return typeof (window as unknown as { Capacitor?: unknown }).Capacitor !== 'undefined';
-}
-
-async function readBattery(): Promise<number | null> {
-  try {
-    const nav = navigator as Navigator & { getBattery?: () => Promise<{ level: number }> };
-    if (!nav.getBattery) return null;
-    const b = await nav.getBattery();
-    return Math.round(b.level * 100);
-  } catch { return null; }
-}
-
-function loadBuffer(): QueuedFix[] {
-  try { return JSON.parse(localStorage.getItem(BUFFER_KEY) ?? '[]') as QueuedFix[]; }
+function loadBuffer(): TrackingFix[] {
+  try { return JSON.parse(localStorage.getItem(BUFFER_KEY) ?? '[]') as TrackingFix[]; }
   catch { return []; }
 }
-function saveBuffer(fixes: QueuedFix[]) {
-  // Cap the queue: a very long dead zone should cost the oldest points, not the
-  // ability to store new ones.
+function saveBuffer(fixes: TrackingFix[]) {
+  // Cap the queue: a long dead zone should cost the oldest points, not the
+  // ability to record new ones.
   try { localStorage.setItem(BUFFER_KEY, JSON.stringify(fixes.slice(-500))); } catch { /* quota */ }
 }
 
@@ -89,11 +59,14 @@ export default function DriverTrack() {
   const [message, setMessage] = useState('');
   const [denials, setDenials] = useState(0);
   const [minimal, setMinimal] = useState(false);
+  const [backgroundOk, setBackgroundOk] = useState(false);
 
+  const provider = useRef<TrackingProvider | null>(null);
   const sessionToken = useRef<string | null>(null);
-  const watchId = useRef<number | null>(null);
   const pollTimer = useRef<number | null>(null);
   const stopped = useRef(false);
+
+  if (provider.current === null) provider.current = selectProvider();
 
   /* ─── Validate the link ─────────────────────────────────────────────────── */
   useEffect(() => {
@@ -105,14 +78,8 @@ export default function DriverTrack() {
         const res = await fetch(`${API}/track/${token}`);
         const body = await res.json().catch(() => ({}));
         if (cancelled) return;
-
-        if (res.ok) {
-          setJourney((body.data?.journey ?? {}) as Journey);
-          setPhase('permission');
-          return;
-        }
-        // A spent, revoked or finished link is a dead end by design — a driver
-        // must never be able to restart a journey that has ended.
+        if (res.ok) { setJourney((body.data?.journey ?? {}) as Journey); setPhase('permission'); return; }
+        // A spent, revoked or finished link is a dead end by design.
         setMessage(body.message ?? 'This tracking link is not valid.');
         setPhase(res.status === 404 ? 'invalid' : 'ended');
       } catch {
@@ -125,17 +92,16 @@ export default function DriverTrack() {
 
   /* ─── Telemetry ─────────────────────────────────────────────────────────── */
 
-  // Declared before flush(), which calls it: the journey can end mid-batch.
   const endJourney = useCallback(() => {
     stopped.current = true;
-    if (watchId.current !== null) { navigator.geolocation.clearWatch(watchId.current); watchId.current = null; }
+    void provider.current?.stop();
     if (pollTimer.current !== null) { window.clearInterval(pollTimer.current); pollTimer.current = null; }
-    try { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(BUFFER_KEY); } catch { /* ignore */ }
+    try { localStorage.removeItem(BUFFER_KEY); } catch { /* ignore */ }
     setPhase('completed');
     setMinimal(false);
   }, []);
 
-  const flush = useCallback(async (pending: QueuedFix[]): Promise<boolean> => {
+  const flush = useCallback(async (pending: TrackingFix[]): Promise<boolean> => {
     if (!sessionToken.current || !pending.length) return true;
     try {
       const res = await fetch(`${API}/track/session/ping`, {
@@ -145,61 +111,63 @@ export default function DriverTrack() {
       });
       if (!res.ok) return false;
       const body = await res.json().catch(() => ({}));
-      // The journey ended somewhere else in Sonalit — stop collecting, now.
       if (body.data?.terminated) endJourney();
       return true;
-    } catch {
-      return false;
-    }
+    } catch { return false; }
   }, [endJourney]);
 
-  const startWatching = useCallback(() => {
-    if (watchId.current !== null) return;
+  const reportCapability = useCallback(async (cap: Partial<Capability>) => {
+    if (!sessionToken.current) return;
+    try {
+      await fetch(`${API}/track/session/capability`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Tracking-Session': sessionToken.current },
+        body: JSON.stringify({
+          permission_status: cap.location_permission,
+          background_status: cap.background_status,
+          location_services_enabled: cap.location_services ?? null,
+          failure_reason: cap.failure_reason ?? null,
+        }),
+      });
+    } catch { /* reported again on the next change */ }
+  }, []);
 
-    watchId.current = navigator.geolocation.watchPosition(
-      (pos) => {
+  const beginTracking = useCallback(async () => {
+    const p = provider.current;
+    if (!p) return;
+
+    await p.start(
+      (fix) => {
         if (stopped.current) return;
+        // First real fix is what turns "Waiting for location" into activated.
+        setPhase((prev) => (prev === 'awaiting_fix' ? 'active' : prev));
         void (async () => {
-          const battery = await readBattery();
-          const fix: QueuedFix = {
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            accuracy_m: pos.coords.accuracy ?? null,
-            altitude_m: pos.coords.altitude ?? null,
-            speed_kph: pos.coords.speed != null ? pos.coords.speed * 3.6 : null,
-            heading: pos.coords.heading ?? null,
-            device_time: new Date(pos.timestamp).toISOString(),
-            battery_level: battery,
-            network_status: navigator.onLine ? 'online' : 'offline',
-            buffered: !navigator.onLine,
-          };
-
-          // First real fix is what turns "Starting…" into activated — permission
-          // granted is not the same as GPS working.
-          setPhase((p) => (p === 'awaiting_fix' ? 'active' : p));
-
           const queue = [...loadBuffer(), fix];
           if (!navigator.onLine) { saveBuffer(queue); return; }
-
           const ok = await flush(queue);
           saveBuffer(ok ? [] : queue);
         })();
       },
-      (err) => {
+      (kind) => {
         if (stopped.current) return;
-        // 1 = PERMISSION_DENIED, 2 = POSITION_UNAVAILABLE
-        if (err.code === 1) { setDenials((d) => d + 1); setPhase('permission_denied'); }
-        else if (err.code === 2) setPhase('services_off');
+        if (kind === 'permission_denied') {
+          setDenials((d) => d + 1);
+          setPhase('permission_denied');
+          void reportCapability({ location_permission: 'denied', failure_reason: 'revoked_mid_journey' });
+        } else if (kind === 'position_unavailable') {
+          setPhase('services_off');
+          void reportCapability({ location_services: false, failure_reason: 'position_unavailable' });
+        }
       },
-      { enableHighAccuracy: true, maximumAge: 5_000, timeout: 30_000 },
     );
 
-    // Flush whatever the dead zone accumulated the moment we are back.
-    const onOnline = () => { void (async () => { const q = loadBuffer(); if (q.length && await flush(q)) saveBuffer([]); })(); };
+    const onOnline = () => {
+      void (async () => { const q = loadBuffer(); if (q.length && await flush(q)) saveBuffer([]); })();
+    };
     window.addEventListener('online', onOnline);
 
-    // The only poll this page makes: it exists so the journey can stop the
-    // driver's phone without the driver doing anything.
+    // The only poll this page makes: so the journey can stop the phone without
+    // the driver doing anything.
     pollTimer.current = window.setInterval(() => {
       void (async () => {
         if (!sessionToken.current || stopped.current) return;
@@ -209,58 +177,42 @@ export default function DriverTrack() {
           });
           const body = await res.json().catch(() => ({}));
           if (body.data?.terminated) endJourney();
-        } catch { /* offline — try again next tick */ }
+        } catch { /* offline — retry next tick */ }
       })();
     }, 60_000);
-  }, [flush, endJourney]);
+  }, [flush, endJourney, reportCapability]);
 
   /* ─── Activation ────────────────────────────────────────────────────────── */
 
   const activate = useCallback(async () => {
-    if (!token) return;
+    if (!token || !provider.current) return;
     setPhase('activating');
 
-    // Ask the operating system for real permission. Never fake this dialog.
-    const position = await new Promise<GeolocationPosition | null>((resolve) => {
-      navigator.geolocation.getCurrentPosition(
-        (p) => resolve(p),
-        () => resolve(null),
-        { enableHighAccuracy: true, timeout: 30_000 },
-      );
-    });
+    // Real OS permission flow, then verify the outcome.
+    const cap = await provider.current.requestCapability();
 
-    // Verify the outcome rather than assuming it.
-    let permission = 'denied';
-    try {
-      const status = await navigator.permissions?.query({ name: 'geolocation' as PermissionName });
-      if (status?.state === 'granted') permission = 'granted';
-      else if (status?.state === 'prompt') permission = position ? 'granted' : 'not_determined';
-    } catch {
-      permission = position ? 'granted' : 'denied';
-    }
-    if (position) permission = 'granted';
-
-    if (permission !== 'granted') {
+    if (cap.location_permission !== 'granted') {
       setDenials((d) => d + 1);
-      setPhase('permission_denied');
+      setPhase(cap.location_services === false ? 'services_off' : 'permission_denied');
       return;
     }
 
-    const battery = await readBattery();
     try {
       const res = await fetch(`${API}/track/${token}/activate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           permission_status: 'granted',
-          // Honest, not optimistic: a browser tab cannot hold location in the
-          // background, and Guardian needs to know that.
-          background_status: isNativeShell() ? 'granted' : 'unsupported',
-          location_services_enabled: true,
+          // Reported as measured, never as hoped. The server re-normalises and
+          // pins a web runtime to 'unsupported' regardless of what we send.
+          runtime: cap.runtime,
+          platform: cap.platform,
+          background_status: cap.background_status,
+          location_services_enabled: cap.location_services,
           gps_available: true,
-          platform: isNativeShell() ? 'capacitor' : 'web',
+          failure_reason: cap.failure_reason,
           app_version: (import.meta.env['VITE_APP_VERSION'] as string | undefined) ?? null,
-          device: { label: navigator.userAgent.slice(0, 120), battery },
+          device: { label: navigator.userAgent.slice(0, 120) },
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -272,17 +224,18 @@ export default function DriverTrack() {
       }
 
       sessionToken.current = body.data?.session_token ?? null;
-      try { if (sessionToken.current) localStorage.setItem(TOKEN_KEY, sessionToken.current); } catch { /* ignore */ }
-
+      // Trust the server's resolution, not our own claim, so the driver sees
+      // exactly what Guardian sees.
+      setBackgroundOk(body.data?.background_reliable === true);
       setPhase('awaiting_fix');
-      startWatching();
+      await beginTracking();
     } catch {
       setMessage('Could not reach Sonalit. Check your connection and try again.');
       setPhase('permission_denied');
     }
-  }, [token, startWatching]);
+  }, [token, beginTracking]);
 
-  /* Collapse the confirmation into the ambient state — no dashboard. */
+  /* Collapse the confirmation — no dashboard. */
   useEffect(() => {
     if (phase !== 'active') return;
     const t = window.setTimeout(() => setMinimal(true), 2000);
@@ -290,7 +243,7 @@ export default function DriverTrack() {
   }, [phase]);
 
   useEffect(() => () => {
-    if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
+    void provider.current?.stop();
     if (pollTimer.current !== null) window.clearInterval(pollTimer.current);
   }, []);
 
@@ -364,7 +317,13 @@ export default function DriverTrack() {
           <Centered>
             <div style={{ ...S.glyph, color: '#33d6a8' }}>✓</div>
             <h1 style={S.h1}>Tracking activated</h1>
-            <p style={S.sub}>You can continue your journey.</p>
+            {/* Web genuinely stops when the page is backgrounded, so say so
+                rather than implying an unattended journey is covered. */}
+            <p style={S.sub}>
+              {backgroundOk
+                ? 'You can continue your journey.'
+                : 'Keep this page open while you drive.'}
+            </p>
             {journey.vehicle ? <div style={S.vehicle}>{journey.vehicle}</div> : null}
           </Centered>
         )}
@@ -372,7 +331,11 @@ export default function DriverTrack() {
         {phase === 'active' && minimal && (
           <Centered>
             <div style={S.dot} />
-            <p style={{ ...S.sub, marginTop: 18 }}>Tracking is active. You can put your phone away.</p>
+            <p style={{ ...S.sub, marginTop: 18 }}>
+              {backgroundOk
+                ? 'Tracking is active. You can put your phone away.'
+                : 'Tracking is active. Keep this page open.'}
+            </p>
           </Centered>
         )}
 
@@ -392,8 +355,8 @@ function Centered({ children }: { children: ReactNode }) {
   return <div style={S.centered}>{children}</div>;
 }
 
-// `satisfies` rather than a Record annotation: the values are still checked as
-// CSSProperties, but the keys stay literal so S.card doesn't trip
+// `satisfies` rather than a Record annotation: values stay checked as
+// CSSProperties, but keys stay literal so S.card doesn't trip
 // noPropertyAccessFromIndexSignature.
 const S = {
   page: {

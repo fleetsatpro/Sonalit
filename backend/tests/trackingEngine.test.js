@@ -48,6 +48,57 @@ describe('computeHealth', () => {
   });
 });
 
+describe('normaliseCapability', () => {
+  it('pins a web runtime to unsupported even when it claims otherwise', () => {
+    // The non-negotiable: a browser page cannot hold location once backgrounded,
+    // so no client claim may talk Sonalit into showing background tracking.
+    expect(T.normaliseCapability({ runtime: 'web', platform: 'android', backgroundStatus: 'granted' }))
+      .toEqual({ runtime: 'web', platform: 'android', background_status: 'unsupported' });
+  });
+
+  it('accepts granted only from the native runtime', () => {
+    expect(T.normaliseCapability({ runtime: 'capacitor', platform: 'android', backgroundStatus: 'granted' }))
+      .toEqual({ runtime: 'capacitor', platform: 'android', background_status: 'granted' });
+  });
+
+  it('keeps a native shell under-claim rather than inflating it', () => {
+    // Capacitor without the background plugin genuinely cannot background-track.
+    expect(T.normaliseCapability({ runtime: 'capacitor', platform: 'android', backgroundStatus: 'unsupported' }).background_status)
+      .toBe('unsupported');
+    expect(T.normaliseCapability({ runtime: 'capacitor', platform: 'ios', backgroundStatus: 'denied' }).background_status)
+      .toBe('denied');
+  });
+
+  it('never infers capability from an unknown runtime or a bogus value', () => {
+    expect(T.normaliseCapability({ runtime: 'nonsense', platform: 'x', backgroundStatus: 'granted' }))
+      .toEqual({ runtime: 'unknown', platform: 'unknown', background_status: 'unknown' });
+    expect(T.normaliseCapability({ runtime: 'capacitor', platform: 'android', backgroundStatus: 'wat' }).background_status)
+      .toBe('unknown');
+  });
+});
+
+describe('capabilityOf', () => {
+  it('keeps tracking status and background capability independent', () => {
+    // The case operations must be able to see: telemetry is arriving right now,
+    // and it will stop the moment the driver locks the phone.
+    const cap = T.capabilityOf({
+      runtime: 'web', platform: 'android', background_status: 'unsupported',
+      permission_status: 'granted', location_services_enabled: true,
+    }, 'live');
+
+    expect(cap.tracking_status).toBe('live');
+    expect(cap.background_status).toBe('unsupported');
+    expect(cap.background_reliable).toBe(false);
+  });
+
+  it('marks background reliable only for a native runtime that confirmed it', () => {
+    expect(T.capabilityOf({ runtime: 'capacitor', background_status: 'granted' }, 'live').background_reliable).toBe(true);
+    // Granted claimed against a web runtime is not reliability.
+    expect(T.capabilityOf({ runtime: 'web', background_status: 'granted' }, 'live').background_reliable).toBe(false);
+    expect(T.capabilityOf({ runtime: 'capacitor', background_status: 'denied' }, 'live').background_reliable).toBe(false);
+  });
+});
+
 describe('computeConfidence', () => {
   it('is high for a fresh, accurate fix', () => {
     expect(T.computeConfidence({ accuracyM: 10, ageSeconds: 20, sourceCount: 1 })).toBe('high');

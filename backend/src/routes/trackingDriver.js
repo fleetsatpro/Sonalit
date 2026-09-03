@@ -149,21 +149,28 @@ router.post('/:token/activate', scanLimiter, asyncHandler(async (req, res) => {
 
   const {
     permission_status = 'not_determined',
-    background_status = 'unknown',
+    background_status: claimedBackground = 'unknown',
     location_services_enabled = null,
     gps_available = null,
     failure_reason = null,
     device = {},
     app_version = null,
-    platform = null,
+    runtime: claimedRuntime = null,
+    platform: claimedPlatform = null,
   } = req.body || {};
+
+  // What the runtime can actually do, not what it says it can. A web page is
+  // pinned to background_status='unsupported' here regardless of its claim.
+  const capability = T.normaliseCapability({
+    runtime: claimedRuntime, platform: claimedPlatform, backgroundStatus: claimedBackground,
+  });
 
   // Refuse to open a session we know cannot produce telemetry — a half-started
   // journey that shows green is worse than an honest failure.
   if (permission_status !== 'granted') {
     await T.recordEvent(db, qr.org_id, {
       qrCodeId: qr.id, eventType: 'TRACKING_PERMISSION_DENIED', actorType: 'driver',
-      payload: { permission_status, failure_reason },
+      payload: { permission_status, failure_reason, ...capability },
     });
     T.publishTracking(qr.org_id, 'tracking.permission.denied', {
       qr_id: qr.id, trip_id: qr.trip_id, convoy_id: qr.convoy_id, permission_status,
@@ -175,7 +182,7 @@ router.post('/:token/activate', scanLimiter, asyncHandler(async (req, res) => {
   }
 
   const sessionToken = T.newToken();
-  const fingerprint = T.deviceFingerprint({ ...device, platform, app_version });
+  const fingerprint = T.deviceFingerprint({ ...device, runtime: capability.runtime, platform: capability.platform, app_version });
 
   let session;
   try {
@@ -183,15 +190,15 @@ router.post('/:token/activate', scanLimiter, asyncHandler(async (req, res) => {
       `INSERT INTO tracking_sessions
          (org_id, qr_code_id, session_token_hash, status, termination_policy, termination_container_id,
           trip_id, booking_id, convoy_id, vehicle_id, cds_vehicle_id, driver_id, core_driver_id,
-          device_fingerprint, device_label, app_version, platform,
+          device_fingerprint, device_label, app_version, runtime, platform,
           permission_status, background_status, location_services_enabled, gps_available,
           capability_verified_at, capability_failure_reason, last_seen_at)
-       VALUES ($1,$2,$3,'awaiting_location',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,NOW(),$21,NOW())
+       VALUES ($1,$2,$3,'awaiting_location',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,NOW(),$22,NOW())
        RETURNING *`,
       [qr.org_id, qr.id, T.sha256(sessionToken), qr.termination_policy, qr.termination_container_id,
        qr.trip_id, qr.booking_id, qr.convoy_id, qr.vehicle_id, qr.cds_vehicle_id, qr.driver_id, qr.core_driver_id,
-       fingerprint, device.label || null, app_version, platform,
-       permission_status, background_status, location_services_enabled, gps_available, failure_reason]
+       fingerprint, device.label || null, app_version, capability.runtime, capability.platform,
+       permission_status, capability.background_status, location_services_enabled, gps_available, failure_reason]
     );
     session = inserted.rows[0];
   } catch (err) {
@@ -225,21 +232,27 @@ router.post('/:token/activate', scanLimiter, asyncHandler(async (req, res) => {
 
   await T.recordEvent(db, qr.org_id, {
     sessionId: session.id, qrCodeId: qr.id, eventType: 'TRACKING_STARTED', actorType: 'driver',
-    payload: { background_status, platform },
+    payload: { ...capability, claimed_background: claimedBackground },
   });
 
+  // Guardian is told the capability at the same moment it is told tracking
+  // started, so a web-runtime journey is visibly a reliability limitation from
+  // the first second rather than a surprise when the phone locks.
   T.publishTracking(qr.org_id, 'tracking.session.started', {
     session_id: session.id, qr_id: qr.id, trip_id: qr.trip_id, convoy_id: qr.convoy_id,
-    vehicle_id: qr.vehicle_id, health: 'not_started',
+    vehicle_id: qr.vehicle_id, health: 'not_started', ...capability,
   });
 
-  // `background_ok:false` lets the page warn honestly instead of claiming a
-  // reliability it cannot deliver.
   res.status(201).json({
     data: {
       session_token: sessionToken,
       journey: qr.display || {},
-      background_ok: background_status === 'granted',
+      // Echoed back as the server resolved it, not as the client claimed it, so
+      // the page shows the same truth Guardian sees.
+      runtime: capability.runtime,
+      platform: capability.platform,
+      background_status: capability.background_status,
+      background_reliable: capability.runtime === 'capacitor' && capability.background_status === 'granted',
       ping_interval_seconds: 15,
     },
   });
@@ -389,31 +402,46 @@ router.post('/session/capability', pingLimiter, asyncHandler(async (req, res) =>
 
   const db = T.dbForOrg(session.org_id);
   const {
-    permission_status, background_status,
+    permission_status, background_status: claimedBackground,
     location_services_enabled = null, gps_available = null, failure_reason = null,
   } = req.body || {};
+
+  // Re-normalise against the runtime recorded at activation, not against a
+  // fresh claim: the runtime a session started in is a fact about that session,
+  // and letting a later request restate it would reopen the exact hole the
+  // activation check closes.
+  const capability = T.normaliseCapability({
+    runtime: session.runtime, platform: session.platform, backgroundStatus: claimedBackground,
+  });
 
   await db(
     `UPDATE tracking_sessions
         SET permission_status = COALESCE($1, permission_status),
-            background_status = COALESCE($2, background_status),
+            background_status = $2,
             location_services_enabled = $3, gps_available = $4,
             capability_failure_reason = $5, capability_verified_at = NOW(),
             last_seen_at = NOW(), updated_at = NOW()
       WHERE id = $6`,
-    [permission_status || null, background_status || null,
+    [permission_status || null, capability.background_status,
      location_services_enabled, gps_available, failure_reason, session.id]
   );
 
   await T.recordEvent(db, session.org_id, {
     sessionId: session.id, eventType: 'TRACKING_CAPABILITY_CHANGED', actorType: 'driver',
-    payload: { permission_status, background_status, location_services_enabled, gps_available, failure_reason },
+    payload: { permission_status, ...capability, location_services_enabled, gps_available, failure_reason },
   });
 
-  if (permission_status && permission_status !== 'granted') {
+  // Anything that threatens telemetry — permission pulled, services switched
+  // off, or a native shell losing background — is an operational signal, not a
+  // client detail to swallow.
+  const degraded = (permission_status && permission_status !== 'granted')
+    || location_services_enabled === false
+    || (session.runtime === 'capacitor' && capability.background_status !== 'granted');
+
+  if (degraded) {
     T.publishTracking(session.org_id, 'tracking.capability.degraded', {
       session_id: session.id, trip_id: session.trip_id, convoy_id: session.convoy_id,
-      permission_status, failure_reason,
+      permission_status, failure_reason, ...capability,
     });
   }
 

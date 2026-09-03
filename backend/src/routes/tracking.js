@@ -27,7 +27,16 @@ router.use((req, res, next) => {
   next();
 });
 
-/** Decorate a session row with derived, never-stored operational state. */
+/**
+ * Decorate a session row with derived, never-stored operational state.
+ *
+ * `health` (is telemetry arriving) and `capability` (can this runtime keep
+ * producing it once the phone locks) are returned as separate fields on
+ * purpose. Guardian must never infer capability from a green LIVE dot: a web
+ * session can be perfectly LIVE right now and still stop the instant the driver
+ * switches apps, and that is a reliability limitation operations needs to see
+ * rather than discover.
+ */
 function decorate(session, now = Date.now()) {
   if (!session) return null;
   const health = T.computeHealth(session, now);
@@ -41,6 +50,7 @@ function decorate(session, now = Date.now()) {
     position_is_live: health === 'live',
     last_update_seconds: ageSec,
     sources: session.current_source ? [session.current_source] : [],
+    capability: T.capabilityOf(session, health),
   };
 }
 

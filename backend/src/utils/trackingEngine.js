@@ -123,6 +123,63 @@ function computeConfidence({ accuracyM, ageSeconds, sourceCount = 1, agreementKm
   return 'low';
 }
 
+/* ─── Runtime capability ──────────────────────────────────────────────────── */
+
+const RUNTIMES = ['web', 'capacitor', 'unknown'];
+const PLATFORMS = ['browser', 'android', 'ios', 'unknown'];
+const BACKGROUND_STATES = ['unsupported', 'denied', 'restricted', 'granted', 'unknown'];
+
+/**
+ * Decide what a session's runtime can actually do, from what the client claims.
+ *
+ * The claim is never taken at face value. A browser page cannot hold location
+ * once it leaves the foreground, so a web runtime is pinned to
+ * `background_status: 'unsupported'` no matter what it reports — a compromised
+ * or simply buggy client must not be able to talk Sonalit into showing a
+ * reliability that does not exist. Only the native shell can earn 'granted',
+ * and only by reporting it explicitly.
+ *
+ * Capability is never inferred from permission: a granted location permission
+ * in a browser is still 'unsupported'.
+ */
+function normaliseCapability({ runtime, platform, backgroundStatus } = {}) {
+  const rt = RUNTIMES.includes(runtime) ? runtime : 'unknown';
+  const pf = PLATFORMS.includes(platform) ? platform : 'unknown';
+
+  // Only over-claiming is dangerous. A web page is pinned to 'unsupported'
+  // because it cannot possibly do better; a native shell is taken at its word,
+  // including when it reports *less* than it might (no background plugin
+  // installed, permission refused, OS restriction) — under-claiming is honest
+  // and carries real operational detail worth keeping.
+  let bg;
+  if (rt === 'web') bg = 'unsupported';
+  else if (rt === 'capacitor') bg = BACKGROUND_STATES.includes(backgroundStatus) ? backgroundStatus : 'unknown';
+  else bg = 'unknown';
+
+  return { runtime: rt, platform: pf, background_status: bg };
+}
+
+/**
+ * The capability block Guardian reads. `tracking_status` (is telemetry arriving
+ * right now) and `background_status` (can this runtime keep producing it once
+ * the driver locks the phone) are deliberately separate fields: a session can
+ * be LIVE and simultaneously unable to survive the screen going off, and an
+ * operator has to be able to see both at once.
+ */
+function capabilityOf(session, health) {
+  return {
+    runtime: session.runtime || 'unknown',
+    platform: session.platform || 'unknown',
+    background_status: session.background_status || 'unknown',
+    tracking_status: health,
+    location_permission: session.permission_status || 'not_determined',
+    location_services: session.location_services_enabled,
+    // True only when a native runtime has confirmed it. Never a synonym for
+    // "tracking is live".
+    background_reliable: session.runtime === 'capacitor' && session.background_status === 'granted',
+  };
+}
+
 /* ─── Telemetry validation ────────────────────────────────────────────────── */
 
 /**
@@ -409,6 +466,8 @@ async function onConvoyEnded(db, orgId, convoyId, actor = {}) {
 module.exports = {
   sha256, newToken, deviceFingerprint, dbForOrg,
   computeHealth, computeConfidence, validateFix, reconcile,
+  normaliseCapability, capabilityOf,
+  RUNTIMES, PLATFORMS, BACKGROUND_STATES,
   recordEvent, publishTracking,
   issueQr, supersedeOpenQrs, trackingBaseUrl,
   terminateSession, onContainerDelivered, onConvoyEnded,
