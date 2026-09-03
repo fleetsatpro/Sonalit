@@ -2036,6 +2036,26 @@
         }
       }
     },
+    "/api/v1/guardian/cfo/tracking-qr": {
+      "post": {
+        "operationId": "post_api_v1_guardian_cfo_tracking_qr",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/cfo/tracking-status": {
+      "get": {
+        "operationId": "get_api_v1_guardian_cfo_tracking_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/convoy/login": {
       "post": {
         "operationId": "post_api_v1_guardian_convoy_login",

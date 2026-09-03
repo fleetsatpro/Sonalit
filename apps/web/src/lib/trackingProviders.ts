@@ -183,7 +183,45 @@ function backgroundPlugin(): BackgroundGeolocationPlugin | null {
 class CapacitorProvider implements TrackingProvider {
   readonly runtime = 'capacitor' as const;
   readonly platform: Platform = detectPlatform();
+
+  // ONE watcher for the whole journey, with the handlers held as mutable
+  // fields it dispatches into.
+  //
+  // This matters more than it looks. The OS background session is the watcher:
+  // opening a second one to attach a listener would either churn the service or
+  // — worse — leave the capability watcher running with a callback that drops
+  // every fix on the floor, so the device would report `background_status:
+  // granted` while the session sat in `awaiting_location` forever. A permanent
+  // false "STARTING" with zero telemetry is precisely the failure this
+  // architecture exists to prevent, so the watcher is opened once and the
+  // handlers are swapped in.
   private watcherId: string | null = null;
+  private onFix: FixHandler | null = null;
+  private onError: ErrorHandler | null = null;
+
+  /** Single dispatch point for every callback the plugin makes. */
+  private handle(location?: BackgroundWatcherLocation, error?: { code?: string; message?: string }) {
+    if (error) {
+      this.onError?.(error.code === 'NOT_AUTHORIZED' ? 'permission_denied' : 'position_unavailable');
+      return;
+    }
+    if (!location || !this.onFix) return;
+    const emit = this.onFix;
+    void (async () => {
+      emit({
+        lat: location.latitude,
+        lng: location.longitude,
+        accuracy_m: location.accuracy ?? null,
+        altitude_m: location.altitude ?? null,
+        speed_kph: location.speed != null ? location.speed * 3.6 : null,
+        heading: location.bearing ?? null,
+        device_time: new Date(location.time ?? Date.now()).toISOString(),
+        battery_level: await readBattery(),
+        network_status: navigator.onLine ? 'online' : 'offline',
+        buffered: !navigator.onLine,
+      });
+    })();
+  }
 
   async requestCapability(): Promise<Capability> {
     const plugin = backgroundPlugin();
@@ -198,9 +236,12 @@ class CapacitorProvider implements TrackingProvider {
     }
 
     // addWatcher with requestPermissions drives the real OS dialogs, including
-    // Android's separate "allow all the time" step.
+    // Android's separate "allow all the time" step. The first callback tells us
+    // the verified outcome; every later one is real telemetry and is forwarded.
     return await new Promise<Capability>((resolve) => {
       let settled = false;
+      const settle = (cap: Capability) => { if (!settled) { settled = true; resolve(cap); } };
+
       plugin.addWatcher(
         {
           backgroundTitle: 'Sonalit journey tracking',
@@ -210,31 +251,29 @@ class CapacitorProvider implements TrackingProvider {
           distanceFilter: 20,
         },
         (location, error) => {
-          if (settled) return;
-          settled = true;
           if (error) {
-            resolve({
+            settle({
               runtime: this.runtime, platform: this.platform,
               background_status: error.code === 'NOT_AUTHORIZED' ? 'denied' : 'restricted',
               location_permission: error.code === 'NOT_AUTHORIZED' ? 'denied' : 'not_determined',
               location_services: false,
               failure_reason: error.message ?? error.code ?? 'background_unavailable',
             });
-            return;
+          } else {
+            settle({
+              runtime: this.runtime, platform: this.platform,
+              background_status: 'granted',
+              location_permission: 'granted',
+              location_services: true,
+              failure_reason: null,
+            });
           }
-          resolve({
-            runtime: this.runtime, platform: this.platform,
-            background_status: 'granted',
-            location_permission: 'granted',
-            location_services: true,
-            failure_reason: null,
-          });
-          void location;
+          // Always dispatch — the fix that proved capability is a real fix, and
+          // dropping it would delay the first-fix gate for no reason.
+          this.handle(location, error);
         },
       ).then((id) => { this.watcherId = id; }).catch(() => {
-        if (settled) return;
-        settled = true;
-        resolve({
+        settle({
           runtime: this.runtime, platform: this.platform,
           background_status: 'unknown', location_permission: 'not_determined',
           location_services: null, failure_reason: 'watcher_failed',
@@ -246,38 +285,32 @@ class CapacitorProvider implements TrackingProvider {
   async start(onFix: FixHandler, onError: ErrorHandler): Promise<void> {
     const plugin = backgroundPlugin();
     if (!plugin) { onError('position_unavailable'); return; }
-    // requestCapability already opened the watcher; reuse it so the OS sees one
-    // continuous background session rather than a stop/start churn.
-    if (this.watcherId) {
-      // Re-register the callback against the live watcher by opening a second
-      // one only if the first was never created.
-      return;
-    }
+
+    // Install the handlers first, so a fix arriving between here and the
+    // watcher call is never dropped.
+    this.onFix = onFix;
+    this.onError = onError;
+
+    // requestCapability normally opened the watcher already; reuse it so the OS
+    // sees one continuous background session.
+    if (this.watcherId) return;
+
     this.watcherId = await plugin.addWatcher(
-      { backgroundTitle: 'Sonalit journey tracking', backgroundMessage: 'Recording this journey.', requestPermissions: false, stale: false, distanceFilter: 20 },
-      (location, error) => {
-        if (error) { onError(error.code === 'NOT_AUTHORIZED' ? 'permission_denied' : 'position_unavailable'); return; }
-        if (!location) return;
-        void (async () => {
-          onFix({
-            lat: location.latitude,
-            lng: location.longitude,
-            accuracy_m: location.accuracy ?? null,
-            altitude_m: location.altitude ?? null,
-            speed_kph: location.speed != null ? location.speed * 3.6 : null,
-            heading: location.bearing ?? null,
-            device_time: new Date(location.time ?? Date.now()).toISOString(),
-            battery_level: await readBattery(),
-            network_status: navigator.onLine ? 'online' : 'offline',
-            buffered: !navigator.onLine,
-          });
-        })();
+      {
+        backgroundTitle: 'Sonalit journey tracking',
+        backgroundMessage: 'Recording this journey.',
+        requestPermissions: false, stale: false, distanceFilter: 20,
       },
+      (location, error) => this.handle(location, error),
     );
   }
 
   async stop(): Promise<void> {
     const plugin = backgroundPlugin();
+    // Clear handlers before removing, so a late callback cannot resurrect a
+    // journey that has already ended.
+    this.onFix = null;
+    this.onError = null;
     if (plugin && this.watcherId) {
       await plugin.removeWatcher({ id: this.watcherId }).catch(() => undefined);
       this.watcherId = null;

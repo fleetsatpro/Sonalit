@@ -26,6 +26,10 @@ fun CfoScreen(viewModel: CfoViewModel = hiltViewModel()) {
         CfoNavScreen.SEALS -> CfoSealsScreen(viewModel = viewModel)
         CfoNavScreen.HISTORY -> CfoHistoryScreen(viewModel = viewModel)
         CfoNavScreen.HANDOVER -> CfoHandoverScreen(viewModel = viewModel, onBack = { viewModel.navigate(CfoNavScreen.DASHBOARD) })
+        // Tracking activation gets its own ViewModel rather than growing
+        // CfoViewModel: it owns an independent 15s poll and a QR token that
+        // must never outlive the screen, so a separate lifecycle is the point.
+        CfoNavScreen.TRACKING -> CfoTrackingScreen(onBack = { viewModel.navigate(CfoNavScreen.DASHBOARD) })
     }
 }
 

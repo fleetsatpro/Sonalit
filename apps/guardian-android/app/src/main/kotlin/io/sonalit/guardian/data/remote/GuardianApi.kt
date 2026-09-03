@@ -176,6 +176,69 @@ data class UpsertSealRequest(
 
 // ── Interface ─────────────────────────────────────────────────────────────────
 
+// ── Hybrid Tracking ───────────────────────────────────────────────────────────
+//
+// Guardian is the presentation layer only. Token generation, hashing, journey
+// association, termination policy, replay protection and the audit trail all
+// live in the backend (utils/trackingEngine) — nothing here re-implements any
+// of it. `token` is returned exactly once, for rendering, and is never
+// persisted on the device.
+
+data class TrackingQrDisplay(
+    val vehicle: String? = null,
+    val driver: String? = null,
+    val convoy: String? = null,
+    val position: Int? = null,
+)
+
+data class TrackingQrRequest(val convoy_truck_id: String)
+
+data class TrackingQrData(
+    val qr_id: String,
+    val token: String,
+    val url: String,
+    val display: TrackingQrDisplay?,
+    val termination_policy: String,
+)
+data class TrackingQrResponse(val data: TrackingQrData)
+
+/** Runtime capability of the driver's device, as the SERVER resolved it. */
+data class TrackingCapability(
+    val runtime: String?,
+    val platform: String?,
+    val background_status: String?,
+    val tracking_status: String?,
+    val location_permission: String?,
+    val location_services: Boolean?,
+    val background_reliable: Boolean = false,
+)
+
+data class TrackingVehicleStatus(
+    val convoy_truck_id: String,
+    val vehicle_id: String?,
+    val registration: String?,
+    val driver_name: String?,
+    val position: Int?,
+    val qr_status: String?,
+    /**
+     * no_qr · qr_not_scanned · scanned_not_activated · not_started ·
+     * live · delayed · signal_lost · offline · completed
+     *
+     * Deliberately richer than a boolean: "never issued", "issued but nobody
+     * scanned" and "scanned but never activated" each need a different
+     * intervention from the CFO.
+     */
+    val tracking_state: String,
+    val last_update_seconds: Int?,
+    val capability: TrackingCapability?,
+    val confidence: String?,
+    val source: String?,
+)
+
+data class TrackingConvoy(val id: String, val name: String?, val status: String?)
+data class TrackingStatusData(val convoy: TrackingConvoy, val vehicles: List<TrackingVehicleStatus>)
+data class TrackingStatusResponse(val data: TrackingStatusData)
+
 interface GuardianApi {
 
     // Device endpoints
@@ -300,4 +363,22 @@ interface GuardianApi {
         @Header("X-Device-Token") deviceToken: String,
         @Body req: HandoverCommitRequest,
     ): HandoverCommitResponse
+
+    /**
+     * Mints a tracking QR for one truck in this CFO's convoy. The backend
+     * authorises the truck against the device's own convoy assignment — holding
+     * a device token authorises nothing by itself.
+     */
+    @POST("guardian/cfo/tracking-qr")
+    suspend fun cfoTrackingQr(
+        @Header("X-Device-Token") deviceToken: String,
+        @Body req: TrackingQrRequest,
+    ): TrackingQrResponse
+
+    /** Live tracking board for the convoy — includes trucks that have no QR and
+     *  trucks that have not scanned, which are the rows that matter most. */
+    @GET("guardian/cfo/tracking-status")
+    suspend fun cfoTrackingStatus(
+        @Header("X-Device-Token") deviceToken: String,
+    ): TrackingStatusResponse
 }
