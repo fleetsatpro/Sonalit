@@ -358,22 +358,32 @@ export function InboxView() {
   return (
     <div className="p-5 max-w-[1600px] mx-auto">
       <Card className="p-4">
-        <div className="font-bold text-sm text-text-0 mb-3">Field Messages & Dispatch Log</div>
+        <div className="font-bold text-sm text-text-0">Dispatch Log</div>
+        {/* Says where the entries come from, so an empty log reads as "nothing
+            has happened yet" rather than "this screen may be broken". */}
+        <div className="text-[10px] font-mono text-text-2 mt-0.5 mb-3">
+          CUSTODY CHAIN · E-LOCK EVENTS · TRIP TRANSITIONS · ALERTS
+        </div>
         <div className="space-y-0 max-h-[600px] overflow-y-auto">
           {items.map((item, i) => (
             <div key={String(item['id'] ?? i)} className="flex items-start gap-2.5 py-2.5 border-b border-white/[.05] last:border-0">
               <span className="text-sm flex-none mt-0.5">{iconMap[String(item['icon'] ?? item['type'] ?? '')] ?? '📋'}</span>
               <div className="min-w-0 flex-1">
                 <div className="text-xs text-text-0">{String(item['description'] ?? item['text'] ?? '—')}</div>
-                <div className="text-[10px] text-text-2 font-mono mt-0.5">
-                  {item['created_at'] ? new Date(String(item['created_at'])).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : String(item['meta'] ?? '')}
-                </div>
+                {item['meta'] ? (
+                  <div className="text-[11px] text-text-1 mt-0.5 break-words">{String(item['meta'])}</div>
+                ) : null}
+              </div>
+              <div className="text-[10px] text-text-2 font-mono flex-none mt-0.5">
+                {item['created_at']
+                  ? new Date(String(item['created_at'])).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                  : ''}
               </div>
             </div>
           ))}
           {items.length === 0 && (
             <div className="text-xs text-text-2 text-center py-10 font-mono">
-              No field messages yet — activity appears here as operations run.
+              No field activity recorded yet — clamps, dispatches, lock events and alerts appear here as they happen.
             </div>
           )}
         </div>
