@@ -8,6 +8,9 @@ const { extractBookingData } = require('../utils/extractionClient');
 const { publish } = require('../realtime/centrifugo');
 const { allocateBookingReference, reconcileProvidedReference } = require('../utils/bookingReference');
 const { scanManifest } = require('../utils/manifestAnomalies');
+// The dispatch log the dashboard and the Dispatch Log panel both read, derived
+// from the custody chain, lock events, trip transitions and alerts.
+const { activityFeed } = require('../utils/cdsActivityFeed');
 const T = require('../utils/trackingEngine');
 const logger = require('../utils/logger');
 
@@ -286,10 +289,8 @@ router.get('/dashboard', asyncHandler(async (req, res) => {
       (SELECT COUNT(*) FROM cds_trips WHERE status='delayed' AND deleted_at IS NULL) AS delayed_trips,
       (SELECT ROUND(AVG(EXTRACT(EPOCH FROM (delivered_at - departed_at))/3600)::numeric,1) FROM cds_trips WHERE delivered_at IS NOT NULL AND departed_at IS NOT NULL AND deleted_at IS NULL) AS avg_transit_hours
   `);
-  const activity = await req.db(
-    `SELECT * FROM cds_activity_feed ORDER BY created_at DESC LIMIT 20`
-  );
-  res.json({ data: { ...kpis.rows[0], recent_activity: activity.rows } });
+  const activity = await activityFeed(req.db, 20);
+  res.json({ data: { ...kpis.rows[0], recent_activity: activity } });
 }));
 
 // ══════════════════════════════════════════════════════════════
@@ -1724,10 +1725,7 @@ router.get('/audit', asyncHandler(async (req, res) => {
 
 router.get('/activity', asyncHandler(async (req, res) => {
   const limit = Math.min(100, parseInt(req.query.limit) || 30);
-  const result = await req.db(
-    `SELECT * FROM cds_activity_feed ORDER BY created_at DESC LIMIT $1`, [limit]
-  );
-  res.json(result.rows);
+  res.json(await activityFeed(req.db, limit));
 }));
 
 // ══════════════════════════════════════════════════════════════

@@ -350,8 +350,11 @@ function DashboardView() {
                 <span className="text-sm flex-none mt-0.5">{actIcons[String(item['icon'] ?? item['type'] ?? '')] ?? '📋'}</span>
                 <div className="min-w-0 flex-1">
                   <div className="text-xs text-text-0 truncate">{String(item['description'] ?? item['text'] ?? '—')}</div>
-                  <div className="text-[10px] text-text-2 font-mono mt-0.5">
-                    {String(item['meta'] ?? (item['created_at'] ? new Date(String(item['created_at'])).toLocaleTimeString() : ''))}
+                  <div className="text-[10px] text-text-2 font-mono mt-0.5 truncate">
+                    {[
+                      item['created_at'] ? new Date(String(item['created_at'])).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+                      item['meta'] ? String(item['meta']) : '',
+                    ].filter(Boolean).join(' · ')}
                   </div>
                 </div>
               </div>
