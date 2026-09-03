@@ -1,8 +1,8 @@
 import { useState, useRef } from 'react';
-import { ChevronDown, ChevronUp, Plus, Upload, Loader2, X, Package } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus, Upload, Loader2, X, Package, Pencil } from 'lucide-react';
 import { StatusBadge, FilterChip } from './components.js';
 import {
-  useBookings, useCreateBooking, useCustomers,
+  useBookings, useCreateBooking, useUpdateBooking, useCustomers,
   useExtractBooking, useBookingContainers,
 } from './hooks.js';
 import { LoadingState } from './CDSDashboard.js';
@@ -11,34 +11,32 @@ import { BookingManifest } from './BookingManifest.js';
 type Row = Record<string, unknown>;
 const s = (v: unknown) => String(v ?? '—');
 
-const LIFECYCLE = [
-  { label: 'Pending',   color: '#64748b' },
-  { label: 'Assigned',  color: '#ff7a00' },
-  { label: 'Clamped',   color: '#33d6a8' },
-  { label: 'Dispatched',color: '#37e6ff' },
-  { label: 'In Transit',color: '#37e6ff' },
-  { label: 'At Port',   color: '#ffb020' },
-  { label: 'Awaiting',  color: '#ffb020' },
-  { label: 'Unclamped', color: '#a78bfa' },
-  { label: 'Delivered', color: '#33d6a8' },
-  { label: 'Completed', color: '#22c55e' },
+const LIFECYCLE: { label: string; color: string }[] = [
+  { label: 'Pending', color: '#64748b' }, { label: 'Assigned', color: '#ff7a00' },
+  { label: 'Clamped', color: '#33d6a8' }, { label: 'Dispatched', color: '#37e6ff' },
+  { label: 'In Transit', color: '#37e6ff' }, { label: 'At Port', color: '#ffb020' },
+  { label: 'Awaiting', color: '#ffb020' }, { label: 'Unclamped', color: '#a78bfa' },
+  { label: 'Delivered', color: '#33d6a8' }, { label: 'Completed', color: '#22c55e' },
 ];
+const STATUS_STAGE: Record<string, number> = { pending: 0, assigned: 1, in_transit: 4, at_port: 5, delivered: 8, completed: 9 };
 
-const STATUS_STAGE: Record<string, number> = {
-  pending: 0, assigned: 1, in_transit: 4, at_port: 5, delivered: 8, completed: 9,
-};
-
-const BOOKING_FIELDS: { key: string; label: string; type?: string; required?: boolean; placeholder?: string }[] = [
-  { key: 'reference', label: 'Reference', required: true, placeholder: 'e.g. PO-2026-001' },
+const BOOKING_FIELDS: { key: string; label: string; type?: string; required?: boolean; placeholder?: string; half?: boolean }[] = [
+  { key: 'booking_number', label: 'Booking Number', placeholder: 'Extracted from document or auto-generated', half: true },
+  { key: 'carrier_reference', label: 'Carrier Reference', placeholder: 'e.g. 274570179', half: true },
+  { key: 'reference', label: 'File Reference', required: true, placeholder: 'e.g. PO-2026-001' },
   { key: 'pickup_location', label: 'Pickup Location', required: true, placeholder: 'e.g. Mombasa Port' },
   { key: 'delivery_location', label: 'Delivery Location', required: true, placeholder: 'e.g. Nairobi ICD' },
   { key: 'commodity', label: 'Commodity', required: true, placeholder: 'e.g. Tea, Electronics' },
   { key: 'shipping_line', label: 'Shipping Line', placeholder: 'e.g. Maersk, MSC' },
   { key: 'vessel', label: 'Vessel', placeholder: 'Vessel name' },
   { key: 'voyage', label: 'Voyage', placeholder: 'Voyage number' },
+  { key: 'country_code', label: 'Country', placeholder: 'e.g. TZ, KE', half: true },
+  { key: 'direction', label: 'Direction', placeholder: 'OB (outbound) / IB (inbound)', half: true },
   { key: 'eta', label: 'ETA', type: 'date' },
   { key: 'notes', label: 'Notes', placeholder: 'Additional notes…' },
 ];
+
+const EDIT_FIELDS = BOOKING_FIELDS.filter(f => f.key !== 'booking_number');
 
 const ISO_TYPES = ['20GP', '40GP', '40HC', '45HC', '20RF', '40RF', '20OT', '40OT'];
 type CRow = { container_number: string; iso_type: string; seal_number: string; weight_kg: string };
@@ -107,7 +105,7 @@ function BookingContainers({ bookingId }: { bookingId: string }) {
   );
 }
 
-function BookingCard({ booking }: { booking: Row }) {
+function BookingCard({ booking, onEdit }: { booking: Row; onEdit: (b: Row) => void }) {
   const [open, setOpen] = useState(false);
   const cnt = Number(booking['container_count'] ?? 0);
   const delivered = Number(booking['delivered_count'] ?? 0);
@@ -145,6 +143,11 @@ function BookingCard({ booking }: { booking: Row }) {
         <div className="flex items-center gap-2 flex-shrink-0">
           <StatusBadge status={s(booking['status'])} />
           {eta && <span className="text-[10px] text-white/35 font-mono hidden sm:block">{eta}</span>}
+          <button onClick={(e) => { e.stopPropagation(); onEdit(booking); }}
+            className="w-7 h-7 rounded-lg bg-white/[.04] border border-white/[.06] text-white/30 hover:text-[#F0B429] flex items-center justify-center cursor-pointer transition-colors"
+            title="Edit booking">
+            <Pencil size={12} />
+          </button>
           {open ? <ChevronUp size={15} className="text-white/30" /> : <ChevronDown size={15} className="text-white/30" />}
         </div>
       </button>
@@ -155,9 +158,11 @@ function BookingCard({ booking }: { booking: Row }) {
             {([
               ['Pickup', booking['pickup_location']],
               ['Delivery', booking['delivery_location']],
+              ['Carrier Ref', booking['carrier_reference']],
               ['Shipping Line', booking['shipping_line']],
               ['Vessel', booking['vessel']],
               ['Voyage', booking['voyage']],
+              ['Direction', booking['direction']],
               ['ETA', booking['eta'] ? new Date(s(booking['eta'])).toLocaleDateString() : null],
             ] as [string, unknown][]).map(([label, val]) => val != null ? (
               <div key={label}>
@@ -181,6 +186,8 @@ export function BookingsView() {
   const { data: customers } = useCustomers();
   const createBooking = useCreateBooking();
   const extractBooking = useExtractBooking();
+  const updateBooking = useUpdateBooking();
+  const [editBooking, setEditBooking] = useState<Row | null>(null);
   const [showForm, setShowForm] = useState(false);
   // Manifest first: the yard works off the container sheet, and a booking is
   // only ever a header for the containers under it. Cards stay available for
@@ -261,27 +268,51 @@ export function BookingsView() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault(); setError(''); setWarning('');
-    if (!customerId && !customerName.trim()) { setError('Please select or enter a customer'); return; }
-    const payload: Record<string, unknown> = customerId
-      ? { customer_id: customerId }
-      : { customer_name: customerName.trim() };
-    for (const f of BOOKING_FIELDS) { const v = form[f.key]; if (v) payload[f.key] = v; }
-    if (containers.length > 0) {
-      payload['containers'] = containers.map(c => ({
-        container_number: c.container_number || null, iso_type: c.iso_type || '20GP',
-        seal_number: c.seal_number || null, weight_kg: c.weight_kg ? Number(c.weight_kg) : null,
-      }));
+    const payload: Record<string, unknown> = {};
+    if (editBooking) {
+      if (customerId) payload['customer_id'] = customerId;
+      for (const f of EDIT_FIELDS) { const v = form[f.key]; if (v) payload[f.key] = v; }
+      updateBooking.mutate({ id: String(editBooking['id']), ...payload }, {
+        onSuccess: () => reset(),
+        onError: (err: unknown) => {
+          const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+          setError(msg ?? 'Failed to update booking.');
+        },
+      });
+    } else {
+      if (!customerId && !customerName.trim()) { setError('Please select or enter a customer'); return; }
+      if (customerId) payload['customer_id'] = customerId;
+      else payload['customer_name'] = customerName.trim();
+      for (const f of BOOKING_FIELDS) { const v = form[f.key]; if (v) payload[f.key] = v; }
+      if (containers.length > 0) {
+        payload['containers'] = containers.map(c => ({
+          container_number: c.container_number || null, iso_type: c.iso_type || '20GP',
+          seal_number: c.seal_number || null, weight_kg: c.weight_kg ? Number(c.weight_kg) : null,
+        }));
+      }
+      createBooking.mutate(payload, {
+        onSuccess: () => reset(),
+        onError: (err: unknown) => {
+          const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+          setError(msg ?? 'Failed to create booking.');
+        },
+      });
     }
-    createBooking.mutate(payload, {
-      onSuccess: () => { setShowForm(false); setForm({}); setCustomerId(''); setCustomerName(''); setContainers([]); },
-      onError: (err: unknown) => {
-        const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
-        setError(msg ?? 'Failed to create booking.');
-      },
-    });
   };
 
-  const reset = () => { setShowForm(false); setForm({}); setCustomerId(''); setCustomerName(''); setContainers([]); setError(''); setWarning(''); };
+  const reset = () => { setShowForm(false); setForm({}); setCustomerId(''); setCustomerName(''); setContainers([]); setError(''); setWarning(''); setEditBooking(null); };
+
+  const openEdit = (b: Row) => {
+    const pre: Record<string, string> = {};
+    for (const f of BOOKING_FIELDS) { if (b[f.key] != null && String(b[f.key]) !== '' && String(b[f.key]) !== '—') pre[f.key] = String(b[f.key]); }
+    setForm(pre);
+    setCustomerId(b['customer_id'] ? String(b['customer_id']) : '');
+    setCustomerName(b['customer_name'] ? String(b['customer_name']) : '');
+    setContainers([]);
+    setEditBooking(b);
+    setShowForm(true);
+    setError(''); setWarning('');
+  };
 
   return (
     <div className="p-5 max-w-[1600px] mx-auto">
@@ -327,7 +358,7 @@ export function BookingsView() {
 
       {view === 'manifest' ? <BookingManifest /> : (
         <div className="space-y-2">
-          {rows.map(r => <BookingCard key={s(r['id'])} booking={r} />)}
+          {rows.map(r => <BookingCard key={s(r['id'])} booking={r} onEdit={openEdit} />)}
           {rows.length === 0 && (
             <div className="text-center py-16 text-text-2 font-mono text-sm">No bookings found</div>
           )}
@@ -339,16 +370,18 @@ export function BookingsView() {
           <form onSubmit={handleSubmit} className="w-full max-w-lg mx-4 rounded-2xl border border-white/[.08] bg-[#12141a] shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-white/[.06]">
               <div>
-                <h3 className="text-[15px] font-bold text-white">New Booking</h3>
-                <p className="text-[10px] text-white/40 font-mono mt-0.5">Fill in details or upload a shipping document</p>
+                <h3 className="text-[15px] font-bold text-white">{editBooking ? 'Edit Booking' : 'New Booking'}</h3>
+                <p className="text-[10px] text-white/40 font-mono mt-0.5">{editBooking ? s(editBooking['booking_number']) : 'Fill in details or upload a shipping document'}</p>
               </div>
               <div className="flex items-center gap-2">
                 <input ref={fileRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleFile} />
-                <button type="button" onClick={() => fileRef.current?.click()} disabled={extractBooking.isPending}
-                  className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-[11px] font-semibold border border-white/[.12] bg-white/[.04] text-white/60 hover:text-white/90 cursor-pointer disabled:opacity-50 transition-colors">
-                  {extractBooking.isPending ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-                  {extractBooking.isPending ? 'Extracting…' : 'Upload Doc'}
-                </button>
+                {!editBooking && (
+                  <button type="button" onClick={() => fileRef.current?.click()} disabled={extractBooking.isPending}
+                    className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-[11px] font-semibold border border-white/[.12] bg-white/[.04] text-white/60 hover:text-white/90 cursor-pointer disabled:opacity-50 transition-colors">
+                    {extractBooking.isPending ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                    {extractBooking.isPending ? 'Extracting…' : 'Upload Doc'}
+                  </button>
+                )}
                 <button type="button" onClick={reset} className="w-8 h-8 rounded-lg bg-white/[.04] border border-white/[.06] text-white/40 hover:text-white/70 flex items-center justify-center cursor-pointer transition-colors">
                   <X size={15} />
                 </button>
@@ -376,56 +409,85 @@ export function BookingsView() {
                     className="w-full h-9 px-3 rounded-lg bg-white/[.04] border border-white/[.08] text-white text-[13px] outline-none focus:border-[#F0B429]/50 transition-colors placeholder:text-white/20" />
                 )}
               </div>
-              {BOOKING_FIELDS.map(f => (
-                <div key={f.key}>
-                  <label className="block text-[11px] font-medium text-white/50 mb-1">
-                    {f.label}{f.required && <span className="text-cds-orange ml-0.5">*</span>}
-                  </label>
-                  <input type={f.type ?? 'text'} required={f.required} placeholder={f.placeholder}
-                    value={form[f.key] ?? ''} onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
-                    className="w-full h-9 px-3 rounded-lg bg-white/[.04] border border-white/[.08] text-white text-[13px] outline-none focus:border-[#F0B429]/50 transition-colors placeholder:text-white/20" />
-                </div>
-              ))}
-              <div className="pt-1">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-[11px] font-semibold text-white/60 uppercase tracking-wider">
-                    Containers{containers.length > 0 && <span className="ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: '#ff7a0022', color: '#ff7a00' }}>{containers.length}</span>}
-                  </label>
-                  <button type="button" onClick={addCtr} className="flex items-center gap-1 px-2.5 h-6 rounded text-[10px] font-semibold bg-white/[.04] border border-white/[.08] text-white/50 hover:text-white/80 cursor-pointer transition-colors">
-                    <Plus size={10} strokeWidth={2.5} /> Add
-                  </button>
-                </div>
-                {containers.length === 0
-                  ? <p className="text-[10px] text-white/25 font-mono italic">No containers — add manually or upload a document.</p>
-                  : (
-                    <div className="space-y-1.5">
-                      <div className="grid grid-cols-[1fr_72px_72px_60px_20px] gap-1 mb-0.5">
-                        {['Container #', 'Type', 'Seal #', 'kg', ''].map(h => <span key={h} className="text-[9px] font-medium text-white/30 uppercase tracking-wider">{h}</span>)}
+              {(() => {
+                const fields = editBooking ? EDIT_FIELDS : BOOKING_FIELDS;
+                const nodes: React.ReactNode[] = [];
+                let idx = 0;
+                while (idx < fields.length) {
+                  const f = fields[idx]!;
+                  if (f.half && idx + 1 < fields.length && fields[idx + 1]!.half) {
+                    const f2 = fields[idx + 1]!;
+                    nodes.push(
+                      <div key={f.key} className="grid grid-cols-2 gap-3">
+                        {[f, f2].map(fi => (
+                          <div key={fi.key}>
+                            <label className="block text-[11px] font-medium text-white/50 mb-1">{fi.label}{fi.required && <span className="text-cds-orange ml-0.5">*</span>}</label>
+                            <input type={fi.type ?? 'text'} required={fi.required} placeholder={fi.placeholder}
+                              value={form[fi.key] ?? ''} onChange={e => setForm(p => ({ ...p, [fi.key]: e.target.value }))}
+                              className="w-full h-9 px-3 rounded-lg bg-white/[.04] border border-white/[.08] text-white text-[13px] outline-none focus:border-[#F0B429]/50 transition-colors placeholder:text-white/20" />
+                          </div>
+                        ))}
                       </div>
-                      {containers.map((c, i) => (
-                        <div key={i} className="grid grid-cols-[1fr_72px_72px_60px_20px] gap-1 items-center">
-                          <input type="text" placeholder="MSCU1234560" value={c.container_number} onChange={e => updateCtr(i, { container_number: e.target.value })} className="h-7 px-2 rounded bg-white/[.04] border border-white/[.07] text-white text-[11px] font-mono outline-none focus:border-[#F0B429]/40 placeholder:text-white/15 transition-colors" />
-                          <select value={c.iso_type} onChange={e => updateCtr(i, { iso_type: e.target.value })} className="h-7 px-1 rounded bg-white/[.04] border border-white/[.07] text-white text-[10px] outline-none cursor-pointer transition-colors">
-                            {ISO_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                          </select>
-                          <input type="text" placeholder="Seal #" value={c.seal_number} onChange={e => updateCtr(i, { seal_number: e.target.value })} className="h-7 px-2 rounded bg-white/[.04] border border-white/[.07] text-white text-[11px] font-mono outline-none focus:border-[#F0B429]/40 placeholder:text-white/15 transition-colors" />
-                          <input type="number" placeholder="0" value={c.weight_kg} onChange={e => updateCtr(i, { weight_kg: e.target.value })} className="h-7 px-2 rounded bg-white/[.04] border border-white/[.07] text-white text-[11px] outline-none focus:border-[#F0B429]/40 placeholder:text-white/15 transition-colors" />
-                          <button type="button" onClick={() => removeCtr(i)} className="w-5 h-5 flex items-center justify-center rounded text-white/25 hover:text-red-400 hover:bg-red-400/10 cursor-pointer transition-colors"><X size={11} /></button>
+                    );
+                    idx += 2;
+                  } else {
+                    nodes.push(
+                      <div key={f.key}>
+                        <label className="block text-[11px] font-medium text-white/50 mb-1">{f.label}{f.required && <span className="text-cds-orange ml-0.5">*</span>}</label>
+                        <input type={f.type ?? 'text'} required={f.required} placeholder={f.placeholder}
+                          value={form[f.key] ?? ''} onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
+                          className="w-full h-9 px-3 rounded-lg bg-white/[.04] border border-white/[.08] text-white text-[13px] outline-none focus:border-[#F0B429]/50 transition-colors placeholder:text-white/20" />
+                      </div>
+                    );
+                    idx++;
+                  }
+                }
+                return nodes;
+              })()}
+              {!editBooking && (
+                <div className="pt-1">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-[11px] font-semibold text-white/60 uppercase tracking-wider">
+                      Containers{containers.length > 0 && <span className="ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: '#ff7a0022', color: '#ff7a00' }}>{containers.length}</span>}
+                    </label>
+                    <button type="button" onClick={addCtr} className="flex items-center gap-1 px-2.5 h-6 rounded text-[10px] font-semibold bg-white/[.04] border border-white/[.08] text-white/50 hover:text-white/80 cursor-pointer transition-colors">
+                      <Plus size={10} strokeWidth={2.5} /> Add
+                    </button>
+                  </div>
+                  {containers.length === 0
+                    ? <p className="text-[10px] text-white/25 font-mono italic">No containers — add manually or upload a document.</p>
+                    : (
+                      <div className="space-y-1.5">
+                        <div className="grid grid-cols-[1fr_72px_72px_60px_20px] gap-1 mb-0.5">
+                          {['Container #', 'Type', 'Seal #', 'kg', ''].map(h => <span key={h} className="text-[9px] font-medium text-white/30 uppercase tracking-wider">{h}</span>)}
                         </div>
-                      ))}
-                    </div>
-                  )}
-              </div>
+                        {containers.map((c, i) => (
+                          <div key={i} className="grid grid-cols-[1fr_72px_72px_60px_20px] gap-1 items-center">
+                            <input type="text" placeholder="MSCU1234560" value={c.container_number} onChange={e => updateCtr(i, { container_number: e.target.value })} className="h-7 px-2 rounded bg-white/[.04] border border-white/[.07] text-white text-[11px] font-mono outline-none focus:border-[#F0B429]/40 placeholder:text-white/15 transition-colors" />
+                            <select value={c.iso_type} onChange={e => updateCtr(i, { iso_type: e.target.value })} className="h-7 px-1 rounded bg-white/[.04] border border-white/[.07] text-white text-[10px] outline-none cursor-pointer transition-colors">
+                              {ISO_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                            </select>
+                            <input type="text" placeholder="Seal #" value={c.seal_number} onChange={e => updateCtr(i, { seal_number: e.target.value })} className="h-7 px-2 rounded bg-white/[.04] border border-white/[.07] text-white text-[11px] font-mono outline-none focus:border-[#F0B429]/40 placeholder:text-white/15 transition-colors" />
+                            <input type="number" placeholder="0" value={c.weight_kg} onChange={e => updateCtr(i, { weight_kg: e.target.value })} className="h-7 px-2 rounded bg-white/[.04] border border-white/[.07] text-white text-[11px] outline-none focus:border-[#F0B429]/40 placeholder:text-white/15 transition-colors" />
+                            <button type="button" onClick={() => removeCtr(i)} className="w-5 h-5 flex items-center justify-center rounded text-white/25 hover:text-red-400 hover:bg-red-400/10 cursor-pointer transition-colors"><X size={11} /></button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                </div>
+              )}
             </div>
             <div className="px-5 py-4 border-t border-white/[.06] space-y-2">
               {warning && <p className="text-[11px] font-mono px-1" style={{ color: '#ffb020' }}>{warning}</p>}
               {error && <p className="text-[11px] text-red-400 font-mono px-1">{error}</p>}
               <div className="flex items-center justify-end gap-2">
                 <button type="button" onClick={reset} className="px-4 h-9 rounded-lg text-[12px] font-medium text-white/50 bg-white/[.04] border border-white/[.06] cursor-pointer hover:text-white/70 transition-colors">Cancel</button>
-                <button type="submit" disabled={createBooking.isPending}
+                <button type="submit" disabled={editBooking ? updateBooking.isPending : createBooking.isPending}
                   className="px-5 h-9 rounded-lg text-[12px] font-semibold border-none cursor-pointer transition-all hover:brightness-110 disabled:opacity-50"
                   style={{ background: 'linear-gradient(135deg, #ff7a00, #F0B429)', color: '#0c0e12' }}>
-                  {createBooking.isPending ? 'Creating…' : 'Create Booking'}
+                  {editBooking
+                    ? (updateBooking.isPending ? 'Saving…' : 'Save Changes')
+                    : (createBooking.isPending ? 'Creating…' : 'Create Booking')}
                 </button>
               </div>
             </div>

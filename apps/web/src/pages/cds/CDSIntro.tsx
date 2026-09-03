@@ -1,1219 +1,268 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from 'react';
 
-const SHOTS = [
-  "highway",
-  "yard",
-  "port",
-  "vessel",
-] as const;
+/**
+ * CDS opening cinematic — "Secured Corridor".
+ *
+ * Tells the platform's own story in ~3.8s: a logistics corridor draws itself
+ * across a control-room map, a container convoy travels it waypoint to
+ * waypoint, and the SecuriSat e-lock engages at delivery — the security
+ * payoff — before the wordmark resolves. Shown once per session.
+ */
 
-const DISSOLVE_MS = 900;
-const SHOT_MS = 5000;
+const DURATION = 3800;
+const GOLD = '#F0B429';
+const ORANGE = '#F97316';
+const TEAL = '#33d6a8';
 
-type Shot = (typeof SHOTS)[number];
+// Corridor path in a 1000×560 field. An S-curve reads as a real route rather
+// than a straight line, and gives the convoy something to bank into.
+const ROUTE = 'M 70 430 C 240 380, 300 200, 470 210 C 620 218, 660 400, 830 350 C 900 330, 930 250, 950 210';
+const WAYPOINTS = [
+  { f: 0.02, label: 'ORIGIN PORT' },
+  { f: 0.36, label: 'CHECKPOINT' },
+  { f: 0.68, label: 'HANDOVER' },
+  { f: 0.99, label: 'DELIVERY' },
+];
 
-interface CDSIntroProps {
-  onDone: () => void;
-}
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
+const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+
+interface Pt { x: number; y: number; a: number }
+
+interface CDSIntroProps { onDone: () => void }
 
 export function CDSIntro({ onDone }: CDSIntroProps) {
-  const [shot, setShot] = useState(0);
-  const [transitioning, setTransitioning] = useState(false);
+  const [t, setT] = useState(0);
+  const [pathLen, setPathLen] = useState(0);
+  const [nodes, setNodes] = useState<Pt[]>([]);
+  const pathRef = useRef<SVGPathElement | null>(null);
+  const doneRef = useRef(false);
+  const rafRef = useRef(0);
+  const startRef = useRef(0);
 
-  const done = useRef(false);
-  const timer = useRef<number | null>(null);
-
-  const finish = () => {
-    if (done.current) return;
-
-    done.current = true;
-
-    if (timer.current) {
-      window.clearTimeout(timer.current);
-    }
-
+  const finish = useCallback(() => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    cancelAnimationFrame(rafRef.current);
     onDone();
-  };
+  }, [onDone]);
 
-  /*
-   * Respect reduced-motion settings.
-   */
+  // Sample the path geometry once it's in the DOM so every moving part shares
+  // the exact same curve.
   useEffect(() => {
-    if (
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    ) {
-      finish();
-    }
+    const p = pathRef.current;
+    if (!p) return;
+    const len = p.getTotalLength();
+    setPathLen(len);
+    setNodes(WAYPOINTS.map(w => {
+      const a = p.getPointAtLength(len * w.f);
+      const b = p.getPointAtLength(Math.min(len, len * w.f + 2));
+      return { x: a.x, y: a.y, a: (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI };
+    }));
   }, []);
 
-  /*
-   * Advance through the four cinematic scenes.
-   */
   useEffect(() => {
-    if (done.current) return;
-
-    timer.current = window.setTimeout(() => {
-      if (shot >= SHOTS.length - 1) {
-        finish();
-        return;
-      }
-
-      setTransitioning(true);
-
-      window.setTimeout(() => {
-        setShot((current) => current + 1);
-        setTransitioning(false);
-      }, DISSOLVE_MS);
-    }, SHOT_MS);
-
-    return () => {
-      if (timer.current) {
-        window.clearTimeout(timer.current);
-      }
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { finish(); return; }
+    startRef.current = performance.now();
+    const tick = (now: number) => {
+      const elapsed = now - startRef.current;
+      setT(clamp01(elapsed / DURATION));
+      if (elapsed >= DURATION) { finish(); return; }
+      rafRef.current = requestAnimationFrame(tick);
     };
-  }, [shot]);
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [finish]);
 
-  // shot starts at 0 and only advances while shot < SHOTS.length - 1, so the
-  // index is always in bounds; noUncheckedIndexedAccess can't see that, and
-  // the fallback is unreachable rather than a real default.
-  const currentShot: Shot = SHOTS[shot] ?? SHOTS[0];
+  // Phase progress derived from the single clock.
+  const drawFrac = easeOut(clamp01((t - 0.06) / 0.40));
+  const convoyFrac = easeInOut(clamp01((t - 0.24) / 0.44));
+  const locked = t > 0.70;
+  const lockProg = easeOut(clamp01((t - 0.68) / 0.16));
+  const titleIn = t > 0.66;
+
+  // Convoy position along the shared path.
+  let convoy: Pt | null = null;
+  if (pathRef.current && pathLen > 0 && convoyFrac > 0) {
+    const at = pathRef.current.getPointAtLength(pathLen * convoyFrac);
+    const ahead = pathRef.current.getPointAtLength(Math.min(pathLen, pathLen * convoyFrac + 3));
+    convoy = { x: at.x, y: at.y, a: (Math.atan2(ahead.y - at.y, ahead.x - at.x) * 180) / Math.PI };
+  }
+
+  const dest = nodes[nodes.length - 1];
 
   return (
-    <div className="fixed inset-0 z-[9999] overflow-hidden bg-black">
+    <div className="fixed inset-0 z-[9999] overflow-hidden select-none"
+      style={{ background: 'radial-gradient(130% 110% at 62% 30%, #0b1424 0%, #070b16 45%, #04060d 100%)' }}>
+      <style>{styles}</style>
 
-      {/* =====================================================
-          CURRENT CINEMATIC SCENE
-      ====================================================== */}
-
-      <div
-        className="absolute inset-0 transition-opacity ease-in-out"
-        style={{
-          opacity: transitioning ? 0 : 1,
-          transitionDuration: `${DISSOLVE_MS}ms`,
-        }}
-      >
-        <CinematicScene shot={currentShot} />
-      </div>
-
-      {/* =====================================================
-          COLOR GRADE
-      ====================================================== */}
-
-      <div
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background:
-            "linear-gradient(180deg, rgba(0,0,0,.45) 0%, transparent 35%, transparent 65%, rgba(0,0,0,.6) 100%)",
-        }}
-      />
-
-      {/* =====================================================
-          CINEMATIC VIGNETTE
-      ====================================================== */}
-
-      <div
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(ellipse at center, transparent 38%, rgba(0,0,0,.72) 100%)",
-        }}
-      />
-
-      {/* =====================================================
-          FILM GRAIN
-      ====================================================== */}
-
-      <div
-        className="pointer-events-none absolute inset-0 opacity-[0.055]"
-        style={{
-          backgroundImage:
-            "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E\")",
-          mixBlendMode: "screen",
-        }}
-      />
-
-      {/* =====================================================
-          CINEMATIC LETTERBOX
-      ====================================================== */}
-
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[7vh] bg-black" />
-
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[7vh] bg-black" />
-
-      {/* =====================================================
-          CDS IDENTIFIER
-      ====================================================== */}
-
-      <div className="absolute left-8 top-[10vh] z-30 md:left-12">
-
-        <div className="text-[12px] font-semibold tracking-[0.55em] text-white/80">
-          CDS
-        </div>
-
-        <div className="mt-2 h-px w-16 bg-white/40" />
-
-        <div className="mt-3 text-[8px] uppercase tracking-[0.32em] text-white/50">
-          Security • Logistics • Intelligence
-        </div>
-
-      </div>
-
-      {/* =====================================================
-          SCENE TITLE
-      ====================================================== */}
-
-      <div className="absolute bottom-[15vh] left-8 z-30 md:left-12">
-
-        <div className="mb-3 text-[9px] font-semibold tracking-[0.45em] text-white/50">
-          {String(shot + 1).padStart(2, "0")} / 04
-        </div>
-
-        <div className="text-xl font-light tracking-[0.15em] text-white/90 md:text-3xl">
-          {getTitle(currentShot)}
-        </div>
-
-        <div className="mt-4 h-px w-20 bg-white/30" />
-
-      </div>
-
-      {/* =====================================================
-          SHOT INDICATORS
-      ====================================================== */}
-
-      <div className="absolute bottom-8 left-1/2 z-30 flex -translate-x-1/2 gap-2">
-
-        {SHOTS.map((_, index) => (
-          <div
-            key={index}
-            className="h-[3px] rounded-full transition-all duration-700"
-            style={{
-              width: index === shot ? 26 : 6,
-              background:
-                index <= shot
-                  ? "rgba(255,255,255,.9)"
-                  : "rgba(255,255,255,.25)",
-            }}
-          />
+      {/* Ambient starfield for depth */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-70">
+        {STAR_SEED.map((sp, i) => (
+          <span key={i} className="absolute rounded-full cds-star" style={{
+            left: `${sp.x}%`, top: `${sp.y}%`, width: sp.s, height: sp.s,
+            background: '#cbd5e1', animationDelay: `${sp.d}s`,
+          }} />
         ))}
-
       </div>
 
-      {/* =====================================================
-          SKIP
-      ====================================================== */}
+      {/* The map */}
+      <svg className="absolute inset-0 w-full h-full" viewBox="0 0 1000 560" preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <linearGradient id="cds-route" x1="0" y1="0" x2="1000" y2="0" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor={ORANGE} />
+            <stop offset="0.55" stopColor={GOLD} />
+            <stop offset="1" stopColor={TEAL} />
+          </linearGradient>
+          <radialGradient id="cds-node" cx="50%" cy="50%" r="50%">
+            <stop offset="0" stopColor={GOLD} stopOpacity="0.9" />
+            <stop offset="1" stopColor={GOLD} stopOpacity="0" />
+          </radialGradient>
+          <filter id="cds-glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="3" result="b" />
+            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+        </defs>
 
-      <button
-        type="button"
-        onClick={finish}
-        className="
-          absolute
-          bottom-7
-          right-7
-          z-40
-          rounded-full
-          border
-          border-white/20
-          bg-black/40
-          px-4
-          py-2
-          text-[11px]
-          font-medium
-          tracking-[0.12em]
-          text-white/70
-          backdrop-blur-md
-          transition-all
-          duration-300
-          hover:border-white/40
-          hover:bg-black/70
-          hover:text-white
-        "
-      >
+        {/* Graticule */}
+        <g stroke="rgba(148,163,184,0.06)" strokeWidth="1" className="cds-grid">
+          {Array.from({ length: 11 }, (_, i) => <line key={`v${i}`} x1={i * 100} y1="0" x2={i * 100} y2="560" />)}
+          {Array.from({ length: 7 }, (_, i) => <line key={`h${i}`} x1="0" y1={i * 93} x2="1000" y2={i * 93} />)}
+        </g>
+
+        {/* Route: faint bed + animated draw on top */}
+        <path ref={pathRef} d={ROUTE} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="2.5" strokeLinecap="round" />
+        {pathLen > 0 && (
+          <path d={ROUTE} fill="none" stroke="url(#cds-route)" strokeWidth="3" strokeLinecap="round"
+            filter="url(#cds-glow)"
+            strokeDasharray={pathLen}
+            strokeDashoffset={pathLen * (1 - drawFrac)} />
+        )}
+
+        {/* Waypoints */}
+        {nodes.map((n, i) => {
+          const wp = WAYPOINTS[i];
+          if (!wp) return null;
+          const reached = drawFrac >= wp.f - 0.01;
+          const isDest = i === nodes.length - 1;
+          return (
+            <g key={i} opacity={reached ? 1 : 0} className="cds-node-in">
+              <circle cx={n.x} cy={n.y} r="26" fill="url(#cds-node)" opacity={reached ? 0.5 : 0} />
+              <circle cx={n.x} cy={n.y} r="5" fill={isDest && locked ? TEAL : GOLD} filter="url(#cds-glow)" />
+              <circle cx={n.x} cy={n.y} r="10" fill="none" stroke={isDest && locked ? TEAL : GOLD} strokeWidth="1" opacity="0.5" />
+              <text x={n.x} y={n.y - 20} textAnchor="middle"
+                style={{ fontFamily: 'var(--p-mono, ui-monospace, monospace)', fontSize: 11, letterSpacing: 1.5, fill: 'rgba(226,232,240,0.55)' }}>
+                {wp.label}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Convoy glyph traveling the route */}
+        {convoy && !locked && (
+          <g transform={`translate(${convoy.x} ${convoy.y}) rotate(${convoy.a})`} filter="url(#cds-glow)">
+            <rect x="-13" y="-7" width="26" height="14" rx="2.5" fill="#0e1626" stroke={GOLD} strokeWidth="1.5" />
+            <line x1="-6" y1="-7" x2="-6" y2="7" stroke={GOLD} strokeWidth="1" opacity="0.5" />
+            <line x1="1" y1="-7" x2="1" y2="7" stroke={GOLD} strokeWidth="1" opacity="0.5" />
+            <line x1="8" y1="-7" x2="8" y2="7" stroke={GOLD} strokeWidth="1" opacity="0.5" />
+            <circle cx="16" cy="0" r="2.5" fill={ORANGE} />
+          </g>
+        )}
+
+        {/* E-lock engagement at destination — the security payoff */}
+        {dest && locked && (
+          <g transform={`translate(${dest.x} ${dest.y})`}>
+            {/* Expanding secure pulse */}
+            <circle cx="0" cy="0" r={20 + lockProg * 60} fill="none" stroke={TEAL}
+              strokeWidth="2" opacity={0.6 * (1 - lockProg)} />
+            <circle cx="0" cy="0" r={20 + lockProg * 30} fill="none" stroke={TEAL}
+              strokeWidth="1" opacity={0.4 * (1 - lockProg)} />
+            {/* Padlock */}
+            <g transform="translate(0 -2)" filter="url(#cds-glow)">
+              {/* Shackle snaps down as it locks */}
+              <path d={`M -8 ${-6 - (1 - lockProg) * 8} v -3 a 8 8 0 0 1 16 0 v 3`}
+                fill="none" stroke={TEAL} strokeWidth="2.5" strokeLinecap="round" />
+              <rect x="-11" y="-6" width="22" height="17" rx="3" fill="#0e1626" stroke={TEAL} strokeWidth="2" />
+              <circle cx="0" cy="1" r="2.5" fill={TEAL} />
+              <rect x="-1" y="1" width="2" height="5" rx="1" fill={TEAL} />
+            </g>
+          </g>
+        )}
+      </svg>
+
+      {/* HUD corners */}
+      <div className="absolute top-6 left-8 cds-fade" style={{ fontFamily: 'var(--p-mono, monospace)', animationDelay: '.1s' }}>
+        <div className="text-[10px] tracking-[0.3em] text-slate-500">SECURISAT · CORRIDOR CONTROL</div>
+      </div>
+      <div className="absolute top-6 right-8 text-right cds-fade" style={{ fontFamily: 'var(--p-mono, monospace)', animationDelay: '.25s' }}>
+        <div className="text-[10px] tracking-[0.25em] text-slate-500">
+          LINK <span style={{ color: TEAL }}>● SECURE</span>
+        </div>
+        <div className="text-[10px] tracking-[0.2em] text-slate-600 mt-1">
+          {locked ? 'CUSTODY: CONFIRMED' : 'CUSTODY: IN TRANSIT'}
+        </div>
+      </div>
+
+      {/* Title reveal */}
+      <div className={`absolute left-8 md:left-14 bottom-[16vh] z-30 transition-all duration-700 ${titleIn ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+        <div className="text-[11px] tracking-[0.55em] mb-2" style={{ fontFamily: 'var(--p-mono, monospace)', color: GOLD }}>
+          SONALIT
+        </div>
+        <div className="flex items-end gap-3">
+          <span className="font-extrabold text-white leading-none"
+            style={{ fontFamily: 'var(--p-sans, system-ui)', fontSize: 'clamp(44px, 8vw, 88px)', letterSpacing: '0.02em' }}>
+            CDS
+          </span>
+          <span className="mb-2 text-[13px] tracking-[0.15em] text-slate-400" style={{ fontFamily: 'var(--p-sans, system-ui)' }}>
+            CONTAINER DELIVERY SYSTEM
+          </span>
+        </div>
+        <div className="mt-3 h-[2px] origin-left rounded-full"
+          style={{ width: 260, background: `linear-gradient(90deg, ${ORANGE}, ${GOLD}, transparent)`, transform: `scaleX(${titleIn ? 1 : 0})`, transition: 'transform .8s cubic-bezier(.16,1,.3,1) .15s' }} />
+        {locked && (
+          <div className="mt-4 inline-flex items-center gap-2 rounded-full px-3 py-1.5 cds-fade"
+            style={{ background: 'rgba(51,214,168,0.1)', border: `1px solid rgba(51,214,168,0.3)` }}>
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: TEAL, boxShadow: `0 0 8px ${TEAL}` }} />
+            <span className="text-[10px] tracking-[0.2em]" style={{ fontFamily: 'var(--p-mono, monospace)', color: TEAL }}>
+              CONTAINER SECURED · END-TO-END CUSTODY
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Grain + vignette */}
+      <div className="pointer-events-none absolute inset-0 cds-scanlines" />
+      <div className="pointer-events-none absolute inset-0"
+        style={{ background: 'radial-gradient(ellipse at 55% 40%, transparent 35%, rgba(0,0,0,0.7) 100%)' }} />
+
+      <button type="button" onClick={finish}
+        className="absolute bottom-6 right-6 z-40 rounded-full border border-white/15 bg-black/40 px-4 py-2 text-[10px] font-medium tracking-[0.15em] text-white/50 backdrop-blur-md transition-all hover:border-white/40 hover:text-white/90 cursor-pointer"
+        style={{ fontFamily: 'var(--p-mono, monospace)' }}>
         SKIP
       </button>
-
     </div>
   );
 }
 
+const STAR_SEED = Array.from({ length: 60 }, (_, i) => ({
+  x: (i * 61.803) % 100,
+  y: (i * 37.51) % 100,
+  s: 1 + (i % 3) * 0.6,
+  d: (i * 0.11) % 3,
+}));
 
-/* ============================================================
-   SCENE SELECTOR
-============================================================ */
-
-function CinematicScene({ shot }: { shot: Shot }) {
-  switch (shot) {
-    case "highway":
-      return <HighwayScene />;
-
-    case "yard":
-      return <YardScene />;
-
-    case "port":
-      return <PortScene />;
-
-    case "vessel":
-      return <VesselScene />;
-
-    default:
-      return null;
+const styles = `
+  @keyframes cds-star-tw { 0%,100% { opacity: .15; } 50% { opacity: .7; } }
+  .cds-star { animation: cds-star-tw 3s ease-in-out infinite; }
+  @keyframes cds-fade-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .cds-fade { animation: cds-fade-in .6s ease-out both; }
+  .cds-node-in { transition: opacity .4s ease-out; }
+  .cds-grid { animation: cds-fade-in 1s ease-out both; }
+  .cds-scanlines {
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,.012) 2px, rgba(255,255,255,.012) 4px);
   }
-}
-
-
-/* ============================================================
-   TITLES
-============================================================ */
-
-function getTitle(shot: Shot) {
-  switch (shot) {
-    case "highway":
-      return "GLOBAL ROAD NETWORK";
-
-    case "yard":
-      return "SECURED INDUSTRIAL OPERATIONS";
-
-    case "port":
-      return "GLOBAL PORT OPERATIONS";
-
-    case "vessel":
-      return "SECURITY IN MOTION";
+  @media (prefers-reduced-motion: reduce) {
+    .cds-star, .cds-fade, .cds-grid { animation: none !important; }
   }
-}
-
-
-/* ============================================================
-   COMMON SCENE WRAPPER
-============================================================ */
-
-function Scene({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="absolute inset-0 overflow-hidden">
-
-      <div
-        className="absolute inset-0"
-        style={{
-          animation: "cdsCamera 6s ease-out forwards",
-        }}
-      >
-        {children}
-      </div>
-
-    </div>
-  );
-}
-
-
-/* ============================================================
-   HIGHWAY
-============================================================ */
-
-function HighwayScene() {
-  return (
-    <Scene>
-
-      <svg
-        viewBox="0 0 1920 1080"
-        preserveAspectRatio="xMidYMid slice"
-        className="h-full w-full"
-      >
-
-        <defs>
-
-          <linearGradient
-            id="highwaySky"
-            x1="0"
-            y1="0"
-            x2="0"
-            y2="1"
-          >
-            <stop offset="0%" stopColor="#06121c" />
-            <stop offset="55%" stopColor="#183b50" />
-            <stop offset="100%" stopColor="#b9764e" />
-          </linearGradient>
-
-          <linearGradient
-            id="highwayRoad"
-            x1="0"
-            y1="0"
-            x2="0"
-            y2="1"
-          >
-            <stop offset="0%" stopColor="#35444a" />
-            <stop offset="100%" stopColor="#080d10" />
-          </linearGradient>
-
-          <radialGradient id="sunGlow">
-
-            <stop
-              offset="0%"
-              stopColor="#ffd99a"
-              stopOpacity=".9"
-            />
-
-            <stop
-              offset="100%"
-              stopColor="#ff9d55"
-              stopOpacity="0"
-            />
-
-          </radialGradient>
-
-        </defs>
-
-        {/* Sky */}
-
-        <rect
-          width="1920"
-          height="1080"
-          fill="url(#highwaySky)"
-        />
-
-        {/* Sunrise */}
-
-        <circle
-          cx="1480"
-          cy="500"
-          r="300"
-          fill="url(#sunGlow)"
-        />
-
-        {/* Mountains */}
-
-        <path
-          d="
-            M0 650
-            L250 450
-            L450 610
-            L690 430
-            L900 610
-            L1120 420
-            L1370 610
-            L1590 460
-            L1800 610
-            L1920 500
-            L1920 800
-            L0 800
-            Z
-          "
-          fill="#101c23"
-        />
-
-        {/* Road */}
-
-        <path
-          d="
-            M0 1080
-            L590 680
-            L1330 680
-            L1920 1080
-            Z
-          "
-          fill="url(#highwayRoad)"
-        />
-
-        {/* Road lines */}
-
-        <g
-          stroke="#eee4c9"
-          strokeWidth="11"
-          strokeLinecap="round"
-          opacity=".75"
-        >
-
-          <path d="M850 780 L770 840" />
-
-          <path d="M820 890 L650 1010" />
-
-          <path d="M1070 780 L1150 840" />
-
-          <path d="M1100 890 L1270 1010" />
-
-        </g>
-
-        {/* Trucks */}
-
-        <g className="truck-motion">
-
-          <Truck
-            x={760}
-            y={665}
-            scale={1.1}
-          />
-
-          <Truck
-            x={1020}
-            y={715}
-            scale={0.85}
-          />
-
-          <Truck
-            x={1250}
-            y={745}
-            scale={0.65}
-          />
-
-        </g>
-
-      </svg>
-
-    </Scene>
-  );
-}
-
-
-/* ============================================================
-   TRUCK
-============================================================ */
-
-function Truck({
-  x,
-  y,
-  scale,
-}: {
-  x: number;
-  y: number;
-  scale: number;
-}) {
-  return (
-    <g
-      transform={`translate(${x} ${y}) scale(${scale})`}
-    >
-
-      <rect
-        width="185"
-        height="72"
-        rx="5"
-        fill="#aebbc0"
-      />
-
-      <rect
-        x="185"
-        y="10"
-        width="58"
-        height="62"
-        rx="5"
-        fill="#64747c"
-      />
-
-      <rect
-        x="198"
-        y="20"
-        width="31"
-        height="23"
-        fill="#17262d"
-      />
-
-      <rect
-        x="12"
-        y="10"
-        width="155"
-        height="50"
-        fill="#87979d"
-      />
-
-      <circle
-        cx="45"
-        cy="76"
-        r="19"
-        fill="#080b0d"
-      />
-
-      <circle
-        cx="205"
-        cy="76"
-        r="19"
-        fill="#080b0d"
-      />
-
-      <circle
-        cx="45"
-        cy="76"
-        r="7"
-        fill="#667277"
-      />
-
-      <circle
-        cx="205"
-        cy="76"
-        r="7"
-        fill="#667277"
-      />
-
-    </g>
-  );
-}
-
-
-/* ============================================================
-   INDUSTRIAL YARD
-============================================================ */
-
-function YardScene() {
-  return (
-    <Scene>
-
-      <svg
-        viewBox="0 0 1920 1080"
-        preserveAspectRatio="xMidYMid slice"
-        className="h-full w-full"
-      >
-
-        <defs>
-
-          <linearGradient
-            id="yardSky"
-            x1="0"
-            y1="0"
-            x2="0"
-            y2="1"
-          >
-            <stop offset="0%" stopColor="#07141d" />
-            <stop offset="60%" stopColor="#2d4d5d" />
-            <stop offset="100%" stopColor="#a76f4d" />
-          </linearGradient>
-
-        </defs>
-
-        <rect
-          width="1920"
-          height="1080"
-          fill="url(#yardSky)"
-        />
-
-        {/* Warehouse */}
-
-        <path
-          d="
-            M0 450
-            L600 280
-            L1400 400
-            L1920 300
-            L1920 820
-            L0 820
-            Z
-          "
-          fill="#27343b"
-        />
-
-        {/* Warehouse panels */}
-
-        <g
-          stroke="#9ba7aa"
-          strokeWidth="3"
-          opacity=".2"
-        >
-
-          {Array.from({ length: 13 }).map(
-            (_, i) => (
-              <line
-                key={i}
-                x1={i * 160}
-                y1="300"
-                x2={i * 160}
-                y2="820"
-              />
-            )
-          )}
-
-        </g>
-
-        {/* Containers */}
-
-        <Container
-          x={220}
-          y={610}
-          color="#425d68"
-        />
-
-        <Container
-          x={500}
-          y={570}
-          color="#68776f"
-        />
-
-        <Container
-          x={790}
-          y={625}
-          color="#59666d"
-        />
-
-        <Container
-          x={1430}
-          y={590}
-          color="#536b70"
-        />
-
-        {/* CCTV pole */}
-
-        <g transform="translate(1160 430)">
-
-          <rect
-            width="8"
-            height="220"
-            fill="#111a1f"
-          />
-
-          <rect
-            x="-22"
-            y="20"
-            width="55"
-            height="32"
-            rx="5"
-            fill="#202b30"
-          />
-
-          <circle
-            cx="34"
-            cy="36"
-            r="7"
-            fill="#dce9ea"
-          />
-
-        </g>
-
-        {/* Security fence */}
-
-        <g
-          stroke="#c2ced0"
-          strokeWidth="3"
-          opacity=".45"
-        >
-
-          {Array.from({ length: 17 }).map(
-            (_, i) => (
-              <line
-                key={i}
-                x1={i * 125}
-                y1="640"
-                x2={i * 125}
-                y2="900"
-              />
-            )
-          )}
-
-          <line
-            x1="0"
-            y1="650"
-            x2="1920"
-            y2="650"
-          />
-
-          <line
-            x1="0"
-            y1="760"
-            x2="1920"
-            y2="760"
-          />
-
-        </g>
-
-        {/* Yard road */}
-
-        <path
-          d="
-            M0 880
-            L1920 730
-            L1920 1080
-            L0 1080
-            Z
-          "
-          fill="#080f13"
-        />
-
-      </svg>
-
-    </Scene>
-  );
-}
-
-
-/* ============================================================
-   CONTAINER
-============================================================ */
-
-function Container({
-  x,
-  y,
-  color,
-}: {
-  x: number;
-  y: number;
-  color: string;
-}) {
-  return (
-    <g transform={`translate(${x} ${y})`}>
-
-      <rect
-        width="250"
-        height="110"
-        fill={color}
-        stroke="#a8b5b8"
-        strokeWidth="3"
-      />
-
-      {Array.from({ length: 10 }).map(
-        (_, i) => (
-          <line
-            key={i}
-            x1={i * 25}
-            y1="0"
-            x2={i * 25}
-            y2="110"
-            stroke="#d7dddd"
-            opacity=".14"
-          />
-        )
-      )}
-
-    </g>
-  );
-}
-
-
-/* ============================================================
-   PORT
-============================================================ */
-
-function PortScene() {
-  return (
-    <Scene>
-
-      <svg
-        viewBox="0 0 1920 1080"
-        preserveAspectRatio="xMidYMid slice"
-        className="h-full w-full"
-      >
-
-        <defs>
-
-          <linearGradient
-            id="portSky"
-            x1="0"
-            y1="0"
-            x2="0"
-            y2="1"
-          >
-            <stop offset="0%" stopColor="#06131e" />
-            <stop offset="60%" stopColor="#2b5063" />
-            <stop offset="100%" stopColor="#c07d51" />
-          </linearGradient>
-
-          <linearGradient
-            id="portWater"
-            x1="0"
-            y1="0"
-            x2="0"
-            y2="1"
-          >
-            <stop offset="0%" stopColor="#205a70" />
-            <stop offset="100%" stopColor="#06131a" />
-          </linearGradient>
-
-        </defs>
-
-        <rect
-          width="1920"
-          height="1080"
-          fill="url(#portSky)"
-        />
-
-        {/* Cranes */}
-
-        <g
-          stroke="#b5c1c3"
-          strokeWidth="12"
-          fill="none"
-          opacity=".75"
-        >
-
-          <path d="M280 730 L280 260 L760 260 L760 730" />
-
-          <path d="M280 310 L760 310" />
-
-          <path d="M1050 730 L1050 220 L1530 220 L1530 730" />
-
-          <path d="M1050 270 L1530 270" />
-
-        </g>
-
-        {/* Containers */}
-
-        <g>
-
-          {Array.from({ length: 7 }).map(
-            (_, row) =>
-              Array.from({ length: 12 }).map(
-                (_, col) => (
-
-                  <rect
-                    key={`${row}-${col}`}
-                    x={50 + col * 125}
-                    y={650 - row * 48}
-                    width="112"
-                    height="42"
-                    fill={
-                      row % 3 === 0
-                        ? "#526d75"
-                        : row % 3 === 1
-                        ? "#765d50"
-                        : "#445b63"
-                    }
-                    stroke="#17262c"
-                    strokeWidth="2"
-                  />
-
-                )
-              )
-          )}
-
-        </g>
-
-        {/* Water */}
-
-        <path
-          d="
-            M0 790
-            C400 750 700 800 1000 770
-            C1350 740 1600 790 1920 750
-            L1920 1080
-            L0 1080
-            Z
-          "
-          fill="url(#portWater)"
-        />
-
-        {/* Water reflection */}
-
-        <g
-          stroke="#94bdc5"
-          strokeWidth="4"
-          opacity=".22"
-        >
-
-          {Array.from({ length: 18 }).map(
-            (_, i) => (
-
-              <line
-                key={i}
-                x1={i * 110}
-                y1={850 + (i % 5) * 32}
-                x2={i * 110 + 260}
-                y2={850 + (i % 5) * 32}
-              />
-
-            )
-          )}
-
-        </g>
-
-      </svg>
-
-    </Scene>
-  );
-}
-
-
-/* ============================================================
-   VESSEL
-============================================================ */
-
-function VesselScene() {
-  return (
-    <Scene>
-
-      <svg
-        viewBox="0 0 1920 1080"
-        preserveAspectRatio="xMidYMid slice"
-        className="h-full w-full"
-      >
-
-        <defs>
-
-          <linearGradient
-            id="vesselSky"
-            x1="0"
-            y1="0"
-            x2="0"
-            y2="1"
-          >
-            <stop offset="0%" stopColor="#030b13" />
-            <stop offset="55%" stopColor="#21495c" />
-            <stop offset="100%" stopColor="#98654b" />
-          </linearGradient>
-
-          <linearGradient
-            id="ocean"
-            x1="0"
-            y1="0"
-            x2="0"
-            y2="1"
-          >
-            <stop offset="0%" stopColor="#1a5369" />
-            <stop offset="100%" stopColor="#030b11" />
-          </linearGradient>
-
-        </defs>
-
-        <rect
-          width="1920"
-          height="1080"
-          fill="url(#vesselSky)"
-        />
-
-        {/* Horizon */}
-
-        <line
-          x1="0"
-          y1="610"
-          x2="1920"
-          y2="610"
-          stroke="#e1a06e"
-          strokeWidth="3"
-          opacity=".18"
-        />
-
-        {/* Ocean */}
-
-        <path
-          d="
-            M0 610
-            Q450 570 900 620
-            T1920 600
-            L1920 1080
-            L0 1080
-            Z
-          "
-          fill="url(#ocean)"
-        />
-
-        {/* Ship */}
-
-        <g className="ship-motion">
-
-          {/* Hull */}
-
-          <path
-            d="
-              M500 700
-              L1570 700
-              L1450 835
-              L720 835
-              L590 785
-              Z
-            "
-            fill="#14242b"
-            stroke="#89999e"
-            strokeWidth="4"
-          />
-
-          {/* Deck */}
-
-          <rect
-            x="680"
-            y="615"
-            width="730"
-            height="85"
-            fill="#3b4f57"
-          />
-
-          {/* Bridge */}
-
-          <rect
-            x="1350"
-            y="475"
-            width="180"
-            height="140"
-            fill="#52666c"
-          />
-
-          <rect
-            x="1385"
-            y="425"
-            width="110"
-            height="55"
-            fill="#66797e"
-          />
-
-          {/* Containers */}
-
-          {Array.from({ length: 6 }).map(
-            (_, row) =>
-              Array.from({ length: 10 }).map(
-                (_, col) => (
-
-                  <rect
-                    key={`${row}-${col}`}
-                    x={715 + col * 70}
-                    y={535 - row * 32}
-                    width="64"
-                    height="27"
-                    fill={
-                      row % 3 === 0
-                        ? "#687c82"
-                        : row % 3 === 1
-                        ? "#785e51"
-                        : "#455f68"
-                    }
-                    stroke="#17262c"
-                    strokeWidth="2"
-                  />
-
-                )
-              )
-          )}
-
-        </g>
-
-        {/* Wake */}
-
-        <path
-          d="
-            M700 830
-            C500 880 280 930 40 960
-          "
-          fill="none"
-          stroke="#c8e1e2"
-          strokeWidth="20"
-          opacity=".15"
-        />
-
-        <path
-          d="
-            M720 855
-            C500 930 300 980 100 1020
-          "
-          fill="none"
-          stroke="#d9e9e8"
-          strokeWidth="8"
-          opacity=".13"
-        />
-
-        {/* Ocean highlights */}
-
-        <g
-          stroke="#a2cbd0"
-          strokeWidth="3"
-          opacity=".18"
-        >
-
-          {Array.from({ length: 24 }).map(
-            (_, i) => (
-
-              <line
-                key={i}
-                x1={i * 90}
-                y1={900 + (i % 4) * 30}
-                x2={i * 90 + 180}
-                y2={900 + (i % 4) * 30}
-              />
-
-            )
-          )}
-
-        </g>
-
-      </svg>
-
-    </Scene>
-  );
-}
-
-
-/* ============================================================
-   GLOBAL ANIMATION STYLES
-============================================================ */
-
-if (typeof document !== "undefined") {
-
-  const STYLE_ID = "cds-intro-animation-styles";
-
-  if (!document.getElementById(STYLE_ID)) {
-
-    const style = document.createElement("style");
-
-    style.id = STYLE_ID;
-
-    style.innerHTML = `
-
-      @keyframes cdsCamera {
-
-        0% {
-          transform:
-            scale(1.04)
-            translate3d(0, 0, 0);
-        }
-
-        100% {
-          transform:
-            scale(1.13)
-            translate3d(-1%, -1%, 0);
-        }
-
-      }
-
-      @keyframes cdsTruckMovement {
-
-        0% {
-          transform: translateX(0);
-        }
-
-        100% {
-          transform: translateX(32px);
-        }
-
-      }
-
-      @keyframes cdsShipMovement {
-
-        0% {
-          transform: translateX(0);
-        }
-
-        100% {
-          transform: translateX(-22px);
-        }
-
-      }
-
-      .truck-motion {
-
-        animation:
-          cdsTruckMovement
-          5s
-          ease-in-out
-          infinite
-          alternate;
-
-      }
-
-      .ship-motion {
-
-        animation:
-          cdsShipMovement
-          6s
-          ease-in-out
-          infinite
-          alternate;
-
-      }
-
-      @media (prefers-reduced-motion: reduce) {
-
-        .truck-motion,
-        .ship-motion {
-          animation: none !important;
-        }
-
-      }
-
-    `;
-
-    document.head.appendChild(style);
-
-  }
-
-}
+`;

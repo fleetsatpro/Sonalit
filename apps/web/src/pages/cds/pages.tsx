@@ -172,25 +172,139 @@ export function PortView() {
   );
 }
 
+const ACTIVE_STATUSES = new Set([
+  'created', 'draft', 'pending', 'approved', 'assigned', 'vehicle_assigned',
+  'driver_assigned', 'awaiting_lock', 'locked', 'installed', 'dispatched',
+  'in_transit', 'transit', 'checkpoint', 'delayed', 'at_port',
+]);
+const COMPLETED_STATUSES = new Set(['delivered', 'completed', 'billed', 'archived']);
+const EXCEPTION_STATUSES = new Set(['delayed', 'cancelled', 'failed']);
+const TRANSIT_STATUSES = new Set(['dispatched', 'in_transit', 'transit', 'checkpoint']);
+
+const STALE_HOURS = 48;
+
+function isToday(dateStr: unknown): boolean {
+  if (!dateStr) return false;
+  const d = new Date(String(dateStr));
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+}
+
+function hoursSince(dateStr: unknown): number {
+  if (!dateStr) return Infinity;
+  return (Date.now() - new Date(String(dateStr)).getTime()) / 3_600_000;
+}
+
+function StatusDistribution({ counts, total }: { counts: { label: string; count: number; color: string }[]; total: number }) {
+  if (total === 0) return null;
+  return (
+    <Card className="p-4 mb-5">
+      <div className="flex items-center justify-between mb-3">
+        <span className="font-mono text-[10px] tracking-wider text-text-2">STATUS DISTRIBUTION</span>
+        <span className="font-mono text-[10px] text-text-2">{total} bookings</span>
+      </div>
+      <div className="flex h-2 rounded-full overflow-hidden bg-ink-3 mb-3">
+        {counts.filter(c => c.count > 0).map(c => (
+          <div key={c.label} className="h-full transition-all" style={{ width: `${(c.count / total) * 100}%`, background: c.color }} title={`${c.label}: ${c.count}`} />
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        {counts.filter(c => c.count > 0).map(c => (
+          <div key={c.label} className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full flex-none" style={{ background: c.color }} />
+            <span className="text-[10px] text-text-2 font-mono">{c.label}</span>
+            <span className="text-[10px] text-text-0 font-mono font-bold">{c.count}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 export function PulseView() {
+  const [filter, setFilter] = useState('all');
   const { data, isLoading } = useBookings();
+  const { data: alertData } = useAlerts();
   const { openDrawer, addToast } = useCDSStore();
   if (isLoading) return <LoadingState />;
-  const rows = (data?.data ?? []) as Row[];
+  const all = (data?.data ?? []) as Row[];
+  const alerts = (alertData?.data ?? []) as Row[];
+
+  const activeRows = all.filter(r => ACTIVE_STATUSES.has(s(r['status'])));
+  const inTransit = all.filter(r => TRANSIT_STATUSES.has(s(r['status'])));
+  const completedToday = all.filter(r => COMPLETED_STATUSES.has(s(r['status'])) && isToday(r['updated_at']));
+  const exceptions = all.filter(r => {
+    if (EXCEPTION_STATUSES.has(s(r['status']))) return true;
+    if (ACTIVE_STATUSES.has(s(r['status'])) && hoursSince(r['updated_at']) > STALE_HOURS) return true;
+    return false;
+  });
+  const staleActive = all.filter(r => ACTIVE_STATUSES.has(s(r['status'])) && !EXCEPTION_STATUSES.has(s(r['status'])) && hoursSince(r['updated_at']) > STALE_HOURS);
+
+  const statusGroups = [
+    { label: 'Pending', count: all.filter(r => ['created', 'draft', 'pending', 'approved'].includes(s(r['status']))).length, color: '#64748b' },
+    { label: 'Assigned', count: all.filter(r => ['assigned', 'vehicle_assigned', 'driver_assigned'].includes(s(r['status']))).length, color: '#ff7a00' },
+    { label: 'In Transit', count: inTransit.length, color: '#37e6ff' },
+    { label: 'At Port', count: all.filter(r => s(r['status']) === 'at_port').length, color: '#ffb020' },
+    { label: 'Delayed', count: all.filter(r => s(r['status']) === 'delayed').length, color: '#ff5c5c' },
+    { label: 'Delivered', count: all.filter(r => s(r['status']) === 'delivered').length, color: '#33d6a8' },
+    { label: 'Completed', count: all.filter(r => ['completed', 'billed'].includes(s(r['status']))).length, color: '#22c55e' },
+  ];
+
+  const filterMap: Record<string, Row[]> = {
+    all,
+    active: activeRows,
+    transit: inTransit,
+    exceptions,
+    completed: all.filter(r => COMPLETED_STATUSES.has(s(r['status']))),
+  };
+  const rows = filterMap[filter] ?? all;
+
+  const isException = (r: Row) => EXCEPTION_STATUSES.has(s(r['status'])) || (ACTIVE_STATUSES.has(s(r['status'])) && hoursSince(r['updated_at']) > STALE_HOURS);
 
   return (
     <div className="p-5 max-w-[1600px] mx-auto">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-        <KPICard label="BOOKINGS ON PULSE" value={String(rows.length)} delta="active" trend="up" />
-        <KPICard label="SENT TODAY" value="0" delta="auto-sent" trend="up" />
-        <KPICard label="SUPPRESSED" value="0" delta="no material change" trend="up" />
-        <KPICard label="EXCEPTIONS FIRED" value="0" delta="instant alerts" trend="down" />
+        <KPICard label="ACTIVE BOOKINGS" value={String(activeRows.length)} delta={`${all.length} total`} trend="up" />
+        <KPICard label="IN TRANSIT" value={String(inTransit.length)} delta="moving now" trend="up" />
+        <KPICard label="EXCEPTIONS" value={String(exceptions.length)} delta={staleActive.length > 0 ? `${staleActive.length} stale` : 'none flagged'} trend={exceptions.length > 0 ? 'down' : 'up'} />
+        <KPICard label="COMPLETED TODAY" value={String(completedToday.length)} delta={`${alerts.length} alerts`} trend={completedToday.length > 0 ? 'up' : 'down'} />
       </div>
+
+      <StatusDistribution counts={statusGroups} total={all.length} />
+
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        {[
+          { id: 'all', label: `All (${all.length})` },
+          { id: 'active', label: `Active (${activeRows.length})` },
+          { id: 'transit', label: `In Transit (${inTransit.length})` },
+          { id: 'exceptions', label: `Exceptions (${exceptions.length})` },
+          { id: 'completed', label: `Completed (${all.filter(r => COMPLETED_STATUSES.has(s(r['status']))).length})` },
+        ].map(f => <FilterChip key={f.id} label={f.label} active={filter === f.id} onClick={() => setFilter(f.id)} />)}
+      </div>
+
       <DataTable
         columns={[
-          { id: 'ref', header: 'Booking Ref', accessor: (r: Row) => <span className="font-mono font-bold text-cds-orange text-xs">{s(r['booking_number'])}</span> },
-          { id: 'client', header: 'Client', accessor: (r: Row) => s(r['customer_name']) },
+          { id: 'ref', header: 'Booking Ref', accessor: (r: Row) => (
+            <div className="flex items-center gap-1.5">
+              {isException(r) && <span className="w-1.5 h-1.5 rounded-full bg-cds-red flex-none" style={{ boxShadow: '0 0 6px rgba(255,92,92,.6)' }} />}
+              <span className="font-mono font-bold text-cds-orange text-xs">{s(r['booking_number'])}</span>
+            </div>
+          )},
+          { id: 'client', header: 'Client', accessor: (r: Row) => <span className="text-xs truncate max-w-[140px] block">{s(r['customer_name'])}</span> },
+          { id: 'route', header: 'Route', accessor: (r: Row) => {
+            const from = s(r['pickup_location'] ?? r['origin']);
+            const to = s(r['delivery_location'] ?? r['destination']);
+            if (from === '—' && to === '—') return <span className="text-text-2 text-xs">—</span>;
+            return <span className="text-[10px] font-mono text-text-1 truncate max-w-[180px] block">{from} → {to}</span>;
+          }},
           { id: 'status', header: 'Status', accessor: (r: Row) => <StatusBadge status={s(r['status'])} /> },
+          { id: 'age', header: 'Last Update', accessor: (r: Row) => {
+            const h = hoursSince(r['updated_at']);
+            const stale = ACTIVE_STATUSES.has(s(r['status'])) && h > STALE_HOURS;
+            if (!isFinite(h)) return <span className="text-text-2 text-[10px] font-mono">—</span>;
+            const label = h < 1 ? '<1h ago' : h < 24 ? `${Math.floor(h)}h ago` : `${Math.floor(h / 24)}d ago`;
+            return <span className={`text-[10px] font-mono ${stale ? 'text-cds-red font-bold' : 'text-text-2'}`}>{label}{stale ? ' !' : ''}</span>;
+          }},
           { id: 'action', header: '', accessor: (r: Row) => (
             <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); addToast(`Pulse sent for ${s(r['booking_number'])}`); }}>
               Send now
@@ -203,9 +317,26 @@ export function PulseView() {
         searchPlaceholder="Search bookings…"
         onRowClick={(r: Row) => openDrawer(`Pulse — ${s(r['booking_number'])}`, (
           <>
-            <DrawerField label="Booking" value={s(r['booking_number'])} />
+            <DrawerField label="Booking #" value={<span className="text-cds-orange">{s(r['booking_number'])}</span>} />
+            {s(r['carrier_reference']) !== '—' && <DrawerField label="Carrier Ref" value={s(r['carrier_reference'])} />}
             <DrawerField label="Client" value={s(r['customer_name'])} />
             <DrawerField label="Status" value={<StatusBadge status={s(r['status'])} />} />
+            <DrawerField label="Commodity" value={s(r['commodity'])} />
+            {s(r['pickup_location'] ?? r['origin']) !== '—' && <DrawerField label="From" value={s(r['pickup_location'] ?? r['origin'])} />}
+            {s(r['delivery_location'] ?? r['destination']) !== '—' && <DrawerField label="To" value={s(r['delivery_location'] ?? r['destination'])} />}
+            {s(r['vessel']) !== '—' && <DrawerField label="Vessel" value={`${s(r['vessel'])} / ${s(r['voyage'])}`} />}
+            {s(r['shipping_line']) !== '—' && <DrawerField label="Line" value={s(r['shipping_line'])} />}
+            {r['eta'] && <DrawerField label="ETA" value={new Date(s(r['eta'])).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} />}
+            <DrawerField label="Last Updated" value={r['updated_at'] ? new Date(s(r['updated_at'])).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'} />
+            <DrawerField label="Created" value={r['created_at'] ? new Date(s(r['created_at'])).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'} />
+            {isException(r) && (
+              <div className="mt-3 px-3 py-2 rounded-lg bg-cds-red/10 border border-cds-red/20">
+                <div className="text-[10px] font-mono text-cds-red font-bold tracking-wider mb-1">EXCEPTION</div>
+                <div className="text-[11px] text-cds-red/80">
+                  {EXCEPTION_STATUSES.has(s(r['status'])) ? `Status: ${s(r['status']).toUpperCase()}` : `No update in ${Math.floor(hoursSince(r['updated_at']))}h — possible stall`}
+                </div>
+              </div>
+            )}
           </>
         ))}
       />
