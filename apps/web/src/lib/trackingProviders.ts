@@ -180,7 +180,7 @@ function backgroundPlugin(): BackgroundGeolocationPlugin | null {
  * location, and honestly reports `unsupported` rather than inheriting the
  * native runtime's reputation.
  */
-class CapacitorProvider implements TrackingProvider {
+export class CapacitorProvider implements TrackingProvider {
   readonly runtime = 'capacitor' as const;
   readonly platform: Platform = detectPlatform();
 
@@ -198,6 +198,43 @@ class CapacitorProvider implements TrackingProvider {
   private watcherId: string | null = null;
   private onFix: FixHandler | null = null;
   private onError: ErrorHandler | null = null;
+
+  // The in-flight addWatcher call, captured SYNCHRONOUSLY.
+  //
+  // `watcherId` alone is not enough to answer "is a watcher already open?".
+  // requestCapability() resolves off the plugin's first *callback*, which
+  // travels a different bridge path from the addWatcher *promise* — so the
+  // capability can settle while the id is still unassigned. start() would then
+  // see `watcherId === null`, open a SECOND watcher, and leave the first one
+  // running with no handle: double telemetry now, and an orphaned foreground
+  // service that stop() can never remove. Holding the promise itself closes
+  // that window, because it exists the instant addWatcher is called.
+  private watcherPending: Promise<string> | null = null;
+
+  /** Open the one watcher, or join the one already opening. */
+  private openWatcher(
+    plugin: BackgroundGeolocationPlugin,
+    requestPermissions: boolean,
+    callback: (l?: BackgroundWatcherLocation, e?: { code?: string; message?: string }) => void,
+  ): Promise<string> {
+    if (this.watcherPending) return this.watcherPending;
+    const pending = plugin.addWatcher(
+      {
+        backgroundTitle: 'Sonalit journey tracking',
+        backgroundMessage: 'Recording this journey.',
+        requestPermissions,
+        stale: false,
+        distanceFilter: 20,
+      },
+      callback,
+    );
+    this.watcherPending = pending;
+    void pending.then(
+      (id) => { this.watcherId = id; },
+      () => { this.watcherPending = null; },
+    );
+    return pending;
+  }
 
   /** Single dispatch point for every callback the plugin makes. */
   private handle(location?: BackgroundWatcherLocation, error?: { code?: string; message?: string }) {
@@ -242,14 +279,7 @@ class CapacitorProvider implements TrackingProvider {
       let settled = false;
       const settle = (cap: Capability) => { if (!settled) { settled = true; resolve(cap); } };
 
-      plugin.addWatcher(
-        {
-          backgroundTitle: 'Sonalit journey tracking',
-          backgroundMessage: 'Recording this journey.',
-          requestPermissions: true,
-          stale: false,
-          distanceFilter: 20,
-        },
+      this.openWatcher(plugin, true,
         (location, error) => {
           if (error) {
             settle({
@@ -272,7 +302,7 @@ class CapacitorProvider implements TrackingProvider {
           // dropping it would delay the first-fix gate for no reason.
           this.handle(location, error);
         },
-      ).then((id) => { this.watcherId = id; }).catch(() => {
+      ).catch(() => {
         settle({
           runtime: this.runtime, platform: this.platform,
           background_status: 'unknown', location_permission: 'not_determined',
@@ -292,17 +322,11 @@ class CapacitorProvider implements TrackingProvider {
     this.onError = onError;
 
     // requestCapability normally opened the watcher already; reuse it so the OS
-    // sees one continuous background session.
-    if (this.watcherId) return;
-
-    this.watcherId = await plugin.addWatcher(
-      {
-        backgroundTitle: 'Sonalit journey tracking',
-        backgroundMessage: 'Recording this journey.',
-        requestPermissions: false, stale: false, distanceFilter: 20,
-      },
-      (location, error) => this.handle(location, error),
-    );
+    // sees one continuous background session. Awaiting the pending promise
+    // (rather than testing watcherId) is what stops a second watcher opening
+    // in the window before the id lands.
+    await this.openWatcher(plugin, false, (location, error) => this.handle(location, error))
+      .catch(() => { onError('position_unavailable'); });
   }
 
   async stop(): Promise<void> {
@@ -311,10 +335,17 @@ class CapacitorProvider implements TrackingProvider {
     // journey that has already ended.
     this.onFix = null;
     this.onError = null;
+
+    // A stop landing mid-activation must still close the watcher that is on its
+    // way up, or the foreground service outlives the journey.
+    const pending = this.watcherPending;
+    if (pending) await pending.catch(() => undefined);
+    this.watcherPending = null;
+
     if (plugin && this.watcherId) {
       await plugin.removeWatcher({ id: this.watcherId }).catch(() => undefined);
-      this.watcherId = null;
     }
+    this.watcherId = null;
   }
 }
 

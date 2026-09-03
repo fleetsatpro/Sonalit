@@ -41,6 +41,20 @@ interface Journey {
 
 const BUFFER_KEY = 'sonalit-track-buffer';
 
+/** Deepest offline backlog kept on the device. Oldest points fall off first. */
+const BUFFER_MAX = 500;
+
+/**
+ * Points per ping. MUST NOT exceed the server's own per-request cap
+ * (`fixes.slice(0, 200)` in routes/trackingDriver.js).
+ *
+ * Posting a longer batch is silent data loss: the server ingests the first 200,
+ * answers 200 OK, and a client that treats OK as "all delivered" then drops the
+ * overflow it never stored. A 500-deep backlog after a long dead zone would
+ * lose 300 points at the moment they were finally being recovered.
+ */
+const BATCH_MAX = 200;
+
 function loadBuffer(): TrackingFix[] {
   try { return JSON.parse(localStorage.getItem(BUFFER_KEY) ?? '[]') as TrackingFix[]; }
   catch { return []; }
@@ -48,7 +62,7 @@ function loadBuffer(): TrackingFix[] {
 function saveBuffer(fixes: TrackingFix[]) {
   // Cap the queue: a long dead zone should cost the oldest points, not the
   // ability to record new ones.
-  try { localStorage.setItem(BUFFER_KEY, JSON.stringify(fixes.slice(-500))); } catch { /* quota */ }
+  try { localStorage.setItem(BUFFER_KEY, JSON.stringify(fixes.slice(-BUFFER_MAX))); } catch { /* quota */ }
 }
 
 export default function DriverTrack() {
@@ -65,6 +79,9 @@ export default function DriverTrack() {
   const sessionToken = useRef<string | null>(null);
   const pollTimer = useRef<number | null>(null);
   const stopped = useRef(false);
+  // Serialises every read-modify-write of the offline buffer (see enqueue).
+  const chain = useRef<Promise<void>>(Promise.resolve());
+  const onlineHandler = useRef<(() => void) | null>(null);
 
   if (provider.current === null) provider.current = selectProvider();
 
@@ -96,6 +113,10 @@ export default function DriverTrack() {
     stopped.current = true;
     void provider.current?.stop();
     if (pollTimer.current !== null) { window.clearInterval(pollTimer.current); pollTimer.current = null; }
+    if (onlineHandler.current) {
+      window.removeEventListener('online', onlineHandler.current);
+      onlineHandler.current = null;
+    }
     try { localStorage.removeItem(BUFFER_KEY); } catch { /* ignore */ }
     setPhase('completed');
     setMinimal(false);
@@ -115,6 +136,37 @@ export default function DriverTrack() {
       return true;
     } catch { return false; }
   }, [endJourney]);
+
+  /**
+   * The only path that touches the offline buffer.
+   *
+   * Serialised, because the previous read-modify-write raced itself: two fixes
+   * arriving around one in-flight ping would each loadBuffer(), and whichever
+   * saveBuffer() landed second erased the other's point. On a slow link — the
+   * exact condition the buffer exists for — that silently dropped telemetry.
+   *
+   * Order matters within the task too. The new point is persisted BEFORE the
+   * network call, so a process death mid-ping costs a retry rather than a fix,
+   * and only the points the server actually confirmed are removed afterwards.
+   */
+  const enqueue = useCallback((fix: TrackingFix | null): Promise<void> => {
+    const task = async () => {
+      let queue = loadBuffer();
+      if (fix) { queue = [...queue, fix].slice(-BUFFER_MAX); saveBuffer(queue); }
+      if (!queue.length || !navigator.onLine) return;
+
+      let remaining = queue;
+      while (remaining.length && !stopped.current) {
+        const batch = remaining.slice(0, BATCH_MAX);
+        if (!await flush(batch)) break;          // keep the rest for the next attempt
+        remaining = remaining.slice(batch.length);
+        saveBuffer(remaining);                   // confirmed points, gone for good
+      }
+    };
+    // `.then(task, task)` so one failed link cannot wedge the chain forever.
+    chain.current = chain.current.then(task, task);
+    return chain.current;
+  }, [flush]);
 
   const reportCapability = useCallback(async (cap: Partial<Capability>) => {
     if (!sessionToken.current) return;
@@ -141,12 +193,7 @@ export default function DriverTrack() {
         if (stopped.current) return;
         // First real fix is what turns "Waiting for location" into activated.
         setPhase((prev) => (prev === 'awaiting_fix' ? 'active' : prev));
-        void (async () => {
-          const queue = [...loadBuffer(), fix];
-          if (!navigator.onLine) { saveBuffer(queue); return; }
-          const ok = await flush(queue);
-          saveBuffer(ok ? [] : queue);
-        })();
+        void enqueue(fix);
       },
       (kind) => {
         if (stopped.current) return;
@@ -161,9 +208,11 @@ export default function DriverTrack() {
       },
     );
 
-    const onOnline = () => {
-      void (async () => { const q = loadBuffer(); if (q.length && await flush(q)) saveBuffer([]); })();
-    };
+    // Network back: drain whatever the dead zone accumulated, through the same
+    // serialised path so a reconnect cannot race an arriving fix.
+    const onOnline = () => { void enqueue(null); };
+    if (onlineHandler.current) window.removeEventListener('online', onlineHandler.current);
+    onlineHandler.current = onOnline;
     window.addEventListener('online', onOnline);
 
     // The only poll this page makes: so the journey can stop the phone without
@@ -180,7 +229,7 @@ export default function DriverTrack() {
         } catch { /* offline — retry next tick */ }
       })();
     }, 60_000);
-  }, [flush, endJourney, reportCapability]);
+  }, [enqueue, endJourney, reportCapability]);
 
   /* ─── Activation ────────────────────────────────────────────────────────── */
 
@@ -245,6 +294,10 @@ export default function DriverTrack() {
   useEffect(() => () => {
     void provider.current?.stop();
     if (pollTimer.current !== null) window.clearInterval(pollTimer.current);
+    if (onlineHandler.current) {
+      window.removeEventListener('online', onlineHandler.current);
+      onlineHandler.current = null;
+    }
   }, []);
 
   /* ─── Screens ───────────────────────────────────────────────────────────── */
