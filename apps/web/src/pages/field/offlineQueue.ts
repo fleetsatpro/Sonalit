@@ -20,6 +20,7 @@
  * in memory only, per the T1.2 policy in stores/auth.ts.
  */
 import cdsApi from '../cds/api.js';
+import { isReachable, startConnectivity, subscribe as subscribeConnectivity } from '../../lib/offline/connectivity.js';
 
 import type { AxiosError } from 'axios';
 
@@ -88,8 +89,15 @@ function persist(): void {
   }
 }
 
+/**
+ * Delegated to the connectivity manager rather than reading navigator.onLine
+ * directly. That flag reports whether an interface is up, not whether Sonalit
+ * is answering — a captive portal or a cell that associates but routes nothing
+ * both report online while every clamp fails, which is the case this queue
+ * exists for. The manager decides from real request outcomes instead.
+ */
 export function isOnline(): boolean {
-  return typeof navigator === 'undefined' || navigator.onLine !== false;
+  return isReachable();
 }
 
 export function getSnapshot(): QueueSnapshot {
@@ -225,12 +233,20 @@ export function startOfflineQueue(): void {
   if (started || typeof window === 'undefined') return;
   started = true;
 
-  window.addEventListener('online', () => { emit(); void flush(); });
-  window.addEventListener('offline', () => { emit(); });
+  // The manager owns the OS events, the probe schedule and the hysteresis; this
+  // queue just reacts to its verdict. Previously both this file and half a
+  // dozen others each interpreted navigator.onLine their own way, and they did
+  // not agree with each other.
+  startConnectivity();
+  subscribeConnectivity(() => {
+    emit();
+    if (isReachable()) void flush();
+  });
 
-  // navigator.onLine lies often enough (captive portals, Android reporting a
-  // connected-but-useless network) that an event-only design strands the
-  // queue. A slow poll is the backstop; it no-ops when there's nothing to do.
+  // A slow poll remains as the backstop: a state that never changes emits no
+  // event, and a queue that only drains on transitions can sit full on a link
+  // that has been quietly fine the whole time. It no-ops when there is nothing
+  // to send.
   window.setInterval(() => { void flush(); }, 30_000);
 
   void flush();
