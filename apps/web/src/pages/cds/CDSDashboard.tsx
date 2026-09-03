@@ -49,6 +49,14 @@ const VIEW_ICON_DATA: Record<string, { d: string; from: string; to: string }> = 
     d: 'M20 7H4c-1.1 0-2 .9-2 2v6c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2ZM8 15H6v-6h2v6Zm4 0h-2v-6h2v6Zm4 0h-2v-6h2v6Zm4 0h-2v-6h2v6ZM21 4H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2ZM21 18H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2Z',
     from: '#FB923C', to: '#EA580C',
   },
+  drivers: {
+    d: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4Zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Z',
+    from: '#38BDF8', to: '#0369A1',
+  },
+  transporters: {
+    d: 'M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4ZM6 18.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5Zm13.5-9 1.96 2.5H17V9.5h2.5ZM18 18.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5Z',
+    from: '#C084FC', to: '#7E22CE',
+  },
   bookings: {
     d: 'M17 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Zm-3 16H8v-2h6v2Zm2-4H8v-2h8v2Zm0-4H8V8h8v2Zm-2-5a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z',
     from: '#A78BFA', to: '#7C3AED',
@@ -90,6 +98,7 @@ const VIEW_ICON_DATA: Record<string, { d: string; from: string; to: string }> = 
 const NAV_SECTIONS: { label: string; ids: string[] }[] = [
   { label: 'Overview', ids: ['dashboard', 'live'] },
   { label: 'Operations', ids: ['containers', 'bookings', 'locks'] },
+  { label: 'Fleet', ids: ['drivers', 'transporters'] },
   { label: 'Workflow', ids: ['port', 'pulse', 'inbox'] },
   { label: 'Business', ids: ['billing', 'reports', 'analytics'] },
   { label: 'System', ids: ['settings'] },
@@ -295,17 +304,18 @@ function DashboardView() {
   if (isLoading) return <LoadingState />;
 
   const kv = (k: string) => String(kpis?.[k] ?? 0);
+  const avgHrs = Number(kpis?.['avg_transit_hours'] ?? 0);
+  const avgH = Math.floor(avgHrs);
+  const avgM = Math.round((avgHrs - avgH) * 60);
   const cards = [
-    { label: 'ACTIVE BOOKINGS', value: kv('active_bookings'), delta: 'open orders', trend: 'up' as const, accent: '#F0B429' },
-    { label: 'CONTAINERS IN YARD', value: kv('active_containers'), delta: 'fleet total', trend: 'up' as const, accent: '#33d6a8' },
-    { label: 'CLAMPED', value: kv('clamped'), delta: 'e-lock secured', trend: 'up' as const, accent: '#33d6a8' },
+    { label: 'ACTIVE CONTAINERS', value: kv('active_containers'), delta: 'fleet total', trend: 'up' as const, accent: '#33d6a8' },
     { label: 'IN TRANSIT', value: kv('in_transit'), delta: 'on road now', trend: 'up' as const, accent: '#37e6ff' },
-    { label: 'AT PORT', value: kv('at_port'), delta: 'awaiting unclamp', trend: 'up' as const, accent: '#ffb020' },
-    { label: 'AWAITING UNCLAMP', value: kv('awaiting_unclamp'), delta: 'port queue', trend: 'down' as const, accent: '#ffb020' },
-    { label: 'UNCLAMPED', value: kv('unclamped'), delta: 'lock removed', trend: 'up' as const, accent: '#a78bfa' },
-    { label: 'COMPLETED TODAY', value: kv('delivered_today'), delta: 'delivered', trend: 'up' as const, accent: '#22c55e' },
+    { label: 'ACTIVE LOCKS', value: kv('active_locks'), delta: 'secured', trend: 'up' as const, accent: '#33d6a8' },
+    { label: 'LOCKS REMOVED', value: kv('locks_removed'), delta: 'unclamped', trend: 'up' as const, accent: '#a78bfa' },
+    { label: 'PENDING UNCLAMP', value: kv('pending_unclamp'), delta: 'port queue', trend: 'down' as const, accent: '#ffb020' },
+    { label: 'DELIVERED TODAY', value: kv('delivered_today'), delta: 'completed', trend: 'up' as const, accent: '#22c55e' },
     { label: 'DELAYED', value: kv('delayed_trips'), delta: 'needs attention', trend: 'down' as const, accent: '#ff5c5c' },
-    { label: 'ACTIVE ALERTS', value: kv('active_alerts'), delta: 'unacknowledged', trend: 'down' as const, accent: '#ff5c5c' },
+    { label: 'AVG TRANSIT TIME', value: avgHrs ? `${avgH}h ${avgM}m` : '—', delta: 'hours', trend: 'up' as const, accent: '#F0B429' },
   ];
 
   const actIcons: Record<string, string> = {
@@ -322,8 +332,14 @@ function DashboardView() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
           <div className="font-bold text-sm text-text-0 mb-3">Live Map</div>
-          <div className="h-[300px] rounded-xl bg-ink-3 flex items-center justify-center text-text-2 text-xs font-mono">
-            Map integration — GPS feed renders here
+          <div className="h-[300px] rounded-xl bg-ink-3 relative overflow-hidden"
+            style={{ background: 'linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px) 0 0/40px 40px, linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px) 0 0/40px 40px, #14171b' }}>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center">
+                <div className="text-2xl mb-2 opacity-40">🗺️</div>
+                <div className="text-text-2 text-[11px] font-mono">GPS positions load when vehicles are in transit</div>
+              </div>
+            </div>
           </div>
         </div>
         <div className="rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
@@ -359,8 +375,23 @@ function LiveView() {
     <div className="p-5 max-w-[1600px] mx-auto">
       <div className="rounded-2xl border border-white/[.07] bg-white/[.02] p-4 mb-4">
         <div className="font-bold text-sm text-text-0 mb-3">Live Fleet Tracking</div>
-        <div className="h-[350px] rounded-xl bg-ink-3 flex items-center justify-center text-text-2 text-xs font-mono">
-          Real-time GPS map — vehicle positions rendered here
+        <div className="h-[350px] rounded-xl bg-ink-3 relative overflow-hidden"
+          style={{ background: 'linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px) 0 0/40px 40px, linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px) 0 0/40px 40px, #14171b' }}>
+          {trips.length > 0 ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center">
+                <div className="text-2xl mb-2 opacity-40">📡</div>
+                <div className="text-text-2 text-[11px] font-mono">{trips.length} active trip{trips.length !== 1 ? 's' : ''} — GPS positions streaming</div>
+              </div>
+            </div>
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center">
+                <div className="text-2xl mb-2 opacity-40">🗺️</div>
+                <div className="text-text-2 text-[11px] font-mono">No dispatched trips — map activates when vehicles depart</div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       <div className="rounded-2xl border border-white/[.07] bg-white/[.02] p-4">

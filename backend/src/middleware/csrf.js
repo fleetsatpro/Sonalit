@@ -27,6 +27,12 @@ const SKIP_PREFIXES = [
   // Only the /app/ half is exempt — /field/admin/* is ordinary operator JWT
   // and stays behind double-submit like the rest of the dashboard.
   '/api/v1/field/app/',
+  // Driver tracking activation + telemetry. The credential is an opaque QR
+  // token in the path (spent on first use) or a session token in
+  // X-Tracking-Session — never a cookie, so there is no ambient credential a
+  // third-party page could ride. Only /track/ is exempt; the operator-facing
+  // /api/v1/tracking/** management routes stay behind double-submit.
+  '/api/v1/track/',
   '/api/v1/webhooks/',          // Convoy / external webhook callbacks
   '/api/v1/fuel/webhook/',                 // Fuel-card webhook — HMAC-verified (RULE D)
   '/api/v1/guardian/whatsapp/webhook',     // WhatsApp webhook — HMAC-verified (RULE D)

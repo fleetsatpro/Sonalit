@@ -1,17 +1,13 @@
 import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Card } from '@/components/ui/Card.js';
 import { Badge } from '@/components/ui/Badge.js';
 import { Button } from '@/components/ui/Button.js';
 import { Tabs } from '@/components/ui/Tabs.js';
 import { PageHeader } from '@/components/ui/PageHeader.js';
+import { api } from '@/lib/api.js';
 
-const incidents = [
-  { id: 'INC-001', type: 'tamper', severity: 'critical', title: 'Tamper alert on TGHU3456789', description: 'Lock sensor triggered on container TGHU3456789 near Mariakani checkpoint.', shipment: 'SHP-2024-1001', status: 'open', assignedTo: 'James Kinuthia', createdAt: '2024-01-15 14:22', location: 'Mariakani, Kilifi' },
-  { id: 'INC-002', type: 'route_deviation', severity: 'high', title: 'Route deviation — KDG 330F', description: 'Vehicle KDG 330F deviated 12km from approved corridor near Sultan Hamud.', shipment: 'SHP-2024-0998', status: 'investigating', assignedTo: 'David Kibet', createdAt: '2024-01-15 11:05', location: 'Sultan Hamud, Makueni' },
-  { id: 'INC-003', type: 'breakdown', severity: 'medium', title: 'Engine fault — KCE 771D', description: 'Driver Samuel Kiptoo reported engine warning light. Vehicle stopped at Mtito Andei.', shipment: 'SHP-2024-1003', status: 'investigating', assignedTo: 'Peter Otieno', createdAt: '2024-01-14 18:30', location: 'Mtito Andei' },
-  { id: 'INC-004', type: 'unauthorized_stop', severity: 'medium', title: 'Unauthorized stop — 45 min', description: 'Vehicle KDF 887M stopped for 45 minutes at unregistered location near Emali.', shipment: 'SHP-2024-0995', status: 'resolved', assignedTo: 'Mary Wambui', createdAt: '2024-01-14 08:15', location: 'Emali, Makueni' },
-  { id: 'INC-005', type: 'lock_failure', severity: 'high', title: 'Lock communication lost — SSL-3340', description: 'E-Lock SSL-3340 went offline. Last heartbeat 4 hours ago.', shipment: null, status: 'open', assignedTo: null, createdAt: '2024-01-13 22:10', location: 'Last known: Voi' },
-];
+const s = (v: unknown) => String(v ?? '—');
 
 const severityColors: Record<string, { bg: string; text: string }> = {
   critical: { bg: 'bg-cds-red/15', text: 'text-cds-red' },
@@ -29,13 +25,26 @@ const statusVariants: Record<string, 'bad' | 'warn' | 'ok' | 'neutral'> = {
 
 export default function Incidents() {
   const [filter, setFilter] = useState('all');
-  const filtered = filter === 'all' ? incidents : incidents.filter((i) => i.status === filter);
+
+  const { data, isLoading } = useQuery<{ data: Record<string, unknown>[]; total: number }>({
+    queryKey: ['incidents'],
+    queryFn: async () => { const { data: d } = await api.get('/incidents'); return d; },
+    refetchInterval: 30_000,
+  });
+
+  if (isLoading) return <div className="flex items-center justify-center h-64"><div className="text-text-2 font-mono text-xs">Loading...</div></div>;
+
+  const incidents = (data?.data ?? []) as Record<string, unknown>[];
+  const filtered = filter === 'all' ? incidents : incidents.filter((i) => s(i['status']) === filter);
+  const openCount = incidents.filter((i) => s(i['status']) === 'open').length;
+  const investigatingCount = incidents.filter((i) => s(i['status']) === 'investigating').length;
+  const resolvedCount = incidents.filter((i) => s(i['status']) === 'resolved').length;
 
   return (
     <div className="p-6 pb-10 animate-fade-in">
       <PageHeader
         title="Incidents"
-        description={`${incidents.filter((i) => i.status === 'open').length} open · ${incidents.filter((i) => i.status === 'investigating').length} under investigation`}
+        description={`${openCount} open · ${investigatingCount} under investigation`}
         actions={
           <Button icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14" /></svg>}>
             Report Incident
@@ -45,10 +54,10 @@ export default function Incidents() {
 
       <div className="grid grid-cols-4 gap-3 mb-5">
         {[
-          { label: 'Open', value: incidents.filter((i) => i.status === 'open').length, color: 'text-cds-red' },
-          { label: 'Investigating', value: incidents.filter((i) => i.status === 'investigating').length, color: 'text-cds-amber' },
-          { label: 'Resolved (7d)', value: incidents.filter((i) => i.status === 'resolved').length, color: 'text-cds-teal' },
-          { label: 'Avg Resolution', value: '4.2h', color: 'text-text-0' },
+          { label: 'Open', value: openCount, color: 'text-cds-red' },
+          { label: 'Investigating', value: investigatingCount, color: 'text-cds-amber' },
+          { label: 'Resolved (7d)', value: resolvedCount, color: 'text-cds-teal' },
+          { label: 'Total', value: data?.total ?? incidents.length, color: 'text-text-0' },
         ].map((kpi) => (
           <Card key={kpi.label} className="p-3.5">
             <div className="text-2xs font-mono text-text-2 uppercase tracking-wider">{kpi.label}</div>
@@ -60,9 +69,9 @@ export default function Incidents() {
       <Tabs
         tabs={[
           { id: 'all', label: 'All', count: incidents.length },
-          { id: 'open', label: 'Open', count: incidents.filter((i) => i.status === 'open').length },
-          { id: 'investigating', label: 'Investigating', count: incidents.filter((i) => i.status === 'investigating').length },
-          { id: 'resolved', label: 'Resolved', count: incidents.filter((i) => i.status === 'resolved').length },
+          { id: 'open', label: 'Open', count: openCount },
+          { id: 'investigating', label: 'Investigating', count: investigatingCount },
+          { id: 'resolved', label: 'Resolved', count: resolvedCount },
         ]}
         activeId={filter}
         onChange={setFilter}
@@ -80,23 +89,26 @@ export default function Incidents() {
               </tr>
             </thead>
             <tbody>
+              {filtered.length === 0 && (
+                <tr><td colSpan={8} className="px-4 py-12 text-center text-text-2 text-xs">No incidents found</td></tr>
+              )}
               {filtered.map((inc) => {
-                const sev = severityColors[inc.severity] ?? severityColors['medium']!;
+                const sev = severityColors[s(inc['severity'])] ?? severityColors['medium']!;
                 return (
-                  <tr key={inc.id} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors">
-                    <td className="px-3.5 py-3 font-mono font-semibold text-text-0">{inc.id}</td>
+                  <tr key={s(inc['id'])} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors">
+                    <td className="px-3.5 py-3 font-mono font-semibold text-text-0">{s(inc['id'])}</td>
                     <td className="px-3.5 py-3">
-                      <span className={`px-2 py-0.5 rounded text-2xs font-mono font-semibold uppercase ${sev.bg} ${sev.text}`}>{inc.severity}</span>
+                      <span className={`px-2 py-0.5 rounded text-2xs font-mono font-semibold uppercase ${sev.bg} ${sev.text}`}>{s(inc['severity'])}</span>
                     </td>
                     <td className="px-3.5 py-3 text-text-0 max-w-[260px]">
-                      <div className="truncate">{inc.title}</div>
-                      {inc.shipment && <div className="text-2xs text-text-2 mt-0.5 font-mono">{inc.shipment}</div>}
+                      <div className="truncate">{s(inc['title'])}</div>
+                      {inc['shipment_id'] && <div className="text-2xs text-text-2 mt-0.5 font-mono">{s(inc['shipment_id'])}</div>}
                     </td>
-                    <td className="px-3.5 py-3 font-mono text-text-1 capitalize">{inc.type.replace('_', ' ')}</td>
-                    <td className="px-3.5 py-3 text-text-1">{inc.location}</td>
-                    <td className="px-3.5 py-3 text-text-0">{inc.assignedTo ?? <span className="text-text-2">Unassigned</span>}</td>
-                    <td className="px-3.5 py-3 font-mono text-text-2 text-2xs">{inc.createdAt}</td>
-                    <td className="px-3.5 py-3"><Badge variant={statusVariants[inc.status] ?? 'neutral'}>{inc.status.toUpperCase()}</Badge></td>
+                    <td className="px-3.5 py-3 font-mono text-text-1 capitalize">{s(inc['type']).replace(/_/g, ' ')}</td>
+                    <td className="px-3.5 py-3 text-text-1">{s(inc['location'] ?? inc['lat'])}</td>
+                    <td className="px-3.5 py-3 text-text-0">{inc['assigned_to'] ? s(inc['assigned_to']) : <span className="text-text-2">Unassigned</span>}</td>
+                    <td className="px-3.5 py-3 font-mono text-text-2 text-2xs">{s(inc['created_at'])}</td>
+                    <td className="px-3.5 py-3"><Badge variant={statusVariants[s(inc['status'])] ?? 'neutral'}>{s(inc['status']).toUpperCase()}</Badge></td>
                   </tr>
                 );
               })}

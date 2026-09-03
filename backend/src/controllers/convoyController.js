@@ -252,6 +252,23 @@ const updateConvoyStatus = asyncHandler(async (req, res) => {
   const eventMap = { active: 'convoy:activated', completing: 'convoy:completing', completed: 'convoy:completed', cancelled: 'convoy:cancelled', aborted: 'convoy:aborted' };
   publish(`org#${req.user.org_id}`, { type: 'convoy.update', convoyId: req.params.id, status: value.status, updatedBy: req.user.id });
 
+  // A finished convoy owns the end of its vehicles' Hybrid Tracking: every
+  // session whose termination policy is CONVOY_ENDED stops, and any QR still
+  // waiting to be scanned is invalidated so a late scan cannot revive a journey
+  // that is over. Sessions running on a container policy are left alone — a box
+  // still on the road keeps reporting even after its convoy disbands.
+  if (['completed', 'aborted', 'cancelled'].includes(value.status)) {
+    try {
+      const T = require('../utils/trackingEngine');
+      await T.onConvoyEnded(T.dbForOrg(req.user.org_id), req.user.org_id, req.params.id,
+        { id: req.user.id, name: req.user.name, type: 'operator' });
+    } catch (err) {
+      // Never fail the status change over tracking cleanup; a sweeper can
+      // reconcile, but a convoy that cannot be closed blocks the control room.
+      require('../utils/logger').warn(`convoy tracking teardown failed (${req.params.id}): ${err.message}`);
+    }
+  }
+
   // D4: on completion, enqueue archive PDF generation
   if (value.status === 'completed') {
     try {
@@ -290,6 +307,17 @@ async function finalizeConvoyCompletion(convoyId, orgId, actorUserId) {
   if (!result.rows.length) return null;
 
   publish(`org#${orgId}`, { type: 'convoy.update', convoyId, status: 'completed', updatedBy: actorUserId ?? null });
+
+  // Same teardown as the explicit status route — a handover-driven completion
+  // is still a completion, and leaving live sessions behind here is exactly how
+  // a "finished" convoy keeps drawing moving trucks on the command map.
+  try {
+    const T = require('../utils/trackingEngine');
+    await T.onConvoyEnded(T.dbForOrg(orgId), orgId, convoyId,
+      { id: actorUserId ?? null, type: 'operator' });
+  } catch (err) {
+    require('../utils/logger').warn(`convoy tracking teardown failed (${convoyId}): ${err.message}`);
+  }
 
   try {
     const { getQueues } = require('../config/queue');

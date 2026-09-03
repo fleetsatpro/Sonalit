@@ -7,18 +7,9 @@ import { DrawerField, DrawerSection } from '@/components/ui/Drawer.js';
 import { PageHeader } from '@/components/ui/PageHeader.js';
 import { SearchInput } from '@/components/ui/SearchInput.js';
 import { useUIStore } from '@/stores/ui.js';
-import type { ShipmentStatus } from '@/types/index.js';
+import { useShipments } from '@/hooks/useShipments.js';
 
-const shipments = [
-  { id: 'SHP-2026-001', reference: 'MSC56789', status: 'in_transit' as ShipmentStatus, customer: 'Kenya Coffee Board', container: 'TGHU3456789', vehicle: 'KDK 456P', driver: 'John Kamau', transporter: 'Kentrans Logistics', commodity: 'Coffee', lock: 'SL23891', origin: 'Nakuru WH', destination: 'Mombasa Port', eta: '18:40', risk: 'low', progress: 64, bookingRef: 'MSC56789', sealNumber: 'SN-88213' },
-  { id: 'SHP-2026-002', reference: 'MSC56790', status: 'delivered' as ShipmentStatus, customer: 'KTDA Holdings', container: 'MSCU7712340', vehicle: 'KBZ 902L', driver: 'Peter Otieno', transporter: 'Swift Cargo', commodity: 'Tea', lock: 'SL23881', origin: 'Kericho WH', destination: 'Mombasa Port', eta: 'Arrived', risk: 'low', progress: 100, bookingRef: 'MSC56790', sealNumber: 'SN-88214' },
-  { id: 'SHP-2026-003', reference: 'MSC56791', status: 'in_transit' as ShipmentStatus, customer: 'Sian Roses', container: 'CMAU5581223', vehicle: 'KDA 112B', driver: 'Grace Wanjiru', transporter: 'Kentrans Logistics', commodity: 'Cut Flowers', lock: 'SL24410', origin: 'Naivasha WH', destination: 'JKIA Cargo', eta: '21:10 (+2h)', risk: 'high', progress: 41, bookingRef: 'MSC56791', sealNumber: 'SN-88215' },
-  { id: 'SHP-2026-004', reference: 'MSC56792', status: 'in_transit' as ShipmentStatus, customer: 'Kakuzi PLC', container: 'HLXU9903312', vehicle: 'KCE 771D', driver: 'Samuel Kiptoo', transporter: 'Rift Transporters', commodity: 'Avocado', lock: 'SL24118', origin: 'Eldoret WH', destination: 'Mombasa Port', eta: '23:05', risk: 'medium', progress: 28, bookingRef: 'MSC56792', sealNumber: 'SN-88216' },
-  { id: 'SHP-2026-005', reference: 'MSC56793', status: 'in_transit' as ShipmentStatus, customer: 'EPZ Textiles', container: 'OOCL2261890', vehicle: 'KDG 330F', driver: 'Alice Njeri', transporter: 'Swift Cargo', commodity: 'Textiles', lock: 'SL23977', origin: 'Thika WH', destination: 'Mombasa Port', eta: '19:50', risk: 'low', progress: 77, bookingRef: 'MSC56793', sealNumber: 'SN-88217' },
-  { id: 'SHP-2026-006', reference: 'MSC56794', status: 'created' as ShipmentStatus, customer: 'Kenya Coffee Board', container: null, vehicle: null, driver: null, transporter: 'Kentrans Logistics', commodity: 'Coffee', lock: null, origin: 'Nyeri WH', destination: 'Mombasa Port', eta: 'Not dispatched', risk: 'low', progress: 0, bookingRef: 'MSC56794', sealNumber: null },
-  { id: 'SHP-2026-007', reference: 'MSC56795', status: 'closed' as ShipmentStatus, customer: 'Sasini PLC', container: 'CSNU8834221', vehicle: 'KBW 556J', driver: 'Dennis Mwangi', transporter: 'Rift Transporters', commodity: 'Macadamia', lock: 'SL23652', origin: "Murang'a WH", destination: 'Mombasa Port', eta: 'Arrived', risk: 'low', progress: 100, bookingRef: 'MSC56795', sealNumber: 'SN-88219' },
-  { id: 'SHP-2026-008', reference: 'MSC56796', status: 'in_transit' as ShipmentStatus, customer: 'KTDA Holdings', container: 'EGLV1129003', vehicle: 'KDF 887M', driver: 'Faith Chebet', transporter: 'Swift Cargo', commodity: 'Tea', lock: 'SL24290', origin: 'Kericho WH', destination: 'Mombasa Port', eta: '20:30 (+3h)', risk: 'high', progress: 52, bookingRef: 'MSC56796', sealNumber: 'SN-88220' },
-];
+const s = (v: unknown) => String(v ?? '—');
 
 type Filter = 'all' | 'in_transit' | 'delivered' | 'created' | 'closed';
 
@@ -26,36 +17,41 @@ export default function Shipments() {
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const { openDrawer, addToast } = useUIStore();
+  const { data: shipmentData, isLoading } = useShipments();
 
-  const filtered = shipments.filter((s) => {
-    if (filter !== 'all' && s.status !== filter) return false;
+  if (isLoading) return <div className="flex items-center justify-center h-64"><div className="text-text-2 font-mono text-xs">Loading…</div></div>;
+
+  const shipments = (shipmentData?.data ?? []) as Record<string, unknown>[];
+
+  const filtered = shipments.filter((row) => {
+    if (filter !== 'all' && s(row['status']) !== filter) return false;
     if (search) {
       const q = search.toLowerCase();
-      return s.id.toLowerCase().includes(q) || s.reference.toLowerCase().includes(q) || s.customer.toLowerCase().includes(q) || (s.container?.toLowerCase().includes(q) ?? false) || (s.driver?.toLowerCase().includes(q) ?? false);
+      return s(row['id']).toLowerCase().includes(q) || s(row['reference']).toLowerCase().includes(q) || s(row['customer']).toLowerCase().includes(q) || s(row['container']).toLowerCase().includes(q) || s(row['driver']).toLowerCase().includes(q);
     }
     return true;
   });
 
-  const openShipmentDrawer = (s: typeof shipments[0]) => {
-    openDrawer(s.id, (
+  const openShipmentDrawer = (row: Record<string, unknown>) => {
+    openDrawer(s(row['id']), (
       <div>
-        <div className="text-2xs text-text-2 font-mono mb-4">{s.commodity} · {s.transporter}</div>
+        <div className="text-2xs text-text-2 font-mono mb-4">{s(row['commodity'])} · {s(row['transporter'])}</div>
         <DrawerSection title="Shipment Details">
-          <DrawerField label="Status" value={<StatusBadge status={s.status} />} />
-          <DrawerField label="Customer" value={s.customer} />
-          <DrawerField label="Container" value={s.container ?? '—'} />
-          <DrawerField label="Vehicle" value={s.vehicle ?? '—'} />
-          <DrawerField label="Driver" value={s.driver ?? '—'} />
-          <DrawerField label="Lock" value={s.lock ?? '—'} />
+          <DrawerField label="Status" value={<StatusBadge status={s(row['status'])} />} />
+          <DrawerField label="Customer" value={s(row['customer'])} />
+          <DrawerField label="Container" value={s(row['container'])} />
+          <DrawerField label="Vehicle" value={s(row['vehicle'])} />
+          <DrawerField label="Driver" value={s(row['driver'])} />
+          <DrawerField label="Lock" value={s(row['lock'])} />
         </DrawerSection>
         <DrawerSection title="Route">
-          <DrawerField label="Booking Ref" value={s.bookingRef} />
-          <DrawerField label="Seal Number" value={s.sealNumber ?? '—'} />
-          <DrawerField label="Origin" value={s.origin} />
-          <DrawerField label="Destination" value={s.destination} />
-          <DrawerField label="ETA" value={s.eta} />
-          <DrawerField label="Risk" value={<RiskBadge risk={s.risk} />} />
-          <DrawerField label="Progress" value={<ProgressBar value={s.progress} showLabel />} />
+          <DrawerField label="Booking Ref" value={s(row['booking_ref'])} />
+          <DrawerField label="Seal Number" value={s(row['seal_number'])} />
+          <DrawerField label="Origin" value={s(row['origin'])} />
+          <DrawerField label="Destination" value={s(row['destination'])} />
+          <DrawerField label="ETA" value={s(row['eta'])} />
+          <DrawerField label="Risk" value={<RiskBadge risk={s(row['risk'])} />} />
+          <DrawerField label="Progress" value={<ProgressBar value={Number(row['progress'] ?? 0)} showLabel />} />
         </DrawerSection>
         <div className="flex gap-2 mt-5">
           <Button className="flex-1" onClick={() => addToast('Route exported as PDF')}>Export PDF</Button>
@@ -79,9 +75,9 @@ export default function Shipments() {
 
       <div className="flex items-center gap-2.5 mb-4 flex-wrap">
         <FilterChip label={`All (${shipments.length})`} active={filter === 'all'} onClick={() => setFilter('all')} />
-        <FilterChip label={`In Transit (${shipments.filter((s) => s.status === 'in_transit').length})`} active={filter === 'in_transit'} onClick={() => setFilter('in_transit')} />
-        <FilterChip label={`Delivered (${shipments.filter((s) => s.status === 'delivered').length})`} active={filter === 'delivered'} onClick={() => setFilter('delivered')} />
-        <FilterChip label={`Created (${shipments.filter((s) => s.status === 'created').length})`} active={filter === 'created'} onClick={() => setFilter('created')} />
+        <FilterChip label={`In Transit (${shipments.filter((row) => s(row['status']) === 'in_transit').length})`} active={filter === 'in_transit'} onClick={() => setFilter('in_transit')} />
+        <FilterChip label={`Delivered (${shipments.filter((row) => s(row['status']) === 'delivered').length})`} active={filter === 'delivered'} onClick={() => setFilter('delivered')} />
+        <FilterChip label={`Created (${shipments.filter((row) => s(row['status']) === 'created').length})`} active={filter === 'created'} onClick={() => setFilter('created')} />
         <SearchInput value={search} onChange={setSearch} placeholder="Search shipments…" className="ml-auto" />
       </div>
 
@@ -96,17 +92,17 @@ export default function Shipments() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((s) => (
-                <tr key={s.id} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors" onClick={() => openShipmentDrawer(s)}>
-                  <td className="px-3.5 py-3 font-mono text-text-0">{s.id}<div className="text-2xs text-text-2 mt-0.5">{s.reference}</div></td>
-                  <td className="px-3.5 py-3"><StatusBadge status={s.status} /></td>
-                  <td className="px-3.5 py-3 text-text-0">{s.customer}</td>
-                  <td className="px-3.5 py-3 font-mono text-text-0">{s.container ?? '—'}</td>
-                  <td className="px-3.5 py-3 text-text-0">{s.vehicle ?? '—'}<div className="text-2xs text-text-2 mt-0.5">{s.driver ?? '—'}</div></td>
-                  <td className="px-3.5 py-3 text-text-0">{s.commodity}</td>
-                  <td className="px-3.5 py-3"><ProgressBar value={s.progress} color={s.risk === 'high' ? 'bg-cds-red' : 'bg-cds-orange'} /></td>
-                  <td className="px-3.5 py-3"><RiskBadge risk={s.risk} /></td>
-                  <td className={`px-3.5 py-3 font-mono ${s.risk === 'high' ? 'text-cds-red' : 'text-text-1'}`}>{s.eta}</td>
+              {filtered.map((row, i) => (
+                <tr key={s(row['id'] ?? i)} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors" onClick={() => openShipmentDrawer(row)}>
+                  <td className="px-3.5 py-3 font-mono text-text-0">{s(row['id'])}<div className="text-2xs text-text-2 mt-0.5">{s(row['reference'])}</div></td>
+                  <td className="px-3.5 py-3"><StatusBadge status={s(row['status'])} /></td>
+                  <td className="px-3.5 py-3 text-text-0">{s(row['customer'])}</td>
+                  <td className="px-3.5 py-3 font-mono text-text-0">{s(row['container'])}</td>
+                  <td className="px-3.5 py-3 text-text-0">{s(row['vehicle'])}<div className="text-2xs text-text-2 mt-0.5">{s(row['driver'])}</div></td>
+                  <td className="px-3.5 py-3 text-text-0">{s(row['commodity'])}</td>
+                  <td className="px-3.5 py-3"><ProgressBar value={Number(row['progress'] ?? 0)} color={s(row['risk']) === 'high' ? 'bg-cds-red' : 'bg-cds-orange'} /></td>
+                  <td className="px-3.5 py-3"><RiskBadge risk={s(row['risk'])} /></td>
+                  <td className={`px-3.5 py-3 font-mono ${s(row['risk']) === 'high' ? 'text-cds-red' : 'text-text-1'}`}>{s(row['eta'])}</td>
                 </tr>
               ))}
               {filtered.length === 0 && (

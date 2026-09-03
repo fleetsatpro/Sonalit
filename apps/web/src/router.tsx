@@ -49,6 +49,14 @@ const authFullscreenRoute = createRoute({
 });
 
 const loginRoute = createRoute({ getParentRoute: () => rootRoute, path: '/login', component: LoginPage });
+// Driver tracking activation. Hangs off rootRoute, not authRoute: the driver
+// scanning this has no Sonalit account and must never reach operator chrome —
+// the QR token in the path is the only credential involved.
+const driverTrackRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/t/$token',
+  component: lazyRouteComponent(() => import('./pages/DriverTrack.js')),
+});
 const notFoundRoute = createRoute({ getParentRoute: () => rootRoute, path: '*', component: lazyRouteComponent(() => import('./pages/NotFound.js')) });
 
 // Home is the immersive Orbit launcher — a full-viewport globe + folder grid
@@ -177,6 +185,7 @@ const portalSecurityRoute = createRoute({ getParentRoute: () => portalRootRoute,
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
+  driverTrackRoute,
   notFoundRoute,
   portalViewRoute,
   portalRootRoute.addChildren([

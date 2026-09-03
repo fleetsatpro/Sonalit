@@ -101,6 +101,13 @@ kotlinx-coroutines-play = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 # Location
 play-location = { group = "com.google.android.gms", name = "play-services-location", version = "21.3.0" }
 
+# QR encoding for the tracking-activation screen. zxing *core* only — pure Java,
+# no Android dependency and no camera/scanner baggage: Guardian only ever
+# renders a QR, it never reads one. The BitMatrix is drawn straight onto a
+# Compose Canvas (see CfoTrackingScreen), so no bitmap-conversion library is
+# needed either.
+zxing-core = { group = "com.google.zxing", name = "core", version = "3.5.3" }
+
 # Haze — backdrop blur for the Home screen's glass cards. Real blur (RenderEffect)
 # only on API 31+; Haze automatically falls back to a translucent tint below that,
 # so minSdk 29 stays supported without a second code path.

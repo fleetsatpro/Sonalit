@@ -339,6 +339,21 @@ fun CfoDashboardScreen(viewModel: CfoViewModel) {
                 onClick = { viewModel.navigate(CfoNavScreen.HISTORY) },
             )
         }
+        Spacer(Modifier.height(8.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Always enabled, unlike the photo actions: a CFO needs to issue a
+            // tracking QR and watch the board even on a day with no photo
+            // window open — activation is not tied to the reporting cycle.
+            ActionCard(
+                modifier = Modifier.weight(1f),
+                icon = Icons.Default.QrCode2,
+                label = "Tracking",
+                subtitle = "QR + live status",
+                enabled = true,
+                onClick = { viewModel.navigate(CfoNavScreen.TRACKING) },
+            )
+            Spacer(Modifier.weight(1f))
+        }
     }
 }
 

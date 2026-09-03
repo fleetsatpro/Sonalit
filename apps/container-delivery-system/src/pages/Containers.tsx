@@ -7,17 +7,9 @@ import { DrawerField, DrawerSection } from '@/components/ui/Drawer.js';
 import { PageHeader } from '@/components/ui/PageHeader.js';
 import { SearchInput } from '@/components/ui/SearchInput.js';
 import { useUIStore } from '@/stores/ui.js';
+import { useContainers } from '@/hooks/useContainers.js';
 
-const containers = [
-  { id: 'TGHU3456789', status: 'in_transit', truck: 'KDK 456P', driver: 'John Kamau', transporter: 'Kentrans Logistics', commodity: 'Coffee', lock: 'SL23891', origin: 'Nakuru WH', dest: 'Mombasa Port', eta: '18:40', risk: 'low', progress: 64, isoType: '40HC', weight: 24500 },
-  { id: 'MSCU7712340', status: 'delivered', truck: 'KBZ 902L', driver: 'Peter Otieno', transporter: 'Swift Cargo', commodity: 'Tea', lock: 'SL23881', origin: 'Kericho WH', dest: 'Mombasa Port', eta: 'Arrived', risk: 'low', progress: 100, isoType: '20GP', weight: 18200 },
-  { id: 'CMAU5581223', status: 'delayed', truck: 'KDA 112B', driver: 'Grace Wanjiru', transporter: 'Kentrans Logistics', commodity: 'Cut Flowers', lock: 'SL24410', origin: 'Naivasha WH', dest: 'JKIA Cargo', eta: '21:10 (+2h)', risk: 'high', progress: 41, isoType: '20RF', weight: 12800 },
-  { id: 'HLXU9903312', status: 'in_transit', truck: 'KCE 771D', driver: 'Samuel Kiptoo', transporter: 'Rift Transporters', commodity: 'Avocado', lock: 'SL24118', origin: 'Eldoret WH', dest: 'Mombasa Port', eta: '23:05', risk: 'medium', progress: 28, isoType: '40RF', weight: 21000 },
-  { id: 'OOCL2261890', status: 'in_transit', truck: 'KDG 330F', driver: 'Alice Njeri', transporter: 'Swift Cargo', commodity: 'Textiles', lock: 'SL23977', origin: 'Thika WH', dest: 'Mombasa Port', eta: '19:50', risk: 'low', progress: 77, isoType: '40GP', weight: 16500 },
-  { id: 'MAEU4471029', status: 'pending', truck: '—', driver: '—', transporter: 'Kentrans Logistics', commodity: 'Coffee', lock: 'Unassigned', origin: 'Nyeri WH', dest: 'Mombasa Port', eta: 'Not dispatched', risk: 'low', progress: 0, isoType: '20GP', weight: 0 },
-  { id: 'CSNU8834221', status: 'delivered', truck: 'KBW 556J', driver: 'Dennis Mwangi', transporter: 'Rift Transporters', commodity: 'Macadamia', lock: 'SL23652', origin: "Murang'a WH", dest: 'Mombasa Port', eta: 'Arrived', risk: 'low', progress: 100, isoType: '20GP', weight: 19800 },
-  { id: 'EGLV1129003', status: 'delayed', truck: 'KDF 887M', driver: 'Faith Chebet', transporter: 'Swift Cargo', commodity: 'Tea', lock: 'SL24290', origin: 'Kericho WH', dest: 'Mombasa Port', eta: '20:30 (+3h)', risk: 'high', progress: 52, isoType: '40HC', weight: 22100 },
-];
+const s = (v: unknown) => String(v ?? '—');
 
 type Filter = 'all' | 'in_transit' | 'delivered' | 'delayed' | 'pending';
 
@@ -25,36 +17,41 @@ export default function Containers() {
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const { openDrawer, addToast } = useUIStore();
+  const { data: containerData, isLoading } = useContainers();
+
+  if (isLoading) return <div className="flex items-center justify-center h-64"><div className="text-text-2 font-mono text-xs">Loading…</div></div>;
+
+  const containers = (containerData?.data ?? []) as Record<string, unknown>[];
 
   const filtered = containers.filter((c) => {
-    if (filter !== 'all' && c.status !== filter) return false;
+    if (filter !== 'all' && s(c['status']) !== filter) return false;
     if (search) {
       const q = search.toLowerCase();
-      return c.id.toLowerCase().includes(q) || c.truck.toLowerCase().includes(q) || c.driver.toLowerCase().includes(q) || c.commodity.toLowerCase().includes(q);
+      return s(c['number']).toLowerCase().includes(q) || s(c['truck']).toLowerCase().includes(q) || s(c['driver']).toLowerCase().includes(q) || s(c['commodity']).toLowerCase().includes(q);
     }
     return true;
   });
 
-  const openContainerDrawer = (c: typeof containers[0]) => {
-    openDrawer(c.id, (
+  const openContainerDrawer = (c: Record<string, unknown>) => {
+    openDrawer(s(c['number']), (
       <div>
-        <div className="text-2xs text-text-2 font-mono mb-4">{c.commodity} · {c.transporter}</div>
+        <div className="text-2xs text-text-2 font-mono mb-4">{s(c['commodity'])} · {s(c['transporter'])}</div>
         <DrawerSection title="Container Info">
-          <DrawerField label="Status" value={<StatusBadge status={c.status} />} />
-          <DrawerField label="ISO Type" value={c.isoType} />
-          <DrawerField label="Weight" value={`${c.weight.toLocaleString()} kg`} />
-          <DrawerField label="Lock" value={c.lock} />
+          <DrawerField label="Status" value={<StatusBadge status={s(c['status'])} />} />
+          <DrawerField label="ISO Type" value={s(c['iso_type'])} />
+          <DrawerField label="Weight" value={`${s(c['weight'])} kg`} />
+          <DrawerField label="Lock" value={s(c['lock'])} />
         </DrawerSection>
         <DrawerSection title="Transport">
-          <DrawerField label="Truck" value={c.truck} />
-          <DrawerField label="Driver" value={c.driver} />
-          <DrawerField label="Origin" value={c.origin} />
-          <DrawerField label="Destination" value={c.dest} />
-          <DrawerField label="ETA" value={c.eta} />
+          <DrawerField label="Truck" value={s(c['truck'])} />
+          <DrawerField label="Driver" value={s(c['driver'])} />
+          <DrawerField label="Origin" value={s(c['origin'])} />
+          <DrawerField label="Destination" value={s(c['destination'])} />
+          <DrawerField label="ETA" value={s(c['eta'])} />
         </DrawerSection>
         <DrawerSection title="Assessment">
-          <DrawerField label="Risk" value={<RiskBadge risk={c.risk} />} />
-          <DrawerField label="Progress" value={<ProgressBar value={c.progress} showLabel />} />
+          <DrawerField label="Risk" value={<RiskBadge risk={s(c['risk'])} />} />
+          <DrawerField label="Progress" value={<ProgressBar value={Number(c['progress'] ?? 0)} showLabel />} />
         </DrawerSection>
         <div className="flex gap-2 mt-5">
           <Button className="flex-1" onClick={() => addToast('Route exported as PDF')}>Export Route PDF</Button>
@@ -78,9 +75,9 @@ export default function Containers() {
 
       <div className="flex items-center gap-2.5 mb-4 flex-wrap">
         <FilterChip label={`All (${containers.length})`} active={filter === 'all'} onClick={() => setFilter('all')} />
-        <FilterChip label={`In Transit (${containers.filter((c) => c.status === 'in_transit').length})`} active={filter === 'in_transit'} onClick={() => setFilter('in_transit')} />
-        <FilterChip label={`Delivered (${containers.filter((c) => c.status === 'delivered').length})`} active={filter === 'delivered'} onClick={() => setFilter('delivered')} />
-        <FilterChip label={`Delayed (${containers.filter((c) => c.status === 'delayed').length})`} active={filter === 'delayed'} onClick={() => setFilter('delayed')} />
+        <FilterChip label={`In Transit (${containers.filter((c) => s(c['status']) === 'in_transit').length})`} active={filter === 'in_transit'} onClick={() => setFilter('in_transit')} />
+        <FilterChip label={`Delivered (${containers.filter((c) => s(c['status']) === 'delivered').length})`} active={filter === 'delivered'} onClick={() => setFilter('delivered')} />
+        <FilterChip label={`Delayed (${containers.filter((c) => s(c['status']) === 'delayed').length})`} active={filter === 'delayed'} onClick={() => setFilter('delayed')} />
         <SearchInput value={search} onChange={setSearch} placeholder="Search container, truck, driver…" className="ml-auto" />
       </div>
 
@@ -95,16 +92,16 @@ export default function Containers() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((c) => (
-                <tr key={c.id} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors" onClick={() => openContainerDrawer(c)}>
-                  <td className="px-3.5 py-3 font-mono text-text-0">{c.id}</td>
-                  <td className="px-3.5 py-3"><StatusBadge status={c.status} /></td>
-                  <td className="px-3.5 py-3 text-text-0">{c.truck}<div className="text-2xs text-text-2 mt-0.5">{c.driver}</div></td>
-                  <td className="px-3.5 py-3 text-text-0">{c.transporter}</td>
-                  <td className="px-3.5 py-3 text-text-0">{c.commodity}</td>
-                  <td className="px-3.5 py-3"><ProgressBar value={c.progress} color={c.status === 'delayed' ? 'bg-cds-red' : 'bg-cds-orange'} /></td>
-                  <td className="px-3.5 py-3"><RiskBadge risk={c.risk} /></td>
-                  <td className={`px-3.5 py-3 font-mono ${c.status === 'delayed' ? 'text-cds-red' : 'text-text-1'}`}>{c.eta}</td>
+              {filtered.map((c, i) => (
+                <tr key={s(c['number'] ?? i)} className="border-t border-hair cursor-pointer hover:bg-ink-2 transition-colors" onClick={() => openContainerDrawer(c)}>
+                  <td className="px-3.5 py-3 font-mono text-text-0">{s(c['number'])}</td>
+                  <td className="px-3.5 py-3"><StatusBadge status={s(c['status'])} /></td>
+                  <td className="px-3.5 py-3 text-text-0">{s(c['truck'])}<div className="text-2xs text-text-2 mt-0.5">{s(c['driver'])}</div></td>
+                  <td className="px-3.5 py-3 text-text-0">{s(c['transporter'])}</td>
+                  <td className="px-3.5 py-3 text-text-0">{s(c['commodity'])}</td>
+                  <td className="px-3.5 py-3"><ProgressBar value={Number(c['progress'] ?? 0)} color={s(c['status']) === 'delayed' ? 'bg-cds-red' : 'bg-cds-orange'} /></td>
+                  <td className="px-3.5 py-3"><RiskBadge risk={s(c['risk'])} /></td>
+                  <td className={`px-3.5 py-3 font-mono ${s(c['status']) === 'delayed' ? 'text-cds-red' : 'text-text-1'}`}>{s(c['eta'])}</td>
                 </tr>
               ))}
               {filtered.length === 0 && <tr><td colSpan={8} className="px-3.5 py-8 text-center text-text-2">No containers match.</td></tr>}
