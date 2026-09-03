@@ -3,6 +3,7 @@ import { Centrifuge, type Subscription, type PublicationContext } from 'centrifu
 
 import { api } from './api.js';
 import { fieldAuthHeaders } from './fieldSession.js';
+import { reportRealtimeState } from './offline/connectivity.js';
 
 let client: Centrifuge | null = null;
 
@@ -43,6 +44,15 @@ export function getCentrifuge(): Centrifuge {
     client = new Centrifuge(import.meta.env['VITE_CENTRIFUGO_URL'] ?? 'wss://rt.sonalit.io/connection/websocket', {
       getToken: fetchConnectionToken,
     });
+
+    // Realtime health is tracked separately from API health because they fail
+    // independently: a WebSocket can be blocked by a hotel proxy while REST is
+    // perfectly fine, and a screen that shows LIVE off the back of a dead
+    // socket is showing cached data under a live label.
+    client.on('connected', () => { reportRealtimeState(true); });
+    client.on('disconnected', () => { reportRealtimeState(false); });
+    client.on('error', () => { reportRealtimeState(false); });
+
     client.connect();
   }
   return client;
@@ -53,6 +63,7 @@ export function disconnectCentrifuge(): void {
     client.disconnect();
     client = null;
     channelSubs.clear();
+    reportRealtimeState(false);
   }
 }
 

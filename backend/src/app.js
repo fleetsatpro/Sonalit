@@ -276,6 +276,17 @@ catch (e) { logger.warn("Portal route failed: " + e.message); }
 try { app.use("/api/v1/dashboard", require("./routes/dashboard")); logger.info("Route loaded: /api/v1/dashboard"); }
 catch (e) { logger.warn("Dashboard route failed: " + e.message); }
 
+// Offline replication contract: pull/push/status/device/conflicts.
+//
+// Mounted BEFORE the legacy no-op below, which answers any path under
+// /api/v1/sync and would otherwise shadow every one of these. The stub stays
+// as the fall-through so the old frontend/public/sw.js background-sync replay
+// (POST /api/v1/sync, no sub-path) keeps getting the response it expects
+// instead of a 404 — that service worker ships from a directory outside the
+// pnpm workspace and is not ours to change here.
+try { app.use("/api/v1/sync", require("./routes/sync")); logger.info("Route loaded: /api/v1/sync"); }
+catch (e) { logger.warn("Sync route failed: " + e.message); }
+
 app.use("/api/v1/sync", (req, res) => res.json({ ok: true, processed: 0 }));
 
 // claims.js defines its own routes as /claims, /claims/:id, /incidents/:id/claims
@@ -558,6 +569,19 @@ try {
   });
   logger.info("GDPR weekly purge scheduled (Sundays 04:00 UTC, BL-010)");
 } catch (e) { logger.warn("GDPR purge cron not started: " + e.message); }
+
+// Sync retention — the change log is a cursor index, not a record, and grows by
+// one row per write to a replicated entity. Nightly at 03:40 UTC, offset from
+// the 03:00 partition archival so the two are not competing for the same locks.
+if (!process.env.GENERATE_OPENAPI && process.env.NODE_ENV !== 'test')
+try {
+  const cron = require("node-cron");
+  const { runRetention } = require("./sync/retention");
+  cron.schedule("40 3 * * *", () => {
+    runRetention().catch(err => logger.error("Sync retention error: " + err.message));
+  });
+  logger.info("Sync retention scheduled (daily 03:40 UTC)");
+} catch (e) { logger.warn("Sync retention cron not started: " + e.message); }
 
 // CDS Operations Intelligence: Groq/Llama scans live operational data every 15 min
 // and writes alerts for overdue trips, stalled bookings, capacity gaps, etc.

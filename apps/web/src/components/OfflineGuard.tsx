@@ -1,6 +1,8 @@
 import { WifiOff } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
+import { isNetworkDown, startConnectivity, subscribe as subscribeConnectivity } from '../lib/offline/connectivity.js';
+
 /**
  * Surfaces are exempt from the offline takeover when they are built to keep
  * working without a connection. The Yard/Port field app is the whole reason
@@ -19,15 +21,20 @@ function isOfflineCapable(pathname: string): boolean {
 }
 
 export default function OfflineGuard({ children }: { children: React.ReactNode }) {
-  const [online, setOnline] = useState(navigator.onLine);
+  // Sourced from the connectivity manager rather than reading navigator.onLine
+  // directly, so there is one place that owns the OS events — but deliberately
+  // from `isNetworkDown`, the crude OS-level signal, not the richer reachability
+  // verdict. This guard blanks the entire app: keying it off request failures
+  // would take the UI away from someone whose app is working, and keying it off
+  // the pre-probe UNKNOWN state would blank every cold load before the first
+  // probe resolves.
+  const [online, setOnline] = useState(() => !isNetworkDown());
   const [, tick] = useState(0);
 
   useEffect(() => {
-    const onOnline = () => setOnline(true);
-    const onOffline = () => setOnline(false);
-    window.addEventListener('online', onOnline);
-    window.addEventListener('offline', onOffline);
-    return () => { window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOffline); };
+    startConnectivity();
+    setOnline(!isNetworkDown());
+    return subscribeConnectivity(() => { setOnline(!isNetworkDown()); });
   }, []);
 
   // This component sits above the router, so there's no router context to read

@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-import { attachRefreshInterceptor } from '../../lib/api.js';
+import { attachConnectivityReporter, attachRefreshInterceptor } from '../../lib/api.js';
 import { getCsrfToken } from '../../lib/csrf.js';
 import { announceFieldSessionExpired, fieldAuthHeaders } from '../../lib/fieldSession.js';
 import { getAccessToken } from '../../stores/auth.js';
@@ -68,5 +68,10 @@ cdsApi.interceptors.response.use(
 // in the background, and yanking a yard worker to /login mid-shift would
 // throw away queued actions they could otherwise still complete.
 attachRefreshInterceptor(cdsApi, { redirectOnFailure: false });
+
+// The field app makes almost all of its requests through this instance, so
+// without it the connectivity manager would be blind on exactly the surface
+// where connectivity matters most.
+attachConnectivityReporter(cdsApi);
 
 export default cdsApi;
