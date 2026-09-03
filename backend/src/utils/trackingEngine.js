@@ -104,14 +104,21 @@ function computeHealth(session, now = Date.now()) {
  */
 function computeConfidence({ accuracyM, ageSeconds, sourceCount = 1, agreementKm = null }) {
   if (ageSeconds == null || !Number.isFinite(ageSeconds)) return 'unknown';
+
+  // Sources that materially disagree are decisive on their own: however fresh
+  // and precise either reading looks in isolation, two of them contradicting
+  // each other means we do not actually know where the vehicle is. Letting a
+  // tight accuracy figure carry this to 'medium' would dress up a genuine
+  // unknown as a merely-imperfect fix.
+  if (agreementKm != null && agreementKm > SOURCE_DISCREPANCY_KM) return 'low';
   if (ageSeconds > SIGNAL_LOST_SECONDS) return 'low';
 
   const acc = Number.isFinite(accuracyM) ? accuracyM : POOR_ACCURACY_M;
-  const disagrees = agreementKm != null && agreementKm > SOURCE_DISCREPANCY_KM;
 
-  if (!disagrees && acc <= 50 && ageSeconds <= LIVE_SECONDS) {
-    return sourceCount >= 2 ? 'high' : 'high';
-  }
+  if (acc <= 50 && ageSeconds <= LIVE_SECONDS) return 'high';
+  // Two independent sources that agree earn tolerance for a looser fix than a
+  // lone source would — corroboration is itself evidence.
+  if (sourceCount >= 2 && acc <= POOR_ACCURACY_M && ageSeconds <= LIVE_SECONDS) return 'high';
   if (acc <= POOR_ACCURACY_M && ageSeconds <= DELAYED_SECONDS) return 'medium';
   return 'low';
 }
