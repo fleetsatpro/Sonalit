@@ -206,9 +206,36 @@ export function beginSync(): () => void {
   };
 }
 
-/** True when it is worth attempting network work at all. */
+/**
+ * True when it is worth attempting network work at all.
+ *
+ * Note UNKNOWN counts as reachable. Before the first probe resolves we have no
+ * evidence either way, and the two errors are not symmetric: attempting a
+ * request while actually offline just fails and the work gets queued, whereas
+ * refusing to attempt one while actually online turns a healthy device into a
+ * queue-everything device. Optimistic-until-proven-otherwise is the safe
+ * direction.
+ */
 export function isReachable(): boolean {
-  return snapshot.state === 'ONLINE' || snapshot.state === 'DEGRADED' || snapshot.state === 'SYNCING';
+  return snapshot.state !== 'OFFLINE';
+}
+
+/**
+ * Does the operating system report no network at all?
+ *
+ * Deliberately separate from `isReachable`, and deliberately cruder. This is
+ * the trigger for the full-screen offline takeover (components/OfflineGuard),
+ * where being wrong is expensive: blanking the entire app because a couple of
+ * background API calls failed would lock a user out of a UI that was working
+ * fine. "The OS says there is no interface" is a conservative, well-understood
+ * signal for that, and it is what the guard has always used.
+ *
+ * The richer ONLINE/DEGRADED/OFFLINE verdict — which does weigh real request
+ * outcomes — drives the sync engine and the Sync Center, where acting on a
+ * wrong guess costs a retry rather than the whole screen.
+ */
+export function isNetworkDown(): boolean {
+  return !snapshot.networkUp;
 }
 
 /**
@@ -304,9 +331,15 @@ export function startConnectivity(): void {
   started = true;
 
   window.addEventListener('online', () => {
-    snapshot = { ...snapshot, networkUp: true };
-    // The OS says the interface came back. Verify immediately rather than
-    // believing it — this is precisely where captive portals lie.
+    // Clear the failure count along with the flag. Those failures were recorded
+    // while the interface was down; carrying them over would keep the state at
+    // OFFLINE until fresh probes disproved them, stranding the UI in a takeover
+    // after the network had visibly returned.
+    snapshot = { ...snapshot, networkUp: true, consecutiveFailures: 0 };
+    recompute();
+    emit();
+    // Then verify, rather than believing it — this is precisely where captive
+    // portals lie. A failing probe will walk the state back down.
     void probeNow();
   });
 
@@ -314,6 +347,11 @@ export function startConnectivity(): void {
     snapshot = { ...snapshot, networkUp: false, apiReachable: false };
     everProbed = true;
     recompute();
+    // recompute() only emits when the *state* changes, and subscribers read
+    // networkUp directly (OfflineGuard does). Emit explicitly so a networkUp
+    // flip is never swallowed just because the derived state happened to stay
+    // put.
+    emit();
     scheduleProbe();
   });
 

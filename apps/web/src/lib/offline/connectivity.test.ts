@@ -5,9 +5,9 @@
  * can be verified without a browser, a timer or a network — the alternative is
  * discovering the hysteresis is wrong in a yard.
  */
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
-import { deriveState, OFFLINE_AFTER_FAILURES } from './connectivity.js';
+import { deriveState, isNetworkDown, isReachable, OFFLINE_AFTER_FAILURES, _reset } from './connectivity.js';
 
 const healthy = {
   networkUp: true,
@@ -57,5 +57,35 @@ describe('deriveState', () => {
 
   it('tolerates an unmeasured latency without downgrading', () => {
     expect(deriveState({ ...healthy, latencyMs: null })).toBe('ONLINE');
+  });
+});
+
+describe('isReachable', () => {
+  beforeEach(() => { _reset(); });
+
+  it('is optimistic before the first probe resolves', () => {
+    // Regression: isReachable() once excluded UNKNOWN, which made every cold
+    // load look offline until a probe returned. The field queue then queued the
+    // first action of a shift instead of sending it, and the sync engine
+    // declined to run at all.
+    //
+    // The two errors are not symmetric. Attempting a request while offline just
+    // fails and the work is queued; refusing to attempt one while online turns a
+    // healthy device into a queue-everything device.
+    expect(isReachable()).toBe(true);
+  });
+
+  it('treats a weak link as still worth attempting', () => {
+    expect(deriveState({ ...healthy, latencyMs: 5_000 })).toBe('DEGRADED');
+  });
+});
+
+describe('isNetworkDown', () => {
+  beforeEach(() => { _reset(); });
+
+  it('does not report the network down merely because nothing has been probed', () => {
+    // This drives the full-screen offline takeover. Reporting "down" before any
+    // evidence would blank the entire app on every cold load.
+    expect(isNetworkDown()).toBe(false);
   });
 });

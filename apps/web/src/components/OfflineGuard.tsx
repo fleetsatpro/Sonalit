@@ -1,7 +1,7 @@
 import { WifiOff } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
-import { isReachable, startConnectivity, subscribe as subscribeConnectivity } from '../lib/offline/connectivity.js';
+import { isNetworkDown, startConnectivity, subscribe as subscribeConnectivity } from '../lib/offline/connectivity.js';
 
 /**
  * Surfaces are exempt from the offline takeover when they are built to keep
@@ -21,18 +21,20 @@ function isOfflineCapable(pathname: string): boolean {
 }
 
 export default function OfflineGuard({ children }: { children: React.ReactNode }) {
-  // Sourced from the connectivity manager, not navigator.onLine. This guard
-  // blanks the entire app, so it must not fire on a flag that reports a live
-  // interface behind a captive portal — nor, worse, take the app away from a
-  // worker whose requests are actually succeeding. The manager only says
-  // OFFLINE after repeated real failures.
-  const [online, setOnline] = useState(isReachable);
+  // Sourced from the connectivity manager rather than reading navigator.onLine
+  // directly, so there is one place that owns the OS events — but deliberately
+  // from `isNetworkDown`, the crude OS-level signal, not the richer reachability
+  // verdict. This guard blanks the entire app: keying it off request failures
+  // would take the UI away from someone whose app is working, and keying it off
+  // the pre-probe UNKNOWN state would blank every cold load before the first
+  // probe resolves.
+  const [online, setOnline] = useState(() => !isNetworkDown());
   const [, tick] = useState(0);
 
   useEffect(() => {
     startConnectivity();
-    setOnline(isReachable());
-    return subscribeConnectivity(() => { setOnline(isReachable()); });
+    setOnline(!isNetworkDown());
+    return subscribeConnectivity(() => { setOnline(!isNetworkDown()); });
   }, []);
 
   // This component sits above the router, so there's no router context to read
