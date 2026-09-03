@@ -8,6 +8,7 @@ const { extractBookingData } = require('../utils/extractionClient');
 const { publish } = require('../realtime/centrifugo');
 const { allocateBookingReference, reconcileProvidedReference } = require('../utils/bookingReference');
 const { scanManifest } = require('../utils/manifestAnomalies');
+const T = require('../utils/trackingEngine');
 const logger = require('../utils/logger');
 
 // dualAuthenticate, not authenticate: this router serves both the operator
@@ -368,6 +369,19 @@ router.post('/trips/:id/transition', asyncHandler(async (req, res) => {
      JSON.stringify({ status: to_status, notes, lat, lng }),
      req.user.org_id]
   );
+
+  // Delivery is what ends Hybrid Tracking — never a timer and never the driver.
+  // The engine decides whether *this* delivery satisfies each session's policy,
+  // so a multi-container load keeps tracking until the last box lands. Idempotent
+  // by construction, because delivery gets marked twice more often than not.
+  if (to_status === 'delivered') {
+    try {
+      await T.onContainerDelivered(req.db, req.user.org_id, result.rows[0].container_id,
+        { id: req.user.id, name: req.user.name, type: 'operator' });
+    } catch (err) {
+      logger.warn(`tracking termination failed for trip ${req.params.id}: ${err.message}`);
+    }
+  }
 
   publishCds(req, 'cds.trip.updated', {
     trip_id: result.rows[0].id,
@@ -1336,6 +1350,46 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
      orgId]
   );
 
+  // Hybrid Tracking starts at the gate. Issuing the QR here — rather than in a
+  // separate screen the crew would have to remember — is what makes the driver's
+  // GPS channel the default for every clamped container instead of an
+  // afterthought someone opts into. The journey, not a timer, will end it: the
+  // policy below hands termination to this container's delivery.
+  //
+  // Deliberately non-fatal: a tracking hiccup must never fail a physical clamp
+  // the yard has already performed. The container simply leaves without a QR
+  // and Guardian can issue one.
+  let tracking = null;
+  try {
+    const issued = await T.issueQr(req.db, orgId, {
+      purpose: 'cds_container',
+      terminationPolicy: 'container_delivered',
+      terminationContainerId: containerId,
+      tripId: trip.rows[0].id,
+      bookingId,
+      cdsVehicleId: vehicleId,
+      driverId,
+      issuedBy: req.user.id,
+      // Only what belongs on a gate pass — see the note in trackingEngine.issueQr.
+      display: {
+        vehicle: truck_reg ? String(truck_reg).trim() : null,
+        driver: driver_name ? String(driver_name).trim() : null,
+        container: bc.rows[0].container_number || null,
+        destination: bc.rows[0].delivery_location || null,
+        booking: bc.rows[0].booking_number || null,
+        containers: 1,
+      },
+    });
+    await T.recordEvent(req.db, orgId, {
+      qrCodeId: issued.qr.id, eventType: 'QR_GENERATED', actorType: 'field_agent',
+      actorId: req.user.id, actorName: req.user.name || null,
+      payload: { trip_id: trip.rows[0].id, booking_container_id: bcId },
+    });
+    tracking = { qr_id: issued.qr.id, token: issued.token, url: issued.url };
+  } catch (err) {
+    logger.warn(`tracking QR not issued for trip ${trip.rows[0].id}: ${err.message}`);
+  }
+
   // The moment that matters to the other two surfaces: the port crew gains an
   // inbound container, the yard queue loses one, and the control room gets a
   // new trip on the board.
@@ -1349,11 +1403,12 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
     lock_serial: lock_serial.trim(),
     truck_reg,
     driver_name,
+    tracking_qr_issued: !!tracking,
     lat: lat ?? null,
     lng: lng ?? null,
   });
 
-  res.json({ data: { trip: trip.rows[0], booking_container_id: bcId } });
+  res.json({ data: { trip: trip.rows[0], booking_container_id: bcId, tracking } });
 }));
 
 // Port team unclamps the e-lock — container has arrived and been delivered.
@@ -1431,6 +1486,23 @@ router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyn
   );
   if (remaining.rows[0].c === 0) {
     await req.db(`UPDATE cds_bookings SET status='delivered', updated_at=NOW() WHERE id=$1`, [bookingId]);
+  }
+
+  // The container is physically delivered, so its tracking session ends here
+  // too — the driver's phone learns on its next ping and stops collecting
+  // location. Resolving the container id from the trip rather than trusting the
+  // caller keeps this correct when the port crew unclamps without one.
+  try {
+    const tripRow = bc.rows[0].trip_id
+      ? await req.db('SELECT container_id FROM cds_trips WHERE id=$1', [bc.rows[0].trip_id])
+      : null;
+    const containerId = tripRow && tripRow.rows.length ? tripRow.rows[0].container_id : null;
+    if (containerId) {
+      await T.onContainerDelivered(req.db, orgId, containerId,
+        { id: req.user.id, name: req.user.name, type: 'field_agent' });
+    }
+  } catch (err) {
+    logger.warn(`tracking termination failed on unclamp ${bcId}: ${err.message}`);
   }
 
   // Close the custody chain for this container. seal_intact is the whole point

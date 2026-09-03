@@ -296,6 +296,16 @@ app.use("/api/v1/sync", (req, res) => res.json({ ok: true, processed: 0 }));
 // webhook. It was previously never mounted at all, so the whole feature (and the
 // Meta webhook) was dead. Its own /whatsapp/webhook falls through the earlier
 // /api/v1/guardian routers (which don't define it) to here.
+// Hybrid Tracking. Two routers on purpose: /track is the public, CSRF-exempt
+// driver surface authenticated by opaque QR/session tokens, while /tracking is
+// the operator + Guardian management surface behind the normal credential.
+// Keeping them apart is what stops a scanned QR from ever reaching fleet data.
+try { app.use("/api/v1/track", require("./routes/trackingDriver")); logger.info("Route loaded: /api/v1/track (driver)"); }
+catch (e) { logger.warn("Driver tracking route failed: " + e.message); }
+
+try { app.use("/api/v1/tracking", require("./routes/tracking")); logger.info("Route loaded: /api/v1/tracking"); }
+catch (e) { logger.warn("Tracking route failed: " + e.message); }
+
 try { app.use("/api/v1/cds", require("./routes/cds")); logger.info("Route loaded: /api/v1/cds"); }
 catch (e) { logger.warn("CDS route failed: " + e.message); }
 
