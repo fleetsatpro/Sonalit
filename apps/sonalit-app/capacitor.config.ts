@@ -25,6 +25,22 @@ import type { CapacitorConfig } from '@capacitor/cli';
 // same APK also works for anyone who opens the admin URL on their phone.
 const PROD_URL = 'https://sonalit.vercel.app';
 
+/*
+ * Background location.
+ *
+ * The hosted web app can only hold GPS while its page is in the foreground, so
+ * an installed driver running a journey with the screen locked would silently
+ * stop reporting. @capacitor-community/background-geolocation adds a real
+ * Android foreground service, and because this shell loads the site remotely,
+ * the hosted bundle reaches it through window.Capacitor.Plugins without being
+ * rebuilt — see apps/web/src/lib/trackingProviders.ts, which selects the native
+ * provider only when the plugin is actually present and otherwise reports
+ * `background_status: 'unsupported'` rather than inheriting the native
+ * runtime's reputation.
+ *
+ * This one IS a native change, so unlike ordinary web updates it needs a new
+ * APK (same signing key + higher versionCode → in-place update).
+ */
 const config: CapacitorConfig = {
   appId: 'io.sonalit.app',
   appName: 'Sonalit',
