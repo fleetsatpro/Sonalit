@@ -19,15 +19,52 @@ import UpdateAvailableToast from './components/UpdateAvailableToast.js';
 initOtel();
 initSentry();
 
-// T2.6: Guard against reload-loop — only reload when page is not actively used.
-// An unconditional reload on controllerchange causes a loop when the SW updates
-// while the user is mid-session (e.g. filling a form).
+// Service-worker update flow. Two problems this addresses:
+//   1. A warm WebView (the Android shell keeps the app alive, so it never
+//      re-navigates) never re-registers the SW and so never discovers a new
+//      deploy — installed users could sit on a stale build indefinitely.
+//      Fix: poll registration.update() on an interval and whenever the app
+//      returns to the foreground.
+//   2. workbox runs with skipWaiting+clientsClaim, so a new SW activates and
+//      fires controllerchange while the page is still running the OLD bundle.
+//      Fix: reload when that happens. We reload immediately unless the user is
+//      actively typing in a visible tab, in which case we defer until the app
+//      is next backgrounded — never interrupting mid-input, but never leaving
+//      them stuck on stale assets either. A guard prevents a reload loop.
 if ('serviceWorker' in navigator) {
+  let reloading = false;
+  const reloadOnce = () => {
+    if (reloading) return;
+    reloading = true;
+    window.location.reload();
+  };
+
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (document.visibilityState === 'hidden') {
-      window.location.reload();
+    const el = document.activeElement as HTMLElement | null;
+    const isTyping = !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+    if (document.visibilityState === 'visible' && isTyping) {
+      const onHide = () => {
+        if (document.visibilityState === 'hidden') {
+          document.removeEventListener('visibilitychange', onHide);
+          reloadOnce();
+        }
+      };
+      document.addEventListener('visibilitychange', onHide);
+    } else {
+      reloadOnce();
     }
   });
+
+  navigator.serviceWorker.ready
+    .then((registration) => {
+      const check = () => { void registration.update().catch(() => undefined); };
+      check();
+      window.setInterval(check, 60_000);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') check();
+      });
+    })
+    .catch(() => undefined);
 }
 
 const queryClient = new QueryClient({
