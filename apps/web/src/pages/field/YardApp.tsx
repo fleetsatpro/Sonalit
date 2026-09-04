@@ -9,6 +9,7 @@ import { useYardQueue, useBookingContainers, useClampBookingContainer } from '..
 
 import { OfflineBanner, useOfflineQueue } from './OfflineBanner.js';
 import { enqueue, isOnline } from './offlineQueue.js';
+import { ClampResult, type IssuedTracking } from './TrackingQr.js';
 
 type Row = Record<string, unknown>;
 const s = (v: unknown) => v == null ? '' : String(v);
@@ -202,6 +203,8 @@ function ClampForm({ booking, container, onClose, onDone }: {
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState<null | 'submitted' | 'queued'>(null);
+  // Issued exactly once by the server; there is no way to fetch it again.
+  const [tracking, setTracking] = useState<IssuedTracking | null>(null);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -229,7 +232,6 @@ function ClampForm({ booking, container, onClose, onDone }: {
       const queueIt = () => {
         enqueue({ kind: 'clamp', bookingId, containerId, label, payload });
         setSuccess('queued');
-        setTimeout(onDone, 1400);
       };
 
       // Known-offline: don't bother firing a request that can only fail, and
@@ -237,9 +239,13 @@ function ClampForm({ booking, container, onClose, onDone }: {
       if (!isOnline()) { queueIt(); return; }
 
       clamp.mutate({ bookingId, cid: containerId, ...payload }, {
-        onSuccess: () => {
+        onSuccess: (res: unknown) => {
+          const issued = (res as { data?: { tracking?: IssuedTracking | null } })?.data?.tracking ?? null;
+          setTracking(issued);
           setSuccess('submitted');
-          setTimeout(onDone, 1100);
+          // No auto-dismiss. The driver's code is shown once and cannot be
+          // re-opened, so the worker closes this screen deliberately — a 1.1s
+          // timer used to destroy it before anyone could scan.
         },
         onError: (err: unknown) => {
           const ax = err as { response?: { data?: { error?: string } } };
@@ -260,7 +266,14 @@ function ClampForm({ booking, container, onClose, onDone }: {
     } else doSubmit();
   };
 
-  if (success) return <ClampSuccess mode={success} label={s(container['container_number']) || 'Container'} />;
+  if (success) return (
+    <ClampResult
+      mode={success}
+      label={s(container['container_number']) || 'Container'}
+      tracking={tracking}
+      onDone={onDone}
+    />
+  );
 
   return (
     <div className="min-h-screen bg-ink-0 text-text-0">
@@ -334,38 +347,6 @@ function ClampForm({ booking, container, onClose, onDone }: {
               custody record. */}
           {clamp.isPending ? 'Submitting…' : offline ? 'Save on device' : 'Confirm clamp'}
         </button>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Two genuinely different outcomes, deliberately not blurred into one.
- *
- * "Clamped" claims a trip exists in CDS and the control room can see it.
- * When the action is only sitting in the device queue, saying that would be a
- * lie the worker acts on — they'd walk away believing dispatch knows. The
- * queued variant is reassuring but precise about what has and hasn't happened.
- */
-function ClampSuccess({ mode, label }: { mode: 'submitted' | 'queued'; label: string }) {
-  const queued = mode === 'queued';
-  const accent = queued ? '#ffb020' : '#33d6a8';
-  return (
-    <div className="min-h-screen bg-ink-0 text-text-0 flex flex-col items-center justify-center p-6 relative overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 opacity-30"
-        style={{ background: `radial-gradient(circle at 50% 45%, ${accent}40, transparent 55%)` }} />
-      <div className="relative w-20 h-20 rounded-full flex items-center justify-center mb-5"
-        style={{ background: `${accent}26`, border: `2px solid ${accent}80`, boxShadow: `0 0 40px -8px ${accent}99` }}>
-        {queued
-          ? <CloudOff size={34} style={{ color: accent }} strokeWidth={2.2} />
-          : <Check size={38} style={{ color: accent }} strokeWidth={2.5} />}
-      </div>
-      <div className="relative text-xl font-bold">{queued ? 'Saved on device' : 'Clamped'}</div>
-      <div className="relative text-[12px] font-mono text-text-2 mt-1.5">
-        {label} · {queued ? 'not yet sent' : 'Trip created'}
-      </div>
-      <div className="relative text-[10px] font-mono text-text-2/60 mt-0.5">
-        {queued ? 'Will sync automatically when back online' : 'CDS control room notified'}
       </div>
     </div>
   );

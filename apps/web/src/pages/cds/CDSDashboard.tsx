@@ -405,6 +405,9 @@ export function LiveView() {
   const atPort = trips.filter(t => t.phase === 'at_port');
   const staged = trips.filter(t => t.phase === 'staged');
   const withFix = trips.filter(positioned);
+  // "Positioned" and "live" are different claims: a fix can be hours old. The
+  // tracking engine decides which is which; this panel only reports it.
+  const liveNow = trips.filter(t => t.position_is_live).length;
 
   return (
     <div className="p-5 max-w-[1600px] mx-auto">
@@ -412,7 +415,8 @@ export function LiveView() {
         <div className="flex items-baseline justify-between mb-3 gap-3 flex-wrap">
           <div className="font-bold text-sm text-text-0">Live Fleet Tracking</div>
           <div className="text-[10px] font-mono text-text-2">
-            {withFix.length} of {trips.length} open trip{trips.length === 1 ? '' : 's'} reporting GPS
+            {liveNow} of {trips.length} open trip{trips.length === 1 ? '' : 's'} reporting now
+            {withFix.length > liveNow ? ` · ${withFix.length - liveNow} last known` : ''}
           </div>
         </div>
         <div className="h-[350px] rounded-xl overflow-hidden bg-ink-2 relative">
@@ -464,7 +468,10 @@ export function LiveView() {
                 </div>
                 <div className="text-right flex-none">
                   <div className={`text-[10px] font-mono ${meta.text}`}>{meta.label}</div>
-                  <div className="text-[10px] font-mono text-text-2">{ago(t.last_seen)}</div>
+                  <div className="text-[10px] font-mono text-text-2">
+                    {t.position_is_live ? 'live' : ago(t.last_seen)}
+                    {t.position_source === 'device_telematics' && t.lat != null ? ' · telematics' : ''}
+                  </div>
                 </div>
               </button>
             );

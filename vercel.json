@@ -4,29 +4,41 @@
   "outputDirectory": "apps/web/dist",
   "installCommand": "pnpm install --frozen-lockfile",
   "framework": "vite",
+  "trailingSlash": false,
   "rewrites": [
     { "source": "/convoy.html", "destination": "/convoy.html" },
     { "source": "/api/:path*", "destination": "https://sonalit-production.up.railway.app/api/:path*" },
-    { "source": "/((?!assets|convoy-assets|icons|manifest|sw|workbox|convoy\\.html).*)", "destination": "/index.html" }
+    { "source": "/fleet-management", "destination": "/fleet-management/index.html" },
+    { "source": "/convoy-management", "destination": "/convoy-management/index.html" },
+    { "source": "/container-delivery", "destination": "/container-delivery/index.html" },
+    { "source": "/security-operations", "destination": "/security-operations/index.html" },
+    { "source": "/about", "destination": "/about/index.html" },
+    { "source": "/contact", "destination": "/contact/index.html" },
+    {
+      "source": "/((?!assets|convoy-assets|icons|og|manifest|sw|workbox|robots\\.txt|sitemap\\.xml|favicon\\.ico|convoy\\.html|app-shell\\.html).*)",
+      "destination": "/app-shell.html"
+    }
   ],
   "headers": [
     {
       "source": "/assets/(.*)",
-      "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
-      ]
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
     },
     {
       "source": "/convoy-assets/(.*)",
-      "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
-      ]
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
     },
     {
-      "source": "/((?!assets/|convoy-assets/).*)",
-      "headers": [
-        { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate" }
-      ]
+      "source": "/og/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=86400" }]
+    },
+    {
+      "source": "/(robots.txt|sitemap.xml)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=3600" }]
+    },
+    {
+      "source": "/((?!assets/|convoy-assets/|og/|robots.txt|sitemap.xml).*)",
+      "headers": [{ "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate" }]
     },
     {
       "source": "/(.*)",

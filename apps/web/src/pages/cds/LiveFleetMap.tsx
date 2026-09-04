@@ -31,6 +31,9 @@ export interface LiveTrip {
   speed: number | string | null;
   heading: number | string | null;
   last_seen: string | null;
+  /** True only while the tracking engine still calls the fix live. */
+  position_is_live: boolean;
+  position_source: string | null;
   vehicle_reg: string | null;
   driver_name: string | null;
   customer_name: string | null;
@@ -162,11 +165,14 @@ export function LiveFleetMap({ trips, selectedId, onSelect, track }: LiveFleetMa
       const color = PHASE_COLOR[t.phase];
       el.style.color = color;
       el.dataset['sel'] = t.id === selectedId ? '1' : '0';
-      el.dataset['live'] = t.phase === 'moving' ? '1' : '0';
+      // Only a genuinely live fix pulses. A stale one is drawn hollow, because a
+      // solid pulsing dot over a two-hour-old position is the map lying.
+      el.dataset['live'] = t.position_is_live ? '1' : '0';
       const dot = el.querySelector<HTMLElement>('.cds-fleet-dot');
       if (dot) {
-        dot.style.background = color;
-        dot.style.boxShadow = t.id === selectedId ? `0 0 0 3px ${color}55` : `0 0 10px ${color}88`;
+        dot.style.background = t.position_is_live ? color : 'transparent';
+        dot.style.borderColor = t.position_is_live ? 'rgba(0,0,0,.55)' : color;
+        dot.style.boxShadow = t.id === selectedId ? `0 0 0 3px ${color}55` : (t.position_is_live ? `0 0 10px ${color}88` : 'none');
       }
       const tag = el.querySelector<HTMLElement>('.cds-fleet-tag');
       if (tag) tag.textContent = t.vehicle_reg || t.trip_number;

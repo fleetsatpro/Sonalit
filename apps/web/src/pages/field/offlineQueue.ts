@@ -20,6 +20,7 @@
  * in memory only, per the T1.2 policy in stores/auth.ts.
  */
 import cdsApi from '../cds/api.js';
+import { isReachable, startConnectivity, subscribe as subscribeConnectivity } from '../../lib/offline/connectivity.js';
 
 import type { AxiosError } from 'axios';
 
@@ -47,9 +48,27 @@ export interface FailedAction extends QueuedAction {
   failedAt: number;
 }
 
+/**
+ * A tracking QR that arrived while the worker was not looking at the screen.
+ *
+ * A queued clamp is posted by the sync loop, and the server issues the driver's
+ * code in that response — once, and only once. Dropping it would leave the
+ * container clamped and permanently untracked, so it is held here until a
+ * worker has actually shown it to the driver.
+ */
+export interface IssuedQr {
+  /** The queue entry that produced it, so it can be dismissed idempotently. */
+  id: string;
+  label: string;
+  qr_id: string;
+  url: string;
+  issuedAt: number;
+}
+
 interface QueueState {
   pending: QueuedAction[];
   failed: FailedAction[];
+  issued: IssuedQr[];
 }
 
 type Listener = (state: QueueSnapshot) => void;
@@ -66,16 +85,17 @@ const listeners = new Set<Listener>();
 function load(): QueueState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { pending: [], failed: [] };
+    if (!raw) return { pending: [], failed: [], issued: [] };
     const parsed = JSON.parse(raw) as Partial<QueueState>;
     return {
       pending: Array.isArray(parsed.pending) ? parsed.pending : [],
       failed: Array.isArray(parsed.failed) ? parsed.failed : [],
+      issued: Array.isArray(parsed.issued) ? parsed.issued : [],
     };
   } catch {
     // A corrupt blob must not brick the app on boot — the worker can redo the
     // action, but they can't use a screen that throws on mount.
-    return { pending: [], failed: [] };
+    return { pending: [], failed: [], issued: [] };
   }
 }
 
@@ -88,12 +108,20 @@ function persist(): void {
   }
 }
 
+/**
+ * Delegated to the connectivity manager rather than reading navigator.onLine
+ * directly. That flag reports whether an interface is up, not whether Sonalit
+ * is answering — a captive portal or a cell that associates but routes nothing
+ * both report online while every clamp fails, which is the case this queue
+ * exists for. The manager decides from real request outcomes instead.
+ */
 export function isOnline(): boolean {
-  return typeof navigator === 'undefined' || navigator.onLine !== false;
+  return isReachable();
 }
 
 export function getSnapshot(): QueueSnapshot {
-  return { pending: state.pending, failed: state.failed, online: isOnline(), syncing };
+  return { pending: state.pending, failed: state.failed, issued: state.issued,
+           online: isOnline(), syncing };
 }
 
 function emit(): void {
@@ -127,6 +155,18 @@ export function enqueue(
   // than because the device is offline, the next flush may well succeed.
   void flush();
   return entry;
+}
+
+/**
+ * Mark a synced clamp's QR as shown.
+ *
+ * Only call this once a worker has actually presented it to a driver — the
+ * code cannot be recovered afterwards.
+ */
+export function dismissIssuedQr(id: string): void {
+  state.issued = state.issued.filter(q => q.id !== id);
+  persist();
+  emit();
 }
 
 export function dismissFailed(id: string): void {
@@ -184,9 +224,16 @@ export async function flush(): Promise<void> {
       if (!entry) break;
 
       try {
-        await cdsApi.post(urlFor(entry), entry.payload, {
+        const { data } = await cdsApi.post(urlFor(entry), entry.payload, {
           headers: { 'x-idempotency-key': entry.id },
         });
+        // Hold the driver's code: it is issued once and cannot be re-fetched.
+        const t = (data as { data?: { tracking?: { qr_id: string; url: string } | null } })
+          ?.data?.tracking;
+        if (entry.kind === 'clamp' && t?.url && !state.issued.some(q => q.id === entry.id)) {
+          state.issued = [...state.issued,
+            { id: entry.id, label: entry.label, qr_id: t.qr_id, url: t.url, issuedAt: Date.now() }];
+        }
         state.pending = state.pending.slice(1);
         persist();
         emit();
@@ -225,12 +272,20 @@ export function startOfflineQueue(): void {
   if (started || typeof window === 'undefined') return;
   started = true;
 
-  window.addEventListener('online', () => { emit(); void flush(); });
-  window.addEventListener('offline', () => { emit(); });
+  // The manager owns the OS events, the probe schedule and the hysteresis; this
+  // queue just reacts to its verdict. Previously both this file and half a
+  // dozen others each interpreted navigator.onLine their own way, and they did
+  // not agree with each other.
+  startConnectivity();
+  subscribeConnectivity(() => {
+    emit();
+    if (isReachable()) void flush();
+  });
 
-  // navigator.onLine lies often enough (captive portals, Android reporting a
-  // connected-but-useless network) that an event-only design strands the
-  // queue. A slow poll is the backstop; it no-ops when there's nothing to do.
+  // A slow poll remains as the backstop: a state that never changes emits no
+  // event, and a queue that only drains on transitions can sit full on a link
+  // that has been quietly fine the whole time. It no-ops when there is nothing
+  // to send.
   window.setInterval(() => { void flush(); }, 30_000);
 
   void flush();

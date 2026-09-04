@@ -52,7 +52,7 @@ function safeRedirectTarget(param: unknown): string | null {
 // now rejects those roles at POST /auth/login outright (authController.js), so
 // this screen can never end up holding one.
 function resolveRedirect(explicit: string | null): string {
-  return explicit ?? '/';
+  return explicit ?? '/home';
 }
 
 export default function LoginPage(): React.ReactElement | null {

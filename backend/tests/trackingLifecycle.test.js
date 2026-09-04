@@ -182,3 +182,22 @@ describe('onConvoyEnded', () => {
     expect(state.sessions[1].status).toBe('active');
   });
 });
+
+describe('ping batch cap', () => {
+  const { MAX_FIXES_PER_PING } = require('../src/routes/trackingDriver');
+
+  test('the server cap matches the cap the driver page chunks to', () => {
+    // DriverTrack.tsx chunks its offline backlog to BATCH_MAX. If these two
+    // drift apart the client either wastes round-trips or gets stuck on 413.
+    const page = require('fs').readFileSync(
+      require('path').join(__dirname, '../../apps/web/src/pages/DriverTrack.tsx'), 'utf8');
+    const declared = /const BATCH_MAX = (\d+);/.exec(page);
+    expect(declared).not.toBeNull();
+    expect(Number(declared[1])).toBe(MAX_FIXES_PER_PING);
+  });
+
+  test('the cap is a real number, not undefined', () => {
+    expect(Number.isInteger(MAX_FIXES_PER_PING)).toBe(true);
+    expect(MAX_FIXES_PER_PING).toBeGreaterThan(0);
+  });
+});

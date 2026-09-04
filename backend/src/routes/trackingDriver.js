@@ -29,6 +29,15 @@ const { asyncHandler } = require('../middleware/error');
 const logger = require('../utils/logger');
 const T = require('../utils/trackingEngine');
 
+/**
+ * Most points one ping may carry.
+ *
+ * The driver page chunks its offline backlog to this exact value
+ * (BATCH_MAX in apps/web/src/pages/DriverTrack.tsx). Keep the two in step:
+ * a client that posts more now gets 413 rather than silently losing the tail.
+ */
+const MAX_FIXES_PER_PING = 200;
+
 /** Scans are unauthenticated by nature, so throttle enumeration hard. */
 const scanLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
@@ -63,7 +72,13 @@ async function resolveQr(token) {
 }
 
 async function resolveSession(req) {
-  const token = req.headers['x-tracking-session'];
+  // Header first. The body fallback exists only for navigator.sendBeacon, which
+  // cannot set headers — it is how a driver's phone gets its last buffered
+  // points out while the browser is freezing the page. The credential is read
+  // from the body rather than a query string deliberately: query strings reach
+  // access logs and proxy history, and a session token must never land there.
+  const token = req.headers['x-tracking-session']
+    || (req.body && typeof req.body.session === 'string' ? req.body.session : null);
   if (!token || typeof token !== 'string') return null;
   const result = await query(
     `SELECT * FROM tracking_sessions WHERE session_token_hash = $1 AND deleted_at IS NULL`,
@@ -283,6 +298,21 @@ router.post('/session/ping', pingLimiter, asyncHandler(async (req, res) => {
   const fixes = Array.isArray(body.locations) ? body.locations : (body.location ? [body.location] : []);
   if (!fixes.length) return res.status(400).json({ error: 'no_locations' });
 
+  // Refuse an oversized batch rather than trimming it.
+  //
+  // This used to `slice(0, 200)` and answer 200 OK, so a client posting a
+  // deeper backlog lost the overflow silently — at the exact moment it was
+  // recovering from a dead zone. Telling the caller costs one retry; the old
+  // behaviour cost the points and reported success. Matches how the sync
+  // subsystem handles gps.batch (backend/src/sync/handlers.js).
+  if (fixes.length > MAX_FIXES_PER_PING) {
+    return res.status(413).json({
+      error: 'batch_too_large',
+      max: MAX_FIXES_PER_PING,
+      message: `A ping may carry at most ${MAX_FIXES_PER_PING} points.`,
+    });
+  }
+
   const previous = await db(
     `SELECT lat, lng, device_time FROM tracking_locations
       WHERE session_id = $1 AND quality <> 'rejected' ORDER BY device_time DESC LIMIT 1`,
@@ -293,7 +323,7 @@ router.post('/session/ping', pingLimiter, asyncHandler(async (req, res) => {
   const now = Date.now();
   let accepted = 0, anomalies = 0, buffered = 0, canonical = null;
 
-  for (const raw of fixes.slice(0, 200)) {
+  for (const raw of fixes) {
     const fix = {
       lat: Number(raw.lat), lng: Number(raw.lng),
       accuracy_m: raw.accuracy_m != null ? Number(raw.accuracy_m) : null,
@@ -460,3 +490,4 @@ router.get('/session/state', asyncHandler(async (req, res) => {
 }));
 
 module.exports = router;
+module.exports.MAX_FIXES_PER_PING = MAX_FIXES_PER_PING;

@@ -216,7 +216,20 @@ async function listRows(req, res, table, { joins = '', selectCols = '*', searchC
   const { limit, offset } = paginate(req.query);
   const filters = softDelete ? ['t.deleted_at IS NULL', ...extraFilters] : [...extraFilters];
   const params = [];
-  if (req.query.status) { params.push(req.query.status); filters.push(`t.status=$${params.length}`); }
+  // A comma-separated status means "any of these". Operational views rarely
+  // care about one status: "active trip" spans locked → dispatched → at_port,
+  // and forcing a single value made a clamped container invisible everywhere
+  // that asked for 'dispatched'. A bare value still matches exactly as before.
+  if (req.query.status) {
+    const wanted = String(req.query.status).split(',').map(v => v.trim()).filter(Boolean);
+    if (wanted.length > 1) {
+      params.push(wanted);
+      filters.push(`t.status = ANY($${params.length}::text[])`);
+    } else if (wanted.length === 1) {
+      params.push(wanted[0]);
+      filters.push(`t.status=$${params.length}`);
+    }
+  }
   if (req.query.search && searchCols.length) {
     params.push(`%${req.query.search}%`);
     filters.push(`(${searchCols.map(c => `${c} ILIKE $${params.length}`).join(' OR ')})`);
@@ -335,11 +348,30 @@ router.get('/trips/live', asyncHandler(async (req, res) => {
            ve.registration AS vehicle_reg,
            l.serial AS lock_serial,
            b.booking_number,
-           gps.lat, gps.lng, gps.speed, gps.heading, gps.device_time AS last_seen
+           ts.id AS session_id, ts.status AS session_status, ts.current_source,
+           ts.current_confidence, ts.first_location_at, ts.last_location_at,
+           ts.current_lat, ts.current_lng, ts.current_speed_kph, ts.current_heading,
+           gps.lat AS gps_lat, gps.lng AS gps_lng, gps.speed AS gps_speed,
+           gps.heading AS gps_heading, gps.device_time AS gps_time
       FROM cds_trips t
       ${TRIP_JOINS}
       LEFT JOIN cds_electronic_locks l ON l.id = t.lock_id
       LEFT JOIN cds_bookings b ON b.id = t.booking_id
+      -- The driver's tracking session carries the reconciled position — the
+      -- winner across Guardian GPS, the e-lock and telematics — so it is the
+      -- position to trust when one exists.
+      LEFT JOIN LATERAL (
+        SELECT id, status, current_source, current_confidence, first_location_at,
+               last_location_at, current_lat, current_lng, current_speed_kph, current_heading
+          FROM tracking_sessions
+         WHERE trip_id = t.id
+           AND deleted_at IS NULL
+           AND status = ANY($2)
+         ORDER BY COALESCE(last_location_at, started_at) DESC
+         LIMIT 1
+      ) ts ON true
+      -- Fallback for a vehicle that reports telematics but has no driver
+      -- session: better a stale known position than a blank map.
       LEFT JOIN LATERAL (
         SELECT lat, lng, speed, heading, device_time
           FROM cds_gps_history
@@ -349,14 +381,57 @@ router.get('/trips/live', asyncHandler(async (req, res) => {
       ) gps ON true
      WHERE t.deleted_at IS NULL
        AND t.status = ANY($1)
-     ORDER BY (gps.device_time IS NULL), gps.device_time DESC NULLS LAST, t.created_at DESC
+     ORDER BY (COALESCE(ts.last_location_at, gps.device_time) IS NULL),
+              COALESCE(ts.last_location_at, gps.device_time) DESC NULLS LAST,
+              t.created_at DESC
      LIMIT 300
-  `, [OPEN_TRIP_STATUSES]);
+  `, [OPEN_TRIP_STATUSES, T.LIVE_STATUSES]);
 
-  res.json({
-    data: result.rows.map(r => ({ ...r, phase: TRIP_PHASE[r.status] || 'staged' })),
-  });
+  const now = Date.now();
+  res.json({ data: result.rows.map(r => shapeLiveTrip(r, now)) });
 }));
+
+// One position per trip, from whichever source actually knows where it is, and
+// never presented as live when it is not: health comes from the tracking
+// engine's own thresholds rather than a second opinion invented here.
+function shapeLiveTrip(row, now) {
+  const health = row.session_id
+    ? T.computeHealth({
+        status: row.session_status,
+        first_location_at: row.first_location_at,
+        last_location_at: row.last_location_at,
+      }, now)
+    : null;
+
+  const fromSession = row.current_lat != null && row.current_lng != null;
+  // Normalised to null, never left undefined: undefined vanishes in JSON, and a
+  // client reading an absent key cannot tell "no fix" from "field forgotten".
+  const lat = (fromSession ? row.current_lat : row.gps_lat) ?? null;
+  const lng = (fromSession ? row.current_lng : row.gps_lng) ?? null;
+  const lastSeen = (fromSession ? row.last_location_at : row.gps_time) ?? null;
+
+  return {
+    id: row.id, trip_number: row.trip_number, status: row.status,
+    phase: TRIP_PHASE[row.status] || 'staged',
+    origin: row.origin, destination: row.destination, eta: row.eta,
+    departed_at: row.departed_at, progress: row.progress, risk: row.risk,
+    vehicle_id: row.vehicle_id, booking_id: row.booking_id,
+    booking_number: row.booking_number, customer_name: row.customer_name,
+    driver_name: row.driver_name, driver_phone: row.driver_phone,
+    vehicle_reg: row.vehicle_reg, lock_serial: row.lock_serial,
+    lat, lng, last_seen: lastSeen,
+    speed: (fromSession ? row.current_speed_kph : row.gps_speed) ?? null,
+    heading: (fromSession ? row.current_heading : row.gps_heading) ?? null,
+    // Where the position came from, so the control room can tell a driver's
+    // phone from a truck's telematics box at a glance.
+    position_source: fromSession ? (row.current_source || 'guardian_gps') : (row.gps_lat != null ? 'device_telematics' : null),
+    position_is_live: health === 'live',
+    tracking_health: health,
+    tracking_session_id: row.session_id ?? null,
+    confidence: fromSession ? row.current_confidence : null,
+    has_session: !!row.session_id,
+  };
+}
 
 router.get('/trips/:id', asyncHandler(async (req, res) => {
   await getRow(req, res, 'cds_trips', { joins: TRIP_JOINS, selectCols: TRIP_COLS });

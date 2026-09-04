@@ -94,6 +94,18 @@ jobs:
         env:
           DATABASE_URL: postgresql://sonalit:sonalit@localhost:5432/sonalit_test
 
+      - name: Telemetry evidence invariants (SQL)
+        # These properties are enforced by the DATABASE, not by application
+        # code: a unique index either rejects a replay or it does not, and only
+        # the engine can say which. Runs straight after the migrations so a
+        # schema change that quietly weakens an idempotency or isolation
+        # guarantee fails the build instead of being discovered in the field.
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -f backend/tests/sql/telemetry_evidence_invariants.sql
+        env:
+          DATABASE_URL: postgresql://sonalit:sonalit@localhost:5432/sonalit_test
+
       - name: Backend integration tests
         run: pnpm --filter fleetops-backend exec jest --testPathPattern=integration --no-coverage --runInBand --forceExit
         env:

@@ -4,6 +4,7 @@ import axios from 'axios';
 import { useAuthStore, getAccessToken, setAccessToken } from '../stores/auth.js';
 
 import { getCsrfToken } from './csrf.js';
+import { reportRequestOutcome } from './offline/connectivity.js';
 
 import type { AuthUser } from '../stores/auth.js';
 
@@ -114,4 +115,43 @@ export function attachRefreshInterceptor(
   );
 }
 
+/**
+ * Feed every real request into the connectivity manager.
+ *
+ * This is the highest-quality connectivity signal available — it measures the
+ * exact thing we care about, against the exact host we care about, on traffic
+ * the app was going to send anyway. A dedicated heartbeat can only ever
+ * approximate it, and costs bandwidth on links that have none to spare, so the
+ * probe in offline/connectivity.ts exists purely to cover idle periods.
+ *
+ * A 4xx counts as reachable: the server answered. Only a missing response or a
+ * 5xx says anything about the link itself, and conflating "the API rejected
+ * this" with "the network is down" would drop a perfectly healthy device into
+ * offline mode over a validation error.
+ */
+export function attachConnectivityReporter(instance: typeof api): void {
+  instance.interceptors.request.use((config) => {
+    (config as typeof config & { _startedAt?: number })._startedAt = Date.now();
+    return config;
+  });
+
+  instance.interceptors.response.use(
+    (res) => {
+      const started = (res.config as typeof res.config & { _startedAt?: number })._startedAt;
+      reportRequestOutcome(true, started ? Date.now() - started : undefined);
+      return res;
+    },
+    (err) => {
+      const status = err?.response?.status as number | undefined;
+      const started = (err?.config as { _startedAt?: number } | undefined)?._startedAt;
+      reportRequestOutcome(
+        status != null && status < 500,
+        status != null && started ? Date.now() - started : undefined,
+      );
+      throw err;
+    },
+  );
+}
+
 attachRefreshInterceptor(api);
+attachConnectivityReporter(api);

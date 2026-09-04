@@ -3934,6 +3934,86 @@
         }
       }
     },
+    "/api/v1/sync/ping": {
+      "get": {
+        "operationId": "get_api_v1_sync_ping",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sync/device": {
+      "post": {
+        "operationId": "post_api_v1_sync_device",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sync/pull": {
+      "get": {
+        "operationId": "get_api_v1_sync_pull",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sync/push": {
+      "post": {
+        "operationId": "post_api_v1_sync_push",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sync/status": {
+      "get": {
+        "operationId": "get_api_v1_sync_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sync/conflicts": {
+      "get": {
+        "operationId": "get_api_v1_sync_conflicts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sync/conflicts/{id}/resolve": {
+      "post": {
+        "operationId": "post_api_v1_sync_conflicts_id_resolve",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sync/devices": {
+      "get": {
+        "operationId": "get_api_v1_sync_devices",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/track/{token}": {
       "get": {
         "operationId": "get_api_v1_track_token",

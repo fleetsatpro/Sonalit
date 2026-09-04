@@ -300,7 +300,7 @@ export default function Orbit() {
       <div className={`m-console ${booted ? 'live' : ''}`}>
         {/* Top bar */}
         <header className="m-bar m-bar--top">
-          <Link to="/" style={{ textDecoration: 'none' }}><span className="m-bar-brand">SONALIT</span></Link>
+          <Link to="/home" style={{ textDecoration: 'none' }}><span className="m-bar-brand">SONALIT</span></Link>
           <span className="m-bar-sep">|</span>
           <span><span className="pip pip--on" />System Online</span>
           <span className="m-bar-sep m-hide-mobile">|</span>

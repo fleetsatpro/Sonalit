@@ -86,7 +86,14 @@ describe('which trips count as open', () => {
 
   it('sorts trips with a fix ahead of trips without one', async () => {
     const { sql } = await callLive();
-    expect(sql).toContain('(gps.device_time IS NULL)');
+    expect(sql).toContain('(COALESCE(ts.last_location_at, gps.device_time) IS NULL)');
+  });
+
+  it('only considers tracking sessions that are still running', async () => {
+    const { sql, params } = await callLive();
+    expect(sql).toContain('tracking_sessions');
+    expect(params[1]).toEqual(expect.arrayContaining(['active', 'awaiting_location', 'signal_lost']));
+    expect(params[1]).not.toContain('completed');
   });
 });
 
@@ -116,9 +123,73 @@ describe('phase', () => {
     expect(await phaseOf('some_status_added_later')).toBe('staged');
   });
 
-  it('passes the trip rows through untouched apart from the phase', async () => {
-    const row = { id: 't1', status: 'dispatched', trip_number: 'CDS-1001', lat: '-4.04', lng: '39.66' };
-    const { body } = await callLive([row]);
-    expect(body.data[0]).toMatchObject(row);
+  it('carries the trip identity through', async () => {
+    const { body } = await callLive([{
+      id: 't1', status: 'dispatched', trip_number: 'CDS-1001',
+      vehicle_reg: 'KDA 101X', customer_name: 'Alpha Coffee Ltd', destination: 'Nairobi ICD',
+    }]);
+    expect(body.data[0]).toMatchObject({
+      id: 't1', trip_number: 'CDS-1001', vehicle_reg: 'KDA 101X',
+      customer_name: 'Alpha Coffee Ltd', destination: 'Nairobi ICD',
+    });
+  });
+});
+
+describe('which position is shown', () => {
+  const fresh = new Date(Date.now() - 20_000).toISOString();
+  const old = new Date(Date.now() - 6 * 3600_000).toISOString();
+
+  it('prefers the tracking session, which is the reconciled position', async () => {
+    const { body } = await callLive([{
+      id: 't1', status: 'dispatched',
+      session_id: 's1', session_status: 'active', current_source: 'guardian_gps',
+      first_location_at: fresh, last_location_at: fresh,
+      current_lat: -1.5, current_lng: 37.2, current_speed_kph: 61,
+      gps_lat: -4.0, gps_lng: 39.6, gps_time: old,
+    }]);
+    expect(body.data[0]).toMatchObject({
+      lat: -1.5, lng: 37.2, position_source: 'guardian_gps', position_is_live: true,
+    });
+  });
+
+  it('falls back to telematics for a vehicle with no driver session', async () => {
+    const { body } = await callLive([{
+      id: 't1', status: 'dispatched',
+      gps_lat: -4.0, gps_lng: 39.6, gps_speed: 48, gps_time: old,
+    }]);
+    expect(body.data[0]).toMatchObject({
+      lat: -4.0, lng: 39.6, position_source: 'device_telematics',
+      position_is_live: false, has_session: false,
+    });
+  });
+
+  it('does not call a stale session fix live', async () => {
+    const { body } = await callLive([{
+      id: 't1', status: 'dispatched',
+      session_id: 's1', session_status: 'active', current_source: 'guardian_gps',
+      first_location_at: old, last_location_at: old,
+      current_lat: -1.5, current_lng: 37.2,
+    }]);
+    expect(body.data[0].position_is_live).toBe(false);
+    expect(body.data[0].lat).toBe(-1.5);
+    expect(['delayed', 'signal_lost', 'offline']).toContain(body.data[0].tracking_health);
+  });
+
+  it('reports no position at all rather than inventing one', async () => {
+    const { body } = await callLive([{ id: 't1', status: 'locked' }]);
+    expect(body.data[0]).toMatchObject({
+      lat: null, lng: null, position_source: null, position_is_live: false,
+    });
+  });
+
+  it('reports a session that has not yet produced a fix as not live', async () => {
+    const { body } = await callLive([{
+      id: 't1', status: 'dispatched',
+      session_id: 's1', session_status: 'awaiting_location',
+      first_location_at: null, last_location_at: null,
+    }]);
+    expect(body.data[0]).toMatchObject({
+      position_is_live: false, tracking_health: 'not_started', has_session: true,
+    });
   });
 });
