@@ -31,7 +31,13 @@ const baseOptions = {
 beforeEach(() => {
   mockEmbed.mockReset();
   mockEmbed.mockResolvedValue({
-    result: { vectors: [[0.1, 0.2, 0.3]], model_id: 'bge-m3', model_version: '1' },
+    result: {
+      vectors: [[0.1, 0.2, 0.3]],
+      model_id: 'row-uuid',
+      model_name: 'bge-m3',
+      provider_model: 'BAAI/bge-m3',
+      model_version: '1',
+    },
     attempts: [],
   });
 });
@@ -76,7 +82,9 @@ describe('retrieve', () => {
     await retrieve(baseOptions, client);
 
     expect(calls[0]?.sql).toContain('c.embedding_model = $2');
-    expect(calls[0]?.params[1]).toBe('bge-m3');
+    // The embedding SPACE, not the registry row UUID: re-registering the
+    // same model must not orphan every existing chunk.
+    expect(calls[0]?.params[1]).toBe('BAAI/bge-m3');
   });
 
   // §19 — current state outranks history unless history is asked for.

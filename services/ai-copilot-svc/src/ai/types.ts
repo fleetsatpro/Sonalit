@@ -170,8 +170,16 @@ export interface InferenceResponse {
   text: string;
   tool_calls: ToolCall[];
   stop_reason: StopReason;
-  /** Which model actually served this. Callers surface it for auditability. */
+  /** Registry row UUID. Used for the audit log's foreign key. */
   model_id: string;
+  /** Human-readable registry name, e.g. 'qwen3-32b'. For logs and errors. */
+  model_name: string;
+  /**
+   * Provider-side identifier, e.g. 'BAAI/bge-m3'. This is the STABLE
+   * identity of the model itself, independent of which registry row served
+   * it — see EmbeddingResponse for why that distinction matters.
+   */
+  provider_model: string;
   model_version: string;
   input_tokens: number;
   output_tokens: number;
@@ -186,7 +194,20 @@ export interface EmbeddingRequest {
 
 export interface EmbeddingResponse {
   vectors: number[][];
+  /** Registry row UUID. */
   model_id: string;
+  model_name: string;
+  /**
+   * Provider-side identifier — the embedding SPACE these vectors live in.
+   *
+   * Stored on every chunk and filtered on at retrieval, because vectors
+   * from different models are not comparable. It must be the provider
+   * model rather than the registry UUID: re-registering the same model
+   * (a version bump, a re-seed, a rebuilt database) mints a new UUID, and
+   * keying on that would make every existing chunk unreachable and the
+   * index would silently go dark.
+   */
+  provider_model: string;
   model_version: string;
   input_tokens: number;
   latency_ms: number;

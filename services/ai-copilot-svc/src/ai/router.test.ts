@@ -57,6 +57,8 @@ function response(model_id: string): InferenceResponse {
     tool_calls: [],
     stop_reason: 'end_turn',
     model_id,
+    model_name: 'test-model',
+    provider_model: 'test',
     model_version: '1',
     input_tokens: 10,
     output_tokens: 5,

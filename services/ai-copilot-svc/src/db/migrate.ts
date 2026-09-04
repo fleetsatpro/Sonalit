@@ -372,6 +372,62 @@ async function migrate(): Promise<void> {
       `);
     }
 
+    // ── RLS role provisioning ──────────────────────────────────────────────
+    // withOrgContext() does `SET LOCAL ROLE sonalit_app` so that RLS applies
+    // even when the service connects as the table owner (owners bypass RLS).
+    // Two things must therefore be true, and neither can be assumed:
+    //
+    //  1. The role EXISTS. Without it the SET LOCAL ROLE raises
+    //     `role "sonalit_app" does not exist` and every org-scoped operation
+    //     in the service fails — this is created by the legacy backend's
+    //     migration 20260527_017_app_role.sql, which may not have run against
+    //     the database this service points at.
+    //  2. The role can READ THESE TABLES. Migration 017's grants and
+    //     ALTER DEFAULT PRIVILEGES ran before the ai_* tables existed and
+    //     apply only to objects created by that migration's role, so without
+    //     the explicit grants below the role switch succeeds and every query
+    //     then fails with `permission denied for table ai_documents`.
+    //
+    // Both are idempotent, so this is safe to re-run.
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sonalit_app') THEN
+          CREATE ROLE sonalit_app NOLOGIN NOSUPERUSER INHERIT NOBYPASSRLS;
+        END IF;
+      END
+      $$;
+    `);
+
+    for (const table of [
+      'ai_models',
+      'ai_audit_log',
+      'ai_documents',
+      'ai_document_chunks',
+      'ai_signals',
+      'ai_correlations',
+      'ai_correlation_signals',
+      'ai_decisions',
+    ]) {
+      await client.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON ${table} TO sonalit_app;`);
+    }
+    await client.query(`GRANT USAGE ON SCHEMA public TO sonalit_app;`);
+
+    // The connecting user must be a member of the role to SET ROLE to it.
+    // CURRENT_USER rather than a hardcoded name, since the service account
+    // differs between local, Railway and Kubernetes deployments.
+    await client.query(`
+      DO $$
+      BEGIN
+        EXECUTE format('GRANT sonalit_app TO %I', CURRENT_USER);
+      EXCEPTION WHEN insufficient_privilege OR duplicate_object THEN
+        -- Already a member, or not permitted to self-grant. Both are fine:
+        -- a managed deployment may grant membership out of band.
+        NULL;
+      END
+      $$;
+    `);
+
     process.stdout.write('ai-copilot-svc migrations complete\n');
   } finally {
     client.release();

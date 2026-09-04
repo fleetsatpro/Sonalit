@@ -48,7 +48,9 @@ beforeEach(() => {
     Promise.resolve({
       result: {
         vectors: req.input.map(() => vector()),
-        model_id: 'bge-m3',
+        model_id: 'row-uuid',
+        model_name: 'bge-m3',
+        provider_model: 'BAAI/bge-m3',
         model_version: '1',
       },
       attempts: [],
@@ -64,7 +66,7 @@ describe('ingestDocument', () => {
 
     expect(res.deduplicated).toBe(false);
     expect(res.chunks).toBeGreaterThan(0);
-    expect(res.embedding_model).toBe('bge-m3');
+    expect(res.embedding_model).toBe('BAAI/bge-m3');
     expect(calls.some((c) => /INSERT INTO ai_document_chunks/.test(c.sql))).toBe(true);
   });
 
@@ -99,7 +101,13 @@ describe('ingestDocument', () => {
   // Catching this here names the real problem; pgvector's own error does not.
   it('rejects a model whose dimensions do not match the column', async () => {
     mockEmbed.mockResolvedValue({
-      result: { vectors: [vector(768)], model_id: 'wrong-dim', model_version: '1' },
+      result: {
+        vectors: [vector(768)],
+        model_id: 'row-uuid',
+        model_name: 'wrong-dim',
+        provider_model: 'wrong/dim',
+        model_version: '1',
+      },
       attempts: [],
     });
     const { client, calls } = fakeClient();

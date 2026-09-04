@@ -252,8 +252,70 @@ Not yet built: parsing and OCR (§40) upstream of ingestion, and reranking
   layer explains a finding; it never produces one. `interpretation` is
   nullable for exactly that reason.
 
-Not yet built: the NATS consumer that feeds this, anomaly detection
-(§29), the risk engine, escalation/notification, and AI interpretation.
+**Live event ingestion.** `WatchtowerConsumer` subscribes to
+`events.panic.>`, `events.alert.>` and `events.geofence.breach.>` on
+JetStream. Signals are buffered per tenant and correlated on a timer
+rather than per message — correlation needs a window, so the first event
+of a situation must wait for corroboration instead of firing alone. A
+message is acked only once its signal is durably stored, so a crash
+mid-write redelivers rather than drops; an unmappable event is acked and
+logged, since redelivering it forever would block the consumer.
+
+Disabled by default (`WATCHTOWER_ENABLED=true` to enable) and started
+after the HTTP listener, never allowed to abort startup — verified: with
+NATS refused, the service logs the failure and continues serving
+Commander, RAG and the tool registry.
+
+Not yet built: anomaly detection (§29), the risk engine,
+escalation/notification, and AI interpretation.
+
+### Verification against real infrastructure
+
+Everything above was previously typechecked and unit-tested but had never
+executed against a database. It has now been run against a real
+PostgreSQL 16 with pgvector: migrations apply, the RLS policies isolate
+tenants, and the retrieval SQL — a CTE with reciprocal-rank fusion over
+two candidate sets — parses and returns the right rows.
+
+`services/ai-copilot-svc/tests/integration/` makes that repeatable:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d postgres
+TEST_DATABASE_URL=postgres://sonalit:dev-password@localhost:5432/sonalit \
+  pnpm --filter @sonalit/ai-copilot-svc test:integration
+```
+
+The suite skips (rather than fails) without `TEST_DATABASE_URL`. It uses
+a URL rather than testcontainers, unlike sibling services, because it must
+also run in CI images and sandboxes that have Postgres but no Docker.
+
+Three real defects surfaced only once the SQL actually ran — see §3c.
+
+## 3c. Defects found by running the code
+
+**`sonalit_app` did not exist, and had no grants.** `withOrgContext` does
+`SET LOCAL ROLE sonalit_app`; the role is created by the legacy backend's
+migration `20260527_017_app_role.sql`, which may not have run against the
+database this service points at. Without it, every org-scoped operation
+fails with `role "sonalit_app" does not exist`. Worse, even where the role
+existed, migration 017's grants ran before the `ai_*` tables did — so the
+role switch would succeed and every query then fail with `permission
+denied`. *Fixed:* the migration now provisions the role idempotently and
+grants on its own tables.
+
+**Chunks were keyed by registry-row UUID, not embedding space.**
+`ai_document_chunks.embedding_model` stored the `ai_models.model_id`
+UUID. Re-registering the same model — a version bump, a re-seed, a
+rebuilt database — mints a new UUID, and retrieval filtering on it would
+have matched nothing: the index would go **silently dark**, returning
+zero results with no error. *Fixed:* adapters now return `provider_model`
+(`BAAI/bge-m3`), which is the actual embedding space, and chunks key on
+that. Regression-tested by re-registering the model and re-querying.
+
+**Dev mode could not start.** `index.ts` configures a `pino-pretty`
+transport under `NODE_ENV=development`, but `pino-pretty` was never a
+dependency, so the service died at boot with `unable to determine
+transport target`. Pre-existing. *Fixed:* declared as a devDependency.
 
 ## 6. Not yet built
 

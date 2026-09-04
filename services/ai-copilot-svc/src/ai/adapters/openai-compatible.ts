@@ -192,6 +192,8 @@ export const openAICompatibleAdapter: InferenceAdapter = {
       tool_calls: parseToolCalls(choice.message?.tool_calls),
       stop_reason: toStopReason(choice.finish_reason),
       model_id: model.model_id,
+      model_name: model.name,
+      provider_model: model.provider_model,
       model_version: model.version,
       input_tokens: res.usage?.prompt_tokens ?? 0,
       output_tokens: res.usage?.completion_tokens ?? 0,
@@ -223,6 +225,8 @@ export const openAICompatibleAdapter: InferenceAdapter = {
     return {
       vectors: ordered.map((d) => d.embedding),
       model_id: model.model_id,
+      model_name: model.name,
+      provider_model: model.provider_model,
       model_version: model.version,
       input_tokens: res.usage?.prompt_tokens ?? 0,
       latency_ms: Date.now() - startedAt,

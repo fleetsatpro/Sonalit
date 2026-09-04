@@ -1,0 +1,87 @@
+// Integration test harness.
+//
+// The database comes from TEST_DATABASE_URL, pointing at a Postgres with
+// the pgvector extension available:
+//
+//   docker compose -f docker-compose.dev.yml up -d postgres
+//   TEST_DATABASE_URL=postgres://sonalit:dev-password@localhost:5432/sonalit \
+//     pnpm test:integration
+//
+// Other v4 services use testcontainers, which is not used here on purpose:
+// it needs a Docker daemon, and these tests must also run in CI images and
+// sandboxes that have Postgres but no Docker. The suite runs the real
+// migrations against whatever URL it is given, so it verifies the same
+// things either way.
+//
+// With no TEST_DATABASE_URL the suite SKIPS rather than fails — a developer
+// without a database should not see a red build for infrastructure they
+// were never asked to run, and the gap is visible in the skip output.
+
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+
+export const EMBEDDING_DIM = 1024;
+
+/**
+ * A deterministic stand-in for a real embedding server, speaking the
+ * OpenAI-compatible protocol.
+ *
+ * Real weights are not needed to test the pipeline, and using them would
+ * make assertions depend on a model download. What IS exercised for real:
+ * the openai_compatible adapter, its HTTP handling, pgvector storage, the
+ * vector operators and every SQL filter.
+ */
+export async function startFakeEmbeddingServer(): Promise<{
+  url: string;
+  close: () => Promise<void>;
+}> {
+  const server: Server = createServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => (body += String(chunk)));
+    req.on('end', () => {
+      const parsed = JSON.parse(body || '{}') as { input?: string | string[] };
+      const items = Array.isArray(parsed.input) ? parsed.input : [parsed.input ?? ''];
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          data: items.map((text, index) => ({ index, embedding: embed(String(text)) })),
+          usage: { prompt_tokens: items.length * 10 },
+        }),
+      );
+    });
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+
+  return {
+    url: `http://127.0.0.1:${String(port)}/v1`,
+    close: () =>
+      new Promise<void>((resolve) =>
+        server.close(() => {
+          resolve();
+        }),
+      ),
+  };
+}
+
+/**
+ * Token-overlap embedding: texts sharing words land near each other, so
+ * similarity ordering is meaningful rather than arbitrary.
+ */
+function embed(text: string): number[] {
+  const vector = new Array<number>(EMBEDDING_DIM).fill(0);
+  for (const token of text.toLowerCase().split(/\W+/).filter(Boolean)) {
+    let hash = 0;
+    for (const ch of token) hash = (hash * 31 + ch.charCodeAt(0)) % EMBEDDING_DIM;
+    vector[hash] = (vector[hash] ?? 0) + 1;
+  }
+  const norm = Math.sqrt(vector.reduce((sum, v) => sum + v * v, 0)) || 1;
+  return vector.map((v) => v / norm);
+}
+
+export const DATABASE_URL = process.env['TEST_DATABASE_URL'];
+export const hasDatabase = typeof DATABASE_URL === 'string' && DATABASE_URL.length > 0;
+
+export const ORG_A = '00000000-0000-4000-8000-0000000000aa';
+export const ORG_B = '00000000-0000-4000-8000-0000000000bb';

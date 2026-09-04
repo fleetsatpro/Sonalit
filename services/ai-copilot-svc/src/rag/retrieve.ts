@@ -109,7 +109,8 @@ export async function retrieve(
     const vector = result.vectors[0];
     if (!vector) throw new Error('Embedding model returned no vector for the query');
     queryVector = vector;
-    modelName = result.model_id;
+    // Must match how ingestion keyed the chunks: the embedding space.
+    modelName = result.provider_model;
   } catch (err) {
     // §62 — Commander must be able to say retrieval is unavailable rather
     // than answer from the model's own parametric memory.

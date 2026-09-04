@@ -135,6 +135,8 @@ export const anthropicAdapter: InferenceAdapter = {
       tool_calls: toolCalls,
       stop_reason: toStopReason(res.stop_reason),
       model_id: model.model_id,
+      model_name: model.name,
+      provider_model: model.provider_model,
       model_version: model.version,
       input_tokens: res.usage.input_tokens,
       output_tokens: res.usage.output_tokens,

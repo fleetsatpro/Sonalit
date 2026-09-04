@@ -26,6 +26,30 @@ services:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
 
+  # Local open-weight inference, so the AI plane is actually runnable in dev
+  # rather than inert (see docs/ai/ARCHITECTURE_AUDIT.md §3).
+  #
+  # Ollama speaks the OpenAI-compatible protocol the `openai_compatible`
+  # adapter targets, runs on CPU, and needs no GPU — which makes it the right
+  # dev stand-in for the vLLM deployment production would use. Same adapter,
+  # same registry row shape, so promoting from one to the other is a change
+  # of endpoint.
+  #
+  # Pull an embedding model before first use:
+  #   docker compose -f docker-compose.dev.yml exec ollama ollama pull bge-m3
+  #
+  # Then point the registry at it:
+  #   UPDATE ai_models SET endpoint = 'http://localhost:11434/v1',
+  #     status = 'production', approved_for_production = TRUE
+  #    WHERE name = 'bge-m3';
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    restart: unless-stopped
+
   redis:
     image: redis:7-alpine
     ports:
@@ -34,3 +58,4 @@ services:
 
 volumes:
   postgres_data:
+  ollama_models:

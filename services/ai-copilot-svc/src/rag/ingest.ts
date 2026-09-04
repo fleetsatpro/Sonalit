@@ -83,7 +83,8 @@ export async function ingestDocument(
       input: chunks.map((c) => c.content),
     });
     vectors = result.vectors;
-    modelName = result.model_id;
+    // The embedding SPACE, not the registry row — see EmbeddingResponse.
+    modelName = result.provider_model;
   } catch (err) {
     // Rule 3 / §49: with no embedding model, the document is simply not
     // indexed. It is never stored with a placeholder vector, which would
