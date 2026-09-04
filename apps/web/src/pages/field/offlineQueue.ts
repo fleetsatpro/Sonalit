@@ -48,9 +48,27 @@ export interface FailedAction extends QueuedAction {
   failedAt: number;
 }
 
+/**
+ * A tracking QR that arrived while the worker was not looking at the screen.
+ *
+ * A queued clamp is posted by the sync loop, and the server issues the driver's
+ * code in that response — once, and only once. Dropping it would leave the
+ * container clamped and permanently untracked, so it is held here until a
+ * worker has actually shown it to the driver.
+ */
+export interface IssuedQr {
+  /** The queue entry that produced it, so it can be dismissed idempotently. */
+  id: string;
+  label: string;
+  qr_id: string;
+  url: string;
+  issuedAt: number;
+}
+
 interface QueueState {
   pending: QueuedAction[];
   failed: FailedAction[];
+  issued: IssuedQr[];
 }
 
 type Listener = (state: QueueSnapshot) => void;
@@ -67,16 +85,17 @@ const listeners = new Set<Listener>();
 function load(): QueueState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { pending: [], failed: [] };
+    if (!raw) return { pending: [], failed: [], issued: [] };
     const parsed = JSON.parse(raw) as Partial<QueueState>;
     return {
       pending: Array.isArray(parsed.pending) ? parsed.pending : [],
       failed: Array.isArray(parsed.failed) ? parsed.failed : [],
+      issued: Array.isArray(parsed.issued) ? parsed.issued : [],
     };
   } catch {
     // A corrupt blob must not brick the app on boot — the worker can redo the
     // action, but they can't use a screen that throws on mount.
-    return { pending: [], failed: [] };
+    return { pending: [], failed: [], issued: [] };
   }
 }
 
@@ -101,7 +120,8 @@ export function isOnline(): boolean {
 }
 
 export function getSnapshot(): QueueSnapshot {
-  return { pending: state.pending, failed: state.failed, online: isOnline(), syncing };
+  return { pending: state.pending, failed: state.failed, issued: state.issued,
+           online: isOnline(), syncing };
 }
 
 function emit(): void {
@@ -135,6 +155,18 @@ export function enqueue(
   // than because the device is offline, the next flush may well succeed.
   void flush();
   return entry;
+}
+
+/**
+ * Mark a synced clamp's QR as shown.
+ *
+ * Only call this once a worker has actually presented it to a driver — the
+ * code cannot be recovered afterwards.
+ */
+export function dismissIssuedQr(id: string): void {
+  state.issued = state.issued.filter(q => q.id !== id);
+  persist();
+  emit();
 }
 
 export function dismissFailed(id: string): void {
@@ -192,9 +224,16 @@ export async function flush(): Promise<void> {
       if (!entry) break;
 
       try {
-        await cdsApi.post(urlFor(entry), entry.payload, {
+        const { data } = await cdsApi.post(urlFor(entry), entry.payload, {
           headers: { 'x-idempotency-key': entry.id },
         });
+        // Hold the driver's code: it is issued once and cannot be re-fetched.
+        const t = (data as { data?: { tracking?: { qr_id: string; url: string } | null } })
+          ?.data?.tracking;
+        if (entry.kind === 'clamp' && t?.url && !state.issued.some(q => q.id === entry.id)) {
+          state.issued = [...state.issued,
+            { id: entry.id, label: entry.label, qr_id: t.qr_id, url: t.url, issuedAt: Date.now() }];
+        }
         state.pending = state.pending.slice(1);
         persist();
         emit();

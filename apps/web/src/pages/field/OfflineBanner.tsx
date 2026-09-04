@@ -1,10 +1,11 @@
-import { AlertTriangle, CloudOff, Loader2, RefreshCw, X } from 'lucide-react';
+import { AlertTriangle, CloudOff, Loader2, QrCode, RefreshCw, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import {
-  clearFailed, dismissFailed, flush, getSnapshot, startOfflineQueue, subscribe,
+  clearFailed, dismissFailed, dismissIssuedQr, flush, getSnapshot, startOfflineQueue, subscribe,
   type QueueSnapshot,
 } from './offlineQueue.js';
+import { PendingQrSheet } from './TrackingQr.js';
 
 /**
  * Reactive view of the offline queue. Also starts the queue's flush triggers,
@@ -33,9 +34,11 @@ export function useOfflineQueue(): QueueSnapshot {
  * be wrong: offline, work waiting to sync, or something that needs redoing.
  */
 export function OfflineBanner() {
-  const { pending, failed, online, syncing } = useOfflineQueue();
+  const { pending, failed, issued, online, syncing } = useOfflineQueue();
 
-  if (online && !syncing && pending.length === 0 && failed.length === 0) return null;
+  if (online && !syncing && pending.length === 0 && failed.length === 0 && issued.length === 0) {
+    return null;
+  }
 
   return (
     <div className="px-4 pt-2 space-y-2">
@@ -72,6 +75,27 @@ export function OfflineBanner() {
               Retry
             </button>
           )}
+        </div>
+      )}
+
+      {issued.length > 0 && (
+        <div className="rounded-xl px-3 py-2.5 border border-cds-orange/40 bg-cds-orange/[.10]">
+          <div className="flex items-center gap-2.5">
+            <QrCode size={15} className="text-cds-orange flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="text-[12px] font-semibold text-cds-orange">
+                {issued.length} tracking QR{issued.length === 1 ? '' : 's'} not yet shown
+              </div>
+              <div className="text-[10px] font-mono text-text-2 mt-0.5">
+                Driver must scan before leaving
+              </div>
+            </div>
+          </div>
+          <div className="mt-2 space-y-1.5">
+            {issued.map(q => (
+              <PendingQrSheet key={q.id} qr={q} onShown={() => dismissIssuedQr(q.id)} />
+            ))}
+          </div>
         </div>
       )}
 
