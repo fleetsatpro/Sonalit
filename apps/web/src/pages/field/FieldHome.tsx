@@ -1,8 +1,8 @@
 import { Link } from '@tanstack/react-router';
-import { Anchor, ChevronRight, LogOut, Package, Siren, Truck } from 'lucide-react';
+import { Anchor, ArrowUpRight, ChevronRight, LogOut, Package, Siren, Truck } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
-import { usePortQueue, useYardQueue } from '../cds/hooks.js';
+import { useAwaitingDeparture, usePortQueue, useYardQueue } from '../cds/hooks.js';
 
 import { useFieldAuth } from './fieldAuth.js';
 import { OfflineBanner } from './OfflineBanner.js';
@@ -44,6 +44,7 @@ export default function FieldHome() {
 
   const yardQueue = useYardQueue(canYard);
   const portQueue = usePortQueue(canPort);
+  const departures = useAwaitingDeparture(canYard);
 
   const [activeDispatches, setActiveDispatches] = useState(0);
   useEffect(() => {
@@ -57,6 +58,15 @@ export default function FieldHome() {
     [yardQueue.data]
   );
   const inTransit = portQueue.data?.data?.length ?? 0;
+
+  // Only the trucks with no tracking are counted as urgent. A driver who
+  // scanned will depart on his own telemetry a few minutes past the gate, so
+  // badging those too would put a permanent red number on the tile for work
+  // nobody has to do.
+  const awaitingDeparture = useMemo(
+    () => (departures.data?.data ?? []).filter(t => t['scanned'] !== true).length,
+    [departures.data]
+  );
 
   // Deliberately no auto-redirect into the single tile. On a shared tablet the
   // first thing that matters is *who the device thinks you are* — every clamp
@@ -122,6 +132,20 @@ export default function FieldHome() {
             stat={pendingClamp > 0 ? `${pendingClamp} pending clamp` : 'All caught up'}
             statLoading={yardQueue.isLoading}
             urgent={pendingClamp > 0}
+          />
+        )}
+        {canYard && (
+          <RoleTile
+            to="/field/departures"
+            title="Departures"
+            subtitle="Mark trucks that have left the yard"
+            icon={<ArrowUpRight size={26} strokeWidth={1.8} />}
+            accent="#F0B429"
+            stat={awaitingDeparture > 0
+              ? `${awaitingDeparture} untracked truck${awaitingDeparture > 1 ? 's' : ''} to confirm`
+              : 'Nothing to confirm'}
+            statLoading={departures.isLoading}
+            urgent={awaitingDeparture > 0}
           />
         )}
         {canPort && (

@@ -47,7 +47,10 @@ export default function FieldShell() {
     worker && (
       (path.startsWith('/field/yard') && worker.role !== 'yard_agent') ||
       (path.startsWith('/field/port') && worker.role !== 'port_agent') ||
-      (path.startsWith('/field/response') && worker.role !== 'response_crew')
+      (path.startsWith('/field/response') && worker.role !== 'response_crew') ||
+      // Departures is yard work and the backend gate scopes it to yard_agent,
+      // so anyone else lands on the same dead surface the other three avoid.
+      (path.startsWith('/field/departures') && worker.role !== 'yard_agent')
     ),
   );
   useEffect(() => {

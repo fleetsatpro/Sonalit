@@ -387,6 +387,46 @@ export function usePortQueue(enabled = true) {
   });
 }
 
+/**
+ * Trips the yard clamped and has not yet seen leave.
+ *
+ * Polls on the same 15s cadence as the two queues: a truck that departs on its
+ * own telemetry drops off this list by itself, and the crew should see that
+ * happen rather than keep chasing a truck the system already knows about.
+ */
+export function useAwaitingDeparture(enabled = true) {
+  return useQuery<{ data: Record<string, unknown>[] }>({
+    queryKey: ['cds', 'field', 'departures'],
+    queryFn: () => withOfflineFallback('departures', async () =>
+      (await cdsApi.get<{ data: Record<string, unknown>[] }>('/field/departures')).data),
+    refetchInterval: 15_000,
+    enabled,
+  });
+}
+
+/**
+ * Mark a trip departed.
+ *
+ * Invalidates trips and the dashboard as well as the field queues: departure is
+ * the handover from yard to control room, so the desk's board is precisely the
+ * screen that must not keep showing the truck as staged.
+ */
+export function useMarkDeparted() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ tripId, note, at }: { tripId: string; note?: string | undefined; at?: string | undefined }) => {
+      const { data } = await cdsApi.post(`/trips/${tripId}/depart`, { note, at });
+      return data as { data: { already_departed: boolean } };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cds', 'field'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'trips'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
+      qc.invalidateQueries({ queryKey: ['cds', 'activity'] });
+    },
+  });
+}
+
 export function useClampBookingContainer() {
   const qc = useQueryClient();
   return useMutation({

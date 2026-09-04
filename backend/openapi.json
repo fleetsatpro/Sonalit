@@ -4238,6 +4238,16 @@
         }
       }
     },
+    "/api/v1/cds/trips/{id}/depart": {
+      "post": {
+        "operationId": "post_api_v1_cds_trips_id_depart",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/cds/trips/{id}/transition": {
       "post": {
         "operationId": "post_api_v1_cds_trips_id_transition",
@@ -4637,6 +4647,16 @@
     "/api/v1/cds/field/port-queue": {
       "get": {
         "operationId": "get_api_v1_cds_field_port_queue",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/field/departures": {
+      "get": {
+        "operationId": "get_api_v1_cds_field_departures",
         "responses": {
           "200": {
             "description": "OK"

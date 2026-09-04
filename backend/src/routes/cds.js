@@ -37,13 +37,23 @@ const UNCLAMP_PATH = /^\/bookings\/[^/]+\/containers\/[^/]+\/unclamp$/;
 // stays read-only and adding/editing containers on that same path (POST)
 // is still out of reach.
 const BOOKING_CONTAINERS_LIST_PATH = /^\/bookings\/[^/]+\/containers$/;
+// Marking a departure only sets departed_at and moves 'locked' to
+// 'dispatched' — it opens none of the rest of the trip surface, so a yard
+// device still cannot read or edit trips generally.
+const DEPART_PATH = /^\/trips\/[^/]+\/depart$/;
 router.use((req, res, next) => {
   const role = req.user.role;
   if (role !== 'yard_agent' && role !== 'port_agent') return next();
 
   const allowed = role === 'yard_agent'
     ? (req.path === '/field/yard-queue' || CLAMP_PATH.test(req.path)
-       || (req.method === 'GET' && BOOKING_CONTAINERS_LIST_PATH.test(req.path)))
+       || (req.method === 'GET' && BOOKING_CONTAINERS_LIST_PATH.test(req.path))
+       // Departure is yard work: the person who watched the truck go through
+       // the gate is standing in the yard, and for a driver who never scanned
+       // the QR there is no other way the trip ever leaves 'locked'. Both the
+       // list and the mark are here because one without the other is useless.
+       || req.path === '/field/departures'
+       || (req.method === 'POST' && DEPART_PATH.test(req.path)))
     : (req.path === '/field/port-queue' || UNCLAMP_PATH.test(req.path));
 
   if (!allowed) {
@@ -467,6 +477,54 @@ const TRIP_TRANSITIONS = {
   completed:         ['archived'],
   archived:          [],
 };
+
+/**
+ * POST /cds/trips/:id/depart — the yard marks a truck as gone.
+ *
+ * THE CASE THIS EXISTS FOR: a driver who never scanned the QR. There is no
+ * telemetry to derive from, so without this the trip sits at 'locked' forever
+ * and the control room sees "awaiting departure" for a truck already on the
+ * road. Manual departure is the primary path, not a fallback.
+ *
+ * Reachable by the field device as well as an operator, because the person who
+ * watched the truck leave is standing in the yard with a phone, not sitting in
+ * the control room. The router-level dualAuthenticate covers both.
+ *
+ * Idempotent: a second tap reports that it was already departed rather than
+ * rewriting the timestamp to a later moment.
+ */
+router.post('/trips/:id/depart', asyncHandler(async (req, res) => {
+  const { note, at } = req.body || {};
+  const trip = await req.db(
+    'SELECT id, status, departed_at FROM cds_trips WHERE id=$1 AND deleted_at IS NULL',
+    [req.params.id]
+  );
+  if (!trip.rows.length) return res.status(404).json({ error: 'Trip not found' });
+
+  // A delivered or completed trip departing is a data error, not a correction.
+  if (['delivered', 'lock_removed', 'completed', 'archived'].includes(trip.rows[0].status)) {
+    return res.status(409).json({ error: `Trip already ${trip.rows[0].status}` });
+  }
+
+  const D = require('../utils/tripDeparture');
+  // req.fieldDevice is the discriminator, NOT the presence of req.user: a field
+  // device authenticates as a real field user with an id and an org, so keying
+  // off req.user.id would file every yard departure as a control-room action
+  // and lose the distinction the departure_source column exists to record.
+  const source = req.fieldDevice ? 'manual' : 'operator';
+  const actorId = req.user?.id || null;
+
+  const { trip: updated, already } = await D.markDeparted(
+    req.db, req.user?.org_id, req.params.id,
+    { source, actorId, note: note || null, at: at || null }
+  );
+
+  // No publish here. markDeparted() announces it, once, for all three paths —
+  // and only when the departure was actually established, so an idempotent
+  // retry cannot put a second "departed" on the control room's board for one
+  // truck. Broadcasting here too would do exactly that for the manual path.
+  res.json({ data: { trip: updated, already_departed: already, source } });
+}));
 
 router.post('/trips/:id/transition', asyncHandler(async (req, res) => {
   const { to_status, notes, lat, lng } = req.body;
@@ -1279,6 +1337,54 @@ router.get('/field/port-queue', asyncHandler(async (req, res) => {
   res.json({ data: result.rows });
 }));
 
+/**
+ * GET /cds/field/departures — what the yard clamped but has not seen leave.
+ *
+ * The yard's job does not end at the clamp. Until the truck is through the
+ * gate the trip sits at 'locked', and the control room reads that as "still in
+ * the yard" — correct for ten minutes, badly wrong for the rest of the day.
+ *
+ * `scanned` is the column that decides whether a human has to act. A driver who
+ * scanned the QR will depart on his own telemetry within a couple of minutes of
+ * the gate; a driver who did not will never depart at all unless the yard says
+ * so. Surfacing that distinction is the whole point of this list — it tells the
+ * crew which trucks are their problem rather than making them check each one.
+ */
+router.get('/field/departures', asyncHandler(async (req, res) => {
+  const result = await req.db(`
+    SELECT t.id AS trip_id, t.trip_number, t.status, t.created_at AS clamped_at,
+           t.origin, t.destination, t.clamp_lat, t.clamp_lng,
+           v.registration AS vehicle_reg,
+           d.name AS driver_name, d.phone AS driver_phone,
+           l.serial AS lock_serial,
+           c.number AS container_number,
+           b.booking_number,
+           -- One live tracking session per trip at most, so a lateral beats a
+           -- group-by here and keeps the row count equal to the trip count.
+           s.status AS tracking_status, s.last_location_at,
+           (s.id IS NOT NULL) AS scanned
+      FROM cds_trips t
+      LEFT JOIN cds_vehicles v ON v.id = t.vehicle_id
+      LEFT JOIN cds_drivers d ON d.id = t.driver_id
+      LEFT JOIN cds_electronic_locks l ON l.id = t.lock_id
+      LEFT JOIN cds_containers c ON c.id = t.container_id
+      LEFT JOIN cds_bookings b ON b.id = t.booking_id
+      LEFT JOIN LATERAL (
+        SELECT id, status, last_location_at
+          FROM tracking_sessions
+         WHERE trip_id = t.id AND deleted_at IS NULL
+         ORDER BY started_at DESC
+         LIMIT 1
+      ) s ON true
+     WHERE t.deleted_at IS NULL
+       AND t.departed_at IS NULL
+       AND t.status = 'locked'
+     ORDER BY t.created_at ASC
+     LIMIT 200
+  `);
+  res.json({ data: result.rows });
+}));
+
 // Yard team clamps an e-lock onto one container of a booking.
 // Auto-creates supporting rows (transporter, driver, vehicle, container, lock, trip)
 // so the mobile UI only needs to send free-text names and numbers.
@@ -1389,12 +1495,18 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
   const trip = await req.db(
     `INSERT INTO cds_trips
       (trip_number, customer_id, driver_id, vehicle_id, container_id, lock_id, transporter_id,
-       origin, destination, commodity, seal_number, weight_kg, booking_id, notes, status, org_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'locked',$15) RETURNING *`,
+       origin, destination, commodity, seal_number, weight_kg, booking_id, notes, status, org_id,
+       clamp_lat, clamp_lng)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'locked',$15,$16,$17) RETURNING *`,
     [
       genCode('CDS'), bc.rows[0].customer_id, driverId, vehicleId, containerId, lockId, transporterId,
       bc.rows[0].pickup_location, bc.rows[0].delivery_location, null, bc.rows[0].seal_number, bc.rows[0].weight_kg,
       bookingId, trailerNote, orgId,
+      // The yard anchor. Previously these only reached an audit JSON blob,
+      // which cannot be queried — so nothing could ask "has this truck moved
+      // away from where it was clamped?". Nullable: a clamp with location
+      // denied is still a valid clamp.
+      lat ?? null, lng ?? null,
     ]
   );
 
