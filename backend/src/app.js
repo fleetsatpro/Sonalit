@@ -314,6 +314,13 @@ app.use("/api/v1/sync", (req, res) => res.json({ ok: true, processed: 0 }));
 try { app.use("/api/v1/track", require("./routes/trackingDriver")); logger.info("Route loaded: /api/v1/track (driver)"); }
 catch (e) { logger.warn("Driver tracking route failed: " + e.message); }
 
+// Machine telemetry ingress. Distinct from /track (driver session token) and
+// /tracking (operator JWT) because a machine caller has no user and no session:
+// its ingest key IS its tenant, which is the only safe place for one. Kept off
+// /api/v1/telemetry, which is a legacy Guardian shim.
+try { app.use("/api/v1/ingest", require("./routes/telemetryIngest")); logger.info("Route loaded: /api/v1/ingest (telemetry)"); }
+catch (e) { logger.warn("Telemetry ingest route failed: " + e.message); }
+
 try { app.use("/api/v1/tracking", require("./routes/tracking")); logger.info("Route loaded: /api/v1/tracking"); }
 catch (e) { logger.warn("Tracking route failed: " + e.message); }
 

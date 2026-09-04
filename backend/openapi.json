@@ -4064,6 +4064,16 @@
         }
       }
     },
+    "/api/v1/ingest/{source}/positions": {
+      "post": {
+        "operationId": "post_api_v1_ingest_source_positions",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/tracking/qr": {
       "post": {
         "operationId": "post_api_v1_tracking_qr",
