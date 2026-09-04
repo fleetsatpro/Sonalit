@@ -1,10 +1,21 @@
 const router = require('express').Router();
 const aiClient = require('../utils/aiClient');
 const { authenticate } = require('../middleware/auth');
+const { attachOrgDb } = require('../utils/orgScopedDb');
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
 
-router.use(authenticate);
+// Every tool below reads or writes tenant-owned data, so the org-scoped
+// path is mandatory. These tools previously used the global query(), which
+// bypasses RLS — query_vehicles, query_convoys, query_alerts and
+// query_risk_zones were returning rows for EVERY organisation to any
+// authenticated user. `db` is threaded explicitly into each tool for that
+// reason: there is no ambient unscoped connection left for one to reach.
+router.use(authenticate, attachOrgDb);
+router.use((req, res, next) => {
+  if (!req.db) return res.status(403).json({ error: 'org_scope_required' });
+  next();
+});
 
 const MODEL = 'claude-opus-4-7';
 
@@ -186,14 +197,14 @@ const TOOLS = [
 ];
 
 // ── Tool implementations ───────────────────────────────────────────────────
-async function toolQueryVehicles(input) {
+async function toolQueryVehicles(input, db) {
   const filters = ['deleted_at IS NULL'];
   const params = [];
   if (input.status) { params.push(input.status); filters.push(`status = $${params.length}`); }
   if (input.region) { params.push(input.region); filters.push(`region = $${params.length}`); }
   if (input.low_fuel) filters.push('COALESCE(fuel_level, 85) < 25');
   if (input.moving) filters.push('COALESCE(speed, 0) > 2');
-  const r = await query(
+  const r = await db(
     `SELECT registration, type, status, region,
             COALESCE(fuel_level, 85) AS fuel_level, COALESCE(speed, 0) AS speed,
             latitude, longitude, driver_name, last_ping
@@ -204,13 +215,13 @@ async function toolQueryVehicles(input) {
   return { count: r.rows.length, vehicles: r.rows };
 }
 
-async function toolQueryConvoys(input) {
+async function toolQueryConvoys(input, db) {
   const filters = ['deleted_at IS NULL'];
   const params = [];
   if (input.status) { params.push(input.status); filters.push(`status = $${params.length}`); }
   if (input.region) { params.push(input.region); filters.push(`region = $${params.length}`); }
   if (input.priority) { params.push(input.priority); filters.push(`priority = $${params.length}`); }
-  const r = await query(
+  const r = await db(
     `SELECT name, status, region, priority, route_origin, route_destination,
             departure_time, estimated_arrival, arrival_time
      FROM convoys WHERE ${filters.join(' AND ')}
@@ -220,13 +231,13 @@ async function toolQueryConvoys(input) {
   return { count: r.rows.length, convoys: r.rows };
 }
 
-async function toolQueryAlerts(input) {
+async function toolQueryAlerts(input, db) {
   const filters = ['a.deleted_at IS NULL'];
   const params = [];
   if (!input.include_resolved) filters.push('a.resolved_at IS NULL');
   if (input.severity) { params.push(input.severity); filters.push(`a.severity = $${params.length}`); }
   if (input.type) { params.push(input.type); filters.push(`a.type = $${params.length}`); }
-  const r = await query(
+  const r = await db(
     `SELECT a.type, a.severity, a.message, a.created_at, a.acknowledged_at, a.resolved_at,
             v.registration AS vehicle
      FROM alerts a LEFT JOIN vehicles v ON v.id = a.vehicle_id
@@ -445,7 +456,7 @@ out skel qt;
   }
 }
 
-async function toolQueryRiskZones(input) {
+async function toolQueryRiskZones(input, db) {
   try {
     const filters = ['active = true'];
     const params = [];
@@ -461,7 +472,7 @@ async function toolQueryRiskZones(input) {
       params.push(input.zone_type);
       filters.push(`zone_type = $${params.length}`);
     }
-    const r = await query(
+    const r = await db(
       `SELECT name, description, risk_level, zone_type, lat, lng, radius_km, created_at
        FROM risk_zones WHERE ${filters.join(' AND ')}
        ORDER BY CASE risk_level WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END
@@ -474,7 +485,7 @@ async function toolQueryRiskZones(input) {
   }
 }
 
-async function toolCreateGeofence(input, userId) {
+async function toolCreateGeofence(input, userId, db, orgId) {
   const { name, location, route_end, fence_type = 'general' } = input;
   if (!name || !location) return { error: 'name and location are required' };
 
@@ -518,11 +529,11 @@ async function toolCreateGeofence(input, userId) {
       // Store coordinates as GeoJSON [lng,lat] array under 'coordinates' key
       const coordinates = { lat: midLat, lng: midLng, type: 'corridor', coordinates: path, buffer_m };
 
-      const r = await query(
-        `INSERT INTO geofences (name, type, coordinates, radius, region)
-         VALUES ($1, $2, $3, $4, $5)
+      const r = await db(
+        `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id`,
-        [name, 'corridor', JSON.stringify(coordinates), approxRadius, region]
+        [name, 'corridor', JSON.stringify(coordinates), approxRadius, region, orgId]
       );
 
       return {
@@ -548,11 +559,11 @@ async function toolCreateGeofence(input, userId) {
       const coordinates = { lat: g.latitude, lng: g.longitude };
       const region = g.admin1 || g.country || location;
 
-      const r = await query(
-        `INSERT INTO geofences (name, type, coordinates, radius, region)
-         VALUES ($1, $2, $3, $4, $5)
+      const r = await db(
+        `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id`,
-        [name, 'circle', JSON.stringify(coordinates), radius_m, region]
+        [name, 'circle', JSON.stringify(coordinates), radius_m, region, orgId]
       );
 
       const locationLabel = [g.name, g.admin1, g.country].filter(Boolean).join(', ');
@@ -575,7 +586,7 @@ async function toolCreateGeofence(input, userId) {
   }
 }
 
-async function toolCreateRiskZone(input, userId) {
+async function toolCreateRiskZone(input, userId, db, orgId) {
   const { name, location, risk_level = 'high', zone_type = 'general', description = '', radius_km = 5 } = input;
   if (!name || !location) return { error: 'name and location are required' };
 
@@ -584,11 +595,11 @@ async function toolCreateRiskZone(input, userId) {
     const g = await geocode(location);
     const desc = description || `${zone_type} risk zone near ${location}`;
 
-    const r = await query(
-      `INSERT INTO risk_zones (name, description, risk_level, zone_type, lat, lng, radius_km, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    const r = await db(
+      `INSERT INTO risk_zones (name, description, risk_level, zone_type, lat, lng, radius_km, created_by, org_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id, name, risk_level, zone_type, lat, lng, radius_km`,
-      [name, desc, risk_level, zone_type, g.latitude, g.longitude, radius_km, userId || null]
+      [name, desc, risk_level, zone_type, g.latitude, g.longitude, radius_km, userId || null, orgId]
     );
 
     const locationLabel = [g.name, g.admin1, g.country].filter(Boolean).join(', ');
@@ -609,17 +620,21 @@ async function toolCreateRiskZone(input, userId) {
   }
 }
 
-async function runTool(name, input, userId) {
+// `db` is req.db — the org-scoped query helper. It is passed in rather than
+// imported so that no tool can accidentally fall back to the unscoped pool.
+// The weather, holiday and road-condition tools take no db handle: they call
+// public third-party APIs and touch no tenant data.
+async function runTool(name, input, userId, db, orgId) {
   switch (name) {
-    case 'query_vehicles':     return toolQueryVehicles(input || {});
-    case 'query_convoys':      return toolQueryConvoys(input || {});
-    case 'query_alerts':       return toolQueryAlerts(input || {});
+    case 'query_vehicles':     return toolQueryVehicles(input || {}, db);
+    case 'query_convoys':      return toolQueryConvoys(input || {}, db);
+    case 'query_alerts':       return toolQueryAlerts(input || {}, db);
     case 'get_weather':        return toolGetWeather(input || {});
     case 'check_holidays':     return toolCheckHolidays(input || {});
     case 'get_road_conditions':return toolGetRoadConditions(input || {});
-    case 'query_risk_zones':   return toolQueryRiskZones(input || {});
-    case 'create_geofence':    return toolCreateGeofence(input || {}, userId);
-    case 'create_risk_zone':   return toolCreateRiskZone(input || {}, userId);
+    case 'query_risk_zones':   return toolQueryRiskZones(input || {}, db);
+    case 'create_geofence':    return toolCreateGeofence(input || {}, userId, db, orgId);
+    case 'create_risk_zone':   return toolCreateRiskZone(input || {}, userId, db, orgId);
     default: return { error: `Unknown tool: ${name}` };
   }
 }
@@ -641,6 +656,10 @@ router.post('/dispatch', async (req, res) => {
     await ensureColumns();
     await ensureRiskZones();
     const userId = req.user?.id || null;
+    // Tenant of the caller. Threaded into the tools so their writes land
+    // under the right org rather than with a NULL org_id, which RLS would
+    // make invisible to everyone.
+    const orgId = req.user?.org_id;
 
     const messages = [
       ...history.slice(-6)
@@ -680,7 +699,7 @@ router.post('/dispatch', async (req, res) => {
           toolsUsed.push(block.name);
           let result, isError = false;
           try {
-            result = await runTool(block.name, block.input, userId);
+            result = await runTool(block.name, block.input, userId, req.db, orgId);
             // Track map-mutating actions for frontend refresh
             if (block.name === 'create_geofence' && result.created) {
               actionsCreated.push({ type: 'geofence', ...result });
@@ -751,7 +770,7 @@ router.post('/dispatch', async (req, res) => {
 router.get('/anomalies', async (req, res, next) => {
   try {
     await ensureColumns();
-    const r = await query(`
+    const r = await req.db(`
       SELECT a.*, v.registration, v.region FROM alerts a
       LEFT JOIN vehicles v ON v.id = a.vehicle_id
       WHERE a.resolved_at IS NULL AND a.deleted_at IS NULL
@@ -765,8 +784,8 @@ router.get('/anomalies', async (req, res, next) => {
 router.get('/risk/:convoyId', async (req, res, next) => {
   try {
     const [alertCount, convoy] = await Promise.all([
-      query('SELECT COUNT(*) FROM alerts WHERE convoy_id=$1 AND resolved_at IS NULL AND deleted_at IS NULL', [req.params.convoyId]),
-      query('SELECT priority, COALESCE(risk_score,0) AS risk_score FROM convoys WHERE id=$1', [req.params.convoyId]),
+      req.db('SELECT COUNT(*) FROM alerts WHERE convoy_id=$1 AND resolved_at IS NULL AND deleted_at IS NULL', [req.params.convoyId]),
+      req.db('SELECT priority, COALESCE(risk_score,0) AS risk_score FROM convoys WHERE id=$1', [req.params.convoyId]),
     ]);
     if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
     const count    = parseInt(alertCount.rows[0].count);

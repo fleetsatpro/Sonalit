@@ -78,10 +78,22 @@ Spec §59: "Cross-tenant leakage is a P0 security defect." Two were found.
 `query_convoys`, `query_alerts` and `query_risk_zones` therefore return
 rows for **all organisations** to any authenticated user of any tenant.
 
-*Status:* the ported tools in `services/ai-copilot-svc/src/tools/` are
-org-scoped and fix this for the v4 path. **The legacy route is unchanged
-and still leaking** — it needs `attachOrgDb` plus `req.db`, which is a
-separate change to the Express monolith.
+Two further leaks in the same file: `GET /ai/anomalies` returned every
+tenant's alerts, and `GET /ai/risk/:convoyId` let any tenant read any
+convoy's risk posture by id (a cross-tenant IDOR).
+
+Both `INSERT`s — `create_geofence` and `create_risk_zone` — also omitted
+`org_id` entirely, writing rows with a NULL tenant. Those rows are
+invisible to every org under RLS, and are rejected outright once the
+policy's `WITH CHECK` applies.
+
+*Status:* **FIXED.** The route now mounts `attachOrgDb` with the
+`org_scope_required` guard, every tenant-data read goes through `req.db`,
+and both `INSERT`s write the caller's `org_id`. The unscoped `query()`
+remains only for the route's one-off schema-bootstrap DDL. Covered by
+`backend/tests/ai-org-scoping.test.js`, which asserts both the runtime
+behaviour and — as a guard against reintroduction — that no `SELECT` or
+`INSERT` in the file uses the unscoped helper.
 
 ### F2 — v4 `withOrgContext` enforced nothing
 
@@ -98,12 +110,18 @@ all for three independent reasons:
 `backend/src/utils/orgScopedDb.js`. The AI plane was its first real caller,
 so nothing had depended on it before.
 
-**The identical broken helper remains in `auth-svc`, `fleet-svc`,
-`convoy-svc`, `alerts-svc`, `guardian-svc`, `media-svc`,
-`notification-svc` and `reports-svc`.** It currently has no callers in
-those services, so it is latent rather than actively leaking — but the
-next person to use it will get silent cross-tenant access. It should be
-fixed everywhere, as one focused change.
+A fourth defect only visible once the others were fixed: the statement
+was written as `SET LOCAL app.org_id = $1`, and `SET LOCAL` takes a
+literal, not a bind parameter. Postgres rejects that outright — so the
+helper would have raised a syntax error on first use regardless.
+
+*Status:* **FIXED** in all nine services — `ai-copilot-svc`, `auth-svc`,
+`fleet-svc`, `convoy-svc`, `alerts-svc`, `guardian-svc`, `media-svc`,
+`notification-svc` and `reports-svc` — which now share one implementation
+matching `backend/src/utils/orgScopedDb.js`. (`analytics-svc` and
+`telemetry-ingest-svc` have no such helper.) Nothing had called it before,
+so this changes no existing behaviour; it means the next caller gets real
+isolation instead of silent cross-tenant access.
 
 ## 4. Architectural constraint discovered
 

@@ -146,37 +146,46 @@ registerTool({
 registerTool({
   name: 'query_risk_zones',
   description:
-    'Query the internal database of known high-risk zones — banditry hotspots, conflict ' +
-    'zones, strike areas, active roadblocks, and dangerous corridors. Always check this ' +
-    'before advising on route safety.',
+    'Query the internal database of known high-risk zones — conflict areas, theft ' +
+    'hotspots, flooding, road closures, customs posts and checkpoints. Always check ' +
+    'this before advising on route safety.',
   action_level: 'read',
   required_role: 'analyst',
   source: 'database',
   input_schema: z.object({
-    region: Region.optional().describe('Filter by region or country name (partial match)'),
+    // Matches the legacy tool: risk_zones has no region column, so a place
+    // filter searches the name and description text instead.
+    search: z
+      .string()
+      .max(120)
+      .optional()
+      .describe('Match against zone name or description, e.g. a place or corridor name'),
     risk_level: z
-      .enum(['low', 'medium', 'high', 'critical'])
+      .enum(['low', 'medium', 'high', 'critical', 'no_go'])
       .optional()
       .describe('Minimum risk level'),
+    // These are exactly the values risk_zones.zone_type permits; a value
+    // outside the table's CHECK constraint could never match a row.
     zone_type: z
       .enum([
-        'security',
-        'construction',
-        'flood',
-        'banditry',
         'conflict',
-        'police_checkpoint',
-        'strike',
-        'general',
+        'theft_hotspot',
+        'flood',
+        'road_closed',
+        'customs',
+        'checkpoint',
+        'restricted',
+        'no_go',
       ])
       .optional(),
   }),
   handler: async (args, _ctx, client) => {
-    const filters: string[] = [];
+    const filters = ['active = true'];
     const params: unknown[] = [];
-    if (args.region) {
-      params.push(`%${args.region}%`);
-      filters.push(`region ILIKE $${String(params.length)}`);
+    if (args.search) {
+      params.push(`%${args.search}%`);
+      const p = `$${String(params.length)}`;
+      filters.push(`(name ILIKE ${p} OR description ILIKE ${p})`);
     }
     if (args.zone_type) {
       params.push(args.zone_type);
@@ -184,20 +193,19 @@ registerTool({
     }
     if (args.risk_level) {
       // "Minimum risk level" is an ordering over an enum, so it is ranked
-      // explicitly here rather than compared as text — 'critical' > 'high'
-      // is false under lexical ordering.
-      const ranks = ['low', 'medium', 'high', 'critical'];
-      const allowed = ranks.slice(ranks.indexOf(args.risk_level));
-      params.push(allowed);
+      // explicitly — 'critical' > 'high' is false under lexical ordering.
+      const ranks = ['low', 'medium', 'high', 'critical', 'no_go'];
+      params.push(ranks.slice(ranks.indexOf(args.risk_level)));
       filters.push(`risk_level = ANY($${String(params.length)})`);
     }
 
     const res = await client.query(
-      `SELECT name, region, risk_level, zone_type, description,
-              latitude, longitude, radius_km, created_at
-         FROM risk_zones
-        ${filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : ''}
-        ORDER BY created_at DESC LIMIT 40`,
+      `SELECT name, description, risk_level, zone_type, lat, lng, radius_km, created_at
+         FROM risk_zones WHERE ${filters.join(' AND ')}
+        ORDER BY CASE risk_level
+                   WHEN 'no_go' THEN 1 WHEN 'critical' THEN 2
+                   WHEN 'high' THEN 3 WHEN 'medium' THEN 4 ELSE 5 END
+        LIMIT 30`,
       params,
     );
     return { count: res.rows.length, risk_zones: res.rows };
