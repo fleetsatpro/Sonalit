@@ -4,6 +4,7 @@
 // registry is fully populated before the first request is served.
 import './definitions/fleet.js';
 import './definitions/knowledge.js';
+import './definitions/risk.js';
 
 export { executeTool, toolsForContext, getTool, registerTool, clearRegistry } from './registry.js';
 export {

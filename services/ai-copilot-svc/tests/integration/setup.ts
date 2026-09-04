@@ -86,3 +86,43 @@ export const hasDatabase = typeof DATABASE_URL === 'string' && DATABASE_URL.leng
 
 export const ORG_A = '00000000-0000-4000-8000-0000000000aa';
 export const ORG_B = '00000000-0000-4000-8000-0000000000bb';
+
+/**
+ * Minimal stand-ins for the platform tables the AI tools read.
+ *
+ * The legacy backend owns the real schema; this service's migrations do not
+ * create it. Rather than depend on the full backend migration set, the
+ * suite creates just the columns the tools actually select — enough to
+ * prove the SQL parses, joins and casts correctly against real Postgres.
+ * Columns are intentionally permissive: this fixture verifies the queries,
+ * not the platform's constraints.
+ */
+export const PLATFORM_FIXTURE_SQL = `
+  CREATE TABLE IF NOT EXISTS convoys (
+    id TEXT PRIMARY KEY, org_id UUID, name TEXT, status TEXT, region TEXT,
+    priority TEXT, route_origin TEXT, route_destination TEXT,
+    departure_time TIMESTAMPTZ, estimated_arrival TIMESTAMPTZ,
+    arrival_time TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW(),
+    deleted_at TIMESTAMPTZ
+  );
+  CREATE TABLE IF NOT EXISTS vehicles (
+    id TEXT PRIMARY KEY, org_id UUID, registration TEXT, type TEXT, status TEXT,
+    region TEXT, fuel_level NUMERIC, speed NUMERIC, latitude NUMERIC,
+    longitude NUMERIC, driver_name TEXT, last_ping TIMESTAMPTZ,
+    deleted_at TIMESTAMPTZ
+  );
+  CREATE TABLE IF NOT EXISTS alerts (
+    id TEXT PRIMARY KEY, org_id UUID, vehicle_id TEXT, convoy_id TEXT,
+    type TEXT, severity TEXT, message TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(), acknowledged_at TIMESTAMPTZ,
+    resolved_at TIMESTAMPTZ, deleted_at TIMESTAMPTZ
+  );
+  CREATE TABLE IF NOT EXISTS risk_zones (
+    id TEXT PRIMARY KEY, org_id UUID, name TEXT, description TEXT,
+    risk_level TEXT, zone_type TEXT, lat NUMERIC, lng NUMERIC,
+    radius_km NUMERIC, active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  );
+  GRANT SELECT, INSERT, UPDATE, DELETE ON convoys, vehicles, alerts, risk_zones
+    TO sonalit_app;
+`;

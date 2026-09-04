@@ -12,7 +12,14 @@ import { promisify } from 'node:util';
 import { Pool } from 'pg';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
-import { DATABASE_URL, ORG_A, ORG_B, hasDatabase, startFakeEmbeddingServer } from './setup.js';
+import {
+  DATABASE_URL,
+  ORG_A,
+  ORG_B,
+  PLATFORM_FIXTURE_SQL,
+  hasDatabase,
+  startFakeEmbeddingServer,
+} from './setup.js';
 
 // Types are imported statically; the modules themselves are imported
 // lazily in beforeAll, after DATABASE_URL is set — src/config.ts parses
@@ -20,6 +27,7 @@ import { DATABASE_URL, ORG_A, ORG_B, hasDatabase, startFakeEmbeddingServer } fro
 import type { withOrgContext as WithOrgContext } from '../../src/db.js';
 import type { ingestDocument as IngestDocument } from '../../src/rag/ingest.js';
 import type { retrieve as Retrieve } from '../../src/rag/retrieve.js';
+import type { executeTool as ExecuteTool } from '../../src/tools/index.js';
 
 const run = promisify(execFile);
 const describeIf = hasDatabase ? describe : describe.skip;
@@ -29,6 +37,7 @@ let server: Awaited<ReturnType<typeof startFakeEmbeddingServer>>;
 let withOrgContext: typeof WithOrgContext;
 let ingestDocument: typeof IngestDocument;
 let retrieve: typeof Retrieve;
+let executeTool: typeof ExecuteTool;
 
 const SOP = [
   'Escort vehicles travel at the rear of convoy KXX123X.',
@@ -56,10 +65,12 @@ describeIf('RAG against real Postgres + pgvector', () => {
       [server.url],
     );
     await pool.query('TRUNCATE ai_document_chunks, ai_documents CASCADE');
+    await pool.query(PLATFORM_FIXTURE_SQL);
 
     ({ withOrgContext } = await import('../../src/db.js'));
     ({ ingestDocument } = await import('../../src/rag/ingest.js'));
     ({ retrieve } = await import('../../src/rag/retrieve.js'));
+    ({ executeTool } = await import('../../src/tools/index.js'));
   }, 120_000);
 
   afterAll(async () => {
@@ -260,5 +271,68 @@ describeIf('RAG against real Postgres + pgvector', () => {
     const found = historical.find((h) => h.title === 'Superseded Routing Note');
     expect(found).toBeDefined();
     expect(found?.stale).toBe(true);
+  });
+
+  // The tool layer's SQL had never executed either. These run it for real:
+  // an interval cast, a JOIN against convoys, and JSONB round-tripping
+  // through Zod are all things a mocked client cannot verify.
+  describe('tools against the real schema', () => {
+    it('scores convoy risk from stored signals', async () => {
+      const convoyId = 'convoy-integration-1';
+      await withOrgContext(ORG_A, (c) =>
+        c.query(
+          `INSERT INTO ai_signals (org_id, type, severity, entity_type, entity_id,
+                                   convoy_id, observed_at, payload, source)
+           VALUES ($1,'panic','critical','vehicle','veh-1',$2, NOW(), '{}'::jsonb, 'test'),
+                  ($1,'comms_silence','warning','vehicle','veh-1',$2, NOW(), '{}'::jsonb, 'test')`,
+          [ORG_A, convoyId],
+        ),
+      );
+
+      const result = await executeTool(
+        'assess_convoy_risk',
+        { convoy_id: convoyId },
+        { org_id: ORG_A, user_id: 'u1', role: 'operator', request_id: 'r1' },
+      );
+
+      expect(result.error).toBeUndefined();
+      expect(result.success).toBe(true);
+      const data = result.data as {
+        score: number;
+        band: string;
+        probability: number | null;
+        contributing_factors: { name: string }[];
+      };
+      expect(data.score).toBeGreaterThan(0);
+      expect(data.band).toBe('critical');
+      // §21 — no probability while the model is uncalibrated.
+      expect(data.probability).toBeNull();
+      expect(data.contributing_factors.map((f) => f.name)).toContain('panic');
+    });
+
+    it('does not score another tenant’s convoy', async () => {
+      const result = await executeTool(
+        'assess_convoy_risk',
+        { convoy_id: 'convoy-integration-1' },
+        { org_id: ORG_B, user_id: 'u2', role: 'admin', request_id: 'r2' },
+      );
+
+      expect(result.success).toBe(true);
+      const data = result.data as { score: number; warnings: string[] };
+      expect(data.score).toBe(0);
+      // Rule 4 — zero must be reported as "nothing observed", not as safe.
+      expect(data.warnings.join(' ')).toContain('not that the convoy is confirmed safe');
+    });
+
+    it('runs the fleet read tools against the real tables', async () => {
+      const result = await executeTool(
+        'query_risk_zones',
+        { risk_level: 'high' },
+        { org_id: ORG_A, user_id: 'u1', role: 'operator', request_id: 'r3' },
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
   });
 });

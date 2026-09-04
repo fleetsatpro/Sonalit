@@ -317,6 +317,46 @@ transport under `NODE_ENV=development`, but `pino-pretty` was never a
 dependency, so the service died at boot with `unable to determine
 transport target`. Pre-existing. *Fixed:* declared as a devDependency.
 
+### Predictive risk (§20–22)
+
+`services/ai-copilot-svc/src/risk/`, exposed as the `assess_convoy_risk`
+tool.
+
+A transparent additive model — each factor contributes points, and every
+contribution is recorded with its direction, magnitude and recency. Chosen
+over something more sophisticated because it is reproducible from
+`feature_snapshot` alone, explainable by construction (§22 falls out
+rather than needing a separate attribution step), and needs training data
+the platform does not yet have.
+
+The honest limitation, encoded rather than glossed: the weights are
+engineering judgement, not fitted to outcomes. `calibration_status` is
+therefore `uncalibrated` and **`probability` is null** — §21 forbids
+exposing a probability from an uncalibrated model, and quoting a
+percentage here would be a fabricated statistic. The score is an
+*ordering* ("which convoy needs attention first"), which is genuinely
+useful; making it a probability means back-testing against historical
+incidents first.
+
+Other decisions worth knowing:
+
+- Signals decay on a 30-minute half-life, so a score does not jump when a
+  signal crosses an arbitrary age boundary.
+- Only the strongest occurrence of each signal type counts — one flapping
+  device is one problem, not ten, and summing would let a noisy sensor
+  dominate.
+- A lone critical panic clears the `critical` band on its own. An operator
+  triaging by band must never see a panic press ranked below the top.
+- A score of zero carries an explicit warning that nothing was *observed*,
+  which is not the same as the convoy being safe (Rule 4).
+- Schedule context is a bonus input, not a precondition: if the `convoys`
+  table is unreachable the signal-based score is still returned, with the
+  gap stated. Failing outright would leave an operator with nothing during
+  exactly the kind of partial outage the score exists to help with.
+
+The model produces the number; the LLM's role is to explain it (§20). It
+never adjusts the score.
+
 ## 6. Not yet built
 
 Phases 2–10 remain: RAG and pgvector, Watchtower, Digital Twin, GEOINT,
