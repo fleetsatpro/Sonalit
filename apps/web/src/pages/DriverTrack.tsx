@@ -45,13 +45,14 @@ const BUFFER_KEY = 'sonalit-track-buffer';
 const BUFFER_MAX = 500;
 
 /**
- * Points per ping. MUST NOT exceed the server's own per-request cap
- * (`fixes.slice(0, 200)` in routes/trackingDriver.js).
+ * Points per ping. MUST match the server's MAX_FIXES_PER_PING
+ * (routes/trackingDriver.js).
  *
- * Posting a longer batch is silent data loss: the server ingests the first 200,
- * answers 200 OK, and a client that treats OK as "all delivered" then drops the
- * overflow it never stored. A 500-deep backlog after a long dead zone would
- * lose 300 points at the moment they were finally being recovered.
+ * This used to overrun a server that silently truncated at 200 and still
+ * answered 200 OK, so a 500-deep backlog lost 300 points at the moment it was
+ * finally being recovered. The server now rejects an oversized batch with 413
+ * instead, and flush() treats that as a failure — so a future divergence costs
+ * a stuck retry that is visible, never points that vanish quietly.
  */
 const BATCH_MAX = 200;
 
