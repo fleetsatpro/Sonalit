@@ -228,6 +228,33 @@ not approved, so the production gate filters them out. Point
 Not yet built: parsing and OCR (§40) upstream of ingestion, and reranking
 (§4.7).
 
+### Watchtower — deterministic core (§28–31)
+
+`services/ai-copilot-svc/src/watchtower/`. Schema: `ai_signals`,
+`ai_correlations`, `ai_correlation_signals`, all org-scoped under RLS.
+
+- **Normalisation** flattens NATS subjects and legacy alert rows into one
+  signal vocabulary. Nothing is invented: an event with no tenant, no
+  parseable producer timestamp, or no correlatable entity is *rejected*,
+  not approximated — a guessed entity id would correlate against the wrong
+  convoy and yield a confident, wrong finding. `observed_at` and
+  `ingested_at` are kept separately because the gap between them is the
+  freshness figure §48 needs.
+- **Correlation** folds a deviation, an unexpected stop, ETA degradation
+  and comms silence into one finding instead of four pages — §64's worked
+  example, and a passing test. Every contributing signal is carried
+  verbatim (§30: aggregation must not destroy evidence), and signals that
+  match no rule are returned rather than dropped, so correlation reduces
+  noise without ever swallowing a signal.
+- **Deterministic by design.** Rules are data and findings are their
+  labels, so the same signals always produce the same result and
+  Watchtower keeps working with every model offline (§20, Rule 3). The AI
+  layer explains a finding; it never produces one. `interpretation` is
+  nullable for exactly that reason.
+
+Not yet built: the NATS consumer that feeds this, anomaly detection
+(§29), the risk engine, escalation/notification, and AI interpretation.
+
 ## 6. Not yet built
 
 Phases 2–10 remain: RAG and pgvector, Watchtower, Digital Twin, GEOINT,

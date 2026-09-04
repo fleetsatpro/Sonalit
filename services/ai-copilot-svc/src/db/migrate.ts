@@ -279,6 +279,99 @@ async function migrate(): Promise<void> {
       [process.env['EMBEDDING_ENDPOINT'] ?? null],
     );
 
+    // ── Watchtower (spec §28-31) ───────────────────────────────────────────
+    // Signals are retained separately from the findings built on them:
+    // §30 forbids aggregation that destroys evidence, so an operator can
+    // always see the raw events behind a correlated conclusion.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ai_signals (
+        signal_id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        org_id       UUID        NOT NULL,
+        type         TEXT        NOT NULL,
+        severity     TEXT        NOT NULL CHECK (severity IN ('info','warning','critical')),
+        entity_type  TEXT        NOT NULL
+                       CHECK (entity_type IN ('vehicle','convoy','driver','device','container')),
+        entity_id    TEXT        NOT NULL,
+        convoy_id    TEXT,
+        -- observed_at is the producer's clock, ingested_at is ours. The gap
+        -- between them is the freshness figure §48 requires; collapsing
+        -- them would make a late event look current.
+        observed_at  TIMESTAMPTZ NOT NULL,
+        ingested_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        payload      JSONB       NOT NULL DEFAULT '{}'::JSONB,
+        source       TEXT        NOT NULL,
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ai_correlations (
+        correlation_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        org_id         UUID        NOT NULL,
+        entity_type    TEXT        NOT NULL,
+        entity_id      TEXT        NOT NULL,
+        convoy_id      TEXT,
+        -- Deterministic label from the rule that fired, never model output.
+        finding        TEXT        NOT NULL,
+        severity       TEXT        NOT NULL CHECK (severity IN ('info','warning','critical')),
+        -- §31 lifecycle. 'verified' is distinct from 'resolved': closing an
+        -- incident and confirming the situation recovered are different facts.
+        state          TEXT        NOT NULL DEFAULT 'correlated'
+                         CHECK (state IN ('detected','correlated','assessed','notified',
+                                          'acknowledged','actioned','resolved','verified')),
+        rule_id        TEXT        NOT NULL,
+        window_start   TIMESTAMPTZ NOT NULL,
+        window_end     TIMESTAMPTZ NOT NULL,
+        -- Written by the AI layer, which explains a finding but never
+        -- produces one. NULL means no model has interpreted it yet, which
+        -- is a normal state, not a degraded one.
+        interpretation TEXT,
+        acknowledged_by UUID,
+        acknowledged_at TIMESTAMPTZ,
+        resolved_at    TIMESTAMPTZ,
+        verified_at    TIMESTAMPTZ,
+        created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+
+    // Join table rather than a JSONB blob so a signal's membership can be
+    // queried from either direction, and the evidence link is enforced.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ai_correlation_signals (
+        correlation_id UUID NOT NULL
+                         REFERENCES ai_correlations (correlation_id) ON DELETE CASCADE,
+        signal_id      UUID NOT NULL REFERENCES ai_signals (signal_id) ON DELETE RESTRICT,
+        PRIMARY KEY (correlation_id, signal_id)
+      );
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_ai_signals_scope
+        ON ai_signals (org_id, convoy_id, observed_at DESC);
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_ai_signals_entity
+        ON ai_signals (org_id, entity_type, entity_id, observed_at DESC);
+    `);
+    // Partial index: the open-work query is the hot path for an operator
+    // dashboard, and closed correlations dominate the table over time.
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_ai_correlations_open
+        ON ai_correlations (org_id, severity, created_at DESC)
+        WHERE state NOT IN ('resolved', 'verified');
+    `);
+
+    for (const table of ['ai_signals', 'ai_correlations']) {
+      await client.query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
+      await client.query(`DROP POLICY IF EXISTS ${table}_org_isolation ON ${table};`);
+      await client.query(`
+        CREATE POLICY ${table}_org_isolation ON ${table}
+          USING (org_id = current_setting('app.current_org_id', TRUE)::UUID)
+          WITH CHECK (org_id = current_setting('app.current_org_id', TRUE)::UUID);
+      `);
+    }
+
     process.stdout.write('ai-copilot-svc migrations complete\n');
   } finally {
     client.release();
