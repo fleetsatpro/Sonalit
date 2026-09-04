@@ -1,8 +1,9 @@
 // Tool Registry (spec §10) and the execution path (§11, §12).
 
-import { z } from 'zod';
-import { zodToJsonSchema } from './json-schema.js';
+
 import { withOrgContext } from '../db.js';
+
+import { zodToJsonSchema } from './json-schema.js';
 import {
   roleSatisfies,
   type AnyToolDefinition,
@@ -10,7 +11,9 @@ import {
   type ToolDefinition,
   type ToolResult,
 } from './types.js';
+
 import type { ToolDefinition as ModelToolDefinition } from '../ai/types.js';
+import type { z } from 'zod';
 
 const tools = new Map<string, AnyToolDefinition>();
 

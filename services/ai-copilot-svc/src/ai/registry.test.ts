@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { selectCandidates } from './registry.js';
 import { classificationPermits, type AIModel } from './types.js';
 

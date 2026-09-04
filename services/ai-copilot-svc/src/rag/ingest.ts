@@ -9,9 +9,10 @@
 // vectors from different models are not comparable — see retrieve.ts.
 
 import { createHash } from 'node:crypto';
-import type { PoolClient } from 'pg';
+
 import { embed } from '../ai/router.js';
 import { NoEligibleModelError, AllModelsFailedError } from '../ai/types.js';
+
 import { chunkText } from './chunker.js';
 import {
   DocumentInput,
@@ -19,6 +20,8 @@ import {
   KnowledgeUnavailableError,
   type DocumentInputRaw,
 } from './types.js';
+
+import type { PoolClient } from 'pg';
 
 /** pgvector's text input format. */
 function toVectorLiteral(vector: number[]): string {

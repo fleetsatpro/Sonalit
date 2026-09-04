@@ -18,12 +18,15 @@
 //    still serves Commander and RAG (Rule 3), so connection failure is
 //    logged and retried, never fatal.
 
-import type { JetStreamClient, JsMsg } from 'nats';
 import { AckPolicy, DeliverPolicy } from 'nats';
+
 import { withOrgContext } from '../db.js';
+
 import { correlate, type CorrelationRule } from './correlate.js';
 import { normalise, UnnormalisableEventError } from './normalize.js';
+
 import type { Correlation, Signal } from './types.js';
+import type { JetStreamClient, JsMsg } from 'nats';
 
 export const WATCHTOWER_STREAM = 'WATCHTOWER';
 export const WATCHTOWER_SUBJECTS = ['events.panic.>', 'events.alert.>', 'events.geofence.breach.>'];

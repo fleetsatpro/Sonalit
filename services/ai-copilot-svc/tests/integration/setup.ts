@@ -18,6 +18,7 @@
 // were never asked to run, and the gap is visible in the skip output.
 
 import { createServer, type Server } from 'node:http';
+
 import type { AddressInfo } from 'node:net';
 
 export const EMBEDDING_DIM = 1024;

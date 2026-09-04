@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import type { JetStreamClient } from 'nats';
 
 // withOrgContext does real I/O; capturing it lets these tests assert what

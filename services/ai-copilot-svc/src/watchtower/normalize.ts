@@ -16,6 +16,7 @@
 //     producer; only `ingested_at` is Watchtower's own clock.
 
 import { randomUUID } from 'node:crypto';
+
 import { Signal, type Severity, type SignalType } from './types.js';
 
 export interface RawEvent {

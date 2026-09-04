@@ -16,6 +16,7 @@
 //     Watchtower keeps working with every model offline (§20, Rule 3).
 
 import { randomUUID } from 'node:crypto';
+
 import {
   maxSeverity,
   type Correlation,

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { correlate, DEFAULT_RULES, type CorrelationRule } from './correlate.js';
 import { isValidTransition, maxSeverity, type Signal, type SignalType } from './types.js';
 

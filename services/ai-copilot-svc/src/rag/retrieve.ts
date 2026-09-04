@@ -11,15 +11,17 @@
 // registration plate, a booking reference — which embeddings match poorly.
 // The two candidate sets are fused by reciprocal rank.
 
-import type { PoolClient } from 'pg';
 import { embed } from '../ai/router.js';
 import {
   AllModelsFailedError,
   NoEligibleModelError,
   type DataClassification,
 } from '../ai/types.js';
-import { type Role } from '../tools/types.js';
+
 import { KnowledgeUnavailableError, type DocType, type RetrievedChunk } from './types.js';
+
+import type { Role } from '../tools/types.js';
+import type { PoolClient } from 'pg';
 
 const ROLE_RANK: Record<Role, number> = {
   admin: 4,

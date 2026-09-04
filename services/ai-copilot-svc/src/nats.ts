@@ -13,6 +13,7 @@ import {
   type JetStreamClient,
   type NatsConnection,
 } from 'nats';
+
 import { config } from './config.js';
 import { WATCHTOWER_STREAM, WATCHTOWER_SUBJECTS } from './watchtower/consumer.js';
 

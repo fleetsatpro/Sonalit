@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import type * as RegistryModule from './registry.js';
 import type { AIModel, InferenceAdapter, InferenceResponse } from './types.js';
+// Imported as a type only, to give importOriginal's generic a static
+// module shape rather than an inline import() annotation.
 
 // The registry and the adapters are the router's two collaborators, and
 // both do I/O (Postgres, HTTP). Mocking them is what makes the routing and
@@ -10,7 +14,7 @@ const { mockGetModels, mockInfer } = vi.hoisted(() => ({
 }));
 
 vi.mock('./registry.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./registry.js')>();
+  const actual = await importOriginal<typeof RegistryModule>();
   return { ...actual, getModels: mockGetModels };
 });
 

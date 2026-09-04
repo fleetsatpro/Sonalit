@@ -1,11 +1,12 @@
 import './otel.js';
 import Fastify from 'fastify';
+
 import { config } from './config.js';
 import { pool } from './db.js';
-import { redis } from './redis.js';
-import { healthRoutes } from './routes/health.js';
-import { aiRoutes } from './routes/ai.js';
 import { connectNats, closeNats } from './nats.js';
+import { redis } from './redis.js';
+import { aiRoutes } from './routes/ai.js';
+import { healthRoutes } from './routes/health.js';
 import { WatchtowerConsumer } from './watchtower/consumer.js';
 
 async function start(): Promise<void> {
@@ -60,6 +61,9 @@ async function start(): Promise<void> {
     await closeNats();
     await redis.quit();
     await pool.end();
+    // A service entrypoint is the one place exiting is correct: the
+    // shutdown path has completed and there is nothing left to unwind.
+    // eslint-disable-next-line unicorn/no-process-exit
     process.exit(0);
   };
 
@@ -71,7 +75,12 @@ async function start(): Promise<void> {
   });
 }
 
-start().catch((err: Error) => {
-  process.stderr.write(`Fatal startup error: ${err.message}\n`);
+try {
+  await start();
+} catch (err) {
+  process.stderr.write(`Fatal startup error: ${(err as Error).message}\n`);
+  // Startup failed, so there is no server to keep alive; a non-zero exit is
+  // what tells the orchestrator to restart or fail the deployment.
+  // eslint-disable-next-line unicorn/no-process-exit
   process.exit(1);
-});
+}

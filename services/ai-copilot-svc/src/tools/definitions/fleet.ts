@@ -13,6 +13,7 @@
 // correctness problem.
 
 import { z } from 'zod';
+
 import { registerTool } from '../registry.js';
 
 const Region = z

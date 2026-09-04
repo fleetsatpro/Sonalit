@@ -13,13 +13,14 @@
 // an emergency pull, `invalidate()` is exposed and the ops runbook uses a
 // rolling restart, which is immediate.
 
+import { query } from '../db.js';
+
 import {
   AIModel,
   type ModelCapability,
   type DataClassification,
   classificationPermits,
 } from './types.js';
-import { query } from '../db.js';
 
 const REGISTRY_TTL_MS = 60_000;
 

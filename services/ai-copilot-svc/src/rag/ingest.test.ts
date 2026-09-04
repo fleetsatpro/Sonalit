@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import type { PoolClient } from 'pg';
 
 const { mockEmbed } = vi.hoisted(() => ({ mockEmbed: vi.fn() }));

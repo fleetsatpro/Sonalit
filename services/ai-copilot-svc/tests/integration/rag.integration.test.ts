@@ -6,20 +6,29 @@
 // sets — parses, runs and returns the right rows. Every one of those was
 // previously asserted only as a string.
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { Pool } from 'pg';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+
+import { Pool } from 'pg';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+
 import { DATABASE_URL, ORG_A, ORG_B, hasDatabase, startFakeEmbeddingServer } from './setup.js';
+
+// Types are imported statically; the modules themselves are imported
+// lazily in beforeAll, after DATABASE_URL is set — src/config.ts parses
+// process.env at module load, so importing early would bind the wrong URL.
+import type { withOrgContext as WithOrgContext } from '../../src/db.js';
+import type { ingestDocument as IngestDocument } from '../../src/rag/ingest.js';
+import type { retrieve as Retrieve } from '../../src/rag/retrieve.js';
 
 const run = promisify(execFile);
 const describeIf = hasDatabase ? describe : describe.skip;
 
 let pool: Pool;
 let server: Awaited<ReturnType<typeof startFakeEmbeddingServer>>;
-let withOrgContext: typeof import('../../src/db.js').withOrgContext;
-let ingestDocument: typeof import('../../src/rag/ingest.js').ingestDocument;
-let retrieve: typeof import('../../src/rag/retrieve.js').retrieve;
+let withOrgContext: typeof WithOrgContext;
+let ingestDocument: typeof IngestDocument;
+let retrieve: typeof Retrieve;
 
 const SOP = [
   'Escort vehicles travel at the rear of convoy KXX123X.',

@@ -6,9 +6,10 @@
 // cannot widen its own access by asking for it.
 
 import { z } from 'zod';
-import { registerTool } from '../registry.js';
+
 import { retrieve } from '../../rag/retrieve.js';
 import { KnowledgeUnavailableError } from '../../rag/types.js';
+import { registerTool } from '../registry.js';
 
 registerTool({
   name: 'search_documents',

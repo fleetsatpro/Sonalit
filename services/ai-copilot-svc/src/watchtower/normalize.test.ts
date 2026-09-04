@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+
 import { normalise, normaliseBatch, UnnormalisableEventError } from './normalize.js';
 
 const ORG = '00000000-0000-4000-8000-00000000000a';

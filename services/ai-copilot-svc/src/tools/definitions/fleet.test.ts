@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
+
 import { toolsForContext } from '../index.js';
+
 import type { ToolContext } from '../types.js';
 
 // Importing ../index.js registers the real tools. This is a smoke test over

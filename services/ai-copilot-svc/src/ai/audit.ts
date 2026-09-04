@@ -10,7 +10,9 @@
 // gap is visible rather than silent.
 
 import { randomUUID } from 'node:crypto';
+
 import { withOrgContext } from '../db.js';
+
 import type { DataClassification, ModelCapability } from './types.js';
 
 export type AuditOutcome =

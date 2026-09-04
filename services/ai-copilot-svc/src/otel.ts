@@ -1,5 +1,5 @@
-import { NodeSDK, resources, node } from '@opentelemetry/sdk-node';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
+import { NodeSDK, resources, node } from '@opentelemetry/sdk-node';
 
 const sdk = new NodeSDK({
   resource: new resources.Resource({
@@ -15,4 +15,8 @@ const sdk = new NodeSDK({
 });
 
 sdk.start();
-process.on('SIGTERM', () => { sdk.shutdown(); });
+process.on('SIGTERM', () => {
+  // Fire-and-forget: the process is already terminating, and a failed
+  // flush of pending spans must not delay or block shutdown.
+  void sdk.shutdown();
+});

@@ -248,8 +248,8 @@ export class AllModelsFailedError extends Error {
     readonly attempts: { model_id: string; error: string }[],
   ) {
     super(
-      `All ${attempts.length} model(s) failed for capability '${capability}': ` +
-        attempts.map((a) => `${a.model_id} (${a.error})`).join('; '),
+      `All ${attempts.length} model(s) failed for capability '${capability}': ${ 
+        attempts.map((a) => `${a.model_id} (${a.error})`).join('; ')}`,
     );
     this.name = 'AllModelsFailedError';
   }

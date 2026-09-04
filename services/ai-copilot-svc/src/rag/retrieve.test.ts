@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import type { PoolClient } from 'pg';
 
 // The embedding call goes through the model router; mocking it keeps these

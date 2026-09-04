@@ -1,12 +1,15 @@
-import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { z } from 'zod';
-import Anthropic from '@anthropic-ai/sdk';
 import { randomUUID } from 'node:crypto';
+
+import Anthropic from '@anthropic-ai/sdk';
+import { z } from 'zod';
+
 import { config } from '../config.js';
 import { query, pool } from '../db.js';
-import { redis } from '../redis.js';
 import { withCircuitBreaker, CircuitOpenError } from '../lib/circuit-breaker.js';
+import { redis } from '../redis.js';
+
 import type { AiDecision } from '../db.js';
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 
 const anthropic = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY });
 
@@ -62,6 +65,9 @@ async function storeDecision(orgId: string, userId: string, userQuery: string, r
   );
 }
 
+// Fastify plugins are declared async by convention; the signature is part
+// of the plugin contract even when the body has nothing to await.
+// eslint-disable-next-line @typescript-eslint/require-await
 export async function aiRoutes(app: FastifyInstance): Promise<void> {
   app.post('/v4/ai/query', async (req: FastifyRequest, reply: FastifyReply) => {
     const body = QuerySchema.safeParse(req.body);

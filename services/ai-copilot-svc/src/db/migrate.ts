@@ -435,7 +435,12 @@ async function migrate(): Promise<void> {
   }
 }
 
-migrate().catch((err: Error) => {
-  process.stderr.write(`Migration failed: ${err.message}\n`);
+try {
+  await migrate();
+} catch (err) {
+  process.stderr.write(`Migration failed: ${(err as Error).message}\n`);
+  // This module IS a CLI — `tsx src/db/migrate.ts` — and a non-zero exit
+  // is how a deploy pipeline learns the migration did not apply.
+  // eslint-disable-next-line unicorn/no-process-exit
   process.exit(1);
-});
+}

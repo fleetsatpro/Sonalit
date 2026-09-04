@@ -18,6 +18,10 @@
 // every model including healthy ones. Isolation per model is the whole
 // point of having a fallback chain.
 
+import { config } from '../config.js';
+
+import { adapterFor } from './adapters/index.js';
+import { getModels, selectCandidates } from './registry.js';
 import {
   AllModelsFailedError,
   NoEligibleModelError,
@@ -27,9 +31,7 @@ import {
   type InferenceRequest,
   type InferenceResponse,
 } from './types.js';
-import { getModels, selectCandidates } from './registry.js';
-import { adapterFor } from './adapters/index.js';
-import { config } from '../config.js';
+
 
 const FAILURE_THRESHOLD = 3;
 const COOLDOWN_MS = 60_000;
@@ -106,8 +108,8 @@ async function candidatesFor(
   if (candidates.length === 0) {
     throw new NoEligibleModelError(
       req.capability,
-      `no registered model satisfies classification '${req.classification}'` +
-        (req.requiresTools ? ' with tool support' : ''),
+      `no registered model satisfies classification '${req.classification}'${ 
+        req.requiresTools ? ' with tool support' : ''}`,
     );
   }
 
