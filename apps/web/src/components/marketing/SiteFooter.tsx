@@ -1,71 +1,48 @@
+import BrandMark from './BrandMark.js';
 import { COMPANY_LINKS, PLATFORM_LINKS } from './nav.js';
 
 export default function SiteFooter(): React.ReactElement {
   const year = new Date().getFullYear();
   return (
-    <footer className="border-t border-d-rim bg-d-carbon">
-      <div className="mx-auto grid max-w-7xl gap-10 px-5 py-14 sm:grid-cols-2 lg:grid-cols-4 lg:px-8">
-        <div className="sm:col-span-2 lg:col-span-2">
-          <div className="flex items-center gap-2.5">
-            <img src="/icon-192.png" alt="" width={26} height={26} className="h-[26px] w-[26px] rounded-md" aria-hidden="true" />
-            <span className="text-[16px] font-bold tracking-[0.14em] text-d-t1">SONALIT</span>
-          </div>
-          <p className="mt-4 max-w-md text-sm leading-relaxed text-d-t2">
-            Sonalit is a multi-tenant operations platform for fleet, convoy and container delivery
-            teams — live tracking, field coordination, incident response and operational reporting
-            in one system.
-          </p>
+    <footer>
+      <div className="foot-grid">
+        <div className="foot-brand">
+          <a href="/" className="logo" aria-label="Sonalit — home">
+            <BrandMark size={26} />
+          </a>
+          <p>Intelligent fleet, convoy and logistics operations platform.</p>
         </div>
 
-        <nav aria-labelledby="footer-platform">
-          <h2 id="footer-platform" className="text-[11px] font-semibold uppercase tracking-[0.18em] text-d-t3">
-            Platform
-          </h2>
-          <ul className="mt-4 space-y-2.5">
+        <div className="foot-links">
+          <nav className="foot-col" aria-labelledby="foot-platform">
+            <h2 id="foot-platform">Platform</h2>
             {PLATFORM_LINKS.map((link) => (
-              <li key={link.href}>
-                <a
-                  href={link.href}
-                  className="text-sm text-d-t2 hover:text-cds-orange focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cds-orange"
-                >
-                  {link.label}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </nav>
-
-        <nav aria-labelledby="footer-company">
-          <h2 id="footer-company" className="text-[11px] font-semibold uppercase tracking-[0.18em] text-d-t3">
-            Company
-          </h2>
-          <ul className="mt-4 space-y-2.5">
-            {COMPANY_LINKS.map((link) => (
-              <li key={link.href}>
-                <a
-                  href={link.href}
-                  className="text-sm text-d-t2 hover:text-cds-orange focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cds-orange"
-                >
-                  {link.label}
-                </a>
-              </li>
-            ))}
-            <li>
-              <a
-                href="/login"
-                className="text-sm text-d-t2 hover:text-cds-orange focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cds-orange"
-              >
-                Sign in to the operations platform
+              <a key={link.href} href={link.href}>
+                {link.label}
               </a>
-            </li>
-          </ul>
-        </nav>
+            ))}
+          </nav>
+
+          <nav className="foot-col" aria-labelledby="foot-company">
+            <h2 id="foot-company">Company</h2>
+            {COMPANY_LINKS.map((link) => (
+              <a key={link.href} href={link.href}>
+                {link.label}
+              </a>
+            ))}
+          </nav>
+
+          <nav className="foot-col" aria-labelledby="foot-access">
+            <h2 id="foot-access">Access</h2>
+            <a href="/login">Sign in to Sonalit</a>
+            <a href="/contact">Request platform access</a>
+          </nav>
+        </div>
       </div>
 
-      <div className="border-t border-d-rim">
-        <div className="mx-auto max-w-7xl px-5 py-6 text-xs text-d-t3 lg:px-8">
-          © {year} Sonalit. Fleet, convoy and container delivery operations technology.
-        </div>
+      <div className="foot-bottom">
+        <span>© {year} Sonalit</span>
+        <span className="foot-tag">Fleet · Convoy · Container delivery · Security operations</span>
       </div>
     </footer>
   );

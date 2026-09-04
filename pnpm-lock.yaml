@@ -156,10 +156,16 @@ importers:
       '@fontsource/ibm-plex-mono':
         specifier: ^5.2.7
         version: 5.2.7
+      '@fontsource/inter':
+        specifier: ^5.2.0
+        version: 5.3.0
       '@fontsource/michroma':
         specifier: ^5.3.0
         version: 5.3.0
       '@fontsource/sora':
+        specifier: ^5.3.0
+        version: 5.3.0
+      '@fontsource/space-grotesk':
         specifier: ^5.3.0
         version: 5.3.0
       '@fontsource/space-mono':
@@ -3078,6 +3084,9 @@ packages:
 
   '@fontsource/sora@5.3.0':
     resolution: {integrity: sha512-SqW3OpKxxfKvxDLPlbdrWf2KooPfbd+W3jaYn483o+Y/JrmU87vjFPNptDqwP428c3vY+gnranLhjcbRaXB0Jw==}
+
+  '@fontsource/space-grotesk@5.3.0':
+    resolution: {integrity: sha512-ksnGizDPXIDuvqcTYTSrmZ+evx9sDlS8rp7+42BQ7wU+spt3twEoXfbJz672C+5CLg6VeUQwRy5RXshWb67LcQ==}
 
   '@fontsource/space-mono@5.3.0':
     resolution: {integrity: sha512-FrpBMOVWn3PRdRHlrZWC55X3kZG/2BTH7SM5ZyS/bky3iKya2BturI5lk+t0RoDQL2JyHzURsVq/EisCsxpI5A==}
@@ -13271,6 +13280,8 @@ snapshots:
   '@fontsource/michroma@5.3.0': {}
 
   '@fontsource/sora@5.3.0': {}
+
+  '@fontsource/space-grotesk@5.3.0': {}
 
   '@fontsource/space-mono@5.3.0': {}
 

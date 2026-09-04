@@ -4,6 +4,11 @@ import './index.css';
 // margin-left: var(--d-rail-w) rule silently collapsed to 0 on non-Dashboard
 // pages, letting the outlet render underneath the sidebar.
 import './styles/dashboard.css';
+// Public marketing site design system. Every rule is scoped under
+// .sonalit-public, so it is inert on every application route — it lives here
+// rather than in the marketing components because scripts/prerender.tsx has to
+// import that component tree outside Vite, where a CSS import would throw.
+import './styles/marketing.css';
 import './i18n/index.js';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
