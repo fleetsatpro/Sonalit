@@ -3,6 +3,7 @@
 // Importing this module registers every tool as a side effect, so the
 // registry is fully populated before the first request is served.
 import './definitions/fleet.js';
+import './definitions/knowledge.js';
 
 export { executeTool, toolsForContext, getTool, registerTool, clearRegistry } from './registry.js';
 export {

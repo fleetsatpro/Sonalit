@@ -194,6 +194,40 @@ Not yet ported: the external-API tools (`get_weather`, `check_holidays`,
 `create_risk_zone`). The mutations are §42 Level 1/2 and need the
 draft/approval pipeline and idempotency keys (§43) before they move.
 
+### Knowledge Fabric — RAG (§17–19, §34)
+
+`services/ai-copilot-svc/src/rag/`. Schema: `ai_documents` and
+`ai_document_chunks`, both org-scoped under RLS, with pgvector.
+
+- **Permissions precede context.** Role, classification and temporal
+  validity are clauses *inside* the retrieval SQL, never a filter over its
+  results — §18 forbids retrieving broadly and asking the model to ignore
+  what it shouldn't see.
+- **Hybrid retrieval** (§34): vector similarity fused with full-text by
+  reciprocal rank, because embeddings match exact identifiers — a plate, a
+  booking reference — poorly, and those are what operators type.
+- **Temporal** (§19): expired and superseded documents are excluded unless
+  history is asked for explicitly, so a rescinded SOP is not cited as
+  current.
+- **Embedding-space safety:** vectors from different models are not
+  comparable, so `embedding_model` is a hard filter in every query. Mixing
+  them returns noise that looks like a result.
+- **Degradation:** with no embedding model, ingestion refuses to store a
+  placeholder vector and retrieval raises `KnowledgeUnavailableError`, so
+  Commander can say retrieval is unavailable (§62) rather than answer from
+  parametric memory.
+
+`docker-compose.dev.yml` now runs `pgvector/pgvector:pg16`; the stock
+Postgres image has no pgvector.
+
+**RAG is inert until an inference endpoint exists.** Two open-source,
+multilingual, 1024-dimension embedding models (`bge-m3`,
+`multilingual-e5-large`, both MIT) are registered as `experimental` and
+not approved, so the production gate filters them out. Point
+`EMBEDDING_ENDPOINT` at a real server and promote them to activate it.
+Not yet built: parsing and OCR (§40) upstream of ingestion, and reranking
+(§4.7).
+
 ## 6. Not yet built
 
 Phases 2–10 remain: RAG and pgvector, Watchtower, Digital Twin, GEOINT,

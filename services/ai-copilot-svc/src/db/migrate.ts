@@ -150,6 +150,135 @@ async function migrate(): Promise<void> {
       ON CONFLICT (name, version) DO NOTHING;
     `);
 
+    // ── Knowledge Fabric (spec §17-19) ─────────────────────────────────────
+    // pgvector is required. It is NOT in the stock postgres image, which is
+    // why docker-compose.dev.yml runs pgvector/pgvector:pg16. If this fails
+    // in a managed environment, the extension must be enabled there first —
+    // the RAG features degrade to unavailable rather than wrong (Rule 3).
+    await client.query(`CREATE EXTENSION IF NOT EXISTS vector;`);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ai_documents (
+        id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        org_id        UUID        NOT NULL,
+        title         TEXT        NOT NULL,
+        doc_type      TEXT        NOT NULL
+                        CHECK (doc_type IN ('sop','policy','manual','report',
+                                            'incident','procedure','route_doc','other')),
+        -- Where this came from in Sonalit, so a retrieved chunk can be cited
+        -- back to an authoritative record rather than floating free (§39).
+        source_table  TEXT,
+        source_id     TEXT,
+        uri           TEXT,
+        -- §18: retrieval filters on these BEFORE building model context.
+        -- Data above a model's clearance must never enter its prompt.
+        required_role TEXT        NOT NULL DEFAULT 'analyst'
+                        CHECK (required_role IN ('admin','dispatcher','operator','analyst','cfo')),
+        classification TEXT       NOT NULL DEFAULT 'operational'
+                        CHECK (classification IN ('public','internal','operational',
+                                                  'sensitive','restricted')),
+        language      TEXT        NOT NULL DEFAULT 'en',
+        -- §19 temporal knowledge: when the content became true, and when it
+        -- stopped being true. Superseded guidance must not outrank current.
+        valid_from    TIMESTAMPTZ,
+        valid_until   TIMESTAMPTZ,
+        superseded_by UUID        REFERENCES ai_documents (id),
+        checksum      TEXT        NOT NULL,
+        created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (org_id, checksum)
+      );
+    `);
+
+    // Chunks carry a denormalised copy of the parent's permission and
+    // validity columns. That is deliberate: retrieval filters on them inside
+    // the vector search, and a join would either force a slower plan or
+    // tempt a future caller into filtering AFTER retrieval — which is
+    // exactly the ordering §18 forbids.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ai_document_chunks (
+        id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        document_id    UUID        NOT NULL REFERENCES ai_documents (id) ON DELETE CASCADE,
+        org_id         UUID        NOT NULL,
+        chunk_index    INTEGER     NOT NULL,
+        content        TEXT        NOT NULL,
+        token_estimate INTEGER     NOT NULL,
+        -- Vectors from different models occupy different spaces and are not
+        -- comparable. Retrieval MUST filter on embedding_model; the column
+        -- exists so that constraint can be enforced rather than assumed.
+        embedding      VECTOR(1024) NOT NULL,
+        embedding_model TEXT       NOT NULL,
+        required_role  TEXT        NOT NULL,
+        classification TEXT        NOT NULL,
+        valid_from     TIMESTAMPTZ,
+        valid_until    TIMESTAMPTZ,
+        created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (document_id, chunk_index)
+      );
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_ai_documents_org
+        ON ai_documents (org_id, doc_type);
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_ai_chunks_org_model
+        ON ai_document_chunks (org_id, embedding_model);
+    `);
+    // Full-text index backs the keyword half of hybrid retrieval (§34):
+    // vector search alone misses exact identifiers — a registration plate or
+    // a booking reference — which operators search for constantly.
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_ai_chunks_fts
+        ON ai_document_chunks USING GIN (to_tsvector('simple', content));
+    `);
+    // IVFFlat over cosine distance. Built after ingestion in practice; with
+    // an empty table Postgres still accepts it and the planner falls back to
+    // a sequential scan until there are enough rows to matter.
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_ai_chunks_embedding
+        ON ai_document_chunks USING ivfflat (embedding vector_cosine_ops)
+        WITH (lists = 100);
+    `);
+
+    for (const table of ['ai_documents', 'ai_document_chunks']) {
+      await client.query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
+      await client.query(`DROP POLICY IF EXISTS ${table}_org_isolation ON ${table};`);
+      await client.query(`
+        CREATE POLICY ${table}_org_isolation ON ${table}
+          USING (org_id = current_setting('app.current_org_id', TRUE)::UUID)
+          WITH CHECK (org_id = current_setting('app.current_org_id', TRUE)::UUID);
+      `);
+    }
+
+    // Candidate open-weight embedding models (§4.6, §5). Both are genuinely
+    // open source, multilingual (EN/FR per §4.4), and emit 1024 dimensions,
+    // matching ai_document_chunks.embedding.
+    //
+    // Registered as 'experimental' and NOT approved for production, because
+    // no inference endpoint exists yet — see the STOP gate in
+    // docs/ai/ARCHITECTURE_AUDIT.md. The production gate therefore filters
+    // them out, and retrieval reports itself unavailable rather than
+    // returning wrong results (Rule 3). Promote them once EMBEDDING_ENDPOINT
+    // points at a real server and the §53 evaluation suite passes.
+    await client.query(
+      `INSERT INTO ai_models (
+         name, version, provider, provider_model, capabilities,
+         license, license_is_open_source, self_hosted, context_length,
+         endpoint, max_data_classification, supports_tools, supports_streaming,
+         routing_priority, status, approved_for_production
+       ) VALUES
+         ('bge-m3', '1', 'openai_compatible', 'BAAI/bge-m3',
+          ARRAY['embedding'], 'MIT', TRUE, TRUE, 8192,
+          $1, 'restricted', FALSE, FALSE, 5, 'experimental', FALSE),
+         ('multilingual-e5-large', '1', 'openai_compatible',
+          'intfloat/multilingual-e5-large',
+          ARRAY['embedding'], 'MIT', TRUE, TRUE, 512,
+          $1, 'restricted', FALSE, FALSE, 6, 'experimental', FALSE)
+       ON CONFLICT (name, version) DO NOTHING;`,
+      [process.env['EMBEDDING_ENDPOINT'] ?? null],
+    );
+
     process.stdout.write('ai-copilot-svc migrations complete\n');
   } finally {
     client.release();

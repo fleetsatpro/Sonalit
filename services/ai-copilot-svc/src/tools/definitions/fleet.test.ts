@@ -15,10 +15,17 @@ const ctx: ToolContext = {
 
 describe('registered fleet tools', () => {
   it('registers the ported read tools', () => {
-    const names = toolsForContext(ctx)
-      .map((t) => t.name)
-      .sort();
-    expect(names).toEqual(['query_alerts', 'query_convoys', 'query_risk_zones', 'query_vehicles']);
+    const names = toolsForContext(ctx).map((t) => t.name);
+    // Containment rather than an exact list: registering a tool elsewhere
+    // should not fail the fleet suite.
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'query_alerts',
+        'query_convoys',
+        'query_risk_zones',
+        'query_vehicles',
+      ]),
+    );
   });
 
   it('renders every tool schema as a plain object schema', () => {

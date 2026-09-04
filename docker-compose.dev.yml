@@ -13,7 +13,9 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:16-alpine
+    # pgvector/pgvector ships the pgvector extension the RAG knowledge fabric
+    # needs (services/ai-copilot-svc/src/rag). Same Postgres 16 underneath.
+    image: pgvector/pgvector:pg16
     ports:
       - "5432:5432"
     environment:

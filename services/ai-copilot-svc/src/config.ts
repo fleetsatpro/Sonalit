@@ -12,6 +12,11 @@ const ConfigSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error']).default('info'),
   CIRCUIT_BREAKER_THRESHOLD: z.coerce.number().default(5),
+  // Base URL of a self-hosted OpenAI-compatible inference server (vLLM,
+  // Ollama, TGI). Read by the migration when seeding embedding models; the
+  // registry is the runtime source of truth, so changing a model's endpoint
+  // later is an UPDATE, not a redeploy.
+  EMBEDDING_ENDPOINT: z.string().url().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
