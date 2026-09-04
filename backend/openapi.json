@@ -4120,6 +4120,16 @@
         }
       }
     },
+    "/api/v1/cds/trips/live": {
+      "get": {
+        "operationId": "get_api_v1_cds_trips_live",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/cds/trips/{id}": {
       "get": {
         "operationId": "get_api_v1_cds_trips_id",

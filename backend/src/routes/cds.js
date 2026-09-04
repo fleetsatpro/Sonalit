@@ -309,6 +309,55 @@ router.get('/trips', asyncHandler(async (req, res) => {
   });
 }));
 
+// Live Operations reads this. It used to call GET /trips?status=dispatched, and
+// that filter is a single-value equality — so a truck that had passed a
+// checkpoint, was running late, or had reached the port counted as zero active
+// trips while it was demonstrably on the road. A trip is "open" until it is
+// delivered, completed or archived, and the phase says which part of the journey
+// it is in, so the control room can never be told nothing is happening while
+// vehicles are out.
+const TRIP_PHASE = {
+  dispatched: 'moving', checkpoint: 'moving', delayed: 'moving',
+  at_port: 'at_port', lock_removed: 'at_port',
+  created: 'staged', vehicle_assigned: 'staged', driver_assigned: 'staged',
+  awaiting_lock: 'staged', locked: 'staged',
+};
+const OPEN_TRIP_STATUSES = Object.keys(TRIP_PHASE);
+
+// Must be declared before '/trips/:id' — Express matches in order, and 'live'
+// would otherwise be swallowed as a trip id.
+router.get('/trips/live', asyncHandler(async (req, res) => {
+  const result = await req.db(`
+    SELECT t.id, t.trip_number, t.status, t.origin, t.destination, t.eta,
+           t.departed_at, t.progress, t.risk, t.vehicle_id, t.booking_id,
+           cu.company_name AS customer_name,
+           dr.name AS driver_name, dr.phone AS driver_phone,
+           ve.registration AS vehicle_reg,
+           l.serial AS lock_serial,
+           b.booking_number,
+           gps.lat, gps.lng, gps.speed, gps.heading, gps.device_time AS last_seen
+      FROM cds_trips t
+      ${TRIP_JOINS}
+      LEFT JOIN cds_electronic_locks l ON l.id = t.lock_id
+      LEFT JOIN cds_bookings b ON b.id = t.booking_id
+      LEFT JOIN LATERAL (
+        SELECT lat, lng, speed, heading, device_time
+          FROM cds_gps_history
+         WHERE vehicle_id = t.vehicle_id
+         ORDER BY device_time DESC
+         LIMIT 1
+      ) gps ON true
+     WHERE t.deleted_at IS NULL
+       AND t.status = ANY($1)
+     ORDER BY (gps.device_time IS NULL), gps.device_time DESC NULLS LAST, t.created_at DESC
+     LIMIT 300
+  `, [OPEN_TRIP_STATUSES]);
+
+  res.json({
+    data: result.rows.map(r => ({ ...r, phase: TRIP_PHASE[r.status] || 'staged' })),
+  });
+}));
+
 router.get('/trips/:id', asyncHandler(async (req, res) => {
   await getRow(req, res, 'cds_trips', { joins: TRIP_JOINS, selectCols: TRIP_COLS });
 }));
