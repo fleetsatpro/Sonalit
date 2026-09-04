@@ -124,7 +124,8 @@ async function migrate(): Promise<void> {
     await client.query(`DROP POLICY IF EXISTS ai_audit_log_org_isolation ON ai_audit_log;`);
     await client.query(`
       CREATE POLICY ai_audit_log_org_isolation ON ai_audit_log
-        USING (org_id = current_setting('app.org_id', TRUE)::UUID);
+        USING (org_id = current_setting('app.current_org_id', TRUE)::UUID)
+        WITH CHECK (org_id = current_setting('app.current_org_id', TRUE)::UUID);
     `);
 
     // Seed the registry with the two models this codebase previously

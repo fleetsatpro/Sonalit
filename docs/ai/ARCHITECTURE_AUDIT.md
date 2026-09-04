@@ -66,6 +66,45 @@ built first: a provider-neutral abstraction is the correct next step under
 *either* answer. What it changes is which registry rows exist and what
 infrastructure must be provisioned alongside them.
 
+## 3b. Security findings (P0 — cross-tenant)
+
+Spec §59: "Cross-tenant leakage is a P0 security defect." Two were found.
+
+### F1 — The AI dispatch tools read across every tenant
+
+`backend/src/routes/ai.js` mounts `authenticate` **only** — never
+`attachOrgDb` — and all nine of its tools call the global `query()` from
+`config/database.js`, which bypasses RLS by design. `query_vehicles`,
+`query_convoys`, `query_alerts` and `query_risk_zones` therefore return
+rows for **all organisations** to any authenticated user of any tenant.
+
+*Status:* the ported tools in `services/ai-copilot-svc/src/tools/` are
+org-scoped and fix this for the v4 path. **The legacy route is unchanged
+and still leaking** — it needs `attachOrgDb` plus `req.db`, which is a
+separate change to the Express monolith.
+
+### F2 — v4 `withOrgContext` enforced nothing
+
+Every v4 service shipped the same helper, which applied no isolation at
+all for three independent reasons:
+
+| Bug | Effect |
+|---|---|
+| No `BEGIN` | `SET LOCAL` outside a transaction is a no-op that only warns. |
+| No `SET LOCAL ROLE sonalit_app` | Table owners and superusers **bypass RLS**; the service connects as the owner. |
+| Setting named `app.org_id` | Every policy in the platform reads `app.current_org_id`, so policies evaluated NULL. |
+
+*Status:* fixed in `services/ai-copilot-svc/src/db.ts`, matching
+`backend/src/utils/orgScopedDb.js`. The AI plane was its first real caller,
+so nothing had depended on it before.
+
+**The identical broken helper remains in `auth-svc`, `fleet-svc`,
+`convoy-svc`, `alerts-svc`, `guardian-svc`, `media-svc`,
+`notification-svc` and `reports-svc`.** It currently has no callers in
+those services, so it is latent rather than actively leaking — but the
+next person to use it will get silent cross-tenant access. It should be
+fixed everywhere, as one focused change.
+
 ## 4. Architectural constraint discovered
 
 `backend/` is CommonJS and **does not depend on `@sonalit/contracts`**,
@@ -114,6 +153,28 @@ No code change, no redeploy of the service. Because `routing_priority` is
 first and the hosted models become its fallback. `max_data_classification`
 of `restricted` lets the most sensitive traffic route to it *exclusively*,
 since no hosted row clears above `operational`.
+
+### Tool Registry (§10–12, §42)
+
+`services/ai-copilot-svc/src/tools/`. Four tenant-scoped read tools ported
+from the legacy dispatch loop: `query_vehicles`, `query_convoys`,
+`query_alerts`, `query_risk_zones`.
+
+Three properties are structural, not per-author discipline:
+
+- **Arguments are validated** against a Zod schema before any handler runs.
+  The same schema is converted to the model's JSON Schema, so the two
+  cannot drift.
+- **Execution is org-scoped.** A handler is *handed* a client already
+  inside the caller's RLS context and has no route to an unscoped pool —
+  which is why F1 cannot recur here even if a handler's SQL omits a filter.
+- **Role filtering happens before the model is told a tool exists**, so an
+  unauthorised tool cannot be attempted and does not leak via a refusal.
+
+Not yet ported: the external-API tools (`get_weather`, `check_holidays`,
+`get_road_conditions`) and the two mutating tools (`create_geofence`,
+`create_risk_zone`). The mutations are §42 Level 1/2 and need the
+draft/approval pipeline and idempotency keys (§43) before they move.
 
 ## 6. Not yet built
 
