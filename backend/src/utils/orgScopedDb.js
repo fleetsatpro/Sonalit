@@ -48,4 +48,34 @@ function attachOrgDb(req, _res, next) {
   next();
 }
 
-module.exports = { withOrg, attachOrgDb };
+/**
+ * withPlatform(fn) runs fn(client) with app.platform_scope = 'on', which is the
+ * predicate the control-plane policies (tenants, memberships, platform_admins,
+ * support_sessions, security_events) key on.
+ *
+ * This is the ONLY function that sets that flag, and it must only be called
+ * from a code path that has already established PLATFORM scope server-side via
+ * resolveSecurityContext. It deliberately does not confer RLS bypass: tenant
+ * tables still filter on app.current_org_id, which is left unset here, so a
+ * platform connection sees the control plane and *no* tenant rows. Reading a
+ * tenant's operational data is done by scoping into that tenant with withOrg,
+ * which keeps the tenant's own RLS in force (see support mode).
+ */
+async function withPlatform(fn) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SET LOCAL ROLE sonalit_app');
+    await client.query('SELECT set_config($1, $2, true)', ['app.platform_scope', 'on']);
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { withOrg, withPlatform, attachOrgDb };

@@ -246,6 +246,11 @@ catch (e) { logger.warn("GDPR route failed: " + e.message); }
   catch (e) { logger.warn("Route not found: " + r + " — " + e.message); }
 });
 
+// Sonalit Mission Control — platform control plane. Every route inside requires
+// PLATFORM scope, resolved server-side from platform_admins.
+try { app.use("/api/v1/platform", require("./routes/platform")); logger.info("Route loaded: /api/v1/platform (Mission Control)"); }
+catch (e) { logger.warn("platform route failed: " + e.message); }
+
 try { app.use("/api/v1/guardian", require("./routes/guardian-ops")); logger.info("Route loaded: guardian-ops"); }
 catch (e) { logger.warn("guardian-ops route failed: " + e.message); }
 

@@ -65,6 +65,15 @@ beforeAll(async () => {
   if (!HAS_DB) return;
   pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
+  // org_id references the tenant registry (migration 090), so this fixture's
+  // org has to be a registered tenant before anything can point at it.
+  await pool.query(
+    `INSERT INTO tenants (id, name, slug, status, data_classification)
+     VALUES ($1, 'Corridor ITest', 'corridor-itest', 'ACTIVE', 'PLATFORM_TEST')
+     ON CONFLICT (id) DO NOTHING`,
+    [ORG],
+  );
+
   await pool.query(
     `INSERT INTO users (id, email, name, password_hash, role, status, org_id)
      VALUES ($1, 'itest-corridor@sonalit.test', 'ITest Ops', 'x', 'admin', 'active', $2)

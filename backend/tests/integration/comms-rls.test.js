@@ -32,6 +32,16 @@ beforeAll(async () => {
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
   });
+  // org_id is a foreign key to the tenant registry (migration 090), so the two
+  // orgs these fixtures use have to exist before any row can reference them.
+  await pool.query(
+    `INSERT INTO tenants (id, name, slug, status, data_classification)
+     VALUES ($1,'RLS Fixture A','rls-fixture-a','ACTIVE','PLATFORM_TEST'),
+            ($2,'RLS Fixture B','rls-fixture-b','ACTIVE','PLATFORM_TEST')
+     ON CONFLICT (id) DO NOTHING`,
+    [ORG_A, ORG_B],
+  );
+
   // Seed two org owners + one channel per org (superuser bypasses RLS).
   await pool.query(
     `INSERT INTO users (id, email, name, role, org_id, status, password_hash) VALUES
