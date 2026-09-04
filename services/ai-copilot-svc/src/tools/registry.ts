@@ -1,6 +1,5 @@
 // Tool Registry (spec §10) and the execution path (§11, §12).
 
-
 import { withOrgContext } from '../db.js';
 
 import { zodToJsonSchema } from './json-schema.js';
@@ -120,7 +119,16 @@ export async function executeTool(
       tool.handler(parsed.data as never, ctx, client),
     );
 
-    return result({ success: true, source: tool.source, data });
+    // A tool that can determine its data's age reports it here; without an
+    // extractor freshness stays null, meaning unknown — which is never
+    // treated as "fresh" downstream (§48).
+    return {
+      ...result({ success: true, source: tool.source, data }),
+      freshness_seconds: tool.freshness ? tool.freshness(data) : null,
+      // Lifted into the contract so callers see them without having to
+      // know each tool's payload shape.
+      warnings: tool.warnings ? tool.warnings(data) : [],
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return result({

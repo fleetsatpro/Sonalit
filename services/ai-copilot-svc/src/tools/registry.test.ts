@@ -124,6 +124,52 @@ describe('executeTool', () => {
     expect(res.warnings.join(' ')).toContain('unavailable, not empty');
   });
 
+  // §48 — a tool that knows how old its data is must be able to say so,
+  // or Commander cannot distinguish "current" from "last known".
+  it('reports freshness from a tool that can determine it', async () => {
+    registerTool({
+      name: 'aged',
+      description: 'Returns data with a known age',
+      action_level: 'read',
+      required_role: 'analyst',
+      source: 'computed',
+      input_schema: z.object({}),
+      handler: () => Promise.resolve({ data_age_seconds: 420 }),
+      freshness: (data: { data_age_seconds: number }) => data.data_age_seconds,
+    } as Parameters<typeof registerTool>[0]);
+
+    const res = await executeTool('aged', {}, ctx);
+
+    expect(res.freshness_seconds).toBe(420);
+  });
+
+  // Unknown must never be reported as fresh.
+  it('leaves freshness null when a tool cannot determine it', async () => {
+    registerEcho();
+    const res = await executeTool('echo', { value: 'x' }, ctx);
+    expect(res.freshness_seconds).toBeNull();
+  });
+
+  // Without an extractor a tool's caveats stay buried in its payload, and
+  // ToolResult.warnings — which Commander uses to cap confidence — is
+  // silently always empty.
+  it('lifts a tool’s own warnings into the result contract', async () => {
+    registerTool({
+      name: 'caveated',
+      description: 'Returns data with caveats',
+      action_level: 'read',
+      required_role: 'analyst',
+      source: 'computed',
+      input_schema: z.object({}),
+      handler: () => Promise.resolve({ warnings: ['ETA data unavailable'] }),
+      warnings: (data: { warnings: string[] }) => data.warnings,
+    } as Parameters<typeof registerTool>[0]);
+
+    const res = await executeTool('caveated', {}, ctx);
+
+    expect(res.warnings).toEqual(['ETA data unavailable']);
+  });
+
   it('refuses to register two tools under one name', () => {
     registerEcho();
     expect(() => {

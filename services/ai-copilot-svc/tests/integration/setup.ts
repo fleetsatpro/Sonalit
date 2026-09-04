@@ -126,3 +126,92 @@ export const PLATFORM_FIXTURE_SQL = `
   GRANT SELECT, INSERT, UPDATE, DELETE ON convoys, vehicles, alerts, risk_zones
     TO sonalit_app;
 `;
+
+/**
+ * A scripted OpenAI-compatible chat endpoint.
+ *
+ * Commander's loop — routing, tool dispatch, evidence classification, the
+ * budget checks — is provider-agnostic, so exercising it needs a server
+ * that speaks the protocol, not real weights. This one asks for a named
+ * tool on its first turn and answers once it sees the result, which is the
+ * shape of every real investigation.
+ */
+export async function startScriptedChatServer(
+  toolName: string,
+  toolArgs: object,
+): Promise<{
+  url: string;
+  close: () => Promise<void>;
+}> {
+  const server: Server = createServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => (body += String(chunk)));
+    req.on('end', () => {
+      const payload = JSON.parse(body || '{}') as {
+        input?: string | string[];
+        messages?: { role: string; content?: string }[];
+      };
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+
+      if ((req.url ?? '').includes('/embeddings')) {
+        const items = Array.isArray(payload.input) ? payload.input : [payload.input ?? ''];
+        res.end(
+          JSON.stringify({
+            data: items.map((_t, index) => ({
+              index,
+              embedding: new Array(EMBEDDING_DIM).fill(0.1),
+            })),
+            usage: { prompt_tokens: 10 },
+          }),
+        );
+        return;
+      }
+
+      const sawToolResult = (payload.messages ?? []).some((m) => m.role === 'tool');
+      if (!sawToolResult) {
+        res.end(
+          JSON.stringify({
+            choices: [
+              {
+                finish_reason: 'tool_calls',
+                message: {
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: 'call-1',
+                      type: 'function',
+                      function: { name: toolName, arguments: JSON.stringify(toolArgs) },
+                    },
+                  ],
+                },
+              },
+            ],
+            usage: { prompt_tokens: 50, completion_tokens: 10 },
+          }),
+        );
+        return;
+      }
+
+      res.end(
+        JSON.stringify({
+          choices: [
+            { finish_reason: 'stop', message: { content: 'SITUATION — assessment complete.' } },
+          ],
+          usage: { prompt_tokens: 80, completion_tokens: 20 },
+        }),
+      );
+    });
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  return {
+    url: `http://127.0.0.1:${String(port)}/v1`,
+    close: () =>
+      new Promise<void>((resolve) =>
+        server.close(() => {
+          resolve();
+        }),
+      ),
+  };
+}

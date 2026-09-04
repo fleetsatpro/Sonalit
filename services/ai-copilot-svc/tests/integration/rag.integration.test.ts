@@ -19,11 +19,13 @@ import {
   PLATFORM_FIXTURE_SQL,
   hasDatabase,
   startFakeEmbeddingServer,
+  startScriptedChatServer,
 } from './setup.js';
 
 // Types are imported statically; the modules themselves are imported
 // lazily in beforeAll, after DATABASE_URL is set — src/config.ts parses
 // process.env at module load, so importing early would bind the wrong URL.
+import type { runCommander as RunCommander } from '../../src/commander/agent.js';
 import type { withOrgContext as WithOrgContext } from '../../src/db.js';
 import type { ingestDocument as IngestDocument } from '../../src/rag/ingest.js';
 import type { retrieve as Retrieve } from '../../src/rag/retrieve.js';
@@ -333,6 +335,92 @@ describeIf('RAG against real Postgres + pgvector', () => {
 
       expect(result.success).toBe(true);
       expect(result.error).toBeUndefined();
+    });
+  });
+
+  // Commander's full loop against real infrastructure: registry routing to
+  // a self-hosted-shaped endpoint, tool dispatch under RLS, evidence
+  // classification, freshness and the audit write.
+  describe('Commander end to end', () => {
+    let chat: Awaited<ReturnType<typeof startScriptedChatServer>>;
+    let runCommander: typeof RunCommander;
+
+    beforeAll(async () => {
+      chat = await startScriptedChatServer('assess_convoy_risk', { convoy_id: 'convoy-e2e' });
+      await pool.query(
+        `INSERT INTO ai_models (name, version, provider, provider_model, capabilities,
+           license, license_is_open_source, self_hosted, context_length, endpoint,
+           max_data_classification, supports_tools, supports_streaming,
+           routing_priority, status, approved_for_production)
+         VALUES ('e2e-general','1','openai_compatible','Qwen/Qwen3-32B',
+           ARRAY['general'],'Apache-2.0',TRUE,TRUE,32768,$1,'restricted',
+           TRUE,TRUE,1,'production',TRUE)
+         ON CONFLICT (name, version) DO UPDATE SET endpoint = EXCLUDED.endpoint`,
+        [chat.url],
+      );
+      await pool.query(
+        `INSERT INTO ai_signals (org_id, type, severity, entity_type, entity_id,
+                                 convoy_id, observed_at, payload, source)
+         VALUES ($1,'panic','critical','vehicle','veh-e2e','convoy-e2e',
+                 NOW() - INTERVAL '2 minutes','{}'::jsonb,'test')`,
+        [ORG_A],
+      );
+      ({ runCommander } = await import('../../src/commander/agent.js'));
+    }, 60_000);
+
+    afterAll(async () => {
+      await chat?.close();
+    });
+
+    it('investigates a convoy and grounds the answer in tool evidence', async () => {
+      const res = await runCommander({
+        message: 'What is happening with convoy-e2e?',
+        ctx: {
+          org_id: ORG_A,
+          user_id: '00000000-0000-4000-8000-0000000000cc',
+          role: 'operator',
+          request_id: '',
+        },
+      });
+
+      expect(res.completion_reason).toBe('answered');
+      expect(res.tools_used).toEqual(['assess_convoy_risk']);
+      // §15 — classified from the tool's declared source, in code.
+      expect(res.evidence[0]?.kind).toBe('computed');
+      // §48 — the risk tool knows how old its newest signal was.
+      expect(res.evidence[0]?.freshness_seconds).toBeGreaterThan(0);
+      expect(res.data_age_seconds).toBeGreaterThan(0);
+      expect(res.prompt_version).toBe('commander-v1');
+    });
+
+    // §44 — the run must leave a trace naming the tools and prompt version.
+    it('writes an audit row for the run', async () => {
+      const rows = await pool.query<{ tools_invoked: string[]; outcome: string }>(
+        `SELECT tools_invoked, outcome FROM ai_audit_log
+          WHERE org_id = $1 AND prompt_version = 'commander-v1'
+          ORDER BY created_at DESC LIMIT 1`,
+        [ORG_A],
+      );
+      expect(rows.rows[0]?.outcome).toBe('success');
+      expect(rows.rows[0]?.tools_invoked).toContain('assess_convoy_risk');
+    });
+
+    // §59 — another tenant sees none of it.
+    it('does not surface another tenant’s signals', async () => {
+      const res = await runCommander({
+        message: 'What is happening with convoy-e2e?',
+        ctx: {
+          org_id: ORG_B,
+          user_id: '00000000-0000-4000-8000-0000000000dd',
+          role: 'admin',
+          request_id: '',
+        },
+      });
+
+      expect(res.completion_reason).toBe('answered');
+      const evidence = res.evidence[0];
+      // The tool runs, but under ORG_B's RLS context it finds nothing.
+      expect(evidence?.caveats.join(' ')).toContain('not that the convoy is confirmed safe');
     });
   });
 });

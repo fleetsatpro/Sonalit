@@ -357,6 +357,71 @@ Other decisions worth knowing:
 The model produces the number; the LLM's role is to explain it (§20). It
 never adjusts the score.
 
+### Commander (§13–16)
+
+`services/ai-copilot-svc/src/commander/`, served at
+`POST /v4/ai/commander`. A bounded tool-use loop that ties the model
+fabric, tool registry, RAG and risk engine together.
+
+The loop deliberately does not trust the model for anything structural:
+
+| Decision | Made by |
+|---|---|
+| Which tools exist | Registry, filtered by role |
+| Whether a call is allowed | `executeTool`, not the prompt |
+| How evidence is labelled | The tool's declared `source` |
+| The confidence figure | Derived from evidence quality |
+
+The model chooses which tools to call and writes the prose. Everything a
+wrong answer would turn into a wrong *action* is decided in code.
+
+- **Evidence classification is derived, not claimed** (§15, §47). The
+  observed/computed/predicted label comes from the tool's source and never
+  passes through the model, so it cannot promote its own inference to
+  "observed".
+- **Every run is bounded** (§9): tool calls, turns and wall-clock. A whole
+  batch counts against the budget, so a model cannot overshoot by
+  requesting six tools at once. A truncated run reports
+  `completion_reason` rather than presenting partial findings as complete.
+- **Screen context is re-authorised server-side** (§14), and treated as
+  unauthorised when no authoriser is supplied. An unauthorised entity id
+  never reaches the model — naming it would confirm its existence to
+  someone who cannot otherwise see it.
+- **No model means no answer** (§49, §62). Commander says the reasoning
+  models are unavailable and that dashboards, alerts and reports are
+  unaffected. It never falls back to answering from parametric memory.
+- The prompt is versioned (`commander-v1`) and recorded on every audit
+  row, so an answer can be traced to the instructions that produced it.
+
+Verified end to end against real Postgres and a self-hosted-shaped
+endpoint: routing, tool dispatch under RLS, evidence classification,
+freshness, the audit write, and cross-tenant isolation.
+
+**Entity-level context authorisation is not yet wired**, so screen context
+is currently always dropped. That is the safe default; implementing it
+belongs with the services that own each entity type.
+
+## 3d. Defects found by running Commander
+
+**Tool freshness was structurally unreachable.** `ToolResult` carried a
+`freshness_seconds` field that `executeTool` always set to null — a tool
+had no way to report its data's age even when it knew it. The risk engine
+computes `data_age_seconds` and it was being discarded, so Commander could
+not distinguish "current" from "last known" for any tool. *Fixed:* tools
+may declare a `freshness` extractor.
+
+**The §12 `warnings` field was inert.** Tools put caveats inside their
+returned `data`, so `ToolResult.warnings` was always empty — which meant
+`deriveConfidence`'s caveat check never fired and stale or incomplete
+evidence never capped confidence. *Fixed:* tools may declare a `warnings`
+extractor, and the risk tool now surfaces its own.
+
+**One malformed identifier discarded an entire audit row.** `user_id` is a
+UUID column, so a non-UUID value made Postgres reject the whole INSERT,
+losing the model, tools and outcome a security review needs. *Fixed:*
+unparseable identifiers are coerced to null and the loss is recorded in
+the row's `error` field rather than hidden.
+
 ## 6. Not yet built
 
 Phases 2–10 remain: RAG and pgvector, Watchtower, Digital Twin, GEOINT,

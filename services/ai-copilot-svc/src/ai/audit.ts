@@ -47,7 +47,35 @@ export function newRequestId(): string {
   return randomUUID();
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Coerces an identifier to a UUID or null.
+ *
+ * user_id and conversation_id are UUID columns, and Postgres rejects the
+ * whole INSERT on a malformed value — so one bad identifier would discard
+ * the entire audit row, including the model, tools and outcome that a
+ * security review actually needs. Dropping the unparseable field keeps the
+ * rest of the record; the loss is recorded in `error` rather than hidden.
+ */
+function asUuidOrNull(value: string | null | undefined): string | null {
+  if (typeof value !== 'string' || !UUID_RE.test(value)) return null;
+  return value;
+}
+
 export async function recordAudit(record: AuditRecord): Promise<void> {
+  const userId = asUuidOrNull(record.user_id);
+  const conversationId = asUuidOrNull(record.conversation_id);
+
+  const notes: string[] = [];
+  if (record.user_id != null && userId === null) {
+    notes.push(`user_id '${record.user_id}' was not a UUID and was not stored`);
+  }
+  if (record.conversation_id != null && conversationId === null) {
+    notes.push(`conversation_id '${record.conversation_id}' was not a UUID and was not stored`);
+  }
+  const error = [record.error, ...notes].filter(Boolean).join('; ') || null;
+
   try {
     // Written under the tenant's RLS context, same as any other org-scoped
     // table — the audit log is not a privileged back door around §59.
@@ -60,8 +88,8 @@ export async function recordAudit(record: AuditRecord): Promise<void> {
          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
         [
           record.org_id,
-          record.user_id ?? null,
-          record.conversation_id ?? null,
+          userId,
+          conversationId,
           record.request_id,
           record.capability,
           record.classification,
@@ -76,7 +104,7 @@ export async function recordAudit(record: AuditRecord): Promise<void> {
           record.latency_ms ?? null,
           record.outcome,
           // Truncated: provider errors can carry very long bodies.
-          record.error ? record.error.slice(0, 2000) : null,
+          error ? error.slice(0, 2000) : null,
         ],
       );
     });

@@ -42,6 +42,10 @@ registerTool({
       .optional()
       .describe('How far back to gather signals (default 120, max 1440)'),
   }),
+  // The score already knows how old its newest input was; surfacing it
+  // lets Commander qualify the answer rather than implying it is current.
+  freshness: (data) => (data as { data_age_seconds: number | null }).data_age_seconds,
+  warnings: (data) => (data as { warnings: string[] }).warnings,
   handler: async (args, ctx, client) => {
     const lookback = Math.min(Math.max(args.lookback_minutes ?? 120, 1), 1440);
 

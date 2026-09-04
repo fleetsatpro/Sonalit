@@ -6,6 +6,7 @@ import { pool } from './db.js';
 import { connectNats, closeNats } from './nats.js';
 import { redis } from './redis.js';
 import { aiRoutes } from './routes/ai.js';
+import { commanderRoutes } from './routes/commander.js';
 import { healthRoutes } from './routes/health.js';
 import { WatchtowerConsumer } from './watchtower/consumer.js';
 
@@ -23,6 +24,7 @@ async function start(): Promise<void> {
 
   await app.register(healthRoutes);
   await app.register(aiRoutes);
+  await app.register(commanderRoutes);
 
   app.setErrorHandler((err, _req, reply) => {
     app.log.error({ err }, 'Unhandled error');

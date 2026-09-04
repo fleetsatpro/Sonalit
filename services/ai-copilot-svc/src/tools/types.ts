@@ -120,6 +120,26 @@ export interface ToolDefinition<TArgs = unknown, TData = unknown> {
    * queries made through it cannot see another tenant's rows.
    */
   handler: (args: TArgs, ctx: ToolContext, client: PoolClient) => Promise<TData>;
+  /**
+   * Age of the underlying data, extracted from the handler's own result.
+   *
+   * Optional because not every tool can know it — a list query spans many
+   * rows with different ages. Where a tool DOES know (a risk score built
+   * from timestamped signals, a single telemetry read), reporting it is
+   * what lets Commander say "last known position, 17 minutes ago" instead
+   * of presenting stale data as current (§48). Returning null means
+   * "unknown", which is never treated as "fresh".
+   */
+  freshness?: (data: TData) => number | null;
+  /**
+   * Caveats lifted out of the handler's result into the §12 contract.
+   *
+   * Without this a tool's warnings stay buried inside `data`, where the
+   * ToolResult.warnings field — which Commander uses to cap confidence on
+   * stale or incomplete evidence — is always empty, and the whole caveat
+   * mechanism is silently inert.
+   */
+  warnings?: (data: TData) => string[];
 }
 
 /** Any tool, for storage in the heterogeneous registry map. */
