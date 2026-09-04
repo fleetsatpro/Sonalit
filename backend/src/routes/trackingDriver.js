@@ -72,7 +72,13 @@ async function resolveQr(token) {
 }
 
 async function resolveSession(req) {
-  const token = req.headers['x-tracking-session'];
+  // Header first. The body fallback exists only for navigator.sendBeacon, which
+  // cannot set headers — it is how a driver's phone gets its last buffered
+  // points out while the browser is freezing the page. The credential is read
+  // from the body rather than a query string deliberately: query strings reach
+  // access logs and proxy history, and a session token must never land there.
+  const token = req.headers['x-tracking-session']
+    || (req.body && typeof req.body.session === 'string' ? req.body.session : null);
   if (!token || typeof token !== 'string') return null;
   const result = await query(
     `SELECT * FROM tracking_sessions WHERE session_token_hash = $1 AND deleted_at IS NULL`,

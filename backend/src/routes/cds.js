@@ -216,7 +216,20 @@ async function listRows(req, res, table, { joins = '', selectCols = '*', searchC
   const { limit, offset } = paginate(req.query);
   const filters = softDelete ? ['t.deleted_at IS NULL', ...extraFilters] : [...extraFilters];
   const params = [];
-  if (req.query.status) { params.push(req.query.status); filters.push(`t.status=$${params.length}`); }
+  // A comma-separated status means "any of these". Operational views rarely
+  // care about one status: "active trip" spans locked → dispatched → at_port,
+  // and forcing a single value made a clamped container invisible everywhere
+  // that asked for 'dispatched'. A bare value still matches exactly as before.
+  if (req.query.status) {
+    const wanted = String(req.query.status).split(',').map(v => v.trim()).filter(Boolean);
+    if (wanted.length > 1) {
+      params.push(wanted);
+      filters.push(`t.status = ANY($${params.length}::text[])`);
+    } else if (wanted.length === 1) {
+      params.push(wanted[0]);
+      filters.push(`t.status=$${params.length}`);
+    }
+  }
   if (req.query.search && searchCols.length) {
     params.push(`%${req.query.search}%`);
     filters.push(`(${searchCols.map(c => `${c} ILIKE $${params.length}`).join(' OR ')})`);
