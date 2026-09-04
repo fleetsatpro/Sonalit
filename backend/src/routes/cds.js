@@ -300,17 +300,48 @@ async function updateRow(req, res, table, fields, { softDelete = true, hasUpdate
 // 1. Dashboard
 // ══════════════════════════════════════════════════════════════
 
+// Trip statuses that mean "on the road". Named once because three different
+// counts used to disagree about it: /trips/live already had this set right,
+// while the dashboard asked for status='dispatched' alone and so reported a
+// truck at a checkpoint, running late, or sitting at the port as not in transit.
+const ON_ROAD_STATUSES = "('dispatched','checkpoint','delayed','at_port')";
+
 router.get('/dashboard', asyncHandler(async (req, res) => {
   const kpis = await req.db(`
     SELECT
       (SELECT COUNT(*) FROM cds_containers WHERE deleted_at IS NULL) AS active_containers,
-      (SELECT COUNT(*) FROM cds_trips WHERE status='dispatched' AND deleted_at IS NULL) AS in_transit,
-      (SELECT COUNT(*) FROM cds_trips WHERE status='delivered' AND delivered_at::date=CURRENT_DATE AND deleted_at IS NULL) AS delivered_today,
+      (SELECT COUNT(*) FROM cds_trips WHERE status IN ${ON_ROAD_STATUSES} AND deleted_at IS NULL) AS in_transit,
+
+      -- Counted by delivered_at, not by status. The port unclamp sets
+      -- status='lock_removed' and delivered_at in the same statement, so a
+      -- trip is never left sitting at 'delivered' — asking for that status
+      -- made this KPI read zero on days the port had cleared a full yard.
+      (SELECT COUNT(*) FROM cds_trips
+        WHERE delivered_at::date = CURRENT_DATE AND deleted_at IS NULL) AS delivered_today,
+
       (SELECT COUNT(*) FROM cds_electronic_locks WHERE status IN ('assigned','installed') AND deleted_at IS NULL) AS active_locks,
       (SELECT COUNT(*) FROM cds_electronic_locks WHERE status='removed' AND deleted_at IS NULL) AS locks_removed,
-      (SELECT COUNT(*) FROM cds_trips WHERE status='lock_removed' AND deleted_at IS NULL) AS pending_unclamp,
+
+      -- Arrived, lock still on. This previously counted status='lock_removed',
+      -- which is the state a trip reaches *after* the lock comes off — the
+      -- number was an exact inversion of its own label, and the port crew's
+      -- actual backlog was the one figure it could never show.
+      (SELECT COUNT(*) FROM cds_trips
+        WHERE status IN ('at_port','delivered') AND lock_id IS NOT NULL
+          AND deleted_at IS NULL) AS pending_unclamp,
+
       (SELECT COUNT(*) FROM cds_trips WHERE status='delayed' AND deleted_at IS NULL) AS delayed_trips,
-      (SELECT ROUND(AVG(EXTRACT(EPOCH FROM (delivered_at - departed_at))/3600)::numeric,1) FROM cds_trips WHERE delivered_at IS NOT NULL AND departed_at IS NOT NULL AND deleted_at IS NULL) AS avg_transit_hours
+      (SELECT ROUND(AVG(EXTRACT(EPOCH FROM (delivered_at - departed_at))/3600)::numeric,1) FROM cds_trips WHERE delivered_at IS NOT NULL AND departed_at IS NOT NULL AND deleted_at IS NULL) AS avg_transit_hours,
+
+      -- Computed here rather than in the browser, which could only ever see
+      -- the newest page of trips: the Analytics card showed a rate derived
+      -- from 50 rows next to a total counted from all of them.
+      (SELECT COUNT(*) FROM cds_trips WHERE deleted_at IS NULL) AS total_trips,
+      (SELECT COUNT(*) FROM cds_trips
+        WHERE delivered_at IS NOT NULL AND deleted_at IS NULL) AS delivered_total,
+      (SELECT COUNT(*) FROM cds_trips
+        WHERE status='delayed' AND deleted_at IS NULL) AS delayed_total,
+      (SELECT COUNT(*) FROM cds_alerts WHERE acknowledged=false) AS unacknowledged_alerts
   `);
   const activity = await activityFeed(req.db, 20);
   res.json({ data: { ...kpis.rows[0], recent_activity: activity } });
@@ -538,7 +569,30 @@ router.post('/trips/:id/transition', asyncHandler(async (req, res) => {
     return res.status(422).json({ error: `Cannot transition from ${current.rows[0].status} to ${to_status}` });
   }
 
-  const extra = to_status === 'dispatched' ? ', departed_at=NOW()' : to_status === 'delivered' ? ', delivered_at=NOW()' : '';
+  // Departure has one writer, and it is not this handler. Delegating keeps the
+  // provenance columns honest — a transition to 'dispatched' that set
+  // departed_at directly here would leave departure_source NULL, which reads
+  // as "departed before this feature existed" rather than "the control room
+  // did it" — and inherits the idempotency, so a transition racing a yard tap
+  // cannot rewrite the yard's timestamp to a later one.
+  if (to_status === 'dispatched') {
+    const D = require('../utils/tripDeparture');
+    const { trip: updated, already } = await D.markDeparted(
+      req.db, req.user.org_id, req.params.id,
+      { source: req.fieldDevice ? 'manual' : 'operator', actorId: req.user.id, note: notes || null }
+    );
+    await req.db(
+      `INSERT INTO cds_audit_logs (action, entity_type, entity_id, user_id, user_name, before_data, after_data, org_id)
+       VALUES ('transition','trip',$1,$2,$3,$4,$5,$6)`,
+      [req.params.id, req.user.id, req.user.name || null,
+       JSON.stringify({ status: current.rows[0].status }),
+       JSON.stringify({ status: 'dispatched', notes, lat, lng, already_departed: already }),
+       req.user.org_id]
+    );
+    return res.json({ data: updated });
+  }
+
+  const extra = to_status === 'delivered' ? ', delivered_at=NOW()' : '';
   const result = await req.db(
     `UPDATE cds_trips SET status=$1, notes=COALESCE($2,notes)${extra}, updated_at=NOW() WHERE id=$3 RETURNING *`,
     [to_status, notes || null, req.params.id]

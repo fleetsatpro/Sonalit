@@ -506,7 +506,11 @@ export function useBookingPipeline() {
   });
 }
 
-export function useAlerts(filters?: SearchFilters) {
+// `acknowledged` is not on SearchFilters because it is meaningless for every
+// other resource that type serves. It matters here: a screen labelled "active
+// alerts" that omits the filter is counting the ones somebody already dealt
+// with, and the number only ever goes up.
+export function useAlerts(filters?: SearchFilters & { acknowledged?: 'true' | 'false' }) {
   return useQuery<ApiList>({
     queryKey: ['cds', 'alerts', filters],
     queryFn: async () => {
@@ -545,6 +549,12 @@ export function useAcknowledgeAlert() {
       const { data } = await cdsApi.post(`/alerts/${id}/acknowledge`);
       return data;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['cds', 'alerts'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cds', 'alerts'] });
+      // The dashboard now carries the unacknowledged count, so acknowledging
+      // one has to refresh it or the KPI keeps showing the alert the operator
+      // has just dealt with.
+      qc.invalidateQueries({ queryKey: ['cds', 'dashboard'] });
+    },
   });
 }

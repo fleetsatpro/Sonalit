@@ -188,3 +188,104 @@ describe('GET /field/departures', () => {
     expect(sql).toMatch(/AS scanned/);
   });
 });
+
+describe('POST /trips/:id/transition — dispatched', () => {
+  const handler = () => routeLayer('/trips/:id/transition', 'post');
+
+  function call(req) {
+    let body; let status = 200;
+    const res = { status: c => { status = c; return res; }, json: b => { body = b; return res; } };
+    return handler()(
+      { params: { id: 'trip-1' }, body: {}, ...req }, res, err => { if (err) throw err; },
+    ).then(() => ({ body, status }));
+  }
+
+  afterEach(() => jest.restoreAllMocks());
+
+  test('delegates to the single departure writer instead of setting departed_at itself', async () => {
+    jest.spyOn(D, 'markDeparted').mockResolvedValue({
+      trip: { id: 'trip-1', status: 'dispatched', departed_at: '2026-09-04T06:10:00.000Z' },
+      already: false,
+    });
+    const statements = [];
+    const db = (sql) => {
+      statements.push(sql);
+      if (/SELECT id, status FROM cds_trips/.test(sql)) {
+        return Promise.resolve({ rows: [{ id: 'trip-1', status: 'locked' }] });
+      }
+      return Promise.resolve({ rows: [{}] });
+    };
+
+    await call({ db, user: { id: 'op-1', org_id: 'o1', name: 'Ops' }, body: { to_status: 'dispatched' } });
+
+    expect(D.markDeparted).toHaveBeenCalledWith(
+      expect.anything(), 'o1', 'trip-1', expect.objectContaining({ source: 'operator' }));
+    // The old inline `departed_at=NOW()` left departure_source NULL, which reads
+    // as "departed before this feature existed" rather than naming who did it.
+    expect(statements.some(q => /UPDATE cds_trips SET status=\$1[\s\S]*departed_at=NOW\(\)/.test(q)))
+      .toBe(false);
+  });
+
+  test('every other transition still runs its own update', async () => {
+    jest.spyOn(D, 'markDeparted');
+    const db = (sql) => {
+      if (/SELECT id, status FROM cds_trips/.test(sql)) {
+        return Promise.resolve({ rows: [{ id: 'trip-1', status: 'at_port' }] });
+      }
+      return Promise.resolve({ rows: [{ id: 'trip-1', status: 'delivered' }] });
+    };
+    await call({ db, user: { id: 'op-1', org_id: 'o1' }, body: { to_status: 'delivered' } });
+    expect(D.markDeparted).not.toHaveBeenCalled();
+  });
+
+  test('an illegal transition is still refused', async () => {
+    const db = () => Promise.resolve({ rows: [{ id: 'trip-1', status: 'locked' }] });
+    const { status } = await call({ db, user: { id: 'op-1', org_id: 'o1' }, body: { to_status: 'delivered' } });
+    expect(status).toBe(422);
+  });
+});
+
+describe('GET /dashboard KPIs', () => {
+  async function kpiSql() {
+    let sql = '';
+    const layer = router.stack.find(l => l.route && l.route.path === '/dashboard' && l.route.methods.get);
+    const handler = layer.route.stack[layer.route.stack.length - 1].handle;
+    await handler(
+      { query: {}, db: (q) => { if (!sql) sql = q; return Promise.resolve({ rows: [{}] }); } },
+      { json: () => {} },
+      err => { if (err) throw err; },
+    );
+    // Comments explain the fix and quote the values it removed, so they have to
+    // go before the assertions look for those values in the query itself.
+    return sql.replace(/--[^\n]*/g, '');
+  }
+
+  test('in transit counts every trip on the road, not just the freshly dispatched', async () => {
+    const sql = await kpiSql();
+    const inTransit = sql.match(/status IN \([^)]*\)[^)]*\) AS in_transit/);
+    expect(inTransit).not.toBeNull();
+    for (const st of ['dispatched', 'checkpoint', 'delayed', 'at_port']) {
+      expect(inTransit[0]).toContain(`'${st}'`);
+    }
+  });
+
+  test('delivered today is counted by delivered_at, not by a status no trip holds', async () => {
+    const sql = await kpiSql();
+    const delivered = sql.split('AS in_transit')[1].split('AS delivered_today')[0];
+    // The port unclamp writes status='lock_removed' and delivered_at together,
+    // so no trip is ever left at 'delivered' for this to find.
+    expect(delivered).toContain('delivered_at::date = CURRENT_DATE');
+    expect(delivered).not.toMatch(/status\s*=\s*'delivered'/);
+  });
+
+  test('pending unclamp is not counted by the state that means it already happened', async () => {
+    const sql = await kpiSql();
+    const pending = sql.split('AS locks_removed')[1].split('AS pending_unclamp')[0];
+    expect(pending).not.toMatch(/status\s*=\s*'lock_removed'/);
+    expect(pending).toContain('lock_id IS NOT NULL');
+  });
+
+  test('the alert count the dashboard publishes excludes acknowledged ones', async () => {
+    expect(await kpiSql()).toMatch(/acknowledged\s*=\s*false[\s\S]*?AS unacknowledged_alerts/);
+  });
+});

@@ -11,7 +11,7 @@ import { ContainersView, BookingsView, DriversView, TransportersView } from './C
 import { CDSIntro } from './CDSIntro.js';
 import { KPICard, CDSDrawer, CDSToastContainer } from './components.js';
 import { CDS_VIEWS } from './constants.js';
-import { useDashboardKPIs, useActivity, useLiveTrips, useVehicleTrack } from './hooks.js';
+import { useDashboardKPIs, useActivity, useLiveTrips, useVehicleTrack, useTransitionTrip, useMarkDeparted } from './hooks.js';
 import { LiveFleetMap, positioned } from './LiveFleetMap.js';
 import {
   LocksView, PortView, PulseView, InboxView,
@@ -389,6 +389,91 @@ function ago(iso: string | null): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+/**
+ * What a trip may become next, mirroring TRIP_TRANSITIONS in routes/cds.js.
+ *
+ * The server is the authority — it rejects anything not on its own list with a
+ * 422 — so this exists only to avoid offering a button that is guaranteed to
+ * fail. Keep the two in step: an entry here that the server refuses is a dead
+ * button, and one missing here is a transition an operator cannot reach.
+ *
+ * 'dispatched' is deliberately absent from the 'locked' row. Departure is not
+ * a status change to be picked off a menu — it is a fact with a source and a
+ * time, so it goes through Mark departed and lands in departure_source.
+ */
+const NEXT_STATUS: Record<string, string[]> = {
+  locked: [],
+  dispatched: ['checkpoint', 'delayed', 'at_port', 'delivered'],
+  checkpoint: ['dispatched', 'delayed', 'at_port', 'delivered'],
+  delayed: ['dispatched', 'checkpoint'],
+  at_port: ['delivered'],
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  checkpoint: 'At checkpoint', delayed: 'Delayed', at_port: 'At port',
+  delivered: 'Delivered', dispatched: 'Back on road',
+};
+
+/**
+ * The control room's half of the trip lifecycle.
+ *
+ * Every one of these transitions had a working endpoint and no caller: no
+ * screen imported useTransitionTrip, so no trip could ever be marked at a
+ * checkpoint, delayed, at the port or delivered. The Port view filters on
+ * status='at_port' and was therefore permanently empty, the delayed-trips KPI
+ * was permanently zero, and the whole state machine in routes/cds.js was
+ * unreachable from the product.
+ */
+function TripActions({ trip }: { trip: LiveTrip }) {
+  const transition = useTransitionTrip();
+  const depart = useMarkDeparted();
+  const { addToast } = useCDSStore();
+  const next = NEXT_STATUS[trip.status] ?? [];
+  const busy = transition.isPending || depart.isPending;
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5 px-3 pb-2.5">
+      {trip.status === 'locked' && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => depart.mutate({ tripId: trip.id }, {
+            onSuccess: (r) => addToast(r?.data?.already_departed
+              ? `${trip.trip_number} was already marked departed`
+              : `${trip.trip_number} marked departed`),
+            onError: () => addToast(`Could not mark ${trip.trip_number} departed`, 'error'),
+          })}
+          className="h-7 px-2.5 rounded-md text-[11px] font-bold disabled:opacity-50 cursor-pointer"
+          style={{ background: 'linear-gradient(135deg, #ff7a00, #F0B429)', color: '#170d00' }}
+        >
+          Mark departed
+        </button>
+      )}
+      {next.map(to => (
+        <button
+          type="button"
+          key={to}
+          disabled={busy}
+          onClick={() => transition.mutate({ id: trip.id, to_status: to }, {
+            onSuccess: () => addToast(`${trip.trip_number} → ${STATUS_LABEL[to] ?? to}`),
+            onError: () => addToast(`Could not move ${trip.trip_number} to ${to}`, 'error'),
+          })}
+          className="h-7 px-2.5 rounded-md text-[11px] font-mono bg-white/[.06] border border-white/10 text-text-1 hover:border-white/25 disabled:opacity-50 cursor-pointer"
+        >
+          {STATUS_LABEL[to] ?? to}
+        </button>
+      ))}
+      {trip.status === 'locked' && (
+        <span className="text-[10px] font-mono text-text-2">
+          {/* Says why there is only one button: everything else waits on the
+              truck actually having left. */}
+          awaiting departure — tracking will mark it automatically once it moves
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function LiveView() {
   const { data, isLoading } = useLiveTrips();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -450,11 +535,14 @@ export function LiveView() {
             const meta = PHASE_META[t.phase];
             const isSel = t.id === selectedId;
             return (
+              <div
+                key={t.id}
+                className={`rounded-xl bg-ink-2/50 border transition-colors ${isSel ? 'border-cds-orange/60' : 'border-white/[.06] hover:border-white/20'}`}
+              >
               <button
                 type="button"
-                key={t.id}
                 onClick={() => setSelectedId(isSel ? null : t.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-ink-2/50 border text-left transition-colors cursor-pointer ${isSel ? 'border-cds-orange/60' : 'border-white/[.06] hover:border-white/20'}`}
+                className="w-full flex items-center gap-3 px-3 py-2.5 text-left cursor-pointer"
               >
                 <div className={`w-2 h-2 rounded-full flex-none ${meta.dot}`} />
                 <div className="flex-1 min-w-0">
@@ -474,6 +562,11 @@ export function LiveView() {
                   </div>
                 </div>
               </button>
+              {/* Actions live behind the selection rather than on every row: a
+                  board of twenty trips each carrying four buttons is a board
+                  nobody can read, and a mis-tap here changes a trip's state. */}
+              {isSel && <TripActions trip={t} />}
+              </div>
             );
           })}
           {trips.length === 0 && (
