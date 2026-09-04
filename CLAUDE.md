@@ -87,6 +87,7 @@ All v4 services import `@sonalit/contracts` for shared Zod schemas and NATS subj
 - **Realtime**: Centrifugo v5 via `lib/centrifuge.ts`. One Subscription per channel, multiplexed to multiple handler callbacks. Connection token fetched from `/realtime/token`.
 - **State**: Zustand stores (`stores/auth.ts`, `stores/ui.ts`, `stores/dashboardStore.ts`). Feature-local state in feature dirs.
 - **Features**: `features/auth/`, `features/live-fleet/`, `features/risk-intel/`, `features/comms/` — each with own components, hooks, types.
+- **Public website**: `pages/public/` + `components/marketing/` — the seven crawlable routes (`/`, `/fleet-management`, `/convoy-management`, `/container-delivery`, `/security-operations`, `/about`, `/contact`). They hang off the router root with no auth check, use plain `<a>` links, and are prerendered to static HTML by `scripts/prerender.tsx` after `vite build`. Page metadata lives in one registry (`lib/seo/pages.ts`) shared by the runtime `<Seo />`, the prerenderer and the sitemap. The authenticated launcher lives at `/home`; `index.html` is the public homepage and `app-shell.html` is the SPA fallback for every app route (keep the two HTML files in sync — the prerender step fails the build if they drift).
 - **CDS sub-app**: `pages/cds/` — Container Management views (dashboard, live map, data pages). Own store, hooks, constants, components. See README for adding views.
 
 ### Shared packages

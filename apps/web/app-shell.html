@@ -1,3 +1,17 @@
+<!-- ─────────────────────────────────────────────────────────────────────────
+     SPA shell for the AUTHENTICATED application.
+
+     index.html is overwritten at build time with the prerendered public
+     homepage (scripts/prerender.tsx), so it can no longer double as the SPA
+     fallback: an operator deep-linking to /command would flash marketing
+     markup before React took over. This file is that fallback instead —
+     vercel.json rewrites unmatched paths to it, and the service worker uses
+     it as navigateFallback.
+
+     KEEP THIS FILE IDENTICAL TO index.html except for this comment and the
+     robots meta below. The prerender script diffs the two and fails the build
+     if they diverge.
+─────────────────────────────────────────────────────────────────────────── -->
 <!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
@@ -8,7 +22,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&family=Syne:wght@400..800&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Fraunces:ital,opsz,wght@0,9..144,100..900;1,9..144,100..900&family=Barlow+Condensed:wght@500;600;700;800;900&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
   <meta name="permissions-policy" content="camera=(), microphone=(), geolocation=()" />
-  <title>Sonalit | Fleet, Convoy & Logistics Operations Platform</title>
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Sonalit</title>
   <meta name="description" content="Sonalit is an operations platform for fleet, convoy and container delivery teams — live vehicle tracking, incident response and operational intelligence." />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="manifest" href="/manifest.webmanifest" />

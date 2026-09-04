@@ -427,7 +427,7 @@ export default function Login(): React.ReactElement {
 
   const passwordMutation = useMutation<AuthResponse, Error, PasswordForm>({
     mutationFn: async (data) => (await api.post<AuthResponse>('/auth/login', data)).data,
-    onSuccess: (data) => { setAuth(data.token, data.user); void navigate({ to: '/' }); },
+    onSuccess: (data) => { setAuth(data.token, data.user); void navigate({ to: '/home' }); },
     onError: (err) => {
       setFailCount((prev) => {
         const next = prev + 1;
@@ -463,7 +463,7 @@ export default function Login(): React.ReactElement {
         },
       })).data;
     },
-    onSuccess: (data) => { setAuth(data.token, data.user); void navigate({ to: '/' }); },
+    onSuccess: (data) => { setAuth(data.token, data.user); void navigate({ to: '/home' }); },
     onError: (err) => setAlert({ type: 'error', msg: err.message ?? 'Passkey authentication failed' }),
   });
 

@@ -30,14 +30,29 @@ test.describe('Login page', () => {
   });
 
   test('redirects unauthenticated users to /login', async ({ page }) => {
-    // All protected routes redirect to /login when no auth token.
+    // All protected routes redirect to /login when no auth token. '/' is NOT
+    // one of them any more — it is the public marketing homepage — so this
+    // asserts against /home, the authenticated launcher that used to live
+    // there. See the next test for the public side of that split.
     // Cold Vite dev can spend >30s transforming the dashboard module graph
     // before the router's beforeLoad guard runs — give this test extra room.
     test.slow();
     // waitUntil 'commit': cold Vite dev transforms the whole dashboard module graph
     // before DOMContentLoaded, which can exceed the test timeout on slow runners.
-    await page.goto('/', { waitUntil: 'commit' });
+    await page.goto('/home', { waitUntil: 'commit' });
     await expect(page).toHaveURL(/\/login/, { timeout: 60000 });
+  });
+
+  test('serves the public homepage to unauthenticated visitors', async ({ page }) => {
+    // The counterpart to the guard above: '/' must render for anyone — an
+    // anonymous visitor or Googlebot — and must NOT bounce to /login.
+    test.slow();
+    await page.goto('/', { waitUntil: 'commit' });
+    await expect(page.getByRole('heading', { level: 1 })).toContainText(
+      /fleet, convoy and logistics operations/i,
+      { timeout: 60000 },
+    );
+    await expect(page).not.toHaveURL(/\/login/);
   });
 
   test('successful login navigates to dashboard', async ({ page }) => {

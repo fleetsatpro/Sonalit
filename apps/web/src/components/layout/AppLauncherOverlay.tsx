@@ -30,7 +30,7 @@ export default function AppLauncherOverlay({ open, onClose }: Props) {
   if (!open) return null;
 
   const go = (path: string) => { onClose(); nav({ to: path }); };
-  const home = () => { onClose(); nav({ to: '/' }); };
+  const home = () => { onClose(); nav({ to: '/home' }); };
 
   return (
     <div className="o-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>

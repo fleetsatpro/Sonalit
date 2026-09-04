@@ -126,7 +126,7 @@ const Rail = React.memo(function Rail({ onClose }: { onClose?: () => void }) {
       scrollbarWidth: 'none',
     }}>
       {/* Wordmark — links home to the Orbit launcher */}
-      <Link to="/" onClick={onClose} style={{ display: 'block', textDecoration: 'none', padding: '20px 20px 12px', borderBottom: '1px solid var(--d-rim)' }}>
+      <Link to="/home" onClick={onClose} style={{ display: 'block', textDecoration: 'none', padding: '20px 20px 12px', borderBottom: '1px solid var(--d-rim)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
             width: 32, height: 32,

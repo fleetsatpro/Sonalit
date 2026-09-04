@@ -3,7 +3,6 @@ import { useAuthStore, getAccessToken } from './stores/auth.js';
 import AppShell from './components/layout/AppShell.js';
 import GlobalPanicAlarm from './components/layout/GlobalPanicAlarm.js';
 import { RootErrorComponent } from './components/ErrorBoundary.js';
-import LoginPage from './pages/Login.js';
 
 const rootRoute = createRootRoute({ component: Outlet, errorComponent: RootErrorComponent });
 
@@ -48,7 +47,7 @@ const authFullscreenRoute = createRoute({
   component: FullscreenShell,
 });
 
-const loginRoute = createRoute({ getParentRoute: () => rootRoute, path: '/login', component: LoginPage });
+const loginRoute = createRoute({ getParentRoute: () => rootRoute, path: '/login', component: lazyRouteComponent(() => import('./pages/Login.js')) });
 // Driver tracking activation. Hangs off rootRoute, not authRoute: the driver
 // scanning this has no Sonalit account and must never reach operator chrome —
 // the QR token in the path is the only credential involved.
@@ -59,11 +58,40 @@ const driverTrackRoute = createRoute({
 });
 const notFoundRoute = createRoute({ getParentRoute: () => rootRoute, path: '*', component: lazyRouteComponent(() => import('./pages/NotFound.js')) });
 
-// Home is the immersive Orbit launcher — a full-viewport globe + folder grid
-// that replaces the rail on the home surface. It lives under the fullscreen
-// shell (no AppShell rail) but still gets GlobalPanicAlarm. The former command
-// console keeps its home at /command, reachable from the Command folder.
-const orbitRoute = createRoute({ getParentRoute: () => authFullscreenRoute, path: '/', component: lazyRouteComponent(() => import('./pages/Orbit.js')) });
+// ─── Public marketing site — the only crawlable surface ──────────────────────
+// These hang off rootRoute with no auth check at all: sonalit.com/ and the
+// service pages must render for an anonymous visitor (and for Googlebot).
+// They are also prerendered to static HTML at build time (scripts/prerender.tsx),
+// so a crawler or a social scraper that never runs our bundle still gets the
+// full page and its metadata. Nothing here reads operational data.
+const publicHomeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/',
+  // A signed-in operator opening the site root wants the launcher, not the
+  // marketing homepage — this preserves the pre-existing behaviour of "/" for
+  // authenticated users (and for the Capacitor shell, which boots at "/").
+  // Anonymous visitors, including crawlers, fall through to the public page.
+  beforeLoad: () => {
+    if (getAccessToken() || useAuthStore.getState().user) {
+      throw redirect({ to: '/home' });
+    }
+  },
+  component: lazyRouteComponent(() => import('./pages/public/Home.js')),
+});
+const publicFleetRoute = createRoute({ getParentRoute: () => rootRoute, path: '/fleet-management', component: lazyRouteComponent(() => import('./pages/public/FleetManagement.js')) });
+const publicConvoyRoute = createRoute({ getParentRoute: () => rootRoute, path: '/convoy-management', component: lazyRouteComponent(() => import('./pages/public/ConvoyManagement.js')) });
+const publicContainerRoute = createRoute({ getParentRoute: () => rootRoute, path: '/container-delivery', component: lazyRouteComponent(() => import('./pages/public/ContainerDelivery.js')) });
+const publicSecurityRoute = createRoute({ getParentRoute: () => rootRoute, path: '/security-operations', component: lazyRouteComponent(() => import('./pages/public/SecurityOperations.js')) });
+const publicAboutRoute = createRoute({ getParentRoute: () => rootRoute, path: '/about', component: lazyRouteComponent(() => import('./pages/public/About.js')) });
+const publicContactRoute = createRoute({ getParentRoute: () => rootRoute, path: '/contact', component: lazyRouteComponent(() => import('./pages/public/Contact.js')) });
+
+// The authenticated launcher is the immersive Orbit surface — a full-viewport
+// globe + folder grid that replaces the rail. It lives under the fullscreen
+// shell (no AppShell rail) but still gets GlobalPanicAlarm. It sits at /home
+// rather than / because / is now the public marketing homepage; signing in and
+// the in-app "home" affordances all land here. The former command console
+// keeps its home at /command, reachable from the Command folder.
+const orbitRoute = createRoute({ getParentRoute: () => authFullscreenRoute, path: '/home', component: lazyRouteComponent(() => import('./pages/Orbit.js')) });
 const commandRoute = createRoute({ getParentRoute: () => authRoute, path: '/command', component: lazyRouteComponent(() => import('./pages/Dashboard.js')) });
 const fleetRoute = createRoute({ getParentRoute: () => authRoute, path: '/fleet', component: lazyRouteComponent(() => import('./pages/Fleet.js')) });
 const gpsRoute = createRoute({ getParentRoute: () => authRoute, path: '/gps', component: lazyRouteComponent(() => import('./pages/GPS.js')) });
@@ -184,6 +212,13 @@ const portalCustodyRoute = createRoute({ getParentRoute: () => portalRootRoute, 
 const portalSecurityRoute = createRoute({ getParentRoute: () => portalRootRoute, path: '/portal/convoy/$convoy_id/security', component: lazyRouteComponent(() => import('./pages/portal/PortalSecurity.js')) });
 
 const routeTree = rootRoute.addChildren([
+  publicHomeRoute,
+  publicFleetRoute,
+  publicConvoyRoute,
+  publicContainerRoute,
+  publicSecurityRoute,
+  publicAboutRoute,
+  publicContactRoute,
   loginRoute,
   driverTrackRoute,
   notFoundRoute,
