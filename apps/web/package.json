@@ -5,7 +5,8 @@
   "description": "Sonalit v4 — React 18 web dashboard (TypeScript strict, TanStack Router, MapLibre GL)",
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json && vite build",
+    "build": "tsc -p tsconfig.json && vite build && pnpm prerender",
+    "prerender": "tsx scripts/prerender.tsx",
     "start": "vite preview",
     "dev": "vite",
     "test": "pnpm test:unit",
@@ -13,7 +14,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "lint": "eslint src --max-warnings=0",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p scripts/tsconfig.json",
     "lighthouse": "lhci autorun"
   },
   "dependencies": {

@@ -362,7 +362,7 @@ export default function ConvoyReports(): React.ReactElement {
         <div style={S.sidebarHeader}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
             <button
-              onClick={() => void navigate({ to: '/' })}
+              onClick={() => void navigate({ to: '/home' })}
               title="Home"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: T.panel2,
                 border: `1px solid ${T.rim}`, borderRadius: 8, padding: '6px 11px', color: T.body,
@@ -435,7 +435,7 @@ export default function ConvoyReports(): React.ReactElement {
               <ArrowLeft size={14} /> Convoys
             </button>
             <button
-              onClick={() => void navigate({ to: '/' })}
+              onClick={() => void navigate({ to: '/home' })}
               title="Home"
               style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, background: T.panel2,
                 border: `1px solid ${T.rim}`, borderRadius: 8, padding: '8px 12px', color: T.body,

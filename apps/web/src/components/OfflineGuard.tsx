@@ -2,6 +2,7 @@ import { WifiOff } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 import { isNetworkDown, startConnectivity, subscribe as subscribeConnectivity } from '../lib/offline/connectivity.js';
+import { PUBLIC_PAGES } from '../lib/seo/pages.js';
 
 /**
  * Surfaces are exempt from the offline takeover when they are built to keep
@@ -14,7 +15,15 @@ import { isNetworkDown, startConnectivity, subscribe as subscribeConnectivity } 
  * Everything else genuinely can't do useful work offline — a live fleet map or
  * a dashboard of stale numbers is worse than an honest "you're offline".
  */
-const OFFLINE_CAPABLE = [/^\/field(\/|$)/];
+const OFFLINE_CAPABLE = [
+  /^\/field(\/|$)/,
+  // The public marketing pages are prerendered static content with no data
+  // fetching at all — they render perfectly well with no network, and they are
+  // the first thing an anonymous visitor (or a crawler) sees. Blanking them
+  // with an operator-facing "you're offline" screen would be both wrong and
+  // the worst possible first impression.
+  ...PUBLIC_PAGES.map((page) => new RegExp(`^${page.path === '/' ? '' : page.path}/?$`)),
+];
 
 function isOfflineCapable(pathname: string): boolean {
   return OFFLINE_CAPABLE.some(re => re.test(pathname));

@@ -161,7 +161,7 @@ export default function CDSApp() {
           style={{ padding: expanded ? '14px 14px 12px' : '14px 0 12px', justifyContent: expanded ? 'flex-start' : 'center' }}
         >
           <button
-            onClick={() => nav({ to: '/' })}
+            onClick={() => nav({ to: '/home' })}
             className="flex items-center justify-center flex-shrink-0 rounded-lg text-[#0c0e12]"
             title="Back to Sonalit"
             style={{ width: 32, height: 32, background: 'linear-gradient(135deg, #F0B429, #ff7a00)', border: 'none', cursor: 'pointer' }}
@@ -179,7 +179,7 @@ export default function CDSApp() {
         </div>
 
         <button
-          onClick={() => nav({ to: '/' })}
+          onClick={() => nav({ to: '/home' })}
           className="flex items-center gap-2 mx-2 mt-2 mb-1 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/[.04] transition-colors"
           style={{ padding: expanded ? '8px 10px' : '8px 0', justifyContent: expanded ? 'flex-start' : 'center' }}
         >
