@@ -322,6 +322,117 @@ router.get('/trips', asyncHandler(async (req, res) => {
   });
 }));
 
+// Live Operations reads this. It used to call GET /trips?status=dispatched, and
+// that filter is a single-value equality — so a truck that had passed a
+// checkpoint, was running late, or had reached the port counted as zero active
+// trips while it was demonstrably on the road. A trip is "open" until it is
+// delivered, completed or archived, and the phase says which part of the journey
+// it is in, so the control room can never be told nothing is happening while
+// vehicles are out.
+const TRIP_PHASE = {
+  dispatched: 'moving', checkpoint: 'moving', delayed: 'moving',
+  at_port: 'at_port', lock_removed: 'at_port',
+  created: 'staged', vehicle_assigned: 'staged', driver_assigned: 'staged',
+  awaiting_lock: 'staged', locked: 'staged',
+};
+const OPEN_TRIP_STATUSES = Object.keys(TRIP_PHASE);
+
+// Must be declared before '/trips/:id' — Express matches in order, and 'live'
+// would otherwise be swallowed as a trip id.
+router.get('/trips/live', asyncHandler(async (req, res) => {
+  const result = await req.db(`
+    SELECT t.id, t.trip_number, t.status, t.origin, t.destination, t.eta,
+           t.departed_at, t.progress, t.risk, t.vehicle_id, t.booking_id,
+           cu.company_name AS customer_name,
+           dr.name AS driver_name, dr.phone AS driver_phone,
+           ve.registration AS vehicle_reg,
+           l.serial AS lock_serial,
+           b.booking_number,
+           ts.id AS session_id, ts.status AS session_status, ts.current_source,
+           ts.current_confidence, ts.first_location_at, ts.last_location_at,
+           ts.current_lat, ts.current_lng, ts.current_speed_kph, ts.current_heading,
+           gps.lat AS gps_lat, gps.lng AS gps_lng, gps.speed AS gps_speed,
+           gps.heading AS gps_heading, gps.device_time AS gps_time
+      FROM cds_trips t
+      ${TRIP_JOINS}
+      LEFT JOIN cds_electronic_locks l ON l.id = t.lock_id
+      LEFT JOIN cds_bookings b ON b.id = t.booking_id
+      -- The driver's tracking session carries the reconciled position — the
+      -- winner across Guardian GPS, the e-lock and telematics — so it is the
+      -- position to trust when one exists.
+      LEFT JOIN LATERAL (
+        SELECT id, status, current_source, current_confidence, first_location_at,
+               last_location_at, current_lat, current_lng, current_speed_kph, current_heading
+          FROM tracking_sessions
+         WHERE trip_id = t.id
+           AND deleted_at IS NULL
+           AND status = ANY($2)
+         ORDER BY COALESCE(last_location_at, started_at) DESC
+         LIMIT 1
+      ) ts ON true
+      -- Fallback for a vehicle that reports telematics but has no driver
+      -- session: better a stale known position than a blank map.
+      LEFT JOIN LATERAL (
+        SELECT lat, lng, speed, heading, device_time
+          FROM cds_gps_history
+         WHERE vehicle_id = t.vehicle_id
+         ORDER BY device_time DESC
+         LIMIT 1
+      ) gps ON true
+     WHERE t.deleted_at IS NULL
+       AND t.status = ANY($1)
+     ORDER BY (COALESCE(ts.last_location_at, gps.device_time) IS NULL),
+              COALESCE(ts.last_location_at, gps.device_time) DESC NULLS LAST,
+              t.created_at DESC
+     LIMIT 300
+  `, [OPEN_TRIP_STATUSES, T.LIVE_STATUSES]);
+
+  const now = Date.now();
+  res.json({ data: result.rows.map(r => shapeLiveTrip(r, now)) });
+}));
+
+// One position per trip, from whichever source actually knows where it is, and
+// never presented as live when it is not: health comes from the tracking
+// engine's own thresholds rather than a second opinion invented here.
+function shapeLiveTrip(row, now) {
+  const health = row.session_id
+    ? T.computeHealth({
+        status: row.session_status,
+        first_location_at: row.first_location_at,
+        last_location_at: row.last_location_at,
+      }, now)
+    : null;
+
+  const fromSession = row.current_lat != null && row.current_lng != null;
+  // Normalised to null, never left undefined: undefined vanishes in JSON, and a
+  // client reading an absent key cannot tell "no fix" from "field forgotten".
+  const lat = (fromSession ? row.current_lat : row.gps_lat) ?? null;
+  const lng = (fromSession ? row.current_lng : row.gps_lng) ?? null;
+  const lastSeen = (fromSession ? row.last_location_at : row.gps_time) ?? null;
+
+  return {
+    id: row.id, trip_number: row.trip_number, status: row.status,
+    phase: TRIP_PHASE[row.status] || 'staged',
+    origin: row.origin, destination: row.destination, eta: row.eta,
+    departed_at: row.departed_at, progress: row.progress, risk: row.risk,
+    vehicle_id: row.vehicle_id, booking_id: row.booking_id,
+    booking_number: row.booking_number, customer_name: row.customer_name,
+    driver_name: row.driver_name, driver_phone: row.driver_phone,
+    vehicle_reg: row.vehicle_reg, lock_serial: row.lock_serial,
+    lat, lng, last_seen: lastSeen,
+    speed: (fromSession ? row.current_speed_kph : row.gps_speed) ?? null,
+    heading: (fromSession ? row.current_heading : row.gps_heading) ?? null,
+    // Where the position came from, so the control room can tell a driver's
+    // phone from a truck's telematics box at a glance.
+    position_source: fromSession ? (row.current_source || 'guardian_gps') : (row.gps_lat != null ? 'device_telematics' : null),
+    position_is_live: health === 'live',
+    tracking_health: health,
+    tracking_session_id: row.session_id ?? null,
+    confidence: fromSession ? row.current_confidence : null,
+    has_session: !!row.session_id,
+  };
+}
+
 router.get('/trips/:id', asyncHandler(async (req, res) => {
   await getRow(req, res, 'cds_trips', { joins: TRIP_JOINS, selectCols: TRIP_COLS });
 }));

@@ -4,6 +4,7 @@ import { withOfflineFallback } from '../field/fieldCache.js';
 
 import cdsApi from './api.js';
 
+import type { LiveTrip } from './LiveFleetMap.js';
 import type { SearchFilters, Report } from './types.js';
 
 interface ApiList { data: Record<string, unknown>[]; total: number }
@@ -70,6 +71,36 @@ export function useTrips(filters?: SearchFilters) {
       return data;
     },
     refetchInterval: CONTROL_ROOM_REFETCH_MS,
+  });
+}
+
+// Every open trip with its last known GPS fix, for Live Operations. A trip stays
+// here until it is delivered, completed or archived — the panel it feeds used to
+// ask for status=dispatched alone and so reported zero active trips while
+// vehicles were at a checkpoint, running late, or sitting at the port.
+// Ten seconds: this is the one board an operator watches a lorry move on.
+export function useLiveTrips() {
+  return useQuery<{ data: LiveTrip[] }>({
+    queryKey: ['cds', 'trips', 'live'],
+    queryFn: async () => {
+      const { data } = await cdsApi.get('/trips/live');
+      return data;
+    },
+    refetchInterval: 10_000,
+  });
+}
+
+// Recent track of one vehicle, for the trail behind the selected trip. Keyed by
+// vehicle rather than trip because that is how GPS is recorded.
+export function useVehicleTrack(vehicleId: string | null) {
+  return useQuery<{ data: Record<string, unknown>[] }>({
+    queryKey: ['cds', 'gps', vehicleId],
+    queryFn: async () => {
+      const { data } = await cdsApi.get(`/gps/${vehicleId}`, { params: { limit: 200 } });
+      return data;
+    },
+    enabled: !!vehicleId,
+    refetchInterval: 20_000,
   });
 }
 

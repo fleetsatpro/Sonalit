@@ -11,13 +11,16 @@ import { ContainersView, BookingsView, DriversView, TransportersView } from './C
 import { CDSIntro } from './CDSIntro.js';
 import { KPICard, CDSDrawer, CDSToastContainer } from './components.js';
 import { CDS_VIEWS } from './constants.js';
-import { useDashboardKPIs, useActivity, useLiveTracking, useTrips } from './hooks.js';
+import { useDashboardKPIs, useActivity, useLiveTrips, useVehicleTrack } from './hooks.js';
+import { LiveFleetMap, positioned } from './LiveFleetMap.js';
 import {
   LocksView, PortView, PulseView, InboxView,
   BillingView, ReportsView, AnalyticsView, SettingsView,
 } from './pages.js';
 import { useCDSStore, type CDSView } from './store.js';
 import { useCDSRealtime } from './useCDSRealtime.js';
+
+import type { LiveTrip } from './LiveFleetMap.js';
 
 function NavIcon({ d, from, to, id }: { d: string; from: string; to: string; id: string }) {
   return (
@@ -161,7 +164,7 @@ export default function CDSApp() {
           style={{ padding: expanded ? '14px 14px 12px' : '14px 0 12px', justifyContent: expanded ? 'flex-start' : 'center' }}
         >
           <button
-            onClick={() => nav({ to: '/home' })}
+            onClick={() => nav({ to: '/' })}
             className="flex items-center justify-center flex-shrink-0 rounded-lg text-[#0c0e12]"
             title="Back to Sonalit"
             style={{ width: 32, height: 32, background: 'linear-gradient(135deg, #F0B429, #ff7a00)', border: 'none', cursor: 'pointer' }}
@@ -179,7 +182,7 @@ export default function CDSApp() {
         </div>
 
         <button
-          onClick={() => nav({ to: '/home' })}
+          onClick={() => nav({ to: '/' })}
           className="flex items-center gap-2 mx-2 mt-2 mb-1 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/[.04] transition-colors"
           style={{ padding: expanded ? '8px 10px' : '8px 0', justifyContent: expanded ? 'flex-start' : 'center' }}
         >
@@ -369,77 +372,112 @@ function DashboardView() {
   );
 }
 
-/** Trip statuses that mean "this container is out and not yet delivered". */
-const IN_TRANSIT = 'locked,dispatched,checkpoint,delayed,at_port';
+const PHASE_META: Record<LiveTrip['phase'], { label: string; dot: string; text: string }> = {
+  moving:  { label: 'On the road', dot: 'bg-cds-teal shadow-[0_0_8px_rgba(51,214,168,.6)]', text: 'text-cds-teal' },
+  at_port: { label: 'At port',     dot: 'bg-[#37e6ff] shadow-[0_0_8px_rgba(55,230,255,.6)]', text: 'text-[#37e6ff]' },
+  staged:  { label: 'Awaiting departure', dot: 'bg-[#f0b429]', text: 'text-[#f0b429]' },
+};
 
-function LiveView() {
-  // Two different questions, deliberately asked separately:
-  //   trips    — what is open on paper (clamped through to at_port)
-  //   tracking — what is actually streaming GPS to us right now
-  // The panel used to ask only for status='dispatched', so a clamped container
-  // whose driver was actively reporting position showed as zero on both the
-  // map and the counter.
-  const { data, isLoading } = useTrips({ status: IN_TRANSIT });
-  const { data: liveData } = useLiveTracking();
+function ago(iso: string | null): string {
+  if (!iso) return 'no GPS yet';
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
+  if (!Number.isFinite(mins) || mins < 0) return 'just now';
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+export function LiveView() {
+  const { data, isLoading } = useLiveTrips();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const trips = data?.data ?? [];
+  const selected = trips.find(t => t.id === selectedId) ?? null;
+  const { data: trackData } = useVehicleTrack(selected?.vehicle_id ?? null);
+  const track = ((trackData?.data ?? []) as Record<string, unknown>[])
+    .map(p => ({ lat: Number(p['lat']), lng: Number(p['lng']) }));
+
   if (isLoading) return <LoadingState />;
-  const trips = (data?.data ?? []) as Record<string, unknown>[];
-  const live = (liveData?.data ?? []) as Record<string, unknown>[];
-  const reporting = live.filter(s => s['position_is_live'] === true).length;
+
+  const onRoad = trips.filter(t => t.phase === 'moving');
+  const atPort = trips.filter(t => t.phase === 'at_port');
+  const staged = trips.filter(t => t.phase === 'staged');
+  const withFix = trips.filter(positioned);
+  // "Positioned" and "live" are different claims: a fix can be hours old. The
+  // tracking engine decides which is which; this panel only reports it.
+  const liveNow = trips.filter(t => t.position_is_live).length;
 
   return (
     <div className="p-5 max-w-[1600px] mx-auto">
       <div className="rounded-2xl border border-white/[.07] bg-white/[.02] p-4 mb-4">
-        <div className="font-bold text-sm text-text-0 mb-3">Live Fleet Tracking</div>
-        <div className="h-[350px] rounded-xl bg-ink-3 relative overflow-hidden"
-          style={{ background: 'linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px) 0 0/40px 40px, linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px) 0 0/40px 40px, #14171b' }}>
-          {live.length > 0 ? (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <div className="text-2xl mb-2 opacity-40">📡</div>
-                <div className="text-text-2 text-[11px] font-mono">
-                  {reporting} of {live.length} vehicle{live.length !== 1 ? 's' : ''} reporting now
-                </div>
-                {reporting < live.length && (
-                  <div className="text-[10px] font-mono text-[#ffb020] mt-1">
-                    {live.length - reporting} tracked but not currently reporting
-                  </div>
-                )}
-              </div>
-            </div>
+        <div className="flex items-baseline justify-between mb-3 gap-3 flex-wrap">
+          <div className="font-bold text-sm text-text-0">Live Fleet Tracking</div>
+          <div className="text-[10px] font-mono text-text-2">
+            {liveNow} of {trips.length} open trip{trips.length === 1 ? '' : 's'} reporting now
+            {withFix.length > liveNow ? ` · ${withFix.length - liveNow} last known` : ''}
+          </div>
+        </div>
+        <div className="h-[350px] rounded-xl overflow-hidden bg-ink-2 relative">
+          {withFix.length > 0 ? (
+            <LiveFleetMap trips={trips} selectedId={selectedId} onSelect={setSelectedId} track={track} />
           ) : (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <div className="text-2xl mb-2 opacity-40">🗺️</div>
-                <div className="text-text-2 text-[11px] font-mono">
-                  {trips.length > 0
-                    ? `${trips.length} open trip${trips.length !== 1 ? 's' : ''} — none tracking yet`
-                    : 'No open trips'}
-                </div>
-                {trips.length > 0 && (
-                  <div className="text-[10px] font-mono text-text-2/60 mt-1">
-                    Tracking starts when a driver scans their QR
-                  </div>
-                )}
+            // No map is drawn with nothing to draw on it, and the reason is
+            // stated rather than implied: whether there are no trips at all or
+            // trips with no fix are two very different problems for an operator.
+            <div className="absolute inset-0 flex items-center justify-center px-6"
+              style={{ background: 'linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px) 0 0/40px 40px, linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px) 0 0/40px 40px, #14171b' }}>
+              <div className="text-center text-text-2 text-[11px] font-mono leading-relaxed">
+                {trips.length === 0
+                  ? 'No open trips — the map draws vehicles once a trip is dispatched'
+                  : `${trips.length} open trip${trips.length === 1 ? '' : 's'}, none reporting GPS yet — check the tracker on ${trips.map(t => t.vehicle_reg || t.trip_number).slice(0, 3).join(', ')}`}
               </div>
             </div>
           )}
         </div>
       </div>
+
       <div className="rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
-        <div className="font-bold text-sm text-text-0 mb-3">Active Trips ({trips.length})</div>
-        <div className="space-y-2 max-h-[300px] overflow-y-auto">
-          {trips.map((t, i) => (
-            <div key={String(t['id'] ?? i)} className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-ink-2/50 border border-white/[.06]">
-              <div className="w-2 h-2 rounded-full bg-cds-teal shadow-[0_0_8px_rgba(51,214,168,.6)] flex-none" />
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-mono font-bold text-cds-orange">{String(t['reference'] ?? t['trip_number'] ?? '—')}</div>
-                <div className="text-[11px] text-text-1 truncate">{String(t['customer_name'] ?? '—')} → {String(t['destination'] ?? '—')}</div>
-              </div>
-              <div className="text-[10px] text-text-2 font-mono">{String(t['vehicleReg'] ?? t['vehicle_reg'] ?? '—')}</div>
-            </div>
-          ))}
+        <div className="flex items-baseline justify-between mb-3 gap-3 flex-wrap">
+          <div className="font-bold text-sm text-text-0">Open Trips ({trips.length})</div>
+          <div className="text-[10px] font-mono text-text-2">
+            {onRoad.length} on the road · {atPort.length} at port · {staged.length} awaiting departure
+          </div>
+        </div>
+        <div className="space-y-2 max-h-[420px] overflow-y-auto">
+          {[...onRoad, ...atPort, ...staged].map(t => {
+            const meta = PHASE_META[t.phase];
+            const isSel = t.id === selectedId;
+            return (
+              <button
+                type="button"
+                key={t.id}
+                onClick={() => setSelectedId(isSel ? null : t.id)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-ink-2/50 border text-left transition-colors cursor-pointer ${isSel ? 'border-cds-orange/60' : 'border-white/[.06] hover:border-white/20'}`}
+              >
+                <div className={`w-2 h-2 rounded-full flex-none ${meta.dot}`} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-mono font-bold text-cds-orange">
+                    {t.trip_number}
+                    {t.vehicle_reg ? <span className="text-text-2 font-normal"> · {t.vehicle_reg}</span> : null}
+                  </div>
+                  <div className="text-[11px] text-text-1 truncate">
+                    {t.customer_name ?? '—'} → {t.destination ?? '—'}
+                  </div>
+                </div>
+                <div className="text-right flex-none">
+                  <div className={`text-[10px] font-mono ${meta.text}`}>{meta.label}</div>
+                  <div className="text-[10px] font-mono text-text-2">
+                    {t.position_is_live ? 'live' : ago(t.last_seen)}
+                    {t.position_source === 'device_telematics' && t.lat != null ? ' · telematics' : ''}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
           {trips.length === 0 && (
-            <div className="text-xs text-text-2 text-center py-8 font-mono">No active trips</div>
+            <div className="text-xs text-text-2 text-center py-8 font-mono">No open trips</div>
           )}
         </div>
       </div>
