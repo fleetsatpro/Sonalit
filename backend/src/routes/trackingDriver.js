@@ -28,6 +28,7 @@ const { query } = require('../config/database');
 const { asyncHandler } = require('../middleware/error');
 const logger = require('../utils/logger');
 const T = require('../utils/trackingEngine');
+const D = require('../utils/tripDeparture');
 
 /**
  * Most points one ping may carry.
@@ -410,6 +411,24 @@ router.post('/session/ping', pingLimiter, asyncHandler(async (req, res) => {
       speed_kph: chosen.speed_kph, heading: chosen.heading,
       source: 'guardian_gps', confidence, health: 'live',
     });
+
+    // A truck that has driven out of the yard has departed, whether or not
+    // anyone in the yard remembered to say so. Derivation runs here, on the
+    // evidence that proves it, rather than on a cron that would re-scan every
+    // open trip on a timer to learn what the fix arriving this second already
+    // says.
+    //
+    // Never allowed to fail the ping. The driver's telemetry is the thing we
+    // cannot afford to lose; a missed derivation is picked up by the next fix,
+    // and the yard can always mark it manually.
+    if (session.trip_id) {
+      try {
+        const trip = await D.tripForSession(db, session.id);
+        if (trip) await D.maybeDeriveDeparture(db, session.org_id, trip, now);
+      } catch (err) {
+        logger.warn(`departure derivation failed for session ${session.id}: ${err.message}`);
+      }
+    }
   } else {
     await db(
       `UPDATE tracking_sessions SET last_seen_at = NOW(), anomaly_count = anomaly_count + $1, updated_at = NOW() WHERE id = $2`,

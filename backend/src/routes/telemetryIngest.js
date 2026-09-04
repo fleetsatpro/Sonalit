@@ -38,6 +38,7 @@ const { asyncHandler } = require('../middleware/error');
 const logger = require('../utils/logger');
 const T = require('../utils/trackingEngine');
 const F = require('../utils/telemetryFabric');
+const D = require('../utils/tripDeparture');
 
 /** Machine callers batch, so the ceiling is higher than the driver path — but
  *  it is still a ceiling, and it REJECTS rather than truncating: a silently
@@ -360,8 +361,30 @@ async function fuseAndRecord(db, orgId, session, now) {
     session_id: session.id, trip_id: session.trip_id, convoy_id: session.convoy_id,
     vehicle_id: session.vehicle_id, lat: chosen.lat, lng: chosen.lng,
     source: chosen.source, confidence, certainty,
-    health: T.computeHealth(chosen.device_time, now),
+    // computeHealth takes a SESSION, not a timestamp: it reads .status and
+    // .first_location_at before it ever looks at freshness. Handing it the
+    // device_time string made every one of those reads undefined, so this
+    // published 'not_started' for a fix that had just landed — the live board
+    // showing "awaiting first fix" for a truck reporting from the road.
+    // The row we just wrote is the session's new state, so describe that.
+    health: T.computeHealth({
+      status: 'active',
+      first_location_at: session.first_location_at || chosen.device_time,
+      last_location_at: new Date(now),
+    }, now),
   });
+
+  // The same evidence that fixed the position can also settle whether the truck
+  // has left. A journey carried by a telematics box or an e-lock — a driver who
+  // never scanned anything — reaches departure through exactly this path.
+  if (session.trip_id) {
+    try {
+      const trip = await D.tripForSession(db, session.id);
+      if (trip) await D.maybeDeriveDeparture(db, orgId, trip, now);
+    } catch (err) {
+      logger.warn(`departure derivation failed for session ${session.id}: ${err.message}`);
+    }
+  }
 
   return { chosen, confidence, certainty, conflict };
 }

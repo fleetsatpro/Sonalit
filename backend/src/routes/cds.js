@@ -37,13 +37,23 @@ const UNCLAMP_PATH = /^\/bookings\/[^/]+\/containers\/[^/]+\/unclamp$/;
 // stays read-only and adding/editing containers on that same path (POST)
 // is still out of reach.
 const BOOKING_CONTAINERS_LIST_PATH = /^\/bookings\/[^/]+\/containers$/;
+// Marking a departure only sets departed_at and moves 'locked' to
+// 'dispatched' — it opens none of the rest of the trip surface, so a yard
+// device still cannot read or edit trips generally.
+const DEPART_PATH = /^\/trips\/[^/]+\/depart$/;
 router.use((req, res, next) => {
   const role = req.user.role;
   if (role !== 'yard_agent' && role !== 'port_agent') return next();
 
   const allowed = role === 'yard_agent'
     ? (req.path === '/field/yard-queue' || CLAMP_PATH.test(req.path)
-       || (req.method === 'GET' && BOOKING_CONTAINERS_LIST_PATH.test(req.path)))
+       || (req.method === 'GET' && BOOKING_CONTAINERS_LIST_PATH.test(req.path))
+       // Departure is yard work: the person who watched the truck go through
+       // the gate is standing in the yard, and for a driver who never scanned
+       // the QR there is no other way the trip ever leaves 'locked'. Both the
+       // list and the mark are here because one without the other is useless.
+       || req.path === '/field/departures'
+       || (req.method === 'POST' && DEPART_PATH.test(req.path)))
     : (req.path === '/field/port-queue' || UNCLAMP_PATH.test(req.path));
 
   if (!allowed) {
@@ -290,17 +300,48 @@ async function updateRow(req, res, table, fields, { softDelete = true, hasUpdate
 // 1. Dashboard
 // ══════════════════════════════════════════════════════════════
 
+// Trip statuses that mean "on the road". Named once because three different
+// counts used to disagree about it: /trips/live already had this set right,
+// while the dashboard asked for status='dispatched' alone and so reported a
+// truck at a checkpoint, running late, or sitting at the port as not in transit.
+const ON_ROAD_STATUSES = "('dispatched','checkpoint','delayed','at_port')";
+
 router.get('/dashboard', asyncHandler(async (req, res) => {
   const kpis = await req.db(`
     SELECT
       (SELECT COUNT(*) FROM cds_containers WHERE deleted_at IS NULL) AS active_containers,
-      (SELECT COUNT(*) FROM cds_trips WHERE status='dispatched' AND deleted_at IS NULL) AS in_transit,
-      (SELECT COUNT(*) FROM cds_trips WHERE status='delivered' AND delivered_at::date=CURRENT_DATE AND deleted_at IS NULL) AS delivered_today,
+      (SELECT COUNT(*) FROM cds_trips WHERE status IN ${ON_ROAD_STATUSES} AND deleted_at IS NULL) AS in_transit,
+
+      -- Counted by delivered_at, not by status. The port unclamp sets
+      -- status='lock_removed' and delivered_at in the same statement, so a
+      -- trip is never left sitting at 'delivered' — asking for that status
+      -- made this KPI read zero on days the port had cleared a full yard.
+      (SELECT COUNT(*) FROM cds_trips
+        WHERE delivered_at::date = CURRENT_DATE AND deleted_at IS NULL) AS delivered_today,
+
       (SELECT COUNT(*) FROM cds_electronic_locks WHERE status IN ('assigned','installed') AND deleted_at IS NULL) AS active_locks,
       (SELECT COUNT(*) FROM cds_electronic_locks WHERE status='removed' AND deleted_at IS NULL) AS locks_removed,
-      (SELECT COUNT(*) FROM cds_trips WHERE status='lock_removed' AND deleted_at IS NULL) AS pending_unclamp,
+
+      -- Arrived, lock still on. This previously counted status='lock_removed',
+      -- which is the state a trip reaches *after* the lock comes off — the
+      -- number was an exact inversion of its own label, and the port crew's
+      -- actual backlog was the one figure it could never show.
+      (SELECT COUNT(*) FROM cds_trips
+        WHERE status IN ('at_port','delivered') AND lock_id IS NOT NULL
+          AND deleted_at IS NULL) AS pending_unclamp,
+
       (SELECT COUNT(*) FROM cds_trips WHERE status='delayed' AND deleted_at IS NULL) AS delayed_trips,
-      (SELECT ROUND(AVG(EXTRACT(EPOCH FROM (delivered_at - departed_at))/3600)::numeric,1) FROM cds_trips WHERE delivered_at IS NOT NULL AND departed_at IS NOT NULL AND deleted_at IS NULL) AS avg_transit_hours
+      (SELECT ROUND(AVG(EXTRACT(EPOCH FROM (delivered_at - departed_at))/3600)::numeric,1) FROM cds_trips WHERE delivered_at IS NOT NULL AND departed_at IS NOT NULL AND deleted_at IS NULL) AS avg_transit_hours,
+
+      -- Computed here rather than in the browser, which could only ever see
+      -- the newest page of trips: the Analytics card showed a rate derived
+      -- from 50 rows next to a total counted from all of them.
+      (SELECT COUNT(*) FROM cds_trips WHERE deleted_at IS NULL) AS total_trips,
+      (SELECT COUNT(*) FROM cds_trips
+        WHERE delivered_at IS NOT NULL AND deleted_at IS NULL) AS delivered_total,
+      (SELECT COUNT(*) FROM cds_trips
+        WHERE status='delayed' AND deleted_at IS NULL) AS delayed_total,
+      (SELECT COUNT(*) FROM cds_alerts WHERE acknowledged=false) AS unacknowledged_alerts
   `);
   const activity = await activityFeed(req.db, 20);
   res.json({ data: { ...kpis.rows[0], recent_activity: activity } });
@@ -468,6 +509,54 @@ const TRIP_TRANSITIONS = {
   archived:          [],
 };
 
+/**
+ * POST /cds/trips/:id/depart — the yard marks a truck as gone.
+ *
+ * THE CASE THIS EXISTS FOR: a driver who never scanned the QR. There is no
+ * telemetry to derive from, so without this the trip sits at 'locked' forever
+ * and the control room sees "awaiting departure" for a truck already on the
+ * road. Manual departure is the primary path, not a fallback.
+ *
+ * Reachable by the field device as well as an operator, because the person who
+ * watched the truck leave is standing in the yard with a phone, not sitting in
+ * the control room. The router-level dualAuthenticate covers both.
+ *
+ * Idempotent: a second tap reports that it was already departed rather than
+ * rewriting the timestamp to a later moment.
+ */
+router.post('/trips/:id/depart', asyncHandler(async (req, res) => {
+  const { note, at } = req.body || {};
+  const trip = await req.db(
+    'SELECT id, status, departed_at FROM cds_trips WHERE id=$1 AND deleted_at IS NULL',
+    [req.params.id]
+  );
+  if (!trip.rows.length) return res.status(404).json({ error: 'Trip not found' });
+
+  // A delivered or completed trip departing is a data error, not a correction.
+  if (['delivered', 'lock_removed', 'completed', 'archived'].includes(trip.rows[0].status)) {
+    return res.status(409).json({ error: `Trip already ${trip.rows[0].status}` });
+  }
+
+  const D = require('../utils/tripDeparture');
+  // req.fieldDevice is the discriminator, NOT the presence of req.user: a field
+  // device authenticates as a real field user with an id and an org, so keying
+  // off req.user.id would file every yard departure as a control-room action
+  // and lose the distinction the departure_source column exists to record.
+  const source = req.fieldDevice ? 'manual' : 'operator';
+  const actorId = req.user?.id || null;
+
+  const { trip: updated, already } = await D.markDeparted(
+    req.db, req.user?.org_id, req.params.id,
+    { source, actorId, note: note || null, at: at || null }
+  );
+
+  // No publish here. markDeparted() announces it, once, for all three paths —
+  // and only when the departure was actually established, so an idempotent
+  // retry cannot put a second "departed" on the control room's board for one
+  // truck. Broadcasting here too would do exactly that for the manual path.
+  res.json({ data: { trip: updated, already_departed: already, source } });
+}));
+
 router.post('/trips/:id/transition', asyncHandler(async (req, res) => {
   const { to_status, notes, lat, lng } = req.body;
   if (!to_status) return res.status(400).json({ error: 'to_status required' });
@@ -480,7 +569,30 @@ router.post('/trips/:id/transition', asyncHandler(async (req, res) => {
     return res.status(422).json({ error: `Cannot transition from ${current.rows[0].status} to ${to_status}` });
   }
 
-  const extra = to_status === 'dispatched' ? ', departed_at=NOW()' : to_status === 'delivered' ? ', delivered_at=NOW()' : '';
+  // Departure has one writer, and it is not this handler. Delegating keeps the
+  // provenance columns honest — a transition to 'dispatched' that set
+  // departed_at directly here would leave departure_source NULL, which reads
+  // as "departed before this feature existed" rather than "the control room
+  // did it" — and inherits the idempotency, so a transition racing a yard tap
+  // cannot rewrite the yard's timestamp to a later one.
+  if (to_status === 'dispatched') {
+    const D = require('../utils/tripDeparture');
+    const { trip: updated, already } = await D.markDeparted(
+      req.db, req.user.org_id, req.params.id,
+      { source: req.fieldDevice ? 'manual' : 'operator', actorId: req.user.id, note: notes || null }
+    );
+    await req.db(
+      `INSERT INTO cds_audit_logs (action, entity_type, entity_id, user_id, user_name, before_data, after_data, org_id)
+       VALUES ('transition','trip',$1,$2,$3,$4,$5,$6)`,
+      [req.params.id, req.user.id, req.user.name || null,
+       JSON.stringify({ status: current.rows[0].status }),
+       JSON.stringify({ status: 'dispatched', notes, lat, lng, already_departed: already }),
+       req.user.org_id]
+    );
+    return res.json({ data: updated });
+  }
+
+  const extra = to_status === 'delivered' ? ', delivered_at=NOW()' : '';
   const result = await req.db(
     `UPDATE cds_trips SET status=$1, notes=COALESCE($2,notes)${extra}, updated_at=NOW() WHERE id=$3 RETURNING *`,
     [to_status, notes || null, req.params.id]
@@ -1279,6 +1391,54 @@ router.get('/field/port-queue', asyncHandler(async (req, res) => {
   res.json({ data: result.rows });
 }));
 
+/**
+ * GET /cds/field/departures — what the yard clamped but has not seen leave.
+ *
+ * The yard's job does not end at the clamp. Until the truck is through the
+ * gate the trip sits at 'locked', and the control room reads that as "still in
+ * the yard" — correct for ten minutes, badly wrong for the rest of the day.
+ *
+ * `scanned` is the column that decides whether a human has to act. A driver who
+ * scanned the QR will depart on his own telemetry within a couple of minutes of
+ * the gate; a driver who did not will never depart at all unless the yard says
+ * so. Surfacing that distinction is the whole point of this list — it tells the
+ * crew which trucks are their problem rather than making them check each one.
+ */
+router.get('/field/departures', asyncHandler(async (req, res) => {
+  const result = await req.db(`
+    SELECT t.id AS trip_id, t.trip_number, t.status, t.created_at AS clamped_at,
+           t.origin, t.destination, t.clamp_lat, t.clamp_lng,
+           v.registration AS vehicle_reg,
+           d.name AS driver_name, d.phone AS driver_phone,
+           l.serial AS lock_serial,
+           c.number AS container_number,
+           b.booking_number,
+           -- One live tracking session per trip at most, so a lateral beats a
+           -- group-by here and keeps the row count equal to the trip count.
+           s.status AS tracking_status, s.last_location_at,
+           (s.id IS NOT NULL) AS scanned
+      FROM cds_trips t
+      LEFT JOIN cds_vehicles v ON v.id = t.vehicle_id
+      LEFT JOIN cds_drivers d ON d.id = t.driver_id
+      LEFT JOIN cds_electronic_locks l ON l.id = t.lock_id
+      LEFT JOIN cds_containers c ON c.id = t.container_id
+      LEFT JOIN cds_bookings b ON b.id = t.booking_id
+      LEFT JOIN LATERAL (
+        SELECT id, status, last_location_at
+          FROM tracking_sessions
+         WHERE trip_id = t.id AND deleted_at IS NULL
+         ORDER BY started_at DESC
+         LIMIT 1
+      ) s ON true
+     WHERE t.deleted_at IS NULL
+       AND t.departed_at IS NULL
+       AND t.status = 'locked'
+     ORDER BY t.created_at ASC
+     LIMIT 200
+  `);
+  res.json({ data: result.rows });
+}));
+
 // Yard team clamps an e-lock onto one container of a booking.
 // Auto-creates supporting rows (transporter, driver, vehicle, container, lock, trip)
 // so the mobile UI only needs to send free-text names and numbers.
@@ -1389,12 +1549,18 @@ router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncH
   const trip = await req.db(
     `INSERT INTO cds_trips
       (trip_number, customer_id, driver_id, vehicle_id, container_id, lock_id, transporter_id,
-       origin, destination, commodity, seal_number, weight_kg, booking_id, notes, status, org_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'locked',$15) RETURNING *`,
+       origin, destination, commodity, seal_number, weight_kg, booking_id, notes, status, org_id,
+       clamp_lat, clamp_lng)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'locked',$15,$16,$17) RETURNING *`,
     [
       genCode('CDS'), bc.rows[0].customer_id, driverId, vehicleId, containerId, lockId, transporterId,
       bc.rows[0].pickup_location, bc.rows[0].delivery_location, null, bc.rows[0].seal_number, bc.rows[0].weight_kg,
       bookingId, trailerNote, orgId,
+      // The yard anchor. Previously these only reached an audit JSON blob,
+      // which cannot be queried — so nothing could ask "has this truck moved
+      // away from where it was clamped?". Nullable: a clamp with location
+      // denied is still a valid clamp.
+      lat ?? null, lng ?? null,
     ]
   );
 

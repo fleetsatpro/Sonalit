@@ -27,7 +27,7 @@ import type { AxiosError } from 'axios';
 
 const STORAGE_KEY = 'sonalit-field-queue-v1';
 
-export type FieldActionKind = 'clamp' | 'unclamp';
+export type FieldActionKind = 'clamp' | 'unclamp' | 'depart';
 
 export interface QueuedAction {
   /** Doubles as the idempotency key sent to the server. */
@@ -37,6 +37,16 @@ export interface QueuedAction {
   containerId: string;
   /** Container number (or a fallback), purely so the UI can name the action. */
   label: string;
+  /**
+   * Explicit endpoint, for actions that are not booking/container shaped.
+   *
+   * Departure is a trip-level action, so it has no container path to derive
+   * from. Optional rather than required because entries persisted by an
+   * earlier build carry no `url` and must keep posting to the same place they
+   * always did — a queue that drops a worker's clamp on upgrade is worse than
+   * one that never supported departures.
+   */
+  url?: string;
   payload: Record<string, unknown>;
   queuedAt: number;
   attempts: number;
@@ -182,7 +192,7 @@ export function clearFailed(): void {
 }
 
 function urlFor(a: QueuedAction): string {
-  return `/bookings/${a.bookingId}/containers/${a.containerId}/${a.kind}`;
+  return a.url ?? `/bookings/${a.bookingId}/containers/${a.containerId}/${a.kind}`;
 }
 
 /**
@@ -209,8 +219,9 @@ function describe(err: AxiosError): string {
  * Drain the queue oldest-first, stopping at the first retryable failure.
  *
  * Order matters and the stop is deliberate: actions on the same container are
- * causally ordered (a clamp must land before its unclamp), so skipping past a
- * stuck entry could apply them out of sequence.
+ * causally ordered (a clamp must land before its unclamp, and a departure only
+ * exists once its clamp has created the trip), so skipping past a stuck entry
+ * could apply them out of sequence.
  */
 export async function flush(): Promise<void> {
   if (syncing || !isOnline() || state.pending.length === 0) return;

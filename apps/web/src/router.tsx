@@ -193,6 +193,7 @@ const fieldHomeRoute = createRoute({ getParentRoute: () => fieldRoute, path: '/f
 const fieldYardRoute = createRoute({ getParentRoute: () => fieldRoute, path: '/field/yard', component: lazyRouteComponent(() => import('./pages/field/YardApp.js')) });
 const fieldPortRoute = createRoute({ getParentRoute: () => fieldRoute, path: '/field/port', component: lazyRouteComponent(() => import('./pages/field/PortApp.js')) });
 const fieldResponseRoute = createRoute({ getParentRoute: () => fieldRoute, path: '/field/response', component: lazyRouteComponent(() => import('./pages/field/ResponseCrewApp.js')) });
+const fieldDeparturesRoute = createRoute({ getParentRoute: () => fieldRoute, path: '/field/departures', component: lazyRouteComponent(() => import('./pages/field/DeparturesApp.js')) });
 
 // Portal client routes
 const portalRootRoute = createRoute({ getParentRoute: () => rootRoute, id: 'portal-root', component: lazyRouteComponent(() => import('./pages/portal/PortalLayout.js')) });
@@ -229,7 +230,7 @@ const routeTree = rootRoute.addChildren([
     portalSensorsRoute, portalReplayRoute,
     portalTrackRoute, portalConvoyRoute, portalCustodyRoute, portalSecurityRoute,
   ]),
-  fieldRoute.addChildren([fieldHomeRoute, fieldYardRoute, fieldPortRoute, fieldResponseRoute]),
+  fieldRoute.addChildren([fieldHomeRoute, fieldYardRoute, fieldPortRoute, fieldResponseRoute, fieldDeparturesRoute]),
   handoverLoginRoute,
   handoverShellRoute.addChildren([handoverRoute]),
   authFullscreenRoute.addChildren([

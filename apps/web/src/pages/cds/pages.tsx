@@ -4,7 +4,7 @@ import { useAuthStore } from '../../stores/auth.js';
 import { LoadingState } from './CDSDashboard.js';
 import { Card, KPICard, Button, StatusBadge, DataTable, DrawerField, FilterChip, Badge } from './components.js';
 import FieldAccessPanel from './FieldAccessPanel.js';
-import { useDashboardKPIs, useLocks, useTrips, useBookings, useMarkBilled, useActivity, useReports, useGenerateReport, useAlerts } from './hooks.js';
+import { useDashboardKPIs, useLocks, useTrips, useBookings, useMarkBilled, useActivity, useReports, useGenerateReport, useAlerts, useUnclampTrip, useAcknowledgeAlert } from './hooks.js';
 import { useCDSStore } from './store.js';
 
 
@@ -136,6 +136,11 @@ export function LocksView() {
 export function PortView() {
   const { data, isLoading } = useTrips({ status: 'at_port' });
   const { openDrawer, addToast } = useCDSStore();
+  // This button used to call addToast('Unclamp initiated…') and nothing else:
+  // no request was ever sent. The controller saw the confirmation, the lock
+  // stayed installed, the trip stayed open, and the port crew was left holding
+  // a container the desk believed was released.
+  const unclamp = useUnclampTrip();
   if (isLoading) return <LoadingState />;
   const rows = (data?.data ?? []) as Row[];
 
@@ -149,8 +154,18 @@ export function PortView() {
           { id: 'arrived', header: 'Arrived', accessor: (r: Row) => r['delivered_at'] ? new Date(s(r['delivered_at'])).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—' },
           { id: 'status', header: 'Status', accessor: (r: Row) => <StatusBadge status={s(r['status'])} /> },
           { id: 'action', header: '', accessor: (r: Row) => (
-            <Button size="sm" onClick={(e) => { e.stopPropagation(); addToast(`Unclamp initiated for ${s(r['container_number'])}`); }}>
-              Unclamp
+            <Button
+              size="sm"
+              disabled={unclamp.isPending}
+              onClick={(e) => {
+                e.stopPropagation();
+                unclamp.mutate({ id: s(r['id']) }, {
+                  onSuccess: () => addToast(`Lock removed on ${s(r['container_number'])}`),
+                  onError: () => addToast(`Could not unclamp ${s(r['container_number'])} — try again`),
+                });
+              }}
+            >
+              {unclamp.isPending ? 'Unclamping…' : 'Unclamp'}
             </Button>
           )},
         ]}
@@ -225,7 +240,7 @@ export function PulseView() {
   const [filter, setFilter] = useState('all');
   const { data, isLoading } = useBookings();
   const { data: alertData } = useAlerts();
-  const { openDrawer, addToast } = useCDSStore();
+  const { openDrawer } = useCDSStore();
   if (isLoading) return <LoadingState />;
   const all = (data?.data ?? []) as Row[];
   const alerts = (alertData?.data ?? []) as Row[];
@@ -305,11 +320,6 @@ export function PulseView() {
             const label = h < 1 ? '<1h ago' : h < 24 ? `${Math.floor(h)}h ago` : `${Math.floor(h / 24)}d ago`;
             return <span className={`text-[10px] font-mono ${stale ? 'text-cds-red font-bold' : 'text-text-2'}`}>{label}{stale ? ' !' : ''}</span>;
           }},
-          { id: 'action', header: '', accessor: (r: Row) => (
-            <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); addToast(`Pulse sent for ${s(r['booking_number'])}`); }}>
-              Send now
-            </Button>
-          )},
         ]}
         data={rows}
         keyExtractor={(r: Row) => s(r['id'])}
@@ -533,8 +543,12 @@ export function ReportsView() {
 
 export function AnalyticsView() {
   const { data: kpis, isLoading: kpiLoading } = useDashboardKPIs();
-  const { data: alertData, isLoading: alertLoading } = useAlerts();
-  const { data: tripData } = useTrips();
+  // Unacknowledged only. Without the filter this listed every alert ever
+  // raised under the heading "active", so the count could only grow and the
+  // ten shown were the ten newest rather than the ten outstanding.
+  const { data: alertData, isLoading: alertLoading } = useAlerts({ acknowledged: 'false' });
+  const acknowledge = useAcknowledgeAlert();
+  const { addToast } = useCDSStore();
   if (kpiLoading || alertLoading) return <LoadingState />;
 
   const kv = (k: string) => String(kpis?.[k] ?? 0);
@@ -542,21 +556,30 @@ export function AnalyticsView() {
   const avgH = Math.floor(avgHrs);
   const avgM = Math.round((avgHrs - avgH) * 60);
   const alerts = (alertData?.data ?? []) as Row[];
-  const trips = (tripData?.data ?? []) as Row[];
 
-  const transitCount = trips.filter(t => t['status'] === 'dispatched').length;
-  const deliveredCount = trips.filter(t => t['status'] === 'delivered').length;
-  const delayedCount = trips.filter(t => t['status'] === 'delayed').length;
-  const onTimeRate = (transitCount + deliveredCount) > 0
-    ? Math.round((deliveredCount / (deliveredCount + delayedCount || 1)) * 100) : 0;
+  // Every figure on this row now comes from the same source. It previously
+  // mixed a total counted over all trips with a rate derived from the newest
+  // page of 50 — two numbers about different sets, printed side by side.
+  const deliveredTotal = Number(kpis?.['delivered_total'] ?? 0);
+  const delayedTotal = Number(kpis?.['delayed_total'] ?? 0);
+  const settled = deliveredTotal + delayedTotal;
+  const onTimeRate = settled > 0 ? Math.round((deliveredTotal / settled) * 100) : 0;
 
   return (
     <div className="p-5 max-w-[1600px] mx-auto">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-        <KPICard label="TOTAL TRIPS" value={String(tripData?.total ?? 0)} delta="all time" trend="up" />
-        <KPICard label="ON-TIME RATE" value={`${onTimeRate}%`} delta="delivery success" trend={onTimeRate >= 80 ? 'up' : 'down'} />
+        <KPICard label="TOTAL TRIPS" value={kv('total_trips')} delta="all time" trend="up" />
+        <KPICard
+          label="DELIVERED VS DELAYED"
+          value={settled > 0 ? `${onTimeRate}%` : '—'}
+          // Named for what it measures. This was never an on-time rate: no trip
+          // carries a promised arrival, so nothing here can say whether one was
+          // late — only whether it was ever flagged as delayed.
+          delta={settled > 0 ? `${deliveredTotal} of ${settled} settled` : 'nothing settled yet'}
+          trend={onTimeRate >= 80 ? 'up' : 'down'}
+        />
         <KPICard label="AVG TRANSIT TIME" value={avgHrs ? `${avgH}h ${avgM}m` : '—'} delta="per delivery" trend="up" />
-        <KPICard label="ACTIVE ALERTS" value={String(alerts.length)} delta="unresolved" trend="down" />
+        <KPICard label="ACTIVE ALERTS" value={kv('unacknowledged_alerts')} delta="unacknowledged" trend="down" />
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card className="p-4">
@@ -578,7 +601,7 @@ export function AnalyticsView() {
           </div>
         </Card>
         <Card className="p-4">
-          <div className="font-bold text-sm text-text-0 mb-3">Recent Alerts</div>
+          <div className="font-bold text-sm text-text-0 mb-3">Open Alerts</div>
           <div className="space-y-0 max-h-[300px] overflow-y-auto">
             {alerts.slice(0, 10).map((a, i) => (
               <div key={String(a['id'] ?? i)} className="flex items-start gap-2 py-2.5 border-b border-white/[.05] last:border-0">
@@ -590,10 +613,24 @@ export function AnalyticsView() {
                   </div>
                 </div>
                 <StatusBadge status={String(a['severity'] ?? 'medium')} />
+                {/* The acknowledge endpoint has existed since the CDS alerts
+                    table was created and nothing ever called it, so an alert,
+                    once raised, stayed open for the life of the deployment. */}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={acknowledge.isPending}
+                  onClick={() => acknowledge.mutate(String(a['id']), {
+                    onSuccess: () => addToast('Alert acknowledged'),
+                    onError: () => addToast('Could not acknowledge that alert', 'error'),
+                  })}
+                >
+                  Ack
+                </Button>
               </div>
             ))}
             {alerts.length === 0 && (
-              <div className="text-xs text-text-2 text-center py-8 font-mono">No active alerts</div>
+              <div className="text-xs text-text-2 text-center py-8 font-mono">Nothing outstanding</div>
             )}
           </div>
         </Card>
