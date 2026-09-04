@@ -11,7 +11,7 @@ import { ContainersView, BookingsView, DriversView, TransportersView } from './C
 import { CDSIntro } from './CDSIntro.js';
 import { KPICard, CDSDrawer, CDSToastContainer } from './components.js';
 import { CDS_VIEWS } from './constants.js';
-import { useDashboardKPIs, useActivity, useTrips } from './hooks.js';
+import { useDashboardKPIs, useActivity, useLiveTracking, useTrips } from './hooks.js';
 import {
   LocksView, PortView, PulseView, InboxView,
   BillingView, ReportsView, AnalyticsView, SettingsView,
@@ -369,10 +369,22 @@ function DashboardView() {
   );
 }
 
+/** Trip statuses that mean "this container is out and not yet delivered". */
+const IN_TRANSIT = 'locked,dispatched,checkpoint,delayed,at_port';
+
 function LiveView() {
-  const { data, isLoading } = useTrips({ status: 'dispatched' });
+  // Two different questions, deliberately asked separately:
+  //   trips    — what is open on paper (clamped through to at_port)
+  //   tracking — what is actually streaming GPS to us right now
+  // The panel used to ask only for status='dispatched', so a clamped container
+  // whose driver was actively reporting position showed as zero on both the
+  // map and the counter.
+  const { data, isLoading } = useTrips({ status: IN_TRANSIT });
+  const { data: liveData } = useLiveTracking();
   if (isLoading) return <LoadingState />;
   const trips = (data?.data ?? []) as Record<string, unknown>[];
+  const live = (liveData?.data ?? []) as Record<string, unknown>[];
+  const reporting = live.filter(s => s['position_is_live'] === true).length;
 
   return (
     <div className="p-5 max-w-[1600px] mx-auto">
@@ -380,18 +392,34 @@ function LiveView() {
         <div className="font-bold text-sm text-text-0 mb-3">Live Fleet Tracking</div>
         <div className="h-[350px] rounded-xl bg-ink-3 relative overflow-hidden"
           style={{ background: 'linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px) 0 0/40px 40px, linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px) 0 0/40px 40px, #14171b' }}>
-          {trips.length > 0 ? (
+          {live.length > 0 ? (
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center">
                 <div className="text-2xl mb-2 opacity-40">📡</div>
-                <div className="text-text-2 text-[11px] font-mono">{trips.length} active trip{trips.length !== 1 ? 's' : ''} — GPS positions streaming</div>
+                <div className="text-text-2 text-[11px] font-mono">
+                  {reporting} of {live.length} vehicle{live.length !== 1 ? 's' : ''} reporting now
+                </div>
+                {reporting < live.length && (
+                  <div className="text-[10px] font-mono text-[#ffb020] mt-1">
+                    {live.length - reporting} tracked but not currently reporting
+                  </div>
+                )}
               </div>
             </div>
           ) : (
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center">
                 <div className="text-2xl mb-2 opacity-40">🗺️</div>
-                <div className="text-text-2 text-[11px] font-mono">No dispatched trips — map activates when vehicles depart</div>
+                <div className="text-text-2 text-[11px] font-mono">
+                  {trips.length > 0
+                    ? `${trips.length} open trip${trips.length !== 1 ? 's' : ''} — none tracking yet`
+                    : 'No open trips'}
+                </div>
+                {trips.length > 0 && (
+                  <div className="text-[10px] font-mono text-text-2/60 mt-1">
+                    Tracking starts when a driver scans their QR
+                  </div>
+                )}
               </div>
             </div>
           )}

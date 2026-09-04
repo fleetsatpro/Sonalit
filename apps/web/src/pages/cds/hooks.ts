@@ -37,6 +37,31 @@ export function useActivity(limit = 30) {
 // queries did before, having had no refetch at all.
 const CONTROL_ROOM_REFETCH_MS = 60_000;
 
+/**
+ * Vehicles that are actually reporting a position right now.
+ *
+ * Distinct from trip status on purpose. A trip's status is paperwork — someone
+ * has to move it to 'dispatched' — whereas a live tracking session means a
+ * device is streaming GPS to us this minute. The live map must answer the
+ * second question, not the first.
+ */
+export function useLiveTracking() {
+  return useQuery({
+    queryKey: ['cds', 'tracking', 'live'],
+    queryFn: async () => {
+      // Tracking is a sibling of /cds, not a child of it. Overriding baseURL
+      // keeps cdsApi's auth interceptors (operator JWT or field device) while
+      // pointing at the right path.
+      const { data } = await cdsApi.get('/tracking/sessions', {
+        baseURL: '/api/v1',
+        params: { active: 'true' },
+      });
+      return data as { data?: Record<string, unknown>[] };
+    },
+    refetchInterval: 20_000,
+  });
+}
+
 export function useTrips(filters?: SearchFilters) {
   return useQuery<ApiList>({
     queryKey: ['cds', 'trips', filters],

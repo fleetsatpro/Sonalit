@@ -2,6 +2,7 @@ import { useParams } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 
+import { keepAwakeState, startKeepAwake, stopKeepAwake, subscribeKeepAwake } from '../lib/keepAwake.js';
 import { selectProvider } from '../lib/trackingProviders.js';
 
 import type { Capability, TrackingFix, TrackingProvider } from '../lib/trackingProviders.js';
@@ -28,7 +29,7 @@ import type { CSSProperties, ReactNode } from 'react';
 const API = (import.meta.env['VITE_API_BASE_URL'] as string | undefined) ?? '/api/v1';
 
 type Phase =
-  | 'loading' | 'invalid' | 'ended'
+  | 'loading' | 'invalid' | 'ended' | 'already_active'
   | 'permission' | 'permission_denied' | 'services_off'
   | 'activating' | 'awaiting_fix' | 'active' | 'completed';
 
@@ -75,6 +76,8 @@ export default function DriverTrack() {
   const [denials, setDenials] = useState(0);
   const [minimal, setMinimal] = useState(false);
   const [backgroundOk, setBackgroundOk] = useState(false);
+  // Whether the screen is actually being held awake — reported, never assumed.
+  const [screenHeld, setScreenHeld] = useState(false);
 
   const provider = useRef<TrackingProvider | null>(null);
   const sessionToken = useRef<string | null>(null);
@@ -83,6 +86,8 @@ export default function DriverTrack() {
   // Serialises every read-modify-write of the offline buffer (see enqueue).
   const chain = useRef<Promise<void>>(Promise.resolve());
   const onlineHandler = useRef<(() => void) | null>(null);
+  const hideHandler = useRef<(() => void) | null>(null);
+  const awakeUnsub = useRef<(() => void) | null>(null);
 
   if (provider.current === null) provider.current = selectProvider();
 
@@ -97,9 +102,15 @@ export default function DriverTrack() {
         const body = await res.json().catch(() => ({}));
         if (cancelled) return;
         if (res.ok) { setJourney((body.data?.journey ?? {}) as Journey); setPhase('permission'); return; }
-        // A spent, revoked or finished link is a dead end by design.
+        // A spent, revoked or finished link is a dead end by design — but the
+        // reasons are NOT the same thing and must not share a headline.
+        // 409 journey_already_active means tracking is RUNNING, most likely on
+        // the phone that scanned first. Calling that "Journey completed" tells
+        // a yard that a container in transit has been delivered.
         setMessage(body.message ?? 'This tracking link is not valid.');
-        setPhase(res.status === 404 ? 'invalid' : 'ended');
+        if (res.status === 404) setPhase('invalid');
+        else if (body.error === 'journey_already_active') setPhase('already_active');
+        else setPhase('ended');
       } catch {
         if (!cancelled) { setMessage('Could not reach Sonalit. Check your connection.'); setPhase('invalid'); }
       }
@@ -113,11 +124,17 @@ export default function DriverTrack() {
   const endJourney = useCallback(() => {
     stopped.current = true;
     void provider.current?.stop();
+    stopKeepAwake();
     if (pollTimer.current !== null) { window.clearInterval(pollTimer.current); pollTimer.current = null; }
     if (onlineHandler.current) {
       window.removeEventListener('online', onlineHandler.current);
       onlineHandler.current = null;
     }
+    if (hideHandler.current) {
+      document.removeEventListener('visibilitychange', hideHandler.current);
+      hideHandler.current = null;
+    }
+    if (awakeUnsub.current) { awakeUnsub.current(); awakeUnsub.current = null; }
     try { localStorage.removeItem(BUFFER_KEY); } catch { /* ignore */ }
     setPhase('completed');
     setMinimal(false);
@@ -211,6 +228,41 @@ export default function DriverTrack() {
 
     // Network back: drain whatever the dead zone accumulated, through the same
     // serialised path so a reconnect cannot race an arriving fix.
+    // Hold the screen so the page never leaves the foreground. This is the only
+    // way a no-install web tracker survives a journey: the browser suspends
+    // location the instant the tab is hidden, so the fix is to never let it be
+    // hidden. Started here because activation was a real user gesture.
+    startKeepAwake(() => { void enqueue(null); });
+    setScreenHeld(keepAwakeState().screenHeld);
+    const unsubAwake = subscribeKeepAwake(st => setScreenHeld(st.screenHeld));
+    awakeUnsub.current = unsubAwake;
+
+    // If the page is hidden anyway, get what we already hold to the server
+    // before the browser freezes us. sendBeacon survives backgrounding; a
+    // normal fetch started at this moment often does not.
+    const onHide = () => {
+      if (document.visibilityState !== 'hidden' || !sessionToken.current) return;
+      const queued = loadBuffer();
+      if (!queued.length) return;
+      try {
+        // The credential goes in the BODY, never the URL. sendBeacon cannot set
+        // headers, and a token in a query string ends up in access logs and
+        // proxy history — the one place a session credential must never be.
+        const ok = navigator.sendBeacon?.(
+          `${API}/track/session/ping`,
+          new Blob([JSON.stringify({
+            session: sessionToken.current,
+            locations: queued.slice(0, BATCH_MAX),
+          })], { type: 'application/json' }),
+        );
+        // Only clear what the browser accepted for delivery. A refused beacon
+        // must leave the backlog intact for the next foreground flush.
+        if (ok) saveBuffer(queued.slice(BATCH_MAX));
+      } catch { /* keep the buffer; it flushes on resume */ }
+    };
+    document.addEventListener('visibilitychange', onHide);
+    hideHandler.current = onHide;
+
     const onOnline = () => { void enqueue(null); };
     if (onlineHandler.current) window.removeEventListener('online', onlineHandler.current);
     onlineHandler.current = onOnline;
@@ -294,11 +346,17 @@ export default function DriverTrack() {
 
   useEffect(() => () => {
     void provider.current?.stop();
+    stopKeepAwake();
     if (pollTimer.current !== null) window.clearInterval(pollTimer.current);
     if (onlineHandler.current) {
       window.removeEventListener('online', onlineHandler.current);
       onlineHandler.current = null;
     }
+    if (hideHandler.current) {
+      document.removeEventListener('visibilitychange', hideHandler.current);
+      hideHandler.current = null;
+    }
+    if (awakeUnsub.current) { awakeUnsub.current(); awakeUnsub.current = null; }
   }, []);
 
   /* ─── Screens ───────────────────────────────────────────────────────────── */
@@ -314,6 +372,20 @@ export default function DriverTrack() {
             <div style={{ ...S.glyph, color: '#ff5c5c' }}>✕</div>
             <h1 style={S.h1}>Link not valid</h1>
             <p style={S.sub}>{message || 'This tracking link is not valid.'}</p>
+          </Centered>
+        )}
+
+        {phase === 'already_active' && (
+          <Centered>
+            <div style={{ ...S.glyph, color: '#37e6ff' }}>◉</div>
+            <h1 style={S.h1}>Already being tracked</h1>
+            <p style={S.sub}>
+              This journey is running on the phone that scanned first. The
+              container is still in transit — nothing here needs doing.
+            </p>
+            <p style={{ ...S.sub, opacity: .6, marginTop: 10 }}>
+              If that was not you, tell the yard so a new code can be issued.
+            </p>
           </Centered>
         )}
 
@@ -371,12 +443,18 @@ export default function DriverTrack() {
           <Centered>
             <div style={{ ...S.glyph, color: '#33d6a8' }}>✓</div>
             <h1 style={S.h1}>Tracking activated</h1>
-            {/* Web genuinely stops when the page is backgrounded, so say so
-                rather than implying an unattended journey is covered. */}
+            {/* Three genuinely different situations, and the driver is told
+                which one they are in — never a reassurance we cannot keep.
+                  native      → the OS tracks; the phone can go in a pocket
+                  screen held → nothing more to do; leave it on the dash
+                  neither     → the honest warning, because the browser really
+                                does stop the moment this page is hidden */}
             <p style={S.sub}>
               {backgroundOk
                 ? 'You can continue your journey.'
-                : 'Keep this page open while you drive.'}
+                : screenHeld
+                  ? 'Leave the phone on the dashboard. Nothing else to do.'
+                  : 'Keep this page open while you drive.'}
             </p>
             {journey.vehicle ? <div style={S.vehicle}>{journey.vehicle}</div> : null}
           </Centered>
@@ -388,7 +466,9 @@ export default function DriverTrack() {
             <p style={{ ...S.sub, marginTop: 18 }}>
               {backgroundOk
                 ? 'Tracking is active. You can put your phone away.'
-                : 'Tracking is active. Keep this page open.'}
+                : screenHeld
+                  ? 'Tracking is active. Leave the phone on the dashboard.'
+                  : 'Tracking is active. Keep this page open.'}
             </p>
           </Centered>
         )}
