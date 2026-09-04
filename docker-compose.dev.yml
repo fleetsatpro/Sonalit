@@ -8,7 +8,22 @@ services:
       CENTRIFUGO_API_KEY: ${CENTRIFUGO_API_KEY:-dev-api-key-change-in-prod}
       CENTRIFUGO_ADMIN: "false"
       CENTRIFUGO_LOG_LEVEL: debug
-      CENTRIFUGO_ALLOW_SUBSCRIBE_FOR_CLIENT: "true"
+      # false, so a subscription token is mandatory for every channel.
+      #
+      # With this true, any connected client could subscribe to any channel
+      # whose name contains no '#' — and most of Sonalit's channels do not:
+      # org:<orgId>:device:<id>:telemetry, alert:<orgId>, panic:<orgId>,
+      # risk:updates:<orgId>, convoy:<id>:report. Only the '#' channels
+      # (org#<orgId>, portal#<convoyId>) were protected, by Centrifugo's
+      # user-limited channel rule against the connection token's 'sub'.
+      #
+      # Tokens for the rest are now issued by POST /realtime/subscription-token,
+      # which authorizes each channel through backend/src/security/channels.js:
+      # the tenant comes from the server-resolved security context and resource
+      # ownership is checked under RLS. Production must set this to false too —
+      # the authorization code above is inert while the broker lets clients
+      # subscribe without asking.
+      CENTRIFUGO_ALLOW_SUBSCRIBE_FOR_CLIENT: "false"
     command: centrifugo --port=8000
     restart: unless-stopped
 

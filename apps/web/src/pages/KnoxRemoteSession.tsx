@@ -3,6 +3,7 @@ import { useNavigate, useParams } from '@tanstack/react-router';
 import { Monitor, Camera, ChevronLeft, AlertTriangle } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { subscribe } from '../lib/centrifuge.js';
+import { useAuthStore } from '../stores/auth.js';
 
 const C = {
   bg:'#080C14', surf:'#0D1420', panel:'#111827', border:'#1E2D40',
@@ -24,6 +25,12 @@ const TURN_CONFIG: RTCConfiguration = { iceServers: [TURN_SERVER] };
 export default function KnoxRemoteSession() {
   const navigate = useNavigate();
   const { deviceId } = useParams({ strict: false }) as { deviceId?: string };
+  // The backend publishes Knox signalling and telemetry on org-prefixed
+  // channels (org:<orgId>:session:<id>, org:<orgId>:device:<id>:telemetry).
+  // This page subscribed to the unprefixed names, so neither subscription ever
+  // received anything, and the unprefixed names are also outside the channel
+  // grammar the subscription-token endpoint will authorize.
+  const orgId = useAuthStore((s) => s.user?.org_id ?? '');
 
   const [sessionStatus, setSessionStatus] = useState<'connecting' | 'live' | 'ended' | 'error'>('connecting');
   const [telemetry, setTelemetry] = useState<Telemetry>({});
@@ -67,7 +74,7 @@ export default function KnoxRemoteSession() {
             api.post(`/guardian/devices/${deviceId}/remote-session/webrtc-signal`, { type: 'ice_candidate', payload: event.candidate, session_id: sessionRef.current }).catch(() => {});
         };
 
-        const unsub = subscribe<{ type: string; payload: unknown }>(`session:${session_id}`, (msg) => {
+        const unsub = subscribe<{ type: string; payload: unknown }>(`org:${orgId}:session:${session_id}`, (msg) => {
           if (msg.type === 'answer' && pc.signalingState !== 'stable')
             pc.setRemoteDescription(new RTCSessionDescription(msg.payload as RTCSessionDescriptionInit)).catch(() => {});
           else if (msg.type === 'ice_candidate' && msg.payload)
@@ -94,12 +101,12 @@ export default function KnoxRemoteSession() {
       }
     })();
     return () => { cancelled = true; };
-  }, [deviceId]);
+  }, [deviceId, orgId]);
 
   useEffect(() => {
-    if (!deviceId) return;
-    return subscribe<Telemetry>(`device:${deviceId}:telemetry`, (data) => setTelemetry(data));
-  }, [deviceId]);
+    if (!deviceId || !orgId) return;
+    return subscribe<Telemetry>(`org:${orgId}:device:${deviceId}:telemetry`, (data) => setTelemetry(data));
+  }, [deviceId, orgId]);
 
   useEffect(() => {
     if (!deviceId) return;

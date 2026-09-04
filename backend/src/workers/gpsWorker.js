@@ -1,6 +1,7 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
 const { Worker } = require('bullmq');
 const { query } = require('../config/database');
+const { withOrg } = require('../utils/orgScopedDb');
 const { getQueues } = require('../config/queue');
 const { distanceToSegment } = require('../utils/haversine');
 const logger = require('../utils/logger');
@@ -11,26 +12,42 @@ const GEOFENCE_KM = parseFloat(process.env.GEOFENCE_RADIUS_KM) || 5;
 // ── Per-vehicle prev-fix cache for behaviour delta calculations ───────────
 const _prevFixCache = new Map(); // vehicleId → { lat, lng, speed, heading, timestamp }
 
-// ── Corridor geofence cache (refreshed every 5 min) ───────────────────────
-let _corridorCache = null;
-let _corridorCacheTime = 0;
+// ── Corridor geofence cache, per org (refreshed every 5 min) ──────────────
+//
+// This cache used to be a single global list built with the unscoped query()
+// helper, which loaded every tenant's corridors and evaluated every vehicle
+// against all of them. A vehicle in tenant A could therefore raise a
+// route_deviation alert against tenant B's corridor — and because the alert
+// message interpolates fence.name, tenant B's corridor name was written into
+// tenant A's alert text and shown in tenant A's UI.
+//
+// The cache is now keyed by org and loaded through withOrg(), so RLS returns
+// only that tenant's corridors and a fix is only ever compared against its
+// own operator's routes.
+const _corridorCacheByOrg = new Map(); // orgId → { fences, loadedAt }
 
-async function getCorridorGeofences() {
-  if (_corridorCache && Date.now() - _corridorCacheTime < 300_000) return _corridorCache;
+async function getCorridorGeofences(orgId) {
+  if (!orgId) return [];
+
+  const cached = _corridorCacheByOrg.get(orgId);
+  if (cached && Date.now() - cached.loadedAt < 300_000) return cached.fences;
+
   try {
-    const r = await query(
+    const r = await withOrg(orgId, (client) => client.query(
       `SELECT id, name, coordinates FROM geofences WHERE type = 'corridor' AND COALESCE(active, true) = true`
-    );
-    _corridorCache = r.rows.flatMap(f => {
+    ));
+    const fences = r.rows.flatMap(f => {
       try {
         const c = typeof f.coordinates === 'string' ? JSON.parse(f.coordinates) : f.coordinates;
         if (!Array.isArray(c?.path) || c.path.length < 2) return [];
         return [{ id: f.id, name: f.name, path: c.path, buffer_km: (c.buffer_m || 300) / 1000 }];
       } catch (_) { return []; }
     });
-    _corridorCacheTime = Date.now();
-  } catch (_) { _corridorCache = _corridorCache || []; }
-  return _corridorCache;
+    _corridorCacheByOrg.set(orgId, { fences, loadedAt: Date.now() });
+    return fences;
+  } catch (_) {
+    return cached ? cached.fences : [];
+  }
 }
 
 // Minimum distance from point to a multi-segment path, in km
@@ -90,7 +107,7 @@ async function processGPS(job) {
   if (orgId) {
     publish(`org#${orgId}`, gpsPayload);
   } else {
-    publish('vehicle:update', { vehicleId: vehicle_id, lat, lng, speed });
+    logger.warn(`GPS fix for vehicle ${vehicle_id} has no owning org — not broadcast`);
   }
 
   // Also publish to portal channel so cargo owners see live updates
@@ -154,7 +171,7 @@ async function processGPS(job) {
   // 6. Corridor geofence deviation check
   if (alertQueue) {
     try {
-      const corridors = await getCorridorGeofences();
+      const corridors = await getCorridorGeofences(orgId);
       for (const fence of corridors) {
         const distKm = minDistToPathKm(lat, lng, fence.path);
         if (distKm > fence.buffer_km) {

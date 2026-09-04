@@ -556,7 +556,8 @@ async function runDmsMonitorJob() {
         created_at: row.created_at,
         triggered_at: row.created_at,
       };
-      if (dev.org_id) publish(`org#${dev.org_id}`, payload); else publish('device:panic', payload);
+      if (dev.org_id) publish(`org#${dev.org_id}`, payload);
+      else logger.warn(`DMS panic for unattributed device ${dev.id} — not broadcast`);
       logger.warn(`DMS timeout PANIC: device=${dev.id} name="${dev.name}" org=${dev.org_id ?? 'unknown'}`);
       // Queue a burst too — a missed check-in is exactly when eyes on the scene
       // matter most. No fcm_token on this partial row, so it rides the device's
@@ -1368,7 +1369,7 @@ router.post('/location', deviceAuth, locationLimiter, async (req, res, next) => 
     if (req.device.org_id) {
       publish(`org#${req.device.org_id}`, locationPayload);
     } else {
-      publish('device:location', locationPayload);
+      logger.warn(`location for unattributed device ${req.device.id} — not broadcast`);
     }
 
     res.json({ ok: true });
@@ -1507,7 +1508,7 @@ router.post('/panic', deviceAuth, requireIdempotencyKey, panicLimiter, async (re
       if (orgId) {
         publish(`org#${orgId}`, panicPublishPayload);
       } else {
-        publish('device:panic', panicPublishPayload);
+        logger.warn(`panic for unattributed device ${deviceId} — not broadcast`);
       }
       logger.warn(`PANIC triggered: device=${deviceId} name="${req.device.name}" mode=${mode} org=${orgId ?? 'unknown'}`);
       // FCM ack to device confirming SOS was received (Task 4.1, fire-and-forget)
@@ -1766,7 +1767,7 @@ router.post('/panic/cancel', deviceAuth, async (req, res, next) => {
     if (req.device.org_id) {
       publish(`org#${req.device.org_id}`, cancelPayload);
     } else {
-      publish('device:panic', cancelPayload);
+      logger.warn(`panic cancel for unattributed device ${req.device.id} — not broadcast`);
     }
 
     logger.warn(`PANIC cancelled by device=${deviceId} count=${resolved.rows.length}`);
@@ -2571,7 +2572,8 @@ router.post('/capture-photo', deviceAuth, async (req, res, next) => {
       created_at: row.created_at,
       lat, lng, camera,
     };
-    if (orgId) publish(`org#${orgId}`, payload); else publish('device:capture', payload);
+    if (orgId) publish(`org#${orgId}`, payload);
+    else logger.warn('capture for unattributed device — not broadcast');
     // Auto-tag the photo (people / weapons / vehicles / plates) the moment it
     // lands. Detached — vision latency must not hold up the device's upload ack.
     captureVision.analyzeCaptureAndStore(row.id, orgId, public_url)
@@ -3285,7 +3287,7 @@ async function processLocationBatch(device, points) {
     if (device.org_id) {
       publish(`org#${device.org_id}`, locationPayload);
     } else {
-      publish('device:location', locationPayload);
+      logger.warn('location for unattributed device — not broadcast');
     }
   }
 
