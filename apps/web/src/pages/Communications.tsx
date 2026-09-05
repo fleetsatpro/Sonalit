@@ -1,1 +1,1 @@
-export { default } from './NotificationCommandCenter.js';
+export { default } from './NotificationCommandCenterFixed.js';
