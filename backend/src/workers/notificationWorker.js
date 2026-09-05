@@ -6,6 +6,8 @@ const { generateAndQueueScopedClientPulse, listCustomerPulseTargets } = require(
 
 const PULSE_HOURS_EAT = [0, 4, 8, 12, 16, 20];
 const TZ_OFFSET_MINUTES = 180;
+const CRITICAL_SECURITY_EVENTS = ['panic', 'sos', 'tamper', 'forced_unlock', 'unauthorized_movement'];
+const GLOBAL_SECURITY_ROLES = ['super_admin', 'org_admin', 'admin', 'dispatcher'];
 
 function eatSlot(date = new Date()) {
   const utcMinutes = date.getUTCHours() * 60 + date.getUTCMinutes();
@@ -13,36 +15,134 @@ function eatSlot(date = new Date()) {
   return { hour: Math.floor(eatMinutes / 60), minute: eatMinutes % 60 };
 }
 
+/**
+ * Resolve notification authority from the asset that produced the event.
+ *
+ * Rules:
+ * - An explicitly client-owned vehicle/device routes to that client.
+ * - A vehicle/device without a client is Admin-owned/unassigned.
+ * - Super Admin/org admin/admin/dispatcher remain globally visible to Fleet
+ *   events within their organization.
+ * - Client recipients are never selected by organization alone.
+ */
+async function resolveFleetOwnership(alert, orgId) {
+  let vehicleClientId = alert.vehicle_client_id || null;
+  let deviceClientId = null;
+
+  if (!vehicleClientId && alert.vehicle_id) {
+    const vehicle = await query(
+      `SELECT client_id FROM vehicles WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1`,
+      [alert.vehicle_id, orgId],
+    );
+    vehicleClientId = vehicle.rows[0]?.client_id || null;
+  }
+
+  if (alert.device_id) {
+    const device = await query(
+      `SELECT client_id, assignment_type, assignment_id
+         FROM guardian_devices
+        WHERE id=$1 AND (org_id=$2 OR org_id IS NULL) AND deleted_at IS NULL
+        LIMIT 1`,
+      [alert.device_id, orgId],
+    );
+    deviceClientId = device.rows[0]?.client_id || null;
+
+    // A device assigned to a vehicle inherits the vehicle's authoritative
+    // client ownership unless the device itself has an explicit client owner.
+    if (!deviceClientId && device.rows[0]?.assignment_type === 'vehicle' && device.rows[0]?.assignment_id) {
+      const vehicle = await query(
+        `SELECT client_id FROM vehicles WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1`,
+        [device.rows[0].assignment_id, orgId],
+      );
+      deviceClientId = vehicle.rows[0]?.client_id || null;
+    }
+  }
+
+  return {
+    clientId: vehicleClientId || deviceClientId || null,
+    ownership: vehicleClientId || deviceClientId ? 'client' : 'admin',
+  };
+}
+
 async function processNotification(job) {
   const { alertId, severity } = job.data || {};
   if (!alertId) throw new Error('notification job missing alertId');
-  const alertResult = await query(`SELECT a.*, v.registration, v.region, c.name AS convoy_name, c.org_id FROM alerts a LEFT JOIN vehicles v ON v.id = a.vehicle_id LEFT JOIN convoys c ON c.id = a.convoy_id WHERE a.id = $1 LIMIT 1`, [alertId]);
-  if (!alertResult.rows.length) { logger.warn(`Notification: alert ${alertId} not found`); return; }
+
+  const alertResult = await query(`
+    SELECT a.*, v.registration, v.region, v.client_id AS vehicle_client_id,
+           c.name AS convoy_name, c.org_id AS convoy_org_id
+      FROM alerts a
+      LEFT JOIN vehicles v ON v.id = a.vehicle_id
+      LEFT JOIN convoys c ON c.id = a.convoy_id
+     WHERE a.id = $1
+     LIMIT 1`, [alertId]);
+  if (!alertResult.rows.length) {
+    logger.warn(`Notification: alert ${alertId} not found`);
+    return;
+  }
+
   const alert = alertResult.rows[0];
-  const orgId = alert.org_id;
+  const orgId = alert.convoy_org_id || alert.org_id || (await query(
+    `SELECT org_id FROM vehicles WHERE id=$1 AND deleted_at IS NULL LIMIT 1`, [alert.vehicle_id],
+  )).rows[0]?.org_id;
   if (!orgId) throw new Error(`Alert ${alertId} has no organization scope`);
 
   const type = String(alert.type || '').toLowerCase();
-  const routeSecurity = alert.security_event === true || type === 'security' || ['panic','sos','tamper','forced_unlock','unauthorized_movement'].includes(type);
+  const routeSecurity = alert.security_event === true || type === 'security' || CRITICAL_SECURITY_EVENTS.includes(type);
   const eventType = routeSecurity ? 'fleet.security' : 'fleet.operational';
+  const ownership = await resolveFleetOwnership(alert, orgId);
 
-  // Internal Sonalit operators continue to receive operational/security alerts
-  // by role. External recipients require explicit, active, verified enrollment
-  // and an event/channel subscription; legacy boolean flags are not authority.
-  const internal = await query(`SELECT email,name FROM users WHERE org_id=$1 AND role IN ('admin','dispatcher') AND status='active' AND deleted_at IS NULL AND email IS NOT NULL`, [orgId]);
-  const external = await query(`
-    SELECT DISTINCT r.email,r.name
-      FROM communication_enrollments e
-      JOIN communication_subscriptions s ON s.enrollment_id=e.id
-      JOIN client_email_recipients r ON r.id=e.recipient_id
-     WHERE e.org_id=$1 AND e.domain='fleet' AND e.status IN ('verified','active')
-       AND r.org_id=$1 AND r.enabled=true AND r.deleted_at IS NULL
-       AND s.org_id=$1 AND s.event_type=$2 AND s.channel='email' AND s.enabled=true`, [orgId, eventType]);
-  const recipients = [...internal.rows, ...external.rows].filter((r, i, arr) => r.email && arr.findIndex(x => x.email.toLowerCase() === r.email.toLowerCase()) === i);
-  if (!recipients.length) { logger.info(`Notification: no eligible recipients for alert ${alertId}`); return; }
+  // Global Fleet authority: these roles receive all Fleet security/operational
+  // events in their organization regardless of asset ownership.
+  const internal = await query(
+    `SELECT email,name FROM users
+      WHERE org_id=$1
+        AND role = ANY($2::text[])
+        AND status='active'
+        AND deleted_at IS NULL
+        AND email IS NOT NULL`,
+    [orgId, GLOBAL_SECURITY_ROLES],
+  );
 
-  await queueAlertEmail({ orgId, recipients, alert: { ...alert, severity: severity || alert.severity }, correlationId: job.id ? `notification:${job.id}` : `alert:${alertId}`, ctaUrl: process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/alerts/${alertId}` : undefined });
-  logger.info(`Notification fan-out queued: alert=${alertId} org=${orgId} event=${eventType} recipients=${recipients.length}`);
+  // External recipients are strictly asset/client scoped. An unassigned or
+  // Admin-owned asset has NO client recipient route, preventing leakage.
+  let external = { rows: [] };
+  if (ownership.clientId) {
+    external = await query(`
+      SELECT DISTINCT r.email,r.name
+        FROM communication_enrollments e
+        JOIN communication_subscriptions s ON s.enrollment_id=e.id
+        JOIN client_email_recipients r ON r.id=e.recipient_id
+       WHERE e.org_id=$1
+         AND e.domain='fleet'
+         AND e.client_id=$2
+         AND e.status IN ('verified','active')
+         AND r.org_id=$1
+         AND r.enabled=true
+         AND r.deleted_at IS NULL
+         AND s.org_id=$1
+         AND s.event_type=$3
+         AND s.channel='email'
+         AND s.enabled=true`, [orgId, ownership.clientId, eventType]);
+  }
+
+  const recipients = [...internal.rows, ...external.rows].filter((r, i, arr) =>
+    r.email && arr.findIndex(x => x.email.toLowerCase() === r.email.toLowerCase()) === i,
+  );
+
+  if (!recipients.length) {
+    logger.warn(`Notification: no eligible recipients alert=${alertId} event=${eventType} ownership=${ownership.ownership} client=${ownership.clientId || 'ADMIN'}`);
+    return;
+  }
+
+  await queueAlertEmail({
+    orgId,
+    recipients,
+    alert: { ...alert, severity: severity || alert.severity, notification_ownership: ownership.ownership, notification_client_id: ownership.clientId },
+    correlationId: job.id ? `notification:${job.id}` : `alert:${alertId}`,
+    ctaUrl: process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/alerts/${alertId}` : undefined,
+  });
+  logger.info(`Notification fan-out queued: alert=${alertId} org=${orgId} event=${eventType} ownership=${ownership.ownership} client=${ownership.clientId || 'ADMIN'} recipients=${recipients.length}`);
 }
 
 async function runScheduledClientPulse(now = new Date()) {
@@ -87,4 +187,4 @@ function startNotificationWorker() {
   return worker;
 }
 
-module.exports = { startNotificationWorker, processNotification, runScheduledClientPulse, startClientPulseScheduler };
+module.exports = { startNotificationWorker, processNotification, runScheduledClientPulse, startClientPulseScheduler, resolveFleetOwnership };
