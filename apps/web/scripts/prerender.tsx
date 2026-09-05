@@ -127,6 +127,12 @@ function renderPage(page: PageSeo, template: string): void {
     // difference between a marketing page that loads and one that does not.
     .replace(/\s*<link rel="stylesheet" href="\/cesium\/[^"]*">/g, '')
     .replace(/\s*<script src="\/cesium\/[^"]*"><\/script>/g, '')
+    // The public pages self-host Inter and Space Grotesk through the bundled
+    // stylesheet (styles/marketing.css), so the app shell's Google Fonts
+    // <link> is a render-blocking request to a third party that these pages
+    // never use. The application keeps it — only the public HTML drops it.
+    .replace(/\s*<link rel="preconnect" href="https:\/\/fonts\.(googleapis|gstatic)\.com"[^>]*>/g, '')
+    .replace(/\s*<link href="https:\/\/fonts\.googleapis\.com[^"]*" rel="stylesheet"\s*\/?>/g, '')
     // The shell's own <title> (and any default description/robots meta) is
     // replaced wholesale by this page's head — never appended to, or the page
     // ships two titles and Google picks one at random.

@@ -1,12 +1,17 @@
 /**
- * The public site's own navigation graph. Header, footer and the related-page
- * links at the bottom of each service page all read this, so every public page
- * is reachable from every other one with descriptive anchor text.
+ * The public site's own navigation graph. Header, footer, the capability grid
+ * and the related-page strips all read this, so every public page is reachable
+ * from every other one with descriptive anchor text and nothing drifts.
  */
 export interface NavLink {
   href: string;
+  /** Full descriptive label — footer, mobile menu, related-page cards. */
   label: string;
-  /** One line used by the footer and the related-pages strip. */
+  /** Compact label for the desktop nav bar. */
+  short: string;
+  /** Glyph used by the capability cards. */
+  icon: string;
+  /** One line used by the footer, capability cards and related-page strips. */
   blurb: string;
 }
 
@@ -14,28 +19,52 @@ export const PLATFORM_LINKS: NavLink[] = [
   {
     href: '/fleet-management',
     label: 'Fleet Management',
-    blurb: 'Live vehicle and driver visibility, maintenance, fuel and shift operations.',
+    short: 'Fleet',
+    icon: '◈',
+    blurb:
+      'Real-time vehicle visibility, GPS tracking, driver operations and maintenance awareness across the whole fleet.',
   },
   {
     href: '/convoy-management',
     label: 'Convoy Management',
-    blurb: 'Convoy planning, field officer coordination, corridor risk and reporting.',
+    short: 'Convoy',
+    icon: '⬡',
+    blurb:
+      'Plan, monitor and secure multi-vehicle movements with corridor awareness and field coordination.',
   },
   {
     href: '/container-delivery',
     label: 'Container Delivery',
-    blurb: 'Bookings, container movements, e-lock workflows and proof of delivery.',
+    short: 'Container',
+    icon: '▣',
+    blurb:
+      'End-to-end container delivery: bookings, e-lock operations, yard and port coordination and proof of delivery.',
   },
   {
     href: '/security-operations',
     label: 'Security Operations',
-    blurb: 'Alerting, panic escalation, geofencing and incident response.',
+    short: 'Security',
+    icon: '◎',
+    blurb:
+      'Situational awareness, alerting, geofencing, panic escalation and field officer coordination.',
   },
 ];
 
 export const COMPANY_LINKS: NavLink[] = [
-  { href: '/about', label: 'About Sonalit', blurb: 'What Sonalit is and who it is built for.' },
-  { href: '/contact', label: 'Contact', blurb: 'Talk to the Sonalit team or request platform access.' },
+  {
+    href: '/about',
+    label: 'About Sonalit',
+    short: 'About',
+    icon: '◇',
+    blurb: 'What Sonalit is, who it is built for and how it is engineered.',
+  },
+  {
+    href: '/contact',
+    label: 'Contact',
+    short: 'Contact',
+    icon: '✉',
+    blurb: 'Talk to the Sonalit team or request access to the platform.',
+  },
 ];
 
 export const NAV_LINKS: NavLink[] = [...PLATFORM_LINKS, ...COMPANY_LINKS];

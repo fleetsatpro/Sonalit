@@ -1,83 +1,92 @@
-import { relatedLinks } from './nav.js';
+import { relatedLinks, type NavLink } from './nav.js';
 
-/** Small caps label above a heading — the site's section eyebrow. */
-export function Eyebrow({ children }: { children: React.ReactNode }): React.ReactElement {
-  return (
-    <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-cds-orange">{children}</p>
-  );
-}
-
-export function Section({
-  children,
-  className = '',
-  labelledBy,
-  tone = 'void',
-}: {
-  children: React.ReactNode;
-  className?: string;
-  labelledBy?: string;
-  tone?: 'void' | 'carbon' | 'deep';
-}): React.ReactElement {
-  const bg = tone === 'carbon' ? 'bg-d-carbon' : tone === 'deep' ? 'bg-d-deep' : 'bg-d-void';
-  return (
-    <section aria-labelledby={labelledBy} className={`${bg} border-t border-d-rim ${className}`}>
-      <div className="mx-auto max-w-7xl px-5 py-20 lg:px-8 lg:py-24">{children}</div>
-    </section>
-  );
-}
-
+/** Section heading block: eyebrow label, title, supporting line. */
 export function SectionHeading({
   id,
-  eyebrow,
+  label,
   title,
-  lede,
+  desc,
 }: {
   id: string;
-  eyebrow?: string;
+  label?: string;
   title: string;
-  lede?: string;
+  desc?: string;
 }): React.ReactElement {
   return (
-    <div className="max-w-3xl">
-      {eyebrow ? <Eyebrow>{eyebrow}</Eyebrow> : null}
-      <h2 id={id} className="text-[28px] font-bold leading-tight tracking-[-0.02em] text-d-t1 sm:text-[34px]">
+    <>
+      {label ? <div className="section-label">{label}</div> : null}
+      <h2 id={id} className="section-title">
         {title}
       </h2>
-      {lede ? <p className="mt-5 text-[16.5px] leading-relaxed text-d-t2">{lede}</p> : null}
-    </div>
+      {desc ? <p className="section-desc">{desc}</p> : null}
+    </>
   );
 }
 
-export function FeatureCard({
+/** One capability card in the four-up grid. */
+export function CapCard({ link }: { link: NavLink }): React.ReactElement {
+  return (
+    <article className="cap">
+      <div className="cap-icon" aria-hidden="true">
+        {link.icon}
+      </div>
+      <h3>{link.label}</h3>
+      <p>{link.blurb}</p>
+      <a className="cap-link" href={link.href}>
+        Explore {link.label.toLowerCase()} <span aria-hidden="true">→</span>
+      </a>
+    </article>
+  );
+}
+
+/**
+ * A feature block: copy on one side, an ops visual on the other.
+ *
+ * `flip` puts the visual first on wide screens. On narrow screens the visual
+ * always comes first regardless (see marketing.css), so the reading order stays
+ * consistent rather than alternating.
+ */
+export function FeatureBlock({
   title,
   body,
+  points,
+  visual,
+  visualLabel,
+  flip = false,
 }: {
   title: string;
   body: string;
+  points: string[];
+  visual: React.ReactNode;
+  visualLabel: string;
+  flip?: boolean;
 }): React.ReactElement {
-  return (
-    <div className="rounded-xl border border-d-rim bg-d-deep/70 p-6 transition-colors hover:border-d-rim2">
-      <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-d-t1">{title}</h3>
-      <p className="mt-3 text-[14.5px] leading-relaxed text-d-t2">{body}</p>
+  const copy = (
+    <div className="feat-copy">
+      <h3>{title}</h3>
+      <p>{body}</p>
+      <ul className="feat-list">
+        {points.map((point) => (
+          <li key={point}>{point}</li>
+        ))}
+      </ul>
     </div>
   );
-}
+  const figure = (
+    <div className="feat-visual">
+      {visual}
+      <div className="feat-visual-label">
+        <span className="live" aria-hidden="true" />
+        {visualLabel}
+      </div>
+    </div>
+  );
 
-export function FeatureGrid({ children }: { children: React.ReactNode }): React.ReactElement {
-  return <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{children}</div>;
-}
-
-/** Bulleted capability list — used on the service pages. */
-export function CapabilityList({ items }: { items: string[] }): React.ReactElement {
   return (
-    <ul className="mt-8 grid gap-3 sm:grid-cols-2">
-      {items.map((item) => (
-        <li key={item} className="flex gap-3 text-[14.5px] leading-relaxed text-d-t2">
-          <span aria-hidden="true" className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-cds-orange" />
-          <span>{item}</span>
-        </li>
-      ))}
-    </ul>
+    <div className="feat">
+      {flip ? figure : copy}
+      {flip ? copy : figure}
+    </div>
   );
 }
 
@@ -85,9 +94,9 @@ export function CtaBand({
   title,
   body,
   primaryHref = '/login',
-  primaryLabel = 'Sign in to Sonalit',
+  primaryLabel = 'Access Sonalit Platform',
   secondaryHref = '/contact',
-  secondaryLabel = 'Contact the Sonalit team',
+  secondaryLabel = 'Request platform access',
 }: {
   title: string;
   body: string;
@@ -97,53 +106,37 @@ export function CtaBand({
   secondaryLabel?: string;
 }): React.ReactElement {
   return (
-    <section aria-labelledby="cta-heading" className="border-t border-d-rim bg-d-carbon">
-      <div className="mx-auto max-w-7xl px-5 py-20 lg:px-8">
-        <div className="rounded-2xl border border-d-rim2 bg-gradient-to-br from-d-deep to-d-void p-8 sm:p-12">
-          <h2 id="cta-heading" className="max-w-2xl text-[26px] font-bold leading-tight tracking-[-0.02em] text-d-t1 sm:text-[32px]">
-            {title}
-          </h2>
-          <p className="mt-4 max-w-2xl text-[16px] leading-relaxed text-d-t2">{body}</p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <a
-              href={primaryHref}
-              className="rounded-md bg-cds-orange px-5 py-3 text-[14.5px] font-semibold text-[#170900] transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cds-orange"
-            >
-              {primaryLabel}
-            </a>
-            <a
-              href={secondaryHref}
-              className="rounded-md border border-d-rim2 px-5 py-3 text-[14.5px] font-semibold text-d-t1 transition-colors hover:border-cds-orange hover:text-cds-orange focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cds-orange"
-            >
-              {secondaryLabel}
-            </a>
-          </div>
+    <div className="cta-wrap">
+      <section className="cta" aria-labelledby="cta-heading">
+        <h2 id="cta-heading">{title}</h2>
+        <p>{body}</p>
+        <div className="cta-actions">
+          <a href={primaryHref} className="btn btn-primary btn-lg">
+            {primaryLabel}
+          </a>
+          <a href={secondaryHref} className="btn btn-ghost btn-lg">
+            {secondaryLabel}
+          </a>
         </div>
-      </div>
-    </section>
+      </section>
+    </div>
   );
 }
 
-/** Descriptive cross-links to the other public pages. */
+/** Descriptive cross-links to the rest of the public site. */
 export function RelatedPages({ currentPath }: { currentPath: string }): React.ReactElement {
-  const links = relatedLinks(currentPath);
   return (
-    <Section labelledBy="related-heading" tone="void">
-      <h2 id="related-heading" className="text-[22px] font-bold tracking-[-0.02em] text-d-t1">
-        Continue exploring the Sonalit platform
-      </h2>
-      <div className="mt-8 grid gap-5 sm:grid-cols-3">
-        {links.map((link) => (
-          <a
-            key={link.href}
-            href={link.href}
-            className="group rounded-xl border border-d-rim bg-d-deep/70 p-6 transition-colors hover:border-cds-orange focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cds-orange"
-          >
-            <h3 className="text-[15px] font-semibold text-d-t1 group-hover:text-cds-orange">{link.label}</h3>
-            <p className="mt-2.5 text-[14px] leading-relaxed text-d-t2">{link.blurb}</p>
-          </a>
+    <section className="section" aria-labelledby="related-heading">
+      <SectionHeading
+        id="related-heading"
+        label="Continue"
+        title="Explore the rest of the platform"
+      />
+      <div className="cap-grid cap-grid-3">
+        {relatedLinks(currentPath).map((link) => (
+          <CapCard key={link.href} link={link} />
         ))}
       </div>
-    </Section>
+    </section>
   );
 }
