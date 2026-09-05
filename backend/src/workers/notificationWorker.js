@@ -25,7 +25,8 @@ async function processNotification(job){
   const {alertId,severity}=job.data||{}; if(!alertId)throw new Error('notification job missing alertId');
   const alertResult=await query(`SELECT a.*,v.registration,v.region,v.client_id AS vehicle_client_id,c.name AS convoy_name,c.org_id AS convoy_org_id FROM alerts a LEFT JOIN vehicles v ON v.id=a.vehicle_id LEFT JOIN convoys c ON c.id=a.convoy_id WHERE a.id=$1 LIMIT 1`,[alertId]);
   if(!alertResult.rows.length){logger.warn(`Notification: alert ${alertId} not found`);return;}
-  const alert=alertResult.rows[0]; const orgId=alert.convoy_org_id||alert.org_id||(await query(`SELECT org_id FROM vehicles WHERE id=$1 AND deleted_at IS NULL LIMIT 1`,[alert.vehicle_id])).rows[0]?.org_id); if(!orgId)throw new Error(`Alert ${alertId} has no organization scope`);
+  const alert=alertResult.rows[0]; const orgId=alert.convoy_org_id||alert.org_id||(await query(`SELECT org_id FROM vehicles WHERE id=$1 AND deleted_at IS NULL LIMIT 1`,[alert.vehicle_id])).rows[0]?.org_id;
+  if(!orgId)throw new Error(`Alert ${alertId} has no organization scope`);
   const type=String(alert.type||'').toLowerCase(); const routeSecurity=alert.security_event===true||type==='security'||CRITICAL_SECURITY_EVENTS.includes(type); const eventType=routeSecurity?'fleet.security':'fleet.operational'; const ownership=await resolveFleetOwnership(alert,orgId);
 
   const internal=await resolveGlobalFleetRecipients(orgId);
