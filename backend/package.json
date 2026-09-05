@@ -36,15 +36,16 @@
     "bullmq": "^1.62.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
+    "dotenv": "^16.3.0",
     "express": "^4.18.2",
     "express-rate-limit": "^7.1.5",
-    "fast-xml-parser": "^5.10.1",
+    "exceljs": "^4.4.0",
+    "fast-xml-parser": "^5.10.0",
     "firebase-admin": "^13.10.0",
     "helmet": "^7.1.0",
     "ioredis": "^5.3.2",
     "joi": "^17.11.0",
-    "jsonwebtoken": "^9.0.2",
+    "jsonwebtoken": "^9.0.0",
     "morgan": "^1.10.0",
     "nodemailer": "^6.9.7",
     "openai": "^6.48.0",
@@ -58,22 +59,7 @@
     "uuid": "^9.0.0",
     "winston": "^3.11.0"
   },
-  "devDependencies": {
-    "jest": "^29.7.0",
-    "nodemon": "^3.0.0",
-    "supertest": "^6.3.4"
-  },
-  "engines": {
-    "node": ">=20.0.0"
-  },
-  "jest": {
-    "testEnvironment": "node",
-    "roots": [
-      "<rootDir>/tests"
-    ],
-    "testMatch": [
-      "**/*.test.js"
-    ],
-    "testTimeout": 30000
-  }
+  "devDependencies": { "jest": "^29.7.0", "nodemon": "^3.0.0" },
+  "engines": { "node": ">=20.0.0" },
+  "jest": { "testEnvironment": "node", "roots": ["<rootDir>/tests"], "testMatch": ["**/*.test.js"], "testTimeout": 30000 }
 }
