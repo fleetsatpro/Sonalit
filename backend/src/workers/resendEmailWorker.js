@@ -52,11 +52,13 @@ async function processEmail(job) {
 }
 
 function startResendEmailWorker() {
+  const concurrency = Number(process.env.RESEND_EMAIL_CONCURRENCY) || 5;
   const worker = new Worker('email', processEmail, {
     connection: redisConnection(),
-    concurrency: Number(process.env.RESEND_EMAIL_CONCURRENCY) || 5,
+    concurrency,
   });
-  worker.on('ready', () => logger.info(`Resend email worker ready: queue=email concurrency=${Number(process.env.RESEND_EMAIL_CONCURRENCY) || 5} from=${FROM}`));
+  logger.info(`Resend email worker starting: queue=email concurrency=${concurrency} from=${FROM}`);
+  worker.on('ready', () => logger.info('Resend email worker ready: Redis connection established'));
   worker.on('completed', job => logger.info(`Resend email job ${job.id} completed`));
   worker.on('failed', (job, err) => logger.error(`Resend email job ${job?.id} failed: ${err.message}`));
   worker.on('error', err => logger.error(`Resend email worker error: ${err.message}`));
