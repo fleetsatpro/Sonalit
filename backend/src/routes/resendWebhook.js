@@ -4,20 +4,8 @@ const { query } = require('../config/database');
 const logger = require('../utils/logger');
 
 const MAX_SKEW_SECONDS = 300;
-
-const STATUS_RANK = Object.freeze({
-  queued: 0,
-  sending: 1,
-  sent: 2,
-  delivery_delayed: 2,
-  delivered: 3,
-  opened: 4,
-  clicked: 5,
-  bounced: 6,
-  complained: 6,
-  suppressed: 6,
-  failed: 6,
-});
+const STATUS_RANK = Object.freeze({ queued: 0, sending: 1, sent: 2, delivery_delayed: 2, delivered: 3, opened: 4, clicked: 5 });
+const TERMINAL = new Set(['bounced', 'complained', 'suppressed', 'failed']);
 
 function verifySignature(req) {
   const secret = process.env.RESEND_WEBHOOK_SECRET;
@@ -29,15 +17,12 @@ function verifySignature(req) {
   const ts = Number(timestamp);
   if (!Number.isFinite(ts) || Math.abs(Date.now() / 1000 - ts) > MAX_SKEW_SECONDS) return false;
 
-  const encodedSecret = secret.replace(/^whsec_/, '');
-  const signingSecret = Buffer.from(encodedSecret, 'base64');
+  const signingSecret = Buffer.from(secret.replace(/^whsec_/, ''), 'base64');
   const signed = `${id}.${timestamp}.${req.rawBody.toString('utf8')}`;
   const expected = crypto.createHmac('sha256', signingSecret).update(signed).digest('base64');
-
   return signatureHeader.split(' ').some(part => {
     const value = part.startsWith('v1,') ? part.slice(3) : part;
-    const a = Buffer.from(value);
-    const b = Buffer.from(expected);
+    const a = Buffer.from(value), b = Buffer.from(expected);
     return a.length === b.length && crypto.timingSafeEqual(a, b);
   });
 }
@@ -49,7 +34,7 @@ router.post('/', async (req, res) => {
   const eventId = req.headers['svix-id'] || null;
   const type = event.type;
   const providerEmailId = event.data?.email_id || event.data?.id || null;
-  if (!type || !providerEmailId) return res.status(400).json({ error: 'invalid_webhook_payload' });
+  if (!type || !providerEmailId || !eventId) return res.status(400).json({ error: 'invalid_webhook_payload' });
 
   const statusMap = {
     'email.sent': 'sent',
@@ -66,27 +51,41 @@ router.post('/', async (req, res) => {
   if (!status) return res.status(202).json({ accepted: true, ignored: true });
 
   try {
-    // Webhooks are at-least-once and can arrive out of order. Store each event
-    // id when first observed and only advance the lifecycle, never regress it.
-    const updated = await query(
-      `UPDATE email_notifications
-          SET status = CASE
-                WHEN $1 IN ('bounced','complained','suppressed','failed') THEN $1
-                WHEN COALESCE(status,'queued') IN ('bounced','complained','suppressed','failed') THEN status
-                WHEN COALESCE($2,0) > COALESCE((SELECT CASE status ${Object.entries(STATUS_RANK).map(([key, rank]) => `WHEN '${key}' THEN ${rank}`).join(' ')} ELSE 0 END),0) THEN $1
-                ELSE status
-              END,
-              provider_event_id = COALESCE(provider_event_id, $3),
-              delivered_at = CASE WHEN $1='delivered' THEN COALESCE(delivered_at,NOW()) ELSE delivered_at END,
-              failed_at = CASE WHEN $1 IN ('failed','bounced','suppressed','complained') THEN COALESCE(failed_at,NOW()) ELSE failed_at END,
-              updated_at = NOW()
-        WHERE provider_email_id=$4
-        RETURNING id, status`,
-      [status, STATUS_RANK[status], eventId, providerEmailId]
+    const inserted = await query(
+      `INSERT INTO resend_webhook_events (event_id, provider_email_id, event_type)
+       VALUES ($1,$2,$3) ON CONFLICT (event_id) DO NOTHING RETURNING event_id`,
+      [eventId, providerEmailId, type]
     );
+    if (!inserted.rows.length) return res.status(200).json({ received: true, duplicate: true });
 
-    logger.info(`Resend webhook processed: type=${type} provider=${providerEmailId} updated=${updated.rows.length}`);
-    return res.status(200).json({ received: true });
+    const current = await query(`SELECT id, status FROM email_notifications WHERE provider_email_id=$1 LIMIT 1`, [providerEmailId]);
+    if (!current.rows.length) {
+      logger.warn(`Resend webhook received before local email record: provider=${providerEmailId} type=${type}`);
+      return res.status(200).json({ received: true, unmatched: true });
+    }
+
+    const row = current.rows[0];
+    const currentRank = STATUS_RANK[row.status] ?? 0;
+    const nextRank = STATUS_RANK[status] ?? 0;
+    const shouldAdvance = TERMINAL.has(status)
+      ? !TERMINAL.has(row.status)
+      : !TERMINAL.has(row.status) && nextRank > currentRank;
+
+    if (shouldAdvance) {
+      await query(
+        `UPDATE email_notifications
+         SET status=$1,
+             provider_event_id=COALESCE(provider_event_id,$2),
+             delivered_at=CASE WHEN $1='delivered' THEN COALESCE(delivered_at,NOW()) ELSE delivered_at END,
+             failed_at=CASE WHEN $1 IN ('failed','bounced','suppressed','complained') THEN COALESCE(failed_at,NOW()) ELSE failed_at END,
+             updated_at=NOW()
+         WHERE id=$3`,
+        [status, eventId, row.id]
+      );
+    }
+
+    logger.info(`Resend webhook processed: type=${type} provider=${providerEmailId} advanced=${shouldAdvance}`);
+    return res.status(200).json({ received: true, advanced: shouldAdvance });
   } catch (err) {
     logger.error(`Resend webhook processing failed: ${err.message}`);
     return res.status(500).json({ error: 'webhook_processing_failed' });
