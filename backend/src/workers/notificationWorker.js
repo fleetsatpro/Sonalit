@@ -2,7 +2,7 @@ require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env'
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
 const { queueAlertEmail } = require('../services/email/email.service');
-const { generateAndQueueClientPulse, fetchManifestSnapshot, isActiveRow } = require('../services/email/clientPulse.service');
+const { generateAndQueueScopedClientPulse, listCustomerPulseTargets } = require('../services/email/scopedClientPulse.service');
 
 const PULSE_HOURS_EAT = [0, 4, 8, 12, 16, 20];
 const TZ_OFFSET_MINUTES = 180;
@@ -24,43 +24,52 @@ async function processNotification(job) {
 
   const type = String(alert.type || '').toLowerCase();
   const routeSecurity = alert.security_event === true || type === 'security' || ['panic','sos','tamper','forced_unlock','unauthorized_movement'].includes(type);
-  const clientFlag = routeSecurity ? 'sonalit_security' : 'sonalit_operational';
-  const recipients = await query(`SELECT email,name FROM users WHERE org_id=$1 AND role IN ('admin','dispatcher') AND status='active' AND deleted_at IS NULL AND email IS NOT NULL UNION SELECT email,name FROM client_email_recipients WHERE org_id=$1 AND enabled=true AND deleted_at IS NULL AND ${clientFlag}=true AND email IS NOT NULL`, [orgId]);
-  if (!recipients.rows.length) { logger.info(`Notification: no eligible recipients for alert ${alertId}`); return; }
+  const eventType = routeSecurity ? 'fleet.security' : 'fleet.operational';
 
-  await queueAlertEmail({ orgId, recipients: recipients.rows, alert: { ...alert, severity: severity || alert.severity }, correlationId: job.id ? `notification:${job.id}` : `alert:${alertId}`, ctaUrl: process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/alerts/${alertId}` : undefined });
-  logger.info(`Notification fan-out queued: alert=${alertId} org=${orgId} recipients=${recipients.rows.length}`);
+  // Internal Sonalit operators continue to receive operational/security alerts
+  // by role. External recipients require explicit, active, verified enrollment
+  // and an event/channel subscription; legacy boolean flags are not authority.
+  const internal = await query(`SELECT email,name FROM users WHERE org_id=$1 AND role IN ('admin','dispatcher') AND status='active' AND deleted_at IS NULL AND email IS NOT NULL`, [orgId]);
+  const external = await query(`
+    SELECT DISTINCT r.email,r.name
+      FROM communication_enrollments e
+      JOIN communication_subscriptions s ON s.enrollment_id=e.id
+      JOIN client_email_recipients r ON r.id=e.recipient_id
+     WHERE e.org_id=$1 AND e.domain='fleet' AND e.status IN ('verified','active')
+       AND r.org_id=$1 AND r.enabled=true AND r.deleted_at IS NULL
+       AND s.org_id=$1 AND s.event_type=$2 AND s.channel='email' AND s.enabled=true`, [orgId, eventType]);
+  const recipients = [...internal.rows, ...external.rows].filter((r, i, arr) => r.email && arr.findIndex(x => x.email.toLowerCase() === r.email.toLowerCase()) === i);
+  if (!recipients.length) { logger.info(`Notification: no eligible recipients for alert ${alertId}`); return; }
+
+  await queueAlertEmail({ orgId, recipients, alert: { ...alert, severity: severity || alert.severity }, correlationId: job.id ? `notification:${job.id}` : `alert:${alertId}`, ctaUrl: process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/alerts/${alertId}` : undefined });
+  logger.info(`Notification fan-out queued: alert=${alertId} org=${orgId} event=${eventType} recipients=${recipients.length}`);
 }
 
 async function runScheduledClientPulse(now = new Date()) {
   const { hour, minute } = eatSlot(now);
   if (minute !== 0 || !PULSE_HOURS_EAT.includes(hour)) return { skipped: true, reason: 'not_pulse_slot' };
-  const orgs = await query(`SELECT DISTINCT org_id FROM client_email_recipients WHERE enabled=true AND deleted_at IS NULL AND cds_client_pulse=true`);
-  let queued = 0;
+  const orgs = await query(`SELECT DISTINCT org_id FROM communication_enrollments WHERE domain='cds' AND status IN ('verified','active') AND cds_customer_id IS NOT NULL`);
+  let queued = 0; let customers = 0;
   for (const { org_id: orgId } of orgs.rows) {
     try {
-      const snapshot = await fetchManifestSnapshot(orgId);
-      const activeRows = snapshot.rows.filter(isActiveRow);
-      if (!activeRows.length) { logger.info(`CDS Client Pulse skipped: org=${orgId} no active bookings`); continue; }
-      const result = await generateAndQueueClientPulse(orgId, { snapshotAt: now, slotKey: `${now.toISOString().slice(0,10)}-${String(hour).padStart(2,'0')}` });
-      if (result?.queued) queued += result.queued;
-    } catch (err) { logger.error(`Scheduled CDS Client Pulse failed: org=${orgId} error=${err.message}`); }
+      const customerIds = await listCustomerPulseTargets(orgId);
+      for (const customerId of customerIds) {
+        customers++;
+        try {
+          const result = await generateAndQueueScopedClientPulse(orgId, customerId, { snapshotAt: now, reason: 'scheduled' });
+          if (result?.queued) queued += result.queued;
+        } catch (err) { logger.error(`Scheduled CDS Client Pulse failed: org=${orgId} customer=${customerId} error=${err.message}`); }
+      }
+    } catch (err) { logger.error(`Scheduled CDS Client Pulse target discovery failed: org=${orgId} error=${err.message}`); }
   }
-  return { queued, organizations: orgs.rows.length, hour };
+  return { queued, organizations: orgs.rows.length, customers, hour };
 }
 
 function startClientPulseScheduler() {
   let lastMinuteKey = null;
-  const tick = async () => {
-    const now = new Date();
-    const key = now.toISOString().slice(0,16);
-    if (key === lastMinuteKey) return;
-    lastMinuteKey = key;
-    try { await runScheduledClientPulse(now); } catch (err) { logger.error(`Client Pulse scheduler error: ${err.message}`); }
-  };
+  const tick = async () => { const now = new Date(); const key = now.toISOString().slice(0,16); if (key === lastMinuteKey) return; lastMinuteKey = key; try { await runScheduledClientPulse(now); } catch (err) { logger.error(`Client Pulse scheduler error: ${err.message}`); } };
   void tick();
-  const timer = setInterval(() => { void tick(); }, 15000);
-  timer.unref?.();
+  const timer = setInterval(() => { void tick(); }, 15000); timer.unref?.();
   logger.info('CDS Client Pulse scheduler started: 00:00, 04:00, 08:00, 12:00, 16:00, 20:00 EAT');
   return timer;
 }
