@@ -1,75 +1,10 @@
 require('dotenv').config();
-const { Queue } = require('bullmq');
-const { getRedis } = require('./redis');
-const logger = require('../utils/logger');
-
-let gpsQueue = null;
-let alertQueue = null;
-let notificationQueue = null;
-let convoyReportQueue = null;
-let convoyArchiveQueue = null;
-let deviceQueue = null;
-let knoxQueue = null;
-
-function getConnection() {
-  const redis = getRedis();
-  if (!redis) return null;
-  return { host: redis.options?.host || '127.0.0.1', port: redis.options?.port || 6379, password: redis.options?.password || process.env.REDIS_PASSWORD || undefined };
-}
-
-function createQueues() {
-  if (process.env.DISABLE_REDIS === 'true' || !process.env.REDIS_URL) {
-    logger.warn('Queues disabled — REDIS_URL not set or DISABLE_REDIS=true');
-    return;
-  }
-
-  const url = new URL(process.env.REDIS_URL);
-  const connection = { host: url.hostname, port: parseInt(url.port) || 6379, password: url.password || process.env.REDIS_PASSWORD || undefined };
-
-  const defaultJobOptions = {
-    attempts: 5,
-    backoff: { type: 'exponential', delay: 1000 },
-    removeOnComplete: { count: 1000 },
-    removeOnFail: false, // keep dead jobs for inspection (T3.6)
-  };
-
-  const onQueueError = (name) => (err) => logger.error(`Queue ${name} error: ${err.message}`);
-
-  gpsQueue = new Queue('gps', { connection, defaultJobOptions });
-  gpsQueue.on('error', onQueueError('gps'));
-  alertQueue = new Queue('alert', { connection, defaultJobOptions });
-  alertQueue.on('error', onQueueError('alert'));
-  notificationQueue = new Queue('notification', { connection, defaultJobOptions });
-  notificationQueue.on('error', onQueueError('notification'));
-  convoyReportQueue = new Queue('convoyReport', { connection, defaultJobOptions });
-  convoyReportQueue.on('error', onQueueError('convoyReport'));
-  convoyArchiveQueue = new Queue('convoyArchive', { connection, defaultJobOptions });
-  convoyArchiveQueue.on('error', onQueueError('convoyArchive'));
-
-  // Repeating job: recount partial/pending reports every 15 minutes while workers are running
-  convoyReportQueue.add(
-    'scheduledRecount',
-    {},
-    { repeat: { every: 15 * 60 * 1000 }, jobId: 'scheduledRecount', removeOnComplete: true, removeOnFail: false }
-  ).catch((err) => logger.warn(`scheduledRecount repeat registration failed: ${err.message}`));
-
-  deviceQueue = new Queue('device', { connection, defaultJobOptions });
-  deviceQueue.on('error', onQueueError('device'));
-  knoxQueue = new Queue('knox', { connection, defaultJobOptions });
-  knoxQueue.on('error', onQueueError('knox'));
-
-  // Repeatable job: heartbeat check every 2 minutes
-  deviceQueue.add('device:heartbeat_check', {}, {
-    repeat: { every: 2 * 60 * 1000 },
-    jobId: 'device:heartbeat_check',
-    removeOnComplete: true,
-  }).catch(err => logger.warn(`heartbeat_check repeat failed: ${err.message}`));
-
-  logger.info('BullMQ queues initialised: gps, alert, notification, convoyReport, convoyArchive, device, knox');
-}
-
-function getQueues() {
-  return { gpsQueue, alertQueue, notificationQueue, convoyReportQueue, convoyArchiveQueue, deviceQueue, knoxQueue };
-}
-
-module.exports = { createQueues, getQueues };
+const{Queue}=require('bullmq');const{getRedis}=require('./redis');const logger=require('../utils/logger');
+let gpsQueue=null,alertQueue=null,notificationQueue=null,convoyReportQueue=null,convoyArchiveQueue=null,deviceQueue=null,knoxQueue=null,emailQueue=null;
+function getConnection(){const redis=getRedis();if(!redis)return null;return{host:redis.options?.host||'127.0.0.1',port:redis.options?.port||6379,password:redis.options?.password||process.env.REDIS_PASSWORD||undefined};}
+function createQueues(){if(process.env.DISABLE_REDIS==='true'||!process.env.REDIS_URL){logger.warn('Queues disabled — REDIS_URL not set or DISABLE_REDIS=true');return;}const url=new URL(process.env.REDIS_URL);const connection={host:url.hostname,port:parseInt(url.port)||6379,password:url.password||process.env.REDIS_PASSWORD||undefined};const defaultJobOptions={attempts:5,backoff:{type:'exponential',delay:1000},removeOnComplete:{count:1000},removeOnFail:false};const onQueueError=name=>err=>logger.error(`Queue ${name} error: ${err.message}`);
+gpsQueue=new Queue('gps',{connection,defaultJobOptions});gpsQueue.on('error',onQueueError('gps'));alertQueue=new Queue('alert',{connection,defaultJobOptions});alertQueue.on('error',onQueueError('alert'));notificationQueue=new Queue('notification',{connection,defaultJobOptions});notificationQueue.on('error',onQueueError('notification'));convoyReportQueue=new Queue('convoyReport',{connection,defaultJobOptions});convoyReportQueue.on('error',onQueueError('convoyReport'));convoyArchiveQueue=new Queue('convoyArchive',{connection,defaultJobOptions});convoyArchiveQueue.on('error',onQueueError('convoyArchive'));emailQueue=new Queue('email',{connection,defaultJobOptions:{...defaultJobOptions,attempts:8,backoff:{type:'exponential',delay:2000}}});emailQueue.on('error',onQueueError('email'));
+convoyReportQueue.add('scheduledRecount',{}, {repeat:{every:15*60*1000},jobId:'scheduledRecount',removeOnComplete:true,removeOnFail:false}).catch(err=>logger.warn(`scheduledRecount repeat registration failed: ${err.message}`));
+deviceQueue=new Queue('device',{connection,defaultJobOptions});deviceQueue.on('error',onQueueError('device'));knoxQueue=new Queue('knox',{connection,defaultJobOptions});knoxQueue.on('error',onQueueError('knox'));deviceQueue.add('device:heartbeat_check',{}, {repeat:{every:2*60*1000},jobId:'device:heartbeat_check',removeOnComplete:true}).catch(err=>logger.warn(`heartbeat_check repeat failed: ${err.message}`));logger.info('BullMQ queues initialised: gps, alert, notification, convoyReport, convoyArchive, device, knox, email');}
+function getQueues(){return{gpsQueue,alertQueue,notificationQueue,convoyReportQueue,convoyArchiveQueue,deviceQueue,knoxQueue,emailQueue};}
+module.exports={createQueues,getQueues};
