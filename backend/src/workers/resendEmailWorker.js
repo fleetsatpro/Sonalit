@@ -56,6 +56,7 @@ function startResendEmailWorker() {
     connection: redisConnection(),
     concurrency: Number(process.env.RESEND_EMAIL_CONCURRENCY) || 5,
   });
+  worker.on('ready', () => logger.info(`Resend email worker ready: queue=email concurrency=${Number(process.env.RESEND_EMAIL_CONCURRENCY) || 5} from=${FROM}`));
   worker.on('completed', job => logger.info(`Resend email job ${job.id} completed`));
   worker.on('failed', (job, err) => logger.error(`Resend email job ${job?.id} failed: ${err.message}`));
   worker.on('error', err => logger.error(`Resend email worker error: ${err.message}`));
