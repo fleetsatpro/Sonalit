@@ -11,8 +11,20 @@ ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS client_id UUID REFERENCES 
 CREATE INDEX IF NOT EXISTS idx_guardian_devices_org_client ON guardian_devices (org_id, client_id) WHERE deleted_at IS NULL;
 
 ALTER TABLE client_email_recipients ADD COLUMN IF NOT EXISTS client_id UUID REFERENCES cargo_clients(id);
-CREATE INDEX IF NOT EXISTS idx_client_email_recipients_client
-  ON client_email_recipients (org_id, client_id, enabled) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_client_email_recipients_client ON client_email_recipients (org_id, client_id, enabled) WHERE deleted_at IS NULL;
+
+-- One-time compatibility reconciliation for recipients created through the
+-- existing Cargo Client email panel: its recipient identity is the client's
+-- email, so an exact org-scoped email match is safe to bind. Future changes
+-- must write the client_id explicitly.
+UPDATE client_email_recipients r
+   SET client_id=c.id, updated_at=NOW()
+  FROM cargo_clients c
+ WHERE r.org_id=c.org_id
+   AND r.client_id IS NULL
+   AND r.deleted_at IS NULL
+   AND c.deleted_at IS NULL
+   AND lower(r.email)=lower(c.email);
 
 ALTER TABLE communication_enrollments ADD COLUMN IF NOT EXISTS client_id UUID REFERENCES cargo_clients(id);
 DROP INDEX IF EXISTS uq_communication_enrollment_scope;
@@ -33,8 +45,7 @@ ALTER TABLE communication_enrollments
     OR (domain = 'platform' AND cds_customer_id IS NULL AND client_id IS NULL)
   );
 
-CREATE INDEX IF NOT EXISTS idx_communication_enrollments_fleet_client
-  ON communication_enrollments (org_id, client_id, status) WHERE domain = 'fleet';
+CREATE INDEX IF NOT EXISTS idx_communication_enrollments_fleet_client ON communication_enrollments (org_id, client_id, status) WHERE domain='fleet';
 
 COMMENT ON COLUMN vehicles.client_id IS 'Authoritative client ownership. NULL means Admin-owned/unassigned for notification routing.';
 COMMENT ON COLUMN guardian_devices.org_id IS 'Organization scope for Guardian devices; nullable for legacy devices pending reconciliation.';
