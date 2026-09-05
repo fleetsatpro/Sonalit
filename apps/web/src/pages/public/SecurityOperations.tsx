@@ -5,7 +5,7 @@ import {
   RelatedPages,
   SectionHeading,
 } from '../../components/marketing/ui.js';
-import { ConvoyVisual, SecurityVisual } from '../../components/marketing/visuals.js';
+import { ConvoyVisual, OpsVisual } from '../../components/marketing/visuals.js';
 import { getPageSeo } from '../../lib/seo/pages.js';
 
 const PAGE = getPageSeo('/security-operations');
@@ -38,7 +38,7 @@ export default function SecurityOperations(): React.ReactElement {
             'Response crews reporting into the same incident',
             'Incident history retained with its full context',
           ]}
-          visual={<SecurityVisual />}
+          visual={<OpsVisual />}
           visualLabel="Alert &amp; Response"
         />
 

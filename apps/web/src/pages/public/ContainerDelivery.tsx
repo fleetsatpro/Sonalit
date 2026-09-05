@@ -5,7 +5,7 @@ import {
   RelatedPages,
   SectionHeading,
 } from '../../components/marketing/ui.js';
-import { ContainerVisual, OpsMapVisual } from '../../components/marketing/visuals.js';
+import { ContainerVisual, OpsVisual } from '../../components/marketing/visuals.js';
 import { getPageSeo } from '../../lib/seo/pages.js';
 
 const PAGE = getPageSeo('/container-delivery');
@@ -52,7 +52,7 @@ export default function ContainerDelivery(): React.ReactElement {
             'Container movements confirmed where they happen',
             'Handover flows for transferring custody',
           ]}
-          visual={<OpsMapVisual />}
+          visual={<OpsVisual />}
           visualLabel="Port &amp; Yard Ops"
         />
       </section>

@@ -5,7 +5,7 @@ import {
   RelatedPages,
   SectionHeading,
 } from '../../components/marketing/ui.js';
-import { ConvoyVisual, SecurityVisual } from '../../components/marketing/visuals.js';
+import { ConvoyVisual, OpsVisual } from '../../components/marketing/visuals.js';
 import { getPageSeo } from '../../lib/seo/pages.js';
 
 const PAGE = getPageSeo('/convoy-management');
@@ -53,7 +53,7 @@ export default function ConvoyManagement(): React.ReactElement {
             'Two-way messaging with the control room',
             'Panic escalation with the convoy context attached',
           ]}
-          visual={<SecurityVisual />}
+          visual={<OpsVisual />}
           visualLabel="Field Coordination"
         />
       </section>

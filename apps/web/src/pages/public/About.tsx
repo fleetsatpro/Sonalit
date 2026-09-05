@@ -5,7 +5,7 @@ import {
   RelatedPages,
   SectionHeading,
 } from '../../components/marketing/ui.js';
-import { ContainerVisual, OpsMapVisual } from '../../components/marketing/visuals.js';
+import { ContainerVisual, OpsVisual } from '../../components/marketing/visuals.js';
 import { getPageSeo } from '../../lib/seo/pages.js';
 
 const PAGE = getPageSeo('/about');
@@ -47,7 +47,7 @@ export default function About(): React.ReactElement {
             'Alerts, field reports and deliveries land in the same system',
             'Reporting is a by-product of running the operation',
           ]}
-          visual={<OpsMapVisual />}
+          visual={<OpsVisual />}
           visualLabel="One Operational Record"
         />
       </section>

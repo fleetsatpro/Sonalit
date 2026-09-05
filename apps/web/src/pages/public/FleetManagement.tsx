@@ -5,7 +5,7 @@ import {
   RelatedPages,
   SectionHeading,
 } from '../../components/marketing/ui.js';
-import { FleetVisual, OpsMapVisual } from '../../components/marketing/visuals.js';
+import { FleetVisual, OpsVisual } from '../../components/marketing/visuals.js';
 import { getPageSeo } from '../../lib/seo/pages.js';
 
 const PAGE = getPageSeo('/fleet-management');
@@ -38,7 +38,7 @@ export default function FleetManagement(): React.ReactElement {
             'Drive replay to reconstruct what actually happened',
             'Geofence events raised automatically',
           ]}
-          visual={<OpsMapVisual />}
+          visual={<OpsVisual />}
           visualLabel="Live Fleet Map"
         />
 

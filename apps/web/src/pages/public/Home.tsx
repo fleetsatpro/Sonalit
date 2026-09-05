@@ -5,7 +5,7 @@ import {
   ContainerVisual,
   ConvoyVisual,
   FleetVisual,
-  OpsMapVisual,
+  OpsVisual,
 } from '../../components/marketing/visuals.js';
 import { getPageSeo } from '../../lib/seo/pages.js';
 
@@ -70,7 +70,7 @@ export default function Home(): React.ReactElement {
           </div>
           <div className="panel-body">
             <div className="panel-visual">
-              <OpsMapVisual />
+              <ContainerVisual priority />
             </div>
             <div className="panel-stats">
               <div className="pstat">
@@ -143,7 +143,7 @@ export default function Home(): React.ReactElement {
             'Yard and port crew coordination',
             'Proof of delivery and custody record',
           ]}
-          visual={<ContainerVisual />}
+          visual={<OpsVisual />}
           visualLabel="CDS Workflow"
         />
       </section>
