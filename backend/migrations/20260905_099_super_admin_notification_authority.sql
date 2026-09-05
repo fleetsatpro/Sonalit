@@ -11,25 +11,35 @@ CREATE INDEX IF NOT EXISTS idx_client_email_recipients_authority
   ON client_email_recipients (org_id, authority_role, enabled)
   WHERE deleted_at IS NULL;
 
--- Promote the current Super Admin identity in every organization where that
--- authenticated operator already exists. ON CONFLICT preserves an existing
--- recipient identity and only changes its authority classification.
+-- First reconcile an existing recipient regardless of email casing.
+UPDATE client_email_recipients r
+SET authority_role='super_admin', enabled=true, sonalit_operational=true,
+    sonalit_security=true, cds_client_pulse=true, updated_at=NOW()
+WHERE lower(trim(r.email)) = 'griffinonyari@gmail.com'
+  AND EXISTS (
+    SELECT 1 FROM users u
+    WHERE u.org_id=r.org_id
+      AND lower(trim(u.email))='griffinonyari@gmail.com'
+      AND COALESCE(u.status,'active')='active'
+      AND u.deleted_at IS NULL
+  );
+
+-- Create the identity only where no matching recipient exists.
 INSERT INTO client_email_recipients (
   org_id, email, name, enabled, sonalit_operational, sonalit_security, cds_client_pulse, authority_role
 )
 SELECT
-  u.org_id,
-  lower(trim(u.email)),
-  COALESCE(NULLIF(trim(u.name), ''), 'Griffin Onyari'),
+  u.org_id, lower(trim(u.email)), COALESCE(NULLIF(trim(u.name), ''), 'Griffin Onyari'),
   true, true, true, true, 'super_admin'
 FROM users u
-WHERE lower(trim(u.email)) = 'griffinonyari@gmail.com'
+WHERE lower(trim(u.email))='griffinonyari@gmail.com'
   AND u.org_id IS NOT NULL
-  AND COALESCE(u.status, 'active') = 'active'
+  AND COALESCE(u.status,'active')='active'
   AND u.deleted_at IS NULL
-ON CONFLICT (org_id, lower(email)) DO UPDATE
-SET authority_role='super_admin', enabled=true, sonalit_operational=true,
-    sonalit_security=true, cds_client_pulse=true, updated_at=NOW();
+  AND NOT EXISTS (
+    SELECT 1 FROM client_email_recipients r
+    WHERE r.org_id=u.org_id AND lower(trim(r.email))='griffinonyari@gmail.com'
+  );
 
 COMMENT ON COLUMN client_email_recipients.authority_role IS
   'Notification authority: super_admin has global visibility; admin is organization/global Fleet authority; client is asset/customer scoped.';
