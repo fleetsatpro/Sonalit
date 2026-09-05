@@ -1,7 +1,6 @@
 const crypto = require('crypto');
 const { getQueues } = require('../../config/queue');
 const { withOrg } = require('../../utils/orgScopedDb');
-const logger = require('../../utils/logger');
 const { alertTemplate, genericTemplate } = require('./templates');
 
 const FROM = process.env.RESEND_FROM_EMAIL || 'Sonalit <notifications@sonalit.com>';
@@ -15,12 +14,10 @@ async function enqueueEmail({ orgId, to, recipientName, notificationType, severi
   if (!recipients.length) return { queued: 0, duplicate: 0 };
   if (!process.env.RESEND_API_KEY) throw new Error('Email provider is not configured');
   const rendered = templateData?.alertType ? alertTemplate(templateData) : genericTemplate(templateData);
-  const queue = getQueues().notificationQueue;
-  if (!queue) throw new Error('Notification queue is unavailable; refusing to drop email');
+  const queue = getQueues().emailQueue;
+  if (!queue) throw new Error('Email queue is unavailable; refusing to drop email');
   let queued = 0; let duplicate = 0;
   for (const recipient of recipients) {
-    // Idempotency is per recipient. Reusing one alert key for all recipients
-    // would incorrectly suppress every recipient after the first insert.
     const key = idempotencyKey ? stableKey({ base: idempotencyKey, recipient }) : stableKey({ orgId, recipient, notificationType, entityType, entityId, subject: rendered.subject });
     const inserted = await withOrg(orgId, client => client.query(
       `INSERT INTO email_notifications (org_id, recipient, recipient_name, notification_type, severity, subject, text_body, html_body, entity_type, entity_id, correlation_id, idempotency_key, status)
