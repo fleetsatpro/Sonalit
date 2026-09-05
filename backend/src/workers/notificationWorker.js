@@ -16,6 +16,11 @@ async function resolveFleetOwnership(alert,orgId){
   return {clientId:vehicleClientId||deviceClientId||null,ownership:vehicleClientId||deviceClientId?'client':'admin'};
 }
 
+async function resolveGlobalFleetRecipients(orgId){
+  const result=await query(`SELECT email,name FROM users WHERE org_id=$1 AND role=ANY($2::text[]) AND status='active' AND deleted_at IS NULL AND email IS NOT NULL UNION SELECT email,name FROM client_email_recipients WHERE org_id=$1 AND authority_role='super_admin' AND enabled=true AND deleted_at IS NULL AND email IS NOT NULL`,[orgId,GLOBAL_SECURITY_ROLES]);
+  return result.rows;
+}
+
 async function processNotification(job){
   const {alertId,severity}=job.data||{}; if(!alertId)throw new Error('notification job missing alertId');
   const alertResult=await query(`SELECT a.*,v.registration,v.region,v.client_id AS vehicle_client_id,c.name AS convoy_name,c.org_id AS convoy_org_id FROM alerts a LEFT JOIN vehicles v ON v.id=a.vehicle_id LEFT JOIN convoys c ON c.id=a.convoy_id WHERE a.id=$1 LIMIT 1`,[alertId]);
@@ -23,29 +28,15 @@ async function processNotification(job){
   const alert=alertResult.rows[0]; const orgId=alert.convoy_org_id||alert.org_id||(await query(`SELECT org_id FROM vehicles WHERE id=$1 AND deleted_at IS NULL LIMIT 1`,[alert.vehicle_id])).rows[0]?.org_id); if(!orgId)throw new Error(`Alert ${alertId} has no organization scope`);
   const type=String(alert.type||'').toLowerCase(); const routeSecurity=alert.security_event===true||type==='security'||CRITICAL_SECURITY_EVENTS.includes(type); const eventType=routeSecurity?'fleet.security':'fleet.operational'; const ownership=await resolveFleetOwnership(alert,orgId);
 
-  const internal=await query(`SELECT email,name FROM users WHERE org_id=$1 AND role=ANY($2::text[]) AND status='active' AND deleted_at IS NULL AND email IS NOT NULL`,[orgId,GLOBAL_SECURITY_ROLES]);
+  const internal=await resolveGlobalFleetRecipients(orgId);
   let external={rows:[]};
   if(ownership.clientId){
     const legacyFlag=routeSecurity?'r.sonalit_security':'r.sonalit_operational';
-    external=await query(`
-      SELECT DISTINCT r.email,r.name
-        FROM client_email_recipients r
-       WHERE r.org_id=$1 AND r.client_id=$2 AND r.enabled=true AND r.deleted_at IS NULL AND ${legacyFlag}=true
-         AND EXISTS (
-           SELECT 1 FROM communication_enrollments e
-           JOIN communication_subscriptions s ON s.enrollment_id=e.id
-          WHERE e.org_id=$1 AND e.recipient_id=r.id AND e.domain='fleet' AND e.client_id=$2
-            AND e.status IN ('verified','active') AND s.org_id=$1 AND s.event_type=$3
-            AND s.channel='email' AND s.enabled=true
-         )`,[orgId,ownership.clientId,eventType]);
-    // Backward-compatible safety bridge: recipients explicitly configured in
-    // the Fleet/Cargo Client UI can receive Fleet mail even if the newer
-    // enrollment record has not yet been materialized. The asset/client
-    // ownership boundary remains mandatory, so this cannot broadcast org-wide.
+    external=await query(`SELECT DISTINCT r.email,r.name FROM client_email_recipients r WHERE r.org_id=$1 AND r.client_id=$2 AND r.enabled=true AND r.deleted_at IS NULL AND ${legacyFlag}=true AND EXISTS (SELECT 1 FROM communication_enrollments e JOIN communication_subscriptions s ON s.enrollment_id=e.id WHERE e.org_id=$1 AND e.recipient_id=r.id AND e.domain='fleet' AND e.client_id=$2 AND e.status IN ('verified','active') AND s.org_id=$1 AND s.event_type=$3 AND s.channel='email' AND s.enabled=true)`,[orgId,ownership.clientId,eventType]);
     if(!external.rows.length){external=await query(`SELECT DISTINCT r.email,r.name FROM client_email_recipients r WHERE r.org_id=$1 AND r.client_id=$2 AND r.enabled=true AND r.deleted_at IS NULL AND ${legacyFlag}=true`,[orgId,ownership.clientId]);}
   }
-  const recipients=[...internal.rows,...external.rows].filter((r,i,arr)=>r.email&&arr.findIndex(x=>x.email.toLowerCase()===r.email.toLowerCase())===i);
-  if(!recipients.length){logger.warn(`Notification: no eligible recipients alert=${alertId} event=${eventType} ownership=${ownership.ownership} client=${ownership.clientId||'ADMIN'}`);return;}
+  const recipients=[...internal,...external.rows].filter((r,i,arr)=>r.email&&arr.findIndex(x=>x.email.toLowerCase()===r.email.toLowerCase())===i);
+  if(!recipients.length){logger.error(`CRITICAL notification routing failure: alert=${alertId} event=${eventType} ownership=${ownership.ownership} client=${ownership.clientId||'ADMIN'} recipients=0`);return;}
   await queueAlertEmail({orgId,recipients,alert:{...alert,severity:severity||alert.severity,notification_ownership:ownership.ownership,notification_client_id:ownership.clientId},correlationId:job.id?`notification:${job.id}`:`alert:${alertId}`,ctaUrl:process.env.FRONTEND_URL?`${process.env.FRONTEND_URL}/alerts/${alertId}`:undefined});
   logger.info(`Notification fan-out queued: alert=${alertId} org=${orgId} event=${eventType} ownership=${ownership.ownership} client=${ownership.clientId||'ADMIN'} recipients=${recipients.length}`);
 }
