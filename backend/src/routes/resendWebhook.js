@@ -5,6 +5,20 @@ const logger = require('../utils/logger');
 
 const MAX_SKEW_SECONDS = 300;
 
+const STATUS_RANK = Object.freeze({
+  queued: 0,
+  sending: 1,
+  sent: 2,
+  delivery_delayed: 2,
+  delivered: 3,
+  opened: 4,
+  clicked: 5,
+  bounced: 6,
+  complained: 6,
+  suppressed: 6,
+  failed: 6,
+});
+
 function verifySignature(req) {
   const secret = process.env.RESEND_WEBHOOK_SECRET;
   if (!secret) return process.env.NODE_ENV !== 'production';
@@ -52,17 +66,23 @@ router.post('/', async (req, res) => {
   if (!status) return res.status(202).json({ accepted: true, ignored: true });
 
   try {
-    // The provider email id is globally unique for the Resend account. The
-    // event id is also unique; both are guarded to make webhook redelivery safe.
+    // Webhooks are at-least-once and can arrive out of order. Store each event
+    // id when first observed and only advance the lifecycle, never regress it.
     const updated = await query(
       `UPDATE email_notifications
-          SET status=$1,
-              provider_event_id=COALESCE(provider_event_id,$2),
-              delivered_at=CASE WHEN $1='delivered' THEN COALESCE(delivered_at,NOW()) ELSE delivered_at END,
-              failed_at=CASE WHEN $1 IN ('failed','bounced','suppressed','complained') THEN COALESCE(failed_at,NOW()) ELSE failed_at END,
-              updated_at=NOW()
-        WHERE provider_email_id=$3
-        RETURNING id`, [status, eventId, providerEmailId]
+          SET status = CASE
+                WHEN $1 IN ('bounced','complained','suppressed','failed') THEN $1
+                WHEN COALESCE(status,'queued') IN ('bounced','complained','suppressed','failed') THEN status
+                WHEN COALESCE($2,0) > COALESCE((SELECT CASE status ${Object.entries(STATUS_RANK).map(([key, rank]) => `WHEN '${key}' THEN ${rank}`).join(' ')} ELSE 0 END),0) THEN $1
+                ELSE status
+              END,
+              provider_event_id = COALESCE(provider_event_id, $3),
+              delivered_at = CASE WHEN $1='delivered' THEN COALESCE(delivered_at,NOW()) ELSE delivered_at END,
+              failed_at = CASE WHEN $1 IN ('failed','bounced','suppressed','complained') THEN COALESCE(failed_at,NOW()) ELSE failed_at END,
+              updated_at = NOW()
+        WHERE provider_email_id=$4
+        RETURNING id, status`,
+      [status, STATUS_RANK[status], eventId, providerEmailId]
     );
 
     logger.info(`Resend webhook processed: type=${type} provider=${providerEmailId} updated=${updated.rows.length}`);
