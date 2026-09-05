@@ -1,40 +1,19 @@
-const { Resend } = require('resend');
-const logger = require('../../utils/logger');
-
-let client = null;
-
-function getResend() {
-  if (!process.env.RESEND_API_KEY) throw new Error('RESEND_API_KEY is not configured');
-  if (!client) client = new Resend(process.env.RESEND_API_KEY);
-  return client;
-}
-
 async function sendEmail({ from, to, replyTo, subject, html, text, idempotencyKey, tags = [] }) {
-  const resend = getResend();
-  const payload = {
-    from,
-    to: Array.isArray(to) ? to : [to],
-    replyTo: replyTo ? (Array.isArray(replyTo) ? replyTo : [replyTo]) : undefined,
-    subject,
-    html,
-    text,
-    tags,
-  };
-
-  // Resend supports provider-side idempotency. The SDK exposes request options
-  // as the second argument to emails.send(). Keep this key stable for retries.
-  const options = idempotencyKey ? { idempotencyKey } : undefined;
-  const result = await resend.emails.send(payload, options);
-
-  if (result.error) {
-    const err = new Error(result.error.message || 'Resend email request failed');
-    err.name = result.error.name || 'ResendError';
-    err.statusCode = result.error.statusCode;
+  if (!process.env.RESEND_API_KEY) throw new Error('RESEND_API_KEY is not configured');
+  const payload = { from, to: Array.isArray(to) ? to : [to], subject, html, text, tags };
+  if (replyTo) payload.reply_to = Array.isArray(replyTo) ? replyTo : [replyTo];
+  const headers = { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' };
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+  const response = await fetch('https://api.resend.com/emails', { method: 'POST', headers, body: JSON.stringify(payload) });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body.error) {
+    const err = new Error(body.error?.message || `Resend request failed with HTTP ${response.status}`);
+    err.name = body.error?.name || 'ResendError';
+    err.statusCode = response.status;
     throw err;
   }
-
-  if (!result.data || !result.data.id) throw new Error('Resend returned no email id');
-  return result.data;
+  if (!body.id) throw new Error('Resend returned no email id');
+  return { id: body.id };
 }
 
 function isRetryableError(err) {
@@ -43,4 +22,4 @@ function isRetryableError(err) {
   return true;
 }
 
-module.exports = { getResend, sendEmail, isRetryableError };
+module.exports = { sendEmail, isRetryableError };
