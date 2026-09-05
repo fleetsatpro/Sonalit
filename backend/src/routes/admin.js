@@ -4,7 +4,7 @@ const { attachOrgDb, withOrg } = require('../utils/orgScopedDb');
 const { getQueues } = require('../config/queue');
 const logger = require('../utils/logger');
 const crypto = require('crypto');
-const { buildManifestWorkbook, isActiveRow } = require('../services/email/clientPulse.service');
+const { buildManifestWorkbook, isActiveRow } = require('../services/email/clientPulseWorkbook.service');
 const { queueClientPulseEmail } = require('../services/email/email.service');
 const { generateAndQueueScopedClientPulse, listCustomerPulseTargets } = require('../services/email/scopedClientPulse.service');
 
@@ -21,10 +21,7 @@ router.get('/queues', async (req, res, next) => {
           q.getWaitingCount(), q.getActiveCount(), q.getFailedCount(), q.getCompletedCount(),
         ]);
         const deadJobs = await q.getFailed(0, 20);
-        stats[name] = {
-          waiting, active, failed, completed,
-          dead: deadJobs.map(j => ({ id: j.id, name: j.name, failedReason: j.failedReason, attemptsMade: j.attemptsMade, timestamp: j.timestamp })),
-        };
+        stats[name] = { waiting, active, failed, completed, dead: deadJobs.map(j => ({ id: j.id, name: j.name, failedReason: j.failedReason, attemptsMade: j.attemptsMade, timestamp: j.timestamp })) };
       } catch (err) { stats[name] = { error: err.message }; }
     }
     res.json({ data: stats });
@@ -113,8 +110,6 @@ router.post('/cds-client-pulse/send', async (req, res, next) => {
     const customers = [];
     for (const customerId of customerIds) {
       try {
-        // The global Super Admin pulse is dispatched separately above; customer-scoped
-        // pulses must remain strictly customer-scoped and must never duplicate it.
         customers.push(await generateAndQueueScopedClientPulse(req.user.org_id, customerId, { snapshotAt, reason: 'manual_scoped' }));
       } catch (err) {
         customers.push({ customerId, skipped: true, reason: 'delivery_failed', error: err.message });
