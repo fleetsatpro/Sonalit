@@ -5,32 +5,23 @@ const logger = require('../utils/logger');
 const { sendEmail, isRetryableError } = require('../services/email/resend');
 const { FROM, REPLY_TO } = require('../services/email/email.service');
 
-function redisConnection() {
-  const url = new URL(process.env.REDIS_URL || 'redis://127.0.0.1:6379');
-  return { host: url.hostname, port: Number(url.port) || 6379, password: url.password || process.env.REDIS_PASSWORD || undefined };
-}
+function redisConnection() { const url = new URL(process.env.REDIS_URL || 'redis://127.0.0.1:6379'); return { host: url.hostname, port: Number(url.port) || 6379, password: url.password || process.env.REDIS_PASSWORD || undefined }; }
 
 async function processEmail(job) {
   const id = job.data?.emailNotificationId;
   if (!id) throw new Error('email.send job missing emailNotificationId');
-
-  const claim = await query(
-    `UPDATE email_notifications
-        SET status='sending', attempts=attempts+1, last_attempt_at=NOW(), updated_at=NOW()
-      WHERE id=$1 AND status IN ('queued','delivery_delayed','failed')
-      RETURNING *`, [id]
-  );
+  const claim = await query(`UPDATE email_notifications SET status='sending', attempts=attempts+1, last_attempt_at=NOW(), updated_at=NOW() WHERE id=$1 AND status IN ('queued','delivery_delayed','failed') RETURNING *`, [id]);
   if (!claim.rows.length) return;
   const email = claim.rows[0];
-
   try {
     const result = await sendEmail({
-      from: FROM,
+      from: email.sender || FROM,
       to: email.recipient,
-      replyTo: REPLY_TO,
+      replyTo: email.reply_to || REPLY_TO,
       subject: email.subject,
       html: email.html_body,
       text: email.text_body,
+      attachments: Array.isArray(email.attachments) ? email.attachments : [],
       idempotencyKey: email.idempotency_key,
       tags: [
         { name: 'notification_type', value: email.notification_type },
@@ -42,10 +33,7 @@ async function processEmail(job) {
     logger.info(`Resend email accepted: notification=${id} provider=${result.id}`);
   } catch (err) {
     const retryable = isRetryableError(err) && email.attempts < 8;
-    await query(
-      `UPDATE email_notifications SET status=$2, last_error=$3, failed_at=CASE WHEN $2='failed' THEN NOW() ELSE failed_at END, updated_at=NOW() WHERE id=$1`,
-      [id, retryable ? 'delivery_delayed' : 'failed', String(err.message || err).slice(0, 2000)]
-    );
+    await query(`UPDATE email_notifications SET status=$2, last_error=$3, failed_at=CASE WHEN $2='failed' THEN NOW() ELSE failed_at END, updated_at=NOW() WHERE id=$1`, [id, retryable ? 'delivery_delayed' : 'failed', String(err.message || err).slice(0, 2000)]);
     if (retryable) throw err;
     logger.error(`Permanent Resend email failure: notification=${id} error=${err.message}`);
   }
@@ -53,10 +41,7 @@ async function processEmail(job) {
 
 function startResendEmailWorker() {
   const concurrency = Number(process.env.RESEND_EMAIL_CONCURRENCY) || 5;
-  const worker = new Worker('email', processEmail, {
-    connection: redisConnection(),
-    concurrency,
-  });
+  const worker = new Worker('email', processEmail, { connection: redisConnection(), concurrency });
   logger.info(`Resend email worker starting: queue=email concurrency=${concurrency} from=${FROM}`);
   worker.on('ready', () => logger.info('Resend email worker ready: Redis connection established'));
   worker.on('completed', job => logger.info(`Resend email job ${job.id} completed`));
