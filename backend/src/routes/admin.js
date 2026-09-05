@@ -84,7 +84,7 @@ async function queueManualSuperAdminPulse(orgId, snapshotAt) {
       await withOrg(orgId, client => client.query(`UPDATE cds_client_pulse_runs SET status='skipped',active_booking_count=0,row_count=0,updated_at=NOW() WHERE id=$1`, [runId]));
       return { runId, skipped: true, reason: 'no_active_bookings', queued: 0 };
     }
-    const workbook = await buildManifestWorkbook(active, snapshotAt);
+    const workbook = await buildManifestWorkbook(active, snapshotAt, { scopeLabel: 'GLOBAL' });
     const manifestHash = crypto.createHash('sha256').update(workbook).digest('hex');
     const filename = `CDS_Client_Pulse_Global_Active_Bookings_${snapshotAt.toISOString().replace(/[:]/g,'').replace(/\.\d{3}Z$/,'Z')}_EAT.xlsx`;
     const result = await queueClientPulseEmail({
