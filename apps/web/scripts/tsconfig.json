@@ -7,7 +7,12 @@
     "moduleResolution": "Bundler",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
-    "types": ["node"],
+    // "vite/client" as well as node: this project type-checks the page
+    // components it prerenders, and ContactForm reaches the API client through
+    // a dynamic import. That module is never executed here (the import only
+    // resolves in the browser, on submit) but tsc still checks it, and it uses
+    // import.meta.env.
+    "types": ["node", "vite/client"],
     "noEmit": true,
     "declaration": false,
     "declarationMap": false,

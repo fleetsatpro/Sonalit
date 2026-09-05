@@ -1,3 +1,4 @@
+import ContactForm from '../../components/marketing/ContactForm.js';
 import MarketingLayout from '../../components/marketing/MarketingLayout.js';
 import { RelatedPages, SectionHeading } from '../../components/marketing/ui.js';
 import { getPageSeo } from '../../lib/seo/pages.js';
@@ -5,13 +6,13 @@ import { getPageSeo } from '../../lib/seo/pages.js';
 const PAGE = getPageSeo('/contact');
 
 /**
- * Contact routes are deliberately the ones that actually exist today: the
- * operations mailbox the product already directs access requests to, and the
- * "Request access" form on the sign-in screen. No contact form is rendered
- * here — there is no public contact endpoint behind it, and a form that
- * silently fails is worse than an address that works.
+ * The enquiry form posts to POST /api/v1/auth/request-access, which records the
+ * request before attempting to notify — so a submission is never lost to a mail
+ * outage. The mailbox below is the fallback for anyone who would rather use
+ * their own mail client; the backend's recipient is set by ACCESS_REQUEST_TO
+ * and defaults to the same address.
  */
-const CONTACT_EMAIL = 'ops@sonalit.io';
+const CONTACT_EMAIL = 'ops@sonalit.com';
 
 const HELPFUL = [
   'Roughly how many vehicles, convoys or containers you move',
@@ -42,9 +43,12 @@ export default function Contact(): React.ReactElement {
         <SectionHeading
           id="reach-heading"
           label="How to reach us"
-          title="Two routes, depending on what you need"
+          title="Tell us about your operation"
+          desc="Send this straight to the Sonalit operations team. If you would rather use your own mail client, the address below works just as well."
         />
-        <div className="cap-grid cap-grid-2">
+        <ContactForm contactEmail={CONTACT_EMAIL} />
+
+        <div className="cap-grid cap-grid-2 grid-after">
           <article className="cap">
             <div className="cap-icon" aria-hidden="true">✉</div>
             <h3>Email the operations team</h3>
@@ -52,17 +56,17 @@ export default function Contact(): React.ReactElement {
               For platform enquiries, access requests, support and anything about running Sonalit in
               your organisation.
             </p>
-            <a className="btn btn-primary" href={`mailto:${CONTACT_EMAIL}`}>
+            <a className="btn btn-ghost" href={`mailto:${CONTACT_EMAIL}`}>
               Email {CONTACT_EMAIL}
             </a>
           </article>
 
           <article className="cap">
             <div className="cap-icon" aria-hidden="true">⌗</div>
-            <h3>Request access to the platform</h3>
+            <h3>Already have an account?</h3>
             <p>
-              Sonalit accounts are issued per organisation. The sign-in screen carries a request
-              access form for teams without credentials yet.
+              Sonalit accounts are issued per organisation. Sign in to the operations platform, or
+              use the request access form on the sign-in screen.
             </p>
             <a className="btn btn-ghost" href="/login">
               Go to the Sonalit sign-in screen

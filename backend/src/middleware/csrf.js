@@ -12,6 +12,14 @@ const SKIP_PREFIXES = [
   // lower-severity class and does not require double-submit protection.
   '/api/v1/auth/login',
   '/api/v1/auth/register',
+  // Access requests / contact enquiries from the public marketing site. Those
+  // pages are prerendered static HTML served by Vercel and never call the API
+  // before the form is submitted, so the visitor has no CSRF cookie to send —
+  // the double-submit check could only ever fail. Same pre-auth reasoning as
+  // /auth/login above: there is no session, so there is nothing to forge. The
+  // worst a forged POST achieves is an unsolicited enquiry email, and the
+  // route is rate limited to 5 per 15 minutes per IP.
+  '/api/v1/auth/request-access',
   '/api/v1/auth/webauthn/',  // challenge fetch + assertion are pre-auth
   // Portal magic-link auth: one-time token sent to user's email IS the credential.
   // The verify endpoint is called immediately on landing from an email link

@@ -7,6 +7,9 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
+const Joi = require('joi');
+const rateLimit = require('express-rate-limit');
+const { sendMail } = require('../utils/mailer');
 
 router.post('/login', login);
 router.get('/me', authenticate, getCurrentUser);
@@ -224,6 +227,93 @@ router.post('/refresh', async (req, res) => {
     logger.error(`Token refresh error: ${err.message}`);
     res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+// ─── POST /api/v1/auth/request-access ─────────────────────────────────────────
+// Public, pre-auth. Backs two forms: the "Request access" dialog on /login
+// (source: 'login') and the enquiry form on the public /contact page
+// (source: 'contact'). Both existed in the UI long before this endpoint did —
+// the login dialog has been posting into a 404 and reporting a generic failure.
+//
+// The row is written first and the email sent second, on purpose: if no mail
+// provider is configured, or the provider is down, the request is still
+// recorded rather than lost. `notified` records which happened, and the
+// partial index on it gives ops a way to find anything that needs picking up
+// by hand.
+const accessRequestLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
+  message: { error: 'Too many requests, please try again later.' },
+});
+
+const accessRequestSchema = Joi.object({
+  // .trim() before .email(): mobile keyboards and autocomplete routinely append
+  // a trailing space, and Joi validates the raw string otherwise — which
+  // rejected perfectly good addresses with a 400.
+  email: Joi.string().trim().email({ minDomainSegments: 2 }).max(320).required(),
+  organization: Joi.string().trim().max(200).allow('', null),
+  name: Joi.string().trim().max(120).allow('', null),
+  message: Joi.string().trim().max(4000).allow('', null),
+  source: Joi.string().valid('login', 'contact').default('login'),
+});
+
+router.post('/request-access', accessRequestLimiter, async (req, res) => {
+  const { error, value } = accessRequestSchema.validate(req.body ?? {});
+  if (error) return res.status(400).json({ error: error.message });
+
+  const email = value.email.toLowerCase().trim();
+  const organization = value.organization?.trim() || null;
+  const name = value.name?.trim() || null;
+  const message = value.message?.trim() || null;
+
+  let requestId;
+  try {
+    const result = await query(
+      `INSERT INTO access_requests (source, name, email, organization, message)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [value.source, name, email, organization, message]
+    );
+    requestId = result.rows[0].id;
+  } catch (err) {
+    logger.error(`request-access persist failed for ${email}: ${err.message}`);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+
+  // Best effort from here: the request is safely recorded, so a mail failure
+  // must not read to the visitor as "your enquiry did not go through".
+  try {
+    const to = process.env.ACCESS_REQUEST_TO || 'ops@sonalit.com';
+    const label = value.source === 'contact' ? 'Contact enquiry' : 'Access request';
+    const sent = await sendMail({
+      to,
+      replyTo: email,
+      subject: `${label} — ${organization || email}`,
+      text: [
+        `${label} from the Sonalit website.`,
+        '',
+        `Email:        ${email}`,
+        `Organisation: ${organization || '—'}`,
+        `Name:         ${name || '—'}`,
+        '',
+        message ? `Message:\n${message}` : 'No message supplied.',
+        '',
+        `Reference: ${requestId}`,
+      ].join('\n'),
+    });
+
+    if (sent) {
+      await query(`UPDATE access_requests SET notified = TRUE WHERE id = $1`, [requestId]);
+    } else {
+      logger.warn(`request-access ${requestId} stored but no mail provider configured`);
+    }
+  } catch (err) {
+    logger.error(`request-access ${requestId} stored but notification failed: ${err.message}`);
+  }
+
+  res.status(202).json({ data: { ok: true } });
 });
 
 module.exports = router;

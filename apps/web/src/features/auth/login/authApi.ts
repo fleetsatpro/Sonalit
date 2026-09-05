@@ -9,8 +9,8 @@
 // The reference HTML used /auth/passkey/*; we deliberately use the real,
 // currently-deployed paths.
 //
-// The forgot-password and request-access endpoints below don't exist in
-// backend/src/routes/auth.js yet — TODO(griff) markers at each call site.
+// request-access is implemented (backend/src/routes/auth.js). forgot-password
+// still is not — its TODO(griff) marker is at the call site below.
 
 import { api } from '../../../lib/api';
 import type { AuthUser } from '../../../stores/auth';
@@ -30,10 +30,25 @@ export type WebAuthnOptions = {
 export const requestPasswordReset = (email: string): Promise<unknown> =>
   api.post('/auth/password/forgot', { email });
 
-// TODO(griff): backend needs POST /auth/request-access — accept
-// { email, organization }, forward to sales inbox / CRM. Rate-limit per IP.
+/**
+ * Access requests and public contact enquiries both post here. The backend
+ * records the row before it tries to send mail, so a 202 means the request is
+ * safely stored — not necessarily that an email has already gone out.
+ */
+export interface AccessRequest {
+  email: string;
+  organization?: string;
+  name?: string;
+  message?: string;
+  /** Which form it came from — drives the subject line of the ops email. */
+  source?: 'login' | 'contact';
+}
+
+export const submitAccessRequest = (payload: AccessRequest): Promise<unknown> =>
+  api.post('/auth/request-access', payload);
+
 export const requestAccess = (email: string, organization: string): Promise<unknown> =>
-  api.post('/auth/request-access', { email, organization });
+  submitAccessRequest({ email, organization, source: 'login' });
 
 // WebAuthn — these paths ARE implemented in production today.
 export const getPasskeyOptions = (email: string): Promise<WebAuthnOptions> =>
