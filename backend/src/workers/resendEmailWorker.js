@@ -11,7 +11,9 @@ function redisConnection() {
 }
 
 async function processEmail(job) {
-  const id = job.data.emailNotificationId;
+  const id = job.data?.emailNotificationId;
+  if (!id) throw new Error('email.send job missing emailNotificationId');
+
   const claim = await query(
     `UPDATE email_notifications
         SET status='sending', attempts=attempts+1, last_attempt_at=NOW(), updated_at=NOW()
@@ -50,7 +52,10 @@ async function processEmail(job) {
 }
 
 function startResendEmailWorker() {
-  const worker = new Worker('notification', processEmail, { connection: redisConnection(), concurrency: Number(process.env.RESEND_EMAIL_CONCURRENCY) || 5 });
+  const worker = new Worker('email', processEmail, {
+    connection: redisConnection(),
+    concurrency: Number(process.env.RESEND_EMAIL_CONCURRENCY) || 5,
+  });
   worker.on('completed', job => logger.info(`Resend email job ${job.id} completed`));
   worker.on('failed', (job, err) => logger.error(`Resend email job ${job?.id} failed: ${err.message}`));
   worker.on('error', err => logger.error(`Resend email worker error: ${err.message}`));
