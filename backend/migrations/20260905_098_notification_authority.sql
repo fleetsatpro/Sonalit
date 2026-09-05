@@ -6,16 +6,15 @@
 ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS client_id UUID REFERENCES cargo_clients(id);
 CREATE INDEX IF NOT EXISTS idx_vehicles_org_client ON vehicles (org_id, client_id) WHERE deleted_at IS NULL;
 
--- Guardian devices historically did not carry org_id; add it as nullable so
--- legacy devices remain usable. New enrollment should populate org_id.
 ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS org_id UUID;
 ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS client_id UUID REFERENCES cargo_clients(id);
 CREATE INDEX IF NOT EXISTS idx_guardian_devices_org_client ON guardian_devices (org_id, client_id) WHERE deleted_at IS NULL;
 
-ALTER TABLE communication_enrollments ADD COLUMN IF NOT EXISTS client_id UUID REFERENCES cargo_clients(id);
+ALTER TABLE client_email_recipients ADD COLUMN IF NOT EXISTS client_id UUID REFERENCES cargo_clients(id);
+CREATE INDEX IF NOT EXISTS idx_client_email_recipients_client
+  ON client_email_recipients (org_id, client_id, enabled) WHERE deleted_at IS NULL;
 
--- Allow a single recipient to be scoped to multiple Fleet clients while keeping
--- each exact recipient/domain/customer/client scope unique.
+ALTER TABLE communication_enrollments ADD COLUMN IF NOT EXISTS client_id UUID REFERENCES cargo_clients(id);
 DROP INDEX IF EXISTS uq_communication_enrollment_scope;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_communication_enrollment_scope
   ON communication_enrollments (
@@ -35,10 +34,10 @@ ALTER TABLE communication_enrollments
   );
 
 CREATE INDEX IF NOT EXISTS idx_communication_enrollments_fleet_client
-  ON communication_enrollments (org_id, client_id, status)
-  WHERE domain = 'fleet';
+  ON communication_enrollments (org_id, client_id, status) WHERE domain = 'fleet';
 
 COMMENT ON COLUMN vehicles.client_id IS 'Authoritative client ownership. NULL means Admin-owned/unassigned for notification routing.';
 COMMENT ON COLUMN guardian_devices.org_id IS 'Organization scope for Guardian devices; nullable for legacy devices pending reconciliation.';
 COMMENT ON COLUMN guardian_devices.client_id IS 'Authoritative client ownership when the device is not inheriting ownership from an assigned vehicle.';
+COMMENT ON COLUMN client_email_recipients.client_id IS 'Client ownership for external notification recipients. NULL means Admin/global recipient.';
 COMMENT ON COLUMN communication_enrollments.client_id IS 'Fleet notification recipient scope. NULL means organization/Admin scope; non-null binds the recipient to one client.';
