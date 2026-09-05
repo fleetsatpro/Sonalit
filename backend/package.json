@@ -46,12 +46,12 @@
     "joi": "^17.11.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
-    "node-cron": "^3.0.3",
     "nodemailer": "^6.9.7",
     "openai": "^6.48.0",
     "pdf-parse": "^2.4.5",
     "pdfkit": "^0.15.0",
     "pg": "^8.11.3",
+    "resend": "^6.25.0",
     "sharp": "^0.35.3",
     "socket.io": "^4.7.2",
     "telegram": "^2.26.22",
@@ -61,7 +61,7 @@
   },
   "devDependencies": {
     "jest": "^29.7.0",
-    "nodemon": "^3.0.2",
+    "nodemon": "^3.0.0",
     "supertest": "^6.3.4"
   },
   "engines": {
