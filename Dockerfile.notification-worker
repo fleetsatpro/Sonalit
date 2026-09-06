@@ -1,18 +1,15 @@
-# Sonalit notification worker — standalone backend runtime
+# Sonalit notification worker — monorepo-root build context
 FROM node:20-alpine
+WORKDIR /app
 
-WORKDIR /app/backend
+# Install workspace manifests first for deterministic dependency caching.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY backend/package.json ./backend/package.json
 
-# The worker requires the backend runtime dependencies, including ExcelJS for
-# reliable Client Pulse workbook generation.
-COPY backend/package.json backend/package-lock.json ./
-RUN npm install --omit=dev
+RUN corepack enable && pnpm install --frozen-lockfile --prod
 
-COPY backend ./
-
-# Client Pulse uses the approved XLSX template location for compatibility, but
-# workbook generation itself is handled by ExcelJS rather than custom ZIP parsing.
-COPY templates ./../templates
+COPY backend ./backend
 
 ENV NODE_ENV=production
+WORKDIR /app/backend
 CMD ["node", "src/workers/worker.notification.js"]

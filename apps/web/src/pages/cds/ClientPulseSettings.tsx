@@ -16,6 +16,7 @@ type Recipient = {
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 type SettingsTab = 'profile' | 'field access' | 'client pulse';
 
 export default function ClientPulseSettingsView() {
@@ -25,7 +26,11 @@ export default function ClientPulseSettingsView() {
     <div className="p-5 max-w-[1600px] mx-auto">
       <div className="flex gap-4" style={{ minHeight: 400 }}>
         <div className="w-[180px] flex-none space-y-1">
-          {tabs.map(t => <button key={t} onClick={() => setTab(t)} className={`w-full text-left px-4 py-2.5 rounded-lg text-xs font-semibold border-none cursor-pointer transition-colors capitalize ${tab === t ? 'bg-[rgba(255,255,255,.06)] text-cds-orange' : 'bg-transparent text-text-2 hover:text-text-1'}`}>{t}</button>)}
+          {tabs.map(t => (
+            <button key={t} onClick={() => setTab(t)} className={`w-full text-left px-4 py-2.5 rounded-lg text-xs font-semibold border-none cursor-pointer transition-colors capitalize ${tab === t ? 'bg-[rgba(255,255,255,.06)] text-cds-orange' : 'bg-transparent text-text-2 hover:text-text-1'}`}>
+              {t}
+            </button>
+          ))}
         </div>
         {tab === 'field access' ? <FieldAccessPanel /> : tab === 'client pulse' ? <ClientPulsePanel /> : <ProfilePanel />}
       </div>
@@ -63,7 +68,9 @@ function ClientPulsePanel() {
       setRows(response.data.data ?? []);
     } catch (err) {
       setError((err as any)?.response?.data?.error ?? 'Failed to load client email recipients');
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { void load(); }, []);
@@ -73,8 +80,18 @@ function ClientPulsePanel() {
     if (!EMAIL_RE.test(normalized)) { setError('Enter a valid client email address.'); return; }
     setError(''); setMessage(''); setSaving('new');
     try {
-      await api.post('/settings/email-recipients', { email: normalized, name: name.trim() || null, company: company.trim() || null, enabled: true, sonalit_operational: true, sonalit_security: false, cds_client_pulse: true });
-      setEmail(''); setName(''); setCompany(''); setMessage('Client recipient added.'); await load();
+      await api.post('/settings/email-recipients', {
+        email: normalized,
+        name: name.trim() || null,
+        company: company.trim() || null,
+        enabled: true,
+        sonalit_operational: true,
+        sonalit_security: false,
+        cds_client_pulse: true,
+      });
+      setEmail(''); setName(''); setCompany('');
+      setMessage('Client recipient added.');
+      await load();
     } catch (err) {
       setError((err as any)?.response?.data?.error ?? 'Failed to add client recipient');
     } finally { setSaving(null); }
@@ -84,7 +101,8 @@ function ClientPulsePanel() {
     setError(''); setMessage(''); setSaving(row.id);
     try {
       const response = await api.put<{ data: Recipient }>(`/settings/email-recipients/${row.id}`, patch);
-      setRows(current => current.map(item => item.id === row.id ? response.data.data : item)); setMessage('Recipient settings saved.');
+      setRows(current => current.map(item => item.id === row.id ? response.data.data : item));
+      setMessage('Recipient settings saved.');
     } catch (err) {
       setError((err as any)?.response?.data?.error ?? 'Failed to save recipient settings');
     } finally { setSaving(null); }
@@ -93,20 +111,9 @@ function ClientPulsePanel() {
   const sendPulse = async () => {
     setSending(true); setError(''); setMessage('');
     try {
-      // Use the authoritative admin dispatcher. The legacy /settings endpoint
-      // is no longer the send path and can silently fail to reach the worker.
-      const response = await api.post<{ data: { queued?: number; global?: { queued?: number; skipped?: boolean; reason?: string }; customers?: Array<{ queued?: number; skipped?: boolean; reason?: string }> } }>('/admin/cds-client-pulse/send', {});
-      const data = response.data?.data ?? {};
-      const queued = Number(data.queued ?? 0);
-      const globalQueued = Number(data.global?.queued ?? 0);
-      const customerScopes = Array.isArray(data.customers) ? data.customers : [];
-      const customerQueued = customerScopes.reduce((sum, item) => sum + Number(item.queued ?? 0), 0);
-      const skipped = data.global?.skipped && customerScopes.every(item => item.skipped);
-      if (skipped && queued === 0) {
-        setMessage(`Client Pulse not sent: ${data.global?.reason ?? customerScopes.find(item => item.reason)?.reason ?? 'no eligible active bookings or recipients'}.`);
-      } else {
-        setMessage(`Client Pulse dispatched: ${queued} email job(s) queued — Super Admin: ${globalQueued}; customer scopes: ${customerScopes.length}; customer email jobs: ${customerQueued}.`);
-      }
+      const response = await api.post<{ data: { skipped?: boolean; queued?: number; reason?: string } }>('/settings/cds-client-pulse/send', {});
+      const result = response.data.data;
+      setMessage(result.skipped ? `Client Pulse not sent: ${result.reason ?? 'no active bookings'}.` : `Client Pulse queued for ${result.queued ?? 0} recipient(s).`);
     } catch (err) {
       setError((err as any)?.response?.data?.error ?? 'Client Pulse send failed');
     } finally { setSending(false); }
@@ -116,8 +123,11 @@ function ClientPulsePanel() {
     <div className="flex-1 space-y-4">
       <Card className="p-5">
         <div className="flex items-start justify-between gap-4">
-          <div><div className="text-sm font-semibold text-text-0">CDS Client Pulse</div><p className="mt-1 max-w-2xl text-xs text-text-2">Client Pulse recipients are separate from Sonalit portal login accounts. These controls determine which client contacts receive the CDS operational manifest.</p></div>
-          <Button onClick={sendPulse} disabled={sending}>{sending ? 'Dispatching…' : 'Send Client Pulse Now'}</Button>
+          <div>
+            <div className="text-sm font-semibold text-text-0">CDS Client Pulse</div>
+            <p className="mt-1 max-w-2xl text-xs text-text-2">Client Pulse recipients are separate from Sonalit portal login accounts. These controls determine which client contacts receive the CDS operational manifest.</p>
+          </div>
+          <Button onClick={sendPulse} disabled={sending}>{sending ? 'Sending…' : 'Send Client Pulse Now'}</Button>
         </div>
         {message && <div className="mt-4 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-300">{message}</div>}
         {error && <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs text-red-300">{error}</div>}
@@ -137,7 +147,8 @@ function ClientPulsePanel() {
         <div className="mb-4 flex items-center justify-between"><div className="text-xs font-mono tracking-wider text-text-2">CLIENT RECIPIENTS</div><span className="text-[10px] font-mono text-text-2">{rows.length} configured</span></div>
         {loading ? <div className="py-8 text-center text-xs text-text-2">Loading recipients…</div> : rows.length === 0 ? <div className="py-8 text-center text-xs text-text-2">No client email recipients configured.</div> : <div className="space-y-2">{rows.map(row => <div key={row.id} className="rounded-lg border border-[rgba(255,255,255,.07)] bg-ink-2 p-3"><div className="flex items-center justify-between gap-3"><div><div className="text-xs font-semibold text-text-0">{row.name || row.email}</div><div className="text-[10px] text-text-2">{row.email}{row.company ? ` · ${row.company}` : ''}</div></div><Badge variant={row.enabled ? 'ok' : 'neutral'}>{row.enabled ? 'ACTIVE' : 'OFF'}</Badge></div><div className="mt-3 grid grid-cols-1 sm:grid-cols-4 gap-2 text-[10px] text-text-2">{([['enabled','Email enabled'],['sonalit_operational','Sonalit operational'],['sonalit_security','Sonalit security'],['cds_client_pulse','CDS Client Pulse']] as const).map(([field,label]) => <label key={field} className="flex items-center gap-2"><input type="checkbox" checked={row[field]} onChange={e => void updateRecipient(row, { [field]: e.target.checked })} disabled={saving === row.id} />{label}</label>)}</div></div>)}</div>}
       </Card>
-      <div className="text-[10px] leading-relaxed text-text-2">Client Pulse uses the authoritative production dispatcher and is skipped when there are no active bookings or no eligible recipients. Recipient management is independent of portal login permissions.</div>
+
+      <div className="text-[10px] leading-relaxed text-text-2">Client Pulse uses the existing production sender/routing path and is skipped when there are no active bookings. Recipient management is independent of portal login permissions.</div>
     </div>
   );
 }
