@@ -1,6 +1,6 @@
 require('dotenv').config();
 const { Queue } = require('bullmq');
-const { getRedis } = require('./redis');
+const { getRedis, normalizeRedisUrl } = require('./redis');
 const logger = require('../utils/logger');
 
 let gpsQueue = null;
@@ -24,7 +24,7 @@ function createQueues() {
     return;
   }
 
-  const url = new URL(process.env.REDIS_URL);
+  const url = new URL(normalizeRedisUrl(process.env.REDIS_URL));
   const connection = { host: url.hostname, port: parseInt(url.port) || 6379, password: url.password || process.env.REDIS_PASSWORD || undefined };
 
   const defaultJobOptions = {
@@ -43,9 +43,6 @@ function createQueues() {
   notificationQueue = new Queue('notification', { connection, defaultJobOptions });
   notificationQueue.on('error', onQueueError('notification'));
 
-  // Email has its own queue. Do not share it with the notification fan-out
-  // consumer: BullMQ workers compete for jobs on a queue, which can otherwise
-  // cause an email job to be consumed by the wrong worker.
   emailQueue = new Queue('email', { connection, defaultJobOptions });
   emailQueue.on('error', onQueueError('email'));
 
