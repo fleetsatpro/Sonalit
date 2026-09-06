@@ -29,9 +29,9 @@ const replacement = String.raw`function unzip(buffer) {
     let data;
     if (method === 0) data = Buffer.from(compressed);
     else if (method === 8) data = zlib.inflateRawSync(compressed);
-    else throw new Error(\`Unsupported XLSX compression method \${method} for \${name}\`);
+    else throw new Error('Unsupported XLSX compression method ' + method + ' for ' + name);
     if (expectedSize != null && expectedSize !== 0xffffffff && data.length !== expectedSize) {
-      throw new Error(\`XLSX entry size mismatch for \${name}\`);
+      throw new Error('XLSX entry size mismatch for ' + name);
     }
     return data;
   }
@@ -88,13 +88,13 @@ const replacement = String.raw`function unzip(buffer) {
         }
       }
       if (localOffset == null) {
-        throw new Error(\`Invalid XLSX local header for \${entry.name}\`);
+        throw new Error('Invalid XLSX local header for ' + entry.name);
       }
       const localNameLen = buffer.readUInt16LE(localOffset + 26);
       const localExtraLen = buffer.readUInt16LE(localOffset + 28);
       const dataStart = localOffset + 30 + localNameLen + localExtraLen;
       const dataEnd = dataStart + entry.compressedSize;
-      if (dataStart < 0 || dataEnd > buffer.length) throw new Error(\`XLSX entry bounds invalid for \${entry.name}\`);
+      if (dataStart < 0 || dataEnd > buffer.length) throw new Error('XLSX entry bounds invalid for ' + entry.name);
       entries.push({ name: entry.name, data: inflateEntry(entry.name, entry.method, buffer.subarray(dataStart, dataEnd), entry.uncompressedSize) });
     }
     return entries;
@@ -114,15 +114,15 @@ const replacement = String.raw`function unzip(buffer) {
     const dataStart = p + 30 + nameLen + extraLen;
     const name = buffer.subarray(p + 30, p + 30 + nameLen).toString('utf8');
     if (flags & 0x0008) {
-      throw new Error(\`Malformed XLSX local data descriptor for \${name}; central directory is unrecoverable\`);
+      throw new Error('Malformed XLSX local data descriptor for ' + name + '; central directory is unrecoverable');
     }
     const dataEnd = dataStart + compressedSize;
-    if (dataStart < 0 || dataEnd > eocd) throw new Error(\`XLSX local entry bounds invalid for \${name}\`);
+    if (dataStart < 0 || dataEnd > eocd) throw new Error('XLSX local entry bounds invalid for ' + name);
     recovered.push({ name, data: inflateEntry(name, method, buffer.subarray(dataStart, dataEnd), uncompressedSize) });
     p = dataEnd;
   }
   if (recovered.length !== count) {
-    throw new Error(\`Unable to recover XLSX entries (expected \${count}, recovered \${recovered.length}; declared offset \${declaredOffset}, size \${declaredSize}, archive \${buffer.length} bytes)\`);
+    throw new Error('Unable to recover XLSX entries (expected ' + count + ', recovered ' + recovered.length + '; declared offset ' + declaredOffset + ', size ' + declaredSize + ', archive ' + buffer.length + ' bytes)');
   }
   return recovered;
 }`;
