@@ -10,5 +10,10 @@ RUN npm ci --omit=dev
 
 COPY backend ./
 
+# Client Pulse uses the approved XLSX template stored at repository root.
+# Keep it outside the backend source tree and copy it explicitly into the
+# runtime image because `COPY backend ./` cannot include repository-root assets.
+COPY templates ./../templates
+
 ENV NODE_ENV=production
 CMD ["node", "src/workers/worker.notification.js"]
