@@ -9,7 +9,6 @@ const { queueClientPulseEmail } = require('../services/email/email.service');
 const { generateAndQueueScopedClientPulse, listCustomerPulseTargets } = require('../services/email/scopedClientPulse.service');
 
 // Super Admin is explicitly allowed to use the administrative command center.
-// Keep the role explicit rather than widening the global hierarchy.
 router.use(authenticate, authorize('admin', 'super_admin'), attachOrgDb);
 
 router.get('/queues', async (req, res, next) => {
@@ -33,8 +32,10 @@ function manifestRow(row) { return { booking_number: row.booking_number, carrier
 async function queueManualSuperAdminPulse(orgId, snapshotAt) {
   const recipients = await withOrg(orgId, client => client.query(`SELECT DISTINCT email,name FROM client_email_recipients WHERE org_id=$1 AND authority_role='super_admin' AND enabled=true AND deleted_at IS NULL AND email IS NOT NULL ORDER BY email`, [orgId]));
   if (!recipients.rows.length) return { skipped: true, reason: 'no_super_admin_recipients', queued: 0 };
-  const run = await withOrg(orgId, client => client.query(`INSERT INTO cds_client_pulse_runs (org_id,snapshot_at,status,idempotency_key) VALUES ($1,$2,'generating',$3) ON CONFLICT (org_id,idempotency_key) DO NOTHING RETURNING id`, [orgId, snapshotAt, `cds-client-pulse:super-admin:${snapshotAt.toISOString().slice(0,13)}`]));
-  if (!run.rows.length) return { skipped: true, reason: 'duplicate_snapshot', queued: 0 };
+  // Manual Send Now is intentionally not hourly-idempotent. It must be possible for a Super Admin
+  // to dispatch again after a scheduled pulse in the same hour. Scheduled jobs retain hourly keys.
+  const manualKey = `cds-client-pulse:super-admin:manual:${snapshotAt.toISOString()}:${crypto.randomUUID()}`;
+  const run = await withOrg(orgId, client => client.query(`INSERT INTO cds_client_pulse_runs (org_id,snapshot_at,status,idempotency_key) VALUES ($1,$2,'generating',$3) RETURNING id`, [orgId, snapshotAt, manualKey]));
   const runId = run.rows[0].id;
   try {
     const { rows } = await withOrg(orgId, client => client.query(`SELECT bc.id,bc.booking_id,bc.container_number,bc.seal_number,bc.seal_number_2,bc.packing_list_no,bc.iso_type,bc.weight_kg,bc.status,bc.notes,bc.clamped_at,bc.unclamped_at,bc.terminal,bc.yard_status,bc.invoiced,bc.lock_number,bc.transporter_name,bc.horse_reg,bc.trailer_reg,bc.driver_name,bc.driver_contact,b.booking_number,b.reference AS file_reference,b.vessel,b.commodity,b.controller,b.country_code,b.direction,b.carrier_reference,b.status AS booking_status,b.pickup_location,b.delivery_location,b.eta,b.created_at AS booking_created_at,t.trip_number,t.status AS trip_status,COALESCE(bc.transporter_name,tr.company_name) AS transporter,COALESCE(bc.horse_reg,v.registration) AS horse_reg_derived,COALESCE(bc.driver_name,d.name) AS driver_name_derived,COALESCE(bc.driver_contact,d.phone) AS driver_contact_derived,l.serial AS lock_serial FROM cds_booking_containers bc JOIN cds_bookings b ON b.id=bc.booking_id LEFT JOIN cds_trips t ON t.id=bc.trip_id LEFT JOIN cds_transporters tr ON tr.id=t.transporter_id LEFT JOIN cds_vehicles v ON v.id=t.vehicle_id LEFT JOIN cds_drivers d ON d.id=t.driver_id LEFT JOIN cds_electronic_locks l ON l.id=t.lock_id WHERE bc.org_id=$1 AND bc.deleted_at IS NULL AND b.org_id=$1 AND b.deleted_at IS NULL ORDER BY b.created_at DESC NULLS LAST,b.id,bc.id`, [orgId]));
@@ -44,7 +45,7 @@ async function queueManualSuperAdminPulse(orgId, snapshotAt) {
     const workbook = await buildManifestWorkbook(active, snapshotAt);
     const manifestHash = crypto.createHash('sha256').update(workbook).digest('hex');
     const filename = `CDS_Client_Pulse_Global_Active_Bookings_${snapshotAt.toISOString().replace(/[:]/g,'').replace(/\.\d{3}Z$/,'Z')}_EAT.xlsx`;
-    const result = await queueClientPulseEmail({ orgId, recipients: recipients.rows.map(r => r.email), snapshotAt: snapshotAt.toISOString(), activeBookingCount, dateLabel: new Intl.DateTimeFormat('en-GB',{timeZone:process.env.CDS_CLIENT_PULSE_TIMEZONE||'Africa/Nairobi',day:'2-digit',month:'short',year:'numeric'}).format(snapshotAt), attachment: { filename, content: workbook.toString('base64'), contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }, correlationId: `cds-client-pulse:${runId}`, idempotencyKey: `cds-client-pulse:super-admin:${snapshotAt.toISOString().slice(0,13)}` });
+    const result = await queueClientPulseEmail({ orgId, recipients: recipients.rows.map(r => r.email), snapshotAt: snapshotAt.toISOString(), activeBookingCount, dateLabel: new Intl.DateTimeFormat('en-GB',{timeZone:process.env.CDS_CLIENT_PULSE_TIMEZONE||'Africa/Nairobi',day:'2-digit',month:'short',year:'numeric'}).format(snapshotAt), attachment: { filename, content: workbook.toString('base64'), contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }, correlationId: `cds-client-pulse:${runId}`, idempotencyKey: manualKey });
     await withOrg(orgId, client => client.query(`UPDATE cds_client_pulse_runs SET status=$2,active_booking_count=$3,row_count=$4,attachment_name=$5,manifest_hash=$6,updated_at=NOW() WHERE id=$1`, [runId,result.queued?'queued':'skipped',activeBookingCount,active.length,filename,manifestHash]));
     return { runId, queued: result.queued, duplicate: result.duplicate, rows: active.length, recipients: recipients.rows.length, filename };
   } catch (err) { await withOrg(orgId, client => client.query(`UPDATE cds_client_pulse_runs SET status='failed',error=$2,updated_at=NOW() WHERE id=$1`, [runId,String(err.message||err).slice(0,4000)])); logger.error(`Manual Super Admin Client Pulse failed: org=${orgId} run=${runId} error=${err.message}`); throw err; }
@@ -58,7 +59,9 @@ router.post('/cds-client-pulse/send', async (req, res, next) => {
     const customers = [];
     for (const customerId of customerIds) { try { customers.push(await generateAndQueueScopedClientPulse(req.user.org_id, customerId, { snapshotAt, reason: 'manual_scoped' })); } catch (err) { customers.push({ customerId, skipped: true, reason: 'delivery_failed', error: err.message }); } }
     const queued = (global.queued || 0) + customers.reduce((n, r) => n + (r.queued || 0), 0);
-    res.status(202).json({ data: { queued, global, customers } });
+    const failures = customers.filter(r => r.reason === 'delivery_failed').length;
+    const status = queued > 0 ? 202 : 409;
+    res.status(status).json({ data: { queued, global, customers, failures, dispatchedAt: snapshotAt.toISOString() } });
   } catch (err) { next(err); }
 });
 
