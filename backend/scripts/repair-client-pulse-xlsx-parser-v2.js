@@ -42,7 +42,6 @@ const replacement = String.raw`function unzip(buffer) {
     let p = offset;
     for (let i = 0; i < count; i++) {
       if (p + 46 > eocd || buffer.readUInt32LE(p) !== CENTRAL) return null;
-      const flags = buffer.readUInt16LE(p + 8);
       const method = buffer.readUInt16LE(p + 10);
       const compressedSize = buffer.readUInt32LE(p + 20);
       const uncompressedSize = buffer.readUInt32LE(p + 24);
@@ -53,81 +52,70 @@ const replacement = String.raw`function unzip(buffer) {
       const recordEnd = p + 46 + nameLen + extraLen + commentLen;
       if (recordEnd > eocd) return null;
       const name = buffer.subarray(p + 46, p + 46 + nameLen).toString('utf8');
-      entries.push({ name, flags, method, compressedSize, uncompressedSize, localOffset });
+      entries.push({ name, method, compressedSize, uncompressedSize, localOffset });
       p = recordEnd;
     }
     return { entries, start: offset, end: p };
   }
 
   let parsed = null;
-  if (declaredOffset + declaredSize <= eocd) {
-    parsed = parseCentralAt(declaredOffset);
-  }
-
+  if (declaredOffset + declaredSize <= eocd) parsed = parseCentralAt(declaredOffset);
   if (!parsed) {
     for (let p = 0; p + 46 <= eocd; p++) {
       if (buffer.readUInt32LE(p) !== CENTRAL) continue;
       const candidate = parseCentralAt(p);
-      if (candidate) {
-        parsed = candidate;
+      if (candidate) { parsed = candidate; break; }
+    }
+  }
+  if (!parsed) throw new Error('Unable to recover XLSX central directory');
+
+  function localCandidates(entry) {
+    const out = [];
+    const seen = new Set();
+    const add = (value) => {
+      if (!Number.isInteger(value) || value < 0 || value + 30 > eocd || seen.has(value)) return;
+      seen.add(value); out.push(value);
+    };
+    add(entry.localOffset);
+    add(entry.localOffset + (parsed.start - declaredOffset));
+    for (let p = 0; p + 30 <= eocd; p++) {
+      if (buffer.readUInt32LE(p) !== LOCAL) continue;
+      const nameLen = buffer.readUInt16LE(p + 26);
+      const extraLen = buffer.readUInt16LE(p + 28);
+      if (p + 30 + nameLen + extraLen > eocd) continue;
+      const name = buffer.subarray(p + 30, p + 30 + nameLen).toString('utf8');
+      if (name === entry.name) add(p);
+    }
+    return out;
+  }
+
+  const entries = [];
+  for (const entry of parsed.entries) {
+    let lastError = null;
+    let recovered = null;
+    for (const localOffset of localCandidates(entry)) {
+      try {
+        const localNameLen = buffer.readUInt16LE(localOffset + 26);
+        const localExtraLen = buffer.readUInt16LE(localOffset + 28);
+        const dataStart = localOffset + 30 + localNameLen + localExtraLen;
+        const dataEnd = dataStart + entry.compressedSize;
+        if (dataStart < 0 || dataEnd > eocd) throw new Error('XLSX entry bounds invalid');
+        const data = inflateEntry(entry.name, entry.method, buffer.subarray(dataStart, dataEnd), entry.uncompressedSize);
+        recovered = { name: entry.name, data };
         break;
+      } catch (error) {
+        lastError = error;
       }
     }
-  }
-
-  if (parsed) {
-    const delta = parsed.start - declaredOffset;
-    const entries = [];
-    for (const entry of parsed.entries) {
-      const offsets = [entry.localOffset, entry.localOffset + delta];
-      let localOffset = null;
-      for (const candidate of offsets) {
-        if (candidate >= 0 && candidate + 30 <= buffer.length && buffer.readUInt32LE(candidate) === LOCAL) {
-          localOffset = candidate;
-          break;
-        }
-      }
-      if (localOffset == null) {
-        throw new Error('Invalid XLSX local header for ' + entry.name);
-      }
-      const localNameLen = buffer.readUInt16LE(localOffset + 26);
-      const localExtraLen = buffer.readUInt16LE(localOffset + 28);
-      const dataStart = localOffset + 30 + localNameLen + localExtraLen;
-      const dataEnd = dataStart + entry.compressedSize;
-      if (dataStart < 0 || dataEnd > buffer.length) throw new Error('XLSX entry bounds invalid for ' + entry.name);
-      entries.push({ name: entry.name, data: inflateEntry(entry.name, entry.method, buffer.subarray(dataStart, dataEnd), entry.uncompressedSize) });
+    if (!recovered) {
+      throw new Error('Unable to recover XLSX entry ' + entry.name + ': ' + (lastError ? lastError.message : 'no valid local header'));
     }
-    return entries;
+    entries.push(recovered);
   }
-
-  const recovered = [];
-  let p = 0;
-  while (p + 30 <= eocd && recovered.length < count) {
-    const sig = buffer.readUInt32LE(p);
-    if (sig !== LOCAL) { p += 1; continue; }
-    const flags = buffer.readUInt16LE(p + 6);
-    const method = buffer.readUInt16LE(p + 8);
-    const compressedSize = buffer.readUInt32LE(p + 18);
-    const uncompressedSize = buffer.readUInt32LE(p + 22);
-    const nameLen = buffer.readUInt16LE(p + 26);
-    const extraLen = buffer.readUInt16LE(p + 28);
-    const dataStart = p + 30 + nameLen + extraLen;
-    const name = buffer.subarray(p + 30, p + 30 + nameLen).toString('utf8');
-    if (flags & 0x0008) {
-      throw new Error('Malformed XLSX local data descriptor for ' + name + '; central directory is unrecoverable');
-    }
-    const dataEnd = dataStart + compressedSize;
-    if (dataStart < 0 || dataEnd > eocd) throw new Error('XLSX local entry bounds invalid for ' + name);
-    recovered.push({ name, data: inflateEntry(name, method, buffer.subarray(dataStart, dataEnd), uncompressedSize) });
-    p = dataEnd;
-  }
-  if (recovered.length !== count) {
-    throw new Error('Unable to recover XLSX entries (expected ' + count + ', recovered ' + recovered.length + '; declared offset ' + declaredOffset + ', size ' + declaredSize + ', archive ' + buffer.length + ' bytes)');
-  }
-  return recovered;
+  return entries;
 }`;
 
 source = source.slice(0, start) + replacement + source.slice(end);
 fs.writeFileSync(target, source);
 require('child_process').execFileSync(process.execPath, ['--check', target], { stdio: 'inherit' });
-console.log('Client Pulse XLSX parser v2 repair applied:', target);
+console.log('Client Pulse XLSX parser v2 local-header recovery applied:', target);
