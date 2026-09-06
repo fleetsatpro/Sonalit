@@ -2,7 +2,16 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
-const TEMPLATE_PATH = path.resolve(__dirname, '../../../../templates/CDS_Client_Pulse_FUTURISTIC_Active_Bookings.xlsx');
+// Railway runs the worker from /app/backend, while the approved template is
+// stored at repository root /templates. Keep a small fallback set so the
+// renderer remains portable across local, Docker and CI runtimes.
+const TEMPLATE_CANDIDATES = [
+  path.resolve(__dirname, '../../../../templates/CDS_Client_Pulse_FUTURISTIC_Active_Bookings.xlsx'),
+  path.resolve(__dirname, '../../../templates/CDS_Client_Pulse_FUTURISTIC_Active_Bookings.xlsx'),
+  path.resolve(process.cwd(), '../templates/CDS_Client_Pulse_FUTURISTIC_Active_Bookings.xlsx'),
+  path.resolve(process.cwd(), 'templates/CDS_Client_Pulse_FUTURISTIC_Active_Bookings.xlsx'),
+];
+const TEMPLATE_PATH = TEMPLATE_CANDIDATES.find((candidate) => fs.existsSync(candidate)) || TEMPLATE_CANDIDATES[0];
 const ACTIVE = new Set(['pending', 'assigned', 'in_transit', 'at_port']);
 const CLOSED = new Set(['completed', 'delivered', 'cancelled', 'canceled', 'archived', 'closed']);
 
@@ -128,20 +137,20 @@ function zip(entries) {
 
 function replaceCell(xml, address, value) {
   const safe = xmlEscape(value);
-  const re = new RegExp(`(<c r=\"${address}\"[^>]*)(?:>.*?</c>|/>)`);
+  const re = new RegExp(`(<c r=\\"${address}\\"[^>]*)(?:>.*?</c>|/>)`);
   const match = xml.match(re);
   if (!match) throw new Error(`Template cell ${address} not found`);
-  const attrs = match[1].replace(/\s+t=\"[^\"]*\"/g, '');
-  return xml.replace(re, `${attrs} t=\"inlineStr\"><is><t xml:space=\"preserve\">${safe}</t></is></c>`);
+  const attrs = match[1].replace(/\s+t=\\"[^\\"]*\\"/g, '');
+  return xml.replace(re, `${attrs} t=\\"inlineStr\\"><is><t xml:space=\\"preserve\\">${safe}</t></is></c>`);
 }
 
 function blankCell(address, styleId = 1) {
-  return `<c r=\"${address}\" s=\"${styleId}\" t=\"inlineStr\"></c>`;
+  return `<c r=\\"${address}\\" s=\\"${styleId}\\" t=\\"inlineStr\\"></c>`;
 }
 
 function cell(address, value, styleId) {
   if (value == null || value === '') return blankCell(address, styleId);
-  return `<c r=\"${address}\" s=\"${styleId}\" t=\"inlineStr\"><is><t xml:space=\"preserve\">${xmlEscape(value)}</t></is></c>`;
+  return `<c r=\\"${address}\\" s=\\"${styleId}\\" t=\\"inlineStr\\"><is><t xml:space=\\"preserve\\">${xmlEscape(value)}</t></is></c>`;
 }
 
 function formatDate(value) {
@@ -191,11 +200,11 @@ function manifestRowXml(row, index) {
   if (status === 'in_transit' || status === 'at_port' || status === 'assigned') styles[7] = even ? 47 : 49;
   const values = rowValues(row);
   const r = index + 5;
-  return `<row r=\"${r}\">${values.map((v, i) => cell(`${colName(i)}${r}`, v, styles[i])).join('')}</row>`;
+  return `<row r=\\"${r}\\">${values.map((v, i) => cell(`${colName(i)}${r}`, v, styles[i])).join('')}</row>`;
 }
 
 function getRowXml(xml, rowNumber) {
-  const match = xml.match(new RegExp(`<row r=\"${rowNumber}\"[^>]*>[\\s\\S]*?<\\/row>`));
+  const match = xml.match(new RegExp(`<row r=\\"${rowNumber}\\"[^>]*>[\\s\\S]*?<\\/row>`));
   if (!match) throw new Error(`Client Pulse template row ${rowNumber} is missing`);
   return match[0];
 }
@@ -211,12 +220,12 @@ function updateSheet2(xml, rows, snapshotAt, scopeLabel) {
   preamble = replaceCell(preamble, 'A1', title);
   preamble = replaceCell(preamble, 'A2', sub);
   const footerRow = rows.length + 5;
-  const footerXml = `<row r=\"${footerRow}\"><c r=\"A${footerRow}\" s=\"33\" t=\"inlineStr\"><is><t xml:space=\"preserve\">${xmlEscape(footer)}</t></is></c><c r=\"S${footerRow}\" s=\"1\" t=\"n\"></c><c r=\"T${footerRow}\" s=\"1\" t=\"n\"></c><c r=\"U${footerRow}\" s=\"1\" t=\"n\"></c><c r=\"V${footerRow}\" s=\"1\" t=\"n\"></c><c r=\"W${footerRow}\" s=\"1\" t=\"n\"></c><c r=\"X${footerRow}\" s=\"1\" t=\"n\"></c><c r=\"Y${footerRow}\" s=\"1\" t=\"n\"></c><c r=\"Z${footerRow}\" s=\"1\" t=\"n\"></c><c r=\"AA${footerRow}\" s=\"1\" t=\"n\"></c><c r=\"AB${footerRow}\" s=\"1\" t=\"n\"></c><c r=\"AC${footerRow}\" s=\"1\" t=\"n\"></c></row>`;
+  const footerXml = `<row r=\\"${footerRow}\\"><c r=\\"A${footerRow}\\" s=\\"33\\" t=\\"inlineStr\\"><is><t xml:space=\\"preserve\\">${xmlEscape(footer)}</t></is></c><c r=\\"S${footerRow}\\" s=\\"1\\" t=\\"n\\"></c><c r=\\"T${footerRow}\\" s=\\"1\\" t=\\"n\\"></c><c r=\\"U${footerRow}\\" s=\\"1\\" t=\\"n\\"></c><c r=\\"V${footerRow}\\" s=\\"1\\" t=\\"n\\"></c><c r=\\"W${footerRow}\\" s=\\"1\\" t=\\"n\\"></c><c r=\\"X${footerRow}\\" s=\\"1\\" t=\\"n\\"></c><c r=\\"Y${footerRow}\\" s=\\"1\\" t=\\"n\\"></c><c r=\\"Z${footerRow}\\" s=\\"1\\" t=\\"n\\"></c><c r=\\"AA${footerRow}\\" s=\\"1\\" t=\\"n\\"></c><c r=\\"AB${footerRow}\\" s=\\"1\\" t=\\"n\\"></c><c r=\\"AC${footerRow}\\" s=\\"1\\" t=\\"n\\"></c></row>`;
   const sheetData = `<sheetData>${preamble}${rows.map(manifestRowXml).join('')}${footerXml}</sheetData>`;
   xml = xml.replace(/<sheetData>[\s\S]*?<\/sheetData>/, sheetData);
-  xml = xml.replace(/<dimension ref=\"A1:[^\"]+\"\/>/, `<dimension ref=\"A1:AC${footerRow}\"/>`);
-  xml = xml.replace(/<autoFilter ref=\"[^\"]+\"\/>/, `<autoFilter ref=\"A4:R${footerRow - 1}\"/>`);
-  xml = xml.replace(/<mergeCell ref=\"A38:R38\"\/>/, `<mergeCell ref=\"A${footerRow}:R${footerRow}\"/>`);
+  xml = xml.replace(/<dimension ref=\\"A1:[^\\"]+\\"\/>/, `<dimension ref=\\"A1:AC${footerRow}\\"/>`);
+  xml = xml.replace(/<autoFilter ref=\\"[^\\"]+\\"\/>/, `<autoFilter ref=\\"A4:R${footerRow - 1}\\"/>`);
+  xml = xml.replace(/<mergeCell ref=\\"A38:R38\\"\/>/, `<mergeCell ref=\\"A${footerRow}:R${footerRow}\\"/>`);
   return xml;
 }
 
@@ -256,7 +265,7 @@ function updateSheet1(xml, rows, snapshotAt, scopeLabel) {
 
 async function buildManifestWorkbook(rows, snapshotAt = new Date(), options = {}) {
   const scopeLabel = String(options.scopeLabel || 'GLOBAL').trim() || 'GLOBAL';
-  if (!fs.existsSync(TEMPLATE_PATH)) throw new Error(`Client Pulse XLSX template not found at ${TEMPLATE_PATH}`);
+  if (!fs.existsSync(TEMPLATE_PATH)) throw new Error(`Client Pulse XLSX template not found. Checked: ${TEMPLATE_CANDIDATES.join(', ')}`);
   const template = fs.readFileSync(TEMPLATE_PATH);
   const entries = unzip(template);
   const byName = new Map(entries.map(e => [e.name, e]));
