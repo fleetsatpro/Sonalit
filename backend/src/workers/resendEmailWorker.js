@@ -31,13 +31,13 @@ async function processEmail(job) {
   const claim = await query(
     `UPDATE email_notifications
      SET status='sending', attempts=attempts+1, last_attempt_at=NOW(), updated_at=NOW()
-     WHERE id=$1 AND status IN ('queued','delivery_delayed','failed')
+     WHERE id=$1 AND status IN ('queued','delivery_delayed','failed') AND attempts < 8
      RETURNING *`,
     [id]
   );
   if (!claim.rows.length) {
-    logger.warn(`Resend email job ${job.id} skipped: notification=${id} is not sendable (already claimed/completed)`);
-    return;
+    logger.warn(`Resend email job ${job.id || 'poll'} skipped: notification=${id} is not sendable`);
+    return { skipped: true };
   }
 
   const email = claim.rows[0];
@@ -65,6 +65,7 @@ async function processEmail(job) {
       [id, result.id]
     );
     logger.info(`Resend email accepted: notification=${id} provider=${result.id} recipient=${email.recipient}`);
+    return { sent: true, providerId: result.id };
   } catch (err) {
     const retryable = isRetryableError(err) && email.attempts < 8;
     await query(
@@ -78,6 +79,39 @@ async function processEmail(job) {
     );
     if (retryable) throw err;
     logger.error(`Permanent Resend email failure: notification=${id} recipient=${email.recipient} error=${err.message}`);
+    return { failed: true };
+  }
+}
+
+// BullMQ remains the primary path. This lightweight database sweeper is a
+// deliberate safety net for transactional email: if Redis/BullMQ loses a job,
+// the email record itself is still durable and will be retried. The atomic
+// status claim in processEmail prevents duplicate sends when both paths see it.
+let pollTimer = null;
+let polling = false;
+async function recoverQueuedEmails() {
+  if (polling) return;
+  polling = true;
+  try {
+    const result = await query(
+      `SELECT id
+       FROM email_notifications
+       WHERE status IN ('queued','delivery_delayed')
+         AND attempts < 8
+       ORDER BY created_at ASC
+       LIMIT 25`
+    );
+    for (const row of result.rows) {
+      try {
+        await processEmail({ id: `recovery:${row.id}`, data: { emailNotificationId: row.id } });
+      } catch (err) {
+        logger.warn(`Email recovery attempt deferred: notification=${row.id} error=${err.message}`);
+      }
+    }
+  } catch (err) {
+    logger.error(`Email recovery sweep failed: ${err.message}`);
+  } finally {
+    polling = false;
   }
 }
 
@@ -95,7 +129,19 @@ function startResendEmailWorker() {
   worker.on('completed', job => logger.info(`Resend email job ${job.id} completed`));
   worker.on('failed', (job, err) => logger.error(`Resend email job ${job?.id} failed: ${err.message}`));
   worker.on('error', err => logger.error(`Resend email worker error: ${err.message}`));
+
+  recoverQueuedEmails();
+  pollTimer = setInterval(recoverQueuedEmails, 5000);
+
+  const close = worker.close.bind(worker);
+  worker.close = async (...args) => {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
+    await connection.quit().catch(() => {});
+    return close(...args);
+  };
+
   return worker;
 }
 
-module.exports = { startResendEmailWorker, processEmail };
+module.exports = { startResendEmailWorker, processEmail, recoverQueuedEmails };
