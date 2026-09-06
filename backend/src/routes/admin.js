@@ -8,7 +8,6 @@ const { buildManifestWorkbook, isActiveRow } = require('../services/email/client
 const { queueClientPulseEmail } = require('../services/email/email.service');
 const { generateAndQueueScopedClientPulse, listCustomerPulseTargets } = require('../services/email/scopedClientPulse.service');
 
-// Super Admin is explicitly allowed to use the administrative command center.
 router.use(authenticate, authorize('admin', 'super_admin'), attachOrgDb);
 
 router.get('/queues', async (req, res, next) => {
@@ -32,8 +31,6 @@ function manifestRow(row) { return { booking_number: row.booking_number, carrier
 async function queueManualSuperAdminPulse(orgId, snapshotAt) {
   const recipients = await withOrg(orgId, client => client.query(`SELECT DISTINCT email,name FROM client_email_recipients WHERE org_id=$1 AND authority_role='super_admin' AND enabled=true AND deleted_at IS NULL AND email IS NOT NULL ORDER BY email`, [orgId]));
   if (!recipients.rows.length) return { skipped: true, reason: 'no_super_admin_recipients', queued: 0 };
-  // Manual Send Now is intentionally not hourly-idempotent. It must be possible for a Super Admin
-  // to dispatch again after a scheduled pulse in the same hour. Scheduled jobs retain hourly keys.
   const manualKey = `cds-client-pulse:super-admin:manual:${snapshotAt.toISOString()}:${crypto.randomUUID()}`;
   const run = await withOrg(orgId, client => client.query(`INSERT INTO cds_client_pulse_runs (org_id,snapshot_at,status,idempotency_key) VALUES ($1,$2,'generating',$3) RETURNING id`, [orgId, snapshotAt, manualKey]));
   const runId = run.rows[0].id;
@@ -44,7 +41,7 @@ async function queueManualSuperAdminPulse(orgId, snapshotAt) {
     if (!active.length) { await withOrg(orgId, client => client.query(`UPDATE cds_client_pulse_runs SET status='skipped',active_booking_count=0,row_count=0,updated_at=NOW() WHERE id=$1`, [runId])); return { runId, skipped: true, reason: 'no_active_bookings', queued: 0 }; }
     const workbook = await buildManifestWorkbook(active, snapshotAt);
     const manifestHash = crypto.createHash('sha256').update(workbook).digest('hex');
-    const filename = `CDS_Client_Pulse_Global_Active_Bookings_${snapshotAt.toISOString().replace(/[:]/g,'').replace(/\.\d{3}Z$/,'Z')}_EAT.xlsx`;
+    const filename = `ALL CLIENTS_Client Dispatch Master Active Bookings_${snapshotAt.toISOString().replace(/[:]/g,'').replace(/\.\d{3}Z$/,'Z')}_EAT.xlsx`;
     const result = await queueClientPulseEmail({ orgId, recipients: recipients.rows.map(r => r.email), snapshotAt: snapshotAt.toISOString(), activeBookingCount, dateLabel: new Intl.DateTimeFormat('en-GB',{timeZone:process.env.CDS_CLIENT_PULSE_TIMEZONE||'Africa/Nairobi',day:'2-digit',month:'short',year:'numeric'}).format(snapshotAt), attachment: { filename, content: workbook.toString('base64'), contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }, correlationId: `cds-client-pulse:${runId}`, idempotencyKey: manualKey });
     await withOrg(orgId, client => client.query(`UPDATE cds_client_pulse_runs SET status=$2,active_booking_count=$3,row_count=$4,attachment_name=$5,manifest_hash=$6,updated_at=NOW() WHERE id=$1`, [runId,result.queued?'queued':'skipped',activeBookingCount,active.length,filename,manifestHash]));
     return { runId, queued: result.queued, duplicate: result.duplicate, rows: active.length, recipients: recipients.rows.length, filename };
@@ -57,11 +54,16 @@ router.post('/cds-client-pulse/send', async (req, res, next) => {
     const global = await queueManualSuperAdminPulse(req.user.org_id, snapshotAt);
     const customerIds = await listCustomerPulseTargets(req.user.org_id);
     const customers = [];
-    for (const customerId of customerIds) { try { customers.push(await generateAndQueueScopedClientPulse(req.user.org_id, customerId, { snapshotAt, reason: 'manual_scoped' })); } catch (err) { customers.push({ customerId, skipped: true, reason: 'delivery_failed', error: err.message }); } }
+    for (const customerId of customerIds) {
+      try { customers.push(await generateAndQueueScopedClientPulse(req.user.org_id, customerId, { snapshotAt, reason: 'manual_scoped' })); }
+      catch (err) { customers.push({ customerId, skipped: true, reason: 'delivery_failed', error: err.message }); }
+    }
     const queued = (global.queued || 0) + customers.reduce((n, r) => n + (r.queued || 0), 0);
     const failures = customers.filter(r => r.reason === 'delivery_failed').length;
-    const status = queued > 0 ? 202 : 409;
-    res.status(status).json({ data: { queued, global, customers, failures, dispatchedAt: snapshotAt.toISOString() } });
+    // Manual Send Now is an operational command, not a validation failure.
+    // Always return 200 with the complete dispatch outcome so the UI can tell
+    // the operator whether it was queued, skipped, or failed and why.
+    res.status(200).json({ data: { queued, global, customers, failures, dispatchedAt: snapshotAt.toISOString() } });
   } catch (err) { next(err); }
 });
 
