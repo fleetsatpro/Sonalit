@@ -4,7 +4,7 @@ const { pool, query } = require('../config/database');
 const { createQueues } = require('../config/queue');
 const { startNotificationWorker } = require('./notificationWorker');
 const { startResendEmailWorker } = require('./resendEmailWorker');
-const { generateAndQueueClientPulse } = require('../services/email/clientPulse.service');
+const { dispatchClientPulse } = require('../services/email/clientPulseDispatch.service');
 
 createQueues();
 const fanoutWorker = startNotificationWorker();
@@ -24,7 +24,7 @@ function scheduleNextClientPulse() {
     try {
       const orgs = await query(`SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL`);
       for (const row of orgs.rows) {
-        try { await generateAndQueueClientPulse(row.org_id, { snapshotAt: new Date() }); }
+        try { await dispatchClientPulse(row.org_id, { snapshotAt: new Date(), reason: 'scheduled' }); }
         catch (err) { logger.error(`CDS Client Pulse org run failed: org=${row.org_id} error=${err.message}`); }
       }
     } catch (err) {
