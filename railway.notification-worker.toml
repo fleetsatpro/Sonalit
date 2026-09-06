@@ -1,0 +1,7 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile.notification-worker"
+
+[deploy]
+startCommand = "node src/workers/worker.notification.js"
+restartPolicyType = "ALWAYS"
