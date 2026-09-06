@@ -2,10 +2,20 @@ const router = require('express').Router();
 const crypto = require('crypto');
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
+const rateLimit = require('express-rate-limit');
+const { verifySecurityMapToken, renderSecurityMap } = require('../services/securityIncidentMap');
 
 const MAX_SKEW_SECONDS = 300;
 const STATUS_RANK = Object.freeze({ queued: 0, sending: 1, sent: 2, delivery_delayed: 2, delivered: 3, opened: 4, clicked: 5 });
 const TERMINAL = new Set(['bounced', 'complained', 'suppressed', 'failed']);
+
+const securityMapLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, res) => res.status(429).send('Too many map requests'),
+});
 
 function verifySignature(req) {
   const secret = process.env.RESEND_WEBHOOK_SECRET;
@@ -26,6 +36,31 @@ function verifySignature(req) {
     return a.length === b.length && crypto.timingSafeEqual(a, b);
   });
 }
+
+// Signed, read-only incident map used by security emails. This route is deliberately
+// outside operator authentication because email clients cannot carry a Sonalit session.
+// The HMAC token is scoped to exactly one panic event and expires automatically.
+router.get('/security-map/:panicId', securityMapLimiter, async (req, res) => {
+  const panicId = String(req.params.panicId || '');
+  if (!verifySecurityMapToken(String(req.query.token || ''), panicId)) {
+    return res.status(403).send('Invalid or expired map token');
+  }
+  try {
+    const image = await renderSecurityMap(panicId);
+    if (!image) return res.status(404).send('Incident location unavailable');
+    res.set({
+      'Content-Type': 'image/png',
+      'Content-Length': String(image.length),
+      'Cache-Control': 'private, max-age=3600',
+      'Content-Disposition': 'inline; filename="sonalit-security-incident.png"',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    return res.send(image);
+  } catch (error) {
+    logger.error(`Security incident map render failed: event=${panicId} error=${error.message}`);
+    return res.status(502).send('Incident map temporarily unavailable');
+  }
+});
 
 router.post('/', async (req, res) => {
   if (!verifySignature(req)) return res.status(401).json({ error: 'invalid_webhook_signature' });
