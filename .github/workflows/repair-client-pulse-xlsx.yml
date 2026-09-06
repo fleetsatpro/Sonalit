@@ -1,0 +1,142 @@
+name: Repair Client Pulse XLSX parser
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: ${{ !contains(github.event.head_commit.message, 'repair: robust Client Pulse XLSX ZIP parser') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Patch ZIP parser and validate
+        env:
+          TARGET: backend/src/services/email/clientPulseWorkbook.service.js
+        run: |
+          python3 - <<'PY'
+          import os, re
+          target = os.environ['TARGET']
+          text = open(target, encoding='utf-8').read()
+          start = text.index('function unzip(buffer) {')
+          end = text.index('\nfunction zip(entries) {', start)
+          replacement = r'''function unzip(buffer) {
+            const EOCD = 0x06054b50;
+            const CENTRAL = 0x02014b50;
+            const LOCAL = 0x04034b50;
+            const eocdMin = 22;
+            let eocd = -1;
+            const tailStart = Math.max(0, buffer.length - 65557);
+            for (let i = buffer.length - eocdMin; i >= tailStart; i--) {
+              if (i + 22 <= buffer.length && buffer.readUInt32LE(i) === EOCD) {
+                const commentLength = buffer.readUInt16LE(i + 20);
+                if (i + 22 + commentLength <= buffer.length) { eocd = i; break; }
+              }
+            }
+            if (eocd < 0) throw new Error('Client Pulse template is not a valid ZIP/XLSX archive');
+
+            const declaredCount = buffer.readUInt16LE(eocd + 10);
+            const declaredCentralSize = buffer.readUInt32LE(eocd + 12);
+            const declaredCentralOffset = buffer.readUInt32LE(eocd + 16);
+            const maxCentralEnd = eocd;
+
+            function parseCentralAt(start, count) {
+              if (!Number.isInteger(start) || start < 0 || start + 46 > maxCentralEnd) return null;
+              const entries = [];
+              let p = start;
+              for (let i = 0; i < count; i++) {
+                if (p + 46 > maxCentralEnd || buffer.readUInt32LE(p) !== CENTRAL) return null;
+                const method = buffer.readUInt16LE(p + 10);
+                const flags = buffer.readUInt16LE(p + 8);
+                const compressedSize = buffer.readUInt32LE(p + 20);
+                const uncompressedSize = buffer.readUInt32LE(p + 24);
+                const nameLen = buffer.readUInt16LE(p + 28);
+                const extraLen = buffer.readUInt16LE(p + 30);
+                const commentLen = buffer.readUInt16LE(p + 32);
+                const localOffset = buffer.readUInt32LE(p + 42);
+                const recordEnd = p + 46 + nameLen + extraLen + commentLen;
+                if (recordEnd > maxCentralEnd) return null;
+                const name = buffer.subarray(p + 46, p + 46 + nameLen).toString('utf8');
+                entries.push({ name, method, flags, compressedSize, uncompressedSize, localOffset });
+                p = recordEnd;
+              }
+              if (p > maxCentralEnd) return null;
+              return { entries, end: p };
+            }
+
+            // Prefer the EOCD declaration when it is internally consistent.
+            let parsed = null;
+            if (declaredCentralOffset + declaredCentralSize <= maxCentralEnd) {
+              parsed = parseCentralAt(declaredCentralOffset, declaredCount);
+              if (parsed && parsed.end !== declaredCentralOffset + declaredCentralSize) parsed = null;
+            }
+
+            // The approved template can contain a malformed EOCD central-directory offset.
+            // Recover only from a structurally valid central directory whose entry count and
+            // local-header references can be reconciled. This avoids blindly trusting a PK\x01\x02
+            // byte sequence inside compressed XML.
+            if (!parsed) {
+              const candidates = [];
+              for (let p = 0; p + 46 <= maxCentralEnd; p++) {
+                if (buffer.readUInt32LE(p) !== CENTRAL) continue;
+                const candidate = parseCentralAt(p, declaredCount);
+                if (!candidate) continue;
+                candidates.push({ start: p, ...candidate });
+              }
+              if (!candidates.length) throw new Error(`Invalid XLSX central directory (declared offset ${declaredCentralOffset}, size ${declaredCentralSize}, archive ${buffer.length} bytes)`);
+              parsed = candidates.sort((a, b) => Math.abs(a.end - eocd) - Math.abs(b.end - eocd))[0];
+            }
+
+            const entries = [];
+            const centralOffsetDelta = parsed.start - declaredCentralOffset;
+            for (const entry of parsed.entries) {
+              const localCandidates = [entry.localOffset, entry.localOffset + centralOffsetDelta];
+              let localOffset = localCandidates.find((candidate) => candidate >= 0 && candidate + 30 <= buffer.length && buffer.readUInt32LE(candidate) === LOCAL);
+              if (localOffset == null) throw new Error(`Invalid XLSX local header for ${entry.name}`);
+
+              const localNameLen = buffer.readUInt16LE(localOffset + 26);
+              const localExtraLen = buffer.readUInt16LE(localOffset + 28);
+              const start = localOffset + 30 + localNameLen + localExtraLen;
+              const end = start + entry.compressedSize;
+              if (start < 0 || end > buffer.length) throw new Error(`XLSX entry bounds invalid for ${entry.name}`);
+              const compressed = buffer.subarray(start, end);
+
+              let data;
+              if (entry.method === 0) data = Buffer.from(compressed);
+              else if (entry.method === 8) data = zlib.inflateRawSync(compressed);
+              else throw new Error(`Unsupported XLSX compression method ${entry.method} for ${entry.name}`);
+              if (data.length !== entry.uncompressedSize) throw new Error(`XLSX entry size mismatch for ${entry.name}`);
+
+              entries.push({ name: entry.name, data });
+            }
+            return entries;
+          }
+'''
+          open(target, 'w', encoding='utf-8').write(text[:start] + replacement + text[end:])
+          PY
+
+          node --check "$TARGET"
+
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const svc = require('./backend/src/services/email/clientPulseWorkbook.service.js');
+          const template = path.resolve('templates/CDS_Client_Pulse_FUTURISTIC_Active_Bookings.xlsx');
+          if (!fs.existsSync(template)) throw new Error('Template missing');
+          console.log('Template bytes:', fs.statSync(template).size);
+          console.log('Service loads successfully:', !!svc.buildManifestWorkbook);
+          NODE
+
+          rm -f .github/workflows/repair-client-pulse-xlsx.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$TARGET"
+          git add -u .github/workflows/repair-client-pulse-xlsx.yml
+          git commit -m 'repair: robust Client Pulse XLSX ZIP parser'
+          git push origin HEAD:main
