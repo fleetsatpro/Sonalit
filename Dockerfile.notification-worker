@@ -1,15 +1,11 @@
-# Sonalit notification worker — monorepo-root build context
+# Sonalit notification worker — standalone backend runtime
 FROM node:20-alpine
-WORKDIR /app
+WORKDIR /app/backend
 
-# Install workspace manifests first for deterministic dependency caching.
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY backend/package.json ./backend/package.json
+COPY backend/package.json backend/package-lock.json ./
+RUN npm ci --omit=dev
 
-RUN corepack enable && pnpm install --frozen-lockfile --prod
-
-COPY backend ./backend
+COPY backend ./
 
 ENV NODE_ENV=production
-WORKDIR /app/backend
 CMD ["node", "src/workers/worker.notification.js"]
