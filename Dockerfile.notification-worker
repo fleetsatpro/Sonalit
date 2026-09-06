@@ -10,6 +10,9 @@ RUN npm ci --omit=dev
 
 COPY backend ./
 
+# Repair the approved Client Pulse XLSX parser during image build.
+RUN node scripts/repair-client-pulse-xlsx-parser.js
+
 # Client Pulse uses the approved XLSX template stored at repository root.
 # Keep it outside the backend source tree and copy it explicitly into the
 # runtime image because `COPY backend ./` cannot include repository-root assets.
