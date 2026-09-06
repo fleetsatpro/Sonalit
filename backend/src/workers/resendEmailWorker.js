@@ -1,9 +1,9 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
 const { Worker } = require('bullmq');
-const { query } = require('../config/database');
+const { pool, query } = require('../config/database');
 const logger = require('../utils/logger');
 const { sendEmail, isRetryableError } = require('../services/email/resend');
-const { FROM, REPLY_TO } = require('../services/email/email.service');
+const { FROM, REPLY_TO, queueAlertEmail } = require('../services/email/email.service');
 
 function redisConnection() { const url = new URL(process.env.REDIS_URL || 'redis://127.0.0.1:6379'); return { host: url.hostname, port: Number(url.port) || 6379, password: url.password || process.env.REDIS_PASSWORD || undefined }; }
 
@@ -39,6 +39,70 @@ async function processEmail(job) {
   }
 }
 
+async function dispatchPanicEmail(panicId) {
+  const panic = await query(`
+    SELECT p.id, p.org_id, p.device_id, p.lat, p.lng, p.message, p.created_at,
+           d.name AS device_name
+    FROM panic_events p
+    LEFT JOIN guardian_devices d ON d.id=p.device_id
+    WHERE p.id=$1
+    LIMIT 1
+  `, [panicId]);
+  if (!panic.rows.length || !panic.rows[0].org_id) {
+    logger.warn(`Panic email skipped: event=${panicId} missing event/org`);
+    return { queued: 0, reason: 'missing_event_or_org' };
+  }
+  const event = panic.rows[0];
+  const recipients = await query(`
+    SELECT email, name
+    FROM client_email_recipients
+    WHERE org_id=$1
+      AND deleted_at IS NULL
+      AND enabled=TRUE
+      AND sonalit_security=TRUE
+      AND authority_role IN ('super_admin','admin')
+  `, [event.org_id]);
+  if (!recipients.rows.length) {
+    logger.error(`Panic email has no eligible authority recipients: event=${panicId} org=${event.org_id}`);
+    return { queued: 0, reason: 'no_authority_recipients' };
+  }
+
+  const result = await queueAlertEmail({
+    orgId: event.org_id,
+    recipients: recipients.rows,
+    correlationId: `panic:${panicId}`,
+    ctaUrl: process.env.APP_URL ? `${process.env.APP_URL.replace(/\/$/, '')}/panic-center` : undefined,
+    alert: {
+      id: event.id,
+      type: 'panic',
+      severity: 'critical',
+      security_event: true,
+      registration: event.device_name || event.device_id,
+      message: event.message || `Panic alarm triggered by ${event.device_name || event.device_id}. Location: ${event.lat ?? 'unknown'}, ${event.lng ?? 'unknown'}.`,
+      created_at: event.created_at,
+    },
+  });
+  logger.warn(`Panic email dispatched: event=${panicId} queued=${result.queued} duplicate=${result.duplicate} recipients=${recipients.rows.length}`);
+  return result;
+}
+
+async function startPanicEmailBridge() {
+  const client = await pool.connect();
+  await client.query('LISTEN sonalit_panic');
+  logger.info('Panic email bridge ready: LISTEN sonalit_panic');
+  client.on('notification', async (msg) => {
+    if (msg.channel !== 'sonalit_panic') return;
+    try {
+      const payload = JSON.parse(msg.payload || '{}');
+      if (!payload.id) return;
+      await dispatchPanicEmail(payload.id);
+    } catch (err) {
+      logger.error(`Panic email bridge failed: ${err.message}`);
+    }
+  });
+  client.on('error', (err) => logger.error(`Panic email bridge PostgreSQL error: ${err.message}`));
+}
+
 function startResendEmailWorker() {
   const concurrency = Number(process.env.RESEND_EMAIL_CONCURRENCY) || 5;
   const worker = new Worker('email', processEmail, { connection: redisConnection(), concurrency });
@@ -47,7 +111,8 @@ function startResendEmailWorker() {
   worker.on('completed', job => logger.info(`Resend email job ${job.id} completed`));
   worker.on('failed', (job, err) => logger.error(`Resend email job ${job?.id} failed: ${err.message}`));
   worker.on('error', err => logger.error(`Resend email worker error: ${err.message}`));
+  startPanicEmailBridge().catch(err => logger.error(`Panic email bridge startup failed: ${err.message}`));
   return worker;
 }
 
-module.exports = { startResendEmailWorker, processEmail };
+module.exports = { startResendEmailWorker, processEmail, dispatchPanicEmail };
