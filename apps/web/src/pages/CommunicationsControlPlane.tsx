@@ -1,44 +1,638 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, AlertTriangle, ArrowUpRight, Check, CheckCircle2, ChevronDown, Clock3, Mail, Plus, Radio, RefreshCw, Search, Send, Shield, Users, X, Zap } from 'lucide-react';
+import {
+  Activity,
+  AlertTriangle,
+  ArrowRight,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  Clock3,
+  Mail,
+  Plus,
+  Radio,
+  RefreshCw,
+  Search,
+  Send,
+  Shield,
+  Sparkles,
+  Users,
+  X,
+  Zap,
+} from 'lucide-react';
 import { api } from '../lib/api.js';
 
-type Subscription = { id:string; event_type:string; channel:string; delivery_mode:string; enabled:boolean; critical_override:boolean };
-type Enrollment = { id:string; domain:'platform'|'fleet'|'cds'; cds_customer_id:string|null; contact_role:string|null; locale:string|null; timezone:string|null; status:string; subscriptions:Subscription[] };
-type Recipient = { id:string; email:string; name:string|null; company:string|null; enabled:boolean; enrollments:Enrollment[] };
-type Customer = { id:string; company_name:string; contact_name:string|null; email:string|null; phone:string|null; status:string|null };
-type Tab = 'command'|'identities'|'customers'|'audit';
-const CATALOG = [['fleet','fleet.operational','Operational events'],['fleet','fleet.security','Security incidents'],['cds','cds.booking_created','Booking created'],['cds','cds.booking_approved','Booking approved'],['cds','cds.dispatch','Dispatch / trip start'],['cds','cds.trip_delayed','Trip delay / exception'],['cds','cds.at_port','At port'],['cds','cds.delivery','Delivery'],['cds','cds.elock_tamper','E-lock tamper / security'],['cds','cds.client_pulse','Client Pulse / manifest digest']] as const;
+type Subscription = {
+  id: string;
+  event_type: string;
+  channel: string;
+  delivery_mode: string;
+  enabled: boolean;
+  critical_override: boolean;
+};
 
-export default function CommunicationsControlPlane(){
- const qc=useQueryClient(); const [tab,setTab]=useState<Tab>('command'); const [search,setSearch]=useState(''); const [showAdd,setShowAdd]=useState(false); const [notice,setNotice]=useState<{kind:'ok'|'warn'|'error';text:string}|null>(null); const [form,setForm]=useState({email:'',name:'',company:''});
- const recipientsQ=useQuery<{data:Recipient[]}>({queryKey:['communications-control'],queryFn:()=>api.get('/communications/recipients').then(r=>r.data)}); const customersQ=useQuery<{data:Customer[]}>({queryKey:['communications-customers'],queryFn:()=>api.get('/communications/customers').then(r=>r.data)}); const deliveryQ=useQuery({queryKey:['communications-delivery'],queryFn:()=>api.get('/communications/delivery?limit=80').then(r=>r.data),enabled:tab==='audit'});
- const rows=recipientsQ.data?.data??[]; const customers=customersQ.data?.data??[]; const enrollments=rows.flatMap(r=>r.enrollments); const active=rows.filter(r=>r.enabled).length; const activeEnrollments=enrollments.filter(e=>['verified','active'].includes(e.status)).length; const cdsEnrollments=enrollments.filter(e=>e.domain==='cds'); const pulse=cdsEnrollments.filter(e=>['verified','active'].includes(e.status)&&e.subscriptions.some(s=>s.event_type==='cds.client_pulse'&&s.channel==='email'&&s.enabled)).length; const attention=rows.filter(r=>!r.enrollments.length||r.enrollments.some(e=>e.status==='pending_verification')).length;
- const filtered=useMemo(()=>rows.filter(r=>{const q=search.toLowerCase().trim();return !q||[r.email,r.name,r.company,...r.enrollments.map(e=>e.cds_customer_id)].filter(Boolean).some(v=>String(v).toLowerCase().includes(q));}),[rows,search]);
- const add=useMutation({mutationFn:()=>api.post('/communications/recipients',{email:form.email.trim().toLowerCase(),name:form.name.trim()||null,company:form.company.trim()||null,enabled:true}),onSuccess:()=>{setShowAdd(false);setForm({email:'',name:'',company:''});setNotice({kind:'ok',text:'Identity created. Delivery authorization remains explicit.'});void qc.invalidateQueries({queryKey:['communications-control']})},onError:(e:any)=>setNotice({kind:'error',text:e?.response?.data?.error??'Identity creation failed.'})});
- const pulseSend=useMutation({mutationFn:()=>api.post('/settings/cds-client-pulse/send',{}),onSuccess:(r)=>setNotice({kind:'ok',text:`Client Pulse dispatched — ${r.data?.data?.queued??0} route(s) queued.`}),onError:(e:any)=>setNotice({kind:'error',text:e?.response?.data?.error??'Client Pulse dispatch failed.'})});
- const enroll=useMutation({mutationFn:(body:any)=>api.post('/communications/enrollments',body),onSuccess:()=>{setNotice({kind:'ok',text:'Enrollment saved.'});void qc.invalidateQueries({queryKey:['communications-control']})},onError:(e:any)=>setNotice({kind:'error',text:e?.response?.data?.error??'Enrollment failed.'})});
- const status=useMutation({mutationFn:({id,status}:{id:string;status:string})=>api.patch(`/communications/enrollments/${id}`,{status}),onSuccess:()=>{setNotice({kind:'ok',text:'Enrollment status updated.'});void qc.invalidateQueries({queryKey:['communications-control']})}}); const subscription=useMutation({mutationFn:({id,event_type,enabled}:{id:string;event_type:string;enabled:boolean})=>api.put(`/communications/enrollments/${id}/subscriptions`,{subscriptions:[{event_type,channel:'email',delivery_mode:'immediate',critical_override:true,enabled}]}),onSuccess:()=>void qc.invalidateQueries({queryKey:['communications-control'])});
- const refresh=()=>{void recipientsQ.refetch();void customersQ.refetch();if(tab==='audit')void deliveryQ.refetch()};
- return <div className="min-h-full max-w-[1680px] space-y-6 pb-8 text-slate-200">
-  <header className="relative overflow-hidden rounded-3xl border border-white/[.08] bg-[radial-gradient(circle_at_80%_0%,rgba(249,115,22,.14),transparent_35%),radial-gradient(circle_at_20%_100%,rgba(59,130,246,.10),transparent_30%)] bg-slate-950/80 p-5 sm:p-7"><div className="absolute right-6 top-6 hidden sm:block"><div className="flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[.18em] text-emerald-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400"/> Control plane healthy</div></div><div className="max-w-3xl"><div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-[.24em] text-orange-300"><Radio size={12}/> Admin communications</div><h1 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">Communications Centre</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">One command surface for identities, customer-bound routes, event subscriptions and delivery assurance.</p></div><div className="mt-6 flex flex-wrap gap-2"><button onClick={refresh} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[.03] px-4 py-2.5 text-xs font-semibold text-slate-300 hover:bg-white/[.06]"><RefreshCw size={14} className={recipientsQ.isFetching?'animate-spin':''}/> Refresh intelligence</button><button onClick={()=>setShowAdd(true)} className="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-orange-500/10 hover:bg-orange-400"><Plus size={14}/> New identity</button></div></header>
-  {notice&&<div className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-xs ${notice.kind==='error'?'border-red-400/20 bg-red-400/5 text-red-200':notice.kind==='warn'?'border-amber-400/20 bg-amber-400/5 text-amber-200':'border-emerald-400/20 bg-emerald-400/5 text-emerald-200'}`}><div className="mt-0.5">{notice.kind==='error'?<AlertTriangle size={14}/>:<CheckCircle2 size={14}/>}</div><span>{notice.text}</span><button className="ml-auto" onClick={()=>setNotice(null)}><X size={14}/></button></div>}
-  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5"><Stat icon={Users} label="Identities" value={rows.length} detail={`${active} enabled`}/><Stat icon={Zap} label="Active routes" value={activeEnrollments} detail={`${enrollments.length} total enrollments`}/><Stat icon={Radio} label="CDS customers" value={cdsEnrollments.length} detail={`${customers.length} registered`}/><Stat icon={Send} label="Pulse routes" value={pulse} detail="customer-bound + eligible" emphasis/><Stat icon={Shield} label="Posture" value="Explicit" detail="no broadcast fallback"/></div>
-  <nav className="grid grid-cols-2 gap-1 rounded-2xl border border-white/[.07] bg-slate-950/70 p-1 sm:grid-cols-4">{([['command','Command centre',Radio],['identities','Identity registry',Users],['customers','CDS customers',Shield],['audit','Delivery assurance',Clock3]] as const).map(([k,l,I])=><button key={k} onClick={()=>setTab(k)} className={`flex items-center justify-center gap-2 rounded-xl px-3 py-3 text-xs font-semibold transition ${tab===k?'bg-white/[.09] text-white':'text-slate-500 hover:text-slate-300'}`}><I size={14}/>{l}</button>)}</nav>
-  {tab==='command'&&<><section className="grid gap-4 xl:grid-cols-[1.25fr_.75fr]"><Panel eyebrow="DISPATCH CONTROL" title="Client Pulse" icon={Send} accent><div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between"><div className="max-w-xl"><div className="text-2xl font-semibold text-white">Customer manifests, precisely scoped.</div><p className="mt-2 text-sm leading-6 text-slate-400">Every dispatch resolves through an active CDS customer route. No organization-wide recipient fallback is permitted.</p><div className="mt-4 flex flex-wrap gap-2"><Pill icon={Shield} text="Customer-bound"/><Pill icon={Mail} text="Email"/><Pill icon={Check} text={`${pulse} eligible route${pulse===1?'':'s'}`}/></div></div><button onClick={()=>pulseSend.mutate()} disabled={pulseSend.isPending||pulse===0} className="group inline-flex min-w-[210px] items-center justify-center gap-2 rounded-2xl bg-orange-500 px-5 py-3.5 text-xs font-bold text-white shadow-xl shadow-orange-500/10 transition hover:bg-orange-400 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500">{pulseSend.isPending?<RefreshCw size={15} className="animate-spin"/>:<Send size={15}/>} {pulseSend.isPending?'Preparing dispatch…':pulse?'Send Client Pulse':'No eligible route'}</button></div><div className="mt-6 grid gap-2 sm:grid-cols-3"><Mini label="Scope" value={pulse?'Exact CDS customer':'Awaiting enrollment'}/><Mini label="Payload" value="Active bookings"/><Mini label="Authority" value="Admin only"/></div></Panel><Panel eyebrow="SYSTEM READINESS" title="Communication health" icon={Activity}><div className="space-y-3"><Health label="Identity registry" value={rows.length?'Operational':'Empty'} ok={!!rows.length}/><Health label="CDS routing" value={pulse?'Ready':'Needs setup'} ok={!!pulse}/><Health label="Delivery audit" value="Traceable" ok/><Health label="Attention queue" value={attention?`${attention} need review`:'Clear'} ok={!attention} warn={!!attention}/></div><button onClick={()=>setTab('identities')} className="mt-5 flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/[.03] px-4 py-3 text-xs font-semibold text-slate-300 hover:bg-white/[.06]">Open identity registry <ArrowUpRight size={14}/></button></Panel></section><section className="grid gap-4 lg:grid-cols-3"><ActionCard icon={Users} title="Identity registry" detail={`${rows.length} identities · ${attention} requiring attention`} onClick={()=>setTab('identities')}/><ActionCard icon={Radio} title="CDS communication routes" detail={`${cdsEnrollments.length} customer-bound enrollments`} onClick={()=>setTab('customers')}/><ActionCard icon={Clock3} title="Delivery assurance" detail="Review dispatch history and status" onClick={()=>setTab('audit')}/></section></>}
-  {tab==='identities'&&<section className="overflow-hidden rounded-2xl border border-white/[.07] bg-slate-950/60"><div className="flex flex-col gap-4 border-b border-white/[.07] p-5 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-[10px] font-mono uppercase tracking-[.18em] text-orange-300">Identity registry</div><h2 className="mt-1 text-lg font-semibold text-white">Recipients & communication authority</h2><p className="mt-1 text-xs text-slate-500">Identities exist independently from delivery authorization.</p></div><div className="relative w-full sm:max-w-sm"><Search size={14} className="absolute left-3 top-3 text-slate-600"/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name, email, company, customer…" className="w-full rounded-xl border border-white/10 bg-black/20 py-2.5 pl-9 pr-3 text-xs text-white outline-none placeholder:text-slate-600 focus:border-orange-500/30"/></div></div><div className="divide-y divide-white/[.05]">{filtered.map(r=><RecipientCard key={r.id} row={r} customers={customers} onEnroll={(body:any)=>enroll.mutate(body)} onStatus={(id,s)=>status.mutate({id,status:s})} onSubscription={(id,event_type,enabled)=>subscription.mutate({id,event_type,enabled})}/>)}</div>{!filtered.length&&<Empty title="No identities found" detail="Create an identity to begin a customer communication route." action="New identity" onClick={()=>setShowAdd(true)}/>}</section>}
-  {tab==='customers'&&<section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">{customers.map(c=>{const routes=enrollments.filter(e=>e.domain==='cds'&&e.cds_customer_id===c.id);const eligible=routes.filter(e=>['active','verified'].includes(e.status)&&e.subscriptions.some(s=>s.event_type==='cds.client_pulse'&&s.channel==='email'&&s.enabled)).length;const subs=routes.reduce((n,e)=>n+e.subscriptions.filter(s=>s.enabled).length,0);return <div key={c.id} className="group rounded-2xl border border-white/[.07] bg-slate-950/60 p-5 transition hover:-translate-y-0.5 hover:border-orange-500/20 hover:bg-slate-900/70"><div className="flex items-start justify-between gap-3"><div><div className="text-base font-semibold text-white">{c.company_name}</div><div className="mt-1 text-xs text-slate-500">{c.contact_name??'No named contact'}</div></div><span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${eligible?'border-emerald-400/20 bg-emerald-400/5 text-emerald-300':'border-amber-400/20 bg-amber-400/5 text-amber-300'}`}>{eligible?'Pulse ready':'Setup needed'}</span></div><div className="mt-5 grid grid-cols-3 gap-2"><Mini label="Routes" value={String(routes.length)}/><Mini label="Events" value={String(subs)}/><Mini label="Pulse" value={String(eligible)}/></div><div className="mt-4 flex items-center gap-2 border-t border-white/[.06] pt-4 text-[11px] text-slate-500"><Mail size={13}/><span className="truncate">{c.email??'No customer email'}</span><span className="ml-auto text-slate-700">Customer-bound</span></div></div>})}{!customers.length&&<div className="lg:col-span-2 xl:col-span-3"><Empty title="No CDS customers" detail="Customer-bound communication routes will appear here after client initialization."/></div>}</section>}
-  {tab==='audit'&&<Panel eyebrow="DELIVERY ASSURANCE" title="Delivery audit" icon={Clock3}><div className="overflow-x-auto">{(deliveryQ.data?.data??[]).length?<table className="w-full text-left text-xs"><thead><tr className="border-b border-white/[.06] text-[10px] uppercase tracking-[.14em] text-slate-600"><th className="p-3">Time</th><th>Recipient</th><th>Domain</th><th>Event</th><th>Channel</th><th>Status</th></tr></thead><tbody>{(deliveryQ.data?.data??[]).map((d:any)=><tr key={d.id} className="border-b border-white/[.04] text-slate-400 hover:bg-white/[.02]"><td className="whitespace-nowrap p-3">{new Date(d.created_at).toLocaleString()}</td><td>{d.email??'—'}</td><td>{d.domain??'—'}</td><td>{d.event_type}</td><td>{d.channel}</td><td><span className="rounded-full border border-white/10 px-2 py-1 text-[10px]">{d.status}</span></td></tr>)}</tbody></table>:<Empty title="No delivery events yet" detail="Dispatch activity and delivery outcomes will appear here."/>}</div></Panel>}
-  {showAdd&&<div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/75 p-4 backdrop-blur-md" onMouseDown={e=>{if(e.currentTarget===e.target)setShowAdd(false)}}><div className="w-full max-w-lg overflow-hidden rounded-3xl border border-white/10 bg-slate-950 shadow-2xl"><div className="border-b border-white/[.07] bg-white/[.02] p-6"><div className="flex items-start justify-between"><div><div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-[.18em] text-orange-300"><Users size={12}/> Identity registry</div><h2 className="mt-2 text-xl font-semibold text-white">Create communication identity</h2><p className="mt-1 text-xs leading-5 text-slate-500">Create the person first. Authorization is established separately.</p></div><button onClick={()=>setShowAdd(false)} className="rounded-lg p-2 text-slate-500 hover:bg-white/[.05] hover:text-white"><X size={17}/></button></div></div><div className="space-y-4 p-6"><Field label="Email address" value={form.email} placeholder="client@example.com" type="email" onChange={v=>setForm({...form,email:v})}/><Field label="Contact name" value={form.name} placeholder="Primary contact" onChange={v=>setForm({...form,name:v})}/><Field label="Company" value={form.company} placeholder="Customer organisation" onChange={v=>setForm({...form,company:v})}/><div className="rounded-xl border border-blue-400/10 bg-blue-400/[.03] p-3 text-[11px] leading-5 text-slate-500">Creating an identity never grants delivery authority. Scope and subscriptions remain explicit.</div></div><div className="flex justify-end gap-2 border-t border-white/[.07] p-5"><button onClick={()=>setShowAdd(false)} className="rounded-xl border border-white/10 px-4 py-2.5 text-xs font-semibold text-slate-400">Cancel</button><button onClick={()=>add.mutate()} disabled={!form.email||add.isPending} className="rounded-xl bg-orange-500 px-5 py-2.5 text-xs font-bold text-white disabled:opacity-40">{add.isPending?'Creating…':'Create identity'}</button></div></div></div>}
- </div>
+type Enrollment = {
+  id: string;
+  domain: 'platform' | 'fleet' | 'cds';
+  cds_customer_id: string | null;
+  contact_role: string | null;
+  locale: string | null;
+  timezone: string | null;
+  status: string;
+  subscriptions: Subscription[];
+};
+
+type Recipient = {
+  id: string;
+  email: string;
+  name: string | null;
+  company: string | null;
+  enabled: boolean;
+  enrollments: Enrollment[];
+};
+
+type Customer = {
+  id: string;
+  company_name: string;
+  contact_name: string | null;
+  email: string | null;
+  phone: string | null;
+  status: string | null;
+};
+
+type Delivery = {
+  id: string;
+  created_at: string;
+  email?: string | null;
+  domain?: string | null;
+  event_type: string;
+  channel: string;
+  status: string;
+};
+
+type Tab = 'command' | 'identities' | 'customers' | 'audit';
+type Notice = { kind: 'ok' | 'warn' | 'error'; text: string };
+
+const PULSE_EVENT = 'cds.client_pulse';
+
+export default function CommunicationsControlPlane() {
+  const queryClient = useQueryClient();
+  const [tab, setTab] = useState<Tab>('command');
+  const [search, setSearch] = useState('');
+  const [showAdd, setShowAdd] = useState(false);
+  const [showPulse, setShowPulse] = useState(false);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [form, setForm] = useState({ email: '', name: '', company: '' });
+
+  const recipientsQuery = useQuery<{ data: Recipient[] }>({
+    queryKey: ['communications-control'],
+    queryFn: () => api.get('/communications/recipients').then((response) => response.data),
+  });
+
+  const customersQuery = useQuery<{ data: Customer[] }>({
+    queryKey: ['communications-customers'],
+    queryFn: () => api.get('/communications/customers').then((response) => response.data),
+  });
+
+  const deliveryQuery = useQuery<{ data: Delivery[] }>({
+    queryKey: ['communications-delivery'],
+    queryFn: () => api.get('/communications/delivery?limit=80').then((response) => response.data),
+    enabled: tab === 'audit',
+  });
+
+  const recipients = recipientsQuery.data?.data ?? [];
+  const customers = customersQuery.data?.data ?? [];
+  const enrollments = recipients.flatMap((recipient) => recipient.enrollments ?? []);
+  const activeIdentities = recipients.filter((recipient) => recipient.enabled).length;
+  const activeRoutes = enrollments.filter((enrollment) => ['active', 'verified'].includes(enrollment.status)).length;
+  const cdsRoutes = enrollments.filter((enrollment) => enrollment.domain === 'cds');
+  const pulseRoutes = cdsRoutes.filter((enrollment) =>
+    ['active', 'verified'].includes(enrollment.status) &&
+    enrollment.subscriptions?.some(
+      (subscription) =>
+        subscription.event_type === PULSE_EVENT &&
+        subscription.channel === 'email' &&
+        subscription.enabled,
+    ),
+  );
+  const attentionCount = recipients.filter(
+    (recipient) =>
+      !recipient.enrollments?.length ||
+      recipient.enrollments.some((enrollment) => enrollment.status === 'pending_verification'),
+  ).length;
+
+  const filteredRecipients = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return recipients;
+    return recipients.filter((recipient) =>
+      [
+        recipient.email,
+        recipient.name,
+        recipient.company,
+        ...recipient.enrollments.map((enrollment) => enrollment.cds_customer_id),
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query)),
+    );
+  }, [recipients, search]);
+
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: ['communications-control'] });
+    void queryClient.invalidateQueries({ queryKey: ['communications-customers'] });
+    void queryClient.invalidateQueries({ queryKey: ['communications-delivery'] });
+  };
+
+  const addIdentity = useMutation({
+    mutationFn: () =>
+      api.post('/communications/recipients', {
+        email: form.email.trim().toLowerCase(),
+        name: form.name.trim() || null,
+        company: form.company.trim() || null,
+        enabled: true,
+      }),
+    onSuccess: () => {
+      setShowAdd(false);
+      setForm({ email: '', name: '', company: '' });
+      setNotice({ kind: 'ok', text: 'Identity created. Delivery authority remains explicit.' });
+      invalidate();
+    },
+    onError: (error: any) =>
+      setNotice({ kind: 'error', text: error?.response?.data?.error ?? 'Identity creation failed.' }),
+  });
+
+  const pulseDispatch = useMutation({
+    mutationFn: () => api.post('/settings/cds-client-pulse/send', {}),
+    onSuccess: (response) => {
+      const queued = response.data?.data?.queued ?? 0;
+      setShowPulse(false);
+      setNotice({ kind: 'ok', text: `Client Pulse dispatched. ${queued} delivery job${queued === 1 ? '' : 's'} queued.` });
+      invalidate();
+    },
+    onError: (error: any) =>
+      setNotice({ kind: 'error', text: error?.response?.data?.error ?? 'Client Pulse dispatch failed.' }),
+  });
+
+  const saveEnrollment = useMutation({
+    mutationFn: (body: Record<string, unknown>) => api.post('/communications/enrollments', body),
+    onSuccess: () => {
+      setNotice({ kind: 'ok', text: 'Communication route saved.' });
+      invalidate();
+    },
+    onError: (error: any) =>
+      setNotice({ kind: 'error', text: error?.response?.data?.error ?? 'Route creation failed.' }),
+  });
+
+  const updateEnrollment = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      api.patch(`/communications/enrollments/${id}`, { status }),
+    onSuccess: () => {
+      setNotice({ kind: 'ok', text: 'Route status updated.' });
+      invalidate();
+    },
+    onError: (error: any) =>
+      setNotice({ kind: 'error', text: error?.response?.data?.error ?? 'Route update failed.' }),
+  });
+
+  const updateSubscription = useMutation({
+    mutationFn: ({ id, eventType, enabled }: { id: string; eventType: string; enabled: boolean }) =>
+      api.put(`/communications/enrollments/${id}/subscriptions`, {
+        subscriptions: [
+          {
+            event_type: eventType,
+            channel: 'email',
+            delivery_mode: 'immediate',
+            critical_override: true,
+            enabled,
+          },
+        ],
+      }),
+    onSuccess: () => {
+      setNotice({ kind: 'ok', text: 'Subscription updated.' });
+      invalidate();
+    },
+    onError: (error: any) =>
+      setNotice({ kind: 'error', text: error?.response?.data?.error ?? 'Subscription update failed.' }),
+  });
+
+  const refreshAll = () => {
+    void recipientsQuery.refetch();
+    void customersQuery.refetch();
+    if (tab === 'audit') void deliveryQuery.refetch();
+  };
+
+  return (
+    <div className="min-h-full max-w-[1720px] space-y-5 pb-10 text-slate-200">
+      <header className="relative overflow-hidden rounded-[28px] border border-white/[.08] bg-slate-950 p-5 shadow-2xl shadow-black/20 sm:p-7">
+        <div className="pointer-events-none absolute -right-24 -top-32 h-80 w-80 rounded-full bg-orange-500/[.10] blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-40 left-1/3 h-80 w-80 rounded-full bg-sky-500/[.06] blur-3xl" />
+        <div className="relative flex flex-col gap-7 xl:flex-row xl:items-end xl:justify-between">
+          <div className="max-w-3xl">
+            <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[.25em] text-orange-300">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,.7)]" />
+              Admin command surface
+            </div>
+            <h1 className="mt-2 text-3xl font-semibold tracking-[-.03em] text-white sm:text-4xl">Communications Centre</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
+              Control who can receive what, for which customer, through which route — and see what actually happened.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={refreshAll}
+              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[.035] px-4 py-2.5 text-xs font-semibold text-slate-300 transition hover:bg-white/[.07]"
+            >
+              <RefreshCw size={14} className={recipientsQuery.isFetching ? 'animate-spin' : ''} />
+              Refresh
+            </button>
+            <button
+              onClick={() => setShowAdd(true)}
+              className="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-orange-950/30 transition hover:bg-orange-400"
+            >
+              <Plus size={14} /> New identity
+            </button>
+          </div>
+        </div>
+
+        <div className="relative mt-7 grid grid-cols-2 gap-2 lg:grid-cols-5">
+          <Metric label="Identities" value={recipients.length} detail={`${activeIdentities} enabled`} icon={Users} />
+          <Metric label="Active routes" value={activeRoutes} detail={`${enrollments.length} total`} icon={Zap} />
+          <Metric label="CDS routes" value={cdsRoutes.length} detail={`${customers.length} customers`} icon={Radio} />
+          <Metric label="Pulse ready" value={pulseRoutes.length} detail="customer-bound" icon={Send} accent />
+          <Metric label="Attention" value={attentionCount} detail={attentionCount ? 'needs review' : 'clear'} icon={AlertTriangle} warning={attentionCount > 0} />
+        </div>
+      </header>
+
+      {notice && (
+        <div
+          role="status"
+          className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-xs ${
+            notice.kind === 'error'
+              ? 'border-red-400/20 bg-red-400/[.05] text-red-200'
+              : notice.kind === 'warn'
+                ? 'border-amber-400/20 bg-amber-400/[.05] text-amber-200'
+                : 'border-emerald-400/20 bg-emerald-400/[.05] text-emerald-200'
+          }`}
+        >
+          {notice.kind === 'error' ? <AlertTriangle size={15} className="mt-0.5" /> : <CheckCircle2 size={15} className="mt-0.5" />}
+          <span className="flex-1 leading-5">{notice.text}</span>
+          <button onClick={() => setNotice(null)} aria-label="Dismiss" className="text-current/60 hover:text-current"><X size={15} /></button>
+        </div>
+      )}
+
+      <nav className="sticky top-2 z-30 grid grid-cols-2 gap-1 rounded-2xl border border-white/[.08] bg-slate-950/90 p-1.5 shadow-xl shadow-black/20 backdrop-blur-xl sm:grid-cols-4">
+        <NavButton active={tab === 'command'} onClick={() => setTab('command')} icon={Radio} label="Command" />
+        <NavButton active={tab === 'identities'} onClick={() => setTab('identities')} icon={Users} label="Identities" />
+        <NavButton active={tab === 'customers'} onClick={() => setTab('customers')} icon={Shield} label="CDS customers" />
+        <NavButton active={tab === 'audit'} onClick={() => setTab('audit')} icon={Clock3} label="Delivery" />
+      </nav>
+
+      {tab === 'command' && (
+        <CommandView
+          pulseRoutes={pulseRoutes}
+          customers={customers}
+          attentionCount={attentionCount}
+          dispatching={pulseDispatch.isPending}
+          onPulse={() => setShowPulse(true)}
+          onIdentities={() => setTab('identities')}
+          onCustomers={() => setTab('customers')}
+          onAudit={() => setTab('audit')}
+        />
+      )}
+
+      {tab === 'identities' && (
+        <IdentitiesView
+          recipients={filteredRecipients}
+          customers={customers}
+          search={search}
+          onSearch={setSearch}
+          onAdd={() => setShowAdd(true)}
+          onEnroll={(body) => saveEnrollment.mutate(body)}
+          onStatus={(id, status) => updateEnrollment.mutate({ id, status })}
+          onSubscription={(id, eventType, enabled) => updateSubscription.mutate({ id, eventType, enabled })}
+        />
+      )}
+
+      {tab === 'customers' && <CustomersView customers={customers} enrollments={enrollments} onIdentities={() => setTab('identities')} />}
+
+      {tab === 'audit' && <DeliveryView deliveries={deliveryQuery.data?.data ?? []} loading={deliveryQuery.isFetching} />}
+
+      {showAdd && (
+        <IdentityModal
+          form={form}
+          setForm={setForm}
+          busy={addIdentity.isPending}
+          onClose={() => setShowAdd(false)}
+          onSubmit={() => addIdentity.mutate()}
+        />
+      )}
+
+      {showPulse && (
+        <PulseModal
+          eligible={pulseRoutes}
+          customers={customers}
+          busy={pulseDispatch.isPending}
+          onClose={() => setShowPulse(false)}
+          onConfirm={() => pulseDispatch.mutate()}
+        />
+      )}
+    </div>
+  );
 }
-function Stat({icon:Icon,label,value,detail,emphasis=false}:{icon:any;label:string;value:string|number;detail:string;emphasis?:boolean}){return <div className={`rounded-2xl border p-4 ${emphasis?'border-orange-500/20 bg-orange-500/[.045]':'border-white/[.07] bg-slate-950/60'}`}><div className="flex items-center justify-between text-[10px] uppercase tracking-[.15em] text-slate-500"><span>{label}</span><Icon size={14}/></div><div className="mt-3 text-2xl font-semibold text-white">{value}</div><div className="mt-1 text-[10px] text-slate-500">{detail}</div></div>}
-function Panel({eyebrow,title,icon:Icon,children,accent=false}:{eyebrow?:string;title:string;icon:any;children:any;accent?:boolean}){return <div className={`rounded-2xl border p-5 sm:p-6 ${accent?'border-orange-500/15 bg-[radial-gradient(circle_at_90%_10%,rgba(249,115,22,.08),transparent_40%)] bg-slate-950/70':'border-white/[.07] bg-slate-950/60'}`}><div className="mb-5 flex items-start gap-3"><div className="rounded-xl border border-orange-400/10 bg-orange-400/[.06] p-2.5 text-orange-300"><Icon size={16}/></div><div><div className="text-[9px] font-mono uppercase tracking-[.2em] text-slate-600">{eyebrow}</div><div className="mt-1 text-sm font-semibold text-white">{title}</div></div></div>{children}</div>}
-function Pill({icon:Icon,text}:{icon:any;text:string}){return <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[.03] px-2.5 py-1.5 text-[10px] text-slate-400"><Icon size={11}/>{text}</span>}
-function Mini({label,value}:{label:string;value:string}){return <div className="rounded-xl border border-white/[.06] bg-black/20 p-3"><div className="text-[9px] uppercase tracking-[.15em] text-slate-600">{label}</div><div className="mt-1 truncate text-[11px] font-semibold text-slate-300">{value}</div></div>}
-function Health({label,value,ok,warn=false}:{label:string;value:string;ok:boolean;warn?:boolean}){return <div className="flex items-center justify-between rounded-xl border border-white/[.06] bg-black/20 p-3"><div className="flex items-center gap-2.5"><span className={`h-2 w-2 rounded-full ${ok?'bg-emerald-400':warn?'bg-amber-400':'bg-slate-600'}`}/><span className="text-xs text-slate-300">{label}</span></div><span className={`text-[10px] font-semibold ${ok?'text-emerald-300':warn?'text-amber-300':'text-slate-500'}`}>{value}</span></div>}
-function ActionCard({icon:Icon,title,detail,onClick}:{icon:any;title:string;detail:string;onClick:()=>void}){return <button onClick={onClick} className="group flex items-center gap-4 rounded-2xl border border-white/[.07] bg-slate-950/60 p-5 text-left transition hover:-translate-y-0.5 hover:border-orange-500/20 hover:bg-slate-900/70"><div className="rounded-xl border border-white/10 bg-white/[.03] p-3 text-slate-400 group-hover:text-orange-300"><Icon size={18}/></div><div className="min-w-0 flex-1"><div className="text-sm font-semibold text-white">{title}</div><div className="mt-1 text-[11px] text-slate-500">{detail}</div></div><ArrowUpRight size={15} className="text-slate-700 group-hover:text-orange-300"/></button>}
-function Empty({title,detail,action,onClick}:{title:string;detail:string;action?:string;onClick?:()=>void}){return <div className="flex flex-col items-center justify-center p-12 text-center"><div className="rounded-2xl border border-white/[.07] bg-white/[.02] p-4 text-slate-600"><Radio size={20}/></div><div className="mt-4 text-sm font-semibold text-slate-300">{title}</div><div className="mt-1 max-w-sm text-xs leading-5 text-slate-600">{detail}</div>{action&&onClick&&<button onClick={onClick} className="mt-5 rounded-xl bg-orange-500 px-4 py-2 text-xs font-bold text-white">{action}</button>}</div>}
-function Field({label,value,placeholder,type='text',onChange}:{label:string;value:string;placeholder:string;type?:string;onChange:(v:string)=>void}){return <label className="block"><span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[.14em] text-slate-500">{label}</span><input type={type} value={value} placeholder={placeholder} onChange={e=>onChange(e.target.value)} className="w-full rounded-xl border border-white/10 bg-white/[.035] px-3.5 py-3 text-xs text-white outline-none placeholder:text-slate-700 focus:border-orange-500/30 focus:bg-white/[.05]"/></label>}
-function RecipientCard({row,customers,onEnroll,onStatus,onSubscription}:{row:Recipient;customers:Customer[];onEnroll:(b:any)=>void;onStatus:(id:string,s:string)=>void;onSubscription:(id:string,e:string,v:boolean)=>void}){const [open,setOpen]=useState(false);const initials=(row.name?.trim()||row.email).charAt(0).toUpperCase();const ready=row.enrollments.some(e=>['active','verified'].includes(e.status)&&e.subscriptions.some(s=>s.enabled));return <div className="p-4 sm:p-5"><button onClick={()=>setOpen(!open)} className="flex w-full items-center gap-3 text-left"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-orange-500/15 bg-orange-500/[.07] text-xs font-bold text-orange-300">{initials}</div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="text-sm font-semibold text-white">{row.name??row.email}</span><span className={`rounded-full border px-2 py-0.5 text-[9px] ${ready?'border-emerald-400/20 text-emerald-300':'border-amber-400/20 text-amber-300'}`}>{ready?'Authorized route':'Needs setup'}</span></div><div className="mt-1 text-[10px] text-slate-500">{row.email}{row.company?` · ${row.company}`:''}</div></div><span className="hidden text-[10px] text-slate-600 sm:block">{row.enrollments.length} enrollment{row.enrollments.length===1?'':'s'}</span><ChevronDown size={15} className={`text-slate-600 transition-transform ${open?'rotate-180':''}`}/></button>{open&&<div className="mt-4 space-y-3 border-t border-white/[.05] pt-4 sm:ml-[52px]">{row.enrollments.map(e=><div key={e.id} className="rounded-xl border border-white/[.06] bg-black/20 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><span className="rounded-full border border-orange-400/10 bg-orange-400/[.04] px-2 py-1 text-[9px] font-mono uppercase tracking-wider text-orange-300">{e.domain}</span>{e.cds_customer_id&&<span className="ml-2 text-[10px] text-slate-500">{customers.find(c=>c.id===e.cds_customer_id)?.company_name??e.cds_customer_id}</span>}</div><select value={e.status} onChange={x=>onStatus(e.id,x.target.value)} className="rounded-lg border border-white/10 bg-slate-900 px-2.5 py-1.5 text-[10px] text-slate-300 outline-none"><option>pending_verification</option><option>verified</option><option>active</option><option>suspended</option><option>revoked</option></select></div><div className="mt-3 grid gap-2 sm:grid-cols-2">{CATALOG.filter(([d])=>d===e.domain).map(([,event,label])=>{const s=e.subscriptions.find(x=>x.event_type===event&&x.channel==='email');return <label key={event} className="flex items-center justify-between rounded-lg border border-white/[.05] bg-white/[.01] px-3 py-2.5"><span className="text-[10px] text-slate-400">{label}</span><input type="checkbox" checked={!!s?.enabled} onChange={x=>onSubscription(e.id,event,x.target.checked)}/></label>})}</div></div>)}{!row.enrollments.length&&<EnrollmentCreator row={row} customers={customers} onEnroll={onEnroll}/>}</div>}</div>}
-function EnrollmentCreator({row,customers,onEnroll}:{row:Recipient;customers:Customer[];onEnroll:(b:any)=>void}){const [domain,setDomain]=useState<'platform'|'fleet'|'cds'>('cds');const [customer,setCustomer]=useState('');return <div className="rounded-xl border border-dashed border-white/10 bg-white/[.015] p-4"><div className="text-xs font-semibold text-white">Create first enrollment</div><div className="mt-1 text-[10px] text-slate-500">Choose the exact authority this identity should receive.</div><div className="mt-3 grid gap-2 sm:grid-cols-[150px_1fr_auto]"><select value={domain} onChange={e=>setDomain(e.target.value as any)} className="rounded-lg border border-white/10 bg-slate-900 px-2 py-2 text-[10px] text-slate-300"><option value="cds">CDS customer</option><option value="fleet">Fleet</option><option value="platform">Platform</option></select>{domain==='cds'?<select value={customer} onChange={e=>setCustomer(e.target.value)} className="rounded-lg border border-white/10 bg-slate-900 px-2 py-2 text-[10px] text-slate-300"><option value="">Select customer…</option>{customers.map(c=><option key={c.id} value={c.id}>{c.company_name}</option>)}</select>:<div className="rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-[10px] text-slate-500">Explicit {domain} scope</div>}<button disabled={domain==='cds'&&!customer} onClick={()=>onEnroll({recipient_id:row.id,domain,cds_customer_id:domain==='cds'?customer:null,status:'active'})} className="rounded-lg bg-orange-500 px-3 py-2 text-[10px] font-bold text-white disabled:opacity-30">Enroll</button></div></div>}
+
+function CommandView({
+  pulseRoutes,
+  customers,
+  attentionCount,
+  dispatching,
+  onPulse,
+  onIdentities,
+  onCustomers,
+  onAudit,
+}: {
+  pulseRoutes: Enrollment[];
+  customers: Customer[];
+  attentionCount: number;
+  dispatching: boolean;
+  onPulse: () => void;
+  onIdentities: () => void;
+  onCustomers: () => void;
+  onAudit: () => void;
+}) {
+  const ready = pulseRoutes.length > 0;
+
+  return (
+    <div className="space-y-5">
+      <section className="grid gap-5 xl:grid-cols-[1.35fr_.65fr]">
+        <section className="relative overflow-hidden rounded-[26px] border border-orange-400/15 bg-[radial-gradient(circle_at_90%_0%,rgba(249,115,22,.12),transparent_42%)] bg-slate-950 p-5 sm:p-7">
+          <div className="absolute right-7 top-7 hidden h-20 w-20 rounded-full border border-orange-300/10 sm:block" />
+          <div className="relative">
+            <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[.2em] text-orange-300"><Send size={13} /> Dispatch control</div>
+            <div className="mt-3 max-w-2xl text-2xl font-semibold tracking-tight text-white sm:text-3xl">Client Pulse</div>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
+              Send each enrolled CDS customer only its own active-bookings manifest. The route is resolved from the customer relationship — never from a global recipient list.
+            </p>
+
+            <div className="mt-6 flex flex-wrap gap-2">
+              <TrustPill icon={Shield} text="Customer-bound" />
+              <TrustPill icon={Mail} text="Email" />
+              <TrustPill icon={Check} text={`${pulseRoutes.length} eligible route${pulseRoutes.length === 1 ? '' : 's'}`} />
+            </div>
+
+            <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <button
+                onClick={onPulse}
+                disabled={!ready || dispatching}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-orange-500 px-5 text-xs font-bold text-white shadow-xl shadow-orange-950/30 transition hover:bg-orange-400 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
+              >
+                {dispatching ? <RefreshCw size={15} className="animate-spin" /> : <Send size={15} />}
+                {dispatching ? 'Preparing dispatch…' : ready ? 'Review & send Client Pulse' : 'Client Pulse not ready'}
+              </button>
+              {!ready && <span className="text-xs text-amber-300/80">Complete a customer-bound CDS route first.</span>}
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-[26px] border border-white/[.08] bg-slate-950 p-5 sm:p-7">
+          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[.2em] text-slate-500"><Activity size={13} /> Live posture</div>
+          <div className="mt-5 space-y-3">
+            <HealthRow label="Identity registry" value="Operational" ok />
+            <HealthRow label="CDS customer binding" value={ready ? 'Ready' : 'Needs setup'} ok={ready} />
+            <HealthRow label="Delivery trace" value="Auditable" ok />
+            <HealthRow label="Attention queue" value={attentionCount ? `${attentionCount} to review` : 'Clear'} ok={!attentionCount} warning={attentionCount > 0} />
+          </div>
+          <div className="mt-5 rounded-2xl border border-white/[.06] bg-white/[.025] p-4">
+            <div className="flex items-center gap-2 text-xs font-semibold text-white"><Sparkles size={14} className="text-orange-300" /> Designed for deliberate delivery</div>
+            <p className="mt-2 text-[11px] leading-5 text-slate-500">Every active route is explicit, scoped and reviewable.</p>
+          </div>
+        </section>
+      </section>
+
+      <section className="grid gap-3 md:grid-cols-3">
+        <CommandCard icon={Users} title="Identity registry" detail="Manage recipients and their authorized routes." meta={`${customers.length ? 'Connected' : 'Awaiting clients'}`} onClick={onIdentities} />
+        <CommandCard icon={Radio} title="CDS customers" detail="See customer-bound communication readiness." meta={`${pulseRoutes.length} pulse-ready`} onClick={onCustomers} />
+        <CommandCard icon={Clock3} title="Delivery assurance" detail="Trace dispatches, channels and outcomes." meta="Live audit" onClick={onAudit} />
+      </section>
+    </div>
+  );
+}
+
+function IdentitiesView({
+  recipients,
+  customers,
+  search,
+  onSearch,
+  onAdd,
+  onEnroll,
+  onStatus,
+  onSubscription,
+}: {
+  recipients: Recipient[];
+  customers: Customer[];
+  search: string;
+  onSearch: (value: string) => void;
+  onAdd: () => void;
+  onEnroll: (body: Record<string, unknown>) => void;
+  onStatus: (id: string, status: string) => void;
+  onSubscription: (id: string, eventType: string, enabled: boolean) => void;
+}) {
+  return (
+    <section className="overflow-hidden rounded-[26px] border border-white/[.08] bg-slate-950">
+      <div className="border-b border-white/[.07] p-5 sm:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[.2em] text-orange-300">Identity registry</div>
+            <h2 className="mt-2 text-xl font-semibold text-white">People, not permissions</h2>
+            <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">An identity can exist without receiving anything. Delivery authority is established through explicit enrollment and subscriptions.</p>
+          </div>
+          <div className="flex w-full gap-2 lg:w-auto">
+            <div className="relative min-w-0 flex-1 lg:w-80"><Search size={14} className="absolute left-3 top-3 text-slate-600" /><input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Search people or customers…" className="w-full rounded-xl border border-white/10 bg-black/20 py-2.5 pl-9 pr-3 text-xs text-white outline-none placeholder:text-slate-600 focus:border-orange-400/30" /></div>
+            <button onClick={onAdd} className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-xs font-bold text-white hover:bg-orange-400"><Plus size={14} /> Add</button>
+          </div>
+        </div>
+      </div>
+      <div className="divide-y divide-white/[.06]">
+        {recipients.map((recipient) => (
+          <RecipientRow key={recipient.id} recipient={recipient} customers={customers} onEnroll={onEnroll} onStatus={onStatus} onSubscription={onSubscription} />
+        ))}
+      </div>
+      {!recipients.length && <EmptyState title="No matching identities" detail="Create an identity, then attach only the customer routes it is authorized to receive." action="Create identity" onClick={onAdd} />}
+    </section>
+  );
+}
+
+function RecipientRow({
+  recipient,
+  customers,
+  onEnroll,
+  onStatus,
+  onSubscription,
+}: {
+  recipient: Recipient;
+  customers: Customer[];
+  onEnroll: (body: Record<string, unknown>) => void;
+  onStatus: (id: string, status: string) => void;
+  onSubscription: (id: string, eventType: string, enabled: boolean) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const routes = recipient.enrollments ?? [];
+  const initials = (recipient.name || recipient.email).slice(0, 1).toUpperCase();
+
+  return (
+    <div className="transition hover:bg-white/[.018]">
+      <button onClick={() => setOpen((value) => !value)} className="flex w-full items-center gap-3 p-4 text-left sm:p-5">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-orange-400/15 bg-orange-400/[.07] text-sm font-bold text-orange-200">{initials}</div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold text-white">{recipient.name || recipient.email}</div>
+          <div className="mt-0.5 truncate text-[11px] text-slate-500">{recipient.email}{recipient.company ? ` · ${recipient.company}` : ''}</div>
+        </div>
+        <div className="hidden text-right sm:block"><div className="text-xs font-semibold text-slate-300">{routes.length} route{routes.length === 1 ? '' : 's'}</div><div className="mt-0.5 text-[10px] text-slate-600">{recipient.enabled ? 'Enabled identity' : 'Disabled identity'}</div></div>
+        <span className={`h-2 w-2 shrink-0 rounded-full ${recipient.enabled ? 'bg-emerald-400' : 'bg-slate-600'}`} />
+        <ChevronDown size={16} className={`shrink-0 text-slate-600 transition ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="border-t border-white/[.05] bg-black/10 p-4 sm:p-5">
+          {routes.length ? (
+            <div className="space-y-3">
+              {routes.map((route) => (
+                <RouteCard key={route.id} route={route} customers={customers} onStatus={onStatus} onSubscription={onSubscription} />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-white/10 p-5 text-center"><div className="text-sm font-semibold text-white">No communication route</div><p className="mt-1 text-xs text-slate-500">The identity is registered, but nothing can be delivered to it yet.</p></div>
+          )}
+          <button onClick={() => onEnroll({ recipient_id: recipient.id, domain: 'cds', status: 'pending_verification', cds_customer_id: customers[0]?.id ?? null })} disabled={!customers.length} className="mt-3 inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[.03] px-3 py-2 text-[11px] font-semibold text-slate-300 hover:bg-white/[.06] disabled:cursor-not-allowed disabled:opacity-40"><Plus size={13} /> Add CDS route</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RouteCard({
+  route,
+  customers,
+  onStatus,
+  onSubscription,
+}: {
+  route: Enrollment;
+  customers: Customer[];
+  onStatus: (id: string, status: string) => void;
+  onSubscription: (id: string, eventType: string, enabled: boolean) => void;
+}) {
+  const customer = route.cds_customer_id ? customers.find((item) => item.id === route.cds_customer_id) : null;
+  const pulse = route.subscriptions?.find((subscription) => subscription.event_type === PULSE_EVENT && subscription.channel === 'email');
+  const active = ['active', 'verified'].includes(route.status);
+
+  return (
+    <div className="rounded-2xl border border-white/[.07] bg-slate-950/70 p-4">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2"><span className="rounded-full border border-sky-400/15 bg-sky-400/[.05] px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-sky-300">{route.domain}</span><span className={`rounded-full border px-2 py-1 text-[9px] font-bold uppercase tracking-wider ${active ? 'border-emerald-400/15 bg-emerald-400/[.04] text-emerald-300' : 'border-amber-400/15 bg-amber-400/[.04] text-amber-300'}`}>{route.status}</span></div>
+          <div className="mt-2 truncate text-sm font-semibold text-white">{customer?.company_name ?? route.cds_customer_id ?? 'Unbound customer'}</div>
+          <div className="mt-1 text-[10px] text-slate-600">{route.contact_role || 'Communication route'}{route.timezone ? ` · ${route.timezone}` : ''}</div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {route.domain === 'cds' && <button onClick={() => onSubscription(route.id, PULSE_EVENT, !pulse?.enabled)} className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-[10px] font-semibold ${pulse?.enabled ? 'border-emerald-400/20 bg-emerald-400/[.05] text-emerald-300' : 'border-white/10 bg-white/[.03] text-slate-400'}`}><Send size={12} /> Pulse {pulse?.enabled ? 'on' : 'off'}</button>}
+          <button onClick={() => onStatus(route.id, active ? 'suspended' : 'active')} className="rounded-xl border border-white/10 px-3 py-2 text-[10px] font-semibold text-slate-400 hover:bg-white/[.05]">{active ? 'Suspend' : 'Activate'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CustomersView({ customers, enrollments, onIdentities }: { customers: Customer[]; enrollments: Enrollment[]; onIdentities: () => void }) {
+  if (!customers.length) return <EmptyState title="No CDS customers yet" detail="Customer-bound communication workspaces appear here after client initialization." action="Open identities" onClick={onIdentities} />;
+
+  return (
+    <section className="space-y-4">
+      <div className="rounded-[26px] border border-white/[.08] bg-slate-950 p-5 sm:p-6"><div className="text-[10px] font-semibold uppercase tracking-[.2em] text-orange-300">CDS customer network</div><h2 className="mt-2 text-xl font-semibold text-white">Communication readiness by customer</h2><p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">Each customer is an isolated communication scope. A ready customer has an active CDS route and an enabled Client Pulse email subscription.</p></div>
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+        {customers.map((customer) => {
+          const routes = enrollments.filter((enrollment) => enrollment.domain === 'cds' && enrollment.cds_customer_id === customer.id);
+          const ready = routes.filter((route) => ['active', 'verified'].includes(route.status) && route.subscriptions?.some((subscription) => subscription.event_type === PULSE_EVENT && subscription.channel === 'email' && subscription.enabled));
+          const subscriptions = routes.reduce((total, route) => total + (route.subscriptions?.filter((subscription) => subscription.enabled).length ?? 0), 0);
+          return (
+            <article key={customer.id} className="rounded-[24px] border border-white/[.08] bg-slate-950 p-5 transition hover:-translate-y-0.5 hover:border-orange-400/20">
+              <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="truncate text-base font-semibold text-white">{customer.company_name}</div><div className="mt-1 truncate text-xs text-slate-500">{customer.contact_name || 'No named contact'}</div></div><span className={`shrink-0 rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider ${ready.length ? 'border-emerald-400/15 bg-emerald-400/[.04] text-emerald-300' : 'border-amber-400/15 bg-amber-400/[.04] text-amber-300'}`}>{ready.length ? 'Pulse ready' : 'Needs setup'}</span></div>
+              <div className="mt-5 grid grid-cols-3 gap-2"><MiniMetric label="Routes" value={routes.length} /><MiniMetric label="Events" value={subscriptions} /><MiniMetric label="Pulse" value={ready.length} /></div>
+              <div className="mt-5 flex items-center gap-2 border-t border-white/[.06] pt-4 text-[10px] text-slate-500"><Mail size={13} /><span className="truncate">{customer.email || 'No customer email'}</span><span className="ml-auto text-slate-700">isolated scope</span></div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function DeliveryView({ deliveries, loading }: { deliveries: Delivery[]; loading: boolean }) {
+  return (
+    <section className="overflow-hidden rounded-[26px] border border-white/[.08] bg-slate-950">
+      <div className="border-b border-white/[.07] p-5 sm:p-6"><div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[.2em] text-orange-300"><Clock3 size={13} /> Delivery assurance</div><h2 className="mt-2 text-xl font-semibold text-white">What was actually delivered</h2><p className="mt-1 text-xs text-slate-500">Operational evidence for dispatches, channels and outcomes.</p></div>
+      {loading && !deliveries.length ? <div className="p-10 text-center text-xs text-slate-500"><RefreshCw size={18} className="mx-auto mb-3 animate-spin" />Loading delivery history…</div> : deliveries.length ? <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-xs"><thead><tr className="border-b border-white/[.06] text-[9px] font-semibold uppercase tracking-[.16em] text-slate-600"><th className="p-4">Time</th><th>Recipient</th><th>Domain</th><th>Event</th><th>Channel</th><th>Status</th></tr></thead><tbody>{deliveries.map((delivery) => <tr key={delivery.id} className="border-b border-white/[.04] text-slate-400 hover:bg-white/[.018]"><td className="whitespace-nowrap p-4">{formatDate(delivery.created_at)}</td><td>{delivery.email || '—'}</td><td>{delivery.domain || '—'}</td><td className="font-medium text-slate-300">{delivery.event_type}</td><td>{delivery.channel}</td><td><StatusBadge value={delivery.status} /></td></tr>)}</tbody></table></div> : <EmptyState title="No delivery events yet" detail="Dispatch activity and outcomes will appear here once communications are sent." />}
+    </section>
+  );
+}
+
+function PulseModal({ eligible, customers, busy, onClose, onConfirm }: { eligible: Enrollment[]; customers: Customer[]; busy: boolean; onClose: () => void; onConfirm: () => void }) {
+  return <ModalShell title="Review Client Pulse" subtitle="Confirm the exact customer scopes before dispatch." icon={Send} onClose={onClose}>
+    <div className="space-y-3">
+      <div className="rounded-2xl border border-orange-400/15 bg-orange-400/[.04] p-4"><div className="flex items-center gap-2 text-xs font-semibold text-white"><Shield size={14} className="text-orange-300" /> Customer-bound dispatch</div><p className="mt-1 text-[11px] leading-5 text-slate-500">Only active CDS routes with an enabled email Client Pulse subscription are included.</p></div>
+      {eligible.map((route) => { const customer = customers.find((item) => item.id === route.cds_customer_id); return <div key={route.id} className="flex items-center gap-3 rounded-xl border border-white/[.07] bg-white/[.02] p-3"><span className="h-2 w-2 rounded-full bg-emerald-400" /><div className="min-w-0 flex-1"><div className="truncate text-xs font-semibold text-white">{customer?.company_name || route.cds_customer_id || 'Bound customer'}</div><div className="text-[10px] text-slate-600">Active bookings manifest · email</div></div><Check size={14} className="text-emerald-300" /></div>; })}
+    </div>
+    <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button onClick={onClose} disabled={busy} className="rounded-xl border border-white/10 px-4 py-2.5 text-xs font-semibold text-slate-400 hover:bg-white/[.04]">Cancel</button><button onClick={onConfirm} disabled={busy || !eligible.length} className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-2.5 text-xs font-bold text-white hover:bg-orange-400 disabled:opacity-40">{busy ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}{busy ? 'Dispatching…' : 'Confirm & send'}</button></div>
+  </ModalShell>;
+}
+
+function IdentityModal({ form, setForm, busy, onClose, onSubmit }: { form: { email: string; name: string; company: string }; setForm: (value: { email: string; name: string; company: string }) => void; busy: boolean; onClose: () => void; onSubmit: () => void }) {
+  const valid = form.email.includes('@');
+  return <ModalShell title="Create identity" subtitle="Register a person without granting delivery authority." icon={Users} onClose={onClose}>
+    <div className="space-y-4"><Field label="Email address" value={form.email} placeholder="client@example.com" type="email" onChange={(value) => setForm({ ...form, email: value })} /><Field label="Contact name" value={form.name} placeholder="Primary contact" onChange={(value) => setForm({ ...form, name: value })} /><Field label="Company" value={form.company} placeholder="Customer organisation" onChange={(value) => setForm({ ...form, company: value })} /><div className="rounded-2xl border border-sky-400/10 bg-sky-400/[.025] p-4 text-[11px] leading-5 text-slate-500"><div className="font-semibold text-slate-300">Safe by default</div>Creating an identity does not subscribe it to anything. A customer route and event subscription must be explicitly established.</div></div>
+    <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button onClick={onClose} className="rounded-xl border border-white/10 px-4 py-2.5 text-xs font-semibold text-slate-400">Cancel</button><button onClick={onSubmit} disabled={!valid || busy} className="rounded-xl bg-orange-500 px-5 py-2.5 text-xs font-bold text-white hover:bg-orange-400 disabled:opacity-40">{busy ? 'Creating…' : 'Create identity'}</button></div>
+  </ModalShell>;
+}
+
+function ModalShell({ title, subtitle, icon: Icon, onClose, children }: { title: string; subtitle: string; icon: any; onClose: () => void; children: any }) {
+  return <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/80 p-4 backdrop-blur-md" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose(); }}><div role="dialog" aria-modal="true" className="w-full max-w-xl overflow-hidden rounded-[28px] border border-white/10 bg-slate-950 shadow-2xl shadow-black/50"><div className="flex items-start gap-3 border-b border-white/[.07] p-5 sm:p-6"><div className="rounded-xl border border-orange-400/15 bg-orange-400/[.06] p-2.5 text-orange-300"><Icon size={17} /></div><div className="min-w-0 flex-1"><h2 className="text-lg font-semibold text-white">{title}</h2><p className="mt-1 text-xs leading-5 text-slate-500">{subtitle}</p></div><button onClick={onClose} aria-label="Close" className="rounded-xl p-2 text-slate-500 hover:bg-white/[.05] hover:text-white"><X size={17} /></button></div><div className="p-5 sm:p-6">{children}</div></div></div>;
+}
+
+function NavButton({ active, onClick, icon: Icon, label }: { active: boolean; onClick: () => void; icon: any; label: string }) {
+  return <button onClick={onClick} className={`flex items-center justify-center gap-2 rounded-xl px-3 py-3 text-xs font-semibold transition ${active ? 'bg-white/[.09] text-white shadow-inner' : 'text-slate-500 hover:bg-white/[.03] hover:text-slate-300'}`}><Icon size={14} />{label}</button>;
+}
+
+function Metric({ label, value, detail, icon: Icon, accent = false, warning = false }: { label: string; value: string | number; detail: string; icon: any; accent?: boolean; warning?: boolean }) {
+  return <div className={`rounded-2xl border p-4 ${accent ? 'border-orange-400/20 bg-orange-400/[.045]' : warning ? 'border-amber-400/15 bg-amber-400/[.03]' : 'border-white/[.07] bg-white/[.018]'}`}><div className="flex items-center justify-between text-[9px] font-semibold uppercase tracking-[.16em] text-slate-600"><span>{label}</span><Icon size={14} /></div><div className="mt-2 text-2xl font-semibold tracking-tight text-white">{value}</div><div className="mt-1 text-[10px] text-slate-600">{detail}</div></div>;
+}
+
+function TrustPill({ icon: Icon, text }: { icon: any; text: string }) {
+  return <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[.025] px-3 py-1.5 text-[10px] font-medium text-slate-400"><Icon size={11} />{text}</span>;
+}
+
+function HealthRow({ label, value, ok, warning = false }: { label: string; value: string; ok: boolean; warning?: boolean }) {
+  return <div className="flex items-center justify-between rounded-xl border border-white/[.06] bg-white/[.018] px-3.5 py-3"><span className="text-[11px] text-slate-500">{label}</span><span className="flex items-center gap-2 text-[10px] font-semibold text-slate-300"><span className={`h-1.5 w-1.5 rounded-full ${ok ? 'bg-emerald-400' : warning ? 'bg-amber-400' : 'bg-slate-600'}`} />{value}</span></div>;
+}
+
+function CommandCard({ icon: Icon, title, detail, meta, onClick }: { icon: any; title: string; detail: string; meta: string; onClick: () => void }) {
+  return <button onClick={onClick} className="group rounded-2xl border border-white/[.07] bg-slate-950 p-5 text-left transition hover:-translate-y-0.5 hover:border-orange-400/20 hover:bg-slate-900"><div className="flex items-center justify-between"><span className="rounded-xl border border-white/10 bg-white/[.03] p-2.5 text-slate-400 group-hover:text-orange-300"><Icon size={16} /></span><ArrowRight size={15} className="text-slate-700 transition group-hover:translate-x-0.5 group-hover:text-orange-300" /></div><div className="mt-5 text-sm font-semibold text-white">{title}</div><p className="mt-1 text-xs leading-5 text-slate-500">{detail}</p><div className="mt-4 text-[9px] font-semibold uppercase tracking-[.15em] text-slate-700">{meta}</div></button>;
+}
+
+function MiniMetric({ label, value }: { label: string; value: string | number }) {
+  return <div className="rounded-xl border border-white/[.06] bg-white/[.018] p-3"><div className="text-[9px] uppercase tracking-wider text-slate-600">{label}</div><div className="mt-1 text-sm font-semibold text-white">{value}</div></div>;
+}
+
+function StatusBadge({ value }: { value: string }) {
+  const positive = ['sent', 'delivered', 'success', 'completed'].includes(value.toLowerCase());
+  return <span className={`rounded-full border px-2 py-1 text-[9px] font-semibold ${positive ? 'border-emerald-400/15 bg-emerald-400/[.04] text-emerald-300' : 'border-white/10 text-slate-400'}`}>{value}</span>;
+}
+
+function Field({ label, value, placeholder, type = 'text', onChange }: { label: string; value: string; placeholder: string; type?: string; onChange: (value: string) => void }) {
+  return <label className="block"><span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[.13em] text-slate-600">{label}</span><input type={type} value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} className="w-full rounded-xl border border-white/10 bg-black/20 px-3.5 py-3 text-xs text-white outline-none placeholder:text-slate-700 focus:border-orange-400/30 focus:ring-2 focus:ring-orange-400/[.06]" /></label>;
+}
+
+function EmptyState({ title, detail, action, onClick }: { title: string; detail: string; action?: string; onClick?: () => void }) {
+  return <div className="rounded-[26px] border border-dashed border-white/10 bg-slate-950 p-10 text-center"><div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[.025] text-slate-600"><Radio size={17} /></div><div className="mt-4 text-sm font-semibold text-white">{title}</div><p className="mx-auto mt-1 max-w-md text-xs leading-5 text-slate-600">{detail}</p>{action && onClick && <button onClick={onClick} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-xs font-bold text-white hover:bg-orange-400">{action}<ArrowRight size={13} /></button>}</div>;
+}
+
+function formatDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
