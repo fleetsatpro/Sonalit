@@ -4,6 +4,7 @@ const { pool, query } = require('../config/database');
 const logger = require('../utils/logger');
 const { sendEmail, isRetryableError } = require('../services/email/resend');
 const { FROM, REPLY_TO, queueAlertEmail } = require('../services/email/email.service');
+const { mapUrlForPanic } = require('../services/securityIncidentMap');
 
 function redisConnection() { const url = new URL(process.env.REDIS_URL || 'redis://127.0.0.1:6379'); return { host: url.hostname, port: Number(url.port) || 6379, password: url.password || process.env.REDIS_PASSWORD || undefined }; }
 
@@ -111,7 +112,7 @@ async function dispatchPanicEmail(panicId) {
     orgId: event.org_id,
     recipients: recipients.rows,
     correlationId: `panic:${panicId}`,
-    ctaUrl: process.env.APP_URL ? `${process.env.APP_URL.replace(/\/$/, '')}/panic-center` : undefined,
+    ctaUrl: process.env.APP_URL ? `${process.env.APP_URL.replace(/\/$/, '')}/panic-center?incident=${encodeURIComponent(event.id)}` : undefined,
     alert: {
       id: event.id, type: 'panic', severity: 'critical', security_event: true,
       registration: event.vehicle_display,
@@ -119,7 +120,8 @@ async function dispatchPanicEmail(panicId) {
       created_at: event.created_at,
       metadata: { vehicle_id: event.vehicle_id, device_id: event.device_id, client_id: event.client_id,
         convoy_id: event.convoy_id, convoy_name: convoy, convoy_status: event.convoy_status || 'N/A',
-        region: event.region, route, ownership, coordinates: { lat: event.lat, lng: event.lng } },
+        region: event.region, route, ownership, coordinates: { lat: event.lat, lng: event.lng },
+        map_url: event.lat != null && event.lng != null ? mapUrlForPanic(event.id) : null },
     },
   });
   logger.warn(`Panic email dispatched: event=${panicId} queued=${result.queued} duplicate=${result.duplicate} recipients=${recipients.rows.length} client=${event.client_id || 'unassigned'} convoy=${event.convoy_id || event.convoy_code || 'none'} region=${event.region}`);
