@@ -111,7 +111,7 @@ function ClientPulsePanel() {
   const sendPulse = async () => {
     setSending(true); setError(''); setMessage('');
     try {
-      const response = await api.post<{ data: { skipped?: boolean; queued?: number; reason?: string } }>('/settings/cds-client-pulse/send', {});
+      const response = await api.post<{ data: { skipped?: boolean; queued?: number; reason?: string } }>('/admin/cds-client-pulse/send', {});
       const result = response.data.data;
       setMessage(result.skipped ? `Client Pulse not sent: ${result.reason ?? 'no active bookings'}.` : `Client Pulse queued for ${result.queued ?? 0} recipient(s).`);
     } catch (err) {
