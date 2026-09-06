@@ -32,7 +32,7 @@ function verifySecurityMapToken(token, panicId) {
 function clampLat(lat) { return Math.max(-85.0511, Math.min(85.0511, Number(lat))); }
 function normalizePoint(row) {
   const lat = Number(row.latitude), lon = Number(row.longitude);
-  return Number.isFinite(lat) && Number.isFinite(lon) ? [lon, clampLat(lat)] : null;
+  return Number.isFinite(lat) && Number.isFinite(lon) ? [Number(lon.toFixed(6)), Number(clampLat(lat).toFixed(6))] : null;
 }
 async function fetchWithTimeout(url) {
   const controller = new AbortController();
@@ -45,23 +45,24 @@ function styleParts(style) {
   const parts = raw.split('/').filter(Boolean);
   return parts.length === 2 ? parts : ['mapbox', 'streets-v12'];
 }
-function simplify(points, max = 80) {
+function simplify(points, max = 36) {
   if (points.length <= max) return points;
   const out = [], step = (points.length - 1) / (max - 1);
   for (let i = 0; i < max; i++) out.push(points[Math.round(i * step)]);
   return out;
 }
-function bbox(points) {
-  const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
-  let minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
-  const dx = Math.max(maxX - minX, 0.003), dy = Math.max(maxY - minY, 0.003);
-  minX -= dx * 0.35; maxX += dx * 0.35; minY -= dy * 0.35; maxY += dy * 0.35;
-  return [minX, minY, maxX, maxY];
-}
-function encodeOverlay(points, incident) {
+function overlayGeoJson(points, incident) {
   const features = [];
-  if (points.length >= 2) features.push({ type: 'Feature', properties: { stroke: '#00e5ff', 'stroke-width': 7, 'stroke-opacity': 0.9 }, geometry: { type: 'LineString', coordinates: points } });
-  features.push({ type: 'Feature', properties: { 'marker-color': '#ff1f3d', 'marker-size': 'large', 'marker-symbol': '!' }, geometry: { type: 'Point', coordinates: incident } });
+  if (points.length >= 2) features.push({
+    type: 'Feature',
+    properties: { stroke: '#00E5FF', 'stroke-width': 6, 'stroke-opacity': 0.9 },
+    geometry: { type: 'LineString', coordinates: points }
+  });
+  features.push({
+    type: 'Feature',
+    properties: { 'marker-color': '#FF1F3D', 'marker-size': 'large' },
+    geometry: { type: 'Point', coordinates: incident }
+  });
   return encodeURIComponent(JSON.stringify({ type: 'FeatureCollection', features }));
 }
 async function renderWithMapbox({ incident, trail }) {
@@ -69,11 +70,11 @@ async function renderWithMapbox({ incident, trail }) {
   if (!token) throw new Error('MAPBOX_TOKEN is not configured');
   const [username, styleId] = styleParts(MAPBOX_STYLE);
   const points = simplify([...trail, incident].filter(Boolean));
-  const overlay = encodeOverlay(points, incident);
-  const [minLon, minLat, maxLon, maxLat] = bbox(points);
-  // Mapbox Static Images accepts bbox as [minLon,minLat,maxLon,maxLat].
-  const viewport = `[${minLon},${minLat},${maxLon},${maxLat}]`;
-  const url = `https://api.mapbox.com/styles/v1/${encodeURIComponent(username)}/${encodeURIComponent(styleId)}/static/geojson(${overlay})/${encodeURIComponent(viewport)}/${MAP_WIDTH}x${MAP_HEIGHT}@2x.png?access_token=${encodeURIComponent(token)}&logo=true`;
+  const overlay = overlayGeoJson(points, incident);
+  // IMPORTANT: use Mapbox's documented `auto` extent. It calculates a viewport
+  // from the overlay itself and avoids fragile bbox/path encoding.
+  const url = `https://api.mapbox.com/styles/v1/${encodeURIComponent(username)}/${encodeURIComponent(styleId)}/static/geojson(${overlay})/auto/${MAP_WIDTH}x${MAP_HEIGHT}@2x.png?access_token=${encodeURIComponent(token)}&logo=true&padding=48`;
+  if (url.length > 8000) throw new Error(`Mapbox static request too long (${url.length} chars)`);
   const response = await fetchWithTimeout(url);
   const contentType = response.headers.get('content-type') || '';
   if (!response.ok || !contentType.includes('image/')) {
@@ -98,7 +99,7 @@ async function getIncidentContext(panicId) {
 }
 async function renderSecurityMap(panicId) {
   const { panic, trail } = await getIncidentContext(panicId);
-  const incident = [Number(panic.longitude), clampLat(panic.latitude)];
+  const incident = [Number(Number(panic.longitude).toFixed(6)), Number(clampLat(panic.latitude).toFixed(6))];
   if (!Number.isFinite(incident[0]) || !Number.isFinite(incident[1])) throw new Error('Incident has no valid coordinates');
   try { return await renderWithMapbox({ incident, trail: trail.length ? trail : [incident] }); }
   catch (error) {
