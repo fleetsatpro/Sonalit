@@ -86,6 +86,26 @@ async function dispatchPanicEmail(panicId) {
   return result;
 }
 
+async function backfillRecentPanics() {
+  const recent = await query(`
+    SELECT p.id
+    FROM panic_events p
+    WHERE p.created_at >= NOW() - INTERVAL '24 hours'
+      AND NOT EXISTS (
+        SELECT 1 FROM email_notifications e
+        WHERE e.entity_id=p.id
+          AND e.notification_type='security_incident'
+      )
+    ORDER BY p.created_at DESC
+    LIMIT 50
+  `);
+  for (const row of recent.rows) {
+    try { await dispatchPanicEmail(row.id); }
+    catch (err) { logger.error(`Panic email backfill failed: event=${row.id} error=${err.message}`); }
+  }
+  if (recent.rows.length) logger.warn(`Panic email backfill processed ${recent.rows.length} recent event(s)`);
+}
+
 async function startPanicEmailBridge() {
   const client = await pool.connect();
   await client.query('LISTEN sonalit_panic');
@@ -101,6 +121,7 @@ async function startPanicEmailBridge() {
     }
   });
   client.on('error', (err) => logger.error(`Panic email bridge PostgreSQL error: ${err.message}`));
+  await backfillRecentPanics();
 }
 
 function startResendEmailWorker() {
