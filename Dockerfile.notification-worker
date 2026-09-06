@@ -3,21 +3,15 @@ FROM node:20-alpine
 
 WORKDIR /app/backend
 
-# The backend package is self-contained; do not make the worker build depend on
-# the monorepo package manager being installed by Railway/Railpack.
+# The worker requires the backend runtime dependencies, including ExcelJS for
+# reliable Client Pulse workbook generation.
 COPY backend/package.json backend/package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm install --omit=dev
 
 COPY backend ./
 
-# Apply the existing Client Pulse hardening and resilient malformed-ZIP recovery.
-RUN node scripts/repair-client-pulse-xlsx-parser.js
-RUN node scripts/repair-client-pulse-xlsx-parser-v2.js
-RUN node scripts/repair-client-pulse-xlsx-parser-v3.js
-
-# Client Pulse uses the approved XLSX template stored at repository root.
-# Keep it outside the backend source tree and copy it explicitly into the
-# runtime image because `COPY backend ./` cannot include repository-root assets.
+# Client Pulse uses the approved XLSX template location for compatibility, but
+# workbook generation itself is handled by ExcelJS rather than custom ZIP parsing.
 COPY templates ./../templates
 
 ENV NODE_ENV=production
