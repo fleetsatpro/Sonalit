@@ -27,8 +27,7 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  SELECT c.id
-    INTO customer_id
+  SELECT c.id INTO customer_id
     FROM cds_customers c
    WHERE c.org_id = NEW.org_id
      AND c.deleted_at IS NULL
@@ -37,9 +36,7 @@ BEGIN
    ORDER BY c.created_at DESC
    LIMIT 1;
 
-  IF customer_id IS NULL THEN
-    RETURN NEW;
-  END IF;
+  IF customer_id IS NULL THEN RETURN NEW; END IF;
 
   INSERT INTO communication_enrollments
     (org_id, recipient_id, domain, cds_customer_id, contact_role, status, verified_at)
@@ -68,13 +65,10 @@ DECLARE
   recipient RECORD;
   enrollment_id UUID;
 BEGIN
-  IF NEW.deleted_at IS NOT NULL OR NEW.email IS NULL THEN
-    RETURN NEW;
-  END IF;
+  IF NEW.deleted_at IS NOT NULL OR NEW.email IS NULL THEN RETURN NEW; END IF;
 
   FOR recipient IN
-    SELECT r.*
-      FROM client_email_recipients r
+    SELECT r.* FROM client_email_recipients r
      WHERE r.org_id = NEW.org_id
        AND r.deleted_at IS NULL
        AND r.enabled IS TRUE
@@ -96,7 +90,6 @@ BEGIN
     ON CONFLICT (enrollment_id, event_type, channel)
     DO UPDATE SET enabled = TRUE, updated_at = NOW();
   END LOOP;
-
   RETURN NEW;
 END;
 $$;
@@ -113,9 +106,7 @@ AFTER INSERT OR UPDATE OF email, deleted_at
 ON cds_customers
 FOR EACH ROW EXECUTE FUNCTION ensure_cds_customer_client_pulse_bindings();
 
--- Repair existing recipients immediately. Exact email matching is deliberate:
--- it provides a deterministic customer boundary without guessing from company
--- names or other mutable attributes.
+-- Repair existing recipients immediately using exact org-scoped email matching.
 DO $$
 DECLARE
   r RECORD;
@@ -150,6 +141,3 @@ BEGIN
   END LOOP;
 END;
 $$;
-
-DROP FUNCTION IF EXISTS ensure_cds_client_pulse_enrollment();
-DROP FUNCTION IF EXISTS ensure_cds_customer_client_pulse_bindings();
