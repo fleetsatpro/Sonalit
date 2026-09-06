@@ -7,6 +7,15 @@ const { isCfoModuleEnabled } = require('../utils/cfoFlag');
 const logger = require('../utils/logger');
 const { publish } = require('../realtime/centrifugo');
 
+// node-pg parses SQL DATE columns into JS Date objects — String(dateObject)
+// calls toString() ("Thu Jul 09 2026 00:00:00 GMT+0000..."), not
+// toISOString(), so a plain String(x).slice(0,10) silently produces "Thu
+// Jul 09" instead of "2026-07-09". Use this wherever a date column arrives
+// via SELECT * (so it can't be cast to text in the query itself).
+function toISODate(v) {
+  return v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
+}
+
 function gAudit(actor_id, action, target_type, target_id, payload, ip) {
   query(
     `INSERT INTO guardian_audit_log
@@ -19,6 +28,7 @@ function gAudit(actor_id, action, target_type, target_id, payload, ip) {
 
 const truckSchema = Joi.object({
   vehicle_id: Joi.string().uuid().allow('', null).optional(),
+  registration: Joi.string().max(50).allow('', null),
   driver_name: Joi.string().min(1).max(100).required(),
   driver_phone: Joi.string().max(30).allow('', null),
   driver_license_no: Joi.string().max(50).allow('', null),
@@ -46,6 +56,7 @@ const createSchema = Joi.object({
   route_destination: Joi.string().max(100).required(),
   trucks: Joi.array().items(truckSchema).min(1).max(6).required(),
   cfos: Joi.array().items(cfoInputSchema).min(1).required(),
+  clientId: Joi.string().uuid().allow('', null),
 });
 
 function validateCoverage(trucks, cfos) {
@@ -94,6 +105,15 @@ const createConvoyCfo = asyncHandler(async (req, res) => {
   const coverageErr = validateCoverage(value.trucks, value.cfos);
   if (coverageErr) return res.status(422).json(coverageErr);
 
+  const clientId = value.clientId || null;
+  if (clientId) {
+    const clientCheck = await query(
+      'SELECT id FROM cargo_clients WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL',
+      [clientId, req.user.org_id]
+    );
+    if (!clientCheck.rows.length) return res.status(422).json({ error: 'client_not_found' });
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -118,13 +138,13 @@ const createConvoyCfo = asyncHandler(async (req, res) => {
     const convoyResult = await client.query(
       `INSERT INTO convoys
          (name, region, priority, description, route_origin, route_destination,
-          timezone, start_date, end_date, seal_count_per_truck, status, created_by, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'planned',$11,NOW(),NOW())
+          timezone, start_date, end_date, seal_count_per_truck, client_id, status, created_by, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'planned',$12,NOW(),NOW())
        RETURNING *`,
       [value.name, value.region, value.priority, value.description || null,
         value.route_origin, value.route_destination,
         value.timezone, value.start_date, value.end_date,
-        value.seal_count_per_truck, req.user.id]
+        value.seal_count_per_truck, clientId, req.user.id]
     );
     const convoy = convoyResult.rows[0];
 
@@ -132,10 +152,10 @@ const createConvoyCfo = asyncHandler(async (req, res) => {
     for (const truck of value.trucks) {
       const tr = await client.query(
         `INSERT INTO convoy_trucks
-           (convoy_id, vehicle_id, driver_name, driver_phone, driver_license_no, position)
-         VALUES ($1,$2,$3,$4,$5,$6)
+           (convoy_id, vehicle_id, registration, driver_name, driver_phone, driver_license_no, position)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
          RETURNING id, position`,
-        [convoy.id, truck.vehicle_id || null, truck.driver_name,
+        [convoy.id, truck.vehicle_id || null, truck.registration || null, truck.driver_name,
           truck.driver_phone || null, truck.driver_license_no || null, truck.position]
       );
       positionToTruckId.set(truck.position, tr.rows[0].id);
@@ -160,7 +180,7 @@ const createConvoyCfo = asyncHandler(async (req, res) => {
 
     gAudit(req.user.id, 'convoy_created', 'convoy', convoy.id, { name: convoy.name }, req.ip);
 
-    publish('convoy:created', { convoyId: convoy.id });
+    publish(`org#${req.user.org_id}`, { type: 'convoy.update', convoyId: convoy.id, status: 'planned' });
 
     res.status(201).json({ data: convoy });
   } catch (err) {
@@ -183,6 +203,7 @@ const addTruck = asyncHandler(async (req, res) => {
 
   const schema = Joi.object({
     vehicle_id: Joi.string().uuid().allow('', null).optional(),
+    registration: Joi.string().max(50).allow('', null),
     driver_name: Joi.string().min(1).max(100).required(),
     driver_phone: Joi.string().max(30).allow('', null),
     driver_license_no: Joi.string().max(50).allow('', null),
@@ -190,25 +211,56 @@ const addTruck = asyncHandler(async (req, res) => {
   });
   const { error, value } = schema.validate(req.body);
   if (error) return res.status(400).json({ error: error.message });
+  if (!value.vehicle_id && !value.registration) {
+    return res.status(400).json({ error: 'registration is required when no fleet vehicle is linked' });
+  }
 
   const convoy = await query(
     'SELECT id, status FROM convoys WHERE id = $1 AND deleted_at IS NULL',
     [req.params.id]
   );
   if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
-  if (convoy.rows[0].status !== 'planned') return res.status(422).json({ error: 'convoy_not_in_planned_status' });
+  // Matches addCfo's policy: roster/truck changes are allowed on planned AND active
+  // convoys (an admin correcting a staffing mistake mid-convoy is a normal operation),
+  // just not once a convoy is completing/completed/aborted/cancelled.
+  if (!['planned', 'active'].includes(convoy.rows[0].status))
+    return res.status(422).json({ error: 'convoy_not_in_planned_status' });
 
   try {
     const result = await query(
       `INSERT INTO convoy_trucks
-         (convoy_id, vehicle_id, driver_name, driver_phone, driver_license_no, position)
-       VALUES ($1,$2,$3,$4,$5,$6)
+         (convoy_id, vehicle_id, registration, driver_name, driver_phone, driver_license_no, position)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
        RETURNING *`,
-      [req.params.id, value.vehicle_id || null, value.driver_name,
+      [req.params.id, value.vehicle_id || null, value.registration || null, value.driver_name,
         value.driver_phone || null, value.driver_license_no || null, value.position]
     );
-    gAudit(req.user.id, 'convoy_truck_added', 'convoy_truck', result.rows[0].id, { convoy_id: req.params.id }, req.ip);
-    res.status(201).json({ data: result.rows[0] });
+    const newTruck = result.rows[0];
+
+    // createConvoyCfo enforces full CFO coverage of every truck at creation time
+    // (validateCoverage), but a truck added later here had no equivalent — it sat
+    // with zero convoy_cfo_truck_assignments rows, invisible in the Guardian app
+    // and permanently unphotographable, which also kept required_photo_count
+    // for the day out of reach forever. Auto-assign the sole CFO officer (capped
+    // at 2 trucks each, mirroring the original coverage schema) so a newly added
+    // truck is immediately usable; convoys with multiple CFOs still need a
+    // manual pick since it's ambiguous which officer should take it.
+    const cfoRows = await query(
+      `SELECT cc.cfo_user_id,
+              (SELECT COUNT(*)::int FROM convoy_cfo_truck_assignments ccta
+               WHERE ccta.cfo_user_id = cc.cfo_user_id AND ccta.convoy_id = cc.convoy_id) AS truck_count
+       FROM convoy_cfos cc WHERE cc.convoy_id = $1`,
+      [req.params.id]
+    );
+    if (cfoRows.rows.length === 1 && cfoRows.rows[0].truck_count < 2) {
+      await query(
+        `INSERT INTO convoy_cfo_truck_assignments (convoy_id, cfo_user_id, convoy_truck_id) VALUES ($1,$2,$3)`,
+        [req.params.id, cfoRows.rows[0].cfo_user_id, newTruck.id]
+      ).catch((e) => logger.warn(`auto-assign new truck to CFO failed: ${e.message}`));
+    }
+
+    gAudit(req.user.id, 'convoy_truck_added', 'convoy_truck', newTruck.id, { convoy_id: req.params.id }, req.ip);
+    res.status(201).json({ data: newTruck });
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'vehicle_or_position_conflict' });
     if (err.message?.includes('convoy_truck_limit_exceeded')) {
@@ -227,7 +279,11 @@ const removeTruck = asyncHandler(async (req, res) => {
     [req.params.id]
   );
   if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
-  if (convoy.rows[0].status !== 'planned') return res.status(422).json({ error: 'convoy_not_in_planned_status' });
+  // Matches addCfo's policy: roster/truck changes are allowed on planned AND active
+  // convoys (an admin correcting a staffing mistake mid-convoy is a normal operation),
+  // just not once a convoy is completing/completed/aborted/cancelled.
+  if (!['planned', 'active'].includes(convoy.rows[0].status))
+    return res.status(422).json({ error: 'convoy_not_in_planned_status' });
 
   const truck = await query(
     'SELECT id FROM convoy_trucks WHERE id = $1 AND convoy_id = $2',
@@ -247,6 +303,65 @@ const removeTruck = asyncHandler(async (req, res) => {
   res.json({ message: 'Truck removed from convoy' });
 });
 
+// Known route waypoints (towns/checkpoints a dispatcher keys in for the
+// planned route) — used by the PDF report as a fallback route display when
+// no live GPS pings were logged for the convoy that day, which is the
+// common case rather than the exception for most convoys.
+const getRouteWaypoints = asyncHandler(async (req, res) => {
+  const convoy = await query('SELECT id FROM convoys WHERE id = $1 AND deleted_at IS NULL', [req.params.id]);
+  if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
+
+  const result = await query(
+    `SELECT id, seq, name, lat, lng FROM convoy_route_waypoints WHERE convoy_id = $1 ORDER BY seq`,
+    [req.params.id]
+  );
+  res.json({ data: result.rows });
+});
+
+const routeWaypointsSchema = Joi.object({
+  waypoints: Joi.array().items(Joi.object({
+    name: Joi.string().min(1).max(120).required(),
+    lat: Joi.number().min(-90).max(90).allow(null),
+    lng: Joi.number().min(-180).max(180).allow(null),
+  })).max(50).required(),
+});
+
+const setRouteWaypoints = asyncHandler(async (req, res) => {
+  const convoy = await query('SELECT id FROM convoys WHERE id = $1 AND deleted_at IS NULL', [req.params.id]);
+  if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
+
+  const { error, value } = routeWaypointsSchema.validate(req.body);
+  if (error) return res.status(400).json({ error: error.message });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM convoy_route_waypoints WHERE convoy_id = $1', [req.params.id]);
+    for (let i = 0; i < value.waypoints.length; i++) {
+      const wp = value.waypoints[i];
+      await client.query(
+        `INSERT INTO convoy_route_waypoints (convoy_id, seq, name, lat, lng) VALUES ($1,$2,$3,$4,$5)`,
+        [req.params.id, i, wp.name, wp.lat ?? null, wp.lng ?? null]
+      );
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  gAudit(req.user.id, 'convoy_route_waypoints_updated', 'convoy', req.params.id,
+    { count: value.waypoints.length }, req.ip);
+
+  const result = await query(
+    `SELECT id, seq, name, lat, lng FROM convoy_route_waypoints WHERE convoy_id = $1 ORDER BY seq`,
+    [req.params.id]
+  );
+  res.json({ data: result.rows });
+});
+
 // B2 — add CFO to planned convoy
 const addCfo = asyncHandler(async (req, res) => {
   if (!await isCfoModuleEnabled()) return res.status(403).json({ error: 'cfo_module_disabled' });
@@ -263,7 +378,8 @@ const addCfo = asyncHandler(async (req, res) => {
     [req.params.id]
   );
   if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
-  if (convoy.rows[0].status !== 'planned') return res.status(422).json({ error: 'convoy_not_in_planned_status' });
+  if (!['planned', 'active'].includes(convoy.rows[0].status))
+    return res.status(422).json({ error: 'convoy_not_in_planned_status' });
 
   const user = await query(
     'SELECT id, role FROM users WHERE id = $1 AND deleted_at IS NULL',
@@ -315,7 +431,11 @@ const removeCfo = asyncHandler(async (req, res) => {
     [req.params.id]
   );
   if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
-  if (convoy.rows[0].status !== 'planned') return res.status(422).json({ error: 'convoy_not_in_planned_status' });
+  // Matches addCfo's policy: roster/truck changes are allowed on planned AND active
+  // convoys (an admin correcting a staffing mistake mid-convoy is a normal operation),
+  // just not once a convoy is completing/completed/aborted/cancelled.
+  if (!['planned', 'active'].includes(convoy.rows[0].status))
+    return res.status(422).json({ error: 'convoy_not_in_planned_status' });
 
   const cfoEntry = await query(
     'SELECT id, cfo_user_id FROM convoy_cfos WHERE id = $1 AND convoy_id = $2',
@@ -354,7 +474,11 @@ const assignTruckToCfo = asyncHandler(async (req, res) => {
     [req.params.id]
   );
   if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
-  if (convoy.rows[0].status !== 'planned') return res.status(422).json({ error: 'convoy_not_in_planned_status' });
+  // Matches addCfo's policy: roster/truck changes are allowed on planned AND active
+  // convoys (an admin correcting a staffing mistake mid-convoy is a normal operation),
+  // just not once a convoy is completing/completed/aborted/cancelled.
+  if (!['planned', 'active'].includes(convoy.rows[0].status))
+    return res.status(422).json({ error: 'convoy_not_in_planned_status' });
 
   const [truck, cfo] = await Promise.all([
     query('SELECT id FROM convoy_trucks WHERE id = $1 AND convoy_id = $2', [value.convoy_truck_id, req.params.id]),
@@ -391,7 +515,11 @@ const removeAssignment = asyncHandler(async (req, res) => {
     [req.params.id]
   );
   if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
-  if (convoy.rows[0].status !== 'planned') return res.status(422).json({ error: 'convoy_not_in_planned_status' });
+  // Matches addCfo's policy: roster/truck changes are allowed on planned AND active
+  // convoys (an admin correcting a staffing mistake mid-convoy is a normal operation),
+  // just not once a convoy is completing/completed/aborted/cancelled.
+  if (!['planned', 'active'].includes(convoy.rows[0].status))
+    return res.status(422).json({ error: 'convoy_not_in_planned_status' });
 
   const assignment = await query(
     'SELECT id FROM convoy_cfo_truck_assignments WHERE id = $1 AND convoy_id = $2',
@@ -406,53 +534,170 @@ const removeAssignment = asyncHandler(async (req, res) => {
   res.json({ message: 'Assignment removed' });
 });
 
-// E5 — list daily reports for a convoy
+// E5 — list daily reports for a convoy with per-truck photo breakdown
 const getConvoyReports = asyncHandler(async (req, res) => {
-  const convoy = await query('SELECT id FROM convoys WHERE id = $1 AND deleted_at IS NULL', [req.params.id]);
-  if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
-
-  const result = await query(
-    `SELECT * FROM convoy_daily_reports
-     WHERE convoy_id = $1
-     ORDER BY report_date DESC`,
+  const convoyRes = await query(
+    `SELECT c.*, c.archive_pdf_url FROM convoys c WHERE c.id = $1 AND c.deleted_at IS NULL`,
     [req.params.id]
   );
-  res.json({ data: result.rows });
+  if (!convoyRes.rows.length) return res.status(404).json({ error: 'Convoy not found' });
+  const convoy = convoyRes.rows[0];
+  const sealCount = convoy.seal_count_per_truck ?? 3;
+
+  const [trucksRes, cfosRes, reportsRes] = await Promise.all([
+    query('SELECT * FROM convoy_trucks WHERE convoy_id = $1 ORDER BY position', [req.params.id]),
+    query(
+      `SELECT cc.id AS convoy_cfo_id, cc.cfo_user_id, cc.guardian_device_id,
+              u.name AS cfo_name, u.email AS cfo_email
+       FROM convoy_cfos cc JOIN users u ON u.id = cc.cfo_user_id WHERE cc.convoy_id = $1`,
+      [req.params.id]
+    ),
+    query(
+      `SELECT * FROM convoy_daily_reports WHERE convoy_id = $1 ORDER BY report_date DESC`,
+      [req.params.id]
+    ),
+  ]);
+
+  const trucks = trucksRes.rows;
+  const reportDates = reportsRes.rows.map(r => toISODate(r.report_date));
+  let allPhotos = [];
+  if (reportDates.length > 0) {
+    const photosRes = await query(
+      `SELECT convoy_truck_id, session, photo_type, seal_position,
+              uploaded_at, location_mismatch, report_date
+       FROM convoy_truck_photos WHERE convoy_id = $1 AND report_date = ANY($2::date[])`,
+      [req.params.id, reportDates]
+    );
+    allPhotos = photosRes.rows;
+  }
+
+  const buildSession = (photos, session) => ({
+    front: photos.some(p => p.session === session && p.photo_type === 'front'),
+    rear: photos.some(p => p.session === session && p.photo_type === 'rear'),
+    seals: Array.from({ length: sealCount }, (_, i) =>
+      photos.some(p => p.session === session && p.photo_type === 'seal' && String(p.seal_position) === String(i + 1))
+    ),
+  });
+
+  const dailyReports = reportsRes.rows.map(report => {
+    const dateStr = toISODate(report.report_date);
+    const dayPhotos = allPhotos.filter(p => toISODate(p.report_date) === dateStr);
+    return {
+      ...report,
+      location_mismatch_count: dayPhotos.filter(p => p.location_mismatch).length,
+      trucks: trucks.map(truck => {
+        const tp = dayPhotos.filter(p => p.convoy_truck_id === truck.id);
+        return {
+          convoy_truck_id: truck.id,
+          position: truck.position,
+          driver_name: truck.driver_name,
+          vehicle_id: truck.vehicle_id,
+          sod: buildSession(tp, 'sod'),
+          eod: buildSession(tp, 'eod'),
+          total_photos: tp.length,
+          required_photos: (2 + sealCount) * 2,
+        };
+      }),
+    };
+  });
+
+  res.json({ data: { convoy, trucks, cfos: cfosRes.rows, daily_reports: dailyReports } });
 });
 
 // E5 — trigger PDF re-generation for a specific date
 const regenerateReport = asyncHandler(async (req, res) => {
-  const convoy = await query('SELECT id FROM convoys WHERE id = $1 AND deleted_at IS NULL', [req.params.id]);
+  const convoy = await query(
+    'SELECT id, start_date, end_date FROM convoys WHERE id = $1 AND deleted_at IS NULL',
+    [req.params.id]
+  );
   if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
 
   const { date } = req.params;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
 
-  const report = await query(
+  let report = await query(
     'SELECT id FROM convoy_daily_reports WHERE convoy_id = $1 AND report_date = $2',
     [req.params.id, date]
   );
-  if (!report.rows.length) return res.status(404).json({ error: 'No report row for this date' });
 
-  // Reset to partial so the worker will regenerate it
-  await query(
+  if (!report.rows.length) {
+    // No row yet. Operators can now generate a report for ANY day the convoy
+    // was running, not only days that already had photos — so if the date is
+    // within the convoy's window we materialize a row (recount computes the
+    // required count from assigned trucks; received starts at whatever exists,
+    // possibly zero). Only reject dates before the convoy started or in the
+    // future, which can't have a legitimate report.
+    const cv = convoy.rows[0];
+    const startOk = !cv.start_date || date >= String(cv.start_date).slice(0, 10);
+    const today = new Date().toISOString().slice(0, 10);
+    if (!startOk || date > today) {
+      return res.status(400).json({ error: 'Date is outside the convoy operating window' });
+    }
+    const { recountPhotos } = require('../workers/convoyReportWorker');
+    await recountPhotos(req.params.id, date);
+    // recountPhotos only inserts a row when the convoy has assigned trucks; if
+    // it didn't, create a minimal placeholder row so the day is still
+    // generatable (it will read as pending/exceptions, which is honest).
+    const check = await query(
+      'SELECT id FROM convoy_daily_reports WHERE convoy_id = $1 AND report_date = $2',
+      [req.params.id, date]
+    );
+    if (!check.rows.length) {
+      await query(
+        `INSERT INTO convoy_daily_reports (convoy_id, report_date, required_photo_count, received_photo_count, status)
+         VALUES ($1, $2, 0, 0, 'pending')
+         ON CONFLICT (convoy_id, report_date) DO NOTHING`,
+        [req.params.id, date]
+      );
+    }
+  }
+
+  // Recompute required/received via the shared, slot-capped counter (not a
+  // raw COUNT(*)) so a stale or first-time row can't bake a >100%
+  // completeness figure into the regenerated PDF — seal_position is a
+  // free-text RFID code, so a truck can otherwise accumulate more distinct
+  // values than seal_count_per_truck allows.
+  const { recountPhotos } = require('../workers/convoyReportWorker');
+  await recountPhotos(req.params.id, date);
+
+  // Reset to partial (clearing any stale PDF) so the worker regenerates it —
+  // handleGenerateReport skips rows already marked 'generated'.
+  report = await query(
     `UPDATE convoy_daily_reports SET status = 'partial', pdf_url = NULL, generation_error = NULL, updated_at = NOW()
-     WHERE convoy_id = $1 AND report_date = $2`,
+     WHERE convoy_id = $1 AND report_date = $2
+     RETURNING id`,
     [req.params.id, date]
   );
+  if (!report.rows.length) return res.status(404).json({ error: 'No report data for this date' });
 
+  // Without REDIS_URL configured, getQueues() returns no convoyReportQueue —
+  // the previous version silently did nothing in that case (`if (queue)`
+  // guard skipped), leaving the row reset to 'partial' forever with no
+  // worker anywhere to ever pick it up and finish the job. Generate inline
+  // as a fallback so Regenerate actually completes regardless of whether a
+  // queue is set up — PDF generation here is lightweight (pdfkit, no
+  // headless browser, no embedded images), same reasoning app.js already
+  // uses to default this worker to running in-process.
+  let queued = false;
   try {
     const { getQueues } = require('../config/queue');
     const { convoyReportQueue } = getQueues();
     if (convoyReportQueue) {
       await convoyReportQueue.add('generateReport', { convoy_id: req.params.id, report_date: date },
         { removeOnComplete: { count: 200 } });
+      queued = true;
     }
-  } catch {}
+  } catch (err) {
+    logger.warn(`regenerateReport: enqueue failed, falling back to inline generation: ${err.message}`);
+  }
+  if (!queued) {
+    const { handleGenerateReport } = require('../workers/convoyReportWorker');
+    await handleGenerateReport({ convoy_id: req.params.id, report_date: date, force: true });
+  }
 
   gAudit(req.user.id, 'convoy_report_regenerated', 'convoy_daily_report', report.rows[0].id,
     { convoy_id: req.params.id, date }, req.ip);
-  res.json({ message: 'Report regeneration queued' });
+  res.json({ message: queued ? 'Report regeneration queued' : 'Report regenerated' });
 });
 
 // B2b — link a guardian device to an existing CFO slot (works on any convoy status)
@@ -494,30 +739,404 @@ const downloadReport = asyncHandler(async (req, res) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
   const convoy = await query('SELECT id FROM convoys WHERE id = $1 AND deleted_at IS NULL', [req.params.id]);
   if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found' });
-  const r = await query(
-    `SELECT pdf_url, status FROM convoy_daily_reports WHERE convoy_id = $1 AND report_date = $2`,
-    [req.params.id, date]
-  );
+  // Tolerate pdf_data not existing yet if its migration hasn't applied on
+  // this database — fall back to the pre-migration column set rather than
+  // 500ing every download.
+  let r;
+  try {
+    r = await query(
+      `SELECT pdf_url, status, pdf_data FROM convoy_daily_reports WHERE convoy_id = $1 AND report_date = $2`,
+      [req.params.id, date]
+    );
+  } catch (err) {
+    if (err.code !== '42703') throw err;
+    r = await query(
+      `SELECT pdf_url, status FROM convoy_daily_reports WHERE convoy_id = $1 AND report_date = $2`,
+      [req.params.id, date]
+    );
+  }
   if (!r.rows.length) return res.status(404).json({ error: 'Report not found' });
   if (r.rows[0].status !== 'generated') return res.status(422).json({ error: `Report status: ${r.rows[0].status}` });
-  if (r.rows[0].pdf_url?.startsWith('http')) return res.redirect(r.rows[0].pdf_url);
+  const r2PublicUrl = process.env.R2_PUBLIC_URL;
+  const pdfUrl = r.rows[0].pdf_url && r2PublicUrl
+    ? r.rows[0].pdf_url.replace(/^https?:\/\/pub-[a-f0-9]+\.r2\.dev\//, `${r2PublicUrl}/`)
+    : r.rows[0].pdf_url;
+  if (pdfUrl?.startsWith('http')) return res.redirect(pdfUrl);
   const filePath = path.resolve(__dirname, '../../data/reports', req.params.id, `${date}.pdf`);
-  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'PDF not on server — please regenerate' });
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="convoy-report-${date}.pdf"`);
-  fs.createReadStream(filePath).pipe(res);
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="convoy-report-${date}.pdf"`);
+    return fs.createReadStream(filePath).pipe(res);
+  }
+  // Last resort: the in-DB copy survives even when R2 is unconfigured and the
+  // local-disk fallback was wiped by a redeploy (Railway's filesystem is
+  // ephemeral, but the database is not).
+  if (r.rows[0].pdf_data) {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="convoy-report-${date}.pdf"`);
+    return res.send(r.rows[0].pdf_data);
+  }
+  return res.status(404).json({ error: 'PDF not on server — please regenerate' });
 });
+
+// E5 — org-wide overview of all convoy report statuses
+const getConvoyReportsOverview = asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+  const convoysRes = await query(
+    `SELECT c.id, c.name, c.status, c.timezone, c.start_date, c.end_date,
+            c.seal_count_per_truck, c.archive_pdf_url,
+            cl.name AS client_name, cl.company AS client_company,
+            (SELECT COUNT(*) FROM convoy_trucks ct WHERE ct.convoy_id = c.id)::int AS truck_count,
+            (SELECT COUNT(*) FROM convoy_cfos cc WHERE cc.convoy_id = c.id)::int AS cfo_count
+     FROM convoys c
+     LEFT JOIN cargo_clients cl ON cl.id = c.client_id
+     WHERE c.org_id = $1 AND c.deleted_at IS NULL
+       AND c.status IN ('planned','active','completing','completed')
+     ORDER BY (c.status = 'active') DESC, c.start_date DESC LIMIT 200`,
+    [orgId]
+  );
+  if (!convoysRes.rows.length) return res.json({ data: [] });
+
+  const convoyIds = convoysRes.rows.map(c => c.id);
+  const [latestReports, mismatchCounts, cfoAppReports] = await Promise.all([
+    query(
+      // A stray convoy_daily_reports row from before the convoy's own
+      // start_date (bad test data, a client clock issue, a manual regenerate
+      // with the wrong date) used to win "latest" purely by being the
+      // newest by date, showing a blank/nonsensical report for a day the
+      // convoy didn't exist yet. Only excluding the lower bound — end_date
+      // is a plan, not a hard stop; an active convoy legitimately keeps
+      // getting real uploads past its original planned end date.
+      // report_date::text — node-pg parses SQL DATE columns into JS Date
+      // objects, and String(dateObject) calls toString() ("Thu Jul 09 2026
+      // 00:00:00 GMT+0000..."), not toISOString(). Slicing that gives "Thu
+      // Jul 09" instead of "2026-07-09", which the frontend then mis-parses
+      // in the browser's local timezone, shifting the date by a day. Casting
+      // to text in SQL sidesteps the whole Date-object ambiguity.
+      `SELECT DISTINCT ON (cdr.convoy_id) cdr.convoy_id, cdr.report_date::text AS report_date, cdr.status,
+              cdr.required_photo_count, cdr.received_photo_count, cdr.pdf_url,
+              cdr.generated_at, cdr.generation_error
+       FROM convoy_daily_reports cdr
+       JOIN convoys c ON c.id = cdr.convoy_id
+       WHERE cdr.convoy_id = ANY($1)
+         AND (c.start_date IS NULL OR cdr.report_date >= c.start_date)
+       ORDER BY cdr.convoy_id, cdr.report_date DESC`,
+      [convoyIds]
+    ),
+    query(
+      `SELECT convoy_id, report_date::text AS report_date, COUNT(*)::int AS mismatch_count
+       FROM convoy_truck_photos WHERE convoy_id = ANY($1) AND location_mismatch = true
+       GROUP BY convoy_id, report_date`,
+      [convoyIds]
+    ),
+    // Guardian Convoy app reports (older system using convoy_reports + photo_uploads —
+    // its photo_type taxonomy — vehicle_front/cargo_seal/cargo_interior/cfo_identity/
+    // tyres_under/vehicle_arrival — doesn't match the front/rear/seal model this
+    // required-count formula assumes, and received is a raw undeduped COUNT(*), so
+    // it can wildly overcount (e.g. 45/10 = 450%). LEAST() is a stopgap so the UI can
+    // never show >100% while the underlying formula for this legacy path gets a
+    // proper fix that reflects its actual photo categories.
+    query(
+      `SELECT DISTINCT ON (cr.convoy_id)
+              cr.convoy_id, cr.date::text AS report_date, cr.status,
+              LEAST(
+                (SELECT COUNT(*)::int FROM photo_uploads pu
+                 WHERE pu.convoy_id = cr.convoy_id AND pu.timestamp::date = cr.date),
+                (SELECT COUNT(ct.id) FROM convoy_trucks ct WHERE ct.convoy_id::text = cr.convoy_id)::int
+                  * (2 + COALESCE(c2.seal_count_per_truck, 0)) * 2
+              ) AS received_photo_count,
+              (SELECT COUNT(ct.id) FROM convoy_trucks ct WHERE ct.convoy_id::text = cr.convoy_id)::int
+                * (2 + COALESCE(c2.seal_count_per_truck, 0)) * 2 AS required_photo_count
+       FROM convoy_reports cr
+       LEFT JOIN convoys c2 ON c2.id::text = cr.convoy_id
+       WHERE cr.convoy_id = ANY($1::text[])
+         AND (c2.start_date IS NULL OR cr.date >= c2.start_date)
+       ORDER BY cr.convoy_id, cr.date DESC`,
+      [convoyIds]
+    ),
+  ]);
+
+  const reportMap = new Map(latestReports.rows.map(r => [String(r.convoy_id), r]));
+  const cfoReportMap = new Map(cfoAppReports.rows.map(r => [String(r.convoy_id), r]));
+  const mismatchMap = new Map(
+    mismatchCounts.rows.map(m => [`${m.convoy_id}:${m.report_date}`, m.mismatch_count])
+  );
+
+  const data = convoysRes.rows.map(c => {
+    const report = reportMap.get(String(c.id)) ?? null;
+    const cfoReport = cfoReportMap.get(String(c.id)) ?? null;
+    const effective = report ?? cfoReport;
+    const rDate = effective ? String(effective.report_date).slice(0, 10) : null;
+    return {
+      ...c,
+      latest_report: effective ? {
+        report_date: rDate,
+        status: effective.status,
+        required_photo_count: effective.required_photo_count,
+        received_photo_count: effective.received_photo_count,
+        pdf_url: report?.pdf_url ?? null,
+        generated_at: report?.generated_at ?? null,
+        generation_error: report?.generation_error ?? null,
+        location_mismatch_count: rDate ? (mismatchMap.get(`${c.id}:${rDate}`) ?? 0) : 0,
+      } : null,
+    };
+  });
+  res.json({ data });
+});
+
+// ─── Per-convoy report-day index ─────────────────────────────────────────────
+// Returns the convoy plus every persisted daily-report row (they never expire),
+// so the Convoy Reports page can show a folder-per-convoy with an expandable
+// day list. The frontend fills in the calendar days between start/end that have
+// no row yet (generatable-on-demand) — this endpoint only carries what exists.
+const getConvoyReportDays = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const convoyRes = await query(
+    `SELECT c.id, c.name, c.status, c.timezone, c.start_date, c.end_date,
+            c.seal_count_per_truck,
+            cl.name AS client_name, cl.company AS client_company,
+            (SELECT COUNT(*) FROM convoy_trucks ct WHERE ct.convoy_id = c.id)::int AS truck_count
+     FROM convoys c
+     LEFT JOIN cargo_clients cl ON cl.id = c.client_id
+     WHERE c.id = $1 AND c.org_id = $2 AND c.deleted_at IS NULL`,
+    [id, req.user.org_id]
+  );
+  if (!convoyRes.rows.length) return res.status(404).json({ error: 'Convoy not found' });
+  const convoy = convoyRes.rows[0];
+
+  const [daysRes, mismatchRes] = await Promise.all([
+    query(
+      `SELECT report_date::text AS report_date, status,
+              required_photo_count, received_photo_count,
+              pdf_url, generated_at, generation_error, updated_at
+       FROM convoy_daily_reports
+       WHERE convoy_id = $1
+         AND ($2::date IS NULL OR report_date >= $2::date)
+       ORDER BY report_date DESC`,
+      [id, convoy.start_date]
+    ),
+    query(
+      `SELECT report_date::text AS report_date, COUNT(*)::int AS mismatch_count
+       FROM convoy_truck_photos WHERE convoy_id = $1 AND location_mismatch = true
+       GROUP BY report_date`,
+      [id]
+    ),
+  ]);
+  const mismatchMap = new Map(mismatchRes.rows.map(m => [String(m.report_date).slice(0, 10), m.mismatch_count]));
+
+  const days = daysRes.rows.map(r => {
+    const d = String(r.report_date).slice(0, 10);
+    return {
+      report_date: d,
+      status: r.status,
+      required_photo_count: r.required_photo_count,
+      received_photo_count: r.received_photo_count,
+      pdf_url: r.pdf_url ?? null,
+      generated_at: r.generated_at ?? null,
+      generation_error: r.generation_error ?? null,
+      location_mismatch_count: mismatchMap.get(d) ?? 0,
+    };
+  });
+
+  res.json({ data: { convoy, days } });
+});
+
+// ─── E6: Per-date Report Detail ──────────────────────────────────────────────
+
+async function getConvoyReportDetail(req, res, next) {
+  try {
+    const { id, date } = req.params;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    }
+
+    const { query } = require('../config/database');
+
+    const convoyRes = await query(
+      `SELECT c.id, c.name, c.status, c.start_date, c.end_date, c.timezone, c.seal_count_per_truck,
+              cl.name AS client_name, cl.company AS client_company
+       FROM convoys c
+       LEFT JOIN cargo_clients cl ON cl.id = c.client_id
+       WHERE c.id = $1 AND c.deleted_at IS NULL`,
+      [id]
+    );
+    if (!convoyRes.rows.length) return res.status(404).json({ error: 'Convoy not found' });
+
+    const [trucksRes, photosRes, sealsRes, waypointsRes, reportRes, namedWaypointsRes] = await Promise.all([
+      query(
+        `SELECT ct.id, COALESCE(ct.registration, v.registration) AS plate_number, v.make, v.model, ct.position,
+                u.name AS cfo_name, u.id AS cfo_user_id
+         FROM convoy_trucks ct
+         LEFT JOIN vehicles v ON v.id = ct.vehicle_id
+         LEFT JOIN convoy_cfo_truck_assignments ccta
+               ON ccta.convoy_truck_id = ct.id AND ccta.convoy_id = $1
+         LEFT JOIN users u ON u.id = ccta.cfo_user_id
+         WHERE ct.convoy_id = $1
+         ORDER BY ct.position`,
+        [id]
+      ),
+      query(
+        `SELECT id, convoy_truck_id, session, photo_type, seal_position,
+                photo_url, taken_at, lat, lng, location_mismatch, notes
+         FROM convoy_truck_photos
+         WHERE convoy_id = $1 AND report_date = $2
+         ORDER BY convoy_truck_id, session, photo_type`,
+        [id, date]
+      ),
+      query(
+        `SELECT id, convoy_truck_id, seal_position, rfid_code, session,
+                status, photo_url, notes, scanned_at
+         FROM convoy_seals
+         WHERE convoy_id = $1 AND report_date = $2
+         ORDER BY convoy_truck_id, seal_position`,
+        [id, date]
+      ),
+      query(
+        `SELECT lat, lng, speed_kmh, heading, recorded_at
+         FROM convoy_waypoints
+         WHERE convoy_id = $1 AND recorded_at::date = $2::date
+         ORDER BY recorded_at
+         LIMIT 500`,
+        [id, date]
+      ),
+      query(
+        `SELECT status, received_photo_count, required_photo_count,
+                generated_at, pdf_url, generation_error
+         FROM convoy_daily_reports
+         WHERE convoy_id = $1 AND report_date = $2`,
+        [id, date]
+      ),
+      query(
+        `SELECT seq, name, lat, lng FROM convoy_route_waypoints WHERE convoy_id = $1 ORDER BY seq`,
+        [id]
+      ),
+    ]);
+
+    // CFO-app tables use FORCE RLS — run separately so any failure degrades
+    // gracefully to empty arrays rather than 500ing the whole endpoint
+    const { withOrg } = require('../utils/orgScopedDb');
+    const orgId = req.user?.org_id;
+    let cfoUploadsRows = [], cfoReportRows = [];
+    if (orgId) {
+      try {
+        [cfoUploadsRows, cfoReportRows] = await withOrg(orgId, async (client) => {
+          const [u, r] = await Promise.all([
+            client.query(
+              `SELECT pu.id, pu.photo_type, pu.r2_url AS photo_url,
+                      pu.phase AS session, pu.plate_number, pu.lat, pu.lng,
+                      pu.timestamp AS taken_at, u.name AS cfo_name
+               FROM photo_uploads pu
+               LEFT JOIN users u ON u.id::text = pu.cfo_id
+               WHERE pu.convoy_id = $1::text AND pu.timestamp::date = $2::date
+               ORDER BY pu.timestamp`,
+              [id, date]
+            ),
+            client.query(
+              `SELECT cr.status, cr.sod_submitted_at, cr.eod_submitted_at, cr.handover_form_url,
+                      u.name AS cfo_name
+               FROM convoy_reports cr
+               LEFT JOIN users u ON u.id::text = cr.cfo_id
+               WHERE cr.convoy_id = $1::text AND cr.date = $2::date`,
+              [id, date]
+            ),
+          ]);
+          return [u.rows, r.rows];
+        });
+      } catch (cfoErr) {
+        logger.error(`getConvoyReportDetail: CFO-app queries failed (non-fatal): ${cfoErr.message}`);
+      }
+    }
+    const cfoUploadsRes = { rows: cfoUploadsRows };
+    const cfoReportRes = { rows: cfoReportRows };
+
+    const r2PublicUrl = process.env.R2_PUBLIC_URL;
+    const normalizePhotoUrl = (url) => {
+      if (!url || !r2PublicUrl) return url;
+      return url.replace(/^https?:\/\/pub-[a-f0-9]+\.r2\.dev\//, `${r2PublicUrl}/`);
+    };
+
+    const photosByTruck = {};
+    for (const p of photosRes.rows) {
+      p.photo_url = normalizePhotoUrl(p.photo_url);
+      (photosByTruck[p.convoy_truck_id] = photosByTruck[p.convoy_truck_id] || []).push(p);
+    }
+    const sealsByTruck = {};
+    for (const s of sealsRes.rows) {
+      s.photo_url = normalizePhotoUrl(s.photo_url);
+      (sealsByTruck[s.convoy_truck_id] = sealsByTruck[s.convoy_truck_id] || []).push(s);
+    }
+
+    // Synthesize daily_report from CFO app data when no PDF report exists yet
+    let dailyReport = reportRes.rows[0] || null;
+    if (dailyReport) dailyReport.pdf_url = normalizePhotoUrl(dailyReport.pdf_url);
+    if (!dailyReport && cfoReportRes.rows.length) {
+      const cr = cfoReportRes.rows[0];
+      const sealCount = convoyRes.rows[0].seal_count_per_truck ?? 0;
+      dailyReport = {
+        status: cr.status,
+        received_photo_count: cfoUploadsRes.rows.length,
+        required_photo_count: trucksRes.rows.length * (2 + sealCount) * 2,
+        generated_at: null,
+        pdf_url: null,
+        generation_error: null,
+      };
+    }
+
+    // Synthesized integrity read — same module the PDF uses, so the on-screen
+    // report and the client PDF always show the same verdict / score / findings.
+    let integrity = null;
+    try {
+      const { assessConvoy } = require('../utils/convoyIntegrity');
+      integrity = assessConvoy({
+        convoy: convoyRes.rows[0],
+        trucks: trucksRes.rows,
+        photos: photosRes.rows,
+        seals: sealsRes.rows,
+        waypoints: waypointsRes.rows,
+        namedWaypoints: namedWaypointsRes.rows,
+        report: { ...(dailyReport || {}), report_date: date },
+        sealCountPerTruck: convoyRes.rows[0].seal_count_per_truck ?? 0,
+      });
+    } catch (assessErr) {
+      logger.error(`getConvoyReportDetail: integrity assessment failed (non-fatal): ${assessErr.message}`);
+    }
+
+    res.json({
+      data: {
+        convoy: convoyRes.rows[0],
+        report_date: date,
+        daily_report: dailyReport,
+        integrity,
+        trucks: trucksRes.rows.map(t => ({
+          ...t,
+          photos: photosByTruck[t.id] || [],
+          seals: sealsByTruck[t.id] || [],
+        })),
+        waypoints: waypointsRes.rows,
+        named_waypoints: namedWaypointsRes.rows,
+        cfo_uploads: cfoUploadsRes.rows.map(u => ({ ...u, photo_url: normalizePhotoUrl(u.photo_url) })),
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
 
 module.exports = {
   createConvoyCfo,
   addTruck,
   removeTruck,
+  getRouteWaypoints,
+  setRouteWaypoints,
   addCfo,
   removeCfo,
   assignTruckToCfo,
   removeAssignment,
   getConvoyReports,
+  getConvoyReportDetail,
   regenerateReport,
   downloadReport,
   linkDevice,
+  getConvoyReportsOverview,
+  getConvoyReportDays,
 };

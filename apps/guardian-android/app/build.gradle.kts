@@ -16,13 +16,25 @@ android {
         applicationId = "io.sonalit.guardian"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "4.0.0"
+        versionCode = 13
+        versionName = "4.7.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("String", "API_BASE_URL", "\"https://api.sonalit.io/v4\"")
+        buildConfigField("String", "API_BASE_URL", "\"https://sonalit-production.up.railway.app/api/v1\"")
         buildConfigField("String", "CENTRIFUGO_URL", "\"wss://centrifugo.sonalit.io/connection/websocket\"")
+    }
+
+    signingConfigs {
+        create("release") {
+            val ksFile = file("release.keystore")
+            if (ksFile.exists()) {
+                storeFile = ksFile
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
@@ -33,12 +45,16 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            buildConfigField("String", "API_BASE_URL", "\"https://api.sonalit.io/v4\"")
+            buildConfigField("String", "API_BASE_URL", "\"https://sonalit-production.up.railway.app/api/v1\"")
+            val ksFile = file("release.keystore")
+            if (ksFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
         debug {
             applicationIdSuffix = ".debug"
             isDebuggable = true
-            buildConfigField("String", "API_BASE_URL", "\"https://api-staging.sonalit.io/v4\"")
+            buildConfigField("String", "API_BASE_URL", "\"https://sonalit-production.up.railway.app/api/v1\"")
         }
     }
 
@@ -122,20 +138,30 @@ dependencies {
     // Location
     implementation(libs.play.location)
 
+    // QR rendering (tracking activation) — encoder only, no scanner.
+    implementation(libs.zxing.core)
+
     // CameraX
     implementation(libs.camerax.core)
     implementation(libs.camerax.camera2)
     implementation(libs.camerax.lifecycle)
     implementation(libs.camerax.view)
 
+    // Biometric (panic cancel) + Fragment (FragmentActivity, required by BiometricPrompt)
+    implementation(libs.biometric)
+    implementation(libs.fragment.ktx)
+
+    // MediaSession (headset button SOS trigger)
+    implementation(libs.androidx.media)
+
     // Coil
     implementation(libs.coil.compose)
 
+    // Haze (backdrop blur for Home's glass cards)
+    implementation(libs.haze)
+
     // Accompanist
     implementation(libs.accompanist.permissions)
-
-    // Centrifugo
-    implementation(libs.centrifugo.client)
 
     // Security
     implementation(libs.encrypted.prefs)

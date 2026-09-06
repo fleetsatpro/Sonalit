@@ -1,0 +1,200 @@
+name: Build Guardian Convoy APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/guardian-convoy/**'
+      - '.github/workflows/build-guardian-convoy-apk.yml'
+  # Compile the app on PRs that touch it so build errors are caught before
+  # merge (the release step below stays gated to main, so a PR run just builds +
+  # uploads the debug APK — handy for on-device QA too).
+  pull_request:
+    paths:
+      - 'apps/guardian-convoy/**'
+      - '.github/workflows/build-guardian-convoy-apk.yml'
+  workflow_dispatch:
+
+# Cancel a superseded in-flight run when a PR is updated (main pushes keep their
+# own lane so releases are never cancelled mid-flight).
+concurrency:
+  group: guardian-convoy-apk-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/guardian-convoy/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/guardian-convoy
+        run: npm ci
+
+      - name: Build web assets
+        working-directory: apps/guardian-convoy
+        run: npm run build
+
+      - name: Add Android platform
+        working-directory: apps/guardian-convoy
+        run: npx cap add android
+
+      - name: Sync web assets into Android
+        working-directory: apps/guardian-convoy
+        run: npx cap sync android
+
+      - name: Stamp APK version
+        working-directory: apps/guardian-convoy/android/app
+        run: |
+          # `cap add android` regenerates this project on every run, so the
+          # template's `versionCode 1` would ship on every release. Identical
+          # codes mean Android sees no version difference: an OLDER build can be
+          # installed over a newer one with no downgrade warning, and nothing
+          # on-device identifies which build a driver is actually running.
+          # Both matter for a tracking app — a stale APK silently reintroducing
+          # a telemetry bug is exactly the failure that must not be invisible.
+          sed -i "s/versionCode [0-9]\+/versionCode ${{ github.run_number }}/" build.gradle
+          sed -i "s/versionName \"[^\"]*\"/versionName \"1.0.${{ github.run_number }}\"/" build.gradle
+          grep -nE "versionCode|versionName" build.gradle
+          # A sed that matches nothing still exits 0, so the step would go
+          # green with the template value intact — the silent failure this
+          # whole step exists to prevent. Assert the stamp actually landed.
+          if ! grep -qE "versionCode +${{ github.run_number }}\b" build.gradle; then
+            echo "::error::versionCode was not stamped — the Capacitor template changed shape and the sed no longer matches."
+            exit 1
+          fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          # Default is "tools platform-tools". The obsolete "tools" package drags
+          # in the ~300MB Android Emulator, whose download intermittently arrives
+          # corrupt ("Error on ZipFile unknown archive") and fails the whole job.
+          # Nothing here emulates anything — the next step installs the build-tools
+          # and platform this build actually needs.
+          packages: 'platform-tools'
+
+      - name: Accept SDK licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Install platform and build tools
+        run: sdkmanager "build-tools;34.0.0" "platforms;android-35"
+
+      - name: Set local.properties
+        working-directory: apps/guardian-convoy/android
+        run: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+          # Ensure minimum SDK version is set to 24 (Android 7.0)
+          if [ -f variables.gradle ]; then
+            sed -i 's/minSdkVersion = [0-9]*/minSdkVersion = 24/' variables.gradle
+          fi
+
+      - name: Decode signing keystore
+        if: env.KEYSTORE_BASE64 != ''
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: echo "$KEYSTORE_BASE64" | base64 -d > apps/guardian-convoy/android/app/release.keystore
+
+      - name: Inject release signing config
+        if: env.KEYSTORE_BASE64 != ''
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        working-directory: apps/guardian-convoy/android/app
+        run: |
+          sed -i '/android {/a\
+              signingConfigs {\
+                  release {\
+                      storeFile file("release.keystore")\
+                      storePassword System.getenv("KEYSTORE_PASSWORD")\
+                      keyAlias System.getenv("KEY_ALIAS")\
+                      keyPassword System.getenv("KEY_PASSWORD")\
+                  }\
+              }' build.gradle
+          # Capacitor's generated release buildType doesn't reliably reference
+          # signingConfigs.debug, so a text-replace sed can silently no-op and
+          # leave the release build unsigned. Assign it via the Gradle DSL
+          # instead — this works regardless of what's inside buildTypes.release.
+          echo 'android.buildTypes.release.signingConfig = android.signingConfigs.release' >> build.gradle
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-convoy-gradle-${{ hashFiles('apps/guardian-convoy/android/**/*.gradle*', 'apps/guardian-convoy/android/**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-convoy-gradle-
+
+      - name: Make gradlew executable
+        run: chmod +x apps/guardian-convoy/android/gradlew
+
+      - name: Build APK
+        working-directory: apps/guardian-convoy/android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -f app/release.keystore ]; then
+            ./gradlew assembleRelease --no-daemon --stacktrace
+          else
+            ./gradlew assembleDebug --no-daemon --stacktrace
+          fi
+
+      - name: Locate and rename APK
+        run: |
+          APK_DIR=apps/guardian-convoy/android/app/build/outputs/apk
+          if [ -f "$APK_DIR/release/app-release.apk" ]; then
+            mv "$APK_DIR/release/app-release.apk" "$APK_DIR/guardian-convoy.apk"
+          elif [ -f "$APK_DIR/release/app-release-unsigned.apk" ]; then
+            echo "::error::Release APK is unsigned — signingConfig was not applied to buildTypes.release. Check the 'Inject release signing config' step."
+            mv "$APK_DIR/release/app-release-unsigned.apk" "$APK_DIR/guardian-convoy.apk"
+          elif [ -f "$APK_DIR/debug/app-debug.apk" ]; then
+            mv "$APK_DIR/debug/app-debug.apk" "$APK_DIR/guardian-convoy.apk"
+          else
+            echo "::error::No APK found under $APK_DIR"
+            find "$APK_DIR" -name '*.apk' || true
+            exit 1
+          fi
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: GuardianConvoy
+          path: apps/guardian-convoy/android/app/build/outputs/apk/guardian-convoy.apk
+          retention-days: 7
+
+      - name: Create GitHub Release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: convoy-v${{ github.run_number }}
+          name: Sonalit Guardian Convoy v${{ github.run_number }}
+          body: |
+            Sonalit Guardian Convoy APK — auto-built from commit ${{ github.sha }}
+
+            **Install**: Download and open on an Android 10+ device (enable "Install unknown apps" in settings).
+            **Login**: Enter your backend URL and CFO credentials provided by your operations manager.
+          files: apps/guardian-convoy/android/app/build/outputs/apk/guardian-convoy.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -23,13 +23,13 @@ const MessageQuerySchema = ThreadQuerySchema.extend({
 });
 
 export const messagesRoutes: FastifyPluginAsync = async (app) => {
-  app.addHook('preHandler', requireAuth(app));
+  app.addHook('preHandler', requireAuth);
 
   app.get('/v4/messages/threads', async (req, reply) => {
     const { org_id } = (req as typeof req & { user: { org_id: string } }).user;
     const q = ThreadQuerySchema.parse(req.query);
     const offset = (q.page - 1) * q.limit;
-    const { rows } = await query<{ id: string; subject: string; last_message_at: string; participant_count: number }>(
+    const rows = await query<{ id: string; subject: string; last_message_at: string; participant_count: number }>(
       `SELECT t.id, t.subject, t.last_message_at,
               COUNT(DISTINCT tp.user_id)::int AS participant_count
        FROM message_threads t
@@ -47,12 +47,12 @@ export const messagesRoutes: FastifyPluginAsync = async (app) => {
     const { org_id } = (req as typeof req & { user: { org_id: string } }).user;
     const q = MessageQuerySchema.parse(req.query);
     const offset = (q.page - 1) * q.limit;
-    const { rows: thread } = await query<{ org_id: string }>(
+    const thread = await query<{ org_id: string }>(
       'SELECT org_id FROM message_threads WHERE id = $1 AND deleted_at IS NULL',
       [q.thread_id],
     );
     if (!thread[0] || thread[0].org_id !== org_id) throw new NotFoundError('Thread not found');
-    const { rows } = await query(
+    const rows = await query(
       `SELECT id, sender_id, body, created_at
        FROM messages
        WHERE thread_id = $1 AND deleted_at IS NULL
@@ -68,18 +68,20 @@ export const messagesRoutes: FastifyPluginAsync = async (app) => {
     const body = CreateMessageSchema.parse(req.body);
     let threadId = body.thread_id;
     if (!threadId) {
-      const { rows: [t] } = await query<{ id: string }>(
+      const [t] = await query<{ id: string }>(
         `INSERT INTO message_threads (id, org_id, subject, last_message_at)
          VALUES ($1, $2, $3, NOW()) RETURNING id`,
         [randomUUID(), user.org_id, 'Direct message'],
       );
+      if (!t) throw new Error('Thread insert returned no row');
       threadId = t.id;
     }
-    const { rows: [msg] } = await query<{ id: string; created_at: string }>(
+    const [msg] = await query<{ id: string; created_at: string }>(
       `INSERT INTO messages (id, thread_id, sender_id, body)
        VALUES ($1, $2, $3, $4) RETURNING id, created_at`,
       [randomUUID(), threadId, user.id, body.body],
     );
+    if (!msg) throw new Error('Message insert returned no row');
     await query('UPDATE message_threads SET last_message_at = NOW() WHERE id = $1', [threadId]);
     try {
       const js = getJs();

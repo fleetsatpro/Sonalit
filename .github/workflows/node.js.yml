@@ -1,10 +1,29 @@
 name: CI
 
+# A push to a claude/** branch with an open PR used to match BOTH triggers, so
+# every commit ran this whole pipeline twice — two identical ~12-minute runs for
+# one result. Dropping claude/** from `push` leaves `pull_request` to cover
+# those branches exactly once. The trade-off is that a claude/** branch gets no
+# CI until its PR is opened, which is the moment the result first matters.
 on:
   push:
-    branches: ["main", "claude/**"]
+    branches: ["main"]
   pull_request:
     branches: ["main"]
+  # Manual escape hatch. On 2026-08-06 both automatic triggers silently stopped
+  # dispatching — no run was created for four consecutive PR pushes or for a
+  # push to main, while Vercel/Cloudflare/Supabase kept responding to the same
+  # events. With no way to run CI on demand there was no way to tell a broken
+  # pipeline from a broken repo, and nothing could be verified before merging.
+  workflow_dispatch:
+
+# Superseded runs are wasted minutes: push twice in five minutes and the first
+# run's verdict is already stale. Cancel it on PRs, but never on main — the
+# OpenAPI drift check below is gated to main, and a release lane should not be
+# killed mid-flight. Same shape as the three APK workflows.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -12,7 +31,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: sonalit
           POSTGRES_PASSWORD: sonalit
@@ -39,8 +58,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - name: Use Node.js 22
         uses: actions/setup-node@v4
@@ -60,8 +77,13 @@ jobs:
       - name: Build web
         run: pnpm --filter @sonalit/web build
 
+      # --forceExit for the same reason the integration step below has it: a suite
+      # leaks a handle, so jest reports all tests green and then never exits,
+      # hanging the job indefinitely (reproducible locally — 172 tests pass in
+      # ~5s, then the process sits forever). Results are final before the exit,
+      # so forcing it loses no signal.
       - name: Backend unit tests
-        run: pnpm --filter fleetops-backend exec jest --testPathIgnorePatterns=integration --no-coverage
+        run: pnpm --filter fleetops-backend exec jest --testPathIgnorePatterns=integration --no-coverage --forceExit
         env:
           JWT_SECRET: ci-test-jwt-secret
           DATABASE_URL: ""
@@ -72,15 +94,29 @@ jobs:
         env:
           DATABASE_URL: postgresql://sonalit:sonalit@localhost:5432/sonalit_test
 
+      - name: Telemetry evidence invariants (SQL)
+        # These properties are enforced by the DATABASE, not by application
+        # code: a unique index either rejects a replay or it does not, and only
+        # the engine can say which. Runs straight after the migrations so a
+        # schema change that quietly weakens an idempotency or isolation
+        # guarantee fails the build instead of being discovered in the field.
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -f backend/tests/sql/telemetry_evidence_invariants.sql
+        env:
+          DATABASE_URL: postgresql://sonalit:sonalit@localhost:5432/sonalit_test
+
       - name: Backend integration tests
-        run: pnpm --filter fleetops-backend exec jest --testPathPattern=integration --no-coverage
+        run: pnpm --filter fleetops-backend exec jest --testPathPattern=integration --no-coverage --runInBand --forceExit
         env:
           JWT_SECRET: ci-test-jwt-secret
           DATABASE_URL: postgresql://sonalit:sonalit@localhost:5432/sonalit_test
           REDIS_URL: redis://localhost:6379
           DISABLE_REDIS: "false"
+          NODE_ENV: test
 
       - name: OpenAPI drift check
+        if: github.ref == 'refs/heads/main'
         run: node scripts/generate-openapi.js --check
         working-directory: backend
         env:
@@ -88,15 +124,27 @@ jobs:
           DATABASE_URL: ""
 
       - name: Install Playwright browsers
-        run: pnpm --filter @sonalit/web exec playwright install --with-deps chromium
+        # Retry: --with-deps runs apt-get, which intermittently fails on
+        # transient Azure/Microsoft mirror errors ("Clearsigned file isn't valid").
+        # Fall back to a plain browser install — the ubuntu-latest image already
+        # ships the system libraries Chromium needs.
+        run: |
+          pnpm --filter @sonalit/web exec playwright install --with-deps chromium \
+            || (sleep 20 && pnpm --filter @sonalit/web exec playwright install --with-deps chromium) \
+            || pnpm --filter @sonalit/web exec playwright install chromium
 
       - name: Playwright E2E tests
         run: pnpm --filter @sonalit/web exec playwright test
         env:
           CI: "true"
 
+      # Debugging aid, not a gate: the E2E result is already recorded in the step
+      # above. A full artifact bucket must not turn a green run red — which is
+      # exactly what happened here (107 E2E tests passed, then CreateArtifact
+      # failed on "Artifact storage quota has been hit").
       - name: Upload Playwright report
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report

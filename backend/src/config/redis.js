@@ -4,13 +4,19 @@ const logger = require('../utils/logger');
 
 let redisClient = null;
 
+function normalizeRedisUrl(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return 'redis://127.0.0.1:6379';
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `redis://${value}`;
+}
+
 function createRedisClient() {
   if (process.env.DISABLE_REDIS === 'true') {
     logger.warn('Redis disabled via DISABLE_REDIS=true. Queue workers will not start.');
     return null;
   }
 
-  const client = new Redis(process.env.REDIS_URL || 'redis://127.0.0.1:6379', {
+  const client = new Redis(normalizeRedisUrl(process.env.REDIS_URL), {
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
     retryStrategy(times) {
@@ -48,4 +54,4 @@ async function healthCheck() {
   }
 }
 
-module.exports = { getRedis, healthCheck };
+module.exports = { getRedis, healthCheck, normalizeRedisUrl };

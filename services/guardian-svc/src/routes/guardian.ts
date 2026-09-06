@@ -201,4 +201,33 @@ export const guardianRoutes: FastifyPluginAsync = async (app) => {
     if (!device) throw new NotFoundError('Device not found or not in pending state');
     return reply.send(device);
   });
+
+  // Assign device to a field officer or convoy (operator-facing).
+  const AssignDeviceSchema = z.object({
+    assignment_type: z.enum(['field_officer', 'convoy', 'unassigned']).optional(),
+    assignment_id: z.string().uuid().nullable().optional(),
+    name: z.string().max(255).optional(),
+  });
+
+  app.patch('/v4/guardian/devices/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = AssignDeviceSchema.parse(req.body);
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    if (body.assignment_type !== undefined) { params.push(body.assignment_type); sets.push(`assignment_type = $${params.length}`); }
+    if (body.assignment_id !== undefined) { params.push(body.assignment_id); sets.push(`assignment_id = $${params.length}`); }
+    if (body.name !== undefined) { params.push(body.name); sets.push(`name = $${params.length}`); }
+    if (!sets.length) {
+      const d = await queryOne('SELECT * FROM guardian_devices WHERE id=$1 AND deleted_at IS NULL', [id]);
+      if (!d) throw new NotFoundError('Device not found');
+      return reply.send(d);
+    }
+    params.push(id);
+    const device = await queryOne(
+      `UPDATE guardian_devices SET ${sets.join(', ')}, updated_at=NOW() WHERE id=$${params.length} AND deleted_at IS NULL RETURNING *`,
+      params,
+    );
+    if (!device) throw new NotFoundError('Device not found');
+    return reply.send(device);
+  });
 };

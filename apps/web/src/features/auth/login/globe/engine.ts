@@ -1,0 +1,354 @@
+// Live Operations Globe — pure canvas engine.
+// Ported byte-for-byte from docs/sonalit-login.html. React shell in
+// ../OperationsGlobe.tsx owns the canvas ref/rAF loop/resize/visibility;
+// this module knows nothing about React.
+
+import { LAND } from './landDots';
+import {
+  CITIES, ROUTES, MODE_COL, DOT_COL, DOT_R,
+  DEG, sinLat0, cosLat0,
+  v3, slerp, vll,
+  type Mode, type Vec3,
+} from './geo';
+import { VSIZE, drawVehicle } from './vehicles';
+
+// ─────────────────────────────────────────────────────────────────────────
+// TUNABLE — one revolution per 90s.
+// TUNABLE — starting longitude (Africa-centred at ~20°E).
+// TUNABLE — framing: R = min(W,H)*0.43, cx = W*0.57, cy = H*0.46.
+// TUNABLE — vehicle sizes live in vehicles.ts:VSIZE.
+// TUNABLE — per-mode arc-traversal durations (ms) below in routeGeo builder.
+// ─────────────────────────────────────────────────────────────────────────
+export const ROT_PER_MS = 360 / 90000;
+export const BASE_LON = 20;
+
+// ─────────────────────────────────────────────────────────────────────────
+// Per-load variety — like a fresh backdrop every visit. On each mount we pick
+// one SCENE (colour mood for the sphere / atmosphere / graticule) and one
+// starting REGION (which slice of the planet is framed first). Brand colours
+// for land, routes and cities stay constant so identity holds.
+// ─────────────────────────────────────────────────────────────────────────
+type Scene = {
+  name: string;
+  sphere: [string, string, string];      // core → mid → rim
+  atmo: [string, string, string, string]; // 4 atmosphere stops (inner→outer)
+  grat: string;                            // graticule stroke
+};
+const SCENES: Scene[] = [
+  { name: 'nightwatch',
+    sphere: ['#0D1728', '#080E1A', '#050810'],
+    atmo: ['rgba(74,158,255,0)', 'rgba(74,158,255,0.05)', 'rgba(240,180,41,0.07)', 'rgba(240,180,41,0)'],
+    grat: 'rgba(120,150,195,0.055)' },
+  { name: 'goldstorm',
+    sphere: ['#181206', '#0C0A06', '#050810'],
+    atmo: ['rgba(240,180,41,0)', 'rgba(240,180,41,0.06)', 'rgba(255,201,74,0.10)', 'rgba(240,180,41,0)'],
+    grat: 'rgba(190,160,110,0.06)' },
+  { name: 'aurora',
+    sphere: ['#08191E', '#06131A', '#050810'],
+    atmo: ['rgba(53,196,215,0)', 'rgba(53,196,215,0.06)', 'rgba(95,224,200,0.09)', 'rgba(53,196,215,0)'],
+    grat: 'rgba(110,180,190,0.06)' },
+  { name: 'deepsea',
+    sphere: ['#081522', '#05101A', '#050810'],
+    atmo: ['rgba(74,158,255,0)', 'rgba(74,158,255,0.07)', 'rgba(53,196,215,0.08)', 'rgba(74,158,255,0)'],
+    grat: 'rgba(90,140,190,0.06)' },
+  { name: 'emberwatch',
+    sphere: ['#1A0E10', '#0E080C', '#050810'],
+    atmo: ['rgba(255,93,108,0)', 'rgba(239,159,39,0.05)', 'rgba(240,180,41,0.09)', 'rgba(255,93,108,0)'],
+    grat: 'rgba(180,130,120,0.055)' },
+];
+// Region centres (°lon) that frame a pleasing land mass first: Africa, Europe,
+// Middle East, South Asia, East Asia, Oceania, the Americas.
+const REGION_LONS = [20, 10, 45, 78, 110, 140, -60, -95];
+
+function pick<T>(arr: T[]): T { return arr[(Math.random() * arr.length) | 0]!; }
+
+export type GlobeController = {
+  start: () => void;
+  stop: () => void;
+  resize: () => void;
+};
+
+type RouteGeo = {
+  va: Vec3;
+  vb: Vec3;
+  mode: Mode;
+  phase: number;
+  dur: number;
+};
+
+/**
+ * Build a globe engine bound to a single <canvas>. Returns a controller with
+ * start()/stop()/resize(); the caller (React shell) drives lifecycle.
+ */
+export function createGlobeEngine(
+  canvas: HTMLCanvasElement,
+  opts: { reducedMotion?: boolean } = {},
+): GlobeController {
+  const reducedMotion = !!opts.reducedMotion;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('2D canvas context unavailable');
+
+  // Fresh scene + framing every mount.
+  const scene = pick(SCENES);
+  const startLon = pick(REGION_LONS) + (Math.random() * 24 - 12);
+
+  let W = 0, H = 0, cx = 0, cy = 0, R = 0;
+  let lon0 = startLon;
+
+  // Deep-space starfield behind the globe — normalized coords so it survives
+  // resize; a few gold stars pick up the brand. Adds depth so the backdrop
+  // reads as a scene, not a flat vector disc.
+  const stars = Array.from({ length: 130 }, () => ({
+    x: Math.random(), y: Math.random(),
+    r: 0.4 + Math.random() * 1.2,
+    a: 0.10 + Math.random() * 0.5,
+    tw: 0.4 + Math.random() * 1.3,
+    ph: Math.random() * 6.283,
+    gold: Math.random() < 0.09,
+  }));
+  let startT: number | null = null;
+  let rafId: number | null = null;
+  let running = false;
+
+  function resize(): void {
+    const rect = canvas.getBoundingClientRect();
+    // Render at up to 3× device pixels for an extremely crisp, high-DPI globe.
+    const DPR = Math.min(window.devicePixelRatio || 1, 3);
+    W = rect.width  || 700;
+    H = rect.height || 700;
+    canvas.width  = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    ctx!.setTransform(DPR, 0, 0, DPR, 0, 0);
+    R  = Math.min(W, H) * 0.43;
+    cx = W * 0.57;
+    cy = H * 0.46;
+    if (reducedMotion || !running) drawFrame(0);
+  }
+
+  // Projection is closed over locals so resize() updates it live.
+  function project(lonDeg: number, latDeg: number) {
+    const la = latDeg * DEG;
+    const lo = (lonDeg - lon0) * DEG;
+    const cosla = Math.cos(la);
+    const sinla = Math.sin(la);
+    const coslo = Math.cos(lo);
+    const cosc  = sinLat0 * sinla + cosLat0 * cosla * coslo;
+    const x = cosla * Math.sin(lo);
+    const y = cosLat0 * sinla - sinLat0 * cosla * coslo;
+    return { sx: cx + R * x, sy: cy - R * y, vis: cosc >= -0.02, depth: cosc };
+  }
+
+  const routeGeo: RouteGeo[] = ROUTES.map((rt, i) => {
+    const A = CITIES[rt.a]!, B = CITIES[rt.b]!;
+    return {
+      va: v3(A.lon, A.lat),
+      vb: v3(B.lon, B.lat),
+      mode: rt.mode,
+      phase: (i * 0.137) % 1,
+      // TUNABLE — arc traversal, ms: ships crawl at ~7.6× planes.
+      dur: rt.mode === 'air' ? 5000 : rt.mode === 'road' ? 13000 : 38000,
+    };
+  });
+
+  function drawSphere(): void {
+    const g = ctx!.createRadialGradient(cx - R * 0.32, cy - R * 0.34, R * 0.1, cx, cy, R);
+    g.addColorStop(0, scene.sphere[0]);
+    g.addColorStop(0.7, scene.sphere[1]);
+    g.addColorStop(1, scene.sphere[2]);
+    ctx!.fillStyle = g;
+    ctx!.beginPath(); ctx!.arc(cx, cy, R, 0, 7); ctx!.fill();
+    const a = ctx!.createRadialGradient(cx, cy, R * 0.9, cx, cy, R * 1.14);
+    a.addColorStop(0,    scene.atmo[0]);
+    a.addColorStop(0.5,  scene.atmo[1]);
+    a.addColorStop(0.78, scene.atmo[2]);
+    a.addColorStop(1,    scene.atmo[3]);
+    ctx!.fillStyle = a;
+    ctx!.beginPath(); ctx!.arc(cx, cy, R * 1.14, 0, 7); ctx!.fill();
+  }
+
+  function drawGraticule(): void {
+    ctx!.lineWidth = 1;
+    ctx!.strokeStyle = scene.grat;
+    for (let lon = -180; lon < 180; lon += 30) {
+      ctx!.beginPath();
+      let on = false;
+      for (let lat = -84; lat <= 84; lat += 3) {
+        const p = project(lon, lat);
+        if (p.vis) { on ? ctx!.lineTo(p.sx, p.sy) : ctx!.moveTo(p.sx, p.sy); on = true; }
+        else on = false;
+      }
+      ctx!.stroke();
+    }
+    for (let lat = -60; lat <= 60; lat += 30) {
+      ctx!.beginPath();
+      let on = false;
+      for (let lon = -180; lon <= 180; lon += 3) {
+        const p = project(lon, lat);
+        if (p.vis) { on ? ctx!.lineTo(p.sx, p.sy) : ctx!.moveTo(p.sx, p.sy); on = true; }
+        else on = false;
+      }
+      ctx!.stroke();
+    }
+  }
+
+  function drawLand(): void {
+    const scale = R / 300;
+    for (let i = 0; i < LAND.length; i++) {
+      const L = LAND[i]!;
+      const p = project(L[0], L[1]);
+      if (!p.vis || p.depth < 0) continue;
+      const d = p.depth;
+      const cls = L[2];
+      const r = DOT_R[cls]! * (0.5 + 0.5 * d) * scale;
+      ctx!.globalAlpha = 0.32 + 0.68 * d;
+      ctx!.fillStyle = DOT_COL[cls]!;
+      ctx!.fillRect(p.sx - r, p.sy - r, r * 2, r * 2);
+    }
+    ctx!.globalAlpha = 1;
+  }
+
+  function drawRoutes(now: number): void {
+    for (const g of routeGeo) {
+      ctx!.lineWidth = 1;
+      ctx!.strokeStyle = MODE_COL[g.mode];
+      ctx!.globalAlpha = 0.20;
+      ctx!.beginPath();
+      let on = false;
+      for (let s = 0; s <= 40; s++) {
+        const v = slerp(g.va, g.vb, s / 40);
+        const ll = vll(v);
+        const p = project(ll[0], ll[1]);
+        if (p.vis) { on ? ctx!.lineTo(p.sx, p.sy) : ctx!.moveTo(p.sx, p.sy); on = true; }
+        else on = false;
+      }
+      ctx!.stroke();
+      ctx!.globalAlpha = 1;
+
+      const t  = reducedMotion ? g.phase : ((now / g.dur) + g.phase) % 1;
+      const t2 = Math.min(1, t + 0.012);
+      const va  = slerp(g.va, g.vb, t);
+      const vb2 = slerp(g.va, g.vb, t2);
+      const lla = vll(va);
+      const llb = vll(vb2);
+      const p  = project(lla[0], lla[1]);
+      const p2 = project(llb[0], llb[1]);
+      if (p.vis && p.depth > 0.05) {
+        const ang = Math.atan2(p2.sy - p.sy, p2.sx - p.sx);
+        const s = R * VSIZE[g.mode] * (0.72 + 0.28 * p.depth);
+        ctx!.save();
+        ctx!.translate(p.sx, p.sy);
+        ctx!.rotate(ang);
+        ctx!.globalAlpha = Math.max(0.42, Math.min(1, p.depth * 1.4));
+        // soft shadow for lift
+        ctx!.fillStyle = 'rgba(0,0,0,0.28)';
+        ctx!.beginPath();
+        ctx!.ellipse(-0.06 * s, 0.10 * s, s * 0.7, s * 0.5, 0, 0, 7);
+        ctx!.fill();
+        drawVehicle(ctx!, g.mode, s);
+        ctx!.restore();
+        ctx!.globalAlpha = 1;
+      }
+    }
+  }
+
+  // City check-in pings, triggered as rotation carries a city through centre.
+  const relPrev: Record<string, number> = {};
+  const pings: { lon: number; lat: number; born: number }[] = [];
+  function drawCities(now: number): void {
+    Object.entries(CITIES).forEach(([k, c]) => {
+      const rel = ((c.lon - lon0 + 540) % 360) - 180;
+      if (!reducedMotion && relPrev[k] !== undefined && relPrev[k]! < 0 && rel >= 0 && Math.abs(c.lat) < 70) {
+        pings.push({ lon: c.lon, lat: c.lat, born: now });
+      }
+      relPrev[k] = rel;
+      const p = project(c.lon, c.lat);
+      if (!p.vis || p.depth < 0) return;
+      const col = MODE_COL[c.mode];
+      // luminous node — soft coloured bloom + hot white core, brighter as the
+      // city faces us. Cheap: only ~a dozen cities per frame.
+      ctx!.save();
+      ctx!.shadowColor = col;
+      ctx!.shadowBlur = 7 * (0.4 + 0.6 * p.depth);
+      ctx!.fillStyle = col;
+      ctx!.globalAlpha = 0.9;
+      ctx!.beginPath(); ctx!.arc(p.sx, p.sy, 2.3, 0, 7); ctx!.fill();
+      ctx!.shadowBlur = 4;
+      ctx!.shadowColor = '#FFF6DA';
+      ctx!.fillStyle = '#FFF6DA';
+      ctx!.beginPath(); ctx!.arc(p.sx, p.sy, 0.9, 0, 7); ctx!.fill();
+      ctx!.restore();
+      ctx!.globalAlpha = 1;
+      if (c.label && p.depth > 0.34) {
+        ctx!.font = '500 9px "JetBrains Mono", monospace';
+        ctx!.fillStyle = 'rgba(150,163,186,' + (0.35 + 0.5 * p.depth).toFixed(2) + ')';
+        ctx!.textBaseline = 'middle';
+        const right = p.sx > cx;
+        ctx!.textAlign = right ? 'left' : 'right';
+        ctx!.fillText(c.label, p.sx + (right ? 7 : -7), p.sy);
+      }
+    });
+    for (let i = pings.length - 1; i >= 0; i--) {
+      const pg = pings[i]!;
+      const age = (now - pg.born) / 1400;
+      if (age >= 1) { pings.splice(i, 1); continue; }
+      const p = project(pg.lon, pg.lat);
+      if (p.vis && p.depth > 0) {
+        ctx!.strokeStyle = 'rgba(240,180,41,' + ((1 - age) * 0.6).toFixed(2) + ')';
+        ctx!.lineWidth = 1;
+        ctx!.beginPath(); ctx!.arc(p.sx, p.sy, 4 + age * 22, 0, 7); ctx!.stroke();
+      }
+    }
+  }
+
+  function drawStars(now: number): void {
+    for (const s of stars) {
+      const tw = reducedMotion ? 1 : 0.55 + 0.45 * Math.sin(now * 0.001 * s.tw + s.ph);
+      ctx!.globalAlpha = s.a * tw;
+      ctx!.fillStyle = s.gold ? '#F0B429' : '#AEBBD6';
+      ctx!.beginPath(); ctx!.arc(s.x * W, s.y * H, s.r, 0, 7); ctx!.fill();
+    }
+    ctx!.globalAlpha = 1;
+  }
+
+  function drawFrame(now: number): void {
+    if (!W || !H) return;
+    ctx!.clearRect(0, 0, W, H);
+    drawStars(now);   // behind everything; the sphere fill covers any that fall on the disc
+    drawSphere();
+    drawGraticule();
+    drawLand();
+    drawRoutes(now);
+    drawCities(now);
+  }
+
+  function loop(now: number): void {
+    if (!running) return;
+    if (startT === null) startT = now;
+    lon0 = (startLon + (now - startT) * ROT_PER_MS) % 360;
+    drawFrame(now);
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function start(): void {
+    if (running) return;
+    running = true;
+    startT = null;
+    if (reducedMotion) {
+      lon0 = startLon;
+      drawFrame(0);
+      running = false;
+      return;
+    }
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function stop(): void {
+    running = false;
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+  }
+
+  return { start, stop, resize };
+}

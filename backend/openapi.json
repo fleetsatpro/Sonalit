@@ -90,6 +90,34 @@
         }
       }
     },
+    "/api/v1/auth/cfo-assignments": {
+      "get": {
+        "operationId": "get_api_v1_auth_cfo_assignments",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/users/{id}": {
+      "patch": {
+        "operationId": "patch_api_v1_auth_users_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_auth_users_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/auth/refresh": {
       "post": {
         "operationId": "post_api_v1_auth_refresh",
@@ -157,6 +185,16 @@
     "/api/v1/vehicles/{id}/history": {
       "get": {
         "operationId": "get_api_v1_vehicles_id_history",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/vehicles/{docId}": {
+      "delete": {
+        "operationId": "delete_api_v1_vehicles_docId",
         "responses": {
           "200": {
             "description": "OK"
@@ -258,6 +296,24 @@
         }
       }
     },
+    "/api/v1/convoys/{id}/route-waypoints": {
+      "get": {
+        "operationId": "get_api_v1_convoys_id_route_waypoints",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_convoys_id_route_waypoints",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/convoys/{id}/cfos": {
       "post": {
         "operationId": "post_api_v1_convoys_id_cfos",
@@ -308,9 +364,39 @@
         }
       }
     },
+    "/api/v1/convoys/reports/overview": {
+      "get": {
+        "operationId": "get_api_v1_convoys_reports_overview",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/convoys/{id}/reports": {
       "get": {
         "operationId": "get_api_v1_convoys_id_reports",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoys/{id}/report-days": {
+      "get": {
+        "operationId": "get_api_v1_convoys_id_report_days",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoys/{id}/reports/{date}/detail": {
+      "get": {
+        "operationId": "get_api_v1_convoys_id_reports_date_detail",
         "responses": {
           "200": {
             "description": "OK"
@@ -331,6 +417,24 @@
     "/api/v1/convoys/{id}/reports/{date}/download": {
       "get": {
         "operationId": "get_api_v1_convoys_id_reports_date_download",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoys/{id}/corridor": {
+      "get": {
+        "operationId": "get_api_v1_convoys_id_corridor",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_convoys_id_corridor",
         "responses": {
           "200": {
             "description": "OK"
@@ -386,6 +490,26 @@
         }
       }
     },
+    "/api/v1/alerts/{id}/promote": {
+      "post": {
+        "operationId": "post_api_v1_alerts_id_promote",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/org-users": {
+      "get": {
+        "operationId": "get_api_v1_messages_org_users",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/messages/channels": {
       "get": {
         "operationId": "get_api_v1_messages_channels",
@@ -394,11 +518,29 @@
             "description": "OK"
           }
         }
+      },
+      "post": {
+        "operationId": "post_api_v1_messages_channels",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
       }
     },
     "/api/v1/messages/channels/{id}": {
+      "delete": {
+        "operationId": "delete_api_v1_messages_channels_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/members": {
       "get": {
-        "operationId": "get_api_v1_messages_channels_id",
+        "operationId": "get_api_v1_messages_channels_id_members",
         "responses": {
           "200": {
             "description": "OK"
@@ -406,7 +548,7 @@
         }
       },
       "post": {
-        "operationId": "post_api_v1_messages_channels_id",
+        "operationId": "post_api_v1_messages_channels_id_members",
         "responses": {
           "200": {
             "description": "OK"
@@ -414,9 +556,173 @@
         }
       }
     },
-    "/api/v1/messages/broadcast": {
+    "/api/v1/messages/channels/{id}/members/{userId}": {
+      "patch": {
+        "operationId": "patch_api_v1_messages_channels_id_members_userId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_messages_channels_id_members_userId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/mute": {
+      "patch": {
+        "operationId": "patch_api_v1_messages_channels_id_mute",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/read": {
+      "patch": {
+        "operationId": "patch_api_v1_messages_channels_id_read",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/messages": {
+      "get": {
+        "operationId": "get_api_v1_messages_channels_id_messages",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
       "post": {
-        "operationId": "post_api_v1_messages_broadcast",
+        "operationId": "post_api_v1_messages_channels_id_messages",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/messages/{msgId}": {
+      "delete": {
+        "operationId": "delete_api_v1_messages_channels_id_messages_msgId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/messages/{msgId}/thread": {
+      "get": {
+        "operationId": "get_api_v1_messages_channels_id_messages_msgId_thread",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/messages/{msgId}/reactions": {
+      "post": {
+        "operationId": "post_api_v1_messages_channels_id_messages_msgId_reactions",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/messages/{msgId}/reactions/{emoji}": {
+      "delete": {
+        "operationId": "delete_api_v1_messages_channels_id_messages_msgId_reactions_emoji",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/pinned": {
+      "get": {
+        "operationId": "get_api_v1_messages_channels_id_pinned",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_messages_channels_id_pinned",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/pinned/{messageId}": {
+      "delete": {
+        "operationId": "delete_api_v1_messages_channels_id_pinned_messageId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/search": {
+      "get": {
+        "operationId": "get_api_v1_messages_channels_id_search",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/channels/{id}/typing": {
+      "post": {
+        "operationId": "post_api_v1_messages_channels_id_typing",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/attachments/presign": {
+      "post": {
+        "operationId": "post_api_v1_messages_attachments_presign",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/attachments/{id}/finalize": {
+      "post": {
+        "operationId": "post_api_v1_messages_attachments_id_finalize",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/attachments/{id}/url": {
+      "get": {
+        "operationId": "get_api_v1_messages_attachments_id_url",
         "responses": {
           "200": {
             "description": "OK"
@@ -464,6 +770,26 @@
         }
       }
     },
+    "/api/v1/analytics/nuclear-report": {
+      "get": {
+        "operationId": "get_api_v1_analytics_nuclear_report",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/sla": {
+      "get": {
+        "operationId": "get_api_v1_analytics_sla",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/geofences/": {
       "get": {
         "operationId": "get_api_v1_geofences",
@@ -485,6 +811,14 @@
     "/api/v1/geofences/{id}": {
       "put": {
         "operationId": "put_api_v1_geofences_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patch_api_v1_geofences_id",
         "responses": {
           "200": {
             "description": "OK"
@@ -531,6 +865,26 @@
     "/api/v1/geofences/{id}/actions/{actionId}/toggle": {
       "patch": {
         "operationId": "patch_api_v1_geofences_id_actions_actionId_toggle",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/geofences/events": {
+      "get": {
+        "operationId": "get_api_v1_geofences_events",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/geofences/{id}/activate-corridor": {
+      "post": {
+        "operationId": "post_api_v1_geofences_id_activate_corridor",
         "responses": {
           "200": {
             "description": "OK"
@@ -614,6 +968,16 @@
         }
       }
     },
+    "/api/v1/incidents/{deviceId}/reconstruct": {
+      "get": {
+        "operationId": "get_api_v1_incidents_deviceId_reconstruct",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/rules/": {
       "get": {
         "operationId": "get_api_v1_rules",
@@ -661,6 +1025,16 @@
       },
       "get": {
         "operationId": "get_api_v1_gps",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/gps/track": {
+      "get": {
+        "operationId": "get_api_v1_gps_track",
         "responses": {
           "200": {
             "description": "OK"
@@ -774,11 +1148,9 @@
             "description": "OK"
           }
         }
-      }
-    },
-    "/api/v1/reports/generate": {
+      },
       "post": {
-        "operationId": "post_api_v1_reports_generate",
+        "operationId": "post_api_v1_reports",
         "responses": {
           "200": {
             "description": "OK"
@@ -789,6 +1161,24 @@
     "/api/v1/reports/{id}": {
       "get": {
         "operationId": "get_api_v1_reports_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_reports_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/reports/{id}/export": {
+      "get": {
+        "operationId": "get_api_v1_reports_id_export",
         "responses": {
           "200": {
             "description": "OK"
@@ -834,6 +1224,16 @@
         }
       }
     },
+    "/api/v1/guardian/recover": {
+      "post": {
+        "operationId": "post_api_v1_guardian_recover",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/enroll": {
       "post": {
         "operationId": "post_api_v1_guardian_enroll",
@@ -847,6 +1247,36 @@
     "/api/v1/guardian/heartbeat": {
       "post": {
         "operationId": "post_api_v1_guardian_heartbeat",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/commands/poll": {
+      "post": {
+        "operationId": "post_api_v1_guardian_commands_poll",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/voice-messages/{id}/audio": {
+      "get": {
+        "operationId": "get_api_v1_guardian_voice_messages_id_audio",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/voice-message": {
+      "post": {
+        "operationId": "post_api_v1_guardian_voice_message",
         "responses": {
           "200": {
             "description": "OK"
@@ -912,6 +1342,36 @@
         }
       }
     },
+    "/api/v1/guardian/whoami": {
+      "get": {
+        "operationId": "get_api_v1_guardian_whoami",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/panic/cancel": {
+      "post": {
+        "operationId": "post_api_v1_guardian_panic_cancel",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/commands": {
+      "get": {
+        "operationId": "get_api_v1_guardian_commands",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/devices": {
       "get": {
         "operationId": "get_api_v1_guardian_devices",
@@ -966,6 +1426,14 @@
             "description": "OK"
           }
         }
+      },
+      "post": {
+        "operationId": "post_api_v1_guardian_devices_id_commands",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
       }
     },
     "/api/v1/guardian/commands/{id}/events": {
@@ -981,6 +1449,16 @@
     "/api/v1/guardian/devices/{id}/history": {
       "get": {
         "operationId": "get_api_v1_guardian_devices_id_history",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/panic/{id}/ack": {
+      "patch": {
+        "operationId": "patch_api_v1_guardian_panic_id_ack",
         "responses": {
           "200": {
             "description": "OK"
@@ -1011,6 +1489,44 @@
     "/api/v1/guardian/checkin": {
       "post": {
         "operationId": "post_api_v1_guardian_checkin",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/capture-photo-url": {
+      "post": {
+        "operationId": "post_api_v1_guardian_capture_photo_url",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/capture-photo": {
+      "post": {
+        "operationId": "post_api_v1_guardian_capture_photo",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/dms": {
+      "get": {
+        "operationId": "get_api_v1_guardian_devices_id_dms",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patch_api_v1_guardian_devices_id_dms",
         "responses": {
           "200": {
             "description": "OK"
@@ -1112,6 +1628,16 @@
         }
       }
     },
+    "/api/v1/guardian/apk/info": {
+      "get": {
+        "operationId": "get_api_v1_guardian_apk_info",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/guardian/apk/download": {
       "get": {
         "operationId": "get_api_v1_guardian_apk_download",
@@ -1132,6 +1658,26 @@
         }
       }
     },
+    "/api/v1/guardian/crash-report": {
+      "post": {
+        "operationId": "post_api_v1_guardian_crash_report",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/capture-event": {
+      "post": {
+        "operationId": "post_api_v1_guardian_capture_event",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/realtime/token": {
       "post": {
         "operationId": "post_api_v1_realtime_token",
@@ -1142,9 +1688,287 @@
         }
       }
     },
+    "/api/v1/realtime/subscription-token": {
+      "post": {
+        "operationId": "post_api_v1_realtime_subscription_token",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/admin/queues": {
       "get": {
         "operationId": "get_api_v1_admin_queues",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/fuel/webhook/fuel-card": {
+      "post": {
+        "operationId": "post_api_v1_fuel_webhook_fuel_card",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/fuel/": {
+      "get": {
+        "operationId": "get_api_v1_fuel",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_fuel",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/fuel/{id}": {
+      "put": {
+        "operationId": "put_api_v1_fuel_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_fuel_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/fuel/anomalies": {
+      "get": {
+        "operationId": "get_api_v1_fuel_anomalies",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/fuel/anomalies/{id}/resolve": {
+      "patch": {
+        "operationId": "patch_api_v1_fuel_anomalies_id_resolve",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/fuel/summary": {
+      "get": {
+        "operationId": "get_api_v1_fuel_summary",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/fuel/stations": {
+      "get": {
+        "operationId": "get_api_v1_fuel_stations",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_fuel_stations",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/fuel/stations/{id}": {
+      "delete": {
+        "operationId": "delete_api_v1_fuel_stations_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/fuel/vehicles/{vehicleId}": {
+      "get": {
+        "operationId": "get_api_v1_fuel_vehicles_vehicleId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/fuel/convoys/{convoyId}": {
+      "get": {
+        "operationId": "get_api_v1_fuel_convoys_convoyId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/shifts/": {
+      "get": {
+        "operationId": "get_api_v1_shifts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_shifts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/shifts/on-duty": {
+      "get": {
+        "operationId": "get_api_v1_shifts_on_duty",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/shifts/coverage": {
+      "get": {
+        "operationId": "get_api_v1_shifts_coverage",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/shifts/{id}": {
+      "put": {
+        "operationId": "put_api_v1_shifts_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_shifts_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/shifts/{id}/handover": {
+      "post": {
+        "operationId": "post_api_v1_shifts_id_handover",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "get": {
+        "operationId": "get_api_v1_shifts_id_handover",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/shifts/handovers/{handoverId}/ack": {
+      "patch": {
+        "operationId": "patch_api_v1_shifts_handovers_handoverId_ack",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/traffic/status": {
+      "get": {
+        "operationId": "get_api_v1_traffic_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/traffic/tiles/flow/{z}/{x}/{y}.png": {
+      "get": {
+        "operationId": "get_api_v1_traffic_tiles_flow_z_x_y_png",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/traffic/incidents": {
+      "get": {
+        "operationId": "get_api_v1_traffic_incidents",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoys/{id}/corridor/auto": {
+      "post": {
+        "operationId": "post_api_v1_convoys_id_corridor_auto",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoys/{id}/corridor/replay": {
+      "get": {
+        "operationId": "get_api_v1_convoys_id_corridor_replay",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoys/{id}/corridor/deviations": {
+      "get": {
+        "operationId": "get_api_v1_convoys_id_corridor_deviations",
         "responses": {
           "200": {
             "description": "OK"
@@ -1185,6 +2009,402 @@
     "/api/v1/guardian/cfo/photos": {
       "post": {
         "operationId": "post_api_v1_guardian_cfo_photos",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/cfo/handover-upload-url": {
+      "post": {
+        "operationId": "post_api_v1_guardian_cfo_handover_upload_url",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/cfo/handover": {
+      "post": {
+        "operationId": "post_api_v1_guardian_cfo_handover",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/cfo/tracking-qr": {
+      "post": {
+        "operationId": "post_api_v1_guardian_cfo_tracking_qr",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/cfo/tracking-status": {
+      "get": {
+        "operationId": "get_api_v1_guardian_cfo_tracking_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/convoy/login": {
+      "post": {
+        "operationId": "post_api_v1_guardian_convoy_login",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/convoy/photos/upload": {
+      "post": {
+        "operationId": "post_api_v1_guardian_convoy_photos_upload",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/convoy/photos/upload-url": {
+      "post": {
+        "operationId": "post_api_v1_guardian_convoy_photos_upload_url",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/convoy/photos/commit": {
+      "post": {
+        "operationId": "post_api_v1_guardian_convoy_photos_commit",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/convoy/handover/upload": {
+      "post": {
+        "operationId": "post_api_v1_guardian_convoy_handover_upload",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/convoy/convoys/{id}/position": {
+      "get": {
+        "operationId": "get_api_v1_guardian_convoy_convoys_id_position",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/convoy/track": {
+      "post": {
+        "operationId": "post_api_v1_guardian_convoy_track",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/convoy/convoy-reports/{convoy_id}": {
+      "get": {
+        "operationId": "get_api_v1_guardian_convoy_convoy_reports_convoy_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/convoy/convoy-reports/{id}/arrival": {
+      "post": {
+        "operationId": "post_api_v1_guardian_convoy_convoy_reports_id_arrival",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/convoy/convoy-reports/{id}/sod": {
+      "post": {
+        "operationId": "post_api_v1_guardian_convoy_convoy_reports_id_sod",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/convoy/convoy-reports/{id}/eod": {
+      "post": {
+        "operationId": "post_api_v1_guardian_convoy_convoy_reports_id_eod",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/convoy/seal-verifications": {
+      "post": {
+        "operationId": "post_api_v1_guardian_convoy_seal_verifications",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/convoy/sos-events": {
+      "post": {
+        "operationId": "post_api_v1_guardian_convoy_sos_events",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/convoy/history": {
+      "get": {
+        "operationId": "get_api_v1_guardian_convoy_history",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/app/pair": {
+      "post": {
+        "operationId": "post_api_v1_field_app_pair",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/app/device": {
+      "get": {
+        "operationId": "get_api_v1_field_app_device",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/app/workers": {
+      "get": {
+        "operationId": "get_api_v1_field_app_workers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/app/sign-in": {
+      "post": {
+        "operationId": "post_api_v1_field_app_sign_in",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/app/me": {
+      "get": {
+        "operationId": "get_api_v1_field_app_me",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/app/pin": {
+      "post": {
+        "operationId": "post_api_v1_field_app_pin",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/app/sign-out": {
+      "post": {
+        "operationId": "post_api_v1_field_app_sign_out",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/admin/devices": {
+      "get": {
+        "operationId": "get_api_v1_field_admin_devices",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_field_admin_devices",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/admin/devices/{id}/rotate": {
+      "post": {
+        "operationId": "post_api_v1_field_admin_devices_id_rotate",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/admin/devices/{id}": {
+      "delete": {
+        "operationId": "delete_api_v1_field_admin_devices_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/admin/workers": {
+      "post": {
+        "operationId": "post_api_v1_field_admin_workers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "get": {
+        "operationId": "get_api_v1_field_admin_workers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/admin/workers/{userId}/pin": {
+      "put": {
+        "operationId": "put_api_v1_field_admin_workers_userId_pin",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/admin/workers/{userId}/unlock": {
+      "post": {
+        "operationId": "post_api_v1_field_admin_workers_userId_unlock",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/response-crew/dispatches": {
+      "get": {
+        "operationId": "get_api_v1_field_response_crew_dispatches",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field/response-crew/dispatches/{id}/status": {
+      "patch": {
+        "operationId": "patch_api_v1_field_response_crew_dispatches_id_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/telemetry/batch": {
+      "post": {
+        "operationId": "post_api_v1_telemetry_batch",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/convoy/day-plan/{convoy_id}": {
+      "get": {
+        "operationId": "get_api_v1_guardian_convoy_day_plan_convoy_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/convoy/day-plan": {
+      "post": {
+        "operationId": "post_api_v1_guardian_convoy_day_plan",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/convoy/day-plan/{id}": {
+      "patch": {
+        "operationId": "patch_api_v1_guardian_convoy_day_plan_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/convoy/day-plan/{id}/waypoints/{wpId}/reach": {
+      "post": {
+        "operationId": "post_api_v1_guardian_convoy_day_plan_id_waypoints_wpId_reach",
         "responses": {
           "200": {
             "description": "OK"
@@ -1296,6 +2516,16 @@
         }
       }
     },
+    "/api/v1/shipments/stats/summary": {
+      "get": {
+        "operationId": "get_api_v1_shipments_stats_summary",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/shipments/{id}": {
       "get": {
         "operationId": "get_api_v1_shipments_id",
@@ -1309,16 +2539,6 @@
     "/api/v1/shipments/{id}/status": {
       "patch": {
         "operationId": "patch_api_v1_shipments_id_status",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/shipments/stats/summary": {
-      "get": {
-        "operationId": "get_api_v1_shipments_stats_summary",
         "responses": {
           "200": {
             "description": "OK"
@@ -1441,6 +2661,2390 @@
     "/api/v1/riskzones/{id}": {
       "delete": {
         "operationId": "delete_api_v1_riskzones_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field-officers/": {
+      "get": {
+        "operationId": "get_api_v1_field_officers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_field_officers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field-officers/{id}": {
+      "patch": {
+        "operationId": "patch_api_v1_field_officers_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "get": {
+        "operationId": "get_api_v1_field_officers_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_field_officers_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field-officers/{id}/activity": {
+      "get": {
+        "operationId": "get_api_v1_field_officers_id_activity",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field-officers/{id}/assign-convoy": {
+      "post": {
+        "operationId": "post_api_v1_field_officers_id_assign_convoy",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field-officers/{id}/unassign-convoy": {
+      "delete": {
+        "operationId": "delete_api_v1_field_officers_id_unassign_convoy",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/field-officers/{id}/ping-device": {
+      "post": {
+        "operationId": "post_api_v1_field_officers_id_ping_device",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/telemetry": {
+      "patch": {
+        "operationId": "patch_api_v1_guardian_devices_id_telemetry",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/command-history": {
+      "get": {
+        "operationId": "get_api_v1_guardian_devices_id_command_history",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/voice-message": {
+      "post": {
+        "operationId": "post_api_v1_guardian_devices_id_voice_message",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/voice-messages": {
+      "get": {
+        "operationId": "get_api_v1_guardian_devices_id_voice_messages",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/voice-messages/recent": {
+      "get": {
+        "operationId": "get_api_v1_guardian_voice_messages_recent",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/captures": {
+      "get": {
+        "operationId": "get_api_v1_guardian_devices_id_captures",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/capture/status": {
+      "get": {
+        "operationId": "get_api_v1_guardian_capture_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/captures/recent": {
+      "get": {
+        "operationId": "get_api_v1_guardian_captures_recent",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/captures/{id}/analyze": {
+      "post": {
+        "operationId": "post_api_v1_guardian_captures_id_analyze",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/captures/analyze-untagged": {
+      "post": {
+        "operationId": "post_api_v1_guardian_captures_analyze_untagged",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/captures/{id}": {
+      "delete": {
+        "operationId": "delete_api_v1_guardian_captures_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/voice-messages/{msgId}/audio": {
+      "get": {
+        "operationId": "get_api_v1_guardian_devices_id_voice_messages_msgId_audio",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/commands/broadcast": {
+      "post": {
+        "operationId": "post_api_v1_guardian_commands_broadcast",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/command-queue": {
+      "get": {
+        "operationId": "get_api_v1_guardian_command_queue",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/command-queue/{commandId}": {
+      "delete": {
+        "operationId": "delete_api_v1_guardian_command_queue_commandId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/alert-rules": {
+      "get": {
+        "operationId": "get_api_v1_guardian_alert_rules",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/approve": {
+      "post": {
+        "operationId": "post_api_v1_guardian_devices_id_approve",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/alert-rules/{ruleId}": {
+      "put": {
+        "operationId": "put_api_v1_guardian_alert_rules_ruleId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/commands/{commandId}/ack": {
+      "post": {
+        "operationId": "post_api_v1_guardian_commands_commandId_ack",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{deviceId}/commands/pending": {
+      "get": {
+        "operationId": "get_api_v1_guardian_devices_deviceId_commands_pending",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{deviceId}/ws-token": {
+      "post": {
+        "operationId": "post_api_v1_guardian_devices_deviceId_ws_token",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/track": {
+      "get": {
+        "operationId": "get_api_v1_guardian_devices_id_track",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/geo/status": {
+      "get": {
+        "operationId": "get_api_v1_guardian_geo_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/geo/geocode": {
+      "get": {
+        "operationId": "get_api_v1_guardian_geo_geocode",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/capture-events": {
+      "get": {
+        "operationId": "get_api_v1_guardian_devices_id_capture_events",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/signal/health": {
+      "get": {
+        "operationId": "get_api_v1_guardian_signal_health",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/remote-session/start": {
+      "post": {
+        "operationId": "post_api_v1_guardian_devices_id_remote_session_start",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/remote-session/webrtc-signal": {
+      "post": {
+        "operationId": "post_api_v1_guardian_devices_id_remote_session_webrtc_signal",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/remote-session/end": {
+      "post": {
+        "operationId": "post_api_v1_guardian_devices_id_remote_session_end",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/remote-session/screenshot": {
+      "post": {
+        "operationId": "post_api_v1_guardian_devices_id_remote_session_screenshot",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/remote-session/recordings": {
+      "get": {
+        "operationId": "get_api_v1_guardian_devices_id_remote_session_recordings",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/remote-session/inject-touch": {
+      "post": {
+        "operationId": "post_api_v1_guardian_devices_id_remote_session_inject_touch",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/remote-session/inject-key": {
+      "post": {
+        "operationId": "post_api_v1_guardian_devices_id_remote_session_inject_key",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/devices/{id}/remote-session/mdm-action": {
+      "post": {
+        "operationId": "post_api_v1_guardian_devices_id_remote_session_mdm_action",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/response-crew/teams": {
+      "get": {
+        "operationId": "get_api_v1_response_crew_teams",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_response_crew_teams",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/response-crew/dispatches": {
+      "get": {
+        "operationId": "get_api_v1_response_crew_dispatches",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/response-crew/dispatches/mine": {
+      "get": {
+        "operationId": "get_api_v1_response_crew_dispatches_mine",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/response-crew/dispatch": {
+      "post": {
+        "operationId": "post_api_v1_response_crew_dispatch",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/response-crew/dispatches/{id}/status": {
+      "patch": {
+        "operationId": "patch_api_v1_response_crew_dispatches_id_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoy-handovers/queue": {
+      "get": {
+        "operationId": "get_api_v1_convoy_handovers_queue",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoy-handovers/{convoyId}": {
+      "get": {
+        "operationId": "get_api_v1_convoy_handovers_convoyId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoy-handovers/{convoyId}/upload-url": {
+      "post": {
+        "operationId": "post_api_v1_convoy_handovers_convoyId_upload_url",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoy-handovers/{convoyId}/selfie-url": {
+      "post": {
+        "operationId": "post_api_v1_convoy_handovers_convoyId_selfie_url",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoy-handovers/{convoyId}/commit": {
+      "post": {
+        "operationId": "post_api_v1_convoy_handovers_convoyId_commit",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/handover-auth/pin/set": {
+      "post": {
+        "operationId": "post_api_v1_handover_auth_pin_set",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/handover-auth/pin/status": {
+      "get": {
+        "operationId": "get_api_v1_handover_auth_pin_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/handover-auth/pin/verify": {
+      "post": {
+        "operationId": "post_api_v1_handover_auth_pin_verify",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/handover-auth/admin/reset-pin": {
+      "post": {
+        "operationId": "post_api_v1_handover_auth_admin_reset_pin",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/handover-auth/admin/pin-status/{userId}": {
+      "get": {
+        "operationId": "get_api_v1_handover_auth_admin_pin_status_userId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/handover-auth/admin/unlock": {
+      "post": {
+        "operationId": "post_api_v1_handover_auth_admin_unlock",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/risk/zones": {
+      "get": {
+        "operationId": "get_api_v1_risk_zones",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_risk_zones",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/risk/zones/{zoneId}/events": {
+      "get": {
+        "operationId": "get_api_v1_risk_zones_zoneId_events",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_risk_zones_zoneId_events",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/risk/convoys": {
+      "get": {
+        "operationId": "get_api_v1_risk_convoys",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/risk/ticker": {
+      "get": {
+        "operationId": "get_api_v1_risk_ticker",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/risk/live-feed": {
+      "get": {
+        "operationId": "get_api_v1_risk_live_feed",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/risk/zones/{zoneId}": {
+      "patch": {
+        "operationId": "patch_api_v1_risk_zones_zoneId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/risk/export": {
+      "get": {
+        "operationId": "get_api_v1_risk_export",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/risk/refresh-intel": {
+      "post": {
+        "operationId": "post_api_v1_risk_refresh_intel",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/routes/analyse": {
+      "post": {
+        "operationId": "post_api_v1_routes_analyse",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/routes/analyses": {
+      "get": {
+        "operationId": "get_api_v1_routes_analyses",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/routes/analyses/{id}": {
+      "get": {
+        "operationId": "get_api_v1_routes_analyses_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/auth/request-link": {
+      "post": {
+        "operationId": "post_api_v1_portal_auth_request_link",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/auth/verify": {
+      "post": {
+        "operationId": "post_api_v1_portal_auth_verify",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/auth/logout": {
+      "post": {
+        "operationId": "post_api_v1_portal_auth_logout",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/auth/rt-token": {
+      "get": {
+        "operationId": "get_api_v1_portal_auth_rt_token",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/auth/rt-sub-token": {
+      "post": {
+        "operationId": "post_api_v1_portal_auth_rt_sub_token",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/convoy": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/convoy/trail": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_trail",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/convoy/custody-pdf": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_custody_pdf",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/tokens": {
+      "post": {
+        "operationId": "post_api_v1_portal_tokens",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "get": {
+        "operationId": "get_api_v1_portal_tokens",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/tokens/{id}": {
+      "delete": {
+        "operationId": "delete_api_v1_portal_tokens_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/convoy/location": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_location",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/convoy/eta": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_eta",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/convoy/checkpoints": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_checkpoints",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/convoy/seals": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_seals",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/centrifuge-token": {
+      "get": {
+        "operationId": "get_api_v1_portal_centrifuge_token",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/shipments": {
+      "get": {
+        "operationId": "get_api_v1_portal_shipments",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/clients": {
+      "post": {
+        "operationId": "post_api_v1_portal_clients",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "get": {
+        "operationId": "get_api_v1_portal_clients",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/clients/{id}/links": {
+      "post": {
+        "operationId": "post_api_v1_portal_clients_id_links",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/clients/{id}/magic-link": {
+      "post": {
+        "operationId": "post_api_v1_portal_clients_id_magic_link",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/convoy/{convoy_id}/manifest": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_convoy_id_manifest",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/convoy/{convoy_id}/shipments/{shipment_id}/manifest-items": {
+      "post": {
+        "operationId": "post_api_v1_portal_convoy_convoy_id_shipments_shipment_id_manifest_items",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/convoy/{convoy_id}/pod": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_convoy_id_pod",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_portal_convoy_convoy_id_pod",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/convoy/{convoy_id}/exceptions": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_convoy_id_exceptions",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/notifications": {
+      "get": {
+        "operationId": "get_api_v1_portal_notifications",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_portal_notifications",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/convoy/{convoy_id}/documents": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_convoy_id_documents",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_portal_convoy_convoy_id_documents",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/convoy/{convoy_id}/sensors": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_convoy_id_sensors",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/convoy/{convoy_id}/replay": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_convoy_id_replay",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/convoy/{convoy_id}/vehicles": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_convoy_id_vehicles",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/convoy/{convoy_id}/overview": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_convoy_id_overview",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/convoy/{convoy_id}/custody": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_convoy_id_custody",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_portal_convoy_convoy_id_custody",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/convoy/{convoy_id}/security": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_convoy_id_security",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/convoy/{convoy_id}/incidents": {
+      "get": {
+        "operationId": "get_api_v1_portal_convoy_convoy_id_incidents",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/convoy/{convoy_id}/incidents/{alert_id}/acknowledge": {
+      "post": {
+        "operationId": "post_api_v1_portal_convoy_convoy_id_incidents_alert_id_acknowledge",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/portal/?/convoy/{convoy_id}/incidents/{alert_id}/resolve": {
+      "post": {
+        "operationId": "post_api_v1_portal_convoy_convoy_id_incidents_alert_id_resolve",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/overview": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_overview",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/reverse-geocode": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_reverse_geocode",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/map": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_map",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/replay": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_replay",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/vehicles": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_vehicles",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/alerts": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_alerts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/convoys": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_convoys",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/route-risk": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_route_risk",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/drivers": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_drivers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/borders": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_borders",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/performance": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_performance",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/predictions": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_predictions",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/weather": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_weather",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/panic": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_panic",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/comms": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_comms",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard/timeline": {
+      "get": {
+        "operationId": "get_api_v1_dashboard_timeline",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sync/ping": {
+      "get": {
+        "operationId": "get_api_v1_sync_ping",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sync/device": {
+      "post": {
+        "operationId": "post_api_v1_sync_device",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sync/pull": {
+      "get": {
+        "operationId": "get_api_v1_sync_pull",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sync/push": {
+      "post": {
+        "operationId": "post_api_v1_sync_push",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sync/status": {
+      "get": {
+        "operationId": "get_api_v1_sync_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sync/conflicts": {
+      "get": {
+        "operationId": "get_api_v1_sync_conflicts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sync/conflicts/{id}/resolve": {
+      "post": {
+        "operationId": "post_api_v1_sync_conflicts_id_resolve",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/sync/devices": {
+      "get": {
+        "operationId": "get_api_v1_sync_devices",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/track/{token}": {
+      "get": {
+        "operationId": "get_api_v1_track_token",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/track/{token}/activate": {
+      "post": {
+        "operationId": "post_api_v1_track_token_activate",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/track/session/ping": {
+      "post": {
+        "operationId": "post_api_v1_track_session_ping",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/track/session/capability": {
+      "post": {
+        "operationId": "post_api_v1_track_session_capability",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/track/session/state": {
+      "get": {
+        "operationId": "get_api_v1_track_session_state",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/ingest/{source}/positions": {
+      "post": {
+        "operationId": "post_api_v1_ingest_source_positions",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/tracking/qr": {
+      "post": {
+        "operationId": "post_api_v1_tracking_qr",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "get": {
+        "operationId": "get_api_v1_tracking_qr",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/tracking/qr/{id}/revoke": {
+      "post": {
+        "operationId": "post_api_v1_tracking_qr_id_revoke",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/tracking/sessions": {
+      "get": {
+        "operationId": "get_api_v1_tracking_sessions",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/tracking/sessions/{id}": {
+      "get": {
+        "operationId": "get_api_v1_tracking_sessions_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/tracking/sessions/{id}/locations": {
+      "get": {
+        "operationId": "get_api_v1_tracking_sessions_id_locations",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/tracking/sessions/{id}/terminate": {
+      "post": {
+        "operationId": "post_api_v1_tracking_sessions_id_terminate",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/tracking/convoys/{id}/live": {
+      "get": {
+        "operationId": "get_api_v1_tracking_convoys_id_live",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/tracking/trips/{id}/live": {
+      "get": {
+        "operationId": "get_api_v1_tracking_trips_id_live",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/tracking/trips/{id}/timeline": {
+      "get": {
+        "operationId": "get_api_v1_tracking_trips_id_timeline",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/tracking/sources": {
+      "get": {
+        "operationId": "get_api_v1_tracking_sources",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/dashboard": {
+      "get": {
+        "operationId": "get_api_v1_cds_dashboard",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/trips": {
+      "get": {
+        "operationId": "get_api_v1_cds_trips",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_cds_trips",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/trips/live": {
+      "get": {
+        "operationId": "get_api_v1_cds_trips_live",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/trips/{id}": {
+      "get": {
+        "operationId": "get_api_v1_cds_trips_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patch_api_v1_cds_trips_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/trips/{id}/depart": {
+      "post": {
+        "operationId": "post_api_v1_cds_trips_id_depart",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/trips/{id}/transition": {
+      "post": {
+        "operationId": "post_api_v1_cds_trips_id_transition",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/containers": {
+      "get": {
+        "operationId": "get_api_v1_cds_containers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_cds_containers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/containers/{id}": {
+      "get": {
+        "operationId": "get_api_v1_cds_containers_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patch_api_v1_cds_containers_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/locks": {
+      "get": {
+        "operationId": "get_api_v1_cds_locks",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_cds_locks",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/locks/{id}": {
+      "get": {
+        "operationId": "get_api_v1_cds_locks_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patch_api_v1_cds_locks_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/locks/{id}/events": {
+      "get": {
+        "operationId": "get_api_v1_cds_locks_id_events",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_cds_locks_id_events",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/vehicles": {
+      "get": {
+        "operationId": "get_api_v1_cds_vehicles",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_cds_vehicles",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/vehicles/{id}": {
+      "get": {
+        "operationId": "get_api_v1_cds_vehicles_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patch_api_v1_cds_vehicles_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/drivers": {
+      "get": {
+        "operationId": "get_api_v1_cds_drivers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_cds_drivers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/drivers/{id}": {
+      "get": {
+        "operationId": "get_api_v1_cds_drivers_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patch_api_v1_cds_drivers_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/customers": {
+      "get": {
+        "operationId": "get_api_v1_cds_customers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_cds_customers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/customers/{id}": {
+      "get": {
+        "operationId": "get_api_v1_cds_customers_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patch_api_v1_cds_customers_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/transporters": {
+      "get": {
+        "operationId": "get_api_v1_cds_transporters",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_cds_transporters",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/transporters/{id}": {
+      "get": {
+        "operationId": "get_api_v1_cds_transporters_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patch_api_v1_cds_transporters_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/trips/{id}/clamp": {
+      "post": {
+        "operationId": "post_api_v1_cds_trips_id_clamp",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/trips/{id}/unclamp": {
+      "post": {
+        "operationId": "post_api_v1_cds_trips_id_unclamp",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/bookings/pipeline": {
+      "get": {
+        "operationId": "get_api_v1_cds_bookings_pipeline",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/bookings": {
+      "get": {
+        "operationId": "get_api_v1_cds_bookings",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_cds_bookings",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/bookings/manifest": {
+      "get": {
+        "operationId": "get_api_v1_cds_bookings_manifest",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/bookings/manifest/anomalies": {
+      "get": {
+        "operationId": "get_api_v1_cds_bookings_manifest_anomalies",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/bookings/{id}": {
+      "get": {
+        "operationId": "get_api_v1_cds_bookings_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patch_api_v1_cds_bookings_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/bookings/extract": {
+      "post": {
+        "operationId": "post_api_v1_cds_bookings_extract",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/bookings/{id}/containers": {
+      "get": {
+        "operationId": "get_api_v1_cds_bookings_id_containers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_cds_bookings_id_containers",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/bookings/{id}/containers/{cid}": {
+      "patch": {
+        "operationId": "patch_api_v1_cds_bookings_id_containers_cid",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_cds_bookings_id_containers_cid",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/bookings/{id}/containers/{cid}/custody": {
+      "get": {
+        "operationId": "get_api_v1_cds_bookings_id_containers_cid_custody",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/field/yard-queue": {
+      "get": {
+        "operationId": "get_api_v1_cds_field_yard_queue",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/field/port-queue": {
+      "get": {
+        "operationId": "get_api_v1_cds_field_port_queue",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/field/departures": {
+      "get": {
+        "operationId": "get_api_v1_cds_field_departures",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/bookings/{id}/containers/{cid}/clamp": {
+      "post": {
+        "operationId": "post_api_v1_cds_bookings_id_containers_cid_clamp",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/bookings/{id}/containers/{cid}/unclamp": {
+      "post": {
+        "operationId": "post_api_v1_cds_bookings_id_containers_cid_unclamp",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/alerts": {
+      "get": {
+        "operationId": "get_api_v1_cds_alerts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/alerts/{id}/acknowledge": {
+      "post": {
+        "operationId": "post_api_v1_cds_alerts_id_acknowledge",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/incidents": {
+      "get": {
+        "operationId": "get_api_v1_cds_incidents",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_cds_incidents",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/incidents/{id}": {
+      "get": {
+        "operationId": "get_api_v1_cds_incidents_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patch_api_v1_cds_incidents_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/geofences": {
+      "get": {
+        "operationId": "get_api_v1_cds_geofences",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_cds_geofences",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/geofences/{id}": {
+      "patch": {
+        "operationId": "patch_api_v1_cds_geofences_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_cds_geofences_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/documents": {
+      "get": {
+        "operationId": "get_api_v1_cds_documents",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_cds_documents",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/reports": {
+      "get": {
+        "operationId": "get_api_v1_cds_reports",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_cds_reports",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/audit": {
+      "get": {
+        "operationId": "get_api_v1_cds_audit",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/activity": {
+      "get": {
+        "operationId": "get_api_v1_cds_activity",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/gps/{vehicleId}": {
+      "get": {
+        "operationId": "get_api_v1_cds_gps_vehicleId",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cds/gps": {
+      "post": {
+        "operationId": "post_api_v1_cds_gps",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/guardian/whatsapp/webhook": {
+      "get": {
+        "operationId": "get_api_v1_guardian_whatsapp_webhook",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_guardian_whatsapp_webhook",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoys/{id}/broadcast": {
+      "post": {
+        "operationId": "post_api_v1_convoys_id_broadcast",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/convoys/{id}/broadcasts": {
+      "get": {
+        "operationId": "get_api_v1_convoys_id_broadcasts",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/canned-messages": {
+      "get": {
+        "operationId": "get_api_v1_canned_messages",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_canned_messages",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/canned-messages/{id}": {
+      "put": {
+        "operationId": "put_api_v1_canned_messages_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_v1_canned_messages_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/whatsapp/inbound": {
+      "get": {
+        "operationId": "get_api_v1_whatsapp_inbound",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/settings/whatsapp": {
+      "get": {
+        "operationId": "get_api_v1_settings_whatsapp",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_v1_settings_whatsapp",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/claims": {
+      "get": {
+        "operationId": "get_api_v1_claims",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_claims",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/claims/{id}": {
+      "put": {
+        "operationId": "put_api_v1_claims_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/claims/{id}/status": {
+      "patch": {
+        "operationId": "patch_api_v1_claims_id_status",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/claims/{id}/generate-pdf": {
+      "post": {
+        "operationId": "post_api_v1_claims_id_generate_pdf",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/claims/{id}/download": {
+      "get": {
+        "operationId": "get_api_v1_claims_id_download",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/incidents/{incidentId}/claims": {
+      "get": {
+        "operationId": "get_api_v1_incidents_incidentId_claims",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/download/apk": {
+      "get": {
+        "operationId": "get_download_apk",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/download,/get": {
+      "get": {
+        "operationId": "get_download_get",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "operationId": "get_",
         "responses": {
           "200": {
             "description": "OK"

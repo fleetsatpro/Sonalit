@@ -132,6 +132,36 @@ class CfoSectionFragment : Fragment() {
         val totalUploaded = data.photosToday.size
         binding.tvPhotoProgress.text = "$totalUploaded / $totalRequired photos"
 
+        val dr = data.dailyReport
+        if (dr != null) {
+            binding.chipReportStatus.visibility = View.VISIBLE
+            when (dr.status) {
+                "generated" -> {
+                    binding.chipReportStatus.text = "✓ Report Generated"
+                    binding.chipReportStatus.setChipBackgroundColorResource(R.color.success)
+                    binding.chipReportStatus.setTextColor(
+                        ContextCompat.getColor(requireContext(), R.color.navy_950)
+                    )
+                }
+                "partial" -> {
+                    binding.chipReportStatus.text = "⏳ ${dr.receivedPhotoCount}/${dr.requiredPhotoCount} photos"
+                    binding.chipReportStatus.setChipBackgroundColorResource(R.color.warning)
+                    binding.chipReportStatus.setTextColor(
+                        ContextCompat.getColor(requireContext(), R.color.navy_950)
+                    )
+                }
+                else -> {
+                    binding.chipReportStatus.text = "Pending report"
+                    binding.chipReportStatus.setChipBackgroundColorResource(R.color.muted)
+                    binding.chipReportStatus.setTextColor(
+                        ContextCompat.getColor(requireContext(), R.color.bright)
+                    )
+                }
+            }
+        } else {
+            binding.chipReportStatus.visibility = View.GONE
+        }
+
         // Build truck cards
         binding.truckListContainer.removeAllViews()
         val inflater = LayoutInflater.from(requireContext())

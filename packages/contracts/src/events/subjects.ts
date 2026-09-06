@@ -52,6 +52,10 @@ export const NATS_SUBJECTS = {
   // Media committed — published by Media service after photo commit
   media_committed: (orgId: string) => `media.committed.${orgId}` as const,
   media_committed_pattern: 'media.committed.*',
+
+  // Response crew dispatch — published when a crew is dispatched to intercept
+  crew_dispatched: (orgId: string) => `crew.dispatched.${orgId}` as const,
+  crew_dispatched_pattern: 'crew.dispatched.*',
 } as const;
 
 // ---------------------------------------------------------------------------

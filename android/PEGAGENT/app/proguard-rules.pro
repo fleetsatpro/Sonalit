@@ -1,0 +1,13 @@
+# PEGAGENT ProGuard rules
+-keep class com.sonalit.pegagent.** { *; }
+-keep class com.sonalit.pegagent.commands.** { *; }
+-keepattributes *Annotation*
+-keepattributes Signature
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-dontwarn retrofit2.**
+-keep class retrofit2.** { *; }
+-keep class com.google.gson.** { *; }
+-keep class * implements com.google.gson.TypeAdapterFactory
+-keep class * implements com.google.gson.JsonSerializer
+-keep class * implements com.google.gson.JsonDeserializer

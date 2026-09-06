@@ -1,0 +1,2052 @@
+const router = require('express').Router();
+const crypto = require('crypto');
+const { dualAuthenticate } = require('../middleware/fieldAuth');
+const { attachOrgDb } = require('../utils/orgScopedDb');
+const { asyncHandler } = require('../middleware/error');
+const requireIdempotencyKey = require('../middleware/idempotency');
+const { extractBookingData } = require('../utils/extractionClient');
+const { publish } = require('../realtime/centrifugo');
+const { allocateBookingReference, reconcileProvidedReference } = require('../utils/bookingReference');
+const { scanManifest } = require('../utils/manifestAnomalies');
+// The dispatch log the dashboard and the Dispatch Log panel both read, derived
+// from the custody chain, lock events, trip transitions and alerts.
+const { activityFeed } = require('../utils/cdsActivityFeed');
+const T = require('../utils/trackingEngine');
+const logger = require('../utils/logger');
+
+// dualAuthenticate, not authenticate: this router serves both the operator
+// dashboard (JWT) and the Field app (X-Field-Device + X-Field-Token — see
+// middleware/fieldAuth.js). Either credential produces the same req.user, so
+// everything below, including the yard/port role gate, is unchanged.
+router.use(dualAuthenticate, attachOrgDb);
+router.use((req, res, next) => {
+  if (!req.db) return res.status(403).json({ error: 'org_scope_required' });
+  next();
+});
+
+// Yard/port field-crew accounts (see migration 077) are scoped to exactly the
+// clamp/unclamp flow — nothing else in this router. Every other route here is
+// reachable by any authenticated user (admin/dispatcher/operator/analyst/cfo)
+// with no per-route authorize(), so without this check a yard_agent or
+// port_agent would inherit that same full CDS surface, defeating the point of
+// handing a shared yard/port device a least-privilege login.
+const CLAMP_PATH = /^\/bookings\/[^/]+\/containers\/[^/]+\/clamp$/;
+const UNCLAMP_PATH = /^\/bookings\/[^/]+\/containers\/[^/]+\/unclamp$/;
+// The Yard app's container-pick screen (YardApp.tsx ContainerPick) lists a
+// chosen booking's containers before clamping one — GET only, so listing
+// stays read-only and adding/editing containers on that same path (POST)
+// is still out of reach.
+const BOOKING_CONTAINERS_LIST_PATH = /^\/bookings\/[^/]+\/containers$/;
+// Marking a departure only sets departed_at and moves 'locked' to
+// 'dispatched' — it opens none of the rest of the trip surface, so a yard
+// device still cannot read or edit trips generally.
+const DEPART_PATH = /^\/trips\/[^/]+\/depart$/;
+router.use((req, res, next) => {
+  const role = req.user.role;
+  if (role !== 'yard_agent' && role !== 'port_agent') return next();
+
+  const allowed = role === 'yard_agent'
+    ? (req.path === '/field/yard-queue' || CLAMP_PATH.test(req.path)
+       || (req.method === 'GET' && BOOKING_CONTAINERS_LIST_PATH.test(req.path))
+       // Departure is yard work: the person who watched the truck go through
+       // the gate is standing in the yard, and for a driver who never scanned
+       // the QR there is no other way the trip ever leaves 'locked'. Both the
+       // list and the mark are here because one without the other is useless.
+       || req.path === '/field/departures'
+       || (req.method === 'POST' && DEPART_PATH.test(req.path)))
+    : (req.path === '/field/port-queue' || UNCLAMP_PATH.test(req.path));
+
+  if (!allowed) {
+    return res.status(403).json({
+      error: 'field_role_restricted',
+      message: `${role === 'yard_agent' ? 'Yard' : 'Port'} field accounts can only use the ${role === 'yard_agent' ? 'clamp' : 'unclamp'} flow.`,
+    });
+  }
+  next();
+});
+
+// ─── Realtime fan-out ────────────────────────────────────────────────────────
+/**
+ * Push a CDS state change to every screen in the org, right now.
+ *
+ * Yard, Port and the control room are three views of one shipment, and until
+ * this existed they only ever learned about each other by polling: 15s on the
+ * two field queues, 20-30s on the dashboard, and *never* on Trips, Containers,
+ * Locks, Bookings or Alerts, which had no refetch at all. So a clamp at the
+ * gate could sit invisible on a controller's Trips board indefinitely, and the
+ * port crew would not see an inbound container until their next poll. Worse,
+ * a seal-mismatch alert — the one event where seconds matter — reached the
+ * control room no faster than a routine one.
+ *
+ * `org#<org_id>` is the same user-limited channel the rest of the platform
+ * already publishes on (alerts, incidents, convoys, panic — see
+ * routes/incidents.js and controllers/alertController.js), so field devices
+ * and dashboards share one connection and one authorisation rule.
+ *
+ * Fire-and-forget on purpose: realtime is an accelerator, not the source of
+ * truth. The poll intervals on the client stay as the floor, so a Centrifugo
+ * outage degrades the system to exactly what it was before rather than
+ * breaking a clamp. Nothing here is ever awaited into the response path.
+ */
+function publishCds(req, type, payload) {
+  const orgId = req.user && req.user.org_id;
+  if (!orgId) return;
+  Promise.resolve(
+    publish(`org#${orgId}`, {
+      type,
+      at: new Date().toISOString(),
+      actor: (req.user.name || req.user.email || null),
+      actor_role: req.user.role || null,
+      ...payload,
+    })
+  ).catch((err) => logger.warn(`CDS realtime publish failed (${type}): ${err.message}`));
+}
+
+function genCode(prefix) {
+  const ts = Date.now().toString(36).toUpperCase();
+  const rand = crypto.randomBytes(3).toString('hex').toUpperCase();
+  return `${prefix}-${ts}-${rand}`;
+}
+
+/**
+ * Canonical string form of a coordinate for hashing, at the precision the
+ * NUMERIC(10,7) column stores.
+ *
+ * Both the append and the verify path must run values through this or the
+ * chain reports tampering on untouched rows. The write sends -4.05 while the
+ * read gets it back as a float (config/database.js installs a NUMERIC type
+ * parser), and "-4.05" hashes differently from "-4.0500000" — so neither the
+ * raw input nor the raw DB value is safe to hash directly.
+ */
+function normCoord(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isNaN(n) ? null : n.toFixed(7);
+}
+
+/**
+ * The exact bytes that get hashed for a custody event.
+ *
+ * Written once and used by both the append path and the verify path, because
+ * the moment those two disagree by so much as a key order the chain reports
+ * tampering on records nobody touched. Every value here must be in the same
+ * form it will have when read back out of Postgres — see the coordinate
+ * normalisation in appendCustodyEvent.
+ */
+function custodyPayload({
+  seq, kind, bookingContainerId, orgId, actorUserId, actorName,
+  sealNumber, sealIntact, lockSerial, lat, lng, notes, prevHash,
+}) {
+  return JSON.stringify({
+    seq, kind,
+    booking_container_id: bookingContainerId,
+    org_id: orgId,
+    actor_user_id: actorUserId ?? null,
+    actor_name: actorName ?? null,
+    seal_number: sealNumber ?? null,
+    seal_intact: sealIntact ?? null,
+    lock_serial: lockSerial ?? null,
+    lat: lat ?? null,
+    lng: lng ?? null,
+    notes: notes ?? null,
+    prev_hash: prevHash ?? null,
+  });
+}
+
+/**
+ * Append a link to a container's tamper-evident custody chain.
+ *
+ * Mirrors the convoy chain in routes/portalCustody.js: each event hashes its
+ * own contents together with the previous event's hash, so editing or removing
+ * any historical link invalidates every hash after it.
+ *
+ * The read of the tail is FOR UPDATE so two concurrent appends can't both take
+ * the same prev_hash and fork the chain. That only locks an existing row, so
+ * the very first two events on a container could still race — the
+ * UNIQUE (booking_container_id, seq) constraint is the backstop there, turning
+ * a would-be fork into a failed insert.
+ *
+ * Never throws into the caller's response path: a custody event is a record of
+ * something that already physically happened, so failing to write it must not
+ * roll back or 500 the clamp/unclamp the worker just performed. It is logged
+ * loudly instead, and the chain's own gap in seq makes the omission visible.
+ */
+async function appendCustodyEvent(req, {
+  bookingContainerId, tripId = null, kind, sealNumber = null, sealIntact = null,
+  lockSerial = null, lat = null, lng = null, notes = null,
+}) {
+  try {
+    const orgId = req.user.org_id;
+    const tail = await req.db(
+      `SELECT hash, seq FROM cds_custody_events
+        WHERE booking_container_id = $1 ORDER BY seq DESC LIMIT 1 FOR UPDATE`,
+      [bookingContainerId]
+    );
+    const prevHash = tail.rows[0]?.hash ?? null;
+    const seq = (tail.rows[0]?.seq ?? -1) + 1;
+    const actorName = req.user.name || req.user.email || null;
+
+    // Coordinates are hashed at exactly the precision the NUMERIC(10,7) column
+    // stores. Hashing the raw JS number instead would make the chain
+    // unverifiable: -4.05 goes in, "-4.0500000" comes back out, and every
+    // recomputation would report tampering on untouched rows.
+    const latN = normCoord(lat);
+    const lngN = normCoord(lng);
+
+    const payload = custodyPayload({
+      seq, kind, bookingContainerId, orgId,
+      actorUserId: req.user.id ?? null, actorName,
+      sealNumber, sealIntact, lockSerial,
+      lat: latN, lng: lngN, notes, prevHash,
+    });
+    const hash = crypto.createHash('sha256').update(payload).digest('hex');
+
+    await req.db(
+      `INSERT INTO cds_custody_events
+         (org_id, booking_container_id, trip_id, seq, kind, actor_user_id, actor_name,
+          lat, lng, seal_number, seal_intact, lock_serial, notes, hash, prev_hash)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+      [orgId, bookingContainerId, tripId, seq, kind, req.user.id ?? null, actorName,
+       latN, lngN, sealNumber, sealIntact, lockSerial, notes, hash, prevHash]
+    );
+  } catch (err) {
+    require('../utils/logger').error(
+      `custody chain append failed (container=${bookingContainerId}, kind=${kind}): ${err.message}`
+    );
+  }
+}
+
+function paginate(query) {
+  const limit = Math.min(200, parseInt(query.limit) || 50);
+  const offset = parseInt(query.offset) || 0;
+  return { limit, offset };
+}
+
+async function listRows(req, res, table, { joins = '', selectCols = '*', searchCols = [], extraFilters = [], softDelete = true } = {}) {
+  const { limit, offset } = paginate(req.query);
+  const filters = softDelete ? ['t.deleted_at IS NULL', ...extraFilters] : [...extraFilters];
+  const params = [];
+  // A comma-separated status means "any of these". Operational views rarely
+  // care about one status: "active trip" spans locked → dispatched → at_port,
+  // and forcing a single value made a clamped container invisible everywhere
+  // that asked for 'dispatched'. A bare value still matches exactly as before.
+  if (req.query.status) {
+    const wanted = String(req.query.status).split(',').map(v => v.trim()).filter(Boolean);
+    if (wanted.length > 1) {
+      params.push(wanted);
+      filters.push(`t.status = ANY($${params.length}::text[])`);
+    } else if (wanted.length === 1) {
+      params.push(wanted[0]);
+      filters.push(`t.status=$${params.length}`);
+    }
+  }
+  if (req.query.search && searchCols.length) {
+    params.push(`%${req.query.search}%`);
+    filters.push(`(${searchCols.map(c => `${c} ILIKE $${params.length}`).join(' OR ')})`);
+  }
+  Object.entries(req.query).forEach(([k, v]) => {
+    if (['status', 'search', 'limit', 'offset'].includes(k)) return;
+    if (k.endsWith('_id')) { params.push(v); filters.push(`t.${k}=$${params.length}`); }
+  });
+  const where = filters.length ? filters.join(' AND ') : 'TRUE';
+  params.push(limit, offset);
+  const result = await req.db(
+    `SELECT ${selectCols} FROM ${table} t ${joins} WHERE ${where} ORDER BY t.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`, params
+  );
+  const total = await req.db(`SELECT COUNT(*) FROM ${table} t ${joins} WHERE ${where}`, params.slice(0, -2));
+  res.json({ data: result.rows, total: parseInt(total.rows[0].count, 10) });
+}
+
+async function getRow(req, res, table, { joins = '', selectCols = '*', softDelete = true } = {}) {
+  const cond = softDelete ? 'AND t.deleted_at IS NULL' : '';
+  const result = await req.db(
+    `SELECT ${selectCols} FROM ${table} t ${joins} WHERE t.id=$1 ${cond}`, [req.params.id]
+  );
+  if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
+  res.json({ data: result.rows[0] });
+}
+
+async function createRow(req, res, table, fields, { genField, genPrefix } = {}) {
+  const cols = [...fields];
+  const vals = cols.map(f => req.body[f] ?? null);
+  if (genField) { cols.unshift(genField); vals.unshift(genCode(genPrefix)); }
+  cols.push('org_id');
+  vals.push(req.user.org_id);
+  const placeholders = vals.map((_, i) => `$${i + 1}`).join(',');
+  const result = await req.db(
+    `INSERT INTO ${table} (${cols.join(',')}) VALUES (${placeholders}) RETURNING *`, vals
+  );
+  res.status(201).json({ data: result.rows[0] });
+}
+
+async function updateRow(req, res, table, fields, { softDelete = true, hasUpdatedAt = true } = {}) {
+  const sets = [];
+  const params = [];
+  fields.forEach(f => {
+    if (req.body[f] !== undefined) { params.push(req.body[f]); sets.push(`${f}=$${params.length}`); }
+  });
+  if (!sets.length) return res.status(400).json({ error: 'No fields to update' });
+  if (hasUpdatedAt) sets.push('updated_at=NOW()');
+  params.push(req.params.id);
+  const cond = softDelete ? 'AND deleted_at IS NULL' : '';
+  const result = await req.db(
+    `UPDATE ${table} SET ${sets.join(',')} WHERE id=$${params.length} ${cond} RETURNING *`, params
+  );
+  if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
+  res.json({ data: result.rows[0] });
+}
+
+// ══════════════════════════════════════════════════════════════
+// 1. Dashboard
+// ══════════════════════════════════════════════════════════════
+
+// Trip statuses that mean "on the road". Named once because three different
+// counts used to disagree about it: /trips/live already had this set right,
+// while the dashboard asked for status='dispatched' alone and so reported a
+// truck at a checkpoint, running late, or sitting at the port as not in transit.
+const ON_ROAD_STATUSES = "('dispatched','checkpoint','delayed','at_port')";
+
+router.get('/dashboard', asyncHandler(async (req, res) => {
+  const kpis = await req.db(`
+    SELECT
+      (SELECT COUNT(*) FROM cds_containers WHERE deleted_at IS NULL) AS active_containers,
+      (SELECT COUNT(*) FROM cds_trips WHERE status IN ${ON_ROAD_STATUSES} AND deleted_at IS NULL) AS in_transit,
+
+      -- Counted by delivered_at, not by status. The port unclamp sets
+      -- status='lock_removed' and delivered_at in the same statement, so a
+      -- trip is never left sitting at 'delivered' — asking for that status
+      -- made this KPI read zero on days the port had cleared a full yard.
+      (SELECT COUNT(*) FROM cds_trips
+        WHERE delivered_at::date = CURRENT_DATE AND deleted_at IS NULL) AS delivered_today,
+
+      (SELECT COUNT(*) FROM cds_electronic_locks WHERE status IN ('assigned','installed') AND deleted_at IS NULL) AS active_locks,
+      (SELECT COUNT(*) FROM cds_electronic_locks WHERE status='removed' AND deleted_at IS NULL) AS locks_removed,
+
+      -- Arrived, lock still on. This previously counted status='lock_removed',
+      -- which is the state a trip reaches *after* the lock comes off — the
+      -- number was an exact inversion of its own label, and the port crew's
+      -- actual backlog was the one figure it could never show.
+      (SELECT COUNT(*) FROM cds_trips
+        WHERE status IN ('at_port','delivered') AND lock_id IS NOT NULL
+          AND deleted_at IS NULL) AS pending_unclamp,
+
+      (SELECT COUNT(*) FROM cds_trips WHERE status='delayed' AND deleted_at IS NULL) AS delayed_trips,
+      (SELECT ROUND(AVG(EXTRACT(EPOCH FROM (delivered_at - departed_at))/3600)::numeric,1) FROM cds_trips WHERE delivered_at IS NOT NULL AND departed_at IS NOT NULL AND deleted_at IS NULL) AS avg_transit_hours,
+
+      -- Computed here rather than in the browser, which could only ever see
+      -- the newest page of trips: the Analytics card showed a rate derived
+      -- from 50 rows next to a total counted from all of them.
+      (SELECT COUNT(*) FROM cds_trips WHERE deleted_at IS NULL) AS total_trips,
+      (SELECT COUNT(*) FROM cds_trips
+        WHERE delivered_at IS NOT NULL AND deleted_at IS NULL) AS delivered_total,
+      (SELECT COUNT(*) FROM cds_trips
+        WHERE status='delayed' AND deleted_at IS NULL) AS delayed_total,
+      (SELECT COUNT(*) FROM cds_alerts WHERE acknowledged=false) AS unacknowledged_alerts
+  `);
+  const activity = await activityFeed(req.db, 20);
+  res.json({ data: { ...kpis.rows[0], recent_activity: activity } });
+}));
+
+// ══════════════════════════════════════════════════════════════
+// 2. Trips
+// ══════════════════════════════════════════════════════════════
+
+const TRIP_JOINS = `LEFT JOIN cds_customers cu ON cu.id=t.customer_id
+  LEFT JOIN cds_drivers dr ON dr.id=t.driver_id
+  LEFT JOIN cds_vehicles ve ON ve.id=t.vehicle_id`;
+const TRIP_COLS = `t.*, t.trip_number AS reference, cu.company_name AS customer_name, dr.name AS "driverName", ve.registration AS "vehicleReg"`;
+
+router.get('/trips', asyncHandler(async (req, res) => {
+  await listRows(req, res, 'cds_trips', {
+    joins: TRIP_JOINS, selectCols: TRIP_COLS,
+    searchCols: ['t.trip_number', 'cu.company_name', 'dr.name'],
+  });
+}));
+
+// Live Operations reads this. It used to call GET /trips?status=dispatched, and
+// that filter is a single-value equality — so a truck that had passed a
+// checkpoint, was running late, or had reached the port counted as zero active
+// trips while it was demonstrably on the road. A trip is "open" until it is
+// delivered, completed or archived, and the phase says which part of the journey
+// it is in, so the control room can never be told nothing is happening while
+// vehicles are out.
+const TRIP_PHASE = {
+  dispatched: 'moving', checkpoint: 'moving', delayed: 'moving',
+  at_port: 'at_port', lock_removed: 'at_port',
+  created: 'staged', vehicle_assigned: 'staged', driver_assigned: 'staged',
+  awaiting_lock: 'staged', locked: 'staged',
+};
+const OPEN_TRIP_STATUSES = Object.keys(TRIP_PHASE);
+
+// Must be declared before '/trips/:id' — Express matches in order, and 'live'
+// would otherwise be swallowed as a trip id.
+router.get('/trips/live', asyncHandler(async (req, res) => {
+  const result = await req.db(`
+    SELECT t.id, t.trip_number, t.status, t.origin, t.destination, t.eta,
+           t.departed_at, t.progress, t.risk, t.vehicle_id, t.booking_id,
+           cu.company_name AS customer_name,
+           dr.name AS driver_name, dr.phone AS driver_phone,
+           ve.registration AS vehicle_reg,
+           l.serial AS lock_serial,
+           b.booking_number,
+           ts.id AS session_id, ts.status AS session_status, ts.current_source,
+           ts.current_confidence, ts.first_location_at, ts.last_location_at,
+           ts.current_lat, ts.current_lng, ts.current_speed_kph, ts.current_heading,
+           gps.lat AS gps_lat, gps.lng AS gps_lng, gps.speed AS gps_speed,
+           gps.heading AS gps_heading, gps.device_time AS gps_time
+      FROM cds_trips t
+      ${TRIP_JOINS}
+      LEFT JOIN cds_electronic_locks l ON l.id = t.lock_id
+      LEFT JOIN cds_bookings b ON b.id = t.booking_id
+      -- The driver's tracking session carries the reconciled position — the
+      -- winner across Guardian GPS, the e-lock and telematics — so it is the
+      -- position to trust when one exists.
+      LEFT JOIN LATERAL (
+        SELECT id, status, current_source, current_confidence, first_location_at,
+               last_location_at, current_lat, current_lng, current_speed_kph, current_heading
+          FROM tracking_sessions
+         WHERE trip_id = t.id
+           AND deleted_at IS NULL
+           AND status = ANY($2)
+         ORDER BY COALESCE(last_location_at, started_at) DESC
+         LIMIT 1
+      ) ts ON true
+      -- Fallback for a vehicle that reports telematics but has no driver
+      -- session: better a stale known position than a blank map.
+      LEFT JOIN LATERAL (
+        SELECT lat, lng, speed, heading, device_time
+          FROM cds_gps_history
+         WHERE vehicle_id = t.vehicle_id
+         ORDER BY device_time DESC
+         LIMIT 1
+      ) gps ON true
+     WHERE t.deleted_at IS NULL
+       AND t.status = ANY($1)
+     ORDER BY (COALESCE(ts.last_location_at, gps.device_time) IS NULL),
+              COALESCE(ts.last_location_at, gps.device_time) DESC NULLS LAST,
+              t.created_at DESC
+     LIMIT 300
+  `, [OPEN_TRIP_STATUSES, T.LIVE_STATUSES]);
+
+  const now = Date.now();
+  res.json({ data: result.rows.map(r => shapeLiveTrip(r, now)) });
+}));
+
+// One position per trip, from whichever source actually knows where it is, and
+// never presented as live when it is not: health comes from the tracking
+// engine's own thresholds rather than a second opinion invented here.
+function shapeLiveTrip(row, now) {
+  const health = row.session_id
+    ? T.computeHealth({
+        status: row.session_status,
+        first_location_at: row.first_location_at,
+        last_location_at: row.last_location_at,
+      }, now)
+    : null;
+
+  const fromSession = row.current_lat != null && row.current_lng != null;
+  // Normalised to null, never left undefined: undefined vanishes in JSON, and a
+  // client reading an absent key cannot tell "no fix" from "field forgotten".
+  const lat = (fromSession ? row.current_lat : row.gps_lat) ?? null;
+  const lng = (fromSession ? row.current_lng : row.gps_lng) ?? null;
+  const lastSeen = (fromSession ? row.last_location_at : row.gps_time) ?? null;
+
+  return {
+    id: row.id, trip_number: row.trip_number, status: row.status,
+    phase: TRIP_PHASE[row.status] || 'staged',
+    origin: row.origin, destination: row.destination, eta: row.eta,
+    departed_at: row.departed_at, progress: row.progress, risk: row.risk,
+    vehicle_id: row.vehicle_id, booking_id: row.booking_id,
+    booking_number: row.booking_number, customer_name: row.customer_name,
+    driver_name: row.driver_name, driver_phone: row.driver_phone,
+    vehicle_reg: row.vehicle_reg, lock_serial: row.lock_serial,
+    lat, lng, last_seen: lastSeen,
+    speed: (fromSession ? row.current_speed_kph : row.gps_speed) ?? null,
+    heading: (fromSession ? row.current_heading : row.gps_heading) ?? null,
+    // Where the position came from, so the control room can tell a driver's
+    // phone from a truck's telematics box at a glance.
+    position_source: fromSession ? (row.current_source || 'guardian_gps') : (row.gps_lat != null ? 'device_telematics' : null),
+    position_is_live: health === 'live',
+    tracking_health: health,
+    tracking_session_id: row.session_id ?? null,
+    confidence: fromSession ? row.current_confidence : null,
+    has_session: !!row.session_id,
+  };
+}
+
+router.get('/trips/:id', asyncHandler(async (req, res) => {
+  await getRow(req, res, 'cds_trips', { joins: TRIP_JOINS, selectCols: TRIP_COLS });
+}));
+
+router.post('/trips', asyncHandler(async (req, res) => {
+  await createRow(req, res, 'cds_trips',
+    ['customer_id', 'driver_id', 'vehicle_id', 'container_id', 'lock_id', 'transporter_id',
+     'origin', 'destination', 'eta', 'commodity', 'weight_kg', 'seal_number', 'notes', 'booking_id'],
+    { genField: 'trip_number', genPrefix: 'CDS' }
+  );
+}));
+
+router.patch('/trips/:id', asyncHandler(async (req, res) => {
+  await updateRow(req, res, 'cds_trips',
+    ['customer_id', 'driver_id', 'vehicle_id', 'container_id', 'lock_id', 'transporter_id',
+     'origin', 'destination', 'eta', 'commodity', 'weight_kg', 'seal_number', 'notes', 'risk', 'progress', 'booking_id']
+  );
+}));
+
+const TRIP_TRANSITIONS = {
+  created:           ['vehicle_assigned', 'driver_assigned'],
+  vehicle_assigned:  ['driver_assigned', 'awaiting_lock'],
+  driver_assigned:   ['vehicle_assigned', 'awaiting_lock'],
+  awaiting_lock:     ['locked'],
+  locked:            ['dispatched'],
+  dispatched:        ['checkpoint', 'delayed', 'at_port', 'delivered'],
+  checkpoint:        ['dispatched', 'delayed', 'at_port', 'delivered'],
+  delayed:           ['dispatched', 'checkpoint'],
+  at_port:           ['delivered'],
+  delivered:         ['lock_removed'],
+  lock_removed:      ['completed'],
+  completed:         ['archived'],
+  archived:          [],
+};
+
+/**
+ * POST /cds/trips/:id/depart — the yard marks a truck as gone.
+ *
+ * THE CASE THIS EXISTS FOR: a driver who never scanned the QR. There is no
+ * telemetry to derive from, so without this the trip sits at 'locked' forever
+ * and the control room sees "awaiting departure" for a truck already on the
+ * road. Manual departure is the primary path, not a fallback.
+ *
+ * Reachable by the field device as well as an operator, because the person who
+ * watched the truck leave is standing in the yard with a phone, not sitting in
+ * the control room. The router-level dualAuthenticate covers both.
+ *
+ * Idempotent: a second tap reports that it was already departed rather than
+ * rewriting the timestamp to a later moment.
+ */
+router.post('/trips/:id/depart', asyncHandler(async (req, res) => {
+  const { note, at } = req.body || {};
+  const trip = await req.db(
+    'SELECT id, status, departed_at FROM cds_trips WHERE id=$1 AND deleted_at IS NULL',
+    [req.params.id]
+  );
+  if (!trip.rows.length) return res.status(404).json({ error: 'Trip not found' });
+
+  // A delivered or completed trip departing is a data error, not a correction.
+  if (['delivered', 'lock_removed', 'completed', 'archived'].includes(trip.rows[0].status)) {
+    return res.status(409).json({ error: `Trip already ${trip.rows[0].status}` });
+  }
+
+  const D = require('../utils/tripDeparture');
+  // req.fieldDevice is the discriminator, NOT the presence of req.user: a field
+  // device authenticates as a real field user with an id and an org, so keying
+  // off req.user.id would file every yard departure as a control-room action
+  // and lose the distinction the departure_source column exists to record.
+  const source = req.fieldDevice ? 'manual' : 'operator';
+  const actorId = req.user?.id || null;
+
+  const { trip: updated, already } = await D.markDeparted(
+    req.db, req.user?.org_id, req.params.id,
+    { source, actorId, note: note || null, at: at || null }
+  );
+
+  // No publish here. markDeparted() announces it, once, for all three paths —
+  // and only when the departure was actually established, so an idempotent
+  // retry cannot put a second "departed" on the control room's board for one
+  // truck. Broadcasting here too would do exactly that for the manual path.
+  res.json({ data: { trip: updated, already_departed: already, source } });
+}));
+
+router.post('/trips/:id/transition', asyncHandler(async (req, res) => {
+  const { to_status, notes, lat, lng } = req.body;
+  if (!to_status) return res.status(400).json({ error: 'to_status required' });
+
+  const current = await req.db('SELECT id, status FROM cds_trips WHERE id=$1 AND deleted_at IS NULL', [req.params.id]);
+  if (!current.rows.length) return res.status(404).json({ error: 'Trip not found' });
+
+  const allowed = TRIP_TRANSITIONS[current.rows[0].status] || [];
+  if (!allowed.includes(to_status)) {
+    return res.status(422).json({ error: `Cannot transition from ${current.rows[0].status} to ${to_status}` });
+  }
+
+  // Departure has one writer, and it is not this handler. Delegating keeps the
+  // provenance columns honest — a transition to 'dispatched' that set
+  // departed_at directly here would leave departure_source NULL, which reads
+  // as "departed before this feature existed" rather than "the control room
+  // did it" — and inherits the idempotency, so a transition racing a yard tap
+  // cannot rewrite the yard's timestamp to a later one.
+  if (to_status === 'dispatched') {
+    const D = require('../utils/tripDeparture');
+    const { trip: updated, already } = await D.markDeparted(
+      req.db, req.user.org_id, req.params.id,
+      { source: req.fieldDevice ? 'manual' : 'operator', actorId: req.user.id, note: notes || null }
+    );
+    await req.db(
+      `INSERT INTO cds_audit_logs (action, entity_type, entity_id, user_id, user_name, before_data, after_data, org_id)
+       VALUES ('transition','trip',$1,$2,$3,$4,$5,$6)`,
+      [req.params.id, req.user.id, req.user.name || null,
+       JSON.stringify({ status: current.rows[0].status }),
+       JSON.stringify({ status: 'dispatched', notes, lat, lng, already_departed: already }),
+       req.user.org_id]
+    );
+    return res.json({ data: updated });
+  }
+
+  const extra = to_status === 'delivered' ? ', delivered_at=NOW()' : '';
+  const result = await req.db(
+    `UPDATE cds_trips SET status=$1, notes=COALESCE($2,notes)${extra}, updated_at=NOW() WHERE id=$3 RETURNING *`,
+    [to_status, notes || null, req.params.id]
+  );
+
+  await req.db(
+    `INSERT INTO cds_audit_logs (action, entity_type, entity_id, user_id, user_name, before_data, after_data, org_id)
+     VALUES ('transition','trip',$1,$2,$3,$4,$5,$6)`,
+    [req.params.id, req.user.id, req.user.name || null,
+     JSON.stringify({ status: current.rows[0].status }),
+     JSON.stringify({ status: to_status, notes, lat, lng }),
+     req.user.org_id]
+  );
+
+  // Delivery is what ends Hybrid Tracking — never a timer and never the driver.
+  // The engine decides whether *this* delivery satisfies each session's policy,
+  // so a multi-container load keeps tracking until the last box lands. Idempotent
+  // by construction, because delivery gets marked twice more often than not.
+  if (to_status === 'delivered') {
+    try {
+      await T.onContainerDelivered(req.db, req.user.org_id, result.rows[0].container_id,
+        { id: req.user.id, name: req.user.name, type: 'operator' });
+    } catch (err) {
+      logger.warn(`tracking termination failed for trip ${req.params.id}: ${err.message}`);
+    }
+  }
+
+  publishCds(req, 'cds.trip.updated', {
+    trip_id: result.rows[0].id,
+    trip_number: result.rows[0].trip_number,
+    booking_id: result.rows[0].booking_id,
+    from_status: current.rows[0].status,
+    status: to_status,
+  });
+
+  res.json({ data: result.rows[0] });
+}));
+
+// ══════════════════════════════════════════════════════════════
+// 3. Containers
+// ══════════════════════════════════════════════════════════════
+
+router.get('/containers', asyncHandler(async (req, res) => {
+  await listRows(req, res, 'cds_containers', { searchCols: ['t.number', 't.container_type'] });
+}));
+router.get('/containers/:id', asyncHandler(async (req, res) => { await getRow(req, res, 'cds_containers'); }));
+router.post('/containers', asyncHandler(async (req, res) => {
+  await createRow(req, res, 'cds_containers',
+    ['number', 'iso_type', 'container_type', 'container_size', 'ownership', 'max_weight_kg', 'tare_weight_kg', 'manufacturer', 'year_built', 'condition', 'status']);
+}));
+router.patch('/containers/:id', asyncHandler(async (req, res) => {
+  await updateRow(req, res, 'cds_containers',
+    ['number', 'iso_type', 'container_type', 'container_size', 'ownership', 'max_weight_kg', 'tare_weight_kg', 'condition', 'current_location', 'status']);
+}));
+
+// ══════════════════════════════════════════════════════════════
+// 4. Electronic Locks
+// ══════════════════════════════════════════════════════════════
+
+router.get('/locks', asyncHandler(async (req, res) => {
+  await listRows(req, res, 'cds_electronic_locks', { searchCols: ['t.serial', 't.provider'] });
+}));
+router.get('/locks/:id', asyncHandler(async (req, res) => { await getRow(req, res, 'cds_electronic_locks'); }));
+router.post('/locks', asyncHandler(async (req, res) => {
+  await createRow(req, res, 'cds_electronic_locks',
+    ['serial', 'provider', 'firmware_version', 'status', 'battery_level']);
+}));
+router.patch('/locks/:id', asyncHandler(async (req, res) => {
+  await updateRow(req, res, 'cds_electronic_locks',
+    ['serial', 'provider', 'firmware_version', 'status', 'battery_level', 'container_id', 'vehicle_id', 'location']);
+}));
+router.get('/locks/:id/events', asyncHandler(async (req, res) => {
+  const { limit, offset } = paginate(req.query);
+  const result = await req.db(
+    `SELECT * FROM cds_lock_events WHERE lock_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+    [req.params.id, limit, offset]
+  );
+  const total = await req.db('SELECT COUNT(*) FROM cds_lock_events WHERE lock_id=$1', [req.params.id]);
+  res.json({ data: result.rows, total: parseInt(total.rows[0].count, 10) });
+}));
+router.post('/locks/:id/events', asyncHandler(async (req, res) => {
+  const { type, lat, lng, data } = req.body;
+  if (!type) return res.status(400).json({ error: 'type required' });
+  const result = await req.db(
+    `INSERT INTO cds_lock_events (lock_id, type, lat, lng, data, org_id)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+    [req.params.id, type, lat || null, lng || null, JSON.stringify(data || {}), req.user.org_id]
+  );
+  res.status(201).json({ data: result.rows[0] });
+}));
+
+// ══════════════════════════════════════════════════════════════
+// 5. Vehicles
+// ══════════════════════════════════════════════════════════════
+
+router.get('/vehicles', asyncHandler(async (req, res) => {
+  await listRows(req, res, 'cds_vehicles', { searchCols: ['t.registration', 't.make', 't.model'] });
+}));
+router.get('/vehicles/:id', asyncHandler(async (req, res) => { await getRow(req, res, 'cds_vehicles'); }));
+router.post('/vehicles', asyncHandler(async (req, res) => {
+  await createRow(req, res, 'cds_vehicles',
+    ['registration', 'fleet_number', 'vin', 'make', 'model', 'year', 'type', 'fuel_type', 'capacity_kg', 'transporter_id', 'status']);
+}));
+router.patch('/vehicles/:id', asyncHandler(async (req, res) => {
+  await updateRow(req, res, 'cds_vehicles',
+    ['registration', 'fleet_number', 'make', 'model', 'year', 'type', 'fuel_type', 'capacity_kg', 'transporter_id', 'current_driver_id', 'status']);
+}));
+
+// ══════════════════════════════════════════════════════════════
+// 6. Drivers
+// ══════════════════════════════════════════════════════════════
+
+router.get('/drivers', asyncHandler(async (req, res) => {
+  await listRows(req, res, 'cds_drivers', { searchCols: ['t.name', 't.phone', 't.license_number'] });
+}));
+router.get('/drivers/:id', asyncHandler(async (req, res) => { await getRow(req, res, 'cds_drivers'); }));
+router.post('/drivers', asyncHandler(async (req, res) => {
+  await createRow(req, res, 'cds_drivers',
+    ['name', 'phone', 'email', 'national_id', 'license_number', 'license_expiry', 'transporter_id', 'status']);
+}));
+router.patch('/drivers/:id', asyncHandler(async (req, res) => {
+  await updateRow(req, res, 'cds_drivers',
+    ['name', 'phone', 'email', 'national_id', 'license_number', 'license_expiry', 'transporter_id', 'current_vehicle_id', 'status']);
+}));
+
+// ══════════════════════════════════════════════════════════════
+// 7. Customers
+// ══════════════════════════════════════════════════════════════
+
+router.get('/customers', asyncHandler(async (req, res) => {
+  await listRows(req, res, 'cds_customers', { searchCols: ['t.company_name', 't.email', 't.phone'] });
+}));
+router.get('/customers/:id', asyncHandler(async (req, res) => { await getRow(req, res, 'cds_customers'); }));
+router.post('/customers', asyncHandler(async (req, res) => {
+  await createRow(req, res, 'cds_customers',
+    ['company_name', 'contact_person', 'phone', 'email', 'address', 'city', 'country', 'status'],
+    { genField: 'code', genPrefix: 'CU' });
+}));
+router.patch('/customers/:id', asyncHandler(async (req, res) => {
+  await updateRow(req, res, 'cds_customers',
+    ['company_name', 'contact_person', 'phone', 'email', 'address', 'city', 'country', 'status']);
+}));
+
+// ══════════════════════════════════════════════════════════════
+// 8. Transporters
+// ══════════════════════════════════════════════════════════════
+
+router.get('/transporters', asyncHandler(async (req, res) => {
+  await listRows(req, res, 'cds_transporters', { searchCols: ['t.company_name', 't.email', 't.phone'] });
+}));
+router.get('/transporters/:id', asyncHandler(async (req, res) => { await getRow(req, res, 'cds_transporters'); }));
+router.post('/transporters', asyncHandler(async (req, res) => {
+  await createRow(req, res, 'cds_transporters',
+    ['company_name', 'contact_person', 'phone', 'email', 'total_trucks', 'status'],
+    { genField: 'code', genPrefix: 'TR' });
+}));
+router.patch('/transporters/:id', asyncHandler(async (req, res) => {
+  await updateRow(req, res, 'cds_transporters',
+    ['company_name', 'contact_person', 'phone', 'email', 'total_trucks', 'status']);
+}));
+
+// ══════════════════════════════════════════════════════════════
+// Clamp / Unclamp — ground & port team workflows
+// ══════════════════════════════════════════════════════════════
+
+router.post('/trips/:id/clamp', asyncHandler(async (req, res) => {
+  const trip = await req.db('SELECT * FROM cds_trips WHERE id=$1 AND deleted_at IS NULL', [req.params.id]);
+  if (!trip.rows.length) return res.status(404).json({ error: 'Trip not found' });
+
+  const { container_number, lock_serial, host_vehicle, trailer_number,
+          driver_name, driver_phone, transporter_name, commodity, seal_number } = req.body;
+
+  const orgId = req.user.org_id;
+  let driverId = null, vehicleId = null, containerId = null, lockId = null, transporterId = null;
+
+  if (transporter_name) {
+    let tr = await req.db('SELECT id FROM cds_transporters WHERE company_name ILIKE $1 AND deleted_at IS NULL LIMIT 1', [transporter_name.trim()]);
+    if (!tr.rows.length) {
+      tr = await req.db('INSERT INTO cds_transporters (company_name, code, org_id) VALUES ($1,$2,$3) RETURNING id',
+        [transporter_name.trim(), genCode('TR'), orgId]);
+    }
+    transporterId = tr.rows[0].id;
+  }
+
+  if (driver_name) {
+    let dr = await req.db('SELECT id FROM cds_drivers WHERE name ILIKE $1 AND deleted_at IS NULL LIMIT 1', [driver_name.trim()]);
+    if (!dr.rows.length) {
+      dr = await req.db('INSERT INTO cds_drivers (name, phone, transporter_id, org_id) VALUES ($1,$2,$3,$4) RETURNING id',
+        [driver_name.trim(), driver_phone || null, transporterId, orgId]);
+    }
+    driverId = dr.rows[0].id;
+  }
+
+  if (host_vehicle) {
+    let ve = await req.db('SELECT id FROM cds_vehicles WHERE registration ILIKE $1 AND deleted_at IS NULL LIMIT 1', [host_vehicle.trim()]);
+    if (!ve.rows.length) {
+      ve = await req.db('INSERT INTO cds_vehicles (registration, fleet_number, transporter_id, org_id) VALUES ($1,$2,$3,$4) RETURNING id',
+        [host_vehicle.trim(), genCode('FL'), transporterId, orgId]);
+    }
+    vehicleId = ve.rows[0].id;
+  }
+
+  if (container_number) {
+    let co = await req.db('SELECT id FROM cds_containers WHERE number ILIKE $1 AND deleted_at IS NULL LIMIT 1', [container_number.trim()]);
+    if (!co.rows.length) {
+      co = await req.db('INSERT INTO cds_containers (number, org_id) VALUES ($1,$2) RETURNING id',
+        [container_number.trim(), orgId]);
+    }
+    containerId = co.rows[0].id;
+  }
+
+  if (lock_serial) {
+    let lk = await req.db('SELECT id FROM cds_electronic_locks WHERE serial ILIKE $1 AND deleted_at IS NULL LIMIT 1', [lock_serial.trim()]);
+    if (!lk.rows.length) {
+      lk = await req.db('INSERT INTO cds_electronic_locks (serial, provider, org_id) VALUES ($1,$2,$3) RETURNING id',
+        [lock_serial.trim(), 'SecuriSat', orgId]);
+    }
+    lockId = lk.rows[0].id;
+    // 'installed' — not 'locked', which isn't a value cds_electronic_locks_status_check
+    // allows. Matches the dashboard's active_locks KPI just below (status IN
+    // ('assigned','installed')), which already assumed this was the value in use.
+    await req.db('UPDATE cds_electronic_locks SET status=$1, container_id=$2, vehicle_id=$3, updated_at=NOW() WHERE id=$4',
+      ['installed', containerId, vehicleId, lockId]);
+  }
+
+  const trailerNote = trailer_number ? `Trailer: ${trailer_number.trim()}` : null;
+  const result = await req.db(
+    `UPDATE cds_trips SET status='locked', driver_id=$1, vehicle_id=$2, container_id=$3, lock_id=$4, transporter_id=$5,
+     commodity=COALESCE($6, commodity), seal_number=COALESCE($7, seal_number),
+     notes=COALESCE($8, notes), updated_at=NOW()
+     WHERE id=$9 RETURNING *`,
+    [driverId, vehicleId, containerId, lockId, transporterId,
+     commodity || null, seal_number || null, trailerNote, req.params.id]
+  );
+
+  await req.db(
+    `INSERT INTO cds_audit_logs (action, entity_type, entity_id, user_id, user_name, before_data, after_data, org_id)
+     VALUES ('clamp','trip',$1,$2,$3,$4,$5,$6)`,
+    [req.params.id, req.user.id, req.user.name || null,
+     JSON.stringify({ status: trip.rows[0].status }),
+     JSON.stringify({ status: 'locked', container_number, lock_serial, host_vehicle, driver_name }),
+     orgId]
+  );
+
+  publishCds(req, 'cds.trip.updated', {
+    trip_id: result.rows[0].id,
+    trip_number: result.rows[0].trip_number,
+    booking_id: result.rows[0].booking_id,
+    from_status: trip.rows[0].status,
+    status: 'locked',
+  });
+
+  res.json({ data: result.rows[0] });
+}));
+
+router.post('/trips/:id/unclamp', asyncHandler(async (req, res) => {
+  const trip = await req.db('SELECT * FROM cds_trips WHERE id=$1 AND deleted_at IS NULL', [req.params.id]);
+  if (!trip.rows.length) return res.status(404).json({ error: 'Trip not found' });
+
+  if (trip.rows[0].lock_id) {
+    await req.db(
+      `UPDATE cds_electronic_locks SET status='available', container_id=NULL, vehicle_id=NULL, updated_at=NOW() WHERE id=$1`,
+      [trip.rows[0].lock_id]
+    );
+  }
+
+  const result = await req.db(
+    `UPDATE cds_trips SET status='lock_removed', delivered_at=COALESCE(delivered_at, NOW()), updated_at=NOW()
+     WHERE id=$1 RETURNING *`,
+    [req.params.id]
+  );
+
+  await req.db(
+    `INSERT INTO cds_audit_logs (action, entity_type, entity_id, user_id, user_name, before_data, after_data, org_id)
+     VALUES ('unclamp','trip',$1,$2,$3,$4,$5,$6)`,
+    [req.params.id, req.user.id, req.user.name || null,
+     JSON.stringify({ status: trip.rows[0].status }),
+     JSON.stringify({ status: 'lock_removed', notes: req.body.notes }),
+     req.user.org_id]
+  );
+
+  publishCds(req, 'cds.trip.updated', {
+    trip_id: result.rows[0].id,
+    trip_number: result.rows[0].trip_number,
+    booking_id: result.rows[0].booking_id,
+    from_status: trip.rows[0].status,
+    status: 'lock_removed',
+  });
+
+  res.json({ data: result.rows[0] });
+}));
+
+// ══════════════════════════════════════════════════════════════
+// 9. Bookings
+// ══════════════════════════════════════════════════════════════
+
+router.get('/bookings/pipeline', asyncHandler(async (req, res) => {
+  const result = await req.db(`
+    SELECT b.*, cu.company_name AS customer_name,
+      COUNT(t.id)::int AS trip_count,
+      COUNT(t.id) FILTER (WHERE t.status IN ('completed','archived'))::int AS trips_completed,
+      CASE
+        WHEN b.status IN ('draft','pending') THEN 'received'
+        WHEN b.status = 'delivered' THEN 'completed'
+        WHEN COUNT(t.id) FILTER (WHERE t.status IN ('delivered','lock_removed','completed')) > 0 THEN 'unclamping'
+        WHEN COUNT(t.id) FILTER (WHERE t.status = 'at_port') > 0 THEN 'at_port'
+        WHEN COUNT(t.id) FILTER (WHERE t.status IN ('dispatched','checkpoint','delayed')) > 0 THEN 'in_transit'
+        WHEN b.status IN ('approved','assigned') THEN 'clamping'
+        ELSE 'received'
+      END AS pipeline_stage
+    FROM cds_bookings b
+    LEFT JOIN cds_customers cu ON cu.id = b.customer_id
+    LEFT JOIN cds_trips t ON t.booking_id = b.id AND t.deleted_at IS NULL
+    WHERE b.deleted_at IS NULL AND b.status != 'cancelled'
+    GROUP BY b.id, cu.company_name
+    ORDER BY b.created_at DESC
+  `);
+  res.json({ data: result.rows });
+}));
+
+router.get('/bookings', asyncHandler(async (req, res) => {
+  const { limit, offset } = paginate(req.query);
+  const filters = ['t.deleted_at IS NULL'];
+  const params = [];
+  if (req.query.status) { params.push(req.query.status); filters.push(`t.status=$${params.length}`); }
+  if (req.query.search) {
+    params.push(`%${req.query.search}%`);
+    filters.push(`(t.booking_number ILIKE $${params.length} OR cu.company_name ILIKE $${params.length})`);
+  }
+  const where = filters.join(' AND ');
+  params.push(limit, offset);
+  const result = await req.db(
+    `SELECT t.*, cu.company_name AS customer_name,
+       COUNT(bc.id)::int AS container_count,
+       COUNT(bc.id) FILTER (WHERE bc.status='delivered')::int AS delivered_count
+     FROM cds_bookings t
+     LEFT JOIN cds_customers cu ON cu.id=t.customer_id
+     LEFT JOIN cds_booking_containers bc ON bc.booking_id=t.id AND bc.deleted_at IS NULL
+     WHERE ${where}
+     GROUP BY t.id, cu.company_name
+     ORDER BY t.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`, params
+  );
+  const total = await req.db(
+    `SELECT COUNT(DISTINCT t.id) FROM cds_bookings t
+     LEFT JOIN cds_customers cu ON cu.id=t.customer_id
+     WHERE ${where}`, params.slice(0, -2)
+  );
+  res.json({ data: result.rows, total: parseInt(total.rows[0].count, 10) });
+}));
+// Container manifest — the yard's working view: one row per container rather
+// than per booking, flattened across booking, trip, transporter, vehicle,
+// driver and lock so the whole sheet comes back in a single round trip.
+//
+// Each of the four assignment columns COALESCEs the container's own value over
+// the trip-derived one. A container sits clamped in the yard with a driver
+// written against it long before a trip exists; once dispatched, the trip is
+// the better source. This reads correctly in both states.
+//
+// Declared before /bookings/:id so Express doesn't match "manifest" as an :id.
+router.get('/bookings/manifest', asyncHandler(async (req, res) => {
+  const limit = Math.min(2000, parseInt(req.query.limit) || 200);
+  const offset = parseInt(req.query.offset) || 0;
+  const filters = ['bc.deleted_at IS NULL', 'b.deleted_at IS NULL'];
+  const params = [];
+  // Scope containers explicitly, as the sibling container routes do. The join
+  // to cds_bookings already limits rows to this org's bookings via that table's
+  // RLS, but that would still surface a container carrying another org's
+  // org_id if one were ever attached to this org's booking — and this row
+  // carries driver name, contact and lock number. 076 adds the missing policy
+  // on cds_booking_containers; this is the belt to that pair of braces.
+  params.push(req.user.org_id);
+  filters.push(`bc.org_id=$${params.length}`);
+  if (req.query.booking_id) { params.push(req.query.booking_id); filters.push(`bc.booking_id=$${params.length}`); }
+  if (req.query.yard_status) { params.push(req.query.yard_status); filters.push(`bc.yard_status=$${params.length}`); }
+  if (req.query.status) { params.push(req.query.status); filters.push(`bc.status=$${params.length}`); }
+  if (req.query.direction) { params.push(req.query.direction); filters.push(`b.direction=$${params.length}`); }
+  if (req.query.search) {
+    params.push(`%${req.query.search}%`);
+    filters.push(`(bc.container_number ILIKE $${params.length} OR bc.seal_number ILIKE $${params.length}
+                   OR b.booking_number ILIKE $${params.length} OR b.reference ILIKE $${params.length}
+                   OR b.vessel ILIKE $${params.length})`);
+  }
+  const where = filters.join(' AND ');
+
+  const FROM = `
+    FROM cds_booking_containers bc
+    JOIN cds_bookings b ON b.id = bc.booking_id
+    LEFT JOIN cds_customers cu ON cu.id = b.customer_id
+    LEFT JOIN cds_trips t ON t.id = bc.trip_id
+    LEFT JOIN cds_transporters tr ON tr.id = t.transporter_id
+    LEFT JOIN cds_vehicles v ON v.id = t.vehicle_id
+    LEFT JOIN cds_drivers d ON d.id = t.driver_id
+    LEFT JOIN cds_electronic_locks el ON el.id = t.lock_id
+    WHERE ${where}`;
+
+  params.push(limit, offset);
+  const result = await req.db(
+    `SELECT bc.id, bc.booking_id, bc.container_number, bc.seal_number, bc.seal_number_2,
+            bc.packing_list_no, bc.iso_type,
+            bc.weight_kg, bc.status, bc.notes,
+            bc.clamped_at, bc.unclamped_at, bc.terminal, bc.yard_status, bc.invoiced,
+            bc.trailer_reg,
+            b.booking_number, b.reference AS file_reference, b.vessel, b.commodity,
+            b.controller, b.country_code, b.direction, b.carrier_reference, b.status AS booking_status,
+            b.pickup_location, b.delivery_location, b.eta, b.created_at AS booking_created_at,
+            cu.company_name AS customer_name,
+            t.trip_number, t.status AS trip_status,
+            COALESCE(bc.transporter_name, tr.company_name) AS transporter,
+            COALESCE(bc.horse_reg,        v.registration)  AS horse_reg,
+            COALESCE(bc.driver_name,      d.name)          AS driver_name,
+            COALESCE(bc.driver_contact,   d.phone)         AS driver_contact,
+            COALESCE(bc.lock_number,      el.serial)       AS lock_number
+     ${FROM}
+     -- Newest booking first, but a booking's containers stay contiguous and in
+     -- container order. Sorting by clamp time instead would scatter the
+     -- containers of one booking across the sheet, which is the opposite of how
+     -- it gets read — you check a booking's containers together.
+     ORDER BY b.created_at DESC, b.booking_number, bc.container_number
+     LIMIT $${params.length - 1} OFFSET $${params.length}`, params
+  );
+  const total = await req.db(`SELECT COUNT(*) ${FROM}`, params.slice(0, -2));
+  res.json({ data: result.rows, total: parseInt(total.rows[0].count, 10) });
+}));
+
+// ─── Manifest integrity scan ─────────────────────────────────────────────────
+// Declared before /bookings/:id for the same reason /bookings/manifest is:
+// Express would otherwise match "manifest" as an :id.
+//
+// Scans the whole org rather than the page the user is looking at. Duplicate
+// detection that only sees 200 rows is worse than none — it would clear a
+// container whose twin happens to be on the next page, which is precisely the
+// case a controller most needs told about.
+const ANOMALY_SCAN_CAP = 5000;
+
+router.get('/bookings/manifest/anomalies', asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+
+  const rows = await req.db(
+    `SELECT bc.id, bc.booking_id, bc.container_number, bc.seal_number, bc.seal_number_2, bc.status,
+            bc.clamped_at, bc.unclamped_at, bc.yard_status,
+            COALESCE(bc.lock_number, el.serial)      AS lock_number,
+            COALESCE(bc.horse_reg,   v.registration) AS horse_reg,
+            b.booking_number
+       FROM cds_booking_containers bc
+       JOIN cds_bookings b ON b.id = bc.booking_id AND b.deleted_at IS NULL
+       LEFT JOIN cds_trips t ON t.id = bc.trip_id
+       LEFT JOIN cds_electronic_locks el ON el.id = t.lock_id
+       LEFT JOIN cds_vehicles v ON v.id = t.vehicle_id
+      WHERE bc.org_id = $1 AND bc.deleted_at IS NULL
+      ORDER BY bc.created_at DESC
+      LIMIT $2`,
+    [orgId, ANOMALY_SCAN_CAP + 1]
+  );
+
+  const bookings = await req.db(
+    `SELECT id, booking_number, reference FROM cds_bookings
+      WHERE org_id = $1 AND deleted_at IS NULL
+      ORDER BY created_at DESC LIMIT $2`,
+    [orgId, ANOMALY_SCAN_CAP + 1]
+  );
+
+  const truncated = rows.rows.length > ANOMALY_SCAN_CAP;
+  const findings = scanManifest(rows.rows.slice(0, ANOMALY_SCAN_CAP), bookings.rows.slice(0, ANOMALY_SCAN_CAP));
+
+  const bySeverity = findings.reduce((acc, f) => {
+    acc[f.severity] = (acc[f.severity] || 0) + 1;
+    return acc;
+  }, {});
+
+  res.json({
+    data: findings,
+    total: findings.length,
+    scanned_containers: Math.min(rows.rows.length, ANOMALY_SCAN_CAP),
+    by_severity: bySeverity,
+    // Surfaced rather than silently swallowed: a partial scan that claims to be
+    // a full one is the failure mode that makes an integrity check untrustworthy.
+    truncated,
+  });
+}));
+
+router.get('/bookings/:id', asyncHandler(async (req, res) => {
+  await getRow(req, res, 'cds_bookings', {
+    joins: 'LEFT JOIN cds_customers cu ON cu.id=t.customer_id',
+    selectCols: 't.*, cu.company_name AS customer_name',
+  });
+}));
+router.post('/bookings/extract',
+  require('express').json({ limit: '20mb' }),
+  asyncHandler(async (req, res) => {
+    const body = req.body || {};
+    const fileData = body.data;
+    const mediaType = body.mediaType;
+    if (!fileData) {
+      return res.status(400).json({ error: 'no_file_data', message: 'No file data received. The upload may be too large or the request was malformed.' });
+    }
+    try {
+      const result = await extractBookingData(fileData, mediaType || 'image/jpeg');
+      return res.json(result);
+    } catch (err) {
+      return res.status(err.allUnconfigured ? 503 : 422).json({
+        error: err.allUnconfigured ? 'extraction_not_configured' : 'extraction_failed',
+        message: err.message,
+        failures: err.failures ?? [],
+      });
+    }
+  }));
+
+router.post('/bookings', asyncHandler(async (req, res) => {
+  const { containers, ...body } = req.body;
+
+  // Auto-create customer when user types a name instead of picking from the list
+  if (!body.customer_id && body.customer_name) {
+    const name = body.customer_name.trim();
+    let cu = await req.db(
+      'SELECT id FROM cds_customers WHERE company_name ILIKE $1 AND deleted_at IS NULL LIMIT 1', [name]
+    );
+    if (!cu.rows.length) {
+      cu = await req.db(
+        `INSERT INTO cds_customers (company_name, contact_person, phone, code, org_id)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+        [name, body.contact_person || name, body.phone || '-', genCode('CU'), req.user.org_id]
+      );
+    }
+    body.customer_id = cu.rows[0].id;
+  }
+
+  if (!body.customer_id) return res.status(400).json({ error: 'Customer is required' });
+
+  // The booking number is captured, not generated, whenever the sheet carries
+  // one (TZ_26_08_OB_00123910 is printed on the customer/line's booking sheet —
+  // see the extraction prompt). Only a booking raised in-app with no document
+  // falls through to allocation. See utils/bookingReference.js and migration 080.
+  const provided = body.booking_number
+    ? await reconcileProvidedReference(req.db, req.user.org_id, body.booking_number)
+    : null;
+  const ref = provided ?? await allocateBookingReference(req.db, req.user.org_id, {
+    country: body.country_code,
+    direction: body.direction,
+  });
+  // A sheet-provided structured number encodes its own country/direction; a
+  // free-form provided number keeps whatever the form/body said (or the org
+  // default), since there is nothing to read out of it.
+  const countryCode = ref.country_code ?? body.country_code ?? null;
+  const direction = ref.direction ?? body.direction ?? null;
+
+  const fields = ['customer_id', 'pickup_location', 'delivery_location', 'commodity', 'weight_kg',
+    'seal_number', 'container_type', 'container_size', 'shipping_line', 'vessel', 'voyage', 'eta',
+    'reference', 'carrier_reference', 'notes'];
+  const cols = ['booking_number', ...(countryCode ? ['country_code'] : []), ...(direction ? ['direction'] : []),
+    ...fields, 'org_id'];
+  const vals = [ref.booking_number, ...(countryCode ? [countryCode] : []), ...(direction ? [direction] : []),
+    ...fields.map(f => body[f] ?? null), req.user.org_id];
+  const phs = vals.map((_, i) => `$${i + 1}`).join(',');
+
+  let bk;
+  try {
+    bk = await req.db(`INSERT INTO cds_bookings (${cols.join(',')}) VALUES (${phs}) RETURNING *`, vals);
+  } catch (err) {
+    // A duplicate booking number is not a server error — it is the single most
+    // important thing to catch at ingest: the same sheet keyed twice, or two
+    // sheets that really do share a reference. Surface it as a conflict the UI
+    // can act on rather than a 500.
+    if (err.code === '23505') {
+      return res.status(409).json({
+        error: 'duplicate_booking_number',
+        message: `Booking ${ref.booking_number} already exists. It may have been entered already, or two sheets share this reference.`,
+        booking_number: ref.booking_number,
+      });
+    }
+    throw err;
+  }
+  const booking = bk.rows[0];
+  if (Array.isArray(containers) && containers.length > 0) {
+    for (const c of containers) {
+      await req.db(
+        `INSERT INTO cds_booking_containers
+           (org_id, booking_id, container_number, iso_type, seal_number, seal_number_2,
+            packing_list_no, weight_kg, notes, yard_status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'yard')`,
+        [req.user.org_id, booking.id, c.container_number || null, c.iso_type || '20GP',
+         c.seal_number || null, c.seal_number_2 || null, c.packing_list_no || null,
+         c.weight_kg || null, c.notes || null]
+      );
+    }
+  }
+  // A new booking is work arriving for the yard: their queue should show it
+  // without waiting out a poll.
+  publishCds(req, 'cds.booking.updated', {
+    booking_id: booking.id,
+    booking_number: booking.booking_number,
+    status: booking.status,
+    created: true,
+  });
+  res.status(201).json({ data: booking });
+}));
+router.patch('/bookings/:id', asyncHandler(async (req, res) => {
+  await updateRow(req, res, 'cds_bookings',
+    ['customer_id', 'pickup_location', 'delivery_location', 'commodity', 'weight_kg',
+     'container_type', 'container_size', 'shipping_line', 'eta', 'status', 'notes',
+     // Manifest columns: vessel and the AW file ref are shown per container row,
+     // and the controller owns the booking on the desk.
+     'vessel', 'voyage', 'reference', 'controller',
+     // Editable after the fact: the reference itself is immutable once issued,
+     // but a booking mis-filed as outbound still has to be correctable.
+     'direction', 'country_code', 'carrier_reference']
+  );
+  // updateRow owns the response; this only fans the change out afterwards.
+  publishCds(req, 'cds.booking.updated', { booking_id: req.params.id });
+}));
+
+// Booking containers sub-resource
+router.get('/bookings/:id/containers', asyncHandler(async (req, res) => {
+  const result = await req.db(
+    `SELECT bc.*, t.trip_number, t.status AS trip_status
+     FROM cds_booking_containers bc
+     LEFT JOIN cds_trips t ON t.id = bc.trip_id
+     WHERE bc.booking_id=$1 AND bc.org_id=$2 AND bc.deleted_at IS NULL
+     ORDER BY bc.created_at`,
+    [req.params.id, req.user.org_id]
+  );
+  res.json({ data: result.rows, total: result.rows.length });
+}));
+router.post('/bookings/:id/containers', asyncHandler(async (req, res) => {
+  const items = Array.isArray(req.body) ? req.body : [req.body];
+  const inserted = [];
+  for (const c of items) {
+    const r = await req.db(
+      `INSERT INTO cds_booking_containers
+         (org_id, booking_id, container_number, iso_type, seal_number, seal_number_2,
+          packing_list_no, weight_kg, notes, yard_status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'yard') RETURNING *`,
+      [req.user.org_id, req.params.id, c.container_number || null, c.iso_type || '20GP',
+       c.seal_number || null, c.seal_number_2 || null, c.packing_list_no || null,
+       c.weight_kg || null, c.notes || null]
+    );
+    inserted.push(r.rows[0]);
+  }
+  publishCds(req, 'cds.container.updated', {
+    booking_id: req.params.id,
+    added: inserted.length,
+  });
+  res.status(201).json({ data: inserted });
+}));
+router.patch('/bookings/:id/containers/:cid', asyncHandler(async (req, res) => {
+  const allowed = [
+    'container_number', 'iso_type', 'seal_number', 'seal_number_2', 'packing_list_no',
+    'weight_kg', 'notes', 'status',
+    // Manifest columns — see 20260807_076_cds_container_ops.sql.
+    'clamped_at', 'unclamped_at', 'terminal', 'yard_status', 'invoiced',
+    'lock_number', 'transporter_name', 'horse_reg', 'trailer_reg',
+    'driver_name', 'driver_contact',
+  ];
+  const sets = []; const params = [];
+  for (const k of allowed) {
+    if (req.body[k] !== undefined) { params.push(req.body[k]); sets.push(`${k}=$${params.length}`); }
+  }
+  if (!sets.length) return res.status(400).json({ error: 'nothing_to_update' });
+  params.push(req.params.cid, req.user.org_id);
+  const r = await req.db(
+    `UPDATE cds_booking_containers SET ${sets.join(',')}, updated_at=NOW()
+     WHERE id=$${params.length - 1} AND org_id=$${params.length} AND deleted_at IS NULL RETURNING *`,
+    params
+  );
+  if (!r.rows.length) return res.status(404).json({ error: 'not_found' });
+  // Controller edits reach the field too — a corrected seal number or a
+  // container pulled back to 'pending' has to show up on the tablet that is
+  // about to act on it, not one poll later.
+  publishCds(req, 'cds.container.updated', {
+    booking_id: req.params.id,
+    booking_container_id: r.rows[0].id,
+    container_number: r.rows[0].container_number,
+    status: r.rows[0].status,
+  });
+  res.json({ data: r.rows[0] });
+}));
+router.delete('/bookings/:id/containers/:cid', asyncHandler(async (req, res) => {
+  await req.db(
+    `UPDATE cds_booking_containers SET deleted_at=NOW() WHERE id=$1 AND org_id=$2`,
+    [req.params.cid, req.user.org_id]
+  );
+  publishCds(req, 'cds.container.updated', {
+    booking_id: req.params.id,
+    booking_container_id: req.params.cid,
+    removed: true,
+  });
+  res.json({ ok: true });
+}));
+
+// The container's custody ledger, re-verified on every read.
+//
+// A hash chain nobody checks is decoration, so this doesn't just return the
+// rows: it recomputes each event's hash from its stored fields and re-links it
+// to its predecessor. `verified` false means that row's contents no longer
+// match its hash (edited in place); `chain_broken` means the link to the
+// previous event doesn't line up (a row was removed or reordered).
+router.get('/bookings/:id/containers/:cid/custody', asyncHandler(async (req, res) => {
+  const result = await req.db(
+    `SELECT seq, kind, actor_user_id, actor_name, lat, lng, seal_number, seal_intact,
+            lock_serial, notes, hash, prev_hash, trip_id, created_at
+       FROM cds_custody_events
+      WHERE booking_container_id = $1 AND org_id = $2
+      ORDER BY seq ASC`,
+    [req.params.cid, req.user.org_id]
+  );
+
+  let tampered = false;
+  const events = result.rows.map((r, i) => {
+    const recomputed = crypto.createHash('sha256').update(custodyPayload({
+      seq: r.seq, kind: r.kind,
+      bookingContainerId: req.params.cid,
+      orgId: req.user.org_id,
+      actorUserId: r.actor_user_id, actorName: r.actor_name,
+      sealNumber: r.seal_number, sealIntact: r.seal_intact,
+      lockSerial: r.lock_serial,
+      lat: normCoord(r.lat), lng: normCoord(r.lng),
+      notes: r.notes, prevHash: r.prev_hash,
+    })).digest('hex');
+
+    const verified = recomputed === r.hash;
+    const expectedPrev = i === 0 ? null : result.rows[i - 1].hash;
+    const chainBroken = (r.prev_hash ?? null) !== expectedPrev;
+    if (!verified || chainBroken) tampered = true;
+
+    return {
+      seq: r.seq, kind: r.kind, actor: r.actor_name, timestamp: r.created_at,
+      lat: r.lat, lng: r.lng, seal_number: r.seal_number, seal_intact: r.seal_intact,
+      lock_serial: r.lock_serial, notes: r.notes, trip_id: r.trip_id,
+      hash: r.hash, prev_hash: r.prev_hash,
+      verified, chain_broken: chainBroken,
+    };
+  });
+
+  res.json({ data: events, total: events.length, chain_intact: !tampered });
+}));
+
+// ══════════════════════════════════════════════════════════════
+// 9b. Field ops — Yard & Port teams (mobile APK)
+// ══════════════════════════════════════════════════════════════
+
+// Queue for the Yard team: containers still pending clamp on active bookings.
+router.get('/field/yard-queue', asyncHandler(async (req, res) => {
+  const result = await req.db(`
+    SELECT b.id AS booking_id, b.booking_number, b.pickup_location, b.delivery_location,
+           b.commodity, b.shipping_line, b.vessel, b.eta, cu.company_name AS customer_name,
+           COUNT(DISTINCT bc.id)::int AS pending_containers,
+           COUNT(DISTINCT bc2.id)::int AS total_containers
+      FROM cds_bookings b
+      LEFT JOIN cds_customers cu ON cu.id = b.customer_id
+      LEFT JOIN cds_booking_containers bc  ON bc.booking_id = b.id AND bc.deleted_at IS NULL AND bc.status = 'pending'
+      LEFT JOIN cds_booking_containers bc2 ON bc2.booking_id = b.id AND bc2.deleted_at IS NULL
+     WHERE b.deleted_at IS NULL
+       AND b.status NOT IN ('cancelled','completed','billed')
+     GROUP BY b.id, cu.company_name
+    -- bc and bc2 are separately-filtered joins to the same table, so any
+    -- booking with more than one container in each set fans out into a
+    -- cross product of matching rows — plain COUNT(bc.id) then counts each
+    -- pending container once per total-container row instead of once.
+    HAVING COUNT(DISTINCT bc.id) > 0
+     ORDER BY b.eta NULLS LAST, b.created_at DESC
+     LIMIT 100
+  `);
+  res.json({ data: result.rows });
+}));
+
+// Queue for the Port team: containers dispatched and heading to / arrived at port.
+router.get('/field/port-queue', asyncHandler(async (req, res) => {
+  const result = await req.db(`
+    SELECT bc.id, bc.container_number, bc.iso_type, bc.seal_number, bc.weight_kg,
+           bc.status, bc.updated_at,
+           b.id AS booking_id, b.booking_number, b.delivery_location, cu.company_name AS customer_name,
+           t.id AS trip_id, t.trip_number, t.status AS trip_status,
+           t.departed_at,
+           v.registration AS vehicle_reg,
+           d.name AS driver_name, d.phone AS driver_phone,
+           l.serial AS lock_serial, l.location AS lock_location,
+           gps.lat AS last_lat, gps.lng AS last_lng, gps.device_time AS last_seen
+      FROM cds_booking_containers bc
+      JOIN cds_bookings b ON b.id = bc.booking_id
+      LEFT JOIN cds_customers cu ON cu.id = b.customer_id
+      LEFT JOIN cds_trips t ON t.id = bc.trip_id AND t.deleted_at IS NULL
+      LEFT JOIN cds_vehicles v ON v.id = t.vehicle_id
+      LEFT JOIN cds_drivers d ON d.id = t.driver_id
+      LEFT JOIN cds_electronic_locks l ON l.id = t.lock_id
+      LEFT JOIN LATERAL (
+        SELECT lat, lng, device_time
+          FROM cds_gps_history
+         WHERE vehicle_id = t.vehicle_id
+         ORDER BY device_time DESC
+         LIMIT 1
+      ) gps ON true
+     WHERE bc.deleted_at IS NULL
+       AND bc.status IN ('assigned','in_transit','at_port')
+     ORDER BY bc.updated_at DESC
+     LIMIT 200
+  `);
+  res.json({ data: result.rows });
+}));
+
+/**
+ * GET /cds/field/departures — what the yard clamped but has not seen leave.
+ *
+ * The yard's job does not end at the clamp. Until the truck is through the
+ * gate the trip sits at 'locked', and the control room reads that as "still in
+ * the yard" — correct for ten minutes, badly wrong for the rest of the day.
+ *
+ * `scanned` is the column that decides whether a human has to act. A driver who
+ * scanned the QR will depart on his own telemetry within a couple of minutes of
+ * the gate; a driver who did not will never depart at all unless the yard says
+ * so. Surfacing that distinction is the whole point of this list — it tells the
+ * crew which trucks are their problem rather than making them check each one.
+ */
+router.get('/field/departures', asyncHandler(async (req, res) => {
+  const result = await req.db(`
+    SELECT t.id AS trip_id, t.trip_number, t.status, t.created_at AS clamped_at,
+           t.origin, t.destination, t.clamp_lat, t.clamp_lng,
+           v.registration AS vehicle_reg,
+           d.name AS driver_name, d.phone AS driver_phone,
+           l.serial AS lock_serial,
+           c.number AS container_number,
+           b.booking_number,
+           -- One live tracking session per trip at most, so a lateral beats a
+           -- group-by here and keeps the row count equal to the trip count.
+           s.status AS tracking_status, s.last_location_at,
+           (s.id IS NOT NULL) AS scanned
+      FROM cds_trips t
+      LEFT JOIN cds_vehicles v ON v.id = t.vehicle_id
+      LEFT JOIN cds_drivers d ON d.id = t.driver_id
+      LEFT JOIN cds_electronic_locks l ON l.id = t.lock_id
+      LEFT JOIN cds_containers c ON c.id = t.container_id
+      LEFT JOIN cds_bookings b ON b.id = t.booking_id
+      LEFT JOIN LATERAL (
+        SELECT id, status, last_location_at
+          FROM tracking_sessions
+         WHERE trip_id = t.id AND deleted_at IS NULL
+         ORDER BY started_at DESC
+         LIMIT 1
+      ) s ON true
+     WHERE t.deleted_at IS NULL
+       AND t.departed_at IS NULL
+       AND t.status = 'locked'
+     ORDER BY t.created_at ASC
+     LIMIT 200
+  `);
+  res.json({ data: result.rows });
+}));
+
+// Yard team clamps an e-lock onto one container of a booking.
+// Auto-creates supporting rows (transporter, driver, vehicle, container, lock, trip)
+// so the mobile UI only needs to send free-text names and numbers.
+// requireIdempotencyKey is a no-op unless the caller sends x-idempotency-key,
+// so nothing changes for the online path. The field app's offline queue does
+// send one, and it must: a clamp creates a trip and upserts a driver/vehicle/
+// lock, so a queued submission retried after a flaky-network timeout would
+// otherwise create a second trip for the same container.
+router.post('/bookings/:id/containers/:cid/clamp', requireIdempotencyKey, asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+  const { id: bookingId, cid: bcId } = req.params;
+  const {
+    lock_serial, transporter_name, truck_reg, trailer_reg,
+    driver_name, driver_phone, notes, lat, lng,
+  } = req.body || {};
+
+  if (!lock_serial || !truck_reg || !driver_name) {
+    return res.status(400).json({ error: 'lock_serial, truck_reg and driver_name are required' });
+  }
+
+  const bc = await req.db(
+    `SELECT bc.*, b.booking_number, b.customer_id, b.pickup_location, b.delivery_location, b.direction
+       FROM cds_booking_containers bc
+       JOIN cds_bookings b ON b.id = bc.booking_id
+      WHERE bc.id=$1 AND bc.booking_id=$2 AND bc.deleted_at IS NULL`,
+    [bcId, bookingId]
+  );
+  if (!bc.rows.length) return res.status(404).json({ error: 'Booking container not found' });
+  if (bc.rows[0].status !== 'pending' && bc.rows[0].status !== 'assigned') {
+    return res.status(409).json({ error: `Container already ${bc.rows[0].status}` });
+  }
+
+  // Upsert transporter. contact_person/phone are NOT NULL on cds_transporters
+  // but the clamp form only collects a company name — same fallback the
+  // customer auto-create above uses (the name doubles as the placeholder
+  // contact until someone fills in the real one from the transporters view).
+  let transporterId = null;
+  if (transporter_name) {
+    const t = await req.db(
+      'SELECT id FROM cds_transporters WHERE company_name ILIKE $1 AND deleted_at IS NULL LIMIT 1',
+      [transporter_name.trim()]
+    );
+    if (t.rows.length) transporterId = t.rows[0].id;
+    else {
+      const ins = await req.db(
+        `INSERT INTO cds_transporters (company_name, contact_person, phone, code, org_id) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+        [transporter_name.trim(), transporter_name.trim(), '-', genCode('TR'), orgId]
+      );
+      transporterId = ins.rows[0].id;
+    }
+  }
+
+  // Upsert driver. license_number/license_expiry are NOT NULL on cds_drivers
+  // but the clamp form doesn't collect them — placeholder + a generous expiry
+  // so the row is valid until ops backfills the real license from the
+  // drivers view; not a compliance record, just enough to satisfy the schema.
+  const dr = await req.db(
+    'SELECT id FROM cds_drivers WHERE name ILIKE $1 AND deleted_at IS NULL LIMIT 1',
+    [driver_name.trim()]
+  );
+  const driverId = dr.rows.length ? dr.rows[0].id : (await req.db(
+    `INSERT INTO cds_drivers (name, phone, license_number, license_expiry, transporter_id, org_id)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+    [driver_name.trim(), driver_phone || '-', 'PENDING', new Date(Date.now() + 365 * 24 * 3600 * 1000), transporterId, orgId]
+  )).rows[0].id;
+
+  // Upsert vehicle (truck horse)
+  const ve = await req.db(
+    'SELECT id FROM cds_vehicles WHERE registration ILIKE $1 AND deleted_at IS NULL LIMIT 1',
+    [truck_reg.trim()]
+  );
+  const vehicleId = ve.rows.length ? ve.rows[0].id : (await req.db(
+    `INSERT INTO cds_vehicles (registration, fleet_number, transporter_id, org_id) VALUES ($1,$2,$3,$4) RETURNING id`,
+    [truck_reg.trim(), genCode('FL'), transporterId, orgId]
+  )).rows[0].id;
+
+  // Upsert physical container (in cds_containers) so it can be tracked on the map
+  let containerId = null;
+  if (bc.rows[0].container_number) {
+    const co = await req.db(
+      'SELECT id FROM cds_containers WHERE number ILIKE $1 AND deleted_at IS NULL LIMIT 1',
+      [bc.rows[0].container_number]
+    );
+    containerId = co.rows.length ? co.rows[0].id : (await req.db(
+      `INSERT INTO cds_containers (number, iso_type, org_id) VALUES ($1,$2,$3) RETURNING id`,
+      [bc.rows[0].container_number, bc.rows[0].iso_type || '20GP', orgId]
+    )).rows[0].id;
+  }
+
+  // Upsert e-lock and put it into 'locked' state on this container/vehicle
+  const lk = await req.db(
+    'SELECT id FROM cds_electronic_locks WHERE serial ILIKE $1 AND deleted_at IS NULL LIMIT 1',
+    [lock_serial.trim()]
+  );
+  const lockId = lk.rows.length ? lk.rows[0].id : (await req.db(
+    `INSERT INTO cds_electronic_locks (serial, provider, status, org_id) VALUES ($1,$2,$3,$4) RETURNING id`,
+    [lock_serial.trim(), 'SecuriSat', 'assigned', orgId]
+  )).rows[0].id;
+  // 'installed', matching cds_electronic_locks_status_check and the desktop
+  // clamp handler above — 'locked' isn't a value the constraint allows.
+  await req.db(
+    `UPDATE cds_electronic_locks SET status='installed', container_id=$1, vehicle_id=$2, updated_at=NOW() WHERE id=$3`,
+    [containerId, vehicleId, lockId]
+  );
+
+  // Create the trip and link it back to the booking container
+  const trailerNote = trailer_reg ? `Trailer: ${trailer_reg.trim()}${notes ? ' | ' + notes : ''}` : (notes || null);
+  const trip = await req.db(
+    `INSERT INTO cds_trips
+      (trip_number, customer_id, driver_id, vehicle_id, container_id, lock_id, transporter_id,
+       origin, destination, commodity, seal_number, weight_kg, booking_id, notes, status, org_id,
+       clamp_lat, clamp_lng)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'locked',$15,$16,$17) RETURNING *`,
+    [
+      genCode('CDS'), bc.rows[0].customer_id, driverId, vehicleId, containerId, lockId, transporterId,
+      bc.rows[0].pickup_location, bc.rows[0].delivery_location, null, bc.rows[0].seal_number, bc.rows[0].weight_kg,
+      bookingId, trailerNote, orgId,
+      // The yard anchor. Previously these only reached an audit JSON blob,
+      // which cannot be queried — so nothing could ask "has this truck moved
+      // away from where it was clamped?". Nullable: a clamp with location
+      // denied is still a valid clamp.
+      lat ?? null, lng ?? null,
+    ]
+  );
+
+  // Fill the manifest columns the control room actually reads.
+  //
+  // GET /bookings/manifest selects bc.clamped_at, bc.lock_number,
+  // bc.transporter_name, bc.horse_reg, bc.trailer_reg, bc.driver_name and
+  // bc.driver_contact — and clamped_at has no fallback join at all. Writing
+  // only status and trip_id here meant a container the yard had physically
+  // clamped still showed a blank DATE CLAMPED, no lock and no driver on the
+  // controller's sheet: the yard knew, the port knew, and the desk did not.
+  //
+  // These overwrite rather than COALESCE on purpose. Anything already in these
+  // columns is what a controller *expected* — the crew at the gate is
+  // reporting what actually left, and the manifest has to show the truck that
+  // really took the box, not the one that was planned. Manual corrections made
+  // after the clamp still stick, because this only ever runs at clamp time.
+  const yardStatus = (bc.rows[0].direction || '').toUpperCase() === 'IB' ? 'inbound' : 'outbound';
+  await req.db(
+    `UPDATE cds_booking_containers
+        SET status='in_transit', trip_id=$1, clamped_at=NOW(),
+            lock_number=$3, transporter_name=$4, horse_reg=$5,
+            trailer_reg=COALESCE($6, trailer_reg),
+            driver_name=$7, driver_contact=COALESCE($8, driver_contact),
+            yard_status=$9,
+            updated_at=NOW()
+      WHERE id=$2`,
+    [
+      trip.rows[0].id, bcId,
+      lock_serial.trim(),
+      transporter_name ? String(transporter_name).trim() : null,
+      truck_reg ? String(truck_reg).trim() : null,
+      trailer_reg ? String(trailer_reg).trim() : null,
+      driver_name ? String(driver_name).trim() : null,
+      driver_phone ? String(driver_phone).trim() : null,
+      yardStatus,
+    ]
+  );
+
+  // Bump booking to 'assigned' if still in draft/pending
+  await req.db(
+    `UPDATE cds_bookings
+        SET status = CASE WHEN status IN ('draft','pending') THEN 'assigned' ELSE status END,
+            updated_at = NOW()
+      WHERE id=$1`,
+    [bookingId]
+  );
+
+  // Open this container's custody chain. The clamp is the handoff: a sealed
+  // box leaves the yard in a transporter's hands, and the seal recorded here
+  // is what the port crew is later required to verify against.
+  await appendCustodyEvent(req, {
+    bookingContainerId: bcId,
+    tripId: trip.rows[0].id,
+    kind: 'clamped',
+    sealNumber: bc.rows[0].seal_number,
+    sealIntact: true,
+    lockSerial: lock_serial.trim(),
+    lat, lng,
+    notes: `Clamped by ${req.user.name || 'yard team'} · ${truck_reg} / ${driver_name}`,
+  });
+
+  // Fire alert so supervisors see it in real-time
+  await req.db(
+    `INSERT INTO cds_alerts (org_id, type, severity, title, message, entity_type, entity_id, escalation_level)
+     VALUES ($1,'container_clamped','info',$2,$3,'container',$4,'operator')`,
+    [orgId,
+     `Container clamped — ${bc.rows[0].container_number || bc.rows[0].booking_number}`,
+     `${req.user.name || 'Yard team'} clamped e-lock ${lock_serial} on ${bc.rows[0].container_number || bcId} for booking ${bc.rows[0].booking_number} (${truck_reg} / ${driver_name}).`,
+     bcId]
+  );
+
+  await req.db(
+    `INSERT INTO cds_audit_logs (action, entity_type, entity_id, user_id, user_name, after_data, org_id)
+     VALUES ('clamp','booking_container',$1,$2,$3,$4,$5)`,
+    [bcId, req.user.id, req.user.name || null,
+     JSON.stringify({ lock_serial, transporter_name, truck_reg, trailer_reg, driver_name, driver_phone, lat, lng }),
+     orgId]
+  );
+
+  // Hybrid Tracking starts at the gate. Issuing the QR here — rather than in a
+  // separate screen the crew would have to remember — is what makes the driver's
+  // GPS channel the default for every clamped container instead of an
+  // afterthought someone opts into. The journey, not a timer, will end it: the
+  // policy below hands termination to this container's delivery.
+  //
+  // Deliberately non-fatal: a tracking hiccup must never fail a physical clamp
+  // the yard has already performed. The container simply leaves without a QR
+  // and Guardian can issue one.
+  let tracking = null;
+  try {
+    const issued = await T.issueQr(req.db, orgId, {
+      purpose: 'cds_container',
+      terminationPolicy: 'container_delivered',
+      terminationContainerId: containerId,
+      tripId: trip.rows[0].id,
+      bookingId,
+      cdsVehicleId: vehicleId,
+      driverId,
+      issuedBy: req.user.id,
+      // Only what belongs on a gate pass — see the note in trackingEngine.issueQr.
+      display: {
+        vehicle: truck_reg ? String(truck_reg).trim() : null,
+        driver: driver_name ? String(driver_name).trim() : null,
+        container: bc.rows[0].container_number || null,
+        destination: bc.rows[0].delivery_location || null,
+        booking: bc.rows[0].booking_number || null,
+        containers: 1,
+      },
+    });
+    await T.recordEvent(req.db, orgId, {
+      qrCodeId: issued.qr.id, eventType: 'QR_GENERATED', actorType: 'field_agent',
+      actorId: req.user.id, actorName: req.user.name || null,
+      payload: { trip_id: trip.rows[0].id, booking_container_id: bcId },
+    });
+    tracking = { qr_id: issued.qr.id, token: issued.token, url: issued.url };
+  } catch (err) {
+    logger.warn(`tracking QR not issued for trip ${trip.rows[0].id}: ${err.message}`);
+  }
+
+  // The moment that matters to the other two surfaces: the port crew gains an
+  // inbound container, the yard queue loses one, and the control room gets a
+  // new trip on the board.
+  publishCds(req, 'cds.container.clamped', {
+    booking_id: bookingId,
+    booking_number: bc.rows[0].booking_number,
+    booking_container_id: bcId,
+    container_number: bc.rows[0].container_number,
+    trip_id: trip.rows[0].id,
+    trip_number: trip.rows[0].trip_number,
+    lock_serial: lock_serial.trim(),
+    truck_reg,
+    driver_name,
+    tracking_qr_issued: !!tracking,
+    lat: lat ?? null,
+    lng: lng ?? null,
+  });
+
+  res.json({ data: { trip: trip.rows[0], booking_container_id: bcId, tracking } });
+}));
+
+// Port team unclamps the e-lock — container has arrived and been delivered.
+// Idempotent for the same reason as clamp — see the note there.
+router.post('/bookings/:id/containers/:cid/unclamp', requireIdempotencyKey, asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+  const { id: bookingId, cid: bcId } = req.params;
+  const { notes, lat, lng, seal_intact, observed_seal } = req.body || {};
+
+  const bc = await req.db(
+    `SELECT bc.*, b.booking_number, t.id AS trip_id, t.lock_id
+       FROM cds_booking_containers bc
+       JOIN cds_bookings b ON b.id = bc.booking_id
+       LEFT JOIN cds_trips t ON t.id = bc.trip_id
+      WHERE bc.id=$1 AND bc.booking_id=$2 AND bc.deleted_at IS NULL`,
+    [bcId, bookingId]
+  );
+  if (!bc.rows.length) return res.status(404).json({ error: 'Booking container not found' });
+  if (bc.rows[0].status === 'delivered' || bc.rows[0].status === 'completed') {
+    return res.status(409).json({ error: 'Container already delivered' });
+  }
+
+  // Seal verification. A seal is only worth anything if somebody compares it at
+  // the far end, so the decision is made here rather than trusting the client's
+  // verdict: even when the crew reports "intact", an observed seal that doesn't
+  // match the one recorded at clamp is a tamper. Older clients that send
+  // neither field still work — the outcome is then simply unverified (null),
+  // which is honest rather than a false "intact".
+  const expectedSeal = bc.rows[0].seal_number;
+  const observed = typeof observed_seal === 'string' ? observed_seal.trim() : null;
+  let sealVerdict = null;                      // null = not checked
+  if (seal_intact === false) {
+    sealVerdict = false;
+  } else if (seal_intact === true) {
+    const mismatched = expectedSeal && observed && observed.toUpperCase() !== String(expectedSeal).toUpperCase();
+    sealVerdict = !mismatched;
+  }
+  const sealTampered = sealVerdict === false;
+
+  const now = new Date();
+
+  if (bc.rows[0].lock_id) {
+    await req.db(
+      `UPDATE cds_electronic_locks
+          SET status='available', container_id=NULL, vehicle_id=NULL, updated_at=NOW()
+        WHERE id=$1`,
+      [bc.rows[0].lock_id]
+    );
+  }
+
+  if (bc.rows[0].trip_id) {
+    await req.db(
+      `UPDATE cds_trips
+          SET status='lock_removed', delivered_at=COALESCE(delivered_at, NOW()), updated_at=NOW()
+        WHERE id=$1`,
+      [bc.rows[0].trip_id]
+    );
+  }
+
+  // unclamped_at is the manifest's TIME UNCLAMPED column and had the same
+  // problem clamped_at did — nothing ever set it, so the desk could not tell a
+  // delivered container from one still on the road except by its status chip.
+  await req.db(
+    `UPDATE cds_booking_containers
+        SET status='delivered', unclamped_at=$1, yard_status='complete', updated_at=$1
+      WHERE id=$2`,
+    [now, bcId]
+  );
+
+  // If every container on the booking is delivered, mark the booking delivered too.
+  const remaining = await req.db(
+    `SELECT COUNT(*)::int AS c FROM cds_booking_containers
+      WHERE booking_id=$1 AND deleted_at IS NULL AND status NOT IN ('delivered','completed')`,
+    [bookingId]
+  );
+  if (remaining.rows[0].c === 0) {
+    await req.db(`UPDATE cds_bookings SET status='delivered', updated_at=NOW() WHERE id=$1`, [bookingId]);
+  }
+
+  // The container is physically delivered, so its tracking session ends here
+  // too — the driver's phone learns on its next ping and stops collecting
+  // location. Resolving the container id from the trip rather than trusting the
+  // caller keeps this correct when the port crew unclamps without one.
+  try {
+    const tripRow = bc.rows[0].trip_id
+      ? await req.db('SELECT container_id FROM cds_trips WHERE id=$1', [bc.rows[0].trip_id])
+      : null;
+    const containerId = tripRow && tripRow.rows.length ? tripRow.rows[0].container_id : null;
+    if (containerId) {
+      await T.onContainerDelivered(req.db, orgId, containerId,
+        { id: req.user.id, name: req.user.name, type: 'field_agent' });
+    }
+  } catch (err) {
+    logger.warn(`tracking termination failed on unclamp ${bcId}: ${err.message}`);
+  }
+
+  // Close the custody chain for this container. seal_intact is the whole point
+  // of the ledger: it records what the port crew actually found, against what
+  // the yard sealed.
+  const sealNote = sealVerdict === false
+    ? `Seal FAILED verification. Expected ${expectedSeal || '(none recorded)'}, found ${observed || '(reported broken/missing)'}.`
+    : sealVerdict === true ? 'Seal verified against clamp record.' : 'Seal not verified.';
+  await appendCustodyEvent(req, {
+    bookingContainerId: bcId,
+    tripId: bc.rows[0].trip_id,
+    kind: 'unclamped',
+    sealNumber: observed || expectedSeal,
+    sealIntact: sealVerdict,
+    lat, lng,
+    notes: `${sealNote}${notes ? ` Notes: ${notes}` : ''}`,
+  });
+
+  // A broken or swapped seal means the load may have been opened in transit.
+  // That is a security incident, not a delivery note — escalate it to a
+  // critical alert and record it against the lock's own event history so it
+  // shows up in tamper reporting alongside device-reported tampers.
+  if (sealTampered) {
+    await req.db(
+      `INSERT INTO cds_alerts (org_id, type, severity, title, message, entity_type, entity_id, escalation_level)
+       VALUES ($1,'lock_tamper','critical',$2,$3,'container',$4,'manager')`,
+      [orgId,
+       `SEAL MISMATCH — ${bc.rows[0].container_number || bc.rows[0].booking_number}`,
+       `${req.user.name || 'Port team'} reported a seal discrepancy unclamping ${bc.rows[0].container_number || bcId} on booking ${bc.rows[0].booking_number}. ${sealNote}`,
+       bcId]
+    );
+    if (bc.rows[0].lock_id) {
+      await req.db(
+        `INSERT INTO cds_lock_events (org_id, lock_id, type, lat, lng, data)
+         VALUES ($1,$2,'tamper',$3,$4,$5)`,
+        [orgId, bc.rows[0].lock_id, lat ?? null, lng ?? null,
+         JSON.stringify({
+           source: 'seal_verification',
+           expected_seal: expectedSeal, observed_seal: observed,
+           reported_by: req.user.name || req.user.email || null,
+           booking_container_id: bcId, note: sealNote,
+         })]
+      );
+    }
+  }
+
+  // Notify CDS controllers / supervisors
+  await req.db(
+    `INSERT INTO cds_alerts (org_id, type, severity, title, message, entity_type, entity_id, escalation_level)
+     VALUES ($1,'container_delivered','info',$2,$3,'container',$4,'supervisor')`,
+    [orgId,
+     `Container unclamped at port — ${bc.rows[0].container_number || bc.rows[0].booking_number}`,
+     `${req.user.name || 'Port team'} unclamped container ${bc.rows[0].container_number || bcId} on booking ${bc.rows[0].booking_number} at ${now.toISOString()}.${notes ? ' Notes: ' + notes : ''}`,
+     bcId]
+  );
+
+  await req.db(
+    `INSERT INTO cds_audit_logs (action, entity_type, entity_id, user_id, user_name, after_data, org_id)
+     VALUES ('unclamp','booking_container',$1,$2,$3,$4,$5)`,
+    [bcId, req.user.id, req.user.name || null,
+     JSON.stringify({ notes, lat, lng, unclamped_at: now.toISOString(),
+                     seal_expected: expectedSeal, seal_observed: observed, seal_intact: sealVerdict }),
+     orgId]
+  );
+
+  // A seal mismatch is the one event on this router where latency is a safety
+  // property, not a nicety — a controller finding out 30 seconds later is 30
+  // seconds of a possibly-opened load still moving. It rides the same channel
+  // as the routine delivery so the control room needs no second subscription,
+  // and carries `tamper` so the UI can escalate without a follow-up fetch.
+  publishCds(req, 'cds.container.unclamped', {
+    booking_id: bookingId,
+    booking_number: bc.rows[0].booking_number,
+    booking_container_id: bcId,
+    container_number: bc.rows[0].container_number,
+    trip_id: bc.rows[0].trip_id,
+    seal_intact: sealVerdict,
+    seal_expected: expectedSeal || null,
+    seal_observed: observed || null,
+    tamper: sealTampered,
+    lat: lat ?? null,
+    lng: lng ?? null,
+  });
+
+  res.json({
+    data: {
+      booking_container_id: bcId, status: 'delivered', unclamped_at: now.toISOString(),
+      unclamped_by: req.user.name || req.user.email || 'unknown',
+      // Echoed so the app can confirm to the crew that a discrepancy was in
+      // fact escalated, rather than leaving them unsure whether it registered.
+      seal_intact: sealVerdict,
+      seal_tamper_reported: sealTampered,
+    },
+  });
+}));
+
+// ══════════════════════════════════════════════════════════════
+// 10. Alerts
+// ══════════════════════════════════════════════════════════════
+
+router.get('/alerts', asyncHandler(async (req, res) => {
+  const { limit, offset } = paginate(req.query);
+  const filters = [];
+  const params = [];
+  if (req.query.severity) { params.push(req.query.severity); filters.push(`severity=$${params.length}`); }
+  if (req.query.type) { params.push(req.query.type); filters.push(`type=$${params.length}`); }
+  if (req.query.acknowledged === 'true') filters.push('acknowledged=true');
+  else if (req.query.acknowledged === 'false') filters.push('acknowledged=false');
+  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+  params.push(limit, offset);
+  const result = await req.db(
+    `SELECT * FROM cds_alerts ${where} ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`, params
+  );
+  const total = await req.db(`SELECT COUNT(*) FROM cds_alerts ${where}`, params.slice(0, -2));
+  res.json({ data: result.rows, total: parseInt(total.rows[0].count, 10) });
+}));
+
+router.post('/alerts/:id/acknowledge', asyncHandler(async (req, res) => {
+  const result = await req.db(
+    `UPDATE cds_alerts SET acknowledged=true, acknowledged_at=NOW(), acknowledged_by=$1
+     WHERE id=$2 AND acknowledged=false RETURNING *`,
+    [req.user.id, req.params.id]
+  );
+  if (!result.rows.length) return res.status(404).json({ error: 'Alert not found or already acknowledged' });
+  res.json({ data: result.rows[0] });
+}));
+
+// ══════════════════════════════════════════════════════════════
+// 11. Incidents
+// ══════════════════════════════════════════════════════════════
+
+router.get('/incidents', asyncHandler(async (req, res) => {
+  await listRows(req, res, 'cds_incidents', { searchCols: ['t.incident_number', 't.title'] });
+}));
+router.get('/incidents/:id', asyncHandler(async (req, res) => { await getRow(req, res, 'cds_incidents'); }));
+router.post('/incidents', asyncHandler(async (req, res) => {
+  await createRow(req, res, 'cds_incidents',
+    ['trip_id', 'container_id', 'lock_id', 'vehicle_id', 'driver_id',
+     'title', 'description', 'severity', 'type', 'assigned_to', 'lat', 'lng'],
+    { genField: 'incident_number', genPrefix: 'INC' }
+  );
+}));
+router.patch('/incidents/:id', asyncHandler(async (req, res) => {
+  await updateRow(req, res, 'cds_incidents',
+    ['title', 'description', 'severity', 'status', 'type', 'assigned_to', 'resolution']
+  );
+}));
+
+// ══════════════════════════════════════════════════════════════
+// 12. Geofences
+// ══════════════════════════════════════════════════════════════
+
+router.get('/geofences', asyncHandler(async (req, res) => {
+  await listRows(req, res, 'cds_geofences', { searchCols: ['t.name'] });
+}));
+router.post('/geofences', asyncHandler(async (req, res) => {
+  await createRow(req, res, 'cds_geofences',
+    ['name', 'type', 'category', 'geometry', 'center_lat', 'center_lng', 'radius_m', 'alert_config', 'active']);
+}));
+router.patch('/geofences/:id', asyncHandler(async (req, res) => {
+  await updateRow(req, res, 'cds_geofences',
+    ['name', 'type', 'category', 'geometry', 'center_lat', 'center_lng', 'radius_m', 'alert_config', 'active']);
+}));
+router.delete('/geofences/:id', asyncHandler(async (req, res) => {
+  const result = await req.db(
+    `UPDATE cds_geofences SET deleted_at=NOW(), updated_at=NOW() WHERE id=$1 AND deleted_at IS NULL RETURNING id`, [req.params.id]
+  );
+  if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
+  res.json({ data: { id: result.rows[0].id, deleted: true } });
+}));
+
+// ══════════════════════════════════════════════════════════════
+// 13. Documents
+// ══════════════════════════════════════════════════════════════
+
+router.get('/documents', asyncHandler(async (req, res) => {
+  await listRows(req, res, 'cds_documents', { searchCols: ['t.name', 't.type'] });
+}));
+router.post('/documents', asyncHandler(async (req, res) => {
+  await createRow(req, res, 'cds_documents',
+    ['name', 'type', 'mime_type', 'file_size', 'storage_key', 'trip_id', 'container_id', 'booking_id', 'uploaded_by']
+  );
+}));
+
+// ══════════════════════════════════════════════════════════════
+// 14. Reports
+// ══════════════════════════════════════════════════════════════
+
+router.get('/reports', asyncHandler(async (req, res) => {
+  await listRows(req, res, 'cds_reports', { searchCols: ['t.name', 't.type'], softDelete: false });
+}));
+router.post('/reports', asyncHandler(async (req, res) => {
+  await createRow(req, res, 'cds_reports', ['name', 'type', 'format', 'parameters', 'generated_by']);
+}));
+
+// ══════════════════════════════════════════════════════════════
+// 15. Audit
+// ══════════════════════════════════════════════════════════════
+
+router.get('/audit', asyncHandler(async (req, res) => {
+  const { limit, offset } = paginate(req.query);
+  const filters = [];
+  const params = [];
+  if (req.query.entity_type) { params.push(req.query.entity_type); filters.push(`entity_type=$${params.length}`); }
+  if (req.query.entity_id) { params.push(req.query.entity_id); filters.push(`entity_id=$${params.length}`); }
+  if (req.query.action) { params.push(req.query.action); filters.push(`action=$${params.length}`); }
+  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+  params.push(limit, offset);
+  const result = await req.db(
+    `SELECT * FROM cds_audit_logs ${where} ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`, params
+  );
+  const total = await req.db(`SELECT COUNT(*) FROM cds_audit_logs ${where}`, params.slice(0, -2));
+  res.json({ data: result.rows, total: parseInt(total.rows[0].count, 10) });
+}));
+
+// ══════════════════════════════════════════════════════════════
+// 16. Activity Feed
+// ══════════════════════════════════════════════════════════════
+
+router.get('/activity', asyncHandler(async (req, res) => {
+  const limit = Math.min(100, parseInt(req.query.limit) || 30);
+  res.json(await activityFeed(req.db, limit));
+}));
+
+// ══════════════════════════════════════════════════════════════
+// 17. GPS History
+// ══════════════════════════════════════════════════════════════
+
+router.get('/gps/:vehicleId', asyncHandler(async (req, res) => {
+  const { limit, offset } = paginate(req.query);
+  const filters = ['vehicle_id=$1'];
+  const params = [req.params.vehicleId];
+  if (req.query.from) { params.push(req.query.from); filters.push(`device_time >= $${params.length}`); }
+  if (req.query.to) { params.push(req.query.to); filters.push(`device_time <= $${params.length}`); }
+  params.push(limit, offset);
+  const result = await req.db(
+    `SELECT * FROM cds_gps_history WHERE ${filters.join(' AND ')} ORDER BY device_time DESC LIMIT $${params.length - 1} OFFSET $${params.length}`, params
+  );
+  const total = await req.db(`SELECT COUNT(*) FROM cds_gps_history WHERE ${filters.join(' AND ')}`, params.slice(0, -2));
+  res.json({ data: result.rows, total: parseInt(total.rows[0].count, 10) });
+}));
+
+router.post('/gps', asyncHandler(async (req, res) => {
+  const { vehicle_id, trip_id, lat, lng, speed, heading, altitude, ignition, fuel_level, battery, odometer, signal_strength, device_time } = req.body;
+  if (!vehicle_id || lat == null || lng == null) return res.status(400).json({ error: 'vehicle_id, lat, lng required' });
+  const result = await req.db(
+    `INSERT INTO cds_gps_history (vehicle_id, trip_id, lat, lng, speed, heading, altitude, ignition, fuel_level, battery, odometer, signal_strength, device_time, org_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+    [vehicle_id, trip_id || null, lat, lng, speed || null, heading || null, altitude || null,
+     ignition ?? null, fuel_level || null, battery || null, odometer || null, signal_strength || null,
+     device_time || new Date().toISOString(), req.user.org_id]
+  );
+  res.status(201).json({ data: result.rows[0] });
+}));
+
+module.exports = router;

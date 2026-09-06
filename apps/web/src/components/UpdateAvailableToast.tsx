@@ -49,7 +49,7 @@ export default function UpdateAvailableToast() {
       <span>A new version is available.</span>
       <button
         onClick={activateUpdate}
-        className="flex items-center gap-1 rounded bg-blue-600 hover:bg-blue-700 px-3 py-1 font-medium text-xs"
+        className="flex items-center gap-1 rounded bg-orange-600 hover:bg-orange-700 px-3 py-1 font-medium text-xs"
       >
         <RefreshCw size={12} />
         Update

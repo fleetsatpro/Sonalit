@@ -1,7 +1,12 @@
-import axios from 'axios';
 import { context, propagation, trace } from '@opentelemetry/api';
+import axios from 'axios';
+
 import { useAuthStore, getAccessToken, setAccessToken } from '../stores/auth.js';
+
 import { getCsrfToken } from './csrf.js';
+import { reportRequestOutcome } from './offline/connectivity.js';
+
+import type { AuthUser } from '../stores/auth.js';
 
 const API_BASE = import.meta.env['VITE_API_BASE_URL'] ?? '/api/v1';
 
@@ -37,45 +42,116 @@ api.interceptors.request.use((config) => {
 });
 
 // ── Refresh interceptor with infinite-loop guard (T1.2) ───────────────────────
-// If isRefreshing is true when a 401 arrives, a refresh is already in flight —
-// do NOT retry again; clear auth and redirect to login instead.
-let isRefreshing = false;
+// Several requests can 401 at once (a page mounts and fires multiple calls
+// right as the access token expires). They all share this one in-flight
+// refresh promise instead of racing separate /auth/refresh calls — the
+// previous isRefreshing boolean treated "a refresh is already running" as
+// "give up and log out", which force-logged-out users mid-session any time
+// two or more requests happened to expire together.
+let refreshPromise: Promise<string> | null = null;
 
-api.interceptors.response.use(
-  (res) => res,
-  async (err) => {
-    const original = err.config as typeof err.config & { _retry?: boolean };
+async function refreshAccessToken(): Promise<string> {
+  // /auth/refresh is NOT in the backend's CSRF skip list (unlike /auth/login),
+  // so it needs the double-submit header like any other mutating call. Without
+  // it every refresh 403s, and since a failed refresh clears auth and bounces
+  // to /login, the symptom is being logged out on any page reload — the
+  // in-memory access token is gone, the first 401 triggers a refresh, and the
+  // refresh can never succeed. This is a bare axios call rather than `api`, so
+  // it doesn't inherit the request interceptor that would have added it.
+  const csrf = getCsrfToken();
+  const { data } = await axios.post<{ token: string; user: AuthUser }>(
+    `${API_BASE}/auth/refresh`,
+    {},
+    { withCredentials: true, headers: csrf ? { 'X-CSRF-Token': csrf } : {} },
+  );
+  setAccessToken(data.token);
+  useAuthStore.getState().setAuth(data.token, data.user);
+  return data.token;
+}
 
-    if (err.response?.status === 401 && !original._retry) {
-      // Infinite-loop guard: if we already tried a refresh, give up
-      if (isRefreshing) {
-        useAuthStore.getState().clearAuth();
-        window.location.href = '/login';
-        return Promise.reject(err);
+/**
+ * Attach the 401 → refresh → replay behaviour to an axios instance.
+ *
+ * Exported so other instances (notably the CDS client in pages/cds/api.ts)
+ * get the same treatment instead of hard-failing the moment an access token
+ * expires. They deliberately share the module-scoped `refreshPromise` above,
+ * so two instances 401-ing at once still make exactly one /auth/refresh call.
+ *
+ * `redirectOnFailure` is opt-out for callers that must not have the page
+ * yanked out from under them on a failed refresh — the field app's offline
+ * queue flushes in the background, and bouncing a yard worker to /login
+ * mid-shift would discard queued work they can still complete.
+ */
+export function attachRefreshInterceptor(
+  instance: typeof api,
+  { redirectOnFailure = true }: { redirectOnFailure?: boolean } = {},
+): void {
+  instance.interceptors.response.use(
+    (res) => res,
+    async (err) => {
+      const original = err.config as typeof err.config & { _retry?: boolean };
+
+      if (err.response?.status === 401 && original && !original._retry) {
+        original._retry = true;
+
+        try {
+          if (!refreshPromise) {
+            refreshPromise = refreshAccessToken().finally(() => { refreshPromise = null; });
+          }
+          const token = await refreshPromise;
+          original.headers['Authorization'] = `Bearer ${token}`;
+          return instance(original);
+        } catch {
+          if (redirectOnFailure) {
+            useAuthStore.getState().clearAuth();
+            window.location.href = '/login';
+          }
+          throw err;
+        }
       }
 
-      original._retry = true;
-      isRefreshing = true;
+      throw err;
+    },
+  );
+}
 
-      try {
-        const { data } = await axios.post<{ token: string; user: import('../stores/auth.js').AuthUser }>(
-          `${API_BASE}/auth/refresh`,
-          {},
-          { withCredentials: true },
-        );
-        setAccessToken(data.token);
-        useAuthStore.getState().setAuth(data.token, data.user);
-        original.headers['Authorization'] = `Bearer ${data.token}`;
-        return api(original);
-      } catch {
-        useAuthStore.getState().clearAuth();
-        window.location.href = '/login';
-        return Promise.reject(err);
-      } finally {
-        isRefreshing = false;
-      }
-    }
+/**
+ * Feed every real request into the connectivity manager.
+ *
+ * This is the highest-quality connectivity signal available — it measures the
+ * exact thing we care about, against the exact host we care about, on traffic
+ * the app was going to send anyway. A dedicated heartbeat can only ever
+ * approximate it, and costs bandwidth on links that have none to spare, so the
+ * probe in offline/connectivity.ts exists purely to cover idle periods.
+ *
+ * A 4xx counts as reachable: the server answered. Only a missing response or a
+ * 5xx says anything about the link itself, and conflating "the API rejected
+ * this" with "the network is down" would drop a perfectly healthy device into
+ * offline mode over a validation error.
+ */
+export function attachConnectivityReporter(instance: typeof api): void {
+  instance.interceptors.request.use((config) => {
+    (config as typeof config & { _startedAt?: number })._startedAt = Date.now();
+    return config;
+  });
 
-    return Promise.reject(err);
-  },
-);
+  instance.interceptors.response.use(
+    (res) => {
+      const started = (res.config as typeof res.config & { _startedAt?: number })._startedAt;
+      reportRequestOutcome(true, started ? Date.now() - started : undefined);
+      return res;
+    },
+    (err) => {
+      const status = err?.response?.status as number | undefined;
+      const started = (err?.config as { _startedAt?: number } | undefined)?._startedAt;
+      reportRequestOutcome(
+        status != null && status < 500,
+        status != null && started ? Date.now() - started : undefined,
+      );
+      throw err;
+    },
+  );
+}
+
+attachRefreshInterceptor(api);
+attachConnectivityReporter(api);

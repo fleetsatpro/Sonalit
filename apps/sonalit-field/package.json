@@ -1,0 +1,21 @@
+{
+  "name": "@sonalit/field-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Capacitor native shell for the Sonalit CDS Field APK — Yard and Port teams. Loads the hosted /field surface, so mobile flow changes (clamp, unclamp, live map) ship without a new APK. Separate appId (io.sonalit.field) from the operator app so both can be installed side-by-side.",
+  "scripts": {
+    "sync": "cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.0",
+    "@capacitor/app": "^6.0.0",
+    "@capacitor/core": "^6.1.0",
+    "@capacitor/geolocation": "^6.0.0",
+    "@capacitor/status-bar": "^6.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^6.1.0",
+    "typescript": "^5.4.5"
+  }
+}

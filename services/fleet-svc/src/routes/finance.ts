@@ -26,13 +26,13 @@ const CreateTransactionSchema = z.object({
 });
 
 export const financeRoutes: FastifyPluginAsync = async (app) => {
-  app.addHook('preHandler', requireAuth(app));
+  app.addHook('preHandler', requireAuth);
 
   app.get('/v4/finance/summary', async (req, reply) => {
     const { org_id } = (req as typeof req & { user: { org_id: string } }).user;
     const { month } = MonthSchema.parse(req.query);
     const [year, mon] = month.split('-');
-    const { rows } = await query<{ category: string; total: string }>(
+    const rows = await query<{ category: string; total: string }>(
       `SELECT category, SUM(amount)::numeric AS total
        FROM finance_records
        WHERE org_id = $1
@@ -52,7 +52,7 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
     const q = TransactionSchema.parse(req.query);
     const [year, mon] = q.month.split('-');
     const offset = (q.page - 1) * q.limit;
-    const { rows } = await query(
+    const rows = await query(
       `SELECT * FROM finance_records
        WHERE org_id = $1
          AND EXTRACT(YEAR FROM transaction_date) = $2
@@ -68,7 +68,7 @@ export const financeRoutes: FastifyPluginAsync = async (app) => {
   app.post('/v4/finance/transactions', async (req, reply) => {
     const { org_id } = (req as typeof req & { user: { org_id: string } }).user;
     const body = CreateTransactionSchema.parse(req.body);
-    const { rows: [row] } = await query(
+    const [row] = await query(
       `INSERT INTO finance_records (id, org_id, category, amount, description, vehicle_id, driver_id, transaction_date)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
       [randomUUID(), org_id, body.category, body.amount, body.description ?? null, body.vehicle_id ?? null, body.driver_id ?? null, body.transaction_date],

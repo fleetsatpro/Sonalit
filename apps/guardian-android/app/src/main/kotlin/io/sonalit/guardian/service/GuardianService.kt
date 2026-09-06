@@ -1,28 +1,97 @@
 package io.sonalit.guardian.service
 
+import android.Manifest
 import android.app.*
 import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.location.Location
 import android.os.*
+import android.support.v4.media.session.MediaSessionCompat
+import android.util.Log
+import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailability
 import com.google.android.gms.location.*
+import com.google.android.gms.tasks.CancellationTokenSource
 import dagger.hilt.android.AndroidEntryPoint
 import io.sonalit.guardian.R
 import io.sonalit.guardian.data.local.AppDatabase
 import io.sonalit.guardian.data.local.GpsFixEntity
+import io.sonalit.guardian.data.local.HeartbeatStatusStore
+import io.sonalit.guardian.data.local.SyncStatusStore
+import io.sonalit.guardian.data.remote.GuardianApi
+import io.sonalit.guardian.data.remote.LocationBatchRequest
+import io.sonalit.guardian.data.remote.LocationPoint
+import io.sonalit.guardian.receiver.VolumeKeySOSReceiver
 import kotlinx.coroutines.*
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 
 @AndroidEntryPoint
 class GuardianService : Service() {
 
     @Inject lateinit var db: AppDatabase
+    @Inject lateinit var panicSender: PanicSender
+    @Inject lateinit var statusStore: HeartbeatStatusStore
+    @Inject lateinit var api: GuardianApi
+    @Inject lateinit var okHttp: okhttp3.OkHttpClient
+    @Inject lateinit var commandExecutor: CommandExecutor
+    @Inject lateinit var syncStatusStore: SyncStatusStore
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var fusedClient: FusedLocationProviderClient
     private lateinit var activityClient: ActivityRecognitionClient
+    private lateinit var mediaSession: MediaSessionCompat
+
+    private val volumeKeyReceiver = VolumeKeySOSReceiver()
+
+    // True once requestLocationUpdates has been successfully handed to the
+    // fused client. Reset on registration failure so the ticker retries.
+    @Volatile private var locationUpdatesActive = false
+
+    // Covert capture is single-flight: a capture_photo command arrives twice (FCM
+    // push + command poll) and concurrent runs unbind each other's camera.
+    private val captureInFlight = AtomicBoolean(false)
+    @Volatile private var activeCapture: CameraCaptureController? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    /** Never let a dropped CameraX callback latch the single-flight flag on — that
+     *  would silently disable every future capture. */
+    private val captureWatchdog = Runnable {
+        if (captureInFlight.get()) {
+            Log.w(TAG, "covert capture watchdog fired — releasing stuck capture")
+            reportCapture("gs_capture_timeout")
+            activeCapture?.release()
+            finishCapture()
+        }
+    }
+
+    private fun finishCapture() {
+        mainHandler.removeCallbacks(captureWatchdog)
+        activeCapture = null
+        promoteForeground(withCamera = false)
+        captureInFlight.set(false)
+    }
+
+    private val devicePrefs by lazy {
+        val masterKey = androidx.security.crypto.MasterKey.Builder(applicationContext)
+            .setKeyScheme(androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        androidx.security.crypto.EncryptedSharedPreferences.create(
+            applicationContext, "guardian_prefs", masterKey,
+            androidx.security.crypto.EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+        )
+    }
+
+    // Headset button triple-press state
+    private var btnPressCount = 0
+    private var lastBtnPressMs = 0L
 
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
@@ -35,26 +104,266 @@ class GuardianService : Service() {
         fusedClient = LocationServices.getFusedLocationProviderClient(this)
         activityClient = ActivityRecognition.getClient(this)
         startForeground()
-        requestLocationUpdates(intervalMs = 30_000L)
+        // Record liveness immediately so the Home "Service" card flips to
+        // "Running" the instant the service starts, rather than waiting on the
+        // ~15-min network heartbeat worker (which could never keep it fresh).
+        statusStore.recordServiceAlive()
+        checkPlayServicesAvailability()
+        tryStartLocationUpdates()
+        startLivenessTicker()
+        ContextCompat.registerReceiver(
+            this, volumeKeyReceiver, IntentFilter(VolumeKeySOSReceiver.VOLUME_CHANGED_ACTION),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        registerMediaSession()
     }
 
-    private fun startForeground() {
+    /** FusedLocationProviderClient depends entirely on Play Services — on a
+     *  device where it's missing, disabled, or too outdated, every location
+     *  call above fails (or silently never resolves) with nothing in the UI
+     *  to explain why. Logged once at startup so that case is diagnosable. */
+    private fun checkPlayServicesAvailability() {
+        val status = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(this)
+        if (status != ConnectionResult.SUCCESS) {
+            Log.e(TAG, "Google Play Services unavailable (status=$status) — location fixes will never arrive")
+        }
+    }
+
+    /** Beats a local proof-of-life every 60s so the Home screen can tell the
+     *  service is genuinely alive without depending on the network heartbeat.
+     *  Doubles as the retry loop for location registration: on a first launch
+     *  this service is started BEFORE the runtime permission dialog is even
+     *  shown, so the one-shot registration in onCreate() fails and — being
+     *  START_STICKY — the service would otherwise live forever without a
+     *  location listener ("GPS: No fix yet" with Service: Running). */
+    private fun startLivenessTicker() {
+        scope.launch {
+            while (isActive) {
+                statusStore.recordServiceAlive()
+                tryStartLocationUpdates()
+                // 15s, not 60s: a voice message is a call replacement — a
+                // minute of silence after dispatch hits Send reads as broken.
+                // 4 polls/min sits inside the server's 6/min device limit
+                // with heartbeats to spare; FCM push still beats this to the
+                // punch whenever the token+credentials are in place.
+                pollPendingCommands()
+                delay(15_000L)
+            }
+        }
+    }
+
+    /** Dashboard commands (trigger_siren, show_message, ...) are delivered by
+     *  FCM push when the server knows this device's token, with the 15-minute
+     *  heartbeat as the only fallback. Polling here narrows worst-case
+     *  delivery to ~60s whenever the service is alive, regardless of FCM. */
+    private suspend fun pollPendingCommands() {
+        runCatching {
+            val deviceId = devicePrefs.getString("device_id", null) ?: return
+            for (cmd in api.pollCommands().commands) {
+                val commandId = (cmd["id"] ?: cmd["command_id"])?.toString() ?: continue
+                val commandType = cmd["command_type"]?.toString() ?: continue
+                val success = commandExecutor.execute(commandType, deviceId, CommandExecutor.payloadToJson(cmd["payload"]))
+                runCatching {
+                    api.ackCommand(mapOf("command_id" to commandId, "status" to if (success) "executed" else "failed"))
+                }
+            }
+        }
+    }
+
+    private fun hasLocationPermission(): Boolean =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+    /** Registers location updates once permission is actually held. Safe to
+     *  call repeatedly (onCreate, every onStartCommand, the liveness ticker) —
+     *  it no-ops while registered and retries after grant or a failed
+     *  registration, instead of the old register-once-at-birth behaviour. */
+    private fun tryStartLocationUpdates() {
+        if (locationUpdatesActive) return
+        if (!hasLocationPermission()) {
+            Log.w(TAG, "Location permission not granted yet — GPS registration deferred, will retry")
+            return
+        }
+        locationUpdatesActive = true
+        requestLocationUpdates(intervalMs = 30_000L)
+        // Grab one fix right now instead of waiting up to 30s for the first
+        // interval callback — this is what clears "GPS: No fix yet" seconds
+        // after the officer arms the device.
+        requestImmediateFix()
+    }
+
+    @Suppress("MissingPermission")
+    private fun requestImmediateFix() {
+        runCatching {
+            fusedClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token)
+                .addOnSuccessListener { loc ->
+                    if (loc == null) {
+                        Log.w(TAG, "requestImmediateFix: succeeded but returned null location (no provider had a recent fix cached)")
+                    } else {
+                        bufferFix(loc)
+                    }
+                }
+                .addOnFailureListener { e ->
+                    // Silently swallowing this (as the old code did) is exactly why
+                    // "GPS: No fix yet" was undiagnosable on a real device with location
+                    // services on — this is the one place that would have shown a
+                    // ResolvableApiException (location settings not satisfied) or a
+                    // missing/outdated Play Services error.
+                    Log.e(TAG, "requestImmediateFix failed", e)
+                }
+        }.onFailure { e -> Log.e(TAG, "requestImmediateFix threw synchronously", e) }
+    }
+
+    /**
+     * Registers a MediaSession so headset/earpiece inline buttons are delivered
+     * to this service. Three presses within 2 s fires the same panic path as
+     * VolumeKeySOSReceiver — useful when the phone is pocketed and the officer
+     * is wearing an earpiece.
+     *
+     * MediaSession does NOT require the screen to be on, and the button callback
+     * fires inside this foreground service so there are no background launch
+     * restrictions to deal with — the panic call goes out directly.
+     */
+    private fun registerMediaSession() {
+        mediaSession = MediaSessionCompat(this, "GuardianSOS").apply {
+            setCallback(object : MediaSessionCompat.Callback() {
+                override fun onMediaButtonEvent(mediaButtonIntent: Intent?): Boolean {
+                    val ke: KeyEvent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        mediaButtonIntent?.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        mediaButtonIntent?.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+                    }
+                    if (ke == null || ke.action != KeyEvent.ACTION_DOWN) return false
+
+                    val now = System.currentTimeMillis()
+                    btnPressCount = if (now - lastBtnPressMs < 2000L) btnPressCount + 1 else 1
+                    lastBtnPressMs = now
+
+                    if (btnPressCount >= 3) {
+                        btnPressCount = 0
+                        Log.w(TAG, "Headset button triple press — triggering panic")
+                        scope.launch { panicSender.send(mode = "silent") }
+                    }
+                    return true
+                }
+            })
+            isActive = true
+        }
+    }
+
+    private fun buildNotification(): Notification {
         val channelId = "guardian_service"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(channelId, "Guardian Service", NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
-        val notification = NotificationCompat.Builder(this, channelId)
+        return NotificationCompat.Builder(this, channelId)
             .setContentTitle("Guardian Active")
             .setContentText("Monitoring location")
-            .setSmallIcon(R.drawable.ic_notification)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setOngoing(true)
             .build()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
-        } else {
-            startForeground(1, notification)
+    }
+
+    private fun startForeground() = promoteForeground(withCamera = false)
+
+    /** (Re-)asserts this service's foreground state, optionally adding the camera
+     *  type. Promoting an already-running FGS to include camera is what lets us
+     *  reach the camera from the background without a (blocked on Android 14+)
+     *  new camera-FGS start. */
+    private fun promoteForeground(withCamera: Boolean) {
+        val n = buildNotification()
+        val ok = runCatching {
+            when {
+                withCamera && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ->
+                    startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA)
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ->
+                    startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+                else -> startForeground(1, n)
+            }
+        }.onFailure { Log.e(TAG, "startForeground(withCamera=$withCamera) failed: ${it.message}") }.isSuccess
+        // The OS routinely refuses adding the camera type when a service is
+        // promoted from the background (Android 14+). If that happens, fall back
+        // to a plain LOCATION foreground so the service stays validly foreground
+        // and still satisfies the startForeground() contract — otherwise it
+        // lingers un-foregrounded and the system kills it with the uncatchable
+        // ForegroundServiceDidNotStartInTimeException.
+        if (!ok && withCamera) {
+            runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                    startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+                else startForeground(1, n)
+            }.onFailure { Log.e(TAG, "startForeground LOCATION fallback failed: ${it.message}") }
         }
+    }
+
+    /** Covert capture from inside this running FGS. Requires CAMERA already
+     *  granted (device-owner installs grant it silently; see CommandExecutor) —
+     *  otherwise it no-ops rather than crash the location service, and the
+     *  caller's tap-fallback covers the non-silent case. */
+    private fun captureCovertly(lens: String) {
+        reportCapture("gs_enter", "sdk=${Build.VERSION.SDK_INT}")
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            Log.w(TAG, "capture_photo: CAMERA permission not granted — skipping silent capture")
+            reportCapture("gs_no_camera_perm")
+            return
+        }
+        // One capture at a time. A single capture_photo command reaches us twice —
+        // once via the FCM push and again off the command poll — and the second run
+        // would unbind the camera out from under the first, failing both with
+        // ERROR_CAMERA_CLOSED. Whoever gets here first owns the camera.
+        if (!captureInFlight.compareAndSet(false, true)) {
+            reportCapture("gs_busy", "capture already running")
+            return
+        }
+        mainHandler.postDelayed(captureWatchdog, CAPTURE_TIMEOUT_MS)
+        runCatching {
+            promoteForeground(withCamera = true)
+            reportCapture("gs_promoted")
+            // Tag the photo with the device's latest fix so it lands as a located
+            // pin on the Surveillance map (backend falls back to last-known too).
+            scope.launch {
+                val fix = runCatching { db.gpsFixDao().getLatest() }.getOrNull()
+                // CameraCaptureController owns a LifecycleRegistry whose construction and
+                // state transitions MUST run on the main thread; building it on this IO
+                // coroutine throws "must be called on the main thread", which was silently
+                // killing every capture right after gs_promoted (cc_start never fired).
+                // CameraX bindToLifecycle is a main-thread API anyway. Wrapped so any
+                // failure here surfaces as gs_covert_fail instead of a swallowed crash.
+                // Grab BOTH lenses per command — rear (the scene ahead) then front
+                // (a selfie of whoever's holding the device). The requested lens is
+                // captured first so it's never lost if the second shot fails.
+                val lenses = if (lens == "front") listOf("front", "back") else listOf("back", "front")
+                runCatching {
+                    withContext(Dispatchers.Main) {
+                        // Held in a field for the life of the sequence: the capture is
+                        // callback-driven, so a local would be the only reference and
+                        // CameraX holds its owner only weakly.
+                        val controller = CameraCaptureController(this@GuardianService, api, okHttp)
+                        activeCapture = controller
+                        controller.captureSequence(lenses, fix?.lat, fix?.lon) {
+                            // Back to location-only so we don't keep holding the camera type.
+                            finishCapture()
+                        }
+                    }
+                }.onFailure {
+                    Log.e(TAG, "covert capture dispatch failed: ${it.message}")
+                    reportCapture("gs_covert_fail", it.message ?: "")
+                    activeCapture?.release()
+                    finishCapture()
+                }
+            }
+        }.onFailure {
+            Log.e(TAG, "captureCovertly failed: ${it.message}")
+            reportCapture("gs_covert_fail", it.message ?: "")
+            activeCapture?.release()
+            finishCapture()
+        }
+    }
+
+    private fun reportCapture(stage: String, detail: String = "") {
+        scope.launch { runCatching { api.captureEvent(mapOf("stage" to stage, "detail" to detail)) } }
     }
 
     @Suppress("MissingPermission")
@@ -62,12 +371,20 @@ class GuardianService : Service() {
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, intervalMs)
             .setMinUpdateIntervalMillis(intervalMs / 2)
             .build()
+        // The returned Task was previously discarded — a registration failure
+        // (e.g. location settings not satisfied, provider unavailable) would
+        // then look identical to "working fine, just no fix yet" forever.
         fusedClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
+            .addOnFailureListener { e ->
+                // Let the liveness ticker retry rather than staying dead forever.
+                locationUpdatesActive = false
+                Log.e(TAG, "requestLocationUpdates registration failed", e)
+            }
     }
 
     private fun bufferFix(location: Location) {
         scope.launch {
-            db.gpsFixDao().insert(GpsFixEntity(
+            val fix = GpsFixEntity(
                 id = UUID.randomUUID().toString(),
                 lat = location.latitude,
                 lon = location.longitude,
@@ -76,17 +393,69 @@ class GuardianService : Service() {
                 accuracy = location.accuracy,
                 ts = location.time,
                 synced = false,
-            ))
+            )
+            db.gpsFixDao().insert(fix)
+            // Every delivered fix is also proof the service is alive.
+            statusStore.recordServiceAlive()
+            // Stream the fix to the server immediately — SyncWorker's 15-minute
+            // period is WorkManager's floor, which made the live map lag by up
+            // to 15 minutes. With this, the dashboard tracks at the fix
+            // interval (~30s); SyncWorker remains the offline backlog catcher
+            // for anything this upload misses.
+            runCatching {
+                api.locationBatch(LocationBatchRequest(points = listOf(LocationPoint(
+                    lat = fix.lat,
+                    lon = fix.lon,
+                    heading = fix.heading,
+                    speed = fix.speed * 3.6f,
+                    accuracyM = fix.accuracy,
+                    timestamp = java.time.Instant.ofEpochMilli(fix.ts).toString(),
+                ))))
+                db.gpsFixDao().markSynced(listOf(fix.id))
+                syncStatusStore.recordSuccess()
+            }
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Every startForegroundService() call — MainActivity's poke and the
+        // covert-capture delivery below — re-arms the system's "must call
+        // startForeground() in time" timer. Assert foreground up front with the
+        // plain LOCATION type the service can always satisfy, so a later camera
+        // promotion the OS refuses in the background can never leave this command
+        // without a foreground call and crash the app with the uncatchable
+        // ForegroundServiceDidNotStartInTimeException.
+        promoteForeground(withCamera = false)
+        // MainActivity pokes the service (startForegroundService on an already-
+        // running instance) right after the location permission is granted —
+        // this is what picks the grant up immediately instead of waiting for
+        // the next ticker beat.
+        tryStartLocationUpdates()
+        // Covert capture is delivered here (not a separate service) so it runs
+        // inside the already-foreground service instead of a blocked bg start.
+        if (intent?.action == ACTION_CAPTURE_PHOTO) {
+            captureCovertly(intent.getStringExtra(EXTRA_LENS) ?: "back")
+        }
+        return START_STICKY
+    }
 
     override fun onDestroy() {
         super.onDestroy()
         fusedClient.removeLocationUpdates(locationCallback)
+        runCatching { unregisterReceiver(volumeKeyReceiver) }
+        mediaSession.isActive = false
+        mediaSession.release()
         scope.cancel()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    companion object {
+        private const val TAG = "GuardianService"
+        /** Deliver a covert capture_photo to the running service (see CommandExecutor). */
+        const val ACTION_CAPTURE_PHOTO = "io.sonalit.guardian.action.CAPTURE_PHOTO"
+        const val EXTRA_LENS = "lens"
+        /** Ceiling for a whole two-lens capture (open waits, retries, two uploads). */
+        private const val CAPTURE_TIMEOUT_MS = 90_000L
+    }
 }

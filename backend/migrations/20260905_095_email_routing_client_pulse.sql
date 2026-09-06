@@ -1,0 +1,35 @@
+-- Sender routing and CDS Client Pulse configuration/audit.
+-- No foreign keys to organizations: Sonalit tenancy is RLS/context based.
+
+CREATE TABLE IF NOT EXISTS email_routing_policies (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(), org_id UUID NOT NULL,
+  event_key TEXT NOT NULL, channel TEXT NOT NULL DEFAULT 'email', sender TEXT NOT NULL,
+  recipient_roles TEXT[] NOT NULL DEFAULT '{}', enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  priority INTEGER NOT NULL DEFAULT 100, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE (org_id, event_key, channel)
+);
+CREATE INDEX IF NOT EXISTS idx_email_routing_policies_org_event ON email_routing_policies (org_id, event_key, enabled, priority);
+ALTER TABLE email_routing_policies ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS org_isolation_email_routing_policies ON email_routing_policies;
+CREATE POLICY org_isolation_email_routing_policies ON email_routing_policies USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::UUID) WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::UUID);
+GRANT SELECT, INSERT, UPDATE, DELETE ON email_routing_policies TO sonalit_app;
+
+ALTER TABLE email_notifications ADD COLUMN IF NOT EXISTS sender TEXT;
+ALTER TABLE email_notifications ADD COLUMN IF NOT EXISTS reply_to TEXT;
+ALTER TABLE email_notifications ADD COLUMN IF NOT EXISTS attachments JSONB;
+CREATE INDEX IF NOT EXISTS idx_email_notifications_org_type_created ON email_notifications (org_id, notification_type, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS cds_client_pulse_runs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(), org_id UUID NOT NULL, snapshot_at TIMESTAMPTZ NOT NULL,
+  active_booking_count INTEGER NOT NULL DEFAULT 0, row_count INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL CHECK (status IN ('generating','queued','sent','failed','skipped')),
+  idempotency_key TEXT NOT NULL, attachment_name TEXT, manifest_hash TEXT,
+  email_notification_ids UUID[] NOT NULL DEFAULT '{}', error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (org_id, idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS idx_cds_client_pulse_runs_org_created ON cds_client_pulse_runs (org_id, created_at DESC);
+ALTER TABLE cds_client_pulse_runs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS org_isolation_cds_client_pulse_runs ON cds_client_pulse_runs;
+CREATE POLICY org_isolation_cds_client_pulse_runs ON cds_client_pulse_runs USING (org_id = NULLIF(current_setting('app.current_org_id', true), '')::UUID) WITH CHECK (org_id = NULLIF(current_setting('app.current_org_id', true), '')::UUID);
+GRANT SELECT, INSERT, UPDATE, DELETE ON cds_client_pulse_runs TO sonalit_app;

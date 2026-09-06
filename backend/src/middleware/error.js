@@ -21,7 +21,8 @@ function errorHandler(err, req, res, next) {
   }
   // Postgres NOT NULL violation
   if (err.code === '23502') {
-    return res.status(400).json({ error: 'Required field missing' });
+    const col = err.column ? ` (${err.column})` : '';
+    return res.status(400).json({ error: `Required field missing${col}` });
   }
   // Postgres invalid input syntax (e.g. bad UUID, bad enum value)
   if (err.code === '22P02') {
@@ -36,7 +37,9 @@ function errorHandler(err, req, res, next) {
   const message = status < 500 ? err.message : 'Internal server error';
 
   if (status >= 500) {
-    logger.error(`[${req.method} ${req.path}] ${err.stack}`);
+    // Include pg error code so Railway logs show the exact DB failure class
+    const pgCode = err.code ? ` [pg:${err.code}]` : '';
+    logger.error(`[${req.method} ${req.path}]${pgCode} ${err.stack}`);
   } else {
     logger.warn(`[${req.method} ${req.path}] ${status}: ${err.message}`);
   }

@@ -1,0 +1,11 @@
+# Sonalit notification worker — standalone backend runtime
+FROM node:20-alpine
+WORKDIR /app/backend
+
+COPY backend/package.json backend/package-lock.json ./
+RUN npm ci --omit=dev
+
+COPY backend ./
+
+ENV NODE_ENV=production
+CMD ["node", "src/workers/worker.notification.js"]

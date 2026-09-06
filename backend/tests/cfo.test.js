@@ -93,8 +93,10 @@ beforeEach(() => {
   mockCR.mockReset();
   db.pool.connect.mockResolvedValue({ query: mockCQ, release: mockCR });
   isCfoModuleEnabled.mockResolvedValue(true);
+  // convoyReportQueue must exist: with no queue, regenerateReport falls back
+  // to inline PDF generation via the real worker, which this suite doesn't mock.
   require('../src/config/queue').getQueues.mockReturnValue({
-    convoyReportQueue: null, convoyArchiveQueue: null,
+    convoyReportQueue: { add: jest.fn().mockResolvedValue({}) }, convoyArchiveQueue: null,
   });
 });
 
@@ -317,12 +319,15 @@ describe('Daily reports', () => {
   test('GET /:id/reports returns reports array', async () => {
     const rpt = { id: 'rpt1', convoy_id: CID, report_date: DATE, status: 'partial', required_photos: 12, received_photos: 8 };
     mockQuery
-      .mockResolvedValueOnce({ rows: [{ id: CID }] })
-      .mockResolvedValueOnce({ rows: [rpt] });
+      .mockResolvedValueOnce({ rows: [{ id: CID }] })  // convoy lookup
+      .mockResolvedValueOnce({ rows: [] })               // trucks (Promise.all)
+      .mockResolvedValueOnce({ rows: [] })               // cfos  (Promise.all)
+      .mockResolvedValueOnce({ rows: [rpt] })            // reports (Promise.all)
+      .mockResolvedValueOnce({ rows: [] });              // photos
     const res = await request(app).get(`/api/v1/convoys/${CID}/reports`);
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body.data)).toBe(true);
-    expect(res.body.data[0].report_date).toBe(DATE);
+    expect(Array.isArray(res.body.data.daily_reports)).toBe(true);
+    expect(res.body.data.daily_reports[0].report_date).toBe(DATE);
   });
 
   test('GET /:id/reports returns 404 for unknown convoy', async () => {
@@ -339,20 +344,26 @@ describe('Daily reports', () => {
     expect(res.body.error).toMatch(/YYYY-MM-DD/);
   });
 
-  test('POST /:id/reports/:date/regenerate returns 404 when no report row exists', async () => {
+  test('POST /:id/reports/:date/regenerate returns 400 for a date outside the convoy window', async () => {
+    // Any day within the convoy's operating window is now generatable on demand
+    // (materialized if no row exists yet), so the only rejection for a missing
+    // row is a date before the convoy started / in the future. DATE (2026-06-01)
+    // is before this convoy's start_date, so it must be rejected.
     mockQuery
-      .mockResolvedValueOnce({ rows: [{ id: CID }] })
-      .mockResolvedValueOnce({ rows: [] });
+      .mockResolvedValueOnce({ rows: [{ id: CID, start_date: '2026-07-01', end_date: '2026-07-10' }] }) // convoy check
+      .mockResolvedValueOnce({ rows: [] });                                                              // no report row
     const res = await request(app)
       .post(`/api/v1/convoys/${CID}/reports/${DATE}/regenerate`);
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/operating window/i);
   });
 
   test('POST /:id/reports/:date/regenerate queues job and returns 200', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [{ id: CID }] })       // convoy check
       .mockResolvedValueOnce({ rows: [{ id: 'rpt1' }] })    // report found
-      .mockResolvedValueOnce({ rows: [] });                  // UPDATE report status
+      .mockResolvedValueOnce({ rows: [] })                   // recountPhotos truck count (empty → early return)
+      .mockResolvedValueOnce({ rows: [{ id: 'rpt1' }] });   // UPDATE ... RETURNING id
     // gAudit fire-and-forget consumes default mockResolvedValue({ rows: [] })
     const res = await request(app)
       .post(`/api/v1/convoys/${CID}/reports/${DATE}/regenerate`);

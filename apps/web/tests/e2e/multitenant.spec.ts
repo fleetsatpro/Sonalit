@@ -42,51 +42,54 @@ const A_CONVOYS  = [{ id: ORG_A_CONVOY_ID, name: 'Alpha Route', org_id: ORG_A, s
 const A_DRIVERS  = [{ id: ORG_A_DRIVER_ID, name: 'Driver Alpha', org_id: ORG_A }];
 const A_ALERTS   = [{ id: ORG_A_ALERT_ID, type: 'speed', severity: 'high', org_id: ORG_A }];
 
-// JWT whose sub is org-A user only
-const MOCK_TOKEN_A = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' +
-  btoa(JSON.stringify({ sub: USER_A.id, org_id: ORG_A, role: 'admin', exp: 9999999999 })).replace(/=/g, '') +
-  '.fake_sig';
-
 // ─── Helper: seed auth as org-A ───────────────────────────────────────────────
 
 async function seedAuth(page: import('@playwright/test').Page) {
-  await page.addInitScript(({ token, user }: { token: string; user: object }) => {
-    localStorage.setItem('auth-storage', JSON.stringify({
-      state: { accessToken: token, user, isAuthenticated: true }, version: 0,
-    }));
-  }, { token: MOCK_TOKEN_A, user: USER_A });
+  await page.addInitScript(({ user }: { user: object }) => {
+    localStorage.setItem('sonalit-auth', JSON.stringify({ state: { user }, version: 0 }));
+  }, { user: USER_A });
 }
 
 // ─── Helper: wire all list + detail routes ────────────────────────────────────
 
 async function mockRoutes(page: import('@playwright/test').Page) {
-  // List endpoints — always return Org A data only
-  const lists: [string, unknown[]][] = [
-    ['**/api/v1/vehicles**', A_VEHICLES],
-    ['**/api/v1/convoys**',  A_CONVOYS],
-    ['**/api/v1/drivers**',  A_DRIVERS],
-    ['**/api/v1/alerts**',   A_ALERTS],
-    ['**/api/v1/incidents**', []],
-    ['**/api/v1/devices**',  []],
-    ['**/api/v1/messages**', []],
-    ['**/api/v1/geofences**', []],
-    ['**/api/v1/riskzones**', []],
-    ['**/api/v1/maintenance**', []],
-    ['**/api/v1/shipments**', []],
-    ['**/api/v1/finance**',  []],
-    ['**/api/v1/reports**',  []],
-    ['**/api/v1/sensors**',  []],
+  // List endpoints — always return Org A data only.
+  // URL predicates (url => ...) are used instead of glob strings for reliable
+  // matching across Playwright versions.  Per-test routes registered after
+  // beforeEach are checked first (LIFO), so narrow overrides always win.
+  const lists: [(url: URL) => boolean, unknown[]][] = [
+    [url => url.toString().includes('/api/v1/vehicles'),    A_VEHICLES],
+    [url => url.toString().includes('/api/v1/convoys'),     A_CONVOYS],
+    [url => url.toString().includes('/api/v1/drivers'),     A_DRIVERS],
+    [url => url.toString().includes('/api/v1/alerts'),      A_ALERTS],
+    [url => url.toString().includes('/api/v1/incidents'),   []],
+    [url => url.toString().includes('/api/v1/devices'),     []],
+    [url => url.toString().includes('/api/v1/messages'),    []],
+    [url => url.toString().includes('/api/v1/geofences'),   []],
+    [url => url.toString().includes('/api/v1/riskzones'),   []],
+    [url => url.toString().includes('/api/v1/maintenance'), []],
+    [url => url.toString().includes('/api/v1/shipments'),   []],
+    [url => url.toString().includes('/api/v1/finance'),     []],
+    [url => url.toString().includes('/api/v1/reports'),     []],
+    [url => url.toString().includes('/api/v1/sensors'),     []],
   ];
-  for (const [pattern, data] of lists) {
-    await page.route(pattern, route => route.fulfill({
+  for (const [predicate, data] of lists) {
+    await page.route(predicate, route => route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ data, meta: { total: data.length, limit: 50, offset: 0 } }),
     }));
   }
 
+  // GPS track — initial position snapshot (array, not wrapped object)
+  await page.route(url => url.toString().includes('/api/v1/gps/track'), route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([]),
+  }));
+
   // Realtime token — issued for Org A only
-  await page.route('**/api/v1/realtime/token', route => route.fulfill({
+  await page.route(url => url.toString().includes('/api/v1/realtime/token'), route => route.fulfill({
     status: 200,
     contentType: 'application/json',
     body: JSON.stringify({
@@ -107,7 +110,8 @@ test.describe('Multi-tenant isolation — list endpoints', () => {
 
   test('vehicles list contains only Org A vehicles', async ({ page }) => {
     await page.goto('/fleet');
-    await expect(page.getByText('ORG-A-001')).toBeVisible({ timeout: 8000 });
+    // Scope to the table cell — the vehicle filter dropdown also lists ORG-A-001
+    await expect(page.getByRole('cell', { name: 'ORG-A-001' })).toBeVisible({ timeout: 8000 });
     // Org B vehicle must not appear
     await expect(page.getByText('veh-b-0001')).not.toBeVisible();
   });
@@ -120,7 +124,7 @@ test.describe('Multi-tenant isolation — list endpoints', () => {
   test('alerts list contains only Org A alerts', async ({ page }) => {
     await page.goto('/alerts');
     // Page must render without errors; org_id boundary is enforced by the mock
-    await expect(page.getByRole('heading').first()).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('REAL-TIME MONITORING')).toBeVisible({ timeout: 8000 });
   });
 });
 
@@ -128,6 +132,9 @@ test.describe('Multi-tenant isolation — cross-tenant detail reads return 404',
   test.beforeEach(async ({ page }) => {
     await seedAuth(page);
     await mockRoutes(page);
+    // Navigate to establish http://localhost:3000 as base URL so relative fetch()
+    // calls inside page.evaluate() resolve correctly (fetch('/path') fails from about:blank).
+    await page.goto('/login');
   });
 
   test('direct API call to Org B vehicle UUID returns 404, not 403', async ({ page }) => {
@@ -177,6 +184,9 @@ test.describe('Multi-tenant isolation — cross-tenant mutations return 404 (not
   test.beforeEach(async ({ page }) => {
     await seedAuth(page);
     await mockRoutes(page);
+    // Navigate to establish http://localhost:3000 as base URL so relative fetch()
+    // calls resolve correctly and same-origin CORS rules apply.
+    await page.goto('/login');
   });
 
   test('PUT to Org B vehicle UUID returns 404', async ({ page }) => {
@@ -197,7 +207,7 @@ test.describe('Multi-tenant isolation — cross-tenant mutations return 404 (not
   });
 
   test('PATCH convoy status on Org B convoy returns 404', async ({ page }) => {
-    await page.route(`**/api/v1/convoys/${ORG_B_CONVOY_ID}/**`, route =>
+    await page.route(url => url.toString().includes(`/api/v1/convoys/${ORG_B_CONVOY_ID}/`), route =>
       route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'Not found' }) })
     );
 
@@ -247,7 +257,7 @@ test.describe('Multi-tenant isolation — Centrifugo connection JWT', () => {
   test('connection token sub claim matches Org A user, not Org B', async ({ page }) => {
     let capturedToken: string | null = null;
 
-    await page.route('**/api/v1/realtime/token', async route => {
+    await page.route(url => url.toString().includes('/api/v1/realtime/token'), async route => {
       const payload = btoa(JSON.stringify({ sub: USER_A.id, exp: 9999999999 })).replace(/=/g, '');
       const token = `eyJhbGciOiJIUzI1NiJ9.${payload}.fake`;
       capturedToken = token;
@@ -270,7 +280,7 @@ test.describe('Multi-tenant isolation — Centrifugo connection JWT', () => {
 
   test('frontend does not subscribe to cross-tenant Centrifugo channel', async ({ page }) => {
     // Intercept WebSocket to capture subscription attempts
-    await page.route('**/api/v1/realtime/token', route => route.fulfill({
+    await page.route(url => url.toString().includes('/api/v1/realtime/token'), route => route.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify({
         token: 'eyJhbGciOiJIUzI1NiJ9.' +
@@ -285,7 +295,7 @@ test.describe('Multi-tenant isolation — Centrifugo connection JWT', () => {
     // The subscribe() call uses `org#${orgId}` where orgId comes from the auth store
     const pageOrgId = await page.evaluate(() => {
       try {
-        const stored = localStorage.getItem('auth-storage');
+        const stored = localStorage.getItem('sonalit-auth');
         if (!stored) return null;
         return JSON.parse(stored).state?.user?.org_id ?? null;
       } catch { return null; }
@@ -300,6 +310,8 @@ test.describe('Multi-tenant isolation — API key scoping', () => {
   test.beforeEach(async ({ page }) => {
     await seedAuth(page);
     await mockRoutes(page);
+    // Navigate to establish same-origin context for Authorization-header fetch calls.
+    await page.goto('/login');
   });
 
   test('org-A API key cannot read org-B vehicles', async ({ page }) => {
