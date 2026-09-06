@@ -8,7 +8,9 @@ const { buildManifestWorkbook, isActiveRow } = require('../services/email/client
 const { queueClientPulseEmail } = require('../services/email/email.service');
 const { generateAndQueueScopedClientPulse, listCustomerPulseTargets } = require('../services/email/scopedClientPulse.service');
 
-router.use(authenticate, authorize('admin'), attachOrgDb);
+// Super Admin is explicitly allowed to use the administrative command center.
+// Keep the role explicit rather than widening the global hierarchy.
+router.use(authenticate, authorize('admin', 'super_admin'), attachOrgDb);
 
 router.get('/queues', async (req, res, next) => {
   try {
