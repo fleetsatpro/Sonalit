@@ -42,6 +42,14 @@ function manifestRow(row) {
   };
 }
 
+function pulseStamp(date) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: process.env.CDS_CLIENT_PULSE_TIMEZONE || 'Africa/Nairobi',
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).formatToParts(date).reduce((o, p) => { o[p.type] = p.value; return o; }, {});
+  return `${parts.year}-${parts.month}-${parts.day}_${parts.hour}-${parts.minute}-${parts.second}`;
+}
+
 async function queueManualSuperAdminPulse(orgId, snapshotAt) {
   const recipients = await withOrg(orgId, client => client.query(
     `SELECT DISTINCT email,name FROM client_email_recipients
@@ -86,7 +94,7 @@ async function queueManualSuperAdminPulse(orgId, snapshotAt) {
     }
     const workbook = await buildManifestWorkbook(active, snapshotAt, { scopeLabel: 'GLOBAL' });
     const manifestHash = crypto.createHash('sha256').update(workbook).digest('hex');
-    const filename = `CDS_Client_Pulse_Global_Active_Bookings_${snapshotAt.toISOString().replace(/[:]/g,'').replace(/\.\d{3}Z$/,'Z')}_EAT.xlsx`;
+    const filename = `Super_Admin_Client_Dispatch_Master_Active_Bookings_${pulseStamp(snapshotAt)}_EAT.xlsx`;
     const result = await queueClientPulseEmail({
       orgId, recipients: recipients.rows.map(r => r.email), snapshotAt: snapshotAt.toISOString(), activeBookingCount,
       dateLabel: new Intl.DateTimeFormat('en-GB',{timeZone:process.env.CDS_CLIENT_PULSE_TIMEZONE||'Africa/Nairobi',day:'2-digit',month:'short',year:'numeric'}).format(snapshotAt),
