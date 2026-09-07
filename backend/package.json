@@ -5,8 +5,8 @@
   "main": "src/app.js",
   "scripts": {
     "prestart": "node scripts/db-migrate.js",
-    "start": "node -r ./src/utils/runtimeDiagnosticsBootstrap.js src/app.js",
-    "start:api": "node -r ./src/utils/runtimeDiagnosticsBootstrap.js src/app.js",
+    "start": "node -r ./src/utils/runtimeDiagnosticsBootstrap.js -r ./src/utils/intelligenceCollectionBootstrap.js src/app.js",
+    "start:api": "node -r ./src/utils/runtimeDiagnosticsBootstrap.js -r ./src/utils/intelligenceCollectionBootstrap.js src/app.js",
     "start:worker:gps": "node src/workers/worker.gps.js",
     "start:worker:alert": "node src/workers/worker.alert.js",
     "start:worker:notification": "node src/workers/worker.notification.js",
@@ -39,7 +39,6 @@
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "express-rate-limit": "^7.1.5",
-    "fast-xml-parser": "^5.10.1",
     "firebase-admin": "^13.10.0",
     "helmet": "^7.1.0",
     "ioredis": "^5.3.2",
@@ -59,7 +58,7 @@
     "uuid": "^9.0.0",
     "winston": "^3.11.0"
   },
-  "devDependencies": { "jest": "^29.7.0", "nodemon": "^3.0.2", "supertest": "^6.3.4" },
+  "devDependencies": { "jest": "^29.7.0", "nodemon": "^3.0.0", "supertest": "^6.3.4" },
   "engines": { "node": ">=20.0.0" },
   "jest": { "testEnvironment": "node", "roots": ["<rootDir>/tests"], "testMatch": ["**/*.test.js"], "testTimeout": 30000 }
 }
