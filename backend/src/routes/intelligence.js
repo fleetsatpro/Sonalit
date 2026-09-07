@@ -22,14 +22,7 @@ router.get('/picture', asyncHandler(async (req, res) => {
 }));
 
 router.get('/countries', asyncHandler(async (req, res) => {
-  const { rows } = await req.db(`
-    SELECT country_code,
-      COUNT(*) FILTER (WHERE last_seen_at >= now() - interval '24 hours')::int AS events_24h,
-      COUNT(*) FILTER (WHERE last_seen_at >= now() - interval '7 days')::int AS events_7d,
-      ROUND(AVG(confidence))::int AS confidence,
-      MAX(last_seen_at) AS last_seen_at,
-      MAX(CASE severity WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'moderate' THEN 2 WHEN 'low' THEN 1 ELSE 0 END) AS severity_rank
-    FROM intel_events WHERE country_code IS NOT NULL GROUP BY country_code ORDER BY severity_rank DESC, events_24h DESC`);
+  const { rows } = await req.db(`SELECT country_code, COUNT(*) FILTER (WHERE last_seen_at >= now() - interval '24 hours')::int AS events_24h, COUNT(*) FILTER (WHERE last_seen_at >= now() - interval '7 days')::int AS events_7d, ROUND(AVG(confidence))::int AS confidence, MAX(last_seen_at) AS last_seen_at, MAX(CASE severity WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'moderate' THEN 2 WHEN 'low' THEN 1 ELSE 0 END) AS severity_rank FROM intel_events WHERE country_code IS NOT NULL GROUP BY country_code ORDER BY severity_rank DESC, events_24h DESC`);
   res.json({ countries: rows });
 }));
 
@@ -43,6 +36,19 @@ router.get('/countries/:country/assessment', asyncHandler(async (req, res) => {
   const { rows: events } = await req.db(`SELECT * FROM intel_events WHERE country_code=$1 AND last_seen_at >= now() - interval '7 days' ORDER BY last_seen_at DESC LIMIT 300`, [country]);
   const { rows: observations } = await req.db(`SELECT io.*, s.reliability FROM intel_observations io LEFT JOIN intel_sources s ON s.id=io.source_id WHERE io.country_code=$1 AND io.observed_at >= now() - interval '7 days' ORDER BY io.observed_at DESC LIMIT 500`, [country]);
   res.json({ country, assessment: buildAssessment({ scope: { type: 'country', country }, events, observations }) });
+}));
+
+router.get('/collection/status', asyncHandler(async (req, res) => {
+  const { rows: sources } = await req.db(`SELECT id,name,source_type,provider,reliability,active,last_seen_at,updated_at FROM intel_sources ORDER BY last_seen_at DESC NULLS LAST`);
+  const { rows: recent } = await req.db(`SELECT source_id, COUNT(*)::int AS observations_24h, MAX(observed_at) AS latest_observation FROM intel_observations WHERE observed_at >= now()-interval '24 hours' GROUP BY source_id`);
+  const bySource = new Map(recent.map(r => [String(r.source_id), r]));
+  res.json({ collection: { sources: sources.map(s => ({ ...s, ...(bySource.get(String(s.id)) || { observations_24h: 0, latest_observation: null }) })), checked_at: new Date().toISOString() } });
+}));
+
+router.post('/collection/run', asyncHandler(async (_req, res) => {
+  const { runCollection } = require('../utils/intelligenceCollectionBootstrap');
+  const result = await runCollection();
+  res.status(result?.skipped ? 202 : 200).json({ collection: result });
 }));
 
 router.post('/requirements', asyncHandler(async (req, res) => {
