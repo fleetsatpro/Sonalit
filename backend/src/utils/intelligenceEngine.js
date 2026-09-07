@@ -1,7 +1,8 @@
-// Loading the assessment engine activates the Collection Fabric exactly once per process.
-// This keeps collection startup independent from the legacy Risk OSINT sweep while
-// remaining part of the admin-only Intelligence Centre backend.
-require('./intelligenceCollection');
+// Intelligence assessment primitives plus the production Collection Fabric bootstrap.
+// Loading this module from the Intelligence Centre route activates the scheduler
+// exactly once per Node process. The bootstrap uses a PostgreSQL advisory lock so
+// multiple Railway replicas cannot run the same collection cycle concurrently.
+require('./intelligenceCollectionBootstrap');
 
 const SEVERITY_RANK = { informational: 0, low: 1, moderate: 2, high: 3, critical: 4 };
 
