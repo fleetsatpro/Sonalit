@@ -4,14 +4,14 @@
  * Intel cron. Only public/authorized provider adapters are invoked.
  */
 require('dotenv').config();
-const { query } = require('../config/database');
 const logger = require('./logger');
+const { pool } = require('../config/database');
+const { fuseOrg } = require('./intelligenceFusionRuntime');
 
 const DEFAULT_COUNTRIES = [
   'KE','ML','NE','NG','SO','SS','SD','ET','TZ','UG','RW','BF','BI','CM','CF','TD','GH','SN','MZ','ZW',
   'UA','YE','SY','IQ','LB','LY','EG','CO','MX','IN','PK','AF','BD','BJ','CI','TG','HT','MM','PH','PG','VE','SV','GT','HN'
 ];
-
 let running = false;
 
 function configuredCountries() {
@@ -26,26 +26,23 @@ async function runCollection() {
   if (running) return { skipped: true, reason: 'local_run_in_progress' };
   running = true;
   let client;
+  let locked = false;
   try {
-    // A database advisory lock prevents duplicate collection when multiple API
-    // instances are running against the same production database.
-    client = await require('../config/database').pool.connect();
+    client = await pool.connect();
     const lock = await client.query("SELECT pg_try_advisory_lock(hashtext('sonalit:intelligence:collection')) AS acquired");
-    if (!lock.rows[0]?.acquired) return { skipped: true, reason: 'cluster_run_in_progress' };
+    locked = Boolean(lock.rows[0]?.acquired);
+    if (!locked) return { skipped: true, reason: 'cluster_run_in_progress' };
 
     const fabric = require('./intelligenceCollection');
     const { rows: orgs } = await client.query(`SELECT DISTINCT org_id FROM intel_watchlists WHERE active=true UNION SELECT DISTINCT org_id FROM intel_sources WHERE active=true`);
     const countries = configuredCountries();
     const results = [];
 
-    for (const row of orgs) {
-      const orgId = row.org_id;
+    for (const { org_id: orgId } of orgs) {
       const started = Date.now();
       try {
-        const collection = typeof fabric.collectForOrg === 'function'
-          ? await fabric.collectForOrg(orgId, countries)
-          : [];
-        const fusion = typeof fabric.fuseOrg === 'function' ? await fabric.fuseOrg(orgId) : null;
+        const collection = typeof fabric.collectForOrg === 'function' ? await fabric.collectForOrg(orgId, countries) : [];
+        const fusion = await fuseOrg(orgId);
         results.push({ org_id: orgId, collection, fusion, duration_ms: Date.now() - started });
         logger.info(`Intelligence Collection Fabric: org=${orgId} completed in ${Date.now() - started}ms`);
       } catch (err) {
@@ -58,7 +55,7 @@ async function runCollection() {
     logger.warn(`Intelligence Collection Fabric scheduler failed: ${err.message}`);
     return { error: err.message };
   } finally {
-    try { if (client) await client.query("SELECT pg_advisory_unlock(hashtext('sonalit:intelligence:collection'))"); } catch (_) {}
+    if (client && locked) { try { await client.query("SELECT pg_advisory_unlock(hashtext('sonalit:intelligence:collection'))"); } catch (_) {} }
     try { client?.release(); } catch (_) {}
     running = false;
   }
@@ -70,5 +67,4 @@ if (process.env.NODE_ENV !== 'test' && process.env.GENERATE_OPENAPI !== '1') {
   setInterval(() => runCollection().catch(() => {}), intervalMs).unref();
   logger.info(`Intelligence Collection Fabric scheduled (${Math.round(intervalMs / 60000)} min; public/authorized sources only)`);
 }
-
 module.exports = { runCollection };
