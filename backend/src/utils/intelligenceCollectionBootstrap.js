@@ -34,7 +34,9 @@ async function runCollection() {
     if (!locked) return { skipped: true, reason: 'cluster_run_in_progress' };
 
     const fabric = require('./intelligenceCollection');
-    const { rows: orgs } = await client.query(`SELECT DISTINCT org_id FROM intel_watchlists WHERE active=true UNION SELECT DISTINCT org_id FROM intel_sources WHERE active=true`);
+    // Every active tenant gets the same collection fabric; watchlists refine
+    // future query expansion, but must never be required for baseline coverage.
+    const { rows: orgs } = await client.query(`SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL`);
     const countries = configuredCountries();
     const results = [];
 
