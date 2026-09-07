@@ -1,12 +1,13 @@
 /*
  * Intelligence Collection Fabric scheduler.
- * Loaded as a Node preload so collection is independent of the legacy Risk
- * Intel cron. Only public/authorized provider adapters are invoked.
+ * Public/authorized collection only. Provider failures are isolated.
+ * PostgreSQL advisory locking prevents overlapping collection cycles across replicas.
  */
 require('dotenv').config();
 const logger = require('./logger');
 const { pool } = require('../config/database');
 const { fuseOrg } = require('./intelligenceFusionRuntime');
+const { enrichOrg } = require('./intelligenceAdvancedRuntime');
 
 const DEFAULT_COUNTRIES = [
   'KE','ML','NE','NG','SO','SS','SD','ET','TZ','UG','RW','BF','BI','CM','CF','TD','GH','SN','MZ','ZW',
@@ -43,7 +44,8 @@ async function runCollection() {
       try {
         const collection = typeof fabric.collectForOrg === 'function' ? await fabric.collectForOrg(orgId, countries) : [];
         const fusion = await fuseOrg(orgId);
-        results.push({ org_id: orgId, collection, fusion, duration_ms: Date.now() - started });
+        const enrichment = await enrichOrg(orgId);
+        results.push({ org_id: orgId, collection, fusion, enrichment, duration_ms: Date.now() - started });
         logger.info(`Intelligence Collection Fabric: org=${orgId} completed in ${Date.now() - started}ms`);
       } catch (err) {
         results.push({ org_id: orgId, error: err.message, duration_ms: Date.now() - started });
