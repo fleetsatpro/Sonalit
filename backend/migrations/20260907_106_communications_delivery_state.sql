@@ -14,6 +14,7 @@ CREATE INDEX IF NOT EXISTS idx_comm_delivery_correlation ON communication_delive
 
 -- Webhook idempotency is already keyed by provider event id. Add a lookup path
 -- for reconciliation when provider events arrive before/after local state.
-CREATE INDEX IF NOT EXISTS idx_resend_webhook_provider_email ON resend_webhook_events(provider_email_id, created_at DESC);
+-- The webhook ledger uses received_at (not created_at) as its event timestamp.
+CREATE INDEX IF NOT EXISTS idx_resend_webhook_provider_email ON resend_webhook_events(provider_email_id, received_at DESC);
 
 COMMENT ON COLUMN communication_delivery_events.status IS 'Full lifecycle: application queue -> provider -> recipient outcome. queued is not delivery.';
