@@ -4,147 +4,256 @@ const { query } = require('../config/database');
 const logger = require('./logger');
 const telegramMtproto = require('./telegramMtproto');
 
+/*
+ * Collection Fabric
+ * -----------------
+ * Only public or explicitly authorised interfaces are used. Every provider is
+ * isolated, bounded and allowed to fail without stopping the rest of the run.
+ * Raw observations are evidence; deterministic fusion happens separately.
+ */
 const xmlParser = new XMLParser({ ignoreAttributes: true });
-const HIGH = /attack|ambush|kill|kidnap|abduct|bomb|explos|gunfire|shoot|terroris|insurgen|massacre|raid|fatal/i;
-const MEDIUM = /protest|unrest|roadblock|strike|clash|robbery|bandit|checkpoint|tension|militia|curfew|riot|closure/i;
-const COUNTRY_NAMES = ['Afghanistan','Bangladesh','Benin','Burkina Faso','Burundi','Cameroon','Central African Republic','Chad','Colombia','Egypt','El Salvador','Ethiopia','Ghana','Guatemala','Haiti','Honduras','India','Iraq','Ivory Coast','Kenya','Lebanon','Libya','Mali','Mexico','Mozambique','Myanmar','Niger','Nigeria','Pakistan','Papua New Guinea','Philippines','Rwanda','Senegal','Somalia','South Sudan','Sri Lanka','Sudan','Syria','Tanzania','Togo','Uganda','Ukraine','Venezuela','Yemen','Zimbabwe'];
-const ISO = { Kenya:'KE',Mali:'ML',Niger:'NE',Nigeria:'NG',Somalia:'SO','South Sudan':'SS',Sudan:'SD',Ethiopia:'ET',Tanzania:'TZ',Uganda:'UG',Rwanda:'RW','Burkina Faso':'BF',Burundi:'BI',Cameroon:'CM','Central African Republic':'CF',Chad:'TD',Ghana:'GH',Senegal:'SN',Mozambique:'MZ',Zimbabwe:'ZW',Ukraine:'UA',Yemen:'YE',Syria:'SY',Iraq:'IQ',Lebanon:'LB',Libya:'LY',Egypt:'EG',Colombia:'CO',Mexico:'MX',India:'IN',Pakistan:'PK',Afghanistan:'AF',Bangladesh:'BD',Benin:'BJ','Ivory Coast':'CI',Togo:'TG',Haiti:'HT',Myanmar:'MM',Philippines:'PH','Papua New Guinea':'PG',Venezuela:'VE','El Salvador':'SV',Guatemala:'GT',Honduras:'HN' };
-const SOURCE_TTL_MS = 24 * 3600 * 1000;
-let running = false;
+const HIGH = /massacre|terrorist attack|bombing|explosion|ambush|kidnap|abduct|gunfire|killed|fatal|insurgent/i;
+const MEDIUM = /attack|clash|violence|armed|militia|protest|riot|unrest|roadblock|robbery|bandit|checkpoint|curfew|closure|strike/i;
+const COUNTRY_TO_ISO = {
+  Afghanistan:'AF', Bangladesh:'BD', Benin:'BJ', 'Burkina Faso':'BF', Burundi:'BI', Cameroon:'CM',
+  'Central African Republic':'CF', Chad:'TD', Colombia:'CO', Egypt:'EG', 'El Salvador':'SV', Ethiopia:'ET',
+  Ghana:'GH', Guatemala:'GT', Haiti:'HT', Honduras:'HN', India:'IN', Iraq:'IQ', 'Ivory Coast':'CI',
+  Kenya:'KE', Lebanon:'LB', Libya:'LY', Mali:'ML', Mexico:'MX', Mozambique:'MZ', Myanmar:'MM', Niger:'NE',
+  Nigeria:'NG', Pakistan:'PK', 'Papua New Guinea':'PG', Philippines:'PH', Rwanda:'RW', Senegal:'SN', Somalia:'SO',
+  'South Sudan':'SS', 'Sri Lanka':'LK', Sudan:'SD', Syria:'SY', Tanzania:'TZ', Togo:'TG', Uganda:'UG', Ukraine:'UA',
+  Venezuela:'VE', Yemen:'YE', Zimbabwe:'ZW'
+};
+const ISO_TO_COUNTRY = Object.fromEntries(Object.entries(COUNTRY_TO_ISO).map(([k,v]) => [v,k]));
+const DEFAULT_COUNTRIES = Object.values(COUNTRY_TO_ISO);
+const FETCH_TIMEOUT_MS = 10000;
+const MAX_ITEMS_PER_PROVIDER = 500;
+const SOURCE_TTL_MS = 48 * 3600 * 1000;
 
-function hash(s) { return crypto.createHash('sha256').update(String(s || '').trim().toLowerCase()).digest('hex'); }
-function level(text) { if (HIGH.test(text)) return 'high'; if (MEDIUM.test(text)) return 'moderate'; return 'low'; }
+function hash(value) { return crypto.createHash('sha256').update(String(value || '').trim().toLowerCase()).digest('hex'); }
+function severity(text) { const s = String(text || ''); if (HIGH.test(s)) return 'high'; if (MEDIUM.test(s)) return 'moderate'; return 'low'; }
+function safeDate(value) { const d = value ? new Date(value) : null; return d && Number.isFinite(d.getTime()) ? d.toISOString() : null; }
 function countryCode(text) {
   const s = String(text || '');
-  const hit = COUNTRY_NAMES.find(c => new RegExp(`\\b${c.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}\\b`, 'i').test(s));
-  return hit ? ISO[hit] : null;
+  for (const [country, code] of Object.entries(COUNTRY_TO_ISO)) {
+    const escaped = country.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(`\\b${escaped}\\b`, 'i').test(s)) return code;
+  }
+  return null;
 }
-function parseJsonEnv(name, fallback = []) { try { const v = JSON.parse(process.env[name] || 'null'); return Array.isArray(v) ? v : fallback; } catch (e) { logger.warn(`Intelligence collection: invalid ${name}: ${e.message}`); return fallback; } }
-async function boundedFetch(url, options = {}, timeout = 10000) { return fetch(url, { ...options, signal: AbortSignal.timeout(timeout) }); }
+function parseJsonEnv(name, fallback = []) {
+  try { const value = JSON.parse(process.env[name] || 'null'); return Array.isArray(value) ? value : fallback; }
+  catch (e) { logger.warn(`Intelligence collection: invalid ${name}: ${e.message}`); return fallback; }
+}
+async function boundedFetch(url, options = {}, timeout = FETCH_TIMEOUT_MS) {
+  return fetch(url, { ...options, signal: AbortSignal.timeout(timeout) });
+}
+function manipulationScore(title, body) {
+  const text = `${title || ''} ${body || ''}`.trim();
+  if (!text) return 0;
+  let score = 0;
+  if (text.length > 20 && text === text.toUpperCase()) score += 12;
+  if (/BREAKING!!!|SHOCKING|MUST SHARE|100% TRUE/i.test(text)) score += 18;
+  if (/(.)\1{8,}/.test(text)) score += 10;
+  return Math.min(100, score);
+}
+function sourceReliability(provider) {
+  return ({ reliefweb: 75, acled: 90, gdacs: 85, gdelt: 65, x: 45, facebook: 50, telegram: 45, rss: 55 })[provider] || 50;
+}
 
-async function sourceId(orgId, name, type, provider, endpoint, metadata = {}) {
-  const { rows } = await query(`SELECT id FROM intel_sources WHERE org_id=$1 AND name=$2 LIMIT 1`, [orgId, name]);
+async function ensureSource(orgId, { name, type, provider, endpoint = null, reliability = sourceReliability(provider), metadata = {} }) {
+  const { rows } = await query(
+    `SELECT id FROM intel_sources WHERE org_id=$1 AND provider=$2 AND COALESCE(endpoint,'')=COALESCE($3,'') LIMIT 1`,
+    [orgId, provider, endpoint]
+  );
   if (rows[0]) return rows[0].id;
-  const r = await query(`INSERT INTO intel_sources (org_id,name,source_type,provider,endpoint,reliability,metadata) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`, [orgId,name,type,provider,endpoint,Number(metadata.reliability ?? 55),metadata]);
+  const r = await query(
+    `INSERT INTO intel_sources (org_id,name,source_type,provider,endpoint,reliability,metadata) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+    [orgId, name, type, provider, endpoint, reliability, metadata]
+  );
   return r.rows[0].id;
 }
 
-async function storeObservation(orgId, source, item) {
+async function recordRun(orgId, sourceId, status, stats, errorMessage = null, metadata = {}) {
+  await query(
+    `INSERT INTO intel_collection_runs (org_id,source_id,started_at,finished_at,status,observations_seen,observations_inserted,observations_duplicate,error_count,error_message,metadata)
+     VALUES ($1,$2,$3,now(),$4,$5,$6,$7,$8,$9,$10)`,
+    [orgId, sourceId, stats.startedAt, status, stats.seen || 0, stats.inserted || 0, stats.duplicate || 0, stats.errors || 0, errorMessage, metadata]
+  ).catch(e => logger.warn(`Intelligence collection: run telemetry failed: ${e.message}`));
+}
+
+async function storeObservation(orgId, sourceId, item) {
   const title = String(item.title || '').slice(0, 500);
   const body = String(item.body || title).slice(0, 8000);
   const externalId = String(item.external_id || item.url || hash(`${title}|${body}`)).slice(0, 500);
-  const contentHash = hash(`${title}|${body}`);
-  const published = item.published_at ? new Date(item.published_at) : null;
-  const publishedAt = published && Number.isFinite(published.getTime()) ? published.toISOString() : null;
+  const publishedAt = safeDate(item.published_at);
   const cc = item.country_code || countryCode(`${title} ${body}`);
-  const { rows } = await query(`INSERT INTO intel_observations (org_id,source_id,external_id,observed_at,published_at,title,body,url,language,country_code,latitude,longitude,content_hash,raw_metadata,credibility,manipulation_score) VALUES ($1,$2,$3,now(),$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT (org_id,source_id,external_id) DO UPDATE SET observed_at=now(),last_seen_at=now() RETURNING id, (xmax=0) AS inserted`, [orgId,source.id,externalId,publishedAt,title,body,item.url || null,item.language || null,cc,item.latitude ?? null,item.longitude ?? null,contentHash,item.metadata || {},item.credibility ?? 55,item.manipulation_score ?? 0]);
-  await query(`UPDATE intel_sources SET last_seen_at=now(),updated_at=now() WHERE id=$1`, [source.id]);
-  return { id: rows[0]?.id, inserted: rows[0]?.inserted, country_code: cc, severity: level(`${title} ${body}`) };
+  const contentHash = hash(`${title}|${body}`);
+  const manipulation = item.manipulation_score ?? manipulationScore(title, body);
+  const credibility = Math.max(0, Math.min(100, Number(item.credibility ?? sourceReliability(item.provider))));
+  const { rows } = await query(
+    `INSERT INTO intel_observations
+      (org_id,source_id,external_id,observed_at,published_at,title,body,url,language,country_code,latitude,longitude,content_hash,raw_metadata,credibility,manipulation_score,last_seen_at)
+     VALUES ($1,$2,$3,now(),$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,now())
+     ON CONFLICT (org_id,source_id,external_id)
+     DO UPDATE SET observed_at=now(),last_seen_at=now(),title=EXCLUDED.title,body=EXCLUDED.body,url=COALESCE(EXCLUDED.url,intel_observations.url),published_at=COALESCE(EXCLUDED.published_at,intel_observations.published_at),country_code=COALESCE(EXCLUDED.country_code,intel_observations.country_code),raw_metadata=EXCLUDED.raw_metadata,credibility=EXCLUDED.credibility,manipulation_score=EXCLUDED.manipulation_score
+     RETURNING id,(xmax=0) AS inserted`,
+    [orgId, sourceId, externalId, publishedAt, title, body, item.url || null, item.language || null, cc, item.latitude ?? null, item.longitude ?? null, contentHash, item.metadata || {}, credibility, manipulation]
+  );
+  await query(`UPDATE intel_sources SET last_seen_at=now(),updated_at=now() WHERE id=$1`, [sourceId]);
+  return { inserted: Boolean(rows[0]?.inserted), duplicate: !rows[0]?.inserted, id: rows[0]?.id };
 }
 
 async function collectGdelt(countries) {
   const out = [];
   for (const cc of countries) {
-    const country = Object.entries(ISO).find(([, v]) => v === cc)?.[0];
-    if (!country) continue;
+    const country = ISO_TO_COUNTRY[cc]; if (!country) continue;
     try {
       const q = `"${country}" (attack OR conflict OR violence OR kidnapping OR ambush OR protest OR unrest OR roadblock OR coup)`;
       const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(q)}&mode=artlist&maxrecords=20&timespan=24h&format=json`;
-      const res = await boundedFetch(url, {}, 8000);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const res = await boundedFetch(url, {}, 8000); if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      for (const a of (data.articles || [])) out.push({ title:a.title, body:a.title, url:a.url, external_id:a.url, country_code:cc, published_at:a.seendate ? `${a.seendate.slice(0,8)}T${a.seendate.slice(8,10)}:${a.seendate.slice(10,12)}:00Z` : null, metadata:{tone:a.tone,domain:a.domain,source:'gdelt'} });
+      for (const a of (data.articles || []).slice(0, MAX_ITEMS_PER_PROVIDER)) out.push({
+        title:a.title, body:a.title, url:a.url, external_id:a.url, country_code:cc,
+        published_at:a.seendate ? `${a.seendate.slice(0,8)}T${a.seendate.slice(8,10)}:${a.seendate.slice(10,12)}:00Z` : null,
+        metadata:{tone:a.tone,domain:a.domain,source:'gdelt'}, credibility:65, provider:'gdelt'
+      });
     } catch (e) { logger.warn(`Intelligence collection: GDELT ${cc} failed: ${e.message}`); }
   }
   return out;
 }
 
 async function collectX(countries) {
-  const token = process.env.X_BEARER_TOKEN;
-  if (!token) return [];
+  const token = process.env.X_BEARER_TOKEN; if (!token) return [];
   const out = [];
   for (const cc of countries) {
-    const country = Object.entries(ISO).find(([, v]) => v === cc)?.[0];
-    if (!country) continue;
+    const country = ISO_TO_COUNTRY[cc]; if (!country) continue;
     try {
-      const query = `(${country}) (attack OR conflict OR violence OR protest OR kidnapping OR roadblock) -is:retweet lang:en`;
-      const url = `https://api.x.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&max_results=50&tweet.fields=created_at,lang,author_id&expansions=author_id&user.fields=username`;
-      const res = await boundedFetch(url,{headers:{Authorization:`Bearer ${token}`}},10000);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      for (const t of (data.data || [])) out.push({ title:`X observation — ${country}`, body:t.text, url:`https://x.com/i/web/status/${t.id}`, external_id:`x:${t.id}`, country_code:cc, language:t.lang, published_at:t.created_at, metadata:{author_id:t.author_id,source:'x'} , credibility:45 });
+      const queryText = `(${country}) (attack OR conflict OR violence OR protest OR kidnapping OR roadblock) -is:retweet -is:reply`;
+      let nextToken = null;
+      for (let page = 0; page < 2; page++) {
+        const u = new URL('https://api.x.com/2/tweets/search/recent');
+        u.searchParams.set('query', queryText); u.searchParams.set('max_results','100');
+        u.searchParams.set('tweet.fields','created_at,lang,author_id,public_metrics,geo,entities');
+        if (nextToken) u.searchParams.set('next_token', nextToken);
+        const res = await boundedFetch(u, { headers:{Authorization:`Bearer ${token}`} }, 10000);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        for (const t of (data.data || [])) out.push({ title:`X observation — ${country}`, body:t.text, url:`https://x.com/i/web/status/${t.id}`, external_id:`x:${t.id}`, country_code:cc, language:t.lang, published_at:t.created_at, metadata:{author_id:t.author_id,public_metrics:t.public_metrics,source:'x'}, credibility:45, provider:'x' });
+        nextToken = data.meta?.next_token; if (!nextToken) break;
+      }
     } catch (e) { logger.warn(`Intelligence collection: X ${cc} failed: ${e.message}`); }
   }
   return out;
 }
 
 async function collectMeta() {
-  const token = process.env.META_ACCESS_TOKEN;
-  const pages = parseJsonEnv('META_PAGE_IDS');
-  if (!token || !pages.length) return [];
-  const out=[];
-  for (const p of pages) {
+  const token = process.env.META_ACCESS_TOKEN; const pages = parseJsonEnv('META_PAGE_IDS'); if (!token || !pages.length) return [];
+  const version = process.env.META_GRAPH_VERSION || 'v24.0'; const out = [];
+  for (const raw of pages) {
+    const id = typeof raw === 'string' ? raw : raw?.id; const cc = typeof raw === 'object' ? raw.country_code : null; if (!id) continue;
     try {
-      const id = typeof p === 'string' ? p : p.id;
-      const cc = typeof p === 'object' ? p.country_code : null;
-      const url=`https://graph.facebook.com/v23.0/${encodeURIComponent(id)}/feed?fields=id,message,created_time,permalink_url&limit=50&access_token=${encodeURIComponent(token)}`;
-      const res=await boundedFetch(url,{},10000); if(!res.ok) throw new Error(`HTTP ${res.status}`); const data=await res.json();
-      for(const x of (data.data||[])) if(x.message) out.push({title:`Facebook page observation`,body:x.message,url:x.permalink_url,external_id:`facebook:${x.id}`,country_code:cc||countryCode(x.message),published_at:x.created_time,metadata:{page_id:id,source:'facebook'},credibility:50});
-    } catch(e){ logger.warn(`Intelligence collection: Facebook page failed: ${e.message}`); }
+      const u = `https://graph.facebook.com/${version}/${encodeURIComponent(id)}/feed?fields=id,message,created_time,permalink_url&limit=100&access_token=${encodeURIComponent(token)}`;
+      const res = await boundedFetch(u, {}, 10000); if (!res.ok) throw new Error(`HTTP ${res.status}`); const data = await res.json();
+      for (const p of (data.data || [])) if (p.message) out.push({ title:'Facebook Page observation', body:p.message, url:p.permalink_url, external_id:`facebook:${p.id}`, country_code:cc || countryCode(p.message), published_at:p.created_time, metadata:{page_id:id,source:'facebook'}, credibility:50, provider:'facebook' });
+    } catch (e) { logger.warn(`Intelligence collection: Facebook page ${id} failed: ${e.message}`); }
   }
   return out;
 }
 
 async function collectRss() {
-  const feeds=parseJsonEnv('INTEL_RSS_FEEDS'); const out=[]; const cutoff=Date.now()-SOURCE_TTL_MS;
-  for(const f of feeds){
-    if(!f?.url) continue;
-    try { const res=await boundedFetch(f.url,{},10000); if(!res.ok) throw new Error(`HTTP ${res.status}`); const xml=await res.text(); const items=xmlParser.parse(xml)?.rss?.channel?.item || []; for(const raw of (Array.isArray(items)?items:[items])) { const d=new Date(raw.pubDate||0).getTime(); if(d && d<cutoff) continue; out.push({title:String(raw.title||''),body:String(raw.description||raw.title||''),url:raw.link,external_id:raw.guid||raw.link,country_code:f.country_code||countryCode(`${raw.title} ${raw.description}`),language:f.language,published_at:raw.pubDate,metadata:{feed:f.name||f.url,source:'rss'},credibility:f.credibility||55}); } }
-    catch(e){ logger.warn(`Intelligence collection: RSS ${f.name||f.url} failed: ${e.message}`); }
+  const feeds = parseJsonEnv('INTEL_RSS_FEEDS'); const cutoff = Date.now() - SOURCE_TTL_MS; const out = [];
+  for (const f of feeds) {
+    if (!f?.url) continue;
+    try {
+      const res = await boundedFetch(f.url, {}, 10000); if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const parsed = xmlParser.parse(await res.text()); const items = parsed?.rss?.channel?.item || parsed?.feed?.entry || [];
+      for (const raw of (Array.isArray(items) ? items : [items])) {
+        const title = String(raw.title || ''); const body = String(raw.description || raw.summary || raw.content || title); const link = typeof raw.link === 'string' ? raw.link : raw.link?.href;
+        const date = safeDate(raw.pubDate || raw.published || raw.updated); if (date && new Date(date).getTime() < cutoff) continue;
+        if (!link || !title) continue;
+        out.push({title,body,url:link,external_id:String(raw.guid || raw.id || link),country_code:f.country_code || countryCode(`${title} ${body}`),language:f.language,published_at:date,metadata:{feed:f.name || f.url,source:'rss'},credibility:f.credibility || 55,provider:'rss'});
+      }
+    } catch (e) { logger.warn(`Intelligence collection: RSS ${f.name || f.url} failed: ${e.message}`); }
   }
   return out;
 }
 
 async function collectReliefWeb(countries) {
-  const appname=process.env.RELIEFWEB_APP_NAME; if(!appname) return [];
-  const out=[];
-  for(const cc of countries){ const country=Object.entries(ISO).find(([,v])=>v===cc)?.[0]; if(!country) continue; try { const u=new URL('https://api.reliefweb.int/v2/reports'); u.searchParams.set('appname',appname); u.searchParams.set('query[value]',country); u.searchParams.set('limit','20'); u.searchParams.append('fields[include][]','title');u.searchParams.append('fields[include][]','url');u.searchParams.append('fields[include][]','date.created'); const r=await boundedFetch(u,{},10000); if(!r.ok) throw new Error(`HTTP ${r.status}`); const d=await r.json(); for(const x of (d.data||[])){const f=x.fields||{};out.push({title:f.title,body:f.title,url:f.url||x.href,external_id:`reliefweb:${x.id}`,country_code:cc,published_at:f.date?.created,metadata:{source:'reliefweb'},credibility:75});}} catch(e){logger.warn(`Intelligence collection: ReliefWeb ${cc} failed: ${e.message}`);} }
+  const appname = process.env.RELIEFWEB_APP_NAME; if (!appname) return [];
+  const out = [];
+  for (const cc of countries) {
+    const country = ISO_TO_COUNTRY[cc]; if (!country) continue;
+    try {
+      const u = new URL('https://api.reliefweb.int/v2/reports'); u.searchParams.set('appname',appname); u.searchParams.set('query[value]',country); u.searchParams.set('limit','20'); u.searchParams.append('fields[include][]','title'); u.searchParams.append('fields[include][]','url'); u.searchParams.append('fields[include][]','date.created');
+      const res = await boundedFetch(u, {}, 10000); if (!res.ok) throw new Error(`HTTP ${res.status}`); const data = await res.json();
+      for (const x of (data.data || [])) { const f=x.fields || {}; out.push({title:f.title,body:f.title,url:f.url || x.href,external_id:`reliefweb:${x.id}`,country_code:cc,published_at:f.date?.created,metadata:{source:'reliefweb'},credibility:75,provider:'reliefweb'}); }
+    } catch (e) { logger.warn(`Intelligence collection: ReliefWeb ${cc} failed: ${e.message}`); }
+  }
   return out;
+}
+
+async function collectAcled(countries) {
+  const username=process.env.ACLED_USERNAME, password=process.env.ACLED_PASSWORD; if (!username || !password) return [];
+  try {
+    const auth=await boundedFetch('https://acleddata.com/oauth/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({username,password,grant_type:'password',client_id:'acled',scope:'authenticated'})},10000);
+    if (!auth.ok) throw new Error(`OAuth HTTP ${auth.status}`); const token=(await auth.json()).access_token; if (!token) throw new Error('missing access_token');
+    const out=[]; const since=new Date(Date.now()-3*86400000).toISOString().slice(0,10); const today=new Date().toISOString().slice(0,10);
+    for (const cc of countries) {
+      const country=ISO_TO_COUNTRY[cc]; if (!country) continue;
+      try { const u=new URL('https://acleddata.com/api/acled/read'); u.searchParams.set('_format','json');u.searchParams.set('country',country);u.searchParams.set('event_date',`${since}|${today}`);u.searchParams.set('event_date_where','BETWEEN');u.searchParams.set('limit','50');u.searchParams.set('fields','event_id_cnty|event_date|event_type|sub_event_type|disorder_type|country|location|latitude|longitude|notes|fatalities');
+        const r=await boundedFetch(u,{headers:{Authorization:`Bearer ${token}`}},10000); if(!r.ok) throw new Error(`HTTP ${r.status}`); const d=await r.json();
+        for(const x of (d.data||[])){const text=`${x.event_type || 'Event'} — ${x.location || country}: ${x.notes || ''}`.slice(0,800); out.push({title:`ACLED ${x.event_type || 'event'} — ${x.location || country}`,body:text,url:null,external_id:`acled:${x.event_id_cnty}`,country_code:cc,latitude:x.latitude,longitude:x.longitude,published_at:x.event_date,metadata:{event_type:x.event_type,sub_event_type:x.sub_event_type,fatalities:x.fatalities,source:'acled'},credibility:Number(x.fatalities)>0?90:85,provider:'acled'});}
+      } catch(e){logger.warn(`Intelligence collection: ACLED ${cc} failed: ${e.message}`);}
+    }
+    return out;
+  } catch(e){ logger.warn(`Intelligence collection: ACLED authentication failed: ${e.message}`); return []; }
+}
+
+async function collectGdacs(countries) {
+  try {
+    const from=new Date(Date.now()-5*86400000).toISOString().slice(0,10), to=new Date().toISOString().slice(0,10);
+    const u=`https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?fromdate=${from}&todate=${to}`; const r=await boundedFetch(u,{},10000); if(!r.ok) throw new Error(`HTTP ${r.status}`); const d=await r.json(); const out=[];
+    for(const f of (d.features||[])){const p=f.properties||{};const affected=(p.affectedcountries||[]).map(x=>String(x.countrycode||x.iso3||x.countryname||'').toUpperCase());const cc=countries.find(c=>affected.includes(c) || affected.some(a=>a.includes(c))); if(!cc) continue; const [lng,lat]=f.geometry?.coordinates||[]; out.push({title:p.name || p.description || 'GDACS hazard',body:p.description || p.name || 'Hazard event',url:p.url?.report || null,external_id:`gdacs:${p.eventtype}:${p.eventid}:${p.episodeid}`,country_code:cc,latitude:lat,longitude:lng,published_at:p.datemodified || p.dateevent,metadata:{event_type:p.eventtype,alert_level:p.alertlevel,source:'gdacs'},credibility:85,provider:'gdacs'});}
+    return out;
+  } catch(e){logger.warn(`Intelligence collection: GDACS failed: ${e.message}`);return[];}
 }
 
 async function collectTelegram() {
   const channels=parseJsonEnv('INTEL_TELEGRAM_CHANNELS'); if(!channels.length) return [];
-  const out=[]; const cutoff=Date.now()-SOURCE_TTL_MS;
-  for(const raw of channels){ const channel=typeof raw==='string'?raw:raw.channel; const cc=typeof raw==='object'?raw.country_code:null; if(!channel) continue; try { let msgs=[]; if(telegramMtproto.isConfigured()){ try { msgs=await telegramMtproto.fetchChannelMessages(channel,cutoff); } catch(_){} } if(!msgs.length){ const r=await boundedFetch(`https://t.me/s/${encodeURIComponent(channel)}`,{headers:{'User-Agent':'Mozilla/5.0'}},10000); if(!r.ok) throw new Error(`HTTP ${r.status}`); const html=await r.text(); for(const block of html.split('data-post="').slice(1)){const id=(block.match(/^([^"]+)"/)||[])[1];const tm=(block.match(/<time[^>]*datetime="([^"]+)"/)||[])[1];const tx=(block.match(/<div class="tgme_widget_message_text[^>]*>([\s\S]*?)<\/div>/)||[])[1];if(id&&tm&&tx){const dt=new Date(tm).getTime();if(dt>=cutoff){const text=tx.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();msgs.push({id,text,created_at:tm});}}}} for(const m of msgs){const text=m.text||'';if(!HIGH.test(text)&&!MEDIUM.test(text))continue;out.push({title:`Telegram ${channel}`,body:text,url:`https://t.me/${String(m.id).split('/').pop()}`,external_id:`telegram:${m.id}`,country_code:cc||countryCode(text),published_at:m.created_at,metadata:{channel,source:'telegram'},credibility:45});}} catch(e){logger.warn(`Intelligence collection: Telegram ${channel} failed: ${e.message}`);} }
+  const cutoff=Date.now()-SOURCE_TTL_MS, out=[];
+  for(const raw of channels){const channel=typeof raw==='string'?raw:raw?.channel;const cc=typeof raw==='object'?raw.country_code:null;if(!channel)continue;
+    try{let msgs=[];if(telegramMtproto.isConfigured()){try{msgs=await telegramMtproto.fetchChannelMessages(channel,cutoff);}catch(e){logger.warn(`Intelligence collection: Telegram MTProto ${channel} failed: ${e.message}`);}}
+      if(!msgs.length){const r=await boundedFetch(`https://t.me/s/${encodeURIComponent(channel)}`,{headers:{'User-Agent':'Mozilla/5.0'}},10000);if(!r.ok)throw new Error(`HTTP ${r.status}`);const html=await r.text();for(const block of html.split('data-post="').slice(1)){const id=(block.match(/^([^"]+)"/)||[])[1],tm=(block.match(/<time[^>]*datetime="([^"]+)"/)||[])[1],tx=(block.match(/<div class="tgme_widget_message_text[^>]*>([\s\S]*?)<\/div>/)||[])[1];if(!id||!tm||!tx)continue;const dt=new Date(tm).getTime();if(dt<cutoff)continue;msgs.push({id,text:tx.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim(),created_at:tm});}}
+      for(const m of msgs){const text=m.text||'';if(!HIGH.test(text)&&!MEDIUM.test(text))continue;out.push({title:`Telegram ${channel}`,body:text,url:`https://t.me/${String(m.id).split('/').pop()}`,external_id:`telegram:${m.id}`,country_code:cc||countryCode(text),published_at:m.created_at,metadata:{channel,source:'telegram'},credibility:45,provider:'telegram'});}
+    }catch(e){logger.warn(`Intelligence collection: Telegram ${channel} failed: ${e.message}`);}
+  }
   return out;
 }
 
-async function collectForOrg(orgId, countries) {
+async function collectForOrg(orgId, countries = DEFAULT_COUNTRIES) {
+  const jobs = [
+    ['gdelt','news','GDELT',null,() => collectGdelt(countries)],
+    ['x','social','X',null,() => collectX(countries)],
+    ['facebook','social','Facebook',null,() => collectMeta()],
+    ['rss','rss','Configured RSS',null,() => collectRss()],
+    ['reliefweb','humanitarian','ReliefWeb',null,() => collectReliefWeb(countries)],
+    ['acled','database','ACLED',null,() => collectAcled(countries)],
+    ['gdacs','government','GDACS',null,() => collectGdacs(countries)],
+    ['telegram','social','Telegram',null,() => collectTelegram()]
+  ];
   const results=[];
-  const providers=[['gdelt','news','GDELT',collectGdelt],['x','social','X',collectX],['facebook','social','Facebook',collectMeta],['rss','rss','RSS',collectRss],['reliefweb','humanitarian','ReliefWeb',collectReliefWeb],['telegram','social','Telegram',collectTelegram]];
-  for(const [key,type,name,fn] of providers){
-    try { const items=key==='gdelt'||key==='x'||key==='reliefweb'?await fn(countries):await fn(); const sid=await sourceId(orgId,name,type,key,null,{reliability:key==='reliefweb'?75:key==='gdelt'?65:50}); let inserted=0; for(const item of items){const r=await storeObservation(orgId,{id:sid},item); if(r.inserted) inserted++;} results.push({provider:key,received:items.length,inserted}); }
-    catch(e){results.push({provider:key,error:e.message});logger.warn(`Intelligence collection: ${name} failed for org ${orgId}: ${e.message}`);}
+  for(const [provider,type,name,endpoint,fn] of jobs){
+    const sourceId=await ensureSource(orgId,{name,type,provider,endpoint});
+    const stats={startedAt:new Date(),seen:0,inserted:0,duplicate:0,errors:0};
+    try{
+      const items=(await fn()).slice(0,MAX_ITEMS_PER_PROVIDER);stats.seen=items.length;
+      for(const item of items){try{const r=await storeObservation(orgId,sourceId,item);if(r.inserted)stats.inserted++;else stats.duplicate++;}catch(e){stats.errors++;logger.warn(`Intelligence collection: ${provider} observation failed: ${e.message}`);}}
+      await recordRun(orgId,sourceId,stats,stats.errors?'partial':'success',null,{provider,countries:countries.length});
+      results.push({provider,received:stats.seen,inserted:stats.inserted,duplicate:stats.duplicate,errors:stats.errors});
+    }catch(e){stats.errors++;await recordRun(orgId,sourceId,stats,'failed',e.message,{provider});results.push({provider,error:e.message});logger.warn(`Intelligence collection: ${name} failed for org ${orgId}: ${e.message}`);}
   }
+  try{await telegramMtproto.disconnect();}catch(_){}
   return results;
 }
 
-async function fuseOrg(orgId) {
-  const {rows}=await query(`SELECT io.*,s.reliability FROM intel_observations io LEFT JOIN intel_sources s ON s.id=io.source_id WHERE io.org_id=$1 AND io.observed_at>=now()-interval '48 hours' ORDER BY io.observed_at DESC LIMIT 3000`,[orgId]);
-  let created=0,linked=0;
-  for(const o of rows){ if(!o.country_code) continue; const sev=level(`${o.title||''} ${o.body||''}`); const severity=sev==='high'?'high':sev==='moderate'?'moderate':'low'; const title=(o.title||o.body||'Observation').slice(0,240); const {rows:existing}=await query(`SELECT id FROM intel_events WHERE org_id=$1 AND country_code=$2 AND title=$3 AND last_seen_at>=now()-interval '48 hours' ORDER BY last_seen_at DESC LIMIT 1`,[orgId,o.country_code,title]); let eventId=existing[0]?.id;
-    if(!eventId){const r=await query(`INSERT INTO intel_events (org_id,event_type,title,summary,status,severity,confidence,country_code,first_seen_at,last_seen_at,indicators) VALUES ($1,'security_observation',$2,$3,'discovered',$4,$5,$6,$7,$7,$8) RETURNING id`,[orgId,title,(o.body||title).slice(0,2000),severity,Math.min(95,Math.max(25,Number(o.credibility||50))),o.country_code,o.observed_at,JSON.stringify([{source:o.source_id,observation:o.id}])]);eventId=r.rows[0].id;created++;} const rel=await query(`INSERT INTO intel_event_observations(event_id,observation_id,relationship,weight) VALUES($1,$2,'supports',$3) ON CONFLICT DO NOTHING`,[eventId,o.id,Math.min(100,Number(o.credibility||50))]);linked+=rel.rowCount;
-  }
-  return {events_created:created,links_created:linked};
-}
-
-async function collectOnce() {
-  if(running)return {skipped:true}; running=true;
-  try { const {rows:orgs}=await query(`SELECT DISTINCT org_id FROM intel_watchlists WHERE active=true UNION SELECT DISTINCT org_id FROM risk_zones WHERE active=true`); const reports=[]; for(const o of orgs){ const {rows:w}=await query(`SELECT target FROM intel_watchlists WHERE org_id=$1 AND active=true`,[o.org_id]); const countries=[...new Set(w.flatMap(x=>[x.target?.country_code,x.target?.country]).filter(Boolean).map(x=>String(x).toUpperCase()))]; if(!countries.length){const {rows:z}=await query(`SELECT DISTINCT upper(substring(region from '([A-Za-z][A-Za-z ]+)$')) AS country FROM risk_zones WHERE org_id=$1 AND active=true`,[o.org_id]); for(const x of z) {const cc=countryCode(x.country||''); if(cc)countries.push(cc);} } const collection=await collectForOrg(o.org_id,[...new Set(countries)]); const fusion=await fuseOrg(o.org_id); reports.push({org_id:o.org_id,collection,fusion}); } return {skipped:false,reports,completed_at:new Date().toISOString()}; }
-  finally {running=false;}
-}
-
-function schedule() { if(process.env.NODE_ENV==='test'||process.env.GENERATE_OPENAPI)return; if(global.__sonalitIntelCollectionScheduled)return; global.__sonalitIntelCollectionScheduled=true; const cron=require('node-cron'); cron.schedule(process.env.INTEL_COLLECTION_CRON||'*/30 * * * *',()=>collectOnce().catch(e=>logger.error(`Intelligence collection error: ${e.message}`))); setTimeout(()=>collectOnce().catch(e=>logger.warn(`Intelligence startup collection error: ${e.message}`)),15000); logger.info(`Intelligence Collection Fabric scheduled (${process.env.INTEL_COLLECTION_CRON||'every 30 minutes'})`); }
-
-schedule();
-module.exports={collectOnce};
+module.exports={collectForOrg};
