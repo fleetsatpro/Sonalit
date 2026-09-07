@@ -1,3 +1,8 @@
+// Loading the assessment engine activates the Collection Fabric exactly once per process.
+// This keeps collection startup independent from the legacy Risk OSINT sweep while
+// remaining part of the admin-only Intelligence Centre backend.
+require('./intelligenceCollection');
+
 const SEVERITY_RANK = { informational: 0, low: 1, moderate: 2, high: 3, critical: 4 };
 
 function clamp(value, min = 0, max = 100) {
