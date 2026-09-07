@@ -7,10 +7,12 @@ const { runOsintSweep, isSweeping } = require('../utils/riskOsint');
 const { query: rawQuery } = require('../config/database');
 const logger = require('../utils/logger');
 const intelligenceRouter = require('./intelligence');
+const runtimeDiagnosticsRouter = require('./runtimeDiagnostics');
 
 router.use(authenticate);
 router.use(attachOrgDb);
 router.use('/intelligence', intelligenceRouter);
+router.use('/diagnostics', runtimeDiagnosticsRouter);
 
 router.get('/zones', asyncHandler(async (req, res) => {
   const continent = req.query.continent || null;
