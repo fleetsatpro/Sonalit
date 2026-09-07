@@ -1,7 +1,7 @@
 // Sonalit Collection Fabric. Public/authorized collection only; adapters degrade gracefully.
 const crypto = require('crypto');
 const { XMLParser } = require('fast-xml-parser');
-const { query } = require('../config/database');
+const { query, pool } = require('../config/database');
 const logger = require('./logger');
 const xmlParser = new XMLParser({ ignoreAttributes: true });
 const TIMEOUT_MS = 9000;
@@ -32,10 +32,36 @@ async function fetchGdelt(q){const url=`https://api.gdeltproject.org/api/v2/doc/
 async function fetchX(q){const token=process.env.X_BEARER_TOKEN||process.env.TWITTER_BEARER_TOKEN;if(!token)return[];const p=new URLSearchParams({query:`${q} -is:retweet`,max_results:'50','tweet.fields':'created_at,lang,author_id,public_metrics,context_annotations'});const r=await timeoutFetch(`https://api.x.com/2/tweets/search/recent?${p}`,{headers:{Authorization:`Bearer ${token}`}});if(!r.ok)throw new Error(`X API HTTP ${r.status}`);const d=await r.json();return (d.data||[]).map(t=>({external_id:`x:${t.id}`,title:clean(t.text,700),body:t.text,published_at:t.created_at,language:t.lang,raw_metadata:{author_id:t.author_id,public_metrics:t.public_metrics,context_annotations:t.context_annotations}}));}
 async function fetchFacebook(page){const token=page.access_token||process.env.META_GRAPH_ACCESS_TOKEN||process.env.FACEBOOK_GRAPH_ACCESS_TOKEN;if(!token||!page.page_id)return[];const fields='id,message,created_time,permalink_url,from,attachments';const r=await timeoutFetch(`https://graph.facebook.com/${encodeURIComponent(page.page_id)}/feed?fields=${encodeURIComponent(fields)}&limit=50&access_token=${encodeURIComponent(token)}`);if(!r.ok)throw new Error(`Meta Graph HTTP ${r.status}`);const d=await r.json();return (d.data||[]).map(p=>({external_id:`facebook:${p.id}`,title:clean(p.message,700),body:p.message,url:p.permalink_url||null,published_at:p.created_time,raw_metadata:{from:p.from,attachments:p.attachments}}));}
 async function fetchRss(url){const r=await timeoutFetch(url);if(!r.ok)throw new Error(`RSS HTTP ${r.status}`);const x=xmlParser.parse(await r.text()),raw=x?.rss?.channel?.item||[],items=Array.isArray(raw)?raw:[raw];return items.slice(0,MAX_ITEMS).map(i=>({external_id:i.guid?`rss:${String(i.guid)}`:null,title:clean(i.title,700),body:clean(i.description,5000),url:i.link||null,published_at:i.pubDate?new Date(i.pubDate).toISOString():null}));}
-function buildQuery(watchlists){const terms=[];for(const w of watchlists){const t=w.target||{};if(w.watch_type==='keyword'&&t.keyword)terms.push(t.keyword);if(w.watch_type==='topic'&&t.query)terms.push(t.query);if(w.watch_type==='country'&&t.country)terms.push(t.country);if(w.watch_type==='region'&&t.region)terms.push(t.region);if(w.watch_type==='entity'&&t.name)terms.push(t.name);}const u=[...new Set(terms.map(clean).filter(Boolean))].slice(0,12);return u.length?`(${u.map(t=>`"${t.replace(/"/g,'')}"`).join(' OR ')})`:'(attack OR conflict OR violence OR kidnapping OR protest OR unrest)';}
-async function collectForOrg(orgId){const {rows:watchlists}=await query(`SELECT name,watch_type,target FROM intel_watchlists WHERE org_id=$1 AND active=true ORDER BY updated_at DESC LIMIT 100`,[orgId]);const q=buildQuery(watchlists);const adapters=[{provider:'gdelt',name:'GDELT Global News',endpoint:'https://api.gdeltproject.org/api/v2/doc/doc',reliability:72,run:()=>fetchGdelt(q)}];if(process.env.X_BEARER_TOKEN||process.env.TWITTER_BEARER_TOKEN)adapters.push({provider:'x',name:'X Recent Search',endpoint:'https://api.x.com/2/tweets/search/recent',reliability:45,run:()=>fetchX(q)});let pages=[];try{pages=JSON.parse(process.env.RISK_INTEL_FACEBOOK_PAGES||'[]');}catch{}for(const p of Array.isArray(pages)?pages.slice(0,20):[])if(p?.page_id)adapters.push({provider:'facebook',name:`Facebook Page ${p.page_id}`,endpoint:`page:${p.page_id}`,reliability:48,run:()=>fetchFacebook(p)});let feeds=[];try{feeds=JSON.parse(process.env.RISK_INTEL_EXTRA_RSS_FEEDS||'[]');}catch{}for(const f of Array.isArray(feeds)?feeds.slice(0,30):[])if(f?.url)adapters.push({provider:'rss',name:f.name||`RSS ${f.url}`,endpoint:f.url,reliability:Number(f.reliability)||60,run:()=>fetchRss(f.url)});
+function buildQuery(watchlists){const terms=[];for(const w of watchlists){const t=w.target||{};if(w.watch_type==='keyword'&&t.keyword)terms.push(t.keyword);if(w.watch_type==='topic'&&t.query)terms.push(t.query);if(w.watch_type==='country'&&t.country)terms.push(t.country);if(w.watch_type==='region'&&t.region)terms.push(t.region);if(w.watch_type==='entity'&&t.name)terms.push(t.name);}const u=[...new Set(terms.map(clean).filter(Boolean))].slice(0,12);return u.length?`(${u.map(t=>`\"${t.replace(/\"/g,'')}\"`).join(' OR ')})`:'(attack OR conflict OR violence OR kidnapping OR protest OR unrest)';}
+async function collectForOrg(orgId){const {rows:watchlists}=await query(`SELECT name,watch_type,target FROM intel_watchlists WHERE org_id=$1 AND active=true ORDER BY updated_at DESC LIMIT 100`,[orgId]);const q=buildQuery(watchlists);const adapters=[{provider:'gdelt',name:'GDELT Global News',endpoint:'https://api.gdeltproject.org/api/v2/doc/doc',reliability:72,run:()=>fetchGdelt(q)}];if(process.env.X_BEARER_TOKEN||process.env.TWITTER_BEARER_TOKEN)adapters.push({provider:'x',name:'X Recent Search',endpoint:'https://api.x.com/2/tweets/search/recent',reliability:45,run:()=>fetchX(q)});let pages=[];try{pages=JSON.parse(process.env.RISK_INTEL_FACEBOOK_PAGES||'[]');}catch{}for(const p of Array.isArray(pages)?pages.slice(0,20):[])if(p?.page_id)adapters.push({provider:'facebook',name:`Facebook Page ${p.page_id}`,endpoint:`page:${p.page_id}`,reliability:Number(p.reliability)||48,run:()=>fetchFacebook(p)});let feeds=[];try{feeds=JSON.parse(process.env.RISK_INTEL_EXTRA_RSS_FEEDS||'[]');}catch{}for(const f of Array.isArray(feeds)?feeds.slice(0,30):[])if(f?.url)adapters.push({provider:'rss',name:f.name||`RSS ${f.url}`,endpoint:f.url,reliability:Number(f.reliability)||60,run:()=>fetchRss(f.url)});
   const results=[];for(const a of adapters){let runId=null,seen=0,inserted=0,duplicate=0;try{const source=await ensureSource(orgId,{...a,metadata:{query:q}});runId=await startRun(orgId,source.id,{query:q,adapter:a.provider});const items=await a.run();seen=items.length;const p=await persist(orgId,source,items);inserted=p.inserted;duplicate=p.duplicate;await finishRun(runId,{status:'success',seen,inserted,duplicate,metadata:{query:q}});results.push({provider:a.provider,seen,inserted,duplicate,status:'success'});}catch(e){if(runId)await finishRun(runId,{status:seen?'partial':'failed',seen,inserted,duplicate,errors:1,errorMessage:String(e.message).slice(0,500)}).catch(()=>{});logger.warn(`Collection Fabric: ${a.provider} failed for org ${orgId}: ${e.message}`);results.push({provider:a.provider,seen,inserted,duplicate,status:'failed',error:e.message});}}
   return {orgId,query:q,results,totalInserted:results.reduce((s,r)=>s+(r.inserted||0),0)};
 }
-async function runCollectionFabric(){const {rows:orgs}=await query(`SELECT DISTINCT org_id FROM intel_watchlists WHERE active=true`);const output=[];for(const {org_id} of orgs)output.push(await collectForOrg(org_id));return output;}
+async function runCollectionFabric(){
+  const client=await pool.connect();
+  let locked=false;
+  try{
+    const lock=await client.query("SELECT pg_try_advisory_lock(hashtext('sonalit:intelligence:collection')) AS acquired");
+    locked=Boolean(lock.rows[0]?.acquired);
+    if(!locked)return {skipped:true,reason:'cluster_run_in_progress'};
+    const {rows:orgs}=await client.query(`SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL`);
+    const {fuseOrg}=require('./intelligenceFusionRuntime');
+    const {enrichOrg}=require('./intelligenceAdvancedRuntime');
+    const output=[];
+    for(const {org_id} of orgs){
+      const started=Date.now();
+      try{
+        const collection=await collectForOrg(org_id);
+        const fusion=await fuseOrg(org_id);
+        const enrichment=await enrichOrg(org_id);
+        output.push({org_id,collection,fusion,enrichment,duration_ms:Date.now()-started});
+        logger.info(`Intelligence Collection Fabric: org=${org_id} completed in ${Date.now()-started}ms`);
+      }catch(e){output.push({org_id,error:e.message,duration_ms:Date.now()-started});logger.warn(`Intelligence Collection Fabric: org=${org_id} failed: ${e.message}`);}
+    }
+    return {organizations:output.length,results:output};
+  }finally{
+    if(locked){try{await client.query("SELECT pg_advisory_unlock(hashtext('sonalit:intelligence:collection'))")}catch(_){} }
+    client.release();
+  }
+}
 module.exports={runCollectionFabric,collectForOrg,severityHint,buildQuery};
