@@ -19,6 +19,11 @@ const pool = new Pool({
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
+  // Configure the server-side timeout as part of the connection options.
+  // Do not issue an asynchronous query from the pool's `connect` event: pg 9
+  // can race that query with the first application query on a freshly checked
+  // out client and emit "client is already executing a query".
+  options: '-c statement_timeout=30000',
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
@@ -26,9 +31,7 @@ pool.on('error', (err) => {
   logger.error('Unexpected PostgreSQL pool error', err);
 });
 
-pool.on('connect', (client) => {
-  // Prevent runaway queries from holding connections indefinitely
-  client.query("SET statement_timeout = '30s'").catch(() => {});
+pool.on('connect', () => {
   logger.info('New PostgreSQL client connected');
 });
 
