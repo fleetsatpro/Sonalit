@@ -1,6 +1,7 @@
 /* Deterministic observation -> event fusion for the Intelligence Centre. */
 const { query } = require('../config/database');
 const logger = require('./logger');
+const { buildExtendedAdapters } = require('./intelligenceExtendedProviders');
 
 const RANK = { low: 1, moderate: 2, high: 3, critical: 4 };
 const SEVERITY = ['informational','low','moderate','high','critical'];
@@ -20,7 +21,49 @@ function confidenceFor(observations) {
   return Math.min(98, Math.round(avg * 0.72 + Math.min(24, Math.max(0, sources.size - 1) * 8)));
 }
 
+// Extended providers are deliberately executed inside the canonical pipeline rather
+// than owning their own scheduler. This keeps one orchestration path and one lock.
+async function collectExtendedProviders(orgId) {
+  const { rows: watchlists } = await query(`SELECT name,watch_type,target FROM intel_watchlists WHERE org_id=$1 AND active=true ORDER BY updated_at DESC LIMIT 100`, [orgId]);
+  const adapters = buildExtendedAdapters(watchlists);
+  const results = [];
+  for (const adapter of adapters) {
+    const minMinutes = adapter.provider === 'acled' ? 360 : adapter.provider === 'reliefweb' ? 60 : 30;
+    try {
+      const { rows: recent } = await query(`SELECT 1 FROM intel_collection_runs r JOIN intel_sources s ON s.id=r.source_id WHERE r.org_id=$1 AND s.provider=$2 AND r.status IN ('success','partial') AND r.finished_at >= now() - ($3 || ' minutes')::interval LIMIT 1`, [orgId, adapter.provider, String(minMinutes)]);
+      if (recent.length) { results.push({ provider: adapter.provider, skipped: true, reason: 'cooldown' }); continue; }
+
+      const { rows: sourceRows } = await query(`INSERT INTO intel_sources (org_id,name,source_type,provider,endpoint,reliability,metadata,last_seen_at) VALUES ($1,$2,'other',$3,$4,$5,$6::jsonb,NOW()) ON CONFLICT (org_id,provider,endpoint) WHERE provider IS NOT NULL AND endpoint IS NOT NULL DO UPDATE SET name=EXCLUDED.name,reliability=EXCLUDED.reliability,metadata=EXCLUDED.metadata,last_seen_at=NOW(),updated_at=NOW() RETURNING id`, [orgId,adapter.name,adapter.provider,adapter.endpoint,adapter.reliability,JSON.stringify({canonical_pipeline:true})]);
+      const sourceId = sourceRows[0].id;
+      const { rows: runRows } = await query(`INSERT INTO intel_collection_runs (org_id,source_id,metadata) VALUES ($1,$2,$3::jsonb) RETURNING id`, [orgId,sourceId,JSON.stringify({adapter:adapter.provider,canonical_pipeline:true})]);
+      const runId = runRows[0].id;
+      let seen=0, inserted=0, duplicate=0;
+      try {
+        const items = await adapter.run();
+        seen = items.length;
+        for (const item of items.slice(0,50)) {
+          if (!item.title && !item.body) continue;
+          const externalId = String(item.external_id || item.url || `${adapter.provider}:${item.title}:${item.published_at || ''}`).slice(0,500);
+          const r = await query(`INSERT INTO intel_observations (org_id,source_id,external_id,observed_at,published_at,title,body,url,language,country_code,latitude,longitude,content_hash,raw_metadata,credibility,manipulation_score) VALUES ($1,$2,$3,NOW(),$4,$5,$6,$7,$8,$9,$10,$11,encode(digest(lower(coalesce($5,'') || '|' || coalesce($6,'') || '|' || coalesce($7,'')),'sha256'),'hex'),$12::jsonb,$13,$14) ON CONFLICT (org_id,source_id,external_id) DO UPDATE SET observed_at=NOW(),published_at=COALESCE(EXCLUDED.published_at,intel_observations.published_at),title=EXCLUDED.title,body=EXCLUDED.body,url=COALESCE(EXCLUDED.url,intel_observations.url),country_code=COALESCE(EXCLUDED.country_code,intel_observations.country_code),latitude=COALESCE(EXCLUDED.latitude,intel_observations.latitude),longitude=COALESCE(EXCLUDED.longitude,intel_observations.longitude),raw_metadata=EXCLUDED.raw_metadata,credibility=EXCLUDED.credibility RETURNING (xmax=0) AS inserted`, [orgId,sourceId,externalId,item.published_at || null,String(item.title || '').slice(0,500),String(item.body || item.title || '').slice(0,8000),item.url || null,item.language || null,item.country_code || null,item.latitude ?? null,item.longitude ?? null,JSON.stringify(item.raw_metadata || {}),Number.isFinite(item.credibility) ? item.credibility : adapter.reliability,0]);
+          if (r.rows[0]?.inserted) inserted++; else duplicate++;
+        }
+        await query(`UPDATE intel_collection_runs SET finished_at=NOW(),status='success',observations_seen=$2,observations_inserted=$3,observations_duplicate=$4 WHERE id=$1`, [runId,seen,inserted,duplicate]);
+        results.push({provider:adapter.provider,seen,inserted,duplicate,status:'success'});
+      } catch (e) {
+        await query(`UPDATE intel_collection_runs SET finished_at=NOW(),status=$2,error_count=1,error_message=$3 WHERE id=$1`, [runId,seen?'partial':'failed',String(e.message).slice(0,500)]).catch(()=>{});
+        results.push({provider:adapter.provider,seen,inserted,duplicate,status:'failed',error:e.message});
+        logger.warn(`Extended intelligence provider ${adapter.provider} failed for ${orgId}: ${e.message}`);
+      }
+    } catch (e) {
+      results.push({provider:adapter.provider,status:'failed',error:e.message});
+      logger.warn(`Extended intelligence setup ${adapter.provider} failed for ${orgId}: ${e.message}`);
+    }
+  }
+  return results;
+}
+
 async function fuseOrg(orgId) {
+  const extended = await collectExtendedProviders(orgId);
   const { rows } = await query(`
     SELECT io.*, s.reliability, s.provider
     FROM intel_observations io
@@ -61,7 +104,7 @@ async function fuseOrg(orgId) {
       linked++;
     }
   }
-  return { observations: rows.length, groups: groups.size, created, linked, context_links: contradictions };
+  return { observations: rows.length, groups: groups.size, created, linked, context_links: contradictions, extended_providers: extended };
 }
 
-module.exports = { fuseOrg };
+module.exports = { fuseOrg, collectExtendedProviders };
