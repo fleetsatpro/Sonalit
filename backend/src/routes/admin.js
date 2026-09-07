@@ -10,6 +10,10 @@ const { generateAndQueueScopedClientPulse, listCustomerPulseTargets } = require(
 
 router.use(authenticate, authorize('admin', 'super_admin'), attachOrgDb);
 
+// Canonical Communications Control Plane. Legacy admin Client Pulse endpoints
+// remain below for compatibility; new UI code should use /admin/communications/*.
+router.use('/communications', require('./communicationsControl'));
+
 router.get('/queues', async (req, res, next) => {
   try {
     const queues = getQueues();
@@ -60,9 +64,6 @@ router.post('/cds-client-pulse/send', async (req, res, next) => {
     }
     const queued = (global.queued || 0) + customers.reduce((n, r) => n + (r.queued || 0), 0);
     const failures = customers.filter(r => r.reason === 'delivery_failed').length;
-    // Manual Send Now is an operational command, not a validation failure.
-    // Always return 200 with the complete dispatch outcome so the UI can tell
-    // the operator whether it was queued, skipped, or failed and why.
     res.status(200).json({ data: { queued, global, customers, failures, dispatchedAt: snapshotAt.toISOString() } });
   } catch (err) { next(err); }
 });
