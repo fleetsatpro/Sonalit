@@ -166,8 +166,8 @@ async function runIntelligenceScan(db, orgId) {
       if (existing.rows.length) continue;
 
       await db(
-        `INSERT INTO cds_alerts (org_id, type, severity, title, message, entity_type, entity_id, source)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,'intelligence')`,
+        `INSERT INTO cds_alerts (org_id, type, severity, title, message, entity_type, entity_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
         [orgId, a.type, a.severity, a.title, a.message, a.entity_type, a.entity_id]
       );
       inserted++;
