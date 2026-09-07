@@ -34,8 +34,6 @@ async function runCollection() {
     if (!locked) return { skipped: true, reason: 'cluster_run_in_progress' };
 
     const fabric = require('./intelligenceCollection');
-    // Every active tenant gets the same collection fabric; watchlists refine
-    // future query expansion, but must never be required for baseline coverage.
     const { rows: orgs } = await client.query(`SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL`);
     const countries = configuredCountries();
     const results = [];
@@ -64,7 +62,7 @@ async function runCollection() {
 }
 
 if (process.env.NODE_ENV !== 'test' && process.env.GENERATE_OPENAPI !== '1') {
-  const intervalMs = Math.max(5, Number(process.env.INTEL_COLLECTION_INTERVAL_MINUTES || 15)) * 60 * 1000;
+  const intervalMs = Math.max(5, Number(process.env.INTEL_COLLECTION_INTERVAL_MINUTES || 30)) * 60 * 1000;
   setTimeout(() => runCollection().catch(() => {}), 20_000).unref();
   setInterval(() => runCollection().catch(() => {}), intervalMs).unref();
   logger.info(`Intelligence Collection Fabric scheduled (${Math.round(intervalMs / 60000)} min; public/authorized sources only)`);
