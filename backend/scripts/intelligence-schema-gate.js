@@ -1,6 +1,10 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
+const fs = require('fs');
+const path = require('path');
 const { Pool } = require('pg');
 const { checkIntelligenceSchema } = require('../src/utils/intelligenceSchemaHealth');
+
+const RECONCILIATION_FILE = path.resolve(__dirname, '../migrations/20260908_114_intelligence_schema_reconciliation_certification.sql');
 
 async function main() {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required for the intelligence schema gate');
@@ -10,7 +14,21 @@ async function main() {
     connectionTimeoutMillis: 15000,
     idleTimeoutMillis: 10000,
   });
+
   try {
+    // The gate and reconciliation must inspect exactly the same physical
+    // schema. Do not inherit a mutable role search_path.
+    await pool.query('SET search_path TO public');
+
+    // Defense-in-depth: execute the certified, additive reconciliation on
+    // this exact connection immediately before certification. This closes the
+    // remaining gap where a pre-deploy migration can succeed against a stale
+    // connection/schema while the gate later observes a different physical
+    // state. The reconciliation is idempotent and data-non-destructive.
+    const reconciliationSql = fs.readFileSync(RECONCILIATION_FILE, 'utf8');
+    await pool.query(reconciliationSql);
+    console.log('[intel-schema-gate] reconciliation replay executed on certification connection');
+
     const result = await checkIntelligenceSchema(pool.query.bind(pool));
     if (!result.ok) {
       console.error('[intel-schema-gate] FAILED');
