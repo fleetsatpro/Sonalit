@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const crypto = require('crypto');
-const { listCustomerPulseTargets, generateAndQueueScopedClientPulse } = require('../services/email/scopedClientPulse.service');
+const { listCustomerPulseTargets, generateAndQueueScopedClientPulse, generateAndQueueSuperAdminClientPulse } = require('../services/email/clientPulseDispatch.service');
 const { withOrg } = require('../utils/orgScopedDb');
 
 // Mounted below /admin, whose parent router already enforces admin/super_admin.
@@ -20,9 +20,13 @@ router.get('/deliveries', async (req, res, next) => {
     const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
     const rows = await withOrg(req.user.org_id, c => c.query(
       `SELECT e.id,e.event_type,e.channel,e.status,e.provider_message_id,e.provider_event_id,e.correlation_id,e.error_code,e.error_message,e.created_at,e.sent_at,e.delivered_at,e.failed_at,
-              n.recipient,n.recipient_name,n.notification_type,n.subject
+              n.recipient,
+              COALESCE(NULLIF(n.recipient_name,''), NULLIF(r.name,''), CASE WHEN r.authority_role='super_admin' THEN 'Super Admin' WHEN r.authority_role='admin' THEN 'Admin' ELSE NULL END) AS recipient_name,
+              COALESCE(r.authority_role, CASE WHEN lower(COALESCE(n.recipient_name,''))='super admin' THEN 'super_admin' END) AS recipient_role,
+              n.notification_type,n.subject
          FROM communication_delivery_events e
          LEFT JOIN email_notifications n ON n.org_id=e.org_id AND n.provider_email_id=e.provider_message_id
+         LEFT JOIN client_email_recipients r ON r.org_id=e.org_id AND lower(trim(r.email))=lower(trim(n.recipient)) AND r.deleted_at IS NULL
         WHERE e.org_id=$1 ORDER BY e.created_at DESC LIMIT $2`, [req.user.org_id, limit]
     ));
     res.json({ data: rows.rows });
@@ -32,6 +36,7 @@ router.get('/deliveries', async (req, res, next) => {
 router.post('/client-pulse/dispatch', async (req, res, next) => {
   try {
     const snapshotAt = new Date();
+    const global = await generateAndQueueSuperAdminClientPulse(req.user.org_id, snapshotAt, { scheduled: false });
     const targets = await listCustomerPulseTargets(req.user.org_id);
     const requested = Array.isArray(req.body?.customerIds) && req.body.customerIds.length
       ? [...new Set(req.body.customerIds.map(String))]
@@ -39,23 +44,21 @@ router.post('/client-pulse/dispatch', async (req, res, next) => {
     const invalid = requested.filter(id => !targets.includes(id));
     if (invalid.length) return res.status(403).json({ error: 'customer_scope_violation', invalidCustomerIds: invalid });
 
-    // The idempotency key is persisted under a unique (org,key) constraint.
-    // This makes simultaneous operator clicks collapse to one dispatch per
-    // customer and five-minute window without relying on a fragile read-before-write.
     const windowStart = new Date(Math.floor(snapshotAt.getTime() / 300000) * 300000);
-    const results = [];
+    const customers = [];
     for (const customerId of requested) {
       try {
-        results.push(await generateAndQueueScopedClientPulse(req.user.org_id, customerId, {
+        customers.push(await generateAndQueueScopedClientPulse(req.user.org_id, customerId, {
           snapshotAt,
           reason: 'manual_canonical',
           idempotencyKey: `manual-cds-client-pulse:${customerId}:${windowStart.toISOString()}`,
         }));
       } catch (err) {
-        results.push({ customerId, skipped: true, reason: 'delivery_failed', error: String(err.message || err).slice(0, 1000) });
+        customers.push({ customerId, skipped: true, reason: 'delivery_failed', error: String(err.message || err).slice(0, 1000) });
       }
     }
-    res.json({ data: { dispatchId: crypto.randomUUID(), snapshotAt: snapshotAt.toISOString(), requested: requested.length, results } });
+    const queued = Number(global?.queued ?? 0) + customers.reduce((sum, item) => sum + Number(item?.queued ?? 0), 0);
+    res.json({ data: { dispatchId: crypto.randomUUID(), snapshotAt: snapshotAt.toISOString(), queued, global, customers, requested: requested.length } });
   } catch (err) { next(err); }
 });
 
