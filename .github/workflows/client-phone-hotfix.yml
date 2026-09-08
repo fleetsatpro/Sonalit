@@ -1,0 +1,139 @@
+name: Client phone onboarding hotfix
+
+on:
+  push:
+    branches:
+      - hotfix/client-phone-onboarding-20260908
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch phone validation and persistence
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path('.')
+
+          # Shared backend canonicalizer.
+          phone_util = root / 'backend/src/utils/phone.js'
+          phone_util.parent.mkdir(parents=True, exist_ok=True)
+          phone_util.write_text(r'''const COUNTRY_DIAL_CODES = {
+  Kenya: '254', KE: '254',
+  Tanzania: '255', TZ: '255',
+  Uganda: '256', UG: '256',
+  Rwanda: '250', RW: '250',
+  Burundi: '257', BI: '257',
+  Ethiopia: '251', ET: '251',
+  SouthAfrica: '27', 'South Africa': '27', ZA: '27',
+  France: '33', FR: '33',
+  UK: '44', 'United Kingdom': '44', GB: '44',
+  USA: '1', 'United States': '1', US: '1',
+};
+
+function normalizePhone(input, country = 'Kenya') {
+  if (input == null) throw new Error('Phone number is required.');
+  const raw = String(input).trim();
+  if (!raw) throw new Error('Phone number is required.');
+  if (!/^[+0-9()\s-]+$/.test(raw)) throw new Error('Enter a valid phone number.');
+
+  const hasPlus = raw.startsWith('+');
+  let digits = raw.replace(/\D/g, '');
+  if (!digits) throw new Error('Enter a valid phone number.');
+
+  if (!hasPlus) {
+    const dial = COUNTRY_DIAL_CODES[country] || COUNTRY_DIAL_CODES[String(country).trim()];
+    if (digits.startsWith('0') && dial) digits = dial + digits.slice(1);
+    else if (dial && !digits.startsWith(dial)) digits = dial + digits;
+  }
+
+  if (digits.length < 8 || digits.length > 15) throw new Error('Enter a valid phone number.');
+  if (digits.startsWith('0')) throw new Error('Enter a valid international or local phone number.');
+  return `+${digits}`;
+}
+
+function isValidPhone(input, country = 'Kenya') {
+  try { normalizePhone(input, country); return true; } catch { return false; }
+}
+
+module.exports = { normalizePhone, isValidPhone };
+''', encoding='utf-8')
+
+          # Add phone column safely; existing deployments may not have it.
+          migration = root / 'backend/migrations/20260908_107_client_phone_normalization.sql'
+          migration.write_text('''ALTER TABLE cargo_clients\n  ADD COLUMN IF NOT EXISTS phone TEXT;\n\nCREATE INDEX IF NOT EXISTS idx_cargo_clients_phone\n  ON cargo_clients(org_id, phone)\n  WHERE deleted_at IS NULL AND phone IS NOT NULL;\n''', encoding='utf-8')
+
+          # Make the portal endpoint authoritative for phone normalization.
+          portal = root / 'backend/src/routes/portalClients.js'
+          text = portal.read_text(encoding='utf-8')
+          if "require('../utils/phone')" not in text:
+              marker = "const { query } = require('../config/database');\n"
+              text = text.replace(marker, marker + "const { normalizePhone } = require('../utils/phone');\n", 1)
+
+          old = """  const { email, name, company } = req.body;\n  if (!email || !name) return res.status(400).json({ error: 'email and name required' });\n  const result = await req.db(\n    `INSERT INTO cargo_clients (org_id, email, name, company)\n     VALUES ($1, $2, $3, $4)\n     ON CONFLICT (org_id, email) DO UPDATE SET name = EXCLUDED.name, company = EXCLUDED.company\n     RETURNING id, org_id, email, name, company, created_at`,\n    [req.user.org_id, email.toLowerCase().trim(), name, company ?? null],\n  );\n"""
+          new = """  const { email, name, company, phone, country } = req.body;\n  if (!email || !name) return res.status(400).json({ error: 'email and name required' });\n  let normalizedPhone;\n  try { normalizedPhone = normalizePhone(phone, country || 'Kenya'); }\n  catch (error) { return res.status(400).json({ error: error.message || 'Enter a valid phone number.' }); }\n  const result = await req.db(\n    `INSERT INTO cargo_clients (org_id, email, name, company, phone)\n     VALUES ($1, $2, $3, $4, $5)\n     ON CONFLICT (org_id, email) DO UPDATE SET name = EXCLUDED.name, company = EXCLUDED.company, phone = EXCLUDED.phone\n     RETURNING id, org_id, email, name, company, phone, created_at`,\n    [req.user.org_id, email.toLowerCase().trim(), name, company ?? null, normalizedPhone],\n  );\n"""
+          if old not in text:
+              raise SystemExit('portal client create block did not match; refusing unsafe patch')
+          portal.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          # Fix the malformed frontend plus-sign regex wherever it occurs.
+          frontend = root / 'apps/web/src/pages/ClientOnboardingV3.tsx'
+          text = frontend.read_text(encoding='utf-8')
+          before = text
+          text = text.replace(r'/^\\+?[0-9][0-9 ()-]{6,}$/', r'/^\+?[0-9][0-9 ()-]{6,}$/')
+          text = text.replace(r'/^\\+?[0-9][0-9 ()-]{6,}$/', r'/^\+?[0-9][0-9 ()-]{6,}$/')
+          if text == before:
+              # Handle source containing a doubled backslash in a regex literal.
+              text = re.sub(r'/\^\\\\\+\?\[0-9\]\[0-9 \(\)-\]\{6,\}\$/', r'/^\+?[0-9][0-9 ()-]{6,}$/', text)
+          if text == before:
+              raise SystemExit('frontend phone regex was not found; refusing unsafe patch')
+          frontend.write_text(text, encoding='utf-8')
+          print('Phone hotfix patch applied.')
+          PY
+
+      - name: Verify patch
+        shell: bash
+        run: |
+          node --check backend/src/utils/phone.js
+          node --check backend/src/routes/portalClients.js
+          grep -n "^\\+?\|phone" apps/web/src/pages/ClientOnboardingV3.tsx | head -20
+          node - <<'JS'
+          const { normalizePhone } = require('./backend/src/utils/phone');
+          const cases = [
+            ['0712345678', '+254712345678'],
+            ['+254712345678', '+254712345678'],
+            ['+254 712 345 678', '+254712345678'],
+            ['+254-712-345-678', '+254712345678'],
+          ];
+          for (const [input, expected] of cases) {
+            const actual = normalizePhone(input, 'Kenya');
+            if (actual !== expected) throw new Error(`${input}: ${actual} !== ${expected}`);
+          }
+          for (const input of ['123', 'abc712345678', '+', '07abc345678']) {
+            let rejected = false;
+            try { normalizePhone(input, 'Kenya'); } catch { rejected = true; }
+            if (!rejected) throw new Error(`Invalid input accepted: ${input}`);
+          }
+          console.log('Phone normalization checks passed.');
+          JS
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/src/utils/phone.js backend/src/routes/portalClients.js backend/migrations/20260908_107_client_phone_normalization.sql apps/web/src/pages/ClientOnboardingV3.tsx
+          git diff --cached --check
+          git commit -m "fix: unblock client phone onboarding"
+          git push origin HEAD:hotfix/client-phone-onboarding-20260908
