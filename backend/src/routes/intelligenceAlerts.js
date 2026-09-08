@@ -7,7 +7,9 @@ router.use(authenticate, attachOrgDb);
 
 // Explicit geographic scopes. The API must never broaden a client-selected
 // Kenya/East Africa view into global intelligence by omission.
-const EAST_AFRICA = ['BI','DJ','ER','ET','KE','RW','SO','SS','TZ','UG'];
+// EA follows Sonalit's operational East Africa/Horn footprint, including EAC
+// states plus the adjacent Horn/Great Lakes states used by regional operations.
+const EAST_AFRICA = ['BI','CD','DJ','ER','ET','KE','RW','SD','SO','SS','TZ','UG'];
 
 router.get('/', asyncHandler(async (req,res)=>{
   const limit=Math.min(Math.max(Number(req.query.limit)||100,1),300);
