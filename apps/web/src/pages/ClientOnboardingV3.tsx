@@ -114,7 +114,9 @@ export default function ClientOnboardingV3() {
       const primary = contacts.find(c => c.email.trim()) ?? { name: form.name, email: form.email, role: 'Operations' };
       let recipientId = draft.recipientId;
       if (!recipientId) {
-        const r = await api.post('/communications/recipients', { email: primary.email.trim().toLowerCase(), name: primary.name.trim() || form.name.trim(), company: form.company.trim(), phone: normalizedPhone, enabled: true });
+        // Communication recipients are email identities; phone belongs to the client/CDS customer record.
+        // The recipient API schema intentionally does not accept a phone field.
+        const r = await api.post('/communications/recipients', { email: primary.email.trim().toLowerCase(), name: primary.name.trim() || form.name.trim(), company: form.company.trim(), enabled: true });
         recipientId = r.data?.data?.id;
         if (!recipientId) throw new Error('Communication recipient could not be created.');
         patch({ recipientId });
