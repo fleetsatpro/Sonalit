@@ -41,11 +41,12 @@ interface CDSUIState {
 
 let toastCounter = 0;
 
-export const useCDSStore = create<CDSUIState>()((set) => ({
+export const useCDSStore = create<CDSUIState>()((set, get) => ({
   // CDS views are URL-backed now, so browser/device Back can unwind one
   // submodule at a time instead of leaving the CDS surface altogether.
   activeView: viewFromLocation(),
   setActiveView: (view) => {
+    if (get().activeView === view) return;
     set({ activeView: view });
 
     if (typeof window === 'undefined') return;
