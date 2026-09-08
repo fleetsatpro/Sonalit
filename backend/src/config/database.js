@@ -10,21 +10,25 @@ const logger = require('../utils/logger');
 types.setTypeParser(1700, (v) => (v === null ? null : parseFloat(v)));
 
 if (!process.env.DATABASE_URL) {
-  // Log and continue — server starts degraded; /health will show database:error
   require('../utils/logger').warn('DATABASE_URL not set — database queries will fail');
 }
+
+// Background workers that operate on behalf of a tenant need an explicit RLS
+// context before they can see tenant rows. HTTP requests use withOrg()/req.db;
+// the intelligence worker supplies INTEL_ORG_ID and therefore gets the same
+// fail-closed isolation without leaking a session-level tenant between users.
+const statementTimeout = '-c statement_timeout=30000';
+const rlsOrgOption = process.env.INTEL_ORG_ID
+  ? `-c app.current_org_id=${process.env.INTEL_ORG_ID}`
+  : null;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://invalid:invalid@localhost/invalid',
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
-  // Configure the server-side timeout as part of the connection options.
-  // Do not issue an asynchronous query from the pool's `connect` event: pg 9
-  // can race that query with the first application query on a freshly checked
-  // out client and emit "client is already executing a query".
-  options: '-c statement_timeout=30000',
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  options: [statementTimeout, rlsOrgOption].filter(Boolean).join(' '),
 });
 
 pool.on('error', (err) => {
@@ -32,13 +36,9 @@ pool.on('error', (err) => {
 });
 
 pool.on('connect', () => {
-  logger.info('New PostgreSQL client connected');
+  logger.info(`New PostgreSQL client connected${process.env.INTEL_ORG_ID ? `; RLS org=${process.env.INTEL_ORG_ID}` : ''}`);
 });
 
-/**
- * Parameterised query helper.
- * Usage: await query('SELECT * FROM users WHERE id = $1', [userId])
- */
 async function query(text, params) {
   const start = Date.now();
   try {
@@ -54,9 +54,6 @@ async function query(text, params) {
   }
 }
 
-/**
- * Health check — verifies DB is reachable.
- */
 async function healthCheck() {
   const result = await query('SELECT NOW() AS now');
   return result.rows[0].now;
