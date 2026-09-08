@@ -1,0 +1,56 @@
+name: Client phone onboarding hotfix
+
+on:
+  push:
+    branches:
+      - fix/client-phone-hotfix-clean
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fix malformed phone validators
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path('apps/web/src/pages/ClientOnboardingV3.tsx')
+          s = p.read_text()
+          pattern = re.compile(r'/\^.*?\$/\.test\(form\.phone\.trim\(\)\)')
+          matches = pattern.findall(s)
+          if len(matches) != 2:
+              raise SystemExit(f'Expected exactly 2 phone validators, found {len(matches)}')
+          replacement = r'/^\+?[0-9][0-9 ()-]{6,}$/.test(form.phone.trim())'
+          p.write_text(pattern.sub(replacement, s))
+          print('Fixed 2 onboarding phone validators')
+          PY
+
+      - name: Verify
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('apps/web/src/pages/ClientOnboardingV3.tsx').read_text()
+          expected = r'/^\+?[0-9][0-9 ()-]{6,}$/.test(form.phone.trim())'
+          if s.count(expected) != 2:
+              raise SystemExit(f'Phone validator verification failed: found {s.count(expected)}')
+          print('Source verification passed')
+          PY
+          git diff --check
+
+      - name: Commit source fix
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/web/src/pages/ClientOnboardingV3.tsx
+          git diff --cached --check
+          git commit -m 'fix: unblock valid phone numbers during client onboarding'
+          git push origin HEAD:fix/client-phone-hotfix-clean
