@@ -20,18 +20,17 @@ jobs:
           p = Path('apps/web/src/pages/ClientOnboardingV3.tsx')
           s = p.read_text()
           old = r"/^\\+?[0-9][0-9 ()-]{6,}$/"
-          if old not in s:
-              raise SystemExit('Expected malformed phone regex was not found; refusing to modify source')
-          new = r"/^\\+?[0-9][0-9 ()-]{6,}$/"
-          # Replace the malformed source representation with the intended regex literal.
-          new = '/^\\+?[0-9][0-9 ()-]{6,}$/'
+          if s.count(old) != 2:
+              raise SystemExit(f'Expected exactly 2 malformed phone validators, found {s.count(old)}; refusing to modify source')
+          new = r"/^\+?[0-9][0-9 ()-]{6,}$/"
           s2 = s.replace(old, new)
           if s2 == s:
               raise SystemExit('No change made')
           p.write_text(s2)
-      - name: Verify
+      - name: Verify source
         run: |
-          grep -n "\\+?\[0-9\]" apps/web/src/pages/ClientOnboardingV3.tsx
+          grep -nF '/^\+?[0-9][0-9 ()-]{6,}$/' apps/web/src/pages/ClientOnboardingV3.tsx
+          if [ "$(grep -oF '/^\+?[0-9][0-9 ()-]{6,}$/' apps/web/src/pages/ClientOnboardingV3.tsx | wc -l)" -ne 2 ]; then exit 1; fi
           git diff --check
       - name: Commit hotfix
         run: |
