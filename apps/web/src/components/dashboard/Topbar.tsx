@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
+import { Link, useRouter, useRouterState } from '@tanstack/react-router';
 import { ArrowLeft, Bell, LayoutGrid, Home } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import NotificationPanel from '../layout/NotificationPanel.js';
@@ -10,7 +10,7 @@ interface TopbarProps { onMenuOpen: () => void; }
 const Topbar = React.memo(function Topbar({ onMenuOpen }: TopbarProps) {
   const [time, setTime] = useState(() => new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }));
   const [bellOpen, setBellOpen] = useState(false);
-  const navigate = useNavigate();
+  const router = useRouter();
   const pathname = useRouterState({ select: state => state.location.pathname });
 
   useEffect(() => {
@@ -32,9 +32,16 @@ const Topbar = React.memo(function Topbar({ onMenuOpen }: TopbarProps) {
   const toggleBell = useCallback(() => setBellOpen(o => !o), []);
   const closeBell = useCallback(() => setBellOpen(false), []);
   const goBack = useCallback(() => {
-    if (window.history.length > 1) { void navigate(-1); return; }
-    void navigate({ to: '/home' });
-  }, [navigate]);
+    // Back is a history operation, not a route-relative navigation. Using
+    // router.history.back() preserves the exact previous location, including
+    // nested module state, search params and hashes. Only fall back to Orbit
+    // when this tab has no earlier history entry.
+    if (window.history.length > 1) {
+      router.history.back();
+      return;
+    }
+    void router.navigate({ to: '/home', replace: true });
+  }, [router]);
   const showBack = pathname !== '/home';
 
   return (
