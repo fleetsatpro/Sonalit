@@ -13,7 +13,7 @@ const MODULES = [
 
 function readModule(search: string): string {
   const value = new URLSearchParams(search).get('module');
-  return MODULES.some(module => module.id === value) ? value! : 'core';
+  return MODULES.some(module => module.id === value) ? value : 'core';
 }
 
 export default function IntelligenceCentre() {
