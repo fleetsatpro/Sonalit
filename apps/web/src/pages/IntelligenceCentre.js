@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { Activity, Newspaper, Shield } from 'lucide-react';
+import { Activity, Newspaper, Shield, Siren } from 'lucide-react';
 import CoreIntelligenceCentre from './IntelligenceCentre.tsx';
 import IntelligenceLiveNews from './IntelligenceLiveNews.jsx';
+import IntelligenceAlerts from './IntelligenceAlerts.tsx';
 
 const MODULES=[
   {id:'core',label:'INTELLIGENCE WORKSPACE',caption:'Situation · Signals · Operations · Atlas · Analysis',icon:Shield},
+  {id:'alerts',label:'KENYA / EA ALERTS',caption:'Near-real-time incidents · social signals · 60-minute window',icon:Siren},
   {id:'newsroom',label:'LIVE NEWSROOM',caption:'Multi-source collection · breaking · developing · evidence',icon:Newspaper},
 ];
 
@@ -18,6 +20,6 @@ export default function IntelligenceCentre(){
       {MODULES.map(m=>{const Icon=m.icon;return <button key={m.id} type="button" className={`ic-module ${module===m.id?'active':''}`} onClick={()=>setModule(m.id)}><Icon size={14}/><span><strong>{m.label}</strong><em>{m.caption}</em></span></button>})}
       <span className="ic-module-state">MODULE · {active.label}</span>
     </nav>
-    {module==='newsroom'?<IntelligenceLiveNews/>:<CoreIntelligenceCentre/>}
+    {module==='alerts'?<IntelligenceAlerts/>:module==='newsroom'?<IntelligenceLiveNews/>:<CoreIntelligenceCentre/>}
   </div>;
 }
