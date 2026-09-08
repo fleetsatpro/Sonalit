@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { runCollectionFabric } = require('../utils/collectionFabric');
 const { runIncidentAlertSweep } = require('../utils/intelligenceAlertRuntime');
+const { query } = require('../config/database');
 const logger = require('../utils/logger');
 
 const intervalMs = Math.max(5, Number(process.env.INTEL_COLLECTION_INTERVAL_MINUTES || 5)) * 60 * 1000;
@@ -55,6 +56,12 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 
 (async () => {
   logger.info(`Intelligence worker online; collection cadence=${intervalMs / 60000}m; incident-alert cadence=${intervalMs / 60000}m`);
+  try {
+    const context = await query(`SELECT current_user, session_user, current_setting('app.current_org_id', true) AS rls_org, (SELECT count(*)::int FROM users WHERE deleted_at IS NULL) AS visible_users`);
+    logger.info(`Intelligence worker DB context: current_user=${context.rows[0]?.current_user} session_user=${context.rows[0]?.session_user} rls_org=${context.rows[0]?.rls_org || 'unset'} visible_users=${context.rows[0]?.visible_users ?? 0}`);
+  } catch (error) {
+    logger.warn(`Intelligence worker DB context probe failed: ${error.message}`);
+  }
   await cycle('startup');
   schedule();
 })();
