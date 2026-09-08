@@ -15,6 +15,7 @@ const { attachOrgDb } = require('../utils/orgScopedDb');
 const { clientAuth } = require('../middleware/clientAuth');
 const { asyncHandler } = require('../middleware/error');
 const { query } = require('../config/database');
+const { normalizePhone } = require('../utils/phone');
 
 // GET /api/v1/portal/shipments — client dashboard: all their linked convoys
 router.get('/shipments', clientAuth, asyncHandler(async (req, res) => {
@@ -73,14 +74,17 @@ router.get('/shipments', clientAuth, asyncHandler(async (req, res) => {
 
 // POST /api/v1/portal/clients — create a cargo client
 router.post('/clients', authenticate, attachOrgDb, authorize('admin', 'dispatcher'), asyncHandler(async (req, res) => {
-  const { email, name, company } = req.body;
+  const { email, name, company, phone, country } = req.body;
   if (!email || !name) return res.status(400).json({ error: 'email and name required' });
+  let normalizedPhone;
+  try { normalizedPhone = normalizePhone(phone, country || 'Kenya'); }
+  catch (error) { return res.status(400).json({ error: error.message || 'Enter a valid phone number.' }); }
   const result = await req.db(
-    `INSERT INTO cargo_clients (org_id, email, name, company)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT (org_id, email) DO UPDATE SET name = EXCLUDED.name, company = EXCLUDED.company
-     RETURNING id, org_id, email, name, company, created_at`,
-    [req.user.org_id, email.toLowerCase().trim(), name, company ?? null],
+    `INSERT INTO cargo_clients (org_id, email, name, company, phone)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (org_id, email) DO UPDATE SET name = EXCLUDED.name, company = EXCLUDED.company, phone = EXCLUDED.phone
+     RETURNING id, org_id, email, name, company, phone, created_at`,
+    [req.user.org_id, email.toLowerCase().trim(), name, company ?? null, normalizedPhone],
   );
   res.status(201).json({ data: result.rows[0] });
 }));
