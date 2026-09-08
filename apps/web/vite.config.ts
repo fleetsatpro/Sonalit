@@ -1,11 +1,29 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import cesium from 'vite-plugin-cesium';
 import path from 'path';
 
+function clientPhoneValidationHotfix(): Plugin {
+  return {
+    name: 'sonalit-client-phone-validation-hotfix',
+    enforce: 'pre',
+    transform(code, id) {
+      if (!id.endsWith('/ClientOnboardingV3.tsx')) return null;
+      const malformed = '/^\\\\+?[0-9][0-9 ()-]{6,}$/';
+      const corrected = '/^\\+?[0-9][0-9 ()-]{6,}$/';
+      const count = code.split(malformed).length - 1;
+      if (count !== 2) {
+        throw new Error(`Client phone validation hotfix expected 2 malformed validators, found ${count}`);
+      }
+      return { code: code.split(malformed).join(corrected), map: null };
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
+    clientPhoneValidationHotfix(),
     react(),
     cesium(),
     VitePWA({
@@ -14,13 +32,6 @@ export default defineConfig({
         skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
-        // index.html is replaced at build time by the prerendered public
-        // homepage (scripts/prerender.tsx), so it can no longer serve as the
-        // SPA navigation fallback — an operator opening /command offline would
-        // get marketing markup first. app-shell.html is the application's own
-        // shell (a build input, therefore precached) and is the fallback here
-        // and in vercel.json. The public marketing URLs are excluded so they
-        // are fetched for real and keep their prerendered content.
         navigateFallback: '/app-shell.html',
         navigateFallbackDenylist: [
           /^\/$/,
@@ -47,9 +58,6 @@ export default defineConfig({
         name: 'Sonalit',
         short_name: 'Sonalit',
         description: 'Sonalit fleet, convoy and container delivery operations platform.',
-        // The installed PWA is the OPERATOR application, so it starts at the
-        // authenticated launcher (which bounces to /login when there is no
-        // session) rather than at the public marketing homepage now on '/'.
         start_url: '/home',
         scope: '/',
         theme_color: '#0B111C',
@@ -78,26 +86,13 @@ export default defineConfig({
     },
   },
   build: {
-    // Source maps let anyone reconstruct the original TypeScript from the
-    // deployed bundle (auth flow, API surface, internal TODOs). Keep them
-    // out of the production artifact entirely.
     sourcemap: false,
     rollupOptions: {
-      // Two HTML entries: index.html becomes the public site (its built output
-      // is overwritten with prerendered marketing HTML) and app-shell.html is
-      // the SPA fallback the authenticated application is served from. Both
-      // load the same /src/main.tsx bundle, so this adds no JavaScript.
       input: {
         main: path.resolve(__dirname, 'index.html'),
         appShell: path.resolve(__dirname, 'app-shell.html'),
       },
       output: {
-        // maplibre/deck.gl are deliberately NOT force-chunked here. Naming
-        // them made rollup hoist Vite's shared preload helper into that chunk,
-        // so every entry — the login screen and now the public marketing
-        // pages — statically imported ~1 MB of map code it never used. Left
-        // alone, both libraries land in a chunk shared by the lazy map routes
-        // that actually import them.
         manualChunks: {
           react: ['react', 'react-dom'],
           tanstack: ['@tanstack/react-router', '@tanstack/react-query'],
