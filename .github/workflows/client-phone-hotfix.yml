@@ -1,0 +1,54 @@
+name: Client phone hotfix
+
+on:
+  push:
+    branches:
+      - fix/client-phone-normalization
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Patch malformed phone regex
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('apps/web/src/pages/ClientOnboardingV3.tsx')
+          s = p.read_text()
+          old = r'/^\\\\+?[0-9][0-9 ()-]{6,}$/'
+          new = r'/^\\+?[0-9][0-9 ()-]{6,}$/'
+          count = s.count(old)
+          if count != 2:
+              raise SystemExit(f'Expected exactly 2 malformed regex occurrences, found {count}')
+          p.write_text(s.replace(old, new))
+          print(f'Patched {count} phone validators')
+          PY
+
+      - name: Verify source patch
+        run: |
+          grep -nF '/^\\+?[0-9][0-9 ()-]{6,}$/' apps/web/src/pages/ClientOnboardingV3.tsx
+          if grep -qF '/^\\\\+?[0-9][0-9 ()-]{6,}$/' apps/web/src/pages/ClientOnboardingV3.tsx; then
+            echo 'Malformed regex still present'
+            exit 1
+          fi
+
+      - name: Commit hotfix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/web/src/pages/ClientOnboardingV3.tsx
+          git diff --cached --check
+          git commit -m 'fix client onboarding phone validation'
+          git push
+
+      - name: Remove one-shot workflow
+        run: |
+          git rm .github/workflows/client-phone-hotfix.yml
+          git commit -m 'chore remove one-shot phone hotfix workflow'
+          git push
