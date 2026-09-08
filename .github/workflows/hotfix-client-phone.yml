@@ -1,0 +1,48 @@
+name: Hotfix client phone validation
+
+on:
+  push:
+    branches:
+      - hotfix/client-phone-validation
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Patch onboarding phone validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="apps/web/src/pages/ClientOnboardingV3.tsx"
+          node <<'NODE'
+          const fs = require('fs');
+          const file = 'apps/web/src/pages/ClientOnboardingV3.tsx';
+          let s = fs.readFileSync(file, 'utf8');
+          const old = /^\\\\+?[0-9][0-9 ()-]{6,}$/;
+          const next = /^\\+?[0-9][0-9 ()-]{6,}$/;
+          const before = s;
+          s = s.replaceAll('/^\\\\+?[0-9][0-9 ()-]{6,}$/', '/^\\+?[0-9][0-9 ()-]{6,}$/');
+          if (s === before) {
+            throw new Error('Expected malformed phone regex was not found; refusing to modify the file.');
+          }
+          fs.writeFileSync(file, s);
+          NODE
+          grep -qF "const phoneValid = /^\\+?[0-9][0-9 ()-]{6,}$/.test(form.phone.trim());" "$FILE"
+          grep -qF "if (!/^\\+?[0-9][0-9 ()-]{6,}$/.test(form.phone.trim()))" "$FILE"
+
+      - name: Commit hotfix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/web/src/pages/ClientOnboardingV3.tsx
+          git diff --cached --check
+          git commit -m "fix: accept valid formatted client phone numbers"
+          git push origin HEAD:hotfix/client-phone-validation
