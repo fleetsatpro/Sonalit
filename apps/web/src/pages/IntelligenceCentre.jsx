@@ -38,3 +38,4 @@ export default function IntelligenceCentre() {
     </nav>
     {module === 'alerts' ? <IntelligenceAlerts/> : module === 'newsroom' ? <IntelligenceLiveNews/> : <CoreIntelligenceCentre/>}
   </div>;
+}
