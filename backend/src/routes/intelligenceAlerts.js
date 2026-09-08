@@ -10,8 +10,12 @@ router.get('/', asyncHandler(async (req,res)=>{
   const country=req.query.country_code?String(req.query.country_code).toUpperCase():null;
   const category=req.query.category?String(req.query.category):null;
   const since=String(req.query.since_minutes||60);
-  const {rows}=await req.db(`SELECT a.*,s.name AS source_name,s.provider,io.url AS source_url,io.body AS source_text FROM intel_alerts a LEFT JOIN intel_sources s ON s.id=a.source_id LEFT JOIN intel_observations io ON io.id=a.observation_id WHERE a.org_id=$1 AND a.last_seen_at>=now()-make_interval(mins => LEAST(GREATEST($2::int,1),1440)) AND ($3::text IS NULL OR a.country_code=$3) AND ($4::text IS NULL OR a.category=$4) ORDER BY a.last_seen_at DESC LIMIT $5`,[req.user.org_id,Number.isFinite(Number(since))?Number(since):60,country,category,limit]);
-  res.json({alerts:rows,generated_at:new Date().toISOString(),freshness_window_minutes:Number(since)});
+  // Country code is authoritative for normal records. For Kenya, add a
+  // conservative coordinate sanity fence so a malformed upstream country
+  // tag cannot leak an obviously foreign geolocation into the Kenya surface.
+  const geoGuard=country==='KE' ? `AND (a.latitude IS NULL OR (a.latitude BETWEEN -5.5 AND 5.5 AND a.longitude BETWEEN 33.5 AND 42.5))` : '';
+  const {rows}=await req.db(`SELECT a.*,s.name AS source_name,s.provider,io.url AS source_url,io.body AS source_text FROM intel_alerts a LEFT JOIN intel_sources s ON s.id=a.source_id LEFT JOIN intel_observations io ON io.id=a.observation_id WHERE a.org_id=$1 AND a.last_seen_at>=now()-make_interval(mins => LEAST(GREATEST($2::int,1),1440)) AND ($3::text IS NULL OR a.country_code=$3) AND ($4::text IS NULL OR a.category=$4) ${geoGuard} ORDER BY a.last_seen_at DESC LIMIT $5`,[req.user.org_id,Number.isFinite(Number(since))?Number(since):60,country,category,limit]);
+  res.json({alerts:rows,generated_at:new Date().toISOString(),freshness_window_minutes:Number(since),geographic_scope:country||'global'});
 }));
 
 router.get('/status', asyncHandler(async (req,res)=>{
