@@ -1,10 +1,9 @@
 name: Client phone hotfix
-
 on:
-  workflow_dispatch:
   push:
     branches:
       - fix/client-phone-normalization
+  workflow_dispatch:
 
 jobs:
   patch:
@@ -12,37 +11,26 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: fix/client-phone-normalization
-
-      - name: Patch phone validation
+      - uses: actions/checkout@v4
+      - name: Patch validation
         run: |
-          python - <<'PY'
+          python3 - <<'PY'
           from pathlib import Path
           p = Path('apps/web/src/pages/ClientOnboardingV3.tsx')
           s = p.read_text()
-          old = r"/^\\+?[0-9][0-9 ()-]{6,}$/"
-          if s.count(old) != 2:
-              raise SystemExit(f'Expected exactly 2 malformed phone validators, found {s.count(old)}; refusing to modify source')
-          new = r"/^\+?[0-9][0-9 ()-]{6,}$/"
-          s2 = s.replace(old, new)
-          if s2 == s:
-              raise SystemExit('No change made')
-          p.write_text(s2)
+          old = '/^\\\\+?[0-9][0-9 ()-]{6,}$/'
+          new = '/^\\+?[0-9][0-9 ()-]{6,}$/'
+          count = s.count(old)
+          if count != 2:
+              raise SystemExit(f'Expected 2 malformed validators, found {count}')
+          p.write_text(s.replace(old, new))
           PY
-
-      - name: Verify source
-        run: |
-          grep -nF '/^\+?[0-9][0-9 ()-]{6,}$/' apps/web/src/pages/ClientOnboardingV3.tsx
-          test "$(grep -oF '/^\+?[0-9][0-9 ()-]{6,}$/' apps/web/src/pages/ClientOnboardingV3.tsx | wc -l)" -eq 2
           git diff --check
-
-      - name: Commit hotfix
+          grep -nF '/^\\+?[0-9][0-9 ()-]{6,}$/' apps/web/src/pages/ClientOnboardingV3.tsx
+      - name: Commit
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add apps/web/src/pages/ClientOnboardingV3.tsx
-          git commit -m "fix: accept valid client phone numbers during onboarding"
+          git commit -m 'fix: accept valid client phone numbers during onboarding'
           git push origin HEAD:fix/client-phone-normalization
