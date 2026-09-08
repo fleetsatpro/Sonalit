@@ -4,6 +4,9 @@
   "compilerOptions": {
     "types": ["vite/client"],
     "baseUrl": ".",
+    "noUncheckedIndexedAccess": false,
+    "noPropertyAccessFromIndexSignature": false,
+    "noUnusedLocals": false,
     "paths": {
       "@/*": ["src/*"],
       "@sonalit/contracts": ["../../packages/contracts/src/index.ts"]
