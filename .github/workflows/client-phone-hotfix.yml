@@ -14,77 +14,44 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Patch malformed phone regex
-        shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
-          frontend = Path('apps/web/src/pages/ClientOnboardingV3.tsx')
-          text = frontend.read_text()
+          p = Path('apps/web/src/pages/ClientOnboardingV3.tsx')
+          s = p.read_text()
           bad = r'/^\\\\+?[0-9][0-9 ()-]{6,}$/'
           good = r'/^\\+?[0-9][0-9 ()-]{6,}$/'
-          count = text.count(bad)
+          count = s.count(bad)
           if count != 2:
-              raise SystemExit(f'Expected exactly 2 malformed regex occurrences, found {count}')
-          frontend.write_text(text.replace(bad, good))
-          print(f'Patched {count} phone validators')
-
-          backend = Path('backend/src/routes/portalClients.js')
-          text = backend.read_text()
-          destructure_old = 'const { email, name, company } = req.body;'
-          destructure_new = 'const { email, name, company, phone } = req.body;'
-          if destructure_old in text:
-              text = text.replace(destructure_old, destructure_new, 1)
-          elif destructure_new not in text:
-              raise SystemExit('Could not locate portal client request destructuring')
-
-          insert_old = "createRow('cargo_clients', { org_id: req.user.org_id, email, name, company })"
-          insert_new = "createRow('cargo_clients', { org_id: req.user.org_id, email, name, company, phone })"
-          if insert_old in text:
-              text = text.replace(insert_old, insert_new, 1)
-          elif insert_new not in text:
-              raise SystemExit('Could not locate portal client insert')
-          backend.write_text(text)
-          print('Patched portal client phone persistence')
+              raise SystemExit(f'Expected 2 malformed validators, found {count}')
+          p.write_text(s.replace(bad, good))
+          print('Patched', count, 'validators')
           PY
 
-      - name: Verify source patch
-        shell: bash
+      - name: Verify
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          frontend = Path('apps/web/src/pages/ClientOnboardingV3.tsx').read_text()
+          s = Path('apps/web/src/pages/ClientOnboardingV3.tsx').read_text()
           bad = r'/^\\\\+?[0-9][0-9 ()-]{6,}$/'
           good = r'/^\\+?[0-9][0-9 ()-]{6,}$/'
-          if bad in frontend:
-              raise SystemExit('Malformed frontend regex still present')
-          if frontend.count(good) != 2:
-              raise SystemExit(f'Expected 2 corrected validators, found {frontend.count(good)}')
-
-          backend = Path('backend/src/routes/portalClients.js').read_text()
-          if 'const { email, name, company, phone } = req.body;' not in backend:
-              raise SystemExit('Portal client phone is not destructured')
-          if "createRow('cargo_clients', { org_id: req.user.org_id, email, name, company, phone })" not in backend:
-              raise SystemExit('Portal client phone is not persisted')
-          print('Client onboarding hotfix source verification passed.')
+          assert bad not in s, 'Malformed validator remains'
+          assert s.count(good) == 2, 'Expected two corrected validators'
+          print('Verification passed')
           PY
-          git diff --check
 
-      - name: Commit source fix
+      - name: Commit
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add apps/web/src/pages/ClientOnboardingV3.tsx backend/src/routes/portalClients.js
+          git add apps/web/src/pages/ClientOnboardingV3.tsx
           git diff --cached --check
-          git commit -m 'fix: unblock client onboarding phone validation and persistence'
+          git commit -m 'fix: accept valid phone numbers during client onboarding'
           git push origin HEAD:fix/client-phone-normalization
 
-      - name: Remove one-shot workflow
-        if: ${{ success() }}
+      - name: Remove workflow
         run: |
           git rm .github/workflows/client-phone-hotfix.yml
           git commit -m 'chore: remove one-shot phone hotfix workflow'
