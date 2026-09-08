@@ -83,4 +83,63 @@ router.get('/quality', asyncHandler(async(req,res)=>{
   res.json({quality:{...q,...e,...g,checked_at:new Date().toISOString()}});
 }));
 
+// Deep read surfaces for the Intelligence Centre. All reads are org-scoped through req.db/auth.
+router.get('/events', asyncHandler(async(req,res)=>{
+  const limit=Math.min(500,Math.max(1,Number(req.query.limit)||200));
+  const severity=req.query.severity||null; const country=req.query.country_code||null; const status=req.query.status||null;
+  const {rows}=await req.db(`SELECT e.*,COUNT(eo.observation_id)::int AS source_count FROM intel_events e LEFT JOIN intel_event_observations eo ON eo.event_id=e.id WHERE ($1::text IS NULL OR e.severity=$1) AND ($2::text IS NULL OR e.country_code=$2) AND ($3::text IS NULL OR e.status=$3) GROUP BY e.id ORDER BY e.last_seen_at DESC LIMIT $4`,[severity,country,status,limit]);
+  res.json({events:rows,generated_at:new Date().toISOString()});
+}));
+
+router.get('/events/:id', asyncHandler(async(req,res)=>{
+  const {rows}=await req.db(`SELECT e.*,COALESCE((SELECT json_agg(json_build_object('id',o.id,'title',o.title,'body',o.body,'url',o.url,'observed_at',o.observed_at,'credibility',o.credibility,'manipulation_score',o.manipulation_score,'relationship',eo.relationship,'weight',eo.weight,'source',json_build_object('id',s.id,'name',s.name,'source_type',s.source_type,'provider',s.provider,'reliability',s.reliability))) FROM intel_event_observations eo JOIN intel_observations o ON o.id=eo.observation_id LEFT JOIN intel_sources s ON s.id=o.source_id WHERE eo.event_id=e.id),'[]') AS evidence,COALESCE((SELECT json_agg(json_build_object('event_id',x.id,'title',x.title,'relationship',l.relationship,'confidence',l.confidence)) FROM intel_event_links l JOIN intel_events x ON x.id=CASE WHEN l.from_event_id=e.id THEN l.to_event_id ELSE l.from_event_id END WHERE l.from_event_id=e.id OR l.to_event_id=e.id),'[]') AS related_events FROM intel_events e WHERE e.id=$1 AND e.org_id=$2 GROUP BY e.id`,[req.params.id,req.user.org_id]);
+  if(!rows.length)return res.status(404).json({error:'Event not found'}); res.json({event:rows[0]});
+}));
+
+router.get('/sources', asyncHandler(async(req,res)=>{
+  const active=req.query.active==null?null:req.query.active==='true';
+  const {rows}=await req.db(`SELECT s.*,COUNT(DISTINCT o.id)::int AS observation_count,MAX(o.observed_at) AS latest_observation FROM intel_sources s LEFT JOIN intel_observations o ON o.source_id=s.id WHERE ($1::boolean IS NULL OR s.active=$1) GROUP BY s.id ORDER BY s.last_seen_at DESC NULLS LAST,s.name LIMIT 300`,[active]);
+  res.json({sources:rows,generated_at:new Date().toISOString()});
+}));
+
+router.get('/observations', asyncHandler(async(req,res)=>{
+  const limit=Math.min(500,Math.max(1,Number(req.query.limit)||200));
+  const {rows}=await req.db(`SELECT o.*,s.name AS source_name,s.source_type,s.provider FROM intel_observations o LEFT JOIN intel_sources s ON s.id=o.source_id ORDER BY o.observed_at DESC LIMIT $1`,[limit]);
+  res.json({observations:rows,generated_at:new Date().toISOString()});
+}));
+
+router.get('/publications', asyncHandler(async(req,res)=>{
+  const status=req.query.status||null;
+  const {rows}=await req.db(`SELECT p.*,COUNT(r.id)::int AS review_count FROM intel_publications p LEFT JOIN intel_publication_reviews r ON r.publication_id=p.id WHERE ($1::text IS NULL OR p.status=$1) GROUP BY p.id ORDER BY p.updated_at DESC LIMIT 300`,[status]);
+  res.json({publications:rows,generated_at:new Date().toISOString()});
+}));
+
+router.get('/watchlists', asyncHandler(async(req,res)=>{
+  const {rows}=await req.db(`SELECT w.* FROM intel_watchlists w WHERE w.active=true ORDER BY w.updated_at DESC LIMIT 300`);
+  res.json({watchlists:rows,generated_at:new Date().toISOString()});
+}));
+
+router.get('/requirements', asyncHandler(async(req,res)=>{
+  const status=req.query.status||null;
+  const {rows}=await req.db(`SELECT * FROM intel_requirements WHERE ($1::text IS NULL OR status=$1) ORDER BY ${priorityRank},due_at ASC NULLS LAST,created_at DESC LIMIT 300`,[status]);
+  res.json({requirements:rows,generated_at:new Date().toISOString()});
+}));
+
+router.get('/assessments', asyncHandler(async(req,res)=>{
+  const scope=req.query.scope_type||null;
+  const {rows}=await req.db(`SELECT * FROM intel_assessments WHERE ($1::text IS NULL OR scope_type=$1) AND (validity_end IS NULL OR validity_end>=now()) ORDER BY validity_start DESC LIMIT 300`,[scope]);
+  res.json({assessments:rows,generated_at:new Date().toISOString()});
+}));
+
+router.get('/entities', asyncHandler(async(req,res)=>{
+  const type=req.query.entity_type||null; const country=req.query.country_code||null;
+  const {rows}=await req.db(`SELECT * FROM intel_entities WHERE ($1::text IS NULL OR entity_type=$1) AND ($2::text IS NULL OR country_code=$2) ORDER BY last_seen_at DESC LIMIT 500`,[type,country]);
+  res.json({entities:rows,generated_at:new Date().toISOString()});
+}));
+
+router.get('/early-warnings', asyncHandler(async(req,res)=>{
+  const {rows}=await req.db(`SELECT * FROM intel_early_warnings WHERE status IN ('open','review','acknowledged') ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'moderate' THEN 3 ELSE 4 END,last_detected_at DESC LIMIT 300`);
+  res.json({warnings:rows,generated_at:new Date().toISOString()});
+}));
+
 module.exports=router;
