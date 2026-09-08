@@ -1,0 +1,45 @@
+name: Client phone onboarding hotfix v2
+
+on:
+  push:
+    branches: [fix/client-phone-hotfix-v2]
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch malformed validators
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('apps/web/src/pages/ClientOnboardingV3.tsx')
+          s = p.read_text()
+          old = '/^\\\\+?[0-9][0-9 ()-]{6,}$/'
+          new = '/^\\+?[0-9][0-9 ()-]{6,}$/'
+          count = s.count(old)
+          print('malformed validators:', count)
+          if count != 2:
+              raise SystemExit(f'Expected 2 malformed validators, found {count}')
+          p.write_text(s.replace(old, new))
+          PY
+      - name: Verify source
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('apps/web/src/pages/ClientOnboardingV3.tsx').read_text()
+          good = '/^\\+?[0-9][0-9 ()-]{6,}$/'
+          bad = '/^\\\\+?[0-9][0-9 ()-]{6,}$/'
+          assert s.count(good) == 2, f'Expected 2 corrected validators, got {s.count(good)}'
+          assert s.count(bad) == 0, 'Malformed validator remains'
+          print('PASS: both validators corrected')
+          PY
+      - name: Commit and push
+        run: |
+          git config user.name 'Sonalit Automation'
+          git config user.email 'actions@users.noreply.github.com'
+          git add apps/web/src/pages/ClientOnboardingV3.tsx
+          git commit -m 'fix: unblock valid client phone onboarding [skip ci]'
+          git push origin HEAD:fix/client-phone-hotfix-v2
