@@ -22,31 +22,39 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           p = Path('apps/web/src/pages/ClientOnboardingV3.tsx')
-          s = p.read_text()
-          bad = r'/^\\+?[0-9][0-9 ()-]{6,}$/'
-          good = r'/^\+?[0-9][0-9 ()-]{6,}$/'
-          count = s.count(bad)
-          if count != 2:
-              raise SystemExit(f'Expected exactly 2 malformed phone validators, found {count}')
-          p.write_text(s.replace(bad, good))
-          print(f'Corrected {count} validators')
+          lines = p.read_text().splitlines(keepends=True)
+          targets = [
+              "if (!form.phone.trim()) throw new Error('Primary contact phone is required.');",
+              "const phoneValid =",
+          ]
+          replacements = [
+              "      if (!form.phone.trim()) throw new Error('Primary contact phone is required.');\n",
+              "  const phoneValid = /^\\+?[0-9][0-9 ()-]{6,}$/.test(form.phone.trim());\n",
+          ]
+          found = [False, False]
+          out = []
+          for line in lines:
+              if line.startswith('      if (!/^') and '.test(form.phone.trim())' in line:
+                  out.append("      if (!/^\\+?[0-9][0-9 ()-]{6,}$/.test(form.phone.trim())) throw new Error('Enter a valid primary contact phone number.');\n")
+                  found[0] = True
+              elif line.startswith('  const phoneValid ='):
+                  out.append(replacements[1])
+                  found[1] = True
+              else:
+                  out.append(line)
+          if not all(found):
+              raise SystemExit(f'Could not locate both phone validators: {found}')
+          p.write_text(''.join(out))
+          print('Patched both ClientOnboardingV3 phone validators.')
           PY
 
       - name: Verify
         shell: bash
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          s = Path('apps/web/src/pages/ClientOnboardingV3.tsx').read_text()
-          bad = r'/^\\+?[0-9][0-9 ()-]{6,}$/'
-          good = r'/^\+?[0-9][0-9 ()-]{6,}$/'
-          if bad in s:
-              raise SystemExit('Malformed validator remains')
-          if s.count(good) != 2:
-              raise SystemExit(f'Expected 2 corrected validators, found {s.count(good)}')
-          print('Phone validation hotfix verified.')
-          PY
+          grep -Fq "if (!/^\\+?[0-9][0-9 ()-]{6,}$/.test(form.phone.trim()))" apps/web/src/pages/ClientOnboardingV3.tsx
+          grep -Fq "const phoneValid = /^\\+?[0-9][0-9 ()-]{6,}$/.test(form.phone.trim());" apps/web/src/pages/ClientOnboardingV3.tsx
           git diff --check
+          echo 'Client phone validation hotfix verified.'
 
       - name: Commit fix
         run: |
