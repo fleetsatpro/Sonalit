@@ -3,11 +3,11 @@ import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { Activity, Newspaper, Shield, Siren } from 'lucide-react';
 import CoreIntelligenceCentre from './IntelligenceCentre.tsx';
 import IntelligenceLiveNews from './IntelligenceLiveNews.jsx';
-import IntelligenceAlerts from './IntelligenceAlerts.tsx';
+import IntelligenceAlerts from './IntelligenceAlertsPremium.tsx';
 
 const MODULES = [
   { id: 'core', label: 'INTELLIGENCE WORKSPACE', caption: 'Situation · Signals · Operations · Atlas · Analysis', icon: Shield },
-  { id: 'alerts', label: 'KENYA / EA ALERTS', caption: 'Near-real-time incidents · social signals · 60-minute window', icon: Siren },
+  { id: 'alerts', label: 'KENYA / EA ALERTS', caption: 'Bounded incidents · earthquake · social signals', icon: Siren },
   { id: 'newsroom', label: 'LIVE NEWSROOM', caption: 'Multi-source collection · breaking · developing · evidence', icon: Newspaper },
 ];
 
@@ -23,9 +23,6 @@ export default function IntelligenceCentre() {
   const active = MODULES.find(item => item.id === module) || MODULES[0];
 
   const selectModule = (next: string) => {
-    // Module selection is a real navigation state, not ephemeral React state.
-    // That means browser/app Back unwinds Newsroom -> Alerts -> Workspace ->
-    // previous platform context instead of jumping directly to Orbit.
     void navigate({ search: next === 'core' ? {} : { module: next } });
   };
 
