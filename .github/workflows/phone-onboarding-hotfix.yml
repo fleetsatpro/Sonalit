@@ -1,73 +1,79 @@
-name: Client onboarding phone hotfix
+name: Client onboarding phone validation hardening
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
-  hotfix:
-    if: ${{ !contains(github.event.head_commit.message, 'chore: remove one-shot phone onboarding hotfix') }}
+  harden:
+    if: ${{ !contains(github.event.head_commit.message, 'chore: remove phone validation hardening workflow') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Patch malformed phone validators
+      - name: Harden phone normalization and validation
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
           p = Path('apps/web/src/pages/ClientOnboardingV3.tsx')
-          lines = p.read_text().splitlines(keepends=True)
-          targets = [
-              "if (!form.phone.trim()) throw new Error('Primary contact phone is required.');",
-              "const phoneValid =",
-          ]
-          replacements = [
-              "      if (!form.phone.trim()) throw new Error('Primary contact phone is required.');\n",
-              "  const phoneValid = /^\\+?[0-9][0-9 ()-]{6,}$/.test(form.phone.trim());\n",
-          ]
-          found = [False, False]
-          out = []
-          for line in lines:
-              if line.startswith('      if (!/^') and '.test(form.phone.trim())' in line:
-                  out.append("      if (!/^\\+?[0-9][0-9 ()-]{6,}$/.test(form.phone.trim())) throw new Error('Enter a valid primary contact phone number.');\n")
-                  found[0] = True
-              elif line.startswith('  const phoneValid ='):
-                  out.append(replacements[1])
-                  found[1] = True
-              else:
-                  out.append(line)
-          if not all(found):
-              raise SystemExit(f'Could not locate both phone validators: {found}')
-          p.write_text(''.join(out))
-          print('Patched both ClientOnboardingV3 phone validators.')
+          s = p.read_text()
+          start = s.index('function isValidPhoneInput(')
+          end = s.index('\n\nexport default function ClientOnboardingV3()', start)
+          replacement = r'''function normalizePhoneInput(input: string, country = 'Kenya') {
+            const raw = String(input ?? '').trim();
+            if (!raw) return '';
+            const compact = raw.replace(/[()\s-]/g, '');
+            if (country.trim().toLowerCase() === 'kenya') {
+              if (/^0\d{9}$/.test(compact)) return `+254${compact.slice(1)}`;
+              if (/^254\d{9}$/.test(compact)) return `+${compact}`;
+              if (/^\+254\d{9}$/.test(compact)) return compact;
+            }
+            return compact;
+          }
+
+          function isValidPhoneInput(input: string, country = 'Kenya') {
+            const normalized = normalizePhoneInput(input, country);
+            if (!normalized || !/^\+[1-9]\d{7,14}$/.test(normalized)) return false;
+            if (country.trim().toLowerCase() === 'kenya') return /^\+254(?:[17]\d{8})$/.test(normalized);
+            return true;
+          }'''
+          s = s[:start] + replacement + s[end:]
+          s = s.replace('phone: form.phone.trim(), country: form.country', 'phone: normalizePhoneInput(form.phone, form.country), country: form.country')
+          s = s.replace('phone: form.phone.trim(), enabled: true', 'phone: normalizePhoneInput(form.phone, form.country), enabled: true')
+          p.write_text(s)
           PY
 
-      - name: Verify
-        shell: bash
+      - name: Verify source
         run: |
-          grep -Fq "if (!/^\\+?[0-9][0-9 ()-]{6,}$/.test(form.phone.trim()))" apps/web/src/pages/ClientOnboardingV3.tsx
-          grep -Fq "const phoneValid = /^\\+?[0-9][0-9 ()-]{6,}$/.test(form.phone.trim());" apps/web/src/pages/ClientOnboardingV3.tsx
+          grep -Fq 'function normalizePhoneInput' apps/web/src/pages/ClientOnboardingV3.tsx
+          grep -Fq 'function isValidPhoneInput' apps/web/src/pages/ClientOnboardingV3.tsx
+          grep -Fq 'normalizePhoneInput(form.phone, form.country)' apps/web/src/pages/ClientOnboardingV3.tsx
           git diff --check
-          echo 'Client phone validation hotfix verified.'
 
-      - name: Commit fix
+      - name: Build web application
+        working-directory: apps/web
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      - name: Commit hardening
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add apps/web/src/pages/ClientOnboardingV3.tsx
           git diff --cached --check
-          git commit -m 'fix: accept valid client phone numbers during onboarding'
+          git commit -m 'fix: harden client phone normalization and validation'
           git push origin HEAD:main
 
       - name: Remove one-shot workflow
         if: ${{ success() }}
         run: |
           git rm .github/workflows/phone-onboarding-hotfix.yml
-          git commit -m 'chore: remove one-shot phone onboarding hotfix'
+          git commit -m 'chore: remove phone validation hardening workflow'
           git push origin HEAD:main
