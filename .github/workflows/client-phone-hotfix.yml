@@ -14,55 +14,41 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Patch client phone handling
-        shell: bash
+
+      - name: Patch the two onboarding validators
         run: |
-          set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          frontend = Path('apps/web/src/pages/ClientOnboardingV3.tsx')
-          s = frontend.read_text()
-          bad = r'/^\\\\+?[0-9][0-9 ()-]{6,}$/'
-          good = r'/^\\+?[0-9][0-9 ()-]{6,}$/'
-          count = s.count(bad)
-          if count != 2:
-              raise SystemExit(f'Expected 2 malformed validators, found {count}')
-          frontend.write_text(s.replace(bad, good))
-          backend = Path('backend/src/routes/portalClients.js')
-          s = backend.read_text()
-          marker = "const { query } = require('../config/database');"
-          if "require('../utils/phone')" not in s:
-              s = s.replace(marker, marker + "\nconst { normalizePhone } = require('../utils/phone');", 1)
-          old = """  const { email, name, company } = req.body;\n  if (!email || !name) return res.status(400).json({ error: 'email and name required' });\n  const result = await req.db(\n    `INSERT INTO cargo_clients (org_id, email, name, company)\n     VALUES ($1, $2, $3, $4)\n     ON CONFLICT (org_id, email) DO UPDATE SET name = EXCLUDED.name, company = EXCLUDED.company\n     RETURNING id, org_id, email, name, company, created_at`,\n    [req.user.org_id, email.toLowerCase().trim(), name, company ?? null],\n  );"""
-          new = """  const { email, name, company, phone, country = 'Kenya' } = req.body;\n  if (!email || !name || !phone) return res.status(400).json({ error: 'email, name and phone required' });\n  let canonicalPhone;\n  try { canonicalPhone = normalizePhone(phone, country); }\n  catch (error) { return res.status(400).json({ error: error.message }); }\n  const result = await req.db(\n    `INSERT INTO cargo_clients (org_id, email, name, company, phone)\n     VALUES ($1, $2, $3, $4, $5)\n     ON CONFLICT (org_id, email) DO UPDATE SET name = EXCLUDED.name, company = EXCLUDED.company, phone = EXCLUDED.phone\n     RETURNING id, org_id, email, name, company, phone, created_at`,\n    [req.user.org_id, email.toLowerCase().trim(), name, company ?? null, canonicalPhone],\n  );"""
-          if old not in s:
-              raise SystemExit('portal client create route not found')
-          backend.write_text(s.replace(old, new, 1))
+          import re
+          p = Path('apps/web/src/pages/ClientOnboardingV3.tsx')
+          s = p.read_text()
+          pattern = r'/\^.*?\$/\.test\(form\.phone\.trim\(\)\)'
+          replacement = r'/^\+?[0-9][0-9 ()-]{6,}$/.test(form.phone.trim())'
+          matches = list(re.finditer(pattern, s))
+          if len(matches) != 2:
+              raise SystemExit(f'Expected exactly 2 phone validators, found {len(matches)}')
+          s2 = re.sub(pattern, replacement, s)
+          p.write_text(s2)
+          print('Patched 2 phone validators')
           PY
-      - name: Verify source changes
-        shell: bash
+
+      - name: Verify
         run: |
-          set -euo pipefail
-          node --check backend/src/utils/phone.js
-          node --check backend/src/routes/portalClients.js
-          grep -F "const phoneValid = /^\\+?[0-9][0-9 ()-]{6,}$/.test(form.phone.trim());" apps/web/src/pages/ClientOnboardingV3.tsx
-          grep -F "normalizePhone" backend/src/routes/portalClients.js
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('apps/web/src/pages/ClientOnboardingV3.tsx').read_text()
+          expected = r'/^\+?[0-9][0-9 ()-]{6,}$/.test(form.phone.trim())'
+          if s.count(expected) != 2:
+              raise SystemExit(f'Expected 2 corrected validators, found {s.count(expected)}')
+          print('Phone validation hotfix verified in source')
+          PY
           git diff --check
-      - name: Commit hotfix
-        shell: bash
+
+      - name: Commit source fix
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add apps/web/src/pages/ClientOnboardingV3.tsx backend/src/routes/portalClients.js
+          git add apps/web/src/pages/ClientOnboardingV3.tsx
           git diff --cached --check
-          git commit -m 'fix: accept valid client phone numbers and persist canonical phone'
+          git commit -m 'fix: unblock valid client phone numbers during onboarding'
           git push origin HEAD:fix/client-phone-normalization
-      - name: Remove one-shot workflow
-        if: always()
-        shell: bash
-        run: |
-          git rm -f .github/workflows/client-phone-hotfix.yml || true
-          if ! git diff --cached --quiet; then
-            git commit -m 'chore: remove one-shot phone hotfix workflow'
-            git push origin HEAD:fix/client-phone-normalization
-          fi
