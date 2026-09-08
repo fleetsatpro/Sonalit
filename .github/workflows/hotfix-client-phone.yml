@@ -1,6 +1,8 @@
 name: Client phone hotfix
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - fix/client-phone-normalization
 
 jobs:
   patch:
@@ -68,7 +70,7 @@ function isValidPhone(phone: string, country: string): boolean {
           grep -n "function normalizePhone\|function isValidPhone\|phoneValid =\|Enter a valid primary contact phone" apps/web/src/pages/ClientOnboardingV3.tsx
           ! grep -n "^\\\\+?\[0-9\]" apps/web/src/pages/ClientOnboardingV3.tsx
 
-      - name: Commit
+      - name: Commit and remove temporary workflow
         shell: bash
         run: |
           git config user.name 'Sonalit Hotfix Bot'
@@ -76,4 +78,6 @@ function isValidPhone(phone: string, country: string): boolean {
           git add apps/web/src/pages/ClientOnboardingV3.tsx
           git diff --cached --check
           git commit -m 'fix: accept and normalize valid client phone numbers'
+          git rm .github/workflows/hotfix-client-phone.yml
+          git commit -m 'chore: remove temporary phone hotfix workflow'
           git push
