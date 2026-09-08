@@ -2,8 +2,7 @@ name: Client phone hotfix
 
 on:
   push:
-    branches:
-      - fix/client-phone-normalization
+    branches: [fix/client-phone-normalization]
 
 permissions:
   contents: write
@@ -12,10 +11,12 @@ jobs:
   patch:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Patch malformed phone regex
+        shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -31,24 +32,32 @@ jobs:
           PY
 
       - name: Verify source patch
+        shell: bash
         run: |
-          grep -nF '/^\\+?[0-9][0-9 ()-]{6,}$/' apps/web/src/pages/ClientOnboardingV3.tsx
-          if grep -qF '/^\\\\+?[0-9][0-9 ()-]{6,}$/' apps/web/src/pages/ClientOnboardingV3.tsx; then
-            echo 'Malformed regex still present'
-            exit 1
-          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('apps/web/src/pages/ClientOnboardingV3.tsx').read_text()
+          bad = r'/^\\\\+?[0-9][0-9 ()-]{6,}$/'
+          good = r'/^\\+?[0-9][0-9 ()-]{6,}$/'
+          if bad in s:
+              raise SystemExit('Malformed regex still present')
+          if s.count(good) != 2:
+              raise SystemExit(f'Expected 2 corrected validators, found {s.count(good)}')
+          print('Phone validation source check passed')
+          PY
 
-      - name: Commit hotfix
+      - name: Commit source fix
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add apps/web/src/pages/ClientOnboardingV3.tsx
           git diff --cached --check
-          git commit -m 'fix client onboarding phone validation'
-          git push
+          git commit -m 'fix: accept valid phone numbers during client onboarding'
+          git push origin HEAD:fix/client-phone-normalization
 
       - name: Remove one-shot workflow
+        if: ${{ success() }}
         run: |
           git rm .github/workflows/client-phone-hotfix.yml
-          git commit -m 'chore remove one-shot phone hotfix workflow'
-          git push
+          git commit -m 'chore: remove one-shot phone hotfix workflow'
+          git push origin HEAD:fix/client-phone-normalization
