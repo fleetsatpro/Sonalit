@@ -4,7 +4,9 @@ const {XMLParser}=require('fast-xml-parser');
 const {query,pool}=require('../config/database');
 const logger=require('./logger');
 const xmlParser=new XMLParser({ignoreAttributes:true});
-const TIMEOUT_MS=7000,MAX_ITEMS=50;
+// News providers can legitimately take several seconds under load; keep a bounded timeout
+// without making the continuous worker give up before the upstream has responded.
+const TIMEOUT_MS=20000,MAX_ITEMS=50;
 let gdeltCooldownUntil=0,gdeltLastRequestAt=0;
 const GDELT_MIN_INTERVAL_MS=1500,GDELT_COOLDOWN_MS=5*60*1000;
 function sha256(v){return crypto.createHash('sha256').update(String(v||'')).digest('hex');}
