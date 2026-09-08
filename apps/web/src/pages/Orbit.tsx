@@ -21,6 +21,7 @@ const CHANNEL_CFG: Record<string, ChannelCfg> = {
   Fleet:                { color: '#22d4e6', bgType: 'route',     vizType: 'routeProgress', statusLabel: 'Active',      statusColor: '#2dd4a8', statusGlow: 'rgba(45,212,168,.5)' },
   'Executive & Reporting': { color: '#2dd4a8', bgType: 'chart', vizType: 'donut',         statusLabel: 'Synced',      statusColor: '#2dd4a8', statusGlow: 'rgba(45,212,168,.5)' },
   'Container Management':  { color: '#ff7a00', bgType: 'container', vizType: 'fillLevel', statusLabel: 'Tracking',    statusColor: '#2dd4a8', statusGlow: 'rgba(45,212,168,.5)' },
+  'Intelligence Centre':    { color: '#7c8cff', bgType: 'radar',     vizType: 'waveform',      statusLabel: 'Intelligence', statusColor: '#2dd4a8', statusGlow: 'rgba(45,212,168,.5)' },
 };
 
 const BOOT_LINES = [
