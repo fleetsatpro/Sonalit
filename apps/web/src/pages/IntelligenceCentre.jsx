@@ -23,9 +23,6 @@ export default function IntelligenceCentre() {
   const active = MODULES.find(item => item.id === module) || MODULES[0];
 
   const selectModule = (next) => {
-    // Module selection is a real navigation state, not ephemeral React state.
-    // That means browser/app Back unwinds Newsroom -> Alerts -> Workspace ->
-    // previous platform context instead of jumping directly to Orbit.
     void navigate({ search: next === 'core' ? {} : { module: next } });
   };
 
