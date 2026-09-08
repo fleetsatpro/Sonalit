@@ -9,6 +9,7 @@
     "noPropertyAccessFromIndexSignature": false,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
+    "exactOptionalPropertyTypes": false,
     "paths": {
       "@/*": ["src/*"],
       "@sonalit/contracts": ["../../packages/contracts/src/index.ts"]
