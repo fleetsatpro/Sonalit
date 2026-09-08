@@ -2,21 +2,16 @@ name: Client phone hotfix
 
 on:
   push:
-    branches:
-      - fix/client-phone-hotfix
+    branches: [fix/client-phone-hotfix]
 
 jobs:
   patch:
-    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Fix onboarding phone validation
-        shell: bash
+      - uses: actions/checkout@v4
+      - name: Patch phone validators
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -26,25 +21,22 @@ jobs:
           new = r'/^\+?[0-9][0-9 ()-]{6,}$/'
           count = s.count(old)
           if count != 2:
-              raise SystemExit(f'Expected 2 malformed phone regexes, found {count}')
+              raise SystemExit(f'Expected exactly 2 malformed validators, found {count}')
           p.write_text(s.replace(old, new))
-          print('Replaced both malformed phone validators.')
+          print(f'Patched {count} validators')
           PY
-
-      - name: Verify hotfix
-        shell: bash
+      - name: Verify
         run: |
           python3 - <<'PY'
           from pathlib import Path
           s = Path('apps/web/src/pages/ClientOnboardingV3.tsx').read_text()
-          expected = r'/^\+?[0-9][0-9 ()-]{6,}$/'
-          assert s.count(expected) == 2, 'Correct validator is not present twice'
-          assert r'/^\\+?[0-9][0-9 ()-]{6,}$/' not in s, 'Malformed validator remains'
-          print('Phone validation hotfix verified statically.')
+          good = r'/^\+?[0-9][0-9 ()-]{6,}$/'
+          bad = r'/^\\+?[0-9][0-9 ()-]{6,}$/'
+          assert s.count(good) == 2
+          assert bad not in s
+          print('Static verification passed')
           PY
-
-      - name: Commit hotfix
-        shell: bash
+      - name: Commit and push
         run: |
           git config user.name 'Sonalit Automation'
           git config user.email 'actions@users.noreply.github.com'
