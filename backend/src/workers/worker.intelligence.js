@@ -11,7 +11,9 @@ async function cycle(reason) {
   const started = Date.now();
   try {
     const result = await runCollectionFabric();
-    logger.info(`Intelligence worker cycle complete (${reason}) in ${Date.now() - started}ms: orgs=${result?.organizations ?? 0}, discovered=${result?.discovered ?? 0}, ingested=${result?.ingested ?? 0}`);
+    const discovered = Number(result?.discovered || 0);
+    const ingested = Number(result?.ingested || 0);
+    logger.info(`Intelligence worker cycle complete (${reason}) in ${Date.now() - started}ms: orgs=${result?.organizations ?? 0}, discovered=${discovered}, ingested=${ingested}`);
   } catch (error) {
     logger.error(`Intelligence worker cycle failed (${reason}): ${error.message}`);
   }
@@ -19,11 +21,11 @@ async function cycle(reason) {
 
 function schedule() {
   if (stopping) return;
+  // Keep the timer referenced. A Railway worker must remain alive between collection cycles.
   timer = setTimeout(async () => {
     await cycle('scheduled');
     schedule();
   }, intervalMs);
-  timer.unref?.();
 }
 
 async function shutdown(signal) {
