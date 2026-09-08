@@ -16,6 +16,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Patch malformed phone regex
+        shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -27,22 +28,26 @@ jobs:
           if count != 2:
               raise SystemExit(f'Expected 2 malformed validators, found {count}')
           p.write_text(s.replace(bad, good))
-          print('Patched', count, 'validators')
+          print(f'Patched {count} validators')
           PY
 
       - name: Verify
+        shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
           s = Path('apps/web/src/pages/ClientOnboardingV3.tsx').read_text()
           bad = r'/^\\\\+?[0-9][0-9 ()-]{6,}$/'
           good = r'/^\\+?[0-9][0-9 ()-]{6,}$/'
-          assert bad not in s, 'Malformed validator remains'
-          assert s.count(good) == 2, 'Expected two corrected validators'
-          print('Verification passed')
+          if bad in s:
+              raise SystemExit('Malformed validator remains')
+          if s.count(good) != 2:
+              raise SystemExit(f'Expected two corrected validators, found {s.count(good)}')
+          print('Phone validator verification passed')
           PY
 
-      - name: Commit
+      - name: Commit hotfix
+        shell: bash
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -51,8 +56,12 @@ jobs:
           git commit -m 'fix: accept valid phone numbers during client onboarding'
           git push origin HEAD:fix/client-phone-normalization
 
-      - name: Remove workflow
+      - name: Remove one-shot workflow
+        if: always()
+        shell: bash
         run: |
-          git rm .github/workflows/client-phone-hotfix.yml
-          git commit -m 'chore: remove one-shot phone hotfix workflow'
-          git push origin HEAD:fix/client-phone-normalization
+          git rm -f .github/workflows/client-phone-hotfix.yml || true
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore: remove one-shot phone hotfix workflow'
+            git push origin HEAD:fix/client-phone-normalization
+          fi
