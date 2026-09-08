@@ -32,13 +32,9 @@ function splitStatements(sql) {
   const n = sql.length;
   let i = 0;
   let stmtStart = 0;
-
   while (i < n) {
     const c = sql[i];
-    if (c === '-' && i + 1 < n && sql[i + 1] === '-') {
-      while (i < n && sql[i] !== '\n') i++;
-      continue;
-    }
+    if (c === '-' && i + 1 < n && sql[i + 1] === '-') { while (i < n && sql[i] !== '\n') i++; continue; }
     if (c === "'") {
       i++;
       while (i < n) {
@@ -65,22 +61,16 @@ function splitStatements(sql) {
       const stmt = sql.slice(stmtStart, i + 1).trim();
       if (stmt && stmt !== ';') stmts.push(stmt);
       stmtStart = i + 1;
-      i++;
-      continue;
     }
     i++;
   }
-
   const tail = sql.slice(stmtStart).trim();
   if (tail) stmts.push(tail);
   return stmts;
 }
 
 function cleanMigration(rawSql) {
-  return rawSql
-    .split('\n')
-    .filter(line => !/^\s*(BEGIN|COMMIT|ROLLBACK)\s*;\s*$/i.test(line))
-    .join('\n');
+  return rawSql.split('\n').filter(line => !/^\s*(BEGIN|COMMIT|ROLLBACK)\s*;\s*$/i.test(line)).join('\n');
 }
 
 function isReconciliation(rawSql) {
@@ -88,8 +78,7 @@ function isReconciliation(rawSql) {
 }
 
 async function executeMigration(client, file, rawSql, { reconciliation = false } = {}) {
-  const cleanSql = cleanMigration(rawSql);
-  const statements = splitStatements(cleanSql).filter(s => {
+  const statements = splitStatements(cleanMigration(rawSql)).filter(s => {
     const code = s.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
     return code && code !== ';';
   });
@@ -107,12 +96,9 @@ async function executeMigration(client, file, rawSql, { reconciliation = false }
         throw stmtErr;
       }
     }
-    if (!reconciliation) {
-      await client.query('INSERT INTO schema_migrations (filename) VALUES ($1)', [file]);
-    }
+    if (!reconciliation) await client.query('INSERT INTO schema_migrations (filename) VALUES ($1)', [file]);
     await client.query('COMMIT');
     console.log(`[db-migrate] ${reconciliation ? 'reconciled' : 'done  '} ${file}`);
-    return true;
   } catch (err) {
     await client.query('ROLLBACK');
     throw new Error(`${reconciliation ? 'Reconciliation' : 'Migration'} ${file} failed: ${err.message}`);
@@ -122,17 +108,22 @@ async function executeMigration(client, file, rawSql, { reconciliation = false }
 async function run() {
   const client = await pool.connect();
   try {
+    // The production schema gate certifies `public`. Make the migration
+    // runner use that exact schema instead of inheriting a mutable DB role
+    // search_path, which can silently create repaired objects elsewhere.
+    await client.query('SET search_path TO public');
+    console.log('[db-migrate] search_path=public');
+
     await client.query(`
-      CREATE TABLE IF NOT EXISTS schema_migrations (
+      CREATE TABLE IF NOT EXISTS public.schema_migrations (
         filename TEXT PRIMARY KEY,
         applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
 
     const applied = new Set(
-      (await client.query('SELECT filename FROM schema_migrations')).rows.map(r => r.filename)
+      (await client.query('SELECT filename FROM public.schema_migrations')).rows.map(r => r.filename)
     );
-
     const files = fs.readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql')).sort();
     let ran = 0;
     let reconciled = 0;
@@ -140,18 +131,12 @@ async function run() {
     for (const file of files) {
       const rawSql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
       const reconciliation = isReconciliation(rawSql);
-
       if (reconciliation) {
         await executeMigration(client, file, rawSql, { reconciliation: true });
         reconciled++;
         continue;
       }
-
-      if (applied.has(file)) {
-        console.log(`[db-migrate] skip  ${file}`);
-        continue;
-      }
-
+      if (applied.has(file)) { console.log(`[db-migrate] skip  ${file}`); continue; }
       await executeMigration(client, file, rawSql);
       ran++;
     }
