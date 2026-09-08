@@ -1,29 +1,11 @@
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import cesium from 'vite-plugin-cesium';
 import path from 'path';
 
-function clientPhoneValidationHotfix(): Plugin {
-  return {
-    name: 'sonalit-client-phone-validation-hotfix',
-    enforce: 'pre',
-    transform(code, id) {
-      if (!id.endsWith('/ClientOnboardingV3.tsx')) return null;
-      const malformed = '/^\\\\+?[0-9][0-9 ()-]{6,}$/';
-      const corrected = '/^\\+?[0-9][0-9 ()-]{6,}$/';
-      const count = code.split(malformed).length - 1;
-      if (count !== 2) {
-        throw new Error(`Client phone validation hotfix expected 2 malformed validators, found ${count}`);
-      }
-      return { code: code.split(malformed).join(corrected), map: null };
-    },
-  };
-}
-
 export default defineConfig({
   plugins: [
-    clientPhoneValidationHotfix(),
     react(),
     cesium(),
     VitePWA({
