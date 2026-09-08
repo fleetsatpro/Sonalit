@@ -11,7 +11,7 @@ const MODULES = [
   { id: 'newsroom', label: 'LIVE NEWSROOM', caption: 'Multi-source collection · breaking · developing · evidence', icon: Newspaper },
 ];
 
-function readModule(search: string): string {
+function readModule(search) {
   const value = new URLSearchParams(search).get('module');
   return MODULES.some(module => module.id === value) ? value : 'core';
 }
@@ -22,7 +22,7 @@ export default function IntelligenceCentre() {
   const module = useMemo(() => readModule(search), [search]);
   const active = MODULES.find(item => item.id === module) || MODULES[0];
 
-  const selectModule = (next: string) => {
+  const selectModule = (next) => {
     // Module selection is a real navigation state, not ephemeral React state.
     // That means browser/app Back unwinds Newsroom -> Alerts -> Workspace ->
     // previous platform context instead of jumping directly to Orbit.
@@ -38,4 +38,3 @@ export default function IntelligenceCentre() {
     </nav>
     {module === 'alerts' ? <IntelligenceAlerts/> : module === 'newsroom' ? <IntelligenceLiveNews/> : <CoreIntelligenceCentre/>}
   </div>;
-}
