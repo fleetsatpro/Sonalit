@@ -10,6 +10,7 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "exactOptionalPropertyTypes": false,
+    "skipLibCheck": true,
     "paths": {
       "@/*": ["src/*"],
       "@sonalit/contracts": ["../../packages/contracts/src/index.ts"]
