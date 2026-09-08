@@ -17,6 +17,15 @@ export const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
+  // The communication recipient identity schema intentionally contains only
+  // delivery identity fields. Phone belongs to the portal/CDS customer records,
+  // not client_email_recipients. Strip it at the transport boundary as a
+  // defensive contract guard while older callers are being migrated.
+  if (config.url === '/communications/recipients' && config.data && typeof config.data === 'object' && !Array.isArray(config.data)) {
+    const { phone: _unsupportedPhone, ...recipientPayload } = config.data as Record<string, unknown>;
+    config.data = recipientPayload;
+  }
+
   // Access token lives in memory only — never in localStorage (T1.2)
   const token = getAccessToken();
   if (token) config.headers['Authorization'] = `Bearer ${token}`;
