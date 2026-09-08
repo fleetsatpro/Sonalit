@@ -1,0 +1,53 @@
+name: Client phone hotfix
+
+on:
+  push:
+    branches:
+      - fix/client-phone-hotfix
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fix onboarding phone validation
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('apps/web/src/pages/ClientOnboardingV3.tsx')
+          s = p.read_text()
+          old = r'/^\\+?[0-9][0-9 ()-]{6,}$/'
+          new = r'/^\+?[0-9][0-9 ()-]{6,}$/'
+          count = s.count(old)
+          if count != 2:
+              raise SystemExit(f'Expected 2 malformed phone regexes, found {count}')
+          p.write_text(s.replace(old, new))
+          print('Replaced both malformed phone validators.')
+          PY
+
+      - name: Verify hotfix
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path('apps/web/src/pages/ClientOnboardingV3.tsx').read_text()
+          expected = r'/^\+?[0-9][0-9 ()-]{6,}$/'
+          assert s.count(expected) == 2, 'Correct validator is not present twice'
+          assert r'/^\\+?[0-9][0-9 ()-]{6,}$/' not in s, 'Malformed validator remains'
+          print('Phone validation hotfix verified statically.')
+          PY
+
+      - name: Commit hotfix
+        shell: bash
+        run: |
+          git config user.name 'Sonalit Automation'
+          git config user.email 'actions@users.noreply.github.com'
+          git add apps/web/src/pages/ClientOnboardingV3.tsx
+          git commit -m 'fix: unblock valid client phone onboarding [skip ci]'
+          git push origin HEAD:fix/client-phone-hotfix
