@@ -15,8 +15,10 @@ const ISO = {
 const COUNTRY = Object.fromEntries(Object.entries(ISO).map(([name, code]) => [code, name]));
 
 function countriesFromWatchlists(watchlists) {
+  // Kenya is Sonalit's primary operating intelligence baseline. An empty
+  // configuration must never silently disable country-aware collection.
   const configured = parseJsonEnv('RISK_INTEL_COUNTRIES', []);
-  const out = new Set();
+  const out = new Set(['KE']);
   for (const v of configured) {
     const raw = String(v || '').trim();
     const upper = raw.toUpperCase();
@@ -66,8 +68,7 @@ async function getAcledToken() {
   const password = process.env.ACLED_PASSWORD;
   if (!username || !password) return null;
   const auth = await timeoutFetch('https://acleddata.com/oauth/token', {
-    method:'POST',
-    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
     body:new URLSearchParams({username,password,grant_type:'password',client_id:'acled',scope:'authenticated'})
   });
   if (!auth.ok) throw new Error(`OAuth HTTP ${auth.status}`);
@@ -89,10 +90,8 @@ async function collectAcled(countries) {
     for (const cc of countries) {
       try {
         const u = new URL('https://acleddata.com/api/acled/read');
-        u.searchParams.set('_format','json');
-        u.searchParams.set('country',COUNTRY[cc]);
-        u.searchParams.set('event_date',`${since}|${today}`);
-        u.searchParams.set('event_date_where','BETWEEN');
+        u.searchParams.set('_format','json'); u.searchParams.set('country',COUNTRY[cc]);
+        u.searchParams.set('event_date',`${since}|${today}`); u.searchParams.set('event_date_where','BETWEEN');
         u.searchParams.set('limit',String(MAX_ITEMS));
         u.searchParams.set('fields','event_id_cnty|event_date|event_type|sub_event_type|country|location|latitude|longitude|notes|fatalities');
         const r = await timeoutFetch(u,{headers:{Authorization:`Bearer ${token}`}});
@@ -116,15 +115,13 @@ async function collectGdacs(countries) {
     const to = new Date().toISOString().slice(0,10);
     const r = await timeoutFetch(`https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?fromdate=${from}&todate=${to}`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const d = await r.json();
-    const out=[];
+    const d = await r.json(); const out=[];
     for (const f of d.features || []) {
       const p=f.properties || {};
       const affected=(p.affectedcountries || []).map(x => String(x.countrycode || x.iso2 || x.iso3 || x.countryname || '').trim().toUpperCase());
       const cc=countries.find(c => affected.includes(c) || affected.some(a => a === c || a.includes(c) || a === ISO[COUNTRY[c]]));
       if (!cc) continue;
-      const coords=f.geometry?.coordinates || [];
-      const lng=coords[0] ?? null, lat=coords[1] ?? null;
+      const coords=f.geometry?.coordinates || []; const lng=coords[0] ?? null, lat=coords[1] ?? null;
       out.push({provider:'gdacs',external_id:`gdacs:${p.eventtype}:${p.eventid}:${p.episodeid}`,title:clean(p.name || p.description || 'GDACS hazard',700),body:clean(p.description || p.name || 'Hazard event'),url:p.url?.report || null,country_code:cc,latitude:lat,longitude:lng,published_at:p.datemodified || p.dateevent || null,credibility:85,raw_metadata:{event_type:p.eventtype,alert_level:p.alertlevel,source:'gdacs'}});
     }
     return out.slice(0,MAX_ITEMS);
