@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { ArrowLeft, ArrowRight, Check, Network, Radio, ShieldCheck, Sparkles, UserPlus, AlertTriangle, Save } from 'lucide-react';
 import { api } from '../lib/api.js';
+import { isValidPhone, normalizePhone } from '../lib/phone.js';
 import { useAuthStore } from '../stores/auth.js';
 
 type Domain = 'fleet' | 'cds';
@@ -36,13 +37,8 @@ function readDraft(): Draft {
   } catch { return initial; }
 }
 
-function isValidPhoneInput(input: string, country = 'Kenya') {
-  const raw = String(input ?? '').trim();
-  if (!raw || !/^[+0-9()\s-]+$/.test(raw)) return false;
-  const normalized = raw.replace(/[()\s-]/g, '');
-  if (country.trim().toLowerCase() === 'kenya') return /^(?:07\d{8}|\+2547\d{8})$/.test(normalized);
-  return /^\+[1-9]\d{7,14}$/.test(normalized) || /^[1-9]\d{7,14}$/.test(normalized);
-}
+const isValidPhoneInput = isValidPhone;
+const normalizeClientPhone = normalizePhone;
 
 export default function ClientOnboardingV3() {
   const isAdmin = useAuthStore(s => s.user?.role === 'admin');
@@ -89,12 +85,13 @@ export default function ClientOnboardingV3() {
       if (!form.name.trim()) throw new Error('Primary contact name is required.');
       if (!form.email.trim()) throw new Error('Primary email is required.');
       if (!form.phone.trim()) throw new Error('Primary contact phone is required.');
-      if (!isValidPhoneInput(form.phone, form.country)) throw new Error('Enter a valid primary contact phone number.');
+      const normalizedPhone = normalizeClientPhone(form.phone, form.country);
+      if (!normalizedPhone) throw new Error('Enter a valid primary contact phone number.');
       if (duplicate) throw new Error(`An existing client matches ${duplicate.company || duplicate.name || duplicate.email}. Resolve the duplicate before activation.`);
 
       let clientId = draft.clientId;
       if (!clientId) {
-        const r = await api.post('/portal/clients', { name: form.name.trim(), email: form.email.trim().toLowerCase(), company: form.company.trim(), phone: form.phone.trim(), country: form.country });
+        const r = await api.post('/portal/clients', { name: form.name.trim(), email: form.email.trim().toLowerCase(), company: form.company.trim(), phone: normalizedPhone, country: form.country });
         clientId = r.data?.data?.id;
         if (!clientId) throw new Error('Client identity was not created.');
         patch({ clientId });
@@ -108,7 +105,7 @@ export default function ClientOnboardingV3() {
         cdsCustomerId = existing?.id;
         if (!cdsCustomerId) {
           const r = await api.post('/cds/customers', {
-            company_name: form.company.trim(), contact_person: form.name.trim(), phone: form.phone.trim(),
+            company_name: form.company.trim(), contact_person: form.name.trim(), phone: normalizedPhone,
             email, country: form.country, status: 'active',
           });
           cdsCustomerId = r.data?.data?.id;
@@ -120,7 +117,7 @@ export default function ClientOnboardingV3() {
       const primary = contacts.find(c => c.email.trim()) ?? { name: form.name, email: form.email, role: 'Operations' };
       let recipientId = draft.recipientId;
       if (!recipientId) {
-        const r = await api.post('/communications/recipients', { email: primary.email.trim().toLowerCase(), name: primary.name.trim() || form.name.trim(), company: form.company.trim(), phone: form.phone.trim(), enabled: true });
+        const r = await api.post('/communications/recipients', { email: primary.email.trim().toLowerCase(), name: primary.name.trim() || form.name.trim(), company: form.company.trim(), phone: normalizedPhone, enabled: true });
         recipientId = r.data?.data?.id;
         if (!recipientId) throw new Error('Communication recipient could not be created.');
         patch({ recipientId });
