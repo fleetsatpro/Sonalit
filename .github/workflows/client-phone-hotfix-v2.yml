@@ -1,0 +1,45 @@
+name: Client phone hotfix v2
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch source
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('apps/web/src/pages/ClientOnboardingV3.tsx')
+          s = p.read_text()
+          if "from '../lib/phone.js'" not in s:
+              s = s.replace("import { api } from '../lib/api.js';", "import { api } from '../lib/api.js';\nimport { normalizePhone, isValidPhone } from '../lib/phone.js';")
+          old = "if (!/^\\\\+?[0-9][0-9 ()-]{6,}$/.test(form.phone.trim())) throw new Error('Enter a valid primary contact phone number.');"
+          old2 = "const phoneValid = /^\\\\+?[0-9][0-9 ()-]{6,}$/.test(form.phone.trim());"
+          if old not in s or old2 not in s:
+              raise SystemExit('Expected validation code not found')
+          s = s.replace(old, "const normalizedPhone = normalizePhone(form.phone, form.country);\n      if (!normalizedPhone) throw new Error('Enter a valid primary contact phone number.');", 1)
+          s = s.replace(old2, "const phoneValid = isValidPhone(form.phone, form.country);", 1)
+          s = s.replace("company: form.company.trim(), phone: form.phone.trim() });", "company: form.company.trim(), phone: normalizedPhone });", 1)
+          s = s.replace("contact_person: form.name.trim(), phone: form.phone.trim(),", "contact_person: form.name.trim(), phone: normalizedPhone,", 1)
+          s = s.replace("company: form.company.trim(), phone: form.phone.trim(), enabled: true", "company: form.company.trim(), phone: normalizedPhone, enabled: true", 1)
+          p.write_text(s)
+          PY
+          git diff --check
+          grep -n "normalizePhone\|isValidPhone\|phone: normalizedPhone" apps/web/src/pages/ClientOnboardingV3.tsx
+      - name: Commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/web/src/pages/ClientOnboardingV3.tsx apps/web/src/lib/phone.ts
+          git diff --cached --check
+          git commit -m 'fix: accept valid phone numbers during client onboarding'
+          git push origin HEAD:fix/client-phone-normalization
