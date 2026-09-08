@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { ArrowLeft, ArrowRight, Check, Network, Radio, ShieldCheck, Sparkles, UserPlus, AlertTriangle, Save } from 'lucide-react';
 import { api } from '../lib/api.js';
-import { isValidPhone, normalizePhone } from '../lib/phone.js';
 import { useAuthStore } from '../stores/auth.js';
+import { normalizePhone, isValidPhone } from '../lib/phone.js';
 
 type Domain = 'fleet' | 'cds';
 type Contact = { name: string; email: string; role: string };
@@ -36,9 +36,6 @@ function readDraft(): Draft {
     return { ...initial, ...saved, form: { ...initial.form, ...(saved.form ?? {}) } };
   } catch { return initial; }
 }
-
-const isValidPhoneInput = isValidPhone;
-const normalizeClientPhone = normalizePhone;
 
 export default function ClientOnboardingV3() {
   const isAdmin = useAuthStore(s => s.user?.role === 'admin');
@@ -85,8 +82,8 @@ export default function ClientOnboardingV3() {
       if (!form.name.trim()) throw new Error('Primary contact name is required.');
       if (!form.email.trim()) throw new Error('Primary email is required.');
       if (!form.phone.trim()) throw new Error('Primary contact phone is required.');
-      const normalizedPhone = normalizeClientPhone(form.phone, form.country);
-      if (!normalizedPhone) throw new Error('Enter a valid primary contact phone number.');
+      const normalizedPhone = normalizePhone(form.phone, form.country);
+      if (!normalizedPhone || !isValidPhone(form.phone, form.country)) throw new Error('Enter a valid primary contact phone number.');
       if (duplicate) throw new Error(`An existing client matches ${duplicate.company || duplicate.name || duplicate.email}. Resolve the duplicate before activation.`);
 
       let clientId = draft.clientId;
@@ -148,7 +145,7 @@ export default function ClientOnboardingV3() {
   if (!isAdmin) return <div className="flex min-h-[70vh] items-center justify-center"><div className="rounded-2xl border border-red-400/20 bg-red-400/[.04] p-8 text-center"><Radio className="mx-auto text-red-300" size={28}/><h1 className="mt-3 text-lg font-semibold text-white">Admin Communications Control</h1><p className="mt-2 max-w-sm text-xs leading-5 text-slate-500">Client Intelligence exists only on the Admin account.</p></div></div>;
 
   const { step, form, domains, contacts, events, channel, done } = draft;
-  const phoneValid = isValidPhoneInput(form.phone, form.country);
+  const phoneValid = isValidPhone(form.phone, form.country);
   const canNext = step === 0 ? !!form.company.trim() && !!form.name.trim() && !!form.email.trim() && phoneValid && !duplicate : step === 1 ? domains.length > 0 : step === 2 ? contacts.some(c => c.email.trim()) : step === 3 ? events.length > 0 : true;
   const setContact = (index: number, p: Partial<Contact>) => patch({ contacts: contacts.map((c, i) => i === index ? { ...c, ...p } : c) });
   const clearDraft = () => { localStorage.removeItem(KEY); setDraft(initial); setNotice({ kind: 'info', text: 'Saved onboarding draft cleared.' }); setSaveState('saved'); };
