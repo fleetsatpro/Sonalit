@@ -11,7 +11,7 @@ async function cycle(reason) {
   const started = Date.now();
   try {
     const result = await runCollectionFabric();
-    logger.info(`Intelligence worker cycle complete (${reason}) in ${Date.now() - started}ms: orgs=${result?.organizations ?? 0}`);
+    logger.info(`Intelligence worker cycle complete (${reason}) in ${Date.now() - started}ms: orgs=${result?.organizations ?? 0}, discovered=${result?.discovered ?? 0}, ingested=${result?.ingested ?? 0}`);
   } catch (error) {
     logger.error(`Intelligence worker cycle failed (${reason}): ${error.message}`);
   }
