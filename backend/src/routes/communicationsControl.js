@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const crypto = require('crypto');
-const { listCustomerPulseTargets, generateAndQueueScopedClientPulse, generateAndQueueSuperAdminClientPulse } = require('../services/email/clientPulseDispatch.service');
+const { listCustomerPulseTargets, generateAndQueueScopedClientPulse } = require('../services/email/scopedClientPulse.service');
+const { generateAndQueueSuperAdminClientPulse } = require('../services/email/clientPulseDispatch.service');
 const { withOrg } = require('../utils/orgScopedDb');
 
 // Mounted below /admin, whose parent router already enforces admin/super_admin.
@@ -36,7 +37,7 @@ router.get('/deliveries', async (req, res, next) => {
 router.post('/client-pulse/dispatch', async (req, res, next) => {
   try {
     const snapshotAt = new Date();
-    const global = await generateAndQueueSuperAdminClientPulse(req.user.org_id, snapshotAt, { scheduled: false });
+    const global = await generateAndQueueSuperAdminClientPulse(req.user.org_id, { snapshotAt, reason: 'manual' });
     const targets = await listCustomerPulseTargets(req.user.org_id);
     const requested = Array.isArray(req.body?.customerIds) && req.body.customerIds.length
       ? [...new Set(req.body.customerIds.map(String))]
