@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Check, ChevronRight, Plus, Radio, RefreshCw, Shield, UserPlus, Users, X } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { normalizePhone, isValidPhone } from '../lib/phone.js';
-import ClientPulseSettingsView from './cds/ClientPulseSettings.tsx';
+import ClientPulseSettingsView from './cds/ClientPulseSettings.js';
 import CommunicationsAuthorityV2 from './CommunicationsAuthorityV2.js';
 
 type Service = 'cds' | 'fleet';
@@ -11,6 +11,7 @@ type Receive = 'cds.client_pulse' | 'cds.operations' | 'fleet.operational' | 'fl
 type Staff = { name: string; email: string; role: string; services: Service[]; receives: Receive[]; channels: Channel[] };
 type Client = { id: string; company?: string; name?: string; email?: string; phone?: string; status?: string };
 type CdsCustomer = { id: string; company_name: string; email?: string; phone?: string; status?: string };
+type Notice = { kind: 'ok' | 'error'; text: string };
 
 const RECEIVE_OPTIONS: { id: Receive; label: string; service: Service }[] = [
   { id: 'cds.client_pulse', label: 'CDS Client Pulse', service: 'cds' },
@@ -24,7 +25,7 @@ const emptyStaff = (): Staff => ({ name: '', email: '', role: 'Operations', serv
 export default function Communications() {
   const [view, setView] = useState<'clients' | 'pulse' | 'advanced'>('clients');
   const [showEnroll, setShowEnroll] = useState(false);
-  const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
   return <div className="min-h-full pb-14 text-slate-200"><div className="mx-auto max-w-[1680px] space-y-4">
     <header className="relative overflow-hidden rounded-[26px] border border-white/[.08] bg-[#090d14] shadow-[0_24px_80px_rgba(0,0,0,.3)]"><div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_82%_0%,rgba(249,115,22,.13),transparent_32%),radial-gradient(circle_at_18%_100%,rgba(14,165,233,.07),transparent_28%)]"/><div className="relative p-5 sm:p-7"><div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.28em] text-orange-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400"/> Sonalit / Communications</div><h1 className="mt-2 text-3xl font-semibold tracking-[-.04em] text-white">Who receives what.</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">Manage clients, their staff, and what they receive. The authority model stays underneath; operators get a simple workflow.</p></div><button onClick={() => { setShowEnroll(true); setNotice(null); }} className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 text-xs font-bold text-white shadow-lg shadow-orange-500/15 hover:bg-orange-400"><UserPlus size={15}/> Enrol Client</button></div><nav className="mt-6 flex flex-wrap gap-1 border-t border-white/[.07] pt-3"><Nav active={view === 'clients'} onClick={() => setView('clients')} icon={Users} label="Clients"/><Nav active={view === 'pulse'} onClick={() => setView('pulse')} icon={Radio} label="Client Pulse"/><Nav active={view === 'advanced'} onClick={() => setView('advanced')} icon={Shield} label="Advanced Authority"/></nav></div></header>
     {notice && <div className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-xs ${notice.kind === 'error' ? 'border-red-400/20 bg-red-400/[.04] text-red-200' : 'border-emerald-400/20 bg-emerald-400/[.04] text-emerald-200'}`}><Check size={14}/><span className="flex-1">{notice.text}</span><button onClick={() => setNotice(null)}><X size={14}/></button></div>}
@@ -32,7 +33,7 @@ export default function Communications() {
     {showEnroll && <EnrollClient onClose={() => setShowEnroll(false)} onDone={text => { setShowEnroll(false); setNotice({ kind: 'ok', text }); }} onError={text => setNotice({ kind: 'error', text })}/>}</div></div>;
 }
 function Nav({ active, onClick, icon: Icon, label }: { active: boolean; onClick: () => void; icon: typeof Users; label: string }) { return <button onClick={onClick} className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition ${active ? 'bg-white/[.07] text-white' : 'text-slate-500 hover:bg-white/[.035] hover:text-slate-300'}`}><Icon size={14}/>{label}</button>; }
-function Clients({ onEnroll, onNotice }: { onEnroll: () => void; onNotice: (n: { kind: 'ok' | 'error' } | null) => void }) {
+function Clients({ onEnroll, onNotice }: { onEnroll: () => void; onNotice: (n: Notice) => void }) {
   const [clients, setClients] = useState<Client[]>([]); const [cds, setCds] = useState<CdsCustomer[]>([]); const [loading, setLoading] = useState(true);
   const load = async () => { setLoading(true); try { const [a,b] = await Promise.all([api.get('/portal/clients'), api.get('/cds/customers')]); setClients(a.data?.data ?? []); setCds(b.data?.data ?? []); } catch (e:any) { onNotice({ kind:'error', text:e?.response?.data?.error ?? 'Could not load clients.' }); } finally { setLoading(false); } };
   useEffect(() => { void load(); }, []);
