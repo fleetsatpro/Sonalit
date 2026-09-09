@@ -9,6 +9,7 @@
     "noPropertyAccessFromIndexSignature": false,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
+    "noImplicitAny": false,
     "exactOptionalPropertyTypes": false,
     "skipLibCheck": true,
     "paths": {
