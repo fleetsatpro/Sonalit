@@ -15,7 +15,7 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  v_old_customer_id := OLD.cds_customer_id;
+  v_old_customer_id := CASE WHEN TG_OP='UPDATE' THEN OLD.cds_customer_id ELSE NULL END;
 
   -- Explicit binding wins. Otherwise safely resolve only when email or company
   -- identifies exactly one CDS customer in this organization.
@@ -34,15 +34,12 @@ BEGIN
       AND lower(trim(c.company_name))=lower(trim(NEW.company));
   END IF;
 
-  -- Keep the authoritative binding on the recipient row. This UPDATE is only
-  -- executed when a safe automatic match was found and therefore does not loop.
   IF NEW.cds_customer_id IS NULL AND v_customer_id IS NOT NULL THEN
     NEW.cds_customer_id := v_customer_id;
   END IF;
 
-  -- Any previous customer route that is no longer the authoritative binding
-  -- must be shut off before enabling the new route. This prevents cross-client
-  -- delivery after an email/company edit or reassignment.
+  -- Any previous customer route that is no longer authoritative must be shut
+  -- off before enabling the new route. This prevents cross-client delivery.
   IF v_old_customer_id IS NOT NULL AND v_old_customer_id IS DISTINCT FROM NEW.cds_customer_id THEN
     UPDATE communication_subscriptions s
        SET enabled=FALSE, updated_at=NOW()
