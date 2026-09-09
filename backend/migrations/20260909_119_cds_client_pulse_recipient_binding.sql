@@ -50,8 +50,19 @@ FROM candidates c
 WHERE r.id=c.id
   AND r.cds_customer_id IS NULL;
 
--- Create/repair the canonical CDS Client Pulse enrollment for every bound
--- recipient. This is deliberately idempotent and leaves other domains alone.
+-- Repair existing enrollment rows first, then insert any missing rows.
+UPDATE communication_enrollments e
+SET status='active', updated_at=NOW()
+FROM client_email_recipients r
+WHERE e.org_id=r.org_id
+  AND e.recipient_id=r.id
+  AND e.domain='cds'
+  AND e.cds_customer_id=r.cds_customer_id
+  AND r.deleted_at IS NULL
+  AND r.enabled=true
+  AND r.authority_role IS DISTINCT FROM 'super_admin'
+  AND r.cds_customer_id IS NOT NULL;
+
 INSERT INTO communication_enrollments
   (org_id,recipient_id,domain,cds_customer_id,contact_role,status)
 SELECT r.org_id,r.id,'cds',r.cds_customer_id,'client_pulse','active'
@@ -60,14 +71,15 @@ WHERE r.deleted_at IS NULL
   AND r.enabled=true
   AND r.authority_role IS DISTINCT FROM 'super_admin'
   AND r.cds_customer_id IS NOT NULL
-WHERE NOT EXISTS (
-  SELECT 1
-  FROM communication_enrollments e
-  WHERE e.org_id=r.org_id
-    AND e.recipient_id=r.id
-    AND e.domain='cds'
-    AND e.cds_customer_id=r.cds_customer_id
-);
+  AND NOT EXISTS (
+    SELECT 1
+    FROM communication_enrollments e
+    WHERE e.org_id=r.org_id
+      AND e.recipient_id=r.id
+      AND e.domain='cds'
+      AND e.cds_customer_id=r.cds_customer_id
+  )
+ON CONFLICT DO NOTHING;
 
 INSERT INTO communication_subscriptions
   (org_id,enrollment_id,event_type,channel,delivery_mode,enabled,critical_override)
