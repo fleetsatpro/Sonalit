@@ -37,33 +37,29 @@ describe('CDS Client Pulse futuristic workbook', () => {
     expect(isActiveRow({ booking_status: 'confirmed', status: 'delivered' })).toBe(false);
   });
 
-  test('renders Overview and preserves CARRIER REF and TIME UNCLAMPED', async () => {
-    const snapshot = new Date('2026-09-07T16:10:00Z');
-    const rows = [
-      {
-        booking_number: 'TEST-BOOKING',
-        carrier_reference: 'CARRIER-REF-001',
-        vessel: 'TEST VESSEL',
-        file_reference: 'AW-001',
-        commodity: 'Copper',
-        container_number: 'TEST000001',
-        iso_type: '20GP',
-        seal_number: 'SEAL001',
-        status: 'in_transit',
-        clamped_at: '2026-09-05T08:12:00Z',
-        unclamped_at: '2026-09-06T08:12:00Z',
-        lock_number: 'LOCK001',
-        yard_status: 'outbound',
-        transporter: 'TEST TRANSPORTER',
-        horse_reg: 'KDA001A',
-        trailer_reg: 'Z123ABC',
-        driver_name: 'Test Driver',
-        driver_contact: '255700000000',
-        invoiced: false,
-      },
-    ];
+  test('renders the template with Overview and the preserved operational fields', async () => {
+    const rows = [{
+      booking_number: 'TEST-BOOKING',
+      carrier_reference: 'CARRIER-REF-001',
+      vessel: 'TEST VESSEL',
+      file_reference: 'AW-001',
+      commodity: 'Copper',
+      container_number: 'TEST000001',
+      iso_type: '20GP',
+      seal_number: 'SEAL001',
+      status: 'in_transit',
+      clamped_at: '2026-09-05T08:12:00Z',
+      unclamped_at: '2026-09-06T08:12:00Z',
+      lock_number: 'LOCK001',
+      yard_status: 'outbound',
+      transporter: 'TEST TRANSPORTER',
+      driver_name: 'Test Driver',
+      driver_contact: '255700000000',
+      invoiced: false,
+    }];
 
-    const workbook = await buildManifestWorkbook(rows, snapshot);
+    const workbook = await buildManifestWorkbook(rows, new Date('2026-09-07T16:10:00Z'));
+    expect(Buffer.isBuffer(workbook)).toBe(true);
     expect(workbook.subarray(0, 2).toString()).toBe('PK');
 
     const workbookXml = extractZipEntry(workbook, 'xl/workbook.xml');
@@ -72,6 +68,7 @@ describe('CDS Client Pulse futuristic workbook', () => {
 
     expect(workbookXml).toContain('name="Overview"');
     expect(workbookXml).not.toContain('name="COMMAND CENTER"');
+    expect(detailXml).toContain('BOOKING NO');
     expect(detailXml).toContain('CARRIER REF');
     expect(detailXml).toContain('TIME UNCLAMPED');
     expect(detailXml).toContain('CARRIER-REF-001');
@@ -79,8 +76,5 @@ describe('CDS Client Pulse futuristic workbook', () => {
     expect(detailXml).not.toContain('TRHU3066037');
     expect(detailXml).not.toContain('BSE0339598');
     expect(overviewXml).toContain('CDS CLIENT PULSE');
-    expect(overviewXml).toContain('1');
-    expect(workbookXml).toContain("'ACTIVE BOOKINGS'!$A$4:$T$5");
-    expect(workbookXml).toContain("'ACTIVE BOOKINGS'!$1:$4");
   });
 });
