@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const { withOrg } = require('../../utils/orgScopedDb');
 const logger = require('../../utils/logger');
 const { queueClientPulseEmail } = require('./email.service');
-const { buildManifestWorkbook, isActiveRow } = require('./clientPulse.service');
+const { buildManifestWorkbook, isActiveRow } = require('./clientPulseWorkbook.service');
 const orgQuery = (orgId,text,params) => withOrg(orgId,client=>client.query(text,params));
 function dateLabel(date){return new Intl.DateTimeFormat('en-GB',{timeZone:process.env.CDS_CLIENT_PULSE_TIMEZONE||'Africa/Nairobi',day:'2-digit',month:'short',year:'numeric'}).format(date);}
 function manifestRow(row){return {booking_number:row.booking_number,carrier_reference:row.carrier_reference,vessel:row.vessel,file_reference:row.file_reference,controller:row.controller,commodity:row.commodity,packing_list_no:row.packing_list_no,container_number:row.container_number,iso_type:row.iso_type,seal_number:row.seal_number,seal_number_2:row.seal_number_2,status:row.status,clamped_at:row.clamped_at,clamped_at_t:row.clamped_at,unclamped_at:row.unclamped_at,lock_number:row.lock_number||row.lock_serial,terminal:row.terminal,yard_status:row.yard_status,transporter:row.transporter,horse_reg:row.horse_reg||row.horse_reg_derived,trailer_reg:row.trailer_reg,driver_name:row.driver_name||row.driver_name_derived,driver_contact:row.driver_contact||row.driver_contact_derived,invoiced:row.invoiced?'YES':'NO'};}
