@@ -26,7 +26,7 @@ WITH email_match AS (
     AND r.authority_role IS DISTINCT FROM 'super_admin'
     AND r.cds_customer_id IS NULL
 ), company_match AS (
-  SELECT r.id, MIN(c.id) AS cds_customer_id
+  SELECT r.id, MIN(c.id::text)::uuid AS cds_customer_id
   FROM client_email_recipients r
   JOIN cds_customers c
     ON c.org_id=r.org_id
@@ -60,7 +60,7 @@ WHERE r.deleted_at IS NULL
   AND r.enabled=true
   AND r.authority_role IS DISTINCT FROM 'super_admin'
   AND r.cds_customer_id IS NOT NULL
-ON CONFLICT (org_id,recipient_id,domain,COALESCE(cds_customer_id,'00000000-0000-0000-0000-000000000000'::uuid),COALESCE(client_id,'00000000-0000-0000-0000-000000000000'::uuid))
+ON CONFLICT (org_id,recipient_id,domain,cds_customer_id,client_id)
 DO UPDATE SET status='active', updated_at=NOW();
 
 INSERT INTO communication_subscriptions
