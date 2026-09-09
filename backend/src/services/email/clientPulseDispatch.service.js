@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const { withOrg } = require('../../utils/orgScopedDb');
 const { listCustomerPulseTargets, generateAndQueueScopedClientPulse } = require('./scopedClientPulse.service');
-const { buildManifestWorkbook, isActiveRow } = require('./clientPulse.service');
+const { buildManifestWorkbook, isActiveRow } = require('./clientPulseWorkbook.service');
 const { queueClientPulseEmail } = require('./email.service');
 const logger = require('../../utils/logger');
 
@@ -105,7 +105,7 @@ async function generateAndQueueSuperAdminClientPulse(orgId, { snapshotAt = new D
     }
 
     const workbook = await buildManifestWorkbook(active, snapshot);
-    const filename = `ALL CLIENTS_Client Dispatch Master Active Bookings_${snapshot.toISOString().replace(/:/g,'').replace(/\\.\\d{3}Z$/,'Z')}_EAT.xlsx`;
+    const filename = `ALL CLIENTS_Client Dispatch Master Active Bookings_${snapshot.toISOString().replace(/:/g,'').replace(/\.\d{3}Z$/,'Z')}_EAT.xlsx`;
     const result = await queueClientPulseEmail({
       orgId,
       recipients: recipients.rows.map(r => r.email),
