@@ -10,10 +10,11 @@ DECLARE
   v_status TEXT;
   v_enabled BOOLEAN;
   v_pulse BOOLEAN;
-  v_customer_id UUID;
+  v_recipient_customer_id UUID;
+  v_enrollment_customer_id UUID;
 BEGIN
-  SELECT e.domain,e.status,r.enabled,r.cds_client_pulse,r.cds_customer_id
-    INTO v_domain,v_status,v_enabled,v_pulse,v_customer_id
+  SELECT e.domain,e.status,r.enabled,r.cds_client_pulse,r.cds_customer_id,e.cds_customer_id
+    INTO v_domain,v_status,v_enabled,v_pulse,v_recipient_customer_id,v_enrollment_customer_id
     FROM communication_enrollments e
     JOIN client_email_recipients r
       ON r.id=e.recipient_id AND r.org_id=e.org_id
@@ -26,14 +27,8 @@ BEGIN
      AND v_status IN ('active','verified')
      AND v_enabled IS TRUE
      AND v_pulse IS TRUE
-     AND v_customer_id IS NOT NULL
-     AND v_customer_id = (
-       SELECT r2.cds_customer_id
-       FROM client_email_recipients r2
-       WHERE r2.id=NEW.enrollment_id
-          OR r2.id=(SELECT recipient_id FROM communication_enrollments WHERE id=NEW.enrollment_id)
-       LIMIT 1
-     )
+     AND v_recipient_customer_id IS NOT NULL
+     AND v_enrollment_customer_id = v_recipient_customer_id
   THEN
     NEW.enabled := TRUE;
     NEW.critical_override := TRUE;
