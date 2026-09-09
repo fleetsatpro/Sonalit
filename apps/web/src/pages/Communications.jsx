@@ -1,14 +1,14 @@
-import { useMemo, useState } from 'react';
-import { Check, ChevronRight, Mail, Plus, Radio, RefreshCw, Shield, UserPlus, Users, X, Zap } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Check, ChevronRight, Plus, Radio, RefreshCw, Shield, UserPlus, Users, X } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { normalizePhone, isValidPhone } from '../lib/phone.js';
-import ClientPulseSettingsView from './cds/ClientPulseSettings.js';
+import ClientPulseSettingsView from './cds/ClientPulseSettings.tsx';
 import CommunicationsAuthorityV2 from './CommunicationsAuthorityV2.js';
 
 type Service = 'cds' | 'fleet';
 type Channel = 'email' | 'whatsapp' | 'web';
 type Receive = 'cds.client_pulse' | 'cds.operations' | 'fleet.operational' | 'fleet.security';
-type Staff = { name: string; email: string; phone: string; role: string; services: Service[]; receives: Receive[]; channels: Channel[] };
+type Staff = { name: string; email: string; role: string; services: Service[]; receives: Receive[]; channels: Channel[] };
 type Client = { id: string; company?: string; name?: string; email?: string; phone?: string; status?: string };
 type CdsCustomer = { id: string; company_name: string; email?: string; phone?: string; status?: string };
 
@@ -18,128 +18,39 @@ const RECEIVE_OPTIONS: { id: Receive; label: string; service: Service }[] = [
   { id: 'fleet.operational', label: 'Fleet Operations', service: 'fleet' },
   { id: 'fleet.security', label: 'Fleet Security', service: 'fleet' },
 ];
-
-const CHANNELS: { id: Channel; label: string }[] = [
-  { id: 'email', label: 'Email' },
-  { id: 'whatsapp', label: 'WhatsApp' },
-  { id: 'web', label: 'Web' },
-];
-
-const emptyStaff = (): Staff => ({ name: '', email: '', phone: '', role: 'Operations', services: ['cds'], receives: ['cds.client_pulse'], channels: ['email'] });
+const CHANNELS: { id: Channel; label: string }[] = [{ id: 'email', label: 'Email' }, { id: 'whatsapp', label: 'WhatsApp' }, { id: 'web', label: 'Web' }];
+const emptyStaff = (): Staff => ({ name: '', email: '', role: 'Operations', services: ['cds'], receives: ['cds.client_pulse'], channels: ['email'] });
 
 export default function Communications() {
   const [view, setView] = useState<'clients' | 'pulse' | 'advanced'>('clients');
   const [showEnroll, setShowEnroll] = useState(false);
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
-
-  return <div className="min-h-full pb-14 text-slate-200">
-    <div className="mx-auto max-w-[1680px] space-y-4">
-      <header className="relative overflow-hidden rounded-[26px] border border-white/[.08] bg-[#090d14] shadow-[0_24px_80px_rgba(0,0,0,.3)]">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_82%_0%,rgba(249,115,22,.13),transparent_32%),radial-gradient(circle_at_18%_100%,rgba(14,165,233,.07),transparent_28%)]" />
-        <div className="relative p-5 sm:p-7">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div><div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.28em] text-orange-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Sonalit / Communications</div><h1 className="mt-2 text-3xl font-semibold tracking-[-.04em] text-white">Who receives what.</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">Manage clients, their staff, and the communication they receive. The authority model stays underneath; operators get a simple workflow.</p></div>
-            <button onClick={() => { setShowEnroll(true); setNotice(null); }} className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 text-xs font-bold text-white shadow-lg shadow-orange-500/15 hover:bg-orange-400"><UserPlus size={15} /> Enrol Client</button>
-          </div>
-          <nav className="mt-6 flex flex-wrap gap-1 border-t border-white/[.07] pt-3">
-            <Nav active={view === 'clients'} onClick={() => setView('clients')} icon={Users} label="Clients" />
-            <Nav active={view === 'pulse'} onClick={() => setView('pulse')} icon={Radio} label="Client Pulse" />
-            <Nav active={view === 'advanced'} onClick={() => setView('advanced')} icon={Shield} label="Advanced Authority" />
-          </nav>
-        </div>
-      </header>
-
-      {notice && <div className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-xs ${notice.kind === 'error' ? 'border-red-400/20 bg-red-400/[.04] text-red-200' : 'border-emerald-400/20 bg-emerald-400/[.04] text-emerald-200'}`}><Check size={14}/><span className="flex-1">{notice.text}</span><button onClick={() => setNotice(null)}><X size={14}/></button></div>}
-
-      {view === 'clients' && <Clients onEnroll={() => setShowEnroll(true)} onNotice={setNotice} />}
-      {view === 'pulse' && <ClientPulseSettingsView />}
-      {view === 'advanced' && <CommunicationsAuthorityV2 />}
-      {showEnroll && <EnrollClient onClose={() => setShowEnroll(false)} onDone={(text) => { setShowEnroll(false); setNotice({ kind: 'ok', text }); }} onError={(text) => setNotice({ kind: 'error', text })} />}
-    </div>
-  </div>;
+  return <div className="min-h-full pb-14 text-slate-200"><div className="mx-auto max-w-[1680px] space-y-4">
+    <header className="relative overflow-hidden rounded-[26px] border border-white/[.08] bg-[#090d14] shadow-[0_24px_80px_rgba(0,0,0,.3)]"><div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_82%_0%,rgba(249,115,22,.13),transparent_32%),radial-gradient(circle_at_18%_100%,rgba(14,165,233,.07),transparent_28%)]"/><div className="relative p-5 sm:p-7"><div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.28em] text-orange-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400"/> Sonalit / Communications</div><h1 className="mt-2 text-3xl font-semibold tracking-[-.04em] text-white">Who receives what.</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">Manage clients, their staff, and what they receive. The authority model stays underneath; operators get a simple workflow.</p></div><button onClick={() => { setShowEnroll(true); setNotice(null); }} className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 text-xs font-bold text-white shadow-lg shadow-orange-500/15 hover:bg-orange-400"><UserPlus size={15}/> Enrol Client</button></div><nav className="mt-6 flex flex-wrap gap-1 border-t border-white/[.07] pt-3"><Nav active={view === 'clients'} onClick={() => setView('clients')} icon={Users} label="Clients"/><Nav active={view === 'pulse'} onClick={() => setView('pulse')} icon={Radio} label="Client Pulse"/><Nav active={view === 'advanced'} onClick={() => setView('advanced')} icon={Shield} label="Advanced Authority"/></nav></div></header>
+    {notice && <div className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-xs ${notice.kind === 'error' ? 'border-red-400/20 bg-red-400/[.04] text-red-200' : 'border-emerald-400/20 bg-emerald-400/[.04] text-emerald-200'}`}><Check size={14}/><span className="flex-1">{notice.text}</span><button onClick={() => setNotice(null)}><X size={14}/></button></div>}
+    {view === 'clients' && <Clients onEnroll={() => setShowEnroll(true)} onNotice={setNotice}/>} {view === 'pulse' && <ClientPulseSettingsView/>} {view === 'advanced' && <CommunicationsAuthorityV2/>}
+    {showEnroll && <EnrollClient onClose={() => setShowEnroll(false)} onDone={text => { setShowEnroll(false); setNotice({ kind: 'ok', text }); }} onError={text => setNotice({ kind: 'error', text })}/>}</div></div>;
 }
-
-function Nav({ active, onClick, icon: Icon, label }: { active: boolean; onClick: () => void; icon: typeof Users; label: string }) {
-  return <button onClick={onClick} className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition ${active ? 'bg-white/[.07] text-white' : 'text-slate-500 hover:bg-white/[.035] hover:text-slate-300'}`}><Icon size={14}/>{label}</button>;
-}
-
-function Clients({ onEnroll, onNotice }: { onEnroll: () => void; onNotice: (n: { kind: 'ok' | 'error'; text: string } | null) => void }) {
-  const [clients, setClients] = useState<Client[]>([]);
-  const [cds, setCds] = useState<CdsCustomer[]>([]);
-  const [loading, setLoading] = useState(true);
-  const load = async () => { setLoading(true); try { const [a, b] = await Promise.all([api.get('/portal/clients'), api.get('/cds/customers')]); setClients(a.data?.data ?? []); setCds(b.data?.data ?? []); } catch (e: any) { onNotice({ kind: 'error', text: e?.response?.data?.error ?? 'Could not load clients.' }); } finally { setLoading(false); } };
-  useMemo(() => { void load(); }, []);
+function Nav({ active, onClick, icon: Icon, label }: { active: boolean; onClick: () => void; icon: typeof Users; label: string }) { return <button onClick={onClick} className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition ${active ? 'bg-white/[.07] text-white' : 'text-slate-500 hover:bg-white/[.035] hover:text-slate-300'}`}><Icon size={14}/>{label}</button>; }
+function Clients({ onEnroll, onNotice }: { onEnroll: () => void; onNotice: (n: { kind: 'ok' | 'error' } | null) => void }) {
+  const [clients, setClients] = useState<Client[]>([]); const [cds, setCds] = useState<CdsCustomer[]>([]); const [loading, setLoading] = useState(true);
+  const load = async () => { setLoading(true); try { const [a,b] = await Promise.all([api.get('/portal/clients'), api.get('/cds/customers')]); setClients(a.data?.data ?? []); setCds(b.data?.data ?? []); } catch (e:any) { onNotice({ kind:'error', text:e?.response?.data?.error ?? 'Could not load clients.' }); } finally { setLoading(false); } };
+  useEffect(() => { void load(); }, []);
   const rows = clients.map(c => ({ ...c, cds: cds.find(x => String(x.company_name).toLowerCase() === String(c.company ?? c.name ?? '').toLowerCase()) }));
-  return <section className="rounded-[22px] border border-white/[.07] bg-[#0a0f17] p-5">
-    <div className="flex items-center justify-between gap-3"><div><div className="text-[10px] font-bold uppercase tracking-[.2em] text-slate-500">Clients</div><h2 className="mt-1 text-xl font-semibold text-white">Client communication registry</h2></div><button onClick={() => void load()} className="rounded-lg border border-white/10 p-2 text-slate-400 hover:text-white"><RefreshCw size={14} className={loading ? 'animate-spin' : ''}/></button></div>
-    {loading ? <div className="py-16 text-center text-xs text-slate-500">Loading clients…</div> : rows.length === 0 ? <div className="py-16 text-center"><Users className="mx-auto text-slate-600" size={28}/><p className="mt-3 text-sm text-slate-400">No clients enrolled yet.</p><button onClick={onEnroll} className="mt-4 rounded-lg bg-orange-500 px-4 py-2 text-xs font-bold text-white">Enrol your first client</button></div> : <div className="mt-5 divide-y divide-white/[.06]">{rows.map(c => <div key={c.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-sm font-semibold text-white">{c.company || c.name || 'Unnamed client'}</div><div className="mt-1 text-[11px] text-slate-500">{c.email || 'No email'}{c.phone ? ` · ${c.phone}` : ''}</div></div><div className="flex flex-wrap gap-2"><Tag active={!!c.cds}>CDS</Tag><Tag active={true}>Fleet</Tag><span className="rounded-full bg-white/[.04] px-2.5 py-1 text-[10px] text-slate-400">{c.status || 'active'}</span></div></div>)}</div>}
-  </section>;
+  return <section className="rounded-[22px] border border-white/[.07] bg-[#0a0f17] p-5"><div className="flex items-center justify-between gap-3"><div><div className="text-[10px] font-bold uppercase tracking-[.2em] text-slate-500">Clients</div><h2 className="mt-1 text-xl font-semibold text-white">Client communication registry</h2></div><button onClick={() => void load()} className="rounded-lg border border-white/10 p-2 text-slate-400 hover:text-white"><RefreshCw size={14} className={loading ? 'animate-spin' : ''}/></button></div>{loading ? <div className="py-16 text-center text-xs text-slate-500">Loading clients…</div> : rows.length === 0 ? <div className="py-16 text-center"><Users className="mx-auto text-slate-600" size={28}/><p className="mt-3 text-sm text-slate-400">No clients enrolled yet.</p><button onClick={onEnroll} className="mt-4 rounded-lg bg-orange-500 px-4 py-2 text-xs font-bold text-white">Enrol your first client</button></div> : <div className="mt-5 divide-y divide-white/[.06]">{rows.map(c => <div key={c.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-sm font-semibold text-white">{c.company || c.name || 'Unnamed client'}</div><div className="mt-1 text-[11px] text-slate-500">{c.email || 'No email'}{c.phone ? ` · ${c.phone}` : ''}</div></div><div className="flex flex-wrap gap-2"><Tag active={!!c.cds}>CDS</Tag><Tag active={true}>Fleet</Tag><span className="rounded-full bg-white/[.04] px-2.5 py-1 text-[10px] text-slate-400">{c.status || 'active'}</span></div></div>)}</div>}</section>;
 }
-
-function Tag({ active, children }: { active: boolean; children: string }) { return <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${active ? 'bg-emerald-400/10 text-emerald-300' : 'bg-white/[.04] text-slate-600'}`}>{active ? '✓ ' : ''}{children}</span>; }
-
-function EnrollClient({ onClose, onDone, onError }: { onClose: () => void; onDone: (text: string) => void; onError: (text: string) => void }) {
-  const [company, setCompany] = useState('');
-  const [contact, setContact] = useState({ name: '', email: '', phone: '' });
-  const [services, setServices] = useState<Service[]>(['cds']);
-  const [staff, setStaff] = useState<Staff[]>([emptyStaff()]);
-  const [saving, setSaving] = useState(false);
-  const toggleService = (service: Service) => setServices(s => s.includes(service) ? s.filter(x => x !== service) : [...s, service]);
-  const updateStaff = (i: number, patch: Partial<Staff>) => setStaff(s => s.map((x, n) => n === i ? { ...x, ...patch } : x));
-  const toggleStaffService = (i: number, service: Service) => { const current = staff[i].services; const next = current.includes(service) ? current.filter(x => x !== service) : [...current, service]; updateStaff(i, { services: next, receives: staff[i].receives.filter(r => next.includes(RECEIVE_OPTIONS.find(o => o.id === r)?.service as Service)) }); };
-  const toggleReceive = (i: number, receive: Receive) => { const current = staff[i].receives; updateStaff(i, { receives: current.includes(receive) ? current.filter(x => x !== receive) : [...current, receive] }); };
-  const toggleChannel = (i: number, channel: Channel) => { const current = staff[i].channels; updateStaff(i, { channels: current.includes(channel) ? current.filter(x => x !== channel) : [...current, channel] }); };
-
-  const submit = async () => {
-    if (!company.trim()) return onError('Enter the client company name.');
-    if (!services.length) return onError('Choose CDS, Fleet, or both.');
-    if (!contact.name.trim() || !contact.email.trim() || !contact.phone.trim()) return onError('Complete the primary contact details.');
-    const phone = normalizePhone(contact.phone, 'Kenya');
-    if (!phone || !isValidPhone(contact.phone, 'Kenya')) return onError('Enter a valid primary contact phone number.');
-    const validStaff = staff.filter(s => s.name.trim() && s.email.trim());
-    setSaving(true);
-    try {
-      let clientId: string | null = null;
-      let cdsCustomerId: string | null = null;
-      if (services.includes('fleet')) {
-        const r = await api.post('/portal/clients', { name: contact.name.trim(), email: contact.email.trim().toLowerCase(), company: company.trim(), phone, country: 'Kenya' });
-        clientId = r.data?.data?.id;
-      }
-      if (services.includes('cds')) {
-        const r = await api.post('/cds/customers', { company_name: company.trim(), contact_person: contact.name.trim(), phone, email: contact.email.trim().toLowerCase(), country: 'Kenya', status: 'active' });
-        cdsCustomerId = r.data?.data?.id;
-      }
-      if (!clientId && !cdsCustomerId) throw new Error('Client could not be created.');
-      for (const person of validStaff) {
-        const recipient = await api.post('/communications/recipients', { email: person.email.trim().toLowerCase(), name: person.name.trim(), company: company.trim(), enabled: true });
-        const recipientId = recipient.data?.data?.id;
-        if (!recipientId) throw new Error(`Could not create ${person.name}'s communication identity.`);
-        for (const service of person.services.filter(s => services.includes(s))) {
-          const enrollment = await api.post('/communications/enrollments', { recipient_id: recipientId, domain: service, client_id: service === 'fleet' ? clientId : null, cds_customer_id: service === 'cds' ? cdsCustomerId : null, contact_role: person.role || 'Operations', locale: 'en-KE', timezone: 'Africa/Nairobi', status: 'pending_verification' });
-          const enrollmentId = enrollment.data?.data?.id;
-          const selected = person.receives.filter(x => RECEIVE_OPTIONS.some(o => o.id === x && o.service === service));
-          if (enrollmentId && selected.length) await api.put(`/communications/enrollments/${enrollmentId}/subscriptions`, { subscriptions: selected.map(event_type => ({ event_type, channel: person.channels[0] || 'email', delivery_mode: 'immediate', enabled: false, critical_override: true })) });
-        }
-      }
-      onDone(`${company.trim()} enrolled with ${services.map(s => s.toUpperCase()).join(' + ')}. ${validStaff.length} staff member(s) added.`);
-    } catch (e: any) { onError(e?.response?.data?.error ?? e?.message ?? 'Client enrolment failed.'); }
-    finally { setSaving(false); }
-  };
-
-  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-6">
-    <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-t-[26px] border border-white/[.1] bg-[#0b1018] shadow-2xl sm:rounded-[26px]">
-      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/[.07] bg-[#0b1018]/95 px-5 py-4 backdrop-blur"><div><div className="text-[9px] font-bold uppercase tracking-[.24em] text-orange-300">Communications</div><h2 className="mt-1 text-lg font-semibold text-white">Enrol Client</h2></div><button onClick={onClose} className="rounded-lg p-2 text-slate-500 hover:bg-white/[.05] hover:text-white"><X size={17}/></button></div>
-      <div className="space-y-6 p-5 sm:p-7">
-        <section><Label>Client</Label><input value={company} onChange={e => setCompany(e.target.value)} placeholder="Client company name" className="mt-2 w-full rounded-xl border border-white/10 bg-white/[.025] px-3.5 py-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-orange-400/40"/><div className="mt-3 grid gap-3 sm:grid-cols-3"><Input label="Primary contact" value={contact.name} onChange={v => setContact({ ...contact, name: v })}/><Input label="Email" value={contact.email} onChange={v => setContact({ ...contact, email: v })} type="email"/><Input label="Phone" value={contact.phone} onChange={v => setContact({ ...contact, phone: v })} type="tel"/></div></section>
-        <section><Label>Services</Label><div className="mt-2 grid gap-2 sm:grid-cols-2"><ServiceChoice active={services.includes('cds')} onClick={() => toggleService('cds')} title="CDS" description="Bookings, delivery, e-locks and Client Pulse"/><ServiceChoice active={services.includes('fleet')} onClick={() => toggleService('fleet')} title="Fleet" description="Convoys, operations and security"/></div></section>
-        <section><div className="flex items-center justify-between"><Label>Client staff</Label><button onClick={() => setStaff(s => [...s, emptyStaff()])} className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-orange-300"><Plus size={13}/> Add staff</button></div><div className="mt-2 space-y-3">{staff.map((person, i) => <div key={i} className="rounded-2xl border border-white/[.07] bg-white/[.02] p-4"><div className="grid gap-3 sm:grid-cols-3"><Input label="Name" value={person.name} onChange={v => updateStaff(i, { name: v })}/><Input label="Email" value={person.email} onChange={v => updateStaff(i, { email: v })} type="email"/><Input label="Role" value={person.role} onChange={v => updateStaff(i, { role: v })}/></div><div className="mt-4"><div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Services</div><div className="mt-2 flex flex-wrap gap-2">{(['cds','fleet'] as Service[]).map(s => <SmallToggle key={s} active={person.services.includes(s) && services.includes(s)} disabled={!services.includes(s)} onClick={() => toggleStaffService(i, s)}>{s.toUpperCase()}</SmallToggle>)}</div></div><div className="mt-4"><div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">They receive</div><div className="mt-2 flex flex-wrap gap-2">{RECEIVE_OPTIONS.filter(o => person.services.includes(o.service) && services.includes(o.service)).map(o => <SmallToggle key={o.id} active={person.receives.includes(o.id)} onClick={() => toggleReceive(i, o.id)}>{o.label}</SmallToggle>)}</div></div><div className="mt-4"><div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Channels</div><div className="mt-2 flex flex-wrap gap-2">{CHANNELS.map(c => <SmallToggle key={c.id} active={person.channels.includes(c.id)} onClick={() => toggleChannel(i, c.id)}>{c.label}</SmallToggle>)}</div></div>{staff.length > 1 && <button onClick={() => setStaff(s => s.filter((_, n) => n !== i))} className="mt-3 text-[10px] text-slate-600 hover:text-red-300">Remove staff</button>}</div>)}</div></section>
-        <div className="flex flex-col-reverse gap-2 border-t border-white/[.07] pt-5 sm:flex-row sm:justify-end"><button onClick={onClose} className="rounded-xl px-4 py-2.5 text-xs font-semibold text-slate-400 hover:text-white">Cancel</button><button disabled={saving} onClick={() => void submit()} className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-2.5 text-xs font-bold text-white disabled:opacity-50">{saving ? 'Enrolling…' : 'Enrol Client'} <ChevronRight size={14}/></button></div>
-      </div>
-    </div>
-  </div>;
+function Tag({ active, children }: { active:boolean; children:string }) { return <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${active ? 'bg-emerald-400/10 text-emerald-300' : 'bg-white/[.04] text-slate-600'}`}>{active ? '✓ ' : ''}{children}</span>; }
+function EnrollClient({ onClose, onDone, onError }: { onClose:()=>void; onDone:(text:string)=>void; onError:(text:string)=>void }) {
+  const [company,setCompany]=useState(''); const [contact,setContact]=useState({name:'',email:'',phone:''}); const [services,setServices]=useState<Service[]>(['cds']); const [staff,setStaff]=useState<Staff[]>([emptyStaff()]); const [saving,setSaving]=useState(false);
+  const toggleService=(s:Service)=>setServices(v=>v.includes(s)?v.filter(x=>x!==s):[...v,s]);
+  const updateStaff=(i:number,p:Partial<Staff>)=>setStaff(v=>v.map((x,n)=>n===i?{...x,...p}:x));
+  const toggleStaffService=(i:number,s:Service)=>{const next=staff[i].services.includes(s)?staff[i].services.filter(x=>x!==s):[...staff[i].services,s];updateStaff(i,{services:next,receives:staff[i].receives.filter(r=>next.includes(RECEIVE_OPTIONS.find(o=>o.id===r)?.service as Service))});};
+  const toggleReceive=(i:number,r:Receive)=>updateStaff(i,{receives:staff[i].receives.includes(r)?staff[i].receives.filter(x=>x!==r):[...staff[i].receives,r]});
+  const toggleChannel=(i:number,c:Channel)=>updateStaff(i,{channels:staff[i].channels.includes(c)?staff[i].channels.filter(x=>x!==c):[...staff[i].channels,c]});
+  const submit=async()=>{if(!company.trim())return onError('Enter the client company name.');if(!services.length)return onError('Choose CDS, Fleet, or both.');if(!contact.name.trim()||!contact.email.trim()||!contact.phone.trim())return onError('Complete the primary contact details.');const phone=normalizePhone(contact.phone,'Kenya');if(!phone||!isValidPhone(contact.phone,'Kenya'))return onError('Enter a valid primary contact phone number.');const validStaff=staff.filter(s=>s.name.trim()&&s.email.trim());setSaving(true);try{let clientId:string|null=null;let cdsCustomerId:string|null=null;if(services.includes('fleet')){const r=await api.post('/portal/clients',{name:contact.name.trim(),email:contact.email.trim().toLowerCase(),company:company.trim(),phone,country:'Kenya'});clientId=r.data?.data?.id;}if(services.includes('cds')){const r=await api.post('/cds/customers',{company_name:company.trim(),contact_person:contact.name.trim(),phone,email:contact.email.trim().toLowerCase(),country:'Kenya',status:'active'});cdsCustomerId=r.data?.data?.id;}if(!clientId&&!cdsCustomerId)throw new Error('Client could not be created.');for(const person of validStaff){const recipient=await api.post('/communications/recipients',{email:person.email.trim().toLowerCase(),name:person.name.trim(),company:company.trim(),enabled:true});const recipientId=recipient.data?.data?.id;if(!recipientId)throw new Error(`Could not create ${person.name}'s communication identity.`);for(const service of person.services.filter(s=>services.includes(s))){const enrollment=await api.post('/communications/enrollments',{recipient_id:recipientId,domain:service,client_id:service==='fleet'?clientId:null,cds_customer_id:service==='cds'?cdsCustomerId:null,contact_role:person.role||'Operations',locale:'en-KE',timezone:'Africa/Nairobi',status:'pending_verification'});const enrollmentId=enrollment.data?.data?.id;const selected=person.receives.filter(x=>RECEIVE_OPTIONS.some(o=>o.id===x&&o.service===service));if(enrollmentId&&selected.length){const subscriptions=selected.flatMap(event_type=>person.channels.map(channel=>({event_type,channel,delivery_mode:'immediate',enabled:false,critical_override:true})));await api.put(`/communications/enrollments/${enrollmentId}/subscriptions`,{subscriptions});}}}onDone(`${company.trim()} enrolled with ${services.map(s=>s.toUpperCase()).join(' + ')}. ${validStaff.length} staff member(s) added.`);}catch(e:any){onError(e?.response?.data?.error??e?.message??'Client enrolment failed.');}finally{setSaving(false);}};
+  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-6"><div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-t-[26px] border border-white/[.1] bg-[#0b1018] shadow-2xl sm:rounded-[26px]"><div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/[.07] bg-[#0b1018]/95 px-5 py-4 backdrop-blur"><div><div className="text-[9px] font-bold uppercase tracking-[.24em] text-orange-300">Communications</div><h2 className="mt-1 text-lg font-semibold text-white">Enrol Client</h2></div><button onClick={onClose} className="rounded-lg p-2 text-slate-500 hover:bg-white/[.05] hover:text-white"><X size={17}/></button></div><div className="space-y-6 p-5 sm:p-7"><section><Label>Client</Label><input value={company} onChange={e=>setCompany(e.target.value)} placeholder="Client company name" className="mt-2 w-full rounded-xl border border-white/10 bg-white/[.025] px-3.5 py-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-orange-400/40"/><div className="mt-3 grid gap-3 sm:grid-cols-3"><Input label="Primary contact" value={contact.name} onChange={v=>setContact({...contact,name:v})}/><Input label="Email" value={contact.email} onChange={v=>setContact({...contact,email:v})} type="email"/><Input label="Phone" value={contact.phone} onChange={v=>setContact({...contact,phone:v})} type="tel"/></div></section><section><Label>Services</Label><div className="mt-2 grid gap-2 sm:grid-cols-2"><ServiceChoice active={services.includes('cds')} onClick={()=>toggleService('cds')} title="CDS" description="Bookings, delivery, e-locks and Client Pulse"/><ServiceChoice active={services.includes('fleet')} onClick={()=>toggleService('fleet')} title="Fleet" description="Convoys, operations and security"/></div></section><section><div className="flex items-center justify-between"><Label>Client staff</Label><button onClick={()=>setStaff(s=>[...s,emptyStaff()])} className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-orange-300"><Plus size={13}/> Add staff</button></div><div className="mt-2 space-y-3">{staff.map((person,i)=><div key={i} className="rounded-2xl border border-white/[.07] bg-white/[.02] p-4"><div className="grid gap-3 sm:grid-cols-3"><Input label="Name" value={person.name} onChange={v=>updateStaff(i,{name:v})}/><Input label="Email" value={person.email} onChange={v=>updateStaff(i,{email:v})} type="email"/><Input label="Role" value={person.role} onChange={v=>updateStaff(i,{role:v})}/></div><div className="mt-4"><Label>Services</Label><div className="mt-2 flex flex-wrap gap-2">{(['cds','fleet'] as Service[]).map(s=><SmallToggle key={s} active={person.services.includes(s)&&services.includes(s)} disabled={!services.includes(s)} onClick={()=>toggleStaffService(i,s)}>{s.toUpperCase()}</SmallToggle>)}</div></div><div className="mt-4"><Label>They receive</Label><div className="mt-2 flex flex-wrap gap-2">{RECEIVE_OPTIONS.filter(o=>person.services.includes(o.service)&&services.includes(o.service)).map(o=><SmallToggle key={o.id} active={person.receives.includes(o.id)} onClick={()=>toggleReceive(i,o.id)}>{o.label}</SmallToggle>)}</div></div><div className="mt-4"><Label>Channels</Label><div className="mt-2 flex flex-wrap gap-2">{CHANNELS.map(c=><SmallToggle key={c.id} active={person.channels.includes(c.id)} onClick={()=>toggleChannel(i,c.id)}>{c.label}</SmallToggle>)}</div></div>{staff.length>1&&<button onClick={()=>setStaff(s=>s.filter((_,n)=>n!==i))} className="mt-3 text-[10px] text-slate-600 hover:text-red-300">Remove staff</button>}</div>)}</div></section><div className="flex flex-col-reverse gap-2 border-t border-white/[.07] pt-5 sm:flex-row sm:justify-end"><button onClick={onClose} className="rounded-xl px-4 py-2.5 text-xs font-semibold text-slate-400 hover:text-white">Cancel</button><button disabled={saving} onClick={()=>void submit()} className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-2.5 text-xs font-bold text-white disabled:opacity-50">{saving?'Enrolling…':'Enrol Client'} <ChevronRight size={14}/></button></div></div></div></div>;
 }
-
-function Label({ children }: { children: string }) { return <div className="text-[10px] font-bold uppercase tracking-[.18em] text-slate-500">{children}</div>; }
-function Input({ label, value, onChange, type = 'text' }: { label: string; value: string; onChange: (v: string) => void; type?: string }) { return <label className="block"><span className="text-[10px] text-slate-500">{label}</span><input value={value} onChange={e => onChange(e.target.value)} type={type} className="mt-1.5 w-full rounded-xl border border-white/10 bg-white/[.025] px-3 py-2.5 text-xs text-white outline-none placeholder:text-slate-600 focus:border-orange-400/40" /></label>; }
-function ServiceChoice({ active, onClick, title, description }: { active: boolean; onClick: () => void; title: string; description: string }) { return <button onClick={onClick} className={`flex items-start gap-3 rounded-xl border p-3.5 text-left transition ${active ? 'border-orange-400/35 bg-orange-400/[.07]' : 'border-white/[.08] bg-white/[.015] hover:bg-white/[.035]'}`}><span className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border ${active ? 'border-orange-300 bg-orange-400 text-white' : 'border-white/15 text-transparent'}`}><Check size={12}/></span><span><span className="block text-xs font-bold text-white">{title}</span><span className="mt-1 block text-[10px] leading-4 text-slate-500">{description}</span></span></button>; }
-function SmallToggle({ active, disabled, onClick, children }: { active: boolean; disabled?: boolean; onClick: () => void; children: string }) { return <button disabled={disabled} onClick={onClick} className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-semibold transition ${disabled ? 'cursor-not-allowed border-white/[.04] text-slate-700' : active ? 'border-emerald-400/25 bg-emerald-400/10 text-emerald-300' : 'border-white/10 text-slate-500 hover:text-slate-300'}`}>{active ? '✓ ' : ''}{children}</button>; }
+function Label({children}:{children:string}){return <div className="text-[10px] font-bold uppercase tracking-[.18em] text-slate-500">{children}</div>;}
+function Input({label,value,onChange,type='text'}:{label:string;value:string;onChange:(v:string)=>void;type?:string}){return <label className="block"><span className="text-[10px] text-slate-500">{label}</span><input value={value} onChange={e=>onChange(e.target.value)} type={type} className="mt-1.5 w-full rounded-xl border border-white/10 bg-white/[.025] px-3 py-2.5 text-xs text-white outline-none placeholder:text-slate-600 focus:border-orange-400/40"/></label>;}
+function ServiceChoice({active,onClick,title,description}:{active:boolean;onClick:()=>void;title:string;description:string}){return <button onClick={onClick} className={`flex items-start gap-3 rounded-xl border p-3.5 text-left transition ${active?'border-orange-400/35 bg-orange-400/[.07]':'border-white/[.08] bg-white/[.015] hover:bg-white/[.035]'}`}><span className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border ${active?'border-orange-300 bg-orange-400 text-white':'border-white/15 text-transparent'}`}><Check size={12}/></span><span><span className="block text-xs font-bold text-white">{title}</span><span className="mt-1 block text-[10px] leading-4 text-slate-500">{description}</span></span></button>;}
+function SmallToggle({active,disabled,onClick,children}:{active:boolean;disabled?:boolean;onClick:()=>void;children:string}){return <button disabled={disabled} onClick={onClick} className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-semibold transition ${disabled?'cursor-not-allowed border-white/[.04] text-slate-700':active?'border-emerald-400/25 bg-emerald-400/10 text-emerald-300':'border-white/10 text-slate-500 hover:text-slate-300'}`}>{active?'✓ ':''}{children}</button>;}
