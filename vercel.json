@@ -7,6 +7,7 @@
   "trailingSlash": false,
   "rewrites": [
     { "source": "/convoy.html", "destination": "/convoy.html" },
+    { "source": "/api/v1/communications/:path*", "destination": "https://sonalit-production.up.railway.app/api/v1/admin/communications/:path*" },
     { "source": "/api/:path*", "destination": "https://sonalit-production.up.railway.app/api/:path*" },
     { "source": "/fleet-management", "destination": "/fleet-management/index.html" },
     { "source": "/convoy-management", "destination": "/convoy-management/index.html" },
