@@ -9,6 +9,7 @@ const { queueClientPulseEmail } = require('../services/email/email.service');
 const { generateAndQueueScopedClientPulse, listCustomerPulseTargets } = require('../services/email/scopedClientPulse.service');
 
 router.use(authenticate, authorize('admin', 'super_admin'), attachOrgDb);
+router.use('/settings', require('./clientPulseRecipients'));
 
 // Canonical Communications Control Plane. Legacy admin Client Pulse endpoints
 // remain below for compatibility; new UI code should use /admin/communications/*.
