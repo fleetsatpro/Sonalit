@@ -1,1 +1,1 @@
-export { default } from './NotificationCommandCenterFixed.js';
+export { default } from './CommunicationsControlPlane.js';
