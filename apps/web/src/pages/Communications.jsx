@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Radio, UserPlus } from 'lucide-react';
-import CommunicationsCommandDeck from './CommunicationsCommandDeck';
+import CommunicationsCommandDeck from './CommunicationsCommandDeckV2';
 import ClientOnboarding from './ClientOnboardingV3';
 import { useAuthStore } from '../stores/auth.js';
 
