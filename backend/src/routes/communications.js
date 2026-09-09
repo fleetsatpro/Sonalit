@@ -13,8 +13,22 @@ function validateEnrollment(body) {
   if (!body.recipient_id) return { error: '"recipient_id" is required' };
   if (!body.domain) return { error: '"domain" is required' };
   if (!['platform','fleet','cds'].includes(body.domain)) return { error: '"domain" must be one of [platform, fleet, cds]' };
-  if (body.domain === 'cds' && !body.cds_customer_id) return { error: '"cds_customer_id" is required for CDS enrollment' };
-  if (body.domain !== 'cds' && body.cds_customer_id != null) return { error: '"cds_customer_id" is only valid for CDS enrollment' };
+
+  if (body.domain === 'cds') {
+    if (!body.cds_customer_id) return { error: '"cds_customer_id" is required for CDS enrollment' };
+    if (body.client_id != null) return { error: '"client_id" is not allowed for CDS enrollment' };
+  }
+
+  if (body.domain === 'fleet') {
+    if (body.cds_customer_id != null) return { error: '"cds_customer_id" is not allowed for Fleet enrollment' };
+  }
+
+  if (body.domain === 'platform') {
+    if (body.client_id != null || body.cds_customer_id != null) {
+      return { error: '"client_id" and "cds_customer_id" are not allowed for platform enrollment' };
+    }
+  }
+
   return null;
 }
 
