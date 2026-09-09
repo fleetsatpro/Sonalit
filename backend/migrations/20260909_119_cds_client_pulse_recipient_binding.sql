@@ -60,7 +60,13 @@ WHERE r.deleted_at IS NULL
   AND r.enabled=true
   AND r.authority_role IS DISTINCT FROM 'super_admin'
   AND r.cds_customer_id IS NOT NULL
-ON CONFLICT (org_id,recipient_id,domain,cds_customer_id,client_id)
+ON CONFLICT (
+  org_id,
+  recipient_id,
+  domain,
+  COALESCE(cds_customer_id, '00000000-0000-0000-0000-000000000000'::uuid),
+  COALESCE(client_id, '00000000-0000-0000-0000-000000000000'::uuid)
+)
 DO UPDATE SET status='active', updated_at=NOW();
 
 INSERT INTO communication_subscriptions
