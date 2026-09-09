@@ -13,6 +13,7 @@ router.use(authenticate, authorize('admin', 'super_admin'), attachOrgDb);
 // Canonical Communications Control Plane. Legacy admin Client Pulse endpoints
 // remain below for compatibility; new UI code should use /admin/communications/*.
 router.use('/communications', require('./communicationsControl'));
+router.use('/communications', require('./communications'));
 
 router.get('/queues', async (req, res, next) => {
   try {
