@@ -21,14 +21,14 @@ BEGIN
   -- identifies exactly one CDS customer in this organization.
   v_customer_id := NEW.cds_customer_id;
   IF v_customer_id IS NULL AND NEW.email IS NOT NULL THEN
-    SELECT CASE WHEN COUNT(*) = 1 THEN MIN(c.id) END INTO v_customer_id
+    SELECT CASE WHEN COUNT(*) = 1 THEN MIN(c.id::text)::uuid END INTO v_customer_id
     FROM cds_customers c
     WHERE c.org_id=NEW.org_id AND c.deleted_at IS NULL
       AND c.email IS NOT NULL
       AND lower(trim(c.email))=lower(trim(NEW.email));
   END IF;
   IF v_customer_id IS NULL AND NEW.company IS NOT NULL THEN
-    SELECT CASE WHEN COUNT(*) = 1 THEN MIN(c.id) END INTO v_customer_id
+    SELECT CASE WHEN COUNT(*) = 1 THEN MIN(c.id::text)::uuid END INTO v_customer_id
     FROM cds_customers c
     WHERE c.org_id=NEW.org_id AND c.deleted_at IS NULL
       AND lower(trim(c.company_name))=lower(trim(NEW.company));
@@ -61,13 +61,24 @@ BEGIN
   END IF;
 
   IF NEW.enabled IS TRUE AND NEW.cds_client_pulse IS TRUE AND NEW.cds_customer_id IS NOT NULL THEN
+    UPDATE communication_enrollments
+       SET status='active', revoked_at=NULL, suspended_at=NULL, updated_at=NOW()
+     WHERE org_id=NEW.org_id
+       AND recipient_id=NEW.id
+       AND domain='cds'
+       AND cds_customer_id=NEW.cds_customer_id;
+
     INSERT INTO communication_enrollments
       (org_id,recipient_id,domain,cds_customer_id,contact_role,status)
-    VALUES
-      (NEW.org_id,NEW.id,'cds',NEW.cds_customer_id,'client_pulse','active')
-    ON CONFLICT (org_id,recipient_id,domain,COALESCE(cds_customer_id,'00000000-0000-0000-0000-000000000000'::uuid),COALESCE(client_id,'00000000-0000-0000-0000-000000000000'::uuid))
-    DO UPDATE SET status='active', revoked_at=NULL, suspended_at=NULL,
-                  verified_at=COALESCE(communication_enrollments.verified_at,NOW()), updated_at=NOW();
+    SELECT NEW.org_id,NEW.id,'cds',NEW.cds_customer_id,'client_pulse','active'
+    WHERE NOT EXISTS (
+      SELECT 1 FROM communication_enrollments e
+      WHERE e.org_id=NEW.org_id
+        AND e.recipient_id=NEW.id
+        AND e.domain='cds'
+        AND e.cds_customer_id=NEW.cds_customer_id
+    )
+    ON CONFLICT DO NOTHING;
 
     INSERT INTO communication_subscriptions
       (org_id,enrollment_id,event_type,channel,delivery_mode,enabled,critical_override)
