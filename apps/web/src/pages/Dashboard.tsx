@@ -4,7 +4,7 @@ import { api } from '../lib/api.js';
 import { useDashboardStore } from '../stores/dashboardStore.js';
 import '../styles/dashboard.css';
 
-import { Suspense, lazy } from 'react';
+import React, { Suspense, lazy } from 'react';
 import { Activity, AlertTriangle, Clock3, MapPinned, Radio, ShieldCheck, Siren, Target, Zap } from 'lucide-react';
 import EventsTicker from '../components/dashboard/EventsTicker.js';
 import InstrumentBar from '../components/dashboard/InstrumentBar.js';
@@ -70,6 +70,31 @@ function CommandMast() {
   );
 }
 
+function CommandObject({ item, onClose }: { item: { title: string; body?: string; at: string; rank: number; chip: { label: string; hue: string }; ackId?: string }; onClose: () => void }) {
+  return (
+    <div className='command-object-backdrop' onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <article className={`command-object command-object--${item.rank <= 1 ? 'high' : 'normal'}`} onMouseDown={(e) => e.stopPropagation()}>
+        <div className='command-object__topline'><span className='command-object__signal' style={{ color:`rgb(${item.chip.hue})`, borderColor:`rgba(${item.chip.hue},.45)`, background:`rgba(${item.chip.hue},.08)` }}>{item.chip.label}</span><span>COMMAND EVENT</span><button onClick={onClose} aria-label='Close command event'>×</button></div>
+        <div className='command-object__hero'>
+          <div><span>LIVE OPERATIONAL OBJECT</span><h2>{item.title}</h2><p>{item.body || 'No additional narrative supplied. The operator should use the linked operational systems for full context.'}</p></div>
+          <div className='command-object__time'><strong>{relTime(item.at)}</strong><small>OBSERVED</small></div>
+        </div>
+        <div className='command-object__facts'>
+          <div><span>SEVERITY</span><b>{item.rank <= 0 ? 'CRITICAL' : item.rank === 1 ? 'HIGH' : item.chip.label}</b></div>
+          <div><span>STATUS</span><b>ACTIVE QUEUE</b></div>
+          <div><span>PROVENANCE</span><b>LIVE COMMAND FEED</b></div>
+          <div><span>RESPONSE</span><b>OPERATOR REVIEW</b></div>
+        </div>
+        <div className='command-object__rail'>
+          <button onClick={onClose}>RETURN TO MAP</button>
+          <button onClick={() => { window.location.href='/alerts'; }}>OPEN ALERT CONSOLE</button>
+          <button onClick={() => { window.location.href='/intelligence'; }}>OPEN INTELLIGENCE</button>
+        </div>
+      </article>
+    </div>
+  );
+}
+
 function CommandDeck() {
   const nav = useNavigate();
   const alerts = useDashboardStore((s) => s.alerts);
@@ -125,6 +150,7 @@ function MapOverlay() {
 
 export default function Dashboard() {
   const { setOverview } = useDashboardStore.getState();
+  const [selectedCommand, setSelectedCommand] = React.useState<any>(null);
 
   useQuery({
     queryKey: ['dashboard-overview'],
@@ -162,13 +188,38 @@ export default function Dashboard() {
             <div className='command-map-corners' aria-hidden='true'><i/><i/><i/><i/></div>
           </div>
         </div>
-        <PriorityQueue />
+        <PriorityQueue onSelect={setSelectedCommand} />
       </div>
 
       <EventsTicker />
+      {selectedCommand && <CommandObject item={selectedCommand} onClose={() => setSelectedCommand(null)} />}
 
       <style>{`
         .d-command-v3 { height: 100%; min-height: 0; }
+        .command-object-backdrop { position:fixed; inset:0; z-index:9000; display:grid; place-items:center; padding:24px; background:rgba(2,6,14,.72); backdrop-filter:blur(8px); }
+        .command-object { position:relative; width:min(860px,94vw); color:var(--d-t1); border:1px solid rgba(34,232,255,.28); border-radius:18px; overflow:hidden; background:linear-gradient(145deg,rgba(10,20,36,.98),rgba(5,11,22,.98)); box-shadow:0 40px 100px rgba(0,0,0,.55), 0 0 60px rgba(34,232,255,.08); transform:perspective(1400px) rotateX(.7deg); }
+        .command-object--high { border-color:rgba(255,178,62,.38); box-shadow:0 40px 100px rgba(0,0,0,.55),0 0 55px rgba(255,178,62,.08); }
+        .command-object::before { content:''; position:absolute; inset:0; pointer-events:none; background:linear-gradient(120deg,rgba(34,232,255,.06),transparent 34%,transparent 68%,rgba(139,107,255,.06)); }
+        .command-object__topline { display:flex; align-items:center; gap:9px; padding:14px 16px; border-bottom:1px solid var(--d-rim2); color:var(--d-t2); font-size:10px; font-weight:800; letter-spacing:.13em; }
+        .command-object__signal { padding:4px 8px; border:1px solid; border-radius:6px; font-weight:900; }
+        .command-object__topline button { margin-left:auto; width:34px; height:34px; border-radius:9px; border:1px solid var(--d-rim2); background:rgba(255,255,255,.03); color:var(--d-t1); font-size:22px; cursor:pointer; }
+        .command-object__hero { display:grid; grid-template-columns:1fr 130px; gap:20px; padding:28px 28px 22px; }
+        .command-object__hero > div:first-child > span { color:var(--d-sig); font-size:10px; font-weight:900; letter-spacing:.16em; }
+        .command-object__hero h2 { margin:8px 0 10px; max-width:680px; font-size:clamp(25px,3vw,42px); line-height:1.06; letter-spacing:-.03em; }
+        .command-object__hero p { margin:0; max-width:690px; color:var(--d-t2); font-size:15px; line-height:1.6; }
+        .command-object__time { display:flex; flex-direction:column; justify-content:center; align-items:flex-end; border-left:1px solid var(--d-rim2); padding-left:18px; }
+        .command-object__time strong { font-size:24px; color:var(--d-t1); }
+        .command-object__time small { margin-top:5px; color:var(--d-t3); font-size:10px; letter-spacing:.13em; }
+        .command-object__facts { display:grid; grid-template-columns:repeat(4,1fr); gap:9px; padding:0 28px 24px; }
+        .command-object__facts div { padding:11px 12px; border:1px solid var(--d-rim2); border-radius:10px; background:rgba(255,255,255,.025); }
+        .command-object__facts span { display:block; color:var(--d-t3); font-size:9px; font-weight:800; letter-spacing:.1em; }
+        .command-object__facts b { display:block; margin-top:4px; color:var(--d-t1); font-size:12px; letter-spacing:.04em; }
+        .command-object__rail { display:flex; gap:10px; padding:14px 28px 20px; border-top:1px solid var(--d-rim2); background:rgba(255,255,255,.02); }
+        .command-object__rail button { min-height:40px; padding:0 14px; border-radius:9px; border:1px solid var(--d-rim2); background:rgba(255,255,255,.03); color:var(--d-t1); font-size:11px; font-weight:800; letter-spacing:.04em; cursor:pointer; }
+        .command-object__rail button:nth-child(2) { border-color:rgba(255,201,63,.28); color:var(--d-warn); }
+        .command-object__rail button:nth-child(3) { border-color:rgba(34,232,255,.28); color:var(--d-sig); }
+        @media (max-width:700px){ .command-object-backdrop{padding:10px}.command-object__hero{grid-template-columns:1fr}.command-object__time{align-items:flex-start;border-left:0;border-top:1px solid var(--d-rim2);padding:12px 0 0}.command-object__facts{grid-template-columns:repeat(2,1fr)}.command-object__rail{flex-wrap:wrap}.command-object__rail button{flex:1 1 140px} }
+
         .command-deck { display:grid; grid-template-columns: minmax(230px,.78fr) minmax(520px,2.2fr); gap:10px; padding:10px 14px; background:linear-gradient(180deg, rgba(6,11,24,.98), rgba(7,14,28,.96)); border-bottom:1px solid var(--d-rim2); }
         .command-deck__context { display:flex; flex-direction:column; justify-content:center; padding:10px 12px; border:1px solid var(--d-rim2); border-radius:11px; background:rgba(255,255,255,.025); }
         .command-deck__context span { color:var(--d-sig); font-size:10px; font-weight:800; letter-spacing:.14em; }
