@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { FileText, ShieldCheck, CalendarDays, ChevronRight, X } from 'lucide-react'
 import { api } from '../lib/api.js'
+import '../styles/intelligence-publication-desk.css'
 
 type Row=Record<string,any>
 const COUNTRIES=['KE','TZ','UG','RW','BI','SO','ET','SS','DJ','ER','SD','CD']
