@@ -1,118 +1,99 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Activity, ArrowRight, BrainCircuit, CheckCircle2, ChevronRight, Clock3, FileSearch, Layers3, MapPin, Network, RefreshCw, Search, ShieldAlert, Sparkles, Target, X, Zap } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowUpRight, BookOpen, BrainCircuit, ChevronRight, Clock3, Globe2, Layers3, MapPin, Network, Radio, RefreshCw, Search, Shield, Sparkles, Target, X, Zap } from 'lucide-react';
 import { api } from '../lib/api.js';
 import IntelligenceScopedWorkspace from './IntelligenceCentreDeep.tsx';
 import '../styles/intelligence-centre-synthesis.css';
 
-type Story = {
-  id: string;
-  rank: number;
-  headline: string;
-  topic: string;
-  brief: string;
-  key_facts: string[];
-  why_it_matters: string[];
-  caveats: string[];
-  confidence_label: string;
-  operational_relevance: string;
-  severity: string;
-  country_code?: string | null;
-  status: string;
-  source_count: number;
-  observation_count: number;
-  first_seen_at?: string | null;
-  last_seen_at?: string | null;
-  event_ids: string[];
-  events: Record<string, any>[];
-};
+type Row = Record<string, any>;
+type Story = Row & { id: string; headline: string; brief: string; key_facts?: string[]; why_it_matters?: string[]; caveats?: string[]; event_ids?: string[]; events?: Row[]; source_count?: number; observation_count?: number };
 
-type Topic = { topic: string; story_count: number; signal_count: number; severity: string; countries: string[] };
+const COUNTRIES=['KE','SO','ET','UG','TZ','RW','BI','SS','DJ','ER','SD','CD'];
+const NAMES:Record<string,string>={KE:'Kenya',SO:'Somalia',ET:'Ethiopia',UG:'Uganda',TZ:'Tanzania',RW:'Rwanda',BI:'Burundi',SS:'South Sudan',DJ:'Djibouti',ER:'Eritrea',SD:'Sudan',CD:'DR Congo'};
+const EA=new Set(['KE','SO','ET','UG','TZ','RW','BI','SS','DJ']);
+const sevRank:Record<string,number>={critical:4,high:3,moderate:2,low:1,informational:0};
+const age=(v?:string|null)=>{if(!v)return'—';const m=Math.max(0,Math.floor((Date.now()-new Date(v).getTime())/60000));if(m<1)return'NOW';if(m<60)return`${m}M`;if(m<1440)return`${Math.floor(m/60)}H`;return`${Math.floor(m/1440)}D`};
+const severity=(r:Row)=>{const s=String(r.severity||'').toLowerCase();if(s)return s;const t=`${r.title||''} ${r.body||r.summary||''}`.toLowerCase();if(/attack|bomb|explosion|kidnap|massacre|terror|ambush|gunfire|insurgent/.test(t))return'critical';if(/conflict|clash|unrest|protest|militia|strike|border|roadblock/.test(t))return'high';return'moderate'};
+const text=(v:any,max=3200)=>String(v||'').replace(/\s+/g,' ').trim().slice(0,max);
 
-type StoriesPayload = { stories: Story[]; topics: Topic[]; changes: Record<string, number>; scope: Record<string, string>; generated_at: string; engine: { name: string; ai_used: boolean; stories_synthesized: number } };
+function Sev({value}:{value?:string}){const v=String(value||'low').toLowerCase();return <span className={`ic2-sev ${v}`}><i/>{v.toUpperCase()}</span>}
+function Metric({label,value,sub}:{label:string;value:any;sub:string}){return <div className="ic2-metric"><span>{label}</span><strong>{value}</strong><small>{sub}</small></div>}
 
-const SCOPE_COUNTRIES=['KE','SO','UG','TZ','RW','ET','DJ','SS','BI','ZM','ZW','CD'];
-const sevOrder=['critical','high','moderate','low'];
-function age(v?: string | null){if(!v)return'—';const m=Math.max(0,Math.floor((Date.now()-new Date(v).getTime())/60000));if(m<1)return'NOW';if(m<60)return`${m}M`;if(m<1440)return`${Math.floor(m/60)}H`;return`${Math.floor(m/1440)}D`;}
-function tone(v?:string){const k=String(v||'low').toLowerCase();return sevOrder.includes(k)?k:'low';}
-function Metric({label,value,sub,accent}:{label:string;value:any;sub:string;accent?:boolean}){return <div className={`ics-metric ${accent?'accent':''}`}><span>{label}</span><strong>{value}</strong><small>{sub}</small></div>}
-function StoryCard({story,onOpen,featured=false}:{story:Story;onOpen:(story:Story)=>void;featured?:boolean}){return <button className={`ics-story ${featured?'featured':''}`} onClick={()=>onOpen(story)}><div className="ics-story-top"><span className={`ics-severity ${tone(story.severity)}`}><i/>{story.severity.toUpperCase()}</span><span>{story.country_code||'REGIONAL'}</span><span>{age(story.last_seen_at)}</span></div><div className="ics-story-topic">{story.topic}</div><h3>{story.headline}</h3><p>{story.brief}</p><div className="ics-story-bottom"><span>{story.observation_count} OBSERVATIONS</span><span>{story.source_count} EVIDENCE</span><span>{story.operational_relevance} OPERATIONAL</span><ChevronRight size={16}/></div></button>}
+function NewsRow({item,onOpen}:{item:Row;onOpen:(x:Row)=>void}){return <button className="ic2-news-row" onClick={()=>onOpen(item)}><div className="ic2-news-time"><span>{age(item.published_at||item.observed_at)}</span><b>{item.country_code||'REG'}</b></div><div className="ic2-news-copy"><div className="ic2-news-source"><Radio size={12}/>{item.source_name||item.provider||'SOURCE'}<span>·</span>{item.raw_metadata?.aggregator_source||'DISCOVERY MESH'}</div><h3>{text(item.title||'Untitled source observation',180)}</h3><p>{text(item.body||item.summary||'')}</p></div><div className="ic2-news-right"><Sev value={severity(item)}/><small>{item.language||'—'}</small><ChevronRight size={17}/></div></button>}
+
+function StoryRow({story,onOpen}:{story:Story;onOpen:(x:Story)=>void}){return <button className="ic2-story-row" onClick={()=>onOpen(story)}><div><Sev value={story.severity}/><span>{story.country_code||'REGIONAL'}</span><small>{age(story.last_seen_at)}</small></div><b>{story.headline}</b><p>{text(story.brief,260)}</p><footer><span>{story.observation_count||0} OBS</span><span>{story.source_count||0} SOURCES</span><span>{story.operational_relevance||'MEDIUM'} OPERATIONAL</span></footer><ChevronRight size={17}/></button>}
+
+function ObjectCard({item,story,onClose}:{item:Row;story?:Story|null;onClose:()=>void}){
+ const [tab,setTab]=useState<'summary'|'evidence'|'timeline'|'connections'|'spatial'|'impact'>('summary');
+ const title=story?.headline||item?.title||'Intelligence object';
+ const brief=story?.brief||item?.body_en||item?.body||'Sonalit has received the source observation. Background synthesis will be promoted when the fusion agent links it to an intelligence event.';
+ const evidence=story?.events||[];
+ return <div className="ic2-overlay" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><article className="ic2-object" onMouseDown={e=>e.stopPropagation()}>
+   <div className="ic2-object-bezel b1"/><div className="ic2-object-bezel b2"/>
+   <header className="ic2-object-head"><div><div className="ic2-object-kicker"><span>INTELLIGENCE OBJECT</span><span>SONALIT SYNTHESIS</span><span>{item?.country_code||story?.country_code||'REGIONAL'}</span></div><h2>{title}</h2><div className="ic2-object-tags"><Sev value={story?.severity||severity(item)}/><span>{story?.topic||'SOURCE OBSERVATION'}</span><span>{story?.status||'COLLECTION'}</span><span>{age(story?.last_seen_at||item?.published_at||item?.observed_at)}</span></div></div><button onClick={onClose} aria-label="Close"><X size={20}/></button></header>
+   <div className="ic2-object-main"><section className="ic2-summary"><div className="ic2-summary-label"><Sparkles size={14}/> AI SUMMARY</div><p>{brief}</p>{story?.why_it_matters?.length?<div className="ic2-why"><div><Target size={14}/><b>WHY IT MATTERS</b></div>{story.why_it_matters.slice(0,4).map((x,i)=><span key={i}>• {x}</span>)}</div>:null}</section>
+   <section className="ic2-object-metrics"><Metric label="CONFIDENCE" value={story?.confidence_label||'PENDING'} sub={story?.synthesis_confidence?`${story.synthesis_confidence}/100`:''}/><Metric label="EVIDENCE" value={story?.source_count||1} sub="source families"/><Metric label="OBSERVATIONS" value={story?.observation_count||1} sub="linked records"/><Metric label="LAST SEEN" value={age(story?.last_seen_at||item?.observed_at)} sub="refreshing live"/></section></div>
+   <nav className="ic2-object-tabs">{[['summary','SUMMARY',Sparkles],['evidence','EVIDENCE',Shield],['timeline','TIMELINE',Clock3],['connections','CONNECTIONS',Network],['spatial','SPATIAL',MapPin],['impact','IMPACT',AlertTriangle]].map(([id,label,Icon])=><button key={id as string} className={tab===id?'active':''} onClick={()=>setTab(id as any)}><Icon size={14}/>{label as string}</button>)}</nav>
+   <section className="ic2-object-detail">
+     {tab==='summary'&&<div className="ic2-detail-grid"><div><span>HEADLINE</span><strong>{story?.headline||item?.title||'—'}</strong></div><div><span>TOPIC</span><strong>{story?.topic||'Awaiting story fusion'}</strong></div><div><span>INTELLIGENCE TYPE</span><strong>{story?.intelligence_type||'SOURCE MATERIAL'}</strong></div><div><span>OPERATIONAL RELEVANCE</span><strong>{story?.operational_relevance||'PENDING'}</strong></div></div>}
+     {tab==='evidence'&&<div className="ic2-evidence"><div className="ic2-detail-head"><b>OBSERVATION MESH</b><span>{evidence.length||1} LINKED RECORDS</span></div>{evidence.length?evidence.slice(0,10).map((e,i)=><div className="ic2-evidence-row" key={e.id||i}><b>{String(i+1).padStart(2,'0')}</b><div><strong>{e.title||e.headline||'Observation'}</strong><p>{text(e.summary||e.body||e.description,420)}</p></div><aside><span>{e.country_code||story?.country_code||'—'}</span><small>{age(e.last_seen_at||e.observed_at)}</small></aside></div>):<div className="ic2-raw"><span>RAW SOURCE MATERIAL</span><p>{text(item?.body_en||item?.body||item?.summary,1500)}</p>{item?.url&&<a href={item.url} target="_blank" rel="noreferrer">OPEN ORIGINAL SOURCE <ArrowUpRight size={13}/></a>}</div>}</div>}
+     {tab==='timeline'&&<div className="ic2-empty-detail"><Clock3 size={22}/><b>EVENT TIMELINE</b><span>Promoted event observations are sequenced here as the fusion layer links and refreshes the story.</span></div>}
+     {tab==='connections'&&<div className="ic2-empty-detail"><Network size={22}/><b>ENTITY & STORY CONNECTIONS</b><span>Connected actors, locations, topics and related event objects will appear here.</span></div>}
+     {tab==='spatial'&&<div className="ic2-empty-detail"><MapPin size={22}/><b>SPATIAL CONTEXT</b><span>{item?.latitude&&item?.longitude?`Point ${item.latitude}, ${item.longitude} retained from the source.`:'No source coordinates supplied.'}</span></div>}
+     {tab==='impact'&&<div className="ic2-empty-detail"><AlertTriangle size={22}/><b>OPERATIONAL IMPACT</b><span>{story?.why_it_matters?.join(' ')||'Impact assessment remains conservative until evidence supports a stronger judgement.'}</span></div>}
+   </section>
+   <footer className="ic2-object-footer"><div><BrainCircuit size={15}/><span>BACKGROUND INTELLIGENCE AGENT</span><small>Translation → headline → fusion → assessment → publication; original provenance remains attached.</small></div><button onClick={onClose}>RETURN TO CENTRE</button></footer>
+ </article></div>
+}
 
 export default function IntelligenceCentreSynthesis(){
- const [subview,setSubview]=useState<'overview'|'stories'|'topics'|'signals'|'deep'>('overview');
- const [query,setQuery]=useState('');
- const [windowHours,setWindowHours]=useState(24);
+ const [view,setView]=useState<'picture'|'news'|'signals'|'publications'|'watchlists'|'sources'|'countries'|'deep'>('picture');
  const [country,setCountry]=useState('');
- const [selected,setSelected]=useState<Story|null>(null);
- const [refreshing,setRefreshing]=useState(false);
+ const [mode,setMode]=useState<'all'|'east'>('all');
+ const [q,setQ]=useState('');
+ const [windowHours,setWindowHours]=useState(24);
+ const [selected,setSelected]=useState<Row|null>(null);
+ const [refreshKey,setRefreshKey]=useState(0);
  const params={scope_type:country?'country':'global',scope_key:country||'global',window_hours:windowHours,limit:24};
- const synthesis=useQuery<StoriesPayload>({queryKey:['intel-synthesis',params],queryFn:async()=>{const r=await api.get('/risk/intelligence/synthesis/stories',{params});return r.data},staleTime:30_000,refetchInterval:60_000,retry:1});
- const signals=useQuery({queryKey:['intel-synthesis-events',country,windowHours],queryFn:async()=>{const r=await api.get('/risk/intelligence/events',{params:{scope_type:country?'country':'global',scope_key:country||'global',limit:120}});return r.data?.events||[]},staleTime:20_000,refetchInterval:30_000,retry:1});
- const selectedDetail=useQuery({queryKey:['intel-synthesis-story-detail',selected?.id],enabled:Boolean(selected),queryFn:async()=>{const ids=(selected?.event_ids||[]).slice(0,12);const r=await api.get('/risk/intelligence/synthesis/stories/'+selected!.id,{params:{event_ids:ids}});return r.data?.events||[]},staleTime:30_000,retry:1});
- const q=(query||'').trim().toLowerCase();
- const stories=useMemo(()=>{const items=synthesis.data?.stories||[];return q?items.filter(s=>JSON.stringify(s).toLowerCase().includes(q)):items},[synthesis.data,q]);
- const topics=useMemo(()=>synthesis.data?.topics||[],[synthesis.data]);
- const liveSignals=useMemo(()=>{const xs=Array.isArray(signals.data)?signals.data:[];return q?xs.filter((x:any)=>JSON.stringify(x).toLowerCase().includes(q)):xs},[signals.data,q]);
- const top=stories[0];
- const priority=stories.filter(s=>s.severity==='critical'||s.severity==='high').length;
- const change=synthesis.data?.changes||{};
- useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape')setSelected(null);if(e.key==='/'&&document.activeElement?.tagName!=='INPUT'){e.preventDefault();document.getElementById('ics-search')?.focus();}};window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey)},[]);
+ const storiesQ=useQuery({queryKey:['ic2-stories',params,refreshKey],queryFn:async()=>{const r=await api.get('/risk/intelligence/synthesis/stories',{params});return r.data||{}} ,staleTime:20000,refetchInterval:45000,retry:1});
+ const obsQ=useQuery({queryKey:['ic2-observations',country,windowHours,refreshKey],queryFn:async()=>{const r=await api.get('/risk/intelligence/observations',{params:{limit:300,scope_type:country?'country':'global',scope_key:country||'global'}});return r.data?.observations||[]},staleTime:15000,refetchInterval:30000,retry:1});
+ const eventsQ=useQuery({queryKey:['ic2-events',country,windowHours,refreshKey],queryFn:async()=>{const r=await api.get('/risk/intelligence/events',{params:{limit:240,scope_type:country?'country':'global',scope_key:country||'global'}});return r.data?.events||[]},staleTime:15000,refetchInterval:30000,retry:1});
+ const pubsQ=useQuery({queryKey:['ic2-publications',country,refreshKey],queryFn:async()=>{const r=await api.get('/risk/intelligence/publications',{params:{scope_type:country?'country':'global',scope_key:country||'global'}});return r.data?.publications||[]},staleTime:30000,refetchInterval:60000,retry:1});
+ const watchQ=useQuery({queryKey:['ic2-watchlists',country,refreshKey],queryFn:async()=>{const r=await api.get('/risk/intelligence/watchlists',{params:{scope_type:country?'country':'global',scope_key:country||'global'}});return r.data?.watchlists||[]},staleTime:30000,refetchInterval:60000,retry:1});
+ const sourceQ=useQuery({queryKey:['ic2-sources',country,refreshKey],queryFn:async()=>{const r=await api.get('/risk/intelligence/sources',{params:{active:true,scope_type:country?'country':'global',scope_key:country||'global'}});return r.data?.sources||[]},staleTime:30000,refetchInterval:60000,retry:1});
+ const countryQ=useQuery({queryKey:['ic2-countries',refreshKey],queryFn:async()=>{const r=await api.get('/risk/intelligence/countries');return r.data?.countries||[]},staleTime:30000,refetchInterval:60000,retry:1});
+ const ql=q.trim().toLowerCase();
+ const observations=useMemo(()=>obsQ.data.filter((x:Row)=>{if(mode==='east'&&!EA.has(String(x.country_code||'').toUpperCase()))return false;if(country&&String(x.country_code||'').toUpperCase()!==country)return false;return !ql||`${x.title||''} ${x.body||''} ${x.source_name||''} ${x.country_code||''}`.toLowerCase().includes(ql)}),[obsQ.data,mode,country,ql]);
+ const stories=useMemo(()=>{const xs=(storiesQ.data?.stories||[]) as Story[];return ql?xs.filter(x=>JSON.stringify(x).toLowerCase().includes(ql)):xs},[storiesQ.data,ql]);
+ const events=useMemo(()=>eventsQ.data as Row[],[eventsQ.data]);
+ const publications=useMemo(()=>pubsQ.data as Row[],[pubsQ.data]);
+ const priority=events.filter(x=>['critical','high'].includes(String(x.severity||'').toLowerCase())).length;
+ const sourceFamilies=sourceQ.data.length;
+ const fresh=observations.filter(x=>Date.now()-new Date(x.observed_at||0).getTime()<86400000).length;
+ const storyFor=(item:Row)=>{const title=text(item.title,240).toLowerCase();return stories.find((s:Story)=>[s.headline,s.brief,...(s.key_facts||[])].some(v=>{const z=text(v,500).toLowerCase();return title&&z.includes(title.slice(0,50))||title.split(/\s+/).filter(Boolean).slice(0,5).every(w=>z.includes(w))}))||null};
+ const openItem=(x:Row)=>setSelected(x);
+ useEffect(()=>{const f=(e:KeyboardEvent)=>{if(e.key==='/'&&document.activeElement?.tagName!=='INPUT'){e.preventDefault();document.getElementById('ic2-search')?.focus()}if(e.key==='Escape')setSelected(null)};window.addEventListener('keydown',f);return()=>window.removeEventListener('keydown',f)},[]);
  useEffect(()=>{document.body.style.overflow=selected?'hidden':'';return()=>{document.body.style.overflow=''}},[selected]);
- async function refresh(){setRefreshing(true);try{await Promise.all([synthesis.refetch(),signals.refetch()])}finally{setRefreshing(false)}}
- return <div className="ics-root">
-  <header className="ics-header">
-    <div className="ics-brand"><div className="ics-mark"><span>S</span></div><div><span>SONALIT / SECURITY INTELLIGENCE</span><h1>INTELLIGENCE CENTRE <em>SYNTHESIS</em></h1><p>Source mesh → story fusion → analytical context → operational relevance</p></div></div>
-    <div className="ics-live"><span><i/>FABRIC LIVE</span><b>{synthesis.data?.engine?.ai_used?'AI SYNTHESIS ONLINE':'DETERMINISTIC FALLBACK'}</b><small>{age(synthesis.data?.generated_at)}</small><button onClick={refresh} disabled={refreshing}><RefreshCw size={15} className={refreshing?'spin':''}/> REFRESH</button></div>
-  </header>
-
-  <section className="ics-controlbar">
-    <div className="ics-theatre"><span>ACTIVE THEATRE</span><strong>{country||'GLOBAL'}</strong><small>Server-side scope enforcement active</small></div>
-    <label><span>COUNTRY FOCUS</span><select value={country} onChange={e=>setCountry(e.target.value)}><option value="">ALL THEATRES</option>{SCOPE_COUNTRIES.map(c=><option key={c} value={c}>{c}</option>)}</select></label>
-    <label><span>WINDOW</span><select value={windowHours} onChange={e=>setWindowHours(Number(e.target.value))}><option value={6}>6 HOURS</option><option value={24}>24 HOURS</option><option value={72}>72 HOURS</option><option value={168}>7 DAYS</option></select></label>
-    <div className="ics-search"><Search size={16}/><input id="ics-search" value={query} onChange={e=>setQuery(e.target.value)} placeholder="SEARCH STORIES, TOPICS, ACTORS, PLACES"/><kbd>/</kbd></div>
-  </section>
-
-  <nav className="ics-subnav">{[['overview','OPERATING PICTURE'],['stories','STORIES'],['topics','TOPICS'],['signals','LIVE SIGNALS'],['deep','DEEP ANALYSIS']].map(([id,label],i)=><button key={id} className={subview===id?'active':''} onClick={()=>setSubview(id as any)}><span>0{i+1}</span><b>{label}</b></button>)}</nav>
-
-  {subview==='deep'?<IntelligenceScopedWorkspace/>:<main className="ics-main">
-    <section className="ics-changebar">
-      <div className="ics-change-title"><span>WHAT CHANGED</span><strong>{change.signals_24h||0}</strong><small>signals in active window</small></div>
-      <div className="ics-change"><span className="up">↑</span><b>{priority}</b><small>HIGH PRIORITY</small></div>
-      <div className="ics-change"><span>◆</span><b>{change.developing_stories||0}</b><small>DEVELOPING STORIES</small></div>
-      <div className="ics-change"><span>◉</span><b>{change.source_observations||0}</b><small>EVIDENCE OBSERVATIONS</small></div>
-      <div className="ics-engine"><BrainCircuit size={18}/><div><b>SONALIT SYNTHESIS</b><small>{synthesis.data?.engine?.stories_synthesized||0} stories AI-normalized · provenance retained</small></div></div>
-    </section>
-
-    {subview==='overview'&&<>
-      <section className="ics-hero-grid">
-        <div className="ics-hero">
-          <div><span className="ics-eyebrow">PRIORITY INTELLIGENCE OBJECT</span><h2>{top?.headline||'WAITING FOR THE INTELLIGENCE FABRIC'}</h2><div className="ics-hero-meta">{top&&<><span className={`ics-severity ${tone(top.severity)}`}><i/>{top.severity.toUpperCase()}</span><span>{top.topic}</span><span>{top.country_code||'REGIONAL'}</span><span>{age(top.last_seen_at)}</span></>}</div><p>{top?.brief||'The synthesis engine will consolidate raw observations into canonical stories as collection data arrives.'}</p>{top&&<button className="ics-primary" onClick={()=>setSelected(top)}>OPEN INTELLIGENCE OBJECT <ArrowRight size={16}/></button>}</div>
-          <div className="ics-orb"><div className="ring r1"/><div className="ring r2"/><div className="ring r3"/><Sparkles size={22}/><strong>{stories.length}</strong><small>CANONICAL STORIES</small></div>
-        </div>
-        <div className="ics-metrics"><Metric label="ACTIVE SIGNALS" value={change.signals_24h||0} sub="within window"/><Metric label="PRIORITY" value={priority} sub="high / critical" accent/><Metric label="TOPICS" value={topics.length} sub="active clusters"/><Metric label="DEVELOPING" value={change.developing_stories||0} sub="needs attention"/><Metric label="EVIDENCE" value={change.source_observations||0} sub="observations"/><Metric label="AI STORIES" value={synthesis.data?.engine?.stories_synthesized||0} sub="synthesized now" accent/></div>
-      </section>
-      <section className="ics-columns"><div className="ics-panel"><header><div><span>EMERGING TOPICS</span><h3>Live thematic clusters</h3></div><button onClick={()=>setSubview('topics')}>VIEW ALL <ArrowRight size={14}/></button></header><div className="ics-topic-list">{topics.slice(0,6).map((topic,i)=><button key={topic.topic} onClick={()=>{setQuery(topic.topic);setSubview('topics')}}><span>{String(i+1).padStart(2,'0')}</span><div><b>{topic.topic}</b><small>{topic.story_count} stories · {topic.signal_count} signals · {topic.countries.join(' · ')||'REGIONAL'}</small></div><span className={`ics-severity ${tone(topic.severity)}`}><i/>{topic.severity}</span><ChevronRight size={15}/></button>)}{!topics.length&&<div className="ics-empty">NO THEMATIC CLUSTERS YET</div>}</div></div>
-        <div className="ics-panel"><header><div><span>PRIORITY SIGNALS</span><h3>Canonical intelligence stories</h3></div><button onClick={()=>setSubview('stories')}>VIEW ALL <ArrowRight size={14}/></button></header><div className="ics-mini-stories">{stories.slice(0,4).map(s=><StoryCard key={s.id} story={s} onOpen={setSelected}/>)}</div></div></section>
+ const selectedStory=selected?storyFor(selected):null;
+ const tabs=[['picture','OPERATING PICTURE'],['news','NEWS FEED'],['signals','SIGNALS'],['publications','PUBLICATIONS'],['watchlists','WATCHLISTS'],['sources','SOURCES'],['countries','COUNTRIES'],['deep','DEEP ANALYSIS']];
+ return <div className="ic2-root">
+  <header className="ic2-header"><div className="ic2-title"><div className="ic2-sigil">S</div><div><span>SONALIT / 3i INTELLIGENCE FABRIC</span><h1>INTELLIGENCE CENTRE</h1><p>Discover more. Corroborate. Synthesize. Publish. Preserve provenance.</p></div></div><div className="ic2-status"><div><i/>FABRIC LIVE <b>{sourceFamilies} SOURCES</b></div><div className="ic2-ai"><BrainCircuit size={14}/>BACKGROUND AGENTS ACTIVE</div><button onClick={()=>setRefreshKey(x=>x+1)}><RefreshCw size={14}/> SYNC</button></div></header>
+  <section className="ic2-toolbar"><div className="ic2-theatre"><span>ACTIVE THEATRE</span><strong>{country?NAMES[country]||country:mode==='east'?'EAST AFRICA':'AFRICA / GLOBAL'}</strong></div><label><span>FOCUS</span><select value={country} onChange={e=>setCountry(e.target.value)}><option value="">ALL COUNTRIES</option>{COUNTRIES.map(c=><option key={c} value={c}>{c} · {NAMES[c]}</option>)}</select></label><label><span>WINDOW</span><select value={windowHours} onChange={e=>setWindowHours(Number(e.target.value))}><option value={6}>6H</option><option value={24}>24H</option><option value={72}>72H</option><option value={168}>7D</option></select></label><div className="ic2-search"><Search size={16}/><input id="ic2-search" value={q} onChange={e=>setQ(e.target.value)} placeholder="SEARCH HEADLINES, ACTORS, PLACES, SOURCES…"/><kbd>/</kbd></div><div className="ic2-region-switch"><button className={mode==='all'?'active':''} onClick={()=>setMode('all')}><Globe2 size={13}/> AFRICA</button><button className={mode==='east'?'active':''} onClick={()=>setMode('east')}>EAST AFRICA</button></div></section>
+  <nav className="ic2-nav">{tabs.map(([id,label],i)=><button key={id} className={view===id?'active':''} onClick={()=>setView(id as any)}><span>{String(i+1).padStart(2,'0')}</span>{label}</button>)}</nav>
+  {view==='deep'?<IntelligenceScopedWorkspace/>:<main className="ic2-main">
+    <section className="ic2-kpis"><Metric label="FRESH OBSERVATIONS" value={fresh} sub="last 24 hours"/><Metric label="PRIORITY EVENTS" value={priority} sub="critical + high"/><Metric label="STORY OBJECTS" value={stories.length} sub="fused narratives"/><Metric label="SOURCE FAMILIES" value={sourceFamilies} sub="collection lanes"/><Metric label="PUBLICATIONS" value={publications.length} sub="live newsroom"/><Metric label="WATCHLISTS" value={watchQ.data.length} sub="active monitoring"/></section>
+    {view==='picture'&&<>
+      <section className="ic2-hero"><div><span>OPERATING PICTURE / {country||'GLOBAL'}</span><h2>{stories[0]?.headline||'THE FABRIC IS COLLECTING; SYNTHESIS FOLLOWS THE EVIDENCE'}</h2><p>{stories[0]?.brief||'Sonalit is continuously expanding collection across country, local-source, thematic and specialist discovery lanes. Source material stays distinct from intelligence judgement until the fusion agent has evidence to support promotion.'}</p><div className="ic2-hero-actions">{stories[0]&&<button onClick={()=>openItem(stories[0])}>OPEN INTELLIGENCE OBJECT <ArrowUpRight size={15}/></button>}<button className="ghost" onClick={()=>setView('news')}>ENTER NEWS ROOM <Radio size={15}/></button></div></div><div className="ic2-hero-orbit"><div/><div/><div/><strong>{observations.length}</strong><span>COLLECTED</span></div></section>
+      <section className="ic2-columns"><div className="ic2-panel"><header><div><span>LIVE NEWS</span><h3>Fresh source discovery</h3></div><button onClick={()=>setView('news')}>OPEN FEED <ChevronRight size={14}/></button></header>{observations.slice(0,7).map((x:Row,i)=><NewsRow key={x.id||i} item={x} onOpen={openItem}/>)}</div><div className="ic2-panel"><header><div><span>SYNTHESIZED INTELLIGENCE</span><h3>Priority story objects</h3></div><button onClick={()=>setView('signals')}>VIEW SIGNALS <ChevronRight size={14}/></button></header>{stories.slice(0,5).map((x:Story)=><StoryRow key={x.id} story={x} onOpen={openItem}/>)}</div></section>
+      <section className="ic2-pulse"><div><span>COLLECTION REDUNDANCY</span><strong>{sourceFamilies} ACTIVE SOURCE FAMILIES</strong><small>News mesh + RSS + GDELT + authorised social/humanitarian lanes</small></div><div><span>AI PIPELINE</span><strong>TRANSLATE → HEADLINE → FUSE → ASSESS</strong><small>Background agents persist outputs; browser is not the dependency</small></div><div><span>NEWSROOM</span><strong>{publications.filter((p:Row)=>p.status==='published').length} PUBLISHED PRODUCTS</strong><small>Daily country products are evidence-governed</small></div></section>
     </>}
-
-    {subview==='stories'&&<section className="ics-panel ics-panel-full"><header><div><span>STORY OBJECTS</span><h3>One story. Many observations. No link-chasing.</h3></div><small>{stories.length} RESULTS</small></header><div className="ics-story-grid">{stories.map(s=><StoryCard key={s.id} story={s} onOpen={setSelected} featured={s.rank===1}/>)}</div></section>}
-
-    {subview==='topics'&&<section className="ics-panel ics-panel-full"><header><div><span>TOPIC INTELLIGENCE</span><h3>Living thematic clusters</h3></div><small>SELECT A TOPIC TO FILTER STORIES</small></header><div className="ics-topics-grid">{topics.map((t,i)=><button key={t.topic} className="ics-topic-card" onClick={()=>{setQuery(t.topic);setSubview('stories')}}><span className="topic-index">{String(i+1).padStart(2,'0')}</span><b>{t.topic}</b><strong>{t.signal_count}</strong><small>SIGNALS · {t.story_count} STORIES</small><div className={`ics-topic-bar ${tone(t.severity)}`}><span style={{width:`${Math.min(100,25+t.signal_count*8)}%`}}/></div><em>{t.countries.join(' · ')||'REGIONAL'}</em></button>)}</div></section>}
-
-    {subview==='signals'&&<section className="ics-panel ics-panel-full"><header><div><span>RAW COLLECTION</span><h3>Live signals with synthesis overlay</h3></div><small>{liveSignals.length} SIGNALS</small></header><div className="ics-signal-list">{liveSignals.slice(0,80).map((x:any,i:number)=><button key={x.id||i} onClick={()=>{const story=stories.find(s=>s.event_ids.includes(String(x.id)));if(story)setSelected(story)}}><span>{String(i+1).padStart(2,'0')}</span><div><b>{x.title||x.headline||'UNNAMED SIGNAL'}</b><small>{x.summary||x.description||'No synopsis supplied.'}</small></div><aside><em>{x.country_code||'—'}</em><span className={`ics-severity ${tone(x.severity)}`}><i/>{x.severity||'LOW'}</span><small>{age(x.last_seen_at||x.observed_at)}</small></aside><ChevronRight size={15}/></button>)}</div></section>}
+    {view==='news'&&<section className="ic2-fullpanel"><header><div><span>COLLECTION ROOM</span><h2>NEWS FEED — DISCOVER, DON'T RECYCLE</h2><p>Fresh source observations are shown with provenance. Headlines are later normalized by the background synthesis agent.</p></div><b>{observations.length} MATCHES</b></header><div className="ic2-news-feed">{observations.map((x:Row,i)=><NewsRow key={x.id||i} item={x} onOpen={openItem}/>)}</div></section>}
+    {view==='signals'&&<section className="ic2-fullpanel"><header><div><span>FUSED SIGNALS</span><h2>STORY OBJECTS</h2><p>Multiple observations become one canonical intelligence object instead of repeated headlines.</p></div><b>{stories.length}</b></header><div className="ic2-story-feed">{stories.map((x:Story)=><StoryRow key={x.id} story={x} onOpen={openItem}/>)}</div></section>}
+    {view==='publications'&&<section className="ic2-fullpanel"><header><div><span>INTELLIGENCE NEWSROOM</span><h2>DAILY / WEEKLY / MONTHLY COUNTRY REPORTS</h2><p>East Africa is live now, with the publication country set designed to expand across Africa. Automated products publish only when their evidence contract is satisfied; otherwise they remain drafts.</p></div><BookOpen size={18}/></header><div className="ic2-publication-grid">{publications.map((p:Row)=><article key={p.id} className="ic2-publication"><div className="ic2-pub-head"><span>{String(p.publication_type||'custom').toUpperCase()}</span><b className={p.status}>{String(p.status||'draft').toUpperCase()}</b></div><div className="ic2-pub-country">{NAMES[p.country_code]||p.country_code}</div><h3>{p.title}</h3><p>{text(p.executive_assessment||'',380)}</p><div className="ic2-pub-stats"><span>CONFIDENCE <b>{p.confidence??'—'}</b></span><span>EVIDENCE <b>{Array.isArray(p.evidence)?p.evidence.length:0}</b></span><span>UPDATED <b>{age(p.updated_at)}</b></span></div><small>{p.body?.generator?.evidence_contract?'Evidence contract met':'Analyst review / evidence threshold pending'}</small></article>)}</div></section>}
+    {view==='watchlists'&&<section className="ic2-fullpanel"><header><div><span>CONTINUOUS COLLECTION</span><h2>WATCHLISTS</h2><p>Watchlists feed search lanes and should express collection requirements, not just UI filters.</p></div><b>{watchQ.data.length} ACTIVE</b></header><div className="ic2-watch-grid">{watchQ.data.map((w:Row)=><article key={w.id}><div><span>{String(w.watch_type||'watch').toUpperCase()}</span><b>{String(w.severity_floor||'moderate').toUpperCase()} FLOOR</b></div><h3>{w.name}</h3><p>{w.description||'Continuous monitoring requirement.'}</p><pre>{JSON.stringify(w.target||{},null,2)}</pre></article>)}</div></section>}
+    {view==='sources'&&<section className="ic2-fullpanel"><header><div><span>PROVENANCE</span><h2>SOURCE NETWORK</h2><p>Source availability, reliability and observation freshness are operational telemetry.</p></div><b>{sourceQ.data.length} ACTIVE</b></header><div className="ic2-source-grid">{sourceQ.data.map((s:Row)=><article key={s.id}><div className="ic2-source-state"><i className={s.latest_observation?'ok':''}/>{s.latest_observation?`LAST ${age(s.latest_observation)}`:'NO RECENT OBSERVATION'}</div><h3>{s.name}</h3><div><span>{String(s.source_type||'OTHER').toUpperCase()}</span><span>{s.provider||'—'}</span></div><strong>{s.reliability??'—'}</strong><small>RELIABILITY · {s.metrics?.observations_24h??s.observation_count??0} OBS / 24H</small></article>)}</div></section>}
+    {view==='countries'&&<section className="ic2-fullpanel"><header><div><span>COUNTRY POSTURE</span><h2>AFRICA COVERAGE</h2><p>Each country becomes an intelligence workspace with events, publications, collection health and watchlists.</p></div><b>{countryQ.data.length}</b></header><div className="ic2-country-grid">{countryQ.data.map((c:Row)=><button key={c.country_code} onClick={()=>{setCountry(c.country_code);setView('picture')}}><div><span>{c.country_code}</span><Sev value={['critical','high','moderate','low','informational'][Math.max(0,Number(c.severity_rank||1)-1)]}/></div><h3>{NAMES[c.country_code]||c.country_code}</h3><div className="ic2-country-numbers"><strong>{c.events_24h||0}</strong><span>24H EVENTS</span><strong>{c.events_7d||0}</strong><span>7D EVENTS</span></div><small>CONFIDENCE {c.confidence??'—'} · LAST {age(c.last_seen_at)}</small></button>)}</div></section>}
   </main>}
-
-  {selected&&<div className="ics-modal" role="dialog" aria-modal="true" aria-label="Intelligence object" onMouseDown={e=>{if(e.target===e.currentTarget)setSelected(null)}}><article className="ics-object">
-    <header><div><span>INTELLIGENCE OBJECT · STORY {selected.id}</span><h2>{selected.headline}</h2><div className="ics-object-tags"><span className={`ics-severity ${tone(selected.severity)}`}><i/>{selected.severity.toUpperCase()}</span><span>{selected.country_code||'REGIONAL'}</span><span>{selected.topic}</span><span>{selected.status}</span></div></div><button className="ics-close" onClick={()=>setSelected(null)} aria-label="Close"><X size={20}/></button></header>
-    <div className="ics-object-body">
-      <section className="ics-brief"><span>SONALIT INTELLIGENCE BRIEF</span><p>{selected.brief}</p></section>
-      <section className="ics-object-grid"><div className="ics-evidence-panel"><header><span>KEY FACTS</span><b>{selected.key_facts?.length||0}</b></header>{(selected.key_facts||[]).map((x,i)=><div className="ics-fact" key={i}><CheckCircle2 size={15}/><span>{x}</span></div>)}</div><div className="ics-evidence-panel"><header><span>WHY THIS MATTERS</span><b>{selected.operational_relevance}</b></header>{(selected.why_it_matters||[]).map((x,i)=><div className="ics-fact" key={i}><Target size={15}/><span>{x}</span></div>)}{!selected.why_it_matters?.length&&<div className="ics-fact muted"><Target size={15}/><span>No operational relevance assessed yet.</span></div>}</div></section>
-      <section className="ics-bottom-rail"><div><span>CONFIDENCE</span><strong>{selected.confidence_label}</strong></div><div><span>OBSERVATIONS</span><strong>{selected.observation_count}</strong></div><div><span>EVIDENCE</span><strong>{selected.source_count}</strong></div><div><span>LAST SEEN</span><strong>{age(selected.last_seen_at)}</strong></div></section>
-      <section className="ics-tabs"><button className="active"><FileSearch size={15}/> EVIDENCE</button><button><Clock3 size={15}/> TIMELINE</button><button><Network size={15}/> CONNECTIONS</button><button><MapPin size={15}/> SPATIAL</button><button><ShieldAlert size={15}/> IMPACT</button></section>
-      <section className="ics-detail-content"><div className="ics-detail-label"><span>OBSERVATION MESH</span><small>{selectedDetail.data?.length||selected.observation_count} linked event observations</small></div>{(selectedDetail.data||selected.events||[]).slice(0,12).map((x:any,i:number)=><div className="ics-observation" key={x.id||i}><span>{String(i+1).padStart(2,'0')}</span><div><b>{x.title||x.headline||'Observation'}</b><p>{x.summary||x.description||'Evidence retained in the underlying event record.'}</p></div><aside><em>{x.country_code||selected.country_code||'—'}</em><small>{age(x.last_seen_at||x.observed_at)}</small></aside></div>)}
-      {selected.caveats?.length>0&&<div className="ics-caveat"><Zap size={15}/><div><b>ANALYTICAL CAVEATS</b>{selected.caveats.map((x,i)=><p key={i}>{x}</p>)}</div></div>}</section>
-    </div>
-    <footer><div><Sparkles size={14}/><span>SONALIT SYNTHESIS</span><small>Canonical headline and topic generated from retained evidence. Original source provenance remains available in the underlying record.</small></div><button onClick={()=>setSubview('deep')}>OPEN DEEP ANALYSIS <ArrowRight size={15}/></button></footer>
-  </article></div>}
+  {selected&&<ObjectCard item={selected} story={selectedStory||('headline' in selected?selected:null)} onClose={()=>setSelected(null)}/>} 
  </div>;
 }
