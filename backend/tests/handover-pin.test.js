@@ -110,24 +110,23 @@ describe('users.role migration constraints', () => {
     .sort()
     .map((f) => ({ file: f, body: fs.readFileSync(path.join(dir, f), 'utf8') }));
 
-  // Every ADD CONSTRAINT <name> CHECK (role IN ...) across the migration set,
-  // in application order, paired with the drops that precede it.
+  // Track only constraints belonging to users.role. Other tables may
+  // legitimately have their own *_role_check constraints.
   function constraintTimeline() {
     const live = new Set();
     for (const { body } of sql) {
       for (const line of body.split('\n')) {
-        const drop = line.match(/DROP\s+CONSTRAINT\s+(?:IF\s+EXISTS\s+)?(\w+)/i);
+        const drop = line.match(/DROP\s+CONSTRAINT\s+(?:IF\s+EXISTS\s+)?(users_[A-Za-z0-9_]*role[A-Za-z0-9_]*)/i);
         if (drop) live.delete(drop[1].toLowerCase());
-        const add = line.match(/ADD\s+CONSTRAINT\s+(\w+)/i);
+        const add = line.match(/ADD\s+CONSTRAINT\s+(users_[A-Za-z0-9_]*role[A-Za-z0-9_]*)/i);
         if (add) live.add(add[1].toLowerCase());
       }
     }
     return live;
   }
 
-  test('exactly one role CHECK constraint survives the migration set', () => {
-    const roleConstraints = [...constraintTimeline()].filter((n) => n.includes('role'));
-    expect(roleConstraints).toEqual(['users_role_check']);
+  test('exactly one users.role CHECK constraint survives the migration set', () => {
+    expect([...constraintTimeline()]).toEqual(['users_role_check']);
   });
 
   test('the surviving constraint admits every role the app assigns', () => {
