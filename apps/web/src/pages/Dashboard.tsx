@@ -175,9 +175,18 @@ export default function Dashboard() {
         .command-map-loading svg { color:var(--d-sig); animation: radar-turn 1.4s linear infinite; }
         .command-map-corners i { position:absolute; width:16px; height:16px; border-color:rgba(34,232,255,.7); border-style:solid; z-index:32; pointer-events:none; }
         .command-map-corners i:nth-child(1){top:8px;left:8px;border-width:2px 0 0 2px}.command-map-corners i:nth-child(2){top:8px;right:8px;border-width:2px 2px 0 0}.command-map-corners i:nth-child(3){bottom:8px;left:8px;border-width:0 0 2px 2px}.command-map-corners i:nth-child(4){bottom:8px;right:8px;border-width:0 2px 2px 0}
-        .d-command-v3 .d-console-queue > div:first-child { padding-top: 13px; }
+        .d-command-v3 .d-console-queue > div:first-child { padding: 14px 16px 10px !important; }
         .d-command-v3 .d-console-queue button { font-family: var(--d-font) !important; }
-        .d-command-v3 .d-console-queue .d-queue-title { font-size: 13px; }
+        .d-command-v3 .d-console-queue { color: var(--d-t1); }
+        .d-command-v3 .d-console-queue > div { font-size: 12px; }
+        .d-command-v3 .d-console-queue span { line-height: 1.25; }
+        .d-command-v3 .d-console-queue [style*="font-size: 8px"] { font-size: 10px !important; }
+        .d-command-v3 .d-console-queue [style*="font-size: 9px"] { font-size: 11px !important; }
+        .d-command-v3 .d-console-queue [style*="font-size: 10px"] { font-size: 12px !important; }
+        .d-command-v3 .d-console-queue [style*="font-size: 11px"] { font-size: 13px !important; }
+        .d-command-v3 .d-console-queue [style*="font-family: Orbitron"] { font-size: 12px !important; letter-spacing: .08em !important; }
+        .d-command-v3 .d-console-queue a { font-size: 11px !important; }
+        .d-command-v3 .d-console-queue .d-queue-title { font-size: 14px; }
         @media (max-width: 1200px) { .command-mast { grid-template-columns: 1.2fr .9fr 1fr; } .command-mast__clock { display:none; } .d-command-v3 .d-console-queue { flex-basis: 330px; } }
         @media (max-width: 999px) { .d-command-v3 .d-console-main { flex-direction: column; } .d-command-v3 .d-console-map { min-height: 430px; } .d-command-v3 .d-console-queue { flex: 1 1 auto; max-width: none; border-left: none; } .command-mast { grid-template-columns: 1fr; } .command-mast__metrics { grid-template-columns: repeat(3,1fr); } }
         @media (max-width: 640px) { .d-command-v3 .d-console-main { padding: 6px; gap: 6px; } .command-mast { padding: 10px; } .command-mast__brand h1 { font-size: 20px; } .command-mast__brand p { font-size: 11px; } .command-mast__metrics strong { font-size: 20px; } .command-map-overlay { left:8px; right:8px; min-width:0; } }
