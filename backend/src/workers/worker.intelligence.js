@@ -1,6 +1,6 @@
 require('dotenv').config();
 const { runCollectionFabric } = require('../utils/collectionFabric');
-const { runIncidentAlertSweep } = require('../utils/intelligenceAlertRuntime');
+const { runRegionalIncidentSweep } = require('../utils/regionalIncidentFabric');
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
 
@@ -16,16 +16,20 @@ async function cycle(reason) {
     const discovered = Number(result?.discovered || 0);
     const ingested = Number(result?.ingested || 0);
     let alertCount = 0;
+    let regionalSeen = 0;
+    let regionalInserted = 0;
     for (const org of result?.results || []) {
       if (!org?.org_id) continue;
       try {
-        const alerts = await runIncidentAlertSweep(org.org_id);
+        const alerts = await runRegionalIncidentSweep(org.org_id);
         alertCount += Number(alerts?.totalAlerts || 0);
+        regionalSeen += Number(alerts?.totalSeen || 0);
+        regionalInserted += Number(alerts?.totalInserted || 0);
       } catch (error) {
-        logger.warn(`Incident Alert Fabric failed for org=${org.org_id}: ${error.message}`);
+        logger.warn(`Regional Incident Fabric failed for org=${org.org_id}: ${error.message}`);
       }
     }
-    logger.info(`Intelligence worker cycle complete (${reason}) in ${Date.now() - started}ms: orgs=${result?.organizations ?? 0}, discovered=${discovered}, ingested=${ingested}, incident_alerts=${alertCount}`);
+    logger.info(`Intelligence worker cycle complete (${reason}) in ${Date.now() - started}ms: orgs=${result?.organizations ?? 0}, discovered=${discovered}, ingested=${ingested}, regional_seen=${regionalSeen}, regional_inserted=${regionalInserted}, incident_alerts=${alertCount}`);
   } catch (error) {
     logger.error(`Intelligence worker cycle failed (${reason}): ${error.message}`);
   }
@@ -55,7 +59,7 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
 (async () => {
-  logger.info(`Intelligence worker online; collection cadence=${intervalMs / 60000}m; incident-alert cadence=${intervalMs / 60000}m`);
+  logger.info(`Intelligence worker online; collection cadence=${intervalMs / 60000}m; regional-incident cadence=${intervalMs / 60000}m`);
   try {
     const context = await query(`SELECT current_user, session_user, current_setting('app.current_org_id', true) AS rls_org, (SELECT count(*)::int FROM users WHERE deleted_at IS NULL) AS visible_users`);
     logger.info(`Intelligence worker DB context: current_user=${context.rows[0]?.current_user} session_user=${context.rows[0]?.session_user} rls_org=${context.rows[0]?.rls_org || 'unset'} visible_users=${context.rows[0]?.visible_users ?? 0}`);
