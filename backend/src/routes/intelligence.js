@@ -5,6 +5,7 @@ const { asyncHandler } = require('../middleware/error');
 const { buildAssessment } = require('../utils/intelligenceEngine');
 const { translatePayload } = require('../utils/intelligenceTranslation');
 const operationsRouter = require('./intelligenceOperations');
+const synthesisRouter = require('./intelligenceSynthesis');
 
 router.use(authenticate);
 router.use(attachOrgDb);
@@ -23,6 +24,7 @@ router.use((req,res,next)=>{
 
 router.use('/', operationsRouter);
 router.use('/ops', operationsRouter);
+router.use('/synthesis', synthesisRouter);
 
 router.get('/picture',asyncHandler(async(req,res)=>{const {rows:events}=await req.db(`SELECT * FROM intel_events WHERE org_id=$1 AND last_seen_at>=now()-interval '7 days' ORDER BY last_seen_at DESC LIMIT 500`,[req.user.org_id]);const {rows:observations}=await req.db(`SELECT io.*,s.reliability,s.name AS source_name FROM intel_observations io LEFT JOIN intel_sources s ON s.id=io.source_id WHERE io.org_id=$1 AND io.observed_at>=now()-interval '7 days' ORDER BY io.observed_at DESC LIMIT 1000`,[req.user.org_id]);const assessment=buildAssessment({scope:'global',events,observations});const {rows:countries}=await req.db(`SELECT country_code,COUNT(*)::int AS events,ROUND(AVG(confidence))::int AS confidence FROM intel_events WHERE org_id=$1 AND country_code IS NOT NULL AND intel_country_evidence_ok(country_code,CONCAT_WS(' ',title,summary)) AND last_seen_at>=now()-interval '24 hours' GROUP BY country_code ORDER BY events DESC LIMIT 20`,[req.user.org_id]);res.json({picture:{...assessment,countries},generated_at:new Date().toISOString()});}));
 router.get('/countries',asyncHandler(async(req,res)=>{const {rows}=await req.db(`SELECT country_code,COUNT(*) FILTER(WHERE last_seen_at>=now()-interval '24 hours')::int AS events_24h,COUNT(*) FILTER(WHERE last_seen_at>=now()-interval '7 days')::int AS events_7d,ROUND(AVG(confidence))::int AS confidence,MAX(last_seen_at) AS last_seen_at,MAX(CASE severity WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'moderate' THEN 2 WHEN 'low' THEN 1 ELSE 0 END) AS severity_rank FROM intel_events WHERE org_id=$1 AND country_code IS NOT NULL AND intel_country_evidence_ok(country_code,CONCAT_WS(' ',title,summary)) GROUP BY country_code ORDER BY severity_rank DESC,events_24h DESC`,[req.user.org_id]);res.json({countries:rows});}));
