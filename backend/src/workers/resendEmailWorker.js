@@ -49,9 +49,18 @@ async function resolvePanicContext(panicId) {
       SELECT c2.id, c2.name, c2.region, c2.status, c2.route_origin, c2.route_destination, c2.client_id
       FROM convoy_cfos cc
       JOIN convoys c2 ON c2.id=cc.convoy_id AND c2.deleted_at IS NULL
-      WHERE cc.guardian_device_id=d.id
+      WHERE (
+        cc.guardian_device_id=d.id
+        OR (
+          lower(COALESCE(d.assignment_type,'')) = 'user'
+          AND cc.cfo_user_id=d.assignment_id
+        )
+      )
         AND c2.status IN ('active','planned')
-      ORDER BY CASE WHEN c2.status='active' THEN 0 ELSE 1 END, c2.updated_at DESC
+      ORDER BY
+        CASE WHEN c2.status='active' THEN 0 ELSE 1 END,
+        CASE WHEN cc.guardian_device_id=d.id THEN 0 ELSE 1 END,
+        c2.updated_at DESC
       LIMIT 1
     ) cfo_c ON true
     WHERE p.id=$1
@@ -82,10 +91,6 @@ async function resolvePanicContext(panicId) {
     }
   }
 
-  // Ownership precedence is explicit device/vehicle ownership first, then the
-  // authoritative client on the active/planned convoy associated with the CFO.
-  // This is the missing link for Guardian devices assigned to a CFO rather than
-  // directly to a vehicle: the panic still belongs to that convoy's client.
   event.client_id = event.device_client_id || event.vehicle_client_id || event.convoy_client_id || null;
   event.org_id = event.panic_org_id || event.device_org_id || event.vehicle_org_id;
   event.vehicle_display = event.vehicle_registration || event.device_name || event.device_id;
