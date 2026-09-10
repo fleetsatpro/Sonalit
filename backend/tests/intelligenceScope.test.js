@@ -26,10 +26,14 @@ describe('intelligence geographic scope contract', () => {
     expect(() => normaliseScope({ query: { scope_type: 'continent', scope_key: 'europe' } })).toThrow('Unsupported intelligence continent');
   });
 
-  test('country predicates cannot match an unscoped row', () => {
+  test('country predicates require country code and independent content evidence', () => {
     const predicate = countryClause({ type: 'country', key: 'KE' }, 'e', 2);
-    expect(predicate.clause).toContain('e.country_code = ANY($2::text[])');
-    expect(predicate.params).toEqual([['KE']]);
+    expect(predicate.clause).toContain('e.country_code = $2');
+    expect(predicate.clause).toContain('LIKE ANY($3::text[])');
+    expect(predicate.clause).toContain("to_jsonb(e)->>'title'");
+    expect(predicate.params[0]).toBe('KE');
+    expect(predicate.params[1]).toContain('%kenya%');
+    expect(predicate.params[1]).toContain('%nairobi%');
   });
 
   test('region predicates allow explicit regional scope and member countries only', () => {
