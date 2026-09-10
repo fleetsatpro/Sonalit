@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import { api } from '../lib/api.js';
 import { useDashboardStore } from '../stores/dashboardStore.js';
 import '../styles/dashboard.css';
@@ -69,6 +70,41 @@ function CommandMast() {
   );
 }
 
+function CommandDeck() {
+  const nav = useNavigate();
+  const alerts = useDashboardStore((s) => s.alerts);
+  const convoys = useDashboardStore((s) => s.convoys);
+  const incidents = useDashboardStore((s) => s.incidents);
+  const panic = useDashboardStore((s) => s.panicState);
+  const priority = alerts.filter((a) => a.severity === 'critical' || a.severity === 'high').length;
+  const activeConvoys = convoys.filter((c) => c.status === 'active' || c.status === 'in_transit').length;
+  const activeIncidents = incidents.filter((i) => i.status !== 'resolved' && i.status !== 'closed').length;
+  const actions = [
+    { label: 'PANIC CENTER', sub: panic ? 'INCIDENT ACTIVE' : 'STANDBY', path: '/panic-center', tone: panic ? 'critical' : 'red', icon: Siren, value: panic ? 'LIVE' : 'OPEN' },
+    { label: 'ALERTS', sub: 'PRIORITY QUEUE', path: '/alerts', tone: priority ? 'amber' : 'cyan', icon: AlertTriangle, value: String(priority) },
+    { label: 'MESSAGES', sub: 'DISPATCH CHANNEL', path: '/messages', tone: 'violet', icon: Radio, value: 'OPEN' },
+    { label: 'INTELLIGENCE', sub: 'THREAT CONTEXT', path: '/intelligence', tone: 'green', icon: Target, value: 'VIEW' },
+  ];
+  return (
+    <section className='command-deck' aria-label='Command actions'>
+      <div className='command-deck__context'>
+        <span>DECISION DECK</span>
+        <strong>{activeConvoys} ACTIVE MOVEMENTS</strong>
+        <small>{activeIncidents} operational incidents · {priority} priority alerts</small>
+      </div>
+      <div className='command-deck__actions'>
+        {actions.map(({ label, sub, path, tone, icon: Icon, value }) => (
+          <button key={path} className={`command-deck__action command-deck__action--${tone}`} onClick={() => nav({ to: path as any })}>
+            <span className='command-deck__icon'><Icon size={17}/></span>
+            <span className='command-deck__copy'><b>{label}</b><small>{sub}</small></span>
+            <strong>{value}</strong>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function MapOverlay() {
   const vehicles = useDashboardStore((s) => s.overview?.kpi?.vehicles_live ?? 0);
   const convoys = useDashboardStore((s) => s.overview?.kpi?.convoys_active ?? 0);
@@ -108,6 +144,7 @@ export default function Dashboard() {
   return (
     <div className='d-console d-command-v3'>
       <CommandMast />
+      <CommandDeck />
       <InstrumentBar />
 
       <div className='d-console-main'>
@@ -132,6 +169,26 @@ export default function Dashboard() {
 
       <style>{`
         .d-command-v3 { height: 100%; min-height: 0; }
+        .command-deck { display:grid; grid-template-columns: minmax(230px,.78fr) minmax(520px,2.2fr); gap:10px; padding:10px 14px; background:linear-gradient(180deg, rgba(6,11,24,.98), rgba(7,14,28,.96)); border-bottom:1px solid var(--d-rim2); }
+        .command-deck__context { display:flex; flex-direction:column; justify-content:center; padding:10px 12px; border:1px solid var(--d-rim2); border-radius:11px; background:rgba(255,255,255,.025); }
+        .command-deck__context span { color:var(--d-sig); font-size:10px; font-weight:800; letter-spacing:.14em; }
+        .command-deck__context strong { margin-top:4px; color:var(--d-t1); font-size:16px; line-height:1.1; }
+        .command-deck__context small { margin-top:5px; color:var(--d-t2); font-size:11px; line-height:1.35; }
+        .command-deck__actions { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+        .command-deck__action { appearance:none; min-width:0; display:flex; align-items:center; gap:9px; padding:10px; border:1px solid var(--d-rim2); border-radius:11px; background:rgba(255,255,255,.025); color:var(--d-t1); text-align:left; cursor:pointer; transition:transform .15s ease, border-color .15s ease, background .15s ease; }
+        .command-deck__action:hover { transform:translateY(-1px); background:rgba(255,255,255,.045); border-color:var(--d-rim3); }
+        .command-deck__icon { width:32px; height:32px; display:grid; place-items:center; border-radius:9px; border:1px solid var(--d-rim2); flex:0 0 auto; }
+        .command-deck__copy { min-width:0; display:flex; flex-direction:column; }
+        .command-deck__copy b { font-size:11px; letter-spacing:.05em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .command-deck__copy small { margin-top:3px; color:var(--d-t2); font-size:9px; letter-spacing:.05em; }
+        .command-deck__action strong { margin-left:auto; font-size:13px; color:var(--d-t1); }
+        .command-deck__action--critical .command-deck__icon { color:var(--d-fire); border-color:rgba(255,59,92,.35); background:rgba(255,59,92,.08); }
+        .command-deck__action--red .command-deck__icon { color:var(--d-fire); border-color:rgba(255,59,92,.3); background:rgba(255,59,92,.06); }
+        .command-deck__action--amber .command-deck__icon { color:var(--d-warn); border-color:rgba(255,201,63,.3); background:rgba(255,201,63,.07); }
+        .command-deck__action--cyan .command-deck__icon { color:var(--d-sig); border-color:rgba(34,232,255,.3); background:rgba(34,232,255,.06); }
+        .command-deck__action--violet .command-deck__icon { color:#b29cff; border-color:rgba(178,156,255,.3); background:rgba(178,156,255,.07); }
+        .command-deck__action--green .command-deck__icon { color:var(--d-ok); border-color:rgba(41,255,176,.3); background:rgba(41,255,176,.06); }
+
         .d-command-v3 .d-console-main { flex: 1 1 auto; min-height: 0; display: flex; gap: 10px; padding: 10px; background: var(--d-deep); }
         .d-command-v3 .d-console-map { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; }
         .d-command-v3 .d-console-queue { flex: 0 0 360px; max-width: 38vw; border: 1px solid var(--d-rim2); border-radius: 14px; overflow: hidden; box-shadow: 0 18px 45px rgba(0,0,0,.22); }
@@ -187,9 +244,9 @@ export default function Dashboard() {
         .d-command-v3 .d-console-queue [style*="font-family: Orbitron"] { font-size: 12px !important; letter-spacing: .08em !important; }
         .d-command-v3 .d-console-queue a { font-size: 11px !important; }
         .d-command-v3 .d-console-queue .d-queue-title { font-size: 14px; }
-        @media (max-width: 1200px) { .command-mast { grid-template-columns: 1.2fr .9fr 1fr; } .command-mast__clock { display:none; } .d-command-v3 .d-console-queue { flex-basis: 330px; } }
-        @media (max-width: 999px) { .d-command-v3 .d-console-main { flex-direction: column; } .d-command-v3 .d-console-map { min-height: 430px; } .d-command-v3 .d-console-queue { flex: 1 1 auto; max-width: none; border-left: none; } .command-mast { grid-template-columns: 1fr; } .command-mast__metrics { grid-template-columns: repeat(3,1fr); } }
-        @media (max-width: 640px) { .d-command-v3 .d-console-main { padding: 6px; gap: 6px; } .command-mast { padding: 10px; } .command-mast__brand h1 { font-size: 20px; } .command-mast__brand p { font-size: 11px; } .command-mast__metrics strong { font-size: 20px; } .command-map-overlay { left:8px; right:8px; min-width:0; } }
+        @media (max-width: 1200px) { .command-mast { grid-template-columns: 1.2fr .9fr 1fr; } .command-mast__clock { display:none; } .command-deck { grid-template-columns:1fr; } .d-command-v3 .d-console-queue { flex-basis: 330px; } }
+        @media (max-width: 999px) { .command-deck__actions { grid-template-columns:repeat(2,1fr); } .d-command-v3 .d-console-main { flex-direction: column; } .d-command-v3 .d-console-map { min-height: 430px; } .d-command-v3 .d-console-queue { flex: 1 1 auto; max-width: none; border-left: none; } .command-mast { grid-template-columns: 1fr; } .command-mast__metrics { grid-template-columns: repeat(3,1fr); } }
+        @media (max-width: 640px) { .command-deck { padding:8px 10px; } .command-deck__actions { grid-template-columns:1fr 1fr; } .command-deck__copy small { font-size:8px; } .d-command-v3 .d-console-main { padding: 6px; gap: 6px; } .command-mast { padding: 10px; } .command-mast__brand h1 { font-size: 20px; } .command-mast__brand p { font-size: 11px; } .command-mast__metrics strong { font-size: 20px; } .command-map-overlay { left:8px; right:8px; min-width:0; } }
       `}</style>
     </div>
   );
