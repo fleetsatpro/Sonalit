@@ -12,6 +12,16 @@ import PriorityQueue from '../components/dashboard/PriorityQueue.js';
 const TacticalMap = lazy(() => import('../components/dashboard/TacticalMap.js'));
 import type { DashboardOverview } from '../stores/dashboardStore.js';
 
+function relTime(iso: string): string {
+  const timestamp = new Date(iso).getTime();
+  if (!Number.isFinite(timestamp)) return '—';
+  const sec = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (sec < 60) return `${sec}s`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}m`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h`;
+  return `${Math.floor(sec / 86400)}d`;
+}
+
 function CommandMast() {
   const overview = useDashboardStore((s) => s.overview);
   const alerts = useDashboardStore((s) => s.alerts);
