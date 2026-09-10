@@ -13,7 +13,10 @@ router.use('/settings', require('./clientPulseRecipients'));
 
 // Canonical Communications Control Plane. Legacy admin Client Pulse endpoints
 // remain below for compatibility; new UI code should use /admin/communications/*.
+// The compatibility recipient reader must precede the legacy router because
+// its old nested json_agg ORDER BY expression is PostgreSQL-version sensitive.
 router.use('/communications', require('./communicationsControl'));
+router.use('/communications', require('./communicationsRecipientsCompat'));
 router.use('/communications', require('./communications'));
 
 router.get('/queues', async (req, res, next) => {
