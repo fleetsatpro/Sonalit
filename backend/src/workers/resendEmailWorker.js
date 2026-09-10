@@ -20,15 +20,79 @@ async function processEmail(job) {
     if (retryable) throw err; logger.error(`Permanent Resend email failure: notification=${id} error=${err.message}`);
   }
 }
+
 async function resolvePanicContext(panicId) {
-  const result = await query(`SELECT p.id, p.org_id AS panic_org_id, p.device_id, p.lat, p.lng, p.message, p.created_at, d.name AS device_name, d.org_id AS device_org_id, d.client_id AS device_client_id, d.assignment_type, d.assignment_id, d.convoy_code, v.id AS vehicle_id, v.registration AS vehicle_registration, v.client_id AS vehicle_client_id, v.org_id AS vehicle_org_id, v.region AS vehicle_region, v.assigned_convoy_id, c.id AS convoy_id, c.name AS convoy_name, c.region AS convoy_region, c.status AS convoy_status, c.route_origin, c.route_destination FROM panic_events p LEFT JOIN guardian_devices d ON d.id=p.device_id AND d.deleted_at IS NULL LEFT JOIN vehicles v ON v.id=d.assignment_id AND lower(COALESCE(d.assignment_type,'')) IN ('vehicle','fleet_vehicle') AND v.deleted_at IS NULL LEFT JOIN convoys c ON c.id=v.assigned_convoy_id AND c.deleted_at IS NULL WHERE p.id=$1 LIMIT 1`, [panicId]);
-  if (!result.rows.length || !result.rows[0].panic_org_id) return null; const event = result.rows[0];
+  const result = await query(`
+    SELECT
+      p.id, p.org_id AS panic_org_id, p.device_id, p.lat, p.lng, p.message, p.created_at,
+      d.name AS device_name, d.org_id AS device_org_id, d.client_id AS device_client_id,
+      d.assignment_type, d.assignment_id, d.convoy_code,
+      v.id AS vehicle_id, v.registration AS vehicle_registration, v.client_id AS vehicle_client_id,
+      v.org_id AS vehicle_org_id, v.region AS vehicle_region, v.assigned_convoy_id,
+      COALESCE(c.id, cfo_c.id) AS convoy_id,
+      COALESCE(c.name, cfo_c.name) AS convoy_name,
+      COALESCE(c.region, cfo_c.region) AS convoy_region,
+      COALESCE(c.status, cfo_c.status) AS convoy_status,
+      COALESCE(c.route_origin, cfo_c.route_origin) AS route_origin,
+      COALESCE(c.route_destination, cfo_c.route_destination) AS route_destination,
+      COALESCE(c.client_id, cfo_c.client_id) AS convoy_client_id
+    FROM panic_events p
+    LEFT JOIN guardian_devices d
+      ON d.id=p.device_id AND d.deleted_at IS NULL
+    LEFT JOIN vehicles v
+      ON v.id=d.assignment_id
+     AND lower(COALESCE(d.assignment_type,'')) IN ('vehicle','fleet_vehicle')
+     AND v.deleted_at IS NULL
+    LEFT JOIN convoys c
+      ON c.id=v.assigned_convoy_id AND c.deleted_at IS NULL
+    LEFT JOIN LATERAL (
+      SELECT c2.id, c2.name, c2.region, c2.status, c2.route_origin, c2.route_destination, c2.client_id
+      FROM convoy_cfos cc
+      JOIN convoys c2 ON c2.id=cc.convoy_id AND c2.deleted_at IS NULL
+      WHERE cc.guardian_device_id=d.id
+        AND c2.status IN ('active','planned')
+      ORDER BY CASE WHEN c2.status='active' THEN 0 ELSE 1 END, c2.updated_at DESC
+      LIMIT 1
+    ) cfo_c ON true
+    WHERE p.id=$1
+    LIMIT 1`, [panicId]);
+
+  if (!result.rows.length || !result.rows[0].panic_org_id) return null;
+  const event = result.rows[0];
+
   if (!event.convoy_id && event.vehicle_id) {
-    const assignment = await query(`SELECT c.id, c.name, c.region, c.status, c.route_origin, c.route_destination FROM convoy_assignments ca JOIN convoys c ON c.id=ca.convoy_id WHERE ca.vehicle_id=$1 AND c.deleted_at IS NULL AND c.status IN ('active','planned') ORDER BY CASE WHEN c.status='active' THEN 0 ELSE 1 END, c.updated_at DESC LIMIT 1`, [event.vehicle_id]);
-    if (assignment.rows.length) { const convoy = assignment.rows[0]; event.convoy_id = convoy.id; event.convoy_name = convoy.name; event.convoy_region = convoy.region; event.convoy_status = convoy.status; event.route_origin = convoy.route_origin; event.route_destination = convoy.route_destination; }
+    const assignment = await query(`
+      SELECT c.id, c.name, c.region, c.status, c.route_origin, c.route_destination, c.client_id
+      FROM convoy_assignments ca
+      JOIN convoys c ON c.id=ca.convoy_id
+      WHERE ca.vehicle_id=$1
+        AND c.deleted_at IS NULL
+        AND c.status IN ('active','planned')
+      ORDER BY CASE WHEN c.status='active' THEN 0 ELSE 1 END, c.updated_at DESC
+      LIMIT 1`, [event.vehicle_id]);
+    if (assignment.rows.length) {
+      const convoy = assignment.rows[0];
+      event.convoy_id = convoy.id;
+      event.convoy_name = convoy.name;
+      event.convoy_region = convoy.region;
+      event.convoy_status = convoy.status;
+      event.route_origin = convoy.route_origin;
+      event.route_destination = convoy.route_destination;
+      event.convoy_client_id = convoy.client_id;
+    }
   }
-  event.client_id = event.device_client_id || event.vehicle_client_id || null; event.org_id = event.panic_org_id || event.device_org_id || event.vehicle_org_id; event.vehicle_display = event.vehicle_registration || event.device_name || event.device_id; event.region = event.convoy_region || event.vehicle_region || 'Unknown'; return event;
+
+  // Ownership precedence is explicit device/vehicle ownership first, then the
+  // authoritative client on the active/planned convoy associated with the CFO.
+  // This is the missing link for Guardian devices assigned to a CFO rather than
+  // directly to a vehicle: the panic still belongs to that convoy's client.
+  event.client_id = event.device_client_id || event.vehicle_client_id || event.convoy_client_id || null;
+  event.org_id = event.panic_org_id || event.device_org_id || event.vehicle_org_id;
+  event.vehicle_display = event.vehicle_registration || event.device_name || event.device_id;
+  event.region = event.convoy_region || event.vehicle_region || 'Unknown';
+  return event;
 }
+
 async function dispatchPanicEmail(panicId) {
   const event = await resolvePanicContext(panicId); if (!event || !event.org_id) { logger.warn(`Panic email skipped: event=${panicId} missing event/org`); return { queued: 0, reason: 'missing_event_or_org' }; }
   const recipients = await query(`SELECT DISTINCT ON (lower(trim(r.email))) r.email, r.name, r.authority_role, r.client_id FROM client_email_recipients r WHERE r.org_id=$1 AND r.deleted_at IS NULL AND r.enabled=TRUE AND r.sonalit_security=TRUE AND (r.authority_role IN ('super_admin','admin') OR (r.authority_role='client' AND $2::uuid IS NOT NULL AND r.client_id=$2::uuid)) ORDER BY lower(trim(r.email)), CASE WHEN r.client_id=$2::uuid THEN 0 ELSE 1 END, CASE WHEN r.authority_role='super_admin' THEN 0 WHEN r.authority_role='admin' THEN 1 ELSE 2 END`, [event.org_id, event.client_id]);
@@ -37,11 +101,6 @@ async function dispatchPanicEmail(panicId) {
   const convoy = event.convoy_name || (event.convoy_code ? `Code ${event.convoy_code}` : 'N/A');
   const route = event.route_origin || event.route_destination ? `${event.route_origin || '?'} → ${event.route_destination || '?'}` : 'N/A';
   const frontend = String(process.env.APP_URL || process.env.FRONTEND_URL || 'https://sonalit.com').replace(/\/$/, '');
-  // The incident-map renderer is optional enrichment. Never make life-safety
-  // email dispatch depend on a map helper/export or a map-base URL being set.
-  // When SECURITY_MAP_BASE_URL is explicitly configured, the email template can
-  // render the signed map endpoint; otherwise map_url stays null and the alert
-  // still dispatches normally.
   const mapBase = String(process.env.SECURITY_MAP_BASE_URL || '').replace(/\/$/, '');
   const mapUrl = mapBase && event.lat != null && event.lng != null
     ? `${mapBase}/api/v1/webhooks/resend/security-map/${encodeURIComponent(event.id)}`
