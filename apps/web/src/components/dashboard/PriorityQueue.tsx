@@ -79,7 +79,9 @@ function SectionHeader({ children, count }: { children: React.ReactNode; count?:
   );
 }
 
-const PriorityQueue = React.memo(function PriorityQueue() {
+interface PriorityQueueProps { onSelect?: (item: QueueItem) => void }
+
+const PriorityQueue = React.memo(function PriorityQueue({ onSelect }: PriorityQueueProps) {
   const nav = useNavigate();
   const qc = useQueryClient();
   const alerts = useDashboardStore((s) => s.alerts);
@@ -193,25 +195,30 @@ const PriorityQueue = React.memo(function PriorityQueue() {
       {/* Ranked feed */}
       <div style={{ flex: 1, padding: '0 14px' }}>
         {items.length === 0 && !panic && !voiceNote && (
-          <div style={{ fontSize: 11, color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace', padding: '6px 0' }}>All quiet — awaiting events…</div>
-        )}
-        {items.map(it => (
-          <div key={it.id} style={{
-            padding: '8px 10px', marginBottom: 8,
-            background: 'var(--d-well)', borderRadius: 8,
-            border: '1px solid var(--d-rim2)',
-            borderLeft: `3px solid rgb(${it.chip.hue})`,
+          <div style={{ fontSize: 11, color: 'var(--d-t3)', fon        {items.map(it => (
+          <button key={it.id} type='button' onClick={() => onSelect?.(it)} style={{
+            width: '100%', padding: '11px 11px', marginBottom: 8, display: 'block',
+            background: 'linear-gradient(135deg, rgba(255,255,255,.04), rgba(255,255,255,.015))',
+            borderRadius: 10, border: '1px solid var(--d-rim2)',
+            borderLeft: `4px solid rgb(${it.chip.hue})`, cursor: onSelect ? 'pointer' : 'default',
+            textAlign: 'left', color: 'var(--d-t1)',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-              <span style={{ fontSize: 8, fontFamily: 'IBM Plex Mono, monospace', fontWeight: 700, letterSpacing: '.1em', color: `rgb(${it.chip.hue})`, border: `1px solid rgba(${it.chip.hue},.5)`, borderRadius: 4, padding: '1px 5px', flexShrink: 0 }}>{it.chip.label}</span>
-              <span style={{ marginLeft: 'auto', fontSize: 9, fontFamily: 'IBM Plex Mono, monospace', color: 'var(--d-t3)', flexShrink: 0 }}>{relTime(it.at)}</span>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+              <span style={{ fontSize:10, fontWeight:800, letterSpacing:'.1em', color:`rgb(${it.chip.hue})`, border:`1px solid rgba(${it.chip.hue},.5)`, borderRadius:5, padding:'2px 6px', flexShrink:0 }}>{it.chip.label}</span>
+              <span style={{ marginLeft:'auto', fontSize:11, color:'var(--d-t3)', flexShrink:0 }}>{relTime(it.at)}</span>
             </div>
-            <div style={{ fontSize: 11, color: 'var(--d-t1)', lineHeight: 1.35 }}>{it.title}</div>
-            {it.body && <div style={{ fontSize: 10, color: 'var(--d-t2)', lineHeight: 1.35, marginTop: 2 }}>{it.body}</div>}
+            <div style={{ display:'flex', gap:8, alignItems:'flex-start' }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:14, fontWeight:700, color:'var(--d-t1)', lineHeight:1.3 }}>{it.title}</div>
+                {it.body && <div style={{ fontSize:12, color:'var(--d-t2)', lineHeight:1.4, marginTop:4 }}>{it.body}</div>}
+              </div>
+              <span aria-hidden='true' style={{ color:`rgb(${it.chip.hue})`, fontSize:18, lineHeight:1 }}>›</span>
+            </div>
             {it.ackId && (
-              <button
-                onClick={() => ackMut.mutate(it.ackId!)}
-                style={{ marginTop: 6, background: 'none', border: '1px solid var(--d-rim2)', borderRadius: 4, color: 'var(--d-t3)', fontSize: 9, cursor: 'pointer', padding: '2px 8px', fontFamily: 'IBM Plex Mono, monospace', letterSpacing: '.06em' }}
+              <span role='presentation' onClick={(e) => { e.preventDefault(); e.stopPropagation(); ackMut.mutate(it.ackId!); }} style={{ display:'inline-flex', marginTop:8, border:'1px solid var(--d-rim2)', borderRadius:5, color:'var(--d-t2)', fontSize:10, padding:'3px 9px', fontWeight:700, letterSpacing:'.08em' }}>ACKNOWLEDGE</span>
+            )}
+          </button>
+        ))}ospace', letterSpacing: '.06em' }}
               >ACK</button>
             )}
           </div>
