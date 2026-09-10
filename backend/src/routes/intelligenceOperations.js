@@ -1,13 +1,16 @@
 const router = require('express').Router();
 const { asyncHandler } = require('../middleware/error');
+const { normaliseScope, countryClause, scopedObjectClause, watchlistClause } = require('../utils/intelligenceScope');
 
 // Admin/auth/org middleware is inherited from /risk/intelligence.
 const priorityRank = `CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END`;
+const scope = req => normaliseScope(req);
 
 router.get('/gaps', asyncHandler(async (req,res) => {
   const status=req.query.status||null;
-  const {rows}=await req.db(`SELECT * FROM intel_gaps WHERE ($1::text IS NULL OR status=$1) ORDER BY ${priorityRank},created_at DESC LIMIT 300`,[status]);
-  res.json({gaps:rows,generated_at:new Date().toISOString()});
+  const s=scope(req); const geo=scopedObjectClause(s,'g',2);
+  const {rows}=await req.db(`SELECT g.* FROM intel_gaps g WHERE g.org_id=$1 AND ($2::text IS NULL OR g.status=$2) AND ${geo.clause} ORDER BY ${priorityRank},g.created_at DESC LIMIT 300`,[req.user.org_id,status,...geo.params]);
+  res.json({gaps:rows,scope:s,generated_at:new Date().toISOString()});
 }));
 
 router.post('/gaps', asyncHandler(async(req,res)=>{
@@ -30,8 +33,9 @@ router.patch('/gaps/:id', asyncHandler(async(req,res)=>{
 }));
 
 router.get('/storylines', asyncHandler(async(req,res)=>{
-  const {rows}=await req.db(`SELECT s.*,COUNT(se.event_id)::int AS event_count FROM intel_storylines s LEFT JOIN intel_storyline_events se ON se.storyline_id=s.id WHERE ($1::text IS NULL OR s.status=$1) GROUP BY s.id ORDER BY s.updated_at DESC LIMIT 200`,[req.query.status||null]);
-  res.json({storylines:rows,generated_at:new Date().toISOString()});
+  const s=scope(req); const geo=scopedObjectClause(s,'s',2);
+  const {rows}=await req.db(`SELECT s.*,COUNT(se.event_id)::int AS event_count FROM intel_storylines s LEFT JOIN intel_storyline_events se ON se.storyline_id=s.id WHERE s.org_id=$1 AND ($2::text IS NULL OR s.status=$2) AND ${geo.clause} GROUP BY s.id ORDER BY s.updated_at DESC LIMIT 200`,[req.user.org_id,req.query.status||null,...geo.params]);
+  res.json({storylines:rows,scope:s,generated_at:new Date().toISOString()});
 }));
 
 router.get('/storylines/:id', asyncHandler(async(req,res)=>{
@@ -54,9 +58,9 @@ router.post('/storylines/:id/events', asyncHandler(async(req,res)=>{
 }));
 
 router.get('/forecasts', asyncHandler(async(req,res)=>{
-  const scope=req.query.scope_type||null;
-  const {rows}=await req.db(`SELECT * FROM intel_forecasts WHERE ($1::text IS NULL OR scope_type=$1) AND status<>'expired' ORDER BY valid_until ASC NULLS LAST,created_at DESC LIMIT 300`,[scope]);
-  res.json({forecasts:rows,generated_at:new Date().toISOString()});
+  const s=scope(req); const geo=scopedObjectClause(s,'f',2);
+  const {rows}=await req.db(`SELECT f.* FROM intel_forecasts f WHERE f.org_id=$1 AND ($2::text IS NULL OR f.scope_type=$2) AND ${geo.clause} AND f.status<>'expired' ORDER BY f.valid_until ASC NULLS LAST,f.created_at DESC LIMIT 300`,[req.user.org_id,req.query.scope_type||null,...geo.params]);
+  res.json({forecasts:rows,scope:s,generated_at:new Date().toISOString()});
 }));
 
 router.post('/forecasts', asyncHandler(async(req,res)=>{
@@ -77,18 +81,18 @@ router.post('/publications/:id/review', asyncHandler(async(req,res)=>{
 }));
 
 router.get('/quality', asyncHandler(async(req,res)=>{
-  const {rows:[q]}=await req.db(`SELECT COUNT(*)::int AS observations_30d,COUNT(DISTINCT source_id)::int AS sources_30d,ROUND(AVG(credibility))::int AS avg_credibility,ROUND(AVG(manipulation_score))::int AS avg_manipulation,COUNT(*) FILTER(WHERE manipulation_score>=40)::int AS manipulation_flags FROM intel_observations WHERE observed_at>=now()-interval '30 days'`);
-  const {rows:[e]}=await req.db(`SELECT COUNT(*)::int AS events_30d,ROUND(AVG(confidence))::int AS avg_event_confidence,COUNT(*) FILTER(WHERE severity IN ('critical','high'))::int AS high_critical_events FROM intel_events WHERE last_seen_at>=now()-interval '30 days'`);
-  const {rows:[g]}=await req.db(`SELECT COUNT(*) FILTER(WHERE status IN ('open','tasked','monitoring'))::int AS open_gaps,COUNT(*) FILTER(WHERE status='resolved')::int AS resolved_gaps FROM intel_gaps`);
-  res.json({quality:{...q,...e,...g,checked_at:new Date().toISOString()}});
+  const s=scope(req); const oq=countryClause(s,'o',1); const eq=countryClause(s,'e',2); const gq=scopedObjectClause(s,'g',3);
+  const {rows:[q]}=await req.db(`SELECT COUNT(*)::int AS observations_30d,COUNT(DISTINCT o.source_id)::int AS sources_30d,ROUND(AVG(o.credibility))::int AS avg_credibility,ROUND(AVG(o.manipulation_score))::int AS avg_manipulation,COUNT(*) FILTER(WHERE o.manipulation_score>=40)::int AS manipulation_flags FROM intel_observations o WHERE o.org_id=$4 AND o.observed_at>=now()-interval '30 days' AND ${oq.clause}`,[...oq.params, ...eq.params, ...gq.params, req.user.org_id]);
+  const {rows:[e]}=await req.db(`SELECT COUNT(*)::int AS events_30d,ROUND(AVG(e.confidence))::int AS avg_event_confidence,COUNT(*) FILTER(WHERE e.severity IN ('critical','high'))::int AS high_critical_events FROM intel_events e WHERE e.org_id=$1 AND e.last_seen_at>=now()-interval '30 days' AND ${eq.clause}`,[req.user.org_id,...eq.params]);
+  const {rows:[g]}=await req.db(`SELECT COUNT(*) FILTER(WHERE g.status IN ('open','tasked','monitoring'))::int AS open_gaps,COUNT(*) FILTER(WHERE g.status='resolved')::int AS resolved_gaps FROM intel_gaps g WHERE g.org_id=$1 AND ${gq.clause}`,[req.user.org_id,...gq.params]);
+  res.json({quality:{...q,...e,...g,scope:s,checked_at:new Date().toISOString()}});
 }));
 
-// Deep read surfaces for the Intelligence Centre. All reads are org-scoped through req.db/auth.
 router.get('/events', asyncHandler(async(req,res)=>{
   const limit=Math.min(500,Math.max(1,Number(req.query.limit)||200));
-  const severity=req.query.severity||null; const country=req.query.country_code||null; const status=req.query.status||null;
-  const {rows}=await req.db(`SELECT e.*,COUNT(eo.observation_id)::int AS source_count FROM intel_events e LEFT JOIN intel_event_observations eo ON eo.event_id=e.id WHERE ($1::text IS NULL OR e.severity=$1) AND ($2::text IS NULL OR e.country_code=$2) AND ($3::text IS NULL OR e.status=$3) GROUP BY e.id ORDER BY e.last_seen_at DESC LIMIT $4`,[severity,country,status,limit]);
-  res.json({events:rows,generated_at:new Date().toISOString()});
+  const severity=req.query.severity||null; const status=req.query.status||null; const s=scope(req); const geo=countryClause(s,'e',4);
+  const {rows}=await req.db(`SELECT e.*,COUNT(eo.observation_id)::int AS source_count FROM intel_events e LEFT JOIN intel_event_observations eo ON eo.event_id=e.id WHERE e.org_id=$1 AND ($2::text IS NULL OR e.severity=$2) AND ($3::text IS NULL OR e.status=$3) AND ${geo.clause} GROUP BY e.id ORDER BY e.last_seen_at DESC LIMIT $5`,[req.user.org_id,severity,status,...geo.params,limit]);
+  res.json({events:rows,scope:s,generated_at:new Date().toISOString()});
 }));
 
 router.get('/events/:id', asyncHandler(async(req,res)=>{
@@ -97,49 +101,52 @@ router.get('/events/:id', asyncHandler(async(req,res)=>{
 }));
 
 router.get('/sources', asyncHandler(async(req,res)=>{
-  const active=req.query.active==null?null:req.query.active==='true';
-  const {rows}=await req.db(`SELECT s.*,COUNT(DISTINCT o.id)::int AS observation_count,MAX(o.observed_at) AS latest_observation FROM intel_sources s LEFT JOIN intel_observations o ON o.source_id=s.id WHERE ($1::boolean IS NULL OR s.active=$1) GROUP BY s.id ORDER BY s.last_seen_at DESC NULLS LAST,s.name LIMIT 300`,[active]);
-  res.json({sources:rows,generated_at:new Date().toISOString()});
+  const active=req.query.active==null?null:req.query.active==='true'; const s=scope(req); const geo=countryClause(s,'o',3);
+  const {rows}=await req.db(`SELECT src.*,COUNT(DISTINCT o.id)::int AS observation_count,MAX(o.observed_at) AS latest_observation FROM intel_sources src LEFT JOIN intel_observations o ON o.source_id=src.id WHERE src.org_id=$1 AND ($2::boolean IS NULL OR src.active=$2) AND (${s.type==='global'?'TRUE':`EXISTS (SELECT 1 FROM intel_observations os WHERE os.org_id=src.org_id AND os.source_id=src.id AND ${geo.clause.replace(/\bo\./g,'os.')})`}) GROUP BY src.id ORDER BY src.last_seen_at DESC NULLS LAST,src.name LIMIT 300`,[req.user.org_id,active,...geo.params]);
+  res.json({sources:rows,scope:s,generated_at:new Date().toISOString()});
 }));
 
 router.get('/observations', asyncHandler(async(req,res)=>{
-  const limit=Math.min(500,Math.max(1,Number(req.query.limit)||200));
-  const {rows}=await req.db(`SELECT o.*,s.name AS source_name,s.source_type,s.provider FROM intel_observations o LEFT JOIN intel_sources s ON s.id=o.source_id ORDER BY o.observed_at DESC LIMIT $1`,[limit]);
-  res.json({observations:rows,generated_at:new Date().toISOString()});
+  const limit=Math.min(500,Math.max(1,Number(req.query.limit)||200)); const s=scope(req); const geo=countryClause(s,'o',3);
+  const {rows}=await req.db(`SELECT o.*,s.name AS source_name,s.source_type,s.provider FROM intel_observations o LEFT JOIN intel_sources s ON s.id=o.source_id WHERE o.org_id=$1 AND ${geo.clause} ORDER BY o.observed_at DESC LIMIT $2`,[req.user.org_id,...geo.params,limit]);
+  res.json({observations:rows,scope:s,generated_at:new Date().toISOString()});
 }));
 
 router.get('/publications', asyncHandler(async(req,res)=>{
-  const status=req.query.status||null;
-  const {rows}=await req.db(`SELECT p.*,COUNT(r.id)::int AS review_count FROM intel_publications p LEFT JOIN intel_publication_reviews r ON r.publication_id=p.id WHERE ($1::text IS NULL OR p.status=$1) GROUP BY p.id ORDER BY p.updated_at DESC LIMIT 300`,[status]);
-  res.json({publications:rows,generated_at:new Date().toISOString()});
+  const status=req.query.status||null; const s=scope(req); const geo=countryClause(s,'p',3);
+  const {rows}=await req.db(`SELECT p.*,COUNT(r.id)::int AS review_count FROM intel_publications p LEFT JOIN intel_publication_reviews r ON r.publication_id=p.id WHERE p.org_id=$1 AND ($2::text IS NULL OR p.status=$2) AND ${geo.clause} GROUP BY p.id ORDER BY p.updated_at DESC LIMIT 300`,[req.user.org_id,status,...geo.params]);
+  res.json({publications:rows,scope:s,generated_at:new Date().toISOString()});
 }));
 
 router.get('/watchlists', asyncHandler(async(req,res)=>{
-  const {rows}=await req.db(`SELECT w.* FROM intel_watchlists w WHERE w.active=true ORDER BY w.updated_at DESC LIMIT 300`);
-  res.json({watchlists:rows,generated_at:new Date().toISOString()});
+  const s=scope(req); const geo=watchlistClause(s,'w',2);
+  const {rows}=await req.db(`SELECT w.* FROM intel_watchlists w WHERE w.org_id=$1 AND w.active=true AND ${geo.clause} ORDER BY w.updated_at DESC LIMIT 300`,[req.user.org_id,...geo.params]);
+  res.json({watchlists:rows,scope:s,generated_at:new Date().toISOString()});
 }));
 
 router.get('/requirements', asyncHandler(async(req,res)=>{
-  const status=req.query.status||null;
-  const {rows}=await req.db(`SELECT * FROM intel_requirements WHERE ($1::text IS NULL OR status=$1) ORDER BY ${priorityRank},due_at ASC NULLS LAST,created_at DESC LIMIT 300`,[status]);
-  res.json({requirements:rows,generated_at:new Date().toISOString()});
+  const status=req.query.status||null; const s=scope(req); const geo=`($2::text='global' OR LOWER(COALESCE(r.scope->>'scope_type',''))=$2 AND LOWER(COALESCE(r.scope->>'scope_key',''))=$3 OR UPPER(COALESCE(r.scope->>'country_code',''))=ANY($4::text[]))`;
+  const countries=s.type==='country'?[s.key]:s.type==='region'?require('../utils/intelligenceScope').REGIONS[s.key]:s.type==='continent'?require('../utils/intelligenceScope').AFRICA:[];
+  const {rows}=await req.db(`SELECT r.* FROM intel_requirements r WHERE r.org_id=$1 AND ($5::text IS NULL OR r.status=$5) AND ${geo} ORDER BY ${priorityRank},r.due_at ASC NULLS LAST,r.created_at DESC LIMIT 300`,[req.user.org_id,s.type,s.key,countries,status]);
+  res.json({requirements:rows,scope:s,generated_at:new Date().toISOString()});
 }));
 
 router.get('/assessments', asyncHandler(async(req,res)=>{
-  const scope=req.query.scope_type||null;
-  const {rows}=await req.db(`SELECT * FROM intel_assessments WHERE ($1::text IS NULL OR scope_type=$1) AND (validity_end IS NULL OR validity_end>=now()) ORDER BY validity_start DESC LIMIT 300`,[scope]);
-  res.json({assessments:rows,generated_at:new Date().toISOString()});
+  const s=scope(req); const geo=scopedObjectClause(s,'a',2);
+  const {rows}=await req.db(`SELECT a.* FROM intel_assessments a WHERE a.org_id=$1 AND ($2::text IS NULL OR a.scope_type=$2) AND (a.validity_end IS NULL OR a.validity_end>=now()) AND ${geo.clause} ORDER BY a.validity_start DESC LIMIT 300`,[req.user.org_id,req.query.scope_type||null,...geo.params]);
+  res.json({assessments:rows,scope:s,generated_at:new Date().toISOString()});
 }));
 
 router.get('/entities', asyncHandler(async(req,res)=>{
-  const type=req.query.entity_type||null; const country=req.query.country_code||null;
-  const {rows}=await req.db(`SELECT * FROM intel_entities WHERE ($1::text IS NULL OR entity_type=$1) AND ($2::text IS NULL OR country_code=$2) ORDER BY last_seen_at DESC LIMIT 500`,[type,country]);
-  res.json({entities:rows,generated_at:new Date().toISOString()});
+  const type=req.query.entity_type||null; const s=scope(req); const geo=countryClause(s,'e',3);
+  const {rows}=await req.db(`SELECT e.* FROM intel_entities e WHERE e.org_id=$1 AND ($2::text IS NULL OR e.entity_type=$2) AND ${geo.clause} ORDER BY e.last_seen_at DESC LIMIT 500`,[req.user.org_id,type,...geo.params]);
+  res.json({entities:rows,scope:s,generated_at:new Date().toISOString()});
 }));
 
 router.get('/early-warnings', asyncHandler(async(req,res)=>{
-  const {rows}=await req.db(`SELECT * FROM intel_early_warnings WHERE status IN ('open','review','acknowledged') ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'moderate' THEN 3 ELSE 4 END,last_detected_at DESC LIMIT 300`);
-  res.json({warnings:rows,generated_at:new Date().toISOString()});
+  const s=scope(req); const geo=scopedObjectClause(s,'w',1);
+  const {rows}=await req.db(`SELECT w.* FROM intel_early_warnings w WHERE w.org_id=$1 AND w.status IN ('open','review','acknowledged') AND ${geo.clause} ORDER BY CASE w.severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'moderate' THEN 3 ELSE 4 END,w.last_detected_at DESC LIMIT 300`,[req.user.org_id,...geo.params]);
+  res.json({warnings:rows,scope:s,generated_at:new Date().toISOString()});
 }));
 
 module.exports=router;
