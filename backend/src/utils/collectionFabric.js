@@ -32,3 +32,28 @@ async function collectForOrg(orgId){const{rows:watchlists}=await query(`SELECT n
 }
 async function runCollectionFabric(){const client=await pool.connect();let locked=false;try{const lock=await client.query("SELECT pg_try_advisory_lock(hashtext('sonalit:intelligence:collection')) AS acquired");locked=Boolean(lock.rows[0]?.acquired);if(!locked)return{skipped:true,reason:'cluster_run_in_progress'};const{rows:orgs}=await client.query(`SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL`);const{fuseOrg}=require('./intelligenceFusionRuntime');const{enrichOrg}=require('./intelligenceAdvancedRuntime');const output=[];for(const{org_id}of orgs){const started=Date.now();try{const collection=await collectForOrg(org_id);const fusion=await fuseOrg(org_id);const enrichment=await enrichOrg(org_id);output.push({org_id,collection,fusion,enrichment,duration_ms:Date.now()-started});logger.info(`Intelligence Collection Fabric: org=${org_id} completed in ${Date.now()-started}ms seen=${collection.totalSeen} inserted=${collection.totalInserted}`);}catch(e){output.push({org_id,error:e.message,duration_ms:Date.now()-started});logger.warn(`Intelligence Collection Fabric: org=${org_id} failed: ${e.message}`);}}return{organizations:output.length,discovered:output.reduce((s,o)=>s+(o.collection?.totalSeen||0),0),ingested:output.reduce((s,o)=>s+(o.collection?.totalInserted||0),0),results:output};}finally{if(locked){try{await client.query("SELECT pg_advisory_unlock(hashtext('sonalit:intelligence:collection'))")}catch(_){}}client.release();}}
 module.exports={runCollectionFabric,collectForOrg,severityHint,buildQuery};
+
+// Regional Incident Fabric scheduler. The API process already imports this module
+// and runs runCollectionFabric, so this scheduler guarantees the regional sweep
+// is active in the deployed npm-start process without requiring a separate worker.
+if(!process.env.GENERATE_OPENAPI&&process.env.NODE_ENV!=='test'&&!global.__sonalitRegionalIncidentScheduler){
+  global.__sonalitRegionalIncidentScheduler=true;
+  const regionalIntervalMs=Math.max(5,Number(process.env.INTEL_REGIONAL_INTERVAL_MINUTES||5))*60*1000;
+  let regionalSweepRunning=false;
+  const regionalSweep=async(reason)=>{
+    if(regionalSweepRunning)return;
+    regionalSweepRunning=true;
+    try{
+      const {runRegionalIncidentSweepAll}=require('./regionalIncidentFabric');
+      const results=await runRegionalIncidentSweepAll();
+      const seen=results.reduce((s,r)=>s+Number(r.totalSeen||0),0);
+      const inserted=results.reduce((s,r)=>s+Number(r.totalInserted||0),0);
+      const alerts=results.reduce((s,r)=>s+Number(r.totalAlerts||0),0);
+      logger.info(`Regional Incident Fabric sweep (${reason}) complete: orgs=${results.length} seen=${seen} inserted=${inserted} alerts=${alerts}`);
+    }catch(error){logger.warn(`Regional Incident Fabric sweep (${reason}) failed: ${error.message}`);}
+    finally{regionalSweepRunning=false;}
+  };
+  const startupTimer=setTimeout(()=>regionalSweep('startup'),20000);startupTimer.unref?.();
+  const regionalTimer=setInterval(()=>regionalSweep('scheduled'),regionalIntervalMs);regionalTimer.unref?.();
+  logger.info(`Regional Incident Fabric scheduled every ${regionalIntervalMs/60000}m`);
+}
