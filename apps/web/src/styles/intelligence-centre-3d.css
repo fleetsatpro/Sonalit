@@ -1,0 +1,48 @@
+/* SONALIT INTELLIGENCE CENTRE — 3D COMMAND LAYER */
+
+.icx-root{position:relative;isolation:isolate;perspective:1800px;overflow:hidden;background:radial-gradient(ellipse at 76% 12%,rgba(41,123,116,.16),transparent 34%),radial-gradient(ellipse at 20% 86%,rgba(12,75,91,.13),transparent 38%),#050c10!important}
+.icx-root:before{content:"";position:fixed;inset:0;pointer-events:none;z-index:-1;background-image:linear-gradient(rgba(79,180,169,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(79,180,169,.045) 1px,transparent 1px);background-size:46px 46px;mask-image:linear-gradient(to bottom,black,transparent 90%);transform:translateZ(-100px) scale(1.1)}
+.icx-root:after{content:"";position:fixed;width:680px;height:680px;right:-300px;top:80px;border-radius:50%;pointer-events:none;z-index:-1;background:radial-gradient(circle at 35% 30%,rgba(101,237,209,.13),transparent 26%),radial-gradient(circle,rgba(20,113,109,.11),rgba(5,16,20,0) 68%);filter:blur(1px);animation:icx-orbit 18s linear infinite}
+.icx-top{position:relative;transform:translateZ(30px);border-color:rgba(83,171,164,.24)!important;box-shadow:0 18px 55px rgba(0,0,0,.22)}
+.icx-brand{letter-spacing:.18em!important;text-shadow:0 0 24px rgba(92,222,196,.2)}
+.icx-status{font-size:9px!important}
+.icx-refresh{box-shadow:inset 0 1px rgba(255,255,255,.05),0 8px 24px rgba(0,0,0,.28),0 0 0 1px rgba(82,214,180,.04)!important;transition:transform .18s ease,box-shadow .18s ease!important}
+.icx-refresh:hover{transform:translateY(-2px) translateZ(12px);box-shadow:inset 0 1px rgba(255,255,255,.08),0 14px 32px rgba(0,0,0,.38),0 0 22px rgba(82,214,180,.08)!important}
+.icx-scope{position:relative;transform:translateZ(25px);background:linear-gradient(145deg,rgba(12,30,35,.94),rgba(5,15,19,.96))!important;border-color:rgba(71,142,139,.32)!important;box-shadow:inset 0 1px rgba(255,255,255,.045),0 24px 65px rgba(0,0,0,.28),0 0 0 1px rgba(79,177,168,.025)!important;overflow:hidden}
+.icx-scope:after{content:"";position:absolute;left:0;right:0;top:0;height:1px;background:linear-gradient(90deg,transparent,rgba(103,231,207,.65),transparent);opacity:.65}
+.icx-scope>div:first-child strong{font-size:20px!important;text-shadow:0 4px 18px rgba(0,0,0,.65)}
+.icx-scope select,.icx-search{box-shadow:inset 0 1px rgba(255,255,255,.035),0 7px 20px rgba(0,0,0,.2)!important;transition:transform .16s ease,border-color .16s ease!important}
+.icx-scope select:hover,.icx-search:focus-within{transform:translateY(-1px);border-color:#397b78!important}
+.icx-nav{position:relative;transform:translateZ(18px);padding-left:2px!important}
+.icx-nav button{box-shadow:inset 0 1px rgba(255,255,255,.035),0 7px 18px rgba(0,0,0,.2)!important;transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease!important}
+.icx-nav button:hover{transform:translateY(-2px) translateZ(10px)}
+.icx-nav button.active{box-shadow:inset 0 1px rgba(135,245,220,.12),0 8px 26px rgba(39,137,126,.2),0 0 24px rgba(82,214,180,.06)!important}
+.icx-hero{position:relative;transform-style:preserve-3d;transform:translateZ(34px);background:radial-gradient(circle at 80% 50%,rgba(47,151,141,.12),transparent 32%),linear-gradient(135deg,#0e2429,#071317 65%,#0a1b20)!important;border-color:rgba(65,137,135,.42)!important;box-shadow:inset 0 1px rgba(255,255,255,.055),inset 0 -30px 70px rgba(0,0,0,.2),0 30px 80px rgba(0,0,0,.42),0 0 45px rgba(37,120,116,.08)!important;overflow:hidden}
+.icx-hero:before{content:"";position:absolute;right:170px;top:-130px;width:430px;height:430px;border-radius:50%;border:1px solid rgba(86,210,192,.14);box-shadow:0 0 70px rgba(49,168,155,.07),inset 0 0 55px rgba(65,195,177,.04);transform:translateZ(35px);animation:icx-pulse 5s ease-in-out infinite}
+.icx-hero:after{content:"";position:absolute;right:36px;top:50%;width:250px;height:250px;border-radius:50%;background:radial-gradient(circle at 33% 28%,rgba(134,255,227,.28),transparent 7%),radial-gradient(circle at 35% 35%,rgba(27,116,112,.7),rgba(5,28,35,.96) 67%,rgba(2,11,15,.98));box-shadow:inset -28px -24px 45px rgba(0,0,0,.62),inset 10px 8px 25px rgba(115,241,218,.13),0 0 35px rgba(58,210,188,.14),0 30px 70px rgba(0,0,0,.45);transform:translate3d(0,-50%,75px) rotateX(10deg);animation:icx-globe 14s linear infinite;opacity:.9}
+.icx-hero h1{position:relative;z-index:2;text-shadow:0 8px 30px rgba(0,0,0,.72);letter-spacing:-.035em!important}
+.icx-hero p{position:relative;z-index:2}
+.icx-metric{position:relative;z-index:3;background:linear-gradient(145deg,rgba(11,31,35,.76),rgba(4,15,19,.82));border:1px solid rgba(84,170,160,.2);border-radius:10px;padding:18px!important;box-shadow:inset 0 1px rgba(255,255,255,.05),0 18px 42px rgba(0,0,0,.32),0 0 28px rgba(68,205,183,.06);transform:translateZ(70px)}
+.icx-metric b{font-size:42px!important;text-shadow:0 0 28px rgba(111,231,204,.22)}
+.icx-panel{position:relative;transform:translateZ(18px);background:linear-gradient(145deg,rgba(10,25,29,.96),rgba(5,14,18,.98))!important;border-color:rgba(54,112,113,.3)!important;box-shadow:inset 0 1px rgba(255,255,255,.035),0 22px 58px rgba(0,0,0,.34),0 0 0 1px rgba(85,180,170,.018)!important;transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease!important}
+.icx-panel:hover{transform:translateY(-2px) translateZ(28px);border-color:rgba(67,145,141,.46)!important;box-shadow:inset 0 1px rgba(255,255,255,.05),0 28px 70px rgba(0,0,0,.4),0 0 32px rgba(67,173,160,.05)!important}
+.icx-panel header{background:linear-gradient(180deg,rgba(20,43,47,.26),transparent)!important}
+.icx-row{position:relative;transition:background .16s ease,transform .16s ease,padding-left .16s ease!important}
+.icx-row:after{content:"";position:absolute;left:14px;right:14px;bottom:-1px;height:1px;background:linear-gradient(90deg,transparent,rgba(73,138,135,.16),transparent)}
+.icx-row:hover{background:linear-gradient(90deg,rgba(30,70,72,.23),rgba(11,31,35,.1))!important;transform:translateX(3px);padding-left:17px}
+.icx-row b{text-shadow:0 2px 12px rgba(0,0,0,.5)}
+.icx-sev i{box-shadow:0 0 10px currentColor}
+.icx-sev.critical i,.icx-sev.high i{box-shadow:0 0 11px rgba(240,107,87,.75)!important}
+.icx-sev.low i{box-shadow:0 0 11px rgba(82,214,180,.75)!important}
+.icx-quality div{position:relative;overflow:hidden;background:linear-gradient(145deg,rgba(12,29,33,.94),rgba(5,15,19,.98))!important;box-shadow:inset 0 1px rgba(255,255,255,.035),0 18px 42px rgba(0,0,0,.28)!important;transform:translateZ(22px);transition:transform .18s ease!important}
+.icx-quality div:hover{transform:translateY(-3px) translateZ(30px)}
+.icx-atlas-grid button{position:relative;background:linear-gradient(145deg,#0d2227,#071418)!important;box-shadow:inset 0 1px rgba(255,255,255,.04),0 12px 28px rgba(0,0,0,.25)!important;transition:transform .18s ease,box-shadow .18s ease!important}
+.icx-atlas-grid button:hover{transform:translateY(-4px) rotateX(2deg);box-shadow:inset 0 1px rgba(255,255,255,.06),0 20px 40px rgba(0,0,0,.4),0 0 22px rgba(67,173,160,.07)!important}
+.icx-warning{box-shadow:inset 0 1px rgba(255,255,255,.035),0 14px 35px rgba(0,0,0,.28)!important;transform:translateZ(24px)}
+.icx-drawer{background:linear-gradient(145deg,#0a1a1f,#040d11)!important;box-shadow:-30px 0 80px rgba(0,0,0,.5),inset 1px 0 rgba(98,194,181,.12)!important}
+.icx-drawer h3{text-shadow:0 5px 24px rgba(0,0,0,.7)}
+@keyframes icx-globe{from{transform:translate3d(0,-50%,75px) rotateY(0deg) rotateX(10deg)}to{transform:translate3d(0,-50%,75px) rotateY(360deg) rotateX(10deg)}}
+@keyframes icx-orbit{from{transform:rotate(0deg) translateZ(-100px) scale(1.1)}to{transform:rotate(360deg) translateZ(-100px) scale(1.1)}}
+@keyframes icx-pulse{0%,100%{opacity:.5;transform:translateZ(35px) scale(.98)}50%{opacity:1;transform:translateZ(35px) scale(1.03)}}
+@media(max-width:900px){.icx-hero:after{right:-60px;width:190px;height:190px;opacity:.48}.icx-hero:before{right:20px;width:320px;height:320px}.icx-metric{transform:none}.icx-panel,.icx-quality div{transform:none}.icx-panel:hover,.icx-quality div:hover{transform:translateY(-2px)}}
+@media(prefers-reduced-motion:reduce){.icx-root:after,.icx-hero:before,.icx-hero:after{animation:none!important}.icx-refresh,.icx-nav button,.icx-panel,.icx-row,.icx-quality div,.icx-atlas-grid button{transition:none!important}}
