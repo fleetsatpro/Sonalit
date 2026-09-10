@@ -3,11 +3,28 @@ const { authenticate } = require('../middleware/auth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
 const { buildAssessment } = require('../utils/intelligenceEngine');
+const { translatePayload } = require('../utils/intelligenceTranslation');
 const operationsRouter = require('./intelligenceOperations');
 
 router.use(authenticate);
 router.use(attachOrgDb);
 function adminWrite(req,res,next){if(!['admin','super_admin'].includes(req.user.role))return res.status(403).json({error:'Administrator role required for this action'});next();}
+
+// Automatic English translation is applied at the intelligence response boundary.
+// Translation is cached by content hash and failures degrade to the original source.
+router.use((req,res,next)=>{
+  const originalJson=res.json.bind(res);
+  res.json=async payload=>{
+    try{
+      if(req.path==='/events'||req.path==='/observations'||req.path==='/events/'||req.path==='/observations/'||/^\/events\/[^/]+$/.test(req.path)){
+        payload=await translatePayload(payload);
+      }
+    }catch(_err){}
+    return originalJson(payload);
+  };
+  next();
+});
+
 // Canonical scoped read contract must win over legacy compatibility handlers below.
 router.use('/', operationsRouter);
 router.use('/ops', operationsRouter);
