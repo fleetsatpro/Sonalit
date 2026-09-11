@@ -10,9 +10,9 @@ const TYPES=['daily','weekly','monthly','flash','crisis','country_profile','rout
 function age(v?:string){if(!v)return'—';const m=Math.max(0,Math.floor((Date.now()-new Date(v).getTime())/60000));if(m<1)return'NOW';if(m<60)return`${m}M`;if(m<1440)return`${Math.floor(m/60)}H`;return`${Math.floor(m/1440)}D`}
 function severity(v?:string){const s=String(v||'moderate').toLowerCase();return['critical','high','moderate','low','informational'].includes(s)?s:'moderate'}
 function title(x:Row){return x.title||`${x.country_code||'REGIONAL'} ${x.publication_type||'publication'}`}
-export default function IntelligencePublicationDesk(){
+export default function IntelligencePublicationDesk({scopeType='global',scopeKey='global'}={}){
  const [country,setCountry]=useState(''); const [type,setType]=useState(''); const [selected,setSelected]=useState<Row|null>(null)
- const q=useQuery({queryKey:['intel-publications',country,type],queryFn:async()=>{const r=await api.get('/risk/intelligence/publications',{params:{status:'published',...(country?{scope_type:'country',scope_key:country}:{})}});return r.data?.publications||[]},staleTime:15000,refetchInterval:30000,retry:1})
+ const q=useQuery({queryKey:['intel-publications',country,type],queryFn:async()=>{const r=await api.get('/risk/intelligence/publications',{params:{status:'published',scope_type:scopeType,scope_key:country||scopeKey}});return r.data?.publications||[]},staleTime:15000,refetchInterval:30000,retry:1})
  const items=useMemo(()=>{const xs=(q.data||[]).filter((x:Row)=>!country||x.country_code===country);return type?xs.filter((x:Row)=>x.publication_type===type):xs},[q.data,country,type])
  return <div className="ipd-root">
   <header className="ipd-head"><div><span>SONALIT / 3I NEWSROOM</span><h1>PUBLICATION DESK</h1><p>Daily intelligence products · weekly trend analysis · monthly strategic assessment</p></div><div className="ipd-coverage"><b>{items.length}</b><span>PUBLISHED PRODUCTS</span><small>Evidence-linked dissemination</small></div></header>
