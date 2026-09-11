@@ -110,7 +110,7 @@ function countryClause(scope, alias, index) {
   const countries = countriesFor(scope);
   if (scope.type !== 'country') {
     return {
-      clause: `${alias}.country_code = ANY($${index}::text[])`,
+      clause: `UPPER(${alias}.country_code) = ANY($${index}::text[])`,
       params: [countries],
     };
   }
