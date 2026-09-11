@@ -3,6 +3,8 @@
 // exactly once per Node process. The bootstrap uses a PostgreSQL advisory lock so
 // multiple Railway replicas cannot run the same collection cycle concurrently.
 require('./intelligenceCollectionBootstrap');
+// High-volume specialist collection mesh: public/authorized sources only.
+require('./aggressiveIntelligenceAgents');
 
 const SEVERITY_RANK = { informational: 0, low: 1, moderate: 2, high: 3, critical: 4 };
 
