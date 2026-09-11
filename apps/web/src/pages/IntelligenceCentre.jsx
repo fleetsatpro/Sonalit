@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Activity, Newspaper, Shield, Siren, Radio, ArrowRight, FileText } from 'lucide-react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import IntelligenceCentreDeep from './IntelligenceCentreSynthesis.tsx';
+import IntelligenceCentreDeep from './IntelligenceCentreDeep.tsx';
 import IntelligenceLiveNews from './IntelligenceLiveNews.jsx';
 import IntelligenceAlerts from './IntelligenceAlerts.tsx';
 import IntelligencePublicationDesk from './IntelligencePublicationDesk.tsx';
@@ -20,6 +20,6 @@ export default function IntelligenceCentre(){
   <header className="ic-commandbar"><div className="ic-command-brand"><div className="ic-command-mark"><span>S</span></div><div><span className="ic-command-eyebrow">SONALIT / INTELLIGENCE</span><strong>FUSION CENTRE</strong><small>SECURITY · LOGISTICS · GEOSPATIAL</small></div></div><div className="ic-command-status"><span className="live-dot"/> COLLECTION FABRIC <b>LIVE</b><i/> ACTIVE MODULE <strong>{active.index}</strong></div><div className="ic-command-actions"><span className="ic-clock">{new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}</span><span className="ic-secure">ORG ISOLATED · GEO ENFORCED</span></div></header>
   <nav className="ic-modulebar" aria-label="Intelligence Centre modules"><div className="ic-module-intro"><span className="ic-command-eyebrow">CENTRE LAYERS</span><b>ONE INTELLIGENCE ENVIRONMENT</b><small>Collection → Fusion → Decision support</small></div>{MODULES.map(item=>{const Icon=item.icon;return <button key={item.id} type="button" className={`ic-module ${module===item.id?'active':''}`} onClick={()=>selectModule(item.id)}><span className="ic-module-index">{item.index}</span><Icon size={16}/><span className="ic-module-copy"><strong>{item.label}</strong><em>{item.caption}</em></span><ArrowRight className="ic-module-arrow" size={14}/></button>})}<span className="ic-module-current"><span>CURRENT</span><b>{active.label}</b></span></nav>
   <div className="ic-module-context"><span><Radio size={12}/> DATA FABRIC</span><i/><span>SYNTHESIS FIRST</span><i/><span>30s CORE REFRESH</span><i/><span>FAIL-CLOSED SCOPING</span></div>
-  {module==='alerts'?<IntelligenceAlerts/>:module==='newsroom'?<IntelligenceLiveNews/>:module==='publications'?<IntelligencePublicationDesk/>:<IntelligenceCentreSynthesis/>}
+  {module==='alerts'?<IntelligenceAlerts/>:module==='newsroom'?<IntelligenceLiveNews/>:module==='publications'?<IntelligencePublicationDesk/>:<IntelligenceCentreDeep/>}
  </div>;
 }
