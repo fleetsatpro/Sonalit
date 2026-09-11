@@ -74,11 +74,11 @@ export default function IntelligenceCentreDeep(){
  const countries=list(countriesQ.data,'countries').filter(x=>scopeMatches(x,scope));
  const trajectories=list(trajectoriesQ.data,'trajectories');
  const exposures=list(exposuresQ.data,'exposures');
- const links=list(linksQ.data,'links').filter(x=>scope.type==='global'||EAST_AFRICA_CODES.includes(String(x.country_code||'').toUpperCase()));
+ const links=list(linksQ.data,'links').filter(x=>scope.type==='global'||scopeMatches(x,scope));
  const requirements=list(requirementsQ.data,'requirements');
  const collection=list(collectionQ.data?.collection?.sources,'sources');
  const qd=qualityQ.data?.quality||{};
- const selectedEvent=useQuery({queryKey:['icd-event',selected?.id],enabled:selected?.type==='event'&&Boolean(selected.id),queryFn:async()=>{const r=await api.get(`/risk/intelligence/events/${selected!.id}`);return r.data?.event},staleTime:30_000});
+ const selectedEvent=useQuery({queryKey:['icd-event',selected?.id,params],enabled:selected?.type==='event'&&Boolean(selected.id),queryFn:async()=>{const r=await api.get(`/risk/intelligence/events/${selected!.id}`,{params});return r.data?.event},staleTime:30_000});
  const selectedWarning=useQuery({queryKey:['icd-warning',selected?.id],enabled:selected?.type==='warning'&&Boolean(selected.id),queryFn:async()=>{const r=await api.get(`/risk/intelligence/early-warnings/${selected!.id}/actions`);return r.data},staleTime:30_000});
  const countryAssessment=useQuery({queryKey:['icd-country-assessment',country],enabled:Boolean(country),queryFn:async()=>{const r=await api.get(`/risk/intelligence/countries/${country}/assessment`);return r.data},staleTime:30_000});
  const gps=events.filter(x=>Number.isFinite(Number(x.latitude))&&Number.isFinite(Number(x.longitude)));
