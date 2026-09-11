@@ -4,6 +4,7 @@ import { Activity, AlertTriangle, ArrowUpRight, BookOpen, BrainCircuit, ChevronR
 import { api } from '../lib/api.js';
 import IntelligenceScopedWorkspace from './IntelligenceCentreDeep.tsx';
 import '../styles/intelligence-centre-synthesis.css';
+import '../styles/intelligence-centre-synthesis-v2.css';
 
 type Row = Record<string, any>;
 type Story = Row & { id: string; headline: string; brief: string; key_facts?: string[]; why_it_matters?: string[]; caveats?: string[]; event_ids?: string[]; events?: Row[]; source_count?: number; observation_count?: number };
