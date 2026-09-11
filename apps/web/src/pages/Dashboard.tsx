@@ -1,22 +1,166 @@
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import { api } from '../lib/api.js';
 import { useDashboardStore } from '../stores/dashboardStore.js';
 import '../styles/dashboard.css';
 
-import { Suspense, lazy } from 'react';
+import React, { Suspense, lazy } from 'react';
+import { Activity, AlertTriangle, Clock3, MapPinned, Radio, ShieldCheck, Siren, Target, Zap } from 'lucide-react';
 import EventsTicker from '../components/dashboard/EventsTicker.js';
 import InstrumentBar from '../components/dashboard/InstrumentBar.js';
 import PriorityQueue from '../components/dashboard/PriorityQueue.js';
 const TacticalMap = lazy(() => import('../components/dashboard/TacticalMap.js'));
 import type { DashboardOverview } from '../stores/dashboardStore.js';
 
-// Command console: a tactical single pane. The living map is the hero, one
-// instrument bar on top, one urgency-ranked priority queue on the right, the
-// events ticker along the bottom. Analytics detail (driver behaviour,
-// weather, performance charts, ...) lives on its own pages — home answers
-// only "is anything wrong, and where?".
+function relTime(iso: string): string {
+  const timestamp = new Date(iso).getTime();
+  if (!Number.isFinite(timestamp)) return '—';
+  const sec = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (sec < 60) return `${sec}s`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}m`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h`;
+  return `${Math.floor(sec / 86400)}d`;
+}
+
+function CommandMast() {
+  const overview = useDashboardStore((s) => s.overview);
+  const alerts = useDashboardStore((s) => s.alerts);
+  const convoys = useDashboardStore((s) => s.convoys);
+
+  const level = overview?.threat?.level ?? 'secure';
+  const critical = alerts.filter((a) => a.severity === 'critical' || a.severity === 'high').length;
+  const active = overview?.kpi?.convoys_active ?? convoys.filter((c) => c.status === 'active').length;
+  const vehicles = overview?.kpi?.vehicles_live ?? 0;
+  const incidents = overview?.kpi?.incidents_open ?? overview?.threat?.incidents_active ?? 0;
+
+  const tone = level === 'critical' ? 'critical' : level === 'elevated' ? 'elevated' : 'secure';
+  const threatLabel = level === 'critical' ? 'CRITICAL' : level === 'elevated' ? 'ELEVATED' : 'SECURE';
+
+  return (
+    <section className={`command-mast command-mast--${tone}`} aria-label='Command overview'>
+      <div className='command-mast__brand'>
+        <div className='command-mast__sigil'>S</div>
+        <div>
+          <div className='command-mast__eyebrow'><span className='live-dot' /> SONALIT COMMAND</div>
+          <h1>Operations Command Workspace</h1>
+          <p>One screen for movement posture, threats, exceptions and immediate action.</p>
+        </div>
+      </div>
+
+      <div className='command-mast__posture'>
+        <div className='posture-label'><ShieldCheck size={16} /> GLOBAL POSTURE</div>
+        <strong>{threatLabel}</strong>
+        <span>{incidents} incidents open · {critical} priority alerts</span>
+      </div>
+
+      <div className='command-mast__metrics'>
+        <div className='command-mast__metric'>
+          <Target size={16} />
+          <span>ACTIVE CONVOYS</span>
+          <strong>{active}</strong>
+        </div>
+        <div className='command-mast__metric'>
+          <MapPinned size={16} />
+          <span>LIVE VEHICLES</span>
+          <strong>{vehicles}</strong>
+        </div>
+        <div className='command-mast__metric'>
+          <Siren size={16} />
+          <span>OPEN ISSUES</span>
+          <strong>{incidents}</strong>
+        </div>
+      </div>
+
+      <div className='command-mast__clock'>
+        <div><Clock3 size={15} /> SHIFT</div>
+        <strong>{overview?.shift_started_at ? new Date(overview.shift_started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</strong>
+        <small>{overview?.shift_started_at ? 'ACTIVE' : 'NOT STARTED'}</small>
+      </div>
+    </section>
+  );
+}
+
+function CommandObject({ item, onClose }: { item: { title: string; body?: string; at: string; rank: number; chip: { label: string; hue: string }; ackId?: string }; onClose: () => void }) {
+  return (
+    <div className='command-object-backdrop' onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <article className={`command-object command-object--${item.rank <= 1 ? 'high' : 'normal'}`} onMouseDown={(e) => e.stopPropagation()}>
+        <div className='command-object__topline'><span className='command-object__signal' style={{ color:`rgb(${item.chip.hue})`, borderColor:`rgba(${item.chip.hue},.45)`, background:`rgba(${item.chip.hue},.08)` }}>{item.chip.label}</span><span>COMMAND EVENT</span><button onClick={onClose} aria-label='Close command event'>×</button></div>
+        <div className='command-object__hero'>
+          <div><span>LIVE OPERATIONAL OBJECT</span><h2>{item.title}</h2><p>{item.body || 'No additional narrative supplied. The operator should use the linked operational systems for full context.'}</p></div>
+          <div className='command-object__time'><strong>{relTime(item.at)}</strong><small>OBSERVED</small></div>
+        </div>
+        <div className='command-object__facts'>
+          <div><span>SEVERITY</span><b>{item.rank <= 0 ? 'CRITICAL' : item.rank === 1 ? 'HIGH' : item.chip.label}</b></div>
+          <div><span>STATUS</span><b>ACTIVE QUEUE</b></div>
+          <div><span>PROVENANCE</span><b>LIVE COMMAND FEED</b></div>
+          <div><span>RESPONSE</span><b>OPERATOR REVIEW</b></div>
+        </div>
+        <div className='command-object__rail'>
+          <button onClick={onClose}>RETURN TO MAP</button>
+          <button onClick={() => { window.location.href='/alerts'; }}>OPEN ALERT CONSOLE</button>
+          <button onClick={() => { window.location.href='/intelligence'; }}>OPEN INTELLIGENCE</button>
+        </div>
+      </article>
+    </div>
+  );
+}
+
+function CommandDeck() {
+  const nav = useNavigate();
+  const alerts = useDashboardStore((s) => s.alerts);
+  const convoys = useDashboardStore((s) => s.convoys);
+  const incidents = useDashboardStore((s) => s.incidents);
+  const panic = useDashboardStore((s) => s.panicState);
+  const priority = alerts.filter((a) => a.severity === 'critical' || a.severity === 'high').length;
+  const activeConvoys = convoys.filter((c) => c.status === 'active' || c.status === 'in_transit').length;
+  const activeIncidents = incidents.filter((i) => i.status !== 'resolved' && i.status !== 'closed').length;
+  const actions = [
+    { label: 'PANIC CENTER', sub: panic ? 'INCIDENT ACTIVE' : 'STANDBY', path: '/panic-center', tone: panic ? 'critical' : 'red', icon: Siren, value: panic ? 'LIVE' : 'OPEN' },
+    { label: 'ALERTS', sub: 'PRIORITY QUEUE', path: '/alerts', tone: priority ? 'amber' : 'cyan', icon: AlertTriangle, value: String(priority) },
+    { label: 'MESSAGES', sub: 'DISPATCH CHANNEL', path: '/messages', tone: 'violet', icon: Radio, value: 'OPEN' },
+    { label: 'INTELLIGENCE', sub: 'THREAT CONTEXT', path: '/intelligence', tone: 'green', icon: Target, value: 'VIEW' },
+  ];
+  return (
+    <section className='command-deck' aria-label='Command actions'>
+      <div className='command-deck__context'>
+        <span>DECISION DECK</span>
+        <strong>{activeConvoys} ACTIVE MOVEMENTS</strong>
+        <small>{activeIncidents} operational incidents · {priority} priority alerts</small>
+      </div>
+      <div className='command-deck__actions'>
+        {actions.map(({ label, sub, path, tone, icon: Icon, value }) => (
+          <button key={path} className={`command-deck__action command-deck__action--${tone}`} onClick={() => nav({ to: path as any })}>
+            <span className='command-deck__icon'><Icon size={17}/></span>
+            <span className='command-deck__copy'><b>{label}</b><small>{sub}</small></span>
+            <strong>{value}</strong>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MapOverlay() {
+  const vehicles = useDashboardStore((s) => s.overview?.kpi?.vehicles_live ?? 0);
+  const convoys = useDashboardStore((s) => s.overview?.kpi?.convoys_active ?? 0);
+  const incidents = useDashboardStore((s) => s.overview?.kpi?.incidents_open ?? 0);
+
+  return (
+    <div className='command-map-overlay'>
+      <div className='command-map-overlay__title'><Radio size={15} /> LIVE THEATRE <span>REAL-TIME</span></div>
+      <div className='command-map-overlay__grid'>
+        <div><b>{vehicles}</b><span>VEHICLES</span></div>
+        <div><b>{convoys}</b><span>CONVOYS</span></div>
+        <div><b>{incidents}</b><span>ISSUES</span></div>
+      </div>
+      <div className='command-map-overlay__hint'><Zap size={13} /> Select a vehicle, convoy or alert on the map for detail.</div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { setOverview } = useDashboardStore.getState();
+  const [selectedCommand, setSelectedCommand] = React.useState<any>(null);
 
   useQuery({
     queryKey: ['dashboard-overview'],
@@ -25,59 +169,145 @@ export default function Dashboard() {
         const r = await api.get<DashboardOverview>('/dashboard/overview');
         setOverview(r.data);
         return r.data;
-      } catch { return null; }
+      } catch {
+        return null;
+      }
     },
     staleTime: 30000,
     refetchInterval: 60000,
   });
 
-  // Realtime subscription + panic alarm are wired globally in AppShell
-  // (GlobalPanicAlarm) so they stay active on every route, not just here.
-
   return (
-    <div className='d-console' style={{ background: 'var(--d-void)', display: 'flex', flexDirection: 'column' }}>
+    <div className='d-console d-command-v3'>
+      <CommandMast />
+      <CommandDeck />
       <InstrumentBar />
 
       <div className='d-console-main'>
         <div className='d-console-map'>
-          <Suspense fallback={
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 320 }}>
-              <div style={{ fontSize: 12, color: 'var(--d-t3)', fontFamily: 'IBM Plex Mono, monospace' }}>Loading tactical map…</div>
-            </div>
-          }>
-            <TacticalMap fill />
-          </Suspense>
+          <div className='command-map-frame'>
+            <MapOverlay />
+            <Suspense fallback={
+              <div className='command-map-loading'>
+                <Activity size={18} />
+                <span>Connecting to live operations theatre…</span>
+              </div>
+            }>
+              <TacticalMap fill />
+            </Suspense>
+            <div className='command-map-corners' aria-hidden='true'><i/><i/><i/><i/></div>
+          </div>
         </div>
-        <PriorityQueue />
+        <PriorityQueue onSelect={setSelectedCommand} />
       </div>
 
       <EventsTicker />
+      {selectedCommand && <CommandObject item={selectedCommand} onClose={() => setSelectedCommand(null)} />}
 
       <style>{`
-        .d-console-main {
-          flex: 1;
-          min-height: 0;
-          display: flex;
-        }
-        .d-console-map {
-          flex: 1 1 560px;
-          min-width: 0;
-          display: flex;
-          flex-direction: column;
-          min-height: 0;
-        }
-        .d-console-queue { flex: 0 0 340px; max-width: 100%; }
-        /* Single-viewport pane on desktop: the console owns the height and
-           the map/queue scroll internally. On narrow screens fall back to a
-           normal flowing page — map first, queue below, page scrolls. */
-        @media (min-width: 1000px) {
-          .d-console { height: 100%; }
-        }
-        @media (max-width: 999px) {
-          .d-console-main { flex-direction: column; }
-          .d-console-map { min-height: 380px; }
-          .d-console-queue { flex: 1 1 auto; border-left: none; border-top: 1px solid var(--d-rim2); }
-        }
+        .d-command-v3 { height: 100%; min-height: 0; }
+        .command-object-backdrop { position:fixed; inset:0; z-index:9000; display:grid; place-items:center; padding:24px; background:rgba(2,6,14,.72); backdrop-filter:blur(8px); }
+        .command-object { position:relative; width:min(860px,94vw); color:var(--d-t1); border:1px solid rgba(34,232,255,.28); border-radius:18px; overflow:hidden; background:linear-gradient(145deg,rgba(10,20,36,.98),rgba(5,11,22,.98)); box-shadow:0 40px 100px rgba(0,0,0,.55), 0 0 60px rgba(34,232,255,.08); transform:perspective(1400px) rotateX(.7deg); }
+        .command-object--high { border-color:rgba(255,178,62,.38); box-shadow:0 40px 100px rgba(0,0,0,.55),0 0 55px rgba(255,178,62,.08); }
+        .command-object::before { content:''; position:absolute; inset:0; pointer-events:none; background:linear-gradient(120deg,rgba(34,232,255,.06),transparent 34%,transparent 68%,rgba(139,107,255,.06)); }
+        .command-object__topline { display:flex; align-items:center; gap:9px; padding:14px 16px; border-bottom:1px solid var(--d-rim2); color:var(--d-t2); font-size:10px; font-weight:800; letter-spacing:.13em; }
+        .command-object__signal { padding:4px 8px; border:1px solid; border-radius:6px; font-weight:900; }
+        .command-object__topline button { margin-left:auto; width:34px; height:34px; border-radius:9px; border:1px solid var(--d-rim2); background:rgba(255,255,255,.03); color:var(--d-t1); font-size:22px; cursor:pointer; }
+        .command-object__hero { display:grid; grid-template-columns:1fr 130px; gap:20px; padding:28px 28px 22px; }
+        .command-object__hero > div:first-child > span { color:var(--d-sig); font-size:10px; font-weight:900; letter-spacing:.16em; }
+        .command-object__hero h2 { margin:8px 0 10px; max-width:680px; font-size:clamp(25px,3vw,42px); line-height:1.06; letter-spacing:-.03em; }
+        .command-object__hero p { margin:0; max-width:690px; color:var(--d-t2); font-size:15px; line-height:1.6; }
+        .command-object__time { display:flex; flex-direction:column; justify-content:center; align-items:flex-end; border-left:1px solid var(--d-rim2); padding-left:18px; }
+        .command-object__time strong { font-size:24px; color:var(--d-t1); }
+        .command-object__time small { margin-top:5px; color:var(--d-t3); font-size:10px; letter-spacing:.13em; }
+        .command-object__facts { display:grid; grid-template-columns:repeat(4,1fr); gap:9px; padding:0 28px 24px; }
+        .command-object__facts div { padding:11px 12px; border:1px solid var(--d-rim2); border-radius:10px; background:rgba(255,255,255,.025); }
+        .command-object__facts span { display:block; color:var(--d-t3); font-size:9px; font-weight:800; letter-spacing:.1em; }
+        .command-object__facts b { display:block; margin-top:4px; color:var(--d-t1); font-size:12px; letter-spacing:.04em; }
+        .command-object__rail { display:flex; gap:10px; padding:14px 28px 20px; border-top:1px solid var(--d-rim2); background:rgba(255,255,255,.02); }
+        .command-object__rail button { min-height:40px; padding:0 14px; border-radius:9px; border:1px solid var(--d-rim2); background:rgba(255,255,255,.03); color:var(--d-t1); font-size:11px; font-weight:800; letter-spacing:.04em; cursor:pointer; }
+        .command-object__rail button:nth-child(2) { border-color:rgba(255,201,63,.28); color:var(--d-warn); }
+        .command-object__rail button:nth-child(3) { border-color:rgba(34,232,255,.28); color:var(--d-sig); }
+        @media (max-width:700px){ .command-object-backdrop{padding:10px}.command-object__hero{grid-template-columns:1fr}.command-object__time{align-items:flex-start;border-left:0;border-top:1px solid var(--d-rim2);padding:12px 0 0}.command-object__facts{grid-template-columns:repeat(2,1fr)}.command-object__rail{flex-wrap:wrap}.command-object__rail button{flex:1 1 140px} }
+
+        .command-deck { display:grid; grid-template-columns: minmax(230px,.78fr) minmax(520px,2.2fr); gap:10px; padding:10px 14px; background:linear-gradient(180deg, rgba(6,11,24,.98), rgba(7,14,28,.96)); border-bottom:1px solid var(--d-rim2); }
+        .command-deck__context { display:flex; flex-direction:column; justify-content:center; padding:10px 12px; border:1px solid var(--d-rim2); border-radius:11px; background:rgba(255,255,255,.025); }
+        .command-deck__context span { color:var(--d-sig); font-size:10px; font-weight:800; letter-spacing:.14em; }
+        .command-deck__context strong { margin-top:4px; color:var(--d-t1); font-size:16px; line-height:1.1; }
+        .command-deck__context small { margin-top:5px; color:var(--d-t2); font-size:11px; line-height:1.35; }
+        .command-deck__actions { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+        .command-deck__action { appearance:none; min-width:0; display:flex; align-items:center; gap:9px; padding:10px; border:1px solid var(--d-rim2); border-radius:11px; background:rgba(255,255,255,.025); color:var(--d-t1); text-align:left; cursor:pointer; transition:transform .15s ease, border-color .15s ease, background .15s ease; }
+        .command-deck__action:hover { transform:translateY(-1px); background:rgba(255,255,255,.045); border-color:var(--d-rim3); }
+        .command-deck__icon { width:32px; height:32px; display:grid; place-items:center; border-radius:9px; border:1px solid var(--d-rim2); flex:0 0 auto; }
+        .command-deck__copy { min-width:0; display:flex; flex-direction:column; }
+        .command-deck__copy b { font-size:11px; letter-spacing:.05em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .command-deck__copy small { margin-top:3px; color:var(--d-t2); font-size:9px; letter-spacing:.05em; }
+        .command-deck__action strong { margin-left:auto; font-size:13px; color:var(--d-t1); }
+        .command-deck__action--critical .command-deck__icon { color:var(--d-fire); border-color:rgba(255,59,92,.35); background:rgba(255,59,92,.08); }
+        .command-deck__action--red .command-deck__icon { color:var(--d-fire); border-color:rgba(255,59,92,.3); background:rgba(255,59,92,.06); }
+        .command-deck__action--amber .command-deck__icon { color:var(--d-warn); border-color:rgba(255,201,63,.3); background:rgba(255,201,63,.07); }
+        .command-deck__action--cyan .command-deck__icon { color:var(--d-sig); border-color:rgba(34,232,255,.3); background:rgba(34,232,255,.06); }
+        .command-deck__action--violet .command-deck__icon { color:#b29cff; border-color:rgba(178,156,255,.3); background:rgba(178,156,255,.07); }
+        .command-deck__action--green .command-deck__icon { color:var(--d-ok); border-color:rgba(41,255,176,.3); background:rgba(41,255,176,.06); }
+
+        .d-command-v3 .d-console-main { flex: 1 1 auto; min-height: 0; display: flex; gap: 10px; padding: 10px; background: var(--d-deep); }
+        .d-command-v3 .d-console-map { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; }
+        .d-command-v3 .d-console-queue { flex: 0 0 360px; max-width: 38vw; border: 1px solid var(--d-rim2); border-radius: 14px; overflow: hidden; box-shadow: 0 18px 45px rgba(0,0,0,.22); }
+        .command-mast { flex: 0 0 auto; display: grid; grid-template-columns: minmax(280px,1.4fr) minmax(190px,.75fr) minmax(270px,1fr) 120px; gap: 12px; align-items: stretch; padding: 12px 14px; background: linear-gradient(135deg, rgba(10,17,32,.98), rgba(12,20,40,.94)); border-bottom: 1px solid var(--d-rim2); box-shadow: 0 10px 35px rgba(0,0,0,.22); }
+        .command-mast__brand, .command-mast__posture, .command-mast__metrics, .command-mast__clock { min-width: 0; }
+        .command-mast__brand { display: flex; align-items: center; gap: 12px; }
+        .command-mast__sigil { width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid rgba(34,232,255,.45); border-radius: 11px; background: radial-gradient(circle at 30% 25%, rgba(34,232,255,.2), rgba(139,107,255,.1) 45%, transparent 75%); color: var(--d-sig); font: 800 20px/1 var(--d-font-display); box-shadow: 0 0 24px rgba(34,232,255,.1); }
+        .command-mast__eyebrow, .posture-label { display: flex; align-items: center; gap: 7px; color: var(--d-t2); font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+        .command-mast__brand h1 { margin: 3px 0 2px; color: var(--d-t1); font-size: clamp(19px, 1.6vw, 28px); line-height: 1.05; font-weight: 800; letter-spacing: -.025em; }
+        .command-mast__brand p { margin: 0; color: var(--d-t2); font-size: 12px; line-height: 1.4; }
+        .live-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--d-ok); box-shadow: 0 0 10px rgba(41,255,176,.7); }
+        .command-mast__posture { padding: 9px 12px; border: 1px solid var(--d-rim2); border-left: 3px solid var(--d-sig); border-radius: 11px; background: rgba(255,255,255,.025); }
+        .command-mast--elevated .command-mast__posture { border-left-color: var(--d-warn); }
+        .command-mast--critical .command-mast__posture { border-left-color: var(--d-fire); }
+        .command-mast__posture strong { display: block; margin-top: 4px; color: var(--d-sig); font-size: 24px; line-height: 1; letter-spacing: .04em; }
+        .command-mast--elevated .command-mast__posture strong { color: var(--d-warn); }
+        .command-mast--critical .command-mast__posture strong { color: var(--d-fire); }
+        .command-mast__posture span { display: block; margin-top: 6px; color: var(--d-t2); font-size: 11px; }
+        .command-mast__metrics { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+        .command-mast__metric { padding: 9px 10px; border: 1px solid var(--d-rim2); border-radius: 10px; background: rgba(255,255,255,.024); }
+        .command-mast__metric svg { color: var(--d-sig); margin-bottom: 4px; }
+        .command-mast__metric span { display: block; color: var(--d-t2); font-size: 9px; font-weight: 800; letter-spacing: .09em; }
+        .command-mast__metric strong { display: block; margin-top: 1px; color: var(--d-t1); font-size: 24px; line-height: 1; }
+        .command-mast__clock { display: flex; flex-direction: column; justify-content: center; padding: 8px 10px; border-left: 1px solid var(--d-rim2); }
+        .command-mast__clock div { display:flex; gap:6px; align-items:center; color: var(--d-t2); font-size: 9px; letter-spacing: .1em; font-weight: 800; }
+        .command-mast__clock strong { margin-top: 4px; color: var(--d-t1); font-size: 18px; }
+        .command-mast__clock small { color: var(--d-ok); font-size: 9px; font-weight: 800; letter-spacing: .08em; }
+        .command-map-frame { position: relative; flex: 1; min-height: 0; overflow: hidden; border: 1px solid var(--d-rim2); border-radius: 14px; background: #040914; box-shadow: inset 0 0 0 1px rgba(255,255,255,.018), 0 18px 45px rgba(0,0,0,.25); }
+        .command-map-frame::after { content:''; position:absolute; inset:0; pointer-events:none; background: radial-gradient(circle at 50% 45%, transparent 40%, rgba(3,7,17,.14) 76%, rgba(3,7,17,.45) 100%); z-index: 20; }
+        .command-map-overlay { position:absolute; top:14px; left:14px; z-index:30; min-width:260px; padding:11px 12px; border:1px solid rgba(34,232,255,.22); border-radius:11px; background:rgba(4,9,18,.84); backdrop-filter: blur(12px); box-shadow:0 14px 35px rgba(0,0,0,.25); }
+        .command-map-overlay__title { display:flex; align-items:center; gap:7px; color:var(--d-t1); font-size:11px; font-weight:800; letter-spacing:.08em; }
+        .command-map-overlay__title svg { color:var(--d-sig); }
+        .command-map-overlay__title span { margin-left:auto; color:var(--d-ok); font-size:9px; letter-spacing:.12em; }
+        .command-map-overlay__grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-top:9px; }
+        .command-map-overlay__grid div { padding:7px 8px; border:1px solid var(--d-rim); border-radius:8px; background:rgba(255,255,255,.02); }
+        .command-map-overlay__grid b { display:block; color:var(--d-t1); font-size:18px; line-height:1; }
+        .command-map-overlay__grid span { display:block; margin-top:4px; color:var(--d-t2); font-size:8px; letter-spacing:.08em; font-weight:800; }
+        .command-map-overlay__hint { margin-top:8px; display:flex; align-items:center; gap:6px; color:var(--d-t2); font-size:10px; line-height:1.3; }
+        .command-map-overlay__hint svg { color:var(--d-warn); flex-shrink:0; }
+        .command-map-loading { position:absolute; inset:0; z-index:15; display:grid; place-items:center; align-content:center; gap:8px; color:var(--d-t2); font-size:12px; }
+        .command-map-loading svg { color:var(--d-sig); animation: radar-turn 1.4s linear infinite; }
+        .command-map-corners i { position:absolute; width:16px; height:16px; border-color:rgba(34,232,255,.7); border-style:solid; z-index:32; pointer-events:none; }
+        .command-map-corners i:nth-child(1){top:8px;left:8px;border-width:2px 0 0 2px}.command-map-corners i:nth-child(2){top:8px;right:8px;border-width:2px 2px 0 0}.command-map-corners i:nth-child(3){bottom:8px;left:8px;border-width:0 0 2px 2px}.command-map-corners i:nth-child(4){bottom:8px;right:8px;border-width:0 2px 2px 0}
+        .d-command-v3 .d-console-queue > div:first-child { padding: 14px 16px 10px !important; }
+        .d-command-v3 .d-console-queue button { font-family: var(--d-font) !important; }
+        .d-command-v3 .d-console-queue { color: var(--d-t1); }
+        .d-command-v3 .d-console-queue > div { font-size: 12px; }
+        .d-command-v3 .d-console-queue span { line-height: 1.25; }
+        .d-command-v3 .d-console-queue [style*="font-size: 8px"] { font-size: 10px !important; }
+        .d-command-v3 .d-console-queue [style*="font-size: 9px"] { font-size: 11px !important; }
+        .d-command-v3 .d-console-queue [style*="font-size: 10px"] { font-size: 12px !important; }
+        .d-command-v3 .d-console-queue [style*="font-size: 11px"] { font-size: 13px !important; }
+        .d-command-v3 .d-console-queue [style*="font-family: Orbitron"] { font-size: 12px !important; letter-spacing: .08em !important; }
+        .d-command-v3 .d-console-queue a { font-size: 11px !important; }
+        .d-command-v3 .d-console-queue .d-queue-title { font-size: 14px; }
+        @media (max-width: 1200px) { .command-mast { grid-template-columns: 1.2fr .9fr 1fr; } .command-mast__clock { display:none; } .command-deck { grid-template-columns:1fr; } .d-command-v3 .d-console-queue { flex-basis: 330px; } }
+        @media (max-width: 999px) { .command-deck__actions { grid-template-columns:repeat(2,1fr); } .d-command-v3 .d-console-main { flex-direction: column; } .d-command-v3 .d-console-map { min-height: 430px; } .d-command-v3 .d-console-queue { flex: 1 1 auto; max-width: none; border-left: none; } .command-mast { grid-template-columns: 1fr; } .command-mast__metrics { grid-template-columns: repeat(3,1fr); } }
+        @media (max-width: 640px) { .command-deck { padding:8px 10px; } .command-deck__actions { grid-template-columns:1fr 1fr; } .command-deck__copy small { font-size:8px; } .d-command-v3 .d-console-main { padding: 6px; gap: 6px; } .command-mast { padding: 10px; } .command-mast__brand h1 { font-size: 20px; } .command-mast__brand p { font-size: 11px; } .command-mast__metrics strong { font-size: 20px; } .command-map-overlay { left:8px; right:8px; min-width:0; } }
       `}</style>
     </div>
   );
