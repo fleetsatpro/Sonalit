@@ -1,6 +1,7 @@
 const PDFDocument = require('pdfkit');
 const sharp = require('sharp');
-const { PutObjectCommand, S3Client } = require('@aws-sdk/client-s3');
+const { PutObjectCommand, GetObjectCommand, S3Client } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
 
@@ -11,13 +12,12 @@ const BOUNDS = {
 
 function esc(v){return String(v ?? '').replace(/[&<>\"]/g, s=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[s]||s));}
 function severityScore(v){return ({critical:4,high:3,moderate:2,low:1,informational:0}[String(v||'').toLowerCase()] ?? 2);}
-function hexToRgb(h){return [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];}
 function svgMap(country, events){
   const [minLon,minLat,maxLon,maxLat]=BOUNDS[country]||[20,-20,55,20];
   const W=1200,H=720,pad=70;
   const x=lon=>pad+((lon-minLon)/(maxLon-minLon))*(W-pad*2);
   const y=lat=>H-pad-((lat-minLat)/(maxLat-minLat))*(H-pad*2);
-  const dots=events.filter(e=>Number.isFinite(Number(e.longitude))&&Number.isFinite(Number(e.latitude))).slice(0,80).map((e,i)=>{
+  const dots=events.filter(e=>Number.isFinite(Number(e.longitude))&&Number.isFinite(Number(e.latitude))).slice(0,80).map(e=>{
     const r=4+severityScore(e.severity)*2; const c={critical:'#ef4444',high:'#f97316',moderate:'#f59e0b',low:'#38bdf8',informational:'#94a3b8'}[String(e.severity||'moderate').toLowerCase()]||'#f59e0b';
     return `<circle cx="${x(Number(e.longitude)).toFixed(1)}" cy="${y(Number(e.latitude)).toFixed(1)}" r="${r}" fill="${c}" opacity=".9"><title>${esc(e.headline||e.title||'Event')}</title></circle>`;
   }).join('');
@@ -60,7 +60,6 @@ async function buildPdf(publication, events, images){
   doc.addPage();pageHeader();doc.fillColor(ink).font('Helvetica-Bold').fontSize(17).text('OUTLOOK & COLLECTION GAPS',42,58);doc.font('Helvetica').fontSize(9.5).fillColor(ink).text(JSON.stringify(publication.body?.outlook||[],null,2),42,92,{width:511,lineGap:5});doc.moveDown();doc.font('Helvetica-Bold').fontSize(12).text('EVIDENCE CONTRACT');doc.font('Helvetica').fontSize(9).text(publication.body?.collection_coverage?.evidence_contract_met?'Threshold met for automated publication.':'Threshold not met; analyst review remains required.');doc.moveDown();doc.font('Helvetica-Bold').fontSize(12).text('SOURCES / PROVENANCE');doc.font('Helvetica').fontSize(8).text(`Publication ID: ${publication.id}`);doc.text(`Generator: ${publication.body?.generator?.name||'SONALIT PUBLICATION AGENT'}`);doc.text(`Generator provider: ${publication.body?.generator?.provider||'unknown'}`);footer();doc.end();return done;}
 
 async function getR2Client(){const {R2_ACCOUNT_ID,R2_ACCESS_KEY,R2_SECRET_KEY}=process.env;if(!(R2_ACCOUNT_ID&&R2_ACCESS_KEY&&R2_SECRET_KEY))return null;return new S3Client({region:'auto',endpoint:`https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,credentials:{accessKeyId:R2_ACCESS_KEY,secretAccessKey:R2_SECRET_KEY}})}
-
 async function fetchImages(rows){const out=[];for(const row of rows){const url=row.raw_metadata?.image_url||row.raw_metadata?.imageUrl||row.raw_metadata?.thumbnail_url||row.raw_metadata?.thumbnailUrl;if(!url||!/^https?:\/\//i.test(url))continue;try{const r=await fetch(url,{redirect:'follow'});if(!r.ok)continue;const b=Buffer.from(await r.arrayBuffer());if(!b.length||b.length>5*1024*1024)continue;out.push({buffer:b,label:row.title||'Source image',source_url:row.url||url});if(out.length>=4)break;}catch(error){logger.warn(`Image fetch failed: ${error.message}`)}}return out;}
 
 async function renderAndStorePublicationPdf(orgId, publicationId){
@@ -69,7 +68,7 @@ async function renderAndStorePublicationPdf(orgId, publicationId){
   if(publication.status!=='published')return{status:'skipped',reason:'publication_not_published'};
   await query("UPDATE intel_publications SET pdf_status='generating',pdf_error=NULL WHERE id=$1 AND org_id=$2",[publicationId,orgId]);
   try{
-    const {rows:events}=await query(`SELECT e.id,COALESCE(e.canonical_headline,e.title) AS headline,COALESCE(e.executive_brief,e.summary) AS brief,e.summary,e.title,e.severity,e.confidence,e.intelligence_type,e.last_seen_at,COUNT(DISTINCT eo.observation_id)::int AS observation_count,COUNT(DISTINCT o.source_id)::int AS source_count,array_agg(DISTINCT o.source_id) FILTER (WHERE o.source_id IS NOT NULL) AS source_ids,array_agg(DISTINCT jsonb_build_object('id',o.id,'title',o.title,'url',o.url,'raw_metadata',o.raw_metadata)) FILTER (WHERE o.id IS NOT NULL) AS observations FROM intel_events e LEFT JOIN intel_event_observations eo ON eo.event_id=e.id LEFT JOIN intel_observations o ON o.id=eo.observation_id WHERE e.org_id=$1 AND e.country_code=$2 AND e.last_seen_at>=$3 AND e.last_seen_at<$4 GROUP BY e.id ORDER BY e.last_seen_at DESC LIMIT 120`,[orgId,publication.country_code,publication.period_start,publication.period_end]);
+    const {rows:events}=await query(`SELECT e.id,COALESCE(e.canonical_headline,e.title) AS headline,COALESCE(e.executive_brief,e.summary) AS brief,e.summary,e.title,e.severity,e.confidence,e.intelligence_type,e.latitude,e.longitude,e.last_seen_at,COUNT(DISTINCT eo.observation_id)::int AS observation_count,COUNT(DISTINCT o.source_id)::int AS source_count,array_agg(DISTINCT o.source_id) FILTER (WHERE o.source_id IS NOT NULL) AS source_ids,array_agg(DISTINCT jsonb_build_object('id',o.id,'title',o.title,'url',o.url,'raw_metadata',o.raw_metadata)) FILTER (WHERE o.id IS NOT NULL) AS observations FROM intel_events e LEFT JOIN intel_event_observations eo ON eo.event_id=e.id LEFT JOIN intel_observations o ON o.id=eo.observation_id WHERE e.org_id=$1 AND e.country_code=$2 AND e.last_seen_at>=$3 AND e.last_seen_at<$4 GROUP BY e.id ORDER BY e.last_seen_at DESC LIMIT 120`,[orgId,publication.country_code,publication.period_start,publication.period_end]);
     const observationRows=[];for(const e of events){for(const o of e.observations||[])observationRows.push(o)}
     const images=await fetchImages(observationRows); const pdf=await buildPdf(publication,events,images);
     const r2=await getR2Client(); if(!r2)throw new Error('R2 not configured'); const bucket=process.env.R2_BUCKET; if(!bucket)throw new Error('R2_BUCKET not configured');
@@ -82,5 +81,13 @@ async function renderAndStorePublicationPdf(orgId, publicationId){
   }catch(error){await query("UPDATE intel_publications SET pdf_status='failed',pdf_error=$3 WHERE id=$1 AND org_id=$2",[publicationId,orgId,String(error.message||error).slice(0,2000)]).catch(()=>{});throw error;}
 }
 
+async function getPublicationPdfAccessUrl(orgId,publicationId){
+  const {rows:[row]}=await query('SELECT pdf_key FROM intel_publications WHERE id=$1 AND org_id=$2 AND status=\'published\' AND pdf_status=\'ready\' LIMIT 1',[publicationId,orgId]);
+  if(!row?.pdf_key)throw new Error('Publication PDF is not ready');
+  const r2=await getR2Client(); if(!r2)throw new Error('R2 not configured');
+  const bucket=process.env.R2_BUCKET; if(!bucket)throw new Error('R2_BUCKET not configured');
+  return getSignedUrl(r2,new GetObjectCommand({Bucket:bucket,Key:row.pdf_key}),{expiresIn:300});
+}
+
 async function generateMissingPublicationPdfs(orgId,limit=3){const {rows}=await query("SELECT id FROM intel_publications WHERE org_id=$1 AND status='published' AND (pdf_status='not_requested' OR pdf_status IS NULL OR (pdf_status='failed' AND updated_at < NOW()-INTERVAL '30 minutes')) ORDER BY published_at DESC NULLS LAST LIMIT $2",[orgId,limit]);const out=[];for(const r of rows){try{out.push(await renderAndStorePublicationPdf(orgId,r.id))}catch(error){out.push({status:'failed',publication_id:r.id,error:error.message})}}return out;}
-module.exports={renderAndStorePublicationPdf,generateMissingPublicationPdfs};
+module.exports={renderAndStorePublicationPdf,generateMissingPublicationPdfs,getPublicationPdfAccessUrl};
