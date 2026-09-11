@@ -19,7 +19,7 @@ const publicSecurityRoute=createRoute({getParentRoute:()=>rootRoute,path:'/secur
 const publicAboutRoute=createRoute({getParentRoute:()=>rootRoute,path:'/about',component:lazyRouteComponent(()=>import('./pages/public/About.js'))});
 const publicContactRoute=createRoute({getParentRoute:()=>rootRoute,path:'/contact',component:lazyRouteComponent(()=>import('./pages/public/Contact.js'))});
 const orbitRoute=createRoute({getParentRoute:()=>authFullscreenRoute,path:'/home',component:lazyRouteComponent(()=>import('./pages/Orbit.js'))});
-const commandRoute=createRoute({getParentRoute:()=>authRoute,path:'/command',component:lazyRouteComponent(()=>import('./pages/Dashboard.js'))});
+const commandRoute=createRoute({getParentRoute:()=>authRoute,path:'/command',component:lazyRouteComponent(()=>import('./pages/CommandCentre.js'))});
 const fleetRoute=createRoute({getParentRoute:()=>authRoute,path:'/fleet',component:lazyRouteComponent(()=>import('./pages/Fleet.js'))});
 const gpsRoute=createRoute({getParentRoute:()=>authRoute,path:'/gps',component:lazyRouteComponent(()=>import('./pages/GPS.js'))});
 const convoysRoute=createRoute({getParentRoute:()=>authRoute,path:'/convoys',component:lazyRouteComponent(()=>import('./pages/Convoys.js'))});
