@@ -48,8 +48,8 @@ async function publicationForCountry(orgId,country,type='daily'){
       if(!result.publishable) logger.warn(`Publication editorial board held ${country}/${type}: evidence=${evidenceContract} qa=${result.qa?.publishable===true} blocking=${(result.qa?.blocking_issues||[]).length}`);
     }catch(error){logger.warn(`Publication editorial board failed ${country}/${type}: ${error.message}`);}
   }
-  const qaComplete=Boolean(board?.agents?.some(a=>a.id==='publication-qa'&&a.status==='complete'));
-  const status=(evidenceContract&&(!board||qaComplete))?'published':'draft';
+  const boardPublishable=board?.publishable===true;
+  const status=(evidenceContract&&(!board||boardPublishable))?'published':'draft';
   const body={...baseBody,subtitle,sections,outlook,key_events:events,editorial_board:{agents:AGENT_ROLES.map(a=>a.id),board,visual_plan:visual,graphics_plan:graphics,provider},generator:{name:'SONALIT MULTI-AGENT PUBLICATION BOARD',provider,evidence_contract:evidenceContract}};
   const {rows}=await query(`INSERT INTO intel_publications (org_id,country_code,publication_type,title,subtitle,status,period_start,period_end,executive_assessment,body,evidence,confidence,published_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12,$13) RETURNING id,status`,[orgId,country,type,title,subtitle,status,start,end,executive,JSON.stringify(body),JSON.stringify(events.map(e=>e.id)),events.length?Math.round(events.reduce((n,e)=>n+Number(e.confidence||0),0)/events.length):0,status==='published'?new Date():null]);return{status:'created',publication_id:rows[0].id,publication_status:rows[0].status,evidence_contract:evidenceContract,evidence_count:evidenceCount,source_count:sourceCount.size,editorial_agents:AGENT_ROLES.length};
 }
