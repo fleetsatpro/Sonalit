@@ -52,7 +52,7 @@ function countryClause(scope, alias, index) {
   if (scope.type === 'global') return { clause: 'TRUE', params: [] };
   const countries = countriesFor(scope);
   return {
-    clause: `${alias}.country_code = ANY($${index}::text[])`,
+    clause: `UPPER(${alias}.country_code) = ANY($${index}::text[])`,
     params: [countries],
   };
 }
