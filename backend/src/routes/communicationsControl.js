@@ -4,7 +4,7 @@ const { listCustomerPulseTargets, generateAndQueueScopedClientPulse } = require(
 const { generateAndQueueSuperAdminClientPulse } = require('../services/email/clientPulseDispatch.service');
 const { withOrg } = require('../utils/orgScopedDb');
 const { publicationForCountry } = require('../utils/intelligenceAgents');
-const { renderAndStorePublicationPdf } = require('../services/intelligencePublicationPdf');
+const { renderAndStorePublicationPdf, getPublicationPdfAccessUrl } = require('../services/intelligencePublicationPdf');
 
 // Mounted below /admin, whose parent router already enforces admin/super_admin.
 router.get('/health', async (req, res, next) => {
@@ -85,6 +85,13 @@ router.post('/publications/:id/render', async (req, res, next) => {
   try {
     const result = await renderAndStorePublicationPdf(req.user.org_id, String(req.params.id));
     res.json({ data: result });
+  } catch (err) { next(err); }
+});
+
+router.get('/publications/:id/pdf', async (req, res, next) => {
+  try {
+    const url = await getPublicationPdfAccessUrl(req.user.org_id, String(req.params.id));
+    res.redirect(302, url);
   } catch (err) { next(err); }
 });
 
