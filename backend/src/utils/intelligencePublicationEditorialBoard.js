@@ -21,7 +21,7 @@ const AGENT_ROLES = [
   { id:'fact-checker', lane:'review', purpose:'Check claims against the supplied evidence and flag unsupported assertions.' },
   { id:'red-team-reviewer', lane:'review', purpose:'Actively seek analytical overreach, contradictions, hidden assumptions and false certainty.' },
   { id:'risk-consistency-reviewer', lane:'review', purpose:'Ensure severity, confidence, language and recommendations are internally consistent.' },
-  { id:'visual-intelligence-designer', lane:'visual', purpose:'Design the report's map, visual intelligence panels and image placements from available evidence.' },
+  { id:'visual-intelligence-designer', lane:'visual', purpose:'Design the report\'s map, visual intelligence panels and image placements from available evidence.' },
   { id:'data-graphics-designer', lane:'visual', purpose:'Design charts/metrics such as severity distribution, event volume, source coverage and trend views.' },
   { id:'copy-editor', lane:'editorial', purpose:'Improve clarity, structure, tone, grammar and executive readability without changing facts.' },
   { id:'senior-editor', lane:'editorial', purpose:'Resolve reviewer findings and assemble the authoritative final report.' },
@@ -51,40 +51,33 @@ async function callAgent(role, payload){
 
 async function runLimited(tasks, limit=4){
   const out=[]; let cursor=0;
-  async function worker(){
-    while(true){const i=cursor++; if(i>=tasks.length)return; out[i]=await tasks[i]();}
-  }
+  async function worker(){ while(true){ const i=cursor++; if(i>=tasks.length)return; out[i]=await tasks[i](); } }
   await Promise.all(Array.from({length:Math.min(limit,tasks.length)},worker));
   return out;
 }
 
 function evidencePackage(country, period, events){
-  return {
-    country, period_start:period.start?.toISOString?.()||period.start, period_end:period.end?.toISOString?.()||period.end,
-    events:events.map(e=>({id:String(e.id),headline:clean(e.headline||e.title,500),brief:clean(e.brief||e.summary,900),severity:e.severity,confidence:e.confidence,intelligence_type:e.intelligence_type,last_seen_at:e.last_seen_at,observation_count:e.observation_count,source_count:e.source_count,latitude:e.latitude,longitude:e.longitude}))
-  };
+  return { country, period_start:period.start?.toISOString?.()||period.start, period_end:period.end?.toISOString?.()||period.end,
+    events:events.map(e=>({id:String(e.id),headline:clean(e.headline||e.title,500),brief:clean(e.brief||e.summary,900),severity:e.severity,confidence:e.confidence,intelligence_type:e.intelligence_type,last_seen_at:e.last_seen_at,observation_count:e.observation_count,source_count:e.source_count,latitude:e.latitude,longitude:e.longitude})) };
 }
 
 async function runPublicationEditorialBoard({country, period, events, baseBody, evidenceContract}){
   const evidence=evidencePackage(country,period,events);
   const board={version:'1.0', agents:AGENT_ROLES.map(r=>({...r,status:'pending'})), evidence_contract:evidenceContract, started_at:new Date().toISOString()};
-  if(!events.length){
-    board.agents=board.agents.map(a=>({...a,status:'no_data'}));
-    return { board, final:null, visual:null, graphics:null, publishable:false };
-  }
+  if(!events.length){ board.agents=board.agents.map(a=>({...a,status:'no_data'})); board.publishable=false; return {board,final:null,visual:null,graphics:null,publishable:false}; }
 
   const writers=AGENT_ROLES.filter(r=>r.lane==='writer');
   const writerResults=await runLimited(writers.map(role=>()=>callAgent(role,{assignment:role.purpose,evidence})),4);
   for(const result of writerResults){const a=board.agents.find(x=>x.id===result.role);if(a)Object.assign(a,result);}
-
   const writerOutputs=writerResults.filter(x=>x?.output).map(x=>({agent:x.role,output:x.output}));
+
   const reviewPayload={evidence,writer_outputs:writerOutputs,base_report:baseBody};
   const reviewRoles=AGENT_ROLES.filter(r=>r.lane==='review');
   const reviewResults=await runLimited(reviewRoles.map(role=>()=>callAgent(role,{assignment:role.purpose,...reviewPayload})),4);
   for(const result of reviewResults){const a=board.agents.find(x=>x.id===result.role);if(a)Object.assign(a,result);}
 
-  const visual=await callAgent(AGENT_ROLES.find(r=>r.id==='visual-intelligence-designer'),{assignment:'Return a JSON visual plan with map:true, image_slots (0-4), captions and placement notes. Never fabricate an image.',evidence});
-  const graphics=await callAgent(AGENT_ROLES.find(r=>r.id==='data-graphics-designer'),{assignment:'Return a JSON graphics plan with metric cards and chart specifications based only on the evidence.',evidence});
+  const visual=await callAgent(AGENT_ROLES.find(r=>r.id==='visual-intelligence-designer'),{assignment:'Return JSON visual plan with map:true, image_slots (0-4), captions and placement notes. Never fabricate an image.',evidence});
+  const graphics=await callAgent(AGENT_ROLES.find(r=>r.id==='data-graphics-designer'),{assignment:'Return JSON graphics plan with metric cards and chart specifications based only on the evidence.',evidence});
   for(const result of [visual,graphics]){const a=board.agents.find(x=>x.id===result.role);if(a)Object.assign(a,result);}
 
   const editorialPayload={evidence,writer_outputs:writerOutputs,reviews:reviewResults.filter(x=>x?.output).map(x=>({agent:x.role,output:x.output})),base_report:baseBody,visual_plan:visual.output||null,graphics_plan:graphics.output||null};
@@ -93,12 +86,12 @@ async function runPublicationEditorialBoard({country, period, events, baseBody, 
   for(const result of [copy,senior]){const a=board.agents.find(x=>x.id===result.role);if(a)Object.assign(a,result);}
 
   const qa=await callAgent(AGENT_ROLES.find(r=>r.id==='publication-qa'),{assignment:'Return {publishable:boolean,blocking_issues:[],warnings:[],checks:{evidence,attribution,contradictions,confidence,completeness}}. Publishable requires no blocking factual/evidence problems.',evidence,final_report:senior.output||copy.output||null,reviews:reviewResults.filter(x=>x?.output).map(x=>x.output)});
-  const qaAgent=board.agents.find(x=>x.id==='publication-qa'); if(qaAgent)Object.assign(qaAgent,qa);
+  const qaAgent=board.agents.find(x=>x.id==='publication-qa');if(qaAgent)Object.assign(qaAgent,qa);
 
   board.completed_at=new Date().toISOString();
   const final=senior.output||copy.output||null;
-  const publishable=Boolean(evidenceContract && final && qa.output?.publishable===true && !(qa.output?.blocking_issues||[]).length);
+  const publishable=Boolean(evidenceContract&&final&&qa.output?.publishable===true&&!(qa.output?.blocking_issues||[]).length);
+  board.publishable=publishable;
   return {board,final,visual:visual.output||null,graphics:graphics.output||null,qa:qa.output||null,publishable};
 }
-
 module.exports={AGENT_ROLES,runPublicationEditorialBoard};
