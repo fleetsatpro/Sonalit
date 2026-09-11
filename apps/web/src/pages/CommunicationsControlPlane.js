@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { FileText, Radio, Shield, Users } from 'lucide-react';
 import Communications from './Communications.jsx';
+import ClientPulseSettingsView from './cds/ClientPulseSettings.js';
+import CommunicationsAuthorityV2 from './CommunicationsAuthorityV2.js';
 import CommunicationsPublications from './CommunicationsPublications.jsx';
 
 export default function CommunicationsControlPlane(){
@@ -16,8 +18,8 @@ export default function CommunicationsControlPlane(){
     <div className="mx-auto max-w-[1680px] px-3 py-4 sm:px-6 sm:py-6">
       {view==='publications'&&<CommunicationsPublications/>}
       {view==='distribution'&&<Communications/>}
-      {view==='pulse'&&<Communications/>}
-      {view==='authority'&&<Communications/>}
+      {view==='pulse'&&<ClientPulseSettingsView/>}
+      {view==='authority'&&<CommunicationsAuthorityV2/>}
     </div>
   </div>;
 }
