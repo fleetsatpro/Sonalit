@@ -3,6 +3,8 @@ const crypto = require('crypto');
 const { listCustomerPulseTargets, generateAndQueueScopedClientPulse } = require('../services/email/scopedClientPulse.service');
 const { generateAndQueueSuperAdminClientPulse } = require('../services/email/clientPulseDispatch.service');
 const { withOrg } = require('../utils/orgScopedDb');
+const { publicationForCountry } = require('../utils/intelligenceAgents');
+const { renderAndStorePublicationPdf } = require('../services/intelligencePublicationPdf');
 
 // Mounted below /admin, whose parent router already enforces admin/super_admin.
 router.get('/health', async (req, res, next) => {
@@ -31,6 +33,58 @@ router.get('/deliveries', async (req, res, next) => {
         WHERE e.org_id=$1 ORDER BY e.created_at DESC LIMIT $2`, [req.user.org_id, limit]
     ));
     res.json({ data: rows.rows });
+  } catch (err) { next(err); }
+});
+
+router.get('/publications', async (req, res, next) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+    const values = [req.user.org_id];
+    const filters = ['org_id=$1'];
+    if (req.query.country) { values.push(String(req.query.country).toUpperCase()); filters.push(`country_code=$${values.length}`); }
+    if (req.query.type) { values.push(String(req.query.type)); filters.push(`publication_type=$${values.length}`); }
+    if (req.query.status) { values.push(String(req.query.status)); filters.push(`status=$${values.length}`); }
+    values.push(limit);
+    const rows = await withOrg(req.user.org_id, c => c.query(
+      `SELECT id,country_code,publication_type,title,subtitle,status,period_start,period_end,executive_assessment,confidence,version,published_at,created_at,updated_at,pdf_status,pdf_url,pdf_generated_at,pdf_error
+         FROM intel_publications WHERE ${filters.join(' AND ')} ORDER BY period_end DESC NULLS LAST,created_at DESC LIMIT $${values.length}`,
+      values,
+    ));
+    const counts = await withOrg(req.user.org_id, c => c.query(
+      `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status='published')::int AS published, COUNT(*) FILTER (WHERE status='published' AND pdf_status='ready')::int AS pdf_ready, COUNT(*) FILTER (WHERE status='published' AND pdf_status='failed')::int AS pdf_failed FROM intel_publications WHERE org_id=$1`,
+      [req.user.org_id],
+    ));
+    res.json({ data: { publications: rows.rows, summary: counts.rows[0] } });
+  } catch (err) { next(err); }
+});
+
+router.post('/publications/generate', async (req, res, next) => {
+  try {
+    const types = Array.isArray(req.body?.types) && req.body.types.length ? [...new Set(req.body.types.map(String))] : ['daily'];
+    const countries = Array.isArray(req.body?.countries) && req.body.countries.length ? [...new Set(req.body.countries.map(x => String(x).toUpperCase()))] : String(process.env.INTEL_PUBLICATION_COUNTRIES || 'KE,SO,ET,UG,TZ,RW,BI,SS,DJ,ER,SD,CD').split(',').map(x => x.trim().toUpperCase()).filter(Boolean);
+    const results = [];
+    for (const type of types) {
+      if (!['daily','weekly','monthly'].includes(type)) continue;
+      for (const country of countries) {
+        try {
+          const created = await publicationForCountry(req.user.org_id, country, type);
+          const publicationId = created.publication_id || created.id;
+          let pdf = null;
+          if (publicationId) pdf = await renderAndStorePublicationPdf(req.user.org_id, publicationId);
+          results.push({ country, type, publication: created, pdf });
+        } catch (err) {
+          results.push({ country, type, status: 'failed', error: String(err.message || err).slice(0, 1200) });
+        }
+      }
+    }
+    res.status(202).json({ data: { jobId: crypto.randomUUID(), requested: { countries, types }, results } });
+  } catch (err) { next(err); }
+});
+
+router.post('/publications/:id/render', async (req, res, next) => {
+  try {
+    const result = await renderAndStorePublicationPdf(req.user.org_id, String(req.params.id));
+    res.json({ data: result });
   } catch (err) { next(err); }
 });
 
