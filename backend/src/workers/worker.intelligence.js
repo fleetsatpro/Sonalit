@@ -3,6 +3,7 @@ const { runNewsMesh } = require('../utils/intelligenceNewsMesh');
 const { runCollectionFabric } = require('../utils/collectionFabric');
 const { runRegionalIncidentSweep } = require('../utils/regionalIncidentFabric');
 const { runIntelligenceAgents } = require('../utils/intelligenceAgents');
+const { generateMissingPublicationPdfs } = require('../services/intelligencePublicationPdf');
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
 
@@ -14,7 +15,6 @@ async function cycle(reason) {
   if (stopping) return;
   const started = Date.now();
   try {
-    // Discovery first: the subsequent fusion pass can consume the newly acquired news.
     let mesh = [];
     try { mesh = await runNewsMesh(); } catch (error) { logger.warn(`News Mesh cycle failed: ${error.message}`); }
 
@@ -36,15 +36,26 @@ async function cycle(reason) {
       }
     }
 
-    // Background agents persist translation, canonical headlines and evidence-governed publications.
     let agents = [];
     try { agents = await runIntelligenceAgents(); } catch (error) { logger.warn(`Intelligence agents cycle failed: ${error.message}`); }
+
+    let pdfs = [];
+    for (const org of agents) {
+      if (!org?.org_id) continue;
+      try {
+        const generated = await generateMissingPublicationPdfs(org.org_id, Number(process.env.INTEL_PUBLICATION_PDF_BATCH || 3));
+        pdfs.push(...generated.map(x => ({ org_id: org.org_id, ...x })));
+      } catch (error) {
+        logger.warn(`Publication PDF cycle failed org=${org.org_id}: ${error.message}`);
+      }
+    }
 
     const meshSeen = mesh.reduce((sum, x) => sum + Number(x.seen || 0), 0);
     const meshInserted = mesh.reduce((sum, x) => sum + Number(x.inserted || 0), 0);
     const synth = agents.reduce((sum, x) => sum + Number(x.synthesis?.synthesized || 0), 0);
     const translated = agents.reduce((sum, x) => sum + Number(x.translation?.translated || 0), 0);
-    logger.info(`Intelligence worker cycle complete (${reason}) in ${Date.now() - started}ms: orgs=${result?.organizations ?? 0}, mesh_seen=${meshSeen}, mesh_inserted=${meshInserted}, discovered=${discovered}, ingested=${ingested}, translated=${translated}, synthesized=${synth}, regional_seen=${regionalSeen}, regional_inserted=${regionalInserted}, incident_alerts=${alertCount}`);
+    const pdfReady = pdfs.filter(x => x.status === 'ready').length;
+    logger.info(`Intelligence worker cycle complete (${reason}) in ${Date.now() - started}ms: orgs=${result?.organizations ?? 0}, mesh_seen=${meshSeen}, mesh_inserted=${meshInserted}, discovered=${discovered}, ingested=${ingested}, translated=${translated}, synthesized=${synth}, publication_pdfs_ready=${pdfReady}, regional_seen=${regionalSeen}, regional_inserted=${regionalInserted}, incident_alerts=${alertCount}`);
   } catch (error) {
     logger.error(`Intelligence worker cycle failed (${reason}): ${error.message}`);
   }
