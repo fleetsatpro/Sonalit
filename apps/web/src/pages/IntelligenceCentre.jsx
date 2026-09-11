@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Activity, Newspaper, Shield, Siren, Radio, ArrowRight, FileText } from 'lucide-react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import IntelligenceCentreSynthesis from './IntelligenceCentreSynthesis.tsx';
+import IntelligenceCentreDeep from './IntelligenceCentreSynthesis.tsx';
 import IntelligenceLiveNews from './IntelligenceLiveNews.jsx';
 import IntelligenceAlerts from './IntelligenceAlerts.tsx';
 import IntelligencePublicationDesk from './IntelligencePublicationDesk.tsx';
