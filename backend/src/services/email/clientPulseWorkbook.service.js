@@ -2,12 +2,11 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
-const TEMPLATE_PATH = path.resolve(__dirname, '../../../CDS_Client_Pulse_FUTURISTIC_Active_Bookings.xlsx');
+const TEMPLATE_PATH = path.resolve(__dirname, '../../../CDS_Client_Pulse_Active_Bookings_BOOKING_OVERVIEW.xlsx');
 const TZ = () => process.env.CDS_CLIENT_PULSE_TIMEZONE || 'Africa/Nairobi';
 
 const COLUMNS = [
   ['booking_number', 'BOOKING NO'],
-  ['carrier_reference', 'CARRIER REF'],
   ['vessel', 'VESSEL'],
   ['file_reference', 'AW FILE REF'],
   ['commodity', 'COMMODITY'],
@@ -17,7 +16,6 @@ const COLUMNS = [
   ['status', 'STAGE'],
   ['clamped_date', 'DATE CLAMPED'],
   ['clamped_at', 'TIME CLAMPED'],
-  ['unclamped_at', 'TIME UNCLAMPED'],
   ['lock_number', 'LOCK NO'],
   ['yard_status', 'LOCATION'],
   ['transporter', 'TRANSPORTER'],
@@ -154,20 +152,20 @@ function buildRows(rows) {
       invoice: alt ? 58 : 63,
     };
     const values = [
-      displayValue(row.booking_number), displayValue(row.carrier_reference), displayValue(row.vessel),
-      displayValue(row.file_reference), displayValue(row.commodity), displayValue(row.container_number),
-      displayValue(row.iso_type), displayValue(row.seal_number), displayStage(row.status),
-      formatDate(row.clamped_date), formatDateTime(row.clamped_at), formatDateTime(row.unclamped_at),
+      displayValue(row.booking_number), displayValue(row.vessel), displayValue(row.file_reference),
+      displayValue(row.commodity), displayValue(row.container_number), displayValue(row.iso_type),
+      displayValue(row.seal_number), displayStage(row.status), formatDate(row.clamped_date),
+      formatDateTime(row.clamped_at),
       displayValue(row.lock_number), displayValue(row.yard_status), displayValue(row.transporter),
       displayValue(row.horse_reg), displayValue(row.trailer_reg), displayValue(row.driver_name),
       displayValue(row.driver_contact), displayInvoice(row.invoiced),
     ];
     const cells = values.map((value, colIndex) => {
-      const style = colIndex === 2 ? styles.vessel
-        : colIndex === 5 ? styles.container
-        : colIndex === 8 ? styles.stage
-        : colIndex === 13 ? styles.location
-        : colIndex === 19 ? styles.invoice
+      const style = colIndex === 1 ? styles.vessel
+        : colIndex === 4 ? styles.container
+        : colIndex === 7 ? styles.stage
+        : colIndex === 11 ? styles.location
+        : colIndex === 18 ? styles.invoice
         : styles.text;
       return cell(`${columnLetter(colIndex)}${excelRow}`, value, style);
     }).join('');
@@ -185,16 +183,16 @@ function buildDetailSheet(templateXml, rows, snapshotAt) {
   const header = COLUMNS.map(([, label], index) => cell(`${columnLetter(index)}4`, label, 51)).join('');
   const blankTop = `<row r="1" ht="24" customHeight="1"><c r="A1" s="50" t="inlineStr"><is><t>ACTIVE BOOKINGS  ·  CONTAINER TRACKING</t></is></c></row>`;
   const subtitle = `<row r="2"><c r="A2" s="3" t="inlineStr"><is><t>${xmlEscape(`${rows.length} units  ·  ${new Set(rows.map(r => r.booking_number).filter(Boolean)).size} bookings  ·  Synced ${synced} EAT`)}</t></is></c></row>`;
-  const spacer = `<row r="3">${Array.from({ length: 20 }, (_, i) => `<c r="${columnLetter(i)}3" s="4" t="n"></c>`).join('')}</row>`;
+  const spacer = `<row r="3">${Array.from({ length: 19 }, (_, i) => `<c r="${columnLetter(i)}3" s="4" t="n"></c>`).join('')}</row>`;
   const headerRow = `<row r="4" ht="24" customHeight="1">${header}</row>`;
   const sheetData = `<sheetData>${blankTop}${subtitle}${spacer}${headerRow}${buildRows(rows)}</sheetData>`;
 
   let xml = replaceTag(templateXml, 'sheetData', sheetData);
   xml = xml.replace('<pageSetUpPr/>', '<pageSetUpPr fitToPage="1"/>');
-  xml = xml.replace(/<dimension\s+ref="[^"]+"\s*\/>/, `<dimension ref="A1:T${rows.length + 6}"/>`);
-  xml = xml.replace(/<cols>[\s\S]*?<\/cols>/, '<cols>' + [18, 14, 20, 11, 13, 12, 6, 10, 12, 11, 15, 15, 8, 9, 11, 9, 10, 12, 12, 8].map((width, i) => `<col width="${width}" customWidth="1" min="${i + 1}" max="${i + 1}"/>`).join('') + '</cols>');
-  xml = replaceSelfClosing(xml, 'autoFilter', `<autoFilter ref="A4:T${rows.length + 4}"/>`);
-  xml = xml.replace(/<mergeCells[\s\S]*?<\/mergeCells>/, `<mergeCells count="3"><mergeCell ref="A1:T1"/><mergeCell ref="A2:T2"/><mergeCell ref="A${rows.length + 6}:T${rows.length + 6}"/></mergeCells>`);
+  xml = xml.replace(/<dimension\s+ref="[^"]+"\s*\/>/, `<dimension ref="A1:S${rows.length + 6}"/>`);
+  xml = xml.replace(/<cols>[\s\S]*?<\/cols>/, '<cols>' + [18, 20, 14, 13, 15, 10, 12, 14, 13, 16, 12, 12, 13, 11, 11, 14, 15, 12, 10].map((width, i) => `<col width="${width}" customWidth="1" min="${i + 1}" max="${i + 1}"/>`).join('') + '</cols>');
+  xml = replaceSelfClosing(xml, 'autoFilter', `<autoFilter ref="A4:S${rows.length + 4}"/>`);
+  xml = xml.replace(/<mergeCells[\s\S]*?<\/mergeCells>/, `<mergeCells count="3"><mergeCell ref="A1:S1"/><mergeCell ref="A2:S2"/><mergeCell ref="A${rows.length + 6}:S${rows.length + 6}"/></mergeCells>`);
   xml = xml.replace(/<pageMargins[^>]*\/>/, '<pageMargins left="0.25" right="0.25" top="0.5" bottom="0.5" header="0.2" footer="0.2"/><pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0" paperSize="9"/>');
   return xml;
 }
@@ -238,7 +236,7 @@ function buildOverviewSheet(templateXml, rows, snapshotAt) {
   const sync = new Intl.DateTimeFormat('en-GB', { timeZone: TZ(), day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(snapshotAt);
 
   const rowsXml = [];
-  const blankRow = (r) => `<row r="${r}">${Array.from({ length: 13 }, (_, i) => `<c r="${columnLetter(i)}${r}" s="1" t="n"></c>`).join('')}</row>`;
+  const blankRow = (r) => `<row r="${r}">${Array.from({ length: 11 }, (_, i) => `<c r="${columnLetter(i)}${r}" s="1" t="n"></c>`).join('')}</row>`;
   for (let r = 1; r <= 49; r += 1) rowsXml.push(blankRow(r));
   const set = (r, col, value, style, numeric = false) => {
     const idx = rowsXml.findIndex(s => s.includes(`<row r="${r}">`));
@@ -391,9 +389,8 @@ async function buildManifestWorkbook(rows, snapshotAt = new Date()) {
   sheet1.data = Buffer.from(buildOverviewSheet(sheet1.data.toString('utf8'), normalized, snapshot));
   sheet2.data = Buffer.from(buildDetailSheet(sheet2.data.toString('utf8'), normalized, snapshot));
   let workbookXml = workbook.data.toString('utf8');
-  workbookXml = workbookXml.replace('name="COMMAND CENTER"', 'name="Overview"');
-  workbookXml = workbookXml.replace(/(<definedName name="_xlnm\._FilterDatabase" localSheetId="1" hidden="1">)[\s\S]*?(<\/definedName>)/, (match, open, close) => `${open}'ACTIVE BOOKINGS'!$A$4:$T$${normalized.length + 4}${close}`);
-  const printNames = `<definedName name="_xlnm.Print_Area" localSheetId="0">Overview!$A$1:$G$39</definedName><definedName name="_xlnm.Print_Area" localSheetId="1">'ACTIVE BOOKINGS'!$A$1:$T$${normalized.length + 6}</definedName><definedName name="_xlnm.Print_Titles" localSheetId="1">'ACTIVE BOOKINGS'!$1:$4</definedName>`;
+  workbookXml = workbookXml.replace(/(<definedName name="_xlnm\._FilterDatabase" localSheetId="1" hidden="1">)[\s\S]*?(<\/definedName>)/, (match, open, close) => `${open}'ACTIVE BOOKINGS'!$A$4:$S$${normalized.length + 4}${close}`);
+  const printNames = `<definedName name="_xlnm.Print_Area" localSheetId="0">'BOOKING OVERVIEW'!$A$1:$G$39</definedName><definedName name="_xlnm.Print_Area" localSheetId="1">'ACTIVE BOOKINGS'!$A$1:$S$${normalized.length + 6}</definedName><definedName name="_xlnm.Print_Titles" localSheetId="1">'ACTIVE BOOKINGS'!$1:$4</definedName>`;
   if (workbookXml.includes('<definedNames>')) workbookXml = workbookXml.replace('</definedNames>', `${printNames}</definedNames>`);
   else workbookXml = workbookXml.replace('</sheets>', `</sheets><definedNames>${printNames}</definedNames>`);
   workbook.data = Buffer.from(workbookXml);
