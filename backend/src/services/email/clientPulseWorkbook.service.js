@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
-const TEMPLATE_PATH = path.resolve(__dirname, '../../../CDS_Client_Pulse_FUTURISTIC_Active_Bookings.xlsx');
+const TEMPLATE_PATH = path.resolve(__dirname, '../../../CDS_Client_Pulse_Active_Bookings_BOOKING_OVERVIEW.xlsx');
 const TZ = () => process.env.CDS_CLIENT_PULSE_TIMEZONE || 'Africa/Nairobi';
 
 const COLUMNS = [
@@ -163,10 +163,10 @@ function buildRows(rows) {
       displayValue(row.driver_contact), displayInvoice(row.invoiced),
     ];
     const cells = values.map((value, colIndex) => {
-      const style = colIndex === 1 ? styles.vessel
-        : colIndex === 4 ? styles.container
-        : colIndex === 7 ? styles.stage
-        : colIndex === 11 ? styles.location
+      const style = colIndex === 2 ? styles.vessel
+        : colIndex === 5 ? styles.container
+        : colIndex === 8 ? styles.stage
+        : colIndex === 12 ? styles.location
         : colIndex === 19 ? styles.invoice
         : styles.text;
       return cell(`${columnLetter(colIndex)}${excelRow}`, value, style);
