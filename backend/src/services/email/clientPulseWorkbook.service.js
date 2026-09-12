@@ -165,7 +165,7 @@ function buildRows(rows) {
         : colIndex === 4 ? styles.container
         : colIndex === 7 ? styles.stage
         : colIndex === 11 ? styles.location
-        : colIndex === 18 ? styles.invoice
+        : colIndex === 17 ? styles.invoice
         : styles.text;
       return cell(`${columnLetter(colIndex)}${excelRow}`, value, style);
     }).join('');
