@@ -55,16 +55,16 @@ function securityAlertTemplate(data) {
 
 function clientPulseTemplate(data) {
   const snapshot = data.snapshotAt || new Date().toISOString(); const count = Number(data.activeBookingCount || 0);
-  const body = \`
+  const body = `
     <p style="margin:0 0 14px;font-size:15px;line-height:24px;color:#CBD5E1">Please find attached the latest CDS Client Dispatch workbook, prepared from the active booking snapshot.</p>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px;background:#0B1522;border:1px solid #1D2B3D;border-radius:12px">
-      <tr>\${metric('REPORT', 'CDS CLIENT PULSE', '#E2E8F0')}\${metric('VIEW', 'BOOKING OVERVIEW', '#E7B84B')}\${metric('DETAIL', 'ACTIVE BOOKINGS', '#38BDF8')}\${metric('UNITS', count, '#F8FAFC')}</tr>
+      <tr>${metric('REPORT', 'CDS CLIENT PULSE', '#E2E8F0')}${metric('VIEW', 'BOOKING OVERVIEW', '#E7B84B')}${metric('DETAIL', 'ACTIVE BOOKINGS', '#38BDF8')}${metric('UNITS', count, '#F8FAFC')}</tr>
     </table>
-    <p style="margin:0;font-size:13px;line-height:20px;color:#94A3B8">Snapshot: <strong style="color:#F8FAFC">\${escapeHtml(snapshot)}</strong><br>The attached workbook contains the Booking Overview and Active Bookings operational detail for this snapshot.</p>\`;
+    <p style="margin:0;font-size:13px;line-height:20px;color:#94A3B8">Snapshot: <strong style="color:#F8FAFC">${escapeHtml(snapshot)}</strong><br>The attached workbook contains the Booking Overview and Active Bookings operational detail for this snapshot.</p>`;
   return {
-    subject: \`CDS Client Pulse — Booking Dispatch — \${data.dateLabel}\`,
-    text: \`CDS CLIENT PULSE — BOOKING DISPATCH\\n\\nAttached: Booking Overview + Active Bookings\\nActive units: \${count}\\nSnapshot: \${snapshot}\\n\\nThe workbook contains the latest active CDS booking state at the snapshot time.\\n\\nRegards,\\nSonalit Operations\`,
-    html: layout({ preheader: \`CDS booking dispatch — Booking Overview + Active Bookings — \${data.dateLabel}\`, title: 'CDS Client Pulse', eyebrow: 'SONALIT CDS · CLIENT PULSE', body })
+    subject: `CDS Client Pulse — Booking Dispatch — ${data.dateLabel}`,
+    text: `CDS CLIENT PULSE — BOOKING DISPATCH\n\nAttached: Booking Overview + Active Bookings\nActive units: ${count}\nSnapshot: ${snapshot}\n\nThe workbook contains the latest active CDS booking state at the snapshot time.\n\nRegards,\nSonalit Operations`,
+    html: layout({ preheader: `CDS booking dispatch — Booking Overview + Active Bookings — ${data.dateLabel}`, title: 'CDS Client Pulse', eyebrow: 'SONALIT CDS · CLIENT PULSE', body })
   };
 }
 function genericTemplate(data) { const body = `<p style="margin:0;font-size:15px;line-height:24px;color:#CBD5E1">${escapeHtml(data.message)}</p>`; return { subject: data.subject, text: data.message, html: layout({ preheader: data.subject, title: data.title || data.subject, body, ctaLabel: data.ctaLabel, ctaUrl: data.ctaUrl }) }; }
