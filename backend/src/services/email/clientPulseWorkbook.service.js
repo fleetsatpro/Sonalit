@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
-const TEMPLATE_PATH = path.resolve(__dirname, '../../../CDS_Client_Pulse_Active_Bookings_BOOKING_OVERVIEW.xlsx');
+const TEMPLATE_PATH = path.resolve(__dirname, '../../../CDS_Client_Pulse_FUTURISTIC_Active_Bookings.xlsx');
 const TZ = () => process.env.CDS_CLIENT_PULSE_TIMEZONE || 'Africa/Nairobi';
 
 const COLUMNS = [
@@ -389,7 +389,8 @@ async function buildManifestWorkbook(rows, snapshotAt = new Date()) {
   sheet1.data = Buffer.from(buildOverviewSheet(sheet1.data.toString('utf8'), normalized, snapshot));
   sheet2.data = Buffer.from(buildDetailSheet(sheet2.data.toString('utf8'), normalized, snapshot));
   let workbookXml = workbook.data.toString('utf8');
-  workbookXml = workbookXml.replace(/(<definedName name="_xlnm\._FilterDatabase" localSheetId="1" hidden="1">)[\s\S]*?(<\/definedName>)/, (match, open, close) => `${open}'ACTIVE BOOKINGS'!$A$4:$S$${normalized.length + 4}${close}`);
+  workbookXml = workbookXml.replace('name="COMMAND CENTER"', 'name="BOOKING OVERVIEW"');
+  workbookXml = workbookXml.replace(/(<definedName name="_xlnm\._FilterDatabase" localSheetId="1" hidden="1">)[\s\S]*?(<\/definedName>)/, (match, open, close) => `${open}'ACTIVE BOOKINGS'!$A$4:$S${normalized.length + 4}${close}`);
   const printNames = `<definedName name="_xlnm.Print_Area" localSheetId="0">'BOOKING OVERVIEW'!$A$1:$G$39</definedName><definedName name="_xlnm.Print_Area" localSheetId="1">'ACTIVE BOOKINGS'!$A$1:$S$${normalized.length + 6}</definedName><definedName name="_xlnm.Print_Titles" localSheetId="1">'ACTIVE BOOKINGS'!$1:$4</definedName>`;
   if (workbookXml.includes('<definedNames>')) workbookXml = workbookXml.replace('</definedNames>', `${printNames}</definedNames>`);
   else workbookXml = workbookXml.replace('</sheets>', `</sheets><definedNames>${printNames}</definedNames>`);
