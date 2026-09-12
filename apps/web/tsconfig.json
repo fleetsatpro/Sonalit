@@ -4,11 +4,19 @@
   "compilerOptions": {
     "types": ["vite/client"],
     "baseUrl": ".",
+    "lib": ["ES2021", "DOM", "DOM.Iterable"],
+    "noUncheckedIndexedAccess": false,
+    "noPropertyAccessFromIndexSignature": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noImplicitAny": false,
+    "exactOptionalPropertyTypes": false,
+    "skipLibCheck": true,
     "paths": {
       "@/*": ["src/*"],
       "@sonalit/contracts": ["../../packages/contracts/src/index.ts"]
     }
   },
   "include": ["src/**/*", "tests/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "exclude": ["dist", "node_modules"]
 }

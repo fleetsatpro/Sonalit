@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { UuidSchema, IsoDateSchema, TimestampsSchema } from './common.js';
+import { UuidSchema, IsoDateSchema, IsoDateTimeSchema, TimestampsSchema, LatLngSchema } from './common.js';
 
 // ---------------------------------------------------------------------------
 // Enums
@@ -62,3 +62,41 @@ export const UpdateDriverInputSchema = z.object({
   { message: 'At least one field must be provided for update' },
 );
 export type UpdateDriverInput = z.infer<typeof UpdateDriverInputSchema>;
+
+// ---------------------------------------------------------------------------
+// Driver Behaviour (S2-F3)
+// ---------------------------------------------------------------------------
+
+export const BehaviourEventTypeSchema = z.enum([
+  'hard_braking', 'harsh_acceleration', 'harsh_cornering',
+  'speeding', 'prolonged_idle', 'fatigue_pattern',
+]);
+export type BehaviourEventType = z.infer<typeof BehaviourEventTypeSchema>;
+
+export const DriverBehaviourEventSchema = z.object({
+  id: UuidSchema,
+  org_id: UuidSchema,
+  driver_id: UuidSchema,
+  vehicle_id: UuidSchema,
+  event_type: BehaviourEventTypeSchema,
+  severity: z.enum(['minor', 'moderate', 'severe']),
+  location: LatLngSchema,
+  speed_kmh: z.number().nullable(),
+  delta_kmh: z.number().nullable(),
+  bearing_delta: z.number().nullable(),
+  occurred_at: IsoDateTimeSchema,
+});
+export type DriverBehaviourEvent = z.infer<typeof DriverBehaviourEventSchema>;
+
+export const DriverScoreBreakdownSchema = z.object({
+  overall: z.number().int().min(0).max(100),
+  braking: z.number().int().min(0).max(100),
+  acceleration: z.number().int().min(0).max(100),
+  cornering: z.number().int().min(0).max(100),
+  speeding: z.number().int().min(0).max(100),
+  fatigue: z.number().int().min(0).max(100),
+  events_30d: z.number().int(),
+  period_start: IsoDateSchema,
+  period_end: IsoDateSchema,
+});
+export type DriverScoreBreakdown = z.infer<typeof DriverScoreBreakdownSchema>;

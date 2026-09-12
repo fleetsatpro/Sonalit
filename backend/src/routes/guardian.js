@@ -1,14 +1,17 @@
 const router = require('express').Router();
 const { query } = require('../config/database');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, authorize } = require('../middleware/auth');
 const { requireFreshIntegrity } = require('../middleware/requireFreshIntegrity');
 const logger = require('../utils/logger');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const { sendCommandPush, sendPanicAck } = require('../utils/fcm');
+const { sendWhatsAppMessage } = require('../utils/whatsapp');
 const { publish } = require('../realtime/centrifugo');
 const requireIdempotencyKey = require('../middleware/idempotency');
+const { COMMAND_SIGNING_SECRET, signCommand } = require('../utils/commandSigning');
+const captureVision = require('../utils/captureVision');
 
 // ─── Integrity age thresholds per command type (T1.4) ────────────────────────
 const INTEGRITY_MAX_AGE = {
@@ -82,6 +85,16 @@ const reportLimiter = rateLimit({
   handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
 });
 
+const voiceMessageLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  keyGenerator: (req) => (req.device && req.device.id) || req.headers['x-device-token'] || req.ip,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
+  handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
+});
+
 // Per-admin-per-target-device: 10 commands/min per (admin, device) pair
 const commandLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -92,34 +105,26 @@ const commandLimiter = rateLimit({
   handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
 });
 
-// ─── HMAC signing helper ──────────────────────────────────────────────────────
-
-const COMMAND_SIGNING_SECRET = process.env.COMMAND_SIGNING_SECRET || 'guardian-dev-signing-secret-2024';
-
-// Produce canonical JSON: sorted keys, no whitespace, UTF-8. Handles nested objects/arrays.
-function canonicalJson(obj) {
-  if (obj == null) return '{}';
-  function sorted(val) {
-    if (val === null) return 'null';
-    if (typeof val === 'boolean' || typeof val === 'number') return String(val);
-    if (typeof val === 'string') return JSON.stringify(val);
-    if (Array.isArray(val)) return '[' + val.map(sorted).join(',') + ']';
-    if (typeof val === 'object') {
-      const keys = Object.keys(val).sort();
-      return '{' + keys.map(k => JSON.stringify(k) + ':' + sorted(val[k])).join(',') + '}';
-    }
-    return JSON.stringify(val);
+// Resolve a device's org_id (from guardian_devices) and its linked field-officer id
+// (by device link or badge/name). Additive: used to backfill enrollment responses so
+// the agent can subscribe to the correct realtime channel (org#<org_id>).
+async function resolveOrgOfficer(deviceId, badgeName) {
+  let orgId = null;
+  let officerId = null;
+  try {
+    const devRow = await query(`SELECT org_id FROM guardian_devices WHERE id = $1`, [deviceId]);
+    orgId = devRow.rows[0]?.org_id ?? null;
+    const offRow = await query(
+      `SELECT id FROM field_officers
+       WHERE (device_id = $1 OR badge_number = $2)
+       ORDER BY (device_id = $1) DESC LIMIT 1`,
+      [deviceId, badgeName || null]
+    );
+    officerId = offRow.rows[0]?.id ?? null;
+  } catch (e) {
+    logger.warn(`resolveOrgOfficer failed for ${deviceId}: ${e.message}`);
   }
-  return sorted(obj);
-}
-
-// Signed string: commandId:commandType:sha256(canonicalJson(payload)):issuedAt:expiresAt
-function signCommand(commandId, commandType, payload, issuedAt, expiresAt) {
-  const ts   = issuedAt  instanceof Date ? issuedAt.toISOString()  : (issuedAt  || '');
-  const exp  = expiresAt instanceof Date ? expiresAt.toISOString() : (expiresAt || '');
-  const payloadHash = crypto.createHash('sha256').update(canonicalJson(payload), 'utf8').digest('hex');
-  const message = `${commandId}:${commandType}:${payloadHash}:${ts}:${exp}`;
-  return crypto.createHmac('sha256', COMMAND_SIGNING_SECRET).update(message).digest('hex');
+  return { orgId, officerId };
 }
 
 // ─── Table Initialisation ────────────────────────────────────────────────────
@@ -222,12 +227,31 @@ async function ensureTables() {
       )
     `);
 
+    await query(`
+      CREATE TABLE IF NOT EXISTS guardian_crash_reports (
+        id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        device_id       UUID REFERENCES guardian_devices(id) ON DELETE CASCADE,
+        org_id          UUID,
+        app_version     TEXT,
+        app_build       BIGINT,
+        android_version TEXT,
+        sdk_int         INT,
+        device_model    TEXT,
+        thread          TEXT,
+        stack_trace     TEXT,
+        occurred_at     TIMESTAMPTZ,
+        created_at      TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
     // v2 columns — safe to run repeatedly
+    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS org_id UUID`);
     await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS convoy_code TEXT`);
     await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS last_checkin_at TIMESTAMPTZ`);
     await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS android_id TEXT`);
     await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS manufacturer TEXT`);
     await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS imei_hash TEXT`);
+    await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS fcm_token TEXT`).catch(() => {}); // also added below
     await query(`
       CREATE UNIQUE INDEX IF NOT EXISTS uq_guardian_devices_imei_hash
         ON guardian_devices(imei_hash)
@@ -361,6 +385,19 @@ async function ensureTables() {
     // p2t3 — command expiry
     await query(`ALTER TABLE device_commands ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`);
 
+    // panic revamp — acknowledge/escalation/resolution-reason workflow
+    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ`);
+    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS acknowledged_by UUID`);
+    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS resolution_note TEXT`);
+    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS reason_code TEXT`);
+    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS escalation_level INT DEFAULT 0`);
+    await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMPTZ`);
+    await query(`
+      CREATE INDEX IF NOT EXISTS idx_panic_events_open_unacked
+        ON panic_events(org_id, created_at)
+        WHERE resolved_at IS NULL AND acknowledged_at IS NULL
+    `);
+
     // p1t5 — idempotency UUIDs for panic events and field reports
     await query(`ALTER TABLE panic_events ADD COLUMN IF NOT EXISTS event_uuid UUID`);
     await query(`
@@ -377,6 +414,30 @@ async function ensureTables() {
 
     // p4t1 — FCM push token on device
     await query(`ALTER TABLE guardian_devices ADD COLUMN IF NOT EXISTS fcm_token TEXT`);
+
+    // p5t1 — nonce column for command replay protection
+    await query(`ALTER TABLE device_commands ADD COLUMN IF NOT EXISTS nonce TEXT`);
+
+    // p5t2 — nonce deduplication table (PRIMARY KEY enforces uniqueness per device)
+    await query(`
+      CREATE TABLE IF NOT EXISTS guardian_command_nonces (
+        device_id UUID NOT NULL REFERENCES guardian_devices(id),
+        nonce     TEXT NOT NULL,
+        seen_at   TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (device_id, nonce)
+      )
+    `);
+
+    // p5t3 — command lifecycle event log
+    await query(`
+      CREATE TABLE IF NOT EXISTS device_command_events (
+        id         BIGSERIAL PRIMARY KEY,
+        command_id UUID NOT NULL,
+        status     TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await query(`CREATE INDEX IF NOT EXISTS idx_device_command_events_command ON device_command_events(command_id)`);
 
     logger.info('Guardian tables initialised');
   } catch (err) {
@@ -421,6 +482,154 @@ async function runCommandExpiryJob() {
   } catch (err) {
     logger.error(`Command expiry job error: ${err.message}`);
   }
+
+  // Purge replay-protection nonces past their 24h window. The
+  // cleanup_command_nonces() function (migration 002) was defined but never
+  // invoked, so guardian_command_nonces grew unbounded. Guarded separately so a
+  // failure here never blocks command expiry above.
+  try {
+    await query('SELECT cleanup_command_nonces()');
+  } catch (err) {
+    logger.error(`Nonce cleanup job error: ${err.message}`);
+  }
+}
+
+// ─── Dead Man's Switch Monitor ───────────────────────────────────────────────
+// Server-authoritative DMS: a field officer's device sends periodic check-ins
+// (POST /checkin); if a device with DMS enabled goes past its timeout without
+// one, escalate to a silent SOS on its behalf. Doing this server-side (rather
+// than on the device) is what makes it a real dead-man's switch — it still
+// fires when the phone is destroyed, powered off, or out of signal, which is
+// exactly when the officer most needs it and a device-side timer never could.
+async function runDmsMonitorJob() {
+  try {
+    // Only devices that (a) have DMS on, (b) have actually checked in at least
+    // once since it was enabled (last_checkin_at NULL = no baseline, never
+    // fire blindly), (c) aren't temporarily suspended, and (d) are past their
+    // window. A NULL dms_timeout_minutes yields NULL here and is skipped.
+    const due = await query(
+      `SELECT id, org_id, name, last_lat, last_lng
+         FROM guardian_devices
+        WHERE dms_enabled = true
+          AND deleted_at IS NULL
+          AND panic_active = false
+          AND last_checkin_at IS NOT NULL
+          AND (dms_suspended_until IS NULL OR dms_suspended_until < NOW())
+          AND last_checkin_at < NOW() - (dms_timeout_minutes * INTERVAL '1 minute')`
+    );
+
+    for (const dev of due.rows) {
+      // Claim the device atomically: flip dms_enabled off (operator re-enables
+      // after resolving) and mark panic_active. The WHERE dms_enabled = true
+      // guard means only one monitor tick can win, so we never double-fire.
+      const claim = await query(
+        `UPDATE guardian_devices
+            SET dms_enabled = false, panic_active = true, updated_at = NOW()
+          WHERE id = $1 AND dms_enabled = true
+          RETURNING id`,
+        [dev.id]
+      );
+      if (!claim.rows.length) continue;
+
+      const eventUuid = uuidv4();
+      const ins = await query(
+        `INSERT INTO panic_events (event_uuid, device_id, org_id, mode, lat, lng, message, created_at)
+         VALUES ($1, $2, $3, 'silent', $4, $5, $6, NOW())
+         RETURNING id, created_at`,
+        [eventUuid, dev.id, dev.org_id ?? null, dev.last_lat ?? null, dev.last_lng ?? null,
+         "Dead Man's Switch: missed check-in"]
+      );
+      const row = ins.rows[0];
+
+      // Same payload shape the POST /panic handler publishes, so the dashboard's
+      // existing 'panic' realtime handler renders it identically.
+      const payload = {
+        type: 'panic',
+        panic_id: row.id,
+        event_uuid: eventUuid,
+        device_id: dev.id,
+        device_name: dev.name,
+        mode: 'silent',
+        lat: dev.last_lat ?? null,
+        lng: dev.last_lng ?? null,
+        message: "Dead Man's Switch: missed check-in",
+        created_at: row.created_at,
+        triggered_at: row.created_at,
+      };
+      if (dev.org_id) publish(`org#${dev.org_id}`, payload); else publish('device:panic', payload);
+      logger.warn(`DMS timeout PANIC: device=${dev.id} name="${dev.name}" org=${dev.org_id ?? 'unknown'}`);
+      // Queue a burst too — a missed check-in is exactly when eyes on the scene
+      // matter most. No fcm_token on this partial row, so it rides the device's
+      // next heartbeat/poll claim (6h TTL covers a late reconnect).
+      autoBurstOnPanic(dev, dev.org_id ?? null).catch(e => logger.warn(`autoBurstOnPanic (DMS) error: ${e.message}`));
+    }
+  } catch (err) {
+    logger.error(`DMS monitor job error: ${err.message}`);
+  }
+}
+
+// ─── Panic Escalation Background Job ─────────────────────────────────────────
+
+// Minutes an unacknowledged panic waits before each escalation tier fires.
+// Tier 1 fires at ESCALATION_MINUTES, tier 2 at 2x, tier 3 at 3x — then stops.
+const ESCALATION_MINUTES = parseInt(process.env.PANIC_ESCALATION_MINUTES) || 3;
+const MAX_ESCALATION_LEVEL = 3;
+
+async function runPanicEscalationJob() {
+  try {
+    const due = await query(
+      `SELECT pe.id, pe.org_id, pe.device_id, pe.mode, pe.escalation_level, pe.created_at,
+              gd.name AS device_name
+       FROM panic_events pe
+       JOIN guardian_devices gd ON gd.id = pe.device_id
+       WHERE pe.resolved_at IS NULL
+         AND pe.acknowledged_at IS NULL
+         AND pe.org_id IS NOT NULL
+         AND pe.escalation_level < $1
+         AND pe.created_at < NOW() - ((pe.escalation_level + 1) * $2 || ' minutes')::INTERVAL
+       ORDER BY pe.created_at ASC
+       LIMIT 100`,
+      [MAX_ESCALATION_LEVEL, ESCALATION_MINUTES]
+    );
+
+    for (const row of due.rows) {
+      const nextLevel = row.escalation_level + 1;
+      await query(
+        `UPDATE panic_events SET escalation_level = $2, escalated_at = NOW() WHERE id = $1`,
+        [row.id, nextLevel]
+      );
+
+      publish(`org#${row.org_id}`, {
+        type: 'panic_escalated',
+        panic_id: row.id,
+        device_id: row.device_id,
+        device_name: row.device_name,
+        mode: row.mode,
+        escalation_level: nextLevel,
+        escalated_at: new Date().toISOString(),
+      });
+
+      auditLog('system', null, 'panic_escalated', 'panic_event', row.id, { escalation_level: nextLevel }, null);
+      logger.warn(`PANIC escalated: id=${row.id} device=${row.device_name} level=${nextLevel}`);
+
+      // Notify org admins/dispatchers with a phone number on file, fire-and-forget.
+      try {
+        const contacts = await query(
+          `SELECT phone FROM users WHERE org_id = $1 AND role IN ('admin', 'dispatcher') AND phone IS NOT NULL`,
+          [row.org_id]
+        );
+        const minutesOpen = Math.round((Date.now() - new Date(row.created_at).getTime()) / 60000);
+        const text = `⚠️ PANIC unacknowledged ${minutesOpen}m — ${row.device_name} (${row.mode}). Escalation level ${nextLevel}. Open Panic Center now.`;
+        for (const c of contacts.rows) {
+          sendWhatsAppMessage(row.org_id, c.phone, text).catch(() => {});
+        }
+      } catch (notifyErr) {
+        logger.error(`panic escalation notify error: ${notifyErr.message}`);
+      }
+    }
+  } catch (err) {
+    logger.error(`Panic escalation job error: ${err.message}`);
+  }
 }
 
 // Run immediately on module load
@@ -428,6 +637,13 @@ ensureTables().then(() => {
   // Start command expiry job after tables are ready
   runCommandExpiryJob();
   setInterval(runCommandExpiryJob, 10 * 60 * 1000); // every 10 minutes
+
+  // Start panic escalation job — checks every minute for unacknowledged panics
+  runPanicEscalationJob();
+  setInterval(runPanicEscalationJob, 60 * 1000);
+
+  runDmsMonitorJob();
+  setInterval(runDmsMonitorJob, 2 * 60 * 1000); // every 2 minutes
 });
 
 // ─── Device Auth Middleware ───────────────────────────────────────────────────
@@ -465,11 +681,200 @@ async function deviceAuth(req, res, next) {
 // ─── Device Routes (no JWT required) ─────────────────────────────────────────
 
 /**
+ * Points a field officer at `deviceId`, retiring whatever device they were
+ * previously linked to (if different). A field officer only ever has one
+ * meaningfully "current" device — an old one left behind after a factory
+ * reset, signing-key change, or hand-me-down phone reassignment otherwise
+ * lingers forever as an orphaned row that reads as a duplicate device for
+ * the same officer in every device list.
+ */
+async function linkOfficerDevice(officer, deviceId) {
+  if (officer.device_id && officer.device_id !== deviceId) {
+    await query(
+      `UPDATE guardian_devices SET status = 'revoked', deleted_at = NOW(), updated_at = NOW()
+       WHERE id = $1 AND deleted_at IS NULL`,
+      [officer.device_id]
+    );
+    logger.info(`Retired stale device ${officer.device_id} for officer ${officer.id} (now ${deviceId})`);
+  }
+  if (officer.device_id !== deviceId) {
+    await query(
+      `UPDATE field_officers SET device_id = $1, updated_at = NOW() WHERE id = $2`,
+      [deviceId, officer.id]
+    );
+  }
+}
+
+/**
+ * POST /api/v1/guardian/recover
+ * Silent identity recovery: the app lost its stored credentials (fresh
+ * reinstall, cleared data, logout) but the hardware is already registered.
+ * The app calls this on launch with its ANDROID_ID before ever showing the
+ * enrollment screen — a known device gets its identity back with no badge
+ * typing and no operator involvement, so enrollment is a first-time-only
+ * event. Trust level is identical to the enroll dedup fast path, which has
+ * always returned the token for a matching android_id.
+ */
+router.post('/recover', enrollLimiter, async (req, res, next) => {
+  try {
+    const { device_id } = req.body; // ANDROID_ID, same value enroll sends
+    if (!device_id) {
+      return res.status(400).json({ error: 'device_id is required' });
+    }
+    const result = await query(
+      `SELECT id, token, status, org_id FROM guardian_devices
+       WHERE android_id = $1 AND deleted_at IS NULL
+       ORDER BY enrolled_at DESC LIMIT 1`,
+      [device_id]
+    );
+    const dev = result.rows[0];
+    if (!dev) return res.status(404).json({ error: 'unknown_device' });
+    if (dev.status === 'revoked' || dev.status === 'suspended') {
+      return res.status(403).json({ error: `Device is ${dev.status}` });
+    }
+    const officer = await query(
+      `SELECT id FROM field_officers WHERE device_id = $1 LIMIT 1`,
+      [dev.id]
+    );
+    const mappedStatus = (dev.status === 'active' || dev.status === 'enrolled') ? 'enrolled' : dev.status;
+    auditLog('device', dev.id, 'identity_recovered', 'device', dev.id, {}, req.ip);
+    res.json({
+      status: mappedStatus,
+      device_uuid: dev.id,
+      device_token: dev.token,
+      org_id: dev.org_id ?? null,
+      officer_id: officer.rows[0]?.id ?? null,
+      command_signing_secret: COMMAND_SIGNING_SECRET,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * POST /api/v1/guardian/enroll
- * Register a new device. Validates org_token against env GUARDIAN_ORG_TOKEN.
+ * Register a new device.
+ * Accepts two formats:
+ *   v4 (Guardian Agent APK): { device_id, operator_code, play_integrity_token, platform, fcm_token, app_version }
+ *   legacy: { name, imei, android_id, manufacturer, model, os_version, app_version, org_token, enrollment_code }
  */
 router.post('/enroll', enrollLimiter, async (req, res, next) => {
   try {
+    // ── v4 format (Guardian Agent APK) ──────────────────────────────────────
+    if (!req.body.org_token && req.body.operator_code) {
+      const { device_id, operator_code, platform, fcm_token, app_version } = req.body;
+      if (!device_id || !operator_code) {
+        return res.status(400).json({ error: 'device_id and operator_code are required' });
+      }
+
+      // Find org via field officer badge number
+      // (field_officers has no soft-delete column — a delete is a hard DELETE, see field-officers.js)
+      const officerRes = await query(
+        `SELECT id, org_id, device_id FROM field_officers WHERE badge_number = $1 LIMIT 1`,
+        [operator_code]
+      );
+      // A mistyped/unknown badge number used to fall through silently: the
+      // INSERT below still ran with org_id NULL (the column DEFAULT fires),
+      // creating a device no admin's org view could ever see — the officer
+      // was left staring at "Awaiting operator approval" forever, since
+      // nothing was ever actually pending in any real organisation's queue.
+      // Reject it up front instead, with a message the app can show as-is.
+      if (!officerRes.rows[0]) {
+        return res.status(404).json({ error: 'Badge number not recognized. Check with your dispatcher and try again.' });
+      }
+      const orgId = officerRes.rows[0].org_id;
+
+      // Dedup: return existing if already enrolled with this android device id
+      const existing = await query(
+        `SELECT id, token, status FROM guardian_devices
+         WHERE android_id = $1 AND deleted_at IS NULL
+         ORDER BY enrolled_at DESC LIMIT 1`,
+        [device_id]
+      );
+      if (existing.rows[0]) {
+        const dev = existing.rows[0];
+        // Re-establish (or retarget) the officer<->device link even on this
+        // fast path — not just on fresh enrollment below — so an officer
+        // reassigned to hardware that already has a guardian_devices row
+        // (e.g. a spare/handed-down phone) still ends up correctly linked
+        // instead of staying deviceless.
+        if (officerRes.rows[0]) {
+          await linkOfficerDevice(officerRes.rows[0], dev.id);
+        }
+        const mappedStatus = (dev.status === 'active' || dev.status === 'enrolled') ? 'enrolled' : dev.status;
+        return res.json({
+          status: mappedStatus,
+          device_uuid: dev.id,
+          device_token: dev.token,
+          org_id: orgId,
+          officer_id: officerRes.rows[0]?.id ?? null,
+          command_signing_secret: COMMAND_SIGNING_SECRET,
+        });
+      }
+
+      // No android_id match, but the badge's officer already has a linked
+      // live device — this is almost always the SAME phone re-enrolling
+      // (fresh install wiped its stored credentials, or the row predates
+      // android_id tracking). Adopt that row — backfill android_id, hand its
+      // token back — instead of forking a new row and retiring the old one,
+      // which silently discarded the device's entire position history and
+      // flipped the officer to "NO FIX YET" until the fork caught up.
+      if (officerRes.rows[0].device_id) {
+        const adopt = await query(
+          `UPDATE guardian_devices
+              SET android_id = $2,
+                  fcm_token = COALESCE($3, fcm_token),
+                  app_version = COALESCE($4, app_version),
+                  updated_at = NOW()
+            WHERE id = $1 AND deleted_at IS NULL
+            RETURNING id, token, status`,
+          [officerRes.rows[0].device_id, device_id, fcm_token ?? null, app_version ?? null]
+        );
+        if (adopt.rows[0]) {
+          const dev = adopt.rows[0];
+          const mappedStatus = (dev.status === 'active' || dev.status === 'enrolled') ? 'enrolled' : dev.status;
+          auditLog('device', dev.id, 'v4_enroll_adopted', 'device', dev.id, { operator_code, platform }, req.ip);
+          return res.json({
+            status: mappedStatus,
+            device_uuid: dev.id,
+            device_token: dev.token,
+            org_id: orgId,
+            officer_id: officerRes.rows[0].id,
+            command_signing_secret: COMMAND_SIGNING_SECRET,
+          });
+        }
+      }
+
+      // New enrollment — omit org_id when null so the column DEFAULT fires
+      // rather than explicitly passing NULL against a NOT NULL constraint.
+      const enrollParams = [operator_code, device_id, fcm_token ?? null, app_version ?? null];
+      const enrollSql = orgId !== null
+        ? `INSERT INTO guardian_devices (name, android_id, fcm_token, app_version, org_id, status)
+           VALUES ($1, $2, $3, $4, $5, 'pending') RETURNING id, token`
+        : `INSERT INTO guardian_devices (name, android_id, fcm_token, app_version, status)
+           VALUES ($1, $2, $3, $4, 'pending') RETURNING id, token`;
+      if (orgId !== null) enrollParams.push(orgId);
+      const { rows } = await query(enrollSql, enrollParams);
+
+      // Auto-link device to field officer (see linkOfficerDevice — retires
+      // any previous device this officer had so it doesn't linger as an
+      // orphaned "duplicate" row).
+      if (officerRes.rows[0]) {
+        await linkOfficerDevice(officerRes.rows[0], rows[0].id);
+      }
+
+      auditLog('device', rows[0].id, 'v4_enroll', 'device', rows[0].id, { operator_code, platform }, req.ip);
+      return res.status(202).json({
+        status: 'pending_approval',
+        device_uuid: rows[0].id,
+        device_token: rows[0].token,
+        org_id: orgId,
+        officer_id: officerRes.rows[0]?.id ?? null,
+        command_signing_secret: COMMAND_SIGNING_SECRET,
+      });
+    }
+
+    // ── legacy format ────────────────────────────────────────────────────────
     const { name, imei, android_id, manufacturer, model, os_version, app_version, org_token, enrollment_code } = req.body;
 
     if (!name) {
@@ -511,9 +916,9 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       if (r.rows.length) existingDev = r.rows[0];
     }
 
-    // Legacy fallback: records enrolled before android_id tracking have both hardware IDs null.
-    // Match by name + model and backfill android_id so future lookups hit the fast path.
-    if (!existingDev && safeAndroidId) {
+    // Legacy fallback: records enrolled before android_id tracking have both hardware IDs null,
+    // OR when a device reports unknown hardware IDs. Match by name + model.
+    if (!existingDev) {
       const r = await query(
         `SELECT id, token, status, enrolled_at FROM guardian_devices
          WHERE deleted_at IS NULL AND android_id IS NULL AND imei IS NULL
@@ -561,12 +966,15 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       logger.info(`Guardian re-enrollment: device ${dev.id}`);
       auditLog('device', dev.id, 're_enroll', 'device', dev.id, { name }, req.ip);
       const certPin = process.env.GUARDIAN_CERT_PIN || null;
+      const { orgId: reOrgId, officerId: reOfficerId } = await resolveOrgOfficer(dev.id, name);
       return res.status(200).json({
         device_id: dev.id,
         token: dev.token,
         enrolled_at: dev.enrolled_at,
         cert_pin: certPin,
         command_signing_secret: COMMAND_SIGNING_SECRET,
+        org_id: reOrgId,
+        officer_id: reOfficerId,
       });
     }
 
@@ -605,6 +1013,7 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
     auditLog('device', null, 'enroll', 'device', device.id, { name, android_id }, req.ip);
 
     const certPin = process.env.GUARDIAN_CERT_PIN || null;
+    const { orgId: newOrgId, officerId: newOfficerId } = await resolveOrgOfficer(device.id, name);
 
     res.status(201).json({
       device_id: device.id,
@@ -612,6 +1021,8 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
       enrolled_at: device.enrolled_at,
       cert_pin: certPin,
       command_signing_secret: COMMAND_SIGNING_SECRET,
+      org_id: newOrgId,
+      officer_id: newOfficerId,
     });
   } catch (err) {
     next(err);
@@ -625,19 +1036,25 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
 router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) => {
   try {
     const {
-      battery_level,
       battery_charging,
-      signal_strength,
       network_type,
       storage_free_mb,
       ram_free_mb,
       app_version,
       app_version_code,
-      lat,
-      lng,
-      speed,
       fcm_token,
     } = req.body;
+    // Accept battery_pct (v4 APK) or battery_level (legacy).
+    // APK sends -1 as an "unknown" sentinel — store NULL so it doesn't mask real data.
+    const rawBattery = req.body.battery_level ?? req.body.battery_pct ?? null;
+    const battery_level = rawBattery != null && rawBattery >= 0 ? rawBattery : null;
+    // Accept signal_pct (v4 APK) or signal_strength (legacy)
+    const rawSignal = req.body.signal_strength ?? req.body.signal_pct ?? null;
+    const signal_strength = rawSignal != null && rawSignal >= 0 ? rawSignal : null;
+    // Accept both lat/lng (legacy) and latitude/longitude (Guardian APK field names)
+    const lat = req.body.lat ?? req.body.latitude ?? null;
+    const lng = req.body.lng ?? req.body.longitude ?? null;
+    const speed = req.body.speed ?? null;
 
     const deviceId = req.device.id;
 
@@ -677,7 +1094,8 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
       await query(
         `UPDATE guardian_devices
          SET last_seen = NOW(), status = 'active',
-             last_lat = $2, last_lng = $3, last_speed = $4, updated_at = NOW()
+             last_lat = $2, last_lng = $3, last_speed = $4,
+             last_fix_at = NOW(), updated_at = NOW()
          WHERE id = $1`,
         [deviceId, lat, lng, speed ?? null]
       );
@@ -732,8 +1150,9 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
     res.json({
       status: 'ok',
       server_time: Date.now(),
-      commands: commands.rows,
+      commands: commands.rows.map(serializeCommandPayload),
       command_signing_secret: COMMAND_SIGNING_SECRET,
+      org_id: req.device.org_id ?? null,
       min_required_version: minCode,
       force_update: forceUpdate,
       ...(forceUpdate ? { download_url: `${backendBase}/api/v1/guardian/apk/download` } : {}),
@@ -742,6 +1161,158 @@ router.post('/heartbeat', deviceAuth, heartbeatLimiter, async (req, res, next) =
     next(err);
   }
 });
+
+/**
+ * POST /api/v1/guardian/commands/poll
+ * Lightweight command pickup for the app's 60s in-service poll — the same
+ * atomic claim as the heartbeat path, without writing a device_health row,
+ * so it's cheap enough to hit every minute. This keeps dashboard commands
+ * (trigger_siren, show_message, ...) delivering in ≤60s even when FCM can't
+ * reach the device: no registered token, missing Play services, or push
+ * throttling by the OEM.
+ */
+router.post('/commands/poll', deviceAuth, heartbeatLimiter, async (req, res, next) => {
+  try {
+    const deviceId = req.device.id;
+    const commands = await query(
+      `WITH claimed AS (
+        SELECT id FROM device_commands
+        WHERE device_id = $1 AND status = 'pending' AND signature IS NOT NULL
+        ORDER BY issued_at ASC
+        LIMIT 50
+        FOR UPDATE SKIP LOCKED
+      )
+      UPDATE device_commands dc
+      SET status = 'sent', sent_at = NOW()
+      FROM claimed
+      WHERE dc.id = claimed.id
+      RETURNING dc.id, dc.command_type, dc.payload, dc.status,
+                dc.issued_at, dc.expires_at, dc.signature`,
+      [deviceId]
+    );
+    if (commands.rows.length) {
+      for (const cmd of commands.rows) {
+        query(`INSERT INTO device_command_events (command_id, status) VALUES ($1, 'delivered')`, [cmd.id]).catch(() => {});
+      }
+    }
+    res.json({ commands: commands.rows.map(serializeCommandPayload) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * The app treats a command's payload as an opaque string and parses it as
+ * JSON itself (see CommandExecutor). When these endpoints returned the jsonb
+ * payload as a nested OBJECT, the Kotlin client stringified it with
+ * Map.toString() — "{url=https://...}" — whose unquoted values truncate at
+ * ':' under lenient JSON parsing, so play_voice_message's URL parsed as
+ * literally "https" and every voice command acked 'failed'. Plain-word
+ * show_message texts survived by luck. Serialize payload to a JSON string
+ * here — the same shape the FCM push path has always used — so all delivery
+ * paths hand the app identical bytes.
+ */
+function serializeCommandPayload(cmd) {
+  return {
+    ...cmd,
+    payload: cmd.payload == null
+      ? null
+      : (typeof cmd.payload === 'string' ? cmd.payload : JSON.stringify(cmd.payload)),
+  };
+}
+
+/**
+ * GET /api/v1/guardian/voice-messages/:id/audio
+ * Audio bytes for a play_voice_message command. Device-token authenticated
+ * and scoped to the requesting device, so a leaked URL is useless without
+ * that device's token.
+ */
+router.get('/voice-messages/:id/audio', deviceAuth, async (req, res, next) => {
+  try {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid voice message id' });
+    }
+    const result = await query(
+      `SELECT mime, audio FROM guardian_voice_messages WHERE id = $1 AND device_id = $2`,
+      [req.params.id, req.device.id]
+    );
+    const row = result.rows[0];
+    if (!row) return res.status(404).json({ error: 'Voice message not found' });
+    res.set('Content-Type', row.mime || 'audio/webm');
+    res.set('Cache-Control', 'private, max-age=3600');
+    res.send(row.audio);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/v1/guardian/voice-message
+ * Reverse direction of the route above: a field officer records a note and
+ * sends it up to dispatch. Body is raw audio bytes (audio/*, ≤2 MB, same
+ * cap as the dispatch->device route), stored with direction='from_device'
+ * so GET /guardian/devices/:id/voice-messages (guardian-ops.js) can list
+ * only these for the operator UI. No signed command/FCM push needed here —
+ * dispatch is the web dashboard, which gets the update over the org's
+ * existing Centrifugo channel instead of a device-command round-trip.
+ */
+router.post(
+  '/voice-message',
+  deviceAuth,
+  voiceMessageLimiter,
+  require('express').raw({ type: ['audio/*'], limit: '2mb' }),
+  async (req, res, next) => {
+    try {
+      if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+        return res.status(400).json({ error: 'Request body must be raw audio bytes with an audio/* content type' });
+      }
+      const mime = (req.headers['content-type'] || 'audio/webm').split(';')[0];
+      const durationMs = parseInt(req.query.duration_ms) || null;
+      const orgId = req.device.org_id || null;
+
+      // Exact location of the note. Prefer the device's live GPS at record time
+      // (sent as ?lat=&lng=), fall back to its last known position so the map
+      // still zooms to a real place even on an older client. A fresh fix also
+      // refreshes the device's stored position so its marker is accurate too.
+      const qLat = parseFloat(req.query.lat), qLng = parseFloat(req.query.lng);
+      const hasFix = Number.isFinite(qLat) && Number.isFinite(qLng) && Math.abs(qLat) <= 90 && Math.abs(qLng) <= 180;
+      const lat = hasFix ? qLat : (req.device.last_lat != null ? parseFloat(req.device.last_lat) : null);
+      const lng = hasFix ? qLng : (req.device.last_lng != null ? parseFloat(req.device.last_lng) : null);
+
+      const { rows } = await query(
+        `INSERT INTO guardian_voice_messages (org_id, device_id, mime, duration_ms, audio, direction, lat, lng)
+         VALUES ($1, $2, $3, $4, $5, 'from_device', $6, $7)
+         RETURNING id, created_at`,
+        [orgId, req.device.id, mime, durationMs, req.body, lat, lng]
+      );
+      const voice = rows[0];
+
+      if (hasFix) {
+        await query(
+          `UPDATE guardian_devices SET last_lat = $2, last_lng = $3, last_seen = NOW(), updated_at = NOW() WHERE id = $1`,
+          [req.device.id, qLat, qLng]
+        ).catch(e => logger.warn(`voice-message position update failed: ${e.message}`));
+      }
+
+      if (orgId) {
+        publish(`org#${orgId}`, {
+          type: 'guardian_voice_message',
+          device_id: req.device.id,
+          device_name: req.device.name,
+          voice_id: voice.id,
+          duration_ms: durationMs,
+          created_at: voice.created_at,
+          lat, lng,
+        }).catch(e => logger.warn(`Centrifugo publish failed: ${e.message}`));
+      }
+
+      logger.info(`Voice note received: device=${req.device.id} voice=${voice.id} bytes=${req.body.length}`);
+      res.status(201).json({ data: { voice_id: voice.id, status: 'received' } });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 /**
  * POST /api/v1/guardian/location
@@ -777,12 +1348,13 @@ router.post('/location', deviceAuth, locationLimiter, async (req, res, next) => 
     await query(
       `UPDATE guardian_devices
        SET last_lat = $2, last_lng = $3, last_speed = $4,
-           last_seen = NOW(), updated_at = NOW()
+           last_seen = NOW(), last_fix_at = NOW(), updated_at = NOW()
        WHERE id = $1`,
       [deviceId, lat, lng, speed ?? null]
     );
 
-    publish('device:location', {
+    const locationPayload = {
+      type: 'location',
       device_id: deviceId,
       name: req.device.name,
       lat,
@@ -792,13 +1364,57 @@ router.post('/location', deviceAuth, locationLimiter, async (req, res, next) => 
       speed: speed ?? null,
       accuracy: accuracy ?? null,
       timestamp: result.rows[0].timestamp,
-    });
+    };
+    if (req.device.org_id) {
+      publish(`org#${req.device.org_id}`, locationPayload);
+    } else {
+      publish('device:location', locationPayload);
+    }
 
     res.json({ ok: true });
   } catch (err) {
     next(err);
   }
 });
+
+// Auto-burst on panic: the instant an SOS fires, silently capture imagery from
+// both lenses so dispatch has a located photo of the scene the moment the alert
+// lands — no operator action, no waiting. Reuses the standard capture_photo
+// pipeline (signed command → FCM push + heartbeat/poll claim → covert capture →
+// R2 upload → located pin in Surveillance). Fire-and-forget: a failure here must
+// never delay or break the panic response, so every step is guarded.
+const PANIC_BURST_LENSES = ['back', 'front'];
+async function autoBurstOnPanic(device, orgId) {
+  const ttl = 6;
+  for (const camera of PANIC_BURST_LENSES) {
+    try {
+      const payload = { camera, reason: 'panic' };
+      // ttl bound twice ($5/$6): the same placeholder inferred as both the
+      // integer ttl_hours column and the double-precision interval multiplier
+      // makes Postgres reject the query — see guardian-ops.js for the full note.
+      const { rows } = await query(
+        `INSERT INTO device_commands (org_id, device_id, command, command_type, status, payload, ttl_hours, issued_by, issued_at, expires_at)
+         VALUES ($1, $2, $3, $3, 'pending', $4, $5, NULL, NOW(), NOW() + ($6 * INTERVAL '1 hour'))
+         RETURNING id, issued_at, expires_at`,
+        [orgId, device.id, 'capture_photo', JSON.stringify(payload), ttl, ttl]
+      );
+      const cmd = rows[0];
+      // Signature is what makes the heartbeat/poll claim (WHERE signature IS NOT
+      // NULL) deliver it; without this the burst would only ever reach the device
+      // via the FCM push below.
+      const signature = signCommand(cmd.id, 'capture_photo', payload, cmd.issued_at, cmd.expires_at);
+      await query(`UPDATE device_commands SET signature = $1 WHERE id = $2`, [signature, cmd.id]);
+      if (orgId) {
+        publish(`org#${orgId}`, { type: 'command:queued', device_id: device.id, command: 'capture_photo', command_id: cmd.id }).catch(() => {});
+      }
+      if (device.fcm_token) {
+        sendCommandPush(device.fcm_token, 'capture_photo', cmd.id, payload).catch(() => {});
+      }
+    } catch (e) {
+      logger.warn(`autoBurstOnPanic failed: device=${device.id} camera=${camera}: ${e.message}`);
+    }
+  }
+}
 
 /**
  * POST /api/v1/guardian/panic
@@ -812,7 +1428,11 @@ router.post('/panic', deviceAuth, requireIdempotencyKey, panicLimiter, async (re
     // event_uuid is optional for backward compatibility; generate one server-side if omitted
     const event_uuid = req.body.event_uuid || uuidv4();
 
-    const validModes = ['silent', 'loud', 'medical', 'security', 'hijack'];
+    // voice_distress: fired by VoiceTriggerService detecting "PAN PAN PAN" —
+    // distinct from the other modes because it means the agent verbally
+    // called out under duress, so the dashboard plays a more urgent siren
+    // for it (see apps/web/src/lib/siren.ts's `mayday` style).
+    const validModes = ['silent', 'loud', 'medical', 'security', 'hijack', 'voice_distress'];
     if (!mode || !validModes.includes(mode)) {
       return res.status(400).json({
         error: `mode is required and must be one of: ${validModes.join(', ')}`,
@@ -822,12 +1442,14 @@ router.post('/panic', deviceAuth, requireIdempotencyKey, panicLimiter, async (re
     const deviceId = req.device.id;
 
     // Step 1: attempt idempotent insert
+    const orgId = req.device.org_id || null;
+
     const insertResult = await query(
-      `INSERT INTO panic_events (event_uuid, device_id, mode, lat, lng, message, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      `INSERT INTO panic_events (event_uuid, device_id, org_id, mode, lat, lng, message, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
        ON CONFLICT (event_uuid) WHERE event_uuid IS NOT NULL DO NOTHING
        RETURNING *`,
-      [event_uuid, deviceId, mode, lat ?? null, lng ?? null, message || null]
+      [event_uuid, deviceId, orgId, mode, lat ?? null, lng ?? null, message || null]
     );
 
     let panicEvent;
@@ -863,18 +1485,38 @@ router.post('/panic', deviceAuth, requireIdempotencyKey, panicLimiter, async (re
     };
 
     if (isNew) {
-      // Mark device panic_active so dashboard shows alert immediately on reload
+      // Mark device panic_active so dashboard shows alert immediately on reload.
+      // A panic that carries coordinates is also the freshest position we have —
+      // fold it into last_lat/last_lng/last_seen, which is all Live Fleet reads.
+      // Otherwise a device whose continuous GPS stream is down shows OFF on the
+      // map at a stale position while its SOS sits in Panic Center with exact
+      // coordinates a few pixels away.
       await query(
-        `UPDATE guardian_devices SET panic_active = true, updated_at = NOW() WHERE id = $1`,
-        [deviceId]
+        `UPDATE guardian_devices
+            SET panic_active = true,
+                updated_at = NOW(),
+                last_lat = COALESCE($2::float8, last_lat),
+                last_lng = COALESCE($3::float8, last_lng),
+                last_seen = CASE WHEN $2::float8 IS NOT NULL AND $3::float8 IS NOT NULL
+                                 THEN NOW() ELSE last_seen END
+          WHERE id = $1`,
+        [deviceId, lat ?? null, lng ?? null]
       );
 
-      publish('device:panic', payload);
-      logger.warn(`PANIC triggered: device=${deviceId} name="${req.device.name}" mode=${mode}`);
+      const panicPublishPayload = { type: 'panic', ...payload };
+      if (orgId) {
+        publish(`org#${orgId}`, panicPublishPayload);
+      } else {
+        publish('device:panic', panicPublishPayload);
+      }
+      logger.warn(`PANIC triggered: device=${deviceId} name="${req.device.name}" mode=${mode} org=${orgId ?? 'unknown'}`);
       // FCM ack to device confirming SOS was received (Task 4.1, fire-and-forget)
       if (req.device.fcm_token) {
         sendPanicAck(req.device.fcm_token, panicEvent.id).catch(() => {});
       }
+      // Auto-burst: get eyes on the scene the instant the SOS lands. Detached so
+      // it never delays the panic response.
+      autoBurstOnPanic(req.device, orgId).catch(e => logger.warn(`autoBurstOnPanic error: ${e.message}`));
     }
 
     res.status(isNew ? 201 : 200).json(payload);
@@ -947,7 +1589,9 @@ router.post('/report', deviceAuth, reportLimiter, async (req, res, next) => {
     }
 
     if (isNew) {
-      publish('device:report', {
+      const reportChannel = req.device.org_id ? `org#${req.device.org_id}` : 'device:report';
+      publish(reportChannel, {
+        type: 'device.report',
         report_id: report.id,
         event_uuid: report.event_uuid,
         device_id: deviceId,
@@ -985,6 +1629,13 @@ router.post('/reports/upload-url', deviceAuth, async (req, res, next) => {
     if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY || !R2_SECRET_KEY || !R2_BUCKET) {
       return res.status(501).json({ error: 'Photo storage not configured on this server' });
     }
+    // R2's native endpoint has no public-read addressing without a configured
+    // public base URL — a URL built without it would never resolve. The APK
+    // already treats 501 here as "fall back to base64" (see docstring above),
+    // so failing fast is strictly safer than handing back a dead public_url.
+    if (!R2_PUBLIC_URL) {
+      return res.status(501).json({ error: 'Photo storage public URL (R2_PUBLIC_URL) not configured on this server' });
+    }
 
     let S3Client, PutObjectCommand, getSignedUrl;
     try {
@@ -1006,7 +1657,7 @@ router.post('/reports/upload-url', deviceAuth, async (req, res, next) => {
       ContentType: 'image/jpeg',
     });
     const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
-    const publicUrl = `${R2_PUBLIC_URL || `https://${R2_BUCKET}.${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`}/${key}`;
+    const publicUrl = `${R2_PUBLIC_URL}/${key}`;
 
     res.json({ upload_url: uploadUrl, public_url: publicUrl, key });
   } catch (err) {
@@ -1031,10 +1682,12 @@ router.post('/ack-command', deviceAuth, async (req, res, next) => {
 
     const deviceId = req.device.id;
 
+    // Accept ACKs for 'sent' (poll-delivered) AND 'pending' (WS-delivered before a
+    // heartbeat marked it 'sent') so realtime command acknowledgements are recorded.
     const updated = await query(
       `UPDATE device_commands
        SET status = $2, result = $3, executed_at = NOW()
-       WHERE id = $1 AND device_id = $4 AND status = 'sent'
+       WHERE id = $1 AND device_id = $4 AND status IN ('sent', 'pending')
        RETURNING id`,
       [command_id, status, cmdResult || null, deviceId]
     );
@@ -1046,7 +1699,8 @@ router.post('/ack-command', deviceAuth, async (req, res, next) => {
         [command_id, deviceId]
       );
       if (existing.rows.length) {
-        return res.status(409).json({ error: 'command_not_in_sent_state' });
+        // Already executed/failed — idempotent success (device may re-ack after dedup).
+        return res.json({ ok: true, already: existing.rows[0].status });
       }
       return res.status(404).json({ error: 'Command not found for this device' });
     }
@@ -1061,7 +1715,90 @@ router.post('/ack-command', deviceAuth, async (req, res, next) => {
   }
 });
 
+/**
+ * GET /api/v1/guardian/whoami
+ * Lightweight identity/backfill endpoint. Lets an already-enrolled agent recover
+ * org_id / officer_id after an update without re-enrolling (P0-2 migration).
+ */
+router.get('/whoami', deviceAuth, async (req, res, next) => {
+  try {
+    const { orgId, officerId } = await resolveOrgOfficer(req.device.id, req.device.name);
+    res.json({
+      device_id: req.device.id,
+      name: req.device.name,
+      org_id: orgId,
+      officer_id: officerId,
+      command_signing_secret: COMMAND_SIGNING_SECRET,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/v1/guardian/panic/cancel
+ * Device-initiated cancellation of its own active SOS (the "TAP TO CANCEL" path).
+ * Resolves the device's unresolved panic events and broadcasts a cancel.
+ */
+router.post('/panic/cancel', deviceAuth, async (req, res, next) => {
+  try {
+    const deviceId = req.device.id;
+    const resolved = await query(
+      `UPDATE panic_events
+       SET resolved_at = NOW()
+       WHERE device_id = $1 AND resolved_at IS NULL
+       RETURNING id`,
+      [deviceId]
+    );
+
+    await query(
+      `UPDATE guardian_devices SET panic_active = false, updated_at = NOW() WHERE id = $1`,
+      [deviceId]
+    );
+
+    const cancelPayload = {
+      type: 'panic_cancel',
+      device_id: deviceId,
+      device_name: req.device.name,
+      cancelled: resolved.rows.map(r => r.id),
+      cancelled_at: new Date().toISOString(),
+    };
+    if (req.device.org_id) {
+      publish(`org#${req.device.org_id}`, cancelPayload);
+    } else {
+      publish('device:panic', cancelPayload);
+    }
+
+    logger.warn(`PANIC cancelled by device=${deviceId} count=${resolved.rows.length}`);
+    res.json({ ok: true, cancelled: resolved.rows.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ─── Admin Routes (JWT required) ──────────────────────────────────────────────
+
+/**
+ * GET /api/v1/guardian/commands
+ * Recent commands across all devices (admin view).
+ */
+router.get('/commands', authenticate, async (req, res, next) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const params = [limit];
+    const result = await query(
+      `SELECT dc.id, dc.device_id, dc.command_type, dc.status,
+              dc.issued_at, dc.executed_at, dc.result,
+              gd.name AS device_name
+       FROM device_commands dc
+       JOIN guardian_devices gd ON gd.id = dc.device_id
+       ORDER BY dc.issued_at DESC
+       LIMIT $1`,
+      params
+    );
+    res.json({ data: result.rows });
+  } catch (err) { next(err); }
+});
 
 /**
  * GET /api/v1/guardian/devices
@@ -1074,6 +1811,10 @@ router.get('/devices', authenticate, async (req, res, next) => {
     const filters = ['gd.deleted_at IS NULL'];
     const params = [];
 
+    if (req.user.org_id) {
+      params.push(req.user.org_id);
+      filters.push(`gd.org_id = $${params.length}`);
+    }
     if (status) {
       params.push(status);
       filters.push(`gd.status = $${params.length}`);
@@ -1101,14 +1842,25 @@ router.get('/devices', authenticate, async (req, res, next) => {
          gd.enrolled_at, gd.created_at,
          h.battery_level, h.battery_charging, h.signal_strength,
          h.network_type, h.storage_free_mb, h.ram_free_mb, h.recorded_at AS health_recorded_at,
-         COALESCE(pc.cnt, 0)::INT AS pending_commands
+         COALESCE(pc.cnt, 0)::INT AS pending_commands,
+         -- The officer<->device link's single source of truth is
+         -- field_officers.device_id (written by enroll auto-link, the Field
+         -- Officers page, and the Guardian LINK button). The old join used
+         -- gd.assignment_id, which none of those paths set — so the officer
+         -- name never showed here even when a device was clearly linked. Also
+         -- surface officer_name/officer_badge/officer_phone under the names the
+         -- Guardian frontend actually reads.
+         fo.name         AS officer_name,
+         fo.badge_number AS officer_badge,
+         fo.phone        AS officer_phone,
+         fo.id           AS officer_id
        FROM guardian_devices gd
        LEFT JOIN LATERAL (
          SELECT battery_level, battery_charging, signal_strength,
                 network_type, storage_free_mb, ram_free_mb, recorded_at
          FROM device_health
          WHERE device_id = gd.id
-         ORDER BY recorded_at DESC
+         ORDER BY (battery_level IS NOT NULL) DESC, recorded_at DESC
          LIMIT 1
        ) h ON true
        LEFT JOIN LATERAL (
@@ -1116,6 +1868,8 @@ router.get('/devices', authenticate, async (req, res, next) => {
          FROM device_commands
          WHERE device_id = gd.id AND status = 'pending'
        ) pc ON true
+       LEFT JOIN field_officers fo ON fo.device_id = gd.id
+         AND (gd.org_id IS NULL OR fo.org_id = gd.org_id)
        WHERE ${filters.join(' AND ')}
        ORDER BY gd.last_seen DESC NULLS LAST, gd.created_at DESC
        LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
@@ -1225,6 +1979,17 @@ router.patch('/devices/:id', authenticate, async (req, res, next) => {
       });
     }
 
+    // When assigning to an officer, verify the officer exists in the same org
+    if (assignment_type === 'officer' && assignment_id) {
+      const officerCheck = await query(
+        `SELECT id FROM field_officers WHERE id = $1 AND (org_id = $2 OR org_id IS NULL)`,
+        [assignment_id, req.user.org_id || null]
+      );
+      if (!officerCheck.rows.length) {
+        return res.status(404).json({ error: 'Field officer not found' });
+      }
+    }
+
     // Detect explicit clear: assignment_type is present in body but falsy (null/empty)
     const clearAssignment = 'assignment_type' in req.body && !assignment_type;
 
@@ -1234,10 +1999,11 @@ router.patch('/devices/:id', authenticate, async (req, res, next) => {
            status          = COALESCE($2, status),
            assignment_type = CASE WHEN $6 THEN NULL ELSE COALESCE($3, assignment_type) END,
            assignment_id   = CASE WHEN $6 THEN NULL ELSE COALESCE($4::UUID, assignment_id) END,
+           org_id          = COALESCE(org_id, $7::UUID),
            updated_at      = NOW()
        WHERE id = $5 AND deleted_at IS NULL
        RETURNING *`,
-      [name || null, status || null, assignment_type || null, assignment_id || null, req.params.id, clearAssignment]
+      [name || null, status || null, assignment_type || null, assignment_id || null, req.params.id, clearAssignment, req.user.org_id || null]
     );
 
     if (!result.rows.length) {
@@ -1362,7 +2128,9 @@ router.post('/devices/:id/command', authenticate, requireIdempotencyKey, command
 
     auditLog('admin', req.user.id, 'command_issued', 'device', req.params.id, { command_type, payload, nonce }, req.ip);
 
-    publish('device:command', { device_id: req.params.id, command_type, payload: payload || null, command_id: cmd.id, issued_at: cmd.issued_at, signature });
+    // expires_at MUST be included so the device can reconstruct the signed message
+    // (signCommand binds expires_at) and verify the signature over the WS path.
+    publish(`org#${req.user.org_id}`, { type: 'device.command', device_id: req.params.id, command_type, payload: payload || null, command_id: cmd.id, issued_at: cmd.issued_at, expires_at: cmd.expires_at, signature });
 
     // T5.3: record issued event
     query(`INSERT INTO device_command_events (command_id, status) VALUES ($1, 'issued')`, [cmd.id]).catch(() => {});
@@ -1476,6 +2244,10 @@ router.get('/panic', authenticate, async (req, res, next) => {
     const filters = [];
     const params = [];
 
+    // Org scoping: prefer pe.org_id; fall back to device's org_id for older rows
+    params.push(req.user.org_id);
+    filters.push(`(pe.org_id = $${params.length} OR gd.org_id = $${params.length})`);
+
     if (active_only === 'true') {
       filters.push('pe.resolved_at IS NULL');
     }
@@ -1492,7 +2264,7 @@ router.get('/panic', authenticate, async (req, res, next) => {
     const limitIdx = params.length - 1;
     const offsetIdx = params.length;
 
-    const whereClause = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+    const whereClause = `WHERE ${filters.join(' AND ')}`;
 
     const result = await query(
       `SELECT pe.*, gd.name AS device_name, gd.model AS device_model
@@ -1505,7 +2277,7 @@ router.get('/panic', authenticate, async (req, res, next) => {
     );
 
     const total = await query(
-      `SELECT COUNT(*) FROM panic_events pe ${whereClause}`,
+      `SELECT COUNT(*) FROM panic_events pe JOIN guardian_devices gd ON gd.id = pe.device_id ${whereClause}`,
       params.slice(0, -2)
     );
 
@@ -1525,17 +2297,70 @@ router.get('/panic', authenticate, async (req, res, next) => {
 });
 
 /**
- * PATCH /api/v1/guardian/panic/:id/resolve
- * Resolve a panic event.
+ * PATCH /api/v1/guardian/panic/:id/ack
+ * Admin acknowledges an active panic — signals "someone is on it" without
+ * resolving it, so other dashboards stop treating it as unattended and the
+ * escalation job stops paging further contacts.
  */
-router.patch('/panic/:id/resolve', authenticate, async (req, res, next) => {
+router.patch('/panic/:id/ack', authenticate, async (req, res, next) => {
   try {
     const result = await query(
       `UPDATE panic_events
-       SET resolved_at = NOW(), resolved_by = $2
-       WHERE id = $1 AND resolved_at IS NULL
-       RETURNING id, device_id, resolved_at`,
+       SET acknowledged_at = NOW(), acknowledged_by = $2
+       WHERE id = $1 AND resolved_at IS NULL AND acknowledged_at IS NULL
+       RETURNING id, device_id, org_id, mode, acknowledged_at`,
       [req.params.id, req.user.id]
+    );
+
+    if (!result.rows.length) {
+      const existing = await query(`SELECT id, acknowledged_at, resolved_at FROM panic_events WHERE id = $1`, [req.params.id]);
+      if (!existing.rows.length) return res.status(404).json({ error: 'Panic event not found' });
+      if (existing.rows[0].resolved_at) return res.status(409).json({ error: 'Panic event already resolved' });
+      return res.json({ data: existing.rows[0] }); // already acknowledged — idempotent
+    }
+
+    const panicEvent = result.rows[0];
+    const acker = await query(`SELECT name FROM users WHERE id = $1`, [req.user.id]);
+
+    const ackPayload = {
+      type: 'panic_ack',
+      panic_id: panicEvent.id,
+      device_id: panicEvent.device_id,
+      acknowledged_at: panicEvent.acknowledged_at,
+      acknowledged_by: req.user.id,
+      acknowledged_by_name: acker.rows[0]?.name ?? null,
+    };
+    if (panicEvent.org_id) publish(`org#${panicEvent.org_id}`, ackPayload);
+
+    auditLog('admin', req.user.id, 'panic_acknowledged', 'panic_event', req.params.id, {}, req.ip);
+    logger.info(`Panic acknowledged: ${req.params.id} by user=${req.user.id}`);
+
+    res.json({ data: panicEvent });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * PATCH /api/v1/guardian/panic/:id/resolve
+ * Resolve a panic event. Body: { resolution_note?, reason_code? }
+ */
+router.patch('/panic/:id/resolve', authenticate, async (req, res, next) => {
+  try {
+    const { resolution_note, reason_code } = req.body || {};
+    const validReasonCodes = ['false_alarm', 'resolved_safe', 'escalated_to_authorities', 'training_test', 'other'];
+    if (reason_code && !validReasonCodes.includes(reason_code)) {
+      return res.status(400).json({ error: `reason_code must be one of: ${validReasonCodes.join(', ')}` });
+    }
+
+    const result = await query(
+      `UPDATE panic_events
+       SET resolved_at = NOW(), resolved_by = $2,
+           resolution_note = COALESCE($3, resolution_note),
+           reason_code = COALESCE($4, reason_code)
+       WHERE id = $1 AND resolved_at IS NULL
+       RETURNING id, device_id, org_id, resolved_at, resolution_note, reason_code`,
+      [req.params.id, req.user.id, resolution_note || null, reason_code || null]
     );
 
     if (!result.rows.length) {
@@ -1555,7 +2380,20 @@ router.patch('/panic/:id/resolve', authenticate, async (req, res, next) => {
       [panicEvent.device_id]
     );
 
-    auditLog('admin', req.user.id, 'panic_resolved', 'panic_event', req.params.id, {}, req.ip);
+    // Broadcast the resolution — previously only device-initiated cancels did
+    // this, so other connected dashboards relied on a 15-60s poll to notice
+    // an admin had resolved a panic elsewhere.
+    const resolvePayload = {
+      type: 'panic_resolved',
+      panic_id: panicEvent.id,
+      device_id: panicEvent.device_id,
+      resolved_at: panicEvent.resolved_at,
+      resolved_by: req.user.id,
+      reason_code: panicEvent.reason_code,
+    };
+    if (panicEvent.org_id) publish(`org#${panicEvent.org_id}`, resolvePayload);
+
+    auditLog('admin', req.user.id, 'panic_resolved', 'panic_event', req.params.id, { resolution_note, reason_code }, req.ip);
     logger.info(`Panic resolved: ${req.params.id} by user=${req.user.id}`);
 
     res.json({ data: panicEvent });
@@ -1643,6 +2481,176 @@ router.post('/checkin', deviceAuth, async (req, res, next) => {
       [req.device.id]
     );
     res.json({ ok: true, checkin_at: new Date().toISOString() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Dispatch-requested photo capture ("remote eyes") ────────────────────────
+// Lightweight substitute for the old Knox remote screen/control: a dispatcher
+// issues a capture_photo command, the device captures a still and uploads it to
+// R2 via the presigned PUT below, then reports the public URL. Device-token
+// auth only — unlike the CFO photo pipeline this carries no convoy/truck
+// context, it's a direct response to the command.
+
+/** POST /api/v1/guardian/capture-photo-url — presigned R2 PUT for one capture. */
+router.post('/capture-photo-url', deviceAuth, async (req, res, next) => {
+  try {
+    const { R2_ACCOUNT_ID, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET, R2_PUBLIC_URL } = process.env;
+    if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY || !R2_SECRET_KEY || !R2_BUCKET) {
+      return res.status(501).json({ error: 'Photo storage not configured on this server' });
+    }
+    if (!R2_PUBLIC_URL) {
+      return res.status(501).json({ error: 'Photo storage public URL (R2_PUBLIC_URL) not configured' });
+    }
+    let S3Client, PutObjectCommand, getSignedUrl;
+    try {
+      ({ S3Client, PutObjectCommand } = require('@aws-sdk/client-s3'));
+      ({ getSignedUrl } = require('@aws-sdk/s3-request-presigner'));
+    } catch {
+      return res.status(501).json({ error: 'Photo storage SDK not installed' });
+    }
+    const key = `captures/${req.device.id}/${uuidv4()}.jpg`;
+    const s3 = new S3Client({
+      region: 'auto',
+      endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      credentials: { accessKeyId: R2_ACCESS_KEY, secretAccessKey: R2_SECRET_KEY },
+    });
+    const command = new PutObjectCommand({ Bucket: R2_BUCKET, Key: key, ContentType: 'image/jpeg' });
+    const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
+    res.json({ upload_url: uploadUrl, public_url: `${R2_PUBLIC_URL}/${key}`, key });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** POST /api/v1/guardian/capture-photo — device reports a completed capture.
+ *  Persisted org-scoped (explicit org_id, no RLS — same rationale as
+ *  guardian_voice_messages) and published to the org channel so Live Fleet
+ *  surfaces it live. */
+router.post('/capture-photo', deviceAuth, async (req, res, next) => {
+  try {
+    const { public_url, key, command_id } = req.body;
+    if (!public_url || typeof public_url !== 'string') {
+      return res.status(400).json({ error: 'public_url is required' });
+    }
+    const orgId = req.device.org_id || null;
+    // Which lens this shot came from — a capture_photo command fires both, so
+    // this is what lets dispatch tell the rear (scene) frame from the front
+    // (selfie) one. Anything unexpected is stored as NULL rather than trusted.
+    const camera = (req.body.camera === 'front' || req.body.camera === 'back') ? req.body.camera : null;
+
+    // Where the photo was taken. Prefer the device's live fix at capture time
+    // (body lat/lng), fall back to its last known position so the pin still lands
+    // on a real place. A fresh fix also refreshes the device's stored position.
+    const bLat = parseFloat(req.body.lat), bLng = parseFloat(req.body.lng);
+    const hasFix = Number.isFinite(bLat) && Number.isFinite(bLng) && Math.abs(bLat) <= 90 && Math.abs(bLng) <= 180;
+    const lat = hasFix ? bLat : (req.device.last_lat != null ? parseFloat(req.device.last_lat) : null);
+    const lng = hasFix ? bLng : (req.device.last_lng != null ? parseFloat(req.device.last_lng) : null);
+
+    const ins = await query(
+      `INSERT INTO guardian_captures (org_id, device_id, command_id, url, storage_key, lat, lng, camera)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, created_at`,
+      [orgId, req.device.id, command_id != null ? String(command_id) : null, public_url, key || null, lat, lng, camera]
+    );
+    const row = ins.rows[0];
+
+    if (hasFix) {
+      await query(
+        `UPDATE guardian_devices SET last_lat = $2, last_lng = $3, last_seen = NOW(), updated_at = NOW() WHERE id = $1`,
+        [req.device.id, bLat, bLng]
+      ).catch(e => logger.warn(`capture-photo position update failed: ${e.message}`));
+    }
+
+    const payload = {
+      type: 'guardian_capture_photo',
+      device_id: req.device.id,
+      device_name: req.device.name,
+      capture_id: row.id,
+      url: public_url,
+      created_at: row.created_at,
+      lat, lng, camera,
+    };
+    if (orgId) publish(`org#${orgId}`, payload); else publish('device:capture', payload);
+    // Auto-tag the photo (people / weapons / vehicles / plates) the moment it
+    // lands. Detached — vision latency must not hold up the device's upload ack.
+    captureVision.analyzeCaptureAndStore(row.id, orgId, public_url)
+      .catch(e => logger.warn(`capture auto-analyze error: ${e.message}`));
+    res.status(201).json({ id: row.id, created_at: row.created_at });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Dead Man's Switch Admin ─────────────────────────────────────────────────
+
+/**
+ * GET /api/v1/guardian/devices/:id/dms
+ * Return the DMS configuration for a device.
+ */
+router.get('/devices/:id/dms', authenticate, async (req, res, next) => {
+  try {
+    const result = await query(
+      `SELECT id, dms_enabled, dms_timeout_minutes, dms_suspended_until, last_checkin_at
+       FROM guardian_devices
+       WHERE id = $1 AND deleted_at IS NULL`,
+      [req.params.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Device not found' });
+    res.json({ data: result.rows[0] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * PATCH /api/v1/guardian/devices/:id/dms
+ * Update DMS configuration for a device.
+ * Body: { dms_enabled?, dms_timeout_minutes?, suspend_minutes? }
+ * suspend_minutes > 0 sets dms_suspended_until = NOW() + interval; 0 clears it.
+ */
+router.patch('/devices/:id/dms', authenticate, authorize('admin', 'dispatcher'), async (req, res, next) => {
+  try {
+    const { dms_enabled, dms_timeout_minutes, suspend_minutes } = req.body;
+    const sets = [];
+    const values = [req.params.id];
+    let idx = 2;
+
+    if (typeof dms_enabled === 'boolean') {
+      sets.push(`dms_enabled = $${idx++}`);
+      values.push(dms_enabled);
+      // Reset the check-in baseline when turning DMS on, so a stale
+      // last_checkin_at from an earlier session can't make the monitor fire an
+      // immediate timeout before the device has had a chance to check in.
+      if (dms_enabled) sets.push('last_checkin_at = NOW()');
+    }
+    if (dms_timeout_minutes !== undefined) {
+      if (dms_timeout_minutes !== null && (dms_timeout_minutes < 1 || dms_timeout_minutes > 1440)) {
+        return res.status(400).json({ error: 'dms_timeout_minutes must be 1–1440' });
+      }
+      sets.push(`dms_timeout_minutes = $${idx++}`);
+      values.push(dms_timeout_minutes);
+    }
+    if (suspend_minutes !== undefined) {
+      if (suspend_minutes === 0 || suspend_minutes === null) {
+        sets.push(`dms_suspended_until = NULL`);
+      } else {
+        sets.push(`dms_suspended_until = NOW() + ($${idx++} * INTERVAL '1 minute')`);
+        values.push(suspend_minutes);
+      }
+    }
+
+    if (sets.length === 0) return res.status(400).json({ error: 'No fields to update' });
+    sets.push('updated_at = NOW()');
+
+    const result = await query(
+      `UPDATE guardian_devices SET ${sets.join(', ')}
+       WHERE id = $1 AND deleted_at IS NULL
+       RETURNING id, dms_enabled, dms_timeout_minutes, dms_suspended_until, last_checkin_at`,
+      values
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Device not found' });
+    res.json({ data: result.rows[0] });
   } catch (err) {
     next(err);
   }
@@ -1848,9 +2856,18 @@ router.patch('/config', authenticate, async (req, res, next) => {
   try {
     const { key, value_int, value_text } = req.body;
 
-    const allowlist = ['dms_default_interval_minutes', 'dms_max_interval_minutes', 'min_apk_version_code', 'audit_log_archive_enabled'];
+    const allowlist = [
+      'dms_default_interval_minutes', 'dms_max_interval_minutes', 'min_apk_version_code',
+      'audit_log_archive_enabled', 'dispatch_phone_number',
+    ];
     if (!key || !allowlist.includes(key)) {
       return res.status(400).json({ error: `key must be one of: ${allowlist.join(', ')}` });
+    }
+    // Guardian's Home "Call Dispatch" button dials this verbatim via
+    // ACTION_DIAL — reject anything that isn't plausibly a phone number so a
+    // typo here can't silently become an unreachable/garbage dial target.
+    if (key === 'dispatch_phone_number' && value_text && !/^\+?[0-9 ()-]{5,20}$/.test(value_text)) {
+      return res.status(400).json({ error: 'dispatch_phone_number must look like a phone number (digits, spaces, +, -, () only)' });
     }
 
     const result = await query(
@@ -1931,35 +2948,236 @@ router.get('/convoy-codes', authenticate, async (req, res, next) => {
 });
 
 // ─── APK Download ─────────────────────────────────────────────────────────────
-// Serve the Guardian Agent APK. Configure via env:
-//   APK_FILE_PATH  — absolute path to a pre-built APK on the server
-//   APK_REDIRECT_URL — URL to redirect to (e.g. a GitHub release asset)
+// Serve the current Guardian APK. The source of truth is the LATEST GitHub
+// release asset (app-debug.apk), resolved live from the public releases API and
+// streamed through the backend. This is deliberately NOT driven by
+// APK_REDIRECT_URL: that env var had gone stale on Railway and was serving an
+// ancient pre-rewrite build ("Guardian Agent" / com.fleetops.guardian) long
+// after the app became "Sonalit Guardian" — resolving the latest release each
+// time can never drift. APK_REDIRECT_URL / a local file remain as fallbacks.
+//   APK_RELEASE_REPO — owner/repo to read releases from (default fleetsatpro/Sonalit)
+//   APK_REDIRECT_URL — explicit fallback URL if the release lookup fails
+//   APK_FILE_PATH    — local file fallback
 
-router.get('/apk/download', (req, res) => {
+let _latestApk = { info: null, at: 0 };
+async function resolveLatestApkInfo() {
+  // Cache 10 min so a burst of downloads makes at most ~6 unauthenticated
+  // GitHub API calls/hour (well under the 60/hr limit).
+  if (_latestApk.info && Date.now() - _latestApk.at < 600_000) return _latestApk.info;
+  const repo = process.env.APK_RELEASE_REPO || 'fleetsatpro/Sonalit';
+  // Authenticate the release lookup when a token is present — the unauthenticated
+  // GitHub API is 60 req/hr per IP (shared on Railway), which runs out and makes
+  // the version chips blank; a token raises it to 5000/hr.
+  const ghHeaders = { 'User-Agent': 'Sonalit-Guardian', 'Accept': 'application/vnd.github+json' };
+  const ghToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  if (ghToken) ghHeaders.Authorization = `Bearer ${ghToken}`;
+  const resp = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, { headers: ghHeaders });
+  if (!resp.ok) throw new Error(`releases API HTTP ${resp.status}`);
+  const rel = await resp.json();
+  const asset = (rel.assets || []).find(a => a.name === 'app-debug.apk') || (rel.assets || [])[0];
+  if (!asset || !asset.url) throw new Error('no APK asset on latest release');
+  _latestApk = {
+    info: {
+      version: rel.tag_name || rel.name || null,
+      name: rel.name || null,
+      published_at: rel.published_at || null,
+      notes: rel.body || null,
+      size: asset.size || null,
+      // Public browser URL — works only for public repos.
+      url: asset.browser_download_url || null,
+      // API asset URL — with a token this streams even for a PRIVATE repo.
+      apiUrl: asset.url,
+    },
+    at: Date.now(),
+  };
+  return _latestApk.info;
+}
+async function resolveLatestApkUrl() { return (await resolveLatestApkInfo()).url; }
+
+// Streams a release asset through the authenticated GitHub API. This is the only
+// method that works for a PRIVATE repo — browser_download_url / the stable
+// /releases/latest/download URL 404 without a browser session, but the asset API
+// honours a Bearer token. The API 302s to a short-lived signed CDN URL, which
+// must be fetched WITHOUT the Authorization header (the CDN rejects it).
+async function streamGithubAsset(res, apiAssetUrl) {
+  const ghToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  if (!ghToken) throw new Error('no GitHub token for authenticated asset');
+  const meta = await fetch(apiAssetUrl, {
+    headers: {
+      'User-Agent': 'Sonalit-Guardian',
+      Accept: 'application/octet-stream',
+      Authorization: `Bearer ${ghToken}`,
+    },
+    redirect: 'manual',
+  });
+  let upstream;
+  if (meta.status >= 300 && meta.status < 400) {
+    const loc = meta.headers.get('location');
+    if (!loc) throw new Error('asset redirect had no location');
+    upstream = await fetch(loc, { headers: { 'User-Agent': 'Sonalit-Guardian' }, redirect: 'follow' });
+  } else if (meta.ok && meta.body) {
+    upstream = meta;
+  } else {
+    throw new Error(`asset API HTTP ${meta.status}`);
+  }
+  if (!upstream.ok || !upstream.body) throw new Error(`asset upstream HTTP ${upstream.status}`);
+  res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+  res.setHeader('Content-Disposition', 'attachment; filename="SonalitGuardian.apk"');
+  const len = upstream.headers.get('content-length');
+  if (len) res.setHeader('Content-Length', len);
+  res.setHeader('Cache-Control', 'no-store');
+  require('stream').Readable.fromWeb(upstream.body).pipe(res);
+}
+
+// The stable "latest release" asset URL. GitHub 302-redirects it to the current
+// release's asset, served from its release CDN — this is NOT the api.github.com
+// rate limit, so it keeps working when the API is throttled. Needs no token.
+function githubLatestApkUrl() {
+  const repo = process.env.APK_RELEASE_REPO || 'fleetsatpro/Sonalit';
+  const asset = process.env.APK_ASSET_NAME || 'app-debug.apk';
+  return `https://github.com/${repo}/releases/latest/download/${asset}`;
+}
+
+// Streams an upstream APK URL to the client with an exact Content-Length (a bare
+// 302 through GitHub's redirect chain makes mobile browsers hang at 100%).
+async function streamApk(res, url) {
+  const upstream = await fetch(url, { headers: { 'User-Agent': 'Sonalit-Guardian' }, redirect: 'follow' });
+  if (!upstream.ok || !upstream.body) throw new Error(`upstream HTTP ${upstream.status}`);
+  res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+  res.setHeader('Content-Disposition', 'attachment; filename="SonalitGuardian.apk"');
+  const len = upstream.headers.get('content-length');
+  if (len) res.setHeader('Content-Length', len);
+  res.setHeader('Cache-Control', 'no-store');
+  require('stream').Readable.fromWeb(upstream.body).pipe(res);
+}
+
+// Public metadata for the download site — current version, release date, size.
+// No auth: the download page reads it to show what's on offer. Falls back to a
+// minimal shape so the page still renders (and the download still works) when
+// the release API is briefly unreachable.
+router.get('/apk/info', async (req, res) => {
+  // ?probe=1 — diagnose which APK source is reachable from this server (status
+  // codes only, no secrets). Turns the download 503 into a concrete cause.
+  if (req.query.probe) {
+    const repo = process.env.APK_RELEASE_REPO || 'fleetsatpro/Sonalit';
+    const probe = async (label, url, opts) => {
+      const t0 = Date.now();
+      try {
+        const r = await fetch(url, { redirect: 'manual', headers: { 'User-Agent': 'Sonalit-Guardian' }, ...opts });
+        return { label, status: r.status, ms: Date.now() - t0, location: (r.headers.get('location') || '').slice(0, 120) || undefined };
+      } catch (e) { return { label, error: (e.message || String(e)).slice(0, 120), ms: Date.now() - t0 }; }
+    };
+    const r2Set = !!process.env.R2_PUBLIC_URL;
+    const ghToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+    // Authenticated API probe — mirrors the real download path for a private repo.
+    const githubAuth = ghToken
+      ? probe('github_api_auth', `https://api.github.com/repos/${repo}/releases/latest`, { method: 'GET', headers: { 'User-Agent': 'Sonalit-Guardian', Accept: 'application/vnd.github+json', Authorization: `Bearer ${ghToken}` } })
+      : Promise.resolve({ label: 'github_api_auth', skipped: 'GITHUB_TOKEN unset' });
+    const [githubStable, githubApi, githubApiAuth, r2] = await Promise.all([
+      probe('github_stable', `https://github.com/${repo}/releases/latest/download/${process.env.APK_ASSET_NAME || 'app-debug.apk'}`, { method: 'HEAD' }),
+      probe('github_api', `https://api.github.com/repos/${repo}/releases/latest`, { method: 'GET', headers: { 'User-Agent': 'Sonalit-Guardian', Accept: 'application/vnd.github+json' } }),
+      githubAuth,
+      r2Set ? probe('r2', `${process.env.R2_PUBLIC_URL.replace(/\/$/, '')}/apk/sonalit-guardian.apk`, { method: 'HEAD' }) : Promise.resolve({ label: 'r2', skipped: 'R2_PUBLIC_URL unset' }),
+    ]);
+    return res.json({ probe: { r2_public_url_set: r2Set, apk_redirect_url_set: !!process.env.APK_REDIRECT_URL, github_token_set: !!ghToken, sources: [githubStable, githubApi, githubApiAuth, r2] } });
+  }
+  try {
+    const i = await resolveLatestApkInfo();
+    res.set('Cache-Control', 'public, max-age=300');
+    res.json({ version: i.version, name: i.name, published_at: i.published_at, size: i.size, notes: i.notes });
+  } catch (err) {
+    logger.warn(`APK info unavailable (${err.message})`);
+    // Best-effort version from the stable redirect (no API, no rate limit): the
+    // releases/latest page 302s to /releases/tag/guardian-vN.
+    let version = null;
+    try {
+      const repo = process.env.APK_RELEASE_REPO || 'fleetsatpro/Sonalit';
+      const r = await fetch(`https://github.com/${repo}/releases/latest`, {
+        method: 'HEAD', redirect: 'manual', headers: { 'User-Agent': 'Sonalit-Guardian' },
+      });
+      const loc = r.headers.get('location') || '';
+      const m = loc.match(/\/tag\/([^/?#]+)/);
+      if (m) version = decodeURIComponent(m[1]);
+    } catch { /* leave version null */ }
+    res.status(200).json({ version, name: null, published_at: null, size: null, notes: null });
+  }
+});
+
+router.get('/apk/download', async (req, res) => {
   const fs = require('fs');
   const path = require('path');
 
-  // Option 1: redirect to an external URL (GitHub release, S3, etc.)
-  if (process.env.APK_REDIRECT_URL) {
-    return res.redirect(302, process.env.APK_REDIRECT_URL);
+  // Preferred when a GitHub token is configured: stream the release asset via the
+  // authenticated GitHub API. This is the ONLY source that works for a PRIVATE
+  // repo (the public stable/browser URLs 404 without a browser session), and it
+  // needs nothing but GITHUB_TOKEN — no R2, no Railway. The build already uploads
+  // app-debug.apk to every release, so this is always the latest.
+  if (process.env.GITHUB_TOKEN || process.env.GH_TOKEN) {
+    try {
+      const info = await resolveLatestApkInfo();
+      if (info.apiUrl) return await streamGithubAsset(res, info.apiUrl);
+    } catch (err) {
+      if (res.headersSent) return;
+      logger.warn(`APK authenticated GitHub asset stream failed (${err.message}) — trying other sources`);
+    }
   }
 
-  // Option 2: serve a local file
+  // Primary: the stable R2 object the build publishes on every main push. It's
+  // always the latest APK, CDN-backed, and — unlike the GitHub release API —
+  // has no rate limit, so this is the reliable path.
+  if (process.env.R2_PUBLIC_URL) {
+    const r2Url = `${process.env.R2_PUBLIC_URL.replace(/\/$/, '')}/apk/sonalit-guardian.apk`;
+    try {
+      return await streamApk(res, r2Url);
+    } catch (err) {
+      if (res.headersSent) return;
+      logger.warn(`APK R2 stream failed (${err.message}) — trying the GitHub release`);
+    }
+  }
+
+  // Fallback 1: the stable GitHub "latest release" download URL. Served from the
+  // release CDN (not the rate-limited api.github.com), so this works even when
+  // the API is throttled — which is the common failure mode.
+  try {
+    return await streamApk(res, githubLatestApkUrl());
+  } catch (err) {
+    if (res.headersSent) return;
+    logger.warn(`APK latest-download stream failed (${err.message}) — trying the release API`);
+  }
+
+  // Fallback 2: resolve the asset via the releases API (needs the API, which may
+  // be rate-limited, but returns the exact asset when it works).
+  try {
+    return await streamApk(res, await resolveLatestApkUrl());
+  } catch (err) {
+    if (res.headersSent) return; // stream already started, nothing to fall back to
+    logger.warn(`APK latest-release resolve/stream failed (${err.message}) — trying fallbacks`);
+  }
+
+  // Fallback 3: an explicitly configured URL.
+  if (process.env.APK_REDIRECT_URL) {
+    try {
+      return await streamApk(res, process.env.APK_REDIRECT_URL);
+    } catch (err) {
+      if (res.headersSent) return;
+      logger.warn(`APK redirect-url stream failed (${err.message}) — falling back`);
+    }
+  }
+
+  // Fallback 4: a local file.
   const apkPath = process.env.APK_FILE_PATH
     || path.join(__dirname, '../../static/guardian-agent.apk');
 
   if (!fs.existsSync(apkPath)) {
-    return res.status(404).json({
-      error: 'APK not yet built',
-      message: 'The Guardian Agent APK must be compiled before it can be downloaded. Build it with: cd guardian-agent && ./gradlew assembleDebug',
-      apk_path: apkPath,
-      build_instructions: 'https://developer.android.com/studio',
+    return res.status(503).json({
+      error: 'APK temporarily unavailable',
+      message: 'Could not resolve the latest Guardian release. Please try again shortly.',
     });
   }
 
   const stat = fs.statSync(apkPath);
   res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-  res.setHeader('Content-Disposition', 'attachment; filename="FleetOps-Guardian.apk"');
+  res.setHeader('Content-Disposition', 'attachment; filename="SonalitGuardian.apk"');
   res.setHeader('Content-Length', stat.size);
   fs.createReadStream(apkPath).pipe(res);
 });
@@ -1972,82 +3190,207 @@ router.get('/apk/download', (req, res) => {
  * Body: { points: [{lat, lng, altitude, heading, speed, accuracy, timestamp}] }
  * Max points controlled by guardian_config.batch_location_max_points (default 500).
  */
+// Shared by /location/batch and the legacy /api/v1/telemetry/batch alias
+// (older shipped Guardian app builds call that path with a differently
+// shaped body — see routes/telemetry.js). Both normalize to this same
+// {lat, lng, altitude, heading, speed, accuracy, timestamp} point shape
+// before calling in.
+async function processLocationBatch(device, points) {
+  const deviceId = device.id;
+  const cfgRow = await query(
+    `SELECT value_int FROM guardian_config WHERE key = 'batch_location_max_points'`
+  );
+  const maxPoints = cfgRow.rows[0]?.value_int ?? 500;
+  if (points.length > maxPoints) {
+    const err = new Error(`Too many points. Max allowed: ${maxPoints}`);
+    err.statusCode = 400;
+    throw err;
+  }
+
+  let accepted = 0;
+  let lastLat = null;
+  let lastLng = null;
+  let lastSpeed = null;
+  let lastHeading = null;
+  let lastTimestamp = null;
+
+  // Bulk insert using unnest for efficiency
+  const lats      = [];
+  const lngs      = [];
+  const alts      = [];
+  const headings  = [];
+  const speeds    = [];
+  const accuracies= [];
+  const timestamps= [];
+
+  for (const pt of points) {
+    if (pt.lat == null || pt.lng == null) continue;
+    lats.push(pt.lat);
+    lngs.push(pt.lng);
+    alts.push(pt.altitude ?? null);
+    headings.push(pt.heading ?? null);
+    speeds.push(pt.speed ?? null);
+    accuracies.push(pt.accuracy ?? null);
+    timestamps.push(pt.timestamp || null);
+    lastLat = pt.lat;
+    lastLng = pt.lng;
+    lastSpeed = pt.speed ?? null;
+    lastHeading = pt.heading ?? null;
+    lastTimestamp = pt.timestamp || null;
+    accepted++;
+  }
+
+  if (accepted === 0) {
+    const err = new Error('No valid points (lat/lng required)');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  await query(
+    `INSERT INTO device_locations (device_id, lat, lng, altitude, heading, speed, accuracy, timestamp)
+     SELECT $1, unnest($2::decimal[]), unnest($3::decimal[]),
+            unnest($4::decimal[]), unnest($5::decimal[]),
+            unnest($6::decimal[]), unnest($7::decimal[]),
+            unnest($8::timestamptz[])`,
+    [deviceId, lats, lngs, alts, headings, speeds, accuracies, timestamps]
+  );
+
+  // Update last known position to the last point in the batch
+  if (lastLat != null) {
+    await query(
+      `UPDATE guardian_devices
+       SET last_lat = $2, last_lng = $3, last_speed = $4, last_seen = NOW(), updated_at = NOW()
+       WHERE id = $1`,
+      [deviceId, lastLat, lastLng, lastSpeed]
+    );
+  }
+
+  // Publish the newest point to the live map. The single /location route has
+  // always done this, but batches never did — so devices that upload via the
+  // batch path (the Guardian app's only path) moved on the dashboard solely
+  // on a page reload, never live. Same payload shape as /location.
+  if (lastLat != null) {
+    const locationPayload = {
+      type: 'location',
+      device_id: deviceId,
+      name: device.name ?? null,
+      lat: lastLat,
+      lng: lastLng,
+      altitude: null,
+      heading: lastHeading,
+      speed: lastSpeed,
+      accuracy: null,
+      timestamp: lastTimestamp || new Date().toISOString(),
+    };
+    if (device.org_id) {
+      publish(`org#${device.org_id}`, locationPayload);
+    } else {
+      publish('device:location', locationPayload);
+    }
+  }
+
+  // If this device is rostered on an active convoy, mirror the GPS batch into
+  // convoy_waypoints so the convoy report's live route track populates straight
+  // from the Guardian Agent — the same data the (now folded-in) Guardian Convoy
+  // app's /track endpoint used to write. convoy_cfos.guardian_device_id is the
+  // device→convoy link. Best-effort: a failure here must never break the device
+  // location batch, which drives the live map.
+  try {
+    const convoyRow = await query(
+      `SELECT cc.convoy_id
+         FROM convoy_cfos cc
+         JOIN convoys c ON c.id = cc.convoy_id
+        WHERE cc.guardian_device_id = $1
+          AND c.status IN ('active', 'completing')
+          AND c.deleted_at IS NULL
+        ORDER BY c.start_date DESC
+        LIMIT 1`,
+      [deviceId]
+    );
+    const convoyId = convoyRow.rows[0]?.convoy_id;
+    if (convoyId) {
+      const nowIso = new Date().toISOString();
+      // device_locations stores raw m/s (Android Location.speed); the convoy
+      // route track wants km/h. Null speeds stay null.
+      const speedsKmh = speeds.map((s) =>
+        s == null ? null : Math.max(0, Math.round(s * 3.6 * 10) / 10)
+      );
+      const recordedAt = timestamps.map((t) => t || nowIso);
+      await query(
+        `INSERT INTO convoy_waypoints (convoy_id, lat, lng, speed_kmh, heading, accuracy_m, recorded_at)
+         SELECT $1::uuid, unnest($2::decimal[]), unnest($3::decimal[]),
+                unnest($4::decimal[]), unnest($5::decimal[]),
+                unnest($6::decimal[]), unnest($7::timestamptz[])`,
+        [convoyId, lats, lngs, speedsKmh, headings, accuracies, recordedAt]
+      );
+      logger.info(`Batch location → convoy_waypoints: device=${deviceId} convoy=${convoyId} points=${accepted}`);
+    }
+  } catch (err) {
+    logger.warn(`convoy_waypoints mirror failed for device ${deviceId}: ${err.message}`);
+  }
+
+  logger.info(`Batch location: device=${deviceId} accepted=${accepted}/${points.length}`);
+  return { accepted, total: points.length };
+}
+
 router.post('/location/batch', deviceAuth, async (req, res, next) => {
   try {
     const { points } = req.body;
     if (!Array.isArray(points) || points.length === 0) {
       return res.status(400).json({ error: 'points must be a non-empty array' });
     }
-
-    // Enforce max points from config
-    const cfgRow = await query(
-      `SELECT value_int FROM guardian_config WHERE key = 'batch_location_max_points'`
-    );
-    const maxPoints = cfgRow.rows[0]?.value_int ?? 500;
-    if (points.length > maxPoints) {
-      return res.status(400).json({
-        error: `Too many points. Max allowed: ${maxPoints}`,
-      });
-    }
-
-    const deviceId = req.device.id;
-    let accepted = 0;
-    let lastLat = null;
-    let lastLng = null;
-    let lastSpeed = null;
-
-    // Bulk insert using unnest for efficiency
-    const lats      = [];
-    const lngs      = [];
-    const alts      = [];
-    const headings  = [];
-    const speeds    = [];
-    const accuracies= [];
-    const timestamps= [];
-
-    for (const pt of points) {
-      if (pt.lat == null || pt.lng == null) continue;
-      lats.push(pt.lat);
-      lngs.push(pt.lng);
-      alts.push(pt.altitude ?? null);
-      headings.push(pt.heading ?? null);
-      speeds.push(pt.speed ?? null);
-      accuracies.push(pt.accuracy ?? null);
-      timestamps.push(pt.timestamp || null);
-      lastLat = pt.lat;
-      lastLng = pt.lng;
-      lastSpeed = pt.speed ?? null;
-      accepted++;
-    }
-
-    if (accepted === 0) {
-      return res.status(400).json({ error: 'No valid points (lat/lng required)' });
-    }
-
-    await query(
-      `INSERT INTO device_locations (device_id, lat, lng, altitude, heading, speed, accuracy, timestamp)
-       SELECT $1, unnest($2::decimal[]), unnest($3::decimal[]),
-              unnest($4::decimal[]), unnest($5::decimal[]),
-              unnest($6::decimal[]), unnest($7::decimal[]),
-              unnest($8::timestamptz[])`,
-      [deviceId, lats, lngs, alts, headings, speeds, accuracies, timestamps]
-    );
-
-    // Update last known position to the last point in the batch
-    if (lastLat != null) {
-      await query(
-        `UPDATE guardian_devices
-         SET last_lat = $2, last_lng = $3, last_speed = $4, last_seen = NOW(), updated_at = NOW()
-         WHERE id = $1`,
-        [deviceId, lastLat, lastLng, lastSpeed]
-      );
-    }
-
-    logger.info(`Batch location: device=${deviceId} accepted=${accepted}/${points.length}`);
-    res.json({ accepted, total: points.length });
+    const result = await processLocationBatch(req.device, points);
+    res.json(result);
   } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
     next(err);
   }
 });
 
+// POST /crash-report — a Guardian device uploads a captured crash (stack trace
+// + device/app metadata) so field crashes are diagnosable server-side instead
+// of being invisible. Best-effort store + error log; never fail loudly.
+router.post('/crash-report', deviceAuth, async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const orgId = req.device.org_id || null;
+    const stack = typeof b.stack_trace === 'string' ? b.stack_trace.slice(0, 20000) : null;
+    const appBuild = Number.isFinite(Number(b.app_build)) ? Number(b.app_build) : null;
+    const sdkInt = Number.isFinite(Number(b.sdk_int)) ? Number(b.sdk_int) : null;
+    const occurredAt = b.occurred_at ? new Date(b.occurred_at) : null;
+    await query(
+      `INSERT INTO guardian_crash_reports
+         (device_id, org_id, app_version, app_build, android_version, sdk_int, device_model, thread, stack_trace, occurred_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [req.device.id, orgId, b.app_version ?? null, appBuild, b.android_version ?? null, sdkInt,
+       b.device_model ?? null, b.thread ?? null, stack, occurredAt && !isNaN(occurredAt.getTime()) ? occurredAt : null]
+    );
+    const firstLine = (stack || '').split('\n')[0].slice(0, 300);
+    logger.error(`Guardian crash: device=${req.device.id} v${b.app_version} (${b.device_model}, Android ${b.android_version}) — ${firstLine}`);
+    res.json({ received: true });
+  } catch (err) { next(err); }
+});
+
+// POST /capture-event — breadcrumb telemetry for the covert capture pipeline so
+// a shot that silently fails on a field device is diagnosable from the console.
+// Body: { stage, detail }. Logged AND persisted (best-effort) so the operator
+// can see exactly which stage a capture stopped at.
+router.post('/capture-event', deviceAuth, async (req, res, next) => {
+  try {
+    const stage = String(req.body?.stage || '').slice(0, 60);
+    const detail = String(req.body?.detail || '').slice(0, 400);
+    logger.info(`Guardian capture: device=${req.device.id} stage=${stage} ${detail}`);
+    // Persist for the diagnostics view — never let a telemetry write break the
+    // device's report.
+    query(
+      `INSERT INTO guardian_capture_events (device_id, org_id, stage, detail)
+       VALUES ($1, $2, $3, $4)`,
+      [req.device.id, req.device.org_id || null, stage, detail || null],
+    ).catch((e) => logger.warn(`capture-event persist failed: ${e.message}`));
+    res.json({ received: true });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;
+module.exports.deviceAuth = deviceAuth;
+module.exports.processLocationBatch = processLocationBatch;

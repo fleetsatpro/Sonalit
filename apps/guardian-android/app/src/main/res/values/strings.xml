@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sonalit Guardian</string>
+    <string name="tile_panic_label">Panic</string>
+    <string name="notification_channel_tracking">Location Tracking</string>
+    <string name="notification_channel_sync">Data Sync</string>
+    <string name="notification_channel_alerts">Alerts</string>
+</resources>

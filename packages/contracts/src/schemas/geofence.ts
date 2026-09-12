@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { UuidSchema, IsoDateTimeSchema, GeoJsonPolygonSchema } from './common.js';
+import { UuidSchema, IsoDateTimeSchema, GeoJsonPolygonSchema, LatLngSchema } from './common.js';
 import { AlertSeveritySchema } from './alert.js';
 
 // ---------------------------------------------------------------------------
@@ -25,8 +25,50 @@ export const GeofenceSchema = z.object({
   alert_severity: AlertSeveritySchema,
   created_at: IsoDateTimeSchema,
   updated_at: IsoDateTimeSchema,
+  // S2-F1 Smart Geofencing extensions
+  corridor_width_km: z.number().positive().nullable(),
+  active_from_time: z.string().regex(/^\d{2}:\d{2}$/).nullable(),
+  active_to_time: z.string().regex(/^\d{2}:\d{2}$/).nullable(),
+  days_of_week: z.array(z.number().int().min(0).max(6)).nullable(),
+  checkpoint_order: z.number().int().nullable(),
+  dwell_alert_min: z.number().int().nullable(),
 });
 export type Geofence = z.infer<typeof GeofenceSchema>;
+
+// ---------------------------------------------------------------------------
+// Geofence Events (S2-F1)
+// ---------------------------------------------------------------------------
+
+export const GeofenceEventTypeSchema = z.enum([
+  'enter', 'exit', 'dwell_exceeded', 'route_deviation', 'checkpoint_signin',
+]);
+export type GeofenceEventType = z.infer<typeof GeofenceEventTypeSchema>;
+
+export const GeofenceEventSchema = z.object({
+  id: UuidSchema,
+  org_id: UuidSchema,
+  geofence_id: UuidSchema,
+  vehicle_id: UuidSchema.nullable(),
+  device_id: UuidSchema.nullable(),
+  convoy_id: UuidSchema.nullable(),
+  event_type: GeofenceEventTypeSchema,
+  location: LatLngSchema,
+  dwell_minutes: z.number().nullable(),
+  deviation_km: z.number().nullable(),
+  created_at: IsoDateTimeSchema,
+});
+export type GeofenceEvent = z.infer<typeof GeofenceEventSchema>;
+
+export const ConvoyRouteCorridorSchema = z.object({
+  id: UuidSchema,
+  org_id: UuidSchema,
+  convoy_id: UuidSchema,
+  route_line: z.array(LatLngSchema),
+  width_km: z.number().positive().default(2.0),
+  active: z.boolean().default(true),
+  created_at: IsoDateTimeSchema,
+});
+export type ConvoyRouteCorridor = z.infer<typeof ConvoyRouteCorridorSchema>;
 
 // ---------------------------------------------------------------------------
 // Mutations

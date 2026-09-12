@@ -11,7 +11,7 @@ async function start(): Promise<void> {
   await app.register(analyticsRoutes);
   app.setErrorHandler((err, _req, reply) => {
     const status = (err as { statusCode?: number }).statusCode ?? 500;
-    void reply.code(status).send({ code: (err as { code?: string }).code ?? 'INTERNAL_ERROR', error: err.message });
+    void reply.code(status).send({ code: (err as { code?: string }).code ?? 'INTERNAL_ERROR', error: (err as Error).message });
   });
   await app.listen({ port: config.PORT, host: '0.0.0.0' });
   app.log.info({ port: config.PORT }, 'analytics-svc listening');

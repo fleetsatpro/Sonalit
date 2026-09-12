@@ -1,0 +1,183 @@
+/* ── Godmode enhancement layer ──────────────────────────────────────────
+   All colours stay on the existing palette:
+     orange  #f07020 / #ff9040
+     cyan    #00d4ff
+     blue    #5588ff / #80b0ff
+     green   #22ee88
+   ─────────────────────────────────────────────────────────────────────── */
+
+/* ── Conic spinning border (replaces the linear-gradient border flow) ── */
+@property --border-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.card { will-change: transform; transform-style: preserve-3d; }
+
+.card::before {
+  background: conic-gradient(from var(--border-angle, 0deg),
+    rgba(240,112,32,.95)  0%,
+    rgba(0,212,255,.85)  22%,
+    rgba(85,136,255,.75) 44%,
+    rgba(34,238,136,.75) 62%,
+    rgba(0,212,255,.80)  80%,
+    rgba(240,112,32,.95) 100%);
+  background-size: auto;
+  animation: borderSpin 4s linear infinite;
+}
+@keyframes borderSpin { to { --border-angle: 360deg; } }
+
+/* ── Aurora blobs ── */
+.login-aurora {
+  position: fixed; border-radius: 50%;
+  pointer-events: none; z-index: 4;
+  filter: blur(72px);
+  animation: auroraFloat ease-in-out infinite alternate;
+}
+@keyframes auroraFloat {
+  from { opacity: .22; transform: scale(1) translateY(0); }
+  to   { opacity: .48; transform: scale(1.13) translateY(-20px); }
+}
+
+/* ── Card inner scan line ── */
+.card-scan-line {
+  position: absolute; left: 0; right: 0; height: 1.5px; top: -2px;
+  pointer-events: none; z-index: 50;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(240,112,32,0) 8%,
+    rgba(0,212,255,.85) 30%,
+    rgba(240,112,32,1) 50%,
+    rgba(0,212,255,.85) 70%,
+    rgba(240,112,32,0) 92%,
+    transparent 100%);
+  box-shadow: 0 0 10px rgba(0,212,255,.65), 0 0 22px rgba(240,112,32,.4);
+  animation: cardScanMove 3.8s linear infinite;
+}
+@keyframes cardScanMove {
+  0%   { top: -2px; opacity: 0; }
+  4%   { opacity: 1; }
+  96%  { opacity: .8; }
+  100% { top: calc(100% + 2px); opacity: 0; }
+}
+
+/* ── HUD status strip ── */
+.login-hud {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 13px; margin-bottom: 18px;
+  border: 1px solid rgba(0,212,255,.13);
+  border-radius: 9px;
+  background: rgba(0,212,255,.03);
+  position: relative; overflow: hidden;
+  gap: 10px;
+}
+.login-hud::before {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(0,212,255,.05), transparent);
+  animation: hudSweep 5s linear infinite;
+}
+@keyframes hudSweep { from { transform: translateX(-100%); } to { transform: translateX(220%); } }
+.hud-indicator {
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+  background: #22ee88;
+  box-shadow: 0 0 7px #22ee88, 0 0 14px rgba(34,238,136,.5);
+  animation: hudBlink 2s ease-in-out infinite;
+}
+@keyframes hudBlink { 0%,100% { opacity:1; } 50% { opacity:.35; } }
+.hud-status-text {
+  font-family: 'Space Mono', monospace;
+  font-size: 7.5px; letter-spacing: .28em;
+  color: rgba(34,238,136,.85); text-transform: uppercase; flex: 1;
+}
+.hud-coords-text {
+  font-family: 'Space Mono', monospace;
+  font-size: 7px; letter-spacing: .1em;
+  color: rgba(0,212,255,.45); white-space: nowrap;
+}
+.hud-signal { display: flex; gap: 2px; align-items: flex-end; }
+.hud-signal-bar {
+  width: 3px; background: rgba(0,212,255,.75); border-radius: 1px;
+  animation: barPulse 1.6s ease-in-out infinite alternate;
+}
+@keyframes barPulse { from { opacity:.2; } to { opacity:1; } }
+
+/* ── Password strength bar ── */
+.pw-strength-row { display: flex; gap: 3px; margin-top: 7px; }
+.pw-str-seg {
+  flex: 1; height: 2px; border-radius: 1px;
+  background: rgba(255,255,255,.06);
+  transition: background .32s, box-shadow .32s;
+}
+.pw-str-seg.active {
+  background: var(--str-col, #f07020);
+  box-shadow: 0 0 5px var(--str-col, #f07020);
+}
+
+/* ── Biometric auth overlay ── */
+.bio-overlay {
+  position: absolute; inset: 0; z-index: 100;
+  background: rgba(3,6,22,.96);
+  border-radius: 22px;
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: 16px;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  animation: bioFadeIn .28s cubic-bezier(.22,1,.36,1);
+}
+@keyframes bioFadeIn { from { opacity:0; } to { opacity:1; } }
+.bio-label {
+  font-family: 'Space Mono', monospace;
+  font-size: 7.5px; letter-spacing: .4em;
+  text-transform: uppercase; color: rgba(0,212,255,.8);
+}
+.bio-rings { position: relative; width: 120px; height: 120px; }
+.bio-ring {
+  position: absolute; inset: 0; margin: auto; border-radius: 50%;
+  border-style: solid; border-color: transparent;
+}
+.bio-ring-a {
+  width: 110px; height: 110px; border-width: 1.5px;
+  border-top-color: rgba(240,112,32,.85);
+  animation: bioSpin 1.3s linear infinite;
+}
+.bio-ring-b {
+  width: 82px; height: 82px; border-width: 1px;
+  border-top-color: rgba(0,212,255,.8);
+  animation: bioSpin .95s linear infinite reverse;
+}
+.bio-ring-c {
+  width: 56px; height: 56px; border-width: .8px;
+  border-top-color: rgba(34,238,136,.7);
+  animation: bioSpin .7s linear infinite;
+}
+@keyframes bioSpin { to { transform: rotate(360deg); } }
+.bio-center {
+  position: absolute; width: 8px; height: 8px; border-radius: 50%;
+  background: rgba(240,112,32,.95);
+  box-shadow: 0 0 12px rgba(240,112,32,.85);
+  top: 50%; left: 50%; transform: translate(-50%,-50%);
+  animation: bioPulse 1.4s ease-in-out infinite;
+}
+@keyframes bioPulse {
+  0%,100% { transform: translate(-50%,-50%) scale(1); opacity:.9; }
+  50%      { transform: translate(-50%,-50%) scale(1.7); opacity:1; }
+}
+.bio-phase-text {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px; letter-spacing: .18em;
+  color: rgba(200,218,255,.9); text-align: center;
+}
+.bio-sub-text {
+  font-size: 11px; color: rgba(100,120,160,.6);
+  letter-spacing: .1em; font-family: 'Barlow', sans-serif;
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .card::before { animation: none !important; }
+  .card-scan-line, .login-aurora,
+  .login-hud::before, .hud-indicator,
+  .bio-ring-a, .bio-ring-b, .bio-ring-c,
+  .bio-center, .bio-overlay { animation: none !important; }
+}

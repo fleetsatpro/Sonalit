@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0B111C" />
+  <title>Sonalit</title>
+  <style>
+    html,body{height:100%;margin:0;background:#000;color:#EAEFF6;
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      -webkit-font-smoothing:antialiased;}
+    .wrap{height:100%;display:flex;flex-direction:column;align-items:center;
+      justify-content:center;gap:20px;text-align:center;padding:24px;}
+    .logo{width:150px;height:150px;object-fit:contain;}
+    .brand{font-weight:800;letter-spacing:6px;font-size:22px;}
+    .brand b{color:#F0A020;}
+    .sub{color:#8A93A6;font-size:13px;letter-spacing:1px;}
+    .spin{width:26px;height:26px;border-radius:50%;border:2px solid #1c1c1c;
+      border-top-color:#F0A020;animation:s .8s linear infinite;}
+    @keyframes s{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+  <!--
+    Shown only before the hosted site loads (first launch) or if the device is
+    offline. The app itself lives at server.url (see capacitor.config.ts).
+  -->
+  <div class="wrap">
+    <img class="logo" src="logo.png" alt="Sonalit" />
+    <div class="brand">SON<b>A</b>LIT</div>
+    <div class="spin"></div>
+    <div class="sub">Connecting to your operations console…</div>
+  </div>
+</body>
+</html>

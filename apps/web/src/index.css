@@ -1,3 +1,164 @@
+@import '@fontsource/archivo/400.css';
+@import '@fontsource/archivo/500.css';
+@import '@fontsource/archivo/700.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+
+/* Holoframe design system — Command console, Orbit, Login */
+@import '@fontsource/michroma/400.css';
+@import '@fontsource/sora/400.css';
+@import '@fontsource/sora/500.css';
+@import '@fontsource/sora/600.css';
+@import '@fontsource/sora/700.css';
+@import '@fontsource/space-mono/400.css';
+@import '@fontsource/space-mono/700.css';
+
+/* Orbitron is referenced inline (fontFamily: 'Orbitron, sans-serif') across
+   ~20 dashboard components, but dashboard.css has a blanket
+   `* { font-family: var(--d-font) !important }` rule that always wins over
+   those plain inline styles — Orbitron never actually renders. Not loaded
+   here; loading it would just be dead weight. */
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ── Portal design tokens ─────────────────────────────────────────────────── */
+:root {
+  --p-bg:        #070b16;
+  --p-surface:   #0e1626;
+  --p-surface2:  #0b1120;
+  --p-border:    rgba(255,255,255,0.07);
+  --p-orange:    #f97316;
+  --p-orange2:   #ea6c10;
+  --p-text:      #e2e8f0;
+  --p-muted:     rgba(226,232,240,0.45);
+  --p-mono:      'IBM Plex Mono', 'Courier New', monospace;
+  --p-sans:      'Archivo', system-ui, sans-serif;
+}
+
+body {
+  background: #050813;
+  color: #e2e8f0;
+  font-family: var(--p-sans);
+}
+
+/* Portal pages use Archivo everywhere, IBM Plex Mono for data */
+.portal-root {
+  font-family: var(--p-sans);
+  background: var(--p-bg);
+  min-height: 100dvh;
+}
+.mono { font-family: var(--p-mono); }
+
+/* Grain texture overlay for portal pages */
+.portal-grain::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  z-index: 0;
+  opacity: 0.4;
+}
+
+/* Thin scrollbar for the nav and content areas */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(240, 112, 32, 0.25);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(240, 112, 32, 0.5);
+}
+
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(240, 112, 32, 0.25) transparent;
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes glow-pulse-red {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+  50%       { box-shadow: 0 0 14px 3px rgba(239, 68, 68, 0.3); }
+}
+
+@keyframes glow-pulse-amber {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+  50%       { box-shadow: 0 0 10px 2px rgba(245, 158, 11, 0.25); }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease both;
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-glow-red {
+  animation: glow-pulse-red 2.5s ease-in-out infinite;
+}
+
+.animate-glow-amber {
+  animation: glow-pulse-amber 2.5s ease-in-out infinite;
+}
+
+/* Portal staggered reveal */
+@keyframes portal-reveal {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.portal-reveal {
+  animation: portal-reveal 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.portal-reveal-1 { animation-delay: 0.05s; }
+.portal-reveal-2 { animation-delay: 0.1s; }
+.portal-reveal-3 { animation-delay: 0.15s; }
+.portal-reveal-4 { animation-delay: 0.2s; }
+.portal-reveal-5 { animation-delay: 0.25s; }
+
+/* Orange glow for active convoy */
+@keyframes glow-orange {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(249,115,22,0); }
+  50%       { box-shadow: 0 0 18px 4px rgba(249,115,22,0.2); }
+}
+.glow-orange { animation: glow-orange 3s ease-in-out infinite; }
+
+/* Pulse dot for live vehicles */
+@keyframes ping-slow {
+  75%, 100% { transform: scale(2); opacity: 0; }
+}
+.ping-slow { animation: ping-slow 2s cubic-bezier(0,0,0.2,1) infinite; }
+
+/* Ledger hash scroll */
+@keyframes hash-scroll {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.hash-reveal { animation: hash-scroll 0.3s ease both; }

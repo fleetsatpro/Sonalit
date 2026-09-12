@@ -8,13 +8,7 @@ import { ingestRoutes } from './routes/ingest.js';
 
 export async function buildServer() {
   const app = Fastify({
-    logger: {
-      level: config.LOG_LEVEL,
-      transport:
-        config.NODE_ENV === 'development'
-          ? { target: 'pino-pretty' }
-          : undefined,
-    },
+    logger: { level: config.LOG_LEVEL, ...(config.NODE_ENV === 'development' ? { transport: { target: 'pino-pretty' } } : {}) },
     trustProxy: true,
     bodyLimit: 1_048_576, // 1 MB
   });
@@ -35,12 +29,11 @@ export async function buildServer() {
 
   app.setErrorHandler((error, _request, reply) => {
     app.log.error({ err: error }, 'Unhandled error');
-    const statusCode = 'statusCode' in error && typeof error.statusCode === 'number'
-      ? error.statusCode
-      : 500;
+    const e = error as { statusCode?: number; message?: string };
+    const statusCode = typeof e.statusCode === 'number' ? e.statusCode : 500;
     return reply.status(statusCode).send({
       code: 'INTERNAL_ERROR',
-      message: config.NODE_ENV === 'production' ? 'Internal server error' : error.message,
+      message: config.NODE_ENV === 'production' ? 'Internal server error' : (e.message ?? 'Internal server error'),
     });
   });
 

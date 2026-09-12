@@ -6,7 +6,31 @@ router.use(authenticate);
 
 router.get('/', async (req, res, next) => {
   try {
-    const result = await query('SELECT * FROM risk_zones WHERE active=true ORDER BY CASE risk_level WHEN \'critical\' THEN 1 WHEN \'high\' THEN 2 WHEN \'medium\' THEN 3 ELSE 4 END');
+    const result = await query(
+      `SELECT
+         id::text        AS h3_index,
+         name,
+         CASE risk_level
+           WHEN 'critical' THEN 'high'
+           WHEN 'no_go'    THEN 'high'
+           ELSE risk_level
+         END              AS risk_level,
+         0                AS event_count,
+         lat              AS center_lat,
+         lng              AS center_lon,
+         radius_km,
+         zone_type,
+         active,
+         created_at
+       FROM risk_zones
+       WHERE active = true
+       ORDER BY CASE risk_level
+         WHEN 'critical' THEN 1 WHEN 'no_go' THEN 1
+         WHEN 'high'     THEN 2
+         WHEN 'medium'   THEN 3
+         ELSE 4
+       END`
+    );
     res.json({ data: result.rows });
   } catch (err) { next(err); }
 });

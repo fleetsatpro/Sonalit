@@ -9,7 +9,7 @@ const ListQuerySchema = z.object({
 });
 
 export const gpsRoutes: FastifyPluginAsync = async (app) => {
-  app.addHook('preHandler', requireAuth(app));
+  app.addHook('preHandler', requireAuth);
 
   app.get('/v4/gps/track', async (req, reply) => {
     const { org_id } = (req as typeof req & { user: { org_id: string } }).user;
@@ -21,7 +21,7 @@ export const gpsRoutes: FastifyPluginAsync = async (app) => {
       deviceFilter = `AND device_id = $${params.length}`;
     }
     params.push(q.limit);
-    const { rows } = await query(
+    const rows = await query(
       `SELECT DISTINCT ON (device_id)
               device_id, lat, lon, speed_kmh, heading, accuracy_m, time AS ts
        FROM gps_fixes

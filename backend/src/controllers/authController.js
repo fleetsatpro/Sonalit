@@ -18,22 +18,9 @@ const COOKIE_OPTS = {
   maxAge: REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000,
 };
 
-// Ensure refresh_tokens table exists (idempotent; runs once at startup)
-let _rtTableReady = false;
-async function ensureRefreshTable() {
-  if (_rtTableReady) return;
-  await query(`
-    CREATE TABLE IF NOT EXISTS refresh_tokens (
-      id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      token_hash TEXT NOT NULL UNIQUE,
-      expires_at TIMESTAMPTZ NOT NULL,
-      used_at    TIMESTAMPTZ,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )
-  `).catch(() => {});
-  _rtTableReady = true;
-}
+// refresh_tokens table is created by migration 20260521_014_refresh_tokens_and_gdpr_cols.sql
+// The runtime CREATE TABLE was removed — schema changes belong in migrations.
+async function ensureRefreshTable() { /* no-op — handled by migration */ }
 
 function hashToken(raw) {
   return crypto.createHash('sha256').update(raw).digest('hex');
@@ -54,6 +41,9 @@ async function setRefreshCookie(res, userId, reuseToken) {
   res.cookie(RT_COOKIE, raw, COOKIE_OPTS);
   return raw;
 }
+
+/** Roles whose only sign-in path is the Field app's device + PIN flow. */
+const FIELD_ONLY_ROLES = ['yard_agent', 'port_agent'];
 
 const loginSchema = Joi.object({
   email: Joi.string().required(),
@@ -84,11 +74,25 @@ const login = asyncHandler(async (req, res) => {
     return res.status(403).json({ error: 'Account is suspended' });
   }
 
+  // Field crew do not have an operator session at all. Their credential is a
+  // PIN on a paired device (routes/field.js), and letting the same account
+  // also trade an email + password for a dashboard JWT would make that
+  // separation cosmetic: a leaked field password would be a leaked operator
+  // token, on an account nobody expects to be able to reach the dashboard.
+  // The check sits after the password comparison so it cannot be used to
+  // enumerate which addresses are field accounts.
+  if (FIELD_ONLY_ROLES.includes(user.role)) {
+    return res.status(403).json({
+      error: 'field_account',
+      message: 'Field accounts sign in on the Sonalit Field app with a PIN, not here.',
+    });
+  }
+
   // Access token: short-lived, lives in memory on the client (not localStorage)
   const accessToken = jwt.sign(
     { id: user.id, email: user.email, role: user.role },
     process.env.JWT_SECRET,
-    { expiresIn: '15m' }
+    { expiresIn: '2h' }
   );
 
   // Refresh token: long-lived, httpOnly cookie (T1.2)

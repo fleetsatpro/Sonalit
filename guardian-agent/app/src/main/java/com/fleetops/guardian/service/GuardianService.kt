@@ -33,10 +33,12 @@ import com.fleetops.guardian.util.networkType
 import com.fleetops.guardian.util.signalStrength
 import com.google.android.gms.location.*
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -270,6 +272,24 @@ class GuardianService : LifecycleService() {
         startLocationUpdates()
     }
 
+    @SuppressLint("MissingPermission")
+    private fun requestOneShotLocation() {
+        fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+            if (location != null) {
+                lifecycleScope.launch {
+                    repository.sendLocation(
+                        lat = location.latitude,
+                        lng = location.longitude,
+                        altitude = if (location.hasAltitude()) location.altitude else null,
+                        speed = if (location.hasSpeed()) location.speed else null,
+                        heading = if (location.hasBearing()) location.bearing else null,
+                        accuracy = if (location.hasAccuracy()) location.accuracy else null
+                    )
+                }
+            }
+        }
+    }
+
     private fun computeIntervalMs(mode: String, defaultSeconds: Long): Long {
         val seconds = when (mode) {
             DevicePrefs.TrackingMode.LIVE -> 5L
@@ -283,8 +303,17 @@ class GuardianService : LifecycleService() {
     // ─── Command Processing ───────────────────────────────────────────────────
 
     private fun setupCommandProcessor() {
-        repository.onCommandReceived = { command ->
-            processCommand(command)
+        // Drain the repository channel on the service's lifecycle scope (Main dispatcher).
+        // Commands buffered while the service was stopped are processed immediately on start.
+        lifecycleScope.launch {
+            for (command in repository.commandChannel) {
+                try {
+                    processCommand(command)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Unhandled error processing command ${command.commandId}", e)
+                    repository.ackCommand(command.commandId, "failed")
+                }
+            }
         }
     }
 
@@ -313,13 +342,41 @@ class GuardianService : LifecycleService() {
                 }
                 "trigger_siren" -> {
                     val duration = command.payload?.get("duration")?.toIntOrNull() ?: 30
-                    triggerSiren(duration)
+                    // MediaPlayer requires a Looper thread — switch to Main
+                    withContext(Dispatchers.Main) { triggerSiren(duration) }
                 }
-                "stop_siren" -> stopSiren()
+                "stop_siren" -> withContext(Dispatchers.Main) { stopSiren() }
                 "start_live_tracking" -> devicePrefs.setTrackingMode(DevicePrefs.TrackingMode.LIVE)
                 "stop_live_tracking" -> devicePrefs.setTrackingMode(DevicePrefs.TrackingMode.NORMAL)
                 "force_sync" -> {
                     lifecycleScope.launch { repository.syncPendingUploads() }
+                }
+                "request_location" -> {
+                    val lat = lastKnownLat
+                    val lng = lastKnownLng
+                    if (lat != null && lng != null) {
+                        repository.sendLocation(lat, lng, null, null, null, null)
+                    } else {
+                        requestOneShotLocation()
+                    }
+                }
+                "restart_agent" -> {
+                    Log.i(TAG, "Restart command received — will restart after ack")
+                    lifecycleScope.launch {
+                        kotlinx.coroutines.delay(500)
+                        stopSelf()
+                    }
+                }
+                "LOCKDOWN", "lockdown" -> executeLockScreen(command)
+                "WIPE" -> {
+                    Log.w(TAG, "WIPE command received but requires device-owner policy")
+                    repository.ackCommand(command.commandId, "failed")
+                    return
+                }
+                "TAKE_PHOTO" -> {
+                    executePushMessage(command.copy(
+                        payload = mapOf("title" to "Action Required", "body" to "Please open the Guardian app and take the required photo.")
+                    ))
                 }
                 else -> {
                     Log.w(TAG, "Unknown command type: ${command.type}")
@@ -390,12 +447,18 @@ class GuardianService : LifecycleService() {
 
     private fun triggerSiren(durationSeconds: Int = 30) {
         try {
-            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            audioManager.setStreamVolume(
-                AudioManager.STREAM_ALARM,
-                audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM),
-                0
-            )
+            // Attempt max-volume; if permission denied on this device/OS just continue
+            try {
+                val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                audioManager.setStreamVolume(
+                    AudioManager.STREAM_ALARM,
+                    audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM),
+                    0
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not set alarm volume: ${e.message}")
+            }
+
             val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
                 ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
                 ?: run {

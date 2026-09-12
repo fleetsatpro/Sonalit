@@ -7,7 +7,10 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import io.sonalit.guardian.data.local.ActivityEventDao
 import io.sonalit.guardian.data.local.AppDatabase
+import io.sonalit.guardian.data.local.DispatchMessageDao
+import io.sonalit.guardian.data.local.PendingPhotoDao
 import javax.inject.Singleton
 
 @Module
@@ -19,4 +22,13 @@ object DatabaseModule {
         Room.databaseBuilder(context, AppDatabase::class.java, "guardian.db")
             .fallbackToDestructiveMigration()
             .build()
+
+    @Provides @Singleton
+    fun providePendingPhotoDao(db: AppDatabase): PendingPhotoDao = db.pendingPhotoDao()
+
+    @Provides @Singleton
+    fun provideDispatchMessageDao(db: AppDatabase): DispatchMessageDao = db.dispatchMessageDao()
+
+    @Provides @Singleton
+    fun provideActivityEventDao(db: AppDatabase): ActivityEventDao = db.activityEventDao()
 }

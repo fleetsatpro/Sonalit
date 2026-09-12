@@ -12,7 +12,7 @@ async function start(): Promise<void> {
   redis.on('error', (err: Error) => { app.log.error({ err }, 'Redis error'); });
   await app.register(healthRoutes);
   await app.register(reportsRoutes);
-  app.setErrorHandler((err, _req, reply) => { void reply.code((err as { statusCode?: number }).statusCode ?? 500).send({ error: err.message }); });
+  app.setErrorHandler((err, _req, reply) => { void reply.code((err as { statusCode?: number }).statusCode ?? 500).send({ error: (err as Error).message }); });
   await app.listen({ port: config.PORT, host: '0.0.0.0' });
   app.log.info({ port: config.PORT }, 'reports-svc listening');
   void startGenerateConsumer().catch((err: Error) => { app.log.error({ err }, 'Generate consumer crashed'); });

@@ -8,9 +8,9 @@ import { connectNats, closeNats } from './nats.js';
 import { loginRoutes } from './routes/login.js';
 import { registerRoutes } from './routes/register.js';
 import { refreshRoutes } from './routes/refresh.js';
-import { passkeysRoutes } from './routes/passkeys.js';
+import { passkeyRoutes } from './routes/passkeys.js';
 import { totpRoutes } from './routes/totp.js';
-import { apikeysRoutes } from './routes/apikeys.js';
+import { apiKeyRoutes } from './routes/apikeys.js';
 import { meRoutes } from './routes/me.js';
 
 const BASE = '/v4/auth';
@@ -44,9 +44,9 @@ async function start(): Promise<void> {
     await loginRoutes(svc);
     await registerRoutes(svc);
     await refreshRoutes(svc);
-    await passkeysRoutes(svc);
+    await passkeyRoutes(svc);
     await totpRoutes(svc);
-    await apikeysRoutes(svc);
+    await apiKeyRoutes(svc);
     await meRoutes(svc);
   }, { prefix: BASE });
 
@@ -66,7 +66,7 @@ async function start(): Promise<void> {
     }
     void reply.status(status).send({
       code: (err as { code?: string }).code ?? 'INTERNAL_ERROR',
-      message: status < 500 ? err.message : 'Internal server error',
+      message: status < 500 ? (err as Error).message : 'Internal server error',
     });
   });
 

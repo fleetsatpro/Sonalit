@@ -5,6 +5,10 @@ const cfo = require('../controllers/convoysCfoController');
 const { authenticate, authorize } = require('../middleware/auth');
 const { auditLog } = require('../middleware/audit');
 const requireIdempotencyKey = require('../middleware/idempotency');
+const { query } = require('../config/database');
+const { evaluateCorridor } = require('../services/geofence/corridor');
+const { scoreRoute } = require('../services/geo/routeRisk');
+const logger = require('../utils/logger');
 
 const convoyReportRegenerateLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -36,6 +40,10 @@ router.get('/:id/events', c.getConvoyEvents);
 router.post('/:id/trucks', authorize('admin', 'dispatcher'), cfo.addTruck);
 router.delete('/:id/trucks/:truckId', authorize('admin', 'dispatcher'), cfo.removeTruck);
 
+// Known route waypoints (dispatcher-entered towns/checkpoints for the planned route)
+router.get('/:id/route-waypoints', authorize('admin', 'dispatcher', 'analyst'), cfo.getRouteWaypoints);
+router.put('/:id/route-waypoints', authorize('admin', 'dispatcher'), auditLog('convoy_route_waypoints'), cfo.setRouteWaypoints);
+
 // CFO user management (B2)
 router.post('/:id/cfos', authorize('admin', 'dispatcher'), cfo.addCfo);
 router.delete('/:id/cfos/:cfoId', authorize('admin', 'dispatcher'), cfo.removeCfo);
@@ -46,8 +54,164 @@ router.post('/:id/cfo-assignments', authorize('admin', 'dispatcher'), cfo.assign
 router.delete('/:id/cfo-assignments/:assignmentId', authorize('admin', 'dispatcher'), cfo.removeAssignment);
 
 // Daily report admin (E5)
+// E5 — org-wide report overview (must come before /:id routes)
+router.get('/reports/overview', authorize('admin', 'dispatcher', 'analyst'), cfo.getConvoyReportsOverview);
 router.get('/:id/reports', authorize('admin', 'dispatcher', 'analyst'), cfo.getConvoyReports);
+router.get('/:id/report-days', authorize('admin', 'dispatcher', 'analyst'), cfo.getConvoyReportDays);
+router.get('/:id/reports/:date/detail', authorize('admin', 'dispatcher', 'analyst'), cfo.getConvoyReportDetail);
 router.post('/:id/reports/:date/regenerate', authorize('admin', 'dispatcher'), convoyReportRegenerateLimiter, cfo.regenerateReport);
 router.get('/:id/reports/:date/download', authorize('admin', 'dispatcher', 'analyst'), cfo.downloadReport);
+
+// GET /:id/corridor — live 4D geofence status for a convoy. Evaluates every
+// member device against the planned route swept over time: off_route (space),
+// behind / ahead (schedule), or on_track. Config is tunable via query params
+// (avg_speed_kmh, corridor_km, schedule_tol_km, started_at) with safe defaults.
+// Raw query() + explicit org verification (convoy ownership) — same pattern as
+// the incident dossier — so it's scoped without depending on the RLS role's
+// grants across the mixed device/convoy tables.
+router.get('/:id/corridor', async (req, res, next) => {
+  try {
+    const orgId = req.user.org_id;
+    const convoyId = req.params.id;
+
+    const cv = await query(
+      `SELECT id, name, departure_time, status, route_origin, route_destination FROM convoys
+        WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
+      [convoyId, orgId]
+    );
+    if (!cv.rows.length) return res.status(404).json({ error: 'Convoy not found' });
+    const convoy = cv.rows[0];
+
+    // Centre-line, in priority order:
+    //  1. the corridor planned on the 4D Geofence page (origin → destination
+    //     snapped to real roads, stored by POST /:id/corridor), which also
+    //     carries the operator's chosen corridor width;
+    //  2. the dispatcher's named route waypoints (towns/checkpoints).
+    // Reading only (2) was why a freshly planned corridor still reported
+    // "no planned route" — the planner writes (1).
+    const cr = await query(
+      `SELECT route_line, width_km FROM convoy_route_corridors
+        WHERE convoy_id = $1 AND org_id = $2 AND active = true`,
+      [convoyId, orgId]
+    );
+    let route = [];
+    let plannedWidthKm = null;
+    if (cr.rows.length) {
+      const raw = cr.rows[0].route_line;
+      const line = typeof raw === 'string' ? safeJsonArray(raw) : (Array.isArray(raw) ? raw : []);
+      route = line
+        .map((p, i) => ({ lat: Number(p && p.lat), lng: Number(p && p.lng), name: (p && p.name) || null, seq: i }))
+        .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+      if (route.length >= 2) plannedWidthKm = Number(cr.rows[0].width_km);
+    }
+
+    if (route.length < 2) {
+      const rw = await query(
+        `SELECT seq, name, lat, lng FROM convoy_route_waypoints
+          WHERE convoy_id = $1 AND lat IS NOT NULL AND lng IS NOT NULL
+          ORDER BY seq ASC`,
+        [convoyId]
+      );
+      route = rw.rows.map(r => ({ lat: Number(r.lat), lng: Number(r.lng), name: r.name, seq: r.seq }));
+    }
+    if (route.length < 2) {
+      return res.status(422).json({ error: 'Convoy has no planned route yet — plan one from an origin and destination, or add at least two route waypoints.' });
+    }
+
+    const mem = await query(
+      `SELECT d.id, d.name, fo.name AS officer_name, d.last_lat, d.last_lng, d.last_fix_at
+         FROM convoy_cfos cc
+         JOIN guardian_devices d ON d.id = cc.guardian_device_id
+         LEFT JOIN field_officers fo ON fo.device_id = d.id
+        WHERE cc.convoy_id = $1 AND d.deleted_at IS NULL`,
+      [convoyId]
+    );
+
+    const num = v => (v == null ? null : Number(v));
+    const cfg = {
+      avg_speed_kmh: clampNum(req.query.avg_speed_kmh, 45, 5, 120),
+      // An explicit ?corridor_km wins; otherwise use the width the operator set
+      // on the slider when planning this corridor.
+      corridor_km: clampNum(req.query.corridor_km, plannedWidthKm ?? 2, 0.2, 50),
+      schedule_tol_km: clampNum(req.query.schedule_tol_km, 8, 1, 100),
+    };
+    const startedAt = req.query.started_at ? new Date(req.query.started_at)
+      : (convoy.departure_time ? new Date(convoy.departure_time) : null);
+    const now = Date.now();
+    const elapsedMs = startedAt && !isNaN(startedAt.getTime()) ? Math.max(0, now - startedAt.getTime()) : 0;
+
+    const members = mem.rows.map(m => {
+      const lat = num(m.last_lat), lng = num(m.last_lng);
+      const base = { id: m.id, name: m.name, officer_name: m.officer_name ?? null,
+        lat, lng, last_fix_at: m.last_fix_at };
+      if (lat == null || lng == null) return { ...base, status: 'no_fix', severity: 'low' };
+      const verdict = evaluateCorridor({
+        route, lat, lng, elapsedMs,
+        avgSpeedKmh: cfg.avg_speed_kmh, corridorKm: cfg.corridor_km, scheduleTolKm: cfg.schedule_tol_km,
+      });
+      // Remaining distance and an arrival estimate at the planned pace — the
+      // roster should answer "when does it get there", not only "where is it".
+      const remainingKm = Math.max(0, (verdict.route_len_km ?? 0) - (verdict.along_km ?? 0));
+      const etaMs = cfg.avg_speed_kmh > 0 ? (remainingKm / cfg.avg_speed_kmh) * 3600000 : null;
+      return {
+        ...base, ...verdict,
+        remaining_km: Math.round(remainingKm * 100) / 100,
+        eta: etaMs == null ? null : new Date(now + etaMs).toISOString(),
+        eta_min: etaMs == null ? null : Math.round(etaMs / 60000),
+      };
+    });
+
+    // Risk zones the corridor actually touches, so the 3D view can show what
+    // the convoy is driving into rather than every zone on the continent.
+    // Best-effort: intel is an overlay, never a reason to fail the page.
+    let risk = { zones: [], exposed_km: 0, worst: null, blocked: false };
+    try {
+      const rz = await query(
+        `SELECT id, name, risk_level, zone_type, lat, lng, radius_km
+           FROM risk_zones
+          WHERE active = true
+            AND (org_id = $1 OR org_id IS NULL)
+            AND (valid_from  IS NULL OR valid_from  <= now())
+            AND (valid_until IS NULL OR valid_until >= now())`,
+        [orgId]
+      );
+      const scored = scoreRoute(route, rz.rows);
+      const byId = new Map(rz.rows.map(z => [String(z.id), z]));
+      risk = {
+        zones: scored.exposures.map(e => {
+          const z = byId.get(String(e.zone_id));
+          return { ...e, lat: Number(z.lat), lng: Number(z.lng), radius_km: Number(z.radius_km) };
+        }),
+        exposed_km: scored.exposed_km,
+        worst: scored.worst,
+        blocked: scored.blocked,
+      };
+    } catch (e) {
+      logger.warn(`corridor risk overlay unavailable: ${e.message}`);
+    }
+
+    const summary = members.reduce((a, m) => { a[m.status] = (a[m.status] || 0) + 1; return a; }, {});
+    res.json({ data: {
+      convoy: { id: convoy.id, name: convoy.name, status: convoy.status, departure_time: convoy.departure_time,
+        route_origin: convoy.route_origin ?? null, route_destination: convoy.route_destination ?? null },
+      config: { ...cfg, started_at: startedAt && !isNaN(startedAt.getTime()) ? startedAt.toISOString() : null,
+        schedule_known: elapsedMs > 0 },
+      route, members, summary, risk, evaluated_at: new Date(now).toISOString(),
+    } });
+  } catch (err) { next(err); }
+});
+
+function clampNum(v, def, lo, hi) {
+  const n = parseFloat(v);
+  const chosen = Number.isFinite(n) ? n : parseFloat(def);
+  return Number.isFinite(chosen) ? Math.max(lo, Math.min(hi, chosen)) : def;
+}
+
+// route_line is JSONB, so pg hands it back parsed; a legacy row stored as text
+// still has to survive a malformed value without 500-ing the whole page.
+function safeJsonArray(text) {
+  try { const v = JSON.parse(text); return Array.isArray(v) ? v : []; }
+  catch { return []; }
+}
 
 module.exports = router;

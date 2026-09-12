@@ -1,0 +1,923 @@
+/**
+ * Dashboard aggregation endpoints for the Command Center.
+ * All routes require operator JWT authentication.
+ * GET /api/v1/dashboard/*
+ */
+const router = require('express').Router();
+const { authenticate } = require('../middleware/auth');
+const { attachOrgDb } = require('../utils/orgScopedDb');
+const { asyncHandler } = require('../middleware/error');
+const { query } = require('../config/database');
+const https = require('https');
+const logger = require('../utils/logger');
+
+router.use(authenticate, attachOrgDb);
+
+// Returns { rows: [] } on any DB error so individual query failures don't crash endpoints
+const safeQuery = (db, sql, params) => db(sql, params).catch(() => ({ rows: [] }));
+
+// ── §2.1 Overview ──────────────────────────────────────────────────────────
+router.get('/overview', asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+
+  const [threatR, kpiR, nextR, shiftR, panicR] = await Promise.all([
+    safeQuery(req.db, `
+      SELECT
+        COUNT(*) FILTER (WHERE type='sos' AND resolved_at IS NULL) AS sos_open,
+        COUNT(*) FILTER (WHERE severity='critical' AND resolved_at IS NULL) AS crit_open,
+        COUNT(*) FILTER (WHERE resolved_at IS NULL) AS alerts_open
+      FROM alerts WHERE org_id=$1`, [orgId]),
+
+    safeQuery(req.db, `
+      SELECT
+        (SELECT COUNT(DISTINCT v.id) FROM vehicles v JOIN gps_logs g ON g.vehicle_id=v.id
+          WHERE v.org_id=$1 AND v.deleted_at IS NULL
+            AND g.timestamp > NOW()-INTERVAL '5 minutes') AS vehicles_live,
+        (SELECT COUNT(*) FROM convoys WHERE org_id=$1 AND status='active' AND deleted_at IS NULL) AS convoys_active,
+        (SELECT COUNT(*) FROM incidents WHERE org_id=$1 AND status='open') AS incidents_open,
+        (SELECT COUNT(*) FROM incidents WHERE org_id=$1 AND status='open') AS incidents_active,
+        (SELECT COALESCE(SUM(smi.weight_kg)/1000, 0)
+          FROM shipment_manifest_items smi
+          JOIN shipments s ON s.id=smi.shipment_id
+          JOIN convoys c ON c.id=s.convoy_id
+          WHERE c.org_id=$1 AND c.status='active' AND smi.deleted_at IS NULL) AS payload_tonnes,
+        (SELECT COUNT(*) FROM shipments WHERE org_id=$1 AND deleted_at IS NULL) AS consignments,
+        (SELECT COUNT(*) FROM field_officers WHERE org_id=$1 AND status <> 'offline') AS guards_active
+      `, [orgId]),
+
+    safeQuery(req.db, `
+      SELECT id, COALESCE(name, reference) AS convoy_name,
+             COALESCE(estimated_arrival_at, estimated_arrival) AS eta
+      FROM convoys
+      WHERE org_id=$1 AND status='active' AND deleted_at IS NULL
+        AND COALESCE(estimated_arrival_at, estimated_arrival) IS NOT NULL
+      ORDER BY COALESCE(estimated_arrival_at, estimated_arrival) ASC
+      LIMIT 1`, [orgId]),
+
+    safeQuery(req.db, `
+      SELECT actual_start AS started_at FROM shifts
+      WHERE org_id=$1 AND status='active'
+      ORDER BY actual_start DESC NULLS LAST LIMIT 1`, [orgId]),
+
+    safeQuery(req.db, `
+      SELECT COUNT(*) AS panic_open
+      FROM panic_events WHERE org_id=$1 AND resolved_at IS NULL`, [orgId]),
+  ]);
+
+  // km_today: sum of GPS distance for active vehicles since midnight.
+  // Haversine in plain SQL — no PostGIS extension required.
+  let kmToday = 0;
+  try {
+    const kmR = await req.db(`
+      SELECT COALESCE(SUM(
+        2 * 6371 * ASIN(SQRT(
+          POWER(SIN(RADIANS(lat - prev_lat) / 2), 2) +
+          COS(RADIANS(prev_lat)) * COS(RADIANS(lat)) *
+          POWER(SIN(RADIANS(lng - prev_lng) / 2), 2)
+        ))
+      ), 0) AS km
+      FROM (
+        SELECT lat, lng,
+               LAG(lat) OVER (PARTITION BY vehicle_id ORDER BY timestamp) AS prev_lat,
+               LAG(lng) OVER (PARTITION BY vehicle_id ORDER BY timestamp) AS prev_lng
+        FROM gps_logs g
+        JOIN vehicles v ON v.id=g.vehicle_id
+        WHERE v.org_id=$1 AND g.timestamp >= date_trunc('day', NOW())
+      ) t WHERE prev_lat IS NOT NULL`, [orgId]);
+    kmToday = parseFloat(kmR.rows[0]?.km) || 0;
+  } catch (_) { /* defensive: keep dashboard load resilient to this query's failure */ }
+
+  const t = threatR.rows[0];
+  const sosOpen = parseInt(t.sos_open) || 0;
+  const critOpen = parseInt(t.crit_open) || 0;
+  const alertsOpen = parseInt(t.alerts_open) || 0;
+  const panicOpen = parseInt(panicR.rows[0]?.panic_open) || 0;
+  const threatLevel = panicOpen > 0 || sosOpen > 0 ? 'critical' : critOpen > 0 ? 'elevated' : 'secure';
+
+  const k = kpiR.rows[0];
+
+  // on_time_pct from recently delivered shipments
+  let onTimePct = 100;
+  try {
+    const otR = await req.db(`
+      SELECT
+        COUNT(*) FILTER (WHERE actual_delivery <= scheduled_delivery + INTERVAL '15 minutes') AS on_time,
+        COUNT(*) AS total
+      FROM shipments WHERE org_id=$1 AND actual_delivery IS NOT NULL
+        AND scheduled_delivery >= NOW() - INTERVAL '30 days'`, [orgId]);
+    const ot = otR.rows[0];
+    onTimePct = ot.total > 0 ? Math.round((parseInt(ot.on_time)/parseInt(ot.total))*100) : 100;
+  } catch (_) {}
+
+  const nextRow = nextR.rows[0];
+  const shiftRow = shiftR.rows[0];
+
+  res.json({
+    threat: { level: threatLevel, alerts_open: alertsOpen + panicOpen, incidents_active: parseInt(k.incidents_active)||0 },
+    kpi: {
+      vehicles_live: parseInt(k.vehicles_live)||0,
+      convoys_active: parseInt(k.convoys_active)||0,
+      on_time_pct: onTimePct,
+      incidents_open: parseInt(k.incidents_open)||0,
+      payload_tonnes: parseFloat(k.payload_tonnes)||0,
+      consignments: parseInt(k.consignments)||0,
+      km_today: Math.round(kmToday),
+      guards_active: parseInt(k.guards_active)||0,
+    },
+    next_delivery: nextRow ? { convoy_id: nextRow.id, convoy_name: nextRow.convoy_name, eta: new Date(nextRow.eta).toISOString() } : null,
+    // null when no shift is active — a NOW() fallback made the client's shift
+    // timer restart at 00:00:00 on every poll, which reads as a placeholder.
+    shift_started_at: shiftRow?.started_at ? new Date(shiftRow.started_at).toISOString() : null,
+  });
+}));
+
+// ── Reverse geocode (server-side; the browser CSP blocks geocoder hosts) ────
+// Used by the Orbit homepage to name a panic location. Best-effort: returns
+// {address, short:null} rather than erroring so the caller can fall back to
+// coordinates. Nominatim's policy is fine here — panic events are rare.
+router.get('/reverse-geocode', asyncHandler(async (req, res) => {
+  const lat = parseFloat(req.query.lat), lng = parseFloat(req.query.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return res.status(400).json({ error: 'lat and lng required' });
+  try {
+    const r = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=jsonv2&zoom=16&addressdetails=1`,
+      { headers: { 'User-Agent': 'Sonalit-CommandCenter/1.0 (ops@sonalit.io)' }, signal: AbortSignal.timeout(6000) },
+    );
+    if (!r.ok) throw new Error(`geocode ${r.status}`);
+    const d = await r.json();
+    const a = d.address || {};
+    const short = [a.suburb || a.neighbourhood || a.village || a.town || a.city_district, a.city || a.county || a.state, a.country]
+      .filter(Boolean).slice(0, 3).join(', ');
+    res.json({ address: d.display_name || null, short: short || d.display_name || null });
+  } catch { res.json({ address: null, short: null }); }
+}));
+
+// ── §2.2 Map ───────────────────────────────────────────────────────────────
+router.get('/map', asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+
+  const [convoysR, alertZonesR, vehiclesR, geofencesR, riskzonesR, devicesR] = await Promise.all([
+    safeQuery(req.db, `
+      SELECT c.id, COALESCE(c.name, c.reference) AS name, c.status,
+             (SELECT g.lat FROM gps_logs g JOIN convoy_trucks ct ON ct.vehicle_id=g.vehicle_id
+               WHERE ct.convoy_id=c.id ORDER BY g.timestamp DESC LIMIT 1) AS lat,
+             (SELECT g.lng FROM gps_logs g JOIN convoy_trucks ct ON ct.vehicle_id=g.vehicle_id
+               WHERE ct.convoy_id=c.id ORDER BY g.timestamp DESC LIMIT 1) AS lng,
+             (SELECT v.heading FROM vehicles v JOIN convoy_trucks ct ON ct.vehicle_id=v.id
+               WHERE ct.convoy_id=c.id ORDER BY v.updated_at DESC LIMIT 1) AS heading
+      FROM convoys c
+      WHERE c.org_id=$1 AND c.status='active' AND c.deleted_at IS NULL
+      LIMIT 20`, [orgId]),
+
+    safeQuery(req.db, `
+      SELECT g.lat, g.lng, 2000 AS radius_m,
+             CASE WHEN a.severity='critical' THEN 'critical' WHEN a.severity='high' THEN 'high' ELSE 'medium' END AS severity
+      FROM alerts a
+      JOIN LATERAL (
+        SELECT lat, lng FROM gps_logs
+        WHERE vehicle_id=a.vehicle_id ORDER BY timestamp DESC LIMIT 1
+      ) g ON true
+      WHERE a.org_id=$1 AND a.resolved_at IS NULL AND a.vehicle_id IS NOT NULL
+      LIMIT 10`, [orgId]),
+
+    safeQuery(req.db, `
+      SELECT v.id, v.registration,
+             COALESCE(g.lat, v.latitude)   AS lat,
+             COALESCE(g.lng, v.longitude)  AS lng,
+             COALESCE(v.heading, 0) AS heading,
+             COALESCE(g.speed, 0)          AS speed_kmh,
+             CASE
+               WHEN a.severity = 'critical' OR a.severity = 'high' THEN 'alert'
+               WHEN a.id IS NOT NULL THEN 'warn'
+               WHEN g.timestamp IS NULL OR g.timestamp < NOW()-INTERVAL '15 minutes' THEN 'offline'
+               WHEN g.speed > 2 THEN 'moving'
+               ELSE 'idle'
+             END AS status
+      FROM vehicles v
+      LEFT JOIN LATERAL (
+        SELECT lat, lng, speed, timestamp FROM gps_logs
+        WHERE vehicle_id=v.id ORDER BY timestamp DESC LIMIT 1
+      ) g ON true
+      LEFT JOIN convoy_trucks ct ON ct.vehicle_id=v.id
+        AND ct.convoy_id IN (SELECT id FROM convoys WHERE org_id=$1 AND status='active')
+      LEFT JOIN LATERAL (
+        SELECT id, severity FROM alerts
+        WHERE convoy_id=ct.convoy_id AND resolved_at IS NULL
+        ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END
+        LIMIT 1
+      ) a ON true
+      WHERE v.org_id=$1 AND v.deleted_at IS NULL
+        AND COALESCE(g.lat, v.latitude) IS NOT NULL
+      LIMIT 100`, [orgId]),
+
+    safeQuery(req.db, `
+      SELECT id::text, name, COALESCE(type,'circle') AS type,
+             coordinates, COALESCE(radius, 1000) AS radius_m,
+             corridor_width_km
+      FROM geofences
+      WHERE org_id=$1 AND active IS NOT FALSE
+        AND coordinates IS NOT NULL
+      ORDER BY created_at`, [orgId]),
+
+    // risk_zones is global (no org_id) — use raw query
+    query(`
+      SELECT id::text, name, risk_level, lat, lng, COALESCE(radius_km, 5) AS radius_km
+      FROM risk_zones
+      WHERE active=true AND lat IS NOT NULL AND lng IS NOT NULL
+      LIMIT 20`).catch(() => ({ rows: [] })),
+
+    safeQuery(req.db, `
+      SELECT d.id, d.name, d.model, d.assignment_type,
+             d.last_lat AS lat, d.last_lng AS lng,
+             COALESCE(d.last_speed, 0) AS speed_kmh,
+             d.panic_active,
+             d.last_seen,
+             p.id AS panic_id,
+             CASE
+               WHEN d.panic_active = true OR p.id IS NOT NULL THEN 'panic'
+               WHEN d.last_seen IS NULL OR d.last_seen < NOW()-INTERVAL '15 minutes' THEN 'offline'
+               WHEN COALESCE(d.last_speed,0) > 2 THEN 'moving'
+               ELSE 'idle'
+             END AS status
+      FROM guardian_devices d
+      LEFT JOIN LATERAL (
+        SELECT id FROM panic_events
+        WHERE device_id = d.id AND resolved_at IS NULL
+        ORDER BY created_at DESC LIMIT 1
+      ) p ON true
+      WHERE d.org_id=$1 AND d.deleted_at IS NULL
+        AND d.last_lat IS NOT NULL AND d.last_lng IS NOT NULL
+      LIMIT 100`, [orgId]),
+  ]);
+
+  res.json({
+    convoys: convoysR.rows.map((c, i) => ({
+      id: c.id, name: c.name || `Convoy ${i+1}`, status: c.status,
+      lat: c.lat ? parseFloat(c.lat) : null,
+      lng: c.lng ? parseFloat(c.lng) : null,
+      heading: c.heading ? parseFloat(c.heading) : 0,
+      color: c.status === 'alert' ? '#ff4422' : '#00ffcc',
+    })),
+    alert_zones: alertZonesR.rows.map(z => ({
+      lat: parseFloat(z.lat), lng: parseFloat(z.lng),
+      radius_m: z.radius_m, severity: z.severity,
+    })),
+    vehicles: vehiclesR.rows.map(v => ({
+      id: v.id, registration: v.registration, status: v.status,
+      lat: parseFloat(v.lat), lng: parseFloat(v.lng),
+      heading: parseFloat(v.heading), speed_kmh: parseFloat(v.speed_kmh),
+    })),
+    geofences: geofencesR.rows.map(g => {
+        const type = (g.type || 'circle').toLowerCase();
+        // Unwrap a GeoJSON Feature to its bare geometry — imported/legacy
+        // zones are sometimes stored as the full Feature envelope rather
+        // than just the geometry, which none of the shape checks below
+        // recognize on their own.
+        const rawCoords = g.coordinates || {};
+        const coords = (rawCoords.type === 'Feature' && rawCoords.geometry) ? rawCoords.geometry : rawCoords;
+        const CORRIDOR_TYPES = ['corridor', 'linear', 'line', 'linestring', 'route'];
+        // 'linear' is a real, distinct geofence shape from 'corridor': a plain
+        // route line with no buffer zone, vs. a corridor's buffered safety
+        // band. Only corridor-family types get a fabricated buffer default —
+        // a linear geofence has none unless one was explicitly stored.
+        const isLinear = type === 'linear' || type === 'line' || type === 'linestring';
+
+        // Extract path in [[lat,lng],...] format from any known structure
+        let path = null;
+        let buffer_m = isLinear ? null : (g.corridor_width_km ? g.corridor_width_km * 1000 : 300);
+        if (Array.isArray(coords.path) && coords.path.length >= 2) {
+          path = coords.path; // [[lat,lng],...] order
+          if (typeof coords.buffer_m === 'number') buffer_m = coords.buffer_m;
+        } else if (coords.type === 'LineString' && Array.isArray(coords.coordinates) && coords.coordinates.length >= 2) {
+          // GeoJSON LineString uses [lng,lat] — swap to [lat,lng]
+          path = coords.coordinates.map(([lng, lat]) => [lat, lng]);
+        } else if (Array.isArray(coords) && coords.length >= 2 && Array.isArray(coords[0])) {
+          path = coords; // assume [[lat,lng],...] already
+        }
+
+        if (path && path.length >= 2) {
+          const mid = path[Math.floor(path.length / 2)];
+          return {
+            id: g.id, name: g.name, type: isLinear ? 'linear' : 'corridor',
+            path, buffer_m,
+            lat: mid ? parseFloat(mid[0]) : null,
+            lng: mid ? parseFloat(mid[1]) : null,
+            radius_m: parseFloat(g.radius_m),
+          };
+        }
+
+        // A corridor/linear-typed row with no usable path must NOT fall
+        // through to the circle fallbacks below — drawing a road corridor
+        // as a small circle at some derived centroid is actively misleading
+        // (looks like a different kind of zone entirely, in a fleet-safety
+        // context where that distinction matters), worse than not showing
+        // it at all. Surface it loudly in logs instead so the bad
+        // coordinates (e.g. a row flipped to type='corridor' via POST
+        // /:id/activate-corridor, which never rewrites `coordinates` into
+        // path form) can actually get fixed at the source.
+        if (CORRIDOR_TYPES.includes(type)) {
+          logger.warn(`Geofence dropped from /dashboard/map (corridor/linear typed but no usable path — refusing to render it as a misleading circle): id=${g.id} name="${g.name}" type=${type} coordinates=${JSON.stringify(g.coordinates)}`);
+          return null;
+        }
+
+        // GeoJSON Polygon (e.g. imported/legacy zones) — coordinates is
+        // [[[lng,lat],...]] (ring array); use the ring's centroid as the
+        // zone center rather than dropping it outright.
+        if (coords.type === 'Polygon' && Array.isArray(coords.coordinates?.[0]) && coords.coordinates[0].length >= 3) {
+          const ring = coords.coordinates[0];
+          const sum = ring.reduce((acc, [lng, lat]) => [acc[0] + lat, acc[1] + lng], [0, 0]);
+          const lat = sum[0] / ring.length;
+          const lng = sum[1] / ring.length;
+          return { id: g.id, name: g.name, type, lat, lng, radius_m: parseFloat(g.radius_m), path: null, buffer_m: null };
+        }
+
+        // GeoJSON Point (e.g. the border-crossing seed data) — coordinates
+        // is [lng,lat], the opposite order from every plain {lat,lng} shape
+        // checked below, so it needs its own explicit branch.
+        let lat = coords.lat ?? coords.center?.lat ?? coords.latitude ?? null;
+        let lng = coords.lng ?? coords.center?.lng ?? coords.longitude ?? null;
+        if ((lat == null || lng == null) && coords.type === 'Point' && Array.isArray(coords.coordinates) && coords.coordinates.length >= 2) {
+          [lng, lat] = coords.coordinates;
+        }
+        if (lat == null || lng == null) {
+          logger.warn(`Geofence dropped from /dashboard/map (no recognizable lat/lng): id=${g.id} name="${g.name}" type=${type} coordinates=${JSON.stringify(g.coordinates)}`);
+          return null;
+        }
+        return { id: g.id, name: g.name, type, lat: parseFloat(lat), lng: parseFloat(lng), radius_m: parseFloat(g.radius_m), path: null, buffer_m: null };
+      }).filter(Boolean),
+    riskzones: riskzonesR.rows.map(r => ({
+      id: r.id, name: r.name, risk_level: r.risk_level,
+      lat: parseFloat(r.lat), lng: parseFloat(r.lng),
+      radius_km: parseFloat(r.radius_km),
+    })),
+    devices: devicesR.rows.map(d => ({
+      id: d.id, name: d.name, model: d.model,
+      assignment_type: d.assignment_type,
+      lat: parseFloat(d.lat), lng: parseFloat(d.lng),
+      speed_kmh: parseFloat(d.speed_kmh),
+      status: d.status,
+      panic_active: d.panic_active === true || d.panic_id != null,
+      last_seen: d.last_seen,
+    })),
+  });
+}));
+
+// ── §2.2b Ops Replay ───────────────────────────────────────────────────────
+// A DVR for the operation: every vehicle + Guardian-device track and the panic /
+// alert / voice-note / capture events across a time window, so the front end can
+// scrub the whole picture back and forth. Tracks are downsampled server-side to
+// keep the payload bounded; device events are positioned client-side by
+// interpolating the device track when they carry no coordinates of their own.
+router.get('/replay', asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+  const now = Date.now();
+  const MAX_MS = 24 * 3600_000;
+  let to = req.query.to ? new Date(req.query.to).getTime() : now;
+  let from = req.query.from ? new Date(req.query.from).getTime() : to - 6 * 3600_000;
+  if (!Number.isFinite(to)) to = now;
+  if (!Number.isFinite(from) || from >= to) from = to - 6 * 3600_000;
+  if (to - from > MAX_MS) from = to - MAX_MS;           // cap the window
+  const fromIso = new Date(from).toISOString(), toIso = new Date(to).toISOString();
+
+  // Even-sample a per-entity point list down to at most `cap` points.
+  const downsample = (pts, cap = 500) => {
+    if (pts.length <= cap) return pts;
+    const step = pts.length / cap, out = [];
+    for (let i = 0; i < cap; i++) out.push(pts[Math.floor(i * step)]);
+    out[out.length - 1] = pts[pts.length - 1];          // always keep the last fix
+    return out;
+  };
+
+  const [vTrack, dTrack, vNames, dNames, panics, voices, captures, alerts] = await Promise.all([
+    safeQuery(req.db, `SELECT vehicle_id AS id, lat, lng, speed, timestamp AS t
+        FROM gps_logs WHERE org_id=$1 AND timestamp BETWEEN $2 AND $3
+        ORDER BY vehicle_id, timestamp`, [orgId, fromIso, toIso]),
+    safeQuery(req.db, `SELECT dl.device_id AS id, dl.lat, dl.lng, dl.speed, dl.timestamp AS t
+        FROM device_locations dl JOIN guardian_devices d ON d.id = dl.device_id
+        WHERE d.org_id=$1 AND dl.timestamp BETWEEN $2 AND $3
+        ORDER BY dl.device_id, dl.timestamp`, [orgId, fromIso, toIso]),
+    safeQuery(req.db, `SELECT id, registration FROM vehicles WHERE org_id=$1 AND deleted_at IS NULL`, [orgId]),
+    safeQuery(req.db, `SELECT d.id, d.name, fo.name AS officer
+        FROM guardian_devices d LEFT JOIN field_officers fo ON fo.device_id = d.id
+        WHERE d.org_id=$1 AND d.deleted_at IS NULL`, [orgId]),
+    safeQuery(req.db, `SELECT id, device_id, mode, lat, lng, created_at AS at, message
+        FROM panic_events WHERE org_id=$1 AND created_at BETWEEN $2 AND $3 ORDER BY created_at`, [orgId, fromIso, toIso]),
+    safeQuery(req.db, `SELECT id, device_id, lat, lng, duration_ms, created_at AS at
+        FROM guardian_voice_messages WHERE org_id=$1 AND direction='from_device' AND created_at BETWEEN $2 AND $3 ORDER BY created_at`, [orgId, fromIso, toIso]),
+    safeQuery(req.db, `SELECT id, device_id, url, created_at AS at
+        FROM guardian_captures WHERE org_id=$1 AND created_at BETWEEN $2 AND $3 ORDER BY created_at`, [orgId, fromIso, toIso]),
+    safeQuery(req.db, `SELECT id, vehicle_id, severity, type, message, created_at AS at
+        FROM alerts WHERE org_id=$1 AND deleted_at IS NULL AND created_at BETWEEN $2 AND $3 ORDER BY created_at`, [orgId, fromIso, toIso]),
+  ]);
+
+  const vName = new Map(vNames.rows.map(r => [r.id, r.registration]));
+  const dName = new Map(dNames.rows.map(r => [r.id, r.officer || r.name]));
+
+  const groupTrack = (rows, nameMap) => {
+    const by = new Map();
+    for (const r of rows) {
+      if (!by.has(r.id)) by.set(r.id, []);
+      by.get(r.id).push({ t: new Date(r.t).getTime(), lat: parseFloat(r.lat), lng: parseFloat(r.lng), spd: parseFloat(r.speed) || 0 });
+    }
+    return [...by.entries()].map(([id, pts]) => ({
+      id, name: nameMap.get(id) || 'Unknown', track: downsample(pts),
+    }));
+  };
+
+  const num = (v) => (v == null ? null : parseFloat(v));
+  const events = [
+    ...panics.rows.map(r => ({ kind: 'panic', id: r.id, at: new Date(r.at).getTime(), deviceId: r.device_id, lat: num(r.lat), lng: num(r.lng), label: r.mode === 'voice_distress' ? 'Voice distress' : 'PANIC / SOS', sub: dName.get(r.device_id) || 'device' })),
+    ...voices.rows.map(r => ({ kind: 'voice', id: r.id, at: new Date(r.at).getTime(), deviceId: r.device_id, lat: num(r.lat), lng: num(r.lng), label: 'Voice note', sub: dName.get(r.device_id) || 'Field officer', durationMs: r.duration_ms })),
+    ...captures.rows.map(r => ({ kind: 'capture', id: r.id, at: new Date(r.at).getTime(), deviceId: r.device_id, lat: null, lng: null, label: 'Covert capture', sub: dName.get(r.device_id) || 'device', url: r.url })),
+    ...alerts.rows.map(r => ({ kind: 'alert', id: r.id, at: new Date(r.at).getTime(), vehicleId: r.vehicle_id, lat: null, lng: null, label: r.message || r.type, sub: (r.severity || '').toUpperCase(), severity: r.severity })),
+  ].sort((a, b) => a.at - b.at);
+
+  res.json({
+    window: { from, to },
+    vehicles: groupTrack(vTrack.rows, vName),
+    devices: groupTrack(dTrack.rows, dName),
+    events,
+  });
+}));
+
+// ── §2.3 Vehicles ──────────────────────────────────────────────────────────
+router.get('/vehicles', asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+
+  const r = await req.db(`
+    SELECT v.id, v.registration,
+           ct.convoy_id,
+           CASE
+             WHEN g.timestamp < NOW()-INTERVAL '15 minutes' THEN 'offline'
+             WHEN a.id IS NOT NULL THEN 'alert'
+             WHEN g.speed > 2 THEN 'moving'
+             ELSE 'idle'
+           END AS status,
+           COALESCE(g.speed, 0) AS speed_kmh,
+           g.timestamp AS last_ping_at
+    FROM vehicles v
+    LEFT JOIN convoy_trucks ct ON ct.vehicle_id=v.id
+      AND ct.convoy_id IN (SELECT id FROM convoys WHERE org_id=$1 AND status='active')
+    LEFT JOIN LATERAL (
+      SELECT speed, lat, lng, timestamp FROM gps_logs
+      WHERE vehicle_id=v.id ORDER BY timestamp DESC LIMIT 1
+    ) g ON true
+    LEFT JOIN LATERAL (
+      SELECT id FROM alerts WHERE convoy_id=ct.convoy_id AND resolved_at IS NULL LIMIT 1
+    ) a ON true
+    WHERE v.org_id=$1 AND v.deleted_at IS NULL
+    ORDER BY v.registration`, [orgId]);
+
+  res.json({ data: r.rows.map(row => ({
+    id: row.id,
+    registration: row.registration,
+    convoy_id: row.convoy_id || null,
+    status: row.status || 'offline',
+    speed_kmh: parseFloat(row.speed_kmh) || 0,
+    fuel_pct: null,
+    engine_temp_c: null,
+    gps_signal_pct: null,
+    last_ping_at: row.last_ping_at ? new Date(row.last_ping_at).toISOString() : null,
+  })) });
+}));
+
+// ── §2.4 Alerts ────────────────────────────────────────────────────────────
+router.get('/alerts', asyncHandler(async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 10, 50);
+  try {
+    const r = await req.db(`
+      SELECT id, severity, type, message,
+             convoy_id, created_at AS occurred_at,
+             resolved_at IS NOT NULL AS acknowledged
+      FROM alerts WHERE org_id=$1
+      ORDER BY
+        CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END,
+        created_at DESC
+      LIMIT $2`, [req.user.org_id, limit]);
+
+    res.json({ data: r.rows.map(a => ({
+      id: a.id,
+      severity: a.severity,
+      type: a.type,
+      title: a.message,
+      summary: a.message || '',
+      convoy_id: a.convoy_id || null,
+      occurred_at: new Date(a.occurred_at).toISOString(),
+      acknowledged: a.acknowledged,
+    })) });
+  } catch (_) { res.json({ data: [] }); }
+}));
+
+// ── §2.5 Convoys ───────────────────────────────────────────────────────────
+router.get('/convoys', asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+  try {
+    const r = await req.db(`
+      SELECT c.id, COALESCE(c.name, c.reference) AS name, c.status,
+             COALESCE(c.origin, c.route_origin) AS origin,
+             COALESCE(c.destination, c.route_destination) AS destination,
+             COALESCE(c.estimated_arrival_at, c.estimated_arrival) AS eta,
+             (SELECT COUNT(*) FROM convoy_trucks WHERE convoy_id=c.id) AS truck_count
+      FROM convoys c
+      WHERE c.org_id=$1 AND c.status IN ('active','in_transit','delayed') AND c.deleted_at IS NULL
+      ORDER BY c.created_at DESC LIMIT 5`, [orgId]);
+
+    const convoyIds = r.rows.map(c => c.id);
+    let checkpoints = [];
+    if (convoyIds.length > 0) {
+      const ph = convoyIds.map((_, i) => `$${i+2}`).join(',');
+      const cpR = await safeQuery(req.db, `
+        SELECT cc.convoy_id, cc.name, cc.reached_at
+        FROM checkpoints cc
+        WHERE cc.convoy_id IN (${ph})
+        ORDER BY cc.convoy_id`, [orgId, ...convoyIds]);
+      checkpoints = cpR.rows;
+    }
+
+    const cpByConvoy = {};
+    for (const cp of checkpoints) {
+      if (!cpByConvoy[cp.convoy_id]) cpByConvoy[cp.convoy_id] = [];
+      cpByConvoy[cp.convoy_id].push(cp);
+    }
+
+    res.json({ data: r.rows.map(c => ({
+      id: c.id,
+      name: c.name || c.id,
+      status: c.status,
+      origin: c.origin || null,
+      destination: c.destination || null,
+      eta: c.eta ? new Date(c.eta).toISOString() : null,
+      truck_count: parseInt(c.truck_count) || 0,
+      seal_intact: null,
+      checkpoints: (cpByConvoy[c.id] || []).map(cp => ({
+        name: cp.name,
+        status: cp.reached_at ? 'done' : 'pending',
+        reached_at: cp.reached_at ? new Date(cp.reached_at).toISOString() : null,
+      })),
+    })) });
+  } catch (_) { res.json({ data: [] }); }
+}));
+
+// ── §2.6 Route Risk ────────────────────────────────────────────────────────
+router.get('/route-risk', asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+  try {
+  const r = await req.db(`
+    SELECT c.id AS corridor_id,
+      COALESCE(c.name, c.reference) AS corridor,
+      COALESCE(c.origin, c.route_origin) AS origin,
+      COALESCE(c.destination, c.route_destination) AS destination,
+      COUNT(DISTINCT rz.id) AS incident_count,
+      COALESCE(SUM(CASE rz.level WHEN 'high' THEN 3 WHEN 'medium' THEN 2 ELSE 1 END), 0) AS weighted_score,
+      MAX(rz.why) AS last_incident_summary,
+      ARRAY[]::text[] AS active_convoys
+    FROM convoys c
+    LEFT JOIN convoy_risk_zones crz ON crz.convoy_id = c.id
+    LEFT JOIN risk_zones rz ON rz.id = crz.zone_id AND rz.is_active = true
+    WHERE c.org_id = $1 AND c.deleted_at IS NULL
+      AND c.status NOT IN ('cancelled','archived')
+    GROUP BY c.id, c.name, c.reference, c.origin, c.route_origin, c.destination, c.route_destination
+    ORDER BY weighted_score DESC, c.created_at DESC
+    LIMIT 10`, [orgId]);
+
+  res.json({ data: r.rows.map(row => {
+    const score = parseInt(row.weighted_score) || 0;
+    const normalised = Math.min(100, score * 10);
+    const risk = normalised >= 70 ? 'high' : normalised >= 40 ? 'medium' : 'low';
+    return {
+      corridor: row.corridor,
+      origin: row.origin,
+      destination: row.destination,
+      risk,
+      risk_score: normalised,
+      last_incident_summary: row.last_incident_summary || null,
+      active_convoys: row.active_convoys || [],
+    };
+  }) });
+  } catch (_) { res.json({ data: [] }); }
+}));
+
+// ── §2.7 Drivers ───────────────────────────────────────────────────────────
+router.get('/drivers', asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+  try {
+  const r = await req.db(`
+    SELECT d.id, d.name, d.on_duty,
+           ct.convoy_id,
+           COALESCE(be.speed_violations, 0) AS speed_v,
+           COALESCE(be.harsh_braking, 0) AS brake_v,
+           COALESCE(be.fatigue_flags, 0) AS fatigue_v
+    FROM drivers d
+    LEFT JOIN convoy_trucks ct ON ct.driver_id=d.id
+      AND ct.convoy_id IN (SELECT id FROM convoys WHERE org_id=$1 AND status='active')
+    LEFT JOIN LATERAL (
+      SELECT
+        COUNT(*) FILTER (WHERE event_type='speeding') AS speed_violations,
+        COUNT(*) FILTER (WHERE event_type='hard_braking') AS harsh_braking,
+        COUNT(*) FILTER (WHERE event_type='fatigue_pattern') AS fatigue_flags
+      FROM driver_behaviour_events be
+      WHERE be.driver_id=d.user_id AND be.created_at >= NOW()-INTERVAL '7 days'
+    ) be ON true
+    WHERE d.org_id=$1 AND d.deleted_at IS NULL
+    ORDER BY d.name
+    LIMIT 20`, [orgId]);
+
+  res.json({ data: r.rows.map(d => {
+    const sv = parseInt(d.speed_v) || 0;
+    const bv = parseInt(d.brake_v) || 0;
+    const fv = parseInt(d.fatigue_v) || 0;
+    const penalty = sv * 3 + bv * 2 + fv * 4;
+    const score = Math.max(0, Math.min(100, 100 - penalty));
+    const grade = score >= 90 ? 'excellent' : score >= 80 ? 'good' : score >= 65 ? 'monitor' : 'flagged';
+    const flags = [
+      ...(sv > 0 ? [`${sv} speed violations`] : []),
+      ...(bv > 0 ? [`${bv} harsh braking`] : []),
+      ...(fv > 0 ? [`${fv} fatigue flags`] : []),
+    ];
+    const initials = d.name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
+    return { id: d.id, name: d.name, initials, convoy_id: d.convoy_id || null, score, grade, flags, on_duty: d.on_duty ?? false };
+  }) });
+  } catch (_) { res.json({ data: [] }); }
+}));
+
+// ── §2.8 Borders ───────────────────────────────────────────────────────────
+router.get('/borders', asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+  try {
+  const r = await req.db(`
+    SELECT g.id, g.name, g.region,
+           ARRAY_AGG(DISTINCT COALESCE(con.name, con.reference)) FILTER (WHERE con.id IS NOT NULL) AS active_convoys,
+           MAX(ge.created_at) AS last_event_at
+    FROM geofences g
+    LEFT JOIN geofence_events ge ON ge.geofence_id=g.id AND ge.created_at >= NOW()-INTERVAL '24 hours'
+    LEFT JOIN convoys con ON con.org_id=$1 AND con.status='active'
+    WHERE g.org_id=$1 AND g.type='border' AND g.active IS NOT FALSE
+    GROUP BY g.id, g.name, g.region
+    ORDER BY g.name
+    LIMIT 10`, [orgId]);
+
+  const FLAG_MAP = {
+    'Uganda': '🇺🇬', 'Kenya': '🇰🇪', 'Tanzania': '🇹🇿', 'Rwanda': '🇷🇼',
+    'Burundi': '🇧🇮', 'DRC': '🇨🇩', 'Ethiopia': '🇪🇹', 'South Sudan': '🇸🇸',
+    'Malawi': '🇲🇼', 'Zambia': '🇿🇲', 'Somalia': '🇸🇴',
+  };
+
+  res.json({ data: r.rows.map(b => {
+    const countries = (b.region || b.name).toString();
+    const flagEmojis = countries.split(/[\/\-,]/).map(c => FLAG_MAP[c.trim()] || '').filter(Boolean).join(' ');
+    const activeConvoys = b.active_convoys || [];
+    const status = activeConvoys.length > 2 ? 'busy' : activeConvoys.length > 0 ? 'clear' : 'clear';
+    return { name: b.name, countries, status, queue_minutes: null, active_convoys: activeConvoys, flag_emojis: flagEmojis };
+  }) });
+  } catch (_) { res.json({ data: [] }); }
+}));
+
+// ── §2.9 Performance ───────────────────────────────────────────────────────
+router.get('/performance', asyncHandler(async (req, res) => {
+  const days = Math.min(parseInt(req.query.days) || 14, 30);
+  const orgId = req.user.org_id;
+  try {
+  const r = await req.db(`
+    SELECT
+      date_trunc('day', COALESCE(actual_delivery, scheduled_delivery)) AS day,
+      COUNT(*) AS total,
+      COUNT(*) FILTER (WHERE actual_delivery <= scheduled_delivery + INTERVAL '15 minutes') AS on_time
+    FROM shipments
+    WHERE org_id=$1 AND scheduled_delivery >= NOW()-($2 || ' days')::INTERVAL
+    GROUP BY 1 ORDER BY 1 DESC`, [orgId, days]);
+
+  const rows = r.rows;
+  const result = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const iso = d.toISOString().slice(0, 10);
+    const match = rows.find(r => new Date(r.day).toISOString().slice(0, 10) === iso);
+    const total = parseInt(match?.total) || 0;
+    const onTime = parseInt(match?.on_time) || 0;
+    result.push({
+      date: iso,
+      label: d.toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' }),
+      on_time_pct: total > 0 ? Math.round((onTime / total) * 100) : null,
+    });
+  }
+
+  res.json({ data: result });
+  } catch (_) { res.json({ data: [] }); }
+}));
+
+// ── §2.10 Predictions ──────────────────────────────────────────────────────
+router.get('/predictions', asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+  const predictions = [];
+
+  try {
+    // Delay prediction: convoy below 65% historical avg speed
+    const delayR = await req.db(`
+      SELECT c.id, COALESCE(c.name, c.reference) AS name,
+             AVG(g.speed) FILTER (WHERE g.timestamp >= NOW()-INTERVAL '30 minutes') AS recent_speed,
+             AVG(g.speed) FILTER (WHERE g.timestamp >= NOW()-INTERVAL '7 days') AS hist_speed
+      FROM convoys c
+      JOIN convoy_trucks ct ON ct.convoy_id=c.id
+      JOIN gps_logs g ON g.vehicle_id=ct.vehicle_id
+      WHERE c.org_id=$1 AND c.status='active'
+      GROUP BY c.id, c.name, c.reference
+      HAVING AVG(g.speed) FILTER (WHERE g.timestamp >= NOW()-INTERVAL '30 minutes') < 0.65 *
+             NULLIF(AVG(g.speed) FILTER (WHERE g.timestamp >= NOW()-INTERVAL '7 days'), 0)`, [orgId]);
+
+    for (const row of delayR.rows) {
+      const recentSpeed = parseFloat(row.recent_speed) || 0;
+      const histSpeed = parseFloat(row.hist_speed) || 1;
+      const deficit = Math.round((1 - recentSpeed / histSpeed) * 100);
+      predictions.push({
+        id: `delay-${row.id}`,
+        confidence: Math.min(95, deficit),
+        type: 'delay',
+        title: `Delay risk: ${row.name}`,
+        detail: `Running ${deficit}% below historical average speed`,
+        recommendation: 'Alert dispatch. Check for road incidents or traffic.',
+      });
+    }
+
+  } catch (_) {}
+
+  if (predictions.length === 0) {
+    predictions.push({
+      id: 'perf-ok',
+      confidence: 88,
+      type: 'performance',
+      title: 'Fleet performing nominally',
+      detail: 'All convoys on schedule. No maintenance flags.',
+      recommendation: 'Continue monitoring. Next scheduled check in 6 hours.',
+    });
+  }
+
+  res.json({ data: predictions });
+}));
+
+// ── §2.11 Weather ──────────────────────────────────────────────────────────
+const weatherCache = new Map();
+
+function fetchWeatherCity(city) {
+  const cacheKey = city;
+  const cached = weatherCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < 30 * 60 * 1000) return Promise.resolve(cached.data);
+
+  return new Promise((resolve) => {
+    const url = `https://wttr.in/${encodeURIComponent(city)}?format=j1`;
+    https.get(url, { headers: { 'User-Agent': 'Sonalit/1.0' }, timeout: 5000 }, (resp) => {
+      let body = '';
+      resp.on('data', (d) => { body += d; });
+      resp.on('end', () => {
+        try {
+          const j = JSON.parse(body);
+          const cc = j.current_condition[0];
+          const data = {
+            city,
+            temp_c: parseInt(cc.temp_C),
+            condition: cc.weatherDesc[0].value,
+            wind_kmh: parseInt(cc.windspeedKmph),
+            visibility_km: parseInt(cc.visibility),
+            icon_emoji: cc.weatherCode >= 200 && cc.weatherCode < 300 ? '⛈' :
+              cc.weatherCode >= 300 && cc.weatherCode < 400 ? '🌧' :
+              cc.weatherCode >= 500 && cc.weatherCode < 600 ? '🌧' :
+              cc.weatherCode >= 600 && cc.weatherCode < 700 ? '❄' :
+              cc.weatherCode >= 700 && cc.weatherCode < 800 ? '🌫' :
+              cc.weatherCode === 800 ? '☀' :
+              cc.weatherCode > 800 ? '⛅' : '🌤',
+          };
+          weatherCache.set(cacheKey, { ts: Date.now(), data });
+          resolve(data);
+        } catch (_) { resolve({ city, temp_c: null, condition: 'Unavailable', wind_kmh: null, visibility_km: null, icon_emoji: '❓' }); }
+      });
+    }).on('error', () => resolve({ city, temp_c: null, condition: 'Unavailable', wind_kmh: null, visibility_km: null, icon_emoji: '❓' }));
+  });
+}
+
+router.get('/weather', asyncHandler(async (req, res) => {
+  const cities = ['Kampala', 'Jinja', 'Malaba', 'Eldoret', 'Nairobi', 'Mombasa'];
+  const results = await Promise.all(cities.map(fetchWeatherCity));
+  res.json({ data: results });
+}));
+
+// ── §2.12 Panic ────────────────────────────────────────────────────────────
+router.get('/panic', asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+  try {
+  const [activeR, statsR, teamsR] = await Promise.all([
+    // Prefer the assigned field officer's name (the person holding the device)
+    // over the raw device code — the device links to a field_officer via
+    // field_officers.device_id. req.db is org-scoped, so RLS on field_officers
+    // is satisfied (the device-auth publish path can't read it, hence this poll
+    // is where the SOS card learns who it is).
+    safeQuery(req.db, `SELECT p.id, p.device_id, p.mode, p.lat, p.lng, p.created_at AS triggered_at,
+              p.acknowledged_at, p.escalation_level,
+              COALESCE(fo.name, d.name) AS device_name
+            FROM panic_events p
+            LEFT JOIN guardian_devices d ON d.id = p.device_id
+            LEFT JOIN field_officers fo ON fo.device_id = p.device_id
+            WHERE p.org_id=$1 AND p.resolved_at IS NULL ORDER BY p.created_at DESC LIMIT 1`, [orgId]),
+    safeQuery(req.db, `SELECT
+              AVG(EXTRACT(EPOCH FROM (resolved_at - created_at))) AS avg_response_s,
+              MAX(created_at) AS last_event_at
+            FROM panic_events WHERE org_id=$1 AND resolved_at IS NOT NULL`, [orgId]),
+    safeQuery(req.db, `SELECT name, type, COALESCE(eta_minutes, 0) AS eta_min, location, status
+            FROM response_teams WHERE org_id=$1 AND active=true LIMIT 5`, [orgId]),
+  ]);
+
+  const active = activeR.rows[0] || null;
+  const stats = statsR.rows[0];
+  const avgResponseS = Math.round(parseFloat(stats?.avg_response_s) || 0);
+  const lastEventDaysAgo = stats?.last_event_at
+    ? Math.floor((Date.now() - new Date(stats.last_event_at).getTime()) / 86400000) : -1;
+
+  res.json({
+    status: active ? 'active' : 'clear',
+    active_event: active ? {
+      id: active.id,
+      vehicle_id: active.device_id,
+      device_name: active.device_name ?? null,
+      mode: active.mode,
+      lat: active.lat ? parseFloat(active.lat) : null,
+      lng: active.lng ? parseFloat(active.lng) : null,
+      triggered_at: new Date(active.triggered_at).toISOString(),
+      acknowledged_at: active.acknowledged_at ? new Date(active.acknowledged_at).toISOString() : null,
+      escalation_level: parseInt(active.escalation_level) || 0,
+    } : null,
+    response_time_avg_s: avgResponseS,
+    last_event_days_ago: lastEventDaysAgo,
+    response_teams: teamsR.rows.map(t => ({
+      name: t.name, type: t.type, eta_min: parseInt(t.eta_min) || 0,
+      location: t.location || '', status: t.status || 'standby',
+    })),
+  });
+  } catch (_) {
+    res.json({ status: 'clear', active_event: null, response_time_avg_s: 0, last_event_days_ago: -1, response_teams: [] });
+  }
+}));
+
+// ── §2.13 Comms ────────────────────────────────────────────────────────────
+router.get('/comms', asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+  try {
+  const r = await req.db(`
+    SELECT v.id AS vehicle_id, v.registration,
+           COUNT(g.id) FILTER (WHERE g.timestamp >= date_trunc('day', NOW())) AS ping_count_today,
+           MAX(g.timestamp) AS last_ping_at
+    FROM vehicles v
+    LEFT JOIN gps_logs g ON g.vehicle_id=v.id
+    WHERE v.org_id=$1 AND v.deleted_at IS NULL
+    GROUP BY v.id, v.registration
+    ORDER BY v.registration`, [orgId]);
+
+  res.json({ data: r.rows.map(row => {
+    const pingCount = parseInt(row.ping_count_today) || 0;
+    const lastPingAt = row.last_ping_at ? new Date(row.last_ping_at).toISOString() : null;
+    const secAgo = lastPingAt ? (Date.now() - new Date(lastPingAt).getTime()) / 1000 : 9999;
+    const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+    const pingsPerMin = pingCount / Math.max(1, (Date.now() - midnight.getTime()) / 60000);
+    const signalBars = pingsPerMin > 1 ? 5 : pingsPerMin > 0.5 ? 4 : pingsPerMin > 0.2 ? 3 : pingsPerMin > 0.067 ? 2 : 1;
+    const networkType = signalBars >= 4 ? '4G' : signalBars === 3 ? '3G' : signalBars === 2 ? 'EDGE' : 'offline';
+    const status = secAgo < 30 ? 'live' : secAgo < 300 ? 'delayed' : secAgo < 900 ? 'weak' : 'offline';
+    return { vehicle_id: row.vehicle_id, registration: row.registration, ping_count_today: pingCount, last_ping_at: lastPingAt, signal_bars: signalBars, network_type: networkType, status };
+  }) });
+  } catch (_) { res.json({ data: [] }); }
+}));
+
+// ── §2.14 Timeline ─────────────────────────────────────────────────────────
+router.get('/timeline', asyncHandler(async (req, res) => {
+  const orgId = req.user.org_id;
+  const now = Date.now();
+  const end = now + 24 * 3600 * 1000;
+
+  const [arrivalsR, checkpointsR, shiftsR] = await Promise.all([
+    safeQuery(req.db, `SELECT id, COALESCE(name, reference) AS label,
+               COALESCE(estimated_arrival_at, estimated_arrival) AS time
+            FROM convoys WHERE org_id=$1 AND status='active'
+              AND COALESCE(estimated_arrival_at, estimated_arrival) BETWEEN NOW() AND NOW()+INTERVAL '24 hours'
+            ORDER BY time LIMIT 10`, [orgId]),
+    safeQuery(req.db, `SELECT cc.convoy_id, cc.name AS label, cc.expected_at AS time
+            FROM checkpoints cc
+            JOIN convoys c ON c.id=cc.convoy_id
+            WHERE c.org_id=$1 AND cc.reached_at IS NULL
+              AND cc.expected_at BETWEEN NOW() AND NOW()+INTERVAL '24 hours'
+            ORDER BY cc.expected_at LIMIT 10`, [orgId]),
+    safeQuery(req.db, `SELECT 'Shift changeover' AS label, end_time AS time
+            FROM shifts WHERE org_id=$1 AND status IN ('scheduled','active')
+              AND end_time BETWEEN NOW() AND NOW()+INTERVAL '24 hours'
+            ORDER BY end_time LIMIT 3`, [orgId]),
+  ]);
+
+  const events = [
+    ...arrivalsR.rows.map(r => ({ type: 'arrival', label: `Arrival: ${r.label}`, time: new Date(r.time).toISOString(), convoy_id: r.id })),
+    ...checkpointsR.rows.map(r => ({ type: 'checkpoint', label: r.label, time: new Date(r.time).toISOString(), convoy_id: r.convoy_id })),
+    ...shiftsR.rows.map(r => ({ type: 'shift', label: r.label, time: new Date(r.time).toISOString() })),
+  ].map(e => ({
+    ...e,
+    fraction: Math.max(0, Math.min(1, (new Date(e.time).getTime() - now) / (end - now))),
+  })).sort((a, b) => a.fraction - b.fraction);
+
+  res.json({ data: events });
+}));
+
+module.exports = router;

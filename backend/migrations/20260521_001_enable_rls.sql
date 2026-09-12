@@ -69,6 +69,18 @@ BEGIN
   END IF;
   CREATE INDEX IF NOT EXISTS idx_panic_events_org ON panic_events(org_id);
 
+  -- drivers
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='drivers' AND column_name='org_id') THEN
+    EXECUTE format('ALTER TABLE drivers ADD COLUMN org_id UUID NOT NULL DEFAULT %L', default_org::text);
+  END IF;
+  CREATE INDEX IF NOT EXISTS idx_drivers_org ON drivers(org_id) WHERE deleted_at IS NULL;
+
+  -- field_reports
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='field_reports' AND column_name='org_id') THEN
+    EXECUTE format('ALTER TABLE field_reports ADD COLUMN org_id UUID NOT NULL DEFAULT %L', default_org::text);
+  END IF;
+  CREATE INDEX IF NOT EXISTS idx_field_reports_org ON field_reports(org_id);
+
 END $$;
 
 -- ── Enable Row-Level Security ─────────────────────────────────────────────────
@@ -86,23 +98,31 @@ BEGIN
     'guardian_devices', 'panic_events'
   ] LOOP
     BEGIN
-      EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
-      -- Drop before recreate to keep idempotent
-      EXECUTE format('DROP POLICY IF EXISTS org_isolation ON %I', tbl);
-      EXECUTE format(
-        'CREATE POLICY org_isolation ON %I
-         USING (org_id = current_setting(''app.current_org_id'', true)::uuid)',
-        tbl
-      );
-      -- Superuser / migration role bypasses RLS automatically (BYPASSRLS privilege)
+      -- Only enable RLS and create org_isolation policy on tables that have org_id.
+      -- Tables without org_id (e.g. shipments, trips, invoices, expenses) are skipped
+      -- so that RLS is not enabled with no permissive policy (which would deny all rows).
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = tbl AND column_name = 'org_id'
+      ) THEN
+        EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
+        -- Drop before recreate to keep idempotent
+        EXECUTE format('DROP POLICY IF EXISTS org_isolation ON %I', tbl);
+        EXECUTE format(
+          'CREATE POLICY org_isolation ON %I
+           USING (org_id = current_setting(''app.current_org_id'', true)::uuid)',
+          tbl
+        );
+        -- Superuser / migration role bypasses RLS automatically (BYPASSRLS privilege)
+      ELSE
+        RAISE NOTICE 'Table % has no org_id — skipping RLS', tbl;
+      END IF;
     EXCEPTION WHEN undefined_table THEN
       RAISE NOTICE 'Table % not found — skipping RLS', tbl;
     END;
   END LOOP;
 END $$;
 
--- ── Audit chain index for concurrency fix (T1.6) ─────────────────────────────
-CREATE INDEX IF NOT EXISTS audit_log_org_id_id ON audit_logs (org_id, id DESC)
-  WHERE true; -- partial index created only if org_id column exists
+-- ── Audit chain index lives in 005_audit_chain_locking.sql (org_id added there) ─
 
 COMMIT;

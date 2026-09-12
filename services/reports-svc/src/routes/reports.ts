@@ -23,7 +23,7 @@ export const reportsRoutes: FastifyPluginAsync = async (app) => {
   app.get('/v4/reports', async (req, reply) => {
     const org_id = (req.headers['x-org-id'] as string) ?? '';
     const q = ListSchema.parse(req.query);
-    const { rows } = await query(
+    const rows = await query(
       'SELECT * FROM reports WHERE org_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3',
       [org_id, q.limit, (q.page - 1) * q.limit],
     );
@@ -34,7 +34,7 @@ export const reportsRoutes: FastifyPluginAsync = async (app) => {
     const org_id = (req.headers['x-org-id'] as string) ?? '';
     const body = CreateReportSchema.parse(req.body);
     const id = randomUUID();
-    const { rows: [report] } = await query(
+    const [report] = await query(
       'INSERT INTO reports (id, org_id, title, type, status, params) VALUES ($1,$2,$3,$4,\'pending\',$5) RETURNING *',
       [id, org_id, `${body.type} report ${body.from} – ${body.to}`, body.type, JSON.stringify({ ...body.params, from: body.from, to: body.to, format: body.format })],
     );
@@ -48,7 +48,7 @@ export const reportsRoutes: FastifyPluginAsync = async (app) => {
   app.get('/v4/reports/:id', async (req, reply) => {
     const org_id = (req.headers['x-org-id'] as string) ?? '';
     const { id } = req.params as { id: string };
-    const { rows: [row] } = await query('SELECT * FROM reports WHERE id=$1 AND org_id=$2', [id, org_id]);
+    const [row] = await query('SELECT * FROM reports WHERE id=$1 AND org_id=$2', [id, org_id]);
     if (!row) throw new NotFoundError('Report not found');
     return reply.send(row);
   });

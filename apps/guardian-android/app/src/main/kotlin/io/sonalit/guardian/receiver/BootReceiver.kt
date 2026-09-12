@@ -7,6 +7,7 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import io.sonalit.guardian.service.GuardianService
 import io.sonalit.guardian.worker.HeartbeatWorker
+import io.sonalit.guardian.worker.SyncWorker
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -16,24 +17,25 @@ class BootReceiver : BroadcastReceiver() {
             action != "android.intent.action.MY_PACKAGE_REPLACED"
         ) return
 
-        val deviceId = readDeviceId(context) ?: return
+        val prefs = openPrefs(context) ?: return
+        val deviceId = prefs.getString("device_id", null) ?: return
         context.startForegroundService(Intent(context, GuardianService::class.java))
         HeartbeatWorker.schedule(context, deviceId = deviceId)
+        SyncWorker.schedule(context)
     }
 
-    private fun readDeviceId(context: Context): String? {
+    private fun openPrefs(context: Context): android.content.SharedPreferences? {
         return try {
             val masterKey = MasterKey.Builder(context)
                 .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
                 .build()
-            val prefs = EncryptedSharedPreferences.create(
+            EncryptedSharedPreferences.create(
                 context,
                 "guardian_prefs",
                 masterKey,
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
             )
-            prefs.getString("device_id", null)
         } catch (_: Exception) {
             null
         }

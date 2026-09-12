@@ -1,0 +1,275 @@
+:root {
+  /* Holoframe — self-hosted via @fontsource (see index.css), not a Google
+     Fonts CDN @import. Sora carries names/body text; Space Mono (referenced
+     directly where needed, e.g. timestamps/IDs) is the data face; Michroma
+     is reserved for short eyebrow/instrumentation labels only. */
+  --d-font: 'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --d-font-display: 'Michroma', 'Sora', sans-serif;
+  --d-font-mono: 'Space Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  /* Backgrounds — deep space navy, not flat black */
+  --d-void: #030711;
+  --d-carbon: #060b18;
+  --d-deep: #0a1120;
+  --d-well: #0d1428;
+  --d-surf: #101a30;
+  --d-lift: #16213a;
+  --d-lift2: #1c2a48;
+  /* Borders — cool violet-blue hairline, not pure white */
+  --d-rim: rgba(140,170,255,.09);
+  --d-rim2: rgba(140,170,255,.17);
+  --d-rim3: rgba(140,170,255,.32);
+  /* Signal / accent — holographic cyan (was green) */
+  --d-sig: #22e8ff;
+  --d-sig2: #17b8cc;
+  --d-sig3: #128a9c;
+  --d-sg: rgba(34,232,255,.13);
+  --d-sg2: rgba(34,232,255,.07);
+  --d-sglow: rgba(34,232,255,.6);
+  /* Violet accent (was orange) — pairs with sig for the holographic gradient */
+  --d-orange: #8b6bff;
+  --d-og: rgba(139,107,255,.14);
+  --d-oglow: rgba(139,107,255,.6);
+  /* Status */
+  --d-fire: #ff3b5c;
+  --d-fg: rgba(255,59,92,.15);
+  --d-fglow: rgba(255,59,92,.55);
+  --d-warn: #ffc93f;
+  --d-wg: rgba(255,201,63,.13);
+  --d-ok: #29ffb0;
+  --d-okg: rgba(41,255,176,.12);
+  --d-purple: #ff4fd8;
+  /* Text — cool ink, not neutral grey */
+  --d-t1: #eaf2ff;
+  --d-t2: #7c8aae;
+  --d-t3: #3e4a6b;
+  --d-t4: #1a2338;
+  /* Layout */
+  --d-nav-h: 68px;
+  --d-rail-w: 232px;
+  --d-sb-w: 294px;
+  --d-top-h: 52px;
+  --d-tick-h: 26px;
+  --d-str-h: 40px;
+}
+
+/* ── Light theme ────────────────────────────────────────────────────────
+   Every component reads colors through these var(--d-xxx) custom
+   properties rather than hardcoding them, so overriding them here is
+   enough to re-theme the whole dashboard chrome (Rail, Topbar, cards,
+   etc.) with no per-component changes. data-theme is set on <html> by
+   stores/ui.ts's setTheme(). Note: pages built with hardcoded Tailwind
+   classes (e.g. bg-slate-800) rather than these variables won't respond
+   to this — that's a separate, larger migration. */
+:root[data-theme="light"] {
+  --d-void: #ffffff;
+  --d-carbon: #f8fafc;
+  --d-deep: #f1f5f9;
+  --d-well: #e9edf2;
+  --d-surf: #e2e8f0;
+  --d-lift: #d8e0ea;
+  --d-lift2: #cbd6e3;
+
+  --d-rim: rgba(15,23,42,.08);
+  --d-rim2: rgba(15,23,42,.14);
+  --d-rim3: rgba(15,23,42,.26);
+
+  --d-sig: #16a34a;
+  --d-sig2: #15803d;
+  --d-sig3: #166534;
+  --d-sg: rgba(34,197,94,.15);
+  --d-sg2: rgba(34,197,94,.08);
+  --d-sglow: rgba(34,197,94,.5);
+
+  --d-orange: #ea580c;
+  --d-og: rgba(234,88,12,.14);
+  --d-oglow: rgba(234,88,12,.5);
+
+  --d-fire: #dc2626;
+  --d-fg: rgba(220,38,38,.12);
+  --d-fglow: rgba(220,38,38,.45);
+  --d-warn: #b45309;
+  --d-wg: rgba(180,83,9,.12);
+  --d-ok: #4d7c0f;
+  --d-okg: rgba(77,124,15,.10);
+  --d-purple: #7e22ce;
+
+  --d-t1: #0f172a;
+  --d-t2: #475569;
+  --d-t3: #94a3b8;
+  --d-t4: #cbd5e1;
+}
+
+/* ── System-wide font override ─────────────────────────────────────────
+   Forces Inter everywhere, including on the ~60 components that set
+   font-family inline (Orbitron, Space Grotesk, Syne, Fraunces, Barlow
+   Condensed, DM Sans...) — !important is deliberate here: it's the only
+   way to guarantee one consistent, legible typeface across the whole app
+   without a file-by-file rewrite of every inline style. Tabular numerals
+   keep metric columns aligned since Inter is proportional, not monospace. */
+html, body, #root, * {
+  font-family: var(--d-font) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Rail (side nav) bold font ──────────────────────────────────────────
+   The blanket `* { font-family: var(--d-font) !important }` above wins
+   over any inline font-family Rail.tsx sets on its own, since !important
+   in an author stylesheet beats a plain inline style regardless of
+   specificity — so the only way to actually change the nav's typeface is
+   a rule at least as specific, also !important. Barlow Condensed is
+   already loaded (index.html's Google Fonts link) for the login page, so
+   this adds no new font asset. */
+.d-rail-navlabel {
+  font-family: 'Barlow Condensed', var(--d-font) !important;
+  font-weight: 700 !important;
+  letter-spacing: .015em;
+}
+.d-rail-navlabel.is-active {
+  font-weight: 800 !important;
+}
+.d-rail-wordmark {
+  font-family: 'Barlow Condensed', var(--d-font) !important;
+  font-weight: 800 !important;
+}
+
+/* ── Holoframe typography overrides ──────────────────────────────────────
+   The blanket `* { font-family: var(--d-font) !important }` rule above
+   wins over any plain inline font-family, so a deliberate typeface switch
+   (eyebrow labels in Michroma, data/timestamps in Space Mono) needs a class
+   at least as specific — same pattern as .d-rail-navlabel/.d-rail-wordmark. */
+.d-font-display {
+  font-family: 'Michroma', var(--d-font) !important;
+}
+.d-font-mono {
+  font-family: 'Space Mono', ui-monospace, 'SF Mono', Menlo, monospace !important;
+}
+
+/* ── Animations ─────────────────────────────────────────────────────────── */
+@keyframes d-glitch {
+  0%,100% { text-shadow: none; transform: none; }
+  2% { text-shadow: -2px 0 #ff3b5c, 2px 0 #22e8ff; transform: skewX(-1deg); }
+  4% { text-shadow: 2px 0 #ff3b5c, -2px 0 #22e8ff; transform: skewX(1deg); }
+  6% { text-shadow: none; transform: none; }
+  98% { text-shadow: none; transform: none; }
+}
+
+@keyframes d-sonar {
+  0% { transform: scale(1); opacity: .7; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+
+@keyframes d-pfz {
+  0%,100% { box-shadow: 0 0 0 0 var(--d-fglow); }
+  50% { box-shadow: 0 0 18px 4px var(--d-fglow); }
+}
+
+@keyframes d-rflow {
+  to { stroke-dashoffset: -18; }
+}
+
+@keyframes d-scanv {
+  from { top: 0; }
+  to { top: 100%; }
+}
+
+@keyframes d-tick {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+@keyframes d-crit {
+  0%,100% { border-color: rgba(255,59,92,.28); box-shadow: none; }
+  50% { border-color: rgba(255,59,92,.6); box-shadow: 0 0 22px rgba(255,59,92,.25); }
+}
+
+@keyframes radar-turn {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes d-pulse-warn {
+  0%,100% { opacity: 1; }
+  50% { opacity: .4; }
+}
+
+@keyframes d-slide-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes d-count-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes d-bar-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+/* ── Reduced motion overrides ─────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+/* ── Shared dashboard utility classes ─────────────────────────────────── */
+.d-card {
+  background: var(--d-well);
+  border: 1px solid var(--d-rim2);
+  border-radius: 12px;
+}
+
+.d-label {
+  font-family: var(--d-font);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--d-t2);
+}
+
+.d-num {
+  font-family: var(--d-font);
+  font-weight: 700;
+  color: var(--d-t1);
+}
+
+.d-mono {
+  font-family: var(--d-font);
+}
+
+.d-section-reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity .5s ease, transform .5s ease;
+}
+
+.d-section-reveal.vis {
+  opacity: 1;
+  transform: none;
+}
+
+/* ── Horizontal scroll containers ─────────────────────────────────────── */
+.d-hscroll {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--d-rim2) transparent;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior: contain;
+  padding-bottom: 4px;
+}
+
+.d-hscroll::-webkit-scrollbar { height: 4px; }
+.d-hscroll::-webkit-scrollbar-track { background: transparent; }
+.d-hscroll::-webkit-scrollbar-thumb { background: var(--d-rim2); border-radius: 2px; }
+
+/* ── Clip-corner card accent ─────────────────────────────────────────── */
+.d-clip {
+  clip-path: polygon(0 0, calc(100% - 13px) 0, 100% 13px, 100% 100%, 0 100%);
+}

@@ -8,6 +8,9 @@ const logger = require('../utils/logger');
 const SPEED_THRESHOLD = parseFloat(process.env.SPEED_ALERT_THRESHOLD) || 120;
 const GEOFENCE_KM = parseFloat(process.env.GEOFENCE_RADIUS_KM) || 5;
 
+// ── Per-vehicle prev-fix cache for behaviour delta calculations ───────────
+const _prevFixCache = new Map(); // vehicleId → { lat, lng, speed, heading, timestamp }
+
 // ── Corridor geofence cache (refreshed every 5 min) ───────────────────────
 let _corridorCache = null;
 let _corridorCacheTime = 0;
@@ -41,6 +44,8 @@ function minDistToPathKm(lat, lng, path) {
 }
 
 const { publish } = require('../realtime/centrifugo');
+const { evaluateVehiclePosition } = require('../utils/geofenceEngine');
+const { detectBehaviourEvents, storeBehaviourEvents } = require('../utils/behaviourDetector');
 
 function getRedisConnection() {
   const url = new URL(process.env.REDIS_URL || 'redis://127.0.0.1:6379');
@@ -52,7 +57,10 @@ function getRedisConnection() {
 }
 
 async function processGPS(job) {
-  const { vehicle_id, lat, lng, speed, timestamp } = job.data;
+  const { vehicle_id, lat, lng, speed, heading, timestamp } = job.data;
+  const currentFix = { lat, lng, speed: speed ?? 0, heading: heading ?? null, timestamp: timestamp ?? new Date().toISOString() };
+  const prevFix = _prevFixCache.get(vehicle_id) ?? null;
+  _prevFixCache.set(vehicle_id, currentFix);
 
   // 1. Store GPS log
   await query(
@@ -60,14 +68,41 @@ async function processGPS(job) {
     [vehicle_id, lat, lng, speed, timestamp]
   );
 
-  // 2. Update vehicle position
-  await query(
-    'UPDATE vehicles SET latitude=$1, longitude=$2, last_ping=$3, updated_at=NOW() WHERE id=$4',
+  // 2. Update vehicle position and get org_id via active convoy. RETURNING
+  // registration so alert messages can name the vehicle like an operator
+  // would ("KEN-001"), not by its raw UUID.
+  const posRes = await query(
+    'UPDATE vehicles SET latitude=$1, longitude=$2, last_ping=$3, updated_at=NOW() WHERE id=$4 RETURNING registration',
     [lat, lng, new Date(timestamp), vehicle_id]
   );
+  const vehicleLabel = posRes.rows[0]?.registration || String(vehicle_id).slice(0, 8);
 
-  // 3. Broadcast live position
-  publish('vehicle:update', { vehicleId: vehicle_id, lat, lng, speed });
+  // 3. Broadcast live position on org channel for real-time GPS page
+  const orgRes = await query(
+    `SELECT c.org_id, c.id AS convoy_id FROM convoys c
+     JOIN convoy_trucks ct ON ct.convoy_id = c.id
+     WHERE ct.vehicle_id = $1 AND c.status = 'active' AND c.deleted_at IS NULL
+     LIMIT 1`,
+    [vehicle_id]
+  );
+  const orgId = orgRes.rows[0]?.org_id ?? null;
+  const gpsPayload = { type: 'location', device_id: vehicle_id, vehicle_id, lat, lng, speed };
+  if (orgId) {
+    publish(`org#${orgId}`, gpsPayload);
+  } else {
+    publish('vehicle:update', { vehicleId: vehicle_id, lat, lng, speed });
+  }
+
+  // Also publish to portal channel so cargo owners see live updates
+  const convoyId = orgRes.rows[0]?.convoy_id ?? null;
+  if (convoyId) {
+    publish(`portal#${convoyId}`, {
+      type: 'position',
+      location: { lat, lng },
+      speed_kmh: speed,
+      ping_at: timestamp,
+    });
+  }
 
   const { alertQueue } = getQueues();
 
@@ -75,7 +110,7 @@ async function processGPS(job) {
   if (speed > SPEED_THRESHOLD && alertQueue) {
     await alertQueue.add('speed-alert', {
       vehicle_id, type: 'speed', severity: speed > 150 ? 'critical' : 'high',
-      message: `Vehicle ${vehicle_id} travelling at ${speed} km/h — threshold is ${SPEED_THRESHOLD} km/h`,
+      message: `Vehicle ${vehicleLabel} travelling at ${speed} km/h — threshold is ${SPEED_THRESHOLD} km/h`,
     });
     logger.warn(`Speed alert queued for vehicle ${vehicle_id}: ${speed} km/h`);
   }
@@ -109,7 +144,7 @@ async function processGPS(job) {
         await alertQueue.add('geofence-alert', {
           vehicle_id, convoy_id: convoy.convoy_id, type: 'geofence',
           severity: deviation > GEOFENCE_KM * 2 ? 'critical' : 'high',
-          message: `Vehicle ${vehicle_id} is ${deviation.toFixed(1)} km from convoy route (limit: ${GEOFENCE_KM} km)`,
+          message: `Vehicle ${vehicleLabel} is ${deviation.toFixed(1)} km from convoy route (limit: ${GEOFENCE_KM} km)`,
         });
         logger.warn(`Geofence alert queued for vehicle ${vehicle_id}: ${deviation.toFixed(1)} km deviation`);
       }
@@ -137,7 +172,7 @@ async function processGPS(job) {
               geofence_id: fence.id,
               type: 'route_deviation',
               severity: distKm > fence.buffer_km * 4 ? 'critical' : 'high',
-              message: `Vehicle ${vehicle_id} is ${distM}m off corridor "${fence.name}" (limit: ${limitM}m)`,
+              message: `Vehicle ${vehicleLabel} is ${distM}m off corridor "${fence.name}" (limit: ${limitM}m)`,
             });
             logger.warn(`Corridor deviation: vehicle=${vehicle_id} fence="${fence.name}" dist=${distM}m limit=${limitM}m`);
           }
@@ -146,6 +181,23 @@ async function processGPS(job) {
     } catch (e) {
       logger.warn('Corridor check error: ' + e.message);
     }
+  }
+
+  // 7. Smart geofence + corridor evaluation (RULE C: withOrg inside evaluateVehiclePosition)
+  if (orgId) {
+    evaluateVehiclePosition(orgId, vehicle_id, null, convoyResult.rows[0]?.convoy_id ?? null, { lat, lng, speed })
+      .catch(err => logger.warn(`geofenceEngine error: ${err.message}`));
+  }
+
+  // 8. Driver behaviour scoring
+  if (orgId) {
+    const driverRes = await query(
+      `SELECT assigned_driver_id FROM vehicles WHERE id = $1`, [vehicle_id],
+    ).catch(() => ({ rows: [] }));
+    const driverId = driverRes.rows[0]?.assigned_driver_id ?? null;
+    detectBehaviourEvents(orgId, driverId, vehicle_id, currentFix, prevFix)
+      .then(events => storeBehaviourEvents(orgId, events))
+      .catch(err => logger.warn(`behaviourDetector error: ${err.message}`));
   }
 
   logger.info(`GPS processed: vehicle=${vehicle_id} lat=${lat} lng=${lng} speed=${speed}`);

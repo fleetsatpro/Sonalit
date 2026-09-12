@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fleetops-v2';
+const CACHE_NAME = 'fleetops-v3';
 const STATIC_ASSETS = ['/', '/index.html'];
 const SYNC_TAG = 'fleetops-sync';
 

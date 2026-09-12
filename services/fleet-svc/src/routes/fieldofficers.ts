@@ -23,7 +23,7 @@ const ListSchema = z.object({
 });
 
 export const fieldOfficersRoutes: FastifyPluginAsync = async (app) => {
-  app.addHook('preHandler', requireAuth(app));
+  app.addHook('preHandler', requireAuth);
 
   app.get('/v4/field-officers', async (req, reply) => {
     const { org_id } = (req as typeof req & { user: { org_id: string } }).user;
@@ -32,7 +32,7 @@ export const fieldOfficersRoutes: FastifyPluginAsync = async (app) => {
     const params: unknown[] = [org_id, q.limit, offset];
     let statusFilter = '';
     if (q.status) { params.push(q.status); statusFilter = `AND status = $${params.length}`; }
-    const { rows } = await query(
+    const rows = await query(
       `SELECT * FROM field_officers WHERE org_id = $1 AND deleted_at IS NULL ${statusFilter}
        ORDER BY name LIMIT $2 OFFSET $3`,
       params,
@@ -43,7 +43,7 @@ export const fieldOfficersRoutes: FastifyPluginAsync = async (app) => {
   app.post('/v4/field-officers', async (req, reply) => {
     const { org_id } = (req as typeof req & { user: { org_id: string } }).user;
     const body = CreateOfficerSchema.parse(req.body);
-    const { rows: [row] } = await query(
+    const [row] = await query(
       `INSERT INTO field_officers (id, org_id, name, badge_number, phone, assigned_zone, status)
        VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
       [randomUUID(), org_id, body.name, body.badge_number, body.phone, body.assigned_zone ?? null, body.status],
@@ -54,7 +54,7 @@ export const fieldOfficersRoutes: FastifyPluginAsync = async (app) => {
   app.get('/v4/field-officers/:id', async (req, reply) => {
     const { org_id } = (req as typeof req & { user: { org_id: string } }).user;
     const { id } = req.params as { id: string };
-    const { rows: [row] } = await query(
+    const [row] = await query(
       'SELECT * FROM field_officers WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL',
       [id, org_id],
     );
@@ -71,9 +71,9 @@ export const fieldOfficersRoutes: FastifyPluginAsync = async (app) => {
     for (const [k, v] of Object.entries(body)) {
       if (v !== undefined) { params.push(v); sets.push(`${k} = $${params.length}`); }
     }
-    if (!sets.length) { const { rows: [r] } = await query('SELECT * FROM field_officers WHERE id=$1 AND org_id=$2', [id, org_id]); return reply.send(r); }
+    if (!sets.length) { const [r] = await query('SELECT * FROM field_officers WHERE id=$1 AND org_id=$2', [id, org_id]); return reply.send(r); }
     params.push(id, org_id);
-    const { rows: [row] } = await query(
+    const [row] = await query(
       `UPDATE field_officers SET ${sets.join(', ')}, updated_at=NOW() WHERE id=$${params.length - 1} AND org_id=$${params.length} AND deleted_at IS NULL RETURNING *`,
       params,
     );

@@ -58,7 +58,7 @@ async function getVerificationKey(): Promise<
 
 async function verifyBearer(token: string): Promise<JWTPayload> {
   const key = await getVerificationKey();
-  const { payload } = await jwtVerify(token, key, {
+  const { payload } = await jwtVerify(token, key as Parameters<typeof jwtVerify>[1], {
     issuer: config.JWT_ISSUER,
     audience: config.JWT_AUDIENCE,
   });

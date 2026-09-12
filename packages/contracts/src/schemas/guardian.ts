@@ -33,6 +33,16 @@ export const CommandTypeSchema = z.enum([
 ]);
 export type CommandType = z.infer<typeof CommandTypeSchema>;
 
+export const PanicTriggerTypeSchema = z.enum([
+  'manual',
+  'dms_timeout',
+  'dms_missed_check_in',
+  'geofence_breach',
+  'impact_detected',
+  'api',
+]);
+export type PanicTriggerType = z.infer<typeof PanicTriggerTypeSchema>;
+
 // ---------------------------------------------------------------------------
 // IntegrityVerdict
 // ---------------------------------------------------------------------------
@@ -69,6 +79,9 @@ export const GuardianDeviceSchema = SoftDeleteSchema.extend({
   assignment_id: UuidSchema.nullable(),
   play_integrity_verdict: PlayIntegrityVerdictSchema.nullable(),
   integrity_checked_at: IsoDateTimeSchema.nullable(),
+  dms_enabled: z.boolean(),
+  dms_timeout_minutes: z.number().int().min(1).max(1440).nullable(),
+  dms_suspended_until: IsoDateTimeSchema.nullable(),
 });
 export type GuardianDevice = z.infer<typeof GuardianDeviceSchema>;
 
@@ -147,6 +160,7 @@ export const PanicRequestSchema = z.object({
   accuracy: z.number().nonnegative().nullable(),
   note: z.string().max(512).nullable().optional(),
   timestamp: IsoDateTimeSchema,
+  trigger_type: PanicTriggerTypeSchema.optional().default('manual'),
 });
 export type PanicRequest = z.infer<typeof PanicRequestSchema>;
 

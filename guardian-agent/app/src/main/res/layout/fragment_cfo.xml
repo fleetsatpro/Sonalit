@@ -296,28 +296,48 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
+            android:orientation="vertical"
             android:paddingHorizontal="20dp"
             android:paddingTop="14dp"
-            android:paddingBottom="8dp"
-            android:gravity="center_vertical">
+            android:paddingBottom="8dp">
 
-            <TextView
-                android:layout_width="0dp"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="MY TRUCKS"
-                android:textColor="@color/cyan"
-                android:textSize="11sp"
-                android:letterSpacing="0.14"
-                android:fontFamily="sans-serif-medium" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="6dp">
 
-            <TextView
-                android:id="@+id/tvPhotoProgress"
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="MY TRUCKS"
+                    android:textColor="@color/cyan"
+                    android:textSize="11sp"
+                    android:letterSpacing="0.14"
+                    android:fontFamily="sans-serif-medium" />
+
+                <TextView
+                    android:id="@+id/tvPhotoProgress"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/muted"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chipReportStatus"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textColor="@color/muted"
-                android:textSize="11sp" />
+                android:layout_height="28dp"
+                android:text="Pending report"
+                android:textColor="@color/bright"
+                android:textSize="10sp"
+                app:chipBackgroundColor="@color/muted"
+                app:chipCornerRadius="6dp"
+                android:visibility="gone"
+                android:clickable="false"
+                android:focusable="false" />
         </LinearLayout>
 
         <!-- Truck list -->

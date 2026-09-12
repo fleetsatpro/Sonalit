@@ -29,7 +29,7 @@ export async function drainBuffer(js: JetStreamClient): Promise<void> {
 
   try {
     while (buffer.length > 0) {
-      const msg = buffer[0];
+      const msg = buffer[0]!;
       await js.publish(msg.subject, sc.encode(msg.payload), {
         msgID: msg.msgId,
       });

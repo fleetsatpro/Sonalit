@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const Anthropic = require('@anthropic-ai/sdk');
+const aiClient = require('../utils/aiClient');
 const { authenticate } = require('../middleware/auth');
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
@@ -271,24 +271,6 @@ function haversineM(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Retry wrapper for Anthropic API calls — backs off on 529 Overloaded
-async function createMessageWithRetry(client, params, maxRetries = 3) {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await client.messages.create(params);
-    } catch (err) {
-      const isOverloaded = err?.status === 529 || (err?.message || '').includes('Overloaded');
-      if (isOverloaded && attempt < maxRetries) {
-        const delay = (attempt + 1) * 2000; // 2s, 4s, 6s
-        logger.warn(`Anthropic 529 overloaded — retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        continue;
-      }
-      throw err;
-    }
-  }
-}
-
 async function toolGetWeather(input) {
   const loc = (input.location || '').trim();
   if (!loc) return { error: 'No location provided' };
@@ -512,8 +494,8 @@ async function toolCreateGeofence(input, userId) {
         if (osrmRes.ok) {
           const od = await osrmRes.json();
           if (od.routes?.length) {
-            // OSRM returns [lng, lat] — convert to [lat, lng] for consistency
-            path = od.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+            // OSRM returns [lng, lat] — keep as GeoJSON [lng, lat]
+            path = od.routes[0].geometry.coordinates;
             distM = od.routes[0].distance;
           }
         }
@@ -521,18 +503,20 @@ async function toolCreateGeofence(input, userId) {
 
       // Fallback: straight line if OSRM unavailable
       if (!path || path.length < 2) {
-        path = [[gStart.latitude, gStart.longitude], [gEnd.latitude, gEnd.longitude]];
+        path = [[gStart.longitude, gStart.latitude], [gEnd.longitude, gEnd.latitude]];
         distM = haversineM(gStart.latitude, gStart.longitude, gEnd.latitude, gEnd.longitude);
         logger.warn(`OSRM unavailable for corridor "${name}" — using straight-line fallback`);
       }
 
-      // Midpoint for map fly-to
+      // Midpoint for map fly-to — path is [lng, lat] order
       const mid = path[Math.floor(path.length / 2)];
+      const midLng = mid[0], midLat = mid[1];
       const region = gStart.admin1 || gStart.country || location;
       const locationLabel = `${gStart.name} → ${gEnd.name}`;
       const approxRadius = Math.round(distM / 2) + buffer_m;
 
-      const coordinates = { lat: mid[0], lng: mid[1], type: 'corridor', path, buffer_m };
+      // Store coordinates as GeoJSON [lng,lat] array under 'coordinates' key
+      const coordinates = { lat: midLat, lng: midLng, type: 'corridor', coordinates: path, buffer_m };
 
       const r = await query(
         `INSERT INTO geofences (name, type, coordinates, radius, region)
@@ -546,8 +530,8 @@ async function toolCreateGeofence(input, userId) {
         geofence_id: r.rows[0].id,
         name,
         fence_type: 'corridor',
-        lat: mid[0],
-        lng: mid[1],
+        lat: midLat,
+        lng: midLng,
         radius_m: approxRadius,
         region,
         location: locationLabel,
@@ -645,10 +629,9 @@ router.post('/dispatch', async (req, res) => {
   const { command, history = [] } = req.body;
   if (!command || !command.trim()) return res.status(400).json({ error: 'command required' });
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey || apiKey.length < 20) {
+  if (!aiClient.hasAnthropic() && !aiClient.hasGroqFallback()) {
     return res.json({
-      response: 'AI dispatch is not configured — set ANTHROPIC_API_KEY on the backend to enable it.',
+      response: 'AI dispatch is not configured — set ANTHROPIC_API_KEY (or GROQ_API_KEY as a fallback) on the backend to enable it.',
       actions: [],
       source: 'unconfigured',
     });
@@ -658,7 +641,6 @@ router.post('/dispatch', async (req, res) => {
     await ensureColumns();
     await ensureRiskZones();
     const userId = req.user?.id || null;
-    const client = new Anthropic({ apiKey });
 
     const messages = [
       ...history.slice(-6)
@@ -670,9 +652,16 @@ router.post('/dispatch', async (req, res) => {
     const toolsUsed = [];
     const actionsCreated = [];
     let finalText = '';
+    let lastProvider = 'anthropic';
 
+    // Falls back to Groq (open-weight model) mid-conversation if Anthropic
+    // is rate-limited, out of quota, or down — see aiClient.js. Best-effort:
+    // sustained multi-turn tool use is meaningfully less reliable on an
+    // open-weight model than Claude, so a Groq-served response here is a
+    // degraded mode, not a like-for-like swap — flagged via `source` below
+    // so the frontend can show that distinction if it wants to.
     for (let turn = 0; turn < 8; turn++) {
-      const response = await createMessageWithRetry(client, {
+      const response = await aiClient.createMessage({
         model: MODEL,
         max_tokens: 8000,
         thinking: { type: 'adaptive' },
@@ -681,6 +670,7 @@ router.post('/dispatch', async (req, res) => {
         tools: TOOLS,
         messages,
       });
+      lastProvider = response._provider || lastProvider;
 
       if (response.stop_reason === 'tool_use') {
         messages.push({ role: 'assistant', content: response.content });
@@ -726,10 +716,14 @@ router.post('/dispatch', async (req, res) => {
       response: finalText || 'I could not produce a response — please rephrase your request.',
       actions: [...new Set(toolsUsed)],
       created: actionsCreated,
-      source: 'claude',
+      source: lastProvider === 'groq' ? 'groq-fallback' : 'claude',
     });
   } catch (err) {
-    if (err instanceof Anthropic.AuthenticationError || err?.status === 401) {
+    // By the time an error reaches here, aiClient.createMessage has already
+    // tried the Groq fallback (if configured) and that failed too — this is
+    // a genuine "no AI provider could answer" case, not just an Anthropic
+    // hiccup.
+    if (err?.status === 401) {
       logger.warn('AI dispatch: ANTHROPIC_API_KEY rejected by Anthropic (401)');
       return res.json({
         response: 'AI dispatch is misconfigured — the ANTHROPIC_API_KEY on the backend was rejected. Set a valid key (from console.anthropic.com) and redeploy.',
@@ -737,9 +731,8 @@ router.post('/dispatch', async (req, res) => {
         source: 'unconfigured',
       });
     }
-    const isOverloaded = err?.status === 529 || (err?.message || '').includes('Overloaded');
-    if (isOverloaded) {
-      logger.warn('AI dispatch: Anthropic API overloaded after retries');
+    if (aiClient.isRetryableAnthropicError(err)) {
+      logger.warn('AI dispatch: AI provider(s) overloaded after retries' + (aiClient.hasGroqFallback() ? ' (including Groq fallback)' : ''));
       return res.json({
         response: 'The AI engine is temporarily overloaded — please try again in a few seconds.',
         actions: [],

@@ -8,13 +8,7 @@ import { aiRoutes } from './routes/ai.js';
 
 async function start(): Promise<void> {
   const app = Fastify({
-    logger: {
-      level: config.LOG_LEVEL,
-      transport:
-        config.NODE_ENV === 'development'
-          ? { target: 'pino-pretty' }
-          : undefined,
-    },
+    logger: { level: config.LOG_LEVEL, ...(config.NODE_ENV === 'development' ? { transport: { target: 'pino-pretty' } } : {}) },
   });
 
   redis.on('error', (err: Error) => {

@@ -197,4 +197,40 @@ export const guardianAPI = {
   }),
 };
 
+export const fieldOfficersAPI = {
+  list:           (p)            => api.get('/field-officers', { params: p }),
+  get:            (id)           => api.get(`/field-officers/${id}`),
+  create:         (data)         => api.post('/field-officers', data),
+  update:         (id, d)        => api.patch(`/field-officers/${id}`, d),
+  delete:         (id)           => api.delete(`/field-officers/${id}`),
+  activity:       (id, p)        => api.get(`/field-officers/${id}/activity`, { params: p }),
+  assignConvoy:   (id, convoy_id)=> api.post(`/field-officers/${id}/assign-convoy`, { convoy_id }),
+  unassignConvoy: (id)           => api.delete(`/field-officers/${id}/unassign-convoy`),
+  pingDevice:     (id)           => api.post(`/field-officers/${id}/ping-device`),
+};
+
+export const guardianOpsAPI = {
+  devices:         (p)        => api.get('/guardian/devices', { params: p }),
+  device:          (id)       => api.get(`/guardian/devices/${id}`),
+  telemetry:       (id, data) => api.patch(`/guardian/devices/${id}/telemetry`, data),
+  commandHistory:  (id)       => api.get(`/guardian/devices/${id}/command-history`),
+  command:         (id, data) => api.post(`/guardian/devices/${id}/commands`, data),
+  broadcast:       (data)     => api.post('/guardian/commands/broadcast', data),
+  commandQueue:    ()         => api.get('/guardian/command-queue'),
+  cancelCommand:   (cid)      => api.delete(`/guardian/command-queue/${cid}`),
+  alertRules:      ()         => api.get('/guardian/alert-rules'),
+  updateAlertRule: (rid, data)=> api.put(`/guardian/alert-rules/${rid}`, data),
+};
+
+export const knoxAPI = {
+  startSession:  (deviceId, data) => api.post(`/guardian/devices/${deviceId}/remote-session/start`, data),
+  webrtcSignal:  (deviceId, data) => api.post(`/guardian/devices/${deviceId}/remote-session/webrtc-signal`, data),
+  endSession:    (deviceId)       => api.post(`/guardian/devices/${deviceId}/remote-session/end`),
+  screenshot:    (deviceId, data) => api.post(`/guardian/devices/${deviceId}/remote-session/screenshot`, data),
+  recordings:    (deviceId)       => api.get(`/guardian/devices/${deviceId}/remote-session/recordings`),
+  injectTouch:   (deviceId, data) => api.post(`/guardian/devices/${deviceId}/remote-session/inject-touch`, data),
+  injectKey:     (deviceId, data) => api.post(`/guardian/devices/${deviceId}/remote-session/inject-key`, data),
+  mdmAction:     (deviceId, data) => api.post(`/guardian/devices/${deviceId}/remote-session/mdm-action`, data),
+};
+
 export default api;

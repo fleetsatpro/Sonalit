@@ -4,7 +4,7 @@ import {
   verifyRegistrationResponse,
   generateAuthenticationOptions,
   verifyAuthenticationResponse,
-  type VerifiedRegistrationInfo,
+  type VerifiedRegistrationResponse,
 } from '@simplewebauthn/server';
 import { z } from 'zod';
 import { query } from '../db.js';
@@ -72,10 +72,11 @@ export async function passkeyRoutes(app: FastifyInstance): Promise<void> {
       userName: user.email,
       userDisplayName: user.name,
       attestationType: 'none',
-      excludeCredentials: existingPasskeys.map((pk) => ({
-        id: pk.credential_id,
-        transports: (pk.transports ?? []) as Parameters<typeof generateRegistrationOptions>[0]['excludeCredentials'][0]['transports'],
-      })),
+      excludeCredentials: existingPasskeys.map((pk) => {
+        const entry: { id: string; transports?: string[] } = { id: pk.credential_id };
+        if (pk.transports != null) entry.transports = pk.transports;
+        return entry;
+      }) as never,
       authenticatorSelection: {
         residentKey: 'preferred',
         userVerification: 'preferred',
@@ -106,10 +107,10 @@ export async function passkeyRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(400).send({ code: 'CHALLENGE_EXPIRED', message: 'Registration challenge expired' });
     }
 
-    let verification: VerifiedRegistrationInfo & { verified: boolean };
+    let verification: VerifiedRegistrationResponse;
     try {
       verification = await verifyRegistrationResponse({
-        response: parsed.data.registration_response as Parameters<typeof verifyRegistrationResponse>[0]['response'],
+        response: parsed.data.registration_response as unknown as Parameters<typeof verifyRegistrationResponse>[0]['response'],
         expectedChallenge: JSON.parse(challengeStr) as string,
         expectedOrigin: config.WEBAUTHN_ORIGIN,
         expectedRPID: config.WEBAUTHN_RP_ID,
@@ -123,7 +124,7 @@ export async function passkeyRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(400).send({ code: 'VERIFICATION_FAILED', message: 'Passkey registration verification failed' });
     }
 
-    const { credential } = verification.registrationInfo;
+    const { credentialID, credentialPublicKey, counter } = verification.registrationInfo;
     await redis.del(`webauthn_reg:${authUser.sub}`);
 
     await query(
@@ -133,10 +134,10 @@ export async function passkeyRoutes(app: FastifyInstance): Promise<void> {
       [
         randomUUID(),
         authUser.sub,
-        credential.id,
-        Buffer.from(credential.publicKey),
-        credential.counter,
-        credential.transports ?? null,
+        credentialID,
+        Buffer.from(credentialPublicKey),
+        counter,
+        null,
       ],
     );
 
@@ -146,7 +147,7 @@ export async function passkeyRoutes(app: FastifyInstance): Promise<void> {
       actorId: authUser.sub,
       orgId: authUser.org_id,
       resourceType: 'passkey',
-      resourceId: credential.id,
+      resourceId: credentialID,
       ipAddress: request.ip,
       userAgent: request.headers['user-agent'] ?? '',
     }).catch(() => undefined);
@@ -201,8 +202,6 @@ export async function passkeyRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(err.statusCode).send({ code: err.code, message: err.message });
     }
 
-    const challengeKey = `webauthn_auth:${typeof authResp['response'] === 'object' && authResp['response'] !== null ? '' : ''}`;
-    // Find challenge by iterating possible stored challenges
     const rawChallenge = typeof authResp['challenge'] === 'string' ? authResp['challenge'] : '';
     const storedChallenge = await redis.get(`webauthn_auth:${rawChallenge}`);
 
@@ -213,16 +212,16 @@ export async function passkeyRoutes(app: FastifyInstance): Promise<void> {
     let verification;
     try {
       verification = await verifyAuthenticationResponse({
-        response: authResp as Parameters<typeof verifyAuthenticationResponse>[0]['response'],
+        response: authResp as unknown as Parameters<typeof verifyAuthenticationResponse>[0]['response'],
         expectedChallenge: JSON.parse(storedChallenge) as string,
         expectedOrigin: config.WEBAUTHN_ORIGIN,
         expectedRPID: config.WEBAUTHN_RP_ID,
-        credential: {
-          id: passkey.credential_id,
-          publicKey: new Uint8Array(passkey.public_key),
+        authenticator: {
+          credentialID: passkey.credential_id,
+          credentialPublicKey: new Uint8Array(passkey.public_key),
           counter: passkey.counter,
-          transports: (passkey.transports ?? []) as Parameters<typeof verifyAuthenticationResponse>[0]['credential']['transports'],
-        },
+          ...(passkey.transports != null ? { transports: passkey.transports as string[] } : {}),
+        } as Parameters<typeof verifyAuthenticationResponse>[0]['authenticator'],
       });
     } catch (err) {
       loginCounter.inc({ result: 'passkey_failure' });

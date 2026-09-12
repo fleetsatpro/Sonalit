@@ -1,0 +1,20 @@
+{
+  "name": "@sonalit/handover-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Capacitor native shell for the Sonalit Handover APK — Handover Officers. Loads the hosted /handover surface, so workflow changes ship without a new APK. Separate appId (io.sonalit.handover) from the operator app and the Field app so all three can be installed side-by-side.",
+  "scripts": {
+    "sync": "cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.0",
+    "@capacitor/app": "^6.0.0",
+    "@capacitor/core": "^6.1.0",
+    "@capacitor/status-bar": "^6.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^6.1.0",
+    "typescript": "^5.4.5"
+  }
+}

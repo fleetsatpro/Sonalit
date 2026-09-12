@@ -9,6 +9,7 @@ import io.sonalit.guardian.data.remote.GuardianApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -17,6 +18,9 @@ class GuardianFirebaseMessagingService : FirebaseMessagingService() {
 
     @Inject
     lateinit var api: GuardianApi
+
+    @Inject
+    lateinit var commandExecutor: CommandExecutor
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -42,8 +46,14 @@ class GuardianFirebaseMessagingService : FirebaseMessagingService() {
         when (data["type"]) {
             "command" -> {
                 val commandId = data["command_id"] ?: return
+                val commandType = data["command_type"]
+                val payload = data["payload"]
                 serviceScope.launch {
-                    runCatching { api.ackCommand(mapOf("command_id" to commandId)) }
+                    val deviceId = prefs.getString("device_id", null)
+                    val success = commandType != null && commandExecutor.execute(commandType, deviceId, payload)
+                    runCatching {
+                        api.ackCommand(mapOf("command_id" to commandId, "status" to if (success) "executed" else "failed"))
+                    }
                 }
             }
         }
@@ -51,6 +61,6 @@ class GuardianFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onDestroy() {
         super.onDestroy()
-        serviceScope.coroutineContext[SupervisorJob]?.cancel()
+        serviceScope.cancel()
     }
 }

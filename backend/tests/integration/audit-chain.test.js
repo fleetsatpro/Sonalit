@@ -6,12 +6,21 @@
  */
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
 
-const { pool } = require('../../src/config/database');
+const { Pool } = require('pg');
 const { auditLog } = require('../../src/middleware/audit');
 
 const skip = () => !process.env.DATABASE_URL;
 
 const TEST_ORG = 'cccccccc-0000-0000-0000-000000000001';
+
+// Private pool so this file's afterAll doesn't end the shared pool used by
+// app.js controllers that may still be initialising in the same --runInBand run.
+let pool;
+
+beforeAll(() => {
+  if (skip()) return;
+  pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: false });
+});
 
 test('50 concurrent audit writes produce an unbroken hash chain', async () => {
   if (skip()) return;
@@ -61,5 +70,5 @@ test('50 concurrent audit writes produce an unbroken hash chain', async () => {
 }, 30000);
 
 afterAll(async () => {
-  await pool.end();
+  if (pool) await pool.end();
 });

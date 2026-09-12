@@ -18,11 +18,6 @@ import { test, expect } from '@playwright/test';
 const ORG_ID = 'aaaaaaaa-0000-0000-0000-000000000001';
 const USER = { id: 'user-gps-001', name: 'Fleet Admin', email: 'fleet@org-a.io', role: 'admin', org_id: ORG_ID };
 
-const MOCK_TOKEN =
-  'eyJhbGciOiJIUzI1NiJ9.' +
-  btoa(JSON.stringify({ sub: USER.id, org_id: ORG_ID, role: 'admin', exp: 9999999999 })).replace(/=/g, '') +
-  '.fake_sig';
-
 const NOW = new Date().toISOString();
 const STALE = new Date(Date.now() - 10 * 60 * 1000).toISOString(); // 10 min ago
 
@@ -46,15 +41,13 @@ const VEHICLES = [
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function seedAuth(page: import('@playwright/test').Page) {
-  await page.addInitScript(({ token, user }: { token: string; user: object }) => {
-    localStorage.setItem('auth-storage', JSON.stringify({
-      state: { accessToken: token, user, isAuthenticated: true }, version: 0,
-    }));
-  }, { token: MOCK_TOKEN, user: USER });
+  await page.addInitScript(({ user }: { user: object }) => {
+    localStorage.setItem('sonalit-auth', JSON.stringify({ state: { user }, version: 0 }));
+  }, { user: USER });
 }
 
 async function mockGpsRoutes(page: import('@playwright/test').Page) {
-  await page.route('**/api/v1/vehicles**', route =>
+  await page.route(url => url.toString().includes('/api/v1/vehicles'), route =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -62,7 +55,28 @@ async function mockGpsRoutes(page: import('@playwright/test').Page) {
     })
   );
 
-  await page.route('**/api/v1/realtime/token', route =>
+  // useLiveFleet fetches from /api/v1/dashboard/vehicles and /api/v1/dashboard/convoys
+  await page.route(url => url.toString().includes('/api/v1/dashboard/vehicles'), route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: VEHICLES.map(v => ({
+          id: v.id,
+          registration: v.registration,
+          convoy_id: null,
+          status: v.status,
+          speed_kmh: v.last_position.speed,
+          last_ping_at: v.last_position.recorded_at,
+        })),
+      }),
+    })
+  );
+  await page.route(url => url.toString().includes('/api/v1/dashboard/convoys'), route =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) })
+  );
+
+  await page.route(url => url.toString().includes('/api/v1/realtime/token'), route =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -73,8 +87,19 @@ async function mockGpsRoutes(page: import('@playwright/test').Page) {
     })
   );
 
+  await page.route(url => url.toString().includes('/api/v1/gps/track'), route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        { device_id: 'dev-0001-0000-0000-000000000001', vehicle_id: 'veh-0001-0000-0000-000000000001', lat: 6.5244, lng: 3.3792, speed: 60, heading: 90, timestamp: NOW },
+        { device_id: 'dev-0002-0000-0000-000000000002', vehicle_id: 'veh-0002-0000-0000-000000000002', lat: 6.4550, lng: 3.3841, speed: 0, heading: 0, timestamp: STALE },
+      ]),
+    })
+  );
+
   // GPS fix submission endpoint
-  await page.route('**/api/v1/gps/ingest', route => {
+  await page.route(url => url.toString().includes('/api/v1/gps/ingest'), route => {
     const method = route.request().method();
     if (method === 'POST') {
       return route.fulfill({
@@ -97,17 +122,17 @@ test.describe('GPS page — rendering', () => {
 
   test('GPS page loads and renders without crashing', async ({ page }) => {
     await page.goto('/gps');
-    await expect(page.getByRole('heading').first()).toBeVisible({ timeout: 8000 });
+    await expect(page.locator('text=LIVE FLEET').first()).toBeVisible({ timeout: 8000 });
   });
 
   test('GPS page renders vehicle registrations', async ({ page }) => {
     await page.goto('/gps');
     // At least one vehicle registration should be visible
-    await expect(page.getByText('GPS-001')).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('GPS-001').first()).toBeVisible({ timeout: 8000 });
   });
 
   test('unauthenticated user is redirected to /login from /gps', async ({ page }) => {
-    await page.addInitScript(() => localStorage.removeItem('auth-storage'));
+    await page.addInitScript(() => localStorage.removeItem('sonalit-auth'));
     await page.goto('/gps');
     await expect(page).toHaveURL(/\/login/, { timeout: 5000 });
   });
@@ -124,7 +149,7 @@ test.describe('GPS page — org boundary', () => {
 
     const orgId = await page.evaluate(() => {
       try {
-        const stored = localStorage.getItem('auth-storage');
+        const stored = localStorage.getItem('sonalit-auth');
         if (!stored) return null;
         return JSON.parse(stored).state?.user?.org_id ?? null;
       } catch { return null; }
@@ -135,7 +160,7 @@ test.describe('GPS page — org boundary', () => {
 
   test('mocked vehicle list does not contain cross-tenant data', async ({ page }) => {
     await page.goto('/gps');
-    await expect(page.getByText('GPS-001')).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('GPS-001').first()).toBeVisible({ timeout: 8000 });
     // Cross-org vehicle must not appear
     await expect(page.getByText('CROSS-ORG')).not.toBeVisible();
   });
@@ -173,7 +198,7 @@ test.describe('GPS ingest — API contract', () => {
 
   test('invalid GPS fix POST (missing lat/lng) returns 422', async ({ page }) => {
     // Override the ingest route to simulate validation failure
-    await page.route('**/api/v1/gps/ingest', route =>
+    await page.route(url => url.toString().includes('/api/v1/gps/ingest'), route =>
       route.fulfill({
         status: 422,
         contentType: 'application/json',

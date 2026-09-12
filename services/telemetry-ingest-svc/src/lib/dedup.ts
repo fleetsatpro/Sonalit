@@ -34,7 +34,8 @@ export async function dedupFixes<T extends GpsFix>(
   for (let i = 0; i < fixes.length; i++) {
     const result = results?.[i];
     if (result?.[0] === null && result?.[1] === 'OK') {
-      accepted.push(fixes[i]);
+      const fix = fixes[i];
+      if (fix !== undefined) accepted.push(fix);
     } else {
       duplicateCount++;
     }

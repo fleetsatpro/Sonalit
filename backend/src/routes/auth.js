@@ -36,7 +36,19 @@ router.get('/users', authenticate, authorize('admin', 'dispatcher'), async (req,
 });
 
 // ─── POST /api/v1/auth/users ──────────────────────────────────────────────────
-const VALID_ROLES = ['admin', 'dispatcher', 'operator', 'analyst', 'driver', 'cfo'];
+// yard_agent/port_agent are scoped CDS field-crew roles — see
+// backend/migrations/20260814_077_cds_field_agent_roles.sql and the
+// authorize()/field-role gating in backend/src/routes/cds.js. They sit
+// outside ROLE_HIERARCHY on purpose: least privilege, not a rung on the
+// admin>dispatcher>operator ladder.
+//
+// This list must stay in step with the users_role_check constraint: anything
+// here that the constraint rejects is a 500 waiting for whoever picks it.
+// 'driver' was exactly that — offered by this endpoint, rejected by the
+// database. Drivers are their own table (migration 000) and nothing reads
+// users.role === 'driver', so the stale entry goes rather than the constraint
+// growing a role that would carry no permissions and mean nothing.
+const VALID_ROLES = ['admin', 'dispatcher', 'operator', 'analyst', 'cfo', 'yard_agent', 'port_agent', 'response_crew', 'handover_officer'];
 
 router.post('/users', authenticate, authorize('admin'), async (req, res) => {
   try {
@@ -47,19 +59,98 @@ router.post('/users', authenticate, authorize('admin'), async (req, res) => {
     if (!VALID_ROLES.includes(role)) {
       return res.status(400).json({ error: `role must be one of: ${VALID_ROLES.join(', ')}` });
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      return res.status(400).json({ error: 'email must be a valid email address' });
+    }
+    // Normalise like every lookup does (login's `LOWER(email) = $1`, etc.) —
+    // otherwise "Foo@x.com" and "foo@x.com " both pass the DB's case- and
+    // whitespace-sensitive UNIQUE constraint as distinct rows, and any query
+    // matching on LOWER(email) becomes ambiguous between them.
+    const emailClean = email.trim().toLowerCase();
     const password_hash = await bcrypt.hash(password, 10);
     const result = await query(
-      `INSERT INTO users (name, email, password_hash, role, status)
-       VALUES ($1, $2, $3, $4, 'active')
+      `INSERT INTO users (name, email, password_hash, role, status, org_id)
+       VALUES ($1, $2, $3, $4, 'active', $5)
        RETURNING id, email, name, role, status`,
-      [name, email, password_hash, role]
+      [name.trim(), emailClean, password_hash, role, req.user.org_id]
     );
     res.status(201).json({ data: result.rows[0] });
   } catch (err) {
     if (err.code === '23505') {
-      return res.status(409).json({ error: 'Email already in use' });
+      return res.status(409).json({
+        error: 'duplicate_email',
+        message: 'An account with this email address already exists. If you need to change the role of an existing account, edit the account directly rather than creating a new one.',
+      });
     }
     logger.error(`POST /auth/users error: ${err.message}`);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── GET /api/v1/auth/cfo-assignments ────────────────────────────────────────
+// CFO users with their current convoy assignment (most recent active)
+router.get('/cfo-assignments', authenticate, authorize('admin', 'dispatcher'), async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT DISTINCT ON (u.id)
+         u.id, u.name, u.email, u.status,
+         cc.id AS assignment_id,
+         c.id   AS convoy_id,
+         c.name AS convoy_name,
+         c.status AS convoy_status
+       FROM users u
+       LEFT JOIN convoy_cfos cc ON cc.cfo_user_id = u.id
+       LEFT JOIN convoys c ON c.id = cc.convoy_id AND c.deleted_at IS NULL
+       WHERE u.role = 'cfo' AND u.deleted_at IS NULL AND u.org_id = $1
+       ORDER BY u.id, c.created_at DESC NULLS LAST`,
+      [req.user.org_id]
+    );
+    res.json({ data: result.rows });
+  } catch (err) {
+    logger.error(`GET /auth/cfo-assignments error: ${err.message}`);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── PATCH /api/v1/auth/users/:id ────────────────────────────────────────────
+router.patch('/users/:id', authenticate, authorize('admin'), async (req, res) => {
+  try {
+    const { name, password } = req.body;
+    const updates = [];
+    const params = [];
+    if (name) { params.push(name.trim()); updates.push(`name = $${params.length}`); }
+    if (password) {
+      const hash = await bcrypt.hash(password, 10);
+      params.push(hash);
+      updates.push(`password_hash = $${params.length}`);
+    }
+    if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
+    params.push(req.params.id, req.user.org_id);
+    const result = await query(
+      `UPDATE users SET ${updates.join(', ')} WHERE id = $${params.length - 1} AND org_id = $${params.length} AND deleted_at IS NULL
+       RETURNING id, email, name, role, status`,
+      params
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'User not found' });
+    res.json({ data: result.rows[0] });
+  } catch (err) {
+    logger.error(`PATCH /auth/users/:id error: ${err.message}`);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── DELETE /api/v1/auth/users/:id ───────────────────────────────────────────
+router.delete('/users/:id', authenticate, authorize('admin'), async (req, res) => {
+  try {
+    const result = await query(
+      `UPDATE users SET deleted_at = NOW(), status = 'inactive'
+       WHERE id = $1 AND deleted_at IS NULL AND org_id = $2 RETURNING id`,
+      [req.params.id, req.user.org_id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'User not found' });
+    res.status(204).end();
+  } catch (err) {
+    logger.error(`DELETE /auth/users/:id error: ${err.message}`);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -97,6 +188,14 @@ router.post('/refresh', async (req, res) => {
     if (row.status !== 'active') {
       return res.status(403).json({ error: 'Account is not active' });
     }
+    // Field roles are barred from POST /auth/login (see authController), but a
+    // refresh cookie minted before that rule existed — or before an account
+    // was moved to a field role — would otherwise keep renewing an operator
+    // session indefinitely.
+    if (row.role === 'yard_agent' || row.role === 'port_agent') {
+      res.clearCookie(RT_COOKIE, { ...COOKIE_OPTS, maxAge: 0 });
+      return res.status(403).json({ error: 'field_account' });
+    }
 
     // Rotate: mark old token used, issue new httpOnly cookie
     await query('UPDATE refresh_tokens SET used_at = NOW() WHERE id = $1', [row.id]);
@@ -113,7 +212,7 @@ router.post('/refresh', async (req, res) => {
     const accessToken = jwt.sign(
       { id: row.uid, email: row.email, role: row.role },
       process.env.JWT_SECRET,
-      { expiresIn: '15m' }
+      { expiresIn: '2h' }
     );
 
     logger.info(`Token refreshed for user ${row.email}`);
