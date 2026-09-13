@@ -70,7 +70,7 @@ export default function AIDecision() {
     <div className="space-y-6">
       <div className="flex items-center gap-2">
         <Bot size={20} className="text-orange-400" />
-        <h1 className="text-xl font-bold">AI Decision Support</h1>
+        <h1 className="text-xl font-bold">Sonalit Copilot</h1>
       </div>
 
       <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-3">
@@ -109,7 +109,7 @@ export default function AIDecision() {
           className="flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 rounded text-sm font-medium"
         >
           {dispatchMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-          {dispatchMutation.isPending ? 'Thinking…' : 'Ask AI'}
+          {dispatchMutation.isPending ? 'Thinking…' : 'Ask Copilot'}
         </button>
       </div>
 
@@ -142,7 +142,7 @@ export default function AIDecision() {
         <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-3">
             <Bot size={16} className="text-orange-400" />
-            <span className="text-xs text-slate-400 uppercase font-medium">AI Response</span>
+            <span className="text-xs text-slate-400 uppercase font-medium">Sonalit Copilot</span>
           </div>
           <pre className="text-sm text-slate-100 whitespace-pre-wrap leading-relaxed font-sans">
             {lastResponse}
@@ -151,7 +151,7 @@ export default function AIDecision() {
       )}
 
       <div>
-        <h2 className="text-sm font-semibold text-slate-300 mb-3">AI-Detected Anomalies</h2>
+        <h2 className="text-sm font-semibold text-slate-300 mb-3">Copilot-Detected Signals</h2>
         {anomaliesLoading && <div className="text-slate-400 text-sm">Loading anomalies…</div>}
         <div className="space-y-2">
           {(anomalies ?? []).map((anomaly) => (
