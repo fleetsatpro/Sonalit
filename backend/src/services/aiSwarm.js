@@ -279,6 +279,15 @@ async function runDecisionFabric({ command, history = [], executeTool, userId })
   }
 
   const final = await finalize(draft, critiqueResult, deterministicSafetyGate({ command, draft, evidence: evidencePack.evidence }));
+  final.swarm = settled.map(a => ({
+    id: a.id,
+    name: a.name,
+    status: a.status,
+    confidence: Number(a.confidence || 0),
+    provider: a.provider,
+    finding: a.finding,
+    dissent: a.dissent,
+  }));
   final.meta = {
     latency_ms: Date.now() - started,
     evidence_tools: evidencePack.toolNames,
