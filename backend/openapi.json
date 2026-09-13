@@ -1092,6 +1092,16 @@
         }
       }
     },
+    "/api/v1/ai/decision": {
+      "post": {
+        "operationId": "post_api_v1_ai_decision",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/ai/anomalies": {
       "get": {
         "operationId": "get_api_v1_ai_anomalies",
