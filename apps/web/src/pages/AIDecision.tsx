@@ -13,9 +13,34 @@ interface Anomaly {
 }
 
 interface DispatchResponse {
-  response: string;
-  actions: string[];
-  source: string;
+  response?: string;
+  answer?: string;
+  actions?: string[];
+  source?: string;
+  decision?: string;
+  risk_level?: string;
+  confidence?: number;
+  recommended_actions?: Array<{ action: string; reason?: string; approval?: string; urgency?: string }>;
+  risks?: Array<{ risk: string; severity: string }>;
+  missing_data?: string[];
+  dissent?: string[];
+  swarm?: Array<{
+    id: string;
+    name: string;
+    status: string;
+    confidence: number;
+    provider: string;
+    finding: string;
+    dissent?: string;
+  }>;
+  meta?: {
+    agent_count?: number;
+    agent_failures?: number;
+    evidence_tools?: string[];
+    latency_ms?: number;
+    degraded?: boolean;
+    model_fallback_available?: boolean;
+  };
 }
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -113,8 +138,6 @@ export default function AIDecision() {
         </button>
       </div>
 
-
-
       {dispatchMutation.data && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           <div className="bg-slate-900 border border-slate-700 rounded-lg p-3"><div className="text-[10px] uppercase text-slate-500">Decision</div><div className="text-sm font-semibold text-cyan-300 mt-1">{dispatchMutation.data.decision ?? '—'}</div></div>
@@ -138,7 +161,8 @@ export default function AIDecision() {
           </div>
         </div>
       )}
-\n      {lastResponse && (
+
+      {lastResponse && (
         <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-3">
             <Bot size={16} className="text-orange-400" />
