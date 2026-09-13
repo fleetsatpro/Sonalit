@@ -3,6 +3,7 @@ const aiClient = require('../utils/aiClient');
 const { authenticate } = require('../middleware/auth');
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
+const { runDecisionFabric } = require('../services/aiSwarm');
 
 router.use(authenticate);
 
@@ -623,6 +624,56 @@ async function runTool(name, input, userId) {
     default: return { error: `Unknown tool: ${name}` };
   }
 }
+
+
+// ── POST /ai/decision — unified Decision Intelligence Fabric ──────────────
+// Conversation + decision support share one resilient swarm. The legacy
+// /dispatch endpoint remains intact for existing tool-execution workflows.
+router.post('/decision', async (req, res) => {
+  const { command, history = [] } = req.body || {};
+  if (!command || !String(command).trim()) {
+    return res.status(400).json({ error: 'command required' });
+  }
+
+  if (!aiClient.hasAnthropic() && !aiClient.hasGroqFallback()) {
+    return res.json({
+      answer: 'Decision Intelligence is not configured. Add ANTHROPIC_API_KEY or GROQ_API_KEY.',
+      decision: 'HUMAN_REVIEW_REQUIRED',
+      risk_level: 'HIGH',
+      confidence: 0,
+      recommended_actions: [],
+      risks: [{ risk: 'No AI provider configured', severity: 'high' }],
+      meta: { degraded: true, agent_count: 0, agent_failures: 0 },
+    });
+  }
+
+  try {
+    await ensureColumns();
+    await ensureRiskZones();
+    const result = await runDecisionFabric({
+      command: String(command).trim(),
+      history: Array.isArray(history) ? history : [],
+      executeTool: runTool,
+      userId: req.user?.id || null,
+    });
+
+    return res.json({
+      ...result,
+      answer: result.answer || 'No decision narrative was returned.',
+    });
+  } catch (err) {
+    logger.error('Decision Intelligence Fabric error: ' + (err?.message || err));
+    return res.status(200).json({
+      answer: 'Decision Intelligence entered fail-safe mode. The swarm could not complete this request; no irreversible AI action is authorised.',
+      decision: 'HUMAN_REVIEW_REQUIRED',
+      risk_level: 'HIGH',
+      confidence: 0,
+      recommended_actions: [],
+      risks: [{ risk: 'Decision fabric execution failure', severity: 'high' }],
+      meta: { degraded: true, fatal: true, error: err?.message || 'unknown' },
+    });
+  }
+});
 
 // ── POST /ai/dispatch — agentic tool-use loop ──────────────────────────────
 router.post('/dispatch', async (req, res) => {

@@ -59,7 +59,7 @@ const driveReplayRoute=createRoute({getParentRoute:()=>authFullscreenRoute,path:
 const replayRoute=createRoute({getParentRoute:()=>authRoute,path:'/replay',component:lazyRouteComponent(()=>import('./pages/Replay.js'))});
 const knoxRemoteSessionRoute=createRoute({getParentRoute:()=>authRoute,path:'/guardian/devices/$deviceId/remote',component:lazyRouteComponent(()=>import('./pages/KnoxRemoteSession.js'))});
 const aiDecisionRoute=createRoute({getParentRoute:()=>authRoute,path:'/ai',component:lazyRouteComponent(()=>import('./pages/AIDecision.js'))});
-const copilotRoute=createRoute({getParentRoute:()=>authRoute,path:'/copilot',component:lazyRouteComponent(()=>import('./pages/Copilot.js'))});
+const copilotRoute=createRoute({getParentRoute:()=>authRoute,path:'/copilot',component:lazyRouteComponent(()=>import('./pages/AIDecision.js'))});
 const settingsRoute=createRoute({getParentRoute:()=>authRoute,path:'/settings',component:lazyRouteComponent(()=>import('./pages/Settings.js'))});
 const communicationsRoute=createRoute({getParentRoute:()=>authRoute,path:'/communications',component:lazyRouteComponent(()=>import('./pages/Communications.js'))});
 const routeAnalysisRoute=createRoute({getParentRoute:()=>authRoute,path:'/route-analysis',component:lazyRouteComponent(()=>import('./pages/RouteAnalysis.js'))});

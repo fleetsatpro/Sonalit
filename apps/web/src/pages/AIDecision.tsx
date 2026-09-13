@@ -42,11 +42,11 @@ export default function AIDecision() {
 
   const dispatchMutation = useMutation<DispatchResponse, Error, string>({
     mutationFn: async (command) => {
-      const res = await api.post<DispatchResponse>('/ai/dispatch', { command });
+      const res = await api.post<DispatchResponse>('/ai/decision', { command, history: [] });
       return res.data;
     },
     onSuccess: (data) => {
-      setLastResponse(data.response);
+      setLastResponse(data.answer ?? data.response ?? 'No decision response received.');
       setQuery('');
     },
   });
@@ -70,7 +70,7 @@ export default function AIDecision() {
     <div className="space-y-6">
       <div className="flex items-center gap-2">
         <Bot size={20} className="text-orange-400" />
-        <h1 className="text-xl font-bold">AI Decision Support</h1>
+        <h1 className="text-xl font-bold">Sonalit Copilot</h1>
       </div>
 
       <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-3">
@@ -109,15 +109,40 @@ export default function AIDecision() {
           className="flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 rounded text-sm font-medium"
         >
           {dispatchMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-          {dispatchMutation.isPending ? 'Thinking…' : 'Ask AI'}
+          {dispatchMutation.isPending ? 'Thinking…' : 'Ask Copilot'}
         </button>
       </div>
 
-      {lastResponse && (
+
+
+      {dispatchMutation.data && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <div className="bg-slate-900 border border-slate-700 rounded-lg p-3"><div className="text-[10px] uppercase text-slate-500">Decision</div><div className="text-sm font-semibold text-cyan-300 mt-1">{dispatchMutation.data.decision ?? '—'}</div></div>
+          <div className="bg-slate-900 border border-slate-700 rounded-lg p-3"><div className="text-[10px] uppercase text-slate-500">Risk</div><div className="text-sm font-semibold text-orange-300 mt-1">{dispatchMutation.data.risk_level ?? '—'}</div></div>
+          <div className="bg-slate-900 border border-slate-700 rounded-lg p-3"><div className="text-[10px] uppercase text-slate-500">Confidence</div><div className="text-sm font-semibold text-emerald-300 mt-1">{dispatchMutation.data.confidence != null ? Math.round(dispatchMutation.data.confidence * 100) + '%' : '—'}</div></div>
+          <div className="bg-slate-900 border border-slate-700 rounded-lg p-3"><div className="text-[10px] uppercase text-slate-500">Swarm</div><div className="text-sm font-semibold text-violet-300 mt-1">{dispatchMutation.data.meta?.agent_count ?? dispatchMutation.data.swarm?.length ?? 0} agents</div></div>
+        </div>
+      )}
+
+      {dispatchMutation.data?.swarm && (
+        <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
+          <div className="text-xs uppercase font-semibold text-slate-400 mb-3">Independent Agent Findings</div>
+          <div className="space-y-2">
+            {dispatchMutation.data.swarm.map((agent) => (
+              <div key={agent.id} className="flex items-center gap-3 border-b border-slate-800 pb-2 last:border-0">
+                <span className={agent.status === 'supported' ? 'text-emerald-400' : agent.status === 'uncertain' ? 'text-amber-400' : 'text-red-400'}>●</span>
+                <div className="min-w-0 flex-1"><div className="text-xs text-slate-200">{agent.name}</div><div className="text-[11px] text-slate-500 truncate">{agent.finding}</div></div>
+                <span className="text-[10px] font-mono text-slate-500">{Math.round((agent.confidence || 0) * 100)}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+\n      {lastResponse && (
         <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-3">
             <Bot size={16} className="text-orange-400" />
-            <span className="text-xs text-slate-400 uppercase font-medium">AI Response</span>
+            <span className="text-xs text-slate-400 uppercase font-medium">Sonalit Copilot</span>
           </div>
           <pre className="text-sm text-slate-100 whitespace-pre-wrap leading-relaxed font-sans">
             {lastResponse}
@@ -126,7 +151,7 @@ export default function AIDecision() {
       )}
 
       <div>
-        <h2 className="text-sm font-semibold text-slate-300 mb-3">AI-Detected Anomalies</h2>
+        <h2 className="text-sm font-semibold text-slate-300 mb-3">Copilot-Detected Signals</h2>
         {anomaliesLoading && <div className="text-slate-400 text-sm">Loading anomalies…</div>}
         <div className="space-y-2">
           {(anomalies ?? []).map((anomaly) => (
