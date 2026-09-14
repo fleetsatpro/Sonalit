@@ -163,7 +163,7 @@ function OverviewMap({ shipments, selected, onSelect, onOpen }: {
               <span className="text-white/30">{s.origin ?? '—'} → {s.destination ?? '—'}</span>
               <span className="text-right text-white/45">{s.progress_pct == null ? '—' : Math.round(s.progress_pct) + '%'} complete</span>
               <span className="text-white/30">ETA {fmtDateTime(s.eta)}</span>
-              <span className={cx(['text-right', freshness(s.last_ping_at) === 'live' ? 'text-emerald-300' : 'text-amber-300'])}>{freshness(s.last_ping_at).toUpperCase()}</span>
+              <span className={cx(['text-right', freshness(s) === 'live' ? 'text-emerald-300' : 'text-amber-300'])}>{freshness(s).toUpperCase()}</span>
               <button type="button" className="col-span-2 mt-1 rounded-lg bg-orange-500/15 px-2 py-1.5 text-[10px] font-semibold text-orange-200 hover:bg-orange-500/25"
                 onClick={() => onOpen(s.convoy_id)}>Open convoy telemetry →</button>
             </div>;
