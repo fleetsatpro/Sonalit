@@ -95,10 +95,10 @@ async function planEvidence(command,history){
   return [...new Map(probes.map(p=>[p.tool+JSON.stringify(p.input),p])).values()].slice(0,10);
 }
 
-async function collectToolEvidence(probes,executeTool,userId){
+async function collectToolEvidence(probes,executeTool,context){
   const evidence={},failures=[];
   await Promise.all(probes.map(async p=>{
-    try{evidence[p.tool+JSON.stringify(p.input)]=await executeTool(p.tool,p.input,userId);}
+    try{evidence[p.tool+JSON.stringify(p.input)]=await executeTool(p.tool,p.input,context);}
     catch(e){failures.push({tool:p.tool,input:p.input,error:e?.message||String(e)});}
   }));
   return {evidence,failures};
@@ -211,7 +211,7 @@ function finalize(draft,critic,safety,health){
 async function runDecisionFabric({command,history=[],executeTool,userId,orgId,persistDecision}){
   const started=Date.now();
   const probes=await planEvidence(command,history);
-  const collected=await collectToolEvidence(probes,executeTool,userId);
+  const collected=await collectToolEvidence(probes,executeTool,{userId,orgId});
   const agents=await Promise.all(AGENTS.map(a=>runSpecialist(a,command,collected.evidence,history)));
   const safety=deterministicSafetyAssessment(collected.evidence);
   const health=evidenceHealth(collected.evidence,collected.failures);
