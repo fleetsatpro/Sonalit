@@ -1,6 +1,6 @@
 services:
   sonalit-standby:
-    image: ghcr.io/fleetsatpro/sonalit-backend:standby
+    image: ${SONALIT_IMAGE:-ghcr.io/fleetsatpro/sonalit-backend:standby}
     container_name: sonalit-standby
     restart: unless-stopped
     env_file:
