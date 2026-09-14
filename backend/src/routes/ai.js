@@ -64,6 +64,7 @@ async function ensureRiskZones() {
       )
     `);
     await query(`ALTER TABLE risk_zones ADD COLUMN IF NOT EXISTS zone_type VARCHAR(50) DEFAULT 'general'`);
+    await query(`ALTER TABLE risk_zones ADD COLUMN IF NOT EXISTS org_id UUID`);
   } catch (e) { logger.warn('ensureRiskZones: ' + e.message); }
 }
 
@@ -205,9 +206,10 @@ const TOOLS = [
 ];
 
 // ── Tool implementations ───────────────────────────────────────────────────
-async function toolQueryVehicles(input) {
-  const filters = ['deleted_at IS NULL'];
-  const params = [];
+async function toolQueryVehicles(input, orgId) {
+  if (!orgId) return { error: 'Organisation context is required', vehicles: [], count: 0 };
+  const filters = ['deleted_at IS NULL', 'org_id = $1'];
+  const params = [orgId];
   if (input.status) { params.push(input.status); filters.push(`status = $${params.length}`); }
   if (input.region) { params.push(input.region); filters.push(`region = $${params.length}`); }
   if (input.low_fuel) filters.push('COALESCE(fuel_level, 85) < 25');
@@ -223,9 +225,10 @@ async function toolQueryVehicles(input) {
   return { count: r.rows.length, vehicles: r.rows };
 }
 
-async function toolQueryConvoys(input) {
-  const filters = ['deleted_at IS NULL'];
-  const params = [];
+async function toolQueryConvoys(input, orgId) {
+  if (!orgId) return { error: 'Organisation context is required', convoys: [], count: 0 };
+  const filters = ['deleted_at IS NULL', 'org_id = $1'];
+  const params = [orgId];
   if (input.status) { params.push(input.status); filters.push(`status = $${params.length}`); }
   if (input.region) { params.push(input.region); filters.push(`region = $${params.length}`); }
   if (input.priority) { params.push(input.priority); filters.push(`priority = $${params.length}`); }
@@ -239,9 +242,10 @@ async function toolQueryConvoys(input) {
   return { count: r.rows.length, convoys: r.rows };
 }
 
-async function toolQueryAlerts(input) {
-  const filters = ['a.deleted_at IS NULL'];
-  const params = [];
+async function toolQueryAlerts(input, orgId) {
+  if (!orgId) return { error: 'Organisation context is required', alerts: [], count: 0 };
+  const filters = ['a.deleted_at IS NULL', 'a.org_id = $1'];
+  const params = [orgId];
   if (!input.include_resolved) filters.push('a.resolved_at IS NULL');
   if (input.severity) { params.push(input.severity); filters.push(`a.severity = $${params.length}`); }
   if (input.type) { params.push(input.type); filters.push(`a.type = $${params.length}`); }
@@ -464,10 +468,11 @@ out skel qt;
   }
 }
 
-async function toolQueryRiskZones(input) {
+async function toolQueryRiskZones(input, orgId) {
+  if (!orgId) return { error: 'Organisation context is required', risk_zones: [], count: 0 };
   try {
-    const filters = ['active = true'];
-    const params = [];
+    const filters = ['active = true', 'org_id = $1'];
+    const params = [orgId];
     if (input.region) {
       params.push(`%${input.region}%`);
       filters.push(`(name ILIKE $${params.length} OR description ILIKE $${params.length})`);
@@ -493,7 +498,8 @@ async function toolQueryRiskZones(input) {
   }
 }
 
-async function toolCreateGeofence(input, userId) {
+async function toolCreateGeofence(input, userId, orgId) {
+  if (!orgId) return { error: 'Organisation context is required' };
   const { name, location, route_end, fence_type = 'general' } = input;
   if (!name || !location) return { error: 'name and location are required' };
 
@@ -538,10 +544,10 @@ async function toolCreateGeofence(input, userId) {
       const coordinates = { lat: midLat, lng: midLng, type: 'corridor', coordinates: path, buffer_m };
 
       const r = await query(
-        `INSERT INTO geofences (name, type, coordinates, radius, region)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id`,
-        [name, 'corridor', JSON.stringify(coordinates), approxRadius, region]
+        [name, 'corridor', JSON.stringify(coordinates), approxRadius, region, orgId]
       );
 
       return {
@@ -568,10 +574,10 @@ async function toolCreateGeofence(input, userId) {
       const region = g.admin1 || g.country || location;
 
       const r = await query(
-        `INSERT INTO geofences (name, type, coordinates, radius, region)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id`,
-        [name, 'circle', JSON.stringify(coordinates), radius_m, region]
+        [name, 'circle', JSON.stringify(coordinates), radius_m, region, orgId]
       );
 
       const locationLabel = [g.name, g.admin1, g.country].filter(Boolean).join(', ');
@@ -594,7 +600,8 @@ async function toolCreateGeofence(input, userId) {
   }
 }
 
-async function toolCreateRiskZone(input, userId) {
+async function toolCreateRiskZone(input, userId, orgId) {
+  if (!orgId) return { error: 'Organisation context is required' };
   const { name, location, risk_level = 'high', zone_type = 'general', description = '', radius_km = 5 } = input;
   if (!name || !location) return { error: 'name and location are required' };
 
@@ -605,9 +612,9 @@ async function toolCreateRiskZone(input, userId) {
 
     const r = await query(
       `INSERT INTO risk_zones (name, description, risk_level, zone_type, lat, lng, radius_km, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id, name, risk_level, zone_type, lat, lng, radius_km`,
-      [name, desc, risk_level, zone_type, g.latitude, g.longitude, radius_km, userId || null]
+      [name, desc, risk_level, zone_type, g.latitude, g.longitude, radius_km, userId || null, orgId]
     );
 
     const locationLabel = [g.name, g.admin1, g.country].filter(Boolean).join(', ');
@@ -628,17 +635,19 @@ async function toolCreateRiskZone(input, userId) {
   }
 }
 
-async function runTool(name, input, userId) {
+async function runTool(name, input, context = {}) {
+  const userId = context.userId || null;
+  const orgId = context.orgId || null;
   switch (name) {
-    case 'query_vehicles':     return toolQueryVehicles(input || {});
-    case 'query_convoys':      return toolQueryConvoys(input || {});
-    case 'query_alerts':       return toolQueryAlerts(input || {});
+    case 'query_vehicles':     return toolQueryVehicles(input || {}, orgId);
+    case 'query_convoys':      return toolQueryConvoys(input || {}, orgId);
+    case 'query_alerts':       return toolQueryAlerts(input || {}, orgId);
     case 'get_weather':        return toolGetWeather(input || {});
     case 'check_holidays':     return toolCheckHolidays(input || {});
     case 'get_road_conditions':return toolGetRoadConditions(input || {});
-    case 'query_risk_zones':   return toolQueryRiskZones(input || {});
-    case 'create_geofence':    return toolCreateGeofence(input || {}, userId);
-    case 'create_risk_zone':   return toolCreateRiskZone(input || {}, userId);
+    case 'query_risk_zones':   return toolQueryRiskZones(input || {}, orgId);
+    case 'create_geofence':    return toolCreateGeofence(input || {}, userId, orgId);
+    case 'create_risk_zone':   return toolCreateRiskZone(input || {}, userId, orgId);
     default: return { error: `Unknown tool: ${name}` };
   }
 }
@@ -671,7 +680,7 @@ router.post('/decision', async (req, res) => {
     const result = await runDecisionFabric({
       command: String(command).trim(),
       history: Array.isArray(history) ? history : [],
-      executeTool: runTool,
+      executeTool: (name, input, context) => runTool(name, input, context),
       userId: req.user?.id || null,
       orgId: req.user?.org_id || req.user?.orgId || req.user?.organization_id || null,
       persistDecision: persistCopilotDecision,
