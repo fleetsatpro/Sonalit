@@ -223,7 +223,7 @@ async function runDecisionFabric({command,history=[],executeTool,userId,orgId,pe
   final.swarm=agents.map(a=>({id:a.id,name:a.name,status:a.status,confidence:Number(a.confidence||0),provider:a.provider,finding:a.finding,dissent:a.dissent,tools:a.tools}));
   final.meta={latency_ms:Date.now()-started,probe_plan:probes,agent_count:AGENTS.length,agent_failures:agents.filter(a=>a.status==='blocked').length,provider_fallback_available:aiClient.hasOpenSourcePrimary?.()||aiClient.hasGroqFallback?.(),persisted:false};
   if(persistDecision){
-    try{await persistDecision({orgId,userId,command,result:final});final.meta.persisted=true;}catch(e){logger.warn('Copilot decision persistence failed: '+e.message);}
+    try{const decisionId=await persistDecision({orgId,userId,command,result:final});final.id=decisionId;final.meta.persisted=true;}catch(e){logger.warn('Copilot decision persistence failed: '+e.message);}
   }
   return final;
 }
