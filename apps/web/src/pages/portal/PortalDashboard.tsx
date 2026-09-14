@@ -153,7 +153,7 @@ function OverviewMap({ shipments, selected, onSelect, onOpen }: {
         <span className="rounded-full border border-white/10 bg-black/40 px-2 py-1 text-[10px] text-white/35">Dim = stale/offline</span>
       </div>
       {selected && (
-        <div className="absolute top-14 right-4 max-w-[230px] rounded-xl border border-orange-500/25 bg-black/70 px-3 py-2 backdrop-blur-md pointer-events-none">
+        <div className="absolute top-14 right-4 max-w-[230px] rounded-xl border border-orange-500/25 bg-black/70 px-3 py-2 backdrop-blur-md pointer-events-auto">
           <p className="text-[9px] uppercase tracking-[0.15em] text-orange-300/70">SELECTED</p>
           <p className="text-sm font-semibold text-white mt-0.5 truncate">{shipments.find(x => x.convoy_id === selected)?.reference ?? '—'}</p>
           {(() => {
