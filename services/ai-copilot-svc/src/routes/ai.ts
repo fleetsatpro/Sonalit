@@ -41,7 +41,7 @@ async function saveSessionMessages(sessionId: string, messages: SessionMessage[]
   await redis.setex(`ai:session:${sessionId}`, SESSION_TTL_S, JSON.stringify(trimmed));
 }
 
-async function callDecisionFabric(orgId: string, userId: string, command: string, history: SessionMessage[]): Promise<any> {
+async function callDecisionFabric(orgId: string, userId: string, command: string, history: SessionMessage[], authorization?: string): Promise<any> {
   if (!config.DECISION_FABRIC_URL) throw new Error('DECISION_FABRIC_URL is not configured');
   const response = await fetch(config.DECISION_FABRIC_URL, {
     method: 'POST',
@@ -49,6 +49,7 @@ async function callDecisionFabric(orgId: string, userId: string, command: string
       'content-type': 'application/json',
       'x-org-id': orgId,
       'x-user-id': userId,
+      ...(authorization ? { authorization } : {}),
     },
     body: JSON.stringify({ command, history }),
     signal: AbortSignal.timeout(45000),
@@ -83,7 +84,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
     const userId = (req.headers['x-user-id'] as string) ?? 'unknown';
     setSseHeaders(reply);
     try {
-      const result = await callDecisionFabric(orgId, userId, context ? `Context:\n${context}\n\nQuery:\n${userQuery}` : userQuery, []);
+      const result = await callDecisionFabric(orgId, userId, context ? `Context:\n${context}\n\nQuery:\n${userQuery}` : userQuery, [], req.headers.authorization as string | undefined);
       reply.raw.write(`data: ${JSON.stringify({ result })}\n\n`);
       reply.raw.write('data: [DONE]\n\n');
       reply.raw.end();
@@ -107,7 +108,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
     setSseHeaders(reply);
     reply.raw.write(`data: ${JSON.stringify({ session_id: sessionId })}\n\n`);
     try {
-      const result = await callDecisionFabric(orgId, userId, message, history.slice(-SESSION_MAX_MESSAGES));
+      const result = await callDecisionFabric(orgId, userId, message, history.slice(-SESSION_MAX_MESSAGES), req.headers.authorization as string | undefined);
       const answer = result.answer ?? result.response ?? '';
       reply.raw.write(`data: ${JSON.stringify({ result })}\n\n`);
       reply.raw.write(`data: ${JSON.stringify({ chunk: answer })}\n\n`);
