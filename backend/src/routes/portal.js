@@ -201,6 +201,41 @@ router.delete('/tokens/:id', authenticate, attachOrgDb, authorize('admin', 'disp
   res.json({ data: { id: result.rows[0].id, revoked: true } });
 }));
 
+// GET /api/v1/portal/convoy/:convoy_id/location — customer-scoped live location + trail
+const { clientAuth } = require('../middleware/clientAuth');
+function checkClientConvoy(client, convoy_id, res) {
+  if (!client.convoy_ids.includes(convoy_id)) {
+    res.status(403).json({ error: 'Not authorised for this convoy' });
+    return false;
+  }
+  return true;
+}
+router.get('/convoy/:convoy_id/location', clientAuth, asyncHandler(async (req, res) => {
+  if (!checkClientConvoy(req.client, req.params.convoy_id, res)) return;
+  const result = await req.db(
+    `SELECT g.lat, g.lng, g.timestamp AS recorded_at, g.speed AS speed_kmh, g.heading AS heading_deg
+       FROM gps_logs g
+       JOIN convoy_trucks ct ON ct.vehicle_id = g.vehicle_id
+       JOIN convoys c ON c.id = ct.convoy_id
+      WHERE ct.convoy_id = $1 AND c.org_id = $2
+      ORDER BY g.timestamp ASC LIMIT 2000`,
+    [req.params.convoy_id, req.client.org_id],
+  );
+  const trail = result.rows.map(r => ({
+    lat: parseFloat(r.lat), lng: parseFloat(r.lng), recorded_at: r.recorded_at,
+    speed_kmh: r.speed_kmh != null ? parseFloat(r.speed_kmh) : null,
+    heading_deg: r.heading_deg != null ? parseFloat(r.heading_deg) : null,
+  }));
+  const latest = trail.length ? trail[trail.length - 1] : null;
+  res.json({ data: {
+    current_location: latest ? { lat: latest.lat, lng: latest.lng } : null,
+    speed_kmh: latest?.speed_kmh ?? null,
+    heading_deg: latest?.heading_deg ?? null,
+    last_ping_at: latest?.recorded_at ?? null,
+    trail,
+  }});
+}));
+
 // GET /api/v1/portal/convoy/location
 router.get('/convoy/location', portalAuth, asyncHandler(async (req, res) => {
   const { convoy_id } = req.portal;
