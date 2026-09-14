@@ -153,8 +153,20 @@ function OverviewMap({ shipments, selected, onSelect }: {
       </div>
       {selected && (
         <div className="absolute top-14 right-4 max-w-[230px] rounded-xl border border-orange-500/25 bg-black/70 px-3 py-2 backdrop-blur-md pointer-events-none">
-          <p className="text-[10px] uppercase tracking-[0.15em] text-orange-300/70">Selected shipment</p>
-          <p className="text-xs text-white mt-0.5 truncate">{shipments.find(x => x.convoy_id === selected)?.reference ?? '—'}</p>
+          <p className="text-[9px] uppercase tracking-[0.15em] text-orange-300/70">SELECTED</p>
+          <p className="text-sm font-semibold text-white mt-0.5 truncate">{shipments.find(x => x.convoy_id === selected)?.reference ?? '—'}</p>
+          {(() => {
+            const s = shipments.find(x => x.convoy_id === selected);
+            if (!s) return null;
+            return <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]">
+              <span className="text-white/30">{s.origin ?? '—'} → {s.destination ?? '—'}</span>
+              <span className="text-right text-white/45">{s.progress_pct == null ? '—' : Math.round(s.progress_pct) + '%'} complete</span>
+              <span className="text-white/30">ETA {fmtDateTime(s.eta)}</span>
+              <span className={cx(['text-right', freshness(s.last_ping_at) === 'live' ? 'text-emerald-300' : 'text-amber-300'])}>{freshness(s.last_ping_at).toUpperCase()}</span>
+              <button type="button" className="col-span-2 mt-1 rounded-lg bg-orange-500/15 px-2 py-1.5 text-[10px] font-semibold text-orange-200 hover:bg-orange-500/25"
+                onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/track', params: { convoy_id: s.convoy_id } })}>Open convoy telemetry →</button>
+            </div>;
+          })()}
         </div>
       )}
     </div>
