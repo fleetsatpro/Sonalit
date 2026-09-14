@@ -741,7 +741,7 @@ router.post('/decision', async (req, res) => {
   } catch (err) {
     logger.error('Decision Intelligence Fabric error: ' + (err?.message || err));
     return res.status(200).json({
-      answer: 'Decision Intelligence entered fail-safe mode. The swarm could not complete this request; no irreversible AI action is authorised.',
+      answer: 'Sonalit Copilot entered fail-safe mode. The swarm could not complete this request; no irreversible AI action is authorised.',
       decision: 'HUMAN_REVIEW_REQUIRED',
       risk_level: 'HIGH',
       confidence: 0,
