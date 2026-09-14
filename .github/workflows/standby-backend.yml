@@ -1,0 +1,71 @@
+name: Standby Backend
+
+on:
+  push:
+    branches: [main, feat/free-standby-backend]
+    paths:
+      - 'backend/**'
+      - 'Dockerfile.standby'
+      - 'infra/standby/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: standby-backend
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push standby image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.standby
+          push: true
+          tags: |
+            ghcr.io/fleetsatpro/sonalit-backend:standby
+            ghcr.io/fleetsatpro/sonalit-backend:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+
+  deploy:
+    needs: build
+    if: ${{ secrets.STANDBY_SSH_HOST != '' && secrets.STANDBY_SSH_USER != '' && secrets.STANDBY_SSH_KEY != '' && secrets.STANDBY_GHCR_USER != '' && secrets.STANDBY_GHCR_TOKEN != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy standby container
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.STANDBY_SSH_HOST }}
+          username: ${{ secrets.STANDBY_SSH_USER }}
+          key: ${{ secrets.STANDBY_SSH_KEY }}
+          port: ${{ secrets.STANDBY_SSH_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -eu
+            cd /opt/sonalit-standby
+            export SONALIT_IMAGE="ghcr.io/fleetsatpro/sonalit-backend:${{ github.sha }}"
+            printf '%s\n' "GHCR image: ${SONALIT_IMAGE}"
+            echo '${{ secrets.STANDBY_GHCR_TOKEN }}' | docker login ghcr.io -u '${{ secrets.STANDBY_GHCR_USER }}' --password-stdin
+            docker compose pull
+            docker compose up -d --remove-orphans
+            docker image prune -af --filter 'until=168h' || true
+            curl --fail --silent --show-error --retry 12 --retry-delay 5 http://127.0.0.1:5000/health >/tmp/sonalit-standby-health.json
+            cat /tmp/sonalit-standby-health.json

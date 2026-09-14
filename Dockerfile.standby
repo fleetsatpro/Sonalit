@@ -1,0 +1,20 @@
+FROM node:22-slim
+WORKDIR /app
+
+COPY backend/package*.json ./backend/
+RUN cd backend && npm ci --omit=dev
+
+COPY backend/ ./backend/
+RUN mkdir -p /app/backend/logs
+
+ENV NODE_ENV=production
+ENV PORT=5000
+ENV SONALIT_STANDBY=true
+ENV ENABLE_INPROCESS_WORKERS=false
+
+EXPOSE 5000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||5000)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+CMD ["node", "-r", "./backend/src/utils/standbyBootstrap.js", "-r", "./backend/src/utils/runtimeDiagnosticsBootstrap.js", "-r", "./backend/src/utils/intelligenceCollectionBootstrap.js", "./backend/src/app.js"]
