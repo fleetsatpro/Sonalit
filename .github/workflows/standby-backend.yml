@@ -47,7 +47,7 @@ jobs:
 
   deploy:
     needs: build
-    if: ${{ secrets.STANDBY_SSH_HOST != '' && secrets.STANDBY_SSH_USER != '' && secrets.STANDBY_SSH_KEY != '' }}
+    if: ${{ secrets.STANDBY_SSH_HOST != '' && secrets.STANDBY_SSH_USER != '' && secrets.STANDBY_SSH_KEY != '' && secrets.STANDBY_GHCR_USER != '' && secrets.STANDBY_GHCR_TOKEN != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Deploy standby container
