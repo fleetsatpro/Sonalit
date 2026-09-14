@@ -43,6 +43,8 @@ To enable automatic deployment to the standby host, configure these GitHub Actio
 - `STANDBY_SSH_USER`
 - `STANDBY_SSH_KEY`
 - `STANDBY_SSH_PORT` (optional; defaults to `22`)
+- `STANDBY_GHCR_USER`
+- `STANDBY_GHCR_TOKEN` (a GitHub token/PAT that can pull the image from GHCR)
 
 The workflow is deliberately safe when those secrets are absent: it still builds and publishes the standby image, but skips the SSH deployment job.
 
@@ -58,16 +60,10 @@ cd /opt/sonalit-standby
 # Replace this with the exact image SHA you intend to promote.
 export SONALIT_IMAGE=ghcr.io/fleetsatpro/sonalit-backend:<git-sha>
 
-docker compose pull
-
-# Stop the standby role and start the promoted role.
-docker compose down
-docker compose -f docker-compose.yml -f docker-compose.active.yml up -d --remove-orphans
-
-curl --fail http://127.0.0.1:5000/health
+./promote.sh
 ```
 
-The active override sets `SONALIT_STANDBY=false` and `ENABLE_INPROCESS_WORKERS=true`.
+The promotion script pulls the exact immutable image, runs the database migration while the process remains fenced as standby, restarts the service with `SONALIT_STANDBY=false`, enables in-process workers, and verifies `/health`.
 
 Before promotion, update DNS/reverse-proxy origin routing to the standby host. After primary recovery, reverse the routing and return the standby to its default `SONALIT_STANDBY=true` state before bringing the primary back into service.
 
