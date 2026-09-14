@@ -656,6 +656,54 @@ async function runTool(name, input, context = {}) {
 // ── POST /ai/decision — unified Decision Intelligence Fabric ──────────────
 // Conversation + decision support share one resilient swarm. The legacy
 // /dispatch endpoint remains intact for existing tool-execution workflows.
+router.get('/decision/history', async (req, res) => {
+  try {
+    const orgId = req.user?.org_id || req.user?.orgId || req.user?.organization_id;
+    if (!orgId) return res.status(403).json({ error: 'Organisation context required' });
+    const limit = Math.min(Math.max(Number(req.query.limit || 12), 1), 50);
+    const r = await query(
+      `SELECT id, command, decision, risk_level, confidence, answer, created_at, outcome, outcome_notes
+       FROM public.copilot_decisions
+       WHERE org_id = $1
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [orgId, limit]
+    );
+    return res.json({ data: r.rows });
+  } catch (err) {
+    logger.error('Copilot history error: ' + err.message);
+    return res.status(500).json({ error: 'Unable to load Copilot history' });
+  }
+});
+
+router.post('/decision/:decisionId/feedback', async (req, res) => {
+  try {
+    const orgId = req.user?.org_id || req.user?.orgId || req.user?.organization_id;
+    const userId = req.user?.id || null;
+    const outcome = String(req.body?.outcome || '').trim();
+    const notes = req.body?.notes ? String(req.body.notes).slice(0, 4000) : null;
+    const allowed = new Set(['correct', 'incorrect', 'partially_correct', 'superseded', 'unknown']);
+    if (!orgId || !allowed.has(outcome)) return res.status(400).json({ error: 'Valid organisation and outcome required' });
+    const exists = await query('SELECT id FROM public.copilot_decisions WHERE id = $1 AND org_id = $2', [req.params.decisionId, orgId]);
+    if (!exists.rows.length) return res.status(404).json({ error: 'Decision not found' });
+    await query(
+      `INSERT INTO public.copilot_decision_feedback (decision_id, org_id, user_id, outcome, notes)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [req.params.decisionId, orgId, userId, outcome, notes]
+    );
+    await query(
+      `UPDATE public.copilot_decisions
+       SET outcome=$1, outcome_notes=$2, outcome_recorded_at=NOW()
+       WHERE id=$3 AND org_id=$4`,
+      [outcome, notes, req.params.decisionId, orgId]
+    );
+    return res.json({ ok: true, decision_id: req.params.decisionId, outcome });
+  } catch (err) {
+    logger.error('Copilot feedback error: ' + err.message);
+    return res.status(500).json({ error: 'Unable to record Copilot feedback' });
+  }
+});
+
 router.post('/decision', async (req, res) => {
   const { command, history = [] } = req.body || {};
   if (!command || !String(command).trim()) {
