@@ -1,0 +1,5 @@
+services:
+  sonalit-standby:
+    environment:
+      SONALIT_STANDBY: "false"
+      ENABLE_INPROCESS_WORKERS: "true"
