@@ -52,12 +52,20 @@ export default function PortalLayout(): React.ReactElement {
             })}
           </div>
 
-          <p className="px-3 pt-6 pb-2 text-[10px] uppercase tracking-[0.18em] text-white/25">Shipment tools</p>
-          <div className="space-y-1">
-            <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-white/32"><Truck size={16} /><span>Shipment tracking</span></div>
-            <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-white/32"><ShieldCheck size={16} /><span>Security & custody</span></div>
-            <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-white/32"><FileText size={16} /><span>Documents & POD</span></div>
-            <p className="px-3 pt-1 text-[10px] leading-relaxed text-white/20">Open these from a shipment to preserve access scoping.</p>
+          <p className="px-3 pt-6 pb-2 text-[10px] uppercase tracking-[0.18em] text-white/25">Shipment workspace</p>
+          <div className="space-y-2">
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.018] p-3">
+              <div className="flex items-center gap-2 text-xs text-white/60"><Truck size={14} className="text-orange-400"/><span>Deep shipment views</span></div>
+              <p className="mt-1.5 text-[10px] leading-relaxed text-white/25">Tracking, manifest, security, custody, sensors, replay, documents and POD are opened from the selected shipment.</p>
+            </div>
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.018] p-3">
+              <div className="flex items-center gap-2 text-xs text-white/60"><ShieldCheck size={14} className="text-emerald-400"/><span>Security boundary active</span></div>
+              <p className="mt-1.5 text-[10px] leading-relaxed text-white/25">Only sanitised cargo-owner intelligence is exposed. Internal tactical data remains isolated.</p>
+            </div>
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.018] p-3">
+              <div className="flex items-center gap-2 text-xs text-white/60"><FileText size={14} className="text-sky-400"/><span>Evidence chain</span></div>
+              <p className="mt-1.5 text-[10px] leading-relaxed text-white/25">Delivery evidence, custody events and shipment documents remain tied to the authorised cargo record.</p>
+            </div>
           </div>
         </div>
 
@@ -84,7 +92,7 @@ export default function PortalLayout(): React.ReactElement {
             </div>
             <div className="space-y-1">
               {NAV.map(item => {
-                const active = pathname === item.path;
+                const active = item.path === '/portal/dashboard' ? pathname === item.path : pathname.startsWith(item.path);
                 const Icon = item.icon;
                 return (
                   <button key={item.path} onClick={() => go(item.path)}
@@ -99,17 +107,16 @@ export default function PortalLayout(): React.ReactElement {
       )}
 
       <div className="lg:pl-[244px]">
-        <div className="lg:hidden sticky top-0 z-40 flex items-center justify-between border-b border-white/[0.06] px-4 py-3"
-          style={{ background: 'rgba(7,11,22,0.95)', backdropFilter: 'blur(16px)' }}>
-          <button onClick={() => setMobileOpen(true)} className="p-2 text-white/50"><Menu size={18}/></button>
-          <div className="text-center">
-            <p className="font-black tracking-[0.2em] text-xs text-orange-400">SONALIT</p>
-            <p className="text-[9px] uppercase tracking-[0.16em] text-white/25">Cargo Owner</p>
-          </div>
-          <button onClick={() => void navigate({ to: '/portal/notifications' })} className="p-2 text-white/50"><Bell size={17}/></button>
-        </div>
         <Outlet />
       </div>
+
+      <button
+        aria-label="Open cargo owner navigation"
+        onClick={() => setMobileOpen(true)}
+        className="fixed bottom-4 left-4 z-40 lg:hidden h-11 w-11 rounded-full border border-orange-500/25 bg-[#0b1221]/95 text-orange-300 shadow-xl backdrop-blur-md"
+      >
+        <Menu size={17} className="mx-auto" />
+      </button>
     </div>
   );
 }
