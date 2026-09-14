@@ -1,6 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import Anthropic from '@anthropic-ai/sdk';
 import { randomUUID } from 'node:crypto';
 import { config } from '../config.js';
 import { query, pool } from '../db.js';
@@ -8,9 +7,6 @@ import { redis } from '../redis.js';
 import { withCircuitBreaker, CircuitOpenError } from '../lib/circuit-breaker.js';
 import type { AiDecision } from '../db.js';
 
-const anthropic = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY });
-
-const MODEL = 'claude-sonnet-4-6';
 const SESSION_MAX_MESSAGES = 10;
 const SESSION_TTL_S = 3600;
 
@@ -45,6 +41,22 @@ async function saveSessionMessages(sessionId: string, messages: SessionMessage[]
   await redis.setex(`ai:session:${sessionId}`, SESSION_TTL_S, JSON.stringify(trimmed));
 }
 
+async function callDecisionFabric(orgId: string, userId: string, command: string, history: SessionMessage[]): Promise<any> {
+  if (!config.DECISION_FABRIC_URL) throw new Error('DECISION_FABRIC_URL is not configured');
+  const response = await fetch(config.DECISION_FABRIC_URL, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-org-id': orgId,
+      'x-user-id': userId,
+    },
+    body: JSON.stringify({ command, history }),
+    signal: AbortSignal.timeout(45000),
+  });
+  if (!response.ok) throw new Error(`Decision Fabric HTTP ${response.status}`);
+  return response.json();
+}
+
 function setSseHeaders(reply: FastifyReply): void {
   void reply.raw.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -65,119 +77,49 @@ async function storeDecision(orgId: string, userId: string, userQuery: string, r
 export async function aiRoutes(app: FastifyInstance): Promise<void> {
   app.post('/v4/ai/query', async (req: FastifyRequest, reply: FastifyReply) => {
     const body = QuerySchema.safeParse(req.body);
-    if (!body.success) {
-      return reply.code(400).send({ error: 'Invalid request', issues: body.error.issues });
-    }
-
+    if (!body.success) return reply.code(400).send({ error: 'Invalid request', issues: body.error.issues });
     const { query: userQuery, context } = body.data;
     const orgId = (req.headers['x-org-id'] as string) ?? 'unknown';
     const userId = (req.headers['x-user-id'] as string) ?? 'unknown';
-
     setSseHeaders(reply);
-
-    let fullResponse = '';
-
     try {
-      await withCircuitBreaker(async () => {
-        const stream = anthropic.messages.stream({
-          model: MODEL,
-          max_tokens: 2048,
-          system: 'You are Sonalit AI Copilot, an expert assistant for fleet operations. Help operators manage vehicles, drivers, convoys, and respond to alerts. Be concise, factual, and safety-focused.',
-          messages: [
-            {
-              role: 'user',
-              content: context ? `Context:\n${context}\n\nQuery:\n${userQuery}` : userQuery,
-            },
-          ],
-        });
-
-        for await (const chunk of stream) {
-          if (
-            chunk.type === 'content_block_delta' &&
-            chunk.delta.type === 'text_delta'
-          ) {
-            fullResponse += chunk.delta.text;
-            reply.raw.write(`data: ${JSON.stringify({ chunk: chunk.delta.text })}\n\n`);
-          }
-        }
-      });
-    } catch (err) {
-      if (err instanceof CircuitOpenError) {
-        reply.raw.write(`data: ${JSON.stringify({ error: 'Service temporarily unavailable' })}\n\n`);
-      } else {
-        reply.raw.write(`data: ${JSON.stringify({ error: 'AI query failed' })}\n\n`);
-      }
+      const result = await callDecisionFabric(orgId, userId, context ? `Context:\n${context}\n\nQuery:\n${userQuery}` : userQuery, []);
+      reply.raw.write(`data: ${JSON.stringify({ result })}\n\n`);
+      reply.raw.write('data: [DONE]\n\n');
       reply.raw.end();
-      return;
-    }
-
-    reply.raw.write('data: [DONE]\n\n');
-    reply.raw.end();
-
-    try {
-      await storeDecision(orgId, userId, userQuery, fullResponse);
-    } catch (storeErr) {
-      req.log.warn({ err: storeErr }, 'Failed to store ai_decision');
+    } catch (err) {
+      req.log.error({ err }, 'Unified decision fabric query failed');
+      reply.raw.write(`data: ${JSON.stringify({ error: 'Unified Copilot unavailable' })}\n\n`);
+      reply.raw.end();
     }
   });
 
   app.post('/v4/ai/copilot', async (req: FastifyRequest, reply: FastifyReply) => {
     const body = CopilotSchema.safeParse(req.body);
-    if (!body.success) {
-      return reply.code(400).send({ error: 'Invalid request', issues: body.error.issues });
-    }
-
+    if (!body.success) return reply.code(400).send({ error: 'Invalid request', issues: body.error.issues });
     const { message, session_id } = body.data;
     const sessionId = session_id ?? randomUUID();
     const orgId = (req.headers['x-org-id'] as string) ?? 'unknown';
     const userId = (req.headers['x-user-id'] as string) ?? 'unknown';
-
-    const history = await getSessionMessages(sessionId);
+    let history: SessionMessage[] = [];
+    try { history = await getSessionMessages(sessionId); } catch (err) { req.log.warn({ err }, 'Copilot session read failed; starting fresh'); }
     history.push({ role: 'user', content: message });
-
     setSseHeaders(reply);
     reply.raw.write(`data: ${JSON.stringify({ session_id: sessionId })}\n\n`);
-
-    let assistantResponse = '';
-
     try {
-      await withCircuitBreaker(async () => {
-        const stream = anthropic.messages.stream({
-          model: MODEL,
-          max_tokens: 2048,
-          system: 'You are Sonalit AI Copilot, an expert assistant for fleet operations. Help operators manage vehicles, drivers, convoys, and respond to alerts. Be concise, factual, and safety-focused.',
-          messages: history.map((m) => ({ role: m.role, content: m.content })),
-        });
-
-        for await (const chunk of stream) {
-          if (
-            chunk.type === 'content_block_delta' &&
-            chunk.delta.type === 'text_delta'
-          ) {
-            assistantResponse += chunk.delta.text;
-            reply.raw.write(`data: ${JSON.stringify({ chunk: chunk.delta.text })}\n\n`);
-          }
-        }
-      });
-    } catch (err) {
-      if (err instanceof CircuitOpenError) {
-        reply.raw.write(`data: ${JSON.stringify({ error: 'Service temporarily unavailable' })}\n\n`);
-      } else {
-        reply.raw.write(`data: ${JSON.stringify({ error: 'Copilot request failed' })}\n\n`);
-      }
+      const result = await callDecisionFabric(orgId, userId, message, history.slice(-SESSION_MAX_MESSAGES));
+      const answer = result.answer ?? result.response ?? '';
+      reply.raw.write(`data: ${JSON.stringify({ result })}\n\n`);
+      reply.raw.write(`data: ${JSON.stringify({ chunk: answer })}\n\n`);
+      reply.raw.write('data: [DONE]\n\n');
       reply.raw.end();
+      history.push({ role: 'assistant', content: answer });
+      try { await saveSessionMessages(sessionId, history); } catch (err) { req.log.warn({ err }, 'Failed to persist Copilot session'); }
       return;
-    }
-
-    reply.raw.write('data: [DONE]\n\n');
-    reply.raw.end();
-
-    history.push({ role: 'assistant', content: assistantResponse });
-    try {
-      await saveSessionMessages(sessionId, history);
-      await storeDecision(orgId, userId, message, assistantResponse);
-    } catch (storeErr) {
-      req.log.warn({ err: storeErr }, 'Failed to persist copilot session');
+    } catch (err) {
+      req.log.error({ err }, 'Unified Copilot request failed');
+      reply.raw.write(`data: ${JSON.stringify({ error: 'Unified Copilot unavailable' })}\n\n`);
+      reply.raw.end();
     }
   });
 
