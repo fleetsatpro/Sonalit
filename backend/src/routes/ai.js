@@ -5,6 +5,24 @@ const { query } = require('../config/database');
 const logger = require('../utils/logger');
 const { runDecisionFabric } = require('../services/aiSwarm');
 
+async function persistCopilotDecision({ orgId, userId, command, result }) {
+  if (!orgId) throw new Error('Copilot decision persistence requires an authenticated organisation');
+  const decisionRow = await query(
+    `INSERT INTO public.copilot_decisions (org_id, user_id, command, decision, risk_level, confidence, answer, result, completed_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW()) RETURNING id`,
+    [orgId, userId || null, command, result.decision || 'HUMAN_REVIEW_REQUIRED', result.risk_level || 'HIGH', Number(result.confidence || 0), result.answer || '', JSON.stringify(result)]
+  );
+  const decisionId = decisionRow.rows[0].id;
+  for (const agent of result.swarm || []) {
+    await query(
+      `INSERT INTO public.copilot_decision_agents (decision_id, org_id, agent_id, status, confidence, provider, finding, dissent, tools, provenance)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [decisionId, orgId, agent.id, agent.status || 'uncertain', Number(agent.confidence || 0), agent.provider || null, agent.finding || '', agent.dissent || '', JSON.stringify(agent.tools || []), JSON.stringify(agent.provenance || [])]
+    );
+  }
+  return decisionId;
+}
+
 router.use(authenticate);
 
 const MODEL = 'claude-opus-4-7';
@@ -635,7 +653,7 @@ router.post('/decision', async (req, res) => {
     return res.status(400).json({ error: 'command required' });
   }
 
-  if (!aiClient.hasAnthropic() && !aiClient.hasGroqFallback()) {
+  if (!aiClient.hasAnyProvider()) {
     return res.json({
       answer: 'Decision Intelligence is not configured. Add ANTHROPIC_API_KEY or GROQ_API_KEY.',
       decision: 'HUMAN_REVIEW_REQUIRED',
@@ -643,7 +661,7 @@ router.post('/decision', async (req, res) => {
       confidence: 0,
       recommended_actions: [],
       risks: [{ risk: 'No AI provider configured', severity: 'high' }],
-      meta: { degraded: true, agent_count: 0, agent_failures: 0 },
+      meta: { degraded: true, agent_count: 0, agent_failures: 0, provider_capabilities: aiClient.providerCapabilities() },
     });
   }
 
@@ -655,6 +673,8 @@ router.post('/decision', async (req, res) => {
       history: Array.isArray(history) ? history : [],
       executeTool: runTool,
       userId: req.user?.id || null,
+      orgId: req.user?.org_id || req.user?.orgId || req.user?.organization_id || null,
+      persistDecision: persistCopilotDecision,
     });
 
     return res.json({
