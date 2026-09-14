@@ -1,333 +1,239 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from '@tanstack/react-router';
-import { AlertTriangle, ArrowLeft, Clock, MapPin, Shield, Truck } from 'lucide-react';
-import maplibregl from 'maplibre-gl';
+import Map, { Marker, NavigationControl, Source, Layer, type MapRef } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import {
-  PortalShell, Badge, ProgressBar, RouteRibbon, MapShell,
-  TruckRow, EscortPanel, fmtDateTime,
-} from '../../components/portal/PortalPrimitives.js';
+import { AlertTriangle, ArrowLeft, Activity, Clock3, Expand, Gauge, MapPin, RefreshCw, ShieldCheck, Signal, Truck } from 'lucide-react';
+import { PortalShell, Badge, ProgressBar, fmtDateTime } from '../../components/portal/PortalPrimitives.js';
+import { subscribePortal } from '../../lib/portalCentrifuge.js';
 
 const API = (import.meta.env['VITE_API_BASE_URL'] as string | undefined) ?? '/api/v1';
-const OSRM_BASE = 'https://router.project-osrm.org/route/v1/driving';
+const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 
-interface Vehicle {
-  vehicle_id: string;
-  registration: string;
-  make: string | null;
-  model: string | null;
-  type: string | null;
-  driver_name: string | null;
-  current_lat: number | null;
-  current_lng: number | null;
-  speed_kmh: number | null;
-  heading_deg: number | null;
-  last_ping_at: string | null;
-  carries_my_cargo: boolean;
-}
-
-interface ConvoyOverview {
-  convoy_id: string;
-  reference: string;
-  status: string;
-  origin: string;
-  destination: string;
-  departed_at: string | null;
-  estimated_arrival_at: string | null;
-  arrived_at: string | null;
-  progress_pct: number | null;
-  eta_confidence_low: string | null;
-  eta_confidence_high: string | null;
+type Vehicle = {
+  vehicle_id: string; registration: string; make: string | null; model: string | null;
+  type: string | null; driver_name: string | null; current_lat: number | null;
+  current_lng: number | null; speed_kmh: number | null; heading_deg: number | null;
+  last_ping_at: string | null; carries_my_cargo: boolean;
+};
+type Overview = {
+  convoy_id: string; reference: string; status: string; origin: string; destination: string;
+  departed_at: string | null; estimated_arrival_at: string | null; arrived_at: string | null;
+  progress_pct: number | null; exception_count: number; seal_status: string | null;
   vehicles: Vehicle[];
-  escorts: Array<{ escort_id: string; callsign: string; role: string; company: string | null; vehicle_registration: string | null }>;
-  coload_count: number;
-  exception_count: number;
-  seal_status: string | null;
-  waypoints: Array<{ lat: number; lng: number }>;
-}
+};
+type TrackPoint = { lat: number; lng: number; recorded_at: string; speed_kmh: number | null };
+type LivePosition = { lat: number; lng: number; speed_kmh: number | null; heading_deg: number | null; observed_at: string };
 
-// ── ETA Ribbon ────────────────────────────────────────────────────────────────
+const ageLabel = (iso: string | null | undefined) => {
+  if (!iso) return 'NO FIX';
+  const sec = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (sec < 60) return sec + 's';
+  if (sec < 3600) return Math.floor(sec / 60) + 'm';
+  return Math.floor(sec / 3600) + 'h';
+};
 
-function EtaRibbon({ overview }: { overview: ConvoyOverview }) {
-  const eta = overview.estimated_arrival_at;
-  const low = overview.eta_confidence_low;
-  const high = overview.eta_confidence_high;
+const health = (iso: string | null | undefined) => {
+  if (!iso) return 'offline';
+  const sec = (Date.now() - new Date(iso).getTime()) / 1000;
+  return sec < 120 ? 'live' : sec < 900 ? 'recent' : sec < 3600 ? 'stale' : 'offline';
+};
 
+function Metric({ icon: Icon, label, value, sub }: { icon: React.ElementType; label: string; value: React.ReactNode; sub: string }) {
   return (
-    <div className="rounded-xl border border-white/[0.07] px-4 py-3 mb-4 portal-reveal"
-      style={{ background: 'linear-gradient(145deg,var(--p-surface),var(--p-surface2))' }}>
-      <div className="flex flex-wrap items-center gap-4 justify-between">
-        <div>
-          <p className="text-xs text-white/40 uppercase tracking-widest mb-0.5">Estimated Arrival</p>
-          <p className="mono text-xl font-medium text-white">{fmtDateTime(eta)}</p>
-          {low && high && (
-            <p className="mono text-xs text-white/30 mt-0.5">
-              Window: {fmtDateTime(low)} – {fmtDateTime(high)}
-            </p>
-          )}
-        </div>
-        <div className="flex flex-col items-end gap-1">
-          <Badge label={overview.status.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())} variant={overview.status} />
-          {overview.exception_count > 0 && (
-            <span className="flex items-center gap-1 text-xs text-red-400">
-              <AlertTriangle size={11} /> {overview.exception_count} exception{overview.exception_count !== 1 ? 's' : ''}
-            </span>
-          )}
-          {overview.seal_status && (
-            <span className={`flex items-center gap-1 text-xs ${overview.seal_status === 'intact' ? 'text-green-400' : overview.seal_status === 'compromised' ? 'text-red-400' : 'text-amber-400'}`}>
-              <Shield size={11} /> {overview.seal_status}
-            </span>
-          )}
-        </div>
-      </div>
-      {overview.progress_pct != null && (
-        <div className="mt-3">
-          <RouteRibbon origin={overview.origin} destination={overview.destination} progress={overview.progress_pct} />
-          <ProgressBar pct={overview.progress_pct} className="mt-2" />
-          <p className="mono text-[11px] text-white/30 mt-1 text-right">{overview.progress_pct}% complete</p>
-        </div>
-      )}
+    <div className="rounded-2xl border border-white/[.07] bg-[#0b121c]/90 p-4">
+      <div className="flex items-center justify-between"><span className="text-[9px] font-bold uppercase tracking-[.18em] text-white/30">{label}</span><Icon size={15} className="text-orange-300"/></div>
+      <div className="mt-2 font-mono text-2xl text-white">{value}</div>
+      <div className="mt-1 text-[10px] text-white/25">{sub}</div>
     </div>
   );
 }
 
-// ── Live map ──────────────────────────────────────────────────────────────────
-
-function TrackMap({ vehicles }: { vehicles: Vehicle[] }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
-  const markersRef = useRef<maplibregl.Marker[]>([]);
-
-  useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
-    const located = vehicles.filter(v => v.current_lat != null && v.current_lng != null);
-    const first = located[0];
-    const center: [number, number] = first
-      ? [first.current_lng!, first.current_lat!]
-      : [28, -26];
-
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
-      center,
-      zoom: located.length > 1 ? 7 : 10,
-      attributionControl: false,
-    });
-    mapRef.current = map;
-
-    map.on('load', () => {
-      located.forEach(v => {
-        const el = document.createElement('div');
-        el.style.cssText = `width:14px;height:14px;border-radius:50%;border:2px solid ${v.carries_my_cargo ? '#f97316' : '#475569'};background:${v.carries_my_cargo ? 'rgba(249,115,22,0.4)' : 'rgba(71,85,105,0.4)'};`;
-        if (v.carries_my_cargo) {
-          el.style.boxShadow = '0 0 10px rgba(249,115,22,0.5)';
-        }
-        const popup = new maplibregl.Popup({ offset: 10, closeButton: false })
-          .setHTML(`<div style="font-family:monospace;font-size:11px;color:#fff;background:#0e1626;padding:4px 6px;border-radius:4px;">${v.registration}${v.driver_name ? ` · ${v.driver_name}` : ''}</div>`);
-        const marker = new maplibregl.Marker({ element: el })
-          .setLngLat([v.current_lng!, v.current_lat!])
-          .setPopup(popup)
-          .addTo(map);
-        markersRef.current.push(marker);
-      });
-
-      if (located.length > 1) {
-        const coords = located.map(v => `${v.current_lng},${v.current_lat}`).join(';');
-        fetch(`${OSRM_BASE}/${coords}?overview=full&geometries=geojson`)
-          .then(r => r.json() as Promise<{ routes?: Array<{ geometry: GeoJSON.Geometry }> }>)
-          .then(data => {
-            const route = data.routes?.[0]?.geometry;
-            if (!route) return;
-            if (map.getSource('route')) {
-              (map.getSource('route') as maplibregl.GeoJSONSource).setData({ type: 'Feature', properties: {}, geometry: route });
-            } else {
-              map.addSource('route', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: route } });
-              map.addLayer({ id: 'route-line', type: 'line', source: 'route',
-                layout: { 'line-join': 'round', 'line-cap': 'round' },
-                paint: { 'line-color': '#f97316', 'line-width': 2.5, 'line-opacity': 0.7 } });
-            }
-          })
-          .catch(() => null);
-      }
-    });
-
-    return () => { map.remove(); mapRef.current = null; markersRef.current = []; };
-  }, [vehicles]);
-
+function LiveMap({ points, trail, onFullscreen }: { points: Array<{ id: string; lat: number; lng: number; registration: string; mine: boolean }>; trail: TrackPoint[]; onFullscreen: () => void }) {
+  const mapRef = useRef<MapRef | null>(null);
+  const fit = () => {
+    if (!points.length) return;
+    const lats = points.map(p => p.lat);
+    const lngs = points.map(p => p.lng);
+    mapRef.current?.fitBounds(
+      [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+      { padding: 90, maxZoom: 9, duration: 700 },
+    );
+  };
+  useEffect(() => { if (points.length) window.setTimeout(fit, 250); }, [points.length]);
+  const line = {
+    type: 'Feature' as const,
+    geometry: { type: 'LineString' as const, coordinates: trail.map(p => [p.lng, p.lat]) },
+    properties: {},
+  };
   return (
-    <MapShell className="portal-reveal portal-reveal-2" style={{ height: 260 }}>
-      <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-      <div className="absolute top-2 left-3 text-xs text-white/40 pointer-events-none flex items-center gap-1">
-        <span className="w-2 h-2 rounded-full bg-orange-400" /> Your vehicles
-        <span className="w-2 h-2 rounded-full bg-slate-500 ml-2" /> Other
-      </div>
-    </MapShell>
-  );
-}
-
-// ── Vehicles & Crew card ──────────────────────────────────────────────────────
-
-function VehiclesCrewCard({ overview }: { overview: ConvoyOverview }) {
-  const mine = overview.vehicles.filter(v => v.carries_my_cargo);
-  const others = overview.vehicles.filter(v => !v.carries_my_cargo);
-
-  return (
-    <div className="rounded-xl border border-white/[0.07] overflow-hidden portal-reveal portal-reveal-3"
-      style={{ background: 'linear-gradient(145deg,var(--p-surface),var(--p-surface2))' }}>
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.06]">
-        <Truck size={14} className="text-orange-400" />
-        <span className="text-sm font-semibold text-white">Vehicles &amp; Crew</span>
-        <span className="mono text-xs text-white/30 ml-auto">{overview.vehicles.length} vehicles</span>
-      </div>
-
-      <div className="p-3 flex flex-col gap-2">
-        {mine.length > 0 && (
-          <>
-            <p className="text-[11px] text-orange-400/70 uppercase tracking-wider px-1 mb-1">Carrying Your Cargo</p>
-            {mine.map(v => (
-              <TruckRow key={v.vehicle_id} registration={v.registration} driverName={v.driver_name}
-                isMyCargo={true} speedKmh={v.speed_kmh} lastPing={v.last_ping_at} />
-            ))}
-          </>
+    <div className="relative overflow-hidden rounded-3xl border border-white/[.08] bg-[#06101a]">
+      <Map ref={mapRef} initialViewState={{ longitude: 0, latitude: 0, zoom: 1.6 }} mapStyle={MAP_STYLE} style={{ width: '100%', height: 610 }} attributionControl={false} onLoad={fit}>
+        <NavigationControl position="bottom-right" showCompass showZoom />
+        {trail.length > 1 && (
+          <Source id="portal-track-line" type="geojson" data={line}>
+            <Layer id="portal-track-line-layer" type="line" paint={{ 'line-color': '#ff7a18', 'line-width': 4, 'line-opacity': .9 }} />
+          </Source>
         )}
-
-        {others.length > 0 && (
-          <>
-            <p className="text-[11px] text-white/30 uppercase tracking-wider px-1 mt-2 mb-1">Co-load Vehicles</p>
-            {others.map(v => (
-              <TruckRow key={v.vehicle_id} registration={v.registration} driverName={v.driver_name}
-                isMyCargo={false} speedKmh={v.speed_kmh} lastPing={v.last_ping_at} />
-            ))}
-            {overview.coload_count > 0 && (
-              <p className="mono text-xs text-white/25 text-center py-2">
-                +{overview.coload_count} other secured consignment{overview.coload_count !== 1 ? 's' : ''}
-              </p>
-            )}
-          </>
-        )}
-
-        {overview.vehicles.length === 0 && (
-          <p className="text-xs text-white/30 text-center py-4">No vehicle data available</p>
-        )}
+        {points.map(p => (
+          <Marker key={p.id} longitude={p.lng} latitude={p.lat} anchor="center">
+            <div title={p.registration} className={"flex h-11 w-11 items-center justify-center rounded-full border-2 bg-[#0b1520] shadow-[0_0_0_7px_rgba(255,122,24,.08)] " + (p.mine ? 'border-orange-300 text-orange-300' : 'border-sky-300/60 text-sky-300')}>
+              <Truck size={16} />
+            </div>
+          </Marker>
+        ))}
+      </Map>
+      <div className="absolute left-4 top-4 flex items-center gap-2 rounded-xl border border-white/10 bg-[#071019]/90 px-3 py-2 backdrop-blur-md">
+        <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+        <span className="text-[9px] font-bold uppercase tracking-[.18em] text-white/65">LIVE CARGO ATLAS</span>
+        <span className="font-mono text-[9px] text-white/25">{points.length} positioned units</span>
       </div>
-
-      {overview.escorts.length > 0 && (
-        <div className="border-t border-white/[0.06] p-3">
-          <p className="text-[11px] text-blue-400/70 uppercase tracking-wider px-1 mb-2">Escort Detail</p>
-          <div className="flex flex-col gap-2">
-            {overview.escorts.map(e => (
-              <EscortPanel key={e.escort_id} callsign={e.callsign} role={e.role}
-                company={e.company} vehicleReg={e.vehicle_registration} />
-            ))}
+      <div className="absolute right-4 top-4 flex gap-2">
+        <button onClick={fit} disabled={!points.length} className="rounded-xl border border-white/10 bg-[#071019]/90 p-2.5 text-white/45 disabled:opacity-30"><MapPin size={15}/></button>
+        <button onClick={onFullscreen} className="rounded-xl border border-white/10 bg-[#071019]/90 p-2.5 text-white/45"><Expand size={15}/></button>
+      </div>
+      {!points.length && (
+        <div className="absolute inset-0 flex items-center justify-center bg-[#06101a]/40">
+          <div className="max-w-sm rounded-2xl border border-amber-400/15 bg-[#08111b]/95 p-6 text-center">
+            <Signal size={24} className="mx-auto text-amber-300/70"/>
+            <p className="mt-3 text-sm font-semibold text-white">No live coordinate is available</p>
+            <p className="mt-2 text-[11px] leading-relaxed text-white/35">The map is connected to Sonalit telemetry. Nothing is fabricated when a vehicle has no valid fix.</p>
           </div>
         </div>
       )}
+      <div className="absolute bottom-3 left-3 rounded-lg border border-white/10 bg-[#071019]/90 px-2.5 py-1.5 text-[9px] text-white/25">OpenStreetMap-compatible basemap · Sonalit telemetry</div>
     </div>
   );
 }
 
-// ── Main ─────────────────────────────────────────────────────────────────────
+function VehicleCard({ vehicle }: { vehicle: Vehicle }) {
+  const state = health(vehicle.last_ping_at);
+  return (
+    <div className="rounded-2xl border border-white/[.07] bg-white/[.018] p-4">
+      <div className="flex items-start gap-3">
+        <div className={"h-10 w-10 rounded-xl border flex items-center justify-center " + (vehicle.carries_my_cargo ? 'border-orange-400/25 bg-orange-400/10' : 'border-white/10 bg-white/[.02]')}>
+          <Truck size={16} className={vehicle.carries_my_cargo ? 'text-orange-300' : 'text-white/30'}/>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2"><p className="font-mono text-sm font-semibold text-white">{vehicle.registration}</p><span className="text-[9px] text-white/25">{vehicle.carries_my_cargo ? 'YOUR CARGO' : 'CO-LOAD'}</span></div>
+          <p className="mt-1 truncate text-[10px] text-white/30">{vehicle.make || 'Vehicle'} {vehicle.model || ''}{vehicle.driver_name ? ' · ' + vehicle.driver_name : ''}</p>
+        </div>
+        <span className={"rounded-full border px-2 py-1 text-[9px] font-bold uppercase " + (state === 'live' ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300' : state === 'recent' ? 'border-amber-400/20 bg-amber-400/10 text-amber-300' : 'border-white/10 bg-white/[.03] text-white/30')}>{state}</span>
+      </div>
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        <div className="rounded-xl border border-white/[.06] p-2.5"><span className="block text-[8px] uppercase tracking-[.14em] text-white/20">Speed</span><strong className="mt-1 block font-mono text-[11px] text-white/65">{vehicle.speed_kmh == null ? '—' : Math.round(vehicle.speed_kmh) + ' km/h'}</strong></div>
+        <div className="rounded-xl border border-white/[.06] p-2.5"><span className="block text-[8px] uppercase tracking-[.14em] text-white/20">Heading</span><strong className="mt-1 block font-mono text-[11px] text-white/65">{vehicle.heading_deg == null ? '—' : Math.round(vehicle.heading_deg) + '°'}</strong></div>
+        <div className="rounded-xl border border-white/[.06] p-2.5"><span className="block text-[8px] uppercase tracking-[.14em] text-white/20">Fix age</span><strong className="mt-1 block font-mono text-[11px] text-white/65">{ageLabel(vehicle.last_ping_at)}</strong></div>
+      </div>
+    </div>
+  );
+}
 
 export default function PortalTrack(): React.ReactElement {
   const navigate = useNavigate();
   const { convoy_id = '' } = useParams({ strict: false }) as { convoy_id?: string };
-  const [overview, setOverview] = useState<ConvoyOverview | null>(null);
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [trail, setTrail] = useState<TrackPoint[]>([]);
+  const [live, setLive] = useState<LivePosition | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
+  const [fullscreen, setFullscreen] = useState(false);
+  const [lastSync, setLastSync] = useState(new Date());
+
+  const load = React.useCallback(async () => {
+    if (!convoy_id) return;
+    try {
+      const [oRes, lRes, vRes] = await Promise.all([
+        fetch(API + '/portal/convoy/' + encodeURIComponent(convoy_id) + '/overview', { credentials: 'include' }),
+        fetch(API + '/portal/convoy/location', { credentials: 'include' }),
+        fetch(API + '/portal/convoy/vehicles', { credentials: 'include' }),
+      ]);
+      if (oRes.status === 401) { void navigate({ to: '/portal/login' }); return; }
+      if (oRes.status === 403) throw new Error('Not authorised for this shipment');
+      if (!oRes.ok) throw new Error('Unable to load shipment telemetry');
+      const o = await oRes.json() as { data: Overview };
+      const l = await lRes.json() as { data: { trail?: TrackPoint[]; current_location?: { lat: number; lng: number }; speed_kmh?: number | null; heading?: number | null; last_ping_at?: string | null } };
+      const v = await vRes.json() as { data: Vehicle[] };
+      setOverview({ ...o.data, vehicles: v.data || o.data.vehicles || [] });
+      setTrail(l.data?.trail || []);
+      if (l.data?.current_location) setLive({ lat: l.data.current_location.lat, lng: l.data.current_location.lng, speed_kmh: l.data.speed_kmh ?? null, heading_deg: l.data.heading ?? null, observed_at: l.data.last_ping_at || new Date().toISOString() });
+      setLastSync(new Date());
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : 'Unable to load shipment');
+    } finally {
+      setLoading(false);
+    }
+  }, [convoy_id, navigate]);
 
   useEffect(() => {
-    fetch(`${API}/portal/convoy/${encodeURIComponent(convoy_id)}/overview`, { credentials: 'include' })
-      .then(async res => {
-        if (res.status === 401) { void navigate({ to: '/portal/login' }); return null; }
-        if (res.status === 403) throw new Error('Not authorised for this convoy');
-        if (!res.ok) throw new Error(`Error ${res.status}`);
-        return res.json() as Promise<{ data: ConvoyOverview }>;
-      })
-      .then(json => { if (json) setOverview(json.data); })
-      .catch((e: Error) => setErrorMsg(e.message))
-      .finally(() => setLoading(false));
-  }, [convoy_id, navigate]);
+    void load();
+    const timer = window.setInterval(() => void load(), 15000);
+    return () => window.clearInterval(timer);
+  }, [load]);
+
+  useEffect(() => {
+    if (!convoy_id) return;
+    return subscribePortal<{ type: string; location?: { lat: number; lng: number }; speed_kmh?: number | null }>('portal#' + convoy_id, evt => {
+      if (evt.type !== 'position' || !evt.location) return;
+      const point = { lat: evt.location.lat, lng: evt.location.lng, speed_kmh: evt.speed_kmh ?? null, observed_at: new Date().toISOString() };
+      setLive(point);
+      setTrail(cur => [...cur, { lat: point.lat, lng: point.lng, speed_kmh: point.speed_kmh, recorded_at: point.observed_at }].slice(-1000));
+      setLastSync(new Date());
+    });
+  }, [convoy_id]);
+
+  const positionPoints = useMemo(() => (overview?.vehicles || []).filter(v => v.current_lat != null && v.current_lng != null).map(v => ({ id: v.vehicle_id, lat: v.current_lat as number, lng: v.current_lng as number, registration: v.registration, mine: v.carries_my_cargo })), [overview?.vehicles]);
+  const displayedPoints = live && overview?.vehicles.length === 1
+    ? [{ id: overview.vehicles[0].vehicle_id, lat: live.lat, lng: live.lng, registration: overview.vehicles[0].registration, mine: overview.vehicles[0].carries_my_cargo }]
+    : positionPoints;
+
+  if (loading) return <PortalShell><div className="min-h-[100dvh] bg-[#050b12] p-6 text-white"><div className="mx-auto max-w-[1680px] animate-pulse space-y-4"><div className="h-20 rounded-2xl bg-white/[.03]"/><div className="h-[610px] rounded-3xl bg-white/[.03]"/></div></div></PortalShell>;
 
   return (
     <PortalShell>
-      <header className="sticky top-0 z-40 border-b border-white/[0.06] px-4 py-3 flex items-center gap-3"
-        style={{ background: 'rgba(7,11,22,0.95)', backdropFilter: 'blur(16px)' }}>
-        <button onClick={() => void navigate({ to: '/portal/dashboard' })}
-          className="p-1.5 rounded-lg text-white/40 hover:text-white/80 transition-colors">
-          <ArrowLeft size={16} />
-        </button>
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm text-white truncate">{overview?.reference ?? 'Deep Track'}</p>
-          <p className="text-xs text-white/30 flex items-center gap-1">
-            <Clock size={10} /> Live tracking
-          </p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/exceptions', params: { convoy_id } })}
-            className="text-xs text-white/40 hover:text-white/70 transition-colors flex items-center gap-1">
-            <AlertTriangle size={12} /> Exceptions
-          </button>
-          <button onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/sensors', params: { convoy_id } })}
-            className="text-xs text-white/40 hover:text-white/70 transition-colors flex items-center gap-1">
-            <MapPin size={12} /> Sensors
-          </button>
-        </div>
-      </header>
-
-      <main className="max-w-2xl mx-auto px-4 pt-5 pb-16">
-        {loading && (
-          <div className="space-y-3">
-            {[0, 1, 2].map(i => (
-              <div key={i} className="h-28 rounded-xl border border-white/[0.07] animate-pulse"
-                style={{ background: 'var(--p-surface)', animationDelay: `${i * 80}ms` }} />
-            ))}
+      <div className="min-h-[100dvh] bg-[#050b12] text-white">
+        <header className="sticky top-0 z-40 border-b border-white/[.07] bg-[#070c14]/90 backdrop-blur-xl">
+          <div className="mx-auto flex max-w-[1680px] items-center gap-3 px-4 py-3 sm:px-6 xl:px-8">
+            <button onClick={() => void navigate({ to: '/portal/dashboard' })} className="rounded-xl border border-white/[.07] p-2 text-white/40 hover:text-white"><ArrowLeft size={15}/></button>
+            <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate text-base font-semibold text-white">{overview?.reference || 'Shipment'}</p><Badge label={(overview?.status || 'unknown').replace(/_/g,' ')} variant={overview?.status}/></div><p className="mt-0.5 text-[10px] text-white/25">Live cargo telemetry · synced {lastSync.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}</p></div>
+            <button onClick={() => void load()} className="rounded-xl border border-white/[.07] p-2 text-white/40 hover:text-white"><RefreshCw size={15}/></button>
           </div>
-        )}
-
-        {errorMsg && (
-          <div className="flex gap-3 p-4 rounded-xl border border-red-700/40 bg-red-900/20">
-            <AlertTriangle size={16} className="text-red-400 shrink-0 mt-0.5" />
-            <p className="text-sm text-red-300">{errorMsg}</p>
-          </div>
-        )}
-
-        {overview && (
-          <>
-            <EtaRibbon overview={overview} />
-            {overview.vehicles.some(v => v.current_lat != null) && (
-              <div className="mb-4">
-                <TrackMap vehicles={overview.vehicles} />
+        </header>
+        <main className="mx-auto max-w-[1680px] space-y-4 px-4 pb-20 pt-5 sm:px-6 xl:px-8">
+          {errorMsg && <div className="rounded-2xl border border-red-400/20 bg-red-400/[.05] p-4 text-sm text-red-200"><AlertTriangle size={15} className="mr-2 inline"/> {errorMsg}</div>}
+          <section className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+            <Metric icon={Activity} label="Telemetry" value={live ? 'LIVE' : health(overview?.vehicles[0]?.last_ping_at)} sub={live ? ageLabel(live.observed_at) + ' since fix' : 'Polling telemetry'} />
+            <Metric icon={Gauge} label="Speed" value={live?.speed_kmh == null ? (overview?.vehicles[0]?.speed_kmh == null ? '—' : Math.round(overview.vehicles[0].speed_kmh)) : Math.round(live.speed_kmh)} sub="km/h" />
+            <Metric icon={MapPin} label="Position" value={live ? live.lat.toFixed(4) : '—'} sub={live ? live.lng.toFixed(4) : 'no valid fix'} />
+            <Metric icon={ShieldCheck} label="Seal" value={(overview?.seal_status || 'unverified').toUpperCase()} sub="customer-safe status" />
+            <Metric icon={AlertTriangle} label="Exceptions" value={overview?.exception_count ?? 0} sub={overview?.exception_count ? 'review required' : 'no active alerts'} />
+          </section>
+          <section className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_390px]">
+            <LiveMap points={displayedPoints} trail={trail} onFullscreen={() => setFullscreen(true)} />
+            <div className="space-y-4">
+              <div className="rounded-3xl border border-orange-400/20 bg-gradient-to-br from-orange-400/[.08] to-transparent p-5">
+                <p className="text-[9px] font-bold uppercase tracking-[.18em] text-orange-300/65">Journey intelligence</p>
+                <h2 className="mt-2 text-xl font-semibold text-white">{overview?.origin || 'Origin not recorded'} → {overview?.destination || 'Destination not recorded'}</h2>
+                <div className="mt-4"><div className="flex items-center justify-between text-[9px] uppercase tracking-[.14em] text-white/25"><span>Progress</span><span>{overview?.progress_pct == null ? '—' : Math.round(overview.progress_pct) + '%'}</span></div><ProgressBar pct={overview?.progress_pct ?? 0} className="mt-2"/></div>
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <div className="rounded-xl border border-white/[.06] p-3"><span className="text-[8px] uppercase tracking-[.13em] text-white/20">ETA</span><strong className="mt-1 block font-mono text-[11px] text-white/65">{fmtDateTime(overview?.estimated_arrival_at || null)}</strong></div>
+                  <div className="rounded-xl border border-white/[.06] p-3"><span className="text-[8px] uppercase tracking-[.13em] text-white/20">Last fix</span><strong className="mt-1 block font-mono text-[11px] text-white/65">{ageLabel(live?.observed_at || overview?.vehicles[0]?.last_ping_at)}</strong></div>
+                </div>
               </div>
-            )}
-            <VehiclesCrewCard overview={overview} />
-
-            {/* Quick nav */}
-            <div className="mt-5 grid grid-cols-2 gap-3 portal-reveal portal-reveal-4">
-              <button onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/security', params: { convoy_id } })}
-                className="rounded-xl border py-3 text-sm font-semibold transition-all col-span-2 flex items-center justify-center gap-2"
-                style={{ background: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.30)', color: '#fca5a5' }}>
-                <Shield size={14} /> Live Security
-              </button>
-              <button onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/convoy', params: { convoy_id } })}
-                className="rounded-xl border border-white/[0.07] py-3 text-sm text-white/50 hover:text-white/80 hover:border-orange-500/30 transition-all" style={{ background: 'var(--p-surface2)' }}>
-                Convoy View
-              </button>
-              <button onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/custody', params: { convoy_id } })}
-                className="rounded-xl border border-white/[0.07] py-3 text-sm text-white/50 hover:text-white/80 hover:border-orange-500/30 transition-all" style={{ background: 'var(--p-surface2)' }}>
-                Custody Ledger
-              </button>
-              <button onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/manifest', params: { convoy_id } })}
-                className="rounded-xl border border-white/[0.07] py-3 text-sm text-white/50 hover:text-white/80 hover:border-orange-500/30 transition-all" style={{ background: 'var(--p-surface2)' }}>
-                Manifest
-              </button>
-              <button onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/documents', params: { convoy_id } })}
-                className="rounded-xl border border-white/[0.07] py-3 text-sm text-white/50 hover:text-white/80 hover:border-orange-500/30 transition-all" style={{ background: 'var(--p-surface2)' }}>
-                Documents
-              </button>
+              <div className="rounded-3xl border border-white/[.07] bg-white/[.018] p-4">
+                <div className="flex items-center justify-between"><p className="text-[9px] font-bold uppercase tracking-[.18em] text-white/30">Live vehicle telemetry</p><span className="font-mono text-[9px] text-white/20">{overview?.vehicles.length || 0} units</span></div>
+                <div className="mt-3 space-y-3">{(overview?.vehicles || []).map(v => <VehicleCard key={v.vehicle_id} vehicle={v}/>)}</div>
+              </div>
             </div>
-          </>
-        )}
-      </main>
+          </section>
+          <section className="grid gap-3 lg:grid-cols-4">
+            <button onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/exceptions', params: { convoy_id } })} className="rounded-2xl border border-red-400/15 bg-red-400/[.04] p-4 text-left hover:border-red-400/30"><AlertTriangle size={15} className="text-red-300"/><p className="mt-3 text-sm font-semibold text-white">Exceptions</p><p className="mt-1 text-[10px] text-white/30">Review real shipment alerts.</p></button>
+            <button onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/security', params: { convoy_id } })} className="rounded-2xl border border-emerald-400/15 bg-emerald-400/[.03] p-4 text-left hover:border-emerald-400/25"><ShieldCheck size={15} className="text-emerald-300"/><p className="mt-3 text-sm font-semibold text-white">Security posture</p><p className="mt-1 text-[10px] text-white/30">Customer-safe security state.</p></button>
+            <button onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/custody', params: { convoy_id } })} className="rounded-2xl border border-white/[.07] bg-white/[.018] p-4 text-left hover:border-orange-400/25"><Clock3 size={15} className="text-orange-300"/><p className="mt-3 text-sm font-semibold text-white">Custody ledger</p><p className="mt-1 text-[10px] text-white/30">Verified chain-of-custody events.</p></button>
+            <button onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/documents', params: { convoy_id } })} className="rounded-2xl border border-white/[.07] bg-white/[.018] p-4 text-left hover:border-sky-400/25"><div className="h-[15px] w-[15px] rounded border border-sky-300/50 text-[8px] text-sky-300 flex items-center justify-center">DOC</div><p className="mt-3 text-sm font-semibold text-white">Evidence vault</p><p className="mt-1 text-[10px] text-white/30">Documents and delivery evidence.</p></button>
+          </section>
+        </main>
+        {fullscreen && <div className="fixed inset-0 z-[120] bg-black/90 p-3"><LiveMap points={displayedPoints} trail={trail} onFullscreen={() => setFullscreen(false)} /></div>}
+      </div>
     </PortalShell>
   );
 }
