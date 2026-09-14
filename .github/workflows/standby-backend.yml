@@ -2,7 +2,7 @@ name: Standby Backend
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/free-standby-backend]
     paths:
       - 'backend/**'
       - 'Dockerfile.standby'
@@ -63,7 +63,7 @@ jobs:
             cd /opt/sonalit-standby
             export SONALIT_IMAGE="ghcr.io/fleetsatpro/sonalit-backend:${{ github.sha }}"
             printf '%s\n' "GHCR image: ${SONALIT_IMAGE}"
-            docker login ghcr.io -u '${{ github.actor }}' -p '${{ secrets.GITHUB_TOKEN }}'
+            echo '${{ secrets.STANDBY_GHCR_TOKEN }}' | docker login ghcr.io -u '${{ secrets.STANDBY_GHCR_USER }}' --password-stdin
             docker compose pull
             docker compose up -d --remove-orphans
             docker image prune -af --filter 'until=168h' || true
