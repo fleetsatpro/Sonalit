@@ -212,7 +212,7 @@ function checkClientConvoy(client, convoy_id, res) {
 }
 router.get('/convoy/:convoy_id/location', clientAuth, asyncHandler(async (req, res) => {
   if (!checkClientConvoy(req.client, req.params.convoy_id, res)) return;
-  const result = await req.db(
+  const result = await query(
     `SELECT g.lat, g.lng, g.timestamp AS recorded_at, g.speed AS speed_kmh, g.heading AS heading_deg
        FROM gps_logs g
        JOIN convoy_trucks ct ON ct.vehicle_id = g.vehicle_id
