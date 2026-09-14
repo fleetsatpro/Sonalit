@@ -5061,6 +5061,46 @@
           }
         }
       }
+    },
+    "/api/v1/ai/decision/history": {
+      "get": {
+        "operationId": "get_api_v1_ai_decision_history",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "403": {
+            "description": "Organisation context required"
+          }
+        }
+      }
+    },
+    "/api/v1/ai/decision/{decisionId}/feedback": {
+      "post": {
+        "operationId": "post_api_v1_ai_decision_feedback",
+        "parameters": [
+          {
+            "name": "decisionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Invalid feedback"
+          },
+          "404": {
+            "description": "Decision not found"
+          }
+        }
+      }
     }
   }
 }
