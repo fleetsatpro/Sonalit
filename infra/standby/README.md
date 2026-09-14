@@ -60,7 +60,7 @@ cd /opt/sonalit-standby
 # Replace this with the exact image SHA you intend to promote.
 export SONALIT_IMAGE=ghcr.io/fleetsatpro/sonalit-backend:<git-sha>
 
-./promote.sh
+bash ./promote.sh
 ```
 
 The promotion script pulls the exact immutable image, runs the database migration while the process remains fenced as standby, restarts the service with `SONALIT_STANDBY=false`, enables in-process workers, and verifies `/health`.
