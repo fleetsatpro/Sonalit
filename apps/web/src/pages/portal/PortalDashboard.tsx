@@ -135,21 +135,21 @@ function OverviewMap({ shipments, selected, onSelect }: {
   }, [shipments, onSelect]);
 
   return (
-    <div className="relative h-[320px] sm:h-[380px] overflow-hidden rounded-2xl border border-white/[0.07] bg-[#08101a]">
+    <div className="relative h-[430px] sm:h-[520px] overflow-hidden rounded-2xl border border-white/[0.07] bg-[#08101a]">
       <div ref={ref} className="absolute inset-0" />
       <div className="absolute inset-x-0 top-0 flex items-center justify-between p-4 pointer-events-none">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.18em] text-white/35">Global shipment picture</p>
-          <p className="mt-1 text-sm font-semibold text-white/80">Live cargo positions</p>
+          <p className="text-[10px] uppercase tracking-[0.18em] text-white/35">Live map</p>
+          <p className="mt-1 text-sm font-semibold text-white/80">Cargo positions</p>
         </div>
         <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] text-emerald-300">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Telemetry
         </span>
       </div>
       <div className="absolute bottom-3 left-3 flex flex-wrap gap-2 pointer-events-none">
-        <span className="rounded-full border border-white/10 bg-black/40 px-2 py-1 text-[10px] text-white/45">Orange = shipment</span>
-        <span className="rounded-full border border-red-500/20 bg-red-500/10 px-2 py-1 text-[10px] text-red-300">Red = attention</span>
-        <span className="rounded-full border border-white/10 bg-black/40 px-2 py-1 text-[10px] text-white/35">Dim = stale/offline</span>
+        <span className="rounded-full border border-white/10 bg-black/40 px-2 py-1 text-[10px] text-white/45">Cargo</span>
+        <span className="rounded-full border border-red-500/20 bg-red-500/10 px-2 py-1 text-[10px] text-red-300">Attention</span>
+        <span className="rounded-full border border-white/10 bg-black/40 px-2 py-1 text-[10px] text-white/35">Stale</span>
       </div>
       {selected && (
         <div className="absolute top-14 right-4 max-w-[230px] rounded-xl border border-orange-500/25 bg-black/70 px-3 py-2 backdrop-blur-md pointer-events-none">
@@ -360,9 +360,9 @@ export default function PortalDashboard(): React.ReactElement {
             <p className="mt-1 text-sm font-semibold text-white">Live shipments</p>
           </div>
           <div className="flex flex-wrap gap-2 text-[9px] font-bold uppercase tracking-[0.12em]">
-            <span className="rounded-lg border border-white/[0.07] px-2.5 py-1.5 text-white/35">${active.length} active</span>
-            <span className="rounded-lg border border-white/[0.07] px-2.5 py-1.5 text-white/35">${attention.length} attention</span>
-            <span className="rounded-lg border border-white/[0.07] px-2.5 py-1.5 text-white/35">${shipments.length} total</span>
+            <span className="rounded-lg border border-white/[0.07] px-2.5 py-1.5 text-white/35">{active.length} active</span>
+            <span className="rounded-lg border border-white/[0.07] px-2.5 py-1.5 text-white/35">{attention.length} attention</span>
+            <span className="rounded-lg border border-white/[0.07] px-2.5 py-1.5 text-white/35">{shipments.length} total</span>
           </div>
         </section>
 
