@@ -32,11 +32,26 @@ let os2Client = null;
 function keyOk(k) { return !!(k && String(k).length >= 10); }
 function hasAnthropic() { return keyOk(process.env.ANTHROPIC_API_KEY); }
 function hasGroqFallback() { return keyOk(process.env.GROQ_API_KEY); }
+function openSourceReady(key, baseUrl) {
+  return !!baseUrl && (keyOk(key) || process.env.OPEN_SOURCE_ALLOW_UNAUTH === 'true');
+}
 function hasOpenSourcePrimary() {
-  return keyOk(process.env.OPEN_SOURCE_API_KEY_1) && !!process.env.OPEN_SOURCE_BASE_URL_1;
+  return openSourceReady(process.env.OPEN_SOURCE_API_KEY_1, process.env.OPEN_SOURCE_BASE_URL_1);
 }
 function hasOpenSourceSecondary() {
-  return keyOk(process.env.OPEN_SOURCE_API_KEY_2) && !!process.env.OPEN_SOURCE_BASE_URL_2;
+  return openSourceReady(process.env.OPEN_SOURCE_API_KEY_2, process.env.OPEN_SOURCE_BASE_URL_2);
+}
+function hasAnyProvider() {
+  return hasOpenSourcePrimary() || hasOpenSourceSecondary() || hasGroqFallback() || hasAnthropic();
+}
+function providerCapabilities() {
+  return {
+    open_source_primary: hasOpenSourcePrimary(),
+    open_source_secondary: hasOpenSourceSecondary(),
+    gpt_oss_120b: hasGroqFallback(),
+    anthropic_last_resort: hasAnthropic(),
+    order: ['qwen-primary','qwen-secondary','gpt-oss-120b-groq','anthropic-last-resort'],
+  };
 }
 
 function getAnthropicClient() {
@@ -271,6 +286,8 @@ module.exports = {
   hasGroqFallback,
   hasOpenSourcePrimary,
   hasOpenSourceSecondary,
+  hasAnyProvider,
+  providerCapabilities,
   createMessage,
   isRetryableAnthropicError,
   getAnthropicClient,
