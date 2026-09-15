@@ -8,7 +8,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 type Role = 'user' | 'assistant';
 interface ChatMessage { id: string; role: Role; content: string; timestamp: number }
 interface HistoryEntry { role: Role; content: string }
-interface DispatchResponse { response: string; actions: string[]; source: string }
+interface DecisionResponse { answer?: string; response?: string; message?: string; decision?: { summary?: string }; meta?: { degraded?: boolean } }
 
 const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 
@@ -193,14 +193,16 @@ export default function Copilot() {
     setIsLoading(true);
     const history = historyRef.current.slice(-6);
     try {
-      const res = await api.post<DispatchResponse>('/ai/dispatch', { command: text, history });
-      const responseText = res.data?.response ?? 'No response received.';
+      const res = await api.post<DecisionResponse>('/ai/decision', { command: text, history });
+      const responseText = res.data?.answer ?? res.data?.response ?? res.data?.message ?? res.data?.decision?.summary ?? 'The decision fabric returned no readable answer.';
       const assistantMsg: ChatMessage = { id: `assistant-${Date.now()}`, role: 'assistant', content: responseText, timestamp: Date.now() };
-      historyRef.current = [...historyRef.current, { role: 'user' as Role, content: text }, { role: 'assistant' as Role, content: responseText }].slice(-12);
+      historyRef.current = [...historyRef.current, { role: 'user', content: text }, { role: 'assistant', content: responseText }].slice(-12);
       setMessages((prev) => [...prev, assistantMsg]);
       if (/draw|map|geofence|zone/i.test(responseText) && /geofence|zone|area/i.test(text)) setShowDraw(true);
-    } catch {
-      setMessages((prev) => [...prev, { id: `error-${Date.now()}`, role: 'assistant', content: 'Sorry, I encountered an error. Please try again.', timestamp: Date.now() }]);
+    } catch (error: any) {
+      const detail = error?.response?.data?.error || error?.response?.data?.message;
+      const status = error?.response?.status;
+      setMessages((prev) => [...prev, { id: `error-${Date.now()}`, role: 'assistant', content: detail || `Copilot request failed${status ? ` (HTTP ${status})` : ''}. Please try again.` , timestamp: Date.now() }]);
     } finally {
       setIsLoading(false);
     }
