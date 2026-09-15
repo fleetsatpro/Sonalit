@@ -76,7 +76,7 @@ export default function AIDecision() {
     onSuccess: (data, command) => {
       const answer = data.answer ?? data.response ?? 'No decision response received.';
       setLastResponse(answer);
-      setHistory((items) => [...items, { role: 'user', content: command }, { role: 'assistant', content: answer }].slice(-12));
+      setHistory((items) => [...items, { role: 'user' as const, content: command }, { role: 'assistant' as const, content: answer }].slice(-12));
       setQuery('');
     },
   });
