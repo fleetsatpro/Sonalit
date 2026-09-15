@@ -11,24 +11,13 @@ const { reconcileWorldState } = require('../services/geofence/worldStateSwarm');
 const { scoreRoute } = require('../services/geo/routeRisk');
 const logger = require('../utils/logger');
 
-const convoyReportRegenerateLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 5,
-  keyGenerator: (req) => `${req.user?.id || req.ip}:${req.params.id || ''}`,
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
-});
-
+const convoyReportRegenerateLimiter = rateLimit({ windowMs: 60 * 1000, max: 5, keyGenerator: (req) => `${req.user?.id || req.ip}:${req.params.id || ''}`, standardHeaders: true, legacyHeaders: false, handler: (req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }) });
 router.use(authenticate);
 router.get('/', c.getConvoys);
-router.post('/', requireIdempotencyKey, authorize('admin', 'dispatcher'), auditLog('convoys'), (req, res, next) => {
-  if (req.body.trucks !== undefined || req.body.cfos !== undefined) return cfo.createConvoyCfo(req, res, next);
-  return c.createConvoy(req, res, next);
-});
+router.post('/', requireIdempotencyKey, authorize('admin', 'dispatcher'), auditLog('convoys'), (req, res, next) => { if (req.body.trucks !== undefined || req.body.cfos !== undefined) return cfo.createConvoyCfo(req, res, next); return c.createConvoy(req, res, next); });
 router.get('/:id', c.getConvoy);
 router.put('/:id', authorize('admin', 'dispatcher'), auditLog('convoys'), c.updateConvoy);
-router.patch('/:id/status', authorize('admin', 'dispatcher', 'operator'), auditLog('convoy_assignments'), c.updateConvoyStatus);
+router.patch('/:id/status', authorize('admin', 'dispatcher', 'operator'), auditLog('convoys'), c.updateConvoyStatus);
 router.post('/:id/assign', authorize('admin', 'dispatcher'), auditLog('convoy_assignments'), c.assignVehicles);
 router.delete('/:id', authorize('admin'), auditLog('convoys'), c.deleteConvoy);
 router.get('/:id/events', c.getConvoyEvents);
@@ -48,16 +37,12 @@ router.get('/:id/reports/:date/detail', authorize('admin', 'dispatcher', 'analys
 router.post('/:id/reports/:date/regenerate', authorize('admin', 'dispatcher'), convoyReportRegenerateLimiter, cfo.regenerateReport);
 router.get('/:id/reports/:date/download', authorize('admin', 'dispatcher', 'analyst'), cfo.downloadReport);
 
-// Live 4D corridor. The operational point is derived from recent immutable
-// device fixes, not the mutable guardian_devices last-coordinate cache.
 router.get('/:id/corridor', async (req, res, next) => {
   try {
-    const orgId = req.user.org_id;
-    const convoyId = req.params.id;
+    const orgId = req.user.org_id, convoyId = req.params.id;
     const cv = await query(`SELECT id, name, departure_time, status, route_origin, route_destination FROM convoys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL`, [convoyId, orgId]);
     if (!cv.rows.length) return res.status(404).json({ error: 'Convoy not found' });
     const convoy = cv.rows[0];
-
     const cr = await query(`SELECT route_line, width_km FROM convoy_route_corridors WHERE convoy_id=$1 AND org_id=$2 AND active=true`, [convoyId, orgId]);
     let route = [], plannedWidthKm = null;
     if (cr.rows.length) {
@@ -78,80 +63,35 @@ router.get('/:id/corridor', async (req, res, next) => {
              cur.speed AS live_speed, cur.accuracy AS live_accuracy, cur.ts AS live_ts,
              prev.lat AS prev_lat, prev.lng AS prev_lng, prev.heading AS prev_heading,
              prev.speed AS prev_speed, prev.ts AS prev_ts, d.last_fix_at
-        FROM convoy_cfos cc
-        JOIN guardian_devices d ON d.id=cc.guardian_device_id
+        FROM convoy_cfos cc JOIN guardian_devices d ON d.id=cc.guardian_device_id
         LEFT JOIN field_officers fo ON fo.device_id=d.id
-        LEFT JOIN LATERAL (
-          SELECT lat, lng, heading, speed, accuracy, timestamp AS ts
-            FROM device_locations
-           WHERE device_id=d.id
-           ORDER BY timestamp DESC, id DESC
-           LIMIT 1
-        ) cur ON true
-        LEFT JOIN LATERAL (
-          SELECT lat, lng, heading, speed, timestamp AS ts
-            FROM device_locations
-           WHERE device_id=d.id
-           ORDER BY timestamp DESC, id DESC
-           OFFSET 1 LIMIT 1
-        ) prev ON true
+        LEFT JOIN LATERAL (SELECT lat, lng, heading, speed, accuracy, timestamp AS ts FROM device_locations WHERE device_id=d.id ORDER BY timestamp DESC, id DESC LIMIT 1) cur ON true
+        LEFT JOIN LATERAL (SELECT lat, lng, heading, speed, timestamp AS ts FROM device_locations WHERE device_id=d.id ORDER BY timestamp DESC, id DESC OFFSET 1 LIMIT 1) prev ON true
        WHERE cc.convoy_id=$1 AND d.deleted_at IS NULL`, [convoyId]);
 
-    const num = v => (v == null ? null : Number(v));
-    const cfg = {
-      avg_speed_kmh: clampNum(req.query.avg_speed_kmh, 45, 5, 120),
-      corridor_km: clampNum(req.query.corridor_km, plannedWidthKm ?? 2, 0.2, 50),
-      schedule_tol_km: clampNum(req.query.schedule_tol_km, 8, 1, 100),
-    };
-    const startedAt = req.query.started_at ? new Date(req.query.started_at) : (convoy.departure_time ? new Date(convoy.departure_time) : null);
-    const now = Date.now();
+    const num = v => v == null ? null : Number(v), cfg = { avg_speed_kmh: clampNum(req.query.avg_speed_kmh, 45, 5, 120), corridor_km: clampNum(req.query.corridor_km, plannedWidthKm ?? 2, 0.2, 50), schedule_tol_km: clampNum(req.query.schedule_tol_km, 8, 1, 100) };
+    const startedAt = req.query.started_at ? new Date(req.query.started_at) : (convoy.departure_time ? new Date(convoy.departure_time) : null), now = Date.now();
     const elapsedMs = startedAt && !isNaN(startedAt.getTime()) ? Math.max(0, now - startedAt.getTime()) : 0;
-
     const members = mem.rows.map(m => {
-      const observedLat = num(m.live_lat), observedLng = num(m.live_lng);
-      const base = { id: m.id, name: m.name, officer_name: m.officer_name ?? null, lat: observedLat, lng: observedLng, last_fix_at: m.live_ts || m.last_fix_at || null,
-        heading: num(m.live_heading), speed_kph: num(m.live_speed) };
+      const observedLat = num(m.live_lat), observedLng = num(m.live_lng), base = { id: m.id, name: m.name, officer_name: m.officer_name ?? null, lat: observedLat, lng: observedLng, last_fix_at: m.live_ts || m.last_fix_at || null, heading: num(m.live_heading), speed_kph: num(m.live_speed) };
       if (observedLat == null || observedLng == null) return { ...base, status: 'no_fix', severity: 'low', position_state: 'no_confident_estimate', position_confidence: 0 };
-
       const observedAt = m.live_ts || m.last_fix_at || new Date(now).toISOString();
       const previous = m.prev_lat != null && m.prev_lng != null ? { lat: num(m.prev_lat), lng: num(m.prev_lng), heading: num(m.prev_heading) } : null;
       const elapsedSeconds = previous && m.prev_ts ? Math.max(0, (new Date(observedAt).getTime() - new Date(m.prev_ts).getTime()) / 1000) : 0;
       const world = reconcileWorldState({ previous, observed: { lat: observedLat, lng: observedLng, accuracy_m: num(m.live_accuracy), heading: num(m.live_heading) }, route, elapsedSeconds, observedAt, now });
-
-      const renderLat = world.estimate?.lat ?? observedLat;
-      const renderLng = world.estimate?.lng ?? observedLng;
+      const renderLat = world.estimate?.lat ?? observedLat, renderLng = world.estimate?.lng ?? observedLng;
       const verdict = evaluateCorridor({ route, lat: renderLat, lng: renderLng, elapsedMs, avgSpeedKmh: cfg.avg_speed_kmh, corridorKm: cfg.corridor_km, scheduleTolKm: cfg.schedule_tol_km });
-      const remainingKm = Math.max(0, (verdict.route_len_km ?? 0) - (verdict.along_km ?? 0));
-      const etaMs = cfg.avg_speed_kmh > 0 ? (remainingKm / cfg.avg_speed_kmh) * 3600000 : null;
-      return {
-        ...base, lat: renderLat, lng: renderLng,
-        observed_lat: observedLat, observed_lng: observedLng, observed_at: observedAt,
-        ...verdict,
-        remaining_km: Math.round(remainingKm * 100) / 100,
-        eta: etaMs == null ? null : new Date(now + etaMs).toISOString(),
-        eta_min: etaMs == null ? null : Math.round(etaMs / 60000),
-        position_state: world.state, position_confidence: world.confidence,
-        position_uncertainty_m: world.uncertainty_m, position_reason: world.reason,
-        world_state_version: world.version,
-        world_state_agents: world.agents.map(a => ({ id: a.id, verdict: a.verdict, score: a.score })),
-        world_state_disagreement: world.disagreement,
-      };
+      const remainingKm = Math.max(0, (verdict.route_len_km ?? 0) - (verdict.along_km ?? 0)), etaMs = cfg.avg_speed_kmh > 0 ? (remainingKm / cfg.avg_speed_kmh) * 3600000 : null;
+      return { ...base, lat: renderLat, lng: renderLng, observed_lat: observedLat, observed_lng: observedLng, observed_at: observedAt, ...verdict, remaining_km: Math.round(remainingKm * 100) / 100, eta: etaMs == null ? null : new Date(now + etaMs).toISOString(), eta_min: etaMs == null ? null : Math.round(etaMs / 60000), position_state: world.state, position_confidence: world.confidence, position_uncertainty_m: world.uncertainty_m, position_reason: world.reason, world_state_version: world.version, world_state_agents: world.agents.map(a => ({ id: a.id, verdict: a.verdict, score: a.score })), world_state_disagreement: world.disagreement };
     });
-
     let risk = { zones: [], exposed_km: 0, worst: null, blocked: false };
     try {
       const rz = await query(`SELECT id, name, risk_level, zone_type, lat, lng, radius_km FROM risk_zones WHERE active=true AND (org_id=$1 OR org_id IS NULL) AND (valid_from IS NULL OR valid_from <= now()) AND (valid_until IS NULL OR valid_until >= now())`, [orgId]);
-      const scored = scoreRoute(route, rz.rows);
-      const byId = new Map(rz.rows.map(z => [String(z.id), z]));
+      const scored = scoreRoute(route, rz.rows), byId = new Map(rz.rows.map(z => [String(z.id), z]));
       risk = { zones: scored.exposures.map(e => { const z = byId.get(String(e.zone_id)); return { ...e, lat: Number(z.lat), lng: Number(z.lng), radius_km: Number(z.radius_km) }; }), exposed_km: scored.exposed_km, worst: scored.worst, blocked: scored.blocked };
     } catch (e) { logger.warn(`corridor risk overlay unavailable: ${e.message}`); }
-
     const summary = members.reduce((a, m) => { a[m.status] = (a[m.status] || 0) + 1; return a; }, {});
-    res.json({ data: {
-      convoy: { id: convoy.id, name: convoy.name, status: convoy.status, departure_time: convoy.departure_time, route_origin: convoy.route_origin ?? null, route_destination: convoy.route_destination ?? null },
-      config: { ...cfg, started_at: startedAt && !isNaN(startedAt.getTime()) ? startedAt.toISOString() : null, schedule_known: elapsedMs > 0 },
-      route, members, summary, risk, evaluated_at: new Date(now).toISOString(),
-    } });
+    res.json({ data: { convoy: { id: convoy.id, name: convoy.name, status: convoy.status, departure_time: convoy.departure_time, route_origin: convoy.route_origin ?? null, route_destination: convoy.route_destination ?? null }, config: { ...cfg, started_at: startedAt && !isNaN(startedAt.getTime()) ? startedAt.toISOString() : null, schedule_known: elapsedMs > 0 }, route, members, summary, risk, evaluated_at: new Date(now).toISOString() } });
   } catch (err) { next(err); }
 });
 function clampNum(v, def, lo, hi) { const n = parseFloat(v), chosen = Number.isFinite(n) ? n : parseFloat(def); return Number.isFinite(chosen) ? Math.max(lo, Math.min(hi, chosen)) : def; }
