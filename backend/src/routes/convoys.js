@@ -57,13 +57,19 @@ router.get('/:id/corridor', async (req, res, next) => {
     }
     if (route.length < 2) return res.status(422).json({ error: 'Convoy has no planned route yet — plan one from an origin and destination, or add at least two route waypoints.' });
 
+    // A convoy device can have a durable Guardian cache even when the detailed
+    // device_locations history has not arrived yet. Prefer history, but never
+    // make a selected-convoy device disappear just because that table is empty.
     const mem = await query(`
       SELECT d.id, d.name, fo.name AS officer_name,
-             cur.lat AS live_lat, cur.lng AS live_lng, cur.heading AS live_heading,
+             cur.lat AS history_lat, cur.lng AS history_lng, cur.heading AS live_heading,
              cur.speed AS live_speed, cur.accuracy AS live_accuracy, cur.ts AS live_ts,
              prev.lat AS prev_lat, prev.lng AS prev_lng, prev.heading AS prev_heading,
-             prev.speed AS prev_speed, prev.ts AS prev_ts, d.last_fix_at
-        FROM convoy_cfos cc JOIN guardian_devices d ON d.id=cc.guardian_device_id
+             prev.speed AS prev_speed, prev.ts AS prev_ts,
+             d.last_lat AS cache_lat, d.last_lng AS cache_lng, d.last_speed AS cache_speed,
+             d.last_fix_at AS cache_fix_at, d.last_seen AS cache_seen
+        FROM convoy_cfos cc
+        JOIN guardian_devices d ON d.id=cc.guardian_device_id
         LEFT JOIN field_officers fo ON fo.device_id=d.id
         LEFT JOIN LATERAL (SELECT lat, lng, heading, speed, accuracy, timestamp AS ts FROM device_locations WHERE device_id=d.id ORDER BY timestamp DESC, id DESC LIMIT 1) cur ON true
         LEFT JOIN LATERAL (SELECT lat, lng, heading, speed, timestamp AS ts FROM device_locations WHERE device_id=d.id ORDER BY timestamp DESC, id DESC OFFSET 1 LIMIT 1) prev ON true
@@ -73,11 +79,21 @@ router.get('/:id/corridor', async (req, res, next) => {
     const startedAt = req.query.started_at ? new Date(req.query.started_at) : (convoy.departure_time ? new Date(convoy.departure_time) : null), now = Date.now();
     const elapsedMs = startedAt && !isNaN(startedAt.getTime()) ? Math.max(0, now - startedAt.getTime()) : 0;
     const members = mem.rows.map(m => {
-      const observedLat = num(m.live_lat), observedLng = num(m.live_lng), base = { id: m.id, name: m.name, officer_name: m.officer_name ?? null, lat: observedLat, lng: observedLng, last_fix_at: m.live_ts || m.last_fix_at || null, heading: num(m.live_heading), speed_kph: num(m.live_speed) };
-      if (observedLat == null || observedLng == null) return { ...base, status: 'no_fix', severity: 'low', position_state: 'no_confident_estimate', position_confidence: 0 };
-      const observedAt = m.live_ts || m.last_fix_at || new Date(now).toISOString();
+      const hasHistory = m.history_lat != null && m.history_lng != null;
+      const observedLat = num(hasHistory ? m.history_lat : m.cache_lat), observedLng = num(hasHistory ? m.history_lng : m.cache_lng);
+      const observedAt = hasHistory ? (m.live_ts || m.cache_fix_at || m.cache_seen) : (m.cache_fix_at || m.cache_seen);
+      const base = { id: m.id, name: m.name, officer_name: m.officer_name ?? null, lat: observedLat, lng: observedLng, last_fix_at: observedAt || null, heading: num(m.live_heading), speed_kph: num(hasHistory ? m.live_speed : m.cache_speed), position_source: hasHistory ? 'device_locations' : observedLat != null ? 'guardian_cache' : 'none' };
+      if (observedLat == null || observedLng == null) return { ...base, status: 'no_fix', severity: 'low', position_state: 'no_confident_estimate', position_confidence: 0, position_reason: 'No coordinate is available for this convoy device.' };
+
+      // Cached Guardian coordinates are displayable evidence but must never be
+      // mistaken for a fresh observation or passed through route reconciliation.
+      if (!hasHistory) {
+        const verdict = evaluateCorridor({ route, lat: observedLat, lng: observedLng, elapsedMs, avgSpeedKmh: cfg.avg_speed_kmh, corridorKm: cfg.corridor_km, scheduleTolKm: cfg.schedule_tol_km });
+        return { ...base, ...verdict, status: 'no_fix', severity: 'low', position_state: 'stale', position_confidence: 0, position_uncertainty_m: null, position_reason: 'Showing last Guardian device cache because no device_locations fix is available.', world_state_version: 'world-state-swarm-v1', world_state_agents: [], world_state_disagreement: 'stale-cache', observed_lat: observedLat, observed_lng: observedLng, observed_at: observedAt || null };
+      }
+
       const previous = m.prev_lat != null && m.prev_lng != null ? { lat: num(m.prev_lat), lng: num(m.prev_lng), heading: num(m.prev_heading) } : null;
-      const elapsedSeconds = previous && m.prev_ts ? Math.max(0, (new Date(observedAt).getTime() - new Date(m.prev_ts).getTime()) / 1000) : 0;
+      const elapsedSeconds = previous && m.prev_ts && observedAt ? Math.max(0, (new Date(observedAt).getTime() - new Date(m.prev_ts).getTime()) / 1000) : 0;
       const world = reconcileWorldState({ previous, observed: { lat: observedLat, lng: observedLng, accuracy_m: num(m.live_accuracy), heading: num(m.live_heading) }, route, elapsedSeconds, observedAt, now });
       const renderLat = world.estimate?.lat ?? observedLat, renderLng = world.estimate?.lng ?? observedLng;
       const verdict = evaluateCorridor({ route, lat: renderLat, lng: renderLng, elapsedMs, avgSpeedKmh: cfg.avg_speed_kmh, corridorKm: cfg.corridor_km, scheduleTolKm: cfg.schedule_tol_km });
