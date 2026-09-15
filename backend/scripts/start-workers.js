@@ -6,8 +6,6 @@ const { startAlertWorker } = require('../src/workers/alertWorker');
 const { startNotificationWorker } = require('../src/workers/notificationWorker');
 const { startConvoyReportWorker } = require('../src/workers/convoyReportWorker');
 const { createQueues } = require('../src/config/queue');
-const { query } = require('../src/config/database');
-const { processBatch: processWorldStateBatch } = require('../src/services/geofence/worldStateWorker');
 const logger = require('../src/utils/logger');
 
 // Intelligence publications are intentionally independent of Redis. They must
@@ -18,26 +16,6 @@ intelligenceWorker.on('exit', (code, signal) => { if (!shuttingDown) { logger.er
 
 let workers = [];
 let shuttingDown = false;
-let worldStateTimer = null;
-let worldStateBusy = false;
-
-async function worldStateTick() {
-  if (worldStateBusy || shuttingDown || process.env.DISABLE_WORLD_STATE_RECONCILIATION === 'true') return;
-  worldStateBusy = true;
-  try {
-    const results = await processWorldStateBatch({ db: query, limit: Number(process.env.WORLD_STATE_BATCH_SIZE || 10) });
-    if (results.length) logger.info(`4D world-state reconciliation processed ${results.length} task(s)`);
-  } catch (error) {
-    logger.warn(`4D world-state reconciliation tick failed: ${error.message}`);
-  } finally {
-    worldStateBusy = false;
-  }
-}
-
-if (process.env.DISABLE_WORLD_STATE_RECONCILIATION !== 'true') {
-  worldStateTimer = setInterval(worldStateTick, Number(process.env.WORLD_STATE_INTERVAL_MS || 5000));
-  worldStateTick();
-}
 
 if (process.env.DISABLE_REDIS === 'true') {
   logger.warn('DISABLE_REDIS=true — Redis-backed workers not started; intelligence worker remains active');
@@ -47,13 +25,18 @@ if (process.env.DISABLE_REDIS === 'true') {
   logger.info(`✅ ${workers.length} Redis-backed workers running`);
 }
 
+// The 4D reconciliation path is intentionally synchronous inside the live
+// corridor evaluator for now. A durable world_state_agent_tasks queue exists
+// for deferred investigation, but it is NOT started here until its consumer
+// has an explicit tenant-scoped RLS claim protocol. Never bypass RLS just to
+// make a background worker convenient.
+logger.info('✅ 4D live world-state reconciliation enabled');
 logger.info('✅ Autonomous intelligence worker running');
 
 const shutdown = async () => {
   if (shuttingDown) return;
   shuttingDown = true;
   logger.info('Shutting down workers...');
-  if (worldStateTimer) clearInterval(worldStateTimer);
   if (intelligenceWorker && !intelligenceWorker.killed) intelligenceWorker.kill('SIGTERM');
   await Promise.allSettled(workers.map((w) => w.close()));
   process.exit(0);
