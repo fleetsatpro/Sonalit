@@ -121,6 +121,7 @@ test.describe('Portal UX — Client Workspace', () => {
     await stubVault(page);
     await page.goto('/portal/dashboard');
 
+    await page.getByRole('button', { name: 'Movements', exact: true }).click();
     await expect(page.getByText('SHP-PORTAL-001', { exact: true })).toBeVisible({ timeout: 8000 });
     await expect(page.getByText(/Durban/)).toBeVisible({ timeout: 4000 });
     await expect(page.getByText(/Johannesburg/)).toBeVisible({ timeout: 4000 });
@@ -141,10 +142,11 @@ test.describe('Portal UX — Client Workspace', () => {
     await stubVault(page);
     await page.goto('/portal/dashboard');
 
+    await page.getByRole('button', { name: 'Movements', exact: true }).click();
     const search = page.getByPlaceholder('Search convoy / route…');
     await search.fill('002');
-    await expect(page.getByRole('button', { name: /SHP-PORTAL-002/ }).first()).toBeVisible({ timeout: 6000 });
-    await expect(page.getByRole('button', { name: /SHP-PORTAL-001/ }).first()).not.toBeVisible({ timeout: 3000 });
+    await expect(page.getByText('SHP-PORTAL-002', { exact: true })).toBeVisible({ timeout: 6000 });
+    await expect(page.getByText('SHP-PORTAL-001', { exact: true })).not.toBeVisible({ timeout: 3000 });
   });
 
   test('generated convoy report is arranged under its real convoy', async ({ page }) => {
