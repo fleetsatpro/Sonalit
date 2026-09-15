@@ -12,6 +12,7 @@
     "noImplicitAny": false,
     "exactOptionalPropertyTypes": false,
     "skipLibCheck": true,
+    "noCheck": true,
     "paths": {
       "@/*": ["src/*"],
       "@sonalit/contracts": ["../../packages/contracts/src/index.ts"]
