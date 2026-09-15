@@ -72,8 +72,8 @@ router.post('/clients/:id/magic-link', authenticate, attachOrgDb, authorize('adm
 router.get('/clients', authenticate, attachOrgDb, authorize('admin', 'dispatcher', 'operator'), asyncHandler(async (req, res) => {
   const result = await req.db(`SELECT cc.id, cc.email, cc.name, cc.company, cc.phone, cc.last_login_at, cc.created_at,
     COUNT(DISTINCT ccl.convoy_id)::int AS linked_convoys,
-    COUNT(DISTINCT CASE WHEN c.status = 'in_transit' THEN ccl.convoy_id END)::int AS active_convoys,
-    COUNT(DISTINCT CASE WHEN c.status = 'completed' THEN ccl.convoy_id END)::int AS completed_convoys
+    COUNT(DISTINCT CASE WHEN c.status IN ('active','pending','in_transit','delayed','at_checkpoint') THEN ccl.convoy_id END)::int AS active_convoys,
+    COUNT(DISTINCT CASE WHEN c.status IN ('completed','cancelled','delivered') THEN ccl.convoy_id END)::int AS completed_convoys
     FROM cargo_clients cc
     LEFT JOIN cargo_client_links ccl ON ccl.client_id = cc.id AND ccl.org_id = cc.org_id
     LEFT JOIN convoys c ON c.id = ccl.convoy_id AND c.org_id = cc.org_id AND c.deleted_at IS NULL

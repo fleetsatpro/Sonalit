@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { AlertTriangle, ArrowLeft, Clock, MapPin, Shield, Truck } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
@@ -9,7 +9,6 @@ import {
 } from '../../components/portal/PortalPrimitives.js';
 
 const API = (import.meta.env['VITE_API_BASE_URL'] as string | undefined) ?? '/api/v1';
-const OSRM_BASE = 'https://router.project-osrm.org/route/v1/driving';
 
 interface Vehicle {
   vehicle_id: string;
@@ -24,6 +23,14 @@ interface Vehicle {
   heading_deg: number | null;
   last_ping_at: string | null;
   carries_my_cargo: boolean;
+}
+
+interface ReplayPoint {
+  lat: number;
+  lng: number;
+  timestamp: string;
+  speed: number | null;
+  vehicle_id: string;
 }
 
 interface ConvoyOverview {
@@ -93,66 +100,112 @@ function EtaRibbon({ overview }: { overview: ConvoyOverview }) {
 
 // ── Live map ──────────────────────────────────────────────────────────────────
 
-function TrackMap({ vehicles }: { vehicles: Vehicle[] }) {
+function TrackMap({ convoyId, vehicles }: { convoyId: string; vehicles: Vehicle[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<maplibregl.Marker[]>([]);
+  const [replay, setReplay] = useState<ReplayPoint[]>([]);
+  const [telemetryError, setTelemetryError] = useState('');
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
-    const located = vehicles.filter(v => v.current_lat != null && v.current_lng != null);
-    const first = located[0];
-    const center: [number, number] = first
-      ? [first.current_lng!, first.current_lat!]
-      : [28, -26];
+    let cancelled = false;
+    fetch(`${API}/portal/convoy/${encodeURIComponent(convoyId)}/replay`, { credentials: 'include' })
+      .then(async res => {
+        if (res.status === 401 || res.status === 403) throw new Error('Telemetry unavailable');
+        if (!res.ok) throw new Error(`Telemetry unavailable (${res.status})`);
+        return res.json() as Promise<{ data?: ReplayPoint[] }>;
+      })
+      .then(json => {
+        if (!cancelled) setReplay(Array.isArray(json.data) ? json.data : []);
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setTelemetryError(e.message);
+      });
+    return () => { cancelled = true; };
+  }, [convoyId]);
+
+  const located = useMemo(
+    () => vehicles.filter(v => Number.isFinite(v.current_lat) && Number.isFinite(v.current_lng)),
+    [vehicles],
+  );
+  const validReplay = useMemo(
+    () => replay.filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng) && Math.abs(p.lat) <= 90 && Math.abs(p.lng) <= 180),
+    [replay],
+  );
+  const first = located[0];
+
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current || !first) return;
 
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
-      center,
+      center: [first.current_lng!, first.current_lat!],
       zoom: located.length > 1 ? 7 : 10,
       attributionControl: false,
     });
     mapRef.current = map;
 
-    map.on('load', () => {
+    const render = () => {
+      markersRef.current.forEach(marker => marker.remove());
+      markersRef.current = [];
       located.forEach(v => {
-        const el = document.createElement('div');
-        el.style.cssText = `width:14px;height:14px;border-radius:50%;border:2px solid ${v.carries_my_cargo ? '#f97316' : '#475569'};background:${v.carries_my_cargo ? 'rgba(249,115,22,0.4)' : 'rgba(71,85,105,0.4)'};`;
-        if (v.carries_my_cargo) {
-          el.style.boxShadow = '0 0 10px rgba(249,115,22,0.5)';
-        }
-        const popup = new maplibregl.Popup({ offset: 10, closeButton: false })
-          .setHTML(`<div style="font-family:monospace;font-size:11px;color:#fff;background:#0e1626;padding:4px 6px;border-radius:4px;">${v.registration}${v.driver_name ? ` · ${v.driver_name}` : ''}</div>`);
+        const el = document.createElement('button');
+        el.type = 'button';
+        el.setAttribute('aria-label', `Select ${v.registration}`);
+        el.style.cssText = `width:22px;height:22px;border-radius:50%;border:2px solid ${v.carries_my_cargo ? '#f97316' : '#64748b'};background:${v.carries_my_cargo ? 'rgba(249,115,22,0.48)' : 'rgba(100,116,139,0.45)'};cursor:pointer;box-shadow:${v.carries_my_cargo ? '0 0 0 5px rgba(249,115,22,0.10),0 0 16px rgba(249,115,22,0.35)' : '0 0 0 4px rgba(100,116,139,0.08)'};`;
+        const popup = new maplibregl.Popup({ offset: 12, closeButton: false })
+          .setHTML(`<div style="font-family:monospace;font-size:11px;color:#fff;background:#0e1626;padding:6px 8px;border-radius:6px;">${v.registration}${v.speed_kmh != null ? ` · ${Math.round(v.speed_kmh)} km/h` : ''}</div>`);
         const marker = new maplibregl.Marker({ element: el })
           .setLngLat([v.current_lng!, v.current_lat!])
           .setPopup(popup)
           .addTo(map);
         markersRef.current.push(marker);
       });
+    };
 
-      if (located.length > 1) {
-        const coords = located.map(v => `${v.current_lng},${v.current_lat}`).join(';');
-        fetch(`${OSRM_BASE}/${coords}?overview=full&geometries=geojson`)
-          .then(r => r.json() as Promise<{ routes?: Array<{ geometry: GeoJSON.Geometry }> }>)
-          .then(data => {
-            const route = data.routes?.[0]?.geometry;
-            if (!route) return;
-            if (map.getSource('route')) {
-              (map.getSource('route') as maplibregl.GeoJSONSource).setData({ type: 'Feature', properties: {}, geometry: route });
-            } else {
-              map.addSource('route', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: route } });
-              map.addLayer({ id: 'route-line', type: 'line', source: 'route',
-                layout: { 'line-join': 'round', 'line-cap': 'round' },
-                paint: { 'line-color': '#f97316', 'line-width': 2.5, 'line-opacity': 0.7 } });
-            }
-          })
-          .catch(() => null);
-      }
+    if (map.isStyleLoaded()) render();
+    else map.once('load', render);
+
+    return () => {
+      map.off('load', render);
+      markersRef.current.forEach(marker => marker.remove());
+      markersRef.current = [];
+      map.remove();
+      mapRef.current = null;
+    };
+  }, [first, located]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded() || validReplay.length < 2) return;
+
+    const data = {
+      type: 'Feature' as const,
+      properties: {},
+      geometry: { type: 'LineString' as const, coordinates: validReplay.map(p => [p.lng, p.lat]) },
+    };
+    const existing = map.getSource('real-replay') as maplibregl.GeoJSONSource | undefined;
+    if (existing) {
+      existing.setData(data);
+      return;
+    }
+    map.addSource('real-replay', { type: 'geojson', data });
+    map.addLayer({
+      id: 'real-replay-line',
+      type: 'line',
+      source: 'real-replay',
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: { 'line-color': '#f97316', 'line-width': 3, 'line-opacity': 0.72 },
     });
 
-    return () => { map.remove(); mapRef.current = null; markersRef.current = []; };
-  }, [vehicles]);
+    const coords = validReplay.map(p => [p.lng, p.lat] as [number, number]);
+    const bounds = coords.reduce(
+      (b, c) => b.extend(c),
+      new maplibregl.LngLatBounds(coords[0], coords[0]),
+    );
+    map.fitBounds(bounds, { padding: 60, maxZoom: 11, duration: 500 });
+  }, [validReplay]);
 
   return (
     <MapShell className="portal-reveal portal-reveal-2" style={{ height: 260 }}>
@@ -161,6 +214,9 @@ function TrackMap({ vehicles }: { vehicles: Vehicle[] }) {
         <span className="w-2 h-2 rounded-full bg-orange-400" /> Your vehicles
         <span className="w-2 h-2 rounded-full bg-slate-500 ml-2" /> Other
       </div>
+      {telemetryError && !validReplay.length && (
+        <div className="absolute bottom-2 left-3 rounded-md bg-black/60 px-2 py-1 text-[10px] text-white/35 pointer-events-none">{telemetryError}</div>
+      )}
     </MapShell>
   );
 }
@@ -296,7 +352,7 @@ export default function PortalTrack(): React.ReactElement {
             <EtaRibbon overview={overview} />
             {overview.vehicles.some(v => v.current_lat != null) && (
               <div className="mb-4">
-                <TrackMap vehicles={overview.vehicles} />
+                <TrackMap convoyId={convoy_id} vehicles={overview.vehicles} />
               </div>
             )}
             <VehiclesCrewCard overview={overview} />

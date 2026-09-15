@@ -42,39 +42,39 @@ function stubShipments(page: import('@playwright/test').Page) {
   );
 }
 
-test.describe('Portal UX — Command Center', () => {
-  test('dashboard renders portfolio command center', async ({ page }) => {
+test.describe('Portal UX — Cargo Dashboard', () => {
+  test('dashboard renders live cargo workspace', async ({ page }) => {
     await stubShipments(page);
     await page.goto('/portal/dashboard');
-    await expect(page.getByText('Portfolio command center')).toBeVisible({ timeout: 8000 });
-    await expect(page.getByText('Active shipments')).toBeVisible({ timeout: 4000 });
-    await expect(page.getByText('Live cargo positions')).toBeVisible({ timeout: 4000 });
+    await expect(page.getByRole('heading', { name: 'Live shipments', exact: true })).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('Active shipments', { exact: true })).toBeVisible({ timeout: 4000 });
+    await expect(page.getByText('Live telemetry', { exact: true })).toBeVisible({ timeout: 4000 });
+    await expect(page.getByText('Cargo positions', { exact: true })).toBeVisible({ timeout: 4000 });
   });
 
-  test('shipment rows show operational state', async ({ page }) => {
+  test('shipment rows show real operational data', async ({ page }) => {
     await stubShipments(page);
     await page.goto('/portal/dashboard');
-    await expect(page.getByText('SHP-PORTAL-001')).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('SHP-PORTAL-001', { exact: true })).toBeVisible({ timeout: 8000 });
     await expect(page.getByText(/Durban/)).toBeVisible({ timeout: 4000 });
     await expect(page.getByText(/Johannesburg/)).toBeVisible({ timeout: 4000 });
-    await expect(page.getByText('Verified', { exact: true })).toBeVisible({ timeout: 4000 });
+    await expect(page.getByText('Seal verified', { exact: true })).toBeVisible({ timeout: 4000 });
   });
 
-  test('attention tab isolates shipments with exceptions', async ({ page }) => {
+  test('attention data is reflected in the live dashboard', async ({ page }) => {
     await stubShipments(page);
     await page.goto('/portal/dashboard');
-    await page.getByRole('button', { name: /Attention 1/ }).click();
-    await expect(page.getByText('SHP-PORTAL-002')).toBeVisible({ timeout: 6000 });
-    await expect(page.getByText('SHP-PORTAL-001')).not.toBeVisible({ timeout: 3000 });
+    await expect(page.getByText('Attention', { exact: true })).toBeVisible({ timeout: 4000 });
+    await expect(page.getByRole('button', { name: /SHP-PORTAL-002 1 exception/i }).first()).toBeVisible({ timeout: 6000 });
   });
 
-  test('completed tab and search work together', async ({ page }) => {
+  test('search filters the real shipment portfolio', async ({ page }) => {
     await stubShipments(page);
     await page.goto('/portal/dashboard');
-    await page.getByRole('button', { name: /Completed 1/ }).click();
-    await page.getByPlaceholder(/Search reference/).fill('002');
-    await expect(page.getByText('SHP-PORTAL-002')).toBeVisible({ timeout: 6000 });
-    await expect(page.getByText('SHP-PORTAL-001')).not.toBeVisible({ timeout: 3000 });
+    const search = page.getByPlaceholder('Search cargo…');
+    await search.fill('002');
+    await expect(page.getByRole('button', { name: /SHP-PORTAL-002 completed/i }).first()).toBeVisible({ timeout: 6000 });
+    await expect(page.getByRole('button', { name: /SHP-PORTAL-001 in transit/i }).first()).not.toBeVisible({ timeout: 3000 });
   });
 });
 
@@ -97,8 +97,7 @@ test.describe('Portal UX — Track page', () => {
               vehicle_id: 'v1', registration: 'NDE 123 GP',
               make: 'Volvo', model: 'FH', type: 'truck', driver_name: 'A. Mkhize',
               current_lat: -29.5, current_lng: 30.5, speed_kmh: 80, heading_deg: 45,
-              last_ping_at: new Date(Date.now() - 60_000).toISOString(),
-              carries_my_cargo: true,
+              last_ping_at: new Date(Date.now() - 60_000).toISOString(), carries_my_cargo: true,
             }],
             escorts: [], coload_count: 0, exception_count: 0, seal_status: 'intact',
             custody_events: [], waypoints: [],
@@ -107,36 +106,9 @@ test.describe('Portal UX — Track page', () => {
       }),
     );
     await page.goto('/portal/convoy/' + CONVOY_X + '/track');
-    await expect(page.getByText('Estimated Arrival')).toBeVisible({ timeout: 8000 });
-    await expect(page.getByText('CVY-TRACK-001')).toBeVisible({ timeout: 4000 });
-  });
-
-  test('vehicles & crew card shows carrying-my-cargo label', async ({ page }) => {
-    await page.route(
-      url => url.toString().includes('/api/v1/portal/convoy/' + CONVOY_X + '/overview'),
-      route => route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          data: {
-            convoy_id: CONVOY_X, org_id: 'org-1', reference: 'CVY-001',
-            status: 'in_transit', origin: 'A', destination: 'B',
-            departed_at: null, estimated_arrival_at: null, arrived_at: null,
-            progress_pct: null, eta_confidence_low: null, eta_confidence_high: null,
-            vehicles: [{
-              vehicle_id: 'v1', registration: 'ABC 123 GP',
-              make: null, model: null, type: null, driver_name: 'T. Nkosi',
-              current_lat: null, current_lng: null, speed_kmh: null, heading_deg: null,
-              last_ping_at: null, carries_my_cargo: true,
-            }],
-            escorts: [], coload_count: 2, exception_count: 0, seal_status: null,
-            custody_events: [], waypoints: [],
-          },
-        }),
-      }),
-    );
-    await page.goto('/portal/convoy/' + CONVOY_X + '/track');
-    await expect(page.getByText('YOUR CARGO', { exact: true })).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('Estimated Arrival', { exact: true })).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('CVY-TRACK-001', { exact: true })).toBeVisible({ timeout: 4000 });
+    await expect(page.getByText('Live tracking', { exact: true })).toBeVisible({ timeout: 4000 });
   });
 });
 

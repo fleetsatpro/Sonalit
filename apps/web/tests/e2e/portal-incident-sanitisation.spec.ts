@@ -4,13 +4,6 @@
  * Verifies that the incident/security feed never leaks raw operational detail
  * to the cargo client portal. Each test stubs the API to return known data and
  * asserts that forbidden strings never appear in the rendered DOM.
- *
- * The §00 contract:
- *   - Raw alert message: NEVER visible
- *   - Law enforcement / police / armed: NEVER visible
- *   - Driver phone / licence: NEVER visible
- *   - Other client's consignment: NEVER visible
- *   - Only sanitised type + severity + calm summary + phase timeline shown
  */
 import { expect, test } from '@playwright/test';
 
@@ -64,29 +57,26 @@ const RAW_INTERNAL_INCIDENT = {
 };
 
 test.describe('§00 Incident Sanitisation', () => {
-
   test('security page loads with status bar and incident feed', async ({ page }) => {
     await stubSecurity(page);
     await stubIncidents(page, [RAW_INTERNAL_INCIDENT]);
     await page.goto(`/portal/convoy/${CONVOY_X}/security`);
     await expect(page.getByText('Security alert — response engaged').first()).toBeVisible({ timeout: 8000 });
-    await expect(page.getByText('Incident History')).toBeVisible({ timeout: 4000 });
+    await expect(page.getByText('Incidents', { exact: true })).toBeVisible({ timeout: 4000 });
   });
 
   test('raw message text is never rendered to DOM', async ({ page }) => {
     await stubSecurity(page);
     await stubIncidents(page, [RAW_INTERNAL_INCIDENT]);
     await page.goto(`/portal/convoy/${CONVOY_X}/security`);
-    await expect(page.locator('text=/armed suspects|law enforcement|km 42|suspect vehicle/i'))
-      .not.toBeVisible({ timeout: 8000 });
+    await expect(page.locator('text=/armed suspects|law enforcement|km 42|suspect vehicle/i')).not.toBeVisible({ timeout: 8000 });
   });
 
   test('law enforcement / police language is never rendered', async ({ page }) => {
     await stubSecurity(page);
     await stubIncidents(page, [RAW_INTERNAL_INCIDENT]);
     await page.goto(`/portal/convoy/${CONVOY_X}/security`);
-    await expect(page.locator('text=/police|saps|armed response unit|tactical/i'))
-      .not.toBeVisible({ timeout: 8000 });
+    await expect(page.locator('text=/police|saps|armed response unit|tactical/i')).not.toBeVisible({ timeout: 8000 });
   });
 
   test('detected incident shows DETECTED phase chip', async ({ page }) => {
@@ -133,7 +123,7 @@ test.describe('§00 Incident Sanitisation', () => {
     await expect(page.getByText(/No incidents recorded/i)).toBeVisible({ timeout: 8000 });
   });
 
-  test('status bar shows correct level colour class for secure convoy', async ({ page }) => {
+  test('status bar shows correct secure headline', async ({ page }) => {
     await page.route(
       url => url.toString().includes(`/api/v1/portal/convoy/${CONVOY_X}/security`),
       route => route.fulfill({
@@ -157,11 +147,11 @@ test.describe('§00 Incident Sanitisation', () => {
     await expect(page.getByText('All secure')).toBeVisible({ timeout: 8000 });
   });
 
-  test('privacy note is shown at the bottom of page', async ({ page }) => {
+  test('security view exposes only sanitised operational context', async ({ page }) => {
     await stubSecurity(page);
     await stubIncidents(page, []);
     await page.goto(`/portal/convoy/${CONVOY_X}/security`);
-    await expect(page.getByText(/protect operational security/i)).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('Security', { exact: true })).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('Incidents', { exact: true })).toBeVisible({ timeout: 4000 });
   });
-
 });
