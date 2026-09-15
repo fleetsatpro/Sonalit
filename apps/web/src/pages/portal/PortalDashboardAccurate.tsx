@@ -494,7 +494,8 @@ export default function PortalDashboardAccurate(): React.ReactElement {
       setError('');
       const shipmentResponse = await fetch(`${API}/portal/shipments`, { credentials: 'include' });
       if (shipmentResponse.status === 401) {
-        void navigate({ to: '/portal/login' });
+        const target = window.location.pathname + window.location.search;
+        void navigate({ to: '/portal/login', search: { redirect: target } as never });
         return;
       }
       if (!shipmentResponse.ok) throw new Error(`Client data request failed (${shipmentResponse.status})`);
@@ -503,7 +504,8 @@ export default function PortalDashboardAccurate(): React.ReactElement {
 
       const vaultResponse = await fetch(`${API}/portal/document-vault`, { credentials: 'include' });
       if (vaultResponse.status === 401) {
-        void navigate({ to: '/portal/login' });
+        const target = window.location.pathname + window.location.search;
+        void navigate({ to: '/portal/login', search: { redirect: target } as never });
         return;
       }
       if (vaultResponse.ok) {

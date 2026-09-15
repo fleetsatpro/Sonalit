@@ -9,8 +9,13 @@ type PageState = 'email' | 'sent' | 'no_email' | 'verifying' | 'error';
 
 export default function PortalLogin(): React.ReactElement {
   const navigate = useNavigate();
-  const search = useSearch({ strict: false }) as { token?: string };
+  const search = useSearch({ strict: false }) as { token?: string; redirect?: string };
   const token = typeof search.token === 'string' ? search.token : null;
+
+  const safeRedirect = (() => {
+    const candidate = typeof search.redirect === 'string' ? search.redirect : '';
+    return candidate.startsWith('/') && !candidate.startsWith('//') ? candidate : '/portal/dashboard';
+  })();
 
   const [pageState, setPageState] = useState<PageState>(token ? 'verifying' : 'email');
   const [email, setEmail] = useState('');
@@ -42,7 +47,9 @@ export default function PortalLogin(): React.ReactElement {
         return res.json();
       })
       .then(() => {
-        void navigate({ to: '/portal/dashboard', replace: true });
+        // Deep links should survive authentication. Only same-origin path
+        // targets are accepted; external URLs are ignored.
+        void navigate({ to: safeRedirect as never, replace: true });
       })
       .catch((err: Error) => {
         setErrorMsg(err.message);
