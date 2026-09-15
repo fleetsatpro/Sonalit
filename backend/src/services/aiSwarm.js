@@ -212,7 +212,10 @@ async function runDecisionFabric({command,history=[],executeTool,userId,orgId,pe
   const started=Date.now();
   const probes=await planEvidence(command,history);
   const collected=await collectToolEvidence(probes,executeTool,{userId,orgId});
-  const agents=await Promise.all(AGENTS.map(a=>runSpecialist(a,command,collected.evidence,history)));
+  const relevantToolNames = new Set(probes.map(p => p.tool));
+  const selectedAgents = AGENTS.filter(a => a.tools.some(t => relevantToolNames.has(t)));
+  const boundedAgents = (selectedAgents.length ? selectedAgents : AGENTS.slice(0, 3)).slice(0, 5);
+  const agents=await Promise.all(boundedAgents.map(a=>runSpecialist(a,command,collected.evidence,history)));
   const safety=deterministicSafetyAssessment(collected.evidence);
   const health=evidenceHealth(collected.evidence,collected.failures);
   let draft;
@@ -221,7 +224,7 @@ async function runDecisionFabric({command,history=[],executeTool,userId,orgId,pe
   const critic=await critique(command,draft,collected.evidence,agents);
   const final=finalize(draft,critic,safety,health);
   final.swarm=agents.map(a=>({id:a.id,name:a.name,status:a.status,confidence:Number(a.confidence||0),provider:a.provider,finding:a.finding,dissent:a.dissent,tools:a.tools}));
-  final.meta={latency_ms:Date.now()-started,probe_plan:probes,agent_count:AGENTS.length,agent_failures:agents.filter(a=>a.status==='blocked').length,provider_fallback_available:aiClient.hasOpenSourcePrimary?.()||aiClient.hasGroqFallback?.(),persisted:false};
+  final.meta={latency_ms:Date.now()-started,probe_plan:probes,agent_count:agents.length,agent_failures:agents.filter(a=>a.status==='blocked').length,provider_fallback_available:aiClient.hasOpenSourcePrimary?.()||aiClient.hasGroqFallback?.(),persisted:false};
   if(persistDecision){
     try{const decisionId=await persistDecision({orgId,userId,command,result:final});final.id=decisionId;final.meta.persisted=true;}catch(e){logger.warn('Copilot decision persistence failed: '+e.message);}
   }
