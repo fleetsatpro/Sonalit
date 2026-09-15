@@ -122,10 +122,11 @@ test.describe('Portal UX — Client Workspace', () => {
     await page.goto('/portal/dashboard');
 
     await page.getByRole('button', { name: 'Movements', exact: true }).click();
-    const row = page.getByRole('button', { name: /^SHP-PORTAL-001\b/ });
+    const portfolio = page.locator('section').filter({ hasText: 'Movement portfolio' });
+    const row = portfolio.getByRole('button', { name: /^SHP-PORTAL-001\b/ });
     await expect(row).toBeVisible({ timeout: 8000 });
-    await expect(row.getByText('Durban', { exact: true })).toBeVisible({ timeout: 4000 });
-    await expect(row.getByText('Johannesburg', { exact: true })).toBeVisible({ timeout: 4000 });
+    await expect(row.getByText(/Durban/)).toBeVisible({ timeout: 4000 });
+    await expect(row.getByText(/Johannesburg/)).toBeVisible({ timeout: 4000 });
     await expect(row.getByText('Verified intact', { exact: true })).toBeVisible({ timeout: 4000 });
   });
 
@@ -134,8 +135,9 @@ test.describe('Portal UX — Client Workspace', () => {
     await stubVault(page);
     await page.goto('/portal/dashboard');
 
+    const attention = page.getByRole('heading', { name: 'Attention queue', exact: true }).locator('..').locator('..');
     await expect(page.getByRole('heading', { name: 'Attention queue', exact: true })).toBeVisible({ timeout: 4000 });
-    await expect(page.getByRole('button', { name: /^SHP-PORTAL-002\b/ })).toBeVisible({ timeout: 6000 });
+    await expect(attention.getByRole('button', { name: /^SHP-PORTAL-002\b/ })).toBeVisible({ timeout: 6000 });
   });
 
   test('search filters the real shipment portfolio', async ({ page }) => {
@@ -144,10 +146,11 @@ test.describe('Portal UX — Client Workspace', () => {
     await page.goto('/portal/dashboard');
 
     await page.getByRole('button', { name: 'Movements', exact: true }).click();
+    const portfolio = page.locator('section').filter({ hasText: 'Movement portfolio' });
     const search = page.getByPlaceholder('Search convoy / route…');
     await search.fill('002');
-    await expect(page.getByRole('button', { name: /^SHP-PORTAL-002\b/ })).toBeVisible({ timeout: 6000 });
-    await expect(page.getByRole('button', { name: /^SHP-PORTAL-001\b/ })).not.toBeVisible({ timeout: 3000 });
+    await expect(portfolio.getByRole('button', { name: /^SHP-PORTAL-002\b/ })).toBeVisible({ timeout: 6000 });
+    await expect(portfolio.getByRole('button', { name: /^SHP-PORTAL-001\b/ })).not.toBeVisible({ timeout: 3000 });
   });
 
   test('generated convoy report is arranged under its real convoy', async ({ page }) => {
