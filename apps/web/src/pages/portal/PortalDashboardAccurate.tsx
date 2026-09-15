@@ -1,0 +1,123 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
+import { Activity, AlertTriangle, Bell, CheckCircle2, MapPin, Package, RefreshCw, Search, ShieldCheck, Truck, XCircle } from 'lucide-react';
+import maplibregl from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import { PortalShell, Badge, fmtDateTime, relativeTime } from '../../components/portal/PortalPrimitives.js';
+
+const API = (import.meta.env['VITE_API_BASE_URL'] as string | undefined) ?? '/api/v1';
+
+type Shipment = {
+  convoy_id: string;
+  reference: string;
+  status: string;
+  origin: string | null;
+  destination: string | null;
+  eta: string | null;
+  last_ping_at: string | null;
+  progress_pct: number | null;
+  exception_count: number;
+  seal_status: 'intact' | 'compromised' | 'unverified' | null;
+  current_location: { lat: number; lng: number } | null;
+};
+
+const ACTIVE = new Set(['active', 'pending', 'in_transit', 'delayed', 'at_checkpoint']);
+
+function validPosition(p: Shipment['current_location']): p is { lat: number; lng: number } {
+  return !!p && Number.isFinite(p.lat) && Number.isFinite(p.lng) && p.lat >= -90 && p.lat <= 90 && p.lng >= -180 && p.lng <= 180;
+}
+
+function active(s: Shipment) { return ACTIVE.has(s.status); }
+function live(s: Shipment) { return !!s.last_ping_at && Date.now() - new Date(s.last_ping_at).getTime() < 120000; }
+function attention(s: Shipment) { return s.exception_count > 0 || s.seal_status === 'compromised'; }
+
+function Metric({ label, value, meta, icon: Icon }: { label: string; value: React.ReactNode; meta: string; icon: React.ElementType }) {
+  return <div className="rounded-2xl border border-white/[0.07] bg-gradient-to-br from-white/[0.035] to-transparent p-4 sm:p-5">
+    <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.18em] text-white/35">{label}</p><p className="mono mt-2 text-2xl sm:text-3xl font-medium text-white">{value}</p><p className="mt-1 text-[11px] text-white/35">{meta}</p></div><div className="h-9 w-9 rounded-xl border border-white/[0.07] bg-black/15 flex items-center justify-center"><Icon size={16} className="text-orange-400" /></div></div>
+  </div>;
+}
+
+function LiveMap({ shipments, onSelect }: { shipments: Shipment[]; onSelect: (id: string) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const map = useRef<maplibregl.Map | null>(null);
+  const markers = useRef<maplibregl.Marker[]>([]);
+  const located = useMemo(() => shipments.filter(s => validPosition(s.current_location)), [shipments]);
+
+  useEffect(() => {
+    if (!ref.current || map.current || !located.length) return;
+    const first = located[0].current_location!;
+    const m = new maplibregl.Map({ container: ref.current, style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json', center: [first.lng, first.lat], zoom: 5, attributionControl: true });
+    map.current = m;
+    m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+    return () => { m.remove(); map.current = null; markers.current = []; };
+  }, [located.length]);
+
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+    const render = () => {
+      markers.current.forEach(x => x.remove());
+      markers.current = [];
+      if (!located.length) return;
+      const bounds = new maplibregl.LngLatBounds();
+      located.forEach(s => {
+        const p = s.current_location!;
+        const el = document.createElement('button');
+        el.type = 'button';
+        el.setAttribute('aria-label', `Open ${s.reference}`);
+        el.style.cssText = `width:18px;height:18px;border-radius:50%;border:2px solid rgba(255,255,255,.9);background:${attention(s) ? '#ef4444' : '#f97316'};box-shadow:0 0 0 5px rgba(249,115,22,.12),0 0 18px rgba(249,115,22,.4);cursor:pointer;`;
+        if (!live(s)) el.style.opacity = '.55';
+        el.onclick = () => onSelect(s.convoy_id);
+        markers.current.push(new maplibregl.Marker({ element: el }).setLngLat([p.lng, p.lat]).addTo(m));
+        bounds.extend([p.lng, p.lat]);
+      });
+      if (located.length === 1) m.easeTo({ center: [located[0].current_location!.lng, located[0].current_location!.lat], zoom: 6, duration: 400 });
+      else m.fitBounds(bounds, { padding: 70, maxZoom: 7, duration: 450 });
+    };
+    if (m.isStyleLoaded()) render(); else m.once('load', render);
+    return () => { m.off('load', render); };
+  }, [located, onSelect]);
+
+  return <div className="relative h-[430px] sm:h-[540px] overflow-hidden rounded-2xl border border-white/[0.07] bg-[#08101a]">
+    <div ref={ref} className="absolute inset-0" />
+    {!located.length && <div className="absolute inset-0 flex items-center justify-center bg-[#08101a]"><div className="text-center px-6"><MapPin size={24} className="mx-auto text-white/15"/><p className="mt-3 text-sm font-semibold text-white/55">Telemetry unavailable</p><p className="mt-1 max-w-xs text-xs text-white/30">No valid live cargo coordinates are available for this account. The map is intentionally not rendered at a synthetic location.</p></div></div>}
+    <div className="absolute inset-x-0 top-0 flex items-center justify-between p-4 pointer-events-none"><div><p className="text-[10px] uppercase tracking-[0.18em] text-white/35">Live map</p><p className="mt-1 text-sm font-semibold text-white/80">Cargo positions</p></div><span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] text-emerald-300">{located.length ? `${located.length} positioned` : 'No position'}</span></div>
+  </div>;
+}
+
+export default function PortalDashboardAccurate(): React.ReactElement {
+  const navigate = useNavigate();
+  const [shipments, setShipments] = useState<Shipment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [query, setQuery] = useState('');
+  const [selected, setSelected] = useState<string | null>(null);
+  const load = useCallback(async () => {
+    try {
+      setError('');
+      const res = await fetch(API + '/portal/shipments', { credentials: 'include' });
+      if (res.status === 401) { void navigate({ to: '/portal/login' }); return; }
+      if (!res.ok) throw new Error(`Cargo data request failed (${res.status})`);
+      const body = await res.json() as { data?: Shipment[] };
+      setShipments(Array.isArray(body.data) ? body.data : []);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Cargo data unavailable'); }
+    finally { setLoading(false); }
+  }, [navigate]);
+  useEffect(() => { void load(); const t = window.setInterval(() => void load(), 15000); return () => window.clearInterval(t); }, [load]);
+
+  const activeShipments = useMemo(() => shipments.filter(active), [shipments]);
+  const attentionShipments = useMemo(() => shipments.filter(attention), [shipments]);
+  const liveShipments = useMemo(() => shipments.filter(live), [shipments]);
+  const verified = useMemo(() => shipments.filter(s => s.seal_status === 'intact'), [shipments]);
+  const filtered = useMemo(() => { const q = query.trim().toLowerCase(); return q ? shipments.filter(s => [s.reference, s.origin, s.destination].some(v => (v ?? '').toLowerCase().includes(q))) : shipments; }, [shipments, query]);
+
+  return <PortalShell>
+    <header className="sticky top-0 z-40 border-b border-white/[0.06]" style={{ background: 'rgba(7,11,22,0.9)', backdropFilter: 'blur(18px)' }}><div className="max-w-[1440px] mx-auto px-4 sm:px-6 xl:px-8 py-3 flex items-center justify-between gap-4"><div><p className="text-[10px] uppercase tracking-[0.2em] text-orange-300/70">Cargo Owner Workspace</p><h1 className="mt-1 text-sm sm:text-base font-semibold text-white">Live shipments</h1></div><div className="flex items-center gap-2"><button onClick={() => void load()} className="p-2 rounded-lg border border-white/[0.07] text-white/40 hover:text-white" title="Refresh"><RefreshCw size={14}/></button><button onClick={() => void navigate({ to: '/portal/notifications' })} className="p-2 rounded-lg border border-white/[0.07] text-white/40 hover:text-white"><Bell size={14}/></button></div></div></header>
+    <main className="max-w-[1440px] mx-auto px-4 sm:px-6 xl:px-8 pt-5 sm:pt-7 pb-20">
+      {error && <div className="mb-4 rounded-2xl border border-red-500/20 bg-red-500/[0.04] p-4 flex gap-3"><XCircle size={17} className="text-red-400"/><div><p className="text-sm font-semibold text-red-300">Cargo data unavailable</p><p className="mt-1 text-xs text-red-200/50">{error}</p></div></div>}
+      {!loading && !error && <section className="grid grid-cols-2 lg:grid-cols-4 gap-3"><Metric label="Active shipments" value={activeShipments.length} meta="Current operational status" icon={Truck}/><Metric label="Live telemetry" value={liveShipments.length} meta="Position ping < 2 min" icon={Activity}/><Metric label="Attention" value={attentionShipments.length} meta="Exceptions or seal issues" icon={AlertTriangle}/><Metric label="Seal verified" value={verified.length} meta="Explicit intact state" icon={ShieldCheck}/></section>}
+      <section className="mt-5 grid grid-cols-1 lg:grid-cols-[minmax(0,1.75fr)_minmax(280px,.75fr)] gap-4"><LiveMap shipments={shipments} onSelect={id => { setSelected(id); void navigate({ to: '/portal/convoy/$convoy_id/track', params: { convoy_id: id } }); }}/><aside className="space-y-4"><div className="rounded-2xl border border-white/[0.07] p-4 sm:p-5"><p className="text-[10px] uppercase tracking-[0.18em] text-white/35">Operational picture</p><div className="mt-4 space-y-3"><div className="flex justify-between text-xs"><span className="text-white/45">Active</span><span className="mono text-white">{activeShipments.length}</span></div><div className="flex justify-between text-xs"><span className="text-white/45">Live</span><span className="mono text-emerald-300">{liveShipments.length}</span></div><div className="flex justify-between text-xs"><span className="text-white/45">Attention</span><span className="mono text-amber-300">{attentionShipments.length}</span></div><div className="flex justify-between text-xs"><span className="text-white/45">Located</span><span className="mono text-white">{shipments.filter(s => validPosition(s.current_location)).length}</span></div></div></div><div className="rounded-2xl border border-white/[0.07] p-4 sm:p-5">{attentionShipments.length ? <><div className="flex items-center gap-2"><AlertTriangle size={15} className="text-red-400"/><p className="text-sm font-semibold text-white/80">Attention</p></div><div className="mt-3 space-y-2">{attentionShipments.slice(0,4).map(s => <button key={s.convoy_id} onClick={() => void navigate({ to: '/portal/convoy/$convoy_id/track', params: { convoy_id: s.convoy_id } })} className="w-full text-left rounded-xl border border-red-500/15 bg-red-500/[0.03] p-3"><p className="text-xs font-semibold text-white">{s.reference}</p><p className="mt-1 text-[11px] text-red-200/45">{s.exception_count} exception{s.exception_count === 1 ? '' : 's'}{s.seal_status === 'compromised' ? ' · seal compromised' : ''}</p></button>)}</div></> : <div className="flex gap-3"><CheckCircle2 size={16} className="text-emerald-400"/><div><p className="text-sm font-semibold text-emerald-300">No active exceptions</p><p className="mt-1 text-[11px] text-white/30">No shipment exception or compromised-seal records are present.</p></div></div>}</div></aside></section>
+      <section className="mt-5 rounded-2xl border border-white/[0.07] overflow-hidden"><div className="px-4 sm:px-5 py-4 border-b border-white/[0.06] flex items-center justify-between gap-3"><div><p className="text-[10px] uppercase tracking-[0.18em] text-white/30">Shipment portfolio</p><p className="mt-1 text-sm font-semibold text-white/80">{filtered.length} shipment{filtered.length === 1 ? '' : 's'}</p></div><div className="relative w-[220px]"><Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/25"/><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search cargo…" className="w-full pl-8 pr-3 py-2 rounded-lg border border-white/[0.07] bg-black/10 text-xs text-white placeholder-white/20 focus:outline-none focus:border-orange-500/35"/></div></div><div className="p-3 sm:p-4 space-y-2">{loading ? <div className="py-14 text-center text-xs text-white/30">Loading cargo data…</div> : filtered.length ? filtered.map(s => <button key={s.convoy_id} onClick={() => { setSelected(s.convoy_id); void navigate({ to: '/portal/convoy/$convoy_id/track', params: { convoy_id: s.convoy_id } }); }} className={`w-full text-left rounded-xl border p-4 transition-colors ${selected === s.convoy_id ? 'border-orange-500/35 bg-orange-500/[0.05]' : 'border-white/[0.06] bg-white/[0.015] hover:border-white/[0.14]'}`}><div className="flex items-center gap-3"><Package size={16} className="text-orange-400 shrink-0"/><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="text-sm font-semibold text-white truncate">{s.reference}</p><Badge label={s.status.replace(/_/g, ' ')} variant={s.status}/></div><p className="mt-1 text-[11px] text-white/35 truncate">{s.origin ?? '—'} → {s.destination ?? '—'}</p></div><div className="hidden sm:block text-right"><p className={`text-[11px] ${live(s) ? 'text-emerald-300' : 'text-white/35'}`}>{live(s) ? 'Live' : s.last_ping_at ? relativeTime(s.last_ping_at) : 'No telemetry'}</p><p className="mt-1 text-[10px] text-white/25">{s.eta ? fmtDateTime(s.eta) : 'ETA unavailable'}</p></div></div></button>) : <div className="py-14 text-center"><Package size={28} className="mx-auto text-white/10"/><p className="mt-3 text-sm text-white/40">No cargo records available.</p></div>}</div></section>
+    </main>
+  </PortalShell>;
+}
