@@ -152,6 +152,11 @@ router.post('/verify', asyncHandler(async (req, res) => {
     { expiresIn: '24h', algorithm: 'HS256' },
   );
 
+  // Remove the legacy default-path cookie first. Older builds created it
+  // without an explicit Path, which can otherwise leave two same-name cookies
+  // alive during rollout.
+  res.clearCookie('sonalit_client', { path: '/api/v1/portal/auth' });
+
   // Scope the portal session to the entire portal API, not /portal/auth.
   // Without an explicit Path, browsers default the cookie to the request
   // directory (/api/v1/portal/auth), so /shipments and /convoy/* requests
@@ -176,6 +181,7 @@ router.post('/verify', asyncHandler(async (req, res) => {
 // POST /portal/auth/logout
 router.post('/logout', asyncHandler(async (req, res) => {
   res.clearCookie('sonalit_client', { path: '/api/v1/portal' });
+  res.clearCookie('sonalit_client', { path: '/api/v1/portal/auth' });
   res.json({ ok: true });
 }));
 
