@@ -93,7 +93,7 @@ test.describe('Portal UX — Dashboard', () => {
     await page.goto('/portal/dashboard');
     await expect(page.getByRole('heading', { name: 'Client Workspace', exact: true })).toBeVisible({ timeout: 8000 });
     await expect(page.getByText('Verified Movement Atlas', { exact: true })).toBeVisible({ timeout: 6000 });
-    await expect(page.getByText('SHP-PORTAL-001', { exact: true })).toBeVisible({ timeout: 6000 });
+    await expect(page.getByRole('button', { name: 'Open SHP-PORTAL-001', exact: true })).toBeVisible({ timeout: 6000 });
   });
 });
 
