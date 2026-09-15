@@ -68,14 +68,15 @@ test.describe('Cargo Owner Control Tower', () => {
     await page.goto('/cargo-portal');
     await expect(page.getByText('CONVOY-001')).toBeVisible({ timeout: 8000 });
     await expect(page.getByText('Lagos')).toBeVisible({ timeout: 4000 });
-    await expect(page.getByText('Shipment workspaces')).toBeVisible({ timeout: 4000 });
+    await expect(page.getByRole('button', { name: 'Shipment', exact: true })).toBeVisible({ timeout: 4000 });
   });
 
   test('client 360 is real-data backed and reflects active workspace count', async ({ page }) => {
     await page.goto('/cargo-portal');
     await page.getByRole('button', { name: 'Client 360', exact: true }).first().click();
-    await expect(page.getByText('ACME Logistics')).toBeVisible({ timeout: 8000 });
-    await expect(page.getByText('Active')).toBeVisible({ timeout: 4000 });
+    await expect(page.getByText('Cargo owner 360°', { exact: true })).toBeVisible({ timeout: 4000 });
+    await expect(page.getByText('ACME Logistics', { exact: true })).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('Active', { exact: true }).last()).toBeVisible({ timeout: 4000 });
   });
 });
 
