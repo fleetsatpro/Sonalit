@@ -37,12 +37,15 @@ const TRACK_OVERVIEW = {
 const TRACK_LOCATION = {
   current_location: { lat: -29.5, lng: 30.5 },
   speed_kmh: 80,
-  heading_deg: 45,
+  heading: 45,
   last_ping_at: new Date(Date.now() - 60_000).toISOString(),
   trail: [
-    { lat: -29.8, lng: 31.0, recorded_at: new Date(Date.now() - 120_000).toISOString(), speed_kmh: 78 },
-    { lat: -29.5, lng: 30.5, recorded_at: new Date(Date.now() - 60_000).toISOString(), speed_kmh: 80 },
+    { lat: -29.8, lng: 31.0, t: new Date(Date.now() - 120_000).toISOString() },
+    { lat: -29.5, lng: 30.5, t: new Date(Date.now() - 60_000).toISOString() },
   ],
+  route_line: null,
+  origin_coords: null,
+  destination_coords: null,
 };
 
 const TRACK_VEHICLES = [{
@@ -99,7 +102,7 @@ test.describe('Portal UX — Dashboard', () => {
       ] }) }));
     await page.goto('/portal/dashboard');
     await expect(page.getByText(/Cargo command workspace|Live shipments/i).first()).toBeVisible({ timeout: 8000 });
-    await expect(page.getByText('Live cargo positions')).toBeVisible({ timeout: 6000 });
+    await expect(page.getByText('Cargo positions')).toBeVisible({ timeout: 6000 });
     await expect(page.getByText('SHP-PORTAL-001')).toBeVisible({ timeout: 6000 });
   });
 });
