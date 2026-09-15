@@ -147,9 +147,6 @@ importers:
 
   apps/web:
     dependencies:
-      '@anthropic-ai/sdk':
-        specifier: ^0.37.0
-        version: 0.37.0
       '@fontsource/archivo':
         specifier: ^5.2.8
         version: 5.2.8
@@ -542,9 +539,6 @@ importers:
 
   services/ai-copilot-svc:
     dependencies:
-      '@anthropic-ai/sdk':
-        specifier: ^0.37.0
-        version: 0.37.0
       '@fastify/helmet':
         specifier: ^13.0.0
         version: 13.0.2
