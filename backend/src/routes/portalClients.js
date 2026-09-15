@@ -51,22 +51,23 @@ router.get('/shipments', clientAuth, asyncHandler(async (req, res) => {
 router.get('/document-vault', clientAuth, asyncHandler(async (req, res) => {
   const { org_id, convoy_ids, client_id } = req.client;
   if (!convoy_ids.length) return res.json({ data: [] });
-  const placeholders = convoy_ids.map((_, i) => `$${i + 2}`).join(',');
+  const convoyPlaceholders = convoy_ids.map((_, i) => `$${i + 2}`).join(',');
+  const reportPlaceholders = convoy_ids.map((_, i) => `$${i + 3}`).join(',');
   const [convoysRes,reportsRes,docsRes]=await Promise.all([
     query(`SELECT c.id AS convoy_id,COALESCE(c.reference,c.name) AS reference,c.status,
                   COALESCE(c.origin,c.route_origin) AS origin,COALESCE(c.destination,c.route_destination) AS destination,
                   COALESCE(c.start_date,c.created_at::date)::text AS convoy_date
-             FROM convoys c WHERE c.org_id=$1 AND c.id IN (${placeholders}) AND c.deleted_at IS NULL
+             FROM convoys c WHERE c.org_id=$1 AND c.id IN (${convoyPlaceholders}) AND c.deleted_at IS NULL
              ORDER BY COALESCE(c.start_date,c.created_at::date) DESC,c.created_at DESC`,[org_id,...convoy_ids]),
     query(`SELECT r.id,r.convoy_id,r.report_date::text AS report_date,r.status,
                   r.required_photo_count,r.received_photo_count,r.pdf_url,r.generated_at,r.content_hash
              FROM convoy_daily_reports r JOIN convoys c ON c.id=r.convoy_id
              JOIN cargo_client_links l ON l.convoy_id=c.id AND l.client_id=$2 AND l.org_id=$1
-            WHERE r.convoy_id IN (${placeholders}) AND c.org_id=$1 AND r.status='generated'
+            WHERE r.convoy_id IN (${reportPlaceholders}) AND c.org_id=$1 AND r.status='generated'
             ORDER BY r.report_date DESC`,[org_id,client_id,...convoy_ids]),
     query(`SELECT d.id,d.convoy_id,d.type,d.label,d.file_url,d.created_at
              FROM portal_documents d JOIN convoys c ON c.id=d.convoy_id
-            WHERE d.org_id=$1 AND d.convoy_id IN (${placeholders}) AND c.org_id=$1 AND d.deleted_at IS NULL
+            WHERE d.org_id=$1 AND d.convoy_id IN (${convoyPlaceholders}) AND c.org_id=$1 AND d.deleted_at IS NULL
             ORDER BY d.created_at DESC`,[org_id,...convoy_ids]),
   ]);
   const byConvoy=new Map();
