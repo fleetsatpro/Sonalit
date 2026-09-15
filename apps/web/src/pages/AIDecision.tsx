@@ -19,6 +19,7 @@ interface DispatchResponse {
   source?: string;
   decision?: string;
   risk_level?: string;
+  id?: string;
   confidence?: number;
   recommended_actions?: Array<{ action: string; reason?: string; approval?: string; urgency?: string }>;
   risks?: Array<{ risk: string; severity: string }>;
@@ -55,6 +56,8 @@ export default function AIDecision() {
   const [query, setQuery] = useState('');
   const [context, setContext] = useState('');
   const [lastResponse, setLastResponse] = useState('');
+  const [history, setHistory] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
+  const [feedbackSent, setFeedbackSent] = useState('');
 
   const { data: anomalies, isLoading: anomaliesLoading } = useQuery<Anomaly[]>({
     queryKey: ['ai-anomalies'],
@@ -67,11 +70,13 @@ export default function AIDecision() {
 
   const dispatchMutation = useMutation<DispatchResponse, Error, string>({
     mutationFn: async (command) => {
-      const res = await api.post<DispatchResponse>('/ai/decision', { command, history: [] });
+      const res = await api.post<DispatchResponse>('/ai/decision', { command, history: history.slice(-10) });
       return res.data;
     },
-    onSuccess: (data) => {
-      setLastResponse(data.answer ?? data.response ?? 'No decision response received.');
+    onSuccess: (data, command) => {
+      const answer = data.answer ?? data.response ?? 'No decision response received.';
+      setLastResponse(answer);
+      setHistory((items) => [...items, { role: 'user' as const, content: command }, { role: 'assistant' as const, content: answer }].slice(-12));
       setQuery('');
     },
   });
@@ -83,6 +88,16 @@ export default function AIDecision() {
     if (!fullCommand) return;
     dispatchMutation.mutate(fullCommand);
   }, [query, context, dispatchMutation]);
+
+  const feedbackMutation = useMutation<{ ok: boolean }, Error, { outcome: string; notes?: string }>({
+    mutationFn: async ({ outcome, notes }) => {
+      const decisionId = (dispatchMutation.data as DispatchResponse & { id?: string })?.id;
+      if (!decisionId) throw new Error('Decision identifier unavailable');
+      const res = await api.post<{ ok: boolean }>(`/ai/decision/${decisionId}/feedback`, { outcome, notes });
+      return res.data;
+    },
+    onSuccess: (_, vars) => setFeedbackSent(vars.outcome),
+  });
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -159,6 +174,27 @@ export default function AIDecision() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+
+      {dispatchMutation.data?.id && (
+        <div className="bg-slate-900 border border-slate-700 rounded-lg p-4">
+          <div className="text-xs uppercase font-semibold text-slate-400 mb-3">Decision Outcome Feedback</div>
+          <div className="flex flex-wrap gap-2">
+            {['correct','partially_correct','incorrect','superseded','unknown'].map((outcome) => (
+              <button
+                key={outcome}
+                type="button"
+                disabled={feedbackMutation.isPending}
+                onClick={() => feedbackMutation.mutate({ outcome })}
+                className="px-3 py-1.5 rounded border border-slate-700 bg-slate-950 text-xs text-slate-300 hover:border-cyan-500/50 disabled:opacity-50"
+              >
+                {outcome.replace('_',' ')}
+              </button>
+            ))}
+          </div>
+          {feedbackSent && <div className="text-[11px] text-emerald-400 mt-2">Recorded: {feedbackSent}</div>}
         </div>
       )}
 
