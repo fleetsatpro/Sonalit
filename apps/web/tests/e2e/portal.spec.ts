@@ -68,7 +68,7 @@ test.describe('Portal UX — Track page', () => {
         convoy_id: 'conv-1', org_id: 'org-1', reference: 'CVY-TRACK-001', status: 'in_transit', origin: 'Durban', destination: 'Johannesburg',
         departed_at: new Date(Date.now()-2*3600_000).toISOString(), estimated_arrival_at: new Date(Date.now()+4*3600_000).toISOString(), arrived_at: null, progress_pct: 33,
         eta_confidence_low: null, eta_confidence_high: null, vehicles: [{ vehicle_id: 'v1', registration: 'NDE 123 GP', make: 'Volvo', model: 'FH', type: 'truck', driver_name: 'A. Mkhize', current_lat: -29.5, current_lng: 30.5, speed_kmh: 80, heading_deg: 45, last_ping_at: new Date(Date.now()-60_000).toISOString(), carries_my_cargo: true }], escorts: [], coload_count: 0, exception_count: 0, seal_status: 'intact', custody_events: [], waypoints: []
-      } }));
+       } }) });
     await page.route(url => url.toString().includes('/api/v1/portal/convoy/conv-1/location'), route =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { current_location: { lat: -29.5, lng: 30.5 }, speed_kmh: 80, heading_deg: 45, last_ping_at: new Date(Date.now()-60_000).toISOString(), trail: [{lat:-29.8,lng:31.0,recorded_at:new Date(Date.now()-120_000).toISOString(),speed_kmh:78},{lat:-29.5,lng:30.5,recorded_at:new Date(Date.now()-60_000).toISOString(),speed_kmh:80}] } }) }));
     await page.route(url => url.toString().includes('/api/v1/portal/convoy/conv-1/vehicles'), route =>
