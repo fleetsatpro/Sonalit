@@ -1,15 +1,19 @@
 /**
  * Portal client-facing and client-management routes.
- * Client session: shipment summaries and scoped manifest.
+ * Client session: shipment summaries, scoped manifests and report/document vault.
  * Operator: cargo client CRUD/linking/magic-link and manifest item creation.
  */
 const router = require('express').Router();
+const fs = require('fs');
+const path = require('path');
 const { authenticate, authorize } = require('../middleware/auth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { clientAuth } = require('../middleware/clientAuth');
 const { asyncHandler } = require('../middleware/error');
 const { query } = require('../config/database');
 const { normalizePhone } = require('../utils/phone');
+
+const validCoordinateSql = `(lat IS NOT NULL AND lng IS NOT NULL AND lat BETWEEN -90 AND 90 AND lng BETWEEN -180 AND 180 AND NOT (ABS(lat) < 0.000001 AND ABS(lng) < 0.000001))`;
 
 router.get('/shipments', clientAuth, asyncHandler(async (req, res) => {
   const { org_id, convoy_ids } = req.client;
@@ -20,17 +24,124 @@ router.get('/shipments', clientAuth, asyncHandler(async (req, res) => {
             COALESCE(c.origin, c.route_origin) AS origin,
             COALESCE(c.destination, c.route_destination) AS destination,
             COALESCE(c.estimated_arrival_at, c.estimated_arrival) AS eta,
-            (SELECT g.timestamp FROM gps_logs g JOIN convoy_trucks ct ON ct.vehicle_id = g.vehicle_id WHERE ct.convoy_id = c.id ORDER BY g.timestamp DESC LIMIT 1) AS last_ping_at,
-            (SELECT g.lat FROM gps_logs g JOIN convoy_trucks ct ON ct.vehicle_id = g.vehicle_id WHERE ct.convoy_id = c.id ORDER BY g.timestamp DESC LIMIT 1) AS current_lat,
-            (SELECT g.lng FROM gps_logs g JOIN convoy_trucks ct ON ct.vehicle_id = g.vehicle_id WHERE ct.convoy_id = c.id ORDER BY g.timestamp DESC LIMIT 1) AS current_lng,
-            (SELECT COUNT(*) FROM alerts a WHERE a.convoy_id = c.id AND a.resolved_at IS NULL) AS exception_count,
+            gps.last_ping_at,
+            CASE WHEN ${validCoordinateSql.replaceAll('lat', 'gps.last_lat').replaceAll('lng', 'gps.last_lng')}
+                 THEN gps.last_lat ELSE NULL END AS current_lat,
+            CASE WHEN ${validCoordinateSql.replaceAll('lat', 'gps.last_lat').replaceAll('lng', 'gps.last_lng')}
+                 THEN gps.last_lng ELSE NULL END AS current_lng,
+            COUNT(DISTINCT a.id) FILTER (WHERE a.resolved_at IS NULL)::int AS exception_count,
             c.seal_intact
        FROM convoys c
+       LEFT JOIN LATERAL (
+         SELECT g.timestamp AS last_ping_at, g.lat AS last_lat, g.lng AS last_lng
+           FROM gps_logs g
+           JOIN convoy_trucks ct ON ct.vehicle_id = g.vehicle_id
+          WHERE ct.convoy_id = c.id
+          ORDER BY g.timestamp DESC
+          LIMIT 1
+       ) gps ON true
+       LEFT JOIN alerts a ON a.convoy_id = c.id
       WHERE c.org_id = $1 AND c.id IN (${placeholders}) AND c.deleted_at IS NULL
+      GROUP BY c.id, gps.last_ping_at, gps.last_lat, gps.last_lng
       ORDER BY c.created_at DESC`,
     [org_id, ...convoy_ids],
   );
-  res.json({ data: result.rows.map(r => ({ convoy_id:r.convoy_id, reference:r.reference, status:r.status, origin:r.origin, destination:r.destination, eta:r.eta?new Date(r.eta).toISOString():null, last_ping_at:r.last_ping_at?new Date(r.last_ping_at).toISOString():null, progress_pct:null, exception_count:parseInt(r.exception_count,10)||0, seal_status:r.seal_intact===false?'compromised':r.seal_intact===true?'intact':'unverified', current_location:r.current_lat!=null&&r.current_lng!=null?{lat:parseFloat(r.current_lat),lng:parseFloat(r.current_lng)}:null })) });
+  res.json({ data: result.rows.map(r => ({
+    convoy_id:r.convoy_id, reference:r.reference, status:r.status, origin:r.origin, destination:r.destination,
+    eta:r.eta?new Date(r.eta).toISOString():null,
+    last_ping_at:r.last_ping_at?new Date(r.last_ping_at).toISOString():null,
+    progress_pct:null,
+    exception_count:parseInt(r.exception_count,10)||0,
+    seal_status:r.seal_intact===false?'compromised':r.seal_intact===true?'intact':'unverified',
+    current_location:r.current_lat!=null&&r.current_lng!=null?{lat:parseFloat(r.current_lat),lng:parseFloat(r.current_lng)}:null,
+  })) });
+}));
+
+/**
+ * One client-scoped document index. Generated convoy reports are promoted into
+ * the same vault as manually attached portal documents, but remain immutable
+ * references to their source convoy/report date. This removes N+1 client fetches
+ * and gives the workspace one authoritative archive.
+ */
+router.get('/document-vault', clientAuth, asyncHandler(async (req, res) => {
+  const { org_id, convoy_ids, client_id } = req.client;
+  if (!convoy_ids.length) return res.json({ data: [] });
+  const placeholders = convoy_ids.map((_, i) => `$${i + 2}`).join(',');
+
+  const [convoysRes, reportsRes, docsRes] = await Promise.all([
+    query(`SELECT c.id AS convoy_id, COALESCE(c.reference,c.name) AS reference, c.status,
+                  COALESCE(c.origin,c.route_origin) AS origin, COALESCE(c.destination,c.route_destination) AS destination,
+                  COALESCE(c.start_date, c.created_at::date)::text AS convoy_date
+             FROM convoys c
+            WHERE c.org_id=$1 AND c.id IN (${placeholders}) AND c.deleted_at IS NULL
+            ORDER BY COALESCE(c.start_date,c.created_at::date) DESC, c.created_at DESC`, [org_id,...convoy_ids]),
+    query(`SELECT r.id, r.convoy_id, r.report_date::text AS report_date, r.status,
+                  r.required_photo_count, r.received_photo_count, r.pdf_url, r.generated_at,
+                  r.content_hash
+             FROM convoy_daily_reports r
+             JOIN convoys c ON c.id=r.convoy_id
+             JOIN cargo_client_links l ON l.convoy_id=c.id AND l.client_id=$2 AND l.org_id=$1
+            WHERE r.convoy_id IN (${placeholders}) AND c.org_id=$1 AND r.status='generated'
+            ORDER BY r.report_date DESC`, [org_id,client_id,...convoy_ids]),
+    query(`SELECT d.id, d.convoy_id, d.type, d.label, d.file_url, d.created_at
+             FROM portal_documents d
+             JOIN convoys c ON c.id=d.convoy_id
+            WHERE d.org_id=$1 AND d.convoy_id IN (${placeholders}) AND c.org_id=$1 AND d.deleted_at IS NULL
+            ORDER BY d.created_at DESC`, [org_id,...convoy_ids]),
+  ]);
+
+  const byConvoy = new Map();
+  for (const c of convoysRes.rows) byConvoy.set(c.convoy_id, {
+    convoy_id:c.convoy_id, reference:c.reference || c.convoy_id, status:c.status,
+    origin:c.origin, destination:c.destination, convoy_date:c.convoy_date, reports:[], documents:[],
+  });
+  for (const r of reportsRes.rows) {
+    const g = byConvoy.get(r.convoy_id); if (!g) continue;
+    g.reports.push({
+      id:r.id, convoy_id:r.convoy_id, report_date:r.report_date, status:r.status,
+      required_photo_count:Number(r.required_photo_count)||0, received_photo_count:Number(r.received_photo_count)||0,
+      generated_at:r.generated_at, content_hash:r.content_hash || null,
+      download_url:`/api/v1/portal/reports/${encodeURIComponent(r.convoy_id)}/${r.report_date}/download`,
+    });
+  }
+  for (const d of docsRes.rows) {
+    const g = byConvoy.get(d.convoy_id); if (!g) continue;
+    g.documents.push({ id:d.id, convoy_id:d.convoy_id, type:d.type, label:d.label, file_url:d.file_url, created_at:d.created_at });
+  }
+  res.json({ data:[...byConvoy.values()] });
+}));
+
+// Secure client download for generated reports. The operator-only convoy report
+// route is intentionally not exposed to client sessions.
+router.get('/reports/:convoy_id/:date/download', clientAuth, asyncHandler(async (req, res) => {
+  const { org_id, convoy_ids } = req.client;
+  const { convoy_id, date } = req.params;
+  if (!convoy_ids.includes(convoy_id)) return res.status(403).json({ error: 'Not authorised for this convoy' });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+  const access = await query(`SELECT id FROM convoys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL`, [convoy_id,org_id]);
+  if (!access.rows.length) return res.status(404).json({ error:'Convoy not found' });
+  const link = await query(`SELECT id FROM cargo_client_links WHERE client_id=$1 AND convoy_id=$2 AND org_id=$3`, [req.client.client_id,convoy_id,org_id]);
+  if (!link.rows.length) return res.status(403).json({ error:'Not authorised for this convoy' });
+  const r = await query(`SELECT pdf_url, status, pdf_data FROM convoy_daily_reports WHERE convoy_id=$1 AND report_date=$2`, [convoy_id,date]);
+  if (!r.rows.length) return res.status(404).json({ error:'Report not found' });
+  if (r.rows[0].status !== 'generated') return res.status(422).json({ error:`Report status: ${r.rows[0].status}` });
+  const r2PublicUrl = process.env.R2_PUBLIC_URL;
+  const pdfUrl = r.rows[0].pdf_url && r2PublicUrl
+    ? r.rows[0].pdf_url.replace(/^https?:\/\/pub-[a-f0-9]+\.r2\.dev\//, `${r2PublicUrl}/`)
+    : r.rows[0].pdf_url;
+  if (pdfUrl?.startsWith('http')) return res.redirect(pdfUrl);
+  const filePath = path.resolve(__dirname,'../../data/reports',convoy_id,`${date}.pdf`);
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type','application/pdf');
+    res.setHeader('Content-Disposition',`attachment; filename="sonalit-convoy-report-${date}.pdf"`);
+    return fs.createReadStream(filePath).pipe(res);
+  }
+  if (r.rows[0].pdf_data) {
+    res.setHeader('Content-Type','application/pdf');
+    res.setHeader('Content-Disposition',`attachment; filename="sonalit-convoy-report-${date}.pdf"`);
+    return res.send(r.rows[0].pdf_data);
+  }
+  return res.status(404).json({ error:'PDF unavailable — report can be regenerated by Sonalit operations' });
 }));
 
 router.post('/clients', authenticate, attachOrgDb, authorize('admin', 'dispatcher'), asyncHandler(async (req, res) => {
@@ -60,10 +171,7 @@ router.post('/clients/:id/magic-link', authenticate, attachOrgDb, authorize('adm
   const clientResult = await req.db(`SELECT id, org_id, email FROM cargo_clients WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`, [req.params.id, req.user.org_id]);
   if (!clientResult.rows.length) return res.status(404).json({ error: 'Client not found' });
   const { id: client_id, org_id, email } = clientResult.rows[0];
-  const crypto = require('crypto');
-  const rawToken = crypto.randomBytes(32).toString('hex');
-  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+  const crypto = require('crypto'); const rawToken = crypto.randomBytes(32).toString('hex'); const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex'); const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
   await req.db(`INSERT INTO client_magic_links (org_id, client_id, token_hash, expires_at) VALUES ($1, $2, $3, $4)`, [org_id, client_id, tokenHash, expiresAt]);
   const portalUrl = process.env.PORTAL_URL ?? `https://${req.hostname}`;
   res.json({ data: { url: `${portalUrl}/portal/login?token=${rawToken}`, email, expires_at: expiresAt.toISOString() } });
@@ -93,8 +201,7 @@ router.get('/clients/:id/links', authenticate, attachOrgDb, authorize('admin', '
 }));
 
 router.get('/convoy/:convoy_id/manifest', clientAuth, asyncHandler(async (req, res) => {
-  const { org_id, convoy_ids, client_id } = req.client;
-  const { convoy_id } = req.params;
+  const { org_id, convoy_ids, client_id } = req.client; const { convoy_id } = req.params;
   if (!convoy_ids.includes(convoy_id)) return res.status(403).json({ error: 'Not authorised for this convoy' });
   const linkResult = await query(`SELECT show_value FROM cargo_client_links WHERE client_id = $1 AND convoy_id = $2 AND org_id = $3`, [client_id, convoy_id, org_id]);
   const showValue = linkResult.rows[0]?.show_value ?? false;
