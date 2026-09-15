@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
-import { Crosshair, Layers, Map, Satellite, Signal, Target, TriangleAlert } from 'lucide-react';
+import { Crosshair, Layers, Map as MapIcon, Satellite, Signal, Target, TriangleAlert } from 'lucide-react';
 
 export interface LatLng { lat: number; lng: number }
 export interface GlobeMember {
@@ -131,10 +131,10 @@ export default function CorridorWorldScene({
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Cesium.Viewer | null>(null);
-  const entityMapRef = useRef<Map<string, Cesium.Entity>>(new Map());
-  const currentRef = useRef<Map<string, Cesium.Cartesian3>>(new Map());
-  const targetRef = useRef<Map<string, Cesium.Cartesian3>>(new Map());
-  const headingRef = useRef<Map<string, number>>(new Map());
+  const entityMapRef = useRef<Map<string, Cesium.Entity>>(new globalThis.Map());
+  const currentRef = useRef<Map<string, Cesium.Cartesian3>>(new globalThis.Map());
+  const targetRef = useRef<Map<string, Cesium.Cartesian3>>(new globalThis.Map());
+  const headingRef = useRef<Map<string, number>>(new globalThis.Map());
   const selectRef = useRef(onSelect);
   const [mode, setMode] = useState<MapMode>('dark');
   const [mapStatus, setMapStatus] = useState('LIVE WORLD SURFACE');
@@ -435,7 +435,7 @@ export default function CorridorWorldScene({
     if (!viewer || viewer.isDestroyed() || routeFitted) return;
     const points = fitPoints(route, liveMembers, trail);
     if (points.length < 2) return;
-    viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), { duration: 1.15, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), Math.max(1800, corridorKm * 900)) }).catch(() => undefined);
+    viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), { duration: 1.15, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), Math.max(1800, corridorKm * 900)) });
     setRouteFitted(true);
   }, [route, liveMembers, trail, corridorKm, routeFitted]);
 
@@ -468,7 +468,7 @@ export default function CorridorWorldScene({
       <div ref={boxRef} className="absolute inset-0" />
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3">
         <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-[#070a10]/86 p-1 backdrop-blur-xl">
-          <button type="button" onClick={() => setMode('dark')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'dark' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Dark map"><Map size={15} /></button>
+          <button type="button" onClick={() => setMode('dark')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'dark' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Dark map"><MapIcon size={15} /></button>
           <button type="button" onClick={() => setMode('satellite')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'satellite' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Satellite map"><Satellite size={15} /></button>
           <button type="button" onClick={() => setMode('hybrid')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'hybrid' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Hybrid map"><Layers size={15} /></button>
           <span className="ml-1 border-l border-white/10 pl-2 pr-2 text-[10px] font-mono text-neutral-500">{mapStatus}</span>
