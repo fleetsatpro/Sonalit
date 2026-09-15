@@ -31,7 +31,7 @@ test.describe('Portal UX — Client Workspace', () => {
     await page.goto('/portal/dashboard');
     await expect(page.getByRole('heading', { name: 'Client Workspace', exact: true })).toBeVisible({ timeout: 8000 });
     await expect(page.getByText('Verified live', { exact: true })).toBeVisible({ timeout: 4000 });
-    await expect(page.getByText('Cargo positions', { exact: true })).toBeVisible({ timeout: 4000 });
+    await expect(page.getByText('VERIFIED MOVEMENT ATLAS', { exact: true })).toBeVisible({ timeout: 4000 });
     await expect(page.getByText('Reports arranged by movement', { exact: true })).toBeVisible({ timeout: 4000 });
   });
 
