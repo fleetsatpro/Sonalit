@@ -1,6 +1,13 @@
+import axios from 'axios';
 import { useEffect, useRef, useState } from 'react';
 import { Send, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
-import { api } from '../services/api';
+
+const api = axios.create({ baseURL: import.meta.env.VITE_API_URL || '/api/v1', timeout: 25000 });
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
 
 const C = {
   bg: '#060e1a', panel: '#0b1829', surface: '#0d2240',
