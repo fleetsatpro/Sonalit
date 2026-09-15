@@ -124,7 +124,7 @@ test.describe('Portal UX — Client Workspace', () => {
     await expect(page.getByText('SHP-PORTAL-001', { exact: true })).toBeVisible({ timeout: 8000 });
     await expect(page.getByText(/Durban/)).toBeVisible({ timeout: 4000 });
     await expect(page.getByText(/Johannesburg/)).toBeVisible({ timeout: 4000 });
-    await expect(page.getByText('Seal verified', { exact: true })).toBeVisible({ timeout: 4000 });
+    await expect(page.getByText('Verified intact', { exact: true })).toBeVisible({ timeout: 4000 });
   });
 
   test('attention data is reflected in the live dashboard', async ({ page }) => {
@@ -132,7 +132,7 @@ test.describe('Portal UX — Client Workspace', () => {
     await stubVault(page);
     await page.goto('/portal/dashboard');
 
-    await expect(page.getByText('Attention', { exact: true })).toBeVisible({ timeout: 4000 });
+    await expect(page.getByRole('heading', { name: 'Attention queue', exact: true })).toBeVisible({ timeout: 4000 });
     await expect(page.getByRole('button', { name: /SHP-PORTAL-002/ }).first()).toBeVisible({ timeout: 6000 });
   });
 
