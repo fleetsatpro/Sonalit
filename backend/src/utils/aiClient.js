@@ -15,17 +15,20 @@ const logger = require('./logger');
 
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
 const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
+const GROQ_MODEL_2 = process.env.GROQ_MODEL_2 || 'openai/gpt-oss-20b';
 const OPEN_SOURCE_MODEL_1 = process.env.OPEN_SOURCE_MODEL_1 || 'Qwen/Qwen3-235B-A22B-Instruct-2507';
 const OPEN_SOURCE_MODEL_2 = process.env.OPEN_SOURCE_MODEL_2 || 'Qwen/Qwen3-Next-80B-A3B-Instruct';
 
 const COOLDOWN_MS = 60_000;
 const anthropicState = { downUntil: 0 };
 const groqState = { downUntil: 0 };
+const groq2State = { downUntil: 0 };
 const os1State = { downUntil: 0 };
 const os2State = { downUntil: 0 };
 
 let anthropicClient = null;
 let groqClient = null;
+let groq2Client = null;
 let os1Client = null;
 let os2Client = null;
 
@@ -50,7 +53,7 @@ function providerCapabilities() {
     open_source_secondary: hasOpenSourceSecondary(),
     gpt_oss_120b: hasGroqFallback(),
     anthropic_last_resort: hasAnthropic(),
-    order: ['qwen-primary','qwen-secondary','gpt-oss-120b-groq','anthropic-last-resort'],
+    order: ['qwen-primary','qwen-secondary','gpt-oss-120b-groq','gpt-oss-20b-groq','anthropic-last-resort'],
   };
 }
 
@@ -64,6 +67,10 @@ function getGroqClient() {
     baseURL: 'https://api.groq.com/openai/v1',
   });
   return groqClient;
+}
+function getGroq2Client() {
+  if (!groq2Client) groq2Client = new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: 'https://api.groq.com/openai/v1' });
+  return groq2Client;
 }
 function getOpenAICompatClient(slot) {
   if (slot === 1) {
@@ -193,9 +200,9 @@ async function callOpenAICompat(slot, { system, messages, tools, max_tokens, mod
   });
   return openAIResponseToAnthropicShape(completion);
 }
-async function callGroq(params) {
+async function callGroq(params, model = GROQ_MODEL) {
   const completion = await getGroqClient().chat.completions.create({
-    model: GROQ_MODEL,
+    model,
     messages: [
       ...(params.system ? [{ role: 'system', content: systemToOpenAI(params.system) }] : []),
       ...messagesToOpenAI(params.messages),
@@ -203,6 +210,10 @@ async function callGroq(params) {
     ...(params.tools?.length ? { tools: toolsToOpenAI(params.tools), tool_choice: 'auto' } : {}),
     max_completion_tokens: Math.min(Number(params.max_tokens) || 2048, 8192),
   });
+  return openAIResponseToAnthropicShape(completion);
+}
+async function callGroq2(params) {
+  const completion = await getGroq2Client().chat.completions.create({ model: GROQ_MODEL_2, messages: [ ...(params.system ? [{ role: 'system', content: systemToOpenAI(params.system) }] : []), ...messagesToOpenAI(params.messages) ], ...(params.tools?.length ? { tools: toolsToOpenAI(params.tools), tool_choice: 'auto' } : {}), max_completion_tokens: Math.min(Number(params.max_tokens) || 2048, 8192) });
   return openAIResponseToAnthropicShape(completion);
 }
 
@@ -241,9 +252,10 @@ async function createMessage(params) {
   }
   if (hasGroqFallback()) {
     providers.push({
-      name: 'gpt-oss-120b-groq',
-      state: groqState,
-      fn: () => callGroq(params),
+      name: 'gpt-oss-120b-groq', state: groqState, fn: () => callGroq(params),
+    });
+    providers.push({
+      name: 'gpt-oss-20b-groq', state: groq2State, fn: () => callGroq2(params),
     });
   }
   if (hasAnthropic()) {
