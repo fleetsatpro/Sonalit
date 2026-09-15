@@ -195,7 +195,8 @@ export default function Copilot() {
     const history = historyRef.current.slice(-6);
     try {
       const res = await api.post<DecisionResponse>('/ai/decision', { command: text, history });
-      const responseText = res.data?.answer ?? res.data?.response ?? res.data?.message ?? res.data?.decision?.summary ?? 'The decision fabric returned no readable answer.';
+      const d = res.data;
+      const responseText = d?.answer ?? res.data?.response ?? res.data?.message ?? res.data?.decision?.summary ?? 'The decision fabric returned no readable answer.';
       const assistantMsg: ChatMessage = { id: `assistant-${Date.now()}`, role: 'assistant', content: responseText, timestamp: Date.now() };
       setTelemetry({ ...(d.meta || {}), confidence: d.confidence, risk: d.risk_level, safety: d.assurance?.safety_gate, evidence: d.assurance?.evidence_health?.succeeded });
       historyRef.current = [...historyRef.current, { role: 'user', content: text }, { role: 'assistant', content: responseText }].slice(-12);
