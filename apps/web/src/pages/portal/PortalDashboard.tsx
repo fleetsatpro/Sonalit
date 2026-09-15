@@ -36,7 +36,7 @@ function statusLabel(status: string): string {
 }
 
 function isActive(s: ShipmentSummary): boolean {
-  return s.status === 'in_transit' || s.status === 'pending';
+  return ['active','pending','in_transit','delayed','at_checkpoint'].includes(s.status);
 }
 
 function freshness(s: ShipmentSummary): 'live' | 'recent' | 'stale' | 'offline' {
@@ -354,16 +354,15 @@ export default function PortalDashboard(): React.ReactElement {
       </header>
 
       <main className="max-w-[1440px] mx-auto px-4 sm:px-6 xl:px-8 pt-5 sm:pt-7 pb-20">
-        <section className="rounded-3xl border border-orange-500/15 p-5 sm:p-7 overflow-hidden relative" style={{ background: 'radial-gradient(circle at 90% 15%, rgba(249,115,22,.12), transparent 32%), linear-gradient(140deg, rgba(255,255,255,.035), rgba(255,255,255,.01))' }}>
-          <div className="relative max-w-4xl">
-            <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-orange-300/70"><Waves size={12} /> Cargo visibility layer</div>
-            <h2 className="mt-3 text-2xl sm:text-3xl xl:text-4xl font-semibold tracking-tight text-white">Know where your cargo is.<br className="hidden sm:block" /> Know what needs attention.</h2>
-            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-white/45">A single operational view across your linked shipments, live telemetry, security state, cargo milestones and delivery evidence.</p>
-            <div className="mt-5 flex flex-wrap gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[11px] text-white/55"><ShieldCheck size={12} className="text-emerald-400"/> Sanitised security intelligence</span>
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[11px] text-white/55"><FileText size={12} className="text-orange-400"/> Delivery evidence & custody</span>
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[11px] text-white/55"><MapPin size={12} className="text-sky-400"/> Live movement picture</span>
-            </div>
+        <section className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-white/[0.07] bg-white/[0.018] px-4 py-3 sm:px-5">
+          <div className="min-w-0">
+            <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-orange-300/65">Cargo</p>
+            <p className="mt-1 text-sm font-semibold text-white">Live shipments</p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-[9px] font-bold uppercase tracking-[0.12em]">
+            <span className="rounded-lg border border-white/[0.07] px-2.5 py-1.5 text-white/35">${active.length} active</span>
+            <span className="rounded-lg border border-white/[0.07] px-2.5 py-1.5 text-white/35">${attention.length} attention</span>
+            <span className="rounded-lg border border-white/[0.07] px-2.5 py-1.5 text-white/35">${shipments.length} total</span>
           </div>
         </section>
 
