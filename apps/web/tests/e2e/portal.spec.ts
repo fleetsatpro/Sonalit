@@ -77,7 +77,7 @@ test.describe('Cargo Owner Control Tower', () => {
     await expect(page.getByText('Client registry', { exact: true })).toBeVisible({ timeout: 4000 });
     await page.getByRole('button', { name: /ACME Logistics/ }).click();
     await expect(page.getByText('Cargo owner 360°', { exact: true })).toBeVisible({ timeout: 4000 });
-    await expect(page.getByText('ACME Logistics', { exact: true })).toBeVisible({ timeout: 8000 });
+    await expect(page.getByRole('heading', { name: 'ACME Logistics', exact: true })).toBeVisible({ timeout: 8000 });
     await expect(page.getByText('Active', { exact: true }).last()).toBeVisible({ timeout: 4000 });
   });
 });
