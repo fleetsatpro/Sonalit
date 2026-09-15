@@ -33,8 +33,8 @@ function age(iso: string | null): string {
   return sec < 60 ? `${sec}s` : sec < 3600 ? `${Math.floor(sec / 60)}m` : `${Math.floor(sec / 3600)}h`;
 }
 
-function isValidPosition(lat: number | null, lng: number | null): lat is number {
-  return Number.isFinite(lat) && Number.isFinite(lng);
+function isValidPosition(lat: number | null, lng: number | null): boolean {
+  return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat as number) <= 90 && Math.abs(lng as number) <= 180;
 }
 
 export function ClientSecurityMap({
@@ -99,7 +99,7 @@ export function ClientSecurityMap({
   );
 
   const validReplay = useMemo(
-    () => replay.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng)),
+    () => replay.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng) && Math.abs(p.lat) <= 90 && Math.abs(p.lng) <= 180),
     [replay],
   );
 
@@ -115,42 +115,56 @@ export function ClientSecurityMap({
     [validReplay],
   );
 
-  const fit = React.useCallback(() => {
-    const map = ref.current;
-    if (!map) return;
-
-    const coords = [
+  const telemetryCoords = useMemo<[number, number][]>(
+    () => [
       ...points.map((p) => [p.lng, p.lat] as [number, number]),
       ...validReplay.map((p) => [p.lng, p.lat] as [number, number]),
-    ];
-    if (!coords.length) return;
+    ],
+    [points, validReplay],
+  );
 
-    if (coords.length === 1) {
-      map.easeTo({ center: coords[0], zoom: 11, duration: 500 });
+  const fit = React.useCallback(() => {
+    const map = ref.current;
+    if (!map || !telemetryCoords.length) return;
+
+    if (telemetryCoords.length === 1) {
+      map.easeTo({ center: telemetryCoords[0], zoom: 11, duration: 500 });
       return;
     }
 
-    const lats = coords.map((c) => c[1]);
-    const lngs = coords.map((c) => c[0]);
+    const lats = telemetryCoords.map((coord) => coord[1]);
+    const lngs = telemetryCoords.map((coord) => coord[0]);
     map.fitBounds(
       [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
       { padding: 80, maxZoom: 11, duration: 650 },
     );
-  }, [points, validReplay]);
+  }, [telemetryCoords]);
 
   useEffect(() => {
-    if (!points.length && !validReplay.length) return;
+    if (!telemetryCoords.length) return;
     const timer = window.setTimeout(fit, 150);
     return () => window.clearTimeout(timer);
-  }, [fit, points.length, validReplay.length]);
+  }, [fit, telemetryCoords.length]);
 
   const selectedVehicle = vehicles.find((v) => v.vehicle_id === selected) ?? null;
+  const firstTelemetryPoint = telemetryCoords[0] ?? null;
+
+  if (!firstTelemetryPoint) {
+    return (
+      <div className="relative flex h-[360px] items-center justify-center overflow-hidden rounded-2xl border border-white/[.08] bg-[#06101a]">
+        <div className="flex items-center gap-2 text-[10px] text-white/35">
+          <Activity size={14} />
+          {error || 'No telemetry available'}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-white/[.08] bg-[#06101a]" style={{ height: 360 }}>
       <Map
         ref={ref}
-        initialViewState={{ longitude: 0, latitude: 0, zoom: 1 }}
+        initialViewState={{ longitude: firstTelemetryPoint[0], latitude: firstTelemetryPoint[1], zoom: 7 }}
         mapStyle={MAP_STYLE}
         style={{ width: '100%', height: '100%' }}
         attributionControl={false}
@@ -205,7 +219,7 @@ export function ClientSecurityMap({
           type="button"
           aria-label="Fit telemetry"
           onClick={fit}
-          disabled={!points.length && !validReplay.length}
+          disabled={!telemetryCoords.length}
           className="rounded-lg border border-white/10 bg-[#071019]/90 p-2 text-white/45 disabled:opacity-30 hover:text-white/80"
         >
           <MapPin size={14} />
@@ -233,15 +247,6 @@ export function ClientSecurityMap({
           <div className="mt-2 grid grid-cols-2 gap-2 text-[9px] text-white/40">
             <span>{selectedVehicle.speed_kmh == null ? 'Speed —' : `${Math.round(selectedVehicle.speed_kmh)} km/h`}</span>
             <span>{selectedVehicle.heading_deg == null ? 'Heading —' : `${Math.round(selectedVehicle.heading_deg)}°`}</span>
-          </div>
-        </div>
-      )}
-
-      {!points.length && !validReplay.length && (
-        <div className="absolute inset-0 flex items-center justify-center bg-[#06101a]/20">
-          <div className="flex items-center gap-2 text-[10px] text-white/35">
-            <Activity size={14} />
-            {error || 'No telemetry available'}
           </div>
         </div>
       )}
