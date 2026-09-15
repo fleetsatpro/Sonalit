@@ -46,7 +46,7 @@ async function seedAuth(page: import('@playwright/test').Page) {
   }, { user: { id: 'user-1', name: 'Admin', email: 'admin@test.io', role: 'admin', org_id: 'org-1' } });
 }
 
-test.describe('Cargo Owner Control Tower', () => {
+test.describe('Client Workspace Control Tower', () => {
   test.beforeEach(async ({ page }) => {
     await seedAuth(page);
     await page.route(url => url.toString().includes('/api/v1/realtime/token'), route =>
@@ -61,9 +61,9 @@ test.describe('Cargo Owner Control Tower', () => {
 
   test('renders control tower', async ({ page }) => {
     await page.goto('/cargo-portal');
-    await expect(page.getByRole('heading', { name: /Cargo Control Tower/i })).toBeVisible({ timeout: 8000 });
-    await expect(page.getByText('ACTIVE MOVEMENTS')).toBeVisible({ timeout: 4000 });
-    await expect(page.getByText('Live movement atlas')).toBeVisible({ timeout: 4000 });
+    await expect(page.getByRole('heading', { name: /Client Workspace/i })).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('Verified Movement Atlas', { exact: true })).toBeVisible({ timeout: 4000 });
+    await expect(page.getByText('Client workspace', { exact: true })).toBeVisible({ timeout: 4000 });
   });
 
   test('shows real convoy and available shipment controls', async ({ page }) => {
@@ -85,14 +85,14 @@ test.describe('Cargo Owner Control Tower', () => {
 });
 
 test.describe('Portal UX — Dashboard', () => {
-  test('customer dashboard renders real cargo map surface', async ({ page }) => {
+  test('customer dashboard renders the verified movement surface', async ({ page }) => {
     await page.route(url => url.toString().includes('/api/v1/portal/shipments'), route =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [
         { convoy_id: 'conv-1', reference: 'SHP-PORTAL-001', status: 'in_transit', origin: 'Durban', destination: 'Johannesburg', eta: new Date(Date.now() + 3600_000).toISOString(), last_ping_at: new Date(Date.now() - 60_000).toISOString(), progress_pct: 65, exception_count: 0, seal_status: 'intact', current_location: { lat: -29.8, lng: 31.0 } },
       ] }) }));
     await page.goto('/portal/dashboard');
-    await expect(page.getByText('Live shipments', { exact: true })).toBeVisible({ timeout: 8000 });
-    await expect(page.getByText('Cargo positions', { exact: true })).toBeVisible({ timeout: 6000 });
+    await expect(page.getByRole('heading', { name: 'Client Workspace', exact: true })).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('Verified Movement Atlas', { exact: true })).toBeVisible({ timeout: 6000 });
     await expect(page.getByText('SHP-PORTAL-001', { exact: true })).toBeVisible({ timeout: 6000 });
   });
 });
