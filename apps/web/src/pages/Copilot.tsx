@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Bot, Send, User, Loader2, MapPin, Trash2, CheckCheck, X } from 'lucide-react';
+import { Bot, Send, User, Loader2, MapPin, Trash2, CheckCheck, X, Activity, Database, ShieldCheck, Radar, Sparkles, ChevronRight } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { api } from '../lib/api.js';
@@ -8,7 +8,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 type Role = 'user' | 'assistant';
 interface ChatMessage { id: string; role: Role; content: string; timestamp: number }
 interface HistoryEntry { role: Role; content: string }
-interface DecisionResponse { answer?: string; response?: string; message?: string; decision?: { summary?: string }; meta?: { degraded?: boolean } }
+interface DecisionResponse { answer?: string; response?: string; message?: string; decision?: { summary?: string }; meta?: { degraded?: boolean; fatal?: boolean; latency_ms?: number; agent_count?: number; agent_failures?: number; provider_fallback_available?: boolean }; assurance?: { safety_gate?: string; evidence_health?: { succeeded?: number } }; risk_level?: string; confidence?: number }
 
 const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 
@@ -175,6 +175,7 @@ export default function Copilot() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showDraw, setShowDraw] = useState(false);
+  const [telemetry, setTelemetry] = useState<DecisionResponse['meta'] & { confidence?: number; risk?: string; safety?: string; evidence?: number }>({});
   const bottomRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HistoryEntry[]>([]);
 
@@ -196,6 +197,7 @@ export default function Copilot() {
       const res = await api.post<DecisionResponse>('/ai/decision', { command: text, history });
       const responseText = res.data?.answer ?? res.data?.response ?? res.data?.message ?? res.data?.decision?.summary ?? 'The decision fabric returned no readable answer.';
       const assistantMsg: ChatMessage = { id: `assistant-${Date.now()}`, role: 'assistant', content: responseText, timestamp: Date.now() };
+      setTelemetry({ ...(d.meta || {}), confidence: d.confidence, risk: d.risk_level, safety: d.assurance?.safety_gate, evidence: d.assurance?.evidence_health?.succeeded });
       historyRef.current = [...historyRef.current, { role: 'user', content: text }, { role: 'assistant', content: responseText }].slice(-12);
       setMessages((prev) => [...prev, assistantMsg]);
       if (/draw|map|geofence|zone/i.test(responseText) && /geofence|zone|area/i.test(text)) setShowDraw(true);
@@ -215,19 +217,35 @@ export default function Copilot() {
   return (
     <div className="flex h-full -m-4 md:-m-6 overflow-hidden">
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-        <div className="flex items-center gap-2 px-6 py-3 border-b border-gray-800 shrink-0" style={{ background: 'rgba(5,8,19,0.9)' }}>
-          <Bot size={18} className="text-orange-400" />
-          <h1 className="font-semibold text-white text-sm">Sonalit Copilot</h1>
-          <span className="text-xs text-gray-600 ml-1">AI fleet assistant</span>
-          <button
+        <div className="border-b border-cyan-400/10 shrink-0 bg-[radial-gradient(circle_at_18%_-30%,rgba(34,211,238,.16),transparent_38%),linear-gradient(180deg,#0a1220,#050811)]">
+          <div className="flex items-center gap-3 px-5 py-3">
+            <div className="relative grid h-10 w-10 place-items-center rounded-xl border border-cyan-300/20 bg-cyan-300/5">
+              <Bot size={19} className="text-cyan-200" /><span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,.9)]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2"><h1 className="font-semibold tracking-[0.18em] text-white text-sm uppercase">SONALIT COPILOT</h1><span className="rounded border border-cyan-300/20 bg-cyan-300/5 px-1.5 py-0.5 font-mono text-[9px] text-cyan-200">DECISION FABRIC</span></div>
+              <div className="mt-0.5 text-[10px] text-slate-500">Evidence-linked operational intelligence · human-gated actions</div>
+            </div>
+            <div className="ml-auto flex items-center gap-2">
+              <div className="hidden xl:flex items-center gap-2 rounded-lg border border-slate-700/70 bg-slate-950/60 px-2.5 py-1.5"><Activity size={12} className="text-cyan-300"/><div><div className="text-[8px] tracking-widest text-slate-600">SWARM</div><div className="font-mono text-[9px] text-slate-300">{telemetry.agent_count ?? 'READY'}</div></div></div>
+              <div className="hidden xl:flex items-center gap-2 rounded-lg border border-slate-700/70 bg-slate-950/60 px-2.5 py-1.5"><Database size={12} className="text-cyan-300"/><div><div className="text-[8px] tracking-widest text-slate-600">EVIDENCE</div><div className="font-mono text-[9px] text-slate-300">{telemetry.evidence ?? 'LIVE'}</div></div></div>
+              <div className="hidden xl:flex items-center gap-2 rounded-lg border border-slate-700/70 bg-slate-950/60 px-2.5 py-1.5"><ShieldCheck size={12} className="text-cyan-300"/><div><div className="text-[8px] tracking-widest text-slate-600">SAFETY</div><div className="font-mono text-[9px] text-slate-300">{telemetry.safety ?? 'ARMED'}</div></div></div>
+              <button
             onClick={() => setShowDraw((v) => !v)}
             className={`ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${showDraw ? 'bg-orange-600/20 border-orange-500/50 text-orange-300' : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-orange-300 hover:border-orange-500/40'}`}
           >
             <MapPin size={12} /> {showDraw ? 'Hide Map' : 'Draw Geofence'}
           </button>
+          </div>
+          <div className="grid grid-cols-4 border-t border-cyan-400/10 bg-slate-950/70">
+            {[
+              ['POSTURE', telemetry.risk || 'NOMINAL'], ['CONFIDENCE', telemetry.confidence != null ? `${Math.round(telemetry.confidence * 100)}%` : '—'],
+              ['LATENCY', telemetry.latency_ms ? `${telemetry.latency_ms}ms` : '—'], ['FALLBACK', telemetry.provider_fallback_available ? 'READY' : 'CHECK']
+            ].map(([k,v]) => <div key={k} className="px-3 py-2 border-r border-cyan-400/10 last:border-0"><div className="text-[8px] tracking-[0.16em] text-slate-600">{k}</div><div className="font-mono text-[10px] text-slate-200 mt-0.5">{v}</div></div>)}
+          </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 bg-[radial-gradient(circle_at_70%_15%,rgba(34,211,238,.035),transparent_32%)]">
           {messages.map((m) => <ChatBubble key={m.id} message={m} />)}
 
           {isLoading && (
@@ -235,7 +253,7 @@ export default function Copilot() {
               <div className="w-8 h-8 rounded-full bg-orange-700/60 border border-orange-600/40 flex items-center justify-center shrink-0">
                 <Loader2 size={14} className="animate-spin text-orange-300" />
               </div>
-              <div className="bg-gray-800 border border-gray-700/60 rounded-2xl rounded-tl-sm px-4 py-3 flex gap-1.5 items-center">
+              <div className="bg-slate-900 border border-cyan-300/10 rounded-xl px-4 py-3 flex gap-1.5 items-center"><Sparkles size={12} className="text-cyan-300 mr-1"/>
                 {[0, 1, 2].map((i) => (
                   <span key={i} className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
                 ))}
@@ -246,7 +264,7 @@ export default function Copilot() {
           {messages.length === 1 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-4">
               {SUGGESTIONS.map((s) => (
-                <button key={s} onClick={() => setInput(s)} className="text-left px-4 py-3 bg-gray-800/80 hover:bg-gray-700/80 border border-gray-700 rounded-xl text-sm text-gray-300 transition-colors">
+                <button key={s} onClick={() => setInput(s)} className="group flex items-center justify-between text-left px-4 py-3 bg-slate-900/70 hover:bg-cyan-300/[0.04] border border-slate-800 hover:border-cyan-300/20 rounded-xl text-sm text-slate-300 transition-colors"><span><span className="block text-[8px] uppercase tracking-widest text-slate-600">COPILOT QUERY</span>{s}</span><ChevronRight size={14} className="text-slate-700 group-hover:text-cyan-300 group-hover:translate-x-0.5 transition"/>
                   {s}
                 </button>
               ))}
