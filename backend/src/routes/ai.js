@@ -5,6 +5,24 @@ const { query } = require('../config/database');
 const logger = require('../utils/logger');
 const { runDecisionFabric } = require('../services/aiSwarm');
 
+async function persistCopilotDecision({ orgId, userId, command, result }) {
+  if (!orgId) throw new Error('Copilot decision persistence requires an authenticated organisation');
+  const decisionRow = await query(
+    `INSERT INTO public.copilot_decisions (org_id, user_id, command, decision, risk_level, confidence, answer, result, completed_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW()) RETURNING id`,
+    [orgId, userId || null, command, result.decision || 'HUMAN_REVIEW_REQUIRED', result.risk_level || 'HIGH', Number(result.confidence || 0), result.answer || '', JSON.stringify(result)]
+  );
+  const decisionId = decisionRow.rows[0].id;
+  for (const agent of result.swarm || []) {
+    await query(
+      `INSERT INTO public.copilot_decision_agents (decision_id, org_id, agent_id, status, confidence, provider, finding, dissent, tools, provenance)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [decisionId, orgId, agent.id, agent.status || 'uncertain', Number(agent.confidence || 0), agent.provider || null, agent.finding || '', agent.dissent || '', JSON.stringify(agent.tools || []), JSON.stringify(agent.provenance || [])]
+    );
+  }
+  return decisionId;
+}
+
 router.use(authenticate);
 
 const MODEL = 'claude-opus-4-7';
@@ -46,6 +64,7 @@ async function ensureRiskZones() {
       )
     `);
     await query(`ALTER TABLE risk_zones ADD COLUMN IF NOT EXISTS zone_type VARCHAR(50) DEFAULT 'general'`);
+    await query(`ALTER TABLE risk_zones ADD COLUMN IF NOT EXISTS org_id UUID`);
   } catch (e) { logger.warn('ensureRiskZones: ' + e.message); }
 }
 
@@ -187,9 +206,10 @@ const TOOLS = [
 ];
 
 // ── Tool implementations ───────────────────────────────────────────────────
-async function toolQueryVehicles(input) {
-  const filters = ['deleted_at IS NULL'];
-  const params = [];
+async function toolQueryVehicles(input, orgId) {
+  if (!orgId) return { error: 'Organisation context is required', vehicles: [], count: 0 };
+  const filters = ['deleted_at IS NULL', 'org_id = $1'];
+  const params = [orgId];
   if (input.status) { params.push(input.status); filters.push(`status = $${params.length}`); }
   if (input.region) { params.push(input.region); filters.push(`region = $${params.length}`); }
   if (input.low_fuel) filters.push('COALESCE(fuel_level, 85) < 25');
@@ -205,9 +225,10 @@ async function toolQueryVehicles(input) {
   return { count: r.rows.length, vehicles: r.rows };
 }
 
-async function toolQueryConvoys(input) {
-  const filters = ['deleted_at IS NULL'];
-  const params = [];
+async function toolQueryConvoys(input, orgId) {
+  if (!orgId) return { error: 'Organisation context is required', convoys: [], count: 0 };
+  const filters = ['deleted_at IS NULL', 'org_id = $1'];
+  const params = [orgId];
   if (input.status) { params.push(input.status); filters.push(`status = $${params.length}`); }
   if (input.region) { params.push(input.region); filters.push(`region = $${params.length}`); }
   if (input.priority) { params.push(input.priority); filters.push(`priority = $${params.length}`); }
@@ -221,9 +242,10 @@ async function toolQueryConvoys(input) {
   return { count: r.rows.length, convoys: r.rows };
 }
 
-async function toolQueryAlerts(input) {
-  const filters = ['a.deleted_at IS NULL'];
-  const params = [];
+async function toolQueryAlerts(input, orgId) {
+  if (!orgId) return { error: 'Organisation context is required', alerts: [], count: 0 };
+  const filters = ['a.deleted_at IS NULL', 'a.org_id = $1'];
+  const params = [orgId];
   if (!input.include_resolved) filters.push('a.resolved_at IS NULL');
   if (input.severity) { params.push(input.severity); filters.push(`a.severity = $${params.length}`); }
   if (input.type) { params.push(input.type); filters.push(`a.type = $${params.length}`); }
@@ -446,10 +468,11 @@ out skel qt;
   }
 }
 
-async function toolQueryRiskZones(input) {
+async function toolQueryRiskZones(input, orgId) {
+  if (!orgId) return { error: 'Organisation context is required', risk_zones: [], count: 0 };
   try {
-    const filters = ['active = true'];
-    const params = [];
+    const filters = ['active = true', 'org_id = $1'];
+    const params = [orgId];
     if (input.region) {
       params.push(`%${input.region}%`);
       filters.push(`(name ILIKE $${params.length} OR description ILIKE $${params.length})`);
@@ -475,7 +498,8 @@ async function toolQueryRiskZones(input) {
   }
 }
 
-async function toolCreateGeofence(input, userId) {
+async function toolCreateGeofence(input, userId, orgId) {
+  if (!orgId) return { error: 'Organisation context is required' };
   const { name, location, route_end, fence_type = 'general' } = input;
   if (!name || !location) return { error: 'name and location are required' };
 
@@ -520,10 +544,10 @@ async function toolCreateGeofence(input, userId) {
       const coordinates = { lat: midLat, lng: midLng, type: 'corridor', coordinates: path, buffer_m };
 
       const r = await query(
-        `INSERT INTO geofences (name, type, coordinates, radius, region)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id`,
-        [name, 'corridor', JSON.stringify(coordinates), approxRadius, region]
+        [name, 'corridor', JSON.stringify(coordinates), approxRadius, region, orgId]
       );
 
       return {
@@ -550,10 +574,10 @@ async function toolCreateGeofence(input, userId) {
       const region = g.admin1 || g.country || location;
 
       const r = await query(
-        `INSERT INTO geofences (name, type, coordinates, radius, region)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO geofences (name, type, coordinates, radius, region, org_id)
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id`,
-        [name, 'circle', JSON.stringify(coordinates), radius_m, region]
+        [name, 'circle', JSON.stringify(coordinates), radius_m, region, orgId]
       );
 
       const locationLabel = [g.name, g.admin1, g.country].filter(Boolean).join(', ');
@@ -576,7 +600,8 @@ async function toolCreateGeofence(input, userId) {
   }
 }
 
-async function toolCreateRiskZone(input, userId) {
+async function toolCreateRiskZone(input, userId, orgId) {
+  if (!orgId) return { error: 'Organisation context is required' };
   const { name, location, risk_level = 'high', zone_type = 'general', description = '', radius_km = 5 } = input;
   if (!name || !location) return { error: 'name and location are required' };
 
@@ -587,9 +612,9 @@ async function toolCreateRiskZone(input, userId) {
 
     const r = await query(
       `INSERT INTO risk_zones (name, description, risk_level, zone_type, lat, lng, radius_km, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id, name, risk_level, zone_type, lat, lng, radius_km`,
-      [name, desc, risk_level, zone_type, g.latitude, g.longitude, radius_km, userId || null]
+      [name, desc, risk_level, zone_type, g.latitude, g.longitude, radius_km, userId || null, orgId]
     );
 
     const locationLabel = [g.name, g.admin1, g.country].filter(Boolean).join(', ');
@@ -610,17 +635,19 @@ async function toolCreateRiskZone(input, userId) {
   }
 }
 
-async function runTool(name, input, userId) {
+async function runTool(name, input, context = {}) {
+  const userId = context.userId || null;
+  const orgId = context.orgId || null;
   switch (name) {
-    case 'query_vehicles':     return toolQueryVehicles(input || {});
-    case 'query_convoys':      return toolQueryConvoys(input || {});
-    case 'query_alerts':       return toolQueryAlerts(input || {});
+    case 'query_vehicles':     return toolQueryVehicles(input || {}, orgId);
+    case 'query_convoys':      return toolQueryConvoys(input || {}, orgId);
+    case 'query_alerts':       return toolQueryAlerts(input || {}, orgId);
     case 'get_weather':        return toolGetWeather(input || {});
     case 'check_holidays':     return toolCheckHolidays(input || {});
     case 'get_road_conditions':return toolGetRoadConditions(input || {});
-    case 'query_risk_zones':   return toolQueryRiskZones(input || {});
-    case 'create_geofence':    return toolCreateGeofence(input || {}, userId);
-    case 'create_risk_zone':   return toolCreateRiskZone(input || {}, userId);
+    case 'query_risk_zones':   return toolQueryRiskZones(input || {}, orgId);
+    case 'create_geofence':    return toolCreateGeofence(input || {}, userId, orgId);
+    case 'create_risk_zone':   return toolCreateRiskZone(input || {}, userId, orgId);
     default: return { error: `Unknown tool: ${name}` };
   }
 }
@@ -629,13 +656,61 @@ async function runTool(name, input, userId) {
 // ── POST /ai/decision — unified Decision Intelligence Fabric ──────────────
 // Conversation + decision support share one resilient swarm. The legacy
 // /dispatch endpoint remains intact for existing tool-execution workflows.
+router.get('/decision/history', async (req, res) => {
+  try {
+    const orgId = req.user?.org_id || req.user?.orgId || req.user?.organization_id;
+    if (!orgId) return res.status(403).json({ error: 'Organisation context required' });
+    const limit = Math.min(Math.max(Number(req.query.limit || 12), 1), 50);
+    const r = await query(
+      `SELECT id, command, decision, risk_level, confidence, answer, created_at, outcome, outcome_notes
+       FROM public.copilot_decisions
+       WHERE org_id = $1
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [orgId, limit]
+    );
+    return res.json({ data: r.rows });
+  } catch (err) {
+    logger.error('Copilot history error: ' + err.message);
+    return res.status(500).json({ error: 'Unable to load Copilot history' });
+  }
+});
+
+router.post('/decision/:decisionId/feedback', async (req, res) => {
+  try {
+    const orgId = req.user?.org_id || req.user?.orgId || req.user?.organization_id;
+    const userId = req.user?.id || null;
+    const outcome = String(req.body?.outcome || '').trim();
+    const notes = req.body?.notes ? String(req.body.notes).slice(0, 4000) : null;
+    const allowed = new Set(['correct', 'incorrect', 'partially_correct', 'superseded', 'unknown']);
+    if (!orgId || !allowed.has(outcome)) return res.status(400).json({ error: 'Valid organisation and outcome required' });
+    const exists = await query('SELECT id FROM public.copilot_decisions WHERE id = $1 AND org_id = $2', [req.params.decisionId, orgId]);
+    if (!exists.rows.length) return res.status(404).json({ error: 'Decision not found' });
+    await query(
+      `INSERT INTO public.copilot_decision_feedback (decision_id, org_id, user_id, outcome, notes)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [req.params.decisionId, orgId, userId, outcome, notes]
+    );
+    await query(
+      `UPDATE public.copilot_decisions
+       SET outcome=$1, outcome_notes=$2, outcome_recorded_at=NOW()
+       WHERE id=$3 AND org_id=$4`,
+      [outcome, notes, req.params.decisionId, orgId]
+    );
+    return res.json({ ok: true, decision_id: req.params.decisionId, outcome });
+  } catch (err) {
+    logger.error('Copilot feedback error: ' + err.message);
+    return res.status(500).json({ error: 'Unable to record Copilot feedback' });
+  }
+});
+
 router.post('/decision', async (req, res) => {
   const { command, history = [] } = req.body || {};
   if (!command || !String(command).trim()) {
     return res.status(400).json({ error: 'command required' });
   }
 
-  if (!aiClient.hasAnthropic() && !aiClient.hasGroqFallback()) {
+  if (!aiClient.hasAnyProvider()) {
     return res.json({
       answer: 'Decision Intelligence is not configured. Add ANTHROPIC_API_KEY or GROQ_API_KEY.',
       decision: 'HUMAN_REVIEW_REQUIRED',
@@ -643,7 +718,7 @@ router.post('/decision', async (req, res) => {
       confidence: 0,
       recommended_actions: [],
       risks: [{ risk: 'No AI provider configured', severity: 'high' }],
-      meta: { degraded: true, agent_count: 0, agent_failures: 0 },
+      meta: { degraded: true, agent_count: 0, agent_failures: 0, provider_capabilities: aiClient.providerCapabilities() },
     });
   }
 
@@ -653,8 +728,10 @@ router.post('/decision', async (req, res) => {
     const result = await runDecisionFabric({
       command: String(command).trim(),
       history: Array.isArray(history) ? history : [],
-      executeTool: runTool,
+      executeTool: (name, input, context) => runTool(name, input, context),
       userId: req.user?.id || null,
+      orgId: req.user?.org_id || req.user?.orgId || req.user?.organization_id || null,
+      persistDecision: persistCopilotDecision,
     });
 
     return res.json({
@@ -664,7 +741,7 @@ router.post('/decision', async (req, res) => {
   } catch (err) {
     logger.error('Decision Intelligence Fabric error: ' + (err?.message || err));
     return res.status(200).json({
-      answer: 'Decision Intelligence entered fail-safe mode. The swarm could not complete this request; no irreversible AI action is authorised.',
+      answer: 'Sonalit Copilot entered fail-safe mode. The swarm could not complete this request; no irreversible AI action is authorised.',
       decision: 'HUMAN_REVIEW_REQUIRED',
       risk_level: 'HIGH',
       confidence: 0,
