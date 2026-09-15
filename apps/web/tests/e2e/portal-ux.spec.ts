@@ -44,8 +44,8 @@ function stubShipments(page: import('@playwright/test').Page) {
               origin: 'Mombasa',
               destination: 'Nairobi',
               eta: null,
-              last_ping_at: new Date(Date.now() - 20 * 60_000).toISOString(),
               progress_pct: null,
+              last_ping_at: new Date(Date.now() - 20 * 60_000).toISOString(),
               exception_count: 0,
               seal_status: 'unverified',
               current_location: { lat: 0, lng: 0 },
@@ -122,10 +122,11 @@ test.describe('Portal UX — Client Workspace', () => {
     await page.goto('/portal/dashboard');
 
     await page.getByRole('button', { name: 'Movements', exact: true }).click();
-    await expect(page.getByText('SHP-PORTAL-001', { exact: true })).toBeVisible({ timeout: 8000 });
-    await expect(page.getByText(/Durban/)).toBeVisible({ timeout: 4000 });
-    await expect(page.getByText(/Johannesburg/)).toBeVisible({ timeout: 4000 });
-    await expect(page.getByText('Verified intact', { exact: true })).toBeVisible({ timeout: 4000 });
+    const row = page.getByRole('button', { name: /^SHP-PORTAL-001\b/ });
+    await expect(row).toBeVisible({ timeout: 8000 });
+    await expect(row.getByText('Durban', { exact: true })).toBeVisible({ timeout: 4000 });
+    await expect(row.getByText('Johannesburg', { exact: true })).toBeVisible({ timeout: 4000 });
+    await expect(row.getByText('Verified intact', { exact: true })).toBeVisible({ timeout: 4000 });
   });
 
   test('attention data is reflected in the live dashboard', async ({ page }) => {
@@ -134,7 +135,7 @@ test.describe('Portal UX — Client Workspace', () => {
     await page.goto('/portal/dashboard');
 
     await expect(page.getByRole('heading', { name: 'Attention queue', exact: true })).toBeVisible({ timeout: 4000 });
-    await expect(page.getByRole('button', { name: /SHP-PORTAL-002/ }).first()).toBeVisible({ timeout: 6000 });
+    await expect(page.getByRole('button', { name: /^SHP-PORTAL-002\b/ })).toBeVisible({ timeout: 6000 });
   });
 
   test('search filters the real shipment portfolio', async ({ page }) => {
@@ -145,8 +146,8 @@ test.describe('Portal UX — Client Workspace', () => {
     await page.getByRole('button', { name: 'Movements', exact: true }).click();
     const search = page.getByPlaceholder('Search convoy / route…');
     await search.fill('002');
-    await expect(page.getByText('SHP-PORTAL-002', { exact: true })).toBeVisible({ timeout: 6000 });
-    await expect(page.getByText('SHP-PORTAL-001', { exact: true })).not.toBeVisible({ timeout: 3000 });
+    await expect(page.getByRole('button', { name: /^SHP-PORTAL-002\b/ })).toBeVisible({ timeout: 6000 });
+    await expect(page.getByRole('button', { name: /^SHP-PORTAL-001\b/ })).not.toBeVisible({ timeout: 3000 });
   });
 
   test('generated convoy report is arranged under its real convoy', async ({ page }) => {
