@@ -75,7 +75,7 @@ const fieldDeparturesRoute=createRoute({getParentRoute:()=>fieldRoute,path:'/fie
 const portalRootRoute=createRoute({getParentRoute:()=>rootRoute,id:'portal-root',component:lazyRouteComponent(()=>import('./pages/portal/PortalLayout.js'))});
 const portalLoginRoute=createRoute({getParentRoute:()=>portalRootRoute,path:'/portal/login',component:lazyRouteComponent(()=>import('./pages/portal/PortalLogin.js'))});
 const portalVerifyRoute=createRoute({getParentRoute:()=>portalRootRoute,path:'/portal/verify',component:lazyRouteComponent(()=>import('./pages/portal/PortalLogin.js'))});
-const portalDashboardRoute=createRoute({getParentRoute:()=>portalRootRoute,path:'/portal/dashboard',component:lazyRouteComponent(()=>import('./pages/portal/PortalDashboard.js'))});
+const portalDashboardRoute=createRoute({getParentRoute:()=>portalRootRoute,path:'/portal/dashboard',component:lazyRouteComponent(()=>import('./pages/portal/PortalDashboardAccurate.js'))});
 const portalManifestRoute=createRoute({getParentRoute:()=>portalRootRoute,path:'/portal/convoy/$convoy_id/manifest',component:lazyRouteComponent(()=>import('./pages/portal/PortalManifest.js'))});
 const portalPODRoute=createRoute({getParentRoute:()=>portalRootRoute,path:'/portal/convoy/$convoy_id/pod',component:lazyRouteComponent(()=>import('./pages/portal/PortalPOD.js'))});
 const portalExceptionsRoute=createRoute({getParentRoute:()=>portalRootRoute,path:'/portal/convoy/$convoy_id/exceptions',component:lazyRouteComponent(()=>import('./pages/portal/PortalExceptions.js'))});
