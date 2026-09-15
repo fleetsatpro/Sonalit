@@ -53,8 +53,10 @@ test.describe('Cargo Owner Control Tower', () => {
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ token: 'fake.payload.sig' }) }));
     await page.route(url => url.toString().includes('/api/v1/convoys'), route =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: CONVOYS, meta: { total: 1, limit: 200, offset: 0 } }) }));
-    await page.route(url => url.toString().includes('/api/v1/portal/clients'), route =>
+    await page.route(url => new URL(url).pathname === '/api/v1/portal/clients', route =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: CLIENTS }) }));
+    await page.route(url => new URL(url).pathname === '/api/v1/portal/clients/client-1/links', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [{ id: 'link-1', reference: 'CONVOY-001', status: 'in_transit', origin: 'Lagos', destination: 'Abuja', eta: new Date(Date.now() + 4 * 3600_000).toISOString(), seal_intact: true, show_value: false, exception_count: 0 }] }) }));
   });
 
   test('renders control tower', async ({ page }) => {
