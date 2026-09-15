@@ -40,7 +40,7 @@ router.get('/:id/reports/:date/download', authorize('admin', 'dispatcher', 'anal
 router.get('/:id/corridor', async (req, res, next) => {
   try {
     const orgId = req.user.org_id, convoyId = req.params.id;
-    const cv = await query(`SELECT id, name, departure_time, status, route_origin, route_destination FROM convoys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL`, [convoyId, orgId]);
+    const cv = await query(`SELECT c.id, c.name, c.departure_time, c.status, c.route_origin, c.route_destination, cl.name AS client_name FROM convoys c LEFT JOIN cargo_clients cl ON cl.id=c.client_id WHERE c.id=$1 AND c.org_id=$2 AND c.deleted_at IS NULL`, [convoyId, orgId]);
     if (!cv.rows.length) return res.status(404).json({ error: 'Convoy not found' });
     const convoy = cv.rows[0];
     const cr = await query(`SELECT route_line, width_km FROM convoy_route_corridors WHERE convoy_id=$1 AND org_id=$2 AND active=true`, [convoyId, orgId]);
@@ -82,7 +82,7 @@ router.get('/:id/corridor', async (req, res, next) => {
       const hasHistory = m.history_lat != null && m.history_lng != null;
       const observedLat = num(hasHistory ? m.history_lat : m.cache_lat), observedLng = num(hasHistory ? m.history_lng : m.cache_lng);
       const observedAt = hasHistory ? (m.live_ts || m.cache_fix_at || m.cache_seen) : (m.cache_fix_at || m.cache_seen);
-      const base = { id: m.id, name: m.name, officer_name: m.officer_name ?? null, lat: observedLat, lng: observedLng, last_fix_at: observedAt || null, heading: num(m.live_heading), speed_kph: num(hasHistory ? m.live_speed : m.cache_speed), position_source: hasHistory ? 'device_locations' : observedLat != null ? 'guardian_cache' : 'none' };
+      const base = { id: m.id, name: m.name, officer_name: m.officer_name ?? null, convoy_name: convoy.name, client_name: convoy.client_name ?? null, lat: observedLat, lng: observedLng, last_fix_at: observedAt || null, heading: num(m.live_heading), speed_kph: num(hasHistory ? m.live_speed : m.cache_speed), position_source: hasHistory ? 'device_locations' : observedLat != null ? 'guardian_cache' : 'none' };
       if (observedLat == null || observedLng == null) return { ...base, status: 'no_fix', severity: 'low', position_state: 'no_confident_estimate', position_confidence: 0, position_reason: 'No coordinate is available for this convoy device.' };
 
       // Cached Guardian coordinates are displayable evidence but must never be
@@ -107,7 +107,7 @@ router.get('/:id/corridor', async (req, res, next) => {
       risk = { zones: scored.exposures.map(e => { const z = byId.get(String(e.zone_id)); return { ...e, lat: Number(z.lat), lng: Number(z.lng), radius_km: Number(z.radius_km) }; }), exposed_km: scored.exposed_km, worst: scored.worst, blocked: scored.blocked };
     } catch (e) { logger.warn(`corridor risk overlay unavailable: ${e.message}`); }
     const summary = members.reduce((a, m) => { a[m.status] = (a[m.status] || 0) + 1; return a; }, {});
-    res.json({ data: { convoy: { id: convoy.id, name: convoy.name, status: convoy.status, departure_time: convoy.departure_time, route_origin: convoy.route_origin ?? null, route_destination: convoy.route_destination ?? null }, config: { ...cfg, started_at: startedAt && !isNaN(startedAt.getTime()) ? startedAt.toISOString() : null, schedule_known: elapsedMs > 0 }, route, members, summary, risk, evaluated_at: new Date(now).toISOString() } });
+    res.json({ data: { convoy: { id: convoy.id, name: convoy.name, status: convoy.status, departure_time: convoy.departure_time, route_origin: convoy.route_origin ?? null, route_destination: convoy.route_destination ?? null, client_name: convoy.client_name ?? null }, config: { ...cfg, started_at: startedAt && !isNaN(startedAt.getTime()) ? startedAt.toISOString() : null, schedule_known: elapsedMs > 0 }, route, members, summary, risk, evaluated_at: new Date(now).toISOString() } });
   } catch (err) { next(err); }
 });
 function clampNum(v, def, lo, hi) { const n = parseFloat(v), chosen = Number.isFinite(n) ? n : parseFloat(def); return Number.isFinite(chosen) ? Math.max(lo, Math.min(hi, chosen)) : def; }
