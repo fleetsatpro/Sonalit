@@ -270,9 +270,11 @@ export default function CorridorWorldScene({
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
     viewer.entities.values.filter(e => e.id.startsWith('corridor:')).forEach(e => viewer.entities.remove(e));
+    setRouteFitted(false);
     if (route.length < 2) return;
 
     const positions = Cesium.Cartesian3.fromDegreesArray(route.flatMap(p => [p.lng, p.lat]));
+    const topPositions = Cesium.Cartesian3.fromDegreesArrayHeights(route.flatMap(p => [p.lng, p.lat, height]));
     const widthM = Math.max(200, corridorKm * 2000);
     viewer.entities.add({
       id: 'corridor:volume',
@@ -299,7 +301,7 @@ export default function CorridorWorldScene({
     viewer.entities.add({
       id: 'corridor:top',
       polyline: {
-        positions: Cesium.Cartesian3.fromDegrees(route.map(p => p.lng), route.map(p => p.lat), height),
+        positions: topPositions,
         width: 2,
         material: css('#c4b5fd', 0.28),
       },
@@ -464,7 +466,6 @@ export default function CorridorWorldScene({
   return (
     <div className={`${fill ? 'h-full' : 'h-[520px]'} relative overflow-hidden bg-[#080b12]`}>
       <div ref={boxRef} className="absolute inset-0" />
-
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3">
         <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-[#070a10]/86 p-1 backdrop-blur-xl">
           <button type="button" onClick={() => setMode('dark')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'dark' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Dark map"><Map size={15} /></button>
@@ -478,20 +479,17 @@ export default function CorridorWorldScene({
           <button type="button" onClick={() => setCreditsOpen(v => !v)} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label="Map information"><Signal size={15} /></button>
         </div>
       </div>
-
       <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap items-center gap-2">
         <span className="rounded-lg border border-white/10 bg-[#070a10]/84 px-2.5 py-1.5 text-[10px] font-mono text-neutral-400 backdrop-blur-xl">{liveMembers.length} DEVICE{liveMembers.length === 1 ? '' : 'S'} VISIBLE</span>
         {terrainReady && <span className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.08] px-2.5 py-1.5 text-[10px] font-mono text-emerald-300 backdrop-blur-xl">WORLD TERRAIN</span>}
         {focusId && <span className="rounded-lg border border-violet-500/25 bg-violet-500/[0.09] px-2.5 py-1.5 text-[10px] font-mono text-violet-300 backdrop-blur-xl">FOCUS · {liveMembers.find(m => m.id === focusId)?.name ?? focusId.slice(0, 8)}</span>}
       </div>
-
       {creditsOpen && (
         <div className="absolute bottom-3 right-3 max-w-xs rounded-xl border border-white/10 bg-[#070a10]/92 p-3 text-[10px] leading-relaxed text-neutral-400 shadow-2xl backdrop-blur-xl">
           <p className="font-semibold text-neutral-200">World surface</p>
           <p className="mt-1">Operational map tiles: Esri / OpenStreetMap contributors. Cesium terrain and buildings are enabled when the configured Ion token permits them.</p>
         </div>
       )}
-
       {liveMembers.length === 0 && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center">
           <div className="rounded-xl border border-white/10 bg-[#070a10]/88 px-4 py-3 text-center backdrop-blur-xl">
