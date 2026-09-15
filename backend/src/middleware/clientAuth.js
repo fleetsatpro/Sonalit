@@ -4,6 +4,7 @@
  * Every data endpoint enforces convoy_id ∈ req.client.convoy_ids.
  */
 const jwt = require('jsonwebtoken');
+const { query } = require('../config/database');
 
 function clientAuth(req, res, next) {
   try {
@@ -18,10 +19,40 @@ function clientAuth(req, res, next) {
     if (!secret) return res.status(503).json({ error: 'Auth not configured' });
 
     const claims = jwt.verify(token, secret, { algorithms: ['HS256'] });
+
+    if (!claims.client_id || !claims.org_id) {
+      return res.status(401).json({ error: 'Invalid client session' });
+    }
+
+    // Resolve the current client/convoy relationship instead of trusting the
+    // snapshot embedded in the JWT. This makes newly-created or repaired
+    // convoy links available immediately without re-login.
+    const access = await query(
+      `SELECT cc.id AS client_id, cc.org_id,
+              ARRAY(
+                SELECT DISTINCT ccl.convoy_id
+                FROM cargo_client_links ccl
+                JOIN convoys c_link ON c_link.id = ccl.convoy_id
+                WHERE ccl.client_id = cc.id
+                  AND ccl.org_id = cc.org_id
+                  AND c_link.org_id = cc.org_id
+                  AND c_link.deleted_at IS NULL
+              ) AS convoy_ids
+       FROM cargo_clients cc
+      WHERE cc.id = $1
+        AND cc.org_id = $2
+        AND cc.deleted_at IS NULL`,
+      [claims.client_id, claims.org_id],
+    );
+
+    if (!access.rows.length) {
+      return res.status(401).json({ error: 'Client account is unavailable' });
+    }
+
     req.client = {
-      client_id: claims.client_id,
-      org_id: claims.org_id,
-      convoy_ids: claims.convoy_ids ?? [],
+      client_id: access.rows[0].client_id,
+      org_id: access.rows[0].org_id,
+      convoy_ids: Array.isArray(access.rows[0].convoy_ids) ? access.rows[0].convoy_ids : [],
     };
     next();
   } catch {
