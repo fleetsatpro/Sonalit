@@ -46,7 +46,7 @@ async function seedAuth(page: import('@playwright/test').Page) {
   }, { user: { id: 'user-1', name: 'Admin', email: 'admin@test.io', role: 'admin', org_id: 'org-1' } });
 }
 
-test.describe('Client Workspace Control Tower', () => {
+test.describe('Cargo Control Tower', () => {
   test.beforeEach(async ({ page }) => {
     await seedAuth(page);
     await page.route(url => url.toString().includes('/api/v1/realtime/token'), route =>
@@ -59,11 +59,11 @@ test.describe('Client Workspace Control Tower', () => {
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [{ id: 'link-1', reference: 'CONVOY-001', status: 'in_transit', origin: 'Lagos', destination: 'Abuja', eta: new Date(Date.now() + 4 * 3600_000).toISOString(), seal_intact: true, show_value: false, exception_count: 0 }] }) }));
   });
 
-  test('renders control tower', async ({ page }) => {
+  test('renders cargo control tower', async ({ page }) => {
     await page.goto('/cargo-portal');
-    await expect(page.getByRole('heading', { name: /Client Workspace/i })).toBeVisible({ timeout: 8000 });
-    await expect(page.getByText('Verified Movement Atlas', { exact: true })).toBeVisible({ timeout: 4000 });
-    await expect(page.getByText('Client workspace', { exact: true })).toBeVisible({ timeout: 4000 });
+    await expect(page.getByRole('heading', { name: 'Cargo Control Tower', exact: true })).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('ACTIVE MOVEMENTS', { exact: true })).toBeVisible({ timeout: 4000 });
+    await expect(page.getByText('LIVE CARGO ATLAS', { exact: true })).toBeVisible({ timeout: 4000 });
   });
 
   test('shows real convoy and available shipment controls', async ({ page }) => {
