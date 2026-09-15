@@ -5,7 +5,7 @@ const ConfigSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('production'),
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string(),
-  ANTHROPIC_API_KEY: z.string().min(1),
+  DECISION_FABRIC_URL: z.string().url().optional(),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error']).default('info'),
   CIRCUIT_BREAKER_THRESHOLD: z.coerce.number().default(5),
 });
