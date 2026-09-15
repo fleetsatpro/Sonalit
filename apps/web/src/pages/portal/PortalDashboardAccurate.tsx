@@ -244,7 +244,9 @@ function MovementAtlas({ shipments, onOpen }: { shipments: Shipment[]; onOpen: (
 
     if (map.isStyleLoaded()) render();
     else map.once('load', render);
-    return () => map.off('load', render);
+    return () => {
+      map.off('load', render);
+    };
   }, [located]);
 
   return (
