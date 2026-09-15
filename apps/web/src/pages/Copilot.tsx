@@ -216,57 +216,74 @@ export default function Copilot() {
   };
 
   return (
-    <div className="flex h-full -m-4 md:-m-6 overflow-hidden">
+    <div className="flex h-full -m-4 md:-m-6 overflow-hidden bg-[#050811] text-slate-100">
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <div className="border-b border-cyan-400/10 shrink-0 bg-[radial-gradient(circle_at_18%_-30%,rgba(34,211,238,.16),transparent_38%),linear-gradient(180deg,#0a1220,#050811)]">
           <div className="flex items-center gap-3 px-5 py-3">
             <div className="relative grid h-10 w-10 place-items-center rounded-xl border border-cyan-300/20 bg-cyan-300/5">
-              <Bot size={19} className="text-cyan-200" /><span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,.9)]" />
+              <Bot size={19} className="text-cyan-200" />
+              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-emerald-400" />
             </div>
             <div>
-              <div className="flex items-center gap-2"><h1 className="font-semibold tracking-[0.18em] text-white text-sm uppercase">SONALIT COPILOT</h1><span className="rounded border border-cyan-300/20 bg-cyan-300/5 px-1.5 py-0.5 font-mono text-[9px] text-cyan-200">DECISION FABRIC</span></div>
+              <div className="flex items-center gap-2">
+                <h1 className="font-semibold tracking-[0.18em] text-white text-sm uppercase">SONALIT COPILOT</h1>
+                <span className="rounded border border-cyan-300/20 bg-cyan-300/5 px-1.5 py-0.5 font-mono text-[9px] text-cyan-200">DECISION FABRIC</span>
+              </div>
               <div className="mt-0.5 text-[10px] text-slate-500">Evidence-linked operational intelligence · human-gated actions</div>
             </div>
             <div className="ml-auto flex items-center gap-2">
-              <div className="hidden xl:flex items-center gap-2 rounded-lg border border-slate-700/70 bg-slate-950/60 px-2.5 py-1.5"><Activity size={12} className="text-cyan-300"/><div><div className="text-[8px] tracking-widest text-slate-600">SWARM</div><div className="font-mono text-[9px] text-slate-300">{telemetry.agent_count ?? 'READY'}</div></div></div>
-              <div className="hidden xl:flex items-center gap-2 rounded-lg border border-slate-700/70 bg-slate-950/60 px-2.5 py-1.5"><Database size={12} className="text-cyan-300"/><div><div className="text-[8px] tracking-widest text-slate-600">EVIDENCE</div><div className="font-mono text-[9px] text-slate-300">{telemetry.evidence ?? 'LIVE'}</div></div></div>
-              <div className="hidden xl:flex items-center gap-2 rounded-lg border border-slate-700/70 bg-slate-950/60 px-2.5 py-1.5"><ShieldCheck size={12} className="text-cyan-300"/><div><div className="text-[8px] tracking-widest text-slate-600">SAFETY</div><div className="font-mono text-[9px] text-slate-300">{telemetry.safety ?? 'ARMED'}</div></div></div>
-              <button
-            onClick={() => setShowDraw((v) => !v)}
-            className={`ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${showDraw ? 'bg-orange-600/20 border-orange-500/50 text-orange-300' : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-orange-300 hover:border-orange-500/40'}`}
-          >
-            <MapPin size={12} /> {showDraw ? 'Hide Map' : 'Draw Geofence'}
-          </button>
+              <div className="hidden xl:flex items-center gap-2 rounded-lg border border-slate-700/70 bg-slate-950/60 px-2.5 py-1.5">
+                <Activity size={12} className="text-cyan-300" /><div><div className="text-[8px] tracking-widest text-slate-600">SWARM</div><div className="font-mono text-[9px] text-slate-300">{telemetry.agent_count ?? 'READY'}</div></div>
+              </div>
+              <div className="hidden xl:flex items-center gap-2 rounded-lg border border-slate-700/70 bg-slate-950/60 px-2.5 py-1.5">
+                <Database size={12} className="text-cyan-300" /><div><div className="text-[8px] tracking-widest text-slate-600">EVIDENCE</div><div className="font-mono text-[9px] text-slate-300">{telemetry.evidence ?? 'LIVE'}</div></div>
+              </div>
+              <div className="hidden xl:flex items-center gap-2 rounded-lg border border-slate-700/70 bg-slate-950/60 px-2.5 py-1.5">
+                <ShieldCheck size={12} className="text-cyan-300" /><div><div className="text-[8px] tracking-widest text-slate-600">SAFETY</div><div className="font-mono text-[9px] text-slate-300">{telemetry.safety ?? 'ARMED'}</div></div>
+              </div>
+              <button onClick={() => setShowDraw((v) => !v)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-700 bg-slate-900/70 text-slate-300 hover:border-cyan-300/30 hover:text-cyan-200">
+                <MapPin size={12} /> {showDraw ? 'Hide Map' : 'Draw Geofence'}
+              </button>
+            </div>
           </div>
           <div className="grid grid-cols-4 border-t border-cyan-400/10 bg-slate-950/70">
             {[
-              ['POSTURE', telemetry.risk || 'NOMINAL'], ['CONFIDENCE', telemetry.confidence != null ? `${Math.round(telemetry.confidence * 100)}%` : '—'],
-              ['LATENCY', telemetry.latency_ms ? `${telemetry.latency_ms}ms` : '—'], ['FALLBACK', telemetry.provider_fallback_available ? 'READY' : 'CHECK']
-            ].map(([k,v]) => <div key={k} className="px-3 py-2 border-r border-cyan-400/10 last:border-0"><div className="text-[8px] tracking-[0.16em] text-slate-600">{k}</div><div className="font-mono text-[10px] text-slate-200 mt-0.5">{v}</div></div>)}
+              ['POSTURE', telemetry.risk || 'NOMINAL'],
+              ['CONFIDENCE', telemetry.confidence != null ? `${Math.round(telemetry.confidence * 100)}%` : '—'],
+              ['LATENCY', telemetry.latency_ms ? `${telemetry.latency_ms}ms` : '—'],
+              ['FALLBACK', telemetry.provider_fallback_available ? 'READY' : 'CHECK']
+            ].map(([k, v]) => (
+              <div key={k} className="px-3 py-2 border-r border-cyan-400/10 last:border-0">
+                <div className="text-[8px] tracking-[0.16em] text-slate-600">{k}</div>
+                <div className="font-mono text-[10px] text-slate-200 mt-0.5">{v}</div>
+              </div>
+            ))}
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 bg-[radial-gradient(circle_at_70%_15%,rgba(34,211,238,.035),transparent_32%)]">
+          <div className="flex items-center gap-2 rounded-xl border border-cyan-400/10 bg-cyan-300/[0.025] px-3 py-2 text-[9px] uppercase tracking-[0.16em] text-slate-500">
+            <Radar size={12} className="text-cyan-300" /> LIVE EVIDENCE CHANNEL <span className="ml-auto font-mono text-emerald-400">● ONLINE</span>
+          </div>
           {messages.map((m) => <ChatBubble key={m.id} message={m} />)}
-
           {isLoading && (
-            <div className="flex gap-3 justify-start">
-              <div className="w-8 h-8 rounded-full bg-orange-700/60 border border-orange-600/40 flex items-center justify-center shrink-0">
-                <Loader2 size={14} className="animate-spin text-orange-300" />
-              </div>
-              <div className="bg-slate-900 border border-cyan-300/10 rounded-xl px-4 py-3 flex gap-1.5 items-center"><Sparkles size={12} className="text-cyan-300 mr-1"/>
-                {[0, 1, 2].map((i) => (
-                  <span key={i} className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
-                ))}
+            <div className="flex gap-3">
+              <div className="grid h-8 w-8 place-items-center rounded-lg border border-cyan-300/20 bg-cyan-300/5"><Loader2 size={14} className="animate-spin text-cyan-200" /></div>
+              <div className="rounded-xl border border-cyan-300/10 bg-slate-900 px-4 py-3 flex items-center gap-2">
+                <Sparkles size={12} className="text-cyan-300" />
+                <span className="text-[10px] uppercase tracking-widest text-slate-500">Reconciling operational evidence</span>
               </div>
             </div>
           )}
-
           {messages.length === 1 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-4">
               {SUGGESTIONS.map((s) => (
-                <button key={s} onClick={() => setInput(s)} className="group flex items-center justify-between text-left px-4 py-3 bg-slate-900/70 hover:bg-cyan-300/[0.04] border border-slate-800 hover:border-cyan-300/20 rounded-xl text-sm text-slate-300 transition-colors"><span><span className="block text-[8px] uppercase tracking-widest text-slate-600">COPILOT QUERY</span>{s}</span><ChevronRight size={14} className="text-slate-700 group-hover:text-cyan-300 group-hover:translate-x-0.5 transition"/>
-                  {s}
+                <button key={s} onClick={() => setInput(s)} className="group flex items-center justify-between text-left px-4 py-3 bg-slate-900/70 hover:bg-cyan-300/[0.04] border border-slate-800 hover:border-cyan-300/20 rounded-xl text-sm text-slate-300 transition-colors">
+                  <span>
+                    <span className="block text-[8px] uppercase tracking-widest text-slate-600">COPILOT QUERY</span>
+                    {s}
+                  </span>
+                  <ChevronRight size={14} className="text-slate-700 group-hover:text-cyan-300" />
                 </button>
               ))}
             </div>
@@ -274,34 +291,16 @@ export default function Copilot() {
           <div ref={bottomRef} />
         </div>
 
-        <div className="border-t border-gray-800 px-4 py-3 shrink-0" style={{ background: 'rgba(5,8,19,0.9)' }}>
-          <div className="flex gap-2">
-            <textarea
-              className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-orange-500 resize-none"
-              placeholder="Ask the Copilot anything… (Enter to send)"
-              rows={1}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={isLoading}
-            />
-            <button
-              onClick={handleSend}
-              disabled={!input.trim() || isLoading}
-              className="p-2.5 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 rounded-xl transition-colors"
-              aria-label="Send"
-            >
+        <div className="border-t border-cyan-400/10 px-4 py-3 shrink-0 bg-[#050811]/95">
+          <div className="flex gap-2 rounded-2xl border border-slate-700/80 bg-slate-950/90 p-2">
+            <textarea className="flex-1 bg-slate-900/80 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-300/30 resize-none" placeholder="Ask Sonalit Copilot about vehicles, convoys, alerts, routes, security or operational exposure…" rows={1} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} disabled={isLoading} />
+            <button onClick={handleSend} disabled={!input.trim() || isLoading} className="p-2.5 rounded-xl border border-cyan-300/30 bg-cyan-300/10 text-cyan-100 hover:bg-cyan-300/20 disabled:opacity-30" aria-label="Send">
               {isLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
             </button>
           </div>
         </div>
       </div>
-
-      {showDraw && (
-        <div className="w-80 shrink-0 flex flex-col overflow-hidden">
-          <DrawPanel onClose={() => setShowDraw(false)} />
-        </div>
-      )}
+      {showDraw && <div className="w-80 shrink-0 flex flex-col overflow-hidden"><DrawPanel onClose={() => setShowDraw(false)} /></div>}
     </div>
   );
 }
