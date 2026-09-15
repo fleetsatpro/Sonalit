@@ -58,14 +58,14 @@ test.describe('Portal UX — Cargo Dashboard', () => {
     await expect(page.getByText('SHP-PORTAL-001', { exact: true })).toBeVisible({ timeout: 8000 });
     await expect(page.getByText(/Durban/)).toBeVisible({ timeout: 4000 });
     await expect(page.getByText(/Johannesburg/)).toBeVisible({ timeout: 4000 });
-    await expect(page.getByText('intact', { exact: true })).toBeVisible({ timeout: 4000 });
+    await expect(page.getByText('Seal verified', { exact: true })).toBeVisible({ timeout: 4000 });
   });
 
   test('attention data is reflected in the live dashboard', async ({ page }) => {
     await stubShipments(page);
     await page.goto('/portal/dashboard');
     await expect(page.getByText('Attention', { exact: true })).toBeVisible({ timeout: 4000 });
-    await expect(page.getByText('SHP-PORTAL-002', { exact: true })).toBeVisible({ timeout: 6000 });
+    await expect(page.getByRole('button', { name: /SHP-PORTAL-002 1 exception/i }).first()).toBeVisible({ timeout: 6000 });
   });
 
   test('search filters the real shipment portfolio', async ({ page }) => {
@@ -73,8 +73,8 @@ test.describe('Portal UX — Cargo Dashboard', () => {
     await page.goto('/portal/dashboard');
     const search = page.getByPlaceholder('Search cargo…');
     await search.fill('002');
-    await expect(page.getByText('SHP-PORTAL-002', { exact: true })).toBeVisible({ timeout: 6000 });
-    await expect(page.getByText('SHP-PORTAL-001', { exact: true })).not.toBeVisible({ timeout: 3000 });
+    await expect(page.getByRole('button', { name: /SHP-PORTAL-002 completed/i }).first()).toBeVisible({ timeout: 6000 });
+    await expect(page.getByRole('button', { name: /SHP-PORTAL-001 in transit/i }).first()).not.toBeVisible({ timeout: 3000 });
   });
 });
 
