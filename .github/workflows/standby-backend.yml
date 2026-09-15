@@ -47,25 +47,37 @@ jobs:
 
   deploy:
     needs: build
-    if: ${{ secrets.STANDBY_SSH_HOST != '' && secrets.STANDBY_SSH_USER != '' && secrets.STANDBY_SSH_KEY != '' && secrets.STANDBY_GHCR_USER != '' && secrets.STANDBY_GHCR_TOKEN != '' }}
+    if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
+    env:
+      STANDBY_SSH_HOST: ${{ secrets.STANDBY_SSH_HOST }}
+      STANDBY_SSH_USER: ${{ secrets.STANDBY_SSH_USER }}
+      STANDBY_SSH_KEY: ${{ secrets.STANDBY_SSH_KEY }}
+      STANDBY_SSH_PORT: ${{ secrets.STANDBY_SSH_PORT }}
+      STANDBY_GHCR_USER: ${{ secrets.STANDBY_GHCR_USER }}
+      STANDBY_GHCR_TOKEN: ${{ secrets.STANDBY_GHCR_TOKEN }}
     steps:
       - name: Deploy standby container
+        if: ${{ env.STANDBY_SSH_HOST != '' && env.STANDBY_SSH_USER != '' && env.STANDBY_SSH_KEY != '' && env.STANDBY_GHCR_USER != '' && env.STANDBY_GHCR_TOKEN != '' }}
         uses: appleboy/ssh-action@v1.2.2
         with:
-          host: ${{ secrets.STANDBY_SSH_HOST }}
-          username: ${{ secrets.STANDBY_SSH_USER }}
-          key: ${{ secrets.STANDBY_SSH_KEY }}
-          port: ${{ secrets.STANDBY_SSH_PORT || 22 }}
+          host: ${{ env.STANDBY_SSH_HOST }}
+          username: ${{ env.STANDBY_SSH_USER }}
+          key: ${{ env.STANDBY_SSH_KEY }}
+          port: ${{ env.STANDBY_SSH_PORT || 22 }}
           script_stop: true
           script: |
             set -eu
             cd /opt/sonalit-standby
             export SONALIT_IMAGE="ghcr.io/fleetsatpro/sonalit-backend:${{ github.sha }}"
             printf '%s\n' "GHCR image: ${SONALIT_IMAGE}"
-            echo '${{ secrets.STANDBY_GHCR_TOKEN }}' | docker login ghcr.io -u '${{ secrets.STANDBY_GHCR_USER }}' --password-stdin
+            echo '${{ env.STANDBY_GHCR_TOKEN }}' | docker login ghcr.io -u '${{ env.STANDBY_GHCR_USER }}' --password-stdin
             docker compose pull
             docker compose up -d --remove-orphans
             docker image prune -af --filter 'until=168h' || true
             curl --fail --silent --show-error --retry 12 --retry-delay 5 http://127.0.0.1:5000/health >/tmp/sonalit-standby-health.json
             cat /tmp/sonalit-standby-health.json
+
+      - name: Skip standby deployment when credentials are not configured
+        if: ${{ env.STANDBY_SSH_HOST == '' || env.STANDBY_SSH_USER == '' || env.STANDBY_SSH_KEY == '' || env.STANDBY_GHCR_USER == '' || env.STANDBY_GHCR_TOKEN == '' }}
+        run: echo 'Standby deployment credentials are not configured; build remains the source-of-truth check.'

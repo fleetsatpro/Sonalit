@@ -32,7 +32,7 @@ export default function PortalLayout(): React.ReactElement {
             </div>
             <div>
               <p className="font-black tracking-[0.22em] text-sm text-orange-400">SONALIT</p>
-              <p className="text-[10px] uppercase tracking-[0.16em] text-white/30">Cargo Owner Workspace</p>
+              <p className="text-[10px] uppercase tracking-[0.16em] text-white/30">Client Workspace</p>
             </div>
           </div>
         </div>
@@ -52,7 +52,7 @@ export default function PortalLayout(): React.ReactElement {
             })}
           </div>
 
-          <p className="px-3 pt-6 pb-2 text-[10px] uppercase tracking-[0.18em] text-white/25">Shipment workspace</p>
+          <p className="px-3 pt-6 pb-2 text-[10px] uppercase tracking-[0.18em] text-white/25">Client workspace</p>
           <div className="space-y-2">
             <div className="rounded-xl border border-white/[0.06] bg-white/[0.018] p-3">
               <div className="flex items-center gap-2 text-xs text-white/60"><Truck size={14} className="text-orange-400"/><span>Deep shipment views</span></div>
@@ -60,11 +60,11 @@ export default function PortalLayout(): React.ReactElement {
             </div>
             <div className="rounded-xl border border-white/[0.06] bg-white/[0.018] p-3">
               <div className="flex items-center gap-2 text-xs text-white/60"><ShieldCheck size={14} className="text-emerald-400"/><span>Security boundary active</span></div>
-              <p className="mt-1.5 text-[10px] leading-relaxed text-white/25">Only sanitised cargo-owner intelligence is exposed. Internal tactical data remains isolated.</p>
+              <p className="mt-1.5 text-[10px] leading-relaxed text-white/25">Only sanitised client intelligence is exposed. Internal tactical data remains isolated.</p>
             </div>
             <div className="rounded-xl border border-white/[0.06] bg-white/[0.018] p-3">
               <div className="flex items-center gap-2 text-xs text-white/60"><FileText size={14} className="text-sky-400"/><span>Evidence chain</span></div>
-              <p className="mt-1.5 text-[10px] leading-relaxed text-white/25">Delivery evidence, custody events and shipment documents remain tied to the authorised cargo record.</p>
+              <p className="mt-1.5 text-[10px] leading-relaxed text-white/25">Delivery evidence, custody events and shipment documents remain tied to the authorised client record.</p>
             </div>
           </div>
         </div>
@@ -88,7 +88,7 @@ export default function PortalLayout(): React.ReactElement {
             <button className="absolute top-4 right-4 p-2 text-white/40" onClick={() => setMobileOpen(false)}><X size={18}/></button>
             <div className="px-2 py-3 mb-5">
               <p className="font-black tracking-[0.22em] text-orange-400">SONALIT</p>
-              <p className="text-[10px] uppercase tracking-[0.16em] text-white/30">Cargo Owner Workspace</p>
+              <p className="text-[10px] uppercase tracking-[0.16em] text-white/30">Client Workspace</p>
             </div>
             <div className="space-y-1">
               {NAV.map(item => {
@@ -111,7 +111,7 @@ export default function PortalLayout(): React.ReactElement {
       </div>
 
       <button
-        aria-label="Open cargo owner navigation"
+        aria-label="Open client navigation"
         onClick={() => setMobileOpen(true)}
         className="fixed bottom-4 left-4 z-40 lg:hidden h-11 w-11 rounded-full border border-orange-500/25 bg-[#0b1221]/95 text-orange-300 shadow-xl backdrop-blur-md"
       >
