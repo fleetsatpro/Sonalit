@@ -88,10 +88,12 @@ serviceMonitor:
 env:
   - name: SERVICE_NAME
     value: ai-copilot-svc
+  - name: DECISION_FABRIC_URL
+    value: "http://api-gateway-svc/api/v1/ai/decision"
   - name: LLM_PROVIDER
-    value: anthropic
+    value: decision-fabric
   - name: LLM_MODEL
-    value: claude-sonnet-4-5
+    value: unified
   - name: INFERENCE_TIMEOUT_SECONDS
     value: "30"
 
