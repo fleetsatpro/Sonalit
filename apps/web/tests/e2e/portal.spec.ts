@@ -101,7 +101,7 @@ test.describe('Portal UX — Dashboard', () => {
         { convoy_id: 'conv-1', reference: 'SHP-PORTAL-001', status: 'in_transit', origin: 'Durban', destination: 'Johannesburg', eta: new Date(Date.now() + 3600_000).toISOString(), last_ping_at: new Date(Date.now() - 60_000).toISOString(), progress_pct: 65, exception_count: 0, seal_status: 'intact', current_location: { lat: -29.8, lng: 31.0 } },
       ] }) }));
     await page.goto('/portal/dashboard');
-    await expect(page.getByText(/Cargo command workspace|Live shipments/i).first()).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('Live shipments')).toBeVisible({ timeout: 8000 });
     await expect(page.getByText('Cargo positions')).toBeVisible({ timeout: 6000 });
     await expect(page.getByText('SHP-PORTAL-001')).toBeVisible({ timeout: 6000 });
   });
