@@ -61,8 +61,8 @@ router.post('/analyse', authorize('admin', 'dispatcher', 'operator'), asyncHandl
        (org_id, convoy_id, origin_lat, origin_lng, destination_lat, destination_lng,
         overall_risk_score, primary_risk_factors, recommended_route, alternate_routes,
         ai_summary, requested_by, analysis_version, routing_provider, route_status,
-        risk_zone_count, cache_hit, route_evidence)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+        risk_zone_count, cache_hit, route_evidence, safety_gate, swarm)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
      RETURNING *`,
     [
       analysis.org_id,
@@ -90,6 +90,8 @@ router.post('/analyse', authorize('admin', 'dispatcher', 'operator'), asyncHandl
         recommended: analysis.recommended_route || null,
         alternatives: analysis.alternate_routes || [],
       }),
+      analysis.safety_gate || 'CONDITIONAL',
+      JSON.stringify(analysis.swarm || {}),
     ],
   );
 
