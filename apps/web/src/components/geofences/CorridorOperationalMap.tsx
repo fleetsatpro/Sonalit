@@ -61,7 +61,6 @@ function deviceContext(member: GlobeMember) {
 export default function CorridorOperationalMap({ route, members, zones = [], focusId = null, onSelect, mapMode }: Props) {
   const mapRef = useRef<MapRef>(null);
   const boxRef = useRef<HTMLDivElement>(null);
-  const fittedRef = useRef(false);
   const lastFittedKeyRef = useRef<string | null>(null);
   const [mapReady, setMapReady] = useState(false);
 
@@ -75,13 +74,11 @@ export default function CorridorOperationalMap({ route, members, zones = [], foc
         duration: 700,
         maxZoom: 15,
       });
-      fittedRef.current = true;
       return true;
     }
     const live = members.find(m => m.lat != null && m.lng != null);
     if (live) {
       map.flyTo({ longitude: live.lng!, latitude: live.lat!, zoom: 10.5, duration: 650 });
-      fittedRef.current = true;
       return true;
     }
     return false;
@@ -149,7 +146,6 @@ export default function CorridorOperationalMap({ route, members, zones = [], foc
       latitude: focused.lat,
       zoom: Math.min(15, Math.max(11.5, currentZoom)),
       duration: 650,
-      essential: true,
     });
   }, [focusId, focused, mapReady]);
 
@@ -223,7 +219,6 @@ export default function CorridorOperationalMap({ route, members, zones = [], foc
                 anchor="bottom"
                 onClick={event => {
                   event.originalEvent.stopPropagation();
-                  event.preventDefault();
                   onSelect?.(selected ? null : member.id);
                 }}
               >
