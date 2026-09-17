@@ -31,22 +31,38 @@ router.post('/analyse', authorize('admin', 'dispatcher', 'operator'), asyncHandl
   const { error, value } = analyseSchema.validate(req.body);
   if (error) return res.status(400).json({ error: error.message });
 
-  const analysis = await analyseRoute({
-    origin: value.origin,
+  if (value.convoy_id) {
+    const convoy = await req.db(`SELECT id FROM convoys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1`, [value.convoy_id, req.user.org_id]);
+    if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found in your organisation' });
+  }
+
+  let analysis;
+  try {
+    analysis = await analyseRoute({
+      origin: value.origin,
     destination: value.destination,
     convoyId: value.convoy_id,
     requestedBy: req.user.id,
     departureTime: value.departure_time,
     avoidNightTravel: value.preferences?.avoid_night_travel ?? false,
-    orgId: req.user.org_id,
-  });
+      orgId: req.user.org_id,
+    });
+  } catch (err) {
+    logger.error({ err, orgId: req.user.org_id }, 'Route Safety analysis failed');
+    return res.status(503).json({
+      error: 'Route analysis temporarily unavailable',
+      code: 'ROUTE_ANALYSIS_UNAVAILABLE',
+      detail: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
 
   const result = await req.db(
     `INSERT INTO route_analyses
        (org_id, convoy_id, origin_lat, origin_lng, destination_lat, destination_lng,
         overall_risk_score, primary_risk_factors, recommended_route, alternate_routes,
-        ai_summary, requested_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        ai_summary, requested_by, analysis_version, routing_provider, route_status,
+        risk_zone_count, cache_hit, route_evidence, safety_gate, swarm)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
      RETURNING *`,
     [
       analysis.org_id,
@@ -61,6 +77,21 @@ router.post('/analyse', authorize('admin', 'dispatcher', 'operator'), asyncHandl
       JSON.stringify(analysis.alternate_routes),
       analysis.ai_summary,
       analysis.requested_by,
+      analysis.analysis_version || 'route-safety-v2',
+      analysis.routing_provider || null,
+      analysis.route_status || 'routed',
+      Number(analysis.risk_zone_count || 0),
+      Boolean(analysis.cache_hit),
+      JSON.stringify({
+        algorithm_version: analysis.analysis_version || 'route-safety-v2',
+        routing_provider: analysis.routing_provider || null,
+        route_status: analysis.route_status || 'routed',
+        risk_zone_count: Number(analysis.risk_zone_count || 0),
+        recommended: analysis.recommended_route || null,
+        alternatives: analysis.alternate_routes || [],
+      }),
+      analysis.safety_gate || 'CONDITIONAL',
+      JSON.stringify(analysis.swarm || {}),
     ],
   );
 
@@ -82,8 +113,8 @@ router.get('/analyses', asyncHandler(async (req, res) => {
   );
 
   const total = await req.db(
-    `SELECT COUNT(*) AS count FROM route_analyses`,
-    [],
+    `SELECT COUNT(*) AS count FROM route_analyses WHERE org_id = $1`,
+    [req.user.org_id],
   );
 
   res.json({ data: result.rows, total: parseInt(total.rows[0]?.count ?? 0) });
@@ -95,8 +126,8 @@ router.get('/analyses/:id', asyncHandler(async (req, res) => {
     `SELECT ra.*, u.name AS requested_by_name
      FROM route_analyses ra
      LEFT JOIN users u ON u.id = ra.requested_by
-     WHERE ra.id = $1`,
-    [req.params.id],
+     WHERE ra.id = $1 AND ra.org_id = $2`,
+    [req.params.id, req.user.org_id],
   );
   if (!result.rows.length) return res.status(404).json({ error: 'Analysis not found' });
   res.json({ data: result.rows[0] });
