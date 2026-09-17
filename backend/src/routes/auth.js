@@ -62,10 +62,6 @@ router.post('/users', authenticate, authorize('admin'), async (req, res) => {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       return res.status(400).json({ error: 'email must be a valid email address' });
     }
-    // Normalise like every lookup does (login's `LOWER(email) = $1`, etc.) —
-    // otherwise "Foo@x.com" and "foo@x.com " both pass the DB's case- and
-    // whitespace-sensitive UNIQUE constraint as distinct rows, and any query
-    // matching on LOWER(email) becomes ambiguous between them.
     const emailClean = email.trim().toLowerCase();
     const password_hash = await bcrypt.hash(password, 10);
     const result = await query(
@@ -88,7 +84,6 @@ router.post('/users', authenticate, authorize('admin'), async (req, res) => {
 });
 
 // ─── GET /api/v1/auth/cfo-assignments ────────────────────────────────────────
-// CFO users with their current convoy assignment (most recent active)
 router.get('/cfo-assignments', authenticate, authorize('admin', 'dispatcher'), async (req, res) => {
   try {
     const result = await query(
@@ -156,74 +151,49 @@ router.delete('/users/:id', authenticate, authorize('admin'), async (req, res) =
 });
 
 // ─── POST /api/v1/auth/refresh ────────────────────────────────────────────────
-// Reads refresh token from httpOnly cookie (T1.2).
-// Infinite-loop guard: if the request itself is a refresh attempt and the cookie
-// is absent/invalid we return 401 immediately — the frontend interceptor must not
-// retry this endpoint on 401 (loop guard lives in apps/web/src/lib/api.ts).
 router.post('/refresh', async (req, res) => {
   try {
     await ensureRefreshTable();
-
     const raw = req.cookies && req.cookies[RT_COOKIE];
-    if (!raw) {
-      return res.status(401).json({ error: 'No refresh token' });
-    }
-
+    if (!raw) return res.status(401).json({ error: 'No refresh token' });
     const hash = hashToken(raw);
     const result = await query(
       `SELECT rt.*, u.id AS uid, u.email, u.name, u.role, u.org_id, u.status
        FROM refresh_tokens rt
        JOIN users u ON u.id = rt.user_id
-       WHERE rt.token_hash = $1 AND rt.used_at IS NULL AND rt.expires_at > NOW()
+       WHERE rt.token_hash = $1 AND rt.used_at IS NULL AND COALESCE(rt.revoked_at, NULL) IS NULL AND rt.expires_at > NOW()
          AND u.deleted_at IS NULL`,
       [hash]
     );
-
     if (!result.rows.length) {
       res.clearCookie(RT_COOKIE, { ...COOKIE_OPTS, maxAge: 0 });
       return res.status(401).json({ error: 'Invalid or expired refresh token' });
     }
-
     const row = result.rows[0];
-    if (row.status !== 'active') {
-      return res.status(403).json({ error: 'Account is not active' });
-    }
-    // Field roles are barred from POST /auth/login (see authController), but a
-    // refresh cookie minted before that rule existed — or before an account
-    // was moved to a field role — would otherwise keep renewing an operator
-    // session indefinitely.
+    if (row.status !== 'active') return res.status(403).json({ error: 'Account is not active' });
     if (row.role === 'yard_agent' || row.role === 'port_agent') {
       res.clearCookie(RT_COOKIE, { ...COOKIE_OPTS, maxAge: 0 });
       return res.status(403).json({ error: 'field_account' });
     }
-
-    // Rotate: mark old token used, issue new httpOnly cookie
-    await query('UPDATE refresh_tokens SET used_at = NOW() WHERE id = $1', [row.id]);
-
+    await query('UPDATE refresh_tokens SET used_at = NOW(), last_seen_at = NOW() WHERE id = $1', [row.id]);
     const newRaw = crypto.randomBytes(40).toString('hex');
     const newHash = hashToken(newRaw);
     await query(
-      `INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
-       VALUES ($1, $2, NOW() + INTERVAL '30 days')`,
-      [row.uid, newHash]
+      `INSERT INTO refresh_tokens (user_id, token_hash, expires_at, ip_address, user_agent, last_seen_at)
+       VALUES ($1, $2, NOW() + INTERVAL '30 days', $3, $4, NOW())`,
+      [row.uid, newHash, req.ip || null, String(req.headers['user-agent'] || '').slice(0, 1000) || null]
     );
     res.cookie(RT_COOKIE, newRaw, COOKIE_OPTS);
-
-    const accessToken = jwt.sign(
-      { id: row.uid, email: row.email, role: row.role },
-      process.env.JWT_SECRET,
-      { expiresIn: '2h' }
-    );
-
-    logger.info(`Token refreshed for user ${row.email}`);
-    res.json({
-      token: accessToken,
-      user: { id: row.uid, email: row.email, name: row.name, role: row.role, org_id: row.org_id },
-    });
+    const accessToken = jwt.sign({ id: row.uid, email: row.email, role: row.role }, process.env.JWT_SECRET, { expiresIn: '2h' });
+    res.json({ token: accessToken, user: { id: row.uid, email: row.email, name: row.name, role: row.role, org_id: row.org_id } });
   } catch (err) {
     logger.error(`Token refresh error: ${err.message}`);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// Identity & Security Control Plane — mounted here so it shares the auth prefix
+// and never becomes a tenant-blind top-level surface.
+router.use(require('./identity'));
 
 module.exports = router;
