@@ -24,6 +24,13 @@ CREATE INDEX IF NOT EXISTS idx_identity_access_requests_org_status
 CREATE INDEX IF NOT EXISTS idx_identity_access_requests_email
   ON identity_access_requests(lower(email));
 
+-- The legacy monolith users table predates the auth service's richer identity
+-- schema. Keep the control-plane migration safe on old installations by adding
+-- only the security metadata the Identity Centre reads.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret_enc TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
+
 ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS ip_address INET;
 ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS user_agent TEXT;
 ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;
