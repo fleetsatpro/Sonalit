@@ -1,133 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import * as Cesium from 'cesium';
-import 'cesium/Build/Cesium/Widgets/widgets.css';
-import { Crosshair, Layers, Map as MapIcon, Pause, Play, Satellite, Signal, Target, TriangleAlert } from 'lucide-react';
+import { Activity, Bot, BrainCircuit, Crosshair, DatabaseZap, Eye, Gauge, Layers3, Maximize2, Pause, Play, Route, ScanSearch, ShieldCheck, Sparkles, Target, Timer, Truck, Waypoints, X } from 'lucide-react';
+import CorridorWorldScene, { type GlobeMember, type LatLng, type RiskZone } from './CorridorWorldScene.js';
+import CorridorOperationalMap from './CorridorOperationalMap.js';
+import { runXdSurveillanceAgents, type XdDimension } from './xdSurveillanceAgents.js';
 
-export interface LatLng { lat: number; lng: number }
-export interface GlobeMember {
-  id: string;
-  name: string;
-  officer_name?: string | null;
-  convoy_name?: string | null;
-  client_name?: string | null;
-  lat: number | null;
-  lng: number | null;
-  status: string;
-  along_km?: number | null;
-  cross_track_km?: number | null;
-  heading?: number | null;
-  speed_kph?: number | null;
-  position_state?: string | null;
-  position_confidence?: number | null;
-  position_uncertainty_m?: number | null;
-  vehicle_type?: string | null;
-  vehicle_model_url?: string | null;
-}
-export interface RiskZone {
-  zone_id: string | null;
-  name: string | null;
-  risk_level: string;
-  lat: number;
-  lng: number;
-  radius_km: number;
-}
+export type { LatLng, GlobeMember, RiskZone };
 
-type MapMode = 'dark' | 'satellite' | 'hybrid';
-
-const TOKEN = (import.meta.env['VITE_CESIUM_ION_TOKEN'] as string | undefined)?.trim() ?? '';
-const STREET_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
-const SATELLITE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
-const ROADS_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}';
-const PLACES_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
-const MODEL_URL = (import.meta.env['VITE_SONALIT_VEHICLE_MODEL_URL'] as string | undefined)?.trim() ?? '';
-
-const STATUS_COLOR: Record<string, string> = {
-  off_route: '#ef4444',
-  behind: '#f59e0b',
-  ahead: '#22d3ee',
-  on_track: '#10b981',
-  no_fix: '#737373',
-};
-const RISK_COLOR: Record<string, string> = {
-  no_go: '#dc2626',
-  critical: '#ef4444',
-  high: '#f97316',
-  medium: '#eab308',
-  low: '#84cc16',
-};
-
-const FOCUS_HEIGHT_M = 4200;
-const FIT_RANGE_MIN_M = 3400;
-const CAMERA_DURATION_S = 0.65;
-
-function css(hex: string, alpha = 1) {
-  return Cesium.Color.fromCssColorString(hex).withAlpha(alpha);
-}
-
-function fitPoints(route: LatLng[], members: GlobeMember[], trail?: LatLng[]) {
-  return [
-    ...route,
-    ...members.filter(m => m.lat != null && m.lng != null).map(m => ({ lat: m.lat!, lng: m.lng! })),
-    ...(trail ?? []),
-  ].map(p => Cesium.Cartesian3.fromDegrees(p.lng, p.lat, 0));
-}
-
-function vehicleSvg(color: string, selected: boolean) {
-  const stroke = selected ? '#ffffff' : color;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="64" viewBox="0 0 96 64"><defs><filter id="g"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><g filter="url(#g)"><rect x="19" y="8" width="58" height="45" rx="11" fill="#0a0d14" fill-opacity=".96" stroke="${stroke}" stroke-width="4"/><path d="M30 16h31l10 15v12H25V28z" fill="${color}" fill-opacity=".28" stroke="${color}" stroke-width="2"/><circle cx="34" cy="52" r="7" fill="#05070b" stroke="${color}" stroke-width="3"/><circle cx="63" cy="52" r="7" fill="#05070b" stroke="${color}" stroke-width="3"/><path d="M31 20h24l7 10H31z" fill="#dfe7f5" fill-opacity=".18"/></g></svg>`;
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-}
-
-function addImagery(viewer: Cesium.Viewer, mode: MapMode, onError: (message: string) => void) {
-  viewer.imageryLayers.removeAll();
-  const add = (url: string, credit: string, maximumLevel = 19, tune?: (layer: Cesium.ImageryLayer) => void) => {
-    const provider = new Cesium.UrlTemplateImageryProvider({
-      url,
-      credit: new Cesium.Credit(credit, false),
-      maximumLevel,
-      enablePickFeatures: false,
-    });
-    provider.errorEvent.addEventListener(() => onError('Map tiles are unavailable; the fallback world surface is still active.'));
-    const layer = viewer.imageryLayers.addImageryProvider(provider);
-    tune?.(layer);
-    return layer;
-  };
-
-  if (mode === 'dark') {
-    add(STREET_URL, 'Esri, HERE, Garmin, © OpenStreetMap contributors', 19, layer => {
-      layer.brightness = 0.34;
-      layer.contrast = 1.12;
-      layer.saturation = 0.35;
-      layer.gamma = 0.9;
-    });
-  } else {
-    add(SATELLITE_URL, 'Esri, Maxar, Earthstar Geographics', 19);
-    if (mode === 'hybrid') {
-      add(ROADS_URL, 'Esri', 19);
-      add(PLACES_URL, 'Esri', 19);
-    }
-  }
-}
-
-function deviceLabel(member: GlobeMember) {
-  const lines = [
-    member.officer_name ? `${member.officer_name} · ${member.name}` : member.name,
-    [member.convoy_name, member.client_name].filter(Boolean).join(' · '),
-  ].filter(Boolean);
-  return lines.join('\n');
-}
-
-export default function CorridorGlobe({
-  route,
-  corridorKm,
-  members,
-  zones,
-  ceilingM = 0,
-  focusId = null,
-  trail,
-  onSelect,
-  fill = false,
-}: {
+type Props = {
   route: LatLng[];
   corridorKm: number;
   members: GlobeMember[];
@@ -137,359 +17,121 @@ export default function CorridorGlobe({
   trail?: LatLng[];
   onSelect?: (id: string | null) => void;
   fill?: boolean;
-}) {
-  const boxRef = useRef<HTMLDivElement>(null);
-  const viewerRef = useRef<Cesium.Viewer | null>(null);
-  const entityMapRef = useRef<Map<string, Cesium.Entity>>(new globalThis.Map());
-  const currentRef = useRef<Map<string, Cesium.Cartesian3>>(new globalThis.Map());
-  const targetRef = useRef<Map<string, Cesium.Cartesian3>>(new globalThis.Map());
-  const headingRef = useRef<Map<string, number>>(new globalThis.Map());
-  const latestMembersRef = useRef<GlobeMember[]>(members);
-  const latestRouteRef = useRef<LatLng[]>(route);
-  const latestTrailRef = useRef<LatLng[] | undefined>(trail);
-  const selectRef = useRef(onSelect);
-  const initializedRef = useRef(false);
-  const lastRouteKeyRef = useRef('');
-  const lastFocusRef = useRef<string | null>(null);
-  const cameraJobRef = useRef(0);
-  const [mode, setMode] = useState<MapMode>('dark');
-  const [mapStatus, setMapStatus] = useState('LIVE WORLD SURFACE');
-  const [terrainReady, setTerrainReady] = useState(false);
-  const [initFailed, setInitFailed] = useState(false);
-  const [creditsOpen, setCreditsOpen] = useState(false);
-  const [autoCamera, setAutoCamera] = useState(true);
+};
 
-  const height = Math.max(200, ceilingM || Math.min(1800, Math.max(700, corridorKm * 500)));
-  const liveMembers = useMemo(() => members.filter(m => m.lat != null && m.lng != null), [members]);
+type View = '2D' | '3D';
+const DIMENSIONS: { key: XdDimension; icon: typeof Crosshair }[] = [
+  { key: 'SPACE', icon: Crosshair }, { key: 'TIME', icon: Timer }, { key: 'IDENTITY', icon: Truck }, { key: 'MOTION', icon: Gauge },
+  { key: 'INTEGRITY', icon: ShieldCheck }, { key: 'SECURITY', icon: Eye }, { key: 'EVIDENCE', icon: DatabaseZap }, { key: 'FUTURE', icon: Waypoints },
+];
 
-  latestMembersRef.current = members;
-  latestRouteRef.current = route;
-  latestTrailRef.current = trail;
-  selectRef.current = onSelect;
+function context(member?: GlobeMember | null) {
+  const m = member as (GlobeMember & { convoy_name?: string | null; client_name?: string | null }) | undefined;
+  return { convoy: m?.convoy_name ?? null, client: m?.client_name ?? null };
+}
 
-  const flyToMember = (member: GlobeMember, duration = CAMERA_DURATION_S) => {
-    const viewer = viewerRef.current;
-    if (!viewer || viewer.isDestroyed() || member.lat == null || member.lng == null) return;
-    const job = ++cameraJobRef.current;
-    const heading = Number(member.heading);
-    viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(member.lng, member.lat, FOCUS_HEIGHT_M),
-      orientation: {
-        heading: Number.isFinite(heading) ? Cesium.Math.toRadians(heading) : 0,
-        pitch: Cesium.Math.toRadians(-58),
-        roll: 0,
-      },
-      duration,
-      complete: () => {
-        if (cameraJobRef.current === job) viewer.scene.requestRender();
-      },
-    });
-  };
-
-  const fitCorridor = (duration = CAMERA_DURATION_S) => {
-    const viewer = viewerRef.current;
-    if (!viewer || viewer.isDestroyed()) return;
-    const points = fitPoints(latestRouteRef.current, latestMembersRef.current.filter(m => m.lat != null && m.lng != null), latestTrailRef.current);
-    if (points.length < 2) return;
-    viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), {
-      duration,
-      offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-46), Math.max(FIT_RANGE_MIN_M, corridorKm * 1400)),
-    });
-  };
-
-  useEffect(() => {
-    if (!boxRef.current) return;
-    let viewer: Cesium.Viewer;
-    try {
-      Cesium.Ion.defaultAccessToken = TOKEN;
-      const initialProvider = new Cesium.UrlTemplateImageryProvider({
-        url: STREET_URL,
-        credit: new Cesium.Credit('Esri, HERE, Garmin, © OpenStreetMap contributors', false),
-        maximumLevel: 19,
-        enablePickFeatures: false,
-      });
-      viewer = new Cesium.Viewer(boxRef.current, {
-        baseLayer: new Cesium.ImageryLayer(initialProvider),
-        terrainProvider: new Cesium.EllipsoidTerrainProvider(),
-        animation: false,
-        baseLayerPicker: false,
-        geocoder: false,
-        homeButton: false,
-        infoBox: false,
-        sceneModePicker: false,
-        selectionIndicator: false,
-        timeline: false,
-        navigationHelpButton: false,
-        navigationInstructionsInitiallyVisible: false,
-        fullscreenButton: false,
-        requestRenderMode: true,
-        maximumRenderTimeChange: Infinity,
-      });
-    } catch {
-      setInitFailed(true);
-      return;
-    }
-
-    viewerRef.current = viewer;
-    initializedRef.current = true;
-    viewer.scene.globe.enableLighting = true;
-    viewer.scene.globe.showGroundAtmosphere = true;
-    viewer.scene.globe.depthTestAgainstTerrain = true;
-    viewer.scene.fog.enabled = true;
-    viewer.scene.fog.density = 0.00002;
-    viewer.scene.highDynamicRange = true;
-    viewer.scene.postProcessStages.fxaa.enabled = true;
-    viewer.scene.msaaSamples = 4;
-    viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, 2);
-    setMapStatus(TOKEN ? 'CESIUM + ESRI · LIVE' : 'ESRI FALLBACK · ION TOKEN NOT EXPOSED');
-
-    const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
-    handler.setInputAction((movement: Cesium.ScreenSpaceEventHandler.PositionedEvent) => {
-      const picked = viewer.scene.pick(movement.position);
-      const id = picked?.id?.id;
-      if (typeof id === 'string' && id.startsWith('dev:')) selectRef.current?.(id.slice(4));
-      else selectRef.current?.(null);
-    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
-
-    const preRender = () => {
-      const alpha = 0.12;
-      currentRef.current.forEach((current, id) => {
-        const target = targetRef.current.get(id);
-        const entity = entityMapRef.current.get(id);
-        if (!target || !entity) return;
-        const next = Cesium.Cartesian3.lerp(current, target, alpha, new Cesium.Cartesian3());
-        currentRef.current.set(id, next);
-        entity.position = new Cesium.ConstantPositionProperty(next);
-        const heading = headingRef.current.get(id);
-        if (heading != null) {
-          entity.orientation = new Cesium.ConstantProperty(
-            Cesium.Transforms.headingPitchRollQuaternion(next, new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(heading), 0, 0)),
-          );
-        }
-      });
-      viewer.scene.requestRender();
-    };
-    viewer.scene.preRender.addEventListener(preRender);
-
-    (async () => {
-      if (!TOKEN || viewer.isDestroyed()) return;
-      try {
-        const terrain = await Cesium.createWorldTerrainAsync();
-        if (viewer.isDestroyed()) return;
-        viewer.terrainProvider = terrain;
-        setTerrainReady(true);
-      } catch {
-        setMapStatus('ESRI SURFACE · TERRAIN DEGRADED');
-      }
-    })();
-
-    (async () => {
-      if (!TOKEN || viewer.isDestroyed()) return;
-      try {
-        const buildings = await Cesium.createOsmBuildingsAsync();
-        if (!viewer.isDestroyed()) viewer.scene.primitives.add(buildings);
-      } catch {
-        // Buildings are an enhancement, never a dependency.
-      }
-    })();
-
-    return () => {
-      handler.destroy();
-      viewer.scene.preRender.removeEventListener(preRender);
-      entityMapRef.current.clear();
-      currentRef.current.clear();
-      targetRef.current.clear();
-      headingRef.current.clear();
-      initializedRef.current = false;
-      if (!viewer.isDestroyed()) viewer.destroy();
-      viewerRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer || viewer.isDestroyed()) return;
-    addImagery(viewer, mode, message => setMapStatus(message));
-    viewer.scene.requestRender();
-  }, [mode]);
-
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer || viewer.isDestroyed()) return;
-    viewer.entities.values.filter(e => e.id.startsWith('corridor:')).forEach(e => viewer.entities.remove(e));
-    if (route.length < 2) return;
-    const positions = Cesium.Cartesian3.fromDegreesArray(route.flatMap(p => [p.lng, p.lat]));
-    const topPositions = Cesium.Cartesian3.fromDegreesArrayHeights(route.flatMap(p => [p.lng, p.lat, height]));
-    const widthM = Math.max(200, corridorKm * 2000);
-    viewer.entities.add({
-      id: 'corridor:volume',
-      corridor: { positions, width: widthM, height: 0, extrudedHeight: height, material: css('#8b5cf6', 0.12), outline: true, outlineColor: css('#b59cff', 0.52), cornerType: Cesium.CornerType.ROUNDED },
-    });
-    viewer.entities.add({
-      id: 'corridor:center',
-      polyline: { positions, width: 5, clampToGround: true, material: new Cesium.PolylineGlowMaterialProperty({ glowPower: 0.28, color: css('#c4b5fd', 0.94) }) },
-    });
-    viewer.entities.add({ id: 'corridor:top', polyline: { positions: topPositions, width: 2, material: css('#c4b5fd', 0.28) } });
-    const pin = (id: string, p: LatLng, color: string, label: string) => viewer.entities.add({
-      id,
-      position: Cesium.Cartesian3.fromDegrees(p.lng, p.lat),
-      point: { pixelSize: 12, color: css(color), outlineColor: Cesium.Color.WHITE, outlineWidth: 2, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY },
-      label: { text: label, font: '700 12px sans-serif', fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK, outlineWidth: 3, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(0, -22), disableDepthTestDistance: Number.POSITIVE_INFINITY },
-    });
-    pin('corridor:origin', route[0]!, '#10b981', 'ORIGIN');
-    pin('corridor:destination', route[route.length - 1]!, '#fb7185', 'DESTINATION');
-
-    const routeKey = route.map(p => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join('|');
-    if (!initializedRef.current) return;
-    if (autoCamera && routeKey !== lastRouteKeyRef.current) {
-      lastRouteKeyRef.current = routeKey;
-      window.setTimeout(() => fitCorridor(0.6), 0);
-    } else {
-      lastRouteKeyRef.current = routeKey;
-    }
-  }, [route, corridorKm, height, autoCamera]);
-
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer || viewer.isDestroyed()) return;
-    viewer.entities.values.filter(e => e.id.startsWith('risk:')).forEach(e => viewer.entities.remove(e));
-    for (const [index, zone] of (zones ?? []).entries()) {
-      const color = RISK_COLOR[zone.risk_level] ?? RISK_COLOR.medium!;
-      viewer.entities.add({
-        id: `risk:${zone.zone_id ?? index}`,
-        position: Cesium.Cartesian3.fromDegrees(zone.lng, zone.lat, height / 2),
-        cylinder: { length: height, topRadius: Math.max(50, zone.radius_km * 1000), bottomRadius: Math.max(50, zone.radius_km * 1000), material: css(color, 0.13), outline: true, outlineColor: css(color, 0.58) },
-        label: { text: `${zone.name ?? 'Risk zone'} · ${zone.risk_level.replaceAll('_', '-')}`, font: '700 11px sans-serif', fillColor: css(color), outlineColor: Cesium.Color.BLACK, outlineWidth: 3, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(0, -12), disableDepthTestDistance: Number.POSITIVE_INFINITY, distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 750000) },
-      });
-    }
-  }, [zones, height]);
-
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer || viewer.isDestroyed()) return;
-    const activeIds = new Set(liveMembers.map(m => `dev:${m.id}`));
-    viewer.entities.values.filter(e => e.id.startsWith('dev:')).forEach(e => {
-      if (!activeIds.has(e.id)) {
-        viewer.entities.remove(e);
-        const id = e.id.slice(4);
-        entityMapRef.current.delete(id);
-        currentRef.current.delete(id);
-        targetRef.current.delete(id);
-        headingRef.current.delete(id);
-      }
-    });
-
-    for (const member of liveMembers) {
-      const target = Cesium.Cartesian3.fromDegrees(member.lng!, member.lat!, 6);
-      targetRef.current.set(member.id, target);
-      if (!currentRef.current.has(member.id)) currentRef.current.set(member.id, target.clone());
-      const heading = Number(member.heading);
-      if (Number.isFinite(heading)) headingRef.current.set(member.id, heading);
-      const position = currentRef.current.get(member.id)!;
-      const selected = member.id === focusId;
-      const color = STATUS_COLOR[member.status] ?? STATUS_COLOR.off_route;
-      const entity = entityMapRef.current.get(member.id);
-      const label = deviceLabel(member);
-      if (entity) {
-        entity.position = new Cesium.ConstantPositionProperty(position);
-        entity.point = new Cesium.PointGraphics({ pixelSize: selected ? 15 : 9, color: css(color), outlineColor: selected ? Cesium.Color.WHITE : css(color), outlineWidth: selected ? 3 : 1, disableDepthTestDistance: Number.POSITIVE_INFINITY });
-        if (entity.label?.text) (entity.label.text as Cesium.ConstantProperty).setValue(label);
-        if (entity.billboard?.image) (entity.billboard.image as Cesium.ConstantProperty).setValue(vehicleSvg(color, selected));
-        continue;
-      }
-      const created = viewer.entities.add({
-        id: `dev:${member.id}`,
-        position: new Cesium.ConstantPositionProperty(position),
-        orientation: Number.isFinite(heading) ? new Cesium.ConstantProperty(Cesium.Transforms.headingPitchRollQuaternion(position, new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(heading), 0, 0))) : undefined,
-        point: { pixelSize: selected ? 15 : 9, color: css(color), outlineColor: selected ? Cesium.Color.WHITE : css(color), outlineWidth: selected ? 3 : 1, disableDepthTestDistance: Number.POSITIVE_INFINITY },
-        billboard: { image: vehicleSvg(color, selected), width: selected ? 42 : 34, height: selected ? 28 : 23, verticalOrigin: Cesium.VerticalOrigin.BOTTOM, disableDepthTestDistance: Number.POSITIVE_INFINITY, alignedAxis: Cesium.Cartesian3.ZERO },
-        label: { text: label, font: '700 12px sans-serif', fillColor: Cesium.Color.WHITE, outlineColor: Cesium.Color.BLACK, outlineWidth: 3, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(0, -40), disableDepthTestDistance: Number.POSITIVE_INFINITY, showBackground: true, backgroundColor: css('#06090f', 0.78), backgroundPadding: new Cesium.Cartesian2(8, 5), distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, 500000) },
-        ellipse: { semiMajorAxis: Math.max(12, Number(member.position_uncertainty_m || 12)), semiMinorAxis: Math.max(12, Number(member.position_uncertainty_m || 12)), height: 4, material: css(color, 0.06), outline: true, outlineColor: css(color, 0.45), outlineWidth: 1 },
-        ...(member.vehicle_model_url || MODEL_URL ? { model: new Cesium.ModelGraphics({ uri: new Cesium.ConstantProperty(member.vehicle_model_url || MODEL_URL), minimumPixelSize: 34, maximumScale: 220, runAnimations: true, shadows: Cesium.ShadowMode.ENABLED }) } : {}),
-      });
-      entityMapRef.current.set(member.id, created);
-    }
-    viewer.scene.requestRender();
-  }, [liveMembers, focusId]);
-
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer || viewer.isDestroyed()) return;
-    viewer.entities.values.filter(e => e.id === 'trail:history').forEach(e => viewer.entities.remove(e));
-    if (!trail || trail.length < 2) return;
-    viewer.entities.add({ id: 'trail:history', polyline: { positions: Cesium.Cartesian3.fromDegreesArray(trail.flatMap(p => [p.lng, p.lat])), width: 7, clampToGround: true, material: new Cesium.PolylineGlowMaterialProperty({ glowPower: 0.22, color: css('#22d3ee', 0.7) }) } });
-  }, [trail]);
-
-  useEffect(() => {
-    if (!autoCamera) return;
-    if (focusId === lastFocusRef.current) return;
-    lastFocusRef.current = focusId;
-    if (!focusId) return;
-    const member = latestMembersRef.current.find(m => m.id === focusId);
-    if (member?.lat == null || member?.lng == null) return;
-    flyToMember(member);
-  }, [focusId, autoCamera]);
-
-  const recenter = () => {
-    const member = focusId ? latestMembersRef.current.find(m => m.id === focusId) : null;
-    if (member?.lat != null && member?.lng != null) {
-      flyToMember(member, 0.55);
-      return;
-    }
-    fitCorridor(0.55);
-  };
-
-  if (initFailed) {
-    return (
-      <div className={`${fill ? 'h-full' : 'h-[520px]'} grid place-items-center bg-[#080b12] text-center`}>
-        <div className="max-w-sm px-6">
-          <TriangleAlert className="mx-auto mb-3 text-amber-400" size={26} />
-          <p className="text-sm font-semibold text-white">4D world renderer failed to initialize</p>
-          <p className="mt-1 text-xs text-neutral-500">The operational corridor data is intact. Reopen the map after the browser finishes loading its WebGL context.</p>
-        </div>
-      </div>
-    );
-  }
+export default function CorridorGlobe({ route, corridorKm, members, zones = [], ceilingM = 0, focusId = null, trail, onSelect, fill = false }: Props) {
+  const [view, setView] = useState<View>('2D');
+  const [dimension, setDimension] = useState<XdDimension>('SPACE');
+  const [agentsOpen, setAgentsOpen] = useState(false);
+  const [entityOpen, setEntityOpen] = useState(true);
+  const [renderQuality, setRenderQuality] = useState<'AUTO' | 'HIGH' | 'ULTRA' | 'MAX'>('AUTO');
+  const live = members.filter(m => m.lat != null && m.lng != null);
+  const snapshot = useMemo(() => runXdSurveillanceAgents(route, members, zones), [route, members, zones]);
+  const focused = focusId ? members.find(m => m.id === focusId) : null;
+  const idContext = context(focused);
+  const qualityHint = renderQuality === 'AUTO' ? 'adaptive' : renderQuality.toLowerCase();
 
   return (
-    <div className={`${fill ? 'h-full' : 'h-[520px]'} relative overflow-hidden bg-[#080b12]`}>
-      <div ref={boxRef} className="absolute inset-0" />
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3">
-        <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-[#070a10]/86 p-1 backdrop-blur-xl">
-          <button type="button" onClick={() => setMode('dark')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'dark' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Dark map"><MapIcon size={15} /></button>
-          <button type="button" onClick={() => setMode('satellite')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'satellite' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Satellite map"><Satellite size={15} /></button>
-          <button type="button" onClick={() => setMode('hybrid')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'hybrid' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Hybrid map"><Layers size={15} /></button>
-          <span className="ml-1 border-l border-white/10 pl-2 pr-2 text-[10px] font-mono text-neutral-500">{mapStatus}</span>
-        </div>
-        <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-[#070a10]/86 p-1 backdrop-blur-xl">
-          <button type="button" onClick={() => { setAutoCamera(v => !v); }} className={`inline-flex h-8 items-center gap-1 rounded-lg px-2 text-[10px] font-mono ${autoCamera ? 'bg-white/10 text-neutral-200' : 'bg-amber-500/10 text-amber-300'}`} aria-label={autoCamera ? 'Pause automatic camera movement' : 'Resume automatic camera movement'} title={autoCamera ? 'Pause auto camera' : 'Resume auto camera'}>
-            {autoCamera ? <Pause size={13} /> : <Play size={13} />}
-            {autoCamera ? 'AUTO' : 'PAUSED'}
-          </button>
-          <button type="button" onClick={recenter} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label="Recenter world"><Crosshair size={15} /></button>
-          <button type="button" onClick={() => fitCorridor(0.55)} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label="Fit corridor"><Target size={15} /></button>
-          <button type="button" onClick={() => setCreditsOpen(v => !v)} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label="Map information"><Signal size={15} /></button>
-        </div>
-      </div>
-      <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap items-center gap-2">
-        <span className="rounded-lg border border-white/10 bg-[#070a10]/84 px-2.5 py-1.5 text-[10px] font-mono text-neutral-400 backdrop-blur-xl">{liveMembers.length} DEVICE{liveMembers.length === 1 ? '' : 'S'} VISIBLE</span>
-        {terrainReady && <span className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.08] px-2.5 py-1.5 text-[10px] font-mono text-emerald-300 backdrop-blur-xl">WORLD TERRAIN</span>}
-        {focusId && <span className="rounded-lg border border-violet-500/25 bg-violet-500/[0.09] px-2.5 py-1.5 text-[10px] font-mono text-violet-300 backdrop-blur-xl">FOCUS · {latestMembersRef.current.find(m => m.id === focusId)?.name ?? focusId.slice(0, 8)}</span>}
-        {!autoCamera && <span className="rounded-lg border border-amber-500/25 bg-amber-500/[0.08] px-2.5 py-1.5 text-[10px] font-mono text-amber-300 backdrop-blur-xl">CAMERA LOCKED</span>}
-      </div>
-      {creditsOpen && (
-        <div className="absolute bottom-3 right-3 max-w-xs rounded-xl border border-white/10 bg-[#070a10]/92 p-3 text-[10px] leading-relaxed text-neutral-400 shadow-2xl backdrop-blur-xl">
-          <p className="font-semibold text-neutral-200">World surface</p>
-          <p className="mt-1">Operational map tiles: Esri / OpenStreetMap contributors. Automatic camera movement can be paused; manual recenter and corridor-fit remain available.</p>
-        </div>
+    <div className={`${fill ? 'h-full' : 'h-[520px]'} relative overflow-hidden bg-[#05070b] text-white`}>
+      {view === '2D' ? (
+        <CorridorOperationalMap route={route} members={members} zones={zones} focusId={focusId} onSelect={onSelect} mapMode="dark" />
+      ) : (
+        <CorridorWorldScene route={route} corridorKm={corridorKm} members={members} zones={zones} ceilingM={ceilingM} focusId={focusId} trail={trail} onSelect={onSelect} fill />
       )}
-      {liveMembers.length === 0 && (
-        <div className="pointer-events-none absolute inset-0 grid place-items-center">
-          <div className="rounded-xl border border-white/10 bg-[#070a10]/88 px-4 py-3 text-center backdrop-blur-xl">
-            <p className="text-xs font-semibold text-neutral-200">NO LIVE DEVICE FIX</p>
-            <p className="mt-1 text-[10px] text-neutral-500">The corridor stays visible, but no position is invented.</p>
+
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 px-3 pt-3">
+        <div className="pointer-events-auto flex flex-wrap items-start justify-between gap-2">
+          <div className="max-w-[72vw] rounded-2xl border border-white/10 bg-[#05070c]/88 px-3.5 py-2.5 shadow-2xl backdrop-blur-2xl">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <div className="flex items-center gap-2"><span className="grid h-6 w-6 place-items-center rounded-lg bg-violet-500/15 text-violet-300"><ScanSearch size={13} /></span><span className="text-[13px] font-semibold tracking-[0.08em]">XD LIVE SURVEILLANCE</span></div>
+              <span className="text-[9px] font-mono uppercase tracking-[0.18em] text-neutral-500">8D WORLD CONTROL</span>
+              <span className="h-1 w-1 rounded-full bg-emerald-400" />
+              <span className="text-[9px] font-mono text-emerald-300">{live.length} POSITIONED</span>
+              <span className="text-[9px] font-mono text-neutral-500">{snapshot.agents.length} SPECIALISTS</span>
+            </div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[9px] font-mono text-neutral-500">
+              <span>REAL-TIME WORLD MODEL</span><span>·</span><span>ACTUAL ≠ EXPECTED ≠ PREDICTED</span><span>·</span><span>RENDER {qualityHint}</span>
+            </div>
+          </div>
+
+          <div className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-white/10 bg-[#05070c]/88 p-1 shadow-2xl backdrop-blur-2xl">
+            <button type="button" onClick={() => setView('2D')} className={`rounded-xl px-2.5 py-1.5 text-[10px] font-mono ${view === '2D' ? 'bg-white/12 text-white' : 'text-neutral-500 hover:text-white'}`}>2D</button>
+            <button type="button" onClick={() => setView('3D')} className={`rounded-xl px-2.5 py-1.5 text-[10px] font-mono ${view === '3D' ? 'bg-violet-500/15 text-violet-200' : 'text-neutral-500 hover:text-white'}`}>3D</button>
+            <span className="mx-1 h-5 w-px bg-white/10" />
+            <button type="button" onClick={() => setAgentsOpen(v => !v)} className={`grid h-8 w-8 place-items-center rounded-xl ${agentsOpen ? 'bg-cyan-400/10 text-cyan-200' : 'text-neutral-400 hover:bg-white/10 hover:text-white'}`} aria-label="Toggle specialist swarm"><Bot size={14} /></button>
+            <button type="button" onClick={() => setEntityOpen(v => !v)} className={`grid h-8 w-8 place-items-center rounded-xl ${entityOpen ? 'bg-violet-400/10 text-violet-200' : 'text-neutral-400 hover:bg-white/10 hover:text-white'}`} aria-label="Toggle entity intelligence"><Truck size={14} /></button>
           </div>
         </div>
+      </div>
+
+      <aside className="pointer-events-none absolute inset-y-0 left-0 z-20 flex w-[58px] flex-col justify-center px-2 pt-16 pb-14">
+        <div className="pointer-events-auto rounded-2xl border border-white/10 bg-[#05070c]/84 p-1.5 shadow-2xl backdrop-blur-2xl">
+          <div className="mb-1 grid h-7 place-items-center rounded-xl text-[8px] font-mono tracking-widest text-neutral-600">8D</div>
+          {DIMENSIONS.map(({ key, icon: Icon }) => (
+            <button key={key} type="button" onClick={() => setDimension(key)} title={key} aria-label={key} className={`mb-1 grid h-9 w-full place-items-center rounded-xl transition ${dimension === key ? 'bg-violet-500/15 text-violet-200 ring-1 ring-violet-400/20' : 'text-neutral-500 hover:bg-white/5 hover:text-white'}`}>
+              <Icon size={14} />
+            </button>
+          ))}
+        </div>
+      </aside>
+
+      <div className="pointer-events-none absolute bottom-3 left-1/2 z-20 -translate-x-1/2">
+        <div className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-white/10 bg-[#05070c]/88 p-1.5 shadow-2xl backdrop-blur-2xl">
+          <span className="px-2 text-[9px] font-mono uppercase tracking-[0.18em] text-violet-300">{dimension}</span>
+          <span className="h-4 w-px bg-white/10" />
+          <span className="px-2 text-[9px] font-mono text-neutral-500">QUALITY</span>
+          {(['AUTO', 'HIGH', 'ULTRA', 'MAX'] as const).map(q => <button key={q} type="button" onClick={() => setRenderQuality(q)} className={`rounded-lg px-2 py-1 text-[9px] font-mono ${renderQuality === q ? 'bg-white/10 text-white' : 'text-neutral-600 hover:text-neutral-200'}`}>{q}</button>)}
+        </div>
+      </div>
+
+      {entityOpen && (
+        <section className="pointer-events-auto absolute right-3 top-[86px] z-20 w-[min(340px,calc(100vw-88px))] rounded-2xl border border-white/10 bg-[#05070c]/90 p-3 shadow-2xl backdrop-blur-2xl">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="text-[9px] font-mono uppercase tracking-[0.18em] text-violet-300">ENTITY INTELLIGENCE</p>
+              <h3 className="mt-1 text-[13px] font-semibold text-white">{focused?.name ?? 'World overview'}</h3>
+              {focused ? (
+                <>
+                  <p className="mt-1 text-[9px] font-mono text-violet-200">{idContext.convoy ?? 'Convoy unresolved'}{idContext.client ? ` · ${idContext.client}` : ''}</p>
+                  <div className="mt-2 grid grid-cols-3 gap-1.5 text-[9px] font-mono">
+                    <div className="rounded-lg border border-white/5 bg-white/[0.02] p-2"><span className="block text-neutral-600">STATE</span><span className="text-neutral-200">{focused.position_state ?? 'observed'}</span></div>
+                    <div className="rounded-lg border border-white/5 bg-white/[0.02] p-2"><span className="block text-neutral-600">CONF</span><span className="text-emerald-300">{focused.position_confidence != null ? `${Math.round(focused.position_confidence * 100)}%` : '—'}</span></div>
+                    <div className="rounded-lg border border-white/5 bg-white/[0.02] p-2"><span className="block text-neutral-600">SPEED</span><span className="text-neutral-200">{focused.speed_kph != null ? `${Math.round(focused.speed_kph)} km/h` : '—'}</span></div>
+                  </div>
+                </>
+              ) : <p className="mt-1 text-[10px] text-neutral-500">Select a live entity to inspect identity, provenance and current world state.</p>}
+            </div>
+            <button type="button" onClick={() => setEntityOpen(false)} className="grid h-7 w-7 place-items-center rounded-lg text-neutral-600 hover:bg-white/5 hover:text-white"><X size={13} /></button>
+          </div>
+        </section>
+      )}
+
+      {agentsOpen && (
+        <section className="pointer-events-auto absolute bottom-14 left-[72px] z-20 w-[min(460px,calc(100vw-92px))] rounded-2xl border border-cyan-400/15 bg-[#05070c]/94 p-3 shadow-2xl backdrop-blur-2xl">
+          <div className="flex items-center justify-between">
+            <div><p className="flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-[0.18em] text-cyan-300"><Sparkles size={12} /> SPECIALIST SWARM</p><p className="mt-1 text-[10px] text-neutral-500">Independent world-state interpreters; deterministic evidence remains authoritative.</p></div>
+            <div className="text-right text-[9px] font-mono text-neutral-500"><div>{snapshot.alerts} alert lanes</div><div>{snapshot.visible} positioned</div></div>
+          </div>
+          <div className="mt-3 grid max-h-[250px] grid-cols-1 gap-1.5 overflow-y-auto sm:grid-cols-2">
+            {snapshot.agents.map(agent => <div key={agent.id} className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-2.5">
+              <div className="flex items-center justify-between gap-2"><span className="truncate text-[10px] font-semibold text-neutral-200">{agent.label}</span><span className={`rounded-full px-1.5 py-0.5 text-[8px] font-mono uppercase ${agent.state === 'alert' ? 'bg-red-500/10 text-red-300' : agent.state === 'watch' ? 'bg-amber-500/10 text-amber-200' : agent.state === 'degraded' ? 'bg-neutral-500/10 text-neutral-400' : 'bg-emerald-500/10 text-emerald-300'}`}>{agent.state}</span></div>
+              <div className="mt-1.5 flex items-center justify-between text-[8px] font-mono text-neutral-600"><span>{agent.dimension}</span><span>{Math.round(agent.confidence * 100)}% confidence</span></div>
+              <p className="mt-1 text-[9px] leading-relaxed text-neutral-500">{agent.summary}</p>
+            </div>)}
+          </div>
+          <div className="mt-2 flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-2.5 py-2 text-[8px] font-mono text-neutral-600"><BrainCircuit size={11} /><span>OPEN-WEIGHT MODEL LANES: QWEN3-VL 30B-A3B · QWEN3-VL 8B · QWEN3-VL 4B/GGUF · ADAPTERS STANDBY</span></div>
+        </section>
       )}
     </div>
   );
