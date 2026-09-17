@@ -1,29 +1,54 @@
-# Sonalit Free Standby Backend
+# Sonalit Redundant Backend Runtime
 
-This directory provides a provider-independent disaster-recovery replica for the Sonalit legacy monolith.
+Sonalit uses a provider-independent active/standby backend topology so a Railway outage or billing pause does not require rewriting or rebuilding the application.
 
-## Design
+## Topology
 
-- Railway remains the primary backend.
-- The standby is a single Docker container on a free/low-cost VPS (Oracle Cloud Free Tier is a suitable target).
-- Both instances use the same Git commit/image and the same authoritative Neon/Postgres database.
-- The standby uses the same Redis service when the application requires Redis.
-- `SONALIT_STANDBY=true` disables every `node-cron` schedule in the monolith and keeps in-process workers disabled.
-- The standby is therefore safe to keep running without duplicating report generation, intelligence sweeps, retention, GDPR purge, or other scheduled side effects.
-- Promotion is an explicit operation. Do not point public traffic at both instances unless a proper health-based routing layer is configured.
+```text
+                         SONALIT SOURCE
+                              |
+                        Git commit / image
+                              |
+                    GitHub Container Registry
+                              |
+              +---------------+---------------+
+              |                               |
+        PRIMARY RUNTIME                  STANDBY RUNTIME
+           Railway                       Docker host / VPS
+              |                               |
+              +---------------+---------------+
+                              |
+                    Authoritative services
+                    PostgreSQL / Redis / R2
+```
 
-## Host requirements
+Railway remains the normal primary runtime. The standby is a replaceable Docker compute node. Both use the same authoritative PostgreSQL/Redis services; there is intentionally no second writable production database.
 
-A small Linux VM with Docker and Docker Compose is enough. The application container listens only on `127.0.0.1:5000` so the host can later put Caddy/Nginx/Cloudflare Tunnel in front of it.
+## Runtime fencing
 
-## First-time setup
+Only one production process is allowed to own Sonalit's active runtime fence.
 
-1. Create the VM and install Docker + Compose.
+- `SONALIT_STANDBY=true` keeps the replica fenced and disables cron side effects plus in-process workers.
+- Active production startup claims a lease in the authoritative `sonalit_runtime_fence` table before `app.js` is loaded.
+- The lease is serialized with a PostgreSQL advisory lock and refreshed by heartbeat.
+- A second active runtime refuses to start while the existing lease is fresh.
+- A controlled takeover (`SONALIT_FENCE_TAKEOVER=true`) replaces the recorded owner; the displaced runtime detects loss of ownership and terminates on its next heartbeat.
+- The application fence does not replace operational fencing: public traffic must still be removed from the primary before promotion.
+
+The fence table is bootstrapped automatically by the runtime; no manual schema migration is required for this control plane.
+
+## Standby host
+
+A small Ubuntu/Debian VM with Docker and Docker Compose is sufficient. The standby container binds to `127.0.0.1:5000` only; place Caddy, Nginx, a Cloudflare Tunnel, or another authenticated reverse proxy in front of it when the host is promoted.
+
+### First-time setup
+
+1. Run `bash infra/standby/setup-host.sh` as root on the VM, or install Docker/Compose manually.
 2. Create `/opt/sonalit-standby`.
-3. Copy `docker-compose.yml` and `.env.example` to that directory and rename `.env.example` to `.env`.
-4. Put the real production `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `CORS_ORIGINS`, and all API integration secrets required by the backend into `.env`.
-5. Make sure `SONALIT_STANDBY=true` and `ENABLE_INPROCESS_WORKERS=false` remain set.
-6. Authenticate to GHCR (or make the package public) and start the container:
+3. Copy `infra/standby/docker-compose.yml`, `infra/standby/docker-compose.active.yml`, `infra/standby/promote.sh`, and `infra/standby/demote.sh` there.
+4. Copy `infra/standby/.env.example` to `.env` and fill in the same authoritative production `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `CORS_ORIGINS`, and required integration secrets used by the primary.
+5. Keep `SONALIT_STANDBY=true` and `ENABLE_INPROCESS_WORKERS=false` in the base compose service.
+6. Authenticate Docker to GHCR, then start the replica:
 
 ```bash
 cd /opt/sonalit-standby
@@ -35,42 +60,71 @@ curl --fail http://127.0.0.1:5000/health
 
 ## CI/CD
 
-`.github/workflows/standby-backend.yml` builds `Dockerfile.standby` and publishes an immutable image tagged with the Git SHA plus the `standby` tag.
+`.github/workflows/standby-backend.yml` now runs on standby-related pull requests and on `main`.
 
-To enable automatic deployment to the standby host, configure these GitHub Actions secrets:
+The workflow:
+
+1. Validates the runtime-fence JavaScript.
+2. Runs `bash -n` against promotion/demotion/host setup scripts.
+3. Validates the merged Docker Compose configuration.
+4. Builds `Dockerfile.standby`.
+5. On `main`, publishes both the immutable Git-SHA image tag and the moving `standby` tag to GHCR.
+6. If the standby-host secrets are configured, SSH-deploys the exact Git-SHA image and verifies `/health`.
+
+Configure these GitHub Actions secrets for automatic standby deployment:
 
 - `STANDBY_SSH_HOST`
 - `STANDBY_SSH_USER`
 - `STANDBY_SSH_KEY`
 - `STANDBY_SSH_PORT` (optional; defaults to `22`)
 - `STANDBY_GHCR_USER`
-- `STANDBY_GHCR_TOKEN` (a GitHub token/PAT that can pull the image from GHCR)
+- `STANDBY_GHCR_TOKEN`
 
-The workflow is deliberately safe when those secrets are absent: it still builds and publishes the standby image, but skips the SSH deployment job.
+The deployment step remains optional: image build/validation still runs when those secrets are absent.
 
 ## Promotion
 
-Promotion is deliberately manual until a real health-based routing layer is configured. This prevents a network partition from causing split-brain traffic.
+Promotion is deliberately explicit. Do not promote merely because the primary looks slow or because a single dependency is unhealthy.
 
-First verify the primary is genuinely unavailable and the standby can reach the authoritative database/Redis. Then on the standby host:
+First verify the Railway primary is fenced/offline and determine the exact image you intend to promote:
 
 ```bash
 cd /opt/sonalit-standby
-
-# Replace this with the exact image SHA you intend to promote.
 export SONALIT_IMAGE=ghcr.io/fleetsatpro/sonalit-backend:<git-sha>
-
+export SONALIT_EXPECTED_REVISION=<git-sha>
+export CONFIRM_SONALIT_FAILOVER=YES
 bash ./promote.sh
 ```
 
-The promotion script pulls the exact immutable image, runs the database migration while the process remains fenced as standby, restarts the service with `SONALIT_STANDBY=false`, enables in-process workers, and verifies `/health`.
+The promotion script:
 
-Before promotion, update DNS/reverse-proxy origin routing to the standby host. After primary recovery, reverse the routing and return the standby to its default `SONALIT_STANDBY=true` state before bringing the primary back into service.
+- verifies the existing standby is healthy;
+- pulls the exact image and resolves its digest;
+- optionally verifies the image OCI revision label matches `SONALIT_EXPECTED_REVISION`;
+- runs migrations while the service remains fenced as standby;
+- enables the active role with an explicit database-fence takeover;
+- waits for `/health` before declaring local promotion successful.
 
-## Important data-safety rule
+Only after that local health check passes should the public DNS/reverse-proxy origin be switched to the standby host.
 
-Do not create a second independent production PostgreSQL database for the replica. Two writable databases without deliberate replication/fencing create split-brain risk. The durable state belongs in the authoritative database/object store; backend containers are replaceable compute.
+## Demotion / recovery
+
+After the Railway primary has been repaired and verified independently, restore public routing to Railway first. Then return the standby host to its safe replica state:
+
+```bash
+cd /opt/sonalit-standby
+export CONFIRM_SONALIT_DEMOTION=YES
+bash ./demote.sh
+```
+
+The demotion script stops the active override, restarts the base fenced compose service, and verifies `/health`.
+
+## Data safety
+
+Do not create a second independent production PostgreSQL database for the replica. Two writable databases without deliberate replication/fencing create split-brain and data-loss risk.
+
+The database and object store are the durable system of record; compute containers are replaceable. Backups and restore drills must be validated independently before any database migration or provider move.
 
 ## Cost target
 
-The deployment is designed so the standby compute can live on a free VM tier or a very small VPS. GitHub Container Registry can hold the container image, and the repository itself remains the source of truth for deployments.
+The standby compute can live on a free VM tier or a small VPS while the primary remains Railway. GHCR is used as the portable image registry, so the same application image can be redeployed to another Docker-capable host without changing the application runtime code.
