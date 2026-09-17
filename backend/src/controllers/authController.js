@@ -18,8 +18,6 @@ const COOKIE_OPTS = {
   maxAge: REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000,
 };
 
-// refresh_tokens table is created by migration 20260521_014_refresh_tokens_and_gdpr_cols.sql
-// The runtime CREATE TABLE was removed — schema changes belong in migrations.
 async function ensureRefreshTable() { /* no-op — handled by migration */ }
 
 function hashToken(raw) {
@@ -30,13 +28,13 @@ function issueRefreshToken() {
   return crypto.randomBytes(40).toString('hex');
 }
 
-async function setRefreshCookie(res, userId, reuseToken) {
+async function setRefreshCookie(res, userId, reuseToken, req) {
   const raw = reuseToken || issueRefreshToken();
   const hash = hashToken(raw);
   await query(
-    `INSERT INTO refresh_tokens (user_id, token_hash, expires_at)
-     VALUES ($1, $2, NOW() + INTERVAL '${REFRESH_TTL_DAYS} days')`,
-    [userId, hash]
+    `INSERT INTO refresh_tokens (user_id, token_hash, expires_at, ip_address, user_agent, last_seen_at)
+     VALUES ($1, $2, NOW() + INTERVAL '${REFRESH_TTL_DAYS} days', $3, $4, NOW())`,
+    [userId, hash, req ? (req.ip || null) : null, req ? (String(req.headers['user-agent'] || '').slice(0, 1000) || null) : null]
   );
   res.cookie(RT_COOKIE, raw, COOKIE_OPTS);
   return raw;
@@ -62,25 +60,11 @@ const login = asyncHandler(async (req, res) => {
     [email]
   );
   const user = result.rows[0];
-
-  // Constant-time comparison — always hash even if user not found
   const hashToCompare = user ? user.password_hash : '$2a$10$dummyhashtopreventtimingattacks00000000000';
   const valid = await bcrypt.compare(password, hashToCompare);
+  if (!user || !valid) return res.status(401).json({ error: 'Invalid credentials' });
+  if (user.status !== 'active') return res.status(403).json({ error: 'Account is suspended' });
 
-  if (!user || !valid) {
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
-  if (user.status !== 'active') {
-    return res.status(403).json({ error: 'Account is suspended' });
-  }
-
-  // Field crew do not have an operator session at all. Their credential is a
-  // PIN on a paired device (routes/field.js), and letting the same account
-  // also trade an email + password for a dashboard JWT would make that
-  // separation cosmetic: a leaked field password would be a leaked operator
-  // token, on an account nobody expects to be able to reach the dashboard.
-  // The check sits after the password comparison so it cannot be used to
-  // enumerate which addresses are field accounts.
   if (FIELD_ONLY_ROLES.includes(user.role)) {
     return res.status(403).json({
       error: 'field_account',
@@ -88,15 +72,13 @@ const login = asyncHandler(async (req, res) => {
     });
   }
 
-  // Access token: short-lived, lives in memory on the client (not localStorage)
   const accessToken = jwt.sign(
     { id: user.id, email: user.email, role: user.role },
     process.env.JWT_SECRET,
     { expiresIn: '2h' }
   );
 
-  // Refresh token: long-lived, httpOnly cookie (T1.2)
-  await setRefreshCookie(res, user.id);
+  await setRefreshCookie(res, user.id, undefined, req);
 
   logger.info(`Login: ${user.email} (${user.role})`);
   res.json({
@@ -114,12 +96,10 @@ const getCurrentUser = asyncHandler(async (req, res) => {
 });
 
 const logout = asyncHandler(async (req, res) => {
-  // Revoke the refresh token stored in the httpOnly cookie
   const raw = req.cookies && req.cookies[RT_COOKIE];
   if (raw) {
-    await query('UPDATE refresh_tokens SET used_at = NOW() WHERE token_hash = $1', [hashToken(raw)]).catch(() => {});
+    await query('UPDATE refresh_tokens SET used_at = NOW(), revoked_at = NOW(), last_seen_at = NOW() WHERE token_hash = $1', [hashToken(raw)]).catch(() => {});
   }
-  // Clear the cookie
   res.clearCookie(RT_COOKIE, { ...COOKIE_OPTS, maxAge: 0 });
   logger.info(`Logout: ${req.user.email}`);
   res.json({ message: 'Logged out successfully' });
