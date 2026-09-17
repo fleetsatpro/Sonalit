@@ -39,7 +39,10 @@ jobs:
           bash -n infra/standby/setup-host.sh
 
       - name: Validate Compose configuration
-        run: docker compose -f infra/standby/docker-compose.yml -f infra/standby/docker-compose.active.yml config
+        run: |
+          cp infra/standby/.env.example infra/standby/.env
+          docker compose -f infra/standby/docker-compose.yml -f infra/standby/docker-compose.active.yml config
+          rm -f infra/standby/.env
 
   build:
     needs: validate
