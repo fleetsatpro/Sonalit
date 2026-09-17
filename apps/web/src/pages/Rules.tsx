@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity, Bell, CheckCircle2, ChevronRight, Clock3, Code2, Copy, FlaskConical,
-  GitBranch, History, Layers3, MoreHorizontal, PauseCircle, PlayCircle, Plus,
+  Activity, Bell, ChevronRight, Code2, Copy, FlaskConical,
+  GitBranch, History, Layers3, PauseCircle, PlayCircle, Plus,
   Radio, ShieldAlert, SlidersHorizontal, Trash2, Webhook, X, Zap
 } from 'lucide-react';
 import { rulesAPI } from '../lib/api.js';
