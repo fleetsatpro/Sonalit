@@ -14,6 +14,7 @@ const { query } = require('../config/database');
 const { mapboxToken, osrmUrl } = require('../services/geo/providerEnv');
 const { planRouteAlternatives } = require('../services/geo/routePlan');
 const { rankRoutes } = require('../services/geo/routeRisk');
+const { runSwarm } = require('../services/geo/routeSafetySwarm');
 
 const ROUTE_ANALYSIS_VERSION = 'route-safety-v2';
 const ROUTE_CACHE_MINUTES = 15;
@@ -192,14 +193,27 @@ async function analyseRoute({ origin, destination, convoyId, requestedBy, depart
     exposures: [],
   }, 'Direct fallback');
 
-  let aiSummary = null;
+  let swarm = null;
   try {
-    aiSummary = await callAnalysisAI(origin, destination, deterministicOptions, { departureTime, avoidNightTravel });
+    swarm = await runSwarm({
+      origin,
+      destination,
+      departureTime,
+      avoidNightTravel,
+      candidates: deterministicOptions,
+      zones: zones.slice(0, 100),
+    });
   } catch (err) {
-    logger.warn({ err }, 'Route Safety AI enrichment unavailable; deterministic result retained');
+    logger.warn({ err }, 'Route Safety swarm unavailable; deterministic result retained');
   }
 
   const overallRisk = best.risk_score;
+  const swarmLevel = swarm?.arbiter?.risk_level || null;
+  const swarmSummary = swarm?.arbiter?.route_selection_reason || null;
+  const aiSummary = swarmSummary || `Deterministic route assessment: ${riskBand(overallRisk)} risk based on current mapped route exposure and road-routing evidence.`;
+  const safetyGate = swarm?.consensus?.hard_block || swarmLevel === 'CRITICAL'
+    ? 'HUMAN_REVIEW'
+    : (swarm?.arbiter?.go_no_go || 'CONDITIONAL');
   return {
     org_id: orgId,
     convoy_id: convoyId ?? null,
@@ -211,7 +225,18 @@ async function analyseRoute({ origin, destination, convoyId, requestedBy, depart
     primary_risk_factors: riskFactorsFromExposures(primary?.exposures ?? []),
     recommended_route: best,
     alternate_routes: deterministicOptions.slice(1),
-    ai_summary: aiSummary || `Deterministic route assessment: ${riskBand(overallRisk)} risk based on current mapped route exposure and road-routing evidence.`,
+    ai_summary: aiSummary,
+    safety_gate: safetyGate,
+    swarm: swarm ? {
+      version: swarm.version,
+      agent_count: swarm.agent_count,
+      providers: [...new Set((swarm.reports || []).map(r => r.provider).filter(Boolean)), swarm.arbiter?.provider, swarm.critic?.provider].filter(Boolean),
+      confidence: swarm.consensus?.confidence ?? 0,
+      hard_block: Boolean(swarm.consensus?.hard_block),
+      aggregated_risks: swarm.aggregated_risks || [],
+      arbiter: swarm.arbiter || null,
+      critic: swarm.critic ? { provider: swarm.critic.provider, status: swarm.critic.status, finding: swarm.critic.finding, contradictions: swarm.critic.contradictions, evidence_gaps: swarm.critic.evidence_gaps } : null,
+    } : null,
     requested_by: requestedBy ?? null,
     analysis_version: ROUTE_ANALYSIS_VERSION,
     routing_provider: best.label.includes('fallback') ? 'direct-fallback' : (primary?.provider || 'unknown'),
