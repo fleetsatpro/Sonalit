@@ -31,16 +31,21 @@ router.post('/analyse', authorize('admin', 'dispatcher', 'operator'), asyncHandl
   const { error, value } = analyseSchema.validate(req.body);
   if (error) return res.status(400).json({ error: error.message });
 
+  if (value.convoy_id) {
+    const convoy = await req.db(`SELECT id FROM convoys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL LIMIT 1`, [value.convoy_id, req.user.org_id]);
+    if (!convoy.rows.length) return res.status(404).json({ error: 'Convoy not found in your organisation' });
+  }
+
   let analysis;
   try {
     analysis = await analyseRoute({
-    origin: value.origin,
+      origin: value.origin,
     destination: value.destination,
     convoyId: value.convoy_id,
     requestedBy: req.user.id,
     departureTime: value.departure_time,
     avoidNightTravel: value.preferences?.avoid_night_travel ?? false,
-    orgId: req.user.org_id,
+      orgId: req.user.org_id,
     });
   } catch (err) {
     logger.error({ err, orgId: req.user.org_id }, 'Route Safety analysis failed');
@@ -119,8 +124,8 @@ router.get('/analyses/:id', asyncHandler(async (req, res) => {
     `SELECT ra.*, u.name AS requested_by_name
      FROM route_analyses ra
      LEFT JOIN users u ON u.id = ra.requested_by
-     WHERE ra.id = $1`,
-    [req.params.id],
+     WHERE ra.id = $1 AND ra.org_id = $2`,
+    [req.params.id, req.user.org_id],
   );
   if (!result.rows.length) return res.status(404).json({ error: 'Analysis not found' });
   res.json({ data: result.rows[0] });
