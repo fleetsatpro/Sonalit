@@ -140,6 +140,13 @@ export default function RouteAnalysis(): React.ReactElement {
             <div className="mt-3 space-y-2">{(latest.primary_risk_factors.length?latest.primary_risk_factors:['No mapped primary exposure']).map(f=><div key={f} className="flex items-start gap-2 rounded-lg border border-white/[0.05] px-3 py-2 text-[11px]"><span className="mt-1 h-1.5 w-1.5 rounded-full bg-orange-300"/>{factorLabel[f]??f}</div>)}</div>
           </section>
           <section className="rounded-2xl border border-white/[0.06] bg-[#081217] p-5">
+            <div className="flex items-center gap-2 text-xs font-semibold"><FlaskConical size={13} className="text-purple-300"/> AI safety swarm</div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {[['Agents',String(latest.swarm?.agent_count ?? 0)],['Confidence',Math.round(Number(latest.swarm?.confidence ?? 0)*100)+'%'],['Gate',latest.safety_gate||'CONDITIONAL'],['Provider path',(latest.swarm?.providers||[]).length+' used']].map(([k,v])=><div key={k} className="rounded-lg border border-white/[0.05] bg-white/[0.02] p-2.5"><div className="text-[9px] uppercase tracking-[0.12em] text-slate-600">{k}</div><div className="mt-1 text-[10px] font-medium">{v}</div></div>)}
+            </div>
+            <p className="mt-3 text-[10px] leading-5 text-slate-500">Independent route, security, environment, infrastructure, operations, data-assurance and adversarial agents feed a separate arbiter and critic. AI cannot replace the deterministic route-risk gate.</p>
+          </section>
+          <section className="rounded-2xl border border-white/[0.06] bg-[#081217] p-5">
             <div className="flex items-center gap-2 text-xs font-semibold"><Database size={13} className="text-cyan-300"/> Assessment</div>
             <p className="mt-3 text-xs leading-5 text-slate-400">{latest.ai_summary}</p>
             <div className="mt-4 flex items-center gap-2 text-[10px] text-slate-600"><ShieldAlert size={12}/> Version {latest.analysis_version||'route-safety-v2'} · generated {new Date(latest.analysed_at).toLocaleString()}</div>
