@@ -1,72 +1,659 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, AlertTriangle, Bell, Check, ChevronRight, CirclePause, CirclePlay, Clock3, Code2, Copy, Database, GitBranch, History, Layers3, Plus, Radar, RefreshCw, Search, Shield, SlidersHorizontal, Sparkles, Trash2, Webhook, X, Zap } from 'lucide-react';
+import {
+  Activity,
+  AlertTriangle,
+  ArrowRight,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  CirclePause,
+  CirclePlay,
+  Clock3,
+  Copy,
+  ExternalLink,
+  Filter,
+  History,
+  Layers3,
+  Plus,
+  RefreshCw,
+  Search,
+  Shield,
+  SlidersHorizontal,
+  Sparkles,
+  Trash2,
+  X,
+  Zap,
+} from 'lucide-react';
 import { rulesAPI } from '../lib/api.js';
 
-type Condition={field:string;operator:string;value?:unknown};
-type Action={type:string;channel?:string;recipient?:string;severity?:string};
-type Rule={id:string;name:string;description?:string|null;enabled:boolean;status?:string;priority?:number;severity?:string;mode?:string;version?:number;scope?:Record<string,unknown>;conditions?:Condition[];condition_logic?:'all'|'any';actions?:Action[];cooldown_seconds?:number;evaluation_window_seconds?:number;last_triggered_at?:string|null;trigger_count?:number;failure_count?:number;tags?:string[]};
-type Execution={id:string;event_type:string;subject_id?:string;matched:boolean;suppressed:boolean;suppression_reason?:string|null;decision_ms?:number|null;condition_trace?:Array<{field:string;operator:string;expected?:unknown;actual?:unknown;matched:boolean}>;action_results?:Array<{type:string;status:string;error?:string}>;evaluated_at:string};
+type Condition = { field: string; operator: string; value?: unknown };
+type Action = { type: string; channel?: string; recipient?: string; severity?: string };
+type Rule = {
+  id: string;
+  name: string;
+  description?: string | null;
+  enabled: boolean;
+  status?: string;
+  priority?: number;
+  severity?: string;
+  mode?: string;
+  version?: number;
+  scope?: Record<string, unknown>;
+  conditions?: Condition[];
+  condition_logic?: 'all' | 'any';
+  actions?: Action[];
+  cooldown_seconds?: number;
+  evaluation_window_seconds?: number;
+  last_triggered_at?: string | null;
+  trigger_count?: number;
+  failure_count?: number;
+  tags?: string[];
+};
+type Execution = {
+  id: string;
+  event_type: string;
+  subject_id?: string;
+  matched: boolean;
+  suppressed: boolean;
+  suppression_reason?: string | null;
+  decision_ms?: number | null;
+  condition_trace?: Array<{
+    field: string;
+    operator: string;
+    expected?: unknown;
+    actual?: unknown;
+    matched: boolean;
+  }>;
+  action_results?: Array<{ type: string; status: string; error?: string }>;
+  evaluated_at: string;
+};
 
-const card='border border-white/[0.07] bg-[#081217]';
-const input='w-full border border-white/[0.08] bg-[#071014] px-3 py-2.5 text-xs text-slate-200 outline-none focus:border-orange-400/40';
-const fields=['speed_kmh','route.deviation_km','geofence.inside','event.type','device_id','battery.level','signal.rssi','idle.seconds','cargo.value','convoy.status'];
-const ops=['eq','neq','gt','gte','lt','lte','contains','exists','in','between'];
-const actions=['alert','create_incident','notify','webhook','escalate','tag','log'];
-const patterns=[
- ['Overspeed containment','speed_kmh gt 110',['alert','notify'],'critical'],
- ['Corridor deviation','route.deviation_km gt 2',['alert','create_incident'],'high'],
- ['Telemetry silence','event.type eq device.offline',['alert','notify'],'high'],
- ['Geofence breach','geofence.inside eq false',['alert','create_incident','notify'],'critical'],
- ['Low fuel guard','battery.level lt 25',['notify','tag'],'medium'],
- ['Critical cargo movement','cargo.value gt 100000',['alert','escalate'],'high'],
+type Tab = 'registry' | 'executions' | 'patterns';
+
+const card = 'border border-white/[0.07] bg-[#081217]';
+const input =
+  'w-full border border-white/[0.08] bg-[#050d11] px-3 py-2.5 text-xs text-slate-200 outline-none transition focus:border-orange-400/40';
+const fields = [
+  'speed_kmh',
+  'route.deviation_km',
+  'geofence.inside',
+  'event.type',
+  'device_id',
+  'battery.level',
+  'signal.rssi',
+  'idle.seconds',
+  'cargo.value',
+  'convoy.status',
+];
+const operators = ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'contains', 'exists', 'in', 'between'];
+const actionTypes = ['alert', 'create_incident', 'notify', 'webhook', 'escalate', 'tag', 'log'];
+const patterns = [
+  { name: 'Overspeed containment', severity: 'critical', field: 'speed_kmh', operator: 'gt', value: 110 },
+  { name: 'Corridor deviation', severity: 'high', field: 'route.deviation_km', operator: 'gt', value: 2 },
+  { name: 'Telemetry silence', severity: 'high', field: 'event.type', operator: 'eq', value: 'device.offline' },
+  { name: 'Geofence breach', severity: 'critical', field: 'geofence.inside', operator: 'eq', value: false },
+  { name: 'Low battery guard', severity: 'medium', field: 'battery.level', operator: 'lt', value: 25 },
+  { name: 'Critical cargo movement', severity: 'high', field: 'cargo.value', operator: 'gt', value: 100000 },
 ];
 
-const fmt=(n:number)=>n.toLocaleString();
-const sev=(s:string='medium')=>s==='critical'?'text-red-300 bg-red-400/10 border-red-400/20':s==='high'?'text-orange-300 bg-orange-400/10 border-orange-400/20':s==='medium'?'text-amber-200 bg-amber-300/10 border-amber-300/20':'text-emerald-300 bg-emerald-400/10 border-emerald-400/20';
-const conditionLabel=(c:Condition)=>`${c.field} ${c.operator} ${Array.isArray(c.value)?c.value.join(','):String(c.value??'')}`.trim();
-const actionLabel=(a:Action)=>a.type.replaceAll('_',' ')+(a.channel?` · ${a.channel}`:'');
-
-function Stat({name,value,sub,icon:Icon}:{name:string;value:string|number;sub:string;icon:typeof Activity}){return <div className="px-4 py-4"><div className="flex items-center justify-between text-[9px] uppercase tracking-[.18em] text-slate-600"><span>{name}</span><Icon size={13}/></div><div className="mt-1 text-2xl font-semibold tabular-nums text-slate-100">{value}</div><div className="mt-1 text-[10px] text-slate-600">{sub}</div></div>}
-
-function Builder({initial,onClose,onSaved}:{initial?:Rule|null;onClose:()=>void;onSaved:()=>void}){
- const qc=useQueryClient();
- const [name,setName]=useState(initial?.name??''); const [desc,setDesc]=useState(initial?.description??''); const [priority,setPriority]=useState(String(initial?.priority??500)); const [severity,setSeverity]=useState(initial?.severity??'medium'); const [mode,setMode]=useState(initial?.mode??'live'); const [logic,setLogic]=useState(initial?.condition_logic??'all'); const [cooldown,setCooldown]=useState(String(initial?.cooldown_seconds??900)); const [conditions,setConditions]=useState<Condition[]>(initial?.conditions?.length?initial.conditions:[{field:'speed_kmh',operator:'gt',value:110}]); const [acts,setActs]=useState<Action[]>(initial?.actions?.length?initial.actions:[{type:'alert',severity:'high'}]); const [tagText,setTagText]=useState((initial?.tags??[]).join(', ')); const [scope,setScope]=useState(JSON.stringify(initial?.scope??{type:'organisation'},null,2));
- const save=useMutation({mutationFn:async()=>{const payload={name:name.trim(),description:desc.trim(),enabled:true,status:'active',priority:Number(priority)||0,severity,mode,version:(initial?.version??0)+1,scope:JSON.parse(scope),conditions,condition_logic:logic,actions:acts,cooldown_seconds:Number(cooldown)||0,evaluation_window_seconds:0,deduplication:{strategy:'rule_subject',ttl_seconds:Number(cooldown)||900},tags:tagText.split(',').map(x=>x.trim()).filter(Boolean)}; if(initial?.id)return rulesAPI.update(initial.id,payload); return rulesAPI.create(payload)},onSuccess:()=>{qc.invalidateQueries({queryKey:['rules']});qc.invalidateQueries({queryKey:['rules-stats']});onSaved()}});
- const updateCond=(i:number,p:Partial<Condition>)=>setConditions(v=>v.map((x,j)=>j===i?{...x,...p}:x)); const updateAct=(i:number,p:Partial<Action>)=>setActs(v=>v.map((x,j)=>j===i?{...x,...p}:x));
- return <div className="fixed inset-0 z-[80] bg-black/75"><div className="absolute inset-y-0 right-0 w-full max-w-[860px] overflow-y-auto border-l border-white/10 bg-[#050d11] shadow-[0_0_100px_rgba(0,0,0,.65)]">
-  <div className="sticky top-0 z-10 border-b border-white/[0.07] bg-[#071014]/95 backdrop-blur-xl"><div className="flex items-center justify-between px-6 py-4"><div><div className="text-[9px] uppercase tracking-[.24em] text-orange-300">Policy studio</div><h2 className="mt-1 text-xl font-semibold">{initial?'Revise policy':'Compose policy'}</h2></div><button onClick={onClose} className="p-2 text-slate-500 hover:text-white"><X size={17}/></button></div><div className="grid grid-cols-5 border-t border-white/[0.05] text-[9px] uppercase tracking-widest text-slate-600"><div className="border-r border-white/[0.05] px-4 py-2 text-orange-300">01 intent</div><div className="border-r border-white/[0.05] px-4 py-2">02 trigger</div><div className="border-r border-white/[0.05] px-4 py-2">03 guards</div><div className="border-r border-white/[0.05] px-4 py-2">04 actions</div><div className="px-4 py-2">05 release</div></div></div>
-  <div className="p-6 space-y-5">
-   <section className={card+' p-5'}><div className="flex items-center gap-3"><span className="font-mono text-xs text-orange-300">01</span><div><div className="text-xs font-semibold">Operational intent</div><div className="text-[10px] text-slate-600">State exactly what failure this policy contains.</div></div></div><div className="mt-4 grid gap-3"><input className={input} placeholder="Policy name" value={name} onChange={e=>setName(e.target.value)}/><textarea className={input+' min-h-24 resize-none'} placeholder="Describe the event, consequence and operational objective…" value={desc} onChange={e=>setDesc(e.target.value)}/><div className="grid grid-cols-3 gap-3"><label className="text-[9px] uppercase tracking-widest text-slate-600">Severity<select className={input+' mt-1'} value={severity} onChange={e=>setSeverity(e.target.value)}><option>low</option><option>medium</option><option>high</option><option>critical</option></select></label><label className="text-[9px] uppercase tracking-widest text-slate-600">Priority<input className={input+' mt-1'} value={priority} onChange={e=>setPriority(e.target.value)}/></label><label className="text-[9px] uppercase tracking-widest text-slate-600">Mode<select className={input+' mt-1'} value={mode} onChange={e=>setMode(e.target.value)}><option value="live">Live</option><option value="dry_run">Dry run</option></select></label></div></div></section>
-   <section className={card+' p-5'}><div className="flex items-center justify-between"><div className="flex items-center gap-3"><span className="font-mono text-xs text-cyan-300">02</span><div><div className="text-xs font-semibold">Trigger graph</div><div className="text-[10px] text-slate-600">Compose predicates over the event envelope.</div></div></div><select className="border border-white/[0.07] bg-[#071014] px-3 py-2 text-[10px] uppercase tracking-widest" value={logic} onChange={e=>setLogic(e.target.value as 'all'|'any')}><option value="all">ALL predicates</option><option value="any">ANY predicate</option></select></div><div className="mt-4 space-y-2">{conditions.map((c,i)=><div key={i} className="grid gap-2 md:grid-cols-[1.2fr_.8fr_1fr_34px] bg-black/20 border border-white/[0.05] p-2"><select className={input} value={c.field} onChange={e=>updateCond(i,{field:e.target.value})}>{fields.map(x=><option key={x}>{x}</option>)}</select><select className={input} value={c.operator} onChange={e=>updateCond(i,{operator:e.target.value})}>{ops.map(x=><option key={x}>{x}</option>)}</select><input className={input} value={Array.isArray(c.value)?c.value.join(','):String(c.value??'')} onChange={e=>updateCond(i,{value:e.target.value})}/><button disabled={conditions.length===1} onClick={()=>setConditions(v=>v.filter((_,j)=>j!==i))} className="text-slate-600 hover:text-red-300 disabled:opacity-30"><X size={14}/></button></div>)}</div><button onClick={()=>setConditions(v=>[...v,{field:'event.type',operator:'eq',value:''}])} className="mt-3 text-[10px] uppercase tracking-widest text-cyan-300">+ Add predicate</button></section>
-   <section className={card+' p-5'}><div className="flex items-center gap-3"><span className="font-mono text-xs text-violet-300">03</span><div><div className="text-xs font-semibold">Safety & runtime guards</div><div className="text-[10px] text-slate-600">Control repetition, scope and execution pressure.</div></div></div><div className="mt-4 grid grid-cols-2 gap-3"><label className="text-[9px] uppercase tracking-widest text-slate-600">Cooldown seconds<input className={input+' mt-1'} value={cooldown} onChange={e=>setCooldown(e.target.value)}/></label><label className="text-[9px] uppercase tracking-widest text-slate-600">Scope JSON<textarea className={input+' mt-1 min-h-20 resize-none font-mono text-[10px]'} value={scope} onChange={e=>setScope(e.target.value)}/></label></div><div className="mt-3"><label className="text-[9px] uppercase tracking-widest text-slate-600">Tags<input className={input+' mt-1'} value={tagText} onChange={e=>setTagText(e.target.value)} placeholder="security, route, fleet"/></label></div></section>
-   <section className={card+' p-5'}><div className="flex items-center gap-3"><span className="font-mono text-xs text-emerald-300">04</span><div><div className="text-xs font-semibold">Response graph</div><div className="text-[10px] text-slate-600">Sequence side effects and escalations.</div></div></div><div className="mt-4 space-y-2">{acts.map((a,i)=><div key={i} className="grid gap-2 md:grid-cols-[1fr_1fr_1fr_34px] border border-white/[0.05] bg-black/20 p-2"><select className={input} value={a.type} onChange={e=>updateAct(i,{type:e.target.value})}>{actions.map(x=><option key={x}>{x}</option>)}</select><select className={input} value={a.channel??''} onChange={e=>updateAct(i,{channel:e.target.value||undefined})}><option value="">No channel</option><option value="in_app">In-app</option><option value="email">Email</option><option value="whatsapp">WhatsApp</option></select><input className={input} value={a.recipient??''} placeholder="Recipient / queue" onChange={e=>updateAct(i,{recipient:e.target.value||undefined})}/><button disabled={acts.length===1} onClick={()=>setActs(v=>v.filter((_,j)=>j!==i))} className="text-slate-600 hover:text-red-300 disabled:opacity-30"><X size={14}/></button></div>)}</div><button onClick={()=>setActs(v=>[...v,{type:'notify',channel:'in_app'}])} className="mt-3 text-[10px] uppercase tracking-widest text-emerald-300">+ Add response</button></section>
-   <section className={card+' p-5'}><div className="flex items-center gap-3"><span className="font-mono text-xs text-orange-300">05</span><div><div className="text-xs font-semibold">Release gate</div><div className="text-[10px] text-slate-600">Preview the policy before publishing it.</div></div></div><div className="mt-4 border border-white/[0.05] bg-[#050a0d] p-4 font-mono text-[10px] text-slate-400"><div className="text-orange-300">WHEN</div>{conditions.map((c,i)=><div key={i} className="mt-1">{i?'  AND ':'  '}{conditionLabel(c)}</div>)}<div className="mt-3 text-emerald-300">THEN</div>{acts.map((a,i)=><div key={i} className="mt-1">  {i+1}. {actionLabel(a)}</div>)}<div className="mt-3 text-violet-300">GUARDS</div><div className="mt-1">  cooldown = {cooldown}s · scope = configured · mode = {mode}</div></div>{save.isError&&<div className="mt-3 text-xs text-red-300">{save.error instanceof Error?save.error.message:'Unable to publish'}</div>}<button disabled={!name.trim()||save.isPending} onClick={()=>save.mutate()} className="mt-4 w-full bg-orange-500 py-3 text-xs font-bold text-slate-950 disabled:opacity-40">{save.isPending?'Publishing…':initial?'Publish new version':'Deploy policy'}</button></section>
-  </div></div></div>;
+function severityClass(value = 'medium') {
+  if (value === 'critical') return 'border-red-400/20 bg-red-400/10 text-red-300';
+  if (value === 'high') return 'border-orange-400/20 bg-orange-400/10 text-orange-300';
+  if (value === 'low') return 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300';
+  return 'border-amber-300/20 bg-amber-300/10 text-amber-200';
 }
 
-function Inspector({rule,onClose,onEdit}:{rule:Rule;onClose:()=>void;onEdit:()=>void}){
- const [mode,setMode]=useState<'overview'|'simulation'|'history'>('overview');
- const q=useQuery({queryKey:['rule-executions',rule.id],queryFn:async()=>((await rulesAPI.executions(rule.id,40)).data?.data??[]) as Execution[]});
- const [payload,setPayload]=useState('{"speed_kmh":120,"route":{"deviation_km":3},"device_id":"TRK-001"}');const test=useMutation({mutationFn:()=>{const d=JSON.parse(payload);return rulesAPI.test(rule.id,d)},onSuccess:r=>setMode('simulation')});
- return <div className="fixed inset-0 z-[70] bg-black/60"><div className="absolute inset-y-0 right-0 w-full max-w-[720px] overflow-y-auto border-l border-white/10 bg-[#050d11] shadow-2xl"><header className="sticky top-0 z-10 border-b border-white/[0.07] bg-[#071014]/95 px-6 py-5 backdrop-blur"><div className="flex justify-between gap-4"><div><div className="flex items-center gap-2"><span className={'border px-2 py-1 text-[8px] uppercase tracking-widest '+sev(rule.severity)}>{rule.severity}</span><span className="font-mono text-[9px] text-slate-600">v{rule.version??1}</span></div><h2 className="mt-2 text-xl font-semibold">{rule.name}</h2><p className="mt-1 max-w-xl text-xs leading-5 text-slate-500">{rule.description||'No description'}</p></div><button onClick={onClose} className="text-slate-500 hover:text-white"><X size={17}/></button></div><div className="mt-4 grid grid-cols-3 gap-2"><div className="border border-white/[0.06] bg-black/10 p-3"><div className="text-[9px] uppercase tracking-widest text-slate-600">State</div><div className="mt-1 text-xs">{rule.status??(rule.enabled?'active':'paused')}</div></div><div className="border border-white/[0.06] bg-black/10 p-3"><div className="text-[9px] uppercase tracking-widest text-slate-600">Priority</div><div className="mt-1 text-xs">{rule.priority??0}</div></div><div className="border border-white/[0.06] bg-black/10 p-3"><div className="text-[9px] uppercase tracking-widest text-slate-600">Runs</div><div className="mt-1 text-xs">{fmt(Number(rule.trigger_count??0))}</div></div></div><div className="mt-4 flex border-b border-white/[0.05]">{[['overview','Policy'],['simulation','Simulation'],['history','Execution trace']].map(([x,l])=><button key={x} onClick={()=>setMode(x as typeof mode)} className={`px-4 py-2 text-[10px] uppercase tracking-widest ${mode===x?'border-b border-orange-400 text-orange-300':'text-slate-600'}`}>{l}</button>)}</div></header>
- <div className="p-6">{mode==='overview'&&<div className="space-y-5"><section><div className="text-[9px] uppercase tracking-widest text-slate-600">Trigger chain</div><div className="mt-3 space-y-2">{(rule.conditions??[]).map((c,i)=><div key={i} className="flex items-center gap-3 border border-cyan-400/10 bg-cyan-400/[0.025] p-3"><span className="font-mono text-[9px] text-cyan-300">C{i+1}</span><div className="text-xs">{conditionLabel(c)}</div></div>)}</div></section><section><div className="text-[9px] uppercase tracking-widest text-slate-600">Response chain</div><div className="mt-3 space-y-2">{(rule.actions??[]).map((a,i)=><div key={i} className="flex items-center gap-3 border border-emerald-400/10 bg-emerald-400/[0.025] p-3"><span className="font-mono text-[9px] text-emerald-300">A{i+1}</span><div className="text-xs">{actionLabel(a)}</div></div>)}</div></section><section><div className="text-[9px] uppercase tracking-widest text-slate-600">Runtime posture</div><div className="mt-3 grid grid-cols-2 gap-2"><div className="border border-white/[0.06] p-3"><div className="text-[9px] text-slate-600">Cooldown</div><div className="mt-1 text-xs">{rule.cooldown_seconds??0}s</div></div><div className="border border-white/[0.06] p-3"><div className="text-[9px] text-slate-600">Mode</div><div className="mt-1 text-xs uppercase">{rule.mode??'live'}</div></div></div></section><div className="flex gap-2"><button onClick={onEdit} className="flex-1 bg-orange-500 py-3 text-xs font-bold text-slate-950">Edit policy</button><button onClick={()=>setMode('simulation')} className="border border-white/[0.08] px-4 text-xs text-slate-300">Simulate</button></div></div>}
- {mode==='simulation'&&<section><div className="flex items-center gap-2 text-xs font-semibold"><Sparkles size={14} className="text-violet-300"/> Deterministic simulation</div><p className="mt-2 text-[10px] leading-5 text-slate-600">Evaluate the same event against the current policy without emitting production side effects.</p><textarea className={input+' mt-4 min-h-52 font-mono text-[10px]'} value={payload} onChange={e=>setPayload(e.target.value)}/><button onClick={()=>{try{test.mutate()}catch{}}} className="mt-3 w-full bg-violet-500 py-3 text-xs font-bold text-slate-950">{test.isPending?'Evaluating…':'Evaluate event'}</button>{test.isError&&<div className="mt-3 text-xs text-red-300">Invalid JSON or evaluation failed.</div>}{test.data&&<pre className="mt-3 overflow-auto border border-white/[0.06] bg-black/30 p-4 text-[10px] text-slate-400">{JSON.stringify(test.data.data?.data??test.data.data,null,2)}</pre>}</section>}
- {mode==='history'&&<section><div className="text-[9px] uppercase tracking-widest text-slate-600">Recent evaluations</div><div className="mt-3 border border-white/[0.06]">{q.isLoading?<div className="p-8 text-center text-xs text-slate-600">Loading trace…</div>:q.data?.map(x=><div key={x.id} className="border-b border-white/[0.05] p-4"><div className="flex items-center justify-between"><div className="text-xs">{x.event_type}</div><div className="text-[9px] text-slate-600">{new Date(x.evaluated_at).toLocaleString()}</div></div><div className="mt-2 flex flex-wrap gap-2"><span className={`px-2 py-1 text-[9px] uppercase ${x.matched?'bg-emerald-400/10 text-emerald-300':'bg-white/[0.03] text-slate-600'}`}>{x.matched?'matched':'no match'}</span>{x.suppressed&&<span className="bg-amber-400/10 px-2 py-1 text-[9px] text-amber-300">suppressed</span>}<span className="text-[9px] text-slate-600">{x.decision_ms??'—'} ms</span></div>{x.suppression_reason&&<div className="mt-2 text-[10px] text-amber-300">{x.suppression_reason}</div>}</div>)}{q.data?.length===0&&<div className="p-8 text-center text-xs text-slate-600">No executions recorded.</div>}</div></section>}</div></div></div></div>;
+function formatCount(value: number) {
+  return value.toLocaleString();
 }
 
-export default function RulesOperationsConsole(){
- const qc=useQueryClient(); const [tab,setTab]=useState<'registry'|'ledger'|'patterns'>('registry'); const [query,setQuery]=useState(''); const [sevFilter,setSevFilter]=useState('all'); const [statusFilter,setStatusFilter]=useState('all'); const [builder,setBuilder]=useState(false); const [selected,setSelected]=useState<Rule|null>(null); const [editing,setEditing]=useState<Rule|null>(null);
- const q=useQuery({queryKey:['rules'],queryFn:async()=>((await rulesAPI.list()).data?.data??[]) as Rule[]}); const statsQ=useQuery({queryKey:['rules-stats'],queryFn:async()=>((await rulesAPI.stats()).data?.data??{}) as Record<string,unknown>});
- const toggle=useMutation({mutationFn:(r:Rule)=>rulesAPI.toggle(r.id,!r.enabled),onSuccess:()=>{qc.invalidateQueries({queryKey:['rules']});qc.invalidateQueries({queryKey:['rules-stats']})}}); const remove=useMutation({mutationFn:(id:string)=>rulesAPI.remove(id),onSuccess:()=>{setSelected(null);qc.invalidateQueries({queryKey:['rules']});qc.invalidateQueries({queryKey:['rules-stats']})}});
- const rules=useMemo(()=>{const all=q.data??[];return all.filter(r=>{const text=`${r.name} ${r.description??''} ${(r.tags??[]).join(' ')}`.toLowerCase();return(!query||text.includes(query.toLowerCase()))&&(sevFilter==='all'||(r.severity??'medium')===sevFilter)&&(statusFilter==='all'||(r.status??(r.enabled?'active':'paused'))===statusFilter)})},[q.data,query,sevFilter,statusFilter]);
- const total=Number(statsQ.data?.total??q.data?.length??0),active=Number(statsQ.data?.active??(q.data??[]).filter(r=>r.enabled).length),runs=Number(statsQ.data?.executions??0),failures=Number(statsQ.data?.failures??0);
- const openNew=()=>{setEditing(null);setBuilder(true)}; const onSaved=()=>{setBuilder(false);setEditing(null)};
- return <div className="min-h-full bg-[#050b0f] text-slate-100"><div className="border-b border-white/[0.07] bg-[#071014]"><div className="mx-auto max-w-[1900px] px-6 py-5"><div className="flex flex-wrap items-end justify-between gap-5"><div><div className="flex items-center gap-2 text-[9px] uppercase tracking-[.28em] text-orange-300"><span className="h-1.5 w-1.5 bg-orange-400"/> Automation operations</div><h1 className="mt-2 text-2xl font-semibold tracking-tight">Rules Control Plane</h1><p className="mt-1 text-xs text-slate-500">Deterministic policy orchestration across the Sonalit operational fabric.</p></div><div className="flex items-center gap-2"><div className="flex items-center gap-2 border border-emerald-400/15 bg-emerald-400/[0.03] px-3 py-2 text-[9px] uppercase tracking-widest text-emerald-300"><span className="h-1.5 w-1.5 bg-emerald-400"/> Runtime online</div><button onClick={()=>{q.refetch();statsQ.refetch()}} className="border border-white/[0.08] p-2.5 text-slate-500 hover:text-white"><RefreshCw size={14}/></button><button onClick={openNew} className="flex items-center gap-2 bg-orange-500 px-4 py-2.5 text-xs font-bold text-slate-950"><Plus size={14}/> Compose policy</button></div></div><div className="mt-5 grid grid-cols-2 divide-x divide-white/[0.06] border border-white/[0.06] bg-[#081217] md:grid-cols-4"><Stat name="Policies" value={total} sub="organisation registry" icon={Layers3}/><Stat name="Active" value={active} sub={`${total?Math.round(active/total*100):0}% of policies`} icon={Radar}/><Stat name="Executions" value={fmt(runs)} sub="evaluations recorded" icon={Activity}/><Stat name="Failures" value={fmt(failures)} sub="runtime & action errors" icon={AlertTriangle}/></div></div></div>
- <div className="mx-auto max-w-[1900px] px-6 pb-10"><div className="mt-4 flex border-b border-white/[0.07]">{[['registry','Policy registry',Layers3],['ledger','Execution ledger',History],['patterns','Pattern library',Copy]].map(([k,l,I])=><button key={String(k)} onClick={()=>setTab(k as typeof tab)} className={`flex items-center gap-2 border-b-2 px-4 py-3 text-[10px] uppercase tracking-widest ${tab===k?'border-orange-400 text-orange-300':'border-transparent text-slate-600 hover:text-slate-300'}`}><I size={13}/>{l}</button>)}</div>
- {tab==='registry'&&<div className="mt-4 grid gap-4 xl:grid-cols-[1fr_340px]"><main className={card+' overflow-hidden'}><div className="grid grid-cols-[1fr_auto_auto] gap-2 border-b border-white/[0.06] p-4"><div className="relative"><Search size={13} className="absolute left-3 top-3 text-slate-600"/><input value={query} onChange={e=>setQuery(e.target.value)} className={input+' pl-9'} placeholder="Search policies, intent, tags…"/></div><select value={sevFilter} onChange={e=>setSevFilter(e.target.value)} className="border border-white/[0.08] bg-[#071014] px-3 text-[10px] text-slate-300"><option value="all">Severity</option><option>critical</option><option>high</option><option>medium</option><option>low</option></select><select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} className="border border-white/[0.08] bg-[#071014] px-3 text-[10px] text-slate-300"><option value="all">State</option><option>active</option><option>paused</option><option>error</option></select></div><div className="grid grid-cols-[1.6fr_1.3fr_1fr_130px_90px] gap-4 border-b border-white/[0.06] px-5 py-3 text-[9px] uppercase tracking-[.18em] text-slate-600"><span>Policy</span><span>Trigger topology</span><span>Response topology</span><span>Runtime</span><span/></div>{q.isLoading?<div className="p-16 text-center text-xs text-slate-600">Loading policy fabric…</div>:rules.map(r=><div key={r.id} onClick={()=>setSelected(r)} className="grid cursor-pointer grid-cols-[1.6fr_1.3fr_1fr_130px_90px] gap-4 border-b border-white/[0.045] px-5 py-4 transition hover:bg-white/[0.025]"><div className="min-w-0"><div className="flex items-center gap-2"><span className={`h-2 w-2 ${r.enabled?'bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,.55)]':'bg-slate-700'}`}/><span className="truncate text-xs font-semibold">{r.name}</span><span className={'border px-1.5 py-0.5 text-[8px] uppercase '+sev(r.severity)}>{r.severity??'medium'}</span><span className="font-mono text-[8px] text-slate-700">v{r.version??1}</span></div><div className="mt-1 truncate pl-4 text-[10px] text-slate-600">{r.description||'No description'}{r.tags?.length?` · ${r.tags.join(' · ')}`:''}</div></div><div className="min-w-0"><div className="text-[10px] text-cyan-300">{String(r.condition_logic??'all').toUpperCase()} · {r.conditions?.length??0} predicates</div><div className="mt-1 truncate text-[9px] text-slate-600">{(r.conditions??[]).slice(0,2).map(conditionLabel).join('  /  ')}</div></div><div className="min-w-0"><div className="truncate text-[10px] text-emerald-200">{(r.actions??[]).map(actionLabel).join(' + ')||'No side effects'}</div><div className="mt-1 text-[9px] text-slate-600">dedupe/cooldown {r.cooldown_seconds??0}s</div></div><div><div className="text-[10px] text-slate-300">{fmt(Number(r.trigger_count??0))} runs</div><div className="mt-1 text-[9px] text-slate-600">{fmt(Number(r.failure_count??0))} failed</div></div><div className="flex items-center justify-end gap-1"><button onClick={e=>{e.stopPropagation();toggle.mutate(r)}} className="border border-white/[0.06] p-2 text-slate-500 hover:text-white">{r.enabled?<CirclePause size={14}/>:<CirclePlay size={14}/>}</button><ChevronRight size={14} className="text-slate-700"/></div></div>)}{rules.length===0&&!q.isLoading&&<div className="p-16 text-center text-xs text-slate-600">No policies match this view.</div>}</main><aside className="space-y-4"><div className={card+' p-5'}><div className="flex items-center gap-2 text-xs font-semibold"><Shield size={14} className="text-orange-300"/> Runtime posture</div><div className="mt-4 space-y-3"><div className="flex items-center justify-between text-[10px]"><span className="text-slate-600">Live policies</span><span>{active}/{total}</span></div><div className="h-1 bg-white/[0.05]"><div className="h-full bg-orange-400" style={{width:`${total?Math.round(active/total*100):0}%`}}/></div><div className="grid grid-cols-2 border border-white/[0.05]"><div className="p-3"><div className="text-[9px] text-slate-600">Failure rate</div><div className="mt-1 text-xs">{runs?((failures/runs)*100).toFixed(2):'0.00'}%</div></div><div className="border-l border-white/[0.05] p-3"><div className="text-[9px] text-slate-600">Dry run</div><div className="mt-1 text-xs">{(q.data??[]).filter(r=>r.mode==='dry_run').length}</div></div></div></div></div><div className={card+' p-5'}><div className="flex items-center gap-2 text-xs font-semibold"><GitBranch size={14} className="text-cyan-300"/> Governance</div><div className="mt-3 space-y-2 text-[10px] text-slate-500"><div className="flex justify-between"><span>Versioning</span><Check size={13} className="text-emerald-300"/></div><div className="flex justify-between"><span>Explainable execution</span><Check size={13} className="text-emerald-300"/></div><div className="flex justify-between"><span>Org isolation</span><Check size={13} className="text-emerald-300"/></div><div className="flex justify-between"><span>Dry-run mode</span><Check size={13} className="text-emerald-300"/></div></div></div></aside></div>}
- {tab==='ledger'&&<div className="mt-4"><Ledger rules={rules}/></div>}
- {tab==='patterns'&&<div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{patterns.map(([name,intent,acts,s],i)=><div key={name as string} className={card+' p-5'}><div className="flex items-center justify-between"><span className={'border px-2 py-1 text-[8px] uppercase '+sev(s as string)}>{s as string}</span><span className="font-mono text-[9px] text-slate-700">PAT-{String(i+1).padStart(2,'0')}</span></div><h3 className="mt-4 text-sm font-semibold">{name as string}</h3><p className="mt-1 text-[10px] text-slate-600">Reusable policy pattern for {intent as string}.</p><div className="mt-4 border border-white/[0.05] bg-black/15 p-3 font-mono text-[9px]"><div className="text-cyan-300">WHEN  {intent as string}</div><div className="my-2 text-slate-700">↓</div><div className="text-emerald-300">THEN  {(acts as string[]).join(' + ')}</div></div><button onClick={()=>{setEditing({id:'',name:name as string,description:intent as string,enabled:true,status:'draft',severity:s as string,priority:500,conditions:[{field:(intent as string).split(' ')[0],operator:(intent as string).split(' ')[1],value:(intent as string).split(' ').slice(2).join(' ')}],condition_logic:'all',actions:(acts as string[]).map(x=>({type:x})),mode:'dry_run',version:1});setBuilder(true)}} className="mt-4 w-full border border-white/[0.08] py-2.5 text-[10px] uppercase tracking-widest text-slate-400 hover:border-orange-400/20 hover:text-orange-200"><Copy size={12} className="mr-2 inline"/> Use pattern</button></div>)}</div>}
- </div>{selected&&<Inspector rule={selected} onClose={()=>setSelected(null)} onEdit={()=>{setEditing(selected);setSelected(null);setBuilder(true)}}/>}{builder&&<Builder initial={editing} onClose={()=>{setBuilder(false);setEditing(null)}} onSaved={onSaved}/>}</div>;
+function conditionLabel(condition: Condition) {
+  const value = Array.isArray(condition.value) ? condition.value.join(', ') : String(condition.value ?? '');
+  return `${condition.field} ${condition.operator}${value ? ` ${value}` : ''}`;
 }
-function Ledger({rules}:{rules:Rule[]}){const [rid,setRid]=useState(rules[0]?.id??'');const q=useQuery({queryKey:['rule-ledger',rid],enabled:Boolean(rid),queryFn:async()=>((await rulesAPI.executions(rid,80)).data?.data??[]) as Execution[]});return <div className="grid gap-4 xl:grid-cols-[300px_1fr]"><div className={card+' p-4'}><div className="text-[9px] uppercase tracking-widest text-slate-600">Policies</div><div className="mt-2 space-y-1">{rules.map(r=><button key={r.id} onClick={()=>setRid(r.id)} className={`w-full border-l px-3 py-3 text-left ${rid===r.id?'border-orange-400 bg-orange-400/[0.04]':'border-transparent hover:bg-white/[0.02]'}`}><div className="text-xs">{r.name}</div><div className="mt-1 text-[9px] text-slate-600">{fmt(Number(r.trigger_count??0))} evaluations</div></button>)}</div></div><div className={card+' overflow-hidden'}><div className="border-b border-white/[0.06] px-5 py-4"><div className="text-xs font-semibold">Execution trace</div><div className="mt-1 text-[10px] text-slate-600">Condition evaluation, suppression and side-effect evidence.</div></div>{q.data?.map(x=><div key={x.id} className="grid grid-cols-[1fr_130px_100px_1fr] gap-4 border-b border-white/[0.045] px-5 py-4"><div><div className="text-xs">{x.event_type}</div><div className="mt-1 text-[9px] text-slate-600">{x.subject_id??'—'} · {new Date(x.evaluated_at).toLocaleString()}</div></div><div className="text-[10px]">{x.matched?'MATCH':'MISS'} {x.suppressed?'· SUPPRESSED':''}</div><div className="text-[10px] text-slate-600">{x.decision_ms??'—'} ms</div><div className="truncate text-[10px] text-slate-600">{x.suppression_reason??x.action_results?.map(a=>`${a.type}:${a.status}`).join(' · ')??'—'}</div></div>)}{q.data?.length===0&&!q.isLoading&&<div className="p-16 text-center text-xs text-slate-600">No executions recorded.</div>}{q.isLoading&&<div className="p-16 text-center text-xs text-slate-600">Loading executions…</div>}</div></div>}
+
+function actionLabel(action: Action) {
+  const base = action.type.replaceAll('_', ' ');
+  return action.channel ? `${base} · ${action.channel}` : base;
+}
+
+function SectionTitle({ step, title, detail }: { step: string; title: string; detail: string }) {
+  return (
+    <div className="flex items-start gap-3">
+      <span className="font-mono text-[10px] text-orange-300">{step}</span>
+      <div>
+        <div className="text-xs font-semibold text-slate-200">{title}</div>
+        <div className="mt-0.5 text-[10px] leading-4 text-slate-600">{detail}</div>
+      </div>
+    </div>
+  );
+}
+
+function PolicyStudio({
+  initial,
+  onClose,
+  onSaved,
+}: {
+  initial: Rule | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState(initial?.name ?? '');
+  const [description, setDescription] = useState(initial?.description ?? '');
+  const [priority, setPriority] = useState(String(initial?.priority ?? 500));
+  const [severity, setSeverity] = useState(initial?.severity ?? 'medium');
+  const [mode, setMode] = useState(initial?.mode ?? 'live');
+  const [logic, setLogic] = useState<'all' | 'any'>(initial?.condition_logic ?? 'all');
+  const [cooldown, setCooldown] = useState(String(initial?.cooldown_seconds ?? 900));
+  const [conditions, setConditions] = useState<Condition[]>(
+    initial?.conditions?.length ? initial.conditions : [{ field: 'speed_kmh', operator: 'gt', value: 110 }],
+  );
+  const [actions, setActions] = useState<Action[]>(
+    initial?.actions?.length ? initial.actions : [{ type: 'alert', severity: 'high' }],
+  );
+  const [tags, setTags] = useState((initial?.tags ?? []).join(', '));
+  const [scope, setScope] = useState(JSON.stringify(initial?.scope ?? { type: 'organisation' }, null, 2));
+  const [schedule, setSchedule] = useState('Always on');
+
+  const save = useMutation({
+    mutationFn: async () => {
+      if (!name.trim()) throw new Error('Policy name is required');
+      let scopeValue: Record<string, unknown>;
+      try {
+        scopeValue = JSON.parse(scope) as Record<string, unknown>;
+      } catch {
+        throw new Error('Scope must be valid JSON');
+      }
+      const payload = {
+        name: name.trim(),
+        description: description.trim(),
+        enabled: true,
+        status: 'active',
+        priority: Number(priority) || 0,
+        severity,
+        mode,
+        version: (initial?.version ?? 0) + 1,
+        scope: scopeValue,
+        conditions,
+        condition_logic: logic,
+        actions,
+        cooldown_seconds: Number(cooldown) || 0,
+        evaluation_window_seconds: 0,
+        deduplication: { strategy: 'rule_subject', ttl_seconds: Number(cooldown) || 900 },
+        schedule,
+        tags: tags
+          .split(',')
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+      };
+      return initial ? rulesAPI.update(initial.id, payload) : rulesAPI.create(payload);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['rules'] });
+      void queryClient.invalidateQueries({ queryKey: ['rules-stats'] });
+      onSaved();
+    },
+  });
+
+  const updateCondition = (index: number, patch: Partial<Condition>) => {
+    setConditions((items) => items.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)));
+  };
+  const updateAction = (index: number, patch: Partial<Action>) => {
+    setActions((items) => items.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)));
+  };
+
+  return (
+    <div className="fixed inset-0 z-[80] bg-black/75">
+      <aside className="absolute inset-y-0 right-0 w-full max-w-[900px] overflow-y-auto border-l border-white/10 bg-[#050d11] shadow-[0_0_100px_rgba(0,0,0,.7)]">
+        <header className="sticky top-0 z-10 border-b border-white/[0.07] bg-[#071014]/95 backdrop-blur-xl">
+          <div className="flex items-center justify-between gap-5 px-6 py-5">
+            <div>
+              <div className="text-[9px] uppercase tracking-[0.26em] text-orange-300">Policy studio</div>
+              <h2 className="mt-1 text-xl font-semibold">{initial ? 'Revise policy' : 'Compose policy'}</h2>
+              <div className="mt-1 text-[10px] text-slate-600">Build a deterministic rule, inspect its release posture, then publish.</div>
+            </div>
+            <button type="button" onClick={onClose} className="p-2 text-slate-500 hover:text-white" aria-label="Close policy studio">
+              <X size={18} />
+            </button>
+          </div>
+          <div className="grid grid-cols-5 border-t border-white/[0.05] text-[8px] uppercase tracking-[0.17em] text-slate-600">
+            {['Intent', 'Trigger graph', 'Guards', 'Response graph', 'Release'].map((item, index) => (
+              <div key={item} className={`border-r border-white/[0.05] px-4 py-2 ${index === 0 ? 'text-orange-300' : ''}`}>
+                0{index + 1} {item}
+              </div>
+            ))}
+          </div>
+        </header>
+
+        <div className="space-y-5 p-6">
+          <section className={`${card} p-5`}>
+            <SectionTitle step="01" title="Operational intent" detail="Define the failure mode and the containment objective." />
+            <div className="mt-4 grid gap-3">
+              <input className={input} value={name} onChange={(event) => setName(event.target.value)} placeholder="Policy name" />
+              <textarea
+                className={`${input} min-h-24 resize-none`}
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                placeholder="Describe the event, consequence and operational objective…"
+              />
+              <div className="grid gap-3 md:grid-cols-3">
+                <label className="text-[9px] uppercase tracking-widest text-slate-600">
+                  Severity
+                  <select className={`${input} mt-1`} value={severity} onChange={(event) => setSeverity(event.target.value)}>
+                    {['low', 'medium', 'high', 'critical'].map((value) => <option key={value}>{value}</option>)}
+                  </select>
+                </label>
+                <label className="text-[9px] uppercase tracking-widest text-slate-600">
+                  Priority
+                  <input className={`${input} mt-1`} value={priority} onChange={(event) => setPriority(event.target.value)} inputMode="numeric" />
+                </label>
+                <label className="text-[9px] uppercase tracking-widest text-slate-600">
+                  Execution mode
+                  <select className={`${input} mt-1`} value={mode} onChange={(event) => setMode(event.target.value)}>
+                    <option value="live">Live</option>
+                    <option value="dry_run">Dry run</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section className={`${card} p-5`}>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <SectionTitle step="02" title="Trigger graph" detail="Evaluate predicates against the event envelope in a deterministic order." />
+              <select className="border border-white/[0.08] bg-[#050d11] px-3 py-2 text-[9px] uppercase tracking-widest text-slate-400" value={logic} onChange={(event) => setLogic(event.target.value as 'all' | 'any')}>
+                <option value="all">ALL predicates</option>
+                <option value="any">ANY predicate</option>
+              </select>
+            </div>
+            <div className="mt-4 space-y-2">
+              {conditions.map((condition, index) => (
+                <div key={`${index}-${condition.field}`} className="grid gap-2 border border-cyan-400/10 bg-cyan-400/[0.025] p-2 md:grid-cols-[1.15fr_.75fr_1fr_36px]">
+                  <select className={input} value={condition.field} onChange={(event) => updateCondition(index, { field: event.target.value })}>
+                    {fields.map((field) => <option key={field}>{field}</option>)}
+                  </select>
+                  <select className={input} value={condition.operator} onChange={(event) => updateCondition(index, { operator: event.target.value })}>
+                    {operators.map((operator) => <option key={operator}>{operator}</option>)}
+                  </select>
+                  <input
+                    className={input}
+                    value={Array.isArray(condition.value) ? condition.value.join(',') : String(condition.value ?? '')}
+                    onChange={(event) => updateCondition(index, { value: event.target.value })}
+                    placeholder="Value"
+                  />
+                  <button
+                    type="button"
+                    disabled={conditions.length === 1}
+                    onClick={() => setConditions((items) => items.filter((_, itemIndex) => itemIndex !== index))}
+                    className="flex items-center justify-center border border-white/[0.06] text-slate-600 hover:text-red-300 disabled:opacity-30"
+                    aria-label="Remove predicate"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button type="button" onClick={() => setConditions((items) => [...items, { field: 'event.type', operator: 'eq', value: '' }])} className="mt-3 text-[9px] uppercase tracking-widest text-cyan-300 hover:text-cyan-200">
+              + Add predicate
+            </button>
+          </section>
+
+          <section className={`${card} p-5`}>
+            <SectionTitle step="03" title="Safety & runtime guards" detail="Prevent uncontrolled repetition, scope bleed and unsafe execution pressure." />
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <label className="text-[9px] uppercase tracking-widest text-slate-600">
+                Cooldown seconds
+                <input className={`${input} mt-1`} value={cooldown} onChange={(event) => setCooldown(event.target.value)} inputMode="numeric" />
+              </label>
+              <label className="text-[9px] uppercase tracking-widest text-slate-600">
+                Schedule window
+                <select className={`${input} mt-1`} value={schedule} onChange={(event) => setSchedule(event.target.value)}>
+                  <option>Always on</option>
+                  <option>Business hours</option>
+                  <option>Night operations</option>
+                  <option>Custom schedule</option>
+                </select>
+              </label>
+              <label className="text-[9px] uppercase tracking-widest text-slate-600 md:col-span-2">
+                Scope JSON
+                <textarea className={`${input} mt-1 min-h-24 resize-y font-mono text-[10px]`} value={scope} onChange={(event) => setScope(event.target.value)} />
+              </label>
+              <label className="text-[9px] uppercase tracking-widest text-slate-600 md:col-span-2">
+                Tags
+                <input className={`${input} mt-1`} value={tags} onChange={(event) => setTags(event.target.value)} placeholder="security, route, fleet" />
+              </label>
+            </div>
+          </section>
+
+          <section className={`${card} p-5`}>
+            <SectionTitle step="04" title="Response graph" detail="Define the side effects emitted after a match, in operator-visible order." />
+            <div className="mt-4 space-y-2">
+              {actions.map((action, index) => (
+                <div key={`${index}-${action.type}`} className="grid gap-2 border border-emerald-400/10 bg-emerald-400/[0.025] p-2 md:grid-cols-[1fr_1fr_1fr_36px]">
+                  <select className={input} value={action.type} onChange={(event) => updateAction(index, { type: event.target.value })}>
+                    {actionTypes.map((type) => <option key={type}>{type}</option>)}
+                  </select>
+                  <select className={input} value={action.channel ?? ''} onChange={(event) => updateAction(index, { channel: event.target.value || undefined })}>
+                    <option value="">No channel</option>
+                    <option value="in_app">In-app</option>
+                    <option value="email">Email</option>
+                    <option value="whatsapp">WhatsApp</option>
+                    <option value="webhook">Webhook</option>
+                  </select>
+                  <input className={input} value={action.recipient ?? ''} onChange={(event) => updateAction(index, { recipient: event.target.value || undefined })} placeholder="Recipient / queue" />
+                  <button type="button" disabled={actions.length === 1} onClick={() => setActions((items) => items.filter((_, itemIndex) => itemIndex !== index))} className="flex items-center justify-center border border-white/[0.06] text-slate-600 hover:text-red-300 disabled:opacity-30" aria-label="Remove response">
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button type="button" onClick={() => setActions((items) => [...items, { type: 'notify', channel: 'in_app' }])} className="mt-3 text-[9px] uppercase tracking-widest text-emerald-300 hover:text-emerald-200">
+              + Add response
+            </button>
+          </section>
+
+          <section className={`${card} p-5`}>
+            <SectionTitle step="05" title="Release gate" detail="Inspect the exact policy path before activating the new version." />
+            <div className="mt-4 border border-white/[0.06] bg-black/20 p-4 font-mono text-[10px] leading-5 text-slate-400">
+              <div className="text-orange-300">WHEN</div>
+              {conditions.map((condition, index) => <div key={`when-${index}`}>{index ? '  AND ' : '  '}{conditionLabel(condition)}</div>)}
+              <div className="mt-2 text-emerald-300">THEN</div>
+              {actions.map((action, index) => <div key={`then-${index}`}>  {index + 1}. {actionLabel(action)}</div>)}
+              <div className="mt-2 text-violet-300">GUARDS</div>
+              <div>  cooldown={Number(cooldown) || 0}s · schedule={schedule} · mode={mode}</div>
+              <div>  scope={scope.trim() ? 'configured' : 'missing'}</div>
+            </div>
+            {save.isError && <div className="mt-3 border border-red-400/15 bg-red-400/[0.04] px-3 py-2 text-[10px] text-red-300">{save.error instanceof Error ? save.error.message : 'Unable to publish policy.'}</div>}
+            <div className="mt-4 flex gap-2">
+              <button type="button" onClick={onClose} className="flex-1 border border-white/[0.08] py-3 text-xs text-slate-400 hover:text-white">Cancel</button>
+              <button type="button" disabled={save.isPending || !name.trim()} onClick={() => save.mutate()} className="flex-[2] bg-orange-500 py-3 text-xs font-bold text-slate-950 disabled:opacity-40">
+                {save.isPending ? 'Publishing…' : initial ? 'Publish new version' : 'Deploy policy'}
+              </button>
+            </div>
+          </section>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function PolicyInspector({ rule, onClose, onEdit }: { rule: Rule; onClose: () => void; onEdit: () => void }) {
+  const [tab, setTab] = useState<'overview' | 'simulation' | 'trace'>('overview');
+  const [payload, setPayload] = useState('{\n  "speed_kmh": 120,\n  "route": { "deviation_km": 3 },\n  "device_id": "TRK-001"\n}');
+  const executionsQuery = useQuery({
+    queryKey: ['rule-executions', rule.id],
+    queryFn: async () => ((await rulesAPI.executions(rule.id, 40)).data?.data ?? []) as Execution[],
+  });
+  const simulation = useMutation({
+    mutationFn: async () => {
+      let event: unknown;
+      try {
+        event = JSON.parse(payload);
+      } catch {
+        throw new Error('Simulation payload is not valid JSON');
+      }
+      return rulesAPI.test(rule.id, event);
+    },
+  });
+
+  return (
+    <div className="fixed inset-0 z-[70] bg-black/60">
+      <aside className="absolute inset-y-0 right-0 w-full max-w-[760px] overflow-y-auto border-l border-white/10 bg-[#050d11] shadow-2xl">
+        <header className="sticky top-0 z-10 border-b border-white/[0.07] bg-[#071014]/95 px-6 py-5 backdrop-blur-xl">
+          <div className="flex items-start justify-between gap-5">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`border px-2 py-1 text-[8px] uppercase tracking-widest ${severityClass(rule.severity)}`}>{rule.severity ?? 'medium'}</span>
+                <span className="font-mono text-[9px] text-slate-600">v{rule.version ?? 1}</span>
+                <span className="text-[9px] uppercase tracking-widest text-slate-600">{rule.mode ?? 'live'}</span>
+              </div>
+              <h2 className="mt-2 text-xl font-semibold">{rule.name}</h2>
+              <p className="mt-1 max-w-xl text-xs leading-5 text-slate-500">{rule.description || 'No description recorded.'}</p>
+            </div>
+            <button type="button" onClick={onClose} className="p-2 text-slate-500 hover:text-white" aria-label="Close inspector"><X size={18} /></button>
+          </div>
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            <div className="border border-white/[0.06] p-3"><div className="text-[8px] uppercase tracking-widest text-slate-600">State</div><div className="mt-1 text-xs">{rule.status ?? (rule.enabled ? 'active' : 'paused')}</div></div>
+            <div className="border border-white/[0.06] p-3"><div className="text-[8px] uppercase tracking-widest text-slate-600">Priority</div><div className="mt-1 text-xs">{rule.priority ?? 0}</div></div>
+            <div className="border border-white/[0.06] p-3"><div className="text-[8px] uppercase tracking-widest text-slate-600">Runs</div><div className="mt-1 text-xs">{formatCount(Number(rule.trigger_count ?? 0))}</div></div>
+          </div>
+          <div className="mt-4 flex border-b border-white/[0.05]">
+            {[['overview', 'Policy'], ['simulation', 'Simulation'], ['trace', 'Execution trace']].map(([value, label]) => (
+              <button key={value} type="button" onClick={() => setTab(value as 'overview' | 'simulation' | 'trace')} className={`border-b-2 px-4 py-2 text-[9px] uppercase tracking-widest ${tab === value ? 'border-orange-400 text-orange-300' : 'border-transparent text-slate-600 hover:text-slate-300'}`}>{label}</button>
+            ))}
+          </div>
+        </header>
+        <div className="space-y-5 p-6">
+          {tab === 'overview' && (
+            <>
+              <section className={card + ' p-5'}>
+                <div className="flex items-center gap-2 text-[9px] uppercase tracking-widest text-slate-600"><Shield size={12} className="text-cyan-300" /> Trigger topology</div>
+                <div className="mt-4 grid gap-2">
+                  {(rule.conditions ?? []).map((condition, index) => <div key={index} className="flex items-center gap-3 border border-cyan-400/10 bg-cyan-400/[0.025] p-3"><span className="font-mono text-[9px] text-cyan-300">C{index + 1}</span><span className="text-xs">{conditionLabel(condition)}</span></div>)}
+                </div>
+              </section>
+              <section className={card + ' p-5'}>
+                <div className="flex items-center gap-2 text-[9px] uppercase tracking-widest text-slate-600"><Zap size={12} className="text-emerald-300" /> Response topology</div>
+                <div className="mt-4 grid gap-2">
+                  {(rule.actions ?? []).map((action, index) => <div key={index} className="flex items-center gap-3 border border-emerald-400/10 bg-emerald-400/[0.025] p-3"><span className="font-mono text-[9px] text-emerald-300">A{index + 1}</span><span className="text-xs">{actionLabel(action)}</span></div>)}
+                </div>
+              </section>
+              <section className={card + ' p-5'}>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="border border-white/[0.06] p-3"><div className="text-[8px] uppercase tracking-widest text-slate-600">Cooldown</div><div className="mt-1 text-xs">{rule.cooldown_seconds ?? 0}s</div></div>
+                  <div className="border border-white/[0.06] p-3"><div className="text-[8px] uppercase tracking-widest text-slate-600">Scope</div><div className="mt-1 break-words text-[10px] text-slate-400">{JSON.stringify(rule.scope ?? { type: 'organisation' })}</div></div>
+                  <div className="border border-white/[0.06] p-3"><div className="text-[8px] uppercase tracking-widest text-slate-600">Last triggered</div><div className="mt-1 text-[10px] text-slate-400">{rule.last_triggered_at ? new Date(rule.last_triggered_at).toLocaleString() : 'Never'}</div></div>
+                  <div className="border border-white/[0.06] p-3"><div className="text-[8px] uppercase tracking-widest text-slate-600">Failures</div><div className="mt-1 text-xs">{formatCount(Number(rule.failure_count ?? 0))}</div></div>
+                </div>
+              </section>
+              <div className="flex gap-2">
+                <button type="button" onClick={onEdit} className="flex-1 bg-orange-500 py-3 text-xs font-bold text-slate-950">Edit policy</button>
+                <button type="button" onClick={() => setTab('simulation')} className="border border-white/[0.08] px-5 text-xs text-slate-300 hover:text-white">Simulate</button>
+              </div>
+            </>
+          )}
+          {tab === 'simulation' && (
+            <section className={card + ' p-5'}>
+              <div className="flex items-center gap-2 text-xs font-semibold"><Sparkles size={14} className="text-violet-300" /> Dry-run event simulator</div>
+              <p className="mt-2 text-[10px] leading-5 text-slate-600">Exercise the current policy against an event payload without emitting production side effects.</p>
+              <textarea className={`${input} mt-4 min-h-56 font-mono text-[10px] leading-5`} value={payload} onChange={(event) => setPayload(event.target.value)} />
+              <button type="button" onClick={() => simulation.mutate()} disabled={simulation.isPending} className="mt-3 w-full bg-violet-500 py-3 text-xs font-bold text-slate-950 disabled:opacity-40">{simulation.isPending ? 'Evaluating…' : 'Evaluate event'}</button>
+              {simulation.isError && <div className="mt-3 border border-red-400/15 bg-red-400/[0.04] px-3 py-2 text-[10px] text-red-300">{simulation.error instanceof Error ? simulation.error.message : 'Evaluation failed.'}</div>}
+              {simulation.data && <pre className="mt-3 max-h-80 overflow-auto border border-white/[0.06] bg-black/30 p-4 text-[10px] leading-5 text-slate-400">{JSON.stringify(simulation.data.data?.data ?? simulation.data.data, null, 2)}</pre>}
+            </section>
+          )}
+          {tab === 'trace' && (
+            <section className={card + ' overflow-hidden'}>
+              <div className="border-b border-white/[0.06] px-5 py-4"><div className="flex items-center gap-2 text-xs font-semibold"><History size={13} className="text-orange-300" /> Recent evaluations</div></div>
+              {executionsQuery.isLoading && <div className="p-10 text-center text-xs text-slate-600">Loading execution trace…</div>}
+              {!executionsQuery.isLoading && (executionsQuery.data ?? []).map((execution) => (
+                <div key={execution.id} className="border-b border-white/[0.05] p-4">
+                  <div className="flex items-center justify-between gap-4"><div className="text-xs text-slate-200">{execution.event_type}</div><div className="text-[9px] text-slate-600">{new Date(execution.evaluated_at).toLocaleString()}</div></div>
+                  <div className="mt-2 flex flex-wrap gap-2"><span className={`px-2 py-1 text-[8px] uppercase tracking-widest ${execution.matched ? 'bg-emerald-400/10 text-emerald-300' : 'bg-white/[0.03] text-slate-600'}`}>{execution.matched ? 'matched' : 'no match'}</span>{execution.suppressed && <span className="bg-amber-400/10 px-2 py-1 text-[8px] uppercase tracking-widest text-amber-300">suppressed</span>}<span className="text-[9px] text-slate-600">{execution.decision_ms ?? '—'} ms</span></div>
+                  {execution.suppression_reason && <div className="mt-2 text-[10px] text-amber-300">{execution.suppression_reason}</div>}
+                  {execution.condition_trace?.length ? <div className="mt-3 space-y-1">{execution.condition_trace.map((item, index) => <div key={index} className="flex items-center gap-2 text-[9px]"><Check size={11} className={item.matched ? 'text-emerald-300' : 'text-red-300'} /><span className="text-slate-500">{item.field} {item.operator}</span><span className="text-slate-700">expected {String(item.expected ?? '')}</span><span className="text-slate-600">actual {String(item.actual ?? '')}</span></div>)}</div> : null}
+                </div>
+              ))}
+              {!executionsQuery.isLoading && !(executionsQuery.data ?? []).length && <div className="p-10 text-center text-xs text-slate-600">No execution records for this policy.</div>}
+            </section>
+          )}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+export default function RulesOperationsConsole() {
+  const queryClient = useQueryClient();
+  const [tab, setTab] = useState<Tab>('registry');
+  const [query, setQuery] = useState('');
+  const [severityFilter, setSeverityFilter] = useState('all');
+  const [stateFilter, setStateFilter] = useState('all');
+  const [studio, setStudio] = useState<{ open: boolean; rule: Rule | null }>({ open: false, rule: null });
+  const [selected, setSelected] = useState<Rule | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const rulesQuery = useQuery({
+    queryKey: ['rules'],
+    queryFn: async () => ((await rulesAPI.list()).data?.data ?? []) as Rule[],
+  });
+  const statsQuery = useQuery({
+    queryKey: ['rules-stats'],
+    queryFn: async () => ((await rulesAPI.stats()).data?.data ?? {}) as Record<string, unknown>,
+  });
+  const executionsQuery = useQuery({
+    queryKey: ['rules-recent-executions'],
+    enabled: tab === 'executions',
+    queryFn: async () => {
+      const rules = (rulesQuery.data ?? []).slice(0, 8);
+      const responses = await Promise.allSettled(rules.map((rule) => rulesAPI.executions(rule.id, 10)));
+      return responses.flatMap((response, index) => {
+        if (response.status !== 'fulfilled') return [];
+        const data = (response.value.data?.data ?? []) as Execution[];
+        return data.map((execution) => ({ ...execution, rule_name: rules[index]?.name ?? 'Unknown policy' }));
+      }).sort((a, b) => new Date(b.evaluated_at).getTime() - new Date(a.evaluated_at).getTime());
+    },
+  });
+
+  const toggle = useMutation({
+    mutationFn: (rule: Rule) => rulesAPI.toggle(rule.id, !rule.enabled),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['rules'] });
+      void queryClient.invalidateQueries({ queryKey: ['rules-stats'] });
+    },
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => rulesAPI.remove(id),
+    onSuccess: () => {
+      setSelected(null);
+      void queryClient.invalidateQueries({ queryKey: ['rules'] });
+      void queryClient.invalidateQueries({ queryKey: ['rules-stats'] });
+    },
+  });
+
+  const rules = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return (rulesQuery.data ?? []).filter((rule) => {
+      const haystack = `${rule.name} ${rule.description ?? ''} ${(rule.tags ?? []).join(' ')}`.toLowerCase();
+      const state = rule.status ?? (rule.enabled ? 'active' : 'paused');
+      return (!normalized || haystack.includes(normalized)) &&
+        (severityFilter === 'all' || (rule.severity ?? 'medium') === severityFilter) &&
+        (stateFilter === 'all' || state === stateFilter);
+    });
+  }, [rulesQuery.data, query, severityFilter, stateFilter]);
+
+  const stats = {
+    total: Number(statsQuery.data?.total ?? rulesQuery.data?.length ?? 0),
+    active: Number(statsQuery.data?.active ?? (rulesQuery.data ?? []).filter((rule) => rule.enabled).length),
+    executions: Number(statsQuery.data?.executions ?? 0),
+    failures: Number(statsQuery.data?.failures ?? 0),
+  };
+
+  const refresh = () => {
+    void rulesQuery.refetch();
+    void statsQuery.refetch();
+    if (tab === 'executions') void executionsQuery.refetch();
+  };
+
+  return (
+    <div className="min-h-full bg-[#050b0f] text-slate-100">
+      <header className="border-b border-white/[0.07] bg-[#071014]">
+        <div className="mx-auto max-w-[1900px] px-6 py-5">
+          <div className="flex flex-wrap items-end justify-between gap-5">
+            <div>
+              <div className="flex items-center gap-2 text-[9px] uppercase tracking-[0.28em] text-orange-300"><span className="h-1.5 w-1.5 bg-orange-400 shadow-[0_0_12px_rgba(251,146,60,.7)]" /> Automation operations</div>
+              <h1 className="mt-2 text-2xl font-semibold tracking-tight">Rules Control Plane</h1>
+              <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">Deterministic policy orchestration with simulation, execution evidence, version context and runtime controls.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2 border border-emerald-400/15 bg-emerald-400/[0.03] px-3 py-2 text-[9px] uppercase tracking-widest text-emerald-300"><span className="h-1.5 w-1.5 bg-emerald-400" /> Runtime online</div>
+              <button type="button" onClick={refresh} className="border border-white/[0.08] p-2.5 text-slate-500 hover:text-white" aria-label="Refresh rules"><RefreshCw size={14} /></button>
+              <button type="button" onClick={() => setStudio({ open: true, rule: null })} className="flex items-center gap-2 bg-orange-500 px-4 py-2.5 text-xs font-bold text-slate-950"><Plus size={14} /> Compose policy</button>
+            </div>
+          </div>
+          <div className="mt-5 grid grid-cols-2 divide-x divide-white/[0.06] border border-white/[0.06] bg-[#081217] md:grid-cols-4">
+            {[
+              ['Policies', stats.total, 'organisation registry', Layers3],
+              ['Active', stats.active, `${stats.total ? Math.round((stats.active / stats.total) * 100) : 0}% of policies`, CirclePlay],
+              ['Executions', formatCount(stats.executions), 'evaluations recorded', Activity],
+              ['Failures', formatCount(stats.failures), 'runtime & action errors', AlertTriangle],
+            ].map(([label, value, detail, Icon]) => (
+              <div key={String(label)} className="px-4 py-4"><div className="flex items-center justify-between text-[8px] uppercase tracking-[0.18em] text-slate-600"><span>{label}</span><Icon size={13} /></div><div className="mt-1 text-2xl font-semibold tabular-nums">{value as string | number}</div><div className="mt-1 text-[10px] text-slate-600">{detail as string}</div></div>
+            ))}
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-[1900px] px-6 pb-12">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07]">
+          <div className="flex overflow-x-auto">
+            {[['registry', 'Policy registry', Layers3], ['executions', 'Execution ledger', History], ['patterns', 'Pattern library', Copy]].map(([value, label, Icon]) => (
+              <button key={String(value)} type="button" onClick={() => setTab(value as Tab)} className={`flex items-center gap-2 border-b-2 px-4 py-3 text-[9px] uppercase tracking-widest ${tab === value ? 'border-orange-400 text-orange-300' : 'border-transparent text-slate-600 hover:text-slate-300'}`}><Icon size={13} />{label}</button>
+            ))}
+          </div>
+          <div className="hidden items-center gap-2 text-[8px] uppercase tracking-widest text-slate-700 lg:flex"><Clock3 size={11} /> Operator view · live</div>
+        </div>
+
+        {tab === 'registry' && (
+          <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_310px]">
+            <section className={card + ' overflow-hidden'}>
+              <div className="grid gap-2 border-b border-white/[0.06] p-4 md:grid-cols-[minmax(0,1fr)_150px_150px]">
+                <div className="relative"><Search size={13} className="absolute left-3 top-3 text-slate-600" /><input className={`${input} pl-9`} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search intent, policy or tags…" /></div>
+                <select className="border border-white/[0.08] bg-[#071014] px-3 text-[9px] uppercase tracking-widest text-slate-400" value={severityFilter} onChange={(event) => setSeverityFilter(event.target.value)}><option value="all">All severities</option>{['critical', 'high', 'medium', 'low'].map((value) => <option key={value}>{value}</option>)}</select>
+                <select className="border border-white/[0.08] bg-[#071014] px-3 text-[9px] uppercase tracking-widest text-slate-400" value={stateFilter} onChange={(event) => setStateFilter(event.target.value)}><option value="all">All states</option><option value="active">active</option><option value="paused">paused</option><option value="error">error</option></select>
+              </div>
+              <div className="hidden grid-cols-[1.5fr_1.15fr_1.05fr_120px_90px] gap-4 border-b border-white/[0.06] px-5 py-3 text-[8px] uppercase tracking-[0.18em] text-slate-600 md:grid"><span>Policy</span><span>Trigger topology</span><span>Response topology</span><span>Runtime</span><span /></div>
+              {rulesQuery.isLoading && <div className="p-16 text-center text-xs text-slate-600">Loading policy fabric…</div>}
+              {!rulesQuery.isLoading && !rules.length && <div className="p-16 text-center"><Filter size={18} className="mx-auto text-slate-700" /><div className="mt-3 text-xs text-slate-500">No policies match this view.</div><button type="button" onClick={() => { setQuery(''); setSeverityFilter('all'); setStateFilter('all'); }} className="mt-3 text-[9px] uppercase tracking-widest text-orange-300">Clear filters</button></div>}
+              {rules.map((rule) => {
+                const isExpanded = expanded === rule.id;
+                return (
+                  <div key={rule.id} className="border-b border-white/[0.045]">
+                    <button type="button" onClick={() => setSelected(rule)} className="block w-full text-left hover:bg-white/[0.02]">
+                      <div className="grid gap-4 px-5 py-4 md:grid-cols-[1.5fr_1.15fr_1.05fr_120px_90px]">
+                        <div className="min-w-0"><div className="flex items-center gap-2"><span className={`h-2 w-2 ${rule.enabled ? 'bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,.55)]' : 'bg-slate-700'}`} /><span className="truncate text-xs font-semibold">{rule.name}</span><span className={`border px-1.5 py-0.5 text-[7px] uppercase ${severityClass(rule.severity)}`}>{rule.severity ?? 'medium'}</span><span className="font-mono text-[8px] text-slate-700">v{rule.version ?? 1}</span></div><div className="mt-1 truncate pl-4 text-[10px] text-slate-600">{rule.description || 'No description'}{rule.tags?.length ? ` · ${rule.tags.join(' · ')}` : ''}</div></div>
+                        <div className="min-w-0"><div className="text-[10px] text-cyan-300">{String(rule.condition_logic ?? 'all').toUpperCase()} · {rule.conditions?.length ?? 0} predicates</div><div className="mt-1 truncate text-[9px] text-slate-600">{(rule.conditions ?? []).slice(0, 2).map(conditionLabel).join(' / ')}</div></div>
+                        <div className="min-w-0"><div className="truncate text-[10px] text-emerald-200">{(rule.actions ?? []).map(actionLabel).join(' + ') || 'No side effects'}</div><div className="mt-1 text-[9px] text-slate-600">cooldown {rule.cooldown_seconds ?? 0}s</div></div>
+                        <div><div className="text-[10px] text-slate-300">{formatCount(Number(rule.trigger_count ?? 0))} runs</div><div className="mt-1 text-[9px] text-slate-600">{formatCount(Number(rule.failure_count ?? 0))} failed</div></div>
+                        <div className="flex items-center justify-end gap-1"><button type="button" onClick={(event) => { event.stopPropagation(); toggle.mutate(rule); }} className="border border-white/[0.06] p-2 text-slate-500 hover:text-white" aria-label={rule.enabled ? 'Pause policy' : 'Enable policy'}>{rule.enabled ? <CirclePause size={14} /> : <CirclePlay size={14} />}</button><ChevronRight size={14} className="text-slate-700" /></div>
+                      </div>
+                    </button>
+                    <div className="flex items-center gap-4 px-5 pb-3 pl-9"><button type="button" onClick={() => setExpanded(isExpanded ? null : rule.id)} className="flex items-center gap-1 text-[8px] uppercase tracking-widest text-slate-700 hover:text-slate-300">{isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />} Quick inspect</button>{isExpanded && <><span className="text-[8px] text-slate-700">Last: {rule.last_triggered_at ? new Date(rule.last_triggered_at).toLocaleString() : 'never'}</span><button type="button" onClick={() => setStudio({ open: true, rule })} className="text-[8px] uppercase tracking-widest text-orange-300">Edit</button><button type="button" onClick={() => setTab('executions')} className="text-[8px] uppercase tracking-widest text-cyan-300">Trace</button><button type="button" onClick={() => remove.mutate(rule.id)} disabled={remove.isPending} className="ml-auto flex items-center gap-1 text-[8px] uppercase tracking-widest text-red-300/70 hover:text-red-300"><Trash2 size={11} /> Remove</button></>}</div>
+                  </div>
+                );
+              })}
+            </section>
+            <aside className="space-y-4">
+              <section className={card + ' p-5'}><div className="flex items-center gap-2 text-xs font-semibold"><SlidersHorizontal size={13} className="text-orange-300" /> Runtime posture</div><div className="mt-4 space-y-3 text-[10px]"><div className="flex justify-between"><span className="text-slate-600">Active policies</span><span>{stats.active}/{stats.total}</span></div><div className="h-1 bg-white/[0.04]"><div className="h-full bg-emerald-400/70" style={{ width: `${stats.total ? Math.min(100, (stats.active / stats.total) * 100) : 0}%` }} /></div><div className="flex justify-between"><span className="text-slate-600">Failure rate</span><span>{stats.executions ? ((stats.failures / stats.executions) * 100).toFixed(1) : '0.0'}%</span></div><div className="flex justify-between"><span className="text-slate-600">Execution surface</span><span>deterministic</span></div></div></section>
+              <section className={card + ' p-5'}><div className="flex items-center gap-2 text-xs font-semibold"><Shield size={13} className="text-cyan-300" /> Control principles</div><div className="mt-3 space-y-2 text-[10px] leading-5 text-slate-500"><div>Predicate evaluation is inspectable.</div><div>Scope stays organisation-bound.</div><div>Simulation is isolated from side effects.</div><div>Execution evidence remains queryable.</div></div></section>
+              <section className={card + ' p-5'}><div className="text-[8px] uppercase tracking-widest text-slate-600">Selected view</div><div className="mt-2 text-sm font-semibold">{rules.length} visible policies</div><div className="mt-1 text-[10px] text-slate-600">Filters persist while you inspect or edit.</div></section>
+            </aside>
+          </div>
+        )}
+
+        {tab === 'executions' && (
+          <section className={`${card} mt-4 overflow-hidden`}>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.06] px-5 py-4"><div><div className="flex items-center gap-2 text-xs font-semibold"><History size={13} className="text-orange-300" /> Execution ledger</div><div className="mt-1 text-[10px] text-slate-600">Recent evaluations across the visible policy set.</div></div><button type="button" onClick={() => void executionsQuery.refetch()} className="border border-white/[0.08] p-2 text-slate-500 hover:text-white" aria-label="Refresh execution ledger"><RefreshCw size={13} /></button></div>
+            {executionsQuery.isLoading && <div className="p-16 text-center text-xs text-slate-600">Collecting execution evidence…</div>}
+            {!executionsQuery.isLoading && !(executionsQuery.data ?? []).length && <div className="p-16 text-center text-xs text-slate-600">No execution records found for the available policies.</div>}
+            {(executionsQuery.data ?? []).map((execution) => (
+              <div key={`${execution.id}-${execution.evaluated_at}`} className="grid gap-3 border-b border-white/[0.045] px-5 py-4 lg:grid-cols-[1.5fr_1fr_150px_120px_1fr] lg:items-center"><div><div className="text-xs text-slate-200">{execution.rule_name}</div><div className="mt-1 font-mono text-[9px] text-slate-700">{execution.event_type}{execution.subject_id ? ` · ${execution.subject_id}` : ''}</div></div><div className="flex flex-wrap gap-2"><span className={`px-2 py-1 text-[8px] uppercase tracking-widest ${execution.matched ? 'bg-emerald-400/10 text-emerald-300' : 'bg-white/[0.03] text-slate-600'}`}>{execution.matched ? 'matched' : 'no match'}</span>{execution.suppressed && <span className="bg-amber-400/10 px-2 py-1 text-[8px] text-amber-300">suppressed</span>}</div><div className="text-[10px] text-slate-600">{execution.decision_ms ?? '—'} ms</div><div className="text-[9px] text-slate-600">{new Date(execution.evaluated_at).toLocaleString()}</div><div className="text-right"><button type="button" onClick={() => { const rule = (rulesQuery.data ?? []).find((item) => item.name === execution.rule_name); if (rule) setSelected(rule); }} className="inline-flex items-center gap-1 text-[8px] uppercase tracking-widest text-cyan-300 hover:text-cyan-200">Inspect <ExternalLink size={10} /></button></div></div>
+            ))}
+          </section>
+        )}
+
+        {tab === 'patterns' && (
+          <section className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {patterns.map((pattern) => (
+              <button key={pattern.name} type="button" onClick={() => setStudio({ open: true, rule: { id: '', name: pattern.name, description: `Pattern starter for ${pattern.name.toLowerCase()}.`, enabled: true, severity: pattern.severity, mode: 'live', priority: 500, version: 1, conditions: [{ field: pattern.field, operator: pattern.operator, value: pattern.value }], condition_logic: 'all', actions: [{ type: 'alert', severity: pattern.severity }], cooldown_seconds: 900, scope: { type: 'organisation' }, tags: ['pattern'] } })} className={`${card} p-5 text-left transition hover:-translate-y-0.5 hover:border-orange-400/20`}><div className="flex items-center justify-between gap-3"><span className={`border px-2 py-1 text-[8px] uppercase tracking-widest ${severityClass(pattern.severity)}`}>{pattern.severity}</span><Copy size={13} className="text-slate-700" /></div><div className="mt-5 text-sm font-semibold">{pattern.name}</div><div className="mt-2 font-mono text-[10px] text-slate-500">{pattern.field} {pattern.operator} {String(pattern.value)}</div><div className="mt-4 flex items-center gap-2 text-[9px] uppercase tracking-widest text-orange-300">Use pattern <ArrowRight size={12} /></div></button>
+            ))}
+          </section>
+        )}
+      </main>
+
+      {studio.open && <PolicyStudio initial={studio.rule} onClose={() => setStudio({ open: false, rule: null })} onSaved={() => setStudio({ open: false, rule: null })} />}
+      {selected && <PolicyInspector rule={selected} onClose={() => setSelected(null)} onEdit={() => { setSelected(null); setStudio({ open: true, rule: selected }); }} />}
+    </div>
+  );
+}
