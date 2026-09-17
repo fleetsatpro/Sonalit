@@ -2,7 +2,12 @@ name: Standby Backend
 
 on:
   push:
-    branches: [main, feat/free-standby-backend]
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'Dockerfile.standby'
+      - 'infra/standby/**'
+  pull_request:
     paths:
       - 'backend/**'
       - 'Dockerfile.standby'
@@ -14,29 +19,49 @@ permissions:
   packages: write
 
 concurrency:
-  group: standby-backend
+  group: standby-backend-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate runtime fence JavaScript
+        run: node --check backend/src/utils/runtimeFenceBootstrap.js
+
+      - name: Validate failover shell scripts
+        run: |
+          bash -n infra/standby/promote.sh
+          bash -n infra/standby/demote.sh
+          bash -n infra/standby/setup-host.sh
+
+      - name: Validate Compose configuration
+        run: docker compose -f infra/standby/docker-compose.yml -f infra/standby/docker-compose.active.yml config
+
   build:
+    needs: validate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Log in to GHCR
+        if: ${{ github.event_name != 'pull_request' }}
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push standby image
+      - name: Build standby image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.standby
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ghcr.io/fleetsatpro/sonalit-backend:standby
             ghcr.io/fleetsatpro/sonalit-backend:${{ github.sha }}
@@ -71,13 +96,16 @@ jobs:
             cd /opt/sonalit-standby
             export SONALIT_IMAGE="ghcr.io/fleetsatpro/sonalit-backend:${{ github.sha }}"
             printf '%s\n' "GHCR image: ${SONALIT_IMAGE}"
-            echo '${{ env.STANDBY_GHCR_TOKEN }}' | docker login ghcr.io -u '${{ env.STANDBY_GHCR_USER }}' --password-stdin
+            printf '%s' "$STANDBY_GHCR_TOKEN" | docker login ghcr.io -u "$STANDBY_GHCR_USER" --password-stdin
             docker compose pull
             docker compose up -d --remove-orphans
             docker image prune -af --filter 'until=168h' || true
             curl --fail --silent --show-error --retry 12 --retry-delay 5 http://127.0.0.1:5000/health >/tmp/sonalit-standby-health.json
             cat /tmp/sonalit-standby-health.json
+        env:
+          STANDBY_GHCR_USER: ${{ env.STANDBY_GHCR_USER }}
+          STANDBY_GHCR_TOKEN: ${{ env.STANDBY_GHCR_TOKEN }}
 
       - name: Skip standby deployment when credentials are not configured
         if: ${{ env.STANDBY_SSH_HOST == '' || env.STANDBY_SSH_USER == '' || env.STANDBY_SSH_KEY == '' || env.STANDBY_GHCR_USER == '' || env.STANDBY_GHCR_TOKEN == '' }}
-        run: echo 'Standby deployment credentials are not configured; build remains the source-of-truth check.'
+        run: echo 'Standby deployment credentials are not configured; image build and validation still completed.'
