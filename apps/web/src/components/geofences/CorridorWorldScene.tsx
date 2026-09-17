@@ -136,17 +136,22 @@ export default function CorridorWorldScene({
   const targetRef = useRef<Map<string, Cesium.Cartesian3>>(new globalThis.Map());
   const headingRef = useRef<Map<string, number>>(new globalThis.Map());
   const selectRef = useRef(onSelect);
+  const fittedRouteSignatureRef = useRef<string | null>(null);
   const [mode, setMode] = useState<MapMode>('dark');
   const [mapStatus, setMapStatus] = useState('LIVE WORLD SURFACE');
   const [terrainReady, setTerrainReady] = useState(false);
   const [initFailed, setInitFailed] = useState(false);
   const [creditsOpen, setCreditsOpen] = useState(false);
-  const [routeFitted, setRouteFitted] = useState(false);
 
   selectRef.current = onSelect;
 
   const height = Math.max(200, ceilingM || Math.min(1800, Math.max(700, corridorKm * 500)));
   const liveMembers = useMemo(() => members.filter(m => m.lat != null && m.lng != null), [members]);
+  const routeSignature = useMemo(() => {
+    const start = route[0];
+    const end = route.at(-1);
+    return [route.length, start?.lat, start?.lng, end?.lat, end?.lng].join(':');
+  }, [route]);
 
   useEffect(() => {
     if (!boxRef.current) return;
@@ -182,6 +187,7 @@ export default function CorridorWorldScene({
     }
 
     viewerRef.current = viewer;
+    const compactSurface = window.matchMedia?.('(max-width: 900px)').matches ?? false;
     viewer.scene.globe.enableLighting = true;
     viewer.scene.globe.showGroundAtmosphere = true;
     viewer.scene.globe.depthTestAgainstTerrain = true;
@@ -189,8 +195,8 @@ export default function CorridorWorldScene({
     viewer.scene.fog.density = 0.00002;
     viewer.scene.highDynamicRange = true;
     viewer.scene.postProcessStages.fxaa.enabled = true;
-    viewer.scene.msaaSamples = 4;
-    viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, 2);
+    viewer.scene.msaaSamples = compactSurface ? 2 : 4;
+    viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, compactSurface ? 1.5 : 2);
     setMapStatus(TOKEN ? 'CESIUM + ESRI · LIVE' : 'ESRI FALLBACK · ION TOKEN NOT EXPOSED');
 
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
@@ -205,11 +211,20 @@ export default function CorridorWorldScene({
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
     const preRender = () => {
-      const alpha = 0.12;
+      const alpha = 0.16;
+      let changed = false;
       currentRef.current.forEach((current, id) => {
         const target = targetRef.current.get(id);
         const entity = entityMapRef.current.get(id);
         if (!target || !entity) return;
+        if (Cesium.Cartesian3.distance(current, target) <= 0.75) {
+          if (!Cesium.Cartesian3.equals(current, target)) {
+            currentRef.current.set(id, target.clone());
+            entity.position = new Cesium.ConstantPositionProperty(target);
+            changed = true;
+          }
+          return;
+        }
         const next = Cesium.Cartesian3.lerp(current, target, alpha, new Cesium.Cartesian3());
         currentRef.current.set(id, next);
         entity.position = new Cesium.ConstantPositionProperty(next);
@@ -219,10 +234,20 @@ export default function CorridorWorldScene({
             Cesium.Transforms.headingPitchRollQuaternion(next, new Cesium.HeadingPitchRoll(Cesium.Math.toRadians(heading), 0, 0)),
           );
         }
+        changed = true;
       });
-      viewer.scene.requestRender();
+      if (changed) viewer.scene.requestRender();
     };
     viewer.scene.preRender.addEventListener(preRender);
+
+    const resize = () => {
+      if (viewer.isDestroyed()) return;
+      viewer.resize();
+      viewer.scene.requestRender();
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(boxRef.current);
+    resize();
 
     (async () => {
       if (!TOKEN || viewer.isDestroyed()) return;
@@ -231,6 +256,7 @@ export default function CorridorWorldScene({
         if (viewer.isDestroyed()) return;
         viewer.terrainProvider = terrain;
         setTerrainReady(true);
+        viewer.scene.requestRender();
       } catch {
         setMapStatus('ESRI SURFACE · TERRAIN DEGRADED');
       }
@@ -240,19 +266,24 @@ export default function CorridorWorldScene({
       if (!TOKEN || viewer.isDestroyed()) return;
       try {
         const buildings = await Cesium.createOsmBuildingsAsync();
-        if (!viewer.isDestroyed()) viewer.scene.primitives.add(buildings);
+        if (!viewer.isDestroyed()) {
+          viewer.scene.primitives.add(buildings);
+          viewer.scene.requestRender();
+        }
       } catch {
         // Buildings are an enhancement, never a dependency for the operational map.
       }
     })();
 
     return () => {
+      observer.disconnect();
       handler.destroy();
       viewer.scene.preRender.removeEventListener(preRender);
       entityMapRef.current.clear();
       currentRef.current.clear();
       targetRef.current.clear();
       headingRef.current.clear();
+      fittedRouteSignatureRef.current = null;
       if (!viewer.isDestroyed()) viewer.destroy();
       viewerRef.current = null;
     };
@@ -262,7 +293,6 @@ export default function CorridorWorldScene({
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
     addImagery(viewer, mode, message => setMapStatus(message));
-    setRouteFitted(false);
     viewer.scene.requestRender();
   }, [mode]);
 
@@ -270,7 +300,6 @@ export default function CorridorWorldScene({
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
     viewer.entities.values.filter(e => e.id.startsWith('corridor:')).forEach(e => viewer.entities.remove(e));
-    setRouteFitted(false);
     if (route.length < 2) return;
 
     const positions = Cesium.Cartesian3.fromDegreesArray(route.flatMap(p => [p.lng, p.lat]));
@@ -314,6 +343,7 @@ export default function CorridorWorldScene({
     });
     pin('corridor:origin', route[0]!, '#10b981', 'ORIGIN');
     pin('corridor:destination', route[route.length - 1]!, '#fb7185', 'DESTINATION');
+    viewer.scene.requestRender();
   }, [route, corridorKm, height]);
 
   useEffect(() => {
@@ -346,6 +376,7 @@ export default function CorridorWorldScene({
         },
       });
     }
+    viewer.scene.requestRender();
   }, [zones, height]);
 
   useEffect(() => {
@@ -401,7 +432,10 @@ export default function CorridorWorldScene({
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
     viewer.entities.values.filter(e => e.id === 'trail:history').forEach(e => viewer.entities.remove(e));
-    if (!trail || trail.length < 2) return;
+    if (!trail || trail.length < 2) {
+      viewer.scene.requestRender();
+      return;
+    }
     viewer.entities.add({
       id: 'trail:history',
       polyline: {
@@ -411,6 +445,7 @@ export default function CorridorWorldScene({
         material: new Cesium.PolylineGlowMaterialProperty({ glowPower: 0.22, color: css('#22d3ee', 0.7) }),
       },
     });
+    viewer.scene.requestRender();
   }, [trail]);
 
   useEffect(() => {
@@ -427,17 +462,20 @@ export default function CorridorWorldScene({
       },
       duration: 0.9,
     });
-    setRouteFitted(true);
-  }, [focusId, liveMembers]);
+  }, [focusId]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
-    if (!viewer || viewer.isDestroyed() || routeFitted) return;
+    if (!viewer || viewer.isDestroyed() || route.length < 2) return;
+    if (fittedRouteSignatureRef.current === routeSignature) return;
     const points = fitPoints(route, liveMembers, trail);
     if (points.length < 2) return;
-    viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), { duration: 1.15, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), Math.max(1800, corridorKm * 900)) });
-    setRouteFitted(true);
-  }, [route, liveMembers, trail, corridorKm, routeFitted]);
+    viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), {
+      duration: 1.15,
+      offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), Math.max(1800, corridorKm * 900)),
+    });
+    fittedRouteSignatureRef.current = routeSignature;
+  }, [route, routeSignature, liveMembers, trail, corridorKm]);
 
   const recenter = () => {
     const viewer = viewerRef.current;
@@ -456,7 +494,7 @@ export default function CorridorWorldScene({
       <div className={`${fill ? 'h-full' : 'h-[520px]'} grid place-items-center bg-[#080b12] text-center`}>
         <div className="max-w-sm px-6">
           <TriangleAlert className="mx-auto mb-3 text-amber-400" size={26} />
-          <p className="text-sm font-semibold text-white">4D world renderer failed to initialize</p>
+          <p className="text-sm font-semibold text-white">3D world renderer failed to initialize</p>
           <p className="mt-1 text-xs text-neutral-500">The operational corridor data is intact. Reopen the map after the browser finishes loading its WebGL context.</p>
         </div>
       </div>
@@ -468,21 +506,21 @@ export default function CorridorWorldScene({
       <div ref={boxRef} className="absolute inset-0" />
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3">
         <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-[#070a10]/86 p-1 backdrop-blur-xl">
-          <button type="button" onClick={() => setMode('dark')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'dark' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Dark map"><MapIcon size={15} /></button>
-          <button type="button" onClick={() => setMode('satellite')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'satellite' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Satellite map"><Satellite size={15} /></button>
-          <button type="button" onClick={() => setMode('hybrid')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'hybrid' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Hybrid map"><Layers size={15} /></button>
-          <span className="ml-1 border-l border-white/10 pl-2 pr-2 text-[10px] font-mono text-neutral-500">{mapStatus}</span>
+          <button type="button" onClick={() => setMode('dark')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'dark' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Dark map" aria-pressed={mode === 'dark'}><MapIcon size={15} /></button>
+          <button type="button" onClick={() => setMode('satellite')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'satellite' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Satellite map" aria-pressed={mode === 'satellite'}><Satellite size={15} /></button>
+          <button type="button" onClick={() => setMode('hybrid')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'hybrid' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Hybrid map" aria-pressed={mode === 'hybrid'}><Layers size={15} /></button>
+          <span className="ml-1 max-w-[280px] truncate border-l border-white/10 pl-2 pr-2 text-[10px] font-bold font-mono text-neutral-400">{mapStatus}</span>
         </div>
         <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-[#070a10]/86 p-1 backdrop-blur-xl">
           <button type="button" onClick={recenter} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label="Recenter world"><Crosshair size={15} /></button>
           <button type="button" onClick={() => { const viewer = viewerRef.current; if (!viewer || viewer.isDestroyed()) return; const points = fitPoints(route, liveMembers, trail); if (points.length >= 2) viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), { duration: 0.8, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), Math.max(1800, corridorKm * 900)) }); }} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label="Fit corridor"><Target size={15} /></button>
-          <button type="button" onClick={() => setCreditsOpen(v => !v)} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label="Map information"><Signal size={15} /></button>
+          <button type="button" onClick={() => setCreditsOpen(v => !v)} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label="Map information" aria-expanded={creditsOpen}><Signal size={15} /></button>
         </div>
       </div>
       <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap items-center gap-2">
-        <span className="rounded-lg border border-white/10 bg-[#070a10]/84 px-2.5 py-1.5 text-[10px] font-mono text-neutral-400 backdrop-blur-xl">{liveMembers.length} DEVICE{liveMembers.length === 1 ? '' : 'S'} VISIBLE</span>
-        {terrainReady && <span className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.08] px-2.5 py-1.5 text-[10px] font-mono text-emerald-300 backdrop-blur-xl">WORLD TERRAIN</span>}
-        {focusId && <span className="rounded-lg border border-violet-500/25 bg-violet-500/[0.09] px-2.5 py-1.5 text-[10px] font-mono text-violet-300 backdrop-blur-xl">FOCUS · {liveMembers.find(m => m.id === focusId)?.name ?? focusId.slice(0, 8)}</span>}
+        <span className="rounded-lg border border-white/10 bg-[#070a10]/84 px-2.5 py-1.5 text-[10px] font-bold font-mono text-neutral-300 backdrop-blur-xl">{liveMembers.length} DEVICE{liveMembers.length === 1 ? '' : 'S'} VISIBLE</span>
+        {terrainReady && <span className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.08] px-2.5 py-1.5 text-[10px] font-bold font-mono text-emerald-300 backdrop-blur-xl">WORLD TERRAIN</span>}
+        {focusId && <span className="rounded-lg border border-violet-500/25 bg-violet-500/[0.09] px-2.5 py-1.5 text-[10px] font-bold font-mono text-violet-300 backdrop-blur-xl">FOCUS · {liveMembers.find(m => m.id === focusId)?.name ?? focusId.slice(0, 8)}</span>}
       </div>
       {creditsOpen && (
         <div className="absolute bottom-3 right-3 max-w-xs rounded-xl border border-white/10 bg-[#070a10]/92 p-3 text-[10px] leading-relaxed text-neutral-400 shadow-2xl backdrop-blur-xl">
