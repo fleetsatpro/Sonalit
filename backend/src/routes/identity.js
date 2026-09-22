@@ -23,16 +23,6 @@ function orgId(req) {
   return req.user && req.user.org_id ? req.user.org_id : null;
 }
 
-function clientIp(req) {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string' && forwarded.trim()) return forwarded.split(',')[0].trim();
-  return req.ip || null;
-}
-
-function safeUserAgent(req) {
-  return String(req.headers['user-agent'] || '').slice(0, 1000) || null;
-}
-
 function normalizeStatus(value) {
   if (!value) return null;
   const v = String(value).toLowerCase();
@@ -44,7 +34,6 @@ router.use(authenticate, authorize('admin'));
 router.get('/identity/overview', async (req, res) => {
   const oid = orgId(req);
   if (!oid) return res.status(403).json({ error: 'identity_org_required' });
-
   try {
     const [counts, sessions, mfa] = await Promise.all([
       query(`SELECT
@@ -64,33 +53,21 @@ router.get('/identity/overview', async (req, res) => {
         COUNT(*) FILTER (WHERE COALESCE(totp_enabled, false) = TRUE)::int AS totp_enabled
        FROM users WHERE org_id = $1 AND deleted_at IS NULL`, [oid]),
     ]);
-
     const total = Number(counts.rows[0].total || 0);
     const mfaEnabled = Number(mfa.rows[0].totp_enabled || 0);
-    res.json({
-      data: {
-        users: counts.rows[0],
-        sessions: sessions.rows[0],
-        mfa: { total, totp_enabled: mfaEnabled, coverage_pct: total ? Math.round((mfaEnabled / total) * 100) : 0 },
-        role_catalog_size: ROLE_CATALOG.length,
-        controls: {
-          password_reset: 'not_configured',
-          sso: 'provider_dependent',
-          passkeys: 'available_in_auth_service',
-          session_revocation: 'enabled',
-          tenant_isolation: 'org_scoped',
-        },
-      },
-    });
+    res.json({ data: {
+      users: counts.rows[0], sessions: sessions.rows[0],
+      mfa: { total, totp_enabled: mfaEnabled, coverage_pct: total ? Math.round((mfaEnabled / total) * 100) : 0 },
+      role_catalog_size: ROLE_CATALOG.length,
+      controls: { password_reset: 'not_configured', sso: 'provider_dependent', passkeys: 'available_in_auth_service', session_revocation: 'enabled', tenant_isolation: 'org_scoped' },
+    }});
   } catch (err) {
     logger.error(`GET /auth/identity/overview error: ${err.message}`);
     res.status(500).json({ error: 'identity_overview_failed' });
   }
 });
 
-router.get('/identity/roles', (req, res) => {
-  res.json({ data: ROLE_CATALOG });
-});
+router.get('/identity/roles', (req, res) => res.json({ data: ROLE_CATALOG }));
 
 router.get('/identity/users', async (req, res) => {
   const oid = orgId(req);
@@ -100,21 +77,17 @@ router.get('/identity/users', async (req, res) => {
   const search = String(req.query.search || '').trim();
   const role = MANAGEABLE_ROLES.includes(String(req.query.role || '')) ? String(req.query.role) : null;
   const status = normalizeStatus(req.query.status);
-
   try {
     const params = [oid];
     const where = ['org_id = $1', 'deleted_at IS NULL'];
-    if (search) {
-      params.push(`%${search.toLowerCase()}%`);
-      where.push(`(LOWER(name) LIKE $${params.length} OR LOWER(email) LIKE $${params.length})`);
-    }
+    if (search) { params.push(`%${search.toLowerCase()}%`); where.push(`(LOWER(name) LIKE $${params.length} OR LOWER(email) LIKE $${params.length})`); }
     if (role) { params.push(role); where.push(`role = $${params.length}`); }
     if (status) { params.push(status); where.push(`status = $${params.length}`); }
     const count = await query(`SELECT COUNT(*)::int AS count FROM users WHERE ${where.join(' AND ')}`, params);
     params.push(limit, offset);
     const rows = await query(`SELECT id, name, email, role, status, COALESCE(totp_enabled, false) AS totp_enabled,
-      org_id, created_at, updated_at
-      FROM users WHERE ${where.join(' AND ')} ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END, name ASC
+      org_id, created_at, updated_at FROM users WHERE ${where.join(' AND ')}
+      ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END, name ASC
       LIMIT $${params.length - 1} OFFSET $${params.length}`, params);
     res.json({ data: rows.rows, meta: { total: count.rows[0].count, limit, offset } });
   } catch (err) {
@@ -133,14 +106,21 @@ router.patch('/identity/users/:id', auditLog('identity_users'), async (req, res)
 
   if (requestedRole && !MANAGEABLE_ROLES.includes(requestedRole)) return res.status(400).json({ error: 'invalid_role' });
   if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'status') && !requestedStatus) return res.status(400).json({ error: 'invalid_status' });
-  if (targetId === req.user.id && requestedStatus && requestedStatus !== 'active') {
-    return res.status(400).json({ error: 'cannot_disable_current_account' });
-  }
+  if (targetId === req.user.id && requestedStatus && requestedStatus !== 'active') return res.status(400).json({ error: 'cannot_disable_current_account' });
   if (requestedRole === 'admin' && req.user.role !== 'admin') return res.status(403).json({ error: 'admin_role_required' });
 
   try {
     const before = await query(`SELECT id, name, email, role, status FROM users WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`, [targetId, oid]);
     if (!before.rows.length) return res.status(404).json({ error: 'user_not_found' });
+
+    const current = before.rows[0];
+    const demotingLastAdmin = current.role === 'admin' && current.status === 'active' && (
+      (requestedRole && requestedRole !== 'admin') || (requestedStatus && requestedStatus !== 'active')
+    );
+    if (demotingLastAdmin) {
+      const admins = await query(`SELECT COUNT(*)::int AS count FROM users WHERE org_id = $1 AND deleted_at IS NULL AND role = 'admin' AND status = 'active'`, [oid]);
+      if (Number(admins.rows[0].count) <= 1) return res.status(409).json({ error: 'last_admin_protected', message: 'The organisation must retain at least one active administrator.' });
+    }
 
     const updates = [];
     const params = [];
@@ -152,11 +132,7 @@ router.patch('/identity/users/:id', auditLog('identity_users'), async (req, res)
     const updated = await query(`UPDATE users SET ${updates.join(', ')}, updated_at = NOW()
       WHERE id = $${params.length - 1} AND org_id = $${params.length} AND deleted_at IS NULL
       RETURNING id, name, email, role, status, COALESCE(totp_enabled, false) AS totp_enabled, org_id, created_at, updated_at`, params);
-
-    req.auditAction = 'UPDATE';
-    req.auditRecordId = targetId;
-    req.auditBefore = before.rows[0];
-    req.auditAfter = updated.rows[0];
+    req.auditAction = 'UPDATE'; req.auditRecordId = targetId; req.auditBefore = current; req.auditAfter = updated.rows[0];
     res.json({ data: updated.rows[0] });
   } catch (err) {
     logger.error(`PATCH /auth/identity/users/:id error: ${err.message}`);
@@ -171,12 +147,11 @@ router.get('/identity/sessions', async (req, res) => {
     const rows = await query(`SELECT rt.id, rt.user_id, u.name, u.email, u.role,
       rt.created_at, rt.expires_at, rt.last_seen_at, rt.ip_address, rt.user_agent,
       CASE WHEN rt.used_at IS NOT NULL OR rt.revoked_at IS NOT NULL OR rt.expires_at <= NOW() THEN 'revoked' ELSE 'active' END AS state
-      FROM refresh_tokens rt
-      JOIN users u ON u.id = rt.user_id
+      FROM refresh_tokens rt JOIN users u ON u.id = rt.user_id
       WHERE u.org_id = $1 AND u.deleted_at IS NULL
       ORDER BY CASE WHEN rt.used_at IS NULL AND rt.revoked_at IS NULL AND rt.expires_at > NOW() THEN 0 ELSE 1 END,
         rt.created_at DESC LIMIT 200`, [oid]);
-    res.json({ data: rows.rows.map((r) => ({ ...r, token_fingerprint: crypto.createHash('sha256').update(String(r.id)).digest('hex').slice(0, 12) })) });
+    res.json({ data: rows.rows.map(r => ({ ...r, token_fingerprint: crypto.createHash('sha256').update(String(r.id)).digest('hex').slice(0, 12) })) });
   } catch (err) {
     logger.error(`GET /auth/identity/sessions error: ${err.message}`);
     res.status(500).json({ error: 'identity_sessions_failed' });
@@ -189,10 +164,8 @@ router.post('/identity/sessions/revoke-all', auditLog('identity_sessions'), asyn
   try {
     const result = await query(`UPDATE refresh_tokens rt SET revoked_at = NOW(), used_at = COALESCE(used_at, NOW())
       FROM users u WHERE u.id = rt.user_id AND u.org_id = $1 AND rt.used_at IS NULL AND rt.expires_at > NOW()`, [oid]);
-    req.auditAction = 'REVOKE_SESSIONS';
-    req.auditRecordId = oid;
-    req.auditBefore = { scope: 'organisation', active_sessions: result.rowCount };
-    req.auditAfter = { scope: 'organisation', revoked: result.rowCount };
+    req.auditAction = 'REVOKE_SESSIONS'; req.auditRecordId = oid;
+    req.auditBefore = { scope: 'organisation', active_sessions: result.rowCount }; req.auditAfter = { scope: 'organisation', revoked: result.rowCount };
     res.json({ data: { revoked: result.rowCount } });
   } catch (err) {
     logger.error(`POST /auth/identity/sessions/revoke-all error: ${err.message}`);
@@ -208,9 +181,7 @@ router.delete('/identity/sessions/:id', auditLog('identity_sessions'), async (re
       FROM users u WHERE rt.id = $1 AND u.id = rt.user_id AND u.org_id = $2 AND rt.expires_at > NOW()
       RETURNING rt.id`, [req.params.id, oid]);
     if (!result.rows.length) return res.status(404).json({ error: 'session_not_found' });
-    req.auditAction = 'REVOKE_SESSION';
-    req.auditRecordId = req.params.id;
-    res.status(204).end();
+    req.auditAction = 'REVOKE_SESSION'; req.auditRecordId = req.params.id; res.status(204).end();
   } catch (err) {
     logger.error(`DELETE /auth/identity/sessions/:id error: ${err.message}`);
     res.status(500).json({ error: 'identity_session_revoke_failed' });
@@ -241,10 +212,7 @@ router.patch('/identity/access-requests/:id', auditLog('identity_access_requests
       RETURNING id, name, email, organization, role_requested, reason, status, reviewed_by, reviewed_at, created_at`,
       [status, req.user.id, req.params.id, oid]);
     if (!result.rows.length) return res.status(404).json({ error: 'access_request_not_found_or_already_reviewed' });
-    req.auditAction = 'REVIEW';
-    req.auditRecordId = req.params.id;
-    req.auditAfter = result.rows[0];
-    res.json({ data: result.rows[0] });
+    req.auditAction = 'REVIEW'; req.auditRecordId = req.params.id; req.auditAfter = result.rows[0]; res.json({ data: result.rows[0] });
   } catch (err) {
     logger.error(`PATCH /auth/identity/access-requests/:id error: ${err.message}`);
     res.status(500).json({ error: 'identity_access_request_update_failed' });
