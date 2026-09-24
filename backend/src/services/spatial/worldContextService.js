@@ -291,6 +291,105 @@ function providerFailureStatus(error) {
   return 'UNAVAILABLE';
 }
 
+function externalObservationClass(observation) {
+  const type = String(observation?.entityType || '').toLowerCase();
+  if (type.startsWith('traffic_')) return 'traffic';
+  if (type === 'natural_hazard') return 'hazard';
+  if (type === 'vessel') return 'maritime';
+  if (type === 'aircraft') return 'aircraft';
+  if (type === 'weather') return 'weather';
+  return null;
+}
+
+function trafficState(observation) {
+  const attrs = observation?.attributes || {};
+  return {
+    closed: Boolean(attrs.closed),
+    severe: ['severe', 'heavy', 'major'].includes(String(attrs.congestion || attrs.magnitudeOfDelay || '').toLowerCase()),
+    moderate: String(attrs.congestion || '').toLowerCase() === 'moderate'
+  };
+}
+
+function correlateExternalObservations(observations, route, now) {
+  const sourceGroups = new Map();
+  const usable = (Array.isArray(observations) ? observations : []).filter(function(observation) {
+    return observation &&
+      observation.source &&
+      observation.id &&
+      Number.isFinite(Number(observation.latitude)) &&
+      Number.isFinite(Number(observation.longitude)) &&
+      externalObservationClass(observation) === 'traffic';
+  });
+
+  for (const observation of usable) {
+    const key = String(observation.entityType || 'traffic');
+    if (!sourceGroups.has(key)) sourceGroups.set(key, []);
+    sourceGroups.get(key).push(observation);
+  }
+
+  const correlations = [];
+  const seen = new Set();
+  for (const observationsForType of sourceGroups.values()) {
+    for (let i = 0; i < observationsForType.length; i++) {
+      for (let j = i + 1; j < observationsForType.length; j++) {
+        const a = observationsForType[i];
+        const b = observationsForType[j];
+        if (String(a.source) === String(b.source)) continue;
+
+        const distance = distanceM(
+          Number(a.latitude), Number(a.longitude),
+          Number(b.latitude), Number(b.longitude)
+        );
+        if (distance > 2500) continue;
+
+        const key = [a.id, b.id].sort().join('|');
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        const aState = trafficState(a);
+        const bState = trafficState(b);
+        const agreement = aState.closed === bState.closed &&
+          (aState.severe === bState.severe || (!aState.severe && !bState.severe));
+
+        const routeDistanceA = Array.isArray(route) && route.length >= 2
+          ? projectOntoRoute(route, Number(a.latitude), Number(a.longitude)).crossTrackKm * 1000
+          : null;
+        const routeDistanceB = Array.isArray(route) && route.length >= 2
+          ? projectOntoRoute(route, Number(b.latitude), Number(b.longitude)).crossTrackKm * 1000
+          : null;
+
+        correlations.push({
+          id: 'spatial-correlation:' + key,
+          kind: agreement ? 'corroboration' : 'source_disagreement',
+          entityType: 'traffic',
+          observationIds: [String(a.id), String(b.id)],
+          sourceProviders: [String(a.source), String(b.source)],
+          distanceM: Math.round(distance),
+          routeDistanceM: routeDistanceA == null || routeDistanceB == null
+            ? null
+            : Math.round(Math.min(routeDistanceA, routeDistanceB)),
+          confidence: agreement
+            ? Math.min(Number(a.observationConfidence || 0.5), Number(b.observationConfidence || 0.5)) * 0.9
+            : Math.min(Number(a.observationConfidence || 0.5), Number(b.observationConfidence || 0.5)) * 0.55,
+          observedAt: [a.observedAt, b.observedAt].filter(Boolean).sort().pop() || null,
+          derivedAt: new Date(now).toISOString(),
+          evidence: [
+            { metric: 'source_pair', value: String(a.source) + ' vs ' + String(b.source) },
+            { metric: 'distance_m', value: Math.round(distance) },
+            { metric: 'state_agreement', value: agreement }
+          ],
+          uncertainty: agreement
+            ? ['The sources are spatially proximate and semantically aligned; they may still represent different road features.']
+            : ['Provider observations are proximate but materially disagree on closure/severity state; identity matching is not guaranteed.'],
+          status: agreement ? 'corroborated' : 'unresolved_disagreement'
+        });
+      }
+    }
+  }
+
+  return correlations;
+}
+
 function providerFailureWarning(layer, error) {
   const failureClass = String(error?.failureClass || error?.class || '').toLowerCase();
   if (!failureClass) return layer + '_layer_unavailable';
@@ -1738,6 +1837,7 @@ async function buildWorldContext(opts) {
 
   relations.push.apply(relations, externalRelations);
   const allEntities = operationalVehicles.concat(movement, environment, traffic, hazards, infrastructure, security);
+  const correlations = correlateExternalObservations(traffic, routeInfo.route, now);
   const missionRouteCoords = routeInfo.route.map(function(p) { return [p.lng, p.lat]; });
 
   const context = {
@@ -1770,6 +1870,7 @@ async function buildWorldContext(opts) {
     hazards,
     infrastructure,
     security,
+    correlations,
     coverage: {
       layersRequested: layers,
       layersSucceeded: Array.from(new Set(layersSucceeded)),
@@ -1873,6 +1974,7 @@ module.exports = {
   bboxFromRoute,
   normaliseRoute,
   distanceM,
+  correlateExternalObservations,
   sampleRoutePoints,
   makeVehicle,
   getSpatialProviderHealth
