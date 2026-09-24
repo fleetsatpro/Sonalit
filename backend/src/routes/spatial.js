@@ -204,10 +204,8 @@ router.post(
 router.get(
   '/world-context/convoy/:id',
   asyncHandler(async (req, res) => {
-    req.query.subject = JSON.stringify({ kind: 'convoy', id: req.params.id });
-    const parsed = JSON.parse(req.query.subject);
-    req.query.subject = parsed;
-    return worldContextHandler(req, res, true);
+    req.query.subject = { kind: 'convoy', id: req.params.id };
+    return worldContextHandler(req, res, false);
   }),
 );
 
@@ -215,7 +213,38 @@ router.get(
   '/world-context/vehicle/:id',
   asyncHandler(async (req, res) => {
     req.query.subject = { kind: 'vehicle', id: req.params.id };
-    return worldContextHandler(req, res, true);
+    return worldContextHandler(req, res, false);
+  }),
+);
+
+
+router.post(
+  '/world-events/evaluate',
+  asyncHandler(async (req, res) => {
+    const orgId = req.user?.org_id;
+    if (!orgId) return res.status(403).json({ error: 'Organisation context required' });
+
+    const subject = parseSubject(req.body?.subject);
+    if (!subject || !['convoy', 'vehicle'].includes(subject.kind)) {
+      return res.status(400).json({ error: 'Evaluation requires a convoy or vehicle subject' });
+    }
+
+    const context = await buildWorldContext({
+      orgId,
+      userId: req.user.id,
+      db: req.db,
+      subject,
+      center: req.body?.center ? parseCenter(req.body.center) : null,
+      radiusM: boundedRadius(req.body?.radiusM),
+      bbox: req.body?.bbox ? (Array.isArray(req.body.bbox) ? validateBbox(req.body.bbox) : parseBbox(String(req.body.bbox))) : null,
+      layers: parseLayers(req.body?.layers, ['aircraft','weather','security','infrastructure','incidents']),
+      maxEntitiesPerLayer: Math.min(MAX_RESULT, Math.max(1, Number(req.body?.maxEntitiesPerLayer) || 100)),
+      requestId: req.id || req.headers['x-request-id'],
+      persistEvents: true,
+      publish,
+    });
+
+    res.json({ data: context.events || [] });
   }),
 );
 
