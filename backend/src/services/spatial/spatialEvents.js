@@ -493,9 +493,12 @@ function detectSpatialEvents(context, options) {
       severity: relation.severity || 'high',
       confidence: clamp01(relation.confidence == null ? 0.7 : relation.confidence),
       operationalConfidence: clamp01(relation.operationalConfidence == null ? 0.7 : relation.operationalConfidence),
-      evidence: relation.evidence || [],
+      evidence: (relation.evidence || []).concat(
+        relation.correlationEvidence || []
+      ),
       sourceReferences: relation.sourceReferences || [],
       uncertainty: relation.uncertainty || [],
+
       ruleVersion: 'spatial-v2',
       status: 'open'
     });
