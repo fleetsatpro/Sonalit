@@ -62,6 +62,9 @@ Workers are separate Railway services, one per entrypoint:
 | Alert Worker | `src/workers/worker.alert.js` | `npm run worker:alert` |
 | Notification Worker | `src/workers/worker.notification.js` | `npm run worker:notification` |
 | Convoy Report Worker | `src/workers/worker.convoy-report.js` | `npm run worker:convoy-report` |
+| God’s Eye / Intelligence Worker | `src/workers/worker.intelligence.js` | `npm run worker:intelligence` |
+
+The God’s Eye worker is not a Redis queue consumer; it runs the autonomous spatial evaluation loop. It must be deployed as a standalone worker process in production (or through the existing `npm run workers` supervisor). The API process does not start it automatically unless `ENABLE_INPROCESS_WORKERS=true` is explicitly enabled.
 
 To check dead jobs:
 ```
