@@ -135,8 +135,8 @@ async function worldContextHandler(req, res, persistEvents) {
   }
 
   const layers = req.body?.layers
-    ? parseLayers(req.body.layers, ['aircraft','weather','maritime','traffic','security','infrastructure','incidents','alerts'])
-    : parseLayers(req.query.layers ? String(req.query.layers).split(',') : null, ['aircraft','weather','maritime','traffic','security','infrastructure','incidents','alerts']);
+    ? parseLayers(req.body.layers, ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts'])
+    : parseLayers(req.query.layers ? String(req.query.layers).split(',') : null, ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts']);
 
   const maxEntities = Math.min(
     MAX_RESULT,
@@ -193,7 +193,7 @@ router.post(
       center,
       radiusM: boundedRadius(body.radiusM),
       bbox,
-      layers: parseLayers(body.layers, ['aircraft','weather','maritime','traffic','security','infrastructure','incidents','alerts']),
+      layers: parseLayers(body.layers, ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts']),
       maxEntitiesPerLayer: Math.min(MAX_RESULT, Math.max(1, Number(body.maxEntitiesPerLayer) || 100)),
       requestId: req.id || req.headers['x-request-id'],
       persistEvents: Boolean(body.persistEvents),
