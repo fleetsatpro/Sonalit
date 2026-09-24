@@ -5169,6 +5169,16 @@
           }
         }
       }
+    },
+    "/api/v1/spatial/world-events/evaluate": {
+      "post": {
+        "operationId": "post_api_v1_spatial_world_events_evaluate",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }
