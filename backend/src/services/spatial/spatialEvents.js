@@ -35,6 +35,84 @@ function severityFor(type) {
   return 'low';
 }
 
+
+const EVENT_MODES = Object.freeze({
+  stateful: new Set([
+    'CORRIDOR_EXIT',
+    'ROUTE_DEVIATION',
+    'STALE_TELEMETRY',
+    'GPS_GAP',
+    'UNEXPECTED_STOP',
+    'LONG_DWELL',
+    'CHECKPOINT_APPROACH',
+    'INCIDENT_NEAR_CONVOY',
+    'HAZARD_NEAR_ROUTE',
+    'EXTERNAL_INCIDENT_NEAR_ROUTE',
+    'EXTERNAL_HAZARD_NEAR_ROUTE',
+    'TRAFFIC_CLOSURE',
+    'TRAFFIC_CONGESTION',
+    'VESSEL_APPROACHING_DESTINATION',
+    'NATURAL_HAZARD_NEAR_ROUTE',
+    'ENVIRONMENTAL_DETERIORATION'
+  ]),
+  occurrence: new Set([
+    'CORRIDOR_REENTRY',
+    'TELEMETRY_RECOVERED',
+    'POSITION_JUMP',
+    'HEADING_ANOMALY',
+    'CHECKPOINT_PASS'
+  ])
+});
+
+const EVENT_AUTHORITY_LAYER = Object.freeze({
+  EXTERNAL_INCIDENT_NEAR_ROUTE: 'traffic',
+  EXTERNAL_HAZARD_NEAR_ROUTE: 'traffic',
+  TRAFFIC_CLOSURE: 'traffic',
+  TRAFFIC_CONGESTION: 'traffic',
+  VESSEL_APPROACHING_DESTINATION: 'maritime',
+  NATURAL_HAZARD_NEAR_ROUTE: 'hazards',
+  ENVIRONMENTAL_DETERIORATION: 'weather'
+});
+
+function eventMode(type) {
+  if (EVENT_MODES.occurrence.has(type)) return 'occurrence';
+  return 'stateful';
+}
+
+function eventRequiresFreshExternalAuthority(type) {
+  return Boolean(EVENT_AUTHORITY_LAYER[type]);
+}
+
+function layerCanReconcile(context, eventType) {
+  const layerId = EVENT_AUTHORITY_LAYER[eventType];
+  if (!layerId) return true;
+
+  const coverage = context && context.coverage || {};
+  if (Array.isArray(coverage.layersUnavailable) && coverage.layersUnavailable.includes(layerId)) return false;
+  if (Array.isArray(coverage.layersPartial) && coverage.layersPartial.includes(layerId)) return false;
+
+  const health = (context && context.layerHealth || []).find(function(item) {
+    return item && item.layerId === layerId;
+  });
+  if (!health) return false;
+
+  return ['LIVE', 'DELAYED'].includes(String(health.status || '').toUpperCase());
+}
+
+function eventCanAutoResolve(context, eventType) {
+  if (!EVENT_MODES.stateful.has(eventType)) return false;
+  if (eventRequiresFreshExternalAuthority(eventType)) return layerCanReconcile(context, eventType);
+
+  // Internal operational conditions are only reconciled when the evaluated
+  // mission/vehicle context is present. Absence of a subject is not evidence
+  // that the underlying condition disappeared.
+  return Boolean(
+    context &&
+    ((context.mission && context.mission.convoyId) ||
+      (context.operational && Array.isArray(context.operational.vehicles) && context.operational.vehicles.length))
+  );
+}
+
 function alertTypeFor(type) {
   if (
     type === 'CORRIDOR_EXIT' ||
@@ -99,7 +177,7 @@ function makeEvent(input) {
     sourceReferences: input.sourceReferences || vehicle.sourceReferences || [],
     uncertainty: input.uncertainty || vehicle.uncertainty || [],
     ruleVersion: 'spatial-v2',
-    status: 'open',
+    status: eventMode(type) === 'occurrence' ? 'resolved' : 'open',
     resolvesEventKey: input.resolvesEventKey || null,
   };
 }
@@ -365,48 +443,152 @@ function detectSpatialEvents(context, options) {
       sourceReferences: [env.provenance && env.provenance.sourceReference || env.id],
       uncertainty: ['Weather context does not by itself determine road safety.'],
       ruleVersion: 'spatial-v2',
-      status: 'open'
+      status: eventMode(type) === 'occurrence' ? 'resolved' : 'open'
     });
   }
 
   return events;
 }
 
+
+async function reconcileSpatialEvents(db, context, events, options) {
+  const cfg = options || {};
+  if (!db || !cfg.orgId || !context) return [];
+
+  const mission = context.mission || null;
+  const operationalVehicles = context.operational && Array.isArray(context.operational.vehicles)
+    ? context.operational.vehicles
+    : [];
+  const convoyId = mission && mission.convoyId ? String(mission.convoyId) : null;
+  if (!convoyId && !operationalVehicles.length) return [];
+
+  const subjectIds = [];
+  if (context.subject && context.subject.id) subjectIds.push(String(context.subject.id));
+  for (const vehicle of operationalVehicles) {
+    if (vehicle && vehicle.id) subjectIds.push(String(vehicle.id));
+  }
+  const uniqueSubjectIds = [...new Set(subjectIds)];
+  if (!uniqueSubjectIds.length) return [];
+
+  const rowsResult = await db(
+    'SELECT id,event_key,event_type,subject_type,subject_id,convoy_id FROM spatial_events ' +
+    'WHERE org_id=$1 AND status=\'open\' AND (convoy_id=$2 OR subject_id = ANY($3::text[]))',
+    [cfg.orgId, convoyId, uniqueSubjectIds],
+  );
+  const openEvents = rowsResult.rows || [];
+  const activeKeys = new Set((events || []).map(function(event) {
+    return String(event.eventKey);
+  }));
+  const resolved = [];
+
+  for (const row of openEvents) {
+    const eventType = String(row.event_type || '');
+    if (!eventCanAutoResolve(context, eventType)) continue;
+    if (activeKeys.has(String(row.event_key))) continue;
+
+    const result = await db(
+      'UPDATE spatial_events SET status=\'resolved\',resolved_at=NOW(),resolved_by=$1,resolution_reason=$2,updated_at=NOW(),last_seen_at=COALESCE(last_seen_at,updated_at) ' +
+      'WHERE org_id=$3 AND id=$4 AND status=\'open\' RETURNING id,event_key',
+      [
+        cfg.userId || null,
+        eventRequiresFreshExternalAuthority(eventType)
+          ? 'Fresh authoritative spatial layer no longer reports the condition.'
+          : 'Fresh mission evaluation no longer reports the condition.',
+        cfg.orgId,
+        row.id,
+      ],
+    );
+    resolved.push.apply(resolved, result.rows || []);
+  }
+
+  return resolved;
+}
+
 async function persistSpatialEvents(db, events, options) {
   const cfg = options || {};
-  if (!db || !cfg.orgId || !Array.isArray(events)) return { created: [], resolved: [] };
+  if (!db || !cfg.orgId || !Array.isArray(events)) return { created: [], updated: [], resolved: [] };
 
   const created = [];
+  const updated = [];
   const resolved = [];
 
   for (const event of events) {
     if (event.resolvesEventKey) {
       const resolvedRows = await db(
-        'UPDATE spatial_events SET status=\'resolved\', resolved_at=NOW(), resolved_by=$1, updated_at=NOW() WHERE org_id=$2 AND event_key=$3 AND status=\'open\' RETURNING id,event_key',
-        [cfg.userId || null, cfg.orgId, event.resolvesEventKey]
+        'UPDATE spatial_events SET status=\'resolved\',resolved_at=NOW(),resolved_by=$1,resolution_reason=$2,updated_at=NOW() ' +
+        'WHERE org_id=$3 AND event_key=$4 AND status=\'open\' RETURNING id,event_key',
+        [
+          cfg.userId || null,
+          'Explicit resolving transition emitted by the spatial event detector.',
+          cfg.orgId,
+          event.resolvesEventKey
+        ]
       );
       resolved.push.apply(resolved, resolvedRows.rows || []);
     }
 
-    const result = await db(
+    const insert = await db(
       'INSERT INTO spatial_events ' +
-      '(org_id,event_key,event_type,subject_type,subject_id,convoy_id,related_entities,previous_state,new_state,observed_at,detected_at,severity,confidence,operational_confidence,evidence,source_references,uncertainty,rule_version,status) ' +
-      'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,\'open\') ' +
+      '(org_id,event_key,event_type,subject_type,subject_id,convoy_id,related_entities,previous_state,new_state,observed_at,detected_at,severity,confidence,operational_confidence,evidence,source_references,uncertainty,rule_version,status,last_seen_at) ' +
+      'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,NOW()) ' +
       'ON CONFLICT (org_id,event_key) WHERE status=\'open\' DO NOTHING RETURNING *',
       [
-        cfg.orgId, event.eventKey, event.eventType, event.subjectType, event.subjectId,
-        event.convoyId || null, JSON.stringify(event.relatedEntities || []),
-        event.previousState || null, event.newState || null, event.observedAt || null,
-        event.detectedAt || new Date().toISOString(), event.severity || 'medium',
-        clamp01(event.confidence), clamp01(event.operationalConfidence),
-        JSON.stringify(event.evidence || []), JSON.stringify(event.sourceReferences || []),
-        JSON.stringify(event.uncertainty || []), event.ruleVersion || 'spatial-v2'
+        cfg.orgId,
+        event.eventKey,
+        event.eventType,
+        event.subjectType,
+        event.subjectId,
+        event.convoyId || null,
+        JSON.stringify(event.relatedEntities || []),
+        event.previousState || null,
+        event.newState || null,
+        event.observedAt || null,
+        event.detectedAt || new Date().toISOString(),
+        event.severity || 'medium',
+        clamp01(event.confidence),
+        clamp01(event.operationalConfidence),
+        JSON.stringify(event.evidence || []),
+        JSON.stringify(event.sourceReferences || []),
+        JSON.stringify(event.uncertainty || []),
+        event.ruleVersion || 'spatial-v2',
+        event.status || (eventMode(event.eventType) === 'occurrence' ? 'resolved' : 'open'),
       ]
     );
 
-    const row = result.rows && result.rows[0];
+    let row = insert.rows && insert.rows[0];
+    const wasCreated = Boolean(row);
+
+    if (!row) {
+      const refreshed = await db(
+        'UPDATE spatial_events SET ' +
+        'observed_at=$1,updated_at=NOW(),last_seen_at=NOW(),severity=$2,confidence=$3,operational_confidence=$4,' +
+        'related_entities=$5,new_state=$6,evidence=$7,source_references=$8,uncertainty=$9,rule_version=$10 ' +
+        'WHERE org_id=$11 AND event_key=$12 AND status=\'open\' RETURNING *',
+        [
+          event.observedAt || null,
+          event.severity || 'medium',
+          clamp01(event.confidence),
+          clamp01(event.operationalConfidence),
+          JSON.stringify(event.relatedEntities || []),
+          event.newState || null,
+          JSON.stringify(event.evidence || []),
+          JSON.stringify(event.sourceReferences || []),
+          JSON.stringify(event.uncertainty || []),
+          event.ruleVersion || 'spatial-v2',
+          cfg.orgId,
+          event.eventKey,
+        ]
+      );
+      row = refreshed.rows && refreshed.rows[0];
+    }
+
     if (!row) continue;
-    created.push(row);
+    if (wasCreated) created.push(row);
+    else updated.push(row);
+
+    // Occurrence events are already resolved in the spatial_events ledger, but
+    // still create the normal Sonalit alert exactly once at first persistence.
+    if (!wasCreated) continue;
 
     const alertType = alertTypeFor(event.eventType);
     const evidenceText = (event.evidence || []).slice(0, 3).map(function(e) {
@@ -420,52 +602,71 @@ async function persistSpatialEvents(db, events, options) {
       const rawVehicleId = event.subjectType === 'vehicle'
         ? String(event.subjectId).replace(/^sonalit:vehicle:/, '')
         : null;
-      const alertResult = await db(
-        'INSERT INTO alerts (vehicle_id,convoy_id,type,severity,message,created_by,org_id,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),NOW()) RETURNING id',
-        [
-          rawVehicleId,
-          event.convoyId || null,
-          alertType,
-          event.severity || 'medium',
-          message,
-          cfg.userId || null,
-          cfg.orgId
-        ]
-      );
 
-      if (typeof cfg.publish === 'function') {
-        try {
-          cfg.publish('org#' + cfg.orgId, {
-            type: 'spatial.event',
-            eventId: row.id,
-            eventType: event.eventType,
-            eventKey: event.eventKey,
-            subjectId: event.subjectId,
-            convoyId: event.convoyId || null,
-            severity: event.severity,
-            confidence: event.confidence
-          });
-          if (alertResult.rows && alertResult.rows[0]) {
+      try {
+        const alertResult = await db(
+          'INSERT INTO alerts (vehicle_id,convoy_id,type,severity,message,created_by,org_id,created_at,updated_at) ' +
+          'VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),NOW()) RETURNING id',
+          [
+            rawVehicleId,
+            event.convoyId || null,
+            alertType,
+            event.severity || 'medium',
+            message,
+            cfg.userId || null,
+            cfg.orgId
+          ]
+        );
+
+        if (typeof cfg.publish === 'function') {
+          try {
             cfg.publish('org#' + cfg.orgId, {
-              type: 'alert.new',
-              alertId: alertResult.rows[0].id,
-              vehicleId: rawVehicleId,
+              type: 'spatial.event',
+              eventId: row.id,
+              eventType: event.eventType,
+              eventKey: event.eventKey,
+              subjectId: event.subjectId,
               convoyId: event.convoyId || null,
-              alertType: alertType,
               severity: event.severity,
-              message: message
+              confidence: event.confidence
             });
-          }
-        } catch (_) {}
+            if (alertResult.rows && alertResult.rows[0]) {
+              cfg.publish('org#' + cfg.orgId, {
+                type: 'alert.new',
+                alertId: alertResult.rows[0].id,
+                vehicleId: rawVehicleId,
+                convoyId: event.convoyId || null,
+                alertType: alertType,
+                severity: event.severity,
+                message: message
+              });
+            }
+          } catch (_) {}
+        }
+      } catch (alertError) {
+        // Event state is authoritative; downstream alert delivery is best-effort.
+        // The event remains persisted and can be replayed/reconciled later.
+        if (cfg.logger && typeof cfg.logger.warn === 'function') {
+          cfg.logger.warn('Spatial alert bridge failed: ' + alertError.message);
+        }
       }
     }
   }
 
-  return { created: created, resolved: resolved };
+  const lifecycleResolved = await reconcileSpatialEvents(db, cfg.context || null, events, cfg);
+  resolved.push.apply(resolved, lifecycleResolved);
+
+  return { created, updated, resolved };
 }
 
 module.exports = {
   detectSpatialEvents,
   persistSpatialEvents,
-  DEFAULTS
+  reconcileSpatialEvents,
+  DEFAULTS,
+  EVENT_MODES,
+  EVENT_AUTHORITY_LAYER,
+  eventMode,
+  eventCanAutoResolve,
+  layerCanReconcile
 };
