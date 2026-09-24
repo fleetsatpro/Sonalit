@@ -29,7 +29,7 @@ async function evaluateSpatialEye(orgId) {
           const context = await buildWorldContext({
             orgId,
             userId: null,
-            db: (sql, params) => client.query(sql, params),
+            db: (sql, params) => withOrg(orgId, (scopedClient) => scopedClient.query(sql, params)),
             subject: { kind: 'convoy', id: String(row.id) },
             layers: ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts'],
             maxEntitiesPerLayer: 100,
