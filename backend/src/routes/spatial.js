@@ -40,6 +40,9 @@ function parseBbox(raw) {
 
 function parseSubject(raw) {
   if (!raw) return { kind: 'none', id: 'context' };
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw); } catch (_) { return null; }
+  }
   if (typeof raw !== 'object' || Array.isArray(raw)) return null;
   const kind = typeof raw.kind === 'string' ? raw.kind : null;
   const id = raw.id == null ? null : String(raw.id);
