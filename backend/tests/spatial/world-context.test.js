@@ -40,6 +40,7 @@ jest.mock('../../src/services/spatial/weatherGateway', () => ({
     }],
     health: { status: 'LIVE' }
   }),
+  getTrafficFlowAtPoints: jest.fn().mockResolvedValue({ observations: [{ id: 'tomtom:traffic-flow:p1', entityType: 'traffic_flow_segment', source: 'tomtom-traffic', sourceReference: 'flow:p1', latitude: -1.291, longitude: 36.831, observedAt: null, receivedAt: '2026-09-24T12:00:20.000Z', observationConfidence: 0.88, operationalConfidence: 0.84, confidence: 0.88, speedMps: 5, status: 'heavy', attributes: { currentSpeedKmh: 18, freeFlowSpeedKmh: 50, currentTravelTimeS: 200, freeFlowTravelTimeS: 90, delayRatio: 1.22, congestion: 'heavy' }, provenance: { sourceName: 'TomTom Traffic Flow', sourceReference: 'flow:p1' }, quality: { state: 'good', freshnessClass: 'UNKNOWN' } }], health: { status: 'LIVE', recordCount: 1 } }),
   getProviderHealth: jest.fn().mockReturnValue({ status: 'LIVE' }),
 }));
 
