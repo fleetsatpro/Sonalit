@@ -18,6 +18,7 @@ const DEFAULTS = Object.freeze({
   maxAois: 8,
   maxSamples: 16,
   maxSegmentKm: 25,
+  maxAoiRouteKm: 300,
   mergeOverlapRatio: 0.55,
   paddingM: 10000,
 });
@@ -273,8 +274,11 @@ function buildAoiCandidates(route, options) {
   for (let i = 1; i < dense.length; i++) {
     dense[i]._denseIndex = i;
     const candidate = chunk.concat(dense[i]);
+    const candidateLengthKm = routeLengthKm(candidate);
     const boxes = splitWrappedBbox(bboxForPoints(candidate, options.paddingM));
-    const safe = boxes.length > 0 && boxes.every(b => bboxAreaDeg2(b) <= options.maxAoiAreaDeg2);
+    const safe = boxes.length > 0 &&
+      candidateLengthKm <= options.maxAoiRouteKm &&
+      boxes.every(b => bboxAreaDeg2(b) <= options.maxAoiAreaDeg2);
 
     if (safe) {
       chunk = candidate;
@@ -359,6 +363,7 @@ function planRouteQueries(routeInput, options = {}) {
   opts.maxAois = clampInt(opts.maxAois, 1, 8, DEFAULTS.maxAois);
   opts.maxSamples = clampInt(opts.maxSamples, 3, 32, DEFAULTS.maxSamples);
   opts.maxSegmentKm = Math.max(5, Math.min(100, Number(opts.maxSegmentKm) || DEFAULTS.maxSegmentKm));
+  opts.maxAoiRouteKm = Math.max(50, Math.min(500, Number(opts.maxAoiRouteKm) || DEFAULTS.maxAoiRouteKm));
   opts.maxAoiAreaDeg2 = Math.max(1, Math.min(25, Number(opts.maxAoiAreaDeg2) || DEFAULTS.maxAoiAreaDeg2));
   opts.paddingM = Math.max(1000, Math.min(25000, Number(opts.paddingM) || DEFAULTS.paddingM));
 
