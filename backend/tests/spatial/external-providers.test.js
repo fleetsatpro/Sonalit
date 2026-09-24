@@ -27,6 +27,16 @@ describe('external spatial provider normalizers', () => {
     expect(obs.observedAt).toBeNull();
   });
 
+  test('normalizes Mapbox LineString geometry without accepting invalid coordinates', () => {
+    const obs = normalizeTrafficFeature({
+      id: 'seg-line',
+      geometry: { type: 'LineString', coordinates: [[36.80, -1.30], [36.82, -1.31], [36.84, -1.32]] },
+      properties: { congestion: 'heavy', closed: false }
+    }, '2026-09-24T12:00:20.000Z', { latitude: -1.31, longitude: 36.82 });
+    expect(obs.latitude).toBeCloseTo(-1.31, 5);
+    expect(obs.longitude).toBeCloseTo(36.82, 5);
+    expect(obs.status).toBe('heavy');
+  });
   test('normalizes external road closure as high-confidence actionable incident data', () => {
     const obs=normalizeIncident({id:'inc-1',geometry:{type:'Point',coordinates:[36.82,-1.30]},properties:{id:'inc-1',iconCategory:'roadClosed',magnitudeOfDelay:'major',lastReportTime:'2026-09-24T12:00:10Z',events:[{description:'Road closed'}],roadNumbers:['A104']}},'2026-09-24T12:00:20Z');
     expect(obs.entityType).toBe('traffic_incident');
