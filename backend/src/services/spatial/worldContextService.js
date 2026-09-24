@@ -1716,5 +1716,6 @@ module.exports = {
   normaliseRoute,
   distanceM,
   sampleRoutePoints,
+  makeVehicle,
   getSpatialProviderHealth
 };
