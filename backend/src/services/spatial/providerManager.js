@@ -48,25 +48,6 @@ class SpatialProviderManager {
     const quotaKey = String(descriptor.quotaKey || name);
     const maxPerMinute = envInt(descriptor.budgetEnv?.maxPerMinute, descriptor.maxPerMinute ?? 120, 1, 10_000);
     const maxConcurrent = envInt(descriptor.budgetEnv?.maxConcurrent, descriptor.maxConcurrent ?? 8, 1, 256);
-    let quota = this.quotaFamilies.get(quotaKey);
-    if (!quota) {
-      quota = {
-        budget: new RequestBudget(maxPerMinute, maxConcurrent),
-        maxPerMinute,
-        maxConcurrent,
-        tenantMaxPerMinute,
-        tenantMaxConcurrent,
-        tenantBudgets: new Map(),
-        tenantBudgetLastUsedAt: new Map(),
-      };
-      this.quotaFamilies.set(quotaKey, quota);
-    } else if (quota.maxPerMinute !== maxPerMinute || quota.maxConcurrent !== maxConcurrent) {
-      throw new Error('Spatial provider quota family configuration mismatch: ' + quotaKey);
-    }
-    const circuit = new CircuitBreaker(
-      envInt(descriptor.budgetEnv?.failureThreshold, descriptor.failureThreshold ?? 6, 1, 100),
-      envInt(descriptor.budgetEnv?.cooldownMs, descriptor.cooldownMs ?? 30_000, 1_000, 600_000),
-    );
     const tenantMaxPerMinute = envInt(
       descriptor.budgetEnv?.tenantMaxPerMinute,
       descriptor.tenantMaxPerMinute ?? Math.max(1, Math.floor((descriptor.maxPerMinute ?? 120) / 4)),
@@ -79,16 +60,30 @@ class SpatialProviderManager {
       1,
       256,
     );
-
-    if (quota.tenantMaxPerMinute == null) {
-      quota.tenantMaxPerMinute = tenantMaxPerMinute;
-      quota.tenantMaxConcurrent = tenantMaxConcurrent;
+    let quota = this.quotaFamilies.get(quotaKey);
+    if (!quota) {
+      quota = {
+        budget: new RequestBudget(maxPerMinute, maxConcurrent),
+        maxPerMinute,
+        maxConcurrent,
+        tenantMaxPerMinute,
+        tenantMaxConcurrent,
+        tenantBudgets: new Map(),
+        tenantBudgetLastUsedAt: new Map(),
+      };
+      this.quotaFamilies.set(quotaKey, quota);
     } else if (
+      quota.maxPerMinute !== maxPerMinute ||
+      quota.maxConcurrent !== maxConcurrent ||
       quota.tenantMaxPerMinute !== tenantMaxPerMinute ||
       quota.tenantMaxConcurrent !== tenantMaxConcurrent
     ) {
-      throw new Error('Spatial provider tenant quota family configuration mismatch: ' + quotaKey);
+      throw new Error('Spatial provider quota family configuration mismatch: ' + quotaKey);
     }
+    const circuit = new CircuitBreaker(
+      envInt(descriptor.budgetEnv?.failureThreshold, descriptor.failureThreshold ?? 6, 1, 100),
+      envInt(descriptor.budgetEnv?.cooldownMs, descriptor.cooldownMs ?? 30_000, 1_000, 600_000),
+    );
 
     this.providers.set(name, {
       name,
