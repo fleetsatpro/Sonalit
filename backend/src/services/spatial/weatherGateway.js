@@ -1,11 +1,5 @@
 'use strict';
 
-const {
-  classifyFreshness,
-  isValidLatLon,
-  buildQuality,
-} = require('../../../../packages/spatial-intelligence/dist/model/observation.js');
-
 const CACHE_TTL_MS = 90_000;
 const MAX_CACHE_ENTRIES = 128;
 
@@ -34,6 +28,26 @@ const WMO = {
   85:'snow_showers',86:'heavy_snow_showers',95:'thunderstorm',
   96:'thunderstorm_hail',99:'severe_thunderstorm_hail',
 };
+
+function isValidLatLon(lat, lng) {
+  return typeof lat === 'number' && typeof lng === 'number' && Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+}
+
+function classifyFreshness(observedAtIso, receivedAtIso) {
+  if (!observedAtIso) return 'UNKNOWN';
+  const observed = Date.parse(observedAtIso);
+  const received = Date.parse(receivedAtIso);
+  if (!Number.isFinite(observed) || !Number.isFinite(received)) return 'UNKNOWN';
+  const ageMs = Math.max(0, received - observed);
+  if (ageMs <= 10 * 60 * 1000) return 'LIVE';
+  if (ageMs <= 90 * 60 * 1000) return 'DELAYED';
+  return 'STALE';
+}
+
+function buildQuality(freshnessClass, reason) {
+  const state = freshnessClass === 'LIVE' ? 'good' : freshnessClass === 'DELAYED' ? 'degraded' : freshnessClass === 'STALE' ? 'stale' : 'unknown';
+  return { state, freshnessClass, reason };
+}
 
 function keyFor(lat, lng) {
   return Number(lat).toFixed(3) + ',' + Number(lng).toFixed(3);
@@ -149,7 +163,7 @@ async function getCurrentWeather(input) {
       const weather = classifyCurrent(current);
       const quality = buildQuality(
         freshness,
-        observedAt ? undefined : { reason: 'provider returned no observation timestamp' },
+        observedAt ? undefined : 'provider returned no observation timestamp',
       );
 
       const observation = {
