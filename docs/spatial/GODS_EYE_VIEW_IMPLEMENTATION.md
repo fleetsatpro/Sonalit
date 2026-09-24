@@ -117,14 +117,20 @@ Persistent events use the spatial_events table with organisation isolation and a
 Machine-detected events are bridged into the existing Sonalit alert contract instead of creating a second alert system.
 ## Provider behaviour
 
-OpenSky remains the external aircraft provider.
+God's Eye external feeds are first-class inputs to the same canonical world model:
 
-Open-Meteo is used for current weather observations. Weather severity is not used as a substitute for freshness; freshness is derived from the provider timestamp.
+- **Aircraft:** OpenSky.
+- **Maritime/AIS:** Kpler Maritime 2.0 GraphQL. Kpler documents area-of-interest filtering and vessel last-position fields.
+- **Road traffic:** Mapbox Traffic v1 through Tilequery. The feed exposes congestion and road-closure state; Mapbox documents an approximately 8-minute congestion update cadence.
+- **Road incidents/hazards:** TomTom Orbis Traffic Incident Details, queried by route-derived bounding box. It supports present incidents and categories including accidents, road closures, roadworks and flooding, with last-report timestamps.
+- **Natural hazards:** NASA EONET v3 open events, bounded by the mission area.
+- **Weather:** Open-Meteo current observations.
 
-External movement and weather calls are cache/dedupe aware and report provider health.
+Every external provider has bounded cache, request deduplication, local concurrency/rate protection, timeout handling, circuit breaking and stale-cache fallback where appropriate. Provider health is exposed through the spatial provider-health endpoint and layer health is carried inside world context.
 
-Provider failure produces partial context where possible rather than collapsing the entire mission context.
+External observations never overwrite operational Sonalit state. Route-level and vehicle-level relationships are deterministic, and actionable relationships can flow into the existing spatial event and alert authority.
 
+Provider credentials are server-side only. If a paid provider is not configured, Sonalit reports AUTH_REQUIRED or UNAVAILABLE for that layer rather than fabricating data.
 ## Copilot
 
 The get_world_context Copilot tool calls the same canonical backend world-context service used by the application.
