@@ -554,6 +554,7 @@ function makeVehicle(row, mission, routeInfo, checkpoints, now) {
     })
     .sort(function(a,b) { return Date.parse(b.observedAt) - Date.parse(a.observedAt); });
 
+  const previousFreshness = previous ? classifyOperationalFreshness(previous.observedAt, now) : 'UNKNOWN';
   const gapMs = previous && observedAt ? Math.max(0, Date.parse(observedAt) - Date.parse(previous.observedAt)) : null;
   const impliedKmh = previous && lat != null && lng != null && gapMs > 0
     ? distanceM(previous.lat, previous.lng, lat, lng) / (gapMs / 3600000)
@@ -667,7 +668,12 @@ function makeVehicle(row, mission, routeInfo, checkpoints, now) {
   obs.impliedSpeedKmh = Number.isFinite(impliedKmh) ? Math.round(impliedKmh * 100) / 100 : null;
   obs.headingDeltaDeg = headingDelta;
   obs.stationaryDurationMs = speedKmh <= 2 && previous && gapMs != null && distanceM(previous.lat, previous.lng, lat, lng) <= 75 ? gapMs : 0;
-  obs.recoveredFreshness = freshness === 'LIVE' || freshness === 'DELAYED';
+  obs.previousFreshnessClass = previousFreshness;
+  obs.recoveredFreshness = Boolean(
+    previous &&
+    previousFreshness === 'STALE' &&
+    (freshness === 'LIVE' || freshness === 'DELAYED')
+  );
   obs.speedKmh = speedKmh;
   obs.sourceReferences = sourceReferences;
   obs.uncertainty = freshness === 'STALE' ? ['Current vehicle position is stale.'] : [];
