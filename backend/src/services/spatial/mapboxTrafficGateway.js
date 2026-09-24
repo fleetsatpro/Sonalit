@@ -4,8 +4,12 @@ const BASE='https://api.mapbox.com/v4/mapbox.mapbox-traffic-v1/tilequery';
 const cache=new BoundedTtlCache(90000,256), inflight=new Map(), circuit=new CircuitBreaker(5,30000), budget=new RequestBudget(60,4);
 const health={providerId:'mapbox-traffic',status:'AUTH_REQUIRED',lastSuccessAt:null,lastAttemptAt:null,lastErrorClass:null,lastErrorMessage:null,recordCount:0,acceptedCount:0,rejectedCount:0,requestCount:0,cacheHits:0,dedupeHits:0};
 function normalizeTrafficFeature(feature,receivedAt,queryPoint){
- const c=feature&&feature.geometry&&feature.geometry.coordinates,p=feature&&feature.properties||{};
- if(!Array.isArray(c)||c.length<2)return null; const lng=Number(c[0]),lat=Number(c[1]); if(!Number.isFinite(lat)||!Number.isFinite(lng))return null;
+ const geometry=feature&&feature.geometry,p=feature&&feature.properties||{};
+ const c=geometry&&geometry.coordinates;
+ let lng=null,lat=null;
+ if(geometry&&geometry.type==='Point'&&Array.isArray(c)&&c.length>=2){lng=Number(c[0]);lat=Number(c[1]);}
+ else if(geometry&&geometry.type==='LineString'&&Array.isArray(c)&&c.length){const mid=c[Math.floor(c.length/2)];if(Array.isArray(mid)&&mid.length>=2){lng=Number(mid[0]);lat=Number(mid[1]);}}
+ if(!Number.isFinite(lat)||!Number.isFinite(lng)||lat<-90||lat>90||lng<-180||lng>180)return null;
  const congestion=p.congestion||p.traffic_congestion||null,closed=p.closed==='yes'||p.closed===true;
  const ref=String(feature.id||(lat.toFixed(5)+':'+lng.toFixed(5)));
  const severity=closed?'critical':(congestion==='severe'||congestion==='heavy'?'high':congestion==='moderate'?'medium':'low');
