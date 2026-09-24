@@ -978,7 +978,7 @@ async function buildWorldContext(opts) {
       if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('hazards');
       else if (status === 'STALE' || status === 'PARTIAL') layersPartial.push('hazards');
       else layersUnavailable.push('hazards');
-      layerHealth.push({ layerId: 'hazards', status, lastSuccessAt: result.health?.lastSuccessAt, lastAttemptAt: result.health?.lastAttemptAt, recordCount: result.health?.recordCount, acceptedCount: result.health?.acceptedCount, rejectedCount: result.health?.rejectedCount, reason: result.health?.lastErrorMessage });
+      layerHealth.push({ layerId: 'hazards', status, lastSuccessAt: result.health?.lastSuccessAt, lastAttemptAt: result.health?.lastAttemptAt, recordCount: result.health?.recordCount, acceptedCount: result.health?.acceptedCount, rejectedCount: result.health?.rejectedCount, coverageComplete: result.coverage?.complete === true, reason: result.health?.lastErrorMessage });
     } catch (error) {
       const failureStatus = providerFailureStatus(error);
       const failureWarning = providerFailureWarning('hazards', error);
@@ -999,7 +999,7 @@ async function buildWorldContext(opts) {
       if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('maritime');
       else if (status === 'STALE' || status === 'PARTIAL') layersPartial.push('maritime');
       else layersUnavailable.push('maritime');
-      layerHealth.push({ layerId: 'maritime', status, lastSuccessAt: result.health?.lastSuccessAt, lastAttemptAt: result.health?.lastAttemptAt, recordCount: result.health?.recordCount, acceptedCount: result.health?.acceptedCount, rejectedCount: result.health?.rejectedCount, reason: result.health?.lastErrorMessage });
+      layerHealth.push({ layerId: 'maritime', status, lastSuccessAt: result.health?.lastSuccessAt, lastAttemptAt: result.health?.lastAttemptAt, recordCount: result.health?.recordCount, acceptedCount: result.health?.acceptedCount, rejectedCount: result.health?.rejectedCount, coverageComplete: result.coverage?.complete === true, reason: result.health?.lastErrorMessage });
       if (status === 'AUTH_REQUIRED') warnings.push('Maritime AIS provider credentials are not configured.');
     } catch (error) {
       const failureStatus = providerFailureStatus(error);
