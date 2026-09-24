@@ -10,6 +10,7 @@ const {
   bearingDeg,
 } = require('./relationEngine');
 const { projectOntoRoute, haversineKm } = require('../geofence/corridor');
+const { planRouteQueries, queryAcrossAois } = require('./routeQueryPlanner');
 const { detectSpatialEvents, persistSpatialEvents } = require('./spatialEvents');
 
 const EARTH_R = 6371000;
@@ -832,8 +833,17 @@ async function buildWorldContext(opts) {
   const externalRadiusM = Math.min(boundedRadiusM, MAX_EXTERNAL_RADIUS_M);
   const maxEntitiesPerLayer = Math.max(1, Math.min(250, Number(input.maxEntitiesPerLayer) || 100));
   const bbox = input.bbox || (resolvedCenter ? bboxFromCenterRadius(resolvedCenter.latitude, resolvedCenter.longitude, externalRadiusM) : null);
-  const routeBbox = bboxFromRoute(routeInfo.route, Math.max(10000, routeInfo.widthKm * 1000));
-  const externalBbox = routeBbox && ((routeBbox[2] - routeBbox[0]) * (routeBbox[3] - routeBbox[1]) <= 25) ? routeBbox : bbox;
+  const routeQueryPlan = !input.bbox && routeInfo.route.length >= 2
+    ? planRouteQueries(routeInfo.route, {
+        maxAoiAreaDeg2: Number(process.env.SPATIAL_EYE_MAX_AOI_AREA_DEG2) || 20,
+        maxAois: Number(process.env.SPATIAL_EYE_MAX_AOIS) || 8,
+        maxSamples: Math.min(16, maxEntitiesPerLayer),
+        paddingM: Math.max(10000, routeInfo.widthKm * 1000)
+      })
+    : null;
+  const externalBbox = routeQueryPlan?.aois?.length
+    ? null
+    : bbox;
 
   const movement = [];
   const environment = [];
@@ -847,25 +857,52 @@ async function buildWorldContext(opts) {
   const layersSucceeded = [];
   const layersPartial = [];
   const layersUnavailable = [];
+  const routeCoverage = routeQueryPlan
+    ? {
+        mode: routeQueryPlan.mode,
+        reason: routeQueryPlan.reason,
+        aoisPlanned: routeQueryPlan.aois.length,
+        maxAois: routeQueryPlan.maxAois,
+        segmentsPlanned: routeQueryPlan.segmentsPlanned,
+        routeLengthKm: routeQueryPlan.routeLengthKm,
+        routeLengthCoveredM: routeQueryPlan.routeLengthCoveredM,
+        coverageRatio: routeQueryPlan.coverageRatio
+      }
+    : null;
 
-  if (layers.includes('aircraft') && bbox) {
+  if (layers.includes('aircraft') && (bbox || routeQueryPlan?.aois?.length)) {
     try {
-      const result = await spatialProviderManager.query('opensky', { bbox: bbox, orgId: orgId, requestId: input.requestId, signal: input.signal });
-      movement.push.apply(movement, (result.observations || []).slice(0, Math.max(1, Math.min(250, Number(input.maxEntitiesPerLayer) || 100))));
+      const result = routeQueryPlan?.aois?.length
+        ? await queryAcrossAois(
+            spatialProviderManager,
+            'opensky',
+            routeQueryPlan,
+            { orgId, requestId: input.requestId, signal: input.signal },
+            { concurrency: Math.min(4, Number(process.env.SPATIAL_EYE_PROVIDER_CONCURRENCY || 3)) }
+          )
+        : await spatialProviderManager.query('opensky', { bbox, orgId, requestId: input.requestId, signal: input.signal });
+
+      movement.push.apply(movement, (result.observations || []).slice(0, maxEntitiesPerLayer));
       const status = result.health?.status || 'UNKNOWN';
       if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('aircraft');
       else if (status === 'STALE' || status === 'PARTIAL') layersPartial.push('aircraft');
       else layersUnavailable.push('aircraft');
       layerHealth.push({
         layerId: 'aircraft',
-        status: status,
+        status,
         lastSuccessAt: result.health?.lastSuccessAt,
         lastAttemptAt: result.health?.lastAttemptAt,
         recordCount: result.health?.recordCount,
         acceptedCount: result.health?.acceptedCount,
         rejectedCount: result.health?.rejectedCount,
+        coverageComplete: result.coverage?.complete === true,
+        routeCoverageRatio: result.coverage?.routeCoverageRatio,
+        aoisPlanned: result.coverage?.aoisPlanned,
+        aoisSucceeded: result.coverage?.aoisSucceeded,
+        aoisFailed: result.coverage?.aoisFailed,
         reason: result.health?.lastErrorMessage
       });
+      if (Array.isArray(result.warnings)) warnings.push(...result.warnings);
     } catch (error) {
       const failureStatus = providerFailureStatus(error);
       const failureWarning = providerFailureWarning('aircraft', error);
@@ -877,7 +914,6 @@ async function buildWorldContext(opts) {
       layerHealth.push({ layerId: 'aircraft', status: failureStatus, reason: String(error?.message || 'External movement provider failed.') });
     }
   }
-
   if (layers.includes('weather') && resolvedCenter) {
     const sampled = routeInfo.route.length >= 2
       ? sampleRoutePoints(routeInfo.route, 8)
@@ -970,15 +1006,39 @@ async function buildWorldContext(opts) {
       coverageComplete
     });
   }
-  if (layers.includes('hazards') && bbox) {
+  if (layers.includes('hazards') && (bbox || routeQueryPlan?.aois?.length)) {
     try {
-      const result = await spatialProviderManager.query('nasa-eonet', { bbox: externalBbox || bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal });
-      hazards.push.apply(hazards, result.observations || []);
+      const result = routeQueryPlan?.aois?.length
+        ? await queryAcrossAois(
+            spatialProviderManager,
+            'nasa-eonet',
+            routeQueryPlan,
+            { maxRecords: maxEntitiesPerLayer, signal: input.signal },
+            { concurrency: Math.min(3, Number(process.env.SPATIAL_EYE_PROVIDER_CONCURRENCY || 3)) }
+          )
+        : await spatialProviderManager.query('nasa-eonet', { bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal });
+
+      hazards.push.apply(hazards, (result.observations || []).slice(0, maxEntitiesPerLayer));
       const status = result.health?.status || 'UNKNOWN';
       if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('hazards');
       else if (status === 'STALE' || status === 'PARTIAL') layersPartial.push('hazards');
       else layersUnavailable.push('hazards');
-      layerHealth.push({ layerId: 'hazards', status, lastSuccessAt: result.health?.lastSuccessAt, lastAttemptAt: result.health?.lastAttemptAt, recordCount: result.health?.recordCount, acceptedCount: result.health?.acceptedCount, rejectedCount: result.health?.rejectedCount, coverageComplete: result.coverage?.complete === true, reason: result.health?.lastErrorMessage });
+      layerHealth.push({
+        layerId: 'hazards',
+        status,
+        lastSuccessAt: result.health?.lastSuccessAt,
+        lastAttemptAt: result.health?.lastAttemptAt,
+        recordCount: result.health?.recordCount,
+        acceptedCount: result.health?.acceptedCount,
+        rejectedCount: result.health?.rejectedCount,
+        coverageComplete: result.coverage?.complete === true,
+        routeCoverageRatio: result.coverage?.routeCoverageRatio,
+        aoisPlanned: result.coverage?.aoisPlanned,
+        aoisSucceeded: result.coverage?.aoisSucceeded,
+        aoisFailed: result.coverage?.aoisFailed,
+        reason: result.health?.lastErrorMessage
+      });
+      if (Array.isArray(result.warnings)) warnings.push(...result.warnings);
     } catch (error) {
       const failureStatus = providerFailureStatus(error);
       const failureWarning = providerFailureWarning('hazards', error);
@@ -990,17 +1050,40 @@ async function buildWorldContext(opts) {
       layerHealth.push({ layerId: 'hazards', status: failureStatus, reason: String(error?.message || 'NASA EONET external event provider failed.') });
     }
   }
-
-  if (layers.includes('maritime') && bbox) {
+  if (layers.includes('maritime') && (bbox || routeQueryPlan?.aois?.length)) {
     try {
-      const result = await spatialProviderManager.query('kpler-ais', { bbox: externalBbox || bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal });
-      movement.push.apply(movement, (result.observations || []).slice(0, Math.max(1, Math.min(250, Number(maxEntitiesPerLayer) || 100))));
+      const result = routeQueryPlan?.aois?.length
+        ? await queryAcrossAois(
+            spatialProviderManager,
+            'kpler-ais',
+            routeQueryPlan,
+            { maxRecords: maxEntitiesPerLayer, signal: input.signal },
+            { concurrency: Math.min(3, Number(process.env.SPATIAL_EYE_PROVIDER_CONCURRENCY || 3)) }
+          )
+        : await spatialProviderManager.query('kpler-ais', { bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal });
+
+      movement.push.apply(movement, (result.observations || []).slice(0, maxEntitiesPerLayer));
       const status = result.health?.status || 'UNKNOWN';
       if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('maritime');
       else if (status === 'STALE' || status === 'PARTIAL') layersPartial.push('maritime');
       else layersUnavailable.push('maritime');
-      layerHealth.push({ layerId: 'maritime', status, lastSuccessAt: result.health?.lastSuccessAt, lastAttemptAt: result.health?.lastAttemptAt, recordCount: result.health?.recordCount, acceptedCount: result.health?.acceptedCount, rejectedCount: result.health?.rejectedCount, coverageComplete: result.coverage?.complete === true, reason: result.health?.lastErrorMessage });
+      layerHealth.push({
+        layerId: 'maritime',
+        status,
+        lastSuccessAt: result.health?.lastSuccessAt,
+        lastAttemptAt: result.health?.lastAttemptAt,
+        recordCount: result.health?.recordCount,
+        acceptedCount: result.health?.acceptedCount,
+        rejectedCount: result.health?.rejectedCount,
+        coverageComplete: result.coverage?.complete === true,
+        routeCoverageRatio: result.coverage?.routeCoverageRatio,
+        aoisPlanned: result.coverage?.aoisPlanned,
+        aoisSucceeded: result.coverage?.aoisSucceeded,
+        aoisFailed: result.coverage?.aoisFailed,
+        reason: result.health?.lastErrorMessage
+      });
       if (status === 'AUTH_REQUIRED') warnings.push('Maritime AIS provider credentials are not configured.');
+      if (Array.isArray(result.warnings)) warnings.push(...result.warnings);
     } catch (error) {
       const failureStatus = providerFailureStatus(error);
       const failureWarning = providerFailureWarning('maritime', error);
@@ -1012,7 +1095,6 @@ async function buildWorldContext(opts) {
       layerHealth.push({ layerId: 'maritime', status: failureStatus, reason: String(error?.message || 'External maritime movement provider failed.') });
     }
   }
-
   if (layers.includes('traffic') && resolvedCenter) {
     const samplePoints = routeInfo.route.length >= 2
       ? sampleRoutePoints(routeInfo.route, 16)
@@ -1610,7 +1692,8 @@ async function buildWorldContext(opts) {
       center: resolvedCenter || undefined,
       radiusM: boundedRadiusM,
       queryScope: bbox ? 'bbox:' + bbox.join(',') : 'operational-mission-context',
-      corridorKm: mission ? routeInfo.widthKm : undefined
+      corridorKm: mission ? routeInfo.widthKm : undefined,
+      routeQueryPlan: routeQueryPlan || undefined
     },
     mission: mission ? Object.assign(mission, {
       route: { coordinates: missionRouteCoords, lengthKm: routeInfo.lengthKm },
@@ -1632,7 +1715,8 @@ async function buildWorldContext(opts) {
       layersRequested: layers,
       layersSucceeded: Array.from(new Set(layersSucceeded)),
       layersPartial: Array.from(new Set(layersPartial)),
-      layersUnavailable: Array.from(new Set(layersUnavailable))
+      layersUnavailable: Array.from(new Set(layersUnavailable)),
+      route: routeCoverage || undefined
     },
     layerHealth,
     providerHealth: spatialProviderManager.getHealthSnapshot(),
