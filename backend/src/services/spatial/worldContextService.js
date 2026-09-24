@@ -794,6 +794,7 @@ async function buildWorldContext(opts) {
       });
     } catch (_) {
       layersUnavailable.push('aircraft');
+      warnings.push('aircraft_layer_unavailable');
       uncertainty.push('Aircraft provider unavailable.');
       layerHealth.push({ layerId: 'aircraft', status: 'UNAVAILABLE', reason: 'External movement provider failed.' });
     }
@@ -840,6 +841,7 @@ async function buildWorldContext(opts) {
       layerHealth.push({ layerId: 'hazards', status, lastSuccessAt: result.health?.lastSuccessAt, lastAttemptAt: result.health?.lastAttemptAt, recordCount: result.health?.recordCount, acceptedCount: result.health?.acceptedCount, rejectedCount: result.health?.rejectedCount, reason: result.health?.lastErrorMessage });
     } catch (_) {
       layersUnavailable.push('hazards');
+      warnings.push('hazards_layer_unavailable');
       uncertainty.push('Natural hazard provider unavailable.');
       layerHealth.push({ layerId: 'hazards', status: 'UNAVAILABLE', reason: 'NASA EONET external natural event provider failed.' });
     }
@@ -857,6 +859,7 @@ async function buildWorldContext(opts) {
       if (status === 'AUTH_REQUIRED') warnings.push('Maritime AIS provider credentials are not configured.');
     } catch (_) {
       layersUnavailable.push('maritime');
+      warnings.push('maritime_layer_unavailable');
       uncertainty.push('Maritime AIS provider unavailable.');
       layerHealth.push({ layerId: 'maritime', status: 'UNAVAILABLE', reason: 'External maritime movement provider failed.' });
     }
