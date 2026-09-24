@@ -43,6 +43,10 @@ describe('spatial provider manager', () => {
     expect(health.manager.failureCount).toBe(1);
   });
 
+  test('accepts legacy gateway error.class without collapsing to unknown', () => {
+    expect(classifyFailure(Object.assign(new Error('auth'), { class: 'auth_required' }))).toBe('auth_required');
+  });
+
   test('querySettled isolates one provider failure from successful providers', async () => {
     const manager = new SpatialProviderManager();
     manager.register('good', {
