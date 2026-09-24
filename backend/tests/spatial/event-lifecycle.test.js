@@ -74,6 +74,18 @@ describe('spatial event lifecycle', () => {
     expect(eventCanAutoResolve(fresh, 'TRAFFIC_CLOSURE')).toBe(true);
   });
 
+  test('allows reconciliation from a fresh empty provider result when it did not fail', () => {
+    const context = {
+      coverage: { layersUnavailable: [], layersPartial: ['maritime'] },
+      layerHealth: [{ layerId: 'maritime', status: 'PARTIAL', coverageComplete: true }],
+      providerHealth: { 'kpler-ais': { status: 'PARTIAL', lastErrorClass: null } },
+      mission: { convoyId: 'c1' },
+      operational: { vehicles: [{ id: 'v1' }] },
+      dataHealth: { ok: true, readErrors: [] },
+    };
+    expect(eventCanAutoResolve(context, 'VESSEL_APPROACHING_DESTINATION', ['kpler:vessel:123'])).toBe(true);
+  });
+
   test('updates an existing open event instead of creating a duplicate alert record', async () => {
     const db = dbStub();
     const context = {
