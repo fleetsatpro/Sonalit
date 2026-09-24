@@ -54,7 +54,7 @@ router.get('/:id/corridor', async (req, res, next) => {
     }
     if (route.length < 2) {
       const rw = await query(`SELECT seq, name, lat, lng FROM convoy_route_waypoints WHERE convoy_id=$1 AND lat IS NOT NULL AND lng IS NOT NULL ORDER BY seq ASC`, [convoyId]);
-      route = rw.rows.map(r => ({ lat: Number(r.lat), lng: Number(r.lng), name: r.name, seq: r.seq));
+      route = rw.rows.map(r => ({ lat: Number(r.lat), lng: Number(r.lng), name: r.name, seq: r.seq }));
     }
     if (route.length < 2) return res.status(422).json({ error: 'Convoy has no planned route yet — plan one from an origin and destination, or add at least two route waypoints.' });
 
