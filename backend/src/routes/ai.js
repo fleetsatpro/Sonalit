@@ -725,10 +725,10 @@ async function toolGetWorldContext(input, context) {
     ? requested.layers.filter(x => typeof x === 'string').slice(0, 10)
     : ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts'];
 
-  const ctx = await withOrg(orgId, (client) => buildWorldContext({
+  const ctx = await buildWorldContext({
     orgId,
     userId,
-    db: (sql, params) => client.query(sql, params),
+    db: (sql, params) => withOrg(orgId, client => client.query(sql, params)),
     subject: {
       kind: subject.kind,
       id: String(subject.id || 'context'),
@@ -741,7 +741,7 @@ async function toolGetWorldContext(input, context) {
     maxEntitiesPerLayer,
     requestId: requested.request_id ? String(requested.request_id).slice(0, 120) : undefined,
     persistEvents: false,
-  }));
+  });
 
   return {
     subject: ctx.subject,
