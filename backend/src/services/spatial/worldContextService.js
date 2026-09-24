@@ -229,4 +229,4 @@ async function buildWorldContext(opts) {
   };
 }
 
-module.exports = { buildWorldContext };
+module.exports = { buildWorldContext, classifyOperationalFreshness };
