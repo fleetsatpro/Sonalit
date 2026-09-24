@@ -89,7 +89,6 @@ class SpatialProviderManager {
       tenantBudgetLastUsedAt: quota.tenantBudgetLastUsedAt,
       health: typeof descriptor.health === 'function' ? descriptor.health : () => ({ status: 'UNKNOWN' }),
       capabilities: Array.isArray(descriptor.capabilities) ? [...new Set(descriptor.capabilities)] : [],
-      budget,
       circuit,
       requestCount: 0,
       successCount: 0,
@@ -220,7 +219,7 @@ class SpatialProviderManager {
           : upstream.status || 'UNKNOWN';
       const effectiveReason = provider.circuit.state === 'OPEN'
         ? 'Provider circuit is open after repeated failures.'
-        : provider.budget.remaining() === 0
+        : provider.quota.budget.remaining() === 0
           ? 'Provider request budget is exhausted.'
           : upstream.reason;
       out[provider.name] = {
