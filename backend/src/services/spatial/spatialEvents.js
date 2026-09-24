@@ -612,6 +612,13 @@ async function persistSpatialEvents(db, events, options) {
         ]
       );
       resolved.push.apply(resolved, resolvedRows.rows || []);
+      await resolveLinkedSpatialAlerts(
+        db,
+        cfg.orgId,
+        String(event.resolvesEventKey),
+        'Spatial resolving transition acknowledged by the detector.',
+        cfg.userId || null
+      );
     }
 
     const insert = await db(
