@@ -83,12 +83,17 @@ const EVENT_AUTHORITY_PROVIDER = Object.freeze({
 function sourceProviderFromReferences(references) {
   const values = Array.isArray(references) ? references : [];
   for (const value of values) {
-    const ref = String(value || '').toLowerCase();
-    if (ref.startsWith('tomtom:')) return 'tomtom-traffic-incidents';
-    if (ref.startsWith('mapbox:')) return 'mapbox-traffic';
-    if (ref.startsWith('kpler:')) return 'kpler-ais';
-    if (ref.startsWith('open-meteo:')) return 'weather';
-    if (ref.startsWith('eonet:') || ref.startsWith('nasa-eonet:')) return 'nasa-eonet';
+    const ref = String(value || '').trim().toLowerCase();
+    if (ref === 'mapbox-traffic' || ref.startsWith('mapbox-traffic:')) return 'mapbox-traffic';
+    if (ref === 'tomtom-traffic-flow' || ref.startsWith('tomtom-traffic-flow:')) return 'tomtom-traffic-flow';
+    if (ref === 'tomtom-traffic-incidents' || ref.startsWith('tomtom-traffic-incidents:')) return 'tomtom-traffic-incidents';
+    if (ref.startsWith('tomtom-traffic:traffic_flow_segment')) return 'tomtom-traffic-flow';
+    if (ref.startsWith('tomtom-traffic:traffic_incident') || ref.startsWith('tomtom-traffic:traffic_hazard')) return 'tomtom-traffic-incidents';
+    if (ref === 'kpler-ais' || ref.startsWith('kpler-ais:') || ref.startsWith('kpler:')) return 'kpler-ais';
+    if (ref === 'open-meteo' || ref.startsWith('open-meteo:')) return 'weather';
+    if (ref === 'weather' || ref.startsWith('weather:')) return 'weather';
+    if (ref === 'nasa-eonet' || ref.startsWith('nasa-eonet:') || ref.startsWith('eonet:')) return 'nasa-eonet';
+    if (ref === 'opensky' || ref.startsWith('opensky:')) return 'opensky';
   }
   return null;
 }
