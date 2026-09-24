@@ -1,5 +1,7 @@
 'use strict';
 
+const { resolveSpatialSubject } = require('./subjectResolver');
+
 const { spatialProviderManager } = require('./providerManager');
 const {
   routeRelation,
@@ -679,13 +681,8 @@ async function buildWorldContext(opts) {
   }).slice(0, 10)));
 
   let subject = input.subject || { kind: 'none', id: 'context' };
-  let missionRow = subject.kind === 'convoy' ? await getConvoy(db, orgId, subject.id) : null;
-
-  if (subject.kind === 'convoy' && !missionRow) {
-    const error = new Error('Convoy not found in organisation context');
-    error.statusCode = 404;
-    throw error;
-  }
+  const subjectResolution = await resolveSpatialSubject({ db, orgId, subject });
+  let missionRow = subjectResolution.missionRow;
 
   let vehicleRows = [];
   let mission = null;
@@ -711,6 +708,8 @@ async function buildWorldContext(opts) {
     alertRows = await getAlerts(db, orgId, missionRow.id);
     vehicleRows = await getVehicles(db, orgId, missionRow.id, null);
   } else if (subject.kind === 'vehicle') {
+    // The resolver proves tenant ownership. Re-read the complete operational
+    // projection because route/telemetry calculations need history fields.
     vehicleRows = await getVehicles(db, orgId, null, String(subject.id));
     const assigned = vehicleRows[0]?.assigned_convoy_id || null;
     if (assigned) {
@@ -741,6 +740,8 @@ async function buildWorldContext(opts) {
   let resolvedCenter = null;
   if (input.center && Number.isFinite(Number(input.center.latitude)) && Number.isFinite(Number(input.center.longitude))) {
     resolvedCenter = { latitude: Number(input.center.latitude), longitude: Number(input.center.longitude) };
+  } else if (subject.kind !== 'vehicle' && subjectResolution.center) {
+    resolvedCenter = subjectResolution.center;
   } else if (operationalVehicles.length) {
     const total = operationalVehicles.reduce(function(a,v) {
       return { lat: a.lat + v.latitude, lng: a.lng + v.longitude };
@@ -793,6 +794,7 @@ async function buildWorldContext(opts) {
       });
     } catch (_) {
       layersUnavailable.push('aircraft');
+      warnings.push('aircraft_layer_unavailable');
       uncertainty.push('Aircraft provider unavailable.');
       layerHealth.push({ layerId: 'aircraft', status: 'UNAVAILABLE', reason: 'External movement provider failed.' });
     }
@@ -839,6 +841,7 @@ async function buildWorldContext(opts) {
       layerHealth.push({ layerId: 'hazards', status, lastSuccessAt: result.health?.lastSuccessAt, lastAttemptAt: result.health?.lastAttemptAt, recordCount: result.health?.recordCount, acceptedCount: result.health?.acceptedCount, rejectedCount: result.health?.rejectedCount, reason: result.health?.lastErrorMessage });
     } catch (_) {
       layersUnavailable.push('hazards');
+      warnings.push('hazards_layer_unavailable');
       uncertainty.push('Natural hazard provider unavailable.');
       layerHealth.push({ layerId: 'hazards', status: 'UNAVAILABLE', reason: 'NASA EONET external natural event provider failed.' });
     }
@@ -856,6 +859,7 @@ async function buildWorldContext(opts) {
       if (status === 'AUTH_REQUIRED') warnings.push('Maritime AIS provider credentials are not configured.');
     } catch (_) {
       layersUnavailable.push('maritime');
+      warnings.push('maritime_layer_unavailable');
       uncertainty.push('Maritime AIS provider unavailable.');
       layerHealth.push({ layerId: 'maritime', status: 'UNAVAILABLE', reason: 'External maritime movement provider failed.' });
     }
