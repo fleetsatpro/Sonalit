@@ -8,6 +8,7 @@ function iso(v){if(!v)return null;const d=new Date(v);return Number.isFinite(d.g
 function normalizeVessel(node,receivedAt){
   const p=node&&node.lastPositionUpdate||{}, s=node&&node.staticData||{};
   const lat=Number(p.latitude), lng=Number(p.longitude);
+  if (p.latitude == null || p.longitude == null || p.latitude === '' || p.longitude === '') return null;
   if(!Number.isFinite(lat)||!Number.isFinite(lng)||lat<-90||lat>90||lng<-180||lng>180)return null;
   const ref=String(s.mmsi||s.imo||(node&&node.id)||'').trim(); if(!ref)return null;
   const observedAt=iso(p.timestamp), age=observedAt?Math.max(0,Date.parse(receivedAt)-Date.parse(observedAt)):null;
