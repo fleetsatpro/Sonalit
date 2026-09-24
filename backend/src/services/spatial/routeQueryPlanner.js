@@ -445,6 +445,8 @@ async function queryAcrossAois(manager, provider, plan, baseArgs = {}, options =
   }
 
   const concurrency = clampInt(options.concurrency, 1, 6, 3);
+  const maxRecords = clampInt(baseArgs.maxRecords, 1, 250, 250);
+  const perAoiMax = Math.max(1, Math.ceil(maxRecords / plan.aois.length));
   const results = new Array(plan.aois.length);
   let cursor = 0;
 
@@ -455,7 +457,11 @@ async function queryAcrossAois(manager, provider, plan, baseArgs = {}, options =
       try {
         results[index] = {
           status: 'fulfilled',
-          value: await manager.query(provider, { ...baseArgs, bbox: aoi.bbox }),
+          value: await manager.query(provider, {
+            ...baseArgs,
+            bbox: aoi.bbox,
+            maxRecords: Math.min(maxRecords, perAoiMax),
+          }),
           coverageWeightKm: Number(aoi.coverageWeightKm || 0),
         };
       } catch (error) {
@@ -491,7 +497,7 @@ async function queryAcrossAois(manager, provider, plan, baseArgs = {}, options =
     statuses.push(String(result.value?.health?.status || 'UNKNOWN').toUpperCase());
     if (result.value?.coverage?.complete !== true) providerIncomplete = true;
 
-    for (const observation of result.value?.observations || []) {
+    for (const observation of (result.value?.observations || []).slice(0, perAoiMax)) {
       if (!observation?.id || seen.has(observation.id)) continue;
       seen.add(observation.id);
       observations.push(observation);
