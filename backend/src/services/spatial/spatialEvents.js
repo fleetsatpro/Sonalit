@@ -283,17 +283,24 @@ function detectSpatialEvents(context, options) {
   }
 
   for (const relation of (context && context.relations || [])) {
-    if (relation.predicate !== 'NEAR_INCIDENT' && relation.predicate !== 'HAZARD_NEAR_ROUTE') continue;
+    const isIncident = relation.predicate === 'NEAR_INCIDENT';
+    const isRiskZone = relation.predicate === 'HAZARD_NEAR_ROUTE' ||
+      (relation.predicate === 'WITHIN' && relation.toType === 'risk_zone');
+    if (!isIncident && !isRiskZone) continue;
 
-    const type = relation.predicate === 'NEAR_INCIDENT'
-      ? 'INCIDENT_NEAR_CONVOY'
-      : 'HAZARD_NEAR_ROUTE';
+    const type = isIncident ? 'INCIDENT_NEAR_CONVOY' : 'HAZARD_NEAR_ROUTE';
+    const subjectType = relation.fromType === 'vehicle'
+      ? 'vehicle'
+      : (context && context.mission && context.mission.convoyId ? 'convoy' : 'context');
+    const subjectId = relation.fromType === 'vehicle'
+      ? String(relation.fromId)
+      : String(context && context.mission && context.mission.convoyId || relation.fromId);
 
     events.push({
       eventKey: type + ':' + String(relation.fromId) + ':' + String(relation.toId),
       eventType: type,
-      subjectType: context && context.mission && context.mission.convoyId ? 'convoy' : 'context',
-      subjectId: String(context && context.mission && context.mission.convoyId || relation.fromId),
+      subjectType,
+      subjectId,
       convoyId: context && context.mission && context.mission.convoyId || null,
       relatedEntities: [{ id: relation.toId, type: relation.toType || 'context', distanceM: relation.distanceM }],
       previousState: null,
@@ -314,13 +321,14 @@ function detectSpatialEvents(context, options) {
   for (const env of (context && context.environment || [])) {
     const hazards = Array.isArray(env.attributes && env.attributes.hazards) ? env.attributes.hazards : [];
     if (!hazards.length) continue;
+    const anchorVehicle = context && context.operational && context.operational.vehicles && context.operational.vehicles[0];
     events.push({
       eventKey: 'ENVIRONMENTAL_DETERIORATION:' + String(env.id),
       eventType: 'ENVIRONMENTAL_DETERIORATION',
-      subjectType: context && context.mission && context.mission.convoyId ? 'convoy' : 'context',
-      subjectId: String(context && context.mission && context.mission.convoyId || 'context'),
+      subjectType: anchorVehicle ? 'vehicle' : (context && context.mission && context.mission.convoyId ? 'convoy' : 'context'),
+      subjectId: String(anchorVehicle ? anchorVehicle.id : (context && context.mission && context.mission.convoyId || 'context')),
       convoyId: context && context.mission && context.mission.convoyId || null,
-      relatedEntities: [{ id: env.id, type: 'weather' }],
+      relatedEntities: [{ id: env.id, type: 'weather' }].concat(anchorVehicle ? [{ id: anchorVehicle.id, type: 'vehicle' }] : []),
       previousState: null,
       newState: 'DEGRADED',
       observedAt: env.observedAt || null,
