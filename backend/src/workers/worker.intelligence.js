@@ -11,48 +11,62 @@ const { query } = require('../config/database');
 const logger = require('../utils/logger');
 
 const intervalMs = Math.max(5, Number(process.env.INTEL_COLLECTION_INTERVAL_MINUTES || 5)) * 60 * 1000;
+const spatialIntervalMs = Math.max(15, Number(process.env.SPATIAL_EYE_INTERVAL_SECONDS || 60)) * 1000;
 const spatialMaxConvoys = Math.max(1, Math.min(100, Number(process.env.SPATIAL_EYE_MAX_CONVOYS_PER_CYCLE || 25)));
 let stopping = false;
 let timer = null;
+let spatialTimer = null;
+let spatialRunning = false;
+let spatialCursor = 0;
 
-async function evaluateSpatialEye() {
+async function evaluateSpatialEye(reason = 'scheduled') {
+  if (spatialRunning || stopping) return { evaluated: 0, eventCount: 0, skipped: true };
+  spatialRunning = true;
   let evaluated = 0;
   let eventCount = 0;
+  const started = Date.now();
   try {
-    const orgs = await query(
-      "SELECT DISTINCT org_id FROM convoys WHERE org_id IS NOT NULL AND status = 'active' AND deleted_at IS NULL ORDER BY org_id LIMIT 500"
+    const active = await query(
+      "SELECT id, org_id FROM convoys WHERE org_id IS NOT NULL AND status = 'active' AND deleted_at IS NULL ORDER BY updated_at DESC, id LIMIT 500"
     );
-    for (const org of orgs.rows || []) {
-      if (!org?.org_id) continue;
-      const convoys = await withOrg(org.org_id, (client) => client.query(
-        "SELECT id FROM convoys WHERE org_id = $1 AND status = 'active' AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT $2",
-        [org.org_id, spatialMaxConvoys]
-      ));
-      for (const row of convoys.rows || []) {
-        try {
-          const context = await buildWorldContext({
-            orgId: org.org_id,
-            userId: null,
-            db: (sql, params) => withOrg(org.org_id, (scopedClient) => scopedClient.query(sql, params)),
-            subject: { kind: 'convoy', id: String(row.id) },
-            layers: ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts'],
-            maxEntitiesPerLayer: 100,
-            requestId: 'spatial-eye-' + reasonToken(),
-            persistEvents: true,
-            publish
-          });
-          evaluated += 1;
-          eventCount += Array.isArray(context.events) ? context.events.length : 0;
-        } catch (error) {
-          logger.warn(`Spatial Eye convoy evaluation failed org=${org.org_id} convoy=${row.id}: ${error.message}`);
-        }
+    const rows = active.rows || [];
+    if (!rows.length) return { evaluated: 0, eventCount: 0, skipped: false };
+
+    const count = Math.min(spatialMaxConvoys, rows.length);
+    const start = spatialCursor % rows.length;
+    const selected = [];
+    for (let i = 0; i < count; i += 1) selected.push(rows[(start + i) % rows.length]);
+    spatialCursor = (start + count) % rows.length;
+
+    for (const row of selected) {
+      if (!row?.org_id || !row?.id) continue;
+      try {
+        const context = await buildWorldContext({
+          orgId: row.org_id,
+          userId: null,
+          db: (sql, params) => withOrg(row.org_id, (scopedClient) => scopedClient.query(sql, params)),
+          subject: { kind: 'convoy', id: String(row.id) },
+          layers: ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts'],
+          maxEntitiesPerLayer: 100,
+          requestId: 'spatial-eye:' + reason + ':' + String(row.id),
+          persistEvents: true,
+          publish
+        });
+        evaluated += 1;
+        eventCount += Array.isArray(context.events) ? context.events.length : 0;
+      } catch (error) {
+        logger.warn(`Spatial Eye convoy evaluation failed org=${row.org_id} convoy=${row.id}: ${error.message}`);
       }
     }
   } catch (error) {
     logger.warn(`Spatial Eye global evaluation failed: ${error.message}`);
+  } finally {
+    spatialRunning = false;
+    logger.info(`Spatial Eye cycle complete (${reason}) in ${Date.now() - started}ms: evaluated=${evaluated}, events=${eventCount}, maxConvoys=${spatialMaxConvoys}`);
   }
-  return { evaluated, eventCount };
+  return { evaluated, eventCount, skipped: false };
 }
+
 function reasonToken() {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -63,14 +77,6 @@ async function cycle(reason) {
   try {
     let spatialEvaluated = 0;
     let spatialEvents = 0;
-    try {
-      const spatial = await evaluateSpatialEye();
-      spatialEvaluated = spatial.evaluated;
-      spatialEvents = spatial.eventCount;
-    } catch (error) {
-      logger.warn(`Spatial Eye cycle failed: ${error.message}`);
-    }
-
     let mesh = [];
     try { mesh = await runNewsMesh(); } catch (error) { logger.warn(`News Mesh cycle failed: ${error.message}`); }
 
@@ -117,6 +123,14 @@ async function cycle(reason) {
   }
 }
 
+function scheduleSpatial() {
+  if (stopping) return;
+  spatialTimer = setTimeout(async () => {
+    await evaluateSpatialEye('scheduled');
+    scheduleSpatial();
+  }, spatialIntervalMs);
+}
+
 function schedule() {
   if (stopping) return;
   timer = setTimeout(async () => {
@@ -129,6 +143,7 @@ async function shutdown(signal) {
   if (stopping) return;
   stopping = true;
   if (timer) clearTimeout(timer);
+  if (spatialTimer) clearTimeout(spatialTimer);
   logger.info(`Intelligence worker shutting down (${signal})`);
   try {
     const { pool } = require('../config/database');
@@ -141,13 +156,15 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
 (async () => {
-  logger.info(`Intelligence worker online; collection cadence=${intervalMs / 60000}m; news mesh + synthesis agents enabled`);
+  logger.info(`Intelligence worker online; collection cadence=${intervalMs / 60000}m; spatial cadence=${spatialIntervalMs / 1000}s; news mesh + synthesis agents enabled`);
   try {
     const context = await query(`SELECT current_user, session_user, current_setting('app.current_org_id', true) AS rls_org, (SELECT count(*)::int FROM users WHERE deleted_at IS NULL) AS visible_users`);
     logger.info(`Intelligence worker DB context: current_user=${context.rows[0]?.current_user} session_user=${context.rows[0]?.session_user} rls_org=${context.rows[0]?.rls_org || 'unset'} visible_users=${context.rows[0]?.visible_users ?? 0}`);
   } catch (error) {
     logger.warn(`Intelligence worker DB context probe failed: ${error.message}`);
   }
+  await evaluateSpatialEye('startup');
   await cycle('startup');
+  scheduleSpatial();
   schedule();
 })();
