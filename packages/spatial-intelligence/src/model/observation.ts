@@ -59,7 +59,7 @@ export interface SpatialObservation {
   latitude: number;
   longitude: number;
   altitudeM?: number | null;
-  observedAt: string;
+  observedAt: string | null;
   receivedAt: string;
   freshnessMs?: number;
   accuracyM?: number | null;
