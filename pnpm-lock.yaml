@@ -62,6 +62,9 @@ importers:
       '@sonalit/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@sonalit/spatial-intelligence':
+        specifier: workspace:*
+        version: link:../../packages/spatial-intelligence
       '@tabler/icons-react':
         specifier: ^3.44.0
         version: 3.44.0(react@18.3.1)
@@ -470,6 +473,18 @@ importers:
       supertest:
         specifier: ^6.3.4
         version: 6.3.4
+
+  packages/spatial-intelligence:
+    devDependencies:
+      cesium:
+        specifier: ^1.141.0
+        version: 1.141.0
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.19)(terser@5.47.1)
 
   packages/contracts:
     dependencies:
