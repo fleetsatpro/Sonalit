@@ -357,7 +357,7 @@ async function persistSpatialEvents(db, events, options) {
   for (const event of events) {
     if (event.resolvesEventKey) {
       const resolvedRows = await db(
-        'UPDATE spatial_events SET status=\\'resolved\\', resolved_at=NOW(), resolved_by=$1, updated_at=NOW() WHERE org_id=$2 AND event_key=$3 AND status=\\'open\\' RETURNING id,event_key',
+        'UPDATE spatial_events SET status=\'resolved\', resolved_at=NOW(), resolved_by=$1, updated_at=NOW() WHERE org_id=$2 AND event_key=$3 AND status=\'open\' RETURNING id,event_key',
         [cfg.userId || null, cfg.orgId, event.resolvesEventKey]
       );
       resolved.push.apply(resolved, resolvedRows.rows || []);
@@ -366,8 +366,8 @@ async function persistSpatialEvents(db, events, options) {
     const result = await db(
       'INSERT INTO spatial_events ' +
       '(org_id,event_key,event_type,subject_type,subject_id,convoy_id,related_entities,previous_state,new_state,observed_at,detected_at,severity,confidence,operational_confidence,evidence,source_references,uncertainty,rule_version,status) ' +
-      'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,\\'open\\') ' +
-      'ON CONFLICT (org_id,event_key) WHERE status=\\'open\\' DO NOTHING RETURNING *',
+      'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,\'open\') ' +
+      'ON CONFLICT (org_id,event_key) WHERE status=\'open\' DO NOTHING RETURNING *',
       [
         cfg.orgId, event.eventKey, event.eventType, event.subjectType, event.subjectId,
         event.convoyId || null, JSON.stringify(event.relatedEntities || []),
