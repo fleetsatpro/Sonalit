@@ -26,6 +26,12 @@ function classifyFailure(error) {
   return FAILURE_CLASSES.has(value) ? value : 'unknown';
 }
 
+function tenantIdFromArgs(args) {
+  if (!args || typeof args !== 'object') return null;
+  const value = args.orgId ?? args.tenantId ?? args.tenant?.orgId;
+  return value == null || value === '' ? null : String(value);
+}
+
 class SpatialProviderManager {
   constructor() {
     this.providers = new Map();
@@ -46,10 +52,26 @@ class SpatialProviderManager {
       envInt(descriptor.budgetEnv?.failureThreshold, descriptor.failureThreshold ?? 6, 1, 100),
       envInt(descriptor.budgetEnv?.cooldownMs, descriptor.cooldownMs ?? 30_000, 1_000, 600_000),
     );
+    const tenantMaxPerMinute = envInt(
+      descriptor.budgetEnv?.tenantMaxPerMinute,
+      descriptor.tenantMaxPerMinute ?? Math.max(1, Math.floor((descriptor.maxPerMinute ?? 120) / 4)),
+      1,
+      10_000,
+    );
+    const tenantMaxConcurrent = envInt(
+      descriptor.budgetEnv?.tenantMaxConcurrent,
+      descriptor.tenantMaxConcurrent ?? Math.max(1, Math.min(descriptor.maxConcurrent ?? 8, 2)),
+      1,
+      256,
+    );
 
     this.providers.set(name, {
       name,
       query: descriptor.query,
+      tenantMaxPerMinute,
+      tenantMaxConcurrent,
+      tenantBudgets: new Map(),
+      tenantBudgetLastUsedAt: new Map(),
       health: typeof descriptor.health === 'function' ? descriptor.health : () => ({ status: 'UNKNOWN' }),
       capabilities: Array.isArray(descriptor.capabilities) ? [...new Set(descriptor.capabilities)] : [],
       budget,
@@ -81,6 +103,34 @@ class SpatialProviderManager {
     }
 
     const now = Date.now();
+    const tenantId = tenantIdFromArgs(args);
+    let tenantBudget = null;
+    if (tenantId) {
+      tenantBudget = provider.tenantBudgets.get(tenantId);
+      if (!tenantBudget) {
+        if (provider.tenantBudgets.size >= Number(process.env.SPATIAL_PROVIDER_MAX_TENANT_BUCKETS || 10_000)) {
+          let oldestId = null;
+          let oldestAt = Infinity;
+          for (const [id, at] of provider.tenantBudgetLastUsedAt.entries()) {
+            if (at < oldestAt) { oldestAt = at; oldestId = id; }
+          }
+          if (oldestId) {
+            provider.tenantBudgets.delete(oldestId);
+            provider.tenantBudgetLastUsedAt.delete(oldestId);
+          }
+        }
+        tenantBudget = new RequestBudget(provider.tenantMaxPerMinute, provider.tenantMaxConcurrent);
+        provider.tenantBudgets.set(tenantId, tenantBudget);
+      }
+      provider.tenantBudgetLastUsedAt.set(tenantId, now);
+      if (!tenantBudget.canRequest(now)) {
+        const error = new Error('Spatial provider tenant budget exhausted: ' + name);
+        error.failureClass = 'rate_limited';
+        error.code = 'TENANT_BUDGET_EXHAUSTED';
+        throw error;
+      }
+    }
+
     if (!provider.circuit.canRequest(now)) {
       const error = new Error('Spatial provider circuit is open: ' + name);
       error.failureClass = 'circuit_open';
@@ -100,6 +150,7 @@ class SpatialProviderManager {
     }
 
     provider.budget.begin(now);
+    if (tenantBudget) tenantBudget.begin(now);
     provider.requestCount += 1;
 
     try {
@@ -120,6 +171,7 @@ class SpatialProviderManager {
       throw error;
     } finally {
       provider.budget.end();
+      if (tenantBudget) tenantBudget.end();
     }
   }
 
@@ -165,6 +217,9 @@ class SpatialProviderManager {
         manager: {
           activeRequests: provider.budget.active,
           rateLimitRemaining: provider.budget.remaining(),
+          tenantBucketCount: provider.tenantBudgets.size,
+          tenantMaxPerMinute: provider.tenantMaxPerMinute,
+          tenantMaxConcurrent: provider.tenantMaxConcurrent,
           requestCount: provider.requestCount,
           successCount: provider.successCount,
           failureCount: provider.failureCount,
@@ -190,6 +245,8 @@ class SpatialProviderManager {
       provider.lastFailure = null;
       provider.lastFailureAt = null;
       provider.lastSuccessAt = null;
+      provider.tenantBudgets.clear();
+      provider.tenantBudgetLastUsedAt.clear();
     }
   }
 }
