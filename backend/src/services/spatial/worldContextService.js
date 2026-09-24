@@ -841,10 +841,6 @@ async function buildWorldContext(opts) {
         paddingM: Math.max(10000, routeInfo.widthKm * 1000)
       })
     : null;
-  const externalBbox = routeQueryPlan?.aois?.length
-    ? null
-    : bbox;
-
   const movement = [];
   const environment = [];
   const traffic = [];
