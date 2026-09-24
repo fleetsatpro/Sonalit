@@ -5,6 +5,7 @@ const { getCurrentWeather, getProviderHealth: getWeatherProviderHealth } = requi
 const { getVesselsInBbox, getProviderHealth: getKplerAisProviderHealth } = require('./kplerAisGateway');
 const { getTrafficAtPoints, getProviderHealth: getMapboxTrafficProviderHealth } = require('./mapboxTrafficGateway');
 const { getTrafficIncidents, getProviderHealth: getTomTomTrafficProviderHealth } = require('./tomtomTrafficGateway');
+const { getNaturalHazards, getProviderHealth: getNasaEonetProviderHealth } = require('./nasaEonetGateway');
 const {
   routeRelation,
   circleRelation,
@@ -19,7 +20,7 @@ const EARTH_R = 6371000;
 const LIVE_MS = 45000;
 const DELAYED_MS = 300000;
 const MAX_EXTERNAL_RADIUS_M = 100000;
-const ALLOWED_LAYERS = new Set(['aircraft','weather','maritime','traffic','security','infrastructure','incidents','alerts']);
+const ALLOWED_LAYERS = new Set(['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts']);
 
 function num(v) {
   if (v == null || v === '') return null;
@@ -655,6 +656,7 @@ async function buildWorldContext(opts) {
   const movement = [];
   const environment = [];
   const traffic = [];
+  const hazards = [];
   const infrastructure = [];
   const security = [];
   const layerHealth = [];
@@ -716,6 +718,22 @@ async function buildWorldContext(opts) {
       layersUnavailable.push('weather');
       uncertainty.push('Weather provider returned no usable observation.');
       layerHealth.push({ layerId: 'weather', status: 'UNAVAILABLE', reason: 'No usable weather observation.' });
+    }
+  }
+
+  if (layers.includes('hazards') && bbox) {
+    try {
+      const result = await getNaturalHazards({ bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal });
+      hazards.push.apply(hazards, result.observations || []);
+      const status = result.health?.status || 'UNKNOWN';
+      if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('hazards');
+      else if (status === 'STALE' || status === 'PARTIAL') layersPartial.push('hazards');
+      else layersUnavailable.push('hazards');
+      layerHealth.push({ layerId: 'hazards', status, lastSuccessAt: result.health?.lastSuccessAt, lastAttemptAt: result.health?.lastAttemptAt, recordCount: result.health?.recordCount, acceptedCount: result.health?.acceptedCount, rejectedCount: result.health?.rejectedCount, reason: result.health?.lastErrorMessage });
+    } catch (_) {
+      layersUnavailable.push('hazards');
+      uncertainty.push('Natural hazard provider unavailable.');
+      layerHealth.push({ layerId: 'hazards', status: 'UNAVAILABLE', reason: 'NASA EONET external natural event provider failed.' });
     }
   }
 
@@ -1094,11 +1112,13 @@ async function buildWorldContext(opts) {
   const externalRelations = [];
   const routeObservation = routeInfo.route.length >= 2 ? routeInfo.route : [];
   const trafficEntities = traffic || [];
-  for (const entity of movement.concat(trafficEntities)) {
+  const hazardEntities = hazards || [];
+  for (const entity of movement.concat(trafficEntities, hazardEntities)) {
     if (!Number.isFinite(Number(entity.latitude)) || !Number.isFinite(Number(entity.longitude))) continue;
     const isTraffic = entity.entityType === 'traffic_segment' || entity.entityType === 'traffic_incident' || entity.entityType === 'traffic_hazard';
     const isMaritime = entity.entityType === 'vessel';
-    if (!isTraffic && !isMaritime) continue;
+    const isHazard = entity.entityType === 'natural_hazard';
+    if (!isTraffic && !isMaritime && !isHazard) continue;
     for (const vehicle of operationalVehicles) {
       const distance = distanceM(vehicle.latitude, vehicle.longitude, entity.latitude, entity.longitude);
       const routeDistanceKm = routeObservation.length >= 2 ? projectOntoRoute(routeObservation, Number(entity.latitude), Number(entity.longitude)).crossTrackKm : null;
@@ -1107,9 +1127,11 @@ async function buildWorldContext(opts) {
       const routeNear = routeDistanceKm != null && routeDistanceKm * 1000 <= Math.max(5000, routeInfo.widthKm * 1000 + 5000);
       const close = distance <= 25000;
       if (!close && !routeNear) continue;
-      const predicate = isTraffic
-        ? (entity.entityType === 'traffic_hazard' ? 'EXTERNAL_HAZARD_NEAR_ROUTE' : entity.attributes?.closed ? 'TRAFFIC_CLOSURE' : entity.attributes?.congestion ? 'TRAFFIC_CONGESTION' : entity.entityType === 'traffic_incident' ? 'EXTERNAL_INCIDENT_NEAR_ROUTE' : 'NEAR_TRAFFIC')
-        : 'NEAR_MARITIME';
+      const predicate = isHazard
+        ? 'NATURAL_HAZARD_NEAR_ROUTE'
+        : isTraffic
+          ? (entity.entityType === 'traffic_hazard' ? 'EXTERNAL_HAZARD_NEAR_ROUTE' : entity.attributes?.closed ? 'TRAFFIC_CLOSURE' : entity.attributes?.congestion ? 'TRAFFIC_CONGESTION' : entity.entityType === 'traffic_incident' ? 'EXTERNAL_INCIDENT_NEAR_ROUTE' : 'NEAR_TRAFFIC')
+          : 'NEAR_MARITIME';
       const relevance = contextRelevance({
         distanceM: distance,
         severity: entity.attributes?.magnitudeOfDelay === 'major' || entity.attributes?.closed ? 'high' : entity.attributes?.severity,
@@ -1173,7 +1195,7 @@ async function buildWorldContext(opts) {
     }
   }
   relations.push.apply(relations, externalRelations);
-  const allEntities = operationalVehicles.concat(movement, environment, traffic, infrastructure, security);
+  const allEntities = operationalVehicles.concat(movement, environment, traffic, hazards, infrastructure, security);
   const missionRouteCoords = routeInfo.route.map(function(p) { return [p.lng, p.lat]; });
 
   const context = {
@@ -1202,6 +1224,7 @@ async function buildWorldContext(opts) {
     environment,
     movement,
     traffic,
+    hazards,
     infrastructure,
     security,
     coverage: {
@@ -1218,6 +1241,7 @@ async function buildWorldContext(opts) {
       ...(movement.some(e => e.source === 'kpler-ais') ? [{ sourceName: 'Kpler AIS', attribution: 'Kpler AIS' }] : []),
       ...(traffic.some(e => e.source === 'mapbox-traffic') ? [{ sourceName: 'Mapbox Traffic', attribution: 'Mapbox Traffic' }] : []),
       ...(traffic.some(e => e.source === 'tomtom-traffic') ? [{ sourceName: 'TomTom Traffic', attribution: 'TomTom Traffic' }] : []),
+      ...(hazards.length ? [{ sourceName: 'NASA EONET', attribution: 'NASA EONET' }] : []),
       ...(security.length ? [{ sourceName: 'Sonalit Risk/Incident Systems', attribution: 'Organisation-scoped internal records' }] : [])
     ],
     freshness: {
@@ -1279,6 +1303,7 @@ async function getSpatialProviderHealth() {
   return {
     opensky: open.opensky || open,
     weather: getWeatherProviderHealth(),
+    naturalHazards: getNasaEonetProviderHealth(),
     maritime: getKplerAisProviderHealth(),
     traffic: {
       mapbox: getMapboxTrafficProviderHealth(),
