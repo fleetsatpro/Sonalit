@@ -39,6 +39,21 @@ interface SpatialContext {
     entityType?: string
     attributes?: { name?: string; risk_level?: string; zone_type?: string }
   }>
+  traffic?: Array<{
+    id: string
+    entityType?: string
+    status?: string
+    source?: string
+    attributes?: { congestion?: string; closed?: boolean; category?: string; description?: string; magnitudeOfDelay?: string }
+    quality?: { freshnessClass?: string }
+  }>
+  hazards?: Array<{
+    id: string
+    entityType?: string
+    source?: string
+    attributes?: { title?: string; categoryTitle?: string; severity?: string; representativePointDerived?: boolean }
+    quality?: { freshnessClass?: string }
+  }>
   relations?: Array<{
     predicate: string
     fromId: string
@@ -94,12 +109,14 @@ export default function SpatialContextCard({ vehicleId }: { vehicleId: string })
   const checkpoint = current?.nearbyCheckpoints?.find(function(cp) { return !cp.passed }) || current?.nearbyCheckpoints?.[0]
   const contextualRelations = (data.relations || [])
     .filter(function(r) { return r.fromId === 'sonalit:vehicle:' + vehicleId || r.fromId === vehicleId })
-    .filter(function(r) { return ['HAZARD_NEAR_ROUTE', 'WITHIN', 'NEAR_INCIDENT', 'APPROACHING'].includes(r.predicate) })
+    .filter(function(r) { return ['HAZARD_NEAR_ROUTE', 'NATURAL_HAZARD_NEAR_ROUTE', 'EXTERNAL_HAZARD_NEAR_ROUTE', 'TRAFFIC_CLOSURE', 'TRAFFIC_CONGESTION', 'EXTERNAL_INCIDENT_NEAR_ROUTE', 'WITHIN', 'NEAR_INCIDENT', 'APPROACHING', 'NEAR_MARITIME', 'VESSEL_APPROACHING_DESTINATION'].includes(r.predicate) })
     .slice(0, 3)
   const events = (data.events || []).filter(function(e) { return e.status !== 'resolved' }).slice(0, 3)
   const weather = data.environment?.[0]
   const hazards = weather?.attributes?.hazards || []
   const unavailable = data.coverage?.layersUnavailable || []
+  const trafficCount = data.traffic?.length || 0
+  const vesselCount = (data.relations || []).filter(function(r) { return r.toId.startsWith('kpler:vessel:') || r.toId.includes(':vessel:') }).length
 
   return (
     <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,.07)', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -135,6 +152,36 @@ export default function SpatialContextCard({ vehicleId }: { vehicleId: string })
           </div>
         </div>
       )}
+
+      {trafficCount > 0 && (
+        <div style={{ padding: '7px 8px', background: 'rgba(245,158,11,.05)', border: '1px solid rgba(245,158,11,.16)', borderRadius: 6 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 8, color: '#3e4252', textTransform: 'uppercase' }}>Traffic Intelligence</span>
+            <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 8, color: '#f59e0b' }}>{trafficCount} SIGNAL{trafficCount === 1 ? '' : 'S'}</span>
+          </div>
+          <div style={{ marginTop: 3, fontFamily: 'IBM Plex Mono, monospace', fontSize: 8, color: '#7a7e8a' }}>
+            {(data.traffic || []).slice(0, 2).map(function(t) {
+              return titleCase(t.status || t.attributes?.category || 'TRAFFIC') + (t.attributes?.closed ? ' · CLOSED' : '')
+            }).join(' · ')}
+          </div>
+        </div>
+      )}
+
+      {(vesselCount > 0 || data.hazards?.length) ? (
+        <div style={{ padding: '7px 8px', background: 'rgba(56,189,248,.04)', border: '1px solid rgba(56,189,248,.14)', borderRadius: 6 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 8, color: '#3e4252', textTransform: 'uppercase' }}>External Spatial Intel</span>
+            <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 8, color: '#38bdf8' }}>
+              {vesselCount ? vesselCount + ' AIS RELATION' + (vesselCount === 1 ? '' : 'S') : ''}{vesselCount && data.hazards?.length ? ' · ' : ''}{data.hazards?.length ? data.hazards.length + ' NATURAL EVENT' + (data.hazards.length === 1 ? '' : 'S') : ''}
+            </span>
+          </div>
+          <div style={{ marginTop: 3, fontFamily: 'IBM Plex Mono, monospace', fontSize: 8, color: '#7a7e8a' }}>
+            {(data.hazards || []).slice(0, 1).map(function(h) {
+              return h.attributes?.categoryTitle || h.attributes?.title || 'External natural event'
+            }).join('')}
+          </div>
+        </div>
+      ) : null}
 
       {weather && (
         <div style={{ padding: '7px 8px', background: hazards.length ? 'rgba(239,68,68,.06)' : 'rgba(255,255,255,.025)', border: hazards.length ? '1px solid rgba(239,68,68,.18)' : '1px solid rgba(255,255,255,.06)', borderRadius: 6 }}>
