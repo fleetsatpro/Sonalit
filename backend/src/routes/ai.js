@@ -199,7 +199,7 @@ const TOOLS = [
         radiusM: { type: 'number', description: 'Context radius in metres. Maximum 250000.' },
         layers: {
           type: 'array',
-          items: { type: 'string', enum: ['aircraft','weather','security','infrastructure','incidents','alerts'] },
+          items: { type: 'string', enum: ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts'] },
           maxItems: 10,
         },
       },
@@ -730,6 +730,8 @@ async function toolGetWorldContext(input, context) {
     movement: (ctx.movement || []).slice(0, 50),
     infrastructure: (ctx.infrastructure || []).slice(0, 100),
     security: (ctx.security || []).slice(0, 100),
+    traffic: (ctx.traffic || []).slice(0, 100),
+    hazards: (ctx.hazards || []).slice(0, 100),
     coverage: ctx.coverage,
     layerHealth: ctx.layerHealth,
     provenance: ctx.provenance,
