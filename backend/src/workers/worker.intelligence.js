@@ -4,17 +4,69 @@ const { runCollectionFabric } = require('../utils/collectionFabric');
 const { runRegionalIncidentSweep } = require('../utils/regionalIncidentFabric');
 const { runIntelligenceAgents } = require('../utils/intelligenceAgents');
 const { generateMissingPublicationPdfs } = require('../services/intelligencePublicationPdf');
+const { buildWorldContext } = require('../services/spatial/worldContextService');
+const { withOrg } = require('../utils/orgScopedDb');
+const { publish } = require('../realtime/centrifugo');
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
 
 const intervalMs = Math.max(5, Number(process.env.INTEL_COLLECTION_INTERVAL_MINUTES || 5)) * 60 * 1000;
+const spatialMaxConvoys = Math.max(1, Math.min(100, Number(process.env.SPATIAL_EYE_MAX_CONVOYS_PER_CYCLE || 25)));
 let stopping = false;
 let timer = null;
+
+async function evaluateSpatialEye(orgId) {
+  let evaluated = 0;
+  let eventCount = 0;
+  try {
+    await withOrg(orgId, async (client) => {
+      const convoys = await client.query(
+        "SELECT id FROM convoys WHERE org_id = $1 AND status = 'active' AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT $2",
+        [orgId, spatialMaxConvoys]
+      );
+      for (const row of convoys.rows || []) {
+        try {
+          const context = await buildWorldContext({
+            orgId,
+            userId: null,
+            db: (sql, params) => client.query(sql, params),
+            subject: { kind: 'convoy', id: String(row.id) },
+            layers: ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts'],
+            maxEntitiesPerLayer: 100,
+            requestId: 'spatial-eye-' + reasonToken(),
+            persistEvents: true,
+            publish
+          });
+          evaluated += 1;
+          eventCount += Array.isArray(context.events) ? context.events.length : 0;
+        } catch (error) {
+          logger.warn(`Spatial Eye convoy evaluation failed org=${orgId} convoy=${row.id}: ${error.message}`);
+        }
+      }
+    });
+  } catch (error) {
+    logger.warn(`Spatial Eye organisation evaluation failed org=${orgId}: ${error.message}`);
+  }
+  return { evaluated, eventCount };
+}
+
+function reasonToken() {
+  return Math.random().toString(36).slice(2, 10);
+}
 
 async function cycle(reason) {
   if (stopping) return;
   const started = Date.now();
   try {
+    let spatialEvaluated = 0;
+    let spatialEvents = 0;
+    for (const org of result?.results || []) {
+      if (!org?.org_id) continue;
+      const spatial = await evaluateSpatialEye(org.org_id);
+      spatialEvaluated += spatial.evaluated;
+      spatialEvents += spatial.eventCount;
+    }
+
     let mesh = [];
     try { mesh = await runNewsMesh(); } catch (error) { logger.warn(`News Mesh cycle failed: ${error.message}`); }
 
@@ -55,7 +107,7 @@ async function cycle(reason) {
     const synth = agents.reduce((sum, x) => sum + Number(x.synthesis?.synthesized || 0), 0);
     const translated = agents.reduce((sum, x) => sum + Number(x.translation?.translated || 0), 0);
     const pdfReady = pdfs.filter(x => x.status === 'ready').length;
-    logger.info(`Intelligence worker cycle complete (${reason}) in ${Date.now() - started}ms: orgs=${result?.organizations ?? 0}, mesh_seen=${meshSeen}, mesh_inserted=${meshInserted}, discovered=${discovered}, ingested=${ingested}, translated=${translated}, synthesized=${synth}, publication_pdfs_ready=${pdfReady}, regional_seen=${regionalSeen}, regional_inserted=${regionalInserted}, incident_alerts=${alertCount}`);
+    logger.info(`Intelligence worker cycle complete (${reason}) in ${Date.now() - started}ms: spatial_convoys=${spatialEvaluated}, spatial_events=${spatialEvents}, orgs=${result?.organizations ?? 0}, mesh_seen=${meshSeen}, mesh_inserted=${meshInserted}, discovered=${discovered}, ingested=${ingested}, translated=${translated}, synthesized=${synth}, publication_pdfs_ready=${pdfReady}, regional_seen=${regionalSeen}, regional_inserted=${regionalInserted}, incident_alerts=${alertCount}`);
   } catch (error) {
     logger.error(`Intelligence worker cycle failed (${reason}): ${error.message}`);
   }
