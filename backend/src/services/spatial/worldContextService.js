@@ -97,6 +97,22 @@ function routeLengthKm(route) {
   return total;
 }
 
+function bboxFromRoute(route, paddingM) {
+  if (!Array.isArray(route) || route.length < 2) return null;
+  const pad = Number(paddingM) > 0 ? Number(paddingM) : 15000;
+  let minLat=90,maxLat=-90,minLng=180,maxLng=-180;
+  for (const p of route) {
+    if (!p || !Number.isFinite(Number(p.lat)) || !Number.isFinite(Number(p.lng))) continue;
+    minLat=Math.min(minLat,Number(p.lat)); maxLat=Math.max(maxLat,Number(p.lat));
+    minLng=Math.min(minLng,Number(p.lng)); maxLng=Math.max(maxLng,Number(p.lng));
+  }
+  if (minLat===90) return null;
+  const dLat=pad/EARTH_R*180/Math.PI;
+  const cos=Math.max(0.01,Math.abs(Math.cos(((minLat+maxLat)/2)*Math.PI/180)));
+  const dLng=pad/(EARTH_R*cos)*180/Math.PI;
+  return [Math.max(-180,minLng-dLng),Math.max(-90,minLat-dLat),Math.min(180,maxLng+dLng),Math.min(90,maxLat+dLat)];
+}
+
 async function safeRows(db, sql, params) {
   try {
     const result = await db(sql, params || []);
@@ -652,6 +668,8 @@ async function buildWorldContext(opts) {
   const boundedRadiusM = Math.max(1000, Math.min(Number(input.radiusM) || 25000, 250000));
   const externalRadiusM = Math.min(boundedRadiusM, MAX_EXTERNAL_RADIUS_M);
   const bbox = input.bbox || (resolvedCenter ? bboxFromCenterRadius(resolvedCenter.latitude, resolvedCenter.longitude, externalRadiusM) : null);
+  const routeBbox = bboxFromRoute(routeInfo.route, Math.max(10000, routeInfo.widthKm * 1000));
+  const externalBbox = routeBbox && ((routeBbox[2] - routeBbox[0]) * (routeBbox[3] - routeBbox[1]) <= 25) ? routeBbox : bbox;
 
   const movement = [];
   const environment = [];
@@ -756,35 +774,32 @@ async function buildWorldContext(opts) {
 
   if (layers.includes('traffic') && resolvedCenter) {
     const samplePoints = [resolvedCenter];
-    if (routeInfo.route.length >= 3) {
-      samplePoints.push({ latitude: routeInfo.route[Math.floor(routeInfo.route.length / 2)].lat, longitude: routeInfo.route[Math.floor(routeInfo.route.length / 2)].lng });
-    }
     if (routeInfo.route.length >= 2) {
-      const end = routeInfo.route[routeInfo.route.length - 1];
-      samplePoints.push({ latitude: end.lat, longitude: end.lng });
+      const sampleCount = Math.min(8, routeInfo.route.length);
+      for (let i = 0; i < sampleCount; i++) {
+        const p = routeInfo.route[Math.round((routeInfo.route.length - 1) * i / Math.max(1, sampleCount - 1))];
+        samplePoints.push({ latitude: p.lat, longitude: p.lng });
+      }
     }
     const pointMap = new Map();
-    samplePoints.slice(0, 3).forEach(p => pointMap.set(Number(p.latitude).toFixed(4)+','+Number(p.longitude).toFixed(4), p));
-    const sampled = Array.from(pointMap.values());
+    samplePoints.forEach(p => pointMap.set(Number(p.latitude).toFixed(4)+','+Number(p.longitude).toFixed(4), p));
+    const sampled = Array.from(pointMap.values()).slice(0, 16);
     const trafficResults = await Promise.allSettled([
       getTrafficAtPoints({ points: sampled, maxRecords: maxEntitiesPerLayer, signal: input.signal }),
-      bbox ? getTrafficIncidents({ bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal }) : Promise.resolve({ observations: [], health: { status: 'UNAVAILABLE' }, coverage: { complete: false } })
+      (externalBbox || bbox) ? getTrafficIncidents({ bbox: externalBbox || bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal }) : Promise.resolve({ observations: [], health: { status: 'UNAVAILABLE' } })
     ]);
-    const flow = trafficResults[0], incident = trafficResults[1];
-    const statuses = [];
+    const flow = trafficResults[0], incident = trafficResults[1], statuses = [];
     if (flow.status === 'fulfilled') { traffic.push.apply(traffic, flow.value.observations || []); statuses.push(flow.value.health?.status || 'UNKNOWN'); }
     else { statuses.push('UNAVAILABLE'); uncertainty.push('Mapbox traffic feed unavailable.'); }
     if (incident.status === 'fulfilled') { traffic.push.apply(traffic, incident.value.observations || []); statuses.push(incident.value.health?.status || 'UNKNOWN'); }
     else { statuses.push('UNAVAILABLE'); uncertainty.push('TomTom traffic incident feed unavailable.'); }
-    const usableStatuses = statuses.filter(Boolean);
-    const status = usableStatuses.includes('LIVE') ? 'LIVE' : usableStatuses.includes('DELAYED') ? 'DELAYED' : usableStatuses.includes('STALE') ? 'STALE' : usableStatuses.includes('PARTIAL') ? 'PARTIAL' : usableStatuses.includes('AUTH_REQUIRED') ? 'AUTH_REQUIRED' : 'UNAVAILABLE';
+    const status = statuses.includes('LIVE') ? 'LIVE' : statuses.includes('DELAYED') ? 'DELAYED' : statuses.includes('STALE') ? 'STALE' : statuses.includes('PARTIAL') ? 'PARTIAL' : statuses.includes('AUTH_REQUIRED') ? 'AUTH_REQUIRED' : 'UNAVAILABLE';
     if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('traffic');
     else if (status === 'STALE' || status === 'PARTIAL') layersPartial.push('traffic');
     else layersUnavailable.push('traffic');
-    if (traffic.length === 0 && status === 'AUTH_REQUIRED') warnings.push('Traffic provider credentials are not configured.');
+    if (!traffic.length && status === 'AUTH_REQUIRED') warnings.push('Traffic provider credentials are not configured.');
     layerHealth.push({ layerId: 'traffic', status, recordCount: traffic.length, reason: traffic.length ? undefined : 'No usable external traffic observation.' });
   }
-
   if (layers.includes('infrastructure')) {
     infrastructureRaw.checkpoints.forEach(function(cp) { infrastructure.push(checkpointObservation(cp, now)); });
     infrastructureRaw.geofences.forEach(function(g) {
