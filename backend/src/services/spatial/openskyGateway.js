@@ -226,17 +226,40 @@ function staleCachedResult(key, warning) {
 
 
 async function getAircraftInBbox(opts) {
-  const { bbox, orgId } = opts;
+  const bbox = opts && opts.bbox;
+  const orgId = opts && opts.orgId;
   const safeBbox = validateBbox(bbox);
+
   if (!safeBbox) {
-    return Promise.resolve({
+    return {
       observations: [],
-      health: { ...health, status: 'COVERAGE_LIMITED', lastErrorClass: 'coverage_limited', lastErrorMessage: 'Invalid or oversized bbox' },
+      health: {
+        ...health,
+        status: 'COVERAGE_LIMITED',
+        lastErrorClass: 'coverage_limited',
+        lastErrorMessage: 'Invalid or oversized bbox',
+      },
       coverage: { complete: false, queryScope: 'invalid_bbox' },
-    });
+    };
   }
+
   const key = bboxKey(safeBbox);
   const now = Date.now();
+
+  const cached = responseCache.get(key);
+  if (cached && now - cached.at < CACHE_TTL_MS) {
+    health.cacheHits += 1;
+    return {
+      ...cached.result,
+      cache: { hit: true, ageMs: Math.max(0, now - cached.at) },
+    };
+  }
+
+  if (inflight.has(key)) {
+    health.dedupeHits += 1;
+    return inflight.get(key);
+  }
+
   health.requestCount += 1;
   health.lastAttemptAt = new Date(now).toISOString();
   purgeRateWindow(now);
@@ -251,7 +274,7 @@ async function getAircraftInBbox(opts) {
     return {
       observations: [],
       health: { ...health },
-      coverage: { complete: false, queryScope: \`bbox:\${key}\` },
+      coverage: { complete: false, queryScope: 'bbox:' + key },
       warnings: ['provider_circuit_open'],
     };
   }
@@ -265,7 +288,7 @@ async function getAircraftInBbox(opts) {
     return {
       observations: [],
       health: { ...health },
-      coverage: { complete: false, queryScope: \`bbox:\${key}\` },
+      coverage: { complete: false, queryScope: 'bbox:' + key },
       warnings: ['local_provider_rate_limit'],
     };
   }
@@ -279,7 +302,7 @@ async function getAircraftInBbox(opts) {
     return {
       observations: [],
       health: { ...health },
-      coverage: { complete: false, queryScope: \`bbox:\${key}\` },
+      coverage: { complete: false, queryScope: 'bbox:' + key },
       warnings: ['local_provider_concurrency_limit'],
     };
   }
@@ -288,30 +311,24 @@ async function getAircraftInBbox(opts) {
   activeRequests += 1;
   health.activeRequests = activeRequests;
 
-  const cached = responseCache.get(key);
-  if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
-    health.cacheHits += 1;
-    return { ...cached.result, cache: { hit: true, ageMs: Date.now() - cached.at } };
-  }
-  if (inflight.has(key)) {
-    health.dedupeHits += 1;
-    return inflight.get(key);
-  }
-
   const promise = (async () => {
     try {
       let token = null;
-      try { token = await getAccessToken(); }
-      catch (err) {
+      try {
+        token = await getAccessToken();
+      } catch (err) {
         logger.warn({ err: err.message, orgId }, 'opensky token acquire failed — anonymous');
       }
+
       const url = new URL(OPENSKY_STATES_URL);
       url.searchParams.set('lamin', String(safeBbox[1]));
       url.searchParams.set('lomin', String(safeBbox[0]));
       url.searchParams.set('lamax', String(safeBbox[3]));
       url.searchParams.set('lomax', String(safeBbox[2]));
+
       const headers = { Accept: 'application/json' };
-      if (token) headers.Authorization = `Bearer ${token}`;
+      if (token) headers.Authorization = 'Bearer ' + token;
+
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 12_000);
       let res;
@@ -320,38 +337,65 @@ async function getAircraftInBbox(opts) {
       } finally {
         clearTimeout(timer);
       }
+
       if (res.status === 429) {
         health.status = 'RATE_LIMITED';
         health.lastErrorClass = 'rate_limited';
         health.lastErrorMessage = 'OpenSky rate limited';
         const stale = staleCachedResult(key, 'rate_limited_serving_stale_cache');
         if (stale) return stale;
-        return { observations: [], health: { ...health }, coverage: { complete: false, queryScope: \`bbox:\${key}\` } };
+        return {
+          observations: [],
+          health: { ...health },
+          coverage: { complete: false, queryScope: 'bbox:' + key },
+          warnings: ['upstream_rate_limited'],
+        };
       }
+
       if (!res.ok) {
         health.status = 'UNAVAILABLE';
         health.lastErrorClass = res.status === 401 ? 'auth_required' : 'http_error';
-        health.lastErrorMessage = `HTTP ${res.status}`;
-        return { observations: [], health: { ...health }, coverage: { complete: false, queryScope: `bbox:${key}` } };
+        health.lastErrorMessage = 'HTTP ' + res.status;
+        recordProviderFailure(Date.now());
+        const stale = staleCachedResult(key, 'provider_http_error_serving_stale_cache');
+        if (stale) return stale;
+        return {
+          observations: [],
+          health: { ...health },
+          coverage: { complete: false, queryScope: 'bbox:' + key },
+        };
       }
+
       const payload = await res.json();
       const receivedAt = new Date().toISOString();
-      const states = Array.isArray(payload.states) ? payload.states : [];
+      const states = Array.isArray(payload && payload.states) ? payload.states : [];
       const observations = [];
       let rejected = 0;
+
       for (const row of states) {
         const obs = normalizeState(row, receivedAt);
         if (obs) {
-          obs.coverage.queryScope = `bbox:${key}`;
+          obs.coverage.queryScope = 'bbox:' + key;
           observations.push(obs);
-        } else rejected += 1;
+        } else {
+          rejected += 1;
+        }
       }
-      const hasLive = observations.some((o) => o.quality.freshnessClass === 'LIVE');
-      const hasDelayed = observations.some((o) => o.quality.freshnessClass === 'DELAYED');
+
       recordProviderSuccess();
+
+      const status =
+        observations.length === 0
+          ? 'UNAVAILABLE'
+          : observations.some(o => o.quality.freshnessClass === 'LIVE')
+            ? 'LIVE'
+            : observations.some(o => o.quality.freshnessClass === 'DELAYED')
+              ? 'DELAYED'
+              : 'STALE';
+
       health = {
         ...health,
-        status: observations.length === 0 ? 'UNAVAILABLE' : hasLive ? 'LIVE' : hasDelayed ? 'DELAYED' : 'STALE',
+        status,
         lastSuccessAt: receivedAt,
         lastAttemptAt: receivedAt,
         lastErrorClass: null,
@@ -360,24 +404,43 @@ async function getAircraftInBbox(opts) {
         acceptedCount: observations.length,
         rejectedCount: rejected,
       };
+
       const result = {
         observations,
         health: { ...health },
-        coverage: { complete: false, omittedCount: rejected, queryScope: `bbox:${key}`, bounded: true },
+        coverage: {
+          complete: false,
+          omittedCount: rejected,
+          queryScope: 'bbox:' + key,
+          bounded: true,
+        },
       };
+
       responseCache.set(key, { at: Date.now(), result });
       if (responseCache.size > 64) {
         responseCache.delete(responseCache.keys().next().value);
       }
       return result;
     } catch (err) {
-      const message = err.name === 'AbortError' ? 'timeout' : err.message;
+      const isTimeout = err && err.name === 'AbortError';
+      const message = isTimeout ? 'timeout' : String(err && err.message || err);
       health.status = 'UNAVAILABLE';
-      health.lastErrorClass = err.name === 'AbortError' ? 'timeout' : 'unknown';
+      health.lastErrorClass = isTimeout ? 'timeout' : 'unknown';
       health.lastErrorMessage = message;
+      recordProviderFailure(Date.now());
       logger.warn({ err: message, orgId, bbox: key }, 'opensky fetch failed');
-      return { observations: [], health: { ...health }, coverage: { complete: false, queryScope: `bbox:${key}` } };
+
+      const stale = staleCachedResult(key, 'provider_failed_serving_stale_cache');
+      if (stale) return stale;
+
+      return {
+        observations: [],
+        health: { ...health },
+        coverage: { complete: false, queryScope: 'bbox:' + key },
+      };
     } finally {
+      activeRequests = Math.max(0, activeRequests - 1);
+      health.activeRequests = activeRequests;
       inflight.delete(key);
     }
   })();
