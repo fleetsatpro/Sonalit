@@ -9,7 +9,8 @@ const router = express.Router();
 const { authenticate } = require('../middleware/auth');
 const { attachOrgDb } = require('../utils/orgScopedDb');
 const { asyncHandler } = require('../middleware/error');
-const { getAircraftInBbox, validateBbox } = require('../services/spatial/openskyGateway');
+const { validateBbox } = require('../services/spatial/openskyGateway');
+const { spatialProviderManager } = require('../services/spatial/providerManager');
 const {
   buildWorldContext,
   getSpatialProviderHealth,
@@ -85,10 +86,11 @@ router.get(
       });
     }
 
-    const result = await getAircraftInBbox({
+    const result = await spatialProviderManager.query('opensky', {
       bbox,
       orgId,
       requestId: req.id || req.headers['x-request-id'],
+      signal: req.signal,
     });
 
     res.json({
