@@ -697,9 +697,14 @@ async function buildWorldContext(opts) {
     const results = await Promise.allSettled(Array.from(unique.values()).map(function(p) {
       return getCurrentWeather({ latitude: p.latitude, longitude: p.longitude, requestId: input.requestId });
     }));
+    const environmentById = new Map();
     results.forEach(function(r) {
-      if (r.status === 'fulfilled') environment.push.apply(environment, r.value.observations || []);
+      if (r.status !== 'fulfilled') return;
+      for (const observation of (r.value.observations || [])) {
+        if (observation && observation.id) environmentById.set(observation.id, observation);
+      }
     });
+    environment.push.apply(environment, Array.from(environmentById.values()));
     if (environment.length) {
       layersSucceeded.push('weather');
       layerHealth.push({ layerId: 'weather', status: environment.some(e => e.quality?.freshnessClass === 'LIVE') ? 'LIVE' : 'DELAYED', recordCount: environment.length });
