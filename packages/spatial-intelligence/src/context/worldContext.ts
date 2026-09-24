@@ -191,6 +191,16 @@ export interface WorldContextResult {
     layersUnavailable: string[];
   };
   layerHealth: WorldContextLayerHealth[];
+  providerHealth?: Record<string, {
+    provider?: string;
+    capabilities?: string[];
+    status?: string;
+    reason?: string;
+    lastSuccessAt?: string | null;
+    lastAttemptAt?: string | null;
+    manager?: Record<string, unknown>;
+    [key: string]: unknown;
+  }>;
   provenance: Array<{ sourceName: string; attribution?: string; license?: string }>;
   freshness: {
     oldestObservedAt?: string;
