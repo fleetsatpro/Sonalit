@@ -568,7 +568,7 @@ async function buildWorldContext(opts) {
   }
 
   const now = Date.now();
-  const requested = Array.isArray(input.layers) ? input.layers : ['aircraft','weather','security','infrastructure','incidents','alerts'];
+  const requested = Array.isArray(input.layers) ? input.layers : ['aircraft','weather','maritime','traffic','security','infrastructure','incidents','alerts'];
   const layers = Array.from(new Set(requested.filter(function(l) {
     return typeof l === 'string' && ALLOWED_LAYERS.has(l);
   }).slice(0, 10)));
@@ -1108,7 +1108,7 @@ async function buildWorldContext(opts) {
       const close = distance <= 25000;
       if (!close && !routeNear) continue;
       const predicate = isTraffic
-        ? (entity.entityType === 'traffic_hazard' ? 'EXTERNAL_HAZARD_NEAR_ROUTE' : entity.attributes?.closed ? 'TRAFFIC_CLOSURE' : entity.attributes?.congestion ? 'TRAFFIC_CONGESTION' : 'NEAR_TRAFFIC')
+        ? (entity.entityType === 'traffic_hazard' ? 'EXTERNAL_HAZARD_NEAR_ROUTE' : entity.attributes?.closed ? 'TRAFFIC_CLOSURE' : entity.attributes?.congestion ? 'TRAFFIC_CONGESTION' : entity.entityType === 'traffic_incident' ? 'EXTERNAL_INCIDENT_NEAR_ROUTE' : 'NEAR_TRAFFIC')
         : 'NEAR_MARITIME';
       const relevance = contextRelevance({
         distanceM: distance,
