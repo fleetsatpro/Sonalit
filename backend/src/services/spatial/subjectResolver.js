@@ -9,7 +9,9 @@
  */
 
 function failNotFound(kind, id) {
-  const error = new Error(String(kind).charAt(0).toUpperCase() + String(kind).slice(1) + ' not found in organisation context');
+  // Cross-tenant lookups deliberately collapse to the same not-found response
+  // without disclosing that the object exists in another organisation.
+  const error = new Error(String(kind).charAt(0).toUpperCase() + String(kind).slice(1) + ' not found');
   error.statusCode = 404;
   error.subjectKind = kind;
   error.subjectId = id;
