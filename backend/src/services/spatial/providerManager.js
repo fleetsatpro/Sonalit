@@ -146,10 +146,22 @@ class SpatialProviderManager {
       } catch (error) {
         upstream = { status: 'UNAVAILABLE', reason: error?.message || 'health check failed' };
       }
+      const effectiveStatus = provider.circuit.state === 'OPEN'
+        ? 'UNAVAILABLE'
+        : provider.budget.remaining() === 0
+          ? 'RATE_LIMITED'
+          : upstream.status || 'UNKNOWN';
+      const effectiveReason = provider.circuit.state === 'OPEN'
+        ? 'Provider circuit is open after repeated failures.'
+        : provider.budget.remaining() === 0
+          ? 'Provider request budget is exhausted.'
+          : upstream.reason;
       out[provider.name] = {
         provider: provider.name,
         capabilities: provider.capabilities,
         ...upstream,
+        status: effectiveStatus,
+        ...(effectiveReason ? { reason: effectiveReason } : {}),
         manager: {
           activeRequests: provider.budget.active,
           rateLimitRemaining: provider.budget.remaining(),
