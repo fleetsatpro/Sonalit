@@ -14,6 +14,7 @@ const router = require('express').Router();
 const { authenticate } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/error');
 const logger = require('../utils/logger');
+const { getTrafficIncidents } = require('../services/spatial/tomtomTrafficGateway');
 
 const TOMTOM_BASE = 'https://api.tomtom.com';
 
@@ -54,23 +55,44 @@ router.get('/tiles/flow/:z/:x/:y.png', asyncHandler(async (req, res) => {
 router.get('/incidents', asyncHandler(async (req, res) => {
   if (!isConfigured()) return res.json({ type: 'FeatureCollection', features: [], configured: false });
 
-  const bbox = req.query.bbox;
-  if (typeof bbox !== 'string' || bbox.split(',').length !== 4) {
+  const raw = req.query.bbox;
+  if (typeof raw !== 'string') {
     return res.status(400).json({ error: 'bbox=minLon,minLat,maxLon,maxLat is required' });
   }
-
-  const fields = '{incidents{type,geometry{type,coordinates},properties{iconCategory,magnitudeOfDelay,delay,roadNumbers,events{description,code,iconCategory}}}}';
-  const url = `${TOMTOM_BASE}/traffic/services/5/incidentDetails?key=${process.env.TOMTOM_API_KEY}`
-    + `&bbox=${encodeURIComponent(bbox)}&fields=${encodeURIComponent(fields)}&language=en-US`;
-
-  const upstream = await fetch(url, { signal: AbortSignal.timeout(10000) });
-  if (!upstream.ok) {
-    logger.warn(`Traffic incidents: TomTom HTTP ${upstream.status}`);
-    return res.json({ type: 'FeatureCollection', features: [], configured: true });
+  const bbox = raw.split(',').map(Number);
+  if (bbox.length !== 4 || bbox.some(n => !Number.isFinite(n)) || bbox[0] < -180 || bbox[2] > 180 || bbox[1] < -90 || bbox[3] > 90 || bbox[0] >= bbox[2] || bbox[1] >= bbox[3] || (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) > 25) {
+    return res.status(400).json({ error: 'Invalid traffic bbox' });
   }
-  const data = await upstream.json();
-  const features = Array.isArray(data.incidents) ? data.incidents : [];
-  res.json({ type: 'FeatureCollection', features, configured: true });
-}));
+
+  const result = await getTrafficIncidents({ bbox, maxRecords: 250, signal: req.signal });
+  const features = (result.observations || []).map((observation) => ({
+    type: 'Feature',
+    id: observation.sourceReference || observation.id,
+    geometry: observation.geometry || {
+      type: 'Point',
+      coordinates: [observation.longitude, observation.latitude],
+    },
+    properties: {
+      id: observation.sourceReference || observation.id,
+      iconCategory: observation.attributes?.category || 'unknown',
+      magnitudeOfDelay: Number.isFinite(Number(observation.attributes?.magnitudeOfDelay))
+        ? Number(observation.attributes.magnitudeOfDelay)
+        : 0,
+      delay: observation.attributes?.delaySeconds ?? 0,
+      roadNumbers: observation.attributes?.roadNumbers || [],
+      events: observation.attributes?.description
+        ? [{ description: observation.attributes.description }]
+        : [],
+    },
+  }));
+
+  res.json({
+    type: 'FeatureCollection',
+    features,
+    configured: true,
+    coverage: result.coverage,
+    health: result.health,
+  });
+}));;
 
 module.exports = router;
