@@ -74,6 +74,33 @@ const EVENT_AUTHORITY_LAYER = Object.freeze({
   ENVIRONMENTAL_DETERIORATION: 'weather'
 });
 
+const EVENT_AUTHORITY_PROVIDER = Object.freeze({
+  VESSEL_APPROACHING_DESTINATION: 'kpler-ais',
+  NATURAL_HAZARD_NEAR_ROUTE: 'nasa-eonet',
+  ENVIRONMENTAL_DETERIORATION: 'weather'
+});
+
+function sourceProviderFromReferences(references) {
+  const values = Array.isArray(references) ? references : [];
+  for (const value of values) {
+    const ref = String(value || '').toLowerCase();
+    if (ref.startsWith('tomtom:')) return 'tomtom-traffic-incidents';
+    if (ref.startsWith('mapbox:')) return 'mapbox-traffic';
+    if (ref.startsWith('kpler:')) return 'kpler-ais';
+    if (ref.startsWith('open-meteo:')) return 'weather';
+    if (ref.startsWith('eonet:') || ref.startsWith('nasa-eonet:')) return 'nasa-eonet';
+  }
+  return null;
+}
+
+function providerCanReconcile(context, eventType, sourceReferences) {
+  const provider = EVENT_AUTHORITY_PROVIDER[eventType] || sourceProviderFromReferences(sourceReferences);
+  if (!provider) return true;
+  const providerHealth = context && context.providerHealth && context.providerHealth[provider];
+  if (!providerHealth) return false;
+  return ['LIVE', 'DELAYED'].includes(String(providerHealth.status || '').toUpperCase());
+}
+
 function eventMode(type) {
   if (EVENT_MODES.occurrence.has(type)) return 'occurrence';
   return 'stateful';
@@ -99,9 +126,11 @@ function layerCanReconcile(context, eventType) {
   return ['LIVE', 'DELAYED'].includes(String(health.status || '').toUpperCase());
 }
 
-function eventCanAutoResolve(context, eventType) {
+function eventCanAutoResolve(context, eventType, sourceReferences) {
   if (!EVENT_MODES.stateful.has(eventType)) return false;
-  if (eventRequiresFreshExternalAuthority(eventType)) return layerCanReconcile(context, eventType);
+  if (eventRequiresFreshExternalAuthority(eventType)) {
+    return layerCanReconcile(context, eventType) && providerCanReconcile(context, eventType, sourceReferences);
+  }
 
   // Internal operational conditions are only reconciled when the evaluated
   // mission/vehicle context is present. Absence of a subject is not evidence
@@ -471,7 +500,7 @@ async function reconcileSpatialEvents(db, context, events, options) {
   if (!uniqueSubjectIds.length) return [];
 
   const rowsResult = await db(
-    'SELECT id,event_key,event_type,subject_type,subject_id,convoy_id FROM spatial_events ' +
+    'SELECT id,event_key,event_type,subject_type,subject_id,convoy_id,source_references FROM spatial_events ' +
     'WHERE org_id=$1 AND status=\'open\' AND (convoy_id=$2 OR subject_id = ANY($3::text[]))',
     [cfg.orgId, convoyId, uniqueSubjectIds],
   );
@@ -483,7 +512,12 @@ async function reconcileSpatialEvents(db, context, events, options) {
 
   for (const row of openEvents) {
     const eventType = String(row.event_type || '');
-    if (!eventCanAutoResolve(context, eventType)) continue;
+    const sourceReferences = Array.isArray(row.source_references)
+      ? row.source_references
+      : (typeof row.source_references === 'string'
+        ? (() => { try { return JSON.parse(row.source_references); } catch (_) { return []; } })()
+        : []);
+    if (!eventCanAutoResolve(context, eventType, sourceReferences)) continue;
     if (activeKeys.has(String(row.event_key))) continue;
 
     const result = await db(
@@ -668,5 +702,7 @@ module.exports = {
   EVENT_AUTHORITY_LAYER,
   eventMode,
   eventCanAutoResolve,
-  layerCanReconcile
+  layerCanReconcile,
+  providerCanReconcile,
+  sourceProviderFromReferences
 };
