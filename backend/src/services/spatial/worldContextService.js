@@ -1014,9 +1014,11 @@ async function buildWorldContext(opts) {
     }
   }
   if (layers.includes('weather') && resolvedCenter) {
-    const sampled = routeInfo.route.length >= 2
-      ? sampleRoutePoints(routeInfo.route, 8)
-      : [{ latitude: resolvedCenter.latitude, longitude: resolvedCenter.longitude }];
+    const sampled = routeQueryPlan?.samplePoints?.length
+      ? routeQueryPlan.samplePoints.slice(0, 8)
+      : routeInfo.route.length >= 2
+        ? sampleRoutePoints(routeInfo.route, 8)
+        : [{ latitude: resolvedCenter.latitude, longitude: resolvedCenter.longitude }];
     const points = sampled.length ? sampled : [resolvedCenter];
     const results = await Promise.allSettled(points.map(function(p) {
       return spatialProviderManager.query('weather', {
@@ -1207,9 +1209,11 @@ async function buildWorldContext(opts) {
     }
   }
   if (layers.includes('traffic') && resolvedCenter) {
-    const samplePoints = routeInfo.route.length >= 2
-      ? sampleRoutePoints(routeInfo.route, 16)
-      : [{ latitude: resolvedCenter.latitude, longitude: resolvedCenter.longitude }];
+    const samplePoints = routeQueryPlan?.samplePoints?.length
+      ? routeQueryPlan.samplePoints.slice(0, 16)
+      : routeInfo.route.length >= 2
+        ? sampleRoutePoints(routeInfo.route, 16)
+        : [{ latitude: resolvedCenter.latitude, longitude: resolvedCenter.longitude }];
     const pointMap = new Map();
     pointMap.set(
       Number(resolvedCenter.latitude).toFixed(4) + ',' + Number(resolvedCenter.longitude).toFixed(4),
