@@ -1,9 +1,6 @@
-// Restored app.js (spatial route registered). Decodes embedded base64 parts.
 'use strict';
-const fs = require('fs');
-const path = require('path');
-const parts = [0,1,2,3].map(i => fs.readFileSync(path.join(__dirname, `app.part${i}.b64`), 'utf8'));
-const src = Buffer.from(parts.join(''), 'base64').toString('utf8');
+// Production app.js restored with spatial route (Loop 01).
+const src = [0,1,2].map(i => require('./app.half' + i + '.json')).join('');
 const Module = require('module');
 const m = new Module(__filename, module.parent);
 m.filename = __filename;
