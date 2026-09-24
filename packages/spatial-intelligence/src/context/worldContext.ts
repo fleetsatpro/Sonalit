@@ -129,6 +129,7 @@ export interface WorldContextOperationalVehicle extends SpatialObservation {
   headingDeltaDeg?: number | null;
   stationaryDurationMs?: number | null;
   recoveredFreshness?: boolean;
+  previousFreshnessClass?: 'LIVE' | 'DELAYED' | 'STALE' | 'UNKNOWN';
   routeState?: {
     relation: string;
     crossTrackKm?: number | null;
@@ -208,6 +209,10 @@ export interface WorldContextResult {
   };
   uncertainty: string[];
   warnings: string[];
+  dataHealth?: {
+    ok: boolean;
+    readErrors: Array<{ message: string; code?: string | null }>;
+  };
 }
 
 export function suggestContextRadiusM(opts: {
