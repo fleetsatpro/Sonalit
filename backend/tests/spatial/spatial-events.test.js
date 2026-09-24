@@ -142,4 +142,74 @@ describe('deterministic spatial events', () => {
     expect(events.find(e => e.eventType === 'HAZARD_NEAR_ROUTE')).toBeUndefined();
   });
 
+  test('promotes an external traffic closure near a convoy route into an operational event', () => {
+    const events = detectSpatialEvents({
+      mission: { convoyId: 'convoy-1' },
+      operational: { vehicles: [vehicle()] },
+      relations: [{
+        predicate: 'TRAFFIC_CLOSURE',
+        fromId: 'vehicle-1',
+        toId: 'mapbox:traffic:seg-1',
+        fromType: 'vehicle',
+        toType: 'traffic_segment',
+        distanceM: 700,
+        confidence: 0.82,
+        operationalConfidence: 0.72,
+        actionable: true,
+        sourceReferences: ['seg-1'],
+        evidence: [{ metric: 'closed', value: true }]
+      }],
+      environment: []
+    });
+    const event = events.find(e => e.eventType === 'TRAFFIC_CLOSURE');
+    expect(event).toBeTruthy();
+    expect(event.severity).toBe('high');
+    expect(event.convoyId).toBe('convoy-1');
+  });
+
+  test('promotes a natural hazard near the route while preserving source uncertainty', () => {
+    const events = detectSpatialEvents({
+      mission: { convoyId: 'convoy-1' },
+      operational: { vehicles: [vehicle()] },
+      relations: [{
+        predicate: 'NATURAL_HAZARD_NEAR_ROUTE',
+        fromId: 'vehicle-1',
+        toId: 'nasa:eonet:E1',
+        fromType: 'vehicle',
+        toType: 'natural_hazard',
+        distanceM: 4500,
+        confidence: 0.9,
+        operationalConfidence: 0.7,
+        actionable: true,
+        sourceReferences: ['E1'],
+        uncertainty: ['Representative point derived from provider geometry.']
+      }],
+      environment: []
+    });
+    const event = events.find(e => e.eventType === 'NATURAL_HAZARD_NEAR_ROUTE');
+    expect(event).toBeTruthy();
+    expect(event.severity).toBe('high');
+    expect(event.uncertainty).toEqual(expect.arrayContaining(['Representative point derived from provider geometry.']));
+  });
+
+  test('does not alert on non-actionable external intelligence relations', () => {
+    const events = detectSpatialEvents({
+      mission: { convoyId: 'convoy-1' },
+      operational: { vehicles: [vehicle()] },
+      relations: [{
+        predicate: 'TRAFFIC_CLOSURE',
+        fromId: 'vehicle-1',
+        toId: 'mapbox:traffic:seg-unknown',
+        fromType: 'vehicle',
+        toType: 'traffic_segment',
+        distanceM: 500,
+        confidence: 0.8,
+        operationalConfidence: 0.4,
+        actionable: false
+      }],
+      environment: []
+    });
+    expect(events.find(e => e.eventType === 'TRAFFIC_CLOSURE')).toBeUndefined();
+  });
+
 });
