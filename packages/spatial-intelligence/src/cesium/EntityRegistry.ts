@@ -35,10 +35,24 @@ export class EntityRegistry {
   private listeners = new Set<(ctx: SelectionContext | null) => void>();
 
   register(desc: SpatialEntityDescriptor): void {
-    this.byId.set(desc.id, desc);
+    const existing = this.byId.get(desc.id);
+    if (existing?.cesiumId && existing.cesiumId !== desc.cesiumId) {
+      this.byCesiumId.delete(existing.cesiumId);
+    }
+
     if (desc.cesiumId) {
+      const previousSemanticId = this.byCesiumId.get(desc.cesiumId);
+      if (previousSemanticId && previousSemanticId !== desc.id) {
+        const previous = this.byId.get(previousSemanticId);
+        if (previous?.cesiumId === desc.cesiumId) {
+          previous.cesiumId = undefined;
+          this.byId.set(previousSemanticId, previous);
+        }
+      }
       this.byCesiumId.set(desc.cesiumId, desc.id);
     }
+
+    this.byId.set(desc.id, desc);
   }
 
   registerMany(descs: SpatialEntityDescriptor[]): void {
