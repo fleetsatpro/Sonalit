@@ -58,9 +58,6 @@ router.get('/:id/corridor', async (req, res, next) => {
     }
     if (route.length < 2) return res.status(422).json({ error: 'Convoy has no planned route yet — plan one from an origin and destination, or add at least two route waypoints.' });
 
-    // A convoy device can have a durable Guardian cache even when the detailed
-    // device_locations history has not arrived yet. Prefer history, but never
-    // make a selected-convoy device disappear just because that table is empty.
     const mem = await query(`
       SELECT d.id, d.name, fo.name AS officer_name,
              cur.lat AS history_lat, cur.lng AS history_lng, cur.heading AS live_heading,
@@ -87,7 +84,11 @@ router.get('/:id/corridor', async (req, res, next) => {
       if (observedLat == null || observedLng == null) return { ...base, status: 'no_fix', severity: 'low', position_state: 'no_confident_estimate', position_confidence: 0, position_reason: 'No coordinate is available for this convoy device.' };
       if (!hasHistory) {
         const verdict = evaluateCorridor({ route, lat: observedLat, lng: observedLng, elapsedMs, avgSpeedKmh: cfg.avg_speed_kmh, corridorKm: cfg.corridor_km, scheduleTolKm: cfg.schedule_tol_km });
-        return { ...base, ...verdict, status: 'no_fix', severity: 'low', position_state: 'stale', position_confidence: 0, position_uncertainty_m: null, position_reason: 'Showing last Guardian device cache because no device_locations fix is available.', world_state_version: 'world-state-swarm-v1', world_state_agents: [], world_state_disagreement: 'stale-cache', observed_lat: observedLat, observed_lng: observedLng, observed_at: observedAt || null };
+        // The cached coordinate is not a fresh GPS fix, but it is still the
+        // last known spatial observation. Preserve the corridor verdict so
+        // operators can see that the last known position was off-route while
+        // position_state remains explicitly stale.
+        return { ...base, ...verdict, position_state: 'stale', position_confidence: 0, position_uncertainty_m: null, position_reason: 'Showing last Guardian device cache because no device_locations fix is available.', world_state_version: 'world-state-swarm-v1', world_state_agents: [], world_state_disagreement: 'stale-cache', observed_lat: observedLat, observed_lng: observedLng, observed_at: observedAt || null };
       }
       const previous = m.prev_lat != null && m.prev_lng != null ? { lat: num(m.prev_lat), lng: num(m.prev_lng), heading: num(m.prev_heading) } : null;
       const elapsedSeconds = previous && m.prev_ts && observedAt ? Math.max(0, (new Date(observedAt).getTime() - new Date(m.prev_ts).getTime()) / 1000) : 0;
@@ -145,7 +146,7 @@ router.post('/:id/xd-surveillance/run', authorize('admin', 'dispatcher', 'operat
         try {
           const observedAt = row.ts || null;
           const elapsedSeconds = previous && observedAt && row.prev_ts ? Math.max(0, (new Date(observedAt).getTime() - new Date(row.prev_ts).getTime()) / 1000) : 0;
-          world = reconcileWorldState({ previous, observed: { lat, lng, accuracy_m: row.accuracy == null ? null : Number(row.accuracy), heading: row.heading == null ? null : Number(row.heading) }, route, elapsedSeconds, observedAt, Date.now() });
+          world = reconcileWorldState({ previous, observed: { lat, lng, accuracy_m: row.accuracy == null ? null : Number(row.accuracy), heading: row.heading == null ? null : Number(row.heading) }, route, elapsedSeconds, observedAt, now: Date.now() });
         } catch (_) {}
       }
       return { id: row.id, name: row.name, officer_name: row.officer_name || null, convoy_name: convoy.name, client_name: convoy.client_name || null, observed: lat != null && lng != null ? { lat, lng } : null, speed_kph: row.speed == null ? null : Number(row.speed), heading: row.heading == null ? null : Number(row.heading), observed_at: row.ts || null, previous_observed_at: row.prev_ts || null, world_state: world.state, world_confidence: world.confidence, uncertainty_m: world.uncertainty_m, world_reason: world.reason };

@@ -1,10 +1,15 @@
 /**
  * CesiumLiveMap — 3D globe for the live GPS tracking page.
+ * Loop 01: RenderGovernor + EntityRegistry (semantic selection identity).
  */
 import React, { useEffect, useRef, useState } from 'react';
 import * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 import { Map, Globe, Layers } from 'lucide-react';
+import {
+  RenderGovernor,
+  EntityRegistry,
+} from '@sonalit/spatial-intelligence';
 
 export interface DeviceLocation {
   device_id: string;
@@ -95,15 +100,23 @@ export default function CesiumLiveMap({
   const geofenceIdsRef    = useRef<string[]>([]);
   const guardianRef       = useRef<globalThis.Map<string, Cesium.Entity>>(new globalThis.Map());
   const handlerRef        = useRef<Cesium.ScreenSpaceEventHandler | null>(null);
+  const governorRef       = useRef<RenderGovernor | null>(null);
+  const registryRef       = useRef<EntityRegistry | null>(null);
   const [mapMode, setMapMode]     = useState<MapMode>('map');
   const [initFailed, setInitFailed] = useState(false);
 
-  // ── Init viewer ────────────────────────────────────────────────────────────
+  const onSelectRef = useRef(onSelect);
+  const onDeselectRef = useRef(onDeselect);
+  onSelectRef.current = onSelect;
+  onDeselectRef.current = onDeselect;
+
   useEffect(() => {
     if (!containerRef.current) return;
 
     let viewer: Cesium.Viewer | undefined;
     let handler: Cesium.ScreenSpaceEventHandler | undefined;
+    let governor: RenderGovernor | undefined;
+    let registry: EntityRegistry | undefined;
 
     try {
       Cesium.Ion.defaultAccessToken =
@@ -135,17 +148,38 @@ export default function CesiumLiveMap({
       viewer.clock.shouldAnimate = true;
       viewerRef.current = viewer;
 
+      governor = new RenderGovernor();
+      governor.install(viewer);
+      governorRef.current = governor;
+
+      registry = new EntityRegistry();
+      registryRef.current = registry;
+
       handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
       handler.setInputAction((click: Cesium.ScreenSpaceEventHandler.PositionedEvent) => {
         const picked = viewer!.scene.pick(click.position);
         if (Cesium.defined(picked) && picked.id instanceof Cesium.Entity) {
-          const eid = picked.id.id as string;
-          if (!eid.startsWith('geo_') && !eid.startsWith('guardian_')) {
-            onSelect(eid);
+          const eid = String(picked.id.id);
+          const desc = registryRef.current?.resolvePick(eid);
+          if (
+            desc &&
+            desc.domain === 'sonalit' &&
+            desc.entityType !== 'geofence'
+          ) {
+            onSelectRef.current(desc.id);
+            registryRef.current?.select(desc, {
+              x: click.position.x,
+              y: click.position.y,
+            });
+          } else {
+            onDeselectRef.current();
+            registryRef.current?.select(null);
           }
         } else {
-          onDeselect();
+          onDeselectRef.current();
+          registryRef.current?.select(null);
         }
+        governorRef.current?.requestRender('selection');
       }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
       handlerRef.current = handler;
     } catch {
@@ -155,14 +189,19 @@ export default function CesiumLiveMap({
 
     return () => {
       handler?.destroy();
+      handlerRef.current = null;
       entitiesRef.current.clear();
+      guardianRef.current.clear();
+      geofenceIdsRef.current = [];
+      registry?.clear();
+      registryRef.current = null;
+      governor?.destroy();
+      governorRef.current = null;
       if (viewer && !viewer.isDestroyed()) viewer.destroy();
       viewerRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Layer switching ────────────────────────────────────────────────────────
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
@@ -202,11 +241,12 @@ export default function CesiumLiveMap({
         }),
       );
     }
+    governorRef.current?.requestRender('imagery-mode');
   }, [mapMode]);
 
-  // ── Vehicle device entities ────────────────────────────────────────────────
   useEffect(() => {
     const viewer = viewerRef.current;
+    const registry = registryRef.current;
     if (!viewer || viewer.isDestroyed()) return;
 
     const incoming = new Set(locations.map(l => l.device_id));
@@ -215,6 +255,7 @@ export default function CesiumLiveMap({
       if (!incoming.has(id)) {
         viewer.entities.remove(entity);
         entitiesRef.current.delete(id);
+        registry?.unregister(id);
       }
     }
 
@@ -257,6 +298,21 @@ export default function CesiumLiveMap({
         });
         entitiesRef.current.set(loc.device_id, entity);
       }
+
+      registry?.register({
+        id: loc.device_id,
+        domain: 'sonalit',
+        entityType: 'device',
+        cesiumId: loc.device_id,
+        label,
+        vehicleId: loc.vehicle_id ?? undefined,
+        summary: {
+          speed: loc.speed,
+          heading: loc.heading,
+          timestamp: loc.timestamp,
+        },
+        source: 'sonalit',
+      });
     }
 
     if (needsFly && entitiesRef.current.size > 0) {
@@ -265,20 +321,27 @@ export default function CesiumLiveMap({
         offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-50), 0),
       });
     }
+
+    governorRef.current?.requestRender('locations-sync');
   }, [locations, selectedId, vehicleMap]);
 
-  // ── Geofence overlay ───────────────────────────────────────────────────────
   useEffect(() => {
     const viewer = viewerRef.current;
+    const registry = registryRef.current;
     if (!viewer || viewer.isDestroyed()) return;
 
     for (const id of geofenceIdsRef.current) {
       const e = viewer.entities.getById(id);
       if (e) viewer.entities.remove(e);
+      const semanticId = id.startsWith('geo_') ? id.slice(4) : id;
+      registry?.unregister(semanticId);
     }
     geofenceIdsRef.current = [];
 
-    if (!geofences || geofences.length === 0) return;
+    if (!geofences || geofences.length === 0) {
+      governorRef.current?.requestRender('geofences-clear');
+      return;
+    }
 
     for (const geo of geofences) {
       if (!geo.active) continue;
@@ -311,6 +374,14 @@ export default function CesiumLiveMap({
           }),
         });
         geofenceIdsRef.current.push(entityId);
+        registry?.register({
+          id: geo.id,
+          domain: 'sonalit',
+          entityType: 'geofence',
+          cesiumId: entityId,
+          label: geo.name,
+          source: 'sonalit',
+        });
       } else if (geo.type === 'corridor' || geo.type === 'linear') {
         const coords = geo.coordinates as { path?: [number, number][]; buffer_m?: number };
         if (!Array.isArray(coords?.path) || coords.path.length < 2) continue;
@@ -343,6 +414,14 @@ export default function CesiumLiveMap({
           }),
         });
         geofenceIdsRef.current.push(entityId);
+        registry?.register({
+          id: geo.id,
+          domain: 'sonalit',
+          entityType: 'geofence',
+          cesiumId: entityId,
+          label: geo.name,
+          source: 'sonalit',
+        });
       } else if (geo.type === 'polygon') {
         const pts = geo.coordinates as [number, number][];
         if (!Array.isArray(pts) || pts.length < 3) continue;
@@ -358,17 +437,27 @@ export default function CesiumLiveMap({
           }),
         });
         geofenceIdsRef.current.push(entityId);
+        registry?.register({
+          id: geo.id,
+          domain: 'sonalit',
+          entityType: 'geofence',
+          cesiumId: entityId,
+          label: geo.name,
+          source: 'sonalit',
+        });
       }
     }
+    governorRef.current?.requestRender('geofences-sync');
   }, [geofences]);
 
-  // ── Guardian device entities ───────────────────────────────────────────────
   useEffect(() => {
     const viewer = viewerRef.current;
+    const registry = registryRef.current;
     if (!viewer || viewer.isDestroyed()) return;
 
-    for (const [, entity] of guardianRef.current) {
+    for (const [id, entity] of guardianRef.current) {
       viewer.entities.remove(entity);
+      registry?.unregister(id);
     }
     guardianRef.current.clear();
 
@@ -378,8 +467,9 @@ export default function CesiumLiveMap({
       const pos = Cesium.Cartesian3.fromDegrees(device.last_lng, device.last_lat, 0);
       const color = device.panic_active ? RED : GREEN;
       const labelText = device.panic_active ? `⚠ ${device.name}` : device.name;
+      const cesiumId = `guardian_${device.id}`;
       const entity = viewer.entities.add({
-        id: `guardian_${device.id}`,
+        id: cesiumId,
         position: pos,
         point: makePoint(color, 13),
         label: new Cesium.LabelGraphics({
@@ -398,7 +488,21 @@ export default function CesiumLiveMap({
         }),
       });
       guardianRef.current.set(device.id, entity);
+      registry?.register({
+        id: device.id,
+        domain: 'sonalit',
+        entityType: 'guardian',
+        cesiumId,
+        label: device.name,
+        summary: {
+          status: device.status,
+          panic_active: device.panic_active,
+          last_seen: device.last_seen,
+        },
+        source: 'sonalit',
+      });
     }
+    governorRef.current?.requestRender('guardian-sync');
   }, [guardianDevices]);
 
   if (initFailed) {

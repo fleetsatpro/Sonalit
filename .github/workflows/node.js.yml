@@ -71,6 +71,9 @@ jobs:
       - name: Build contracts
         run: pnpm --filter @sonalit/contracts build
 
+      - name: Build spatial intelligence
+        run: pnpm --filter @sonalit/spatial-intelligence build
+
       - name: Typecheck web
         run: pnpm --filter @sonalit/web typecheck
 

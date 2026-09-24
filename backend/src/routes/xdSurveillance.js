@@ -56,7 +56,7 @@ router.post('/:id/xd-surveillance/run', authorize('admin', 'dispatcher', 'operat
         try {
           const observedAt = row.ts || null;
           const elapsedSeconds = previous && observedAt && row.prev_ts ? Math.max(0, (new Date(observedAt).getTime() - new Date(row.prev_ts).getTime()) / 1000) : 0;
-          world = reconcileWorldState({ previous, observed: { lat, lng, accuracy_m: row.accuracy == null ? null : Number(row.accuracy), heading: row.heading == null ? null : Number(row.heading) }, route, elapsedSeconds, observedAt, Date.now() });
+          world = reconcileWorldState({ previous, observed: { lat, lng, accuracy_m: row.accuracy == null ? null : Number(row.accuracy), heading: row.heading == null ? null : Number(row.heading) }, route, elapsedSeconds, observedAt, now: Date.now() });
         } catch (_) {}
       }
       return {
