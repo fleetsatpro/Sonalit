@@ -80,7 +80,7 @@ export function normalizeOpenSkyState(
         : row.baro_altitude != null && Number.isFinite(row.baro_altitude)
           ? row.baro_altitude
           : null,
-    observedAt: observedAt ?? receivedAt,
+    observedAt,
     receivedAt,
     freshnessMs: observedAt
       ? Math.max(0, Date.parse(receivedAt) - Date.parse(observedAt))
