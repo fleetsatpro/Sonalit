@@ -741,7 +741,7 @@ async function buildWorldContext(opts) {
 
   if (layers.includes('hazards') && bbox) {
     try {
-      const result = await getNaturalHazards({ bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal });
+      const result = await getNaturalHazards({ bbox: externalBbox || bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal });
       hazards.push.apply(hazards, result.observations || []);
       const status = result.health?.status || 'UNKNOWN';
       if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('hazards');
@@ -757,7 +757,7 @@ async function buildWorldContext(opts) {
 
   if (layers.includes('maritime') && bbox) {
     try {
-      const result = await getVesselsInBbox({ bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal });
+      const result = await getVesselsInBbox({ bbox: externalBbox || bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal });
       movement.push.apply(movement, (result.observations || []).slice(0, Math.max(1, Math.min(250, Number(maxEntitiesPerLayer) || 100))));
       const status = result.health?.status || 'UNKNOWN';
       if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('maritime');
@@ -1209,6 +1209,84 @@ async function buildWorldContext(opts) {
       }
     }
   }
+  if (mission && routeObservation.length >= 2) {
+    for (const entity of trafficEntities.concat(hazardEntities)) {
+      if (!Number.isFinite(Number(entity.latitude)) || !Number.isFinite(Number(entity.longitude))) continue;
+      const routeDistanceKm = projectOntoRoute(routeObservation, Number(entity.latitude), Number(entity.longitude)).crossTrackKm;
+      if (!Number.isFinite(routeDistanceKm) || routeDistanceKm * 1000 > Math.max(5000, routeInfo.widthKm * 1000 + 10000)) continue;
+      const predicate = entity.entityType === 'natural_hazard'
+        ? 'NATURAL_HAZARD_NEAR_ROUTE'
+        : entity.entityType === 'traffic_hazard'
+          ? 'EXTERNAL_HAZARD_NEAR_ROUTE'
+          : entity.attributes?.closed
+            ? 'TRAFFIC_CLOSURE'
+            : entity.attributes?.congestion
+              ? 'TRAFFIC_CONGESTION'
+              : entity.entityType === 'traffic_incident'
+                ? 'EXTERNAL_INCIDENT_NEAR_ROUTE'
+                : 'NEAR_TRAFFIC';
+      const opConf = Number(entity.operationalConfidence || entity.observationConfidence || 0.5);
+      externalRelations.push({
+        predicate,
+        fromId: 'sonalit:convoy:' + mission.convoyId,
+        toId: entity.id,
+        fromType: 'convoy',
+        toType: entity.entityType,
+        distanceM: null,
+        routeDistanceM: Math.round(routeDistanceKm * 1000),
+        confidence: Number(entity.observationConfidence || 0.5),
+        operationalConfidence: opConf * (entity.quality?.freshnessClass === 'UNKNOWN' ? 0.9 : 1),
+        observedAt: entity.observedAt || null,
+        derivedAt: new Date(now).toISOString(),
+        evidence: [
+          { metric: 'route_distance_m', value: Math.round(routeDistanceKm * 1000), source: 'sonalit-corridor' },
+          { metric: 'source_observation', value: entity.id, source: entity.source }
+        ],
+        sourceReferences: [String(entity.sourceReference || entity.id)],
+        uncertainty: entity.quality?.reason ? [entity.quality.reason] : [],
+        relevance: contextRelevance({
+          distanceM: routeDistanceKm * 1000,
+          routeDistanceM: routeDistanceKm * 1000,
+          severity: entity.attributes?.magnitudeOfDelay === 'major' || entity.attributes?.closed ? 'high' : entity.attributes?.severity,
+          freshnessClass: entity.quality?.freshnessClass || 'UNKNOWN',
+          sourceQuality: entity.observationConfidence || 0.5,
+          missionActive: true
+        }),
+        actionable: opConf >= 0.65
+      });
+    }
+
+    for (const entity of movement.filter(e => e.entityType === 'vessel')) {
+      if (!Number.isFinite(Number(entity.latitude)) || !Number.isFinite(Number(entity.longitude))) continue;
+      const routeDistanceKm = projectOntoRoute(routeObservation, Number(entity.latitude), Number(entity.longitude)).crossTrackKm;
+      if (!Number.isFinite(routeDistanceKm) || routeDistanceKm * 1000 > Math.max(5000, routeInfo.widthKm * 1000 + 10000)) continue;
+      externalRelations.push({
+        predicate: 'NEAR_MARITIME',
+        fromId: 'sonalit:convoy:' + mission.convoyId,
+        toId: entity.id,
+        fromType: 'convoy',
+        toType: entity.entityType,
+        distanceM: null,
+        routeDistanceM: Math.round(routeDistanceKm * 1000),
+        confidence: Number(entity.observationConfidence || 0.5),
+        operationalConfidence: Number(entity.operationalConfidence || entity.observationConfidence || 0.5),
+        observedAt: entity.observedAt || null,
+        derivedAt: new Date(now).toISOString(),
+        evidence: [{ metric: 'route_distance_m', value: Math.round(routeDistanceKm * 1000), source: 'sonalit-corridor' }],
+        sourceReferences: [String(entity.sourceReference || entity.id)],
+        uncertainty: entity.quality?.reason ? [entity.quality.reason] : [],
+        relevance: contextRelevance({
+          distanceM: routeDistanceKm * 1000,
+          routeDistanceM: routeDistanceKm * 1000,
+          freshnessClass: entity.quality?.freshnessClass || 'UNKNOWN',
+          sourceQuality: entity.observationConfidence || 0.5,
+          missionActive: true
+        }),
+        actionable: Number(entity.operationalConfidence || entity.observationConfidence || 0.5) >= 0.65
+      });
+    }
+  }
+
   relations.push.apply(relations, externalRelations);
   const allEntities = operationalVehicles.concat(movement, environment, traffic, hazards, infrastructure, security);
   const missionRouteCoords = routeInfo.route.map(function(p) { return [p.lng, p.lat]; });
