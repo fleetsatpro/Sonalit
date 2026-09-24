@@ -1,6 +1,7 @@
 'use strict';
 
 const { spatialProviderManager } = require('./providerManager');
+const { resolveSpatialSubject } = require('./subjectResolver');
 const {
   routeRelation,
   circleRelation,
@@ -678,14 +679,9 @@ async function buildWorldContext(opts) {
     return typeof l === 'string' && ALLOWED_LAYERS.has(l);
   }).slice(0, 10)));
 
-  let subject = input.subject || { kind: 'none', id: 'context' };
-  let missionRow = subject.kind === 'convoy' ? await getConvoy(db, orgId, subject.id) : null;
-
-  if (subject.kind === 'convoy' && !missionRow) {
-    const error = new Error('Convoy not found in organisation context');
-    error.statusCode = 404;
-    throw error;
-  }
+  const subject = input.subject || { kind: 'none', id: 'context' };
+  const subjectResolution = await resolveSpatialSubject({ db, orgId, subject });
+  let missionRow = subjectResolution.missionRow;
 
   let vehicleRows = [];
   let mission = null;
@@ -741,6 +737,11 @@ async function buildWorldContext(opts) {
   let resolvedCenter = null;
   if (input.center && Number.isFinite(Number(input.center.latitude)) && Number.isFinite(Number(input.center.longitude))) {
     resolvedCenter = { latitude: Number(input.center.latitude), longitude: Number(input.center.longitude) };
+  } else if (subjectResolution.center) {
+    resolvedCenter = {
+      latitude: Number(subjectResolution.center.latitude),
+      longitude: Number(subjectResolution.center.longitude),
+    };
   } else if (operationalVehicles.length) {
     const total = operationalVehicles.reduce(function(a,v) {
       return { lat: a.lat + v.latitude, lng: a.lng + v.longitude };
