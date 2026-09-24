@@ -68,6 +68,38 @@ describe('bounded route query planner', () => {
     expect(long.length).toBeLessThanOrEqual(16);
   });
 
+  test('balances entity quotas across AOIs instead of favoring the first route segment', async () => {
+    const manager = {
+      query: jest.fn(async (_provider, args) => ({
+        observations: Array.from({ length: 100 }, (_, i) => ({
+          id: 'aoi-' + String(args.bbox[0]) + '-' + i
+        })),
+        health: { status: 'LIVE' },
+        coverage: { complete: true }
+      }))
+    };
+    const result = await queryAcrossAois(manager, 'opensky', {
+      routeLengthKm: 400,
+      coverageRatio: 1,
+      aois: [
+        { bbox: [0,0,1,1], coverageWeightKm: 200 },
+        { bbox: [1,0,2,1], coverageWeightKm: 200 }
+      ]
+    }, { orgId: 'org-a', maxRecords: 10 }, { concurrency: 2 });
+
+    expect(manager.query).toHaveBeenCalledWith(
+      'opensky',
+      expect.objectContaining({ bbox: [0,0,1,1], maxRecords: 5 })
+    );
+    expect(manager.query).toHaveBeenCalledWith(
+      'opensky',
+      expect.objectContaining({ bbox: [1,0,2,1], maxRecords: 5 })
+    );
+    expect(result.observations).toHaveLength(10);
+    expect(result.observations.filter(x => x.id.startsWith('aoi-0')).length).toBe(5);
+    expect(result.observations.filter(x => x.id.startsWith('aoi-1')).length).toBe(5);
+  });
+
   test('aggregates AOI responses, dedupes observations, and reports partial coverage', async () => {
     const manager = {
       query: jest.fn()
