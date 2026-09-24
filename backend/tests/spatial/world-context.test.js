@@ -283,7 +283,8 @@ describe('world context integration assembly', () => {
     expect(ctx.mission.convoyId).toBe(CONVOY);
     expect(ctx.operational.vehicles).toHaveLength(1);
     expect(ctx.environment).toHaveLength(1);
-    expect(ctx.movement).toHaveLength(1);
+    expect(ctx.movement.some(e => e.entityType === 'aircraft')).toBe(true);
+    expect(ctx.movement.some(e => e.entityType === 'vessel')).toBe(true);
     expect(ctx.movement.some(e => e.entityType === 'vessel')).toBe(true);
     expect(ctx.traffic.some(e => e.entityType === 'traffic_segment')).toBe(true);
     expect(ctx.traffic.some(e => e.entityType === 'traffic_hazard')).toBe(true);
