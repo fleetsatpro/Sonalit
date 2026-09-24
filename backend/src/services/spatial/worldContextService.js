@@ -1014,16 +1014,18 @@ async function buildWorldContext(opts) {
   }
 
   if (layers.includes('traffic') && resolvedCenter) {
-    const samplePoints = [resolvedCenter];
-    if (routeInfo.route.length >= 2) {
-      const sampleCount = Math.min(8, routeInfo.route.length);
-      for (let i = 0; i < sampleCount; i++) {
-        const p = routeInfo.route[Math.round((routeInfo.route.length - 1) * i / Math.max(1, sampleCount - 1))];
-        samplePoints.push({ latitude: p.lat, longitude: p.lng });
-      }
-    }
+    const samplePoints = routeInfo.route.length >= 2
+      ? sampleRoutePoints(routeInfo.route, 16)
+      : [{ latitude: resolvedCenter.latitude, longitude: resolvedCenter.longitude }];
     const pointMap = new Map();
-    samplePoints.forEach(p => pointMap.set(Number(p.latitude).toFixed(4)+','+Number(p.longitude).toFixed(4), p));
+    pointMap.set(
+      Number(resolvedCenter.latitude).toFixed(4) + ',' + Number(resolvedCenter.longitude).toFixed(4),
+      resolvedCenter,
+    );
+    samplePoints.forEach(p => pointMap.set(
+      Number(p.latitude).toFixed(4) + ',' + Number(p.longitude).toFixed(4),
+      p,
+    ));
     const sampled = Array.from(pointMap.values()).slice(0, 16);
     const trafficResults = await Promise.allSettled([
       spatialProviderManager.query('mapbox-traffic', { points: sampled, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }),
