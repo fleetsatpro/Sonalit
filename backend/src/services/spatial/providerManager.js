@@ -35,6 +35,7 @@ function tenantIdFromArgs(args) {
 class SpatialProviderManager {
   constructor() {
     this.providers = new Map();
+    this.quotaFamilies = new Map();
   }
 
   register(name, descriptor) {
@@ -44,10 +45,22 @@ class SpatialProviderManager {
     }
     if (this.providers.has(name)) throw new Error('Spatial provider already registered: ' + name);
 
-    const budget = new RequestBudget(
-      envInt(descriptor.budgetEnv?.maxPerMinute, descriptor.maxPerMinute ?? 120, 1, 10_000),
-      envInt(descriptor.budgetEnv?.maxConcurrent, descriptor.maxConcurrent ?? 8, 1, 256),
-    );
+    const quotaKey = String(descriptor.quotaKey || name);
+    const maxPerMinute = envInt(descriptor.budgetEnv?.maxPerMinute, descriptor.maxPerMinute ?? 120, 1, 10_000);
+    const maxConcurrent = envInt(descriptor.budgetEnv?.maxConcurrent, descriptor.maxConcurrent ?? 8, 1, 256);
+    let quota = this.quotaFamilies.get(quotaKey);
+    if (!quota) {
+      quota = {
+        budget: new RequestBudget(maxPerMinute, maxConcurrent),
+        maxPerMinute,
+        maxConcurrent,
+        tenantBudgets: new Map(),
+        tenantBudgetLastUsedAt: new Map(),
+      };
+      this.quotaFamilies.set(quotaKey, quota);
+    } else if (quota.maxPerMinute !== maxPerMinute || quota.maxConcurrent !== maxConcurrent) {
+      throw new Error('Spatial provider quota family configuration mismatch: ' + quotaKey);
+    }
     const circuit = new CircuitBreaker(
       envInt(descriptor.budgetEnv?.failureThreshold, descriptor.failureThreshold ?? 6, 1, 100),
       envInt(descriptor.budgetEnv?.cooldownMs, descriptor.cooldownMs ?? 30_000, 1_000, 600_000),
@@ -69,9 +82,11 @@ class SpatialProviderManager {
       name,
       query: descriptor.query,
       tenantMaxPerMinute,
+      quotaKey,
       tenantMaxConcurrent,
-      tenantBudgets: new Map(),
-      tenantBudgetLastUsedAt: new Map(),
+      quota,
+      tenantBudgets: quota.tenantBudgets,
+      tenantBudgetLastUsedAt: quota.tenantBudgetLastUsedAt,
       health: typeof descriptor.health === 'function' ? descriptor.health : () => ({ status: 'UNKNOWN' }),
       capabilities: Array.isArray(descriptor.capabilities) ? [...new Set(descriptor.capabilities)] : [],
       budget,
@@ -140,7 +155,7 @@ class SpatialProviderManager {
       throw error;
     }
 
-    if (!provider.budget.canRequest(now)) {
+    if (!provider.quota.budget.canRequest(now)) {
       const error = new Error('Spatial provider budget exhausted: ' + name);
       error.failureClass = 'rate_limited';
       provider.lastFailure = 'budget_exhausted';
@@ -149,7 +164,7 @@ class SpatialProviderManager {
       throw error;
     }
 
-    provider.budget.begin(now);
+    provider.quota.budget.begin(now);
     if (tenantBudget) tenantBudget.begin(now);
     provider.requestCount += 1;
 
@@ -170,7 +185,7 @@ class SpatialProviderManager {
       if (!error.failureClass) error.failureClass = failureClass;
       throw error;
     } finally {
-      provider.budget.end();
+      provider.quota.budget.end();
       if (tenantBudget) tenantBudget.end();
     }
   }
@@ -236,8 +251,8 @@ class SpatialProviderManager {
 
   reset() {
     for (const provider of this.providers.values()) {
-      provider.budget.timestamps.length = 0;
-      provider.budget.active = 0;
+      provider.quota.budget.timestamps.length = 0;
+      provider.quota.budget.active = 0;
       provider.circuit.success();
       provider.requestCount = 0;
       provider.successCount = 0;
@@ -247,6 +262,13 @@ class SpatialProviderManager {
       provider.lastSuccessAt = null;
       provider.tenantBudgets.clear();
       provider.tenantBudgetLastUsedAt.clear();
+    }
+    for (const quota of this.quotaFamilies.values()) {
+      quota.budget.timestamps.length = 0;
+      quota.budget.active = 0;
+      quota.tenantBudgets.clear();
+      quota.tenantBudgetLastUsedAt.clear();
+
     }
   }
 }
@@ -324,6 +346,7 @@ function createDefaultSpatialProviderManager() {
     query: queryOrUnavailable({ getTrafficIncidents }, 'getTrafficIncidents', 'TomTom Traffic'),
     health: healthOrUnknown({ getProviderHealth: tomtomHealth }, 'getProviderHealth'),
     capabilities: ['traffic', 'incident', 'bbox'],
+    quotaKey: 'tomtom-traffic',
     ...budgets('SPATIAL_PROVIDER_TOMTOM', 60, 6),
   });
 
@@ -331,6 +354,7 @@ function createDefaultSpatialProviderManager() {
     query: queryOrUnavailable({ getTrafficFlowAtPoints }, 'getTrafficFlowAtPoints', 'TomTom Traffic Flow'),
     health: healthOrUnknown({ getProviderHealth: tomtomHealth }, 'getProviderHealth'),
     capabilities: ['traffic', 'flow', 'point'],
+    quotaKey: 'tomtom-traffic',
     ...budgets('SPATIAL_PROVIDER_TOMTOM', 60, 6),
   });
 
