@@ -785,8 +785,8 @@ async function buildWorldContext(opts) {
     samplePoints.forEach(p => pointMap.set(Number(p.latitude).toFixed(4)+','+Number(p.longitude).toFixed(4), p));
     const sampled = Array.from(pointMap.values()).slice(0, 16);
     const trafficResults = await Promise.allSettled([
-      getTrafficAtPoints({ points: sampled, maxRecords: maxEntitiesPerLayer, signal: input.signal }),
-      (externalBbox || bbox) ? getTrafficIncidents({ bbox: externalBbox || bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal }) : Promise.resolve({ observations: [], health: { status: 'UNAVAILABLE' } })
+      getTrafficAtPoints({ points: sampled, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }),
+      (externalBbox || bbox) ? getTrafficIncidents({ bbox: externalBbox || bbox, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }) : Promise.resolve({ observations: [], health: { status: 'UNAVAILABLE' } })
     ]);
     const flow = trafficResults[0], incident = trafficResults[1], statuses = [];
     if (flow.status === 'fulfilled') { traffic.push.apply(traffic, flow.value.observations || []); statuses.push(flow.value.health?.status || 'UNKNOWN'); }
