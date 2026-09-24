@@ -19,12 +19,11 @@ async function evaluateSpatialEye(orgId) {
   let evaluated = 0;
   let eventCount = 0;
   try {
-    await withOrg(orgId, async (client) => {
-      const convoys = await client.query(
-        "SELECT id FROM convoys WHERE org_id = $1 AND status = 'active' AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT $2",
-        [orgId, spatialMaxConvoys]
-      );
-      for (const row of convoys.rows || []) {
+    const convoys = await withOrg(orgId, (client) => client.query(
+      "SELECT id FROM convoys WHERE org_id = $1 AND status = 'active' AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT $2",
+      [orgId, spatialMaxConvoys]
+    ));
+    for (const row of convoys.rows || []) {
         try {
           const context = await buildWorldContext({
             orgId,
@@ -43,7 +42,6 @@ async function evaluateSpatialEye(orgId) {
           logger.warn(`Spatial Eye convoy evaluation failed org=${orgId} convoy=${row.id}: ${error.message}`);
         }
       }
-    });
   } catch (error) {
     logger.warn(`Spatial Eye organisation evaluation failed org=${orgId}: ${error.message}`);
   }
