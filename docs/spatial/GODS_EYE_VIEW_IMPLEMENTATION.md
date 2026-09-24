@@ -197,3 +197,22 @@ The continuous Spatial Eye evaluator runs as a separate cadence within the exist
 The provider fabric now supports both process-level provider-family budgets and per-tenant budgets. Capabilities sharing a provider family (for example TomTom traffic flow and incidents) share a quota bucket while preserving capability-specific health and failure state. Spatial requests carry organisation context into the provider fabric so one tenant cannot consume an entire in-process provider budget.
 
 World Context exposes both process/provider health and the current request's provider coverage. Event reconciliation uses the latter when source provenance identifies an external authority, preventing a globally healthy provider from being mistaken for complete coverage of the current mission query.
+
+
+## Runtime controls
+
+The spatial runtime exposes bounded controls through environment variables:
+
+- SPATIAL_EYE_INTERVAL_SECONDS — cadence for continuous convoy spatial evaluation (minimum 15 seconds).
+- SPATIAL_EYE_MAX_CONVOYS_PER_CYCLE — maximum active convoys evaluated in one spatial cycle.
+- SPATIAL_EYE_CONCURRENCY — bounded concurrent convoy evaluations.
+- SPATIAL_EYE_PROVIDER_CONCURRENCY — bounded concurrent route-AOI provider calls.
+- SPATIAL_EYE_MAX_AOI_AREA_DEG2 — maximum geographic area of a generated provider AOI.
+- SPATIAL_EYE_MAX_AOIS — maximum route AOIs per world-context provider query.
+- SPATIAL_PROVIDER_<PROVIDER>_MAX_PER_MINUTE — process-level provider budget.
+- SPATIAL_PROVIDER_<PROVIDER>_MAX_CONCURRENT — process-level provider concurrency.
+- SPATIAL_PROVIDER_<PROVIDER>_TENANT_MAX_PER_MINUTE — per-tenant provider budget.
+- SPATIAL_PROVIDER_<PROVIDER>_TENANT_MAX_CONCURRENT — per-tenant provider concurrency.
+- SPATIAL_PROVIDER_MAX_TENANT_BUCKETS — maximum retained in-process tenant quota buckets.
+
+The controls are hard-bounded by the application. Environment variables cannot request unlimited spatial area, AOIs, concurrency, or entity counts.
