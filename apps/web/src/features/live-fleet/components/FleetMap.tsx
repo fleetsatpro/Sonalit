@@ -8,6 +8,7 @@ import {
   bboxFromMap, useTrafficIncidents, useTrafficStatus,
 } from '../../../lib/trafficLayer.js'
 import type { LiveVehicle, LiveStatus } from '../types/fleet.js'
+import { externalWorldFeatures, fetchWorldContext } from '../../../lib/spatialClient.js'
 
 const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
 
@@ -103,6 +104,23 @@ function isCorridor(g: Geofence): boolean {
   return t === 'corridor' || t === 'linear' || t === 'line' || t === 'linestring' || t === 'route'
 }
 
+
+function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const r = 6371000
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLng = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2
+  return r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+function spatialRadiusFromMap(map: maplibregl.Map): number {
+  const center = map.getCenter()
+  const bounds = map.getBounds()
+  const corners = [bounds.getNorthEast(), bounds.getNorthWest(), bounds.getSouthEast(), bounds.getSouthWest()]
+  const radius = Math.max(...corners.map(p => distanceMeters(center.lat, center.lng, p.lat, p.lng))) * 1.15
+  return Math.min(100000, Math.max(15000, Number.isFinite(radius) ? radius : 25000))
+}
+
 function buildRiskFC(zones: RiskZone[]): GeoFC {
   return { type: 'FeatureCollection', features: zones.filter(z => z.center_lat && z.center_lon).map(z => ({
     type: 'Feature' as const,
@@ -176,10 +194,27 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
   const [mapReady, setMapReady] = useState(false)
   const [mapMode, setMapMode] = useState<'dark' | 'satellite' | 'earth'>('dark')
   const [trafficOn, setTrafficOn] = useState(false)
+  const [worldSpatialOn, setWorldSpatialOn] = useState(true)
   const [bbox, setBbox] = useState<string | null>(null)
+  const [worldViewport, setWorldViewport] = useState<{ latitude: number; longitude: number; radiusM: number } | null>(null)
 
   const { data: trafficStatus } = useTrafficStatus()
   const { data: trafficFC } = useTrafficIncidents(bbox, trafficOn)
+
+  const { data: worldContext, isFetching: worldFetching, isError: worldError } = useQuery({
+    queryKey: ['gps-world-context', worldViewport?.latitude, worldViewport?.longitude, worldViewport?.radiusM],
+    queryFn: ({ signal }) => fetchWorldContext({
+      center: { latitude: worldViewport!.latitude, longitude: worldViewport!.longitude },
+      radiusM: worldViewport!.radiusM,
+      layers: ['aircraft', 'maritime', 'traffic', 'hazards'],
+      maxEntitiesPerLayer: 75,
+      signal,
+    }),
+    enabled: mapReady && worldSpatialOn && !!worldViewport,
+    staleTime: 10000,
+    refetchInterval: 30000,
+    retry: 1,
+  })
 
   const { data: geofences } = useQuery<Geofence[]>({
     queryKey: ['live-fleet-geofences'],
@@ -196,13 +231,23 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
     const m = new maplibregl.Map({ container: containerRef.current, style: DARK_STYLE, center: [35.5, 1.2], zoom: 5, attributionControl: false, transformRequest: trafficTransformRequest })
-    m.on('style.load', () => setMapReady(true))
+    m.on('style.load', () => {
+      setMapReady(true)
+      syncWorldViewport()
+    })
     m.on('mousemove', e => {
       if (!coordsRef.current) return
       const { lat, lng } = e.lngLat
       coordsRef.current.textContent = `${Math.abs(lat).toFixed(4)}°${lat >= 0 ? 'N' : 'S'} ${Math.abs(lng).toFixed(4)}°${lng >= 0 ? 'E' : 'W'}`
     })
-    m.on('moveend', () => setBbox(bboxFromMap(m)))
+    const syncWorldViewport = () => {
+      const center = m.getCenter()
+      setWorldViewport({ latitude: center.lat, longitude: center.lng, radiusM: spatialRadiusFromMap(m) })
+    }
+    m.on('moveend', () => {
+      setBbox(bboxFromMap(m))
+      syncWorldViewport()
+    })
     mapRef.current = m
     return () => { m.remove(); mapRef.current = null; setMapReady(false) }
   }, [])
@@ -293,6 +338,66 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
     map.addLayer({ id: 'rz-line', type: 'line', source: 'riskzones', paint: { 'line-color': riskColorExpr, 'line-width': 2.5, 'line-opacity': 1 } })
   }, [mapReady, riskZones])
 
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    const sourceId = 'spatial-world'
+    const source = map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined
+    const empty = { type: 'FeatureCollection' as const, features: [] }
+    const data = worldSpatialOn ? externalWorldFeatures(worldContext) : empty
+    if (source) {
+      source.setData(data)
+      return
+    }
+    map.addSource(sourceId, { type: 'geojson', data })
+    map.addLayer({
+      id: 'spatial-world-points',
+      type: 'circle',
+      source: sourceId,
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 3, 7, 5, 12, 7],
+        'circle-color': ['match', ['get', 'kind'],
+          'aircraft', '#60a5fa',
+          'vessel', '#22d3ee',
+          'natural_hazard', '#ef4444',
+          'traffic_incident', '#f59e0b',
+          'traffic_hazard', '#f97316',
+          'traffic_segment', '#eab308',
+          '#94a3b8',
+        ],
+        'circle-opacity': ['match', ['get', 'freshness'], 'LIVE', 0.95, 'DELAYED', 0.75, 'STALE', 0.45, 0.55],
+        'circle-stroke-color': '#0b1020',
+        'circle-stroke-width': 1.5,
+      },
+    })
+    map.addLayer({
+      id: 'spatial-world-labels',
+      type: 'symbol',
+      source: sourceId,
+      minzoom: 7,
+      layout: {
+        'text-field': ['get', 'label'],
+        'text-size': 10,
+        'text-offset': [0, 1.1],
+        'text-anchor': 'top',
+        'text-allow-overlap': false,
+      },
+      paint: {
+        'text-color': '#dbeafe',
+        'text-halo-color': '#05070d',
+        'text-halo-width': 1.25,
+      },
+    })
+  }, [mapReady, worldContext, worldSpatialOn])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady || !map.getLayer('spatial-world-points')) return
+    map.setLayoutProperty('spatial-world-points', 'visibility', worldSpatialOn ? 'visible' : 'none')
+    map.setLayoutProperty('spatial-world-labels', 'visibility', worldSpatialOn ? 'visible' : 'none')
+  }, [mapReady, worldSpatialOn])
+
   // pulse animation on high-risk zones
   useEffect(() => {
     const map = mapRef.current; if (!map || !mapReady) return
@@ -375,6 +480,14 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
 
       {/* top-right controls */}
       <div style={{ position: 'absolute', right: 14, top: 14, zIndex: 500, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <button
+          onClick={() => setWorldSpatialOn(v => !v)}
+          title={worldSpatialOn ? 'Hide external world intelligence' : 'Show external world intelligence'}
+          aria-label={worldSpatialOn ? 'Hide external world intelligence' : 'Show external world intelligence'}
+          style={{ width: 34, height: 34, borderRadius: 7, background: worldSpatialOn ? 'rgba(56,189,248,.16)' : 'rgba(8,11,20,.92)', border: `1px solid ${worldSpatialOn ? 'rgba(56,189,248,.55)' : 'rgba(255,255,255,.11)'}`, color: worldSpatialOn ? '#38bdf8' : '#7a7e8a', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
+        </button>
         {/* traffic toggle — hidden entirely if no TOMTOM_API_KEY is configured server-side */}
         {trafficStatus?.configured && (
           <button
@@ -402,6 +515,14 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
 
       {/* layer legend */}
       <div style={{ position: 'absolute', right: 56, top: 14, zIndex: 500, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {worldSpatialOn && (
+          <div style={{ background: 'rgba(8,11,20,.92)', border: `1px solid ${worldError ? 'rgba(239,68,68,.35)' : 'rgba(56,189,248,.3)'}`, borderRadius: 5, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: worldError ? '#ef4444' : '#38bdf8', opacity: .9 }} />
+            <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 9, color: worldError ? '#ef4444' : '#38bdf8' }}>
+              {worldError ? 'world context unavailable' : worldFetching ? 'world context updating' : String(externalWorldFeatures(worldContext).features.length) + ' external'}
+            </span>
+          </div>
+        )}
         {geoCount > 0 && (
           <div style={{ background: 'rgba(8,11,20,.92)', border: '1px solid rgba(34,211,238,.3)', borderRadius: 5, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 5 }}>
             <div style={{ width: 8, height: 8, borderRadius: 2, border: '1.5px dashed #22d3ee', opacity: .85 }} />
