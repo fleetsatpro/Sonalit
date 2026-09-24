@@ -194,7 +194,11 @@ async function getSecurity(db, orgId, convoyId) {
     "SELECT id::text AS id,convoy_id::text AS convoy_id,incident_number,title,description,severity,status,lat,lng,created_at,updated_at FROM cds_incidents WHERE org_id=$1 AND status NOT IN ('resolved','closed') AND ($2::uuid IS NULL OR convoy_id=$2) ORDER BY created_at DESC LIMIT 100",
     [orgId, convoyId || null]
   );
-  return { riskZones, incidents: incidents.concat(cdsIncidents) };
+  const intelAlerts = await safeRows(db,
+    "SELECT id::text AS id,category,title,summary,severity,confidence,verification_state,status,country_code,region,location_name,latitude,lngitude,longitude,first_seen_at,last_seen_at,source_count,corroboration_count,metadata FROM intel_alerts WHERE org_id=$1 AND status NOT IN ('resolved','closed') ORDER BY last_seen_at DESC LIMIT 250",
+    [orgId]
+  );
+  return { riskZones, incidents: incidents.concat(cdsIncidents), intelAlerts };
 }
 
 async function getAlerts(db, orgId, convoyId) {
@@ -292,6 +296,53 @@ function checkpointObservation(row, now) {
     coverage: { complete: true, bounded: true, queryScope: 'convoy checkpoints' },
     quality: { state: 'good', freshnessClass: 'UNKNOWN', reason: 'static operational checkpoint record' }
   }, now, { interpretationConfidence: 1, operationalConfidence: 0.95 });
+}
+
+function intelAlertObservation(row, now) {
+  const lat = num(row.latitude);
+  const lng = num(row.longitude);
+  if (lat == null || lng == null) return null;
+  const rawConfidence = num(row.confidence);
+  const observationConfidence = rawConfidence == null ? 0.35 : Math.max(0, Math.min(1, rawConfidence > 1 ? rawConfidence / 100 : rawConfidence));
+  const observedAt = iso(row.last_seen_at || row.first_seen_at);
+  return baseObservation({
+    id: 'sonalit:intel_alert:' + row.id,
+    entityType: 'intelligence_alert',
+    source: 'sonalit-intelligence',
+    sourceReference: row.id,
+    latitude: lat,
+    longitude: lng,
+    observedAt: observedAt,
+    observationConfidence: observationConfidence,
+    status: row.verification_state || row.status,
+    attributes: {
+      category: row.category,
+      title: row.title,
+      summary: row.summary,
+      severity: row.severity,
+      verification_state: row.verification_state,
+      status: row.status,
+      country_code: row.country_code,
+      region: row.region,
+      location_name: row.location_name,
+      source_count: row.source_count,
+      corroboration_count: row.corroboration_count,
+      metadata: row.metadata
+    },
+    provenance: {
+      sourceName: 'Sonalit Intelligence Alerts',
+      sourceReference: row.id,
+      observationType: 'derived_intelligence_alert'
+    },
+    coverage: {
+      complete: false,
+      bounded: true,
+      queryScope: 'organisation-scoped open intelligence alerts'
+    }
+  }, now, {
+    interpretationConfidence: observationConfidence,
+    operationalConfidence: row.verification_state === 'verified' ? observationConfidence : observationConfidence * 0.75
+  });
 }
 
 function incidentObservation(row, now) {
@@ -699,18 +750,33 @@ async function buildWorldContext(opts) {
   }
 
   if (layers.includes('security') || layers.includes('incidents')) {
-    securityRaw.riskZones.forEach(function(z) { security.push(securityObservation(z, now)); });
+    securityRaw.riskZones.forEach(function(z) {
+      const obs = securityObservation(z, now);
+      if (obs) security.push(obs);
+    });
     securityRaw.incidents.forEach(function(i) {
       const obs = incidentObservation(i, now);
       if (obs) security.push(obs);
     });
+    securityRaw.intelAlerts.forEach(function(i) {
+      const obs = intelAlertObservation(i, now);
+      if (obs) security.push(obs);
+    });
     if (layers.includes('security')) {
       layersSucceeded.push('security');
-      layerHealth.push({ layerId: 'security', status: 'LIVE', recordCount: securityRaw.riskZones.length });
+      layerHealth.push({
+        layerId: 'security',
+        status: 'LIVE',
+        recordCount: securityRaw.riskZones.length + securityRaw.intelAlerts.length
+      });
     }
     if (layers.includes('incidents')) {
       layersSucceeded.push('incidents');
-      layerHealth.push({ layerId: 'incidents', status: 'LIVE', recordCount: securityRaw.incidents.length });
+      layerHealth.push({
+        layerId: 'incidents',
+        status: 'LIVE',
+        recordCount: securityRaw.incidents.length
+      });
     }
   }
 
