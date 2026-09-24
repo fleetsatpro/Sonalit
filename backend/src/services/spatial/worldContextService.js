@@ -1528,9 +1528,10 @@ async function buildWorldContext(opts) {
       const persisted = await persistSpatialEvents(db, events, {
         orgId: orgId,
         userId: input.userId || null,
-        publish: input.publish || null
+        publish: input.publish || null,
+        context: context
       });
-      context.events = (persisted.created || []).map(function(row) {
+      context.events = (persisted.created || []).concat(persisted.updated || []).map(function(row) {
         return {
           id: row.id,
           eventKey: row.event_key,
