@@ -7,23 +7,27 @@ const express = require('express');
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
+const { spatialProviderManager } = require('../../src/services/spatial/providerManager');
+const { errorHandler } = require('../../src/middleware/error');
 
 const HAS_DB = !!process.env.DATABASE_URL;
 const describeIfDb = HAS_DB ? describe : describe.skip;
 
-jest.mock('../../src/services/spatial/openskyGateway', () => ({
-  validateBbox: (bbox) => {
-    if (!Array.isArray(bbox) || bbox.length !== 4) return null;
-    const nums = bbox.map(Number);
-    if (nums.some(n => !Number.isFinite(n))) return null;
-    const [west, south, east, north] = nums;
-    if (west < -180 || east > 180 || south < -90 || north > 90 || west >= east || south >= north) return null;
-    if ((east - west) * (north - south) > 25) return null;
-    return nums;
-  },
-  getAircraftInBbox: jest.fn(),
-  getProviderHealth: jest.fn(() => ({ status: 'LIVE', recordCount: 1 })),
-}));
+jest.mock('../../src/services/spatial/openskyGateway', () => {
+  const actual = jest.requireActual('../../src/services/spatial/openskyGateway');
+  return {
+    ...actual,
+    validateBbox: (bbox) => {
+      if (!Array.isArray(bbox) || bbox.length !== 4) return null;
+      const nums = bbox.map(Number);
+      if (nums.some(n => !Number.isFinite(n))) return null;
+      const [west, south, east, north] = nums;
+      if (west < -180 || east > 180 || south < -90 || north > 90 || west >= east || south >= north) return null;
+      if ((east - west) * (north - south) > 25) return null;
+      return nums;
+    },
+  };
+});
 
 const ORG_A = 'eeeeeeee-0000-0000-0001-000000000001';
 const ORG_B = 'eeeeeeee-0000-0000-0002-000000000002';
@@ -31,14 +35,14 @@ const USER_A = 'eeeeeeee-0000-0000-0011-000000000011';
 const CONVOY_A = 'eeeeeeee-0000-0000-0021-000000000021';
 const CONVOY_B = 'eeeeeeee-0000-0000-0022-000000000022';
 
-let pool; let token; let app; let openSky;
+let pool; let token; let app; let openSky; let openSkyQuery;
 
 function buildApp() {
   const a = express();
   a.use(express.json());
   a.use('/api/v1/spatial', require('../../src/routes/spatial'));
   a.use((req, res) => res.status(404).json({ error: 'not found' }));
-  a.use((err, _req, res, _next) => res.status(500).json({ error: err.message }));
+  a.use(errorHandler);
   return a;
 }
 
@@ -60,7 +64,11 @@ describeIfDb('spatial HTTP integration', () => {
       [CONVOY_B, 'SPATIAL HTTP B', 'Kenya', 'planned', ORG_B],
     );
     token = jwt.sign({ id: USER_A }, process.env.JWT_SECRET, { expiresIn: '1h' });
-    openSky = require('../../src/services/spatial/openskyGateway').getAircraftInBbox;
+    const openskyProvider = spatialProviderManager.providers.get('opensky');
+    if (!openskyProvider) throw new Error('OpenSky provider is not registered');
+    openSkyQuery = jest.fn();
+    openskyProvider.query = openSkyQuery;
+    openSky = openSkyQuery;
     openSky.mockResolvedValue({
       observations: [{
         id: 'opensky:http-aircraft-1', entityType: 'aircraft', source: 'opensky', sourceReference: 'abc123',
@@ -84,7 +92,23 @@ describeIfDb('spatial HTTP integration', () => {
     await pool.end();
   });
 
-  beforeEach(() => openSky.mockClear());
+  beforeEach(() => {
+    spatialProviderManager.reset();
+    openSky.mockReset();
+    openSky.mockResolvedValue({
+      observations: [{
+        id: 'opensky:http-aircraft-1', entityType: 'aircraft', source: 'opensky', sourceReference: 'abc123',
+        latitude: -1.291, longitude: 36.821, observedAt: '2026-09-24T17:00:00.000Z',
+        receivedAt: '2026-09-24T17:00:05.000Z', observationConfidence: 0.9, operationalConfidence: 0.7,
+        confidence: 0.9, status: 'airborne', attributes: { callsign: 'HTTP001' },
+        provenance: { sourceName: 'OpenSky Network', sourceReference: 'abc123' },
+        quality: { state: 'good', freshnessClass: 'LIVE' },
+      }],
+      health: { status: 'LIVE', recordCount: 1, acceptedCount: 1, rejectedCount: 0 },
+      coverage: { complete: true, bounded: true, queryScope: 'test bbox' },
+      warnings: [],
+    });
+  });
 
   test('rejects an unauthenticated spatial request', async () => {
     const res = await request(app).get('/api/v1/spatial/world-context/convoy/' + CONVOY_A)
