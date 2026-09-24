@@ -1835,9 +1835,41 @@ async function buildWorldContext(opts) {
     }
   }
 
+  const correlations = correlateExternalObservations(traffic, routeInfo.route, now);
+  const correlationByObservation = new Map();
+  for (const correlation of correlations) {
+    for (const observationId of correlation.observationIds || []) {
+      if (!correlationByObservation.has(observationId)) correlationByObservation.set(observationId, []);
+      correlationByObservation.get(observationId).push(correlation);
+    }
+  }
+
+  for (const relation of externalRelations) {
+    const linked = correlationByObservation.get(String(relation.toId)) || [];
+    if (!linked.length) continue;
+    relation.correlationIds = linked.map(correlation => correlation.id);
+    relation.sourceAgreement = linked.some(correlation => correlation.kind === 'corroboration')
+      ? 'corroborated'
+      : linked.some(correlation => correlation.kind === 'source_disagreement')
+        ? 'disputed'
+        : 'unresolved';
+    relation.correlationEvidence = linked.map(correlation => ({
+      kind: correlation.kind,
+      id: correlation.id,
+      providers: correlation.sourceProviders
+    }));
+    if (relation.sourceAgreement === 'corroborated') {
+      relation.operationalConfidence = Math.min(1, Number(relation.operationalConfidence || 0) * 1.05);
+    } else if (relation.sourceAgreement === 'disputed') {
+      relation.operationalConfidence = Math.min(1, Number(relation.operationalConfidence || 0) * 0.75);
+      relation.uncertainty = (relation.uncertainty || []).concat(
+        'Independent external sources disagree on the correlated traffic condition.'
+      );
+    }
+  }
+
   relations.push.apply(relations, externalRelations);
   const allEntities = operationalVehicles.concat(movement, environment, traffic, hazards, infrastructure, security);
-  const correlations = correlateExternalObservations(traffic, routeInfo.route, now);
   const missionRouteCoords = routeInfo.route.map(function(p) { return [p.lng, p.lat]; });
 
   const context = {
