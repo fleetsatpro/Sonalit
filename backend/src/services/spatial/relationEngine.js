@@ -1,11 +1,5 @@
 'use strict';
 
-/**
- * Deterministic, dependency-light spatial relationship engine.
- * Reuses the canonical corridor evaluator rather than creating a competing
- * route/geofence truth system.
- */
-
 const { evaluateCorridor, projectOntoRoute, haversineKm } = require('../geofence/corridor');
 
 const RAD = Math.PI / 180;
@@ -47,7 +41,7 @@ function isApproaching(currentDistanceM, previousDistanceM, toleranceM = 50) {
 
 function routeRelation(position, route, corridorKm, scheduleTolKm, elapsedMs, avgSpeedKmh) {
   if (!position || !route || route.length < 2) {
-    return { relation: 'UNKNOWN', evidence: [], projection: null };
+    return { relation: 'UNKNOWN', spatialState: 'UNKNOWN', scheduleState: 'UNKNOWN', evidence: [], projection: null };
   }
 
   const verdict = evaluateCorridor({
@@ -60,16 +54,17 @@ function routeRelation(position, route, corridorKm, scheduleTolKm, elapsedMs, av
     scheduleTolKm,
   });
 
-  const relation = verdict.status === 'off_route'
-    ? 'OFF_ROUTE'
-    : verdict.status === 'behind'
-      ? 'BEHIND_SCHEDULE'
-      : verdict.status === 'ahead'
-        ? 'AHEAD_OF_SCHEDULE'
-        : 'ON_ROUTE';
+  const spatialState = verdict.status === 'off_route' ? 'OFF_ROUTE' : 'ON_ROUTE';
+  const scheduleState = verdict.status === 'behind'
+    ? 'BEHIND_SCHEDULE'
+    : verdict.status === 'ahead'
+      ? 'AHEAD_OF_SCHEDULE'
+      : 'ON_SCHEDULE';
 
   return {
-    relation,
+    relation: spatialState,
+    spatialState,
+    scheduleState,
     evidence: {
       cross_track_km: verdict.cross_track_km,
       along_km: verdict.along_km,
@@ -134,8 +129,7 @@ function contextRelevance({
   const directionScore = ahead === true ? 1 : ahead === false ? 0.4 : 0.6;
   const missionScore = missionActive ? 1 : 0.5;
 
-  const score =
-    distanceScore * 0.22 +
+  const score = distanceScore * 0.22 +
     routeScore * 0.25 +
     severityScore * 0.16 +
     freshnessScore * 0.14 +
