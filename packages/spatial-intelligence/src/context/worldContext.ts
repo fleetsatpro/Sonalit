@@ -177,6 +177,23 @@ export interface WorldContextResult {
     radiusM?: number;
     queryScope: string;
     corridorKm?: number;
+    routeQueryPlan?: {
+      mode: 'center_only' | 'single_aoi' | 'multi_aoi' | string;
+      reason: string;
+      maxAois: number;
+      segmentsPlanned: number;
+      routeLengthKm: number;
+      routeLengthCoveredM: number;
+      coverageRatio: number;
+      aois: Array<{
+        id: string;
+        bbox: [number, number, number, number];
+        fromIndex: number;
+        toIndex: number;
+        routeLengthKm: number;
+      }>;
+      samplePoints: Array<{ latitude: number; longitude: number }>;
+    };
   };
   mission?: WorldContextMission;
   operational?: WorldContextOperational;
@@ -194,6 +211,16 @@ export interface WorldContextResult {
     layersSucceeded: string[];
     layersPartial: string[];
     layersUnavailable: string[];
+    route?: {
+      mode: string;
+      reason: string;
+      aoisPlanned: number;
+      maxAois: number;
+      segmentsPlanned: number;
+      routeLengthKm: number;
+      routeLengthCoveredM: number;
+      coverageRatio: number;
+    };
   };
   layerHealth: WorldContextLayerHealth[];
   providerHealth?: Record<string, {
