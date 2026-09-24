@@ -102,6 +102,12 @@ The spatial detector can emit:
 - CHECKPOINT_PASS
 - INCIDENT_NEAR_CONVOY
 - HAZARD_NEAR_ROUTE
+- EXTERNAL_INCIDENT_NEAR_ROUTE
+- EXTERNAL_HAZARD_NEAR_ROUTE
+- NATURAL_HAZARD_NEAR_ROUTE
+- TRAFFIC_CLOSURE
+- TRAFFIC_CONGESTION
+- VESSEL_APPROACHING_DESTINATION
 - ENVIRONMENTAL_DETERIORATION
 
 Events carry evidence, confidence, operational confidence, source references, uncertainty and a rule version.
@@ -109,7 +115,6 @@ Events carry evidence, confidence, operational confidence, source references, un
 Persistent events use the spatial_events table with organisation isolation and an open-condition uniqueness key to prevent repeated copies of the same state.
 
 Machine-detected events are bridged into the existing Sonalit alert contract instead of creating a second alert system.
-
 ## Provider behaviour
 
 OpenSky remains the external aircraft provider.
