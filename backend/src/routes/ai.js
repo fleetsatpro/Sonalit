@@ -700,7 +700,7 @@ async function toolGetWorldContext(input, context) {
   const radius = Number(requested.radiusM);
   const layers = Array.isArray(requested.layers)
     ? requested.layers.filter(x => typeof x === 'string').slice(0, 10)
-    : ['aircraft','weather','security','infrastructure','incidents','alerts'];
+    : ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts'];
 
   const ctx = await buildWorldContext({
     orgId,
