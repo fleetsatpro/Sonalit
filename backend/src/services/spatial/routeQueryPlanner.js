@@ -1,0 +1,442 @@
+
+'use strict';
+
+/**
+ * Bounded route-aware spatial query planning.
+ *
+ * Converts route geometry into provider-safe AOIs without collapsing a long
+ * route to the vehicle/centre radius. Planning is deterministic and bounded.
+ */
+
+const EARTH_R_M = 6371000;
+const DEFAULTS = Object.freeze({
+  maxAoiAreaDeg2: 20,
+  maxAois: 8,
+  maxSamples: 16,
+  minSegmentKm: 20,
+  mergeOverlapRatio: 0.55,
+  paddingM: 10000,
+});
+
+function clampInt(value, min, max, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(min, Math.min(max, Math.trunc(n))) : fallback;
+}
+
+function point(v) {
+  if (Array.isArray(v) && v.length >= 2) return { lat: Number(v[1]), lng: Number(v[0]) };
+  return { lat: Number(v?.lat ?? v?.latitude), lng: Number(v?.lng ?? v?.longitude ?? v?.lon) };
+}
+
+function normalizeRoute(route) {
+  return (Array.isArray(route) ? route : [])
+    .map(point)
+    .filter(p =>
+      Number.isFinite(p.lat) && Number.isFinite(p.lng) &&
+      p.lat >= -90 && p.lat <= 90 && p.lng >= -180 && p.lng <= 180
+    );
+}
+
+function haversineKm(a, b) {
+  const lat1 = a.lat * Math.PI / 180;
+  const lat2 = b.lat * Math.PI / 180;
+  const dLat = lat2 - lat1;
+  const dLng = (b.lng - a.lng) * Math.PI / 180;
+  const s = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(Math.max(0, 1 - s)));
+}
+
+function cumulativeKm(route) {
+  const out = [0];
+  for (let i = 1; i < route.length; i++) out.push(out[i - 1] + haversineKm(route[i - 1], route[i]));
+  return out;
+}
+
+function routeLengthKm(route) {
+  const d = cumulativeKm(route);
+  return d[d.length - 1] || 0;
+}
+
+function curvatureScore(route) {
+  if (route.length < 3) return 0;
+  let turns = 0;
+  for (let i = 1; i < route.length - 1; i++) {
+    const a = route[i - 1], b = route[i], c = route[i + 1];
+    const ab = Math.atan2(b.lng - a.lng, b.lat - a.lat);
+    const bc = Math.atan2(c.lng - b.lng, c.lat - b.lat);
+    let delta = Math.abs((bc - ab) * 180 / Math.PI);
+    while (delta > 180) delta -= 360;
+    if (Math.abs(delta) >= 30) turns += 1;
+  }
+  return turns / Math.max(1, route.length - 2);
+}
+
+function adaptiveSamplePoints(routeInput, maxSamples = DEFAULTS.maxSamples) {
+  const route = normalizeRoute(routeInput);
+  if (route.length < 2) return route.slice(0, 1);
+  const lengthKm = routeLengthKm(route);
+  const curvature = curvatureScore(route);
+  const cap = clampInt(maxSamples, 3, 32, DEFAULTS.maxSamples);
+  const target = Math.max(3, Math.min(
+    cap,
+    Math.ceil(lengthKm / 60) + Math.ceil(curvature * 4)
+  ));
+
+  const seen = new Set();
+  const points = [];
+  for (let i = 0; i < target; i++) {
+    const index = Math.round((route.length - 1) * i / Math.max(1, target - 1));
+    const p = route[index];
+    const key = String(p.lat.toFixed(5)) + ',' + String(p.lng.toFixed(5));
+    if (seen.has(key)) continue;
+    seen.add(key);
+    points.push({ latitude: p.lat, longitude: p.lng });
+  }
+  return points;
+}
+
+function unwrapLongitudes(route) {
+  if (!route.length) return [];
+  const out = [{ ...route[0], unwrappedLng: route[0].lng }];
+  for (let i = 1; i < route.length; i++) {
+    let lng = route[i].lng;
+    const prev = out[i - 1].unwrappedLng;
+    while (lng - prev > 180) lng -= 360;
+    while (lng - prev < -180) lng += 360;
+    out.push({ ...route[i], unwrappedLng: lng });
+  }
+  return out;
+}
+
+function bboxAreaDeg2(bbox) {
+  if (!bbox) return Infinity;
+  return Math.max(0, bbox[2] - bbox[0]) * Math.max(0, bbox[3] - bbox[1]);
+}
+
+function bboxForPoints(points, paddingM) {
+  if (!points.length) return null;
+  let minLat = 90, maxLat = -90, minLng = Infinity, maxLng = -Infinity;
+  for (const p of points) {
+    minLat = Math.min(minLat, p.lat);
+    maxLat = Math.max(maxLat, p.lat);
+    const lng = Number(p.unwrappedLng ?? p.lng);
+    minLng = Math.min(minLng, lng);
+    maxLng = Math.max(maxLng, lng);
+  }
+  const centerLat = (minLat + maxLat) / 2;
+  const dLat = paddingM / EARTH_R_M * 180 / Math.PI;
+  const cos = Math.max(0.05, Math.abs(Math.cos(centerLat * Math.PI / 180)));
+  const dLng = paddingM / (EARTH_R_M * cos) * 180 / Math.PI;
+  return [
+    minLng - dLng,
+    Math.max(-90, minLat - dLat),
+    maxLng + dLng,
+    Math.min(90, maxLat + dLat),
+  ];
+}
+
+function splitWrappedBbox(bbox) {
+  if (!bbox) return [];
+  let west = bbox[0], east = bbox[2];
+  const south = bbox[1], north = bbox[3];
+
+  while (west < -180) { west += 360; east += 360; }
+  while (west > 180) { west -= 360; east -= 360; }
+
+  if (east <= 180 && west >= -180) return [[west, south, east, north]];
+
+  const right = [west, south, 180, north];
+  const left = [-180, south, east - 360, north];
+  return [right, left].filter(x => x[0] < x[2]);
+}
+
+function overlapRatio(a, b) {
+  const west = Math.max(a[0], b[0]);
+  const south = Math.max(a[1], b[1]);
+  const east = Math.min(a[2], b[2]);
+  const north = Math.min(a[3], b[3]);
+  if (east <= west || north <= south) return 0;
+  const intersection = (east - west) * (north - south);
+  return intersection / Math.max(1e-9, Math.min(bboxAreaDeg2(a), bboxAreaDeg2(b)));
+}
+
+function mergeBbox(a, b) {
+  return [
+    Math.min(a[0], b[0]),
+    Math.min(a[1], b[1]),
+    Math.max(a[2], b[2]),
+    Math.max(a[3], b[3]),
+  ];
+}
+
+function splitRoute(route, maxAois, paddingM) {
+  const distances = cumulativeKm(route);
+  const totalKm = distances[distances.length - 1] || 0;
+  if (route.length < 2 || totalKm <= 0) return [];
+  const target = Math.max(1, Math.min(maxAois, Math.ceil(totalKm / 220)));
+  const targetKm = totalKm / target;
+  const unwrapped = unwrapLongitudes(route);
+
+  const segments = [];
+  let start = 0;
+  let startKm = 0;
+
+  for (let i = 1; i < route.length; i++) {
+    const isFinal = i === route.length - 1;
+    if (!isFinal && distances[i] - startKm < targetKm) continue;
+
+    const pts = unwrapped.slice(start, i + 1);
+    const boxes = splitWrappedBbox(bboxForPoints(pts, paddingM));
+    for (const bbox of boxes) {
+      segments.push({
+        fromIndex: start,
+        toIndex: i,
+        routeLengthKm: Math.max(0, distances[i] - startKm),
+        bbox,
+      });
+    }
+
+    start = i;
+    startKm = distances[i];
+  }
+
+  return segments;
+}
+
+function splitOversizeSegments(route, segments, options) {
+  const out = [];
+  for (const segment of segments) {
+    if (bboxAreaDeg2(segment.bbox) <= options.maxAoiAreaDeg2) {
+      out.push(segment);
+      continue;
+    }
+
+    const parts = Math.max(
+      2,
+      Math.min(
+        options.maxAois,
+        Math.ceil(bboxAreaDeg2(segment.bbox) / options.maxAoiAreaDeg2)
+      )
+    );
+    const span = Math.max(1, segment.toIndex - segment.fromIndex);
+
+    for (let p = 0; p < parts; p++) {
+      const from = Math.floor(segment.fromIndex + (span * p / parts));
+      const to = p === parts - 1
+        ? segment.toIndex
+        : Math.max(from + 1, Math.floor(segment.fromIndex + (span * (p + 1) / parts)));
+      const points = unwrapLongitudes(route.slice(from, to + 1));
+      for (const bbox of splitWrappedBbox(bboxForPoints(points, options.paddingM))) {
+        out.push({
+          fromIndex: from,
+          toIndex: to,
+          routeLengthKm: routeLengthKm(points),
+          bbox,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+function mergeSafe(segments, options) {
+  const merged = [];
+  for (const candidate of segments) {
+    let didMerge = false;
+    for (let i = 0; i < merged.length; i++) {
+      if (overlapRatio(merged[i].bbox, candidate.bbox) < options.mergeOverlapRatio) continue;
+      const union = mergeBbox(merged[i].bbox, candidate.bbox);
+      if (bboxAreaDeg2(union) > options.maxAoiAreaDeg2) continue;
+      merged[i] = {
+        ...merged[i],
+        bbox: union,
+        fromIndex: Math.min(merged[i].fromIndex, candidate.fromIndex),
+        toIndex: Math.max(merged[i].toIndex, candidate.toIndex),
+        routeLengthKm: merged[i].routeLengthKm + candidate.routeLengthKm,
+      };
+      didMerge = true;
+      break;
+    }
+    if (!didMerge) merged.push(candidate);
+  }
+  return merged;
+}
+
+function planRouteQueries(routeInput, options = {}) {
+  const opts = { ...DEFAULTS, ...options };
+  opts.maxAois = clampInt(opts.maxAois, 1, 8, DEFAULTS.maxAois);
+  opts.maxSamples = clampInt(opts.maxSamples, 3, 32, DEFAULTS.maxSamples);
+  opts.maxAoiAreaDeg2 = Math.max(1, Math.min(25, Number(opts.maxAoiAreaDeg2) || DEFAULTS.maxAoiAreaDeg2));
+  opts.paddingM = Math.max(1000, Math.min(25000, Number(opts.paddingM) || DEFAULTS.paddingM));
+
+  const route = normalizeRoute(routeInput);
+  const totalKm = routeLengthKm(route);
+
+  if (route.length < 2 || totalKm <= 0) {
+    return {
+      mode: 'center_only',
+      reason: 'no_route_geometry',
+      aois: [],
+      samplePoints: adaptiveSamplePoints(route, opts.maxSamples),
+      maxAois: opts.maxAois,
+      coverageRatio: 0,
+      routeLengthKm: totalKm,
+      routeLengthCoveredM: 0,
+      segmentsPlanned: 0,
+    };
+  }
+
+  let segments = splitRoute(route, opts.maxAois, opts.paddingM);
+  segments = splitOversizeSegments(route, segments, opts);
+  segments = mergeSafe(segments, opts);
+
+  const routeSpan = route[route.length - 1].lng - route[0].lng;
+  const forcedAntimeridian = unwrapLongitudes(route).some((p, i, arr) =>
+    i > 0 && Math.abs(p.unwrappedLng - arr[i - 1].unwrappedLng) > 180
+  ) || Math.abs(routeSpan) > 180;
+
+  if (segments.length > opts.maxAois) {
+    const retained = [];
+    const chunk = Math.ceil(segments.length / opts.maxAois);
+    for (let i = 0; i < segments.length && retained.length < opts.maxAois; i += chunk) {
+      const slice = segments.slice(i, i + chunk);
+      let bbox = slice[0].bbox;
+      let km = Number(slice[0].routeLengthKm || 0);
+      let valid = true;
+      for (let j = 1; j < slice.length; j++) {
+        const union = mergeBbox(bbox, slice[j].bbox);
+        if (bboxAreaDeg2(union) > opts.maxAoiAreaDeg2) {
+          valid = false;
+          break;
+        }
+        bbox = union;
+        km += Number(slice[j].routeLengthKm || 0);
+      }
+      if (valid) retained.push({ ...slice[0], bbox, routeLengthKm: km, toIndex: slice[slice.length - 1].toIndex });
+    }
+    segments = retained;
+  }
+
+  const coveredKm = Math.min(
+    totalKm,
+    segments.reduce((sum, x) => sum + Number(x.routeLengthKm || 0), 0)
+  );
+
+  return {
+    mode: segments.length > 1 ? 'multi_aoi' : 'single_aoi',
+    reason: forcedAntimeridian ? 'bounded_route_partition_antimeridian_safe' : 'bounded_route_partition',
+    aois: segments.map((segment, index) => ({
+      id: 'route-aoi-' + (index + 1),
+      bbox: segment.bbox,
+      fromIndex: segment.fromIndex,
+      toIndex: segment.toIndex,
+      routeLengthKm: Number(segment.routeLengthKm || 0),
+    })).slice(0, opts.maxAois),
+    samplePoints: adaptiveSamplePoints(route, opts.maxSamples),
+    maxAois: opts.maxAois,
+    coverageRatio: totalKm > 0 ? Math.min(1, coveredKm / totalKm) : 0,
+    routeLengthKm: totalKm,
+    routeLengthCoveredM: Math.round(coveredKm * 1000),
+    segmentsPlanned: Math.min(segments.length, opts.maxAois),
+  };
+}
+
+async function queryAcrossAois(manager, provider, plan, baseArgs = {}, options = {}) {
+  if (!plan || !Array.isArray(plan.aois) || !plan.aois.length) {
+    return {
+      observations: [],
+      health: { status: 'UNAVAILABLE' },
+      coverage: {
+        complete: false,
+        routeCoverageRatio: 0,
+        routeLengthCoveredM: 0,
+        aoisPlanned: 0,
+        aoisSucceeded: 0,
+        aoisFailed: 0,
+        queryScope: 'no route AOIs',
+      },
+    };
+  }
+
+  const concurrency = clampInt(options.concurrency, 1, 6, 3);
+  const results = new Array(plan.aois.length);
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < plan.aois.length) {
+      const index = cursor++;
+      const aoi = plan.aois[index];
+      try {
+        results[index] = {
+          status: 'fulfilled',
+          value: await manager.query(provider, { ...baseArgs, bbox: aoi.bbox }),
+        };
+      } catch (error) {
+        results[index] = { status: 'rejected', reason: error };
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, plan.aois.length) }, worker)
+  );
+
+  const observations = [];
+  const seen = new Set();
+  const statuses = [];
+  let succeeded = 0;
+  let failed = 0;
+
+  for (const result of results) {
+    if (!result || result.status !== 'fulfilled') {
+      failed += 1;
+      continue;
+    }
+    succeeded += 1;
+    statuses.push(String(result.value?.health?.status || 'UNKNOWN').toUpperCase());
+    for (const observation of result.value?.observations || []) {
+      if (!observation?.id || seen.has(observation.id)) continue;
+      seen.add(observation.id);
+      observations.push(observation);
+    }
+  }
+
+  const status = statuses.includes('LIVE') ? 'LIVE'
+    : statuses.includes('DELAYED') ? 'DELAYED'
+    : statuses.includes('PARTIAL') ? 'PARTIAL'
+    : statuses.includes('STALE') ? 'STALE'
+    : failed ? 'UNAVAILABLE'
+    : 'UNKNOWN';
+
+  return {
+    observations,
+    health: {
+      status,
+      recordCount: observations.length,
+      acceptedCount: observations.length,
+      rejectedCount: 0,
+    },
+    coverage: {
+      complete: failed === 0 && succeeded === plan.aois.length,
+      routeCoverageRatio: plan.coverageRatio,
+      routeLengthCoveredM: plan.routeLengthCoveredM,
+      aoisPlanned: plan.aois.length,
+      aoisSucceeded: succeeded,
+      aoisFailed: failed,
+      queryScope: 'bounded route AOIs',
+    },
+    warnings: failed ? ['route_aoi_partial_coverage'] : [],
+  };
+}
+
+module.exports = {
+  DEFAULTS,
+  normalizeRoute,
+  routeLengthKm,
+  adaptiveSamplePoints,
+  planRouteQueries,
+  queryAcrossAois,
+  bboxAreaDeg2,
+  splitWrappedBbox,
+};
