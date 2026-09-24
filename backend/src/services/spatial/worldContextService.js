@@ -1169,8 +1169,9 @@ async function buildWorldContext(opts) {
     }
     let trafficCoverageComplete = true;
     for (const result of [flow, tomtomFlow, incident]) {
-      if (result.status === 'fulfilled' && result.value?.coverage?.complete === false) trafficCoverageComplete = false;
-      if (result.status !== 'fulfilled') trafficCoverageComplete = false;
+      if (result.status !== 'fulfilled' || result.value?.coverage?.complete !== true) {
+        trafficCoverageComplete = false;
+      }
     }
 
     if (incident.status === 'fulfilled') {
@@ -1186,14 +1187,18 @@ async function buildWorldContext(opts) {
       warnings.push(providerFailureWarning('traffic_tomtom_incidents', error));
       uncertainty.push('TomTom traffic incident feed unavailable: ' + String(error?.failureClass || 'unknown') + '.');
     }
-    const status = statuses.includes('LIVE') ? 'LIVE' : statuses.includes('DELAYED') ? 'DELAYED' : statuses.includes('STALE') ? 'STALE' : statuses.includes('PARTIAL') ? 'PARTIAL' : statuses.includes('AUTH_REQUIRED') ? 'AUTH_REQUIRED' : 'UNAVAILABLE';
+    const rawTrafficStatus = statuses.includes('LIVE') ? 'LIVE' : statuses.includes('DELAYED') ? 'DELAYED' : statuses.includes('STALE') ? 'STALE' : statuses.includes('PARTIAL') ? 'PARTIAL' : statuses.includes('AUTH_REQUIRED') ? 'AUTH_REQUIRED' : 'UNAVAILABLE';
+    const status = trafficCoverageComplete || !traffic.length
+      ? rawTrafficStatus
+      : (rawTrafficStatus === 'AUTH_REQUIRED' || rawTrafficStatus === 'UNAVAILABLE' ? rawTrafficStatus : 'PARTIAL');
+
     if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('traffic');
     else if (status === 'STALE' || status === 'PARTIAL') layersPartial.push('traffic');
     else layersUnavailable.push('traffic');
     if (!traffic.length && status === 'AUTH_REQUIRED') warnings.push('Traffic provider credentials are not configured.');
     layerHealth.push({
       layerId: 'traffic',
-      status: trafficCoverageComplete && status !== 'PARTIAL' ? status : 'PARTIAL',
+      status,
       recordCount: traffic.length,
       coverageComplete: trafficCoverageComplete,
       routeCoverageRatio: routeQueryPlan?.coverageRatio,
