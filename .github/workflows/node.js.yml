@@ -123,7 +123,7 @@ jobs:
 
       - name: Capture generated OpenAPI
         run: |
-          node scripts/generate-openapi.js
+          node backend/scripts/generate-openapi.js
           if ! git diff --quiet -- backend/openapi.json; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
