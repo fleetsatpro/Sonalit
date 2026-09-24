@@ -49,9 +49,12 @@ async function buildWorldContext(opts) {
               v.latitude AS lat, v.longitude AS lng,
               v.heading, v.last_ping AS observed_at
        FROM vehicles v
-       WHERE v.latitude IS NOT NULL AND v.longitude IS NOT NULL
+       WHERE v.org_id = $1
+         AND v.latitude IS NOT NULL AND v.longitude IS NOT NULL
+         AND v.last_ping IS NOT NULL
          AND v.deleted_at IS NULL
        LIMIT 500`,
+      [orgId],
     );
     operationalEntities = (result.rows || []).map((r) => ({
       id: `sonalit:vehicle:${r.id}`,
@@ -59,9 +62,7 @@ async function buildWorldContext(opts) {
       source: 'sonalit',
       latitude: Number(r.lat),
       longitude: Number(r.lng),
-      observedAt: r.observed_at
-        ? new Date(r.observed_at).toISOString()
-        : new Date().toISOString(),
+      observedAt: new Date(r.observed_at).toISOString(),
       receivedAt: new Date().toISOString(),
       headingDeg: r.heading != null ? Number(r.heading) : null,
       status: 'operational',
