@@ -283,6 +283,8 @@ function detectSpatialEvents(context, options) {
   }
 
   for (const relation of (context && context.relations || [])) {
+    if (relation.actionable === false) continue;
+
     const isIncident = relation.predicate === 'NEAR_INCIDENT';
     const isRiskZone = relation.predicate === 'HAZARD_NEAR_ROUTE' ||
       (relation.predicate === 'WITHIN' && relation.toType === 'risk_zone');
