@@ -240,6 +240,21 @@ function quality(freshness, reason) {
   };
 }
 
+function providerFailureStatus(error) {
+  const failureClass = String(error?.failureClass || error?.class || '').toLowerCase();
+  if (failureClass === 'rate_limited' || failureClass === 'budget_exhausted' || failureClass === 'circuit_open') return 'RATE_LIMITED';
+  if (failureClass === 'auth_required') return 'AUTH_REQUIRED';
+  if (failureClass === 'timeout') return 'UNAVAILABLE';
+  if (failureClass === 'coverage_limited') return 'COVERAGE_LIMITED';
+  return 'UNAVAILABLE';
+}
+
+function providerFailureWarning(layer, error) {
+  const failureClass = String(error?.failureClass || error?.class || '').toLowerCase();
+  if (!failureClass) return layer + '_layer_unavailable';
+  return layer + '_provider_' + failureClass;
+}
+
 function baseObservation(row, now, extra) {
   const observedAt = iso(row.observedAt);
   const freshness = classifyOperationalFreshness(observedAt, now);
@@ -792,10 +807,14 @@ async function buildWorldContext(opts) {
         rejectedCount: result.health?.rejectedCount,
         reason: result.health?.lastErrorMessage
       });
-    } catch (_) {
-      layersUnavailable.push('aircraft');
-      uncertainty.push('Aircraft provider unavailable.');
-      layerHealth.push({ layerId: 'aircraft', status: 'UNAVAILABLE', reason: 'External movement provider failed.' });
+    } catch (error) {
+      const failureStatus = providerFailureStatus(error);
+      const failureWarning = providerFailureWarning('aircraft', error);
+      if (failureStatus === 'COVERAGE_LIMITED') layersPartial.push('aircraft');
+      else layersUnavailable.push('aircraft');
+      warnings.push(failureWarning);
+      uncertainty.push('Aircraft provider unavailable: ' + String(error?.failureClass || 'unknown') + '.');
+      layerHealth.push({ layerId: 'aircraft', status: failureStatus, reason: String(error?.message || 'External movement provider failed.') });
     }
   }
 
@@ -838,10 +857,14 @@ async function buildWorldContext(opts) {
       else if (status === 'STALE' || status === 'PARTIAL') layersPartial.push('hazards');
       else layersUnavailable.push('hazards');
       layerHealth.push({ layerId: 'hazards', status, lastSuccessAt: result.health?.lastSuccessAt, lastAttemptAt: result.health?.lastAttemptAt, recordCount: result.health?.recordCount, acceptedCount: result.health?.acceptedCount, rejectedCount: result.health?.rejectedCount, reason: result.health?.lastErrorMessage });
-    } catch (_) {
-      layersUnavailable.push('hazards');
-      uncertainty.push('Natural hazard provider unavailable.');
-      layerHealth.push({ layerId: 'hazards', status: 'UNAVAILABLE', reason: 'NASA EONET external natural event provider failed.' });
+    } catch (error) {
+      const failureStatus = providerFailureStatus(error);
+      const failureWarning = providerFailureWarning('hazards', error);
+      if (failureStatus === 'COVERAGE_LIMITED') layersPartial.push('hazards');
+      else layersUnavailable.push('hazards');
+      warnings.push(failureWarning);
+      uncertainty.push('Natural hazard provider unavailable: ' + String(error?.failureClass || 'unknown') + '.');
+      layerHealth.push({ layerId: 'hazards', status: failureStatus, reason: String(error?.message || 'NASA EONET external event provider failed.') });
     }
   }
 
@@ -855,10 +878,14 @@ async function buildWorldContext(opts) {
       else layersUnavailable.push('maritime');
       layerHealth.push({ layerId: 'maritime', status, lastSuccessAt: result.health?.lastSuccessAt, lastAttemptAt: result.health?.lastAttemptAt, recordCount: result.health?.recordCount, acceptedCount: result.health?.acceptedCount, rejectedCount: result.health?.rejectedCount, reason: result.health?.lastErrorMessage });
       if (status === 'AUTH_REQUIRED') warnings.push('Maritime AIS provider credentials are not configured.');
-    } catch (_) {
-      layersUnavailable.push('maritime');
-      uncertainty.push('Maritime AIS provider unavailable.');
-      layerHealth.push({ layerId: 'maritime', status: 'UNAVAILABLE', reason: 'External maritime movement provider failed.' });
+    } catch (error) {
+      const failureStatus = providerFailureStatus(error);
+      const failureWarning = providerFailureWarning('maritime', error);
+      if (failureStatus === 'COVERAGE_LIMITED') layersPartial.push('maritime');
+      else layersUnavailable.push('maritime');
+      warnings.push(failureWarning);
+      uncertainty.push('Maritime AIS provider unavailable: ' + String(error?.failureClass || 'unknown') + '.');
+      layerHealth.push({ layerId: 'maritime', status: failureStatus, reason: String(error?.message || 'External maritime movement provider failed.') });
     }
   }
 
@@ -881,11 +908,26 @@ async function buildWorldContext(opts) {
     ]);
     const flow = trafficResults[0], tomtomFlow = trafficResults[1], incident = trafficResults[2], statuses = [];
     if (flow.status === 'fulfilled') { traffic.push.apply(traffic, flow.value.observations || []); statuses.push(flow.value.health?.status || 'UNKNOWN'); }
-    else { statuses.push('UNAVAILABLE'); uncertainty.push('Mapbox traffic feed unavailable.'); }
+    else {
+      statuses.push('UNAVAILABLE');
+      const error = flow.reason;
+      warnings.push(providerFailureWarning('traffic_mapbox', error));
+      uncertainty.push('Mapbox traffic feed unavailable: ' + String(error?.failureClass || 'unknown') + '.');
+    }
     if (tomtomFlow.status === 'fulfilled') { traffic.push.apply(traffic, tomtomFlow.value.observations || []); statuses.push(tomtomFlow.value.health?.status || 'UNKNOWN'); }
-    else { statuses.push('UNAVAILABLE'); uncertainty.push('TomTom traffic flow feed unavailable.'); }
+    else {
+      statuses.push('UNAVAILABLE');
+      const error = tomtomFlow.reason;
+      warnings.push(providerFailureWarning('traffic_tomtom_flow', error));
+      uncertainty.push('TomTom traffic flow feed unavailable: ' + String(error?.failureClass || 'unknown') + '.');
+    }
     if (incident.status === 'fulfilled') { traffic.push.apply(traffic, incident.value.observations || []); statuses.push(incident.value.health?.status || 'UNKNOWN'); }
-    else { statuses.push('UNAVAILABLE'); uncertainty.push('TomTom traffic incident feed unavailable.'); }
+    else {
+      statuses.push('UNAVAILABLE');
+      const error = incident.reason;
+      warnings.push(providerFailureWarning('traffic_tomtom_incidents', error));
+      uncertainty.push('TomTom traffic incident feed unavailable: ' + String(error?.failureClass || 'unknown') + '.');
+    }
     const status = statuses.includes('LIVE') ? 'LIVE' : statuses.includes('DELAYED') ? 'DELAYED' : statuses.includes('STALE') ? 'STALE' : statuses.includes('PARTIAL') ? 'PARTIAL' : statuses.includes('AUTH_REQUIRED') ? 'AUTH_REQUIRED' : 'UNAVAILABLE';
     if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('traffic');
     else if (status === 'STALE' || status === 'PARTIAL') layersPartial.push('traffic');
