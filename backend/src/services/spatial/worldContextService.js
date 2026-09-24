@@ -1096,6 +1096,9 @@ async function buildWorldContext(opts) {
   const trafficEntities = traffic || [];
   for (const entity of movement.concat(trafficEntities)) {
     if (!Number.isFinite(Number(entity.latitude)) || !Number.isFinite(Number(entity.longitude))) continue;
+    const isTraffic = entity.entityType === 'traffic_segment' || entity.entityType === 'traffic_incident' || entity.entityType === 'traffic_hazard';
+    const isMaritime = entity.entityType === 'vessel';
+    if (!isTraffic && !isMaritime) continue;
     for (const vehicle of operationalVehicles) {
       const distance = distanceM(vehicle.latitude, vehicle.longitude, entity.latitude, entity.longitude);
       const routeDistanceKm = routeObservation.length >= 2 ? projectOntoRoute(routeObservation, Number(entity.latitude), Number(entity.longitude)).crossTrackKm : null;
@@ -1104,10 +1107,9 @@ async function buildWorldContext(opts) {
       const routeNear = routeDistanceKm != null && routeDistanceKm * 1000 <= Math.max(5000, routeInfo.widthKm * 1000 + 5000);
       const close = distance <= 25000;
       if (!close && !routeNear) continue;
-      const isTraffic = entity.entityType === 'traffic_segment' || entity.entityType === 'traffic_incident' || entity.entityType === 'traffic_hazard';
       const predicate = isTraffic
         ? (entity.entityType === 'traffic_hazard' ? 'EXTERNAL_HAZARD_NEAR_ROUTE' : entity.attributes?.closed ? 'TRAFFIC_CLOSURE' : entity.attributes?.congestion ? 'TRAFFIC_CONGESTION' : 'NEAR_TRAFFIC')
-        : (routeNear ? (relative === 'ahead' ? 'APPROACHING_DESTINATION' : 'NEAR_MARITIME') : 'NEAR_MARITIME');
+        : 'NEAR_MARITIME';
       const relevance = contextRelevance({
         distanceM: distance,
         severity: entity.attributes?.magnitudeOfDelay === 'major' || entity.attributes?.closed ? 'high' : entity.attributes?.severity,
@@ -1142,8 +1144,35 @@ async function buildWorldContext(opts) {
       });
     }
   }
+  if (routeObservation.length >= 2) {
+    const destinationPoints = infrastructure.filter(e => e.entityType === 'shipment_location' && e.attributes?.kind === 'destination');
+    for (const vessel of movement.filter(e => e.entityType === 'vessel')) {
+      for (const destination of destinationPoints) {
+        const distance = distanceM(vessel.latitude, vessel.longitude, destination.latitude, destination.longitude);
+        if (distance > 50000) continue;
+        const speed = Number(vessel.speedMps || 0);
+        const confidence = Number(vessel.observationConfidence || 0.5);
+        externalRelations.push({
+          predicate: speed > 1 ? 'VESSEL_APPROACHING_DESTINATION' : 'NEAR_MARITIME',
+          fromId: vessel.id,
+          toId: destination.id,
+          fromType: 'vessel',
+          toType: 'shipment_location',
+          distanceM: Math.round(distance),
+          routeDistanceM: null,
+          confidence,
+          operationalConfidence: Number(vessel.operationalConfidence || confidence) * (speed > 1 ? 0.9 : 0.75),
+          observedAt: vessel.observedAt || null,
+          derivedAt: new Date(now).toISOString(),
+          evidence: [{ metric: 'destination_distance_m', value: Math.round(distance), source: vessel.source }, { metric: 'vessel_speed_mps', value: speed, source: vessel.source }],
+          sourceReferences: [String(vessel.sourceReference || vessel.id), String(destination.sourceReference || destination.id)],
+          uncertainty: speed > 1 ? [] : ['Vessel movement speed is not sufficient to establish approach direction.'],
+          actionable: confidence >= 0.65 && speed > 1
+        });
+      }
+    }
+  }
   relations.push.apply(relations, externalRelations);
-
   const allEntities = operationalVehicles.concat(movement, environment, traffic, infrastructure, security);
   const missionRouteCoords = routeInfo.route.map(function(p) { return [p.lng, p.lat]; });
 
