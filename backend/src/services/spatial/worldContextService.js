@@ -852,6 +852,7 @@ async function buildWorldContext(opts) {
   const infrastructure = [];
   const security = [];
   const layerHealth = [];
+  const providerCoverage = {};
   const warnings = [];
   const uncertainty = [];
   const layersSucceeded = [];
@@ -884,6 +885,9 @@ async function buildWorldContext(opts) {
 
       movement.push.apply(movement, (result.observations || []).slice(0, maxEntitiesPerLayer));
       const status = result.health?.status || 'UNKNOWN';
+      providerCoverage.opensky = Object.assign({}, result.coverage || {}, {
+        complete: result.coverage?.complete === true,
+      });
       if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('aircraft');
       else if (status === 'STALE' || status === 'PARTIAL') layersPartial.push('aircraft');
       else layersUnavailable.push('aircraft');
@@ -988,6 +992,12 @@ async function buildWorldContext(opts) {
       }
     }
 
+    providerCoverage.weather = {
+      complete: coverageComplete,
+      sampleCount: attemptedSamples,
+      successfulSamples,
+      failedSamples: failedSamples.length
+    };
     layerHealth.push({
       layerId: 'weather',
       status,
@@ -1020,6 +1030,9 @@ async function buildWorldContext(opts) {
 
       hazards.push.apply(hazards, (result.observations || []).slice(0, maxEntitiesPerLayer));
       const status = result.health?.status || 'UNKNOWN';
+      providerCoverage['nasa-eonet'] = Object.assign({}, result.coverage || {}, {
+        complete: result.coverage?.complete === true,
+      });
       if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('hazards');
       else if (status === 'STALE' || status === 'PARTIAL') layersPartial.push('hazards');
       else layersUnavailable.push('hazards');
@@ -1064,6 +1077,9 @@ async function buildWorldContext(opts) {
 
       movement.push.apply(movement, (result.observations || []).slice(0, maxEntitiesPerLayer));
       const status = result.health?.status || 'UNKNOWN';
+      providerCoverage['kpler-ais'] = Object.assign({}, result.coverage || {}, {
+        complete: result.coverage?.complete === true,
+      });
       if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('maritime');
       else if (status === 'STALE' || status === 'PARTIAL') layersPartial.push('maritime');
       else layersUnavailable.push('maritime');
@@ -1125,14 +1141,26 @@ async function buildWorldContext(opts) {
           : Promise.resolve({ observations: [], health: { status: 'UNAVAILABLE' }, coverage: { complete: false } }))
     ]);
     const flow = trafficResults[0], tomtomFlow = trafficResults[1], incident = trafficResults[2], statuses = [];
-    if (flow.status === 'fulfilled') { traffic.push.apply(traffic, flow.value.observations || []); statuses.push(flow.value.health?.status || 'UNKNOWN'); }
+    if (flow.status === 'fulfilled') {
+      traffic.push.apply(traffic, flow.value.observations || []);
+      statuses.push(flow.value.health?.status || 'UNKNOWN');
+      providerCoverage['mapbox-traffic'] = Object.assign({}, flow.value.coverage || {}, {
+        complete: flow.value.coverage?.complete === true,
+      });
+    }
     else {
       statuses.push('UNAVAILABLE');
       const error = flow.reason;
       warnings.push(providerFailureWarning('traffic_mapbox', error));
       uncertainty.push('Mapbox traffic feed unavailable: ' + String(error?.failureClass || 'unknown') + '.');
     }
-    if (tomtomFlow.status === 'fulfilled') { traffic.push.apply(traffic, tomtomFlow.value.observations || []); statuses.push(tomtomFlow.value.health?.status || 'UNKNOWN'); }
+    if (tomtomFlow.status === 'fulfilled') {
+      traffic.push.apply(traffic, tomtomFlow.value.observations || []);
+      statuses.push(tomtomFlow.value.health?.status || 'UNKNOWN');
+      providerCoverage['tomtom-traffic-flow'] = Object.assign({}, tomtomFlow.value.coverage || {}, {
+        complete: tomtomFlow.value.coverage?.complete === true,
+      });
+    }
     else {
       statuses.push('UNAVAILABLE');
       const error = tomtomFlow.reason;
@@ -1148,6 +1176,9 @@ async function buildWorldContext(opts) {
     if (incident.status === 'fulfilled') {
       traffic.push.apply(traffic, incident.value.observations || []);
       statuses.push(incident.value.health?.status || 'UNKNOWN');
+      providerCoverage['tomtom-traffic-incidents'] = Object.assign({}, incident.value.coverage || {}, {
+        complete: incident.value.coverage?.complete === true,
+      });
       if (Array.isArray(incident.value.warnings)) warnings.push(...incident.value.warnings);
     } else {
       statuses.push('UNAVAILABLE');
@@ -1746,6 +1777,7 @@ async function buildWorldContext(opts) {
       route: routeCoverage || undefined
     },
     layerHealth,
+    providerCoverage,
     providerHealth: spatialProviderManager.getHealthSnapshot(),
     provenance: [
       { sourceName: 'Sonalit Tracking', attribution: 'Organisation-scoped operational telemetry' },
