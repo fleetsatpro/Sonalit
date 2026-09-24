@@ -118,6 +118,22 @@ jobs:
           DISABLE_REDIS: "false"
           NODE_ENV: test
 
+      - name: Capture generated OpenAPI
+        if: github.ref == 'refs/heads/main'
+        run: node scripts/generate-openapi.js
+        working-directory: backend
+        env:
+          JWT_SECRET: ci-test-jwt-secret
+          DATABASE_URL: ""
+
+      - name: Upload generated OpenAPI
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-openapi-${{ github.sha }}
+          path: backend/openapi.json
+          if-no-files-found: error
+
       - name: OpenAPI drift check
         if: github.ref == 'refs/heads/main'
         run: node scripts/generate-openapi.js --check
