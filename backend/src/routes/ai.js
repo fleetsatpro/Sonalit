@@ -750,6 +750,7 @@ async function toolGetWorldContext(input, context) {
     mission: ctx.mission || null,
     operational: ctx.operational || { vehicles: [], alerts: [] },
     relations: (ctx.relations || []).slice(0, 150),
+    correlations: (ctx.correlations || []).slice(0, 75),
     events: (ctx.events || []).slice(0, 75),
     environment: (ctx.environment || []).slice(0, 30),
     movement: (ctx.movement || []).slice(0, 50),
