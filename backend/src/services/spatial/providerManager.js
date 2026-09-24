@@ -22,7 +22,7 @@ function envInt(name, fallback, min, max) {
 }
 
 function classifyFailure(error) {
-  const value = String(error?.failureClass || '').trim().toLowerCase();
+  const value = String(error?.failureClass || error?.class || '').trim().toLowerCase();
   return FAILURE_CLASSES.has(value) ? value : 'unknown';
 }
 
