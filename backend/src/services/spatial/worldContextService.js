@@ -1468,7 +1468,11 @@ async function buildWorldContext(opts) {
           { metric: 'route_distance_m', value: routeDistanceKm == null ? null : Math.round(routeDistanceKm * 1000), source: 'sonalit-corridor' },
           { metric: 'relative_direction', value: relative || 'unknown', source: 'sonalit-geometry' }
         ],
-        sourceReferences: [String(entity.sourceReference || entity.id)],
+        sourceReferences: [
+          String(entity.source || ''),
+          String(entity.source || '') + ':' + String(entity.entityType || 'observation'),
+          String(entity.sourceReference || entity.id)
+        ].filter(Boolean),
         uncertainty: entity.quality?.reason ? [entity.quality.reason] : [],
         relevance,
         actionable: Number(entity.operationalConfidence || 0.5) >= 0.65
@@ -1536,7 +1540,11 @@ async function buildWorldContext(opts) {
           { metric: 'route_distance_m', value: Math.round(routeDistanceKm * 1000), source: 'sonalit-corridor' },
           { metric: 'source_observation', value: entity.id, source: entity.source }
         ],
-        sourceReferences: [String(entity.sourceReference || entity.id)],
+        sourceReferences: [
+          String(entity.source || ''),
+          String(entity.source || '') + ':' + String(entity.entityType || 'observation'),
+          String(entity.sourceReference || entity.id)
+        ].filter(Boolean),
         uncertainty: entity.quality?.reason ? [entity.quality.reason] : [],
         relevance: contextRelevance({
           distanceM: routeDistanceKm * 1000,
@@ -1567,7 +1575,11 @@ async function buildWorldContext(opts) {
         observedAt: entity.observedAt || null,
         derivedAt: new Date(now).toISOString(),
         evidence: [{ metric: 'route_distance_m', value: Math.round(routeDistanceKm * 1000), source: 'sonalit-corridor' }],
-        sourceReferences: [String(entity.sourceReference || entity.id)],
+        sourceReferences: [
+          String(entity.source || ''),
+          String(entity.source || '') + ':' + String(entity.entityType || 'observation'),
+          String(entity.sourceReference || entity.id)
+        ].filter(Boolean),
         uncertainty: entity.quality?.reason ? [entity.quality.reason] : [],
         relevance: contextRelevance({
           distanceM: routeDistanceKm * 1000,
