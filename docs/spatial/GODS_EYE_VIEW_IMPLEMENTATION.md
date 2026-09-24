@@ -70,11 +70,20 @@ The relation layer derives evidence-backed relationships such as:
 - NEAR_CHECKPOINT
 - WITHIN for active risk-zone containment
 - HAZARD_NEAR_ROUTE
+- NATURAL_HAZARD_NEAR_ROUTE
+- EXTERNAL_HAZARD_NEAR_ROUTE
+- EXTERNAL_INCIDENT_NEAR_ROUTE
+- TRAFFIC_CLOSURE
+- TRAFFIC_CONGESTION
+- NEAR_TRAFFIC
+- NEAR_MARITIME
+- VESSEL_APPROACHING_DESTINATION
 - NEAR
 - NEAR_INCIDENT
 
-Relations include distance where meaningful, confidence, operational confidence, evidence, provenance references and uncertainty.
+External traffic, hazard and maritime observations are evaluated both against individual vehicles and, when a convoy route exists, against the route/corridor itself. This prevents route-impacting conditions farther ahead from disappearing merely because they are outside the vehicle's immediate radius.
 
+Relations include distance where meaningful, route distance, relative direction, confidence, operational confidence, evidence, provenance references, relevance and uncertainty.
 ## Deterministic events
 
 The spatial detector can emit:
