@@ -8,16 +8,16 @@ const aiClient = require('../utils/aiClient');
 const logger = require('../utils/logger');
 
 const AGENTS = [
-  { id:'situation', name:'SITUATION INTELLIGENCE', focus:'Operational picture, chronology, mission state, anomalies and affected assets.', tools:['query_alerts','query_convoys','query_vehicles'] },
+  { id:'situation', name:'SITUATION INTELLIGENCE', focus:'Operational picture, chronology, mission state, anomalies and affected assets.', tools:['query_alerts','query_convoys','query_vehicles','get_world_context'] },
   { id:'security', name:'SECURITY INTELLIGENCE', focus:'Threats, hostile activity, security posture, escalation and life safety.', tools:['query_alerts','query_risk_zones','query_convoys'] },
-  { id:'route', name:'ROUTE & MOBILITY', focus:'Route feasibility, delays, road closures, corridor deviations and alternatives.', tools:['query_convoys','get_road_conditions','query_risk_zones','get_weather'] },
+  { id:'route', name:'ROUTE & MOBILITY', focus:'Route feasibility, delays, road closures, corridor deviations and alternatives.', tools:['query_convoys','get_road_conditions','query_risk_zones','get_weather','get_world_context'] },
   { id:'fleet', name:'FLEET & ASSET', focus:'Vehicle health, telemetry freshness, fuel, driver and mechanical exposure.', tools:['query_vehicles','query_alerts'] },
-  { id:'environment', name:'ENVIRONMENTAL', focus:'Weather, flooding, visibility and environmental effects on trafficability.', tools:['get_weather','get_road_conditions'] },
+  { id:'environment', name:'ENVIRONMENTAL', focus:'Weather, flooding, visibility and environmental effects on trafficability.', tools:['get_weather','get_road_conditions','get_world_context'] },
   { id:'risk', name:'RISK INTELLIGENCE', focus:'Likelihood, severity, risk concentration, cascade effects and exposure.', tools:['query_risk_zones','query_alerts','query_convoys'] },
   { id:'compliance', name:'COMPLIANCE & POLICY', focus:'Policy, approvals, duty of care, contractual constraints and data governance.', tools:['query_convoys','query_alerts'] },
   { id:'commercial', name:'COMMERCIAL & SLA', focus:'Customer SLA, schedule, cost and revenue implications after safety constraints.', tools:['query_convoys','query_alerts'] },
   { id:'adversary', name:'RED TEAM / ADVERSARY', focus:'Attack the leading interpretation, identify manipulation, spoofing and second-order failure.', tools:['query_alerts','query_risk_zones','query_convoys'] },
-  { id:'data-quality', name:'DATA INTEGRITY', focus:'Freshness, completeness, contradictions, missing evidence and provenance quality.', tools:['query_vehicles','query_convoys','query_alerts'] },
+  { id:'data-quality', name:'DATA INTEGRITY', focus:'Freshness, completeness, contradictions, missing evidence and provenance quality.', tools:['query_vehicles','query_convoys','query_alerts','get_world_context'] },
 ];
 
 const TOOL_CATALOG = {
@@ -28,6 +28,7 @@ const TOOL_CATALOG = {
   check_holidays:{description:'Public holidays for a country/year.',schema:{type:'object',properties:{country_code:{type:'string'},year:{type:'number'}},required:['country_code']}},
   get_road_conditions:{description:'Road closures, barriers, construction and weather context near a place.',schema:{type:'object',properties:{location:{type:'string'},radius_km:{type:'number'}},required:['location']}},
   query_risk_zones:{description:'Internal active risk zones.',schema:{type:'object',properties:{region:{type:'string'},risk_level:{type:'string'},zone_type:{type:'string'}}}},
+  get_world_context:{description:'Spatial world context: nearby Sonalit vehicles + external aircraft (OpenSky) with honest freshness.',schema:{type:'object',properties:{location:{type:'string'},latitude:{type:'number'},longitude:{type:'number'},radius_km:{type:'number'},layers:{type:'array',items:{type:'string'}},max_entities:{type:'number'}}}},
 };
 
 function clip(value,max=9000){const s=typeof value==='string'?value:JSON.stringify(value);return s.length>max?s.slice(0,max)+'…':s;}
@@ -67,6 +68,7 @@ async function planEvidence(command,history){
     if(name==='check_holidays' && /holiday|border|closure|public/.test(lc)) lexical.push(name);
     if(name==='get_road_conditions' && /road|closure|construction|traffic|route|barrier/.test(lc)) lexical.push(name);
     if(name==='query_risk_zones' && /risk|danger|hotspot|bandit|conflict|strike|roadblock|security/.test(lc)) lexical.push(name);
+    if(name==='get_world_context' && /aircraft|airspace|opensky|nearby|around|proximity|spatial|world context|overhead|flight/.test(lc)) lexical.push(name);
   }
   let modelPlan=null;
   try{
