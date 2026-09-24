@@ -137,6 +137,28 @@ function makeDb() {
         updated_at: '2026-09-24T11:59:00.000Z'
       }] };
     }
+    if (sql.includes('FROM intel_alerts')) {
+      return { rows: [{
+        id: '00000000-0000-0000-0000-000000000004',
+        category: 'security',
+        title: 'Test intelligence alert',
+        summary: 'Unverified security observation',
+        severity: 'high',
+        confidence: 65,
+        verification_state: 'unverified',
+        status: 'open',
+        country_code: 'KE',
+        region: 'Coast',
+        location_name: 'Test location',
+        latitude: -1.2920,
+        longitude: 36.8360,
+        first_seen_at: '2026-09-24T11:55:00.000Z',
+        last_seen_at: '2026-09-24T11:59:30.000Z',
+        source_count: 2,
+        corroboration_count: 1,
+        metadata: {}
+      }] };
+    }
     if (sql.includes('FROM incidents')) return { rows: [] };
     if (sql.includes('FROM cds_incidents')) return { rows: [] };
     if (sql.includes('FROM alerts')) return { rows: [] };
@@ -166,7 +188,8 @@ describe('world context integration assembly', () => {
     expect(ctx.environment).toHaveLength(1);
     expect(ctx.movement).toHaveLength(1);
     expect(ctx.infrastructure).toHaveLength(1);
-    expect(ctx.security).toHaveLength(1);
+    expect(ctx.security.length).toBeGreaterThanOrEqual(2);
+    expect(ctx.security.some(e => e.entityType === 'intelligence_alert')).toBe(true);
 
     const vehicle = ctx.operational.vehicles[0];
     expect(vehicle.quality.freshnessClass).toBe('LIVE');
