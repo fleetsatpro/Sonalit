@@ -16,10 +16,13 @@ The world-context service then composes:
 - internal risk zones
 - active incidents with coordinates when available
 - OpenSky aircraft observations
+- Kpler AIS vessel positions when KPLER_AIS_TOKEN is configured
+- Mapbox Traffic segment congestion/closure observations when MAPBOX_ACCESS_TOKEN is configured
+- TomTom Orbis traffic incidents and road/environmental hazards when TOMTOM_API_KEY is configured
+- NASA EONET natural-event observations
 - Open-Meteo current weather
 
-The resulting context is consumed by the spatial event detector, Copilot tool layer and the live fleet vehicle detail panel.
-
+All of these are assembled by the same canonical world-context service. External feeds are not treated as map-only overlays.
 ## Spatial truth rules
 
 Sonalit remains operationally authoritative. External observations enrich context and do not overwrite operational state.
