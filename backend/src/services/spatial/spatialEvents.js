@@ -1,5 +1,7 @@
 'use strict';
 
+const logger = require('../../utils/logger');
+
 /**
  * Deterministic spatial-event detector + persistence bridge.
  * Uses the existing Sonalit alert contract; it does not create a second
@@ -152,6 +154,7 @@ async function resolveLinkedSpatialAlerts(db, orgId, spatialEventKey, resolution
     );
     return result.rows || [];
   } catch (error) {
+    logger.warn('Spatial linked alert resolution failed: ' + String(error?.message || error));
     return [];
   }
 }
@@ -756,9 +759,7 @@ async function persistSpatialEvents(db, events, options) {
       } catch (alertError) {
         // Event state is authoritative; downstream alert delivery is best-effort.
         // The event remains persisted and can be replayed/reconciled later.
-        if (cfg.logger && typeof cfg.logger.warn === 'function') {
-          cfg.logger.warn('Spatial alert bridge failed: ' + alertError.message);
-        }
+        logger.warn('Spatial alert bridge failed: ' + String(alertError?.message || alertError));
       }
     }
   }
