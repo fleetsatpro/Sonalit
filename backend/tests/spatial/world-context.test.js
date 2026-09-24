@@ -43,6 +43,103 @@ jest.mock('../../src/services/spatial/weatherGateway', () => ({
   getProviderHealth: jest.fn().mockReturnValue({ status: 'LIVE' }),
 }));
 
+jest.mock('../../src/services/spatial/kplerAisGateway', () => ({
+  getVesselsInBbox: jest.fn().mockResolvedValue({
+    observations: [{
+      id: 'kpler:vessel:123',
+      entityType: 'vessel',
+      source: 'kpler-ais',
+      sourceReference: '123',
+      latitude: -1.3,
+      longitude: 36.84,
+      observedAt: '2026-09-24T12:00:10.000Z',
+      receivedAt: '2026-09-24T12:00:20.000Z',
+      observationConfidence: 0.9,
+      operationalConfidence: 0.82,
+      confidence: 0.9,
+      speedMps: 4.5,
+      headingDeg: 90,
+      attributes: { name: 'MV Test', mmsi: '123' },
+      provenance: { sourceName: 'Kpler AIS', sourceReference: '123' },
+      quality: { state: 'good', freshnessClass: 'LIVE' }
+    }],
+    health: { status: 'LIVE', recordCount: 1, acceptedCount: 1 }
+  }),
+  getProviderHealth: jest.fn().mockReturnValue({ status: 'LIVE' })
+}));
+
+jest.mock('../../src/services/spatial/mapboxTrafficGateway', () => ({
+  getTrafficAtPoints: jest.fn().mockResolvedValue({
+    observations: [{
+      id: 'mapbox:traffic:seg-1',
+      entityType: 'traffic_segment',
+      source: 'mapbox-traffic',
+      sourceReference: 'seg-1',
+      latitude: -1.291,
+      longitude: 36.831,
+      observedAt: null,
+      receivedAt: '2026-09-24T12:00:20.000Z',
+      observationConfidence: 0.78,
+      operationalConfidence: 0.72,
+      confidence: 0.78,
+      status: 'severe',
+      attributes: { congestion: 'severe', closed: false, class: 'primary' },
+      provenance: { sourceName: 'Mapbox Traffic', sourceReference: 'seg-1' },
+      quality: { state: 'degraded', freshnessClass: 'UNKNOWN' }
+    }],
+    health: { status: 'PARTIAL', recordCount: 1 }
+  }),
+  getProviderHealth: jest.fn().mockReturnValue({ status: 'PARTIAL' })
+}));
+
+jest.mock('../../src/services/spatial/tomtomTrafficGateway', () => ({
+  getTrafficIncidents: jest.fn().mockResolvedValue({
+    observations: [{
+      id: 'tomtom:traffic-incident:inc-1',
+      entityType: 'traffic_hazard',
+      source: 'tomtom-traffic',
+      sourceReference: 'inc-1',
+      latitude: -1.292,
+      longitude: 36.833,
+      observedAt: '2026-09-24T12:00:10.000Z',
+      receivedAt: '2026-09-24T12:00:20.000Z',
+      observationConfidence: 0.9,
+      operationalConfidence: 0.78,
+      confidence: 0.9,
+      status: 'flooding',
+      attributes: { category: 'flooding', magnitudeOfDelay: 'moderate' },
+      provenance: { sourceName: 'TomTom Traffic', sourceReference: 'inc-1' },
+      quality: { state: 'good', freshnessClass: 'LIVE' }
+    }],
+    health: { status: 'LIVE', recordCount: 1 }
+  }),
+  getProviderHealth: jest.fn().mockReturnValue({ status: 'LIVE' })
+}));
+
+jest.mock('../../src/services/spatial/nasaEonetGateway', () => ({
+  getNaturalHazards: jest.fn().mockResolvedValue({
+    observations: [{
+      id: 'nasa:eonet:E1',
+      entityType: 'natural_hazard',
+      source: 'nasa-eonet',
+      sourceReference: 'E1',
+      latitude: -1.29,
+      longitude: 36.835,
+      observedAt: '2026-09-24T11:59:00.000Z',
+      receivedAt: '2026-09-24T12:00:20.000Z',
+      observationConfidence: 0.9,
+      operationalConfidence: 0.76,
+      confidence: 0.9,
+      status: 'open',
+      attributes: { categoryId: 'wildfires', categoryTitle: 'Wildfires', severity: 'high' },
+      provenance: { sourceName: 'NASA EONET', sourceReference: 'E1' },
+      quality: { state: 'good', freshnessClass: 'LIVE' }
+    }],
+    health: { status: 'LIVE', recordCount: 1 }
+  }),
+  getProviderHealth: jest.fn().mockReturnValue({ status: 'LIVE' })
+}));
+
 const { buildWorldContext } = require('../../src/services/spatial/worldContextService');
 
 const ORG = '00000000-0000-0000-0000-000000000001';
@@ -176,7 +273,7 @@ describe('world context integration assembly', () => {
       db,
       subject: { kind: 'convoy', id: CONVOY },
       radiusM: 25000,
-      layers: ['aircraft','weather','security','infrastructure','incidents','alerts'],
+      layers: ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts'],
       maxEntitiesPerLayer: 100,
       requestId: 'test-world-1',
       persistEvents: false
@@ -187,6 +284,11 @@ describe('world context integration assembly', () => {
     expect(ctx.operational.vehicles).toHaveLength(1);
     expect(ctx.environment).toHaveLength(1);
     expect(ctx.movement).toHaveLength(1);
+    expect(ctx.movement.some(e => e.entityType === 'vessel')).toBe(true);
+    expect(ctx.traffic.some(e => e.entityType === 'traffic_segment')).toBe(true);
+    expect(ctx.traffic.some(e => e.entityType === 'traffic_hazard')).toBe(true);
+    expect(ctx.hazards.some(e => e.entityType === 'natural_hazard')).toBe(true);
+    expect(ctx.coverage.layersSucceeded).toEqual(expect.arrayContaining(['maritime','traffic','hazards']));
     expect(ctx.infrastructure).toHaveLength(1);
     expect(ctx.security.length).toBeGreaterThanOrEqual(2);
     expect(ctx.security.some(e => e.entityType === 'intelligence_alert')).toBe(true);
