@@ -94,6 +94,13 @@ export interface WorldContextRelation {
   evidence?: WorldContextEvidence[];
   sourceReferences?: string[];
   uncertainty?: string[];
+  correlationIds?: string[];
+  sourceAgreement?: 'corroborated' | 'disputed' | 'unresolved';
+  correlationEvidence?: Array<{
+    kind: string;
+    id: string;
+    providers: string[];
+  }>;
   relevance?: {
     score: number;
     components: Record<string, number>;
