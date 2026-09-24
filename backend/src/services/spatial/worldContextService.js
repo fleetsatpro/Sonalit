@@ -4,6 +4,20 @@ const { getAircraftInBbox } = require('./openskyGateway');
 
 const EARTH_R = 6_371_000;
 
+const OPERATIONAL_LIVE_MS = 45_000;
+const OPERATIONAL_DELAYED_MS = 300_000;
+
+function classifyOperationalFreshness(observedAtIso, now = Date.now()) {
+  if (!observedAtIso) return 'UNKNOWN';
+  const observed = Date.parse(observedAtIso);
+  if (!Number.isFinite(observed)) return 'UNKNOWN';
+  const age = Math.max(0, now - observed);
+  if (age <= OPERATIONAL_LIVE_MS) return 'LIVE';
+  if (age <= OPERATIONAL_DELAYED_MS) return 'DELAYED';
+  return 'STALE';
+}
+
+
 function bboxFromCenterRadius(lat, lon, radiusM) {
   const dLat = (radiusM / EARTH_R) * (180 / Math.PI);
   const dLon =
@@ -56,24 +70,35 @@ async function buildWorldContext(opts) {
        LIMIT 500`,
       [orgId],
     );
-    operationalEntities = (result.rows || []).map((r) => ({
-      id: `sonalit:vehicle:${r.id}`,
-      entityType: 'vehicle',
-      source: 'sonalit',
-      latitude: Number(r.lat),
-      longitude: Number(r.lng),
-      observedAt: new Date(r.observed_at).toISOString(),
-      receivedAt: new Date().toISOString(),
-      headingDeg: r.heading != null ? Number(r.heading) : null,
-      status: 'operational',
-      attributes: { vehicle_id: r.id, registration: r.label },
-      provenance: {
-        sourceName: 'Sonalit Tracking',
-        observationType: 'operational_telemetry',
-      },
-      quality: { state: 'good', freshnessClass: 'LIVE' },
-      domain: 'sonalit',
-    }));
+    const receivedAt = new Date().toISOString();
+    operationalEntities = (result.rows || []).map((r) => {
+      const observedAt = new Date(r.observed_at).toISOString();
+      const freshnessClass = classifyOperationalFreshness(observedAt);
+      return {
+        id: `sonalit:vehicle:${r.id}`,
+        entityType: 'vehicle',
+        source: 'sonalit',
+        latitude: Number(r.lat),
+        longitude: Number(r.lng),
+        observedAt,
+        receivedAt,
+        headingDeg: r.heading != null ? Number(r.heading) : null,
+        status: 'operational',
+        attributes: { vehicle_id: r.id, registration: r.label },
+        provenance: {
+          sourceName: 'Sonalit Tracking',
+          observationType: 'operational_telemetry',
+        },
+        quality: {
+          state: freshnessClass === 'LIVE' ? 'good'
+            : freshnessClass === 'DELAYED' ? 'degraded'
+            : freshnessClass === 'STALE' ? 'stale'
+            : 'unknown',
+          freshnessClass,
+        },
+        domain: 'sonalit',
+      };
+    });
   } catch (err) {
     warnings.push(`operational_vehicles_unavailable: ${err.message}`);
   }
