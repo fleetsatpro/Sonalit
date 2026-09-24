@@ -212,6 +212,14 @@ app.get("/metrics", async (req, res) => {
   "fuel", "shifts", "traffic"]
   .forEach(r => app.use("/api/v1/" + r, require("./routes/" + r)));
 
+// Spatial intelligence gateway — authenticated, tenant-scoped external world signals.
+try {
+  app.use("/api/v1/spatial", require("./routes/spatial"));
+  logger.info("Route loaded: /api/v1/spatial");
+} catch (e) {
+  logger.warn("Spatial route failed: " + e.message);
+}
+
 // 4D-geofence corridor writes: POST /api/v1/convoys/:id/corridor (the "Plan
 // corridor" button) and GET /api/v1/convoys/:id/corridor/deviations. This router
 // was written but never mounted, so planning a corridor 404'd. It MUST stay
