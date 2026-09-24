@@ -62,6 +62,22 @@ export interface WorldContextEvidence {
   source?: string;
 }
 
+export interface WorldContextCorrelation {
+  id: string;
+  kind: 'corroboration' | 'source_disagreement' | string;
+  entityType: string;
+  observationIds: string[];
+  sourceProviders: string[];
+  distanceM?: number | null;
+  routeDistanceM?: number | null;
+  confidence: number;
+  observedAt?: string | null;
+  derivedAt: string;
+  evidence: WorldContextEvidence[];
+  uncertainty: string[];
+  status: string;
+}
+
 export interface WorldContextRelation {
   predicate: WorldContextRelationPredicate | string;
   fromId: string;
@@ -199,6 +215,7 @@ export interface WorldContextResult {
   operational?: WorldContextOperational;
   entities: SpatialObservation[];
   relations: WorldContextRelation[];
+  correlations: WorldContextCorrelation[];
   environment: SpatialObservation[];
   movement: SpatialObservation[];
   traffic: SpatialObservation[];
