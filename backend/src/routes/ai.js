@@ -5,6 +5,7 @@ const { query } = require('../config/database');
 const logger = require('../utils/logger');
 const { runDecisionFabric } = require('../services/aiSwarm');
 const { buildWorldContext } = require('../services/spatial/worldContextService');
+const { withOrg } = require('../utils/orgScopedDb');
 
 async function persistCopilotDecision({ orgId, userId, command, result }) {
   if (!orgId) throw new Error('Copilot decision persistence requires an authenticated organisation');
@@ -181,7 +182,7 @@ const TOOLS = [
       properties: {
         subject: {
           type: 'object',
-          description: 'Optional mission subject. Use {kind:"convoy",id:"..."} or {kind:"vehicle",id:"..."}.',
+          description: 'Optional mission subject. Supports convoy, vehicle, route, corridor, incident, checkpoint, port, location, or none. For mission-specific intelligence prefer a canonical Sonalit subject id.',
           properties: {
             kind: { type: 'string', enum: ['convoy','vehicle','route','corridor','incident','checkpoint','port','location','none'] },
             id: { type: 'string' },
@@ -724,7 +725,7 @@ async function toolGetWorldContext(input, context) {
     ? requested.layers.filter(x => typeof x === 'string').slice(0, 10)
     : ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts'];
 
-  const ctx = await buildWorldContext({
+  const ctx = await withOrg(orgId, (client) => buildWorldContext({
     orgId,
     userId,
     db: query,
@@ -740,7 +741,7 @@ async function toolGetWorldContext(input, context) {
     maxEntitiesPerLayer,
     requestId: requested.request_id ? String(requested.request_id).slice(0, 120) : undefined,
     persistEvents: false,
-  });
+  })).then(result => result);
 
   return {
     subject: ctx.subject,
@@ -758,6 +759,8 @@ async function toolGetWorldContext(input, context) {
     hazards: (ctx.hazards || []).slice(0, 100),
     coverage: ctx.coverage,
     layerHealth: ctx.layerHealth,
+    providerCoverage: ctx.providerCoverage || {},
+
     provenance: ctx.provenance,
     freshness: ctx.freshness,
     uncertainty: ctx.uncertainty,
