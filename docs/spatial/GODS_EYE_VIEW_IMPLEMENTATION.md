@@ -164,7 +164,7 @@ AIS and traffic coverage is bounded by the mission-derived spatial area and prov
 
 NASA EONET geometry can be polygonal. When a single point is required for a relation calculation, Sonalit records that the representative point was derived and lowers interpretation confidence accordingly.
 
-The existing Sonalit map already supports an external satellite or aerial basemap. A future dynamic Earth-observation or SAR provider should enter the same provider, observation and world-context chain rather than being implemented as a disconnected imagery widget.
+Sonalit now also exposes NASA GIBS true-colour Earth-observation imagery as a native Cesium map mode. GIBS is imagery rather than a point observation, so it remains a visual intelligence layer; semantic hazards and events continue to enter world context through observation providers such as NASA EONET. Future higher-resolution commercial EO or SAR feeds should follow the same provider contract instead of becoming disconnected map widgets.
 
 Operational Sonalit vehicle GPS, routes, corridors, security records and alert authority remain the system's operational source of truth.
 
