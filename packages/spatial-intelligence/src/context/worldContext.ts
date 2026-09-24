@@ -223,6 +223,18 @@ export interface WorldContextResult {
     };
   };
   layerHealth: WorldContextLayerHealth[];
+  providerCoverage?: Record<string, {
+    complete: boolean;
+    routeCoverageRatio?: number;
+    routeLengthCoveredM?: number;
+    aoisPlanned?: number;
+    aoisSucceeded?: number;
+    aoisFailed?: number;
+    sampleCount?: number;
+    successfulSamples?: number;
+    failedSamples?: number;
+    [key: string]: unknown;
+  }>;
   providerHealth?: Record<string, {
     provider?: string;
     capabilities?: string[];
