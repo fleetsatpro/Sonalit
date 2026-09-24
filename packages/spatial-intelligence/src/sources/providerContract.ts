@@ -101,4 +101,9 @@ export const DEFAULT_BUDGETS: Record<string, ProviderBudget> = {
     maxRequestsPerMinute: 30,
     maxConcurrent: 3,
   },
+  'nasa-eonet': {
+    providerId: 'nasa-eonet',
+    maxRequestsPerMinute: 12,
+    maxConcurrent: 2,
+  },
 };
