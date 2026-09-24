@@ -812,7 +812,8 @@ async function buildWorldContext(opts) {
       const failureWarning = providerFailureWarning('aircraft', error);
       if (failureStatus === 'COVERAGE_LIMITED') layersPartial.push('aircraft');
       else layersUnavailable.push('aircraft');
-      warnings.push(failureWarning);
+      warnings.push('aircraft_layer_unavailable');
+      if (failureWarning !== 'aircraft_layer_unavailable') warnings.push(failureWarning);
       uncertainty.push('Aircraft provider unavailable: ' + String(error?.failureClass || 'unknown') + '.');
       layerHealth.push({ layerId: 'aircraft', status: failureStatus, reason: String(error?.message || 'External movement provider failed.') });
     }
@@ -862,7 +863,8 @@ async function buildWorldContext(opts) {
       const failureWarning = providerFailureWarning('hazards', error);
       if (failureStatus === 'COVERAGE_LIMITED') layersPartial.push('hazards');
       else layersUnavailable.push('hazards');
-      warnings.push(failureWarning);
+      warnings.push('hazards_layer_unavailable');
+      if (failureWarning !== 'hazards_layer_unavailable') warnings.push(failureWarning);
       uncertainty.push('Natural hazard provider unavailable: ' + String(error?.failureClass || 'unknown') + '.');
       layerHealth.push({ layerId: 'hazards', status: failureStatus, reason: String(error?.message || 'NASA EONET external event provider failed.') });
     }
@@ -883,7 +885,8 @@ async function buildWorldContext(opts) {
       const failureWarning = providerFailureWarning('maritime', error);
       if (failureStatus === 'COVERAGE_LIMITED') layersPartial.push('maritime');
       else layersUnavailable.push('maritime');
-      warnings.push(failureWarning);
+      warnings.push('maritime_layer_unavailable');
+      if (failureWarning !== 'maritime_layer_unavailable') warnings.push(failureWarning);
       uncertainty.push('Maritime AIS provider unavailable: ' + String(error?.failureClass || 'unknown') + '.');
       layerHealth.push({ layerId: 'maritime', status: failureStatus, reason: String(error?.message || 'External maritime movement provider failed.') });
     }
