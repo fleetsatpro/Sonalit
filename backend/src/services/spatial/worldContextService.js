@@ -4,7 +4,7 @@ const { getAircraftInBbox, getProviderHealth: getOpenSkyProviderHealth } = requi
 const { getCurrentWeather, getProviderHealth: getWeatherProviderHealth } = require('./weatherGateway');
 const { getVesselsInBbox, getProviderHealth: getKplerAisProviderHealth } = require('./kplerAisGateway');
 const { getTrafficAtPoints, getProviderHealth: getMapboxTrafficProviderHealth } = require('./mapboxTrafficGateway');
-const { getTrafficIncidents, getProviderHealth: getTomTomTrafficProviderHealth } = require('./tomtomTrafficGateway');
+const { getTrafficIncidents, getTrafficFlowAtPoints, getProviderHealth: getTomTomTrafficProviderHealth } = require('./tomtomTrafficGateway');
 const { getNaturalHazards, getProviderHealth: getNasaEonetProviderHealth } = require('./nasaEonetGateway');
 const {
   routeRelation,
@@ -786,11 +786,14 @@ async function buildWorldContext(opts) {
     const sampled = Array.from(pointMap.values()).slice(0, 16);
     const trafficResults = await Promise.allSettled([
       getTrafficAtPoints({ points: sampled, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }),
+      getTrafficFlowAtPoints({ points: sampled, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }),
       (externalBbox || bbox) ? getTrafficIncidents({ bbox: externalBbox || bbox, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }) : Promise.resolve({ observations: [], health: { status: 'UNAVAILABLE' } })
     ]);
-    const flow = trafficResults[0], incident = trafficResults[1], statuses = [];
+    const flow = trafficResults[0], tomtomFlow = trafficResults[1], incident = trafficResults[2], statuses = [];
     if (flow.status === 'fulfilled') { traffic.push.apply(traffic, flow.value.observations || []); statuses.push(flow.value.health?.status || 'UNKNOWN'); }
     else { statuses.push('UNAVAILABLE'); uncertainty.push('Mapbox traffic feed unavailable.'); }
+    if (tomtomFlow.status === 'fulfilled') { traffic.push.apply(traffic, tomtomFlow.value.observations || []); statuses.push(tomtomFlow.value.health?.status || 'UNKNOWN'); }
+    else { statuses.push('UNAVAILABLE'); uncertainty.push('TomTom traffic flow feed unavailable.'); }
     if (incident.status === 'fulfilled') { traffic.push.apply(traffic, incident.value.observations || []); statuses.push(incident.value.health?.status || 'UNKNOWN'); }
     else { statuses.push('UNAVAILABLE'); uncertainty.push('TomTom traffic incident feed unavailable.'); }
     const status = statuses.includes('LIVE') ? 'LIVE' : statuses.includes('DELAYED') ? 'DELAYED' : statuses.includes('STALE') ? 'STALE' : statuses.includes('PARTIAL') ? 'PARTIAL' : statuses.includes('AUTH_REQUIRED') ? 'AUTH_REQUIRED' : 'UNAVAILABLE';
