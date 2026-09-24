@@ -132,11 +132,13 @@ function eventCanAutoResolve(context, eventType, sourceReferences) {
     return layerCanReconcile(context, eventType) && providerCanReconcile(context, eventType, sourceReferences);
   }
 
-  // Internal operational conditions are only reconciled when the evaluated
-  // mission/vehicle context is present. Absence of a subject is not evidence
-  // that the underlying condition disappeared.
+  // Internal conditions are only reconciled when the evaluated operational
+  // context is present AND its critical spatial reads succeeded. A swallowed
+  // DB failure must never look like "the condition disappeared".
   return Boolean(
     context &&
+    context.dataHealth &&
+    context.dataHealth.ok === true &&
     ((context.mission && context.mission.convoyId) ||
       (context.operational && Array.isArray(context.operational.vehicles) && context.operational.vehicles.length))
   );
