@@ -215,7 +215,7 @@ class SpatialProviderManager {
       }
       const effectiveStatus = provider.circuit.state === 'OPEN'
         ? 'UNAVAILABLE'
-        : provider.budget.remaining() === 0
+        : provider.quota.budget.remaining() === 0
           ? 'RATE_LIMITED'
           : upstream.status || 'UNKNOWN';
       const effectiveReason = provider.circuit.state === 'OPEN'
@@ -230,8 +230,8 @@ class SpatialProviderManager {
         status: effectiveStatus,
         ...(effectiveReason ? { reason: effectiveReason } : {}),
         manager: {
-          activeRequests: provider.budget.active,
-          rateLimitRemaining: provider.budget.remaining(),
+          activeRequests: provider.quota.budget.active,
+          rateLimitRemaining: provider.quota.budget.remaining(),
           tenantBucketCount: provider.tenantBudgets.size,
           tenantMaxPerMinute: provider.tenantMaxPerMinute,
           tenantMaxConcurrent: provider.tenantMaxConcurrent,
