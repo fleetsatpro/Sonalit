@@ -27,7 +27,8 @@ function clamp01(n) {
 
 function severityFor(type) {
   if (type === 'CORRIDOR_EXIT' || type === 'POSITION_JUMP') return 'high';
-  if (type === 'INCIDENT_NEAR_CONVOY' || type === 'HAZARD_NEAR_ROUTE') return 'high';
+  if (type === 'INCIDENT_NEAR_CONVOY' || type === 'HAZARD_NEAR_ROUTE' || type === 'EXTERNAL_INCIDENT_NEAR_ROUTE' || type === 'EXTERNAL_HAZARD_NEAR_ROUTE' || type === 'TRAFFIC_CLOSURE') return 'high';
+  if (type === 'TRAFFIC_CONGESTION' || type === 'VESSEL_APPROACHING_DESTINATION') return 'medium';
   if (type === 'ENVIRONMENTAL_DETERIORATION') return 'medium';
   if (type === 'STALE_TELEMETRY' || type === 'GPS_GAP') return 'medium';
   return 'low';
@@ -45,6 +46,11 @@ function alertTypeFor(type) {
   if (
     type === 'INCIDENT_NEAR_CONVOY' ||
     type === 'HAZARD_NEAR_ROUTE' ||
+    type === 'EXTERNAL_INCIDENT_NEAR_ROUTE' ||
+    type === 'EXTERNAL_HAZARD_NEAR_ROUTE' ||
+    type === 'TRAFFIC_CLOSURE' ||
+    type === 'TRAFFIC_CONGESTION' ||
+    type === 'VESSEL_APPROACHING_DESTINATION' ||
     type === 'ENVIRONMENTAL_DETERIORATION'
   ) return 'security';
 
@@ -288,12 +294,25 @@ function detectSpatialEvents(context, options) {
     const isIncident = relation.predicate === 'NEAR_INCIDENT';
     const isRiskZone = relation.predicate === 'HAZARD_NEAR_ROUTE' ||
       (relation.predicate === 'WITHIN' && relation.toType === 'risk_zone');
-    if (!isIncident && !isRiskZone) continue;
+    const isTrafficClosure = relation.predicate === 'TRAFFIC_CLOSURE';
+    const isTrafficCongestion = relation.predicate === 'TRAFFIC_CONGESTION';
+    const isExternalIncident = relation.predicate === 'EXTERNAL_INCIDENT_NEAR_ROUTE';
+    const isExternalHazard = relation.predicate === 'EXTERNAL_HAZARD_NEAR_ROUTE';
+    const isVesselApproach = relation.predicate === 'VESSEL_APPROACHING_DESTINATION';
+    if (!isIncident && !isRiskZone && !isTrafficClosure && !isTrafficCongestion && !isExternalIncident && !isExternalHazard && !isVesselApproach) continue;
 
-    const type = isIncident ? 'INCIDENT_NEAR_CONVOY' : 'HAZARD_NEAR_ROUTE';
+    const type = isIncident ? 'INCIDENT_NEAR_CONVOY'
+      : isRiskZone ? 'HAZARD_NEAR_ROUTE'
+      : isTrafficClosure ? 'TRAFFIC_CLOSURE'
+      : isTrafficCongestion ? 'TRAFFIC_CONGESTION'
+      : isExternalIncident ? 'EXTERNAL_INCIDENT_NEAR_ROUTE'
+      : isExternalHazard ? 'EXTERNAL_HAZARD_NEAR_ROUTE'
+      : 'VESSEL_APPROACHING_DESTINATION';
     const subjectType = relation.fromType === 'vehicle'
       ? 'vehicle'
-      : (context && context.mission && context.mission.convoyId ? 'convoy' : 'context');
+      : (relation.fromType === 'vessel'
+        ? 'convoy'
+        : (context && context.mission && context.mission.convoyId ? 'convoy' : 'context'));
     const subjectId = relation.fromType === 'vehicle'
       ? String(relation.fromId)
       : String(context && context.mission && context.mission.convoyId || relation.fromId);
