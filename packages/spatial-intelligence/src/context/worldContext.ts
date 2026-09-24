@@ -75,6 +75,7 @@ export interface WorldContextRelation {
     score: number;
     components: Record<string, number>;
   };
+  actionable?: boolean;
   temporal?: {
     from?: string | null;
     to?: string | null;
