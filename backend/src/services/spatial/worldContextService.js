@@ -874,7 +874,7 @@ async function buildWorldContext(opts) {
             spatialProviderManager,
             'opensky',
             routeQueryPlan,
-            { orgId, requestId: input.requestId, signal: input.signal },
+            { orgId, maxRecords: maxEntitiesPerLayer, requestId: input.requestId, signal: input.signal },
             { concurrency: Math.min(4, Number(process.env.SPATIAL_EYE_PROVIDER_CONCURRENCY || 3)) }
           )
         : await spatialProviderManager.query('opensky', { bbox, orgId, requestId: input.requestId, signal: input.signal });
