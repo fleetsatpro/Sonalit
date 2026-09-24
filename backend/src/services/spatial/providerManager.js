@@ -199,6 +199,21 @@ function createDefaultSpatialProviderManager() {
   } = require('./tomtomTrafficGateway');
   const { getNaturalHazards, getProviderHealth: eonetHealth } = require('./nasaEonetGateway');
 
+  const queryOrUnavailable = (module, key, providerName) => {
+    if (typeof module[key] === 'function') return module[key];
+    const unavailable = async () => {
+      const error = new Error(providerName + ' provider capability is unavailable');
+      error.failureClass = 'unavailable';
+      throw error;
+    };
+    return unavailable;
+  };
+
+  const healthOrUnknown = (module, key) => {
+    if (typeof module[key] === 'function') return module[key];
+    return () => ({ status: 'UNKNOWN', reason: 'Provider health capability is unavailable' });
+  };
+
   const budgets = (prefix, fallbackMinute, fallbackConcurrent) => ({
     maxPerMinute: fallbackMinute,
     maxConcurrent: fallbackConcurrent,
@@ -209,50 +224,50 @@ function createDefaultSpatialProviderManager() {
   });
 
   manager.register('opensky', {
-    query: getAircraftInBbox,
-    health: openSkyHealth,
+    query: queryOrUnavailable({ getAircraftInBbox }, 'getAircraftInBbox', 'OpenSky'),
+    health: healthOrUnknown({ getProviderHealth: openSkyHealth }, 'getProviderHealth'),
     capabilities: ['aircraft', 'movement', 'bbox', 'live'],
     ...budgets('SPATIAL_PROVIDER_OPENSKY', 60, 4),
   });
 
   manager.register('weather', {
-    query: getCurrentWeather,
-    health: weatherHealth,
+    query: queryOrUnavailable({ getCurrentWeather }, 'getCurrentWeather', 'Weather'),
+    health: healthOrUnknown({ getProviderHealth: weatherHealth }, 'getProviderHealth'),
     capabilities: ['weather', 'point', 'live'],
     ...budgets('SPATIAL_PROVIDER_WEATHER', 120, 8),
   });
 
   manager.register('kpler-ais', {
-    query: getVesselsInBbox,
-    health: aisHealth,
+    query: queryOrUnavailable({ getVesselsInBbox }, 'getVesselsInBbox', 'AIS'),
+    health: healthOrUnknown({ getProviderHealth: aisHealth }, 'getProviderHealth'),
     capabilities: ['vessel', 'maritime', 'bbox', 'live'],
     ...budgets('SPATIAL_PROVIDER_AIS', 60, 4),
   });
 
   manager.register('mapbox-traffic', {
-    query: getTrafficAtPoints,
-    health: mapboxHealth,
+    query: queryOrUnavailable({ getTrafficAtPoints }, 'getTrafficAtPoints', 'Mapbox Traffic'),
+    health: healthOrUnknown({ getProviderHealth: mapboxHealth }, 'getProviderHealth'),
     capabilities: ['traffic', 'point', 'flow'],
     ...budgets('SPATIAL_PROVIDER_MAPBOX_TRAFFIC', 60, 6),
   });
 
   manager.register('tomtom-traffic-incidents', {
-    query: getTrafficIncidents,
-    health: tomtomHealth,
+    query: queryOrUnavailable({ getTrafficIncidents }, 'getTrafficIncidents', 'TomTom Traffic'),
+    health: healthOrUnknown({ getProviderHealth: tomtomHealth }, 'getProviderHealth'),
     capabilities: ['traffic', 'incident', 'bbox'],
     ...budgets('SPATIAL_PROVIDER_TOMTOM', 60, 6),
   });
 
   manager.register('tomtom-traffic-flow', {
-    query: getTrafficFlowAtPoints,
-    health: tomtomHealth,
+    query: queryOrUnavailable({ getTrafficFlowAtPoints }, 'getTrafficFlowAtPoints', 'TomTom Traffic Flow'),
+    health: healthOrUnknown({ getProviderHealth: tomtomHealth }, 'getProviderHealth'),
     capabilities: ['traffic', 'flow', 'point'],
     ...budgets('SPATIAL_PROVIDER_TOMTOM', 60, 6),
   });
 
   manager.register('nasa-eonet', {
-    query: getNaturalHazards,
-    health: eonetHealth,
+    query: queryOrUnavailable({ getNaturalHazards }, 'getNaturalHazards', 'NASA EONET'),
+    health: healthOrUnknown({ getProviderHealth: eonetHealth }, 'getProviderHealth'),
     capabilities: ['natural_hazard', 'earth_observation', 'bbox'],
     ...budgets('SPATIAL_PROVIDER_NASA_EONET', 30, 4),
   });
