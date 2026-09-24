@@ -195,9 +195,9 @@ function makeDb() {
     if (sql.includes('convoy_route_corridors')) {
       return { rows: [{
         route_line: [
-          [-1.2900, 36.8200],
-          [-1.2910, 36.8300],
-          [-1.2920, 36.8400]
+          { lat: -1.2900, lng: 36.8200 },
+          { lat: -1.2910, lng: 36.8300 },
+          { lat: -1.2920, lng: 36.8400 }
         ],
         width_km: 1,
         active: true
