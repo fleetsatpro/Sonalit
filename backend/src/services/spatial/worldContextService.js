@@ -760,6 +760,7 @@ async function buildWorldContext(opts) {
 
   const boundedRadiusM = Math.max(1000, Math.min(Number(input.radiusM) || 25000, 250000));
   const externalRadiusM = Math.min(boundedRadiusM, MAX_EXTERNAL_RADIUS_M);
+  const maxEntitiesPerLayer = Math.max(1, Math.min(250, Number(input.maxEntitiesPerLayer) || 100));
   const bbox = input.bbox || (resolvedCenter ? bboxFromCenterRadius(resolvedCenter.latitude, resolvedCenter.longitude, externalRadiusM) : null);
   const routeBbox = bboxFromRoute(routeInfo.route, Math.max(10000, routeInfo.widthKm * 1000));
   const externalBbox = routeBbox && ((routeBbox[2] - routeBbox[0]) * (routeBbox[3] - routeBbox[1]) <= 25) ? routeBbox : bbox;
