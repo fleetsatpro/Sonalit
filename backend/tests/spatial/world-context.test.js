@@ -214,7 +214,7 @@ function makeDb() {
         longitude: 36.8300,
         heading: 90,
         speed: 45,
-        last_ping: '2026-09-24T12:00:15.000Z',
+        last_ping: new Date(Date.now() - 15_000).toISOString(),
         driver_id: null,
         assigned_convoy_id: CONVOY,
         gps_lat: null,
@@ -227,7 +227,7 @@ function makeDb() {
         prev_lng: 36.8280,
         prev_heading: 90,
         prev_speed: 44,
-        prev_at: '2026-09-24T11:59:45.000Z'
+        prev_at: new Date(Date.now() - 45_000).toISOString()
       }] };
     }
     if (sql.includes('FROM checkpoints')) {
@@ -320,10 +320,10 @@ describe('world context integration assembly', () => {
     const { db } = makeDb();
     db.mockImplementation(async (sql) => {
       if (sql.includes('convoy_route_corridors')) {
-        return { rows: [{ route_line: [[-1.29,36.82],[-1.29,37.20],[-1.29,37.60]], width_km: 1, active: true }] };
+        return { rows: [{ route_line: [{ lat: -1.29, lng: 36.82 }, { lat: -1.29, lng: 37.20 }, { lat: -1.29, lng: 37.60 }], width_km: 1, active: true }] };
       }
       if (sql.includes('FROM vehicles v')) {
-        return { rows: [{ id: VEHICLE, registration: 'KCA 123A', type: 'prime_mover', region: 'Kenya', status: 'active', latitude: -1.29, longitude: 36.82, heading: 90, speed: 45, last_ping: '2026-09-24T12:00:15.000Z', driver_id: null, assigned_convoy_id: CONVOY, gps_lat: null, gps_lng: null, gps_heading: null, gps_speed: null, gps_accuracy: null, gps_at: null, prev_lat: -1.29, prev_lng: 36.819, prev_heading: 90, prev_speed: 44, prev_at: '2026-09-24T11:59:45.000Z' }] };
+        return { rows: [{ id: VEHICLE, registration: 'KCA 123A', type: 'prime_mover', region: 'Kenya', status: 'active', latitude: -1.29, longitude: 36.82, heading: 90, speed: 45, last_ping: new Date(Date.now() - 15_000).toISOString(), driver_id: null, assigned_convoy_id: CONVOY, gps_lat: null, gps_lng: null, gps_heading: null, gps_speed: null, gps_accuracy: null, gps_at: null, prev_lat: -1.29, prev_lng: 36.819, prev_heading: 90, prev_speed: 44, prev_at: new Date(Date.now() - 45_000).toISOString() }] };
       }
       if (sql.includes('FROM checkpoints')) return { rows: [] };
       if (sql.includes('FROM geofences')) return { rows: [] };
