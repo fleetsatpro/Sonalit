@@ -127,9 +127,11 @@ jobs:
           if ! git diff --quiet -- backend/openapi.json; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git fetch origin "${GITHUB_HEAD_REF}" --depth=1
+            git reset --soft "origin/${GITHUB_HEAD_REF}"
             git add backend/openapi.json
             git commit -m "chore(ci): persist generated OpenAPI diagnostic"
-            git push origin HEAD:${GITHUB_HEAD_REF}
+            git push origin HEAD:"${GITHUB_HEAD_REF}"
           fi
         env:
           JWT_SECRET: ci-test-jwt-secret
