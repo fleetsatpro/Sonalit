@@ -9,7 +9,7 @@
  */
 
 function failNotFound(kind, id) {
-  const error = new Error(String(kind).charAt(0).toUpperCase() + String(kind).slice(1) + ' not found in organisation context');
+  const error = new Error(String(kind).charAt(0).toUpperCase() + String(kind).slice(1) + ' not found');
   error.statusCode = 404;
   error.subjectKind = kind;
   error.subjectId = id;
