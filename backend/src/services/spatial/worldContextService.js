@@ -194,11 +194,15 @@ async function getInfrastructure(db, orgId, convoyId) {
     "SELECT id::text AS id,name,type,coordinates,radius,region,active,updated_at FROM geofences WHERE org_id=$1 AND active=true ORDER BY updated_at DESC LIMIT 250",
     [orgId]
   );
+  const cdsGeofences = await safeRows(db,
+    "SELECT id::text AS id,name,type,category,geometry,center_lat,center_lng,radius_m,active,updated_at FROM cds_geofences WHERE org_id=$1 AND active=true AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 250",
+    [orgId]
+  );
   const shipments = await safeRows(db,
     "SELECT id::text AS id,tracking_number,customer_name,status,origin_address,origin_lat,origin_lng,destination_address,destination_lat,destination_lng,estimated_arrival,actual_delivery FROM shipments WHERE convoy_id=$1 AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 100",
     [convoyId]
   );
-  return { checkpoints, geofences, shipments };
+  return { checkpoints, geofences, cdsGeofences, shipments };
 }
 
 async function getSecurity(db, orgId, convoyId) {
@@ -412,6 +416,34 @@ function geofenceObservation(row, now) {
     provenance: { sourceName: 'Sonalit Geofence Registry', sourceReference: row.id, observationType: 'operational_geofence' },
     coverage: { complete: true, bounded: true, queryScope: 'organisation-scoped active geofences' },
     quality: { state: 'good', freshnessClass: 'UNKNOWN', reason: 'static operational geofence definition' }
+  }, now, { interpretationConfidence: 1, operationalConfidence: 0.95 });
+}
+
+function cdsFacilityObservation(row, now) {
+  const lat = num(row.center_lat);
+  const lng = num(row.center_lng);
+  if (lat == null || lng == null) return null;
+  return baseObservation({
+    id: 'sonalit:cds_geofence:' + row.id,
+    entityType: 'facility',
+    source: 'sonalit-cds',
+    sourceReference: row.id,
+    latitude: lat,
+    longitude: lng,
+    observedAt: row.updated_at,
+    status: row.active ? 'active' : 'inactive',
+    geometry: parseJson(row.geometry) || undefined,
+    attributes: {
+      name: row.name,
+      category: row.category,
+      type: row.type,
+      radiusM: num(row.radius_m),
+      active: Boolean(row.active),
+      businessDomain: 'container-delivery-system'
+    },
+    provenance: { sourceName: 'Sonalit CDS Geofence Registry', sourceReference: row.id, observationType: 'cds_facility_boundary' },
+    coverage: { complete: true, bounded: true, queryScope: 'organisation-scoped active CDS port/warehouse/border/customer geofences' },
+    quality: { state: 'good', freshnessClass: 'UNKNOWN', reason: 'static CDS facility boundary' }
   }, now, { interpretationConfidence: 1, operationalConfidence: 0.95 });
 }
 
@@ -807,6 +839,10 @@ async function buildWorldContext(opts) {
     infrastructureRaw.checkpoints.forEach(function(cp) { infrastructure.push(checkpointObservation(cp, now)); });
     infrastructureRaw.geofences.forEach(function(g) {
       const obs = geofenceObservation(g, now);
+      if (obs) infrastructure.push(obs);
+    });
+    (infrastructureRaw.cdsGeofences || []).forEach(function(g) {
+      const obs = cdsFacilityObservation(g, now);
       if (obs) infrastructure.push(obs);
     });
     infrastructureRaw.shipments.forEach(function(s) {
