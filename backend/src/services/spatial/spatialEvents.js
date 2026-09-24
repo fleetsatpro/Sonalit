@@ -139,7 +139,14 @@ function layerCanReconcile(context, eventType) {
 function eventCanAutoResolve(context, eventType, sourceReferences) {
   if (!EVENT_MODES.stateful.has(eventType)) return false;
   if (eventRequiresFreshExternalAuthority(eventType)) {
-    return layerCanReconcile(context, eventType) && providerCanReconcile(context, eventType, sourceReferences);
+    const sourceProvider = EVENT_AUTHORITY_PROVIDER[eventType] || sourceProviderFromReferences(sourceReferences);
+    if (sourceProvider) {
+      // Once provenance identifies the authoritative source, do not let an
+      // unrelated sibling feed (e.g. Mapbox) block reconciliation of a
+      // TomTom-derived condition.
+      return providerCanReconcile(context, eventType, sourceReferences);
+    }
+    return layerCanReconcile(context, eventType);
   }
 
   // Internal conditions are only reconciled when the evaluated operational
