@@ -713,9 +713,10 @@ async function buildWorldContext(opts) {
     alertRows = await getAlerts(db, orgId, missionRow.id);
     vehicleRows = await getVehicles(db, orgId, missionRow.id, null);
   } else if (subject.kind === 'vehicle') {
-    // The resolver has already proved tenant ownership. Re-read the full
-    // operational projection because makeVehicle needs the canonical telemetry
-    // history fields that the lightweight identity query intentionally omits.
+    // The resolver proves ownership/identity. Re-read the full operational
+    // projection because makeVehicle needs canonical telemetry/history fields.
+    // The final context centre is taken from that telemetry projection below,
+    // so the lightweight resolver anchor can never override a fresher GPS fix.
     vehicleRows = await getVehicles(db, orgId, null, String(subject.id));
     const assigned = vehicleRows[0]?.assigned_convoy_id || null;
     if (assigned) {
@@ -746,7 +747,7 @@ async function buildWorldContext(opts) {
   let resolvedCenter = null;
   if (input.center && Number.isFinite(Number(input.center.latitude)) && Number.isFinite(Number(input.center.longitude))) {
     resolvedCenter = { latitude: Number(input.center.latitude), longitude: Number(input.center.longitude) };
-  } else if (subjectResolution.center) {
+  } else if (subject.kind !== 'vehicle' && subjectResolution.center) {
     resolvedCenter = subjectResolution.center;
   } else if (operationalVehicles.length) {
     const total = operationalVehicles.reduce(function(a,v) {
