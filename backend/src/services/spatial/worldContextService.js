@@ -1500,6 +1500,7 @@ async function buildWorldContext(opts) {
       layersUnavailable: Array.from(new Set(layersUnavailable))
     },
     layerHealth,
+    providerHealth: spatialProviderManager.getHealthSnapshot(),
     provenance: [
       { sourceName: 'Sonalit Tracking', attribution: 'Organisation-scoped operational telemetry' },
       ...(movement.some(e => e.source === 'opensky') ? [{ sourceName: 'OpenSky Network', attribution: 'OpenSky Network', license: 'OpenSky Network terms' }] : []),
