@@ -98,7 +98,9 @@ function providerCanReconcile(context, eventType, sourceReferences) {
   if (!provider) return true;
   const providerHealth = context && context.providerHealth && context.providerHealth[provider];
   if (!providerHealth) return false;
-  return ['LIVE', 'DELAYED'].includes(String(providerHealth.status || '').toUpperCase());
+  const status = String(providerHealth.status || '').toUpperCase();
+  if (['LIVE', 'DELAYED'].includes(status)) return true;
+  return status === 'PARTIAL' && !providerHealth.lastErrorClass;
 }
 
 function eventMode(type) {
@@ -123,7 +125,11 @@ function layerCanReconcile(context, eventType) {
   });
   if (!health) return false;
 
-  return ['LIVE', 'DELAYED'].includes(String(health.status || '').toUpperCase());
+  const status = String(health.status || '').toUpperCase();
+  if (['LIVE', 'DELAYED'].includes(status)) return true;
+  // A provider may legitimately return zero records after a successful,
+  // complete query. Treat PARTIAL as reconciliable only when it did not fail.
+  return status === 'PARTIAL' && !health.lastErrorClass;
 }
 
 function eventCanAutoResolve(context, eventType, sourceReferences) {
