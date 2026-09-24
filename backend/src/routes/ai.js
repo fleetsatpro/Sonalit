@@ -183,7 +183,7 @@ const TOOLS = [
           type: 'object',
           description: 'Optional mission subject. Use {kind:"convoy",id:"..."} or {kind:"vehicle",id:"..."}.',
           properties: {
-            kind: { type: 'string', enum: ['convoy','vehicle','location','none'] },
+            kind: { type: 'string', enum: ['convoy','vehicle','route','corridor','incident','checkpoint','port','location','none'] },
             id: { type: 'string' },
             label: { type: 'string' },
           },
@@ -197,6 +197,14 @@ const TOOLS = [
           },
         },
         radiusM: { type: 'number', description: 'Context radius in metres. Maximum 250000.' },
+        bbox: {
+          type: 'array',
+          description: 'Optional bounded [west,south,east,north] spatial envelope. Server enforces the maximum area.',
+          items: { type: 'number' },
+          minItems: 4,
+          maxItems: 4,
+        },
+        maxEntitiesPerLayer: { type: 'number', description: 'Optional per-layer entity cap. Server bounds the final value.' },
         layers: {
           type: 'array',
           items: { type: 'string', enum: ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts'] },
@@ -680,7 +688,7 @@ async function toolGetWorldContext(input, context) {
   if (!subject && requested.vehicle_id) subject = { kind: 'vehicle', id: requested.vehicle_id };
   if (!subject) subject = { kind: 'none', id: 'context' };
 
-  if (!['convoy','vehicle','location','none'].includes(subject.kind)) {
+  if (!['convoy','vehicle','route','corridor','incident','checkpoint','port','location','none'].includes(subject.kind)) {
     return { error: 'Unsupported spatial subject kind' };
   }
   if (subject.kind !== 'none' && (!subject.id || typeof subject.id !== 'string')) {
@@ -698,6 +706,20 @@ async function toolGetWorldContext(input, context) {
   }
 
   const radius = Number(requested.radiusM);
+  let bbox = null;
+  if (requested.bbox != null) {
+    if (!Array.isArray(requested.bbox) || requested.bbox.length !== 4 || requested.bbox.some(x => !Number.isFinite(Number(x)))) {
+      return { error: 'Invalid spatial bbox' };
+    }
+    bbox = requested.bbox.map(Number);
+    const [west, south, east, north] = bbox;
+    if (west < -180 || east > 180 || south < -90 || north > 90 || west >= east || south >= north || (east - west) * (north - south) > 25) {
+      return { error: 'Spatial bbox exceeds server bounds' };
+    }
+  }
+  const maxEntitiesPerLayer = Number.isFinite(Number(requested.maxEntitiesPerLayer))
+    ? Math.min(250, Math.max(1, Number(requested.maxEntitiesPerLayer)))
+    : 100;
   const layers = Array.isArray(requested.layers)
     ? requested.layers.filter(x => typeof x === 'string').slice(0, 10)
     : ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts'];
@@ -713,8 +735,9 @@ async function toolGetWorldContext(input, context) {
     },
     center,
     radiusM: Number.isFinite(radius) && radius > 0 ? Math.min(radius, 250000) : 25000,
+    bbox,
     layers,
-    maxEntitiesPerLayer: 100,
+    maxEntitiesPerLayer,
     requestId: requested.request_id ? String(requested.request_id).slice(0, 120) : undefined,
     persistEvents: false,
   });
@@ -722,6 +745,7 @@ async function toolGetWorldContext(input, context) {
   return {
     subject: ctx.subject,
     generatedAt: ctx.generatedAt,
+    spatialContext: ctx.spatialContext || null,
     mission: ctx.mission || null,
     operational: ctx.operational || { vehicles: [], alerts: [] },
     relations: (ctx.relations || []).slice(0, 150),
@@ -738,6 +762,9 @@ async function toolGetWorldContext(input, context) {
     freshness: ctx.freshness,
     uncertainty: ctx.uncertainty,
     warnings: ctx.warnings,
+    entities: (ctx.entities || []).slice(0, 250),
+    providerHealth: ctx.providerHealth || {},
+    dataHealth: ctx.dataHealth || { ok: true, readErrors: [] },
   };
 }
 
