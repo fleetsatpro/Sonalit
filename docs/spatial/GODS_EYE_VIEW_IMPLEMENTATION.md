@@ -158,10 +158,13 @@ Operational vehicle GPS remains authoritative when spatial context is unavailabl
 
 ## Current deliberate boundaries
 
-The repository does not yet contain a complete real maritime AIS ingestion path or a complete external traffic-provider fusion path in this implementation. Those remain future provider tracks and are not represented as fake live layers.
+The external feed fabric is real but configuration-dependent. Missing credentials produce explicit provider and layer health states rather than fake observations.
 
-External aircraft context is currently bounded around the active spatial context centre rather than pretending to have route-wide global aircraft coverage.
+AIS and traffic coverage is bounded by the mission-derived spatial area and provider request budgets. Traffic flow is sampled across route points and traffic incidents are queried over a route-aware bounding box; Sonalit does not pretend to have unrestricted global road telemetry.
 
-Weather context samples up to three relevant points for a route-aware mission context.
+NASA EONET geometry can be polygonal. When a single point is required for a relation calculation, Sonalit records that the representative point was derived and lowers interpretation confidence accordingly.
 
-These limitations are surfaced as coverage/availability semantics rather than hidden.
+The existing Sonalit map already supports an external satellite or aerial basemap. A future dynamic Earth-observation or SAR provider should enter the same provider, observation and world-context chain rather than being implemented as a disconnected imagery widget.
+
+Operational Sonalit vehicle GPS, routes, corridors, security records and alert authority remain the system's operational source of truth.
+
