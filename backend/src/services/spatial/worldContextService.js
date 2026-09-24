@@ -1,5 +1,7 @@
 'use strict';
 
+const { resolveSpatialSubject } = require('./subjectResolver');
+
 const { getAircraftInBbox, getProviderHealth: getOpenSkyProviderHealth } = require('./openskyGateway');
 const { getCurrentWeather, getProviderHealth: getWeatherProviderHealth } = require('./weatherGateway');
 const { getVesselsInBbox, getProviderHealth: getKplerAisProviderHealth } = require('./kplerAisGateway');
@@ -684,13 +686,8 @@ async function buildWorldContext(opts) {
   }).slice(0, 10)));
 
   let subject = input.subject || { kind: 'none', id: 'context' };
-  let missionRow = subject.kind === 'convoy' ? await getConvoy(db, orgId, subject.id) : null;
-
-  if (subject.kind === 'convoy' && !missionRow) {
-    const error = new Error('Convoy not found in organisation context');
-    error.statusCode = 404;
-    throw error;
-  }
+  const subjectResolution = await resolveSpatialSubject({ db, orgId, subject });
+  let missionRow = subjectResolution.missionRow;
 
   let vehicleRows = [];
   let mission = null;
@@ -716,6 +713,9 @@ async function buildWorldContext(opts) {
     alertRows = await getAlerts(db, orgId, missionRow.id);
     vehicleRows = await getVehicles(db, orgId, missionRow.id, null);
   } else if (subject.kind === 'vehicle') {
+    // The resolver has already proved tenant ownership. Re-read the full
+    // operational projection because makeVehicle needs the canonical telemetry
+    // history fields that the lightweight identity query intentionally omits.
     vehicleRows = await getVehicles(db, orgId, null, String(subject.id));
     const assigned = vehicleRows[0]?.assigned_convoy_id || null;
     if (assigned) {
@@ -746,6 +746,8 @@ async function buildWorldContext(opts) {
   let resolvedCenter = null;
   if (input.center && Number.isFinite(Number(input.center.latitude)) && Number.isFinite(Number(input.center.longitude))) {
     resolvedCenter = { latitude: Number(input.center.latitude), longitude: Number(input.center.longitude) };
+  } else if (subjectResolution.center) {
+    resolvedCenter = subjectResolution.center;
   } else if (operationalVehicles.length) {
     const total = operationalVehicles.reduce(function(a,v) {
       return { lat: a.lat + v.latitude, lng: a.lng + v.longitude };
