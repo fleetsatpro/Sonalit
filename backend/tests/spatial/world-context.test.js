@@ -265,6 +265,39 @@ function makeDb() {
 }
 
 describe('world context integration assembly', () => {
+  test('fuses route-level external traffic and hazards even when they are beyond the vehicle radius', async () => {
+    const { db } = makeDb();
+    db.mockImplementation(async (sql) => {
+      if (sql.includes('convoy_route_corridors')) {
+        return { rows: [{ route_line: [[-1.29,36.82],[-1.29,37.20],[-1.29,37.60]], width_km: 1, active: true }] };
+      }
+      if (sql.includes('FROM vehicles v')) {
+        return { rows: [{ id: VEHICLE, registration: 'KCA 123A', type: 'prime_mover', region: 'Kenya', status: 'active', latitude: -1.29, longitude: 36.82, heading: 90, speed: 45, last_ping: '2026-09-24T12:00:15.000Z', driver_id: null, assigned_convoy_id: CONVOY, gps_lat: null, gps_lng: null, gps_heading: null, gps_speed: null, gps_accuracy: null, gps_at: null, prev_lat: -1.29, prev_lng: 36.819, prev_heading: 90, prev_speed: 44, prev_at: '2026-09-24T11:59:45.000Z' }] };
+      }
+      if (sql.includes('FROM checkpoints')) return { rows: [] };
+      if (sql.includes('FROM geofences')) return { rows: [] };
+      if (sql.includes('FROM shipments')) return { rows: [] };
+      if (sql.includes('FROM risk_zones')) return { rows: [] };
+      if (sql.includes('FROM intel_alerts')) return { rows: [] };
+      if (sql.includes('FROM incidents')) return { rows: [] };
+      if (sql.includes('FROM cds_incidents')) return { rows: [] };
+      if (sql.includes('FROM alerts')) return { rows: [] };
+      if (sql.includes('FROM convoys') && sql.includes('LIMIT 1')) return { rows: [{ id: CONVOY, name: 'LK008', status: 'active', priority: 'high', region: 'Kenya', route_origin: 'Nairobi', route_destination: 'Mombasa', departure_time: '2026-09-24T12:00:00.000Z', estimated_arrival: '2026-09-24T20:00:00.000Z' }] };
+      return { rows: [] };
+    });
+    const ctx = await buildWorldContext({
+      orgId: ORG,
+      db,
+      subject: { kind: 'convoy', id: CONVOY },
+      radiusM: 1000,
+      layers: ['maritime','traffic','hazards'],
+      maxEntitiesPerLayer: 100,
+      persistEvents: false
+    });
+    expect(ctx.relations.some(r => r.fromType === 'convoy' && ['TRAFFIC_CONGESTION','TRAFFIC_CLOSURE','NATURAL_HAZARD_NEAR_ROUTE','EXTERNAL_HAZARD_NEAR_ROUTE','NEAR_TRAFFIC'].includes(r.predicate))).toBe(true);
+    expect(ctx.relations.some(r => r.fromType === 'convoy' && r.routeDistanceM != null)).toBe(true);
+  });
+
   test('assembles real operational, environmental and security layers without fake alert coordinates', async () => {
     const { db, calls } = makeDb();
 
