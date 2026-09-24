@@ -287,6 +287,15 @@ export default function CesiumLiveMap({
           vehicleId: loc.vehicle_id ?? undefined,
         });
       }
+
+      registryRef.current?.register({
+        id: loc.device_id,
+        domain: 'sonalit',
+        entityType: 'device',
+        cesiumId: loc.device_id,
+        label,
+        vehicleId: loc.vehicle_id ?? undefined,
+      });
     }
 
     governorRef.current?.requestRender('locations-sync');
@@ -307,6 +316,7 @@ export default function CesiumLiveMap({
     for (const id of geofenceIdsRef.current) {
       const e = viewer.entities.getById(id);
       if (e) viewer.entities.remove(e);
+      registryRef.current?.unregister(id);
     }
     geofenceIdsRef.current = [];
 
@@ -343,20 +353,6 @@ export default function CesiumLiveMap({
           }),
         });
         geofenceIdsRef.current.push(entityId);
-        registryRef.current?.register({
-          id: entityId,
-          domain: 'sonalit',
-          entityType: 'geofence',
-          cesiumId: entityId,
-          label: geo.name,
-        });
-        registryRef.current?.register({
-          id: entityId,
-          domain: 'sonalit',
-          entityType: 'geofence',
-          cesiumId: entityId,
-          label: geo.name,
-        });
         registryRef.current?.register({
           id: entityId,
           domain: 'sonalit',
@@ -423,6 +419,9 @@ export default function CesiumLiveMap({
 
     for (const [, entity] of guardianRef.current) {
       viewer.entities.remove(entity);
+    }
+    for (const device of guardianRef.current.keys()) {
+      registryRef.current?.unregister('guardian:' + device);
     }
     guardianRef.current.clear();
 
