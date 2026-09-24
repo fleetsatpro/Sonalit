@@ -344,6 +344,7 @@ function detectSpatialEvents(context, options) {
         type: 'HEADING_ANOMALY',
         vehicle,
         convoyId,
+        eventKey: 'HEADING_ANOMALY:vehicle:' + String(vehicle.id) + ':' + Math.floor(now / (10 * 60 * 1000)),
         severity: 'medium',
         evidence: [
           { metric: 'heading_delta_deg', value: headingDelta },
@@ -474,7 +475,7 @@ function detectSpatialEvents(context, options) {
       sourceReferences: [env.provenance && env.provenance.sourceReference || env.id],
       uncertainty: ['Weather context does not by itself determine road safety.'],
       ruleVersion: 'spatial-v2',
-      status: eventMode(type) === 'occurrence' ? 'resolved' : 'open'
+      status: 'open'
     });
   }
 
