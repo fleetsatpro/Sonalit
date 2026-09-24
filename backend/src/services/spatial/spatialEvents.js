@@ -103,7 +103,15 @@ function sourceProviderFromReferences(references) {
 function providerCanReconcile(context, eventType, sourceReferences) {
   const provider = EVENT_AUTHORITY_PROVIDER[eventType] || sourceProviderFromReferences(sourceReferences);
   if (!provider) return true;
+
   const providerHealth = context && context.providerHealth && context.providerHealth[provider];
+  const providerCoverage = context && context.providerCoverage && context.providerCoverage[provider];
+
+  // Reconciliation is based on the current query, not merely the provider's
+  // process-wide health. A LIVE provider can still have failed AOIs/samples
+  // for this specific mission request.
+  if (!providerCoverage || providerCoverage.complete !== true) return false;
+
   if (!providerHealth) return false;
   const status = String(providerHealth.status || '').toUpperCase();
   if (['LIVE', 'DELAYED'].includes(status)) return true;
