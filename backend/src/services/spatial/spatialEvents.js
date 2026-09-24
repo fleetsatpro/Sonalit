@@ -641,19 +641,45 @@ async function persistSpatialEvents(db, events, options) {
         : null;
 
       try {
-        const alertResult = await db(
-          'INSERT INTO alerts (vehicle_id,convoy_id,type,severity,message,created_by,org_id,created_at,updated_at) ' +
-          'VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),NOW()) RETURNING id',
-          [
-            rawVehicleId,
-            event.convoyId || null,
-            alertType,
-            event.severity || 'medium',
-            message,
-            cfg.userId || null,
-            cfg.orgId
-          ]
-        );
+        const spatialAlertKey = eventMode(event.eventType) === 'occurrence'
+          ? 'occurrence:' + event.eventType + ':' + event.subjectType + ':' + String(event.subjectId)
+          : 'condition:' + String(event.eventKey);
+
+        // Occurrence events intentionally use time-bucketed event identities.
+        // Suppress duplicate operational alerts for the same semantic event
+        // during a short cooldown without suppressing the spatial-event ledger.
+        const existingAlert = eventMode(event.eventType) === 'occurrence'
+          ? await db(
+              'SELECT id FROM alerts WHERE org_id=$1 AND (vehicle_id IS NOT DISTINCT FROM $2::uuid) AND ' +
+              '(convoy_id IS NOT DISTINCT FROM $3::uuid) AND metadata->>\'spatialAlertKey\'=$4 AND ' +
+              'deleted_at IS NULL AND resolved_at IS NULL AND created_at > NOW() - INTERVAL \'10 minutes\' LIMIT 1',
+              [cfg.orgId, rawVehicleId, event.convoyId || null, spatialAlertKey]
+            )
+          : { rows: [] };
+
+        let alertResult = { rows: [] };
+        if (!existingAlert.rows?.length) {
+          alertResult = await db(
+            'INSERT INTO alerts (vehicle_id,convoy_id,type,severity,message,created_by,org_id,metadata,created_at,updated_at) ' +
+            'VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,NOW(),NOW()) RETURNING id',
+            [
+              rawVehicleId,
+              event.convoyId || null,
+              alertType,
+              event.severity || 'medium',
+              message,
+              cfg.userId || null,
+              cfg.orgId,
+              JSON.stringify({
+                source: 'sonalit-spatial',
+                spatialAlertKey,
+                spatialEventKey: event.eventKey,
+                eventType: event.eventType,
+                ruleVersion: event.ruleVersion || 'spatial-v2'
+              })
+            ]
+          );
+        }
 
         if (typeof cfg.publish === 'function') {
           try {
