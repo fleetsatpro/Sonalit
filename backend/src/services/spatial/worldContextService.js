@@ -202,7 +202,11 @@ async function getInfrastructure(db, orgId, convoyId) {
     "SELECT id::text AS id,tracking_number,customer_name,status,origin_address,origin_lat,origin_lng,destination_address,destination_lat,destination_lng,estimated_arrival,actual_delivery FROM shipments WHERE convoy_id=$1 AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 100",
     [convoyId]
   );
-  return { checkpoints, geofences, cdsGeofences, shipments };
+  const guardianDevices = await safeRows(db,
+    "SELECT gd.id::text AS id,gd.name,gd.status,gd.panic_active,gd.assignment_type,gd.assignment_id::text AS assignment_id,gd.last_lat,gd.last_lng,gd.last_speed,gd.last_seen,gd.last_fix_at,fo.name AS officer_name,fo.phone AS officer_phone,dh.battery_level,dh.signal_strength,dh.recorded_at AS health_recorded_at,dl.heading,dl.timestamp AS heading_at FROM guardian_devices gd LEFT JOIN field_officers fo ON fo.device_id=gd.id AND fo.org_id=$1 LEFT JOIN LATERAL (SELECT heading,timestamp FROM device_locations WHERE device_id=gd.id ORDER BY timestamp DESC LIMIT 1) dl ON true LEFT JOIN LATERAL (SELECT battery_level,signal_strength,recorded_at FROM device_health WHERE device_id=gd.id ORDER BY recorded_at DESC LIMIT 1) dh ON true WHERE gd.org_id=$1 AND gd.deleted_at IS NULL AND gd.last_lat IS NOT NULL AND gd.last_lng IS NOT NULL ORDER BY gd.last_seen DESC NULLS LAST LIMIT 250",
+    [orgId]
+  );
+  return { checkpoints, geofences, cdsGeofences, shipments, guardianDevices };
 }
 
 async function getSecurity(db, orgId, convoyId) {
@@ -296,6 +300,63 @@ function securityObservation(row, now) {
     provenance: { sourceName: 'Sonalit Risk Intelligence', sourceReference: row.id, observationType: 'risk_zone' },
     coverage: { complete: false, bounded: true, queryScope: 'organisation-scoped risk registry' }
   }, now);
+}
+
+function guardianDeviceObservation(row, now) {
+  const lat = num(row.last_lat);
+  const lng = num(row.last_lng);
+  if (lat == null || lng == null) return null;
+  const observedAt = iso(row.last_fix_at || row.last_seen);
+  const freshness = classifyOperationalFreshness(observedAt, now);
+  const heading = num(row.heading);
+  const speedKmh = num(row.last_speed);
+  const obsConf = row.last_fix_at ? 0.92 : 0.78;
+  return baseObservation({
+    id: 'sonalit:guardian:' + row.id,
+    entityType: 'guardian_device',
+    source: 'sonalit-guardian',
+    sourceReference: row.id,
+    latitude: lat,
+    longitude: lng,
+    observedAt,
+    observationConfidence: obsConf,
+    headingDeg: heading,
+    speedMps: speedKmh == null ? null : speedKmh / 3.6,
+    status: row.panic_active ? 'panic' : row.status,
+    attributes: {
+      name: row.name,
+      status: row.status,
+      panic_active: Boolean(row.panic_active),
+      assignment_type: row.assignment_type || null,
+      assignment_id: row.assignment_id || null,
+      officer_name: row.officer_name || null,
+      officer_phone: row.officer_phone || null,
+      battery_level: row.battery_level == null ? null : Number(row.battery_level),
+      signal_strength: row.signal_strength == null ? null : Number(row.signal_strength),
+      heading_at: iso(row.heading_at),
+      health_recorded_at: iso(row.health_recorded_at),
+      last_fix_at: iso(row.last_fix_at)
+    },
+    provenance: {
+      sourceName: 'Sonalit Guardian Telemetry',
+      sourceReference: row.id,
+      observationType: 'guardian_device_position'
+    },
+    coverage: {
+      complete: false,
+      bounded: true,
+      queryScope: 'organisation-scoped Guardian devices with current location'
+    },
+    quality: {
+      state: freshness === 'LIVE' ? 'good' : freshness === 'DELAYED' ? 'degraded' : freshness === 'STALE' ? 'stale' : 'unknown',
+      freshnessClass: freshness,
+      reason: row.last_fix_at ? undefined : 'Guardian heartbeat timestamp used because last GPS-fix timestamp is unavailable'
+    }
+  }, now, {
+    interpretationConfidence: 0.98,
+    operationalConfidence: row.panic_active ? 1 : 0.92,
+    uncertainty: row.last_fix_at ? [] : ['Position recency is anchored to last_seen because no distinct GPS-fix timestamp is available.']
+  });
 }
 
 function checkpointObservation(row, now) {
@@ -845,6 +906,10 @@ async function buildWorldContext(opts) {
       const obs = cdsFacilityObservation(g, now);
       if (obs) infrastructure.push(obs);
     });
+    (infrastructureRaw.guardianDevices || []).forEach(function(g) {
+      const obs = guardianDeviceObservation(g, now);
+      if (obs) infrastructure.push(obs);
+    });
     infrastructureRaw.shipments.forEach(function(s) {
       [
         ['origin', s.origin_lat, s.origin_lng, s.origin_address],
@@ -1142,6 +1207,33 @@ async function buildWorldContext(opts) {
       });
     });
   });
+
+  const guardianEntities = infrastructure.filter(function(entity) { return entity.entityType === 'guardian_device'; });
+  for (const guardian of guardianEntities) {
+    for (const vehicle of operationalVehicles) {
+      const distance = distanceM(vehicle.latitude, vehicle.longitude, guardian.latitude, guardian.longitude);
+      if (distance > 10000) continue;
+      relations.push({
+        predicate: 'NEAR',
+        fromId: guardian.id,
+        toId: vehicle.id,
+        fromType: 'guardian_device',
+        toType: 'vehicle',
+        distanceM: Math.round(distance),
+        confidence: guardian.observationConfidence || 0.8,
+        operationalConfidence: guardian.operationalConfidence || 0.9,
+        observedAt: guardian.observedAt,
+        derivedAt: new Date(now).toISOString(),
+        evidence: [
+          { metric: 'distance_m', value: Math.round(distance), source: 'sonalit-geometry' },
+          { metric: 'panic_active', value: Boolean(guardian.attributes?.panic_active), source: 'sonalit-guardian' }
+        ],
+        sourceReferences: [guardian.sourceReference],
+        uncertainty: guardian.uncertainty || [],
+        actionable: Boolean(guardian.attributes?.panic_active)
+      });
+    }
+  }
 
   securityRaw.incidents.forEach(function(incident) {
     if (!mission || !incident.convoy_id || String(incident.convoy_id) !== String(mission.convoyId)) return;
