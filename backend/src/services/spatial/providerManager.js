@@ -54,6 +54,8 @@ class SpatialProviderManager {
         budget: new RequestBudget(maxPerMinute, maxConcurrent),
         maxPerMinute,
         maxConcurrent,
+        tenantMaxPerMinute,
+        tenantMaxConcurrent,
         tenantBudgets: new Map(),
         tenantBudgetLastUsedAt: new Map(),
       };
@@ -77,6 +79,16 @@ class SpatialProviderManager {
       1,
       256,
     );
+
+    if (quota.tenantMaxPerMinute == null) {
+      quota.tenantMaxPerMinute = tenantMaxPerMinute;
+      quota.tenantMaxConcurrent = tenantMaxConcurrent;
+    } else if (
+      quota.tenantMaxPerMinute !== tenantMaxPerMinute ||
+      quota.tenantMaxConcurrent !== tenantMaxConcurrent
+    ) {
+      throw new Error('Spatial provider tenant quota family configuration mismatch: ' + quotaKey);
+    }
 
     this.providers.set(name, {
       name,
@@ -133,7 +145,7 @@ class SpatialProviderManager {
             provider.tenantBudgetLastUsedAt.delete(oldestId);
           }
         }
-        tenantBudget = new RequestBudget(provider.tenantMaxPerMinute, provider.tenantMaxConcurrent);
+        tenantBudget = new RequestBudget(provider.quota.tenantMaxPerMinute, provider.quota.tenantMaxConcurrent);
         provider.tenantBudgets.set(tenantId, tenantBudget);
       }
       provider.tenantBudgetLastUsedAt.set(tenantId, now);
@@ -232,8 +244,8 @@ class SpatialProviderManager {
           activeRequests: provider.quota.budget.active,
           rateLimitRemaining: provider.quota.budget.remaining(),
           tenantBucketCount: provider.tenantBudgets.size,
-          tenantMaxPerMinute: provider.tenantMaxPerMinute,
-          tenantMaxConcurrent: provider.tenantMaxConcurrent,
+          tenantMaxPerMinute: provider.quota.tenantMaxPerMinute,
+          tenantMaxConcurrent: provider.quota.tenantMaxConcurrent,
           requestCount: provider.requestCount,
           successCount: provider.successCount,
           failureCount: provider.failureCount,
