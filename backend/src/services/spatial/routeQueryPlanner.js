@@ -291,10 +291,9 @@ function planRouteQueries(routeInput, options = {}) {
   segments = splitOversizeSegments(route, segments, opts);
   segments = mergeSafe(segments, opts);
 
-  const routeSpan = route[route.length - 1].lng - route[0].lng;
-  const forcedAntimeridian = unwrapLongitudes(route).some((p, i, arr) =>
-    i > 0 && Math.abs(p.unwrappedLng - arr[i - 1].unwrappedLng) > 180
-  ) || Math.abs(routeSpan) > 180;
+  const forcedAntimeridian = route.some((p, i) =>
+    i > 0 && Math.abs(p.lng - route[i - 1].lng) > 180
+  );
 
   if (segments.length > opts.maxAois) {
     const retained = [];
