@@ -69,7 +69,7 @@ function normalizeState(row, receivedAt) {
     longitude: lon,
     altitudeM: typeof row[13] === 'number' && Number.isFinite(row[13]) ? row[13]
       : typeof row[7] === 'number' && Number.isFinite(row[7]) ? row[7] : null,
-    observedAt: observedAt ?? receivedAt,
+    observedAt,
     receivedAt,
     freshnessMs: observedAt ? Math.max(0, Date.parse(receivedAt) - Date.parse(observedAt)) : undefined,
     headingDeg: typeof row[10] === 'number' && Number.isFinite(row[10]) ? row[10] : null,
@@ -261,4 +261,4 @@ function getProviderHealth() {
   return { opensky: { ...health } };
 }
 
-module.exports = { getAircraftInBbox, getProviderHealth, validateBbox };
+module.exports = { getAircraftInBbox, getProviderHealth, validateBbox, normalizeState };
