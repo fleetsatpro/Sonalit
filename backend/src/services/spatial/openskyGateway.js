@@ -129,13 +129,32 @@ async function getAccessToken() {
   return tokenCache.accessToken;
 }
 
+function validateBbox(bbox) {
+  if (!Array.isArray(bbox) || bbox.length !== 4) return null;
+  const values = bbox.map(Number);
+  if (values.some((n) => !Number.isFinite(n))) return null;
+  const [west, south, east, north] = values;
+  if (west < -180 || east > 180 || south < -90 || north > 90) return null;
+  if (west >= east || south >= north) return null;
+  if ((east - west) * (north - south) > 25) return null;
+  return [west, south, east, north];
+}
+
 function bboxKey(bbox) {
   return bbox.map((n) => Number(n).toFixed(3)).join(',');
 }
 
 async function getAircraftInBbox(opts) {
   const { bbox, orgId } = opts;
-  const key = bboxKey(bbox);
+  const safeBbox = validateBbox(bbox);
+  if (!safeBbox) {
+    return Promise.resolve({
+      observations: [],
+      health: { ...health, status: 'COVERAGE_LIMITED', lastErrorClass: 'coverage_limited', lastErrorMessage: 'Invalid or oversized bbox' },
+      coverage: { complete: false, queryScope: 'invalid_bbox' },
+    });
+  }
+  const key = bboxKey(safeBbox);
   health.requestCount += 1;
   health.lastAttemptAt = new Date().toISOString();
 
@@ -157,10 +176,10 @@ async function getAircraftInBbox(opts) {
         logger.warn({ err: err.message, orgId }, 'opensky token acquire failed — anonymous');
       }
       const url = new URL(OPENSKY_STATES_URL);
-      url.searchParams.set('lamin', String(bbox[1]));
-      url.searchParams.set('lomin', String(bbox[0]));
-      url.searchParams.set('lamax', String(bbox[3]));
-      url.searchParams.set('lomax', String(bbox[2]));
+      url.searchParams.set('lamin', String(safeBbox[1]));
+      url.searchParams.set('lomin', String(safeBbox[0]));
+      url.searchParams.set('lamax', String(safeBbox[3]));
+      url.searchParams.set('lomax', String(safeBbox[2]));
       const headers = { Accept: 'application/json' };
       if (token) headers.Authorization = `Bearer ${token}`;
       const controller = new AbortController();
@@ -242,4 +261,4 @@ function getProviderHealth() {
   return { opensky: { ...health } };
 }
 
-module.exports = { getAircraftInBbox, getProviderHealth };
+module.exports = { getAircraftInBbox, getProviderHealth, validateBbox };
