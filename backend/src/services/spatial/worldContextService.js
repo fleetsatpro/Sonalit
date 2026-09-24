@@ -1519,7 +1519,20 @@ async function buildWorldContext(opts) {
 }
 
 async function getSpatialProviderHealth() {
-  return spatialProviderManager.getHealthSnapshot();
+  const snapshot = spatialProviderManager.getHealthSnapshot();
+  // Preserve the legacy traffic health grouping while exposing the canonical
+  // manager registry as first-class provider keys. Existing consumers keep
+  // working while new consumers can inspect every registered provider.
+  return {
+    ...snapshot,
+    traffic: {
+      mapbox: snapshot['mapbox-traffic'],
+      tomtom: {
+        incidents: snapshot['tomtom-traffic-incidents'],
+        flow: snapshot['tomtom-traffic-flow'],
+      },
+    },
+  };
 }
 
 module.exports = {
