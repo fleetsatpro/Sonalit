@@ -120,4 +120,26 @@ describe('deterministic spatial events', () => {
     expect(event).toBeTruthy();
     expect(event.evidence[0].value).toBe('high_wind');
   });
+  test('does not turn unverified intelligence into an actionable security event', () => {
+    const events = detectSpatialEvents({
+      mission: { convoyId: 'convoy-1' },
+      operational: { vehicles: [] },
+      relations: [{
+        predicate: 'NEAR',
+        fromId: 'sonalit:vehicle:vehicle-1',
+        toId: 'sonalit:intel_alert:alert-1',
+        fromType: 'vehicle',
+        toType: 'intelligence_alert',
+        distanceM: 1200,
+        confidence: 0.8,
+        operationalConfidence: 0.4,
+        actionable: false,
+        evidence: [{ metric: 'verification_state', value: 'unverified' }]
+      }],
+      environment: []
+    });
+    expect(events.find(e => e.eventType === 'INCIDENT_NEAR_CONVOY')).toBeUndefined();
+    expect(events.find(e => e.eventType === 'HAZARD_NEAR_ROUTE')).toBeUndefined();
+  });
+
 });
