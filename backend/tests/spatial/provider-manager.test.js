@@ -95,6 +95,37 @@ describe('spatial provider manager', () => {
     expect(health.manager.tenantBucketCount).toBe(2);
   });
 
+  test('shares provider-family quota across sibling capabilities', async () => {
+    const manager = new SpatialProviderManager();
+    const first = jest.fn().mockResolvedValue({ observations: [] });
+    const second = jest.fn().mockResolvedValue({ observations: [] });
+
+    manager.register('family-a', {
+      query: first,
+      maxPerMinute: 2,
+      maxConcurrent: 2,
+      tenantMaxPerMinute: 2,
+      tenantMaxConcurrent: 2,
+      quotaKey: 'shared-family',
+    });
+    manager.register('family-b', {
+      query: second,
+      maxPerMinute: 2,
+      maxConcurrent: 2,
+      tenantMaxPerMinute: 2,
+      tenantMaxConcurrent: 2,
+      quotaKey: 'shared-family',
+    });
+
+    await manager.query('family-a', { orgId: 'org-a' });
+    await manager.query('family-b', { orgId: 'org-a' });
+    await expect(manager.query('family-a', { orgId: 'org-a' }))
+      .rejects.toMatchObject({ failureClass: 'rate_limited' });
+
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
   test('rejects duplicate provider registration', () => {
     const manager = new SpatialProviderManager();
     manager.register('duplicate', { query: async () => ({}) });
