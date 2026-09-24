@@ -74,6 +74,9 @@ jobs:
       - name: Build spatial intelligence
         run: pnpm --filter @sonalit/spatial-intelligence build
 
+      - name: Test spatial intelligence package
+        run: pnpm --filter @sonalit/spatial-intelligence test
+
       - name: Typecheck web
         run: pnpm --filter @sonalit/web typecheck
 
