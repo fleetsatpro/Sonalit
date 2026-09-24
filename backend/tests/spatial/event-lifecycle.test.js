@@ -42,7 +42,15 @@ function dbStub() {
       open.delete(row.event_key);
       return { rows: [{ id: row.id, event_key: row.event_key }] };
     }
-    if (sql.startsWith('UPDATE spatial_events SET observed_at=')) return { rows: [] };
+    if (sql.startsWith('UPDATE spatial_events SET observed_at=')) {
+      const key = params[11];
+      const row = open.get(key);
+      if (!row) return { rows: [] };
+      row.confidence = Number(params[3]);
+      row.operational_confidence = Number(params[4]);
+      row.last_seen_at = new Date().toISOString();
+      return { rows: [row] };
+    }
     if (sql.startsWith('INSERT INTO alerts')) return { rows: [{ id: 'alert-' + nextId++ }] };
     return { rows: [] };
   });
@@ -113,6 +121,16 @@ describe('spatial event lifecycle', () => {
     await persistSpatialEvents(db, [Object.assign({}, event, { confidence: 0.9 })], { orgId: 'org-1', context });
     expect(db.open.size).toBe(1);
     expect((db.calls.filter(c => c.sql.startsWith('INSERT INTO alerts'))).length).toBe(1);
+    expect(db.open.get('TRAFFIC_CLOSURE:vehicle:v1:road-1').confidence).toBe(0.9);
+  });
+
+  test('does not reconcile internal events when critical spatial reads failed', () => {
+    const context = {
+      mission: { convoyId: 'c1' },
+      operational: { vehicles: [{ id: 'v1' }] },
+      dataHealth: { ok: false, readErrors: [{ message: 'route query failed' }] },
+    };
+    expect(eventCanAutoResolve(context, 'CORRIDOR_EXIT')).toBe(false);
   });
 
   test('reconciles a disappeared stateful condition only when fresh authority exists', async () => {
@@ -136,6 +154,8 @@ describe('spatial event lifecycle', () => {
       operational: { vehicles: [{ id: 'v1' }] },
       coverage: { layersUnavailable: [], layersPartial: [] },
       layerHealth: [{ layerId: 'traffic', status: 'LIVE' }],
+      providerHealth: { 'tomtom-traffic-incidents': { status: 'LIVE', lastErrorClass: null } },
+      dataHealth: { ok: true, readErrors: [] },
     };
     await persistSpatialEvents(db, [event], { orgId: 'org-1', context: freshContext });
     await persistSpatialEvents(db, [], { orgId: 'org-1', context: freshContext });
