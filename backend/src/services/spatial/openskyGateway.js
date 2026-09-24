@@ -386,7 +386,7 @@ async function getAircraftInBbox(opts) {
 
       const status =
         observations.length === 0
-          ? 'UNAVAILABLE'
+          ? 'PARTIAL'
           : observations.some(o => o.quality.freshnessClass === 'LIVE')
             ? 'LIVE'
             : observations.some(o => o.quality.freshnessClass === 'DELAYED')
