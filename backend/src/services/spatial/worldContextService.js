@@ -1331,6 +1331,7 @@ module.exports = {
   buildWorldContext,
   classifyOperationalFreshness,
   bboxFromCenterRadius,
+  bboxFromRoute,
   normaliseRoute,
   distanceM,
   getSpatialProviderHealth
