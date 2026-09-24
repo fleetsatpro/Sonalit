@@ -1,11 +1,6 @@
 'use strict';
 
-const { getAircraftInBbox, getProviderHealth: getOpenSkyProviderHealth } = require('./openskyGateway');
-const { getCurrentWeather, getProviderHealth: getWeatherProviderHealth } = require('./weatherGateway');
-const { getVesselsInBbox, getProviderHealth: getKplerAisProviderHealth } = require('./kplerAisGateway');
-const { getTrafficAtPoints, getProviderHealth: getMapboxTrafficProviderHealth } = require('./mapboxTrafficGateway');
-const { getTrafficIncidents, getTrafficFlowAtPoints, getProviderHealth: getTomTomTrafficProviderHealth } = require('./tomtomTrafficGateway');
-const { getNaturalHazards, getProviderHealth: getNasaEonetProviderHealth } = require('./nasaEonetGateway');
+const { spatialProviderManager } = require('./providerManager');
 const {
   routeRelation,
   circleRelation,
@@ -780,7 +775,7 @@ async function buildWorldContext(opts) {
 
   if (layers.includes('aircraft') && bbox) {
     try {
-      const result = await getAircraftInBbox({ bbox: bbox, orgId: orgId, requestId: input.requestId });
+      const result = await spatialProviderManager.query('opensky', { bbox: bbox, orgId: orgId, requestId: input.requestId, signal: input.signal });
       movement.push.apply(movement, (result.observations || []).slice(0, Math.max(1, Math.min(250, Number(input.maxEntitiesPerLayer) || 100))));
       const status = result.health?.status || 'UNKNOWN';
       if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('aircraft');
@@ -813,7 +808,7 @@ async function buildWorldContext(opts) {
       unique.set(key, { latitude: Number(p.latitude ?? p.lat), longitude: Number(p.longitude ?? p.lng) });
     });
     const results = await Promise.allSettled(Array.from(unique.values()).map(function(p) {
-      return getCurrentWeather({ latitude: p.latitude, longitude: p.longitude, requestId: input.requestId });
+      return spatialProviderManager.query('weather', { latitude: p.latitude, longitude: p.longitude, requestId: input.requestId, signal: input.signal });
     }));
     const environmentById = new Map();
     results.forEach(function(r) {
@@ -835,7 +830,7 @@ async function buildWorldContext(opts) {
 
   if (layers.includes('hazards') && bbox) {
     try {
-      const result = await getNaturalHazards({ bbox: externalBbox || bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal });
+      const result = await spatialProviderManager.query('nasa-eonet', { bbox: externalBbox || bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal });
       hazards.push.apply(hazards, result.observations || []);
       const status = result.health?.status || 'UNKNOWN';
       if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('hazards');
@@ -851,7 +846,7 @@ async function buildWorldContext(opts) {
 
   if (layers.includes('maritime') && bbox) {
     try {
-      const result = await getVesselsInBbox({ bbox: externalBbox || bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal });
+      const result = await spatialProviderManager.query('kpler-ais', { bbox: externalBbox || bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal });
       movement.push.apply(movement, (result.observations || []).slice(0, Math.max(1, Math.min(250, Number(maxEntitiesPerLayer) || 100))));
       const status = result.health?.status || 'UNKNOWN';
       if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('maritime');
@@ -879,9 +874,9 @@ async function buildWorldContext(opts) {
     samplePoints.forEach(p => pointMap.set(Number(p.latitude).toFixed(4)+','+Number(p.longitude).toFixed(4), p));
     const sampled = Array.from(pointMap.values()).slice(0, 16);
     const trafficResults = await Promise.allSettled([
-      getTrafficAtPoints({ points: sampled, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }),
-      getTrafficFlowAtPoints({ points: sampled, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }),
-      (externalBbox || bbox) ? getTrafficIncidents({ bbox: externalBbox || bbox, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }) : Promise.resolve({ observations: [], health: { status: 'UNAVAILABLE' } })
+      spatialProviderManager.query('mapbox-traffic', { points: sampled, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }),
+      spatialProviderManager.query('tomtom-traffic-flow', { points: sampled, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }),
+      (externalBbox || bbox) ? spatialProviderManager.query('tomtom-traffic-incidents', { bbox: externalBbox || bbox, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }) : Promise.resolve({ observations: [], health: { status: 'UNAVAILABLE' } })
     ]);
     const flow = trafficResults[0], tomtomFlow = trafficResults[1], incident = trafficResults[2], statuses = [];
     if (flow.status === 'fulfilled') { traffic.push.apply(traffic, flow.value.observations || []); statuses.push(flow.value.health?.status || 'UNKNOWN'); }
@@ -1524,17 +1519,7 @@ async function buildWorldContext(opts) {
 }
 
 async function getSpatialProviderHealth() {
-  const open = getOpenSkyProviderHealth();
-  return {
-    opensky: open.opensky || open,
-    weather: getWeatherProviderHealth(),
-    naturalHazards: getNasaEonetProviderHealth(),
-    maritime: getKplerAisProviderHealth(),
-    traffic: {
-      mapbox: getMapboxTrafficProviderHealth(),
-      tomtom: getTomTomTrafficProviderHealth()
-    }
-  };
+  return spatialProviderManager.getHealthSnapshot();
 }
 
 module.exports = {
