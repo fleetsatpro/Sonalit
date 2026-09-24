@@ -157,7 +157,7 @@ export interface WorldContextOperationalVehicle extends SpatialObservation {
 
 export interface WorldContextOperational {
   vehicles: WorldContextOperationalVehicle[];
-  alerts: SpatialObservation[];
+  alerts: Array<Record<string, unknown>>;
 }
 
 export interface WorldContextResult {
