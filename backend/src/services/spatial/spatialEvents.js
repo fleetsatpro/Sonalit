@@ -118,7 +118,6 @@ function layerCanReconcile(context, eventType) {
 
   const coverage = context && context.coverage || {};
   if (Array.isArray(coverage.layersUnavailable) && coverage.layersUnavailable.includes(layerId)) return false;
-  if (Array.isArray(coverage.layersPartial) && coverage.layersPartial.includes(layerId)) return false;
 
   const health = (context && context.layerHealth || []).find(function(item) {
     return item && item.layerId === layerId;
@@ -127,9 +126,14 @@ function layerCanReconcile(context, eventType) {
 
   const status = String(health.status || '').toUpperCase();
   if (['LIVE', 'DELAYED'].includes(status)) return true;
-  // A provider may legitimately return zero records after a successful,
-  // complete query. Treat PARTIAL as reconciliable only when it did not fail.
-  return status === 'PARTIAL' && !health.lastErrorClass;
+  // PARTIAL is safe for automatic resolution only when the layer explicitly
+  // proves the queried coverage was complete. Otherwise a missing observation
+  // may simply be a coverage hole or failed sample.
+  if (status === 'PARTIAL') {
+    return health.coverageComplete === true &&
+      !(Number(health.failedSamples) > 0);
+  }
+  return false;
 }
 
 function eventCanAutoResolve(context, eventType, sourceReferences) {
