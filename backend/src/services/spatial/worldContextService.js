@@ -195,7 +195,7 @@ async function getSecurity(db, orgId, convoyId) {
     [orgId, convoyId || null]
   );
   const intelAlerts = await safeRows(db,
-    "SELECT id::text AS id,category,title,summary,severity,confidence,verification_state,status,country_code,region,location_name,latitude,lngitude,longitude,first_seen_at,last_seen_at,source_count,corroboration_count,metadata FROM intel_alerts WHERE org_id=$1 AND status NOT IN ('resolved','closed') ORDER BY last_seen_at DESC LIMIT 250",
+    "SELECT id::text AS id,category,title,summary,severity,confidence,verification_state,status,country_code,region,location_name,latitude,longitude,first_seen_at,last_seen_at,source_count,corroboration_count,metadata FROM intel_alerts WHERE org_id=$1 AND status NOT IN ('resolved','closed') ORDER BY last_seen_at DESC LIMIT 250",
     [orgId]
   );
   return { riskZones, incidents: incidents.concat(cdsIncidents), intelAlerts };
