@@ -174,7 +174,7 @@ function splitRoute(route, maxAois, paddingM) {
   const distances = cumulativeKm(route);
   const totalKm = distances[distances.length - 1] || 0;
   if (route.length < 2 || totalKm <= 0) return [];
-  const target = Math.max(1, Math.min(maxAois, Math.ceil(totalKm / 220)));
+  const target = Math.max(1, Math.min(maxAois, Math.ceil(totalKm / 300)));
   const targetKm = totalKm / target;
   const unwrapped = unwrapLongitudes(route);
 
@@ -228,12 +228,13 @@ function splitOversizeSegments(route, segments, options) {
         : Math.max(from + 1, Math.floor(segment.fromIndex + (span * (p + 1) / parts)));
       const points = unwrapLongitudes(route.slice(from, to + 1));
       for (const bbox of splitWrappedBbox(bboxForPoints(points, options.paddingM))) {
-        out.push({
-          fromIndex: from,
-          toIndex: to,
-          routeLengthKm: routeLengthKm(points),
-          bbox,
-        });
+        const originalPoints = route.slice(from, to + 1);
+      out.push({
+        fromIndex: from,
+        toIndex: to,
+        routeLengthKm: routeLengthKm(originalPoints),
+        bbox,
+      });
       }
     }
   }
