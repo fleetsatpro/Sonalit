@@ -17,7 +17,7 @@ let stopping = false;
 let timer = null;
 let spatialTimer = null;
 let spatialRunning = false;
-let spatialCursor = 0;
+let spatialCursor = { orgId: null, convoyId: null };
 
 async function evaluateSpatialEye(reason = 'scheduled') {
   if (spatialRunning || stopping) return { evaluated: 0, eventCount: 0, skipped: true };
@@ -26,17 +26,32 @@ async function evaluateSpatialEye(reason = 'scheduled') {
   let eventCount = 0;
   const started = Date.now();
   try {
-    const active = await query(
-      "SELECT id, org_id FROM convoys WHERE org_id IS NOT NULL AND status = 'active' AND deleted_at IS NULL ORDER BY updated_at DESC, id LIMIT 500"
-    );
-    const rows = active.rows || [];
+    const cursor = spatialCursor.orgId && spatialCursor.convoyId
+      ? { orgId: spatialCursor.orgId, convoyId: spatialCursor.convoyId }
+      : null;
+    const baseSql = "SELECT id, org_id FROM convoys " +
+      "WHERE org_id IS NOT NULL AND status = 'active' AND deleted_at IS NULL ";
+    const page = cursor
+      ? await query(
+          baseSql +
+          "AND (org_id > $1 OR (org_id = $1 AND id > $2)) ORDER BY org_id, id LIMIT $3",
+          [cursor.orgId, cursor.convoyId, spatialMaxConvoys]
+        )
+      : await query(baseSql + "ORDER BY org_id, id LIMIT $1", [spatialMaxConvoys]);
+
+    let rows = page.rows || [];
+    if (!rows.length && cursor) {
+      spatialCursor = { orgId: null, convoyId: null };
+      const wrapped = await query(baseSql + "ORDER BY org_id, id LIMIT $1", [spatialMaxConvoys]);
+      rows = wrapped.rows || [];
+    }
     if (!rows.length) return { evaluated: 0, eventCount: 0, skipped: false };
 
-    const count = Math.min(spatialMaxConvoys, rows.length);
-    const start = spatialCursor % rows.length;
-    const selected = [];
-    for (let i = 0; i < count; i += 1) selected.push(rows[(start + i) % rows.length]);
-    spatialCursor = (start + count) % rows.length;
+    const selected = rows.slice(0, spatialMaxConvoys);
+    const last = selected[selected.length - 1];
+    spatialCursor = last
+      ? { orgId: String(last.org_id), convoyId: String(last.id) }
+      : { orgId: null, convoyId: null };
 
     for (const row of selected) {
       if (!row?.org_id || !row?.id) continue;
@@ -65,10 +80,6 @@ async function evaluateSpatialEye(reason = 'scheduled') {
     logger.info(`Spatial Eye cycle complete (${reason}) in ${Date.now() - started}ms: evaluated=${evaluated}, events=${eventCount}, maxConvoys=${spatialMaxConvoys}`);
   }
   return { evaluated, eventCount, skipped: false };
-}
-
-function reasonToken() {
-  return Math.random().toString(36).slice(2, 10);
 }
 
 async function cycle(reason) {
