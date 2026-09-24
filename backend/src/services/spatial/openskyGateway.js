@@ -8,10 +8,19 @@ const TOKEN_SKEW_MS = 60_000;
 const CACHE_TTL_MS = 20_000;
 const MAX_LIVE_MS = 45_000;
 const MAX_DELAYED_MS = 180_000;
+const MAX_STALE_CACHE_MS = 300_000;
+const MAX_CONCURRENT_REQUESTS = 2;
+const MAX_REQUESTS_PER_MINUTE = 10;
+const RATE_WINDOW_MS = 60_000;
+const CIRCUIT_FAILURE_THRESHOLD = 5;
+const CIRCUIT_COOLDOWN_MS = 30_000;
 
 let tokenCache = null;
 const responseCache = new Map();
 const inflight = new Map();
+const requestTimestamps = [];
+let activeRequests = 0;
+let circuit = { state: 'CLOSED', failures: 0, openedAt: null };
 
 let health = {
   providerId: 'opensky',
@@ -26,6 +35,10 @@ let health = {
   requestCount: 0,
   cacheHits: 0,
   dedupeHits: 0,
+  activeRequests: 0,
+  rateLimitRemaining: MAX_REQUESTS_PER_MINUTE,
+  circuitState: 'CLOSED',
+  circuitFailures: 0,
 };
 
 function classifyFreshness(observedAtIso, receivedAtIso) {
@@ -144,6 +157,74 @@ function bboxKey(bbox) {
   return bbox.map((n) => Number(n).toFixed(3)).join(',');
 }
 
+function purgeRateWindow(now) {
+  while (requestTimestamps.length && requestTimestamps[0] <= now - RATE_WINDOW_MS) {
+    requestTimestamps.shift();
+  }
+}
+
+function canRequest(now) {
+  purgeRateWindow(now);
+  return requestTimestamps.length < MAX_REQUESTS_PER_MINUTE;
+}
+
+function recordRequest(now) {
+  purgeRateWindow(now);
+  requestTimestamps.push(now);
+  health.rateLimitRemaining = Math.max(0, MAX_REQUESTS_PER_MINUTE - requestTimestamps.length);
+}
+
+function circuitIsOpen(now) {
+  if (circuit.state !== 'OPEN') return false;
+  if (circuit.openedAt != null && now - circuit.openedAt >= CIRCUIT_COOLDOWN_MS) {
+    circuit = { state: 'HALF_OPEN', failures: circuit.failures, openedAt: circuit.openedAt };
+    health.circuitState = 'HALF_OPEN';
+    return false;
+  }
+  return true;
+}
+
+function recordProviderFailure(now) {
+  circuit.failures += 1;
+  if (circuit.failures >= CIRCUIT_FAILURE_THRESHOLD) {
+    circuit = { state: 'OPEN', failures: circuit.failures, openedAt: now };
+  }
+  health.circuitState = circuit.state;
+  health.circuitFailures = circuit.failures;
+}
+
+function recordProviderSuccess() {
+  circuit = { state: 'CLOSED', failures: 0, openedAt: null };
+  health.circuitState = 'CLOSED';
+  health.circuitFailures = 0;
+}
+
+function staleCachedResult(key, warning) {
+  const cached = responseCache.get(key);
+  if (!cached) return null;
+  const ageMs = Date.now() - cached.at;
+  if (ageMs > MAX_STALE_CACHE_MS) return null;
+  return {
+    ...cached.result,
+    observations: (cached.result.observations || []).map((observation) => ({
+      ...observation,
+      quality: {
+        ...observation.quality,
+        state: 'stale',
+        freshnessClass: 'STALE',
+        reason: warning,
+      },
+    })),
+    health: {
+      ...health,
+      status: 'STALE',
+    },
+    cache: { hit: true, ageMs },
+    warnings: [...(cached.result.warnings || []), warning],
+  };
+}
+
+
 async function getAircraftInBbox(opts) {
   const { bbox, orgId } = opts;
   const safeBbox = validateBbox(bbox);
@@ -155,8 +236,57 @@ async function getAircraftInBbox(opts) {
     });
   }
   const key = bboxKey(safeBbox);
+  const now = Date.now();
   health.requestCount += 1;
-  health.lastAttemptAt = new Date().toISOString();
+  health.lastAttemptAt = new Date(now).toISOString();
+  purgeRateWindow(now);
+  health.rateLimitRemaining = Math.max(0, MAX_REQUESTS_PER_MINUTE - requestTimestamps.length);
+
+  if (circuitIsOpen(now)) {
+    const stale = staleCachedResult(key, 'provider_circuit_open');
+    if (stale) return stale;
+    health.status = 'UNAVAILABLE';
+    health.lastErrorClass = 'unknown';
+    health.lastErrorMessage = 'OpenSky circuit breaker is open';
+    return {
+      observations: [],
+      health: { ...health },
+      coverage: { complete: false, queryScope: \`bbox:\${key}\` },
+      warnings: ['provider_circuit_open'],
+    };
+  }
+
+  if (!canRequest(now)) {
+    const stale = staleCachedResult(key, 'rate_limited_serving_stale_cache');
+    if (stale) return stale;
+    health.status = 'RATE_LIMITED';
+    health.lastErrorClass = 'rate_limited';
+    health.lastErrorMessage = 'OpenSky local rate budget exhausted';
+    return {
+      observations: [],
+      health: { ...health },
+      coverage: { complete: false, queryScope: \`bbox:\${key}\` },
+      warnings: ['local_provider_rate_limit'],
+    };
+  }
+
+  if (activeRequests >= MAX_CONCURRENT_REQUESTS) {
+    const stale = staleCachedResult(key, 'concurrency_limited_serving_stale_cache');
+    if (stale) return stale;
+    health.status = 'RATE_LIMITED';
+    health.lastErrorClass = 'rate_limited';
+    health.lastErrorMessage = 'OpenSky local concurrency budget exhausted';
+    return {
+      observations: [],
+      health: { ...health },
+      coverage: { complete: false, queryScope: \`bbox:\${key}\` },
+      warnings: ['local_provider_concurrency_limit'],
+    };
+  }
+
+  recordRequest(now);
+  activeRequests += 1;
+  health.activeRequests = activeRequests;
 
   const cached = responseCache.get(key);
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
@@ -194,11 +324,9 @@ async function getAircraftInBbox(opts) {
         health.status = 'RATE_LIMITED';
         health.lastErrorClass = 'rate_limited';
         health.lastErrorMessage = 'OpenSky rate limited';
-        const stale = responseCache.get(key);
-        if (stale) {
-          return { ...stale.result, health: { ...health }, warnings: ['rate_limited_serving_stale_cache'] };
-        }
-        return { observations: [], health: { ...health }, coverage: { complete: false, queryScope: `bbox:${key}` } };
+        const stale = staleCachedResult(key, 'rate_limited_serving_stale_cache');
+        if (stale) return stale;
+        return { observations: [], health: { ...health }, coverage: { complete: false, queryScope: \`bbox:\${key}\` } };
       }
       if (!res.ok) {
         health.status = 'UNAVAILABLE';
@@ -220,6 +348,7 @@ async function getAircraftInBbox(opts) {
       }
       const hasLive = observations.some((o) => o.quality.freshnessClass === 'LIVE');
       const hasDelayed = observations.some((o) => o.quality.freshnessClass === 'DELAYED');
+      recordProviderSuccess();
       health = {
         ...health,
         status: observations.length === 0 ? 'UNAVAILABLE' : hasLive ? 'LIVE' : hasDelayed ? 'DELAYED' : 'STALE',
