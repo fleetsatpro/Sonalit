@@ -32,6 +32,20 @@ const SATELLITE_STYLE: maplibregl.StyleSpecification = {
   ],
 }
 
+const EARTH_OBSERVATION_STYLE: maplibregl.StyleSpecification = {
+  version: 8,
+  sources: {
+    earth: {
+      type: 'raster',
+      tiles: ['https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/' + new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10) + '/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg'],
+      tileSize: 256,
+      maxzoom: 9,
+      attribution: 'NASA EOSDIS GIBS',
+    },
+  },
+  layers: [{ id: 'earth-layer', type: 'raster', source: 'earth' }],
+}
+
 const STATUS_COLOR: Record<LiveStatus, string> = {
   move: '#16c784', idle: '#f59e0b', stop: '#475569', offline: '#3e4252', sos: '#ef4444',
 }
@@ -160,7 +174,7 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
   const coordsRef = useRef<HTMLSpanElement>(null)
   const animRef = useRef(0)
   const [mapReady, setMapReady] = useState(false)
-  const [isSatellite, setIsSatellite] = useState(false)
+  const [mapMode, setMapMode] = useState<'dark' | 'satellite' | 'earth'>('dark')
   const [trafficOn, setTrafficOn] = useState(false)
   const [bbox, setBbox] = useState<string | null>(null)
 
@@ -194,14 +208,12 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
   }, [])
 
   // satellite toggle
-  const toggleSatellite = () => {
+  const cycleMapMode = () => {
     const map = mapRef.current; if (!map) return
-    setIsSatellite(prev => {
-      const next = !prev
-      setMapReady(false)
-      map.setStyle(next ? SATELLITE_STYLE : DARK_STYLE)
-      return next
-    })
+    const next = mapMode === 'dark' ? 'satellite' : mapMode === 'satellite' ? 'earth' : 'dark'
+    setMapReady(false)
+    setMapMode(next)
+    map.setStyle(next === 'dark' ? DARK_STYLE : next === 'satellite' ? SATELLITE_STYLE : EARTH_OBSERVATION_STYLE)
   }
 
   // geofence overlay — polygon zones + corridor/linear routes
@@ -372,8 +384,8 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="2" width="6" height="20" rx="1"/><circle cx="12" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/></svg>
           </button>
         )}
-        {/* satellite toggle */}
-        <button onClick={toggleSatellite} title={isSatellite ? 'Dark map' : 'Satellite'} style={{ width: 34, height: 34, borderRadius: 7, background: isSatellite ? 'rgba(232,168,48,.18)' : 'rgba(8,11,20,.92)', border: `1px solid ${isSatellite ? 'rgba(232,168,48,.6)' : 'rgba(255,255,255,.11)'}`, color: isSatellite ? '#e8a830' : '#7a7e8a', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {/* base-layer cycle: operational map → satellite → NASA Earth observation */}
+        <button onClick={cycleMapMode} title={mapMode === 'dark' ? 'Satellite' : mapMode === 'satellite' ? 'Earth observation' : 'Dark map'} style={{ width: 34, height: 34, borderRadius: 7, background: mapMode !== 'dark' ? 'rgba(232,168,48,.18)' : 'rgba(8,11,20,.92)', border: `1px solid ${mapMode !== 'dark' ? 'rgba(232,168,48,.6)' : 'rgba(255,255,255,.11)'}`, color: mapMode !== 'dark' ? '#e8a830' : '#7a7e8a', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
         </button>
         {/* zoom in */}

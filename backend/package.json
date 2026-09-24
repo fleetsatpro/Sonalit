@@ -25,7 +25,8 @@
     "worker:notification": "node src/workers/worker.notification.js",
     "worker:convoy-report": "node src/workers/worker.convoy-report.js",
     "test": "jest",
-    "test:integration": "jest --testPathPattern=tests/integration --runInBand --forceExit"
+    "test:integration": "jest --testPathPattern=tests/integration --runInBand --forceExit",
+    "worker:intelligence": "node src/workers/worker.intelligence.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
@@ -60,7 +61,22 @@
     "uuid": "^9.0.0",
     "winston": "^3.11.0"
   },
-  "devDependencies": { "jest": "^29.7.0", "nodemon": "^3.0.2", "supertest": "^6.3.4" },
-  "engines": { "node": ">=20.0.0" },
-  "jest": { "testEnvironment": "node", "roots": ["<rootDir>/tests"], "testMatch": ["**/*.test.js"], "testTimeout": 30000 }
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.2",
+    "supertest": "^6.3.4"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "roots": [
+      "<rootDir>/tests"
+    ],
+    "testMatch": [
+      "**/*.test.js"
+    ],
+    "testTimeout": 30000
+  }
 }

@@ -20,7 +20,7 @@ describe('external spatial provider normalizers', () => {
   });
 
   test('normalizes traffic congestion and keeps provider timestamp unknown when absent', () => {
-    const obs=normalizeTrafficFeature({id:'seg-1',geometry:{coordinates:[36.81,-1.29]},properties:{congestion:'severe',closed:'no',class:'primary'}},'2026-09-24T12:00:20.000Z',{latitude:-1.29,longitude:36.81});
+    const obs=normalizeTrafficFeature({id:'seg-1',geometry:{type:'Point',coordinates:[36.81,-1.29]},properties:{congestion:'severe',closed:'no',class:'primary'}},'2026-09-24T12:00:20.000Z',{latitude:-1.29,longitude:36.81});
     expect(obs.entityType).toBe('traffic_segment');
     expect(obs.status).toBe('severe');
     expect(obs.quality.freshnessClass).toBe('UNKNOWN');
@@ -46,7 +46,7 @@ describe('external spatial provider normalizers', () => {
   });
 
   test('normalizes NASA EONET hazard geometry with provenance and explicit derived-position uncertainty', () => {
-    const obs=normalizeEvent({id:'E1',title:'Wildfire test',description:'Fire',link:'https://example.invalid/e1',categories:[{id:'wildfires',title:'Wildfires'}],geometry:[{date:'2026-09-24T10:00:00Z',type:'Polygon',coordinates:[[[36.8,-1.3],[36.9,-1.3],[36.9,-1.2],[36.8,-1.2],[36.8,-1.3]]]}]},'2026-09-24T12:00:00Z');
+    const obs=normalizeEvent({id:'E1',title:'Wildfire test',description:'Fire',link:'https://example.invalid/e1',categories:[{id:'wildfires',title:'Wildfires'}],geometry:[{date:'2026-09-24T11:59:00Z',type:'Polygon',coordinates:[[[36.8,-1.3],[36.9,-1.3],[36.9,-1.2],[36.8,-1.2],[36.8,-1.3]]]}]},'2026-09-24T12:00:00Z');
     expect(obs.entityType).toBe('natural_hazard');
     expect(obs.provenance.sourceName).toBe('NASA EONET');
     expect(obs.quality.freshnessClass).toBe('LIVE');

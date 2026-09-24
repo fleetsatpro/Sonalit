@@ -240,7 +240,7 @@ router.post(
       center: req.body?.center ? parseCenter(req.body.center) : null,
       radiusM: boundedRadius(req.body?.radiusM),
       bbox: req.body?.bbox ? (Array.isArray(req.body.bbox) ? validateBbox(req.body.bbox) : parseBbox(String(req.body.bbox))) : null,
-      layers: parseLayers(req.body?.layers, ['aircraft','weather','security','infrastructure','incidents']),
+      layers: parseLayers(req.body?.layers, ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts']),
       maxEntitiesPerLayer: Math.min(MAX_RESULT, Math.max(1, Number(req.body?.maxEntitiesPerLayer) || 100)),
       requestId: req.id || req.headers['x-request-id'],
       persistEvents: true,

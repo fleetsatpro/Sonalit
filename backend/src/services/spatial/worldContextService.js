@@ -4,7 +4,7 @@ const { getAircraftInBbox, getProviderHealth: getOpenSkyProviderHealth } = requi
 const { getCurrentWeather, getProviderHealth: getWeatherProviderHealth } = require('./weatherGateway');
 const { getVesselsInBbox, getProviderHealth: getKplerAisProviderHealth } = require('./kplerAisGateway');
 const { getTrafficAtPoints, getProviderHealth: getMapboxTrafficProviderHealth } = require('./mapboxTrafficGateway');
-const { getTrafficIncidents, getProviderHealth: getTomTomTrafficProviderHealth } = require('./tomtomTrafficGateway');
+const { getTrafficIncidents, getTrafficFlowAtPoints, getProviderHealth: getTomTomTrafficProviderHealth } = require('./tomtomTrafficGateway');
 const { getNaturalHazards, getProviderHealth: getNasaEonetProviderHealth } = require('./nasaEonetGateway');
 const {
   routeRelation,
@@ -194,11 +194,19 @@ async function getInfrastructure(db, orgId, convoyId) {
     "SELECT id::text AS id,name,type,coordinates,radius,region,active,updated_at FROM geofences WHERE org_id=$1 AND active=true ORDER BY updated_at DESC LIMIT 250",
     [orgId]
   );
+  const cdsGeofences = await safeRows(db,
+    "SELECT id::text AS id,name,type,category,geometry,center_lat,center_lng,radius_m,active,updated_at FROM cds_geofences WHERE org_id=$1 AND active=true AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 250",
+    [orgId]
+  );
   const shipments = await safeRows(db,
     "SELECT id::text AS id,tracking_number,customer_name,status,origin_address,origin_lat,origin_lng,destination_address,destination_lat,destination_lng,estimated_arrival,actual_delivery FROM shipments WHERE convoy_id=$1 AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 100",
     [convoyId]
   );
-  return { checkpoints, geofences, shipments };
+  const guardianDevices = await safeRows(db,
+    "SELECT gd.id::text AS id,gd.name,gd.status,gd.panic_active,gd.assignment_type,gd.assignment_id::text AS assignment_id,gd.last_lat,gd.last_lng,gd.last_speed,gd.last_seen,gd.last_fix_at,fo.name AS officer_name,fo.phone AS officer_phone,dh.battery_level,dh.signal_strength,dh.recorded_at AS health_recorded_at,dl.heading,dl.timestamp AS heading_at FROM guardian_devices gd LEFT JOIN field_officers fo ON fo.device_id=gd.id AND fo.org_id=$1 LEFT JOIN LATERAL (SELECT heading,timestamp FROM device_locations WHERE device_id=gd.id ORDER BY timestamp DESC LIMIT 1) dl ON true LEFT JOIN LATERAL (SELECT battery_level,signal_strength,recorded_at FROM device_health WHERE device_id=gd.id ORDER BY recorded_at DESC LIMIT 1) dh ON true WHERE gd.org_id=$1 AND gd.deleted_at IS NULL AND gd.last_lat IS NOT NULL AND gd.last_lng IS NOT NULL ORDER BY gd.last_seen DESC NULLS LAST LIMIT 250",
+    [orgId]
+  );
+  return { checkpoints, geofences, cdsGeofences, shipments, guardianDevices };
 }
 
 async function getSecurity(db, orgId, convoyId) {
@@ -292,6 +300,63 @@ function securityObservation(row, now) {
     provenance: { sourceName: 'Sonalit Risk Intelligence', sourceReference: row.id, observationType: 'risk_zone' },
     coverage: { complete: false, bounded: true, queryScope: 'organisation-scoped risk registry' }
   }, now);
+}
+
+function guardianDeviceObservation(row, now) {
+  const lat = num(row.last_lat);
+  const lng = num(row.last_lng);
+  if (lat == null || lng == null) return null;
+  const observedAt = iso(row.last_fix_at || row.last_seen);
+  const freshness = classifyOperationalFreshness(observedAt, now);
+  const heading = num(row.heading);
+  const speedKmh = num(row.last_speed);
+  const obsConf = row.last_fix_at ? 0.92 : 0.78;
+  return baseObservation({
+    id: 'sonalit:guardian:' + row.id,
+    entityType: 'guardian_device',
+    source: 'sonalit-guardian',
+    sourceReference: row.id,
+    latitude: lat,
+    longitude: lng,
+    observedAt,
+    observationConfidence: obsConf,
+    headingDeg: heading,
+    speedMps: speedKmh == null ? null : speedKmh / 3.6,
+    status: row.panic_active ? 'panic' : row.status,
+    attributes: {
+      name: row.name,
+      status: row.status,
+      panic_active: Boolean(row.panic_active),
+      assignment_type: row.assignment_type || null,
+      assignment_id: row.assignment_id || null,
+      officer_name: row.officer_name || null,
+      officer_phone: row.officer_phone || null,
+      battery_level: row.battery_level == null ? null : Number(row.battery_level),
+      signal_strength: row.signal_strength == null ? null : Number(row.signal_strength),
+      heading_at: iso(row.heading_at),
+      health_recorded_at: iso(row.health_recorded_at),
+      last_fix_at: iso(row.last_fix_at)
+    },
+    provenance: {
+      sourceName: 'Sonalit Guardian Telemetry',
+      sourceReference: row.id,
+      observationType: 'guardian_device_position'
+    },
+    coverage: {
+      complete: false,
+      bounded: true,
+      queryScope: 'organisation-scoped Guardian devices with current location'
+    },
+    quality: {
+      state: freshness === 'LIVE' ? 'good' : freshness === 'DELAYED' ? 'degraded' : freshness === 'STALE' ? 'stale' : 'unknown',
+      freshnessClass: freshness,
+      reason: row.last_fix_at ? undefined : 'Guardian heartbeat timestamp used because last GPS-fix timestamp is unavailable'
+    }
+  }, now, {
+    interpretationConfidence: 0.98,
+    operationalConfidence: row.panic_active ? 1 : 0.92,
+    uncertainty: row.last_fix_at ? [] : ['Position recency is anchored to last_seen because no distinct GPS-fix timestamp is available.']
+  });
 }
 
 function checkpointObservation(row, now) {
@@ -412,6 +477,34 @@ function geofenceObservation(row, now) {
     provenance: { sourceName: 'Sonalit Geofence Registry', sourceReference: row.id, observationType: 'operational_geofence' },
     coverage: { complete: true, bounded: true, queryScope: 'organisation-scoped active geofences' },
     quality: { state: 'good', freshnessClass: 'UNKNOWN', reason: 'static operational geofence definition' }
+  }, now, { interpretationConfidence: 1, operationalConfidence: 0.95 });
+}
+
+function cdsFacilityObservation(row, now) {
+  const lat = num(row.center_lat);
+  const lng = num(row.center_lng);
+  if (lat == null || lng == null) return null;
+  return baseObservation({
+    id: 'sonalit:cds_geofence:' + row.id,
+    entityType: 'facility',
+    source: 'sonalit-cds',
+    sourceReference: row.id,
+    latitude: lat,
+    longitude: lng,
+    observedAt: row.updated_at,
+    status: row.active ? 'active' : 'inactive',
+    geometry: parseJson(row.geometry) || undefined,
+    attributes: {
+      name: row.name,
+      category: row.category,
+      type: row.type,
+      radiusM: num(row.radius_m),
+      active: Boolean(row.active),
+      businessDomain: 'container-delivery-system'
+    },
+    provenance: { sourceName: 'Sonalit CDS Geofence Registry', sourceReference: row.id, observationType: 'cds_facility_boundary' },
+    coverage: { complete: true, bounded: true, queryScope: 'organisation-scoped active CDS port/warehouse/border/customer geofences' },
+    quality: { state: 'good', freshnessClass: 'UNKNOWN', reason: 'static CDS facility boundary' }
   }, now, { interpretationConfidence: 1, operationalConfidence: 0.95 });
 }
 
@@ -741,7 +834,7 @@ async function buildWorldContext(opts) {
 
   if (layers.includes('hazards') && bbox) {
     try {
-      const result = await getNaturalHazards({ bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal });
+      const result = await getNaturalHazards({ bbox: externalBbox || bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal });
       hazards.push.apply(hazards, result.observations || []);
       const status = result.health?.status || 'UNKNOWN';
       if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('hazards');
@@ -757,7 +850,7 @@ async function buildWorldContext(opts) {
 
   if (layers.includes('maritime') && bbox) {
     try {
-      const result = await getVesselsInBbox({ bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal });
+      const result = await getVesselsInBbox({ bbox: externalBbox || bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal });
       movement.push.apply(movement, (result.observations || []).slice(0, Math.max(1, Math.min(250, Number(maxEntitiesPerLayer) || 100))));
       const status = result.health?.status || 'UNKNOWN';
       if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('maritime');
@@ -785,12 +878,15 @@ async function buildWorldContext(opts) {
     samplePoints.forEach(p => pointMap.set(Number(p.latitude).toFixed(4)+','+Number(p.longitude).toFixed(4), p));
     const sampled = Array.from(pointMap.values()).slice(0, 16);
     const trafficResults = await Promise.allSettled([
-      getTrafficAtPoints({ points: sampled, maxRecords: maxEntitiesPerLayer, signal: input.signal }),
-      (externalBbox || bbox) ? getTrafficIncidents({ bbox: externalBbox || bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal }) : Promise.resolve({ observations: [], health: { status: 'UNAVAILABLE' } })
+      getTrafficAtPoints({ points: sampled, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }),
+      getTrafficFlowAtPoints({ points: sampled, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }),
+      (externalBbox || bbox) ? getTrafficIncidents({ bbox: externalBbox || bbox, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }) : Promise.resolve({ observations: [], health: { status: 'UNAVAILABLE' } })
     ]);
-    const flow = trafficResults[0], incident = trafficResults[1], statuses = [];
+    const flow = trafficResults[0], tomtomFlow = trafficResults[1], incident = trafficResults[2], statuses = [];
     if (flow.status === 'fulfilled') { traffic.push.apply(traffic, flow.value.observations || []); statuses.push(flow.value.health?.status || 'UNKNOWN'); }
     else { statuses.push('UNAVAILABLE'); uncertainty.push('Mapbox traffic feed unavailable.'); }
+    if (tomtomFlow.status === 'fulfilled') { traffic.push.apply(traffic, tomtomFlow.value.observations || []); statuses.push(tomtomFlow.value.health?.status || 'UNKNOWN'); }
+    else { statuses.push('UNAVAILABLE'); uncertainty.push('TomTom traffic flow feed unavailable.'); }
     if (incident.status === 'fulfilled') { traffic.push.apply(traffic, incident.value.observations || []); statuses.push(incident.value.health?.status || 'UNKNOWN'); }
     else { statuses.push('UNAVAILABLE'); uncertainty.push('TomTom traffic incident feed unavailable.'); }
     const status = statuses.includes('LIVE') ? 'LIVE' : statuses.includes('DELAYED') ? 'DELAYED' : statuses.includes('STALE') ? 'STALE' : statuses.includes('PARTIAL') ? 'PARTIAL' : statuses.includes('AUTH_REQUIRED') ? 'AUTH_REQUIRED' : 'UNAVAILABLE';
@@ -804,6 +900,14 @@ async function buildWorldContext(opts) {
     infrastructureRaw.checkpoints.forEach(function(cp) { infrastructure.push(checkpointObservation(cp, now)); });
     infrastructureRaw.geofences.forEach(function(g) {
       const obs = geofenceObservation(g, now);
+      if (obs) infrastructure.push(obs);
+    });
+    (infrastructureRaw.cdsGeofences || []).forEach(function(g) {
+      const obs = cdsFacilityObservation(g, now);
+      if (obs) infrastructure.push(obs);
+    });
+    (infrastructureRaw.guardianDevices || []).forEach(function(g) {
+      const obs = guardianDeviceObservation(g, now);
       if (obs) infrastructure.push(obs);
     });
     infrastructureRaw.shipments.forEach(function(s) {
@@ -1009,8 +1113,8 @@ async function buildWorldContext(opts) {
     });
   });
 
-  if (resolvedCenter && movement.length) {
-    movement.slice(0, Math.min(50, movement.length)).forEach(function(ac) {
+  if (resolvedCenter && movement.some(e => e.entityType === 'aircraft')) {
+    movement.filter(e => e.entityType === 'aircraft').slice(0, 50).forEach(function(ac) {
       const d = distanceM(resolvedCenter.latitude, resolvedCenter.longitude, ac.latitude, ac.longitude);
       if (d > boundedRadiusM) return;
       const bearing = bearingDeg(resolvedCenter.latitude, resolvedCenter.longitude, ac.latitude, ac.longitude);
@@ -1103,6 +1207,33 @@ async function buildWorldContext(opts) {
       });
     });
   });
+
+  const guardianEntities = infrastructure.filter(function(entity) { return entity.entityType === 'guardian_device'; });
+  for (const guardian of guardianEntities) {
+    for (const vehicle of operationalVehicles) {
+      const distance = distanceM(vehicle.latitude, vehicle.longitude, guardian.latitude, guardian.longitude);
+      if (distance > 10000) continue;
+      relations.push({
+        predicate: 'NEAR',
+        fromId: guardian.id,
+        toId: vehicle.id,
+        fromType: 'guardian_device',
+        toType: 'vehicle',
+        distanceM: Math.round(distance),
+        confidence: guardian.observationConfidence || 0.8,
+        operationalConfidence: guardian.operationalConfidence || 0.9,
+        observedAt: guardian.observedAt,
+        derivedAt: new Date(now).toISOString(),
+        evidence: [
+          { metric: 'distance_m', value: Math.round(distance), source: 'sonalit-geometry' },
+          { metric: 'panic_active', value: Boolean(guardian.attributes?.panic_active), source: 'sonalit-guardian' }
+        ],
+        sourceReferences: [guardian.sourceReference],
+        uncertainty: guardian.uncertainty || [],
+        actionable: Boolean(guardian.attributes?.panic_active)
+      });
+    }
+  }
 
   securityRaw.incidents.forEach(function(incident) {
     if (!mission || !incident.convoy_id || String(incident.convoy_id) !== String(mission.convoyId)) return;
@@ -1209,6 +1340,84 @@ async function buildWorldContext(opts) {
       }
     }
   }
+  if (mission && routeObservation.length >= 2) {
+    for (const entity of trafficEntities.concat(hazardEntities)) {
+      if (!Number.isFinite(Number(entity.latitude)) || !Number.isFinite(Number(entity.longitude))) continue;
+      const routeDistanceKm = projectOntoRoute(routeObservation, Number(entity.latitude), Number(entity.longitude)).crossTrackKm;
+      if (!Number.isFinite(routeDistanceKm) || routeDistanceKm * 1000 > Math.max(5000, routeInfo.widthKm * 1000 + 10000)) continue;
+      const predicate = entity.entityType === 'natural_hazard'
+        ? 'NATURAL_HAZARD_NEAR_ROUTE'
+        : entity.entityType === 'traffic_hazard'
+          ? 'EXTERNAL_HAZARD_NEAR_ROUTE'
+          : entity.attributes?.closed
+            ? 'TRAFFIC_CLOSURE'
+            : entity.attributes?.congestion
+              ? 'TRAFFIC_CONGESTION'
+              : entity.entityType === 'traffic_incident'
+                ? 'EXTERNAL_INCIDENT_NEAR_ROUTE'
+                : 'NEAR_TRAFFIC';
+      const opConf = Number(entity.operationalConfidence || entity.observationConfidence || 0.5);
+      externalRelations.push({
+        predicate,
+        fromId: 'sonalit:convoy:' + mission.convoyId,
+        toId: entity.id,
+        fromType: 'convoy',
+        toType: entity.entityType,
+        distanceM: null,
+        routeDistanceM: Math.round(routeDistanceKm * 1000),
+        confidence: Number(entity.observationConfidence || 0.5),
+        operationalConfidence: opConf * (entity.quality?.freshnessClass === 'UNKNOWN' ? 0.9 : 1),
+        observedAt: entity.observedAt || null,
+        derivedAt: new Date(now).toISOString(),
+        evidence: [
+          { metric: 'route_distance_m', value: Math.round(routeDistanceKm * 1000), source: 'sonalit-corridor' },
+          { metric: 'source_observation', value: entity.id, source: entity.source }
+        ],
+        sourceReferences: [String(entity.sourceReference || entity.id)],
+        uncertainty: entity.quality?.reason ? [entity.quality.reason] : [],
+        relevance: contextRelevance({
+          distanceM: routeDistanceKm * 1000,
+          routeDistanceM: routeDistanceKm * 1000,
+          severity: entity.attributes?.magnitudeOfDelay === 'major' || entity.attributes?.closed ? 'high' : entity.attributes?.severity,
+          freshnessClass: entity.quality?.freshnessClass || 'UNKNOWN',
+          sourceQuality: entity.observationConfidence || 0.5,
+          missionActive: true
+        }),
+        actionable: opConf >= 0.65
+      });
+    }
+
+    for (const entity of movement.filter(e => e.entityType === 'vessel')) {
+      if (!Number.isFinite(Number(entity.latitude)) || !Number.isFinite(Number(entity.longitude))) continue;
+      const routeDistanceKm = projectOntoRoute(routeObservation, Number(entity.latitude), Number(entity.longitude)).crossTrackKm;
+      if (!Number.isFinite(routeDistanceKm) || routeDistanceKm * 1000 > Math.max(5000, routeInfo.widthKm * 1000 + 10000)) continue;
+      externalRelations.push({
+        predicate: 'NEAR_MARITIME',
+        fromId: 'sonalit:convoy:' + mission.convoyId,
+        toId: entity.id,
+        fromType: 'convoy',
+        toType: entity.entityType,
+        distanceM: null,
+        routeDistanceM: Math.round(routeDistanceKm * 1000),
+        confidence: Number(entity.observationConfidence || 0.5),
+        operationalConfidence: Number(entity.operationalConfidence || entity.observationConfidence || 0.5),
+        observedAt: entity.observedAt || null,
+        derivedAt: new Date(now).toISOString(),
+        evidence: [{ metric: 'route_distance_m', value: Math.round(routeDistanceKm * 1000), source: 'sonalit-corridor' }],
+        sourceReferences: [String(entity.sourceReference || entity.id)],
+        uncertainty: entity.quality?.reason ? [entity.quality.reason] : [],
+        relevance: contextRelevance({
+          distanceM: routeDistanceKm * 1000,
+          routeDistanceM: routeDistanceKm * 1000,
+          freshnessClass: entity.quality?.freshnessClass || 'UNKNOWN',
+          sourceQuality: entity.observationConfidence || 0.5,
+          missionActive: true
+        }),
+        actionable: Number(entity.operationalConfidence || entity.observationConfidence || 0.5) >= 0.65
+      });
+    }
+  }
+
   relations.push.apply(relations, externalRelations);
   const allEntities = operationalVehicles.concat(movement, environment, traffic, hazards, infrastructure, security);
   const missionRouteCoords = routeInfo.route.map(function(p) { return [p.lng, p.lat]; });
@@ -1251,7 +1460,7 @@ async function buildWorldContext(opts) {
     layerHealth,
     provenance: [
       { sourceName: 'Sonalit Tracking', attribution: 'Organisation-scoped operational telemetry' },
-      ...(movement.length ? [{ sourceName: 'OpenSky Network', attribution: 'OpenSky Network', license: 'OpenSky Network terms' }] : []),
+      ...(movement.some(e => e.source === 'opensky') ? [{ sourceName: 'OpenSky Network', attribution: 'OpenSky Network', license: 'OpenSky Network terms' }] : []),
       ...(environment.length ? [{ sourceName: 'Open-Meteo', attribution: 'Open-Meteo', license: 'Open-Meteo terms' }] : []),
       ...(movement.some(e => e.source === 'kpler-ais') ? [{ sourceName: 'Kpler AIS', attribution: 'Kpler AIS' }] : []),
       ...(traffic.some(e => e.source === 'mapbox-traffic') ? [{ sourceName: 'Mapbox Traffic', attribution: 'Mapbox Traffic' }] : []),

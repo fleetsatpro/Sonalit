@@ -40,6 +40,7 @@ jest.mock('../../src/services/spatial/weatherGateway', () => ({
     }],
     health: { status: 'LIVE' }
   }),
+  getTrafficFlowAtPoints: jest.fn().mockResolvedValue({ observations: [{ id: 'tomtom:traffic-flow:p1', entityType: 'traffic_flow_segment', source: 'tomtom-traffic', sourceReference: 'flow:p1', latitude: -1.291, longitude: 36.831, observedAt: null, receivedAt: '2026-09-24T12:00:20.000Z', observationConfidence: 0.88, operationalConfidence: 0.84, confidence: 0.88, speedMps: 5, status: 'heavy', attributes: { currentSpeedKmh: 18, freeFlowSpeedKmh: 50, currentTravelTimeS: 200, freeFlowTravelTimeS: 90, delayRatio: 1.22, congestion: 'heavy' }, provenance: { sourceName: 'TomTom Traffic Flow', sourceReference: 'flow:p1' }, quality: { state: 'good', freshnessClass: 'UNKNOWN' } }], health: { status: 'LIVE', recordCount: 1 } }),
   getProviderHealth: jest.fn().mockReturnValue({ status: 'LIVE' }),
 }));
 
@@ -110,6 +111,34 @@ jest.mock('../../src/services/spatial/tomtomTrafficGateway', () => ({
       attributes: { category: 'flooding', magnitudeOfDelay: 'moderate' },
       provenance: { sourceName: 'TomTom Traffic', sourceReference: 'inc-1' },
       quality: { state: 'good', freshnessClass: 'LIVE' }
+    }],
+    health: { status: 'LIVE', recordCount: 1 }
+  }),
+  getTrafficFlowAtPoints: jest.fn().mockResolvedValue({
+    observations: [{
+      id: 'tomtom:traffic-flow:p1',
+      entityType: 'traffic_flow_segment',
+      source: 'tomtom-traffic',
+      sourceReference: 'flow:p1',
+      latitude: -1.291,
+      longitude: 36.831,
+      observedAt: null,
+      receivedAt: '2026-09-24T12:00:20.000Z',
+      observationConfidence: 0.88,
+      operationalConfidence: 0.84,
+      confidence: 0.88,
+      speedMps: 5,
+      status: 'heavy',
+      attributes: {
+        currentSpeedKmh: 18,
+        freeFlowSpeedKmh: 50,
+        currentTravelTimeS: 200,
+        freeFlowTravelTimeS: 90,
+        delayRatio: 1.22,
+        congestion: 'heavy'
+      },
+      provenance: { sourceName: 'TomTom Traffic Flow', sourceReference: 'flow:p1' },
+      quality: { state: 'good', freshnessClass: 'UNKNOWN' }
     }],
     health: { status: 'LIVE', recordCount: 1 }
   }),
@@ -217,6 +246,28 @@ function makeDb() {
     }
     if (sql.includes('FROM geofences')) return { rows: [] };
     if (sql.includes('FROM shipments')) return { rows: [] };
+    if (sql.includes('FROM guardian_devices gd')) {
+      return { rows: [{
+        id: '00000000-0000-0000-0000-000000000005',
+        name: 'Guardian Alpha',
+        status: 'active',
+        panic_active: false,
+        assignment_type: 'vehicle',
+        assignment_id: VEHICLE,
+        last_lat: -1.2915,
+        last_lng: 36.8310,
+        last_speed: 4,
+        last_seen: '2026-09-24T12:00:18.000Z',
+        last_fix_at: '2026-09-24T12:00:17.000Z',
+        officer_name: 'Officer Alpha',
+        officer_phone: '+254700000001',
+        battery_level: 81,
+        signal_strength: 77,
+        health_recorded_at: '2026-09-24T12:00:16.000Z',
+        heading: 90,
+        heading_at: '2026-09-24T12:00:17.000Z'
+      }] };
+    }
     if (sql.includes('FROM risk_zones')) {
       return { rows: [{
         id: 'rz-1',
@@ -265,6 +316,61 @@ function makeDb() {
 }
 
 describe('world context integration assembly', () => {
+  test('fuses route-level external traffic and hazards even when they are beyond the vehicle radius', async () => {
+    const { db } = makeDb();
+    db.mockImplementation(async (sql) => {
+      if (sql.includes('convoy_route_corridors')) {
+        return { rows: [{ route_line: [[-1.29,36.82],[-1.29,37.20],[-1.29,37.60]], width_km: 1, active: true }] };
+      }
+      if (sql.includes('FROM vehicles v')) {
+        return { rows: [{ id: VEHICLE, registration: 'KCA 123A', type: 'prime_mover', region: 'Kenya', status: 'active', latitude: -1.29, longitude: 36.82, heading: 90, speed: 45, last_ping: '2026-09-24T12:00:15.000Z', driver_id: null, assigned_convoy_id: CONVOY, gps_lat: null, gps_lng: null, gps_heading: null, gps_speed: null, gps_accuracy: null, gps_at: null, prev_lat: -1.29, prev_lng: 36.819, prev_heading: 90, prev_speed: 44, prev_at: '2026-09-24T11:59:45.000Z' }] };
+      }
+      if (sql.includes('FROM checkpoints')) return { rows: [] };
+      if (sql.includes('FROM geofences')) return { rows: [] };
+      if (sql.includes('FROM shipments')) return { rows: [] };
+    if (sql.includes('FROM guardian_devices gd')) {
+      return { rows: [{
+        id: '00000000-0000-0000-0000-000000000005',
+        name: 'Guardian Alpha',
+        status: 'active',
+        panic_active: false,
+        assignment_type: 'vehicle',
+        assignment_id: VEHICLE,
+        last_lat: -1.2915,
+        last_lng: 36.8310,
+        last_speed: 4,
+        last_seen: '2026-09-24T12:00:18.000Z',
+        last_fix_at: '2026-09-24T12:00:17.000Z',
+        officer_name: 'Officer Alpha',
+        officer_phone: '+254700000001',
+        battery_level: 81,
+        signal_strength: 77,
+        health_recorded_at: '2026-09-24T12:00:16.000Z',
+        heading: 90,
+        heading_at: '2026-09-24T12:00:17.000Z'
+      }] };
+    }
+      if (sql.includes('FROM risk_zones')) return { rows: [] };
+      if (sql.includes('FROM intel_alerts')) return { rows: [] };
+      if (sql.includes('FROM incidents')) return { rows: [] };
+      if (sql.includes('FROM cds_incidents')) return { rows: [] };
+      if (sql.includes('FROM alerts')) return { rows: [] };
+      if (sql.includes('FROM convoys') && sql.includes('LIMIT 1')) return { rows: [{ id: CONVOY, name: 'LK008', status: 'active', priority: 'high', region: 'Kenya', route_origin: 'Nairobi', route_destination: 'Mombasa', departure_time: '2026-09-24T12:00:00.000Z', estimated_arrival: '2026-09-24T20:00:00.000Z' }] };
+      return { rows: [] };
+    });
+    const ctx = await buildWorldContext({
+      orgId: ORG,
+      db,
+      subject: { kind: 'convoy', id: CONVOY },
+      radiusM: 1000,
+      layers: ['maritime','traffic','hazards'],
+      maxEntitiesPerLayer: 100,
+      persistEvents: false
+    });
+    expect(ctx.relations.some(r => r.fromType === 'convoy' && ['TRAFFIC_CONGESTION','TRAFFIC_CLOSURE','NATURAL_HAZARD_NEAR_ROUTE','EXTERNAL_HAZARD_NEAR_ROUTE','NEAR_TRAFFIC'].includes(r.predicate))).toBe(true);
+    expect(ctx.relations.some(r => r.fromType === 'convoy' && r.routeDistanceM != null)).toBe(true);
+  });
+
   test('assembles real operational, environmental and security layers without fake alert coordinates', async () => {
     const { db, calls } = makeDb();
 
@@ -285,12 +391,13 @@ describe('world context integration assembly', () => {
     expect(ctx.environment).toHaveLength(1);
     expect(ctx.movement.some(e => e.entityType === 'aircraft')).toBe(true);
     expect(ctx.movement.some(e => e.entityType === 'vessel')).toBe(true);
-    expect(ctx.movement.some(e => e.entityType === 'vessel')).toBe(true);
+    expect(ctx.infrastructure.some(e => e.entityType === 'guardian_device')).toBe(true);
+    expect(ctx.relations.some(r => r.fromType === 'guardian_device' && r.toType === 'vehicle' && r.predicate === 'NEAR')).toBe(true);
     expect(ctx.traffic.some(e => e.entityType === 'traffic_segment')).toBe(true);
     expect(ctx.traffic.some(e => e.entityType === 'traffic_hazard')).toBe(true);
     expect(ctx.hazards.some(e => e.entityType === 'natural_hazard')).toBe(true);
     expect(ctx.coverage.layersSucceeded).toEqual(expect.arrayContaining(['maritime','traffic','hazards']));
-    expect(ctx.infrastructure).toHaveLength(1);
+    expect(ctx.infrastructure.length).toBeGreaterThanOrEqual(2);
     expect(ctx.security.length).toBeGreaterThanOrEqual(2);
     expect(ctx.security.some(e => e.entityType === 'intelligence_alert')).toBe(true);
 

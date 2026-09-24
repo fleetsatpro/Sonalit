@@ -15,20 +15,25 @@ const spatialMaxConvoys = Math.max(1, Math.min(100, Number(process.env.SPATIAL_E
 let stopping = false;
 let timer = null;
 
-async function evaluateSpatialEye(orgId) {
+async function evaluateSpatialEye() {
   let evaluated = 0;
   let eventCount = 0;
   try {
-    const convoys = await withOrg(orgId, (client) => client.query(
-      "SELECT id FROM convoys WHERE org_id = $1 AND status = 'active' AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT $2",
-      [orgId, spatialMaxConvoys]
-    ));
-    for (const row of convoys.rows || []) {
+    const orgs = await query(
+      "SELECT DISTINCT org_id FROM convoys WHERE org_id IS NOT NULL AND status = 'active' AND deleted_at IS NULL ORDER BY org_id LIMIT 500"
+    );
+    for (const org of orgs.rows || []) {
+      if (!org?.org_id) continue;
+      const convoys = await withOrg(org.org_id, (client) => client.query(
+        "SELECT id FROM convoys WHERE org_id = $1 AND status = 'active' AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT $2",
+        [org.org_id, spatialMaxConvoys]
+      ));
+      for (const row of convoys.rows || []) {
         try {
           const context = await buildWorldContext({
-            orgId,
+            orgId: org.org_id,
             userId: null,
-            db: (sql, params) => withOrg(orgId, (scopedClient) => scopedClient.query(sql, params)),
+            db: (sql, params) => withOrg(org.org_id, (scopedClient) => scopedClient.query(sql, params)),
             subject: { kind: 'convoy', id: String(row.id) },
             layers: ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts'],
             maxEntitiesPerLayer: 100,
@@ -39,15 +44,15 @@ async function evaluateSpatialEye(orgId) {
           evaluated += 1;
           eventCount += Array.isArray(context.events) ? context.events.length : 0;
         } catch (error) {
-          logger.warn(`Spatial Eye convoy evaluation failed org=${orgId} convoy=${row.id}: ${error.message}`);
+          logger.warn(`Spatial Eye convoy evaluation failed org=${org.org_id} convoy=${row.id}: ${error.message}`);
         }
       }
+    }
   } catch (error) {
-    logger.warn(`Spatial Eye organisation evaluation failed org=${orgId}: ${error.message}`);
+    logger.warn(`Spatial Eye global evaluation failed: ${error.message}`);
   }
   return { evaluated, eventCount };
 }
-
 function reasonToken() {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -58,11 +63,12 @@ async function cycle(reason) {
   try {
     let spatialEvaluated = 0;
     let spatialEvents = 0;
-    for (const org of result?.results || []) {
-      if (!org?.org_id) continue;
-      const spatial = await evaluateSpatialEye(org.org_id);
-      spatialEvaluated += spatial.evaluated;
-      spatialEvents += spatial.eventCount;
+    try {
+      const spatial = await evaluateSpatialEye();
+      spatialEvaluated = spatial.evaluated;
+      spatialEvents = spatial.eventCount;
+    } catch (error) {
+      logger.warn(`Spatial Eye cycle failed: ${error.message}`);
     }
 
     let mesh = [];
