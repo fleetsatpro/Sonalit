@@ -436,3 +436,34 @@ describe('world context integration assembly', () => {
     })).rejects.toMatchObject({ statusCode: 404 });
   });
 });
+
+
+  test('correlates proximate cross-provider traffic and preserves disagreement', () => {
+    const { correlateExternalObservations } = require('../../src/services/spatial/worldContextService');
+    const route = [{ lat: -1.3, lng: 36.8 }, { lat: -1.0, lng: 37.8 }];
+    const observations = [
+      {
+        id: 'mapbox-1', entityType: 'traffic_segment', source: 'mapbox-traffic',
+        sourceReference: 'm1', latitude: -1.20, longitude: 37.20,
+        observationConfidence: 0.8, attributes: { congestion: 'heavy', closed: false },
+      },
+      {
+        id: 'tomtom-1', entityType: 'traffic_segment', source: 'tomtom-traffic-flow',
+        sourceReference: 't1', latitude: -1.201, longitude: 37.201,
+        observationConfidence: 0.9, attributes: { congestion: 'heavy', closed: false },
+      },
+      {
+        id: 'tomtom-2', entityType: 'traffic_segment', source: 'tomtom-traffic-incidents',
+        sourceReference: 't2', latitude: -1.202, longitude: 37.202,
+        observationConfidence: 0.9, attributes: { congestion: null, closed: true },
+      },
+    ];
+    const correlations = correlateExternalObservations(observations, route, Date.now());
+    expect(correlations.some(x => x.kind === 'corroboration')).toBe(true);
+    expect(correlations.some(x => x.kind === 'source_disagreement')).toBe(true);
+    for (const correlation of correlations) {
+      expect(correlation.sourceProviders.length).toBe(2);
+      expect(correlation.uncertainty.length).toBeGreaterThan(0);
+    }
+  });
+
