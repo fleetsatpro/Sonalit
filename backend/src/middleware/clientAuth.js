@@ -6,7 +6,7 @@
 const jwt = require('jsonwebtoken');
 const { query } = require('../config/database');
 
-function clientAuth(req, res, next) {
+async function clientAuth(req, res, next) {
   try {
     const fromCookie = req.cookies?.sonalit_client;
     const fromHeader = req.headers.authorization?.startsWith('Bearer ')
