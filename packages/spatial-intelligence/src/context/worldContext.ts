@@ -38,6 +38,10 @@ export interface WorldContextLayerHealth {
   acceptedCount?: number;
   rejectedCount?: number;
   freshnessMs?: number;
+  sampleCount?: number;
+  successfulSamples?: number;
+  failedSamples?: number;
+  coverageComplete?: boolean;
   reason?: string;
 }
 
