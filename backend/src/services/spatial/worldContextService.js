@@ -2,6 +2,9 @@
 
 const { getAircraftInBbox, getProviderHealth: getOpenSkyProviderHealth } = require('./openskyGateway');
 const { getCurrentWeather, getProviderHealth: getWeatherProviderHealth } = require('./weatherGateway');
+const { getVesselsInBbox, getProviderHealth: getKplerAisProviderHealth } = require('./kplerAisGateway');
+const { getTrafficAtPoints, getProviderHealth: getMapboxTrafficProviderHealth } = require('./mapboxTrafficGateway');
+const { getTrafficIncidents, getProviderHealth: getTomTomTrafficProviderHealth } = require('./tomtomTrafficGateway');
 const {
   routeRelation,
   circleRelation,
@@ -16,7 +19,7 @@ const EARTH_R = 6371000;
 const LIVE_MS = 45000;
 const DELAYED_MS = 300000;
 const MAX_EXTERNAL_RADIUS_M = 100000;
-const ALLOWED_LAYERS = new Set(['aircraft','weather','security','infrastructure','incidents','alerts']);
+const ALLOWED_LAYERS = new Set(['aircraft','weather','maritime','traffic','security','infrastructure','incidents','alerts']);
 
 function num(v) {
   if (v == null || v === '') return null;
@@ -651,6 +654,7 @@ async function buildWorldContext(opts) {
 
   const movement = [];
   const environment = [];
+  const traffic = [];
   const infrastructure = [];
   const security = [];
   const layerHealth = [];
@@ -713,6 +717,54 @@ async function buildWorldContext(opts) {
       uncertainty.push('Weather provider returned no usable observation.');
       layerHealth.push({ layerId: 'weather', status: 'UNAVAILABLE', reason: 'No usable weather observation.' });
     }
+  }
+
+  if (layers.includes('maritime') && bbox) {
+    try {
+      const result = await getVesselsInBbox({ bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal });
+      movement.push.apply(movement, (result.observations || []).slice(0, Math.max(1, Math.min(250, Number(maxEntitiesPerLayer) || 100))));
+      const status = result.health?.status || 'UNKNOWN';
+      if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('maritime');
+      else if (status === 'STALE' || status === 'PARTIAL') layersPartial.push('maritime');
+      else layersUnavailable.push('maritime');
+      layerHealth.push({ layerId: 'maritime', status, lastSuccessAt: result.health?.lastSuccessAt, lastAttemptAt: result.health?.lastAttemptAt, recordCount: result.health?.recordCount, acceptedCount: result.health?.acceptedCount, rejectedCount: result.health?.rejectedCount, reason: result.health?.lastErrorMessage });
+      if (status === 'AUTH_REQUIRED') warnings.push('Maritime AIS provider credentials are not configured.');
+    } catch (_) {
+      layersUnavailable.push('maritime');
+      uncertainty.push('Maritime AIS provider unavailable.');
+      layerHealth.push({ layerId: 'maritime', status: 'UNAVAILABLE', reason: 'External maritime movement provider failed.' });
+    }
+  }
+
+  if (layers.includes('traffic') && resolvedCenter) {
+    const samplePoints = [resolvedCenter];
+    if (routeInfo.route.length >= 3) {
+      samplePoints.push({ latitude: routeInfo.route[Math.floor(routeInfo.route.length / 2)].lat, longitude: routeInfo.route[Math.floor(routeInfo.route.length / 2)].lng });
+    }
+    if (routeInfo.route.length >= 2) {
+      const end = routeInfo.route[routeInfo.route.length - 1];
+      samplePoints.push({ latitude: end.lat, longitude: end.lng });
+    }
+    const pointMap = new Map();
+    samplePoints.slice(0, 3).forEach(p => pointMap.set(Number(p.latitude).toFixed(4)+','+Number(p.longitude).toFixed(4), p));
+    const sampled = Array.from(pointMap.values());
+    const trafficResults = await Promise.allSettled([
+      getTrafficAtPoints({ points: sampled, maxRecords: maxEntitiesPerLayer, signal: input.signal }),
+      bbox ? getTrafficIncidents({ bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal }) : Promise.resolve({ observations: [], health: { status: 'UNAVAILABLE' }, coverage: { complete: false } })
+    ]);
+    const flow = trafficResults[0], incident = trafficResults[1];
+    const statuses = [];
+    if (flow.status === 'fulfilled') { traffic.push.apply(traffic, flow.value.observations || []); statuses.push(flow.value.health?.status || 'UNKNOWN'); }
+    else { statuses.push('UNAVAILABLE'); uncertainty.push('Mapbox traffic feed unavailable.'); }
+    if (incident.status === 'fulfilled') { traffic.push.apply(traffic, incident.value.observations || []); statuses.push(incident.value.health?.status || 'UNKNOWN'); }
+    else { statuses.push('UNAVAILABLE'); uncertainty.push('TomTom traffic incident feed unavailable.'); }
+    const usableStatuses = statuses.filter(Boolean);
+    const status = usableStatuses.includes('LIVE') ? 'LIVE' : usableStatuses.includes('DELAYED') ? 'DELAYED' : usableStatuses.includes('STALE') ? 'STALE' : usableStatuses.includes('PARTIAL') ? 'PARTIAL' : usableStatuses.includes('AUTH_REQUIRED') ? 'AUTH_REQUIRED' : 'UNAVAILABLE';
+    if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('traffic');
+    else if (status === 'STALE' || status === 'PARTIAL') layersPartial.push('traffic');
+    else layersUnavailable.push('traffic');
+    if (traffic.length === 0 && status === 'AUTH_REQUIRED') warnings.push('Traffic provider credentials are not configured.');
+    layerHealth.push({ layerId: 'traffic', status, recordCount: traffic.length, reason: traffic.length ? undefined : 'No usable external traffic observation.' });
   }
 
   if (layers.includes('infrastructure')) {
@@ -1038,7 +1090,61 @@ async function buildWorldContext(opts) {
     });
   });
 
-  const allEntities = operationalVehicles.concat(movement, environment, infrastructure, security);
+
+  const externalRelations = [];
+  const routeObservation = routeInfo.route.length >= 2 ? routeInfo.route : [];
+  const trafficEntities = traffic || [];
+  for (const entity of movement.concat(trafficEntities)) {
+    if (!Number.isFinite(Number(entity.latitude)) || !Number.isFinite(Number(entity.longitude))) continue;
+    for (const vehicle of operationalVehicles) {
+      const distance = distanceM(vehicle.latitude, vehicle.longitude, entity.latitude, entity.longitude);
+      const routeDistanceKm = routeObservation.length >= 2 ? projectOntoRoute(routeObservation, Number(entity.latitude), Number(entity.longitude)).crossTrackKm : null;
+      const relBearing = vehicle.headingDeg == null ? null : bearingDeg(vehicle.latitude, vehicle.longitude, Number(entity.latitude), Number(entity.longitude));
+      const relative = relBearing == null ? null : relativeDirectionFromHeading(vehicle.headingDeg, relBearing);
+      const routeNear = routeDistanceKm != null && routeDistanceKm * 1000 <= Math.max(5000, routeInfo.widthKm * 1000 + 5000);
+      const close = distance <= 25000;
+      if (!close && !routeNear) continue;
+      const isTraffic = entity.entityType === 'traffic_segment' || entity.entityType === 'traffic_incident' || entity.entityType === 'traffic_hazard';
+      const predicate = isTraffic
+        ? (entity.entityType === 'traffic_hazard' ? 'EXTERNAL_HAZARD_NEAR_ROUTE' : entity.attributes?.closed ? 'TRAFFIC_CLOSURE' : entity.attributes?.congestion ? 'TRAFFIC_CONGESTION' : 'NEAR_TRAFFIC')
+        : (routeNear ? (relative === 'ahead' ? 'APPROACHING_DESTINATION' : 'NEAR_MARITIME') : 'NEAR_MARITIME');
+      const relevance = contextRelevance({
+        distanceM: distance,
+        severity: entity.attributes?.magnitudeOfDelay === 'major' || entity.attributes?.closed ? 'high' : entity.attributes?.severity,
+        freshnessClass: entity.quality?.freshnessClass || 'UNKNOWN',
+        sourceQuality: entity.observationConfidence || 0.5,
+        routeDistanceM: routeDistanceKm == null ? undefined : routeDistanceKm * 1000,
+        ahead: relative === 'ahead',
+        missionActive: Boolean(mission && mission.status === 'active')
+      });
+      externalRelations.push({
+        predicate,
+        fromId: vehicle.id,
+        toId: entity.id,
+        fromType: 'vehicle',
+        toType: entity.entityType,
+        distanceM: Math.round(distance),
+        routeDistanceM: routeDistanceKm == null ? null : Math.round(routeDistanceKm * 1000),
+        relativeDirection: relative || undefined,
+        confidence: Number(entity.observationConfidence || 0.5),
+        operationalConfidence: Number(entity.operationalConfidence || entity.observationConfidence || 0.5) * Number(relevance.score || 1),
+        observedAt: entity.observedAt || null,
+        derivedAt: new Date(now).toISOString(),
+        evidence: [
+          { metric: 'distance_m', value: Math.round(distance), source: entity.source },
+          { metric: 'route_distance_m', value: routeDistanceKm == null ? null : Math.round(routeDistanceKm * 1000), source: 'sonalit-corridor' },
+          { metric: 'relative_direction', value: relative || 'unknown', source: 'sonalit-geometry' }
+        ],
+        sourceReferences: [String(entity.sourceReference || entity.id)],
+        uncertainty: entity.quality?.reason ? [entity.quality.reason] : [],
+        relevance,
+        actionable: Number(entity.operationalConfidence || 0.5) >= 0.65
+      });
+    }
+  }
+  relations.push.apply(relations, externalRelations);
+
+  const allEntities = operationalVehicles.concat(movement, environment, traffic, infrastructure, security);
   const missionRouteCoords = routeInfo.route.map(function(p) { return [p.lng, p.lat]; });
 
   const context = {
@@ -1066,6 +1172,7 @@ async function buildWorldContext(opts) {
     relations,
     environment,
     movement,
+    traffic,
     infrastructure,
     security,
     coverage: {
@@ -1079,6 +1186,9 @@ async function buildWorldContext(opts) {
       { sourceName: 'Sonalit Tracking', attribution: 'Organisation-scoped operational telemetry' },
       ...(movement.length ? [{ sourceName: 'OpenSky Network', attribution: 'OpenSky Network', license: 'OpenSky Network terms' }] : []),
       ...(environment.length ? [{ sourceName: 'Open-Meteo', attribution: 'Open-Meteo', license: 'Open-Meteo terms' }] : []),
+      ...(movement.some(e => e.source === 'kpler-ais') ? [{ sourceName: 'Kpler AIS', attribution: 'Kpler AIS' }] : []),
+      ...(traffic.some(e => e.source === 'mapbox-traffic') ? [{ sourceName: 'Mapbox Traffic', attribution: 'Mapbox Traffic' }] : []),
+      ...(traffic.some(e => e.source === 'tomtom-traffic') ? [{ sourceName: 'TomTom Traffic', attribution: 'TomTom Traffic' }] : []),
       ...(security.length ? [{ sourceName: 'Sonalit Risk/Incident Systems', attribution: 'Organisation-scoped internal records' }] : [])
     ],
     freshness: {
@@ -1139,7 +1249,12 @@ async function getSpatialProviderHealth() {
   const open = getOpenSkyProviderHealth();
   return {
     opensky: open.opensky || open,
-    weather: getWeatherProviderHealth()
+    weather: getWeatherProviderHealth(),
+    maritime: getKplerAisProviderHealth(),
+    traffic: {
+      mapbox: getMapboxTrafficProviderHealth(),
+      tomtom: getTomTomTrafficProviderHealth()
+    }
   };
 }
 
