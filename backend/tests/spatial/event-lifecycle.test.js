@@ -11,6 +11,7 @@ function dbStub() {
   const open = new Map();
   let nextId = 1;
   const calls = [];
+  const spatialAlertKeys = new Set();
   const db = jest.fn(async (sql, params) => {
     calls.push({ sql, params });
     if (sql.startsWith('SELECT id,event_key,event_type')) {
@@ -51,7 +52,18 @@ function dbStub() {
       row.last_seen_at = new Date().toISOString();
       return { rows: [row] };
     }
-    if (sql.startsWith('INSERT INTO alerts')) return { rows: [{ id: 'alert-' + nextId++ }] };
+    if (sql.startsWith('SELECT id FROM alerts')) {
+      return spatialAlertKeys.has(params[3])
+        ? { rows: [{ id: 'existing-alert' }] }
+        : { rows: [] };
+    }
+    if (sql.startsWith('INSERT INTO alerts')) {
+      try {
+        const metadata = JSON.parse(params[7] || '{}');
+        if (metadata.spatialAlertKey) spatialAlertKeys.add(metadata.spatialAlertKey);
+      } catch (_) {}
+      return { rows: [{ id: 'alert-' + nextId++ }] };
+    }
     return { rows: [] };
   });
   db.open = open;
@@ -137,6 +149,30 @@ describe('spatial event lifecycle', () => {
     expect(db.open.size).toBe(1);
     expect((db.calls.filter(c => c.sql.startsWith('INSERT INTO alerts'))).length).toBe(1);
     expect(db.open.get('TRAFFIC_CLOSURE:vehicle:v1:road-1').confidence).toBe(0.9);
+  });
+
+  test('suppresses repeated occurrence alerts while retaining separate event records', async () => {
+    const db = dbStub();
+    const context = {
+      subject: { kind: 'convoy', id: 'c1' },
+      mission: { convoyId: 'c1' },
+      operational: { vehicles: [{ id: 'v1' }] },
+      coverage: { layersUnavailable: [], layersPartial: [] },
+      layerHealth: [],
+      providerHealth: {},
+      dataHealth: { ok: true, readErrors: [] },
+    };
+    const first = {
+      eventKey: 'POSITION_JUMP:vehicle:v1:100', eventType: 'POSITION_JUMP',
+      subjectType: 'vehicle', subjectId: 'v1', convoyId: 'c1',
+      confidence: 0.8, operationalConfidence: 0.7, evidence: [],
+      sourceReferences: ['sonalit:v1'], uncertainty: [], status: 'resolved'
+    };
+    const second = Object.assign({}, first, { eventKey: 'POSITION_JUMP:vehicle:v1:101' });
+    await persistSpatialEvents(db, [first], { orgId: 'org-1', context });
+    await persistSpatialEvents(db, [second], { orgId: 'org-1', context });
+    expect(db.calls.filter(x => x.sql.startsWith('INSERT INTO alerts')).length).toBe(1);
+    expect(db.calls.filter(x => x.sql.startsWith('INSERT INTO spatial_events')).length).toBe(2);
   });
 
   test('does not reconcile internal events when critical spatial reads failed', () => {
