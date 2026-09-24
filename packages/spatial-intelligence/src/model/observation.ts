@@ -1,13 +1,12 @@
 /**
  * Canonical SpatialObservation model for Sonalit Worldview.
  *
- * Design rules (non-negotiable):
+ * Design rules:
  * - Freshness is NOT truth.
- * - Never convert missing timestamps to receipt time silently.
- * - Never convert unknown to zero.
- * - Never mark STALE as LIVE.
+ * - Missing timestamps remain unknown.
  * - Every external observation carries provenance + quality + coverage.
- * - Operational Sonalit entities remain Sonalit-owned.
+ * - Observation confidence, interpretation confidence and operational
+ *   confidence are independent dimensions.
  */
 
 export type QualityState =
@@ -61,7 +60,19 @@ export interface SpatialObservation {
   altitudeM?: number | null;
   observedAt: string | null;
   receivedAt: string;
+
+  /** Age of the underlying observation, never cache age. */
   freshnessMs?: number;
+
+  /** Measurement/source confidence, independent of interpretation. */
+  observationConfidence?: number | null;
+
+  /** Confidence that Sonalit derived the relationship/state correctly. */
+  interpretationConfidence?: number | null;
+
+  /** Confidence that an operator can act on the derived result. */
+  operationalConfidence?: number | null;
+
   accuracyM?: number | null;
   confidence?: number | null;
   headingDeg?: number | null;

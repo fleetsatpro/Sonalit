@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../../lib/api.js'
 import type { LiveVehicle, LiveStatus } from '../types/fleet.js'
+import SpatialContextCard from './SpatialContextCard.js'
 
 const MAX_VOICE_MS = 60_000
 
@@ -328,6 +329,8 @@ export default function DetailCard({ vehicle: v, onClose, trackedId, onToggleTra
           {v.lat.toFixed(5)}, {v.lng!.toFixed(5)}
         </div>
       )}
+
+      {!isGuardian && <SpatialContextCard vehicleId={v.id} />}
 
       {/* actions */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 6, padding: '9px 10px' }}>

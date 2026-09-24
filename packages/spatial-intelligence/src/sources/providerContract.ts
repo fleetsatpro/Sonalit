@@ -86,4 +86,24 @@ export const DEFAULT_BUDGETS: Record<string, ProviderBudget> = {
     maxRequestsPerMinute: 12,
     maxConcurrent: 3,
   },
+  'kpler-ais': {
+    providerId: 'kpler-ais',
+    maxRequestsPerMinute: 6,
+    maxConcurrent: 2,
+  },
+  'mapbox-traffic': {
+    providerId: 'mapbox-traffic',
+    maxRequestsPerMinute: 60,
+    maxConcurrent: 4,
+  },
+  'tomtom-traffic-incidents': {
+    providerId: 'tomtom-traffic-incidents',
+    maxRequestsPerMinute: 30,
+    maxConcurrent: 3,
+  },
+  'nasa-eonet': {
+    providerId: 'nasa-eonet',
+    maxRequestsPerMinute: 12,
+    maxConcurrent: 2,
+  },
 };

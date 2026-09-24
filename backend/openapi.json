@@ -5101,6 +5101,84 @@
           }
         }
       }
+    },
+    "/api/v1/spatial/aircraft": {
+      "get": {
+        "operationId": "get_api_v1_spatial_aircraft",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/spatial/provider-health": {
+      "get": {
+        "operationId": "get_api_v1_spatial_provider_health",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/spatial/world-context": {
+      "get": {
+        "operationId": "get_api_v1_spatial_world_context",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_v1_spatial_world_context",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/spatial/world-context/convoy/{id}": {
+      "get": {
+        "operationId": "get_api_v1_spatial_world_context_convoy_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/spatial/world-context/vehicle/{id}": {
+      "get": {
+        "operationId": "get_api_v1_spatial_world_context_vehicle_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/spatial/world-events": {
+      "get": {
+        "operationId": "get_api_v1_spatial_world_events",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/spatial/world-events/evaluate": {
+      "post": {
+        "operationId": "post_api_v1_spatial_world_events_evaluate",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
     }
   }
 }

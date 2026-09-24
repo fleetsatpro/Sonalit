@@ -4,6 +4,7 @@ const { authenticate } = require('../middleware/auth');
 const { query } = require('../config/database');
 const logger = require('../utils/logger');
 const { runDecisionFabric } = require('../services/aiSwarm');
+const { buildWorldContext } = require('../services/spatial/worldContextService');
 
 async function persistCopilotDecision({ orgId, userId, command, result }) {
   if (!orgId) throw new Error('Copilot decision persistence requires an authenticated organisation');
@@ -79,6 +80,7 @@ Guidelines:
 - Use check_holidays to look up public holidays for any country. This is critical for convoy timing, border crossing windows, and staffing — holidays cause border closures, reduced police escorts, and road congestion.
 - Use get_road_conditions to check for construction zones, road closures, and barriers near a location or along a route. Call it for both origin and destination on convoy routes.
 - Use query_risk_zones to surface internal records of banditry hotspots, conflict zones, strike zones, and high-risk corridors. Always check this when advising on route safety.
+- Use get_world_context for mission-specific spatial questions. It is the canonical spatial source for convoy/vehicle position, route/corridor state, nearby incidents, risk zones, checkpoints, weather, AIS movement, road traffic, external incidents, natural hazards, relationships, events, freshness, provenance, uncertainty, and evidence. Never invent spatial facts that are not present in its result.
 - Use create_geofence when the user asks to "draw a geofence", "create a zone", "set a boundary", or "mark an area" around any location. Geocode it and create it immediately — never just describe it.
 - Use create_risk_zone when the user wants to flag a location as dangerous, mark a strike, roadblock, active incident, or high-risk area. Create it immediately.
 - For comprehensive navigation advisories: combine weather + road conditions + risk zones + active alerts + upcoming holidays. Give a rated assessment (SAFE / CAUTION / HIGH RISK / AVOID).
@@ -168,6 +170,38 @@ const TOOLS = [
         region: { type: 'string', description: 'Filter by region or country name (partial match)' },
         risk_level: { type: 'string', enum: ['low', 'medium', 'high', 'critical'], description: 'Minimum risk level' },
         zone_type: { type: 'string', description: 'Filter by type: security, construction, flood, banditry, conflict, police_checkpoint, strike, general' },
+      },
+    },
+  },
+  {
+    name: 'get_world_context',
+    description: 'Query Sonalit canonical spatial world context for a convoy, vehicle, or explicit location. Returns route/corridor state, nearby incidents and risk zones, checkpoints, weather, external movement, spatial relations, deterministic spatial events, freshness, provenance, coverage and evidence. Tenant scope is taken from the authenticated session; callers must never supply an organisation id.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        subject: {
+          type: 'object',
+          description: 'Optional mission subject. Use {kind:"convoy",id:"..."} or {kind:"vehicle",id:"..."}.',
+          properties: {
+            kind: { type: 'string', enum: ['convoy','vehicle','location','none'] },
+            id: { type: 'string' },
+            label: { type: 'string' },
+          },
+        },
+        center: {
+          type: 'object',
+          description: 'Optional explicit map centre.',
+          properties: {
+            latitude: { type: 'number' },
+            longitude: { type: 'number' },
+          },
+        },
+        radiusM: { type: 'number', description: 'Context radius in metres. Maximum 250000.' },
+        layers: {
+          type: 'array',
+          items: { type: 'string', enum: ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts'] },
+          maxItems: 10,
+        },
       },
     },
   },
@@ -635,6 +669,78 @@ async function toolCreateRiskZone(input, userId, orgId) {
   }
 }
 
+async function toolGetWorldContext(input, context) {
+  const orgId = context && context.orgId ? context.orgId : null;
+  const userId = context && context.userId ? context.userId : null;
+  if (!orgId) return { error: 'Organisation context is required' };
+
+  const requested = input || {};
+  let subject = requested.subject || null;
+  if (!subject && requested.convoy_id) subject = { kind: 'convoy', id: requested.convoy_id };
+  if (!subject && requested.vehicle_id) subject = { kind: 'vehicle', id: requested.vehicle_id };
+  if (!subject) subject = { kind: 'none', id: 'context' };
+
+  if (!['convoy','vehicle','location','none'].includes(subject.kind)) {
+    return { error: 'Unsupported spatial subject kind' };
+  }
+  if (subject.kind !== 'none' && (!subject.id || typeof subject.id !== 'string')) {
+    return { error: 'Spatial subject id is required' };
+  }
+
+  let center = null;
+  if (requested.center) {
+    const lat = Number(requested.center.latitude);
+    const lng = Number(requested.center.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      return { error: 'Invalid spatial center' };
+    }
+    center = { latitude: lat, longitude: lng };
+  }
+
+  const radius = Number(requested.radiusM);
+  const layers = Array.isArray(requested.layers)
+    ? requested.layers.filter(x => typeof x === 'string').slice(0, 10)
+    : ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts'];
+
+  const ctx = await buildWorldContext({
+    orgId,
+    userId,
+    db: query,
+    subject: {
+      kind: subject.kind,
+      id: String(subject.id || 'context'),
+      label: subject.label ? String(subject.label) : undefined,
+    },
+    center,
+    radiusM: Number.isFinite(radius) && radius > 0 ? Math.min(radius, 250000) : 25000,
+    layers,
+    maxEntitiesPerLayer: 100,
+    requestId: requested.request_id ? String(requested.request_id).slice(0, 120) : undefined,
+    persistEvents: false,
+  });
+
+  return {
+    subject: ctx.subject,
+    generatedAt: ctx.generatedAt,
+    mission: ctx.mission || null,
+    operational: ctx.operational || { vehicles: [], alerts: [] },
+    relations: (ctx.relations || []).slice(0, 150),
+    events: (ctx.events || []).slice(0, 75),
+    environment: (ctx.environment || []).slice(0, 30),
+    movement: (ctx.movement || []).slice(0, 50),
+    infrastructure: (ctx.infrastructure || []).slice(0, 100),
+    security: (ctx.security || []).slice(0, 100),
+    traffic: (ctx.traffic || []).slice(0, 100),
+    hazards: (ctx.hazards || []).slice(0, 100),
+    coverage: ctx.coverage,
+    layerHealth: ctx.layerHealth,
+    provenance: ctx.provenance,
+    freshness: ctx.freshness,
+    uncertainty: ctx.uncertainty,
+    warnings: ctx.warnings,
+  };
+}
+
 async function runTool(name, input, context = {}) {
   const userId = context.userId || null;
   const orgId = context.orgId || null;
@@ -646,6 +752,7 @@ async function runTool(name, input, context = {}) {
     case 'check_holidays':     return toolCheckHolidays(input || {});
     case 'get_road_conditions':return toolGetRoadConditions(input || {});
     case 'query_risk_zones':   return toolQueryRiskZones(input || {}, orgId);
+    case 'get_world_context':  return toolGetWorldContext(input || {}, context);
     case 'create_geofence':    return toolCreateGeofence(input || {}, userId, orgId);
     case 'create_risk_zone':   return toolCreateRiskZone(input || {}, userId, orgId);
     default: return { error: `Unknown tool: ${name}` };
@@ -808,7 +915,7 @@ router.post('/dispatch', async (req, res) => {
           toolsUsed.push(block.name);
           let result, isError = false;
           try {
-            result = await runTool(block.name, block.input, userId);
+            result = await runTool(block.name, block.input, { userId, orgId: req.user?.org_id || req.user?.orgId || req.user?.organization_id || null });
             // Track map-mutating actions for frontend refresh
             if (block.name === 'create_geofence' && result.created) {
               actionsCreated.push({ type: 'geofence', ...result });

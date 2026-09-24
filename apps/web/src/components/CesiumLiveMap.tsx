@@ -51,15 +51,16 @@ interface Props {
   guardianDevices?: GuardianDevice[];
 }
 
-type MapMode = 'map' | 'satellite' | 'hybrid';
+type MapMode = 'map' | 'satellite' | 'earth' | 'hybrid';
 
 const MAP_URL        = 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
 const SAT_URL        = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 const REF_PLACES_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
 const REF_ROADS_URL  = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}';
+const GIBS_TRUE_COLOR_URL = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/' + new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10) + '/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg';
 
-const NEXT_MODE:  Record<MapMode, MapMode>  = { map: 'satellite', satellite: 'hybrid', hybrid: 'map' };
-const MODE_LABEL: Record<MapMode, string>   = { map: 'Map', satellite: 'Satellite', hybrid: 'Hybrid' };
+const NEXT_MODE:  Record<MapMode, MapMode>  = { map: 'satellite', satellite: 'earth', earth: 'hybrid', hybrid: 'map' };
+const MODE_LABEL: Record<MapMode, string>   = { map: 'Map', satellite: 'Satellite', earth: 'Earth Observation', hybrid: 'Hybrid' };
 
 const ORANGE        = Cesium.Color.fromCssColorString('#ff9040');
 const GREEN         = Cesium.Color.fromCssColorString('#4ade80');
@@ -80,7 +81,7 @@ function makePoint(color: Cesium.Color, size: number): Cesium.PointGraphics {
 }
 
 function ModeIcon({ mode }: { mode: MapMode }): React.ReactElement {
-  if (mode === 'satellite') return <Globe className="w-3.5 h-3.5" />;
+  if (mode === 'satellite' || mode === 'earth') return <Globe className="w-3.5 h-3.5" />;
   if (mode === 'hybrid')    return <Layers className="w-3.5 h-3.5" />;
   return <Map className="w-3.5 h-3.5" />;
 }
@@ -214,6 +215,14 @@ export default function CesiumLiveMap({
           url: MAP_URL,
           credit: new Cesium.Credit('© Carto, © OpenStreetMap contributors', false),
           maximumLevel: 19,
+        }),
+      );
+    } else if (mapMode === 'earth') {
+      viewer.imageryLayers.addImageryProvider(
+        new Cesium.UrlTemplateImageryProvider({
+          url: GIBS_TRUE_COLOR_URL,
+          credit: new Cesium.Credit('NASA EOSDIS GIBS', false),
+          maximumLevel: 9,
         }),
       );
     } else {
