@@ -93,6 +93,47 @@ function routeLengthKm(route) {
   return total;
 }
 
+function routeBearingDeg(a, b) {
+  return bearingDeg(a.lat, a.lng, b.lat, b.lng);
+}
+
+function angularDeltaDeg(a, b) {
+  return Math.abs((((Number(b) - Number(a)) + 540) % 360) - 180);
+}
+
+function sampleRoutePoints(route, maxPoints = 8) {
+  if (!Array.isArray(route) || route.length < 2) return [];
+  const cap = Math.max(2, Math.min(16, Number(maxPoints) || 8));
+  const lengthKm = routeLengthKm(route);
+
+  let turns = 0;
+  for (let i = 1; i < route.length - 1; i++) {
+    const previousBearing = routeBearingDeg(route[i - 1], route[i]);
+    const nextBearing = routeBearingDeg(route[i], route[i + 1]);
+    if (angularDeltaDeg(previousBearing, nextBearing) >= 30) turns += 1;
+  }
+
+  let target = Math.ceil(lengthKm / 80) + 1;
+  if (turns >= 3) target += 1;
+  if (turns >= 7) target += 1;
+  target = Math.max(3, Math.min(cap, target));
+
+  const points = [];
+  for (let i = 0; i < target; i++) {
+    const index = Math.round((route.length - 1) * i / Math.max(1, target - 1));
+    const point = route[index];
+    if (!point) continue;
+    points.push({ latitude: Number(point.lat), longitude: Number(point.lng) });
+  }
+
+  const unique = new Map();
+  for (const point of points) {
+    const key = point.latitude.toFixed(4) + ',' + point.longitude.toFixed(4);
+    unique.set(key, point);
+  }
+  return Array.from(unique.values());
+}
+
 function bboxFromRoute(route, paddingM) {
   if (!Array.isArray(route) || route.length < 2) return null;
   const pad = Number(paddingM) > 0 ? Number(paddingM) : 15000;
@@ -838,35 +879,97 @@ async function buildWorldContext(opts) {
   }
 
   if (layers.includes('weather') && resolvedCenter) {
-    const points = [resolvedCenter];
-    if (routeInfo.route.length >= 3) points.push(routeInfo.route[Math.floor((routeInfo.route.length - 1) / 2)]);
-    if (routeInfo.route.length >= 2) points.push(routeInfo.route[routeInfo.route.length - 1]);
-    const unique = new Map();
-    points.slice(0, 3).forEach(function(p) {
-      const key = Number(p.latitude ?? p.lat).toFixed(3) + ',' + Number(p.longitude ?? p.lng).toFixed(3);
-      unique.set(key, { latitude: Number(p.latitude ?? p.lat), longitude: Number(p.longitude ?? p.lng) });
-    });
-    const results = await Promise.allSettled(Array.from(unique.values()).map(function(p) {
-      return spatialProviderManager.query('weather', { latitude: p.latitude, longitude: p.longitude, requestId: input.requestId, signal: input.signal });
+    const sampled = routeInfo.route.length >= 2
+      ? sampleRoutePoints(routeInfo.route, 8)
+      : [{ latitude: resolvedCenter.latitude, longitude: resolvedCenter.longitude }];
+    const points = sampled.length ? sampled : [resolvedCenter];
+    const results = await Promise.allSettled(points.map(function(p) {
+      return spatialProviderManager.query('weather', {
+        latitude: p.latitude,
+        longitude: p.longitude,
+        requestId: input.requestId,
+        signal: input.signal
+      });
     }));
+
     const environmentById = new Map();
-    results.forEach(function(r) {
-      if (r.status !== 'fulfilled') return;
-      for (const observation of (r.value.observations || [])) {
+    let successfulSamples = 0;
+    const failedSamples = [];
+    const statuses = [];
+
+    results.forEach(function(result, index) {
+      if (result.status === 'rejected') {
+        failedSamples.push({
+          index,
+          failureClass: String(result.reason?.failureClass || result.reason?.class || 'unknown'),
+          message: String(result.reason?.message || result.reason || 'weather sample failed')
+        });
+        return;
+      }
+      successfulSamples += 1;
+      statuses.push(String(result.value?.health?.status || 'UNKNOWN').toUpperCase());
+      for (const observation of (result.value.observations || [])) {
         if (observation && observation.id) environmentById.set(observation.id, observation);
       }
     });
-    environment.push.apply(environment, Array.from(environmentById.values()));
-    if (environment.length) {
-      layersSucceeded.push('weather');
-      layerHealth.push({ layerId: 'weather', status: environment.some(e => e.quality?.freshnessClass === 'LIVE') ? 'LIVE' : 'DELAYED', recordCount: environment.length });
-    } else {
-      layersUnavailable.push('weather');
-      uncertainty.push('Weather provider returned no usable observation.');
-      layerHealth.push({ layerId: 'weather', status: 'UNAVAILABLE', reason: 'No usable weather observation.' });
-    }
-  }
 
+    environment.push.apply(environment, Array.from(environmentById.values()));
+
+    const attemptedSamples = points.length;
+    const coverageComplete = successfulSamples === attemptedSamples && environment.length >= successfulSamples;
+    const hasLive = statuses.includes('LIVE');
+    const hasDelayed = statuses.includes('DELAYED');
+    let status;
+    if (!successfulSamples) {
+      status = failedSamples.length
+        ? providerFailureStatus({ failureClass: failedSamples[0].failureClass })
+        : 'UNAVAILABLE';
+    } else if (!coverageComplete) {
+      status = 'PARTIAL';
+    } else if (hasLive) {
+      status = 'LIVE';
+    } else if (hasDelayed) {
+      status = 'DELAYED';
+    } else if (statuses.includes('STALE')) {
+      status = 'STALE';
+    } else {
+      status = 'PARTIAL';
+    }
+
+    if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('weather');
+    else if (status === 'STALE' || status === 'PARTIAL') layersPartial.push('weather');
+    else layersUnavailable.push('weather');
+
+    if (failedSamples.length) {
+      warnings.push('weather_partial_coverage');
+      uncertainty.push(
+        'Weather coverage is incomplete: ' +
+        String(successfulSamples) + '/' + String(attemptedSamples) +
+        ' route samples succeeded.'
+      );
+      for (const failure of failedSamples.slice(0, 3)) {
+        warnings.push('weather_provider_' + failure.failureClass);
+      }
+    }
+
+    layerHealth.push({
+      layerId: 'weather',
+      status,
+      lastSuccessAt: environment.length
+        ? environment.map(e => e.receivedAt).filter(Boolean).sort().pop()
+        : undefined,
+      recordCount: environment.length,
+      acceptedCount: environment.length,
+      rejectedCount: 0,
+      reason: failedSamples.length
+        ? failedSamples.map(f => f.failureClass + ': ' + f.message).join('; ')
+        : undefined,
+      sampleCount: attemptedSamples,
+      successfulSamples,
+      failedSamples: failedSamples.length,
+      coverageComplete
+    });
+  }
   if (layers.includes('hazards') && bbox) {
     try {
       const result = await spatialProviderManager.query('nasa-eonet', { bbox: externalBbox || bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal });
@@ -1612,5 +1715,6 @@ module.exports = {
   bboxFromRoute,
   normaliseRoute,
   distanceM,
+  sampleRoutePoints,
   getSpatialProviderHealth
 };
