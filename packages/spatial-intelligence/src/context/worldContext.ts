@@ -47,6 +47,9 @@ export type WorldContextRelationPredicate =
   | 'ON_ROUTE' | 'OFF_ROUTE' | 'WITHIN_CORRIDOR' | 'OUTSIDE_CORRIDOR'
   | 'NEAR_CHECKPOINT' | 'CHECKPOINT_APPROACH' | 'CHECKPOINT_PASSED'
   | 'NEAR_INCIDENT' | 'HAZARD_NEAR_ROUTE'
+  | 'NEAR_TRAFFIC' | 'TRAFFIC_CONGESTION' | 'TRAFFIC_CLOSURE'
+  | 'EXTERNAL_INCIDENT_NEAR_ROUTE' | 'EXTERNAL_HAZARD_NEAR_ROUTE'
+  | 'NEAR_MARITIME' | 'APPROACHING_DESTINATION' | 'VESSEL_APPROACHING_DESTINATION'
   | 'AHEAD' | 'BEHIND' | 'PARALLEL' | 'CROSSING';
 
 export interface WorldContextEvidence {
@@ -176,6 +179,7 @@ export interface WorldContextResult {
   relations: WorldContextRelation[];
   environment: SpatialObservation[];
   movement: SpatialObservation[];
+  traffic: SpatialObservation[];
   infrastructure: SpatialObservation[];
   security: SpatialObservation[];
   events?: SpatialEvent[];
