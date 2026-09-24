@@ -148,10 +148,12 @@ async function getVehicles(db, orgId, convoyId, vehicleId) {
   return safeRows(db,
     "SELECT v.id::text AS id,v.registration,v.type,v.region,v.status,v.latitude,v.longitude,v.heading,v.speed,v.last_ping,v.driver_id,v.assigned_convoy_id::text AS assigned_convoy_id," +
     " lg.lat AS gps_lat,lg.lng AS gps_lng,lg.heading AS gps_heading,lg.speed AS gps_speed,lg.accuracy AS gps_accuracy,lg.timestamp AS gps_at," +
-    " prev.lat AS prev_lat,prev.lng AS prev_lng,prev.heading AS prev_heading,prev.speed AS prev_speed,prev.timestamp AS prev_at" +
+    " prev.lat AS prev_lat,prev.lng AS prev_lng,prev.heading AS prev_heading,prev.speed AS prev_speed,prev.timestamp AS prev_at," +
+    " COALESCE(history.recent_points, '[]'::json) AS recent_points" +
     " FROM vehicles v" +
     " LEFT JOIN LATERAL (SELECT lat,lng,heading,speed,accuracy,timestamp FROM gps_logs WHERE vehicle_id=v.id ORDER BY timestamp DESC,id DESC LIMIT 1) lg ON true" +
     " LEFT JOIN LATERAL (SELECT lat,lng,heading,speed,timestamp FROM gps_logs WHERE vehicle_id=v.id ORDER BY timestamp DESC,id DESC OFFSET 1 LIMIT 1) prev ON true" +
+    " LEFT JOIN LATERAL (SELECT json_agg(h ORDER BY h.timestamp DESC) AS recent_points FROM (SELECT lat,lng,heading,speed,timestamp FROM gps_logs WHERE vehicle_id=v.id ORDER BY timestamp DESC,id DESC LIMIT 30) h) history ON true" +
     " WHERE v.org_id=$1 AND v.deleted_at IS NULL AND " + where +
     " ORDER BY v.registration",
     [orgId, vehicleId || convoyId]
@@ -360,6 +362,22 @@ function makeVehicle(row, mission, routeInfo, checkpoints, now) {
     speedKmh: num(row.prev_speed) ?? 0,
     observedAt: iso(row.prev_at)
   } : null;
+
+  const recentPointsRaw = Array.isArray(parseJson(row.recent_points)) ? parseJson(row.recent_points) : [];
+  const recentPoints = recentPointsRaw
+    .map(function(point) {
+      return {
+        lat: num(point.lat),
+        lng: num(point.lng),
+        speedKmh: num(point.speed) ?? 0,
+        heading: num(point.heading),
+        observedAt: iso(point.timestamp)
+      };
+    })
+    .filter(function(point) {
+      return point.lat != null && point.lng != null && point.observedAt;
+    })
+    .sort(function(a,b) { return Date.parse(b.observedAt) - Date.parse(a.observedAt); });
 
   const gapMs = previous && observedAt ? Math.max(0, Date.parse(observedAt) - Date.parse(previous.observedAt)) : null;
   const impliedKmh = previous && lat != null && lng != null && gapMs > 0
