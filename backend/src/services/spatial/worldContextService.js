@@ -681,8 +681,20 @@ function makeVehicle(row, mission, routeInfo, checkpoints, now) {
 async function buildWorldContext(opts) {
   const input = opts || {};
   const orgId = input.orgId;
-  const db = input.db;
-  if (!orgId || !db) {
+  const rawDb = input.db;
+  const spatialReadErrors = [];
+  const db = async function trackedSpatialDb(sql, params) {
+    try {
+      return await rawDb(sql, params || []);
+    } catch (error) {
+      spatialReadErrors.push({
+        message: String(error?.message || error),
+        code: error?.code || null,
+      });
+      throw error;
+    }
+  };
+  if (!orgId || !rawDb) {
     const error = new Error('Organisation context and database are required');
     error.statusCode = 403;
     throw error;
@@ -1520,7 +1532,11 @@ async function buildWorldContext(opts) {
         : undefined
     },
     uncertainty,
-    warnings
+    warnings,
+    dataHealth: {
+      ok: spatialReadErrors.length === 0,
+      readErrors: spatialReadErrors
+    }
   };
 
   const events = detectSpatialEvents(context, { now: now });
