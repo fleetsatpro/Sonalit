@@ -585,7 +585,7 @@ async function buildWorldContext(opts) {
   }
 
   const now = Date.now();
-  const requested = Array.isArray(input.layers) ? input.layers : ['aircraft','weather','maritime','traffic','security','infrastructure','incidents','alerts'];
+  const requested = Array.isArray(input.layers) ? input.layers : ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts'];
   const layers = Array.from(new Set(requested.filter(function(l) {
     return typeof l === 'string' && ALLOWED_LAYERS.has(l);
   }).slice(0, 10)));
