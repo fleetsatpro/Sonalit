@@ -728,7 +728,7 @@ async function toolGetWorldContext(input, context) {
   const ctx = await withOrg(orgId, (client) => buildWorldContext({
     orgId,
     userId,
-    db: query,
+    db: (sql, params) => client.query(sql, params),
     subject: {
       kind: subject.kind,
       id: String(subject.id || 'context'),
@@ -741,7 +741,7 @@ async function toolGetWorldContext(input, context) {
     maxEntitiesPerLayer,
     requestId: requested.request_id ? String(requested.request_id).slice(0, 120) : undefined,
     persistEvents: false,
-  })).then(result => result);
+  }));
 
   return {
     subject: ctx.subject,
