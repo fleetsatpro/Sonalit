@@ -168,3 +168,32 @@ Sonalit now also exposes NASA GIBS true-colour Earth-observation imagery as a na
 
 Operational Sonalit vehicle GPS, routes, corridors, security records and alert authority remain the system's operational source of truth.
 
+
+
+## Route-aware query planning
+
+God's Eye View now plans long route/corridor queries as bounded provider-safe AOIs rather than collapsing an oversized route envelope back to the convoy centre. The canonical route query planner provides:
+
+- bounded multi-AOI partitioning
+- adaptive route samples
+- provider-safe AOI area limits
+- maximum AOI count and bounded concurrency
+- antimeridian-safe splitting
+- observation deduplication across overlapping AOIs
+- route coverage ratio and route distance coverage
+
+Aircraft, AIS, NASA EONET hazards and TomTom traffic incidents use the route AOI plan when route geometry exists. Traffic flow and weather use the same route-aware adaptive sample strategy.
+
+## Event lifecycle and truth preservation
+
+Spatial events are divided into stateful conditions and point-in-time occurrences. Stateful conditions are refreshed rather than duplicated on every evaluation. Automatic resolution is permitted only when the current request has authoritative, sufficiently fresh provider coverage; provider failure, stale data, missing samples and incomplete route coverage cannot be interpreted as evidence that a condition disappeared.
+
+Spatial event rows retain last_seen_at and resolution_reason. Linked Sonalit alerts are reconciled with the event lifecycle, and spatial alert identity is persisted in alert metadata to protect against concurrent duplicate emissions.
+
+The continuous Spatial Eye evaluator runs as a separate cadence within the existing intelligence worker rather than creating a second scheduler. Convoy evaluation is keyset-paged and bounded by configurable cycle size and concurrency so later organisations/convoys are not starved by a permanently fixed top-N query.
+
+## Tenant and provider quota controls
+
+The provider fabric now supports both process-level provider-family budgets and per-tenant budgets. Capabilities sharing a provider family (for example TomTom traffic flow and incidents) share a quota bucket while preserving capability-specific health and failure state. Spatial requests carry organisation context into the provider fabric so one tenant cannot consume an entire in-process provider budget.
+
+World Context exposes both process/provider health and the current request's provider coverage. Event reconciliation uses the latter when source provenance identifies an external authority, preventing a globally healthy provider from being mistaken for complete coverage of the current mission query.
