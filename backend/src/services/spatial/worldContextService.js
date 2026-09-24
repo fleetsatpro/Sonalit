@@ -954,6 +954,66 @@ async function buildWorldContext(opts) {
     });
   }
 
+  securityRaw.intelAlerts.forEach(function(alert) {
+    const lat = num(alert.latitude);
+    const lng = num(alert.longitude);
+    if (lat == null || lng == null) return;
+
+    operationalVehicles.forEach(function(v) {
+      const distance = distanceM(v.latitude, v.longitude, lat, lng);
+      const routeDistanceKm = routeInfo.route.length >= 2
+        ? projectOntoRoute(routeInfo.route, lat, lng).crossTrackKm
+        : null;
+      if (distance > 30000 && !(routeDistanceKm != null && routeDistanceKm * 1000 <= 30000)) return;
+
+      const targetBearing = bearingDeg(v.latitude, v.longitude, lat, lng);
+      const relative = relativeDirectionFromHeading(v.headingDeg, targetBearing);
+      const sourceConfidence = num(alert.confidence);
+      const confidence = sourceConfidence == null
+        ? 0.35
+        : Math.max(0, Math.min(1, sourceConfidence > 1 ? sourceConfidence / 100 : sourceConfidence));
+      const verified = String(alert.verification_state || '').toLowerCase() === 'verified';
+      const corroborated = Number(alert.corroboration_count || 0) >= 2;
+      const relevance = contextRelevance({
+        distanceM: distance,
+        severity: alert.severity,
+        freshnessClass: classifyOperationalFreshness(alert.last_seen_at || alert.first_seen_at, now),
+        sourceQuality: confidence,
+        routeDistanceM: routeDistanceKm == null ? undefined : routeDistanceKm * 1000,
+        ahead: relative === 'ahead',
+        missionActive: mission?.status === 'active'
+      });
+
+      relations.push({
+        predicate: verified || corroborated ? 'NEAR_INCIDENT' : 'NEAR',
+        fromId: v.id,
+        toId: 'sonalit:intel_alert:' + alert.id,
+        fromType: 'vehicle',
+        toType: 'intelligence_alert',
+        distanceM: Math.round(distance),
+        routeDistanceM: routeDistanceKm == null ? null : Math.round(routeDistanceKm * 1000),
+        relativeDirection: relative,
+        confidence: relevance.score * confidence,
+        operationalConfidence: (verified || corroborated ? relevance.score : relevance.score * 0.65),
+        observedAt: iso(alert.last_seen_at || alert.first_seen_at),
+        derivedAt: new Date(now).toISOString(),
+        evidence: [
+          { metric: 'distance_m', value: Math.round(distance) },
+          { metric: 'alert_confidence', value: confidence },
+          { metric: 'verification_state', value: alert.verification_state || 'unknown' },
+          { metric: 'corroboration_count', value: Number(alert.corroboration_count || 0) },
+          { metric: 'source_count', value: Number(alert.source_count || 0) }
+        ],
+        sourceReferences: [String(alert.id)],
+        uncertainty: verified || corroborated
+          ? ['Intelligence relevance is derived from source confidence, freshness and mission geometry.']
+          : ['Intelligence alert is not verified/corroborated enough for autonomous operational alerting.'],
+        relevance,
+        actionable: verified || corroborated
+      });
+    });
+  });
+
   securityRaw.incidents.forEach(function(incident) {
     if (!mission || !incident.convoy_id || String(incident.convoy_id) !== String(mission.convoyId)) return;
     relations.push({
