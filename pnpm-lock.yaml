@@ -62,9 +62,6 @@ importers:
       '@sonalit/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@sonalit/spatial-intelligence':
-        specifier: workspace:*
-        version: link:../../packages/spatial-intelligence
       '@tabler/icons-react':
         specifier: ^3.44.0
         version: 3.44.0(react@18.3.1)
@@ -195,6 +192,9 @@ importers:
       '@sonalit/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@sonalit/spatial-intelligence':
+        specifier: workspace:*
+        version: link:../../packages/spatial-intelligence
       '@tabler/icons-react':
         specifier: ^3.44.0
         version: 3.44.0(react@18.3.1)
