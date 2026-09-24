@@ -141,6 +141,21 @@ function layerCanReconcile(context, eventType) {
   return false;
 }
 
+async function resolveLinkedSpatialAlerts(db, orgId, spatialEventKey, resolutionReason, userId) {
+  if (!db || !orgId || !spatialEventKey) return [];
+  try {
+    const result = await db(
+      'UPDATE alerts SET resolved_at=NOW(),updated_at=NOW() ' +
+      'WHERE org_id=$1 AND metadata->>\'spatialEventKey\'=$2 AND resolved_at IS NULL AND deleted_at IS NULL ' +
+      'RETURNING id',
+      [orgId, spatialEventKey],
+    );
+    return result.rows || [];
+  } catch (error) {
+    return [];
+  }
+}
+
 function eventCanAutoResolve(context, eventType, sourceReferences) {
   if (!EVENT_MODES.stateful.has(eventType)) return false;
   if (eventRequiresFreshExternalAuthority(eventType)) {
@@ -557,7 +572,17 @@ async function reconcileSpatialEvents(db, context, events, options) {
         row.id,
       ],
     );
-    resolved.push.apply(resolved, result.rows || []);
+    const resolvedRows = result.rows || [];
+    resolved.push.apply(resolved, resolvedRows);
+    await resolveLinkedSpatialAlerts(
+      db,
+      cfg.orgId,
+      String(row.event_key),
+      eventRequiresFreshExternalAuthority(eventType)
+        ? 'Spatial event resolved from fresh authoritative source.'
+        : 'Spatial event resolved from fresh mission evaluation.',
+      cfg.userId || null
+    );
   }
 
   return resolved;
