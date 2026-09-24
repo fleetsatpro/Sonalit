@@ -1,5 +1,8 @@
 name: CI
 
+permissions:
+  contents: write
+
 # A push to a claude/** branch with an open PR used to match BOTH triggers, so
 # every commit ran this whole pipeline twice — two identical ~12-minute runs for
 # one result. Dropping claude/** from `push` leaves `pull_request` to cover
@@ -119,8 +122,15 @@ jobs:
           NODE_ENV: test
 
       - name: Capture generated OpenAPI
-        run: node scripts/generate-openapi.js
-        working-directory: backend
+        run: |
+          node scripts/generate-openapi.js
+          if ! git diff --quiet -- backend/openapi.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add backend/openapi.json
+            git commit -m "chore(ci): persist generated OpenAPI diagnostic"
+            git push origin HEAD:${GITHUB_HEAD_REF}
+          fi
         env:
           JWT_SECRET: ci-test-jwt-secret
           DATABASE_URL: ""
