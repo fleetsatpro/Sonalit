@@ -94,6 +94,21 @@ describe('spatial event lifecycle', () => {
     expect(eventCanAutoResolve(context, 'VESSEL_APPROACHING_DESTINATION', ['kpler:vessel:123'])).toBe(true);
   });
 
+  test('uses the authoritative source provider when sibling traffic feeds are degraded', () => {
+    const context = {
+      coverage: { layersUnavailable: [], layersPartial: ['traffic'] },
+      layerHealth: [{ layerId: 'traffic', status: 'PARTIAL', coverageComplete: false }],
+      providerHealth: {
+        'tomtom-traffic-incidents': { status: 'LIVE', lastErrorClass: null },
+        'mapbox-traffic': { status: 'UNAVAILABLE', lastErrorClass: 'timeout' },
+      },
+      mission: { convoyId: 'c1' },
+      operational: { vehicles: [{ id: 'v1' }] },
+      dataHealth: { ok: true, readErrors: [] },
+    };
+    expect(eventCanAutoResolve(context, 'TRAFFIC_CLOSURE', ['tomtom:traffic-incident:1'])).toBe(true);
+  });
+
   test('updates an existing open event instead of creating a duplicate alert record', async () => {
     const db = dbStub();
     const context = {
