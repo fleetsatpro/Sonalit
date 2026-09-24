@@ -13,6 +13,7 @@ const logger = require('../utils/logger');
 const intervalMs = Math.max(5, Number(process.env.INTEL_COLLECTION_INTERVAL_MINUTES || 5)) * 60 * 1000;
 const spatialIntervalMs = Math.max(15, Number(process.env.SPATIAL_EYE_INTERVAL_SECONDS || 60)) * 1000;
 const spatialMaxConvoys = Math.max(1, Math.min(100, Number(process.env.SPATIAL_EYE_MAX_CONVOYS_PER_CYCLE || 25)));
+const spatialConcurrency = Math.max(1, Math.min(6, Number(process.env.SPATIAL_EYE_CONCURRENCY || 3)));
 let stopping = false;
 let timer = null;
 let spatialTimer = null;
@@ -53,31 +54,34 @@ async function evaluateSpatialEye(reason = 'scheduled') {
       ? { orgId: String(last.org_id), convoyId: String(last.id) }
       : { orgId: null, convoyId: null };
 
-    for (const row of selected) {
-      if (!row?.org_id || !row?.id) continue;
-      try {
-        const context = await buildWorldContext({
-          orgId: row.org_id,
-          userId: null,
-          db: (sql, params) => withOrg(row.org_id, (scopedClient) => scopedClient.query(sql, params)),
-          subject: { kind: 'convoy', id: String(row.id) },
-          layers: ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts'],
-          maxEntitiesPerLayer: 100,
-          requestId: 'spatial-eye:' + reason + ':' + String(row.id),
-          persistEvents: true,
-          publish
-        });
-        evaluated += 1;
-        eventCount += Array.isArray(context.events) ? context.events.length : 0;
-      } catch (error) {
-        logger.warn(`Spatial Eye convoy evaluation failed org=${row.org_id} convoy=${row.id}: ${error.message}`);
-      }
+    for (let offset = 0; offset < selected.length; offset += spatialConcurrency) {
+      const batch = selected.slice(offset, offset + spatialConcurrency);
+      await Promise.all(batch.map(async (row) => {
+        if (!row?.org_id || !row?.id) return;
+        try {
+          const context = await buildWorldContext({
+            orgId: row.org_id,
+            userId: null,
+            db: (sql, params) => withOrg(row.org_id, (scopedClient) => scopedClient.query(sql, params)),
+            subject: { kind: 'convoy', id: String(row.id) },
+            layers: ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts'],
+            maxEntitiesPerLayer: 100,
+            requestId: 'spatial-eye:' + reason + ':' + String(row.id),
+            persistEvents: true,
+            publish
+          });
+          evaluated += 1;
+          eventCount += Array.isArray(context.events) ? context.events.length : 0;
+        } catch (error) {
+          logger.warn(`Spatial Eye convoy evaluation failed org=${row.org_id} convoy=${row.id}: ${error.message}`);
+        }
+      }));
     }
   } catch (error) {
     logger.warn(`Spatial Eye global evaluation failed: ${error.message}`);
   } finally {
     spatialRunning = false;
-    logger.info(`Spatial Eye cycle complete (${reason}) in ${Date.now() - started}ms: evaluated=${evaluated}, events=${eventCount}, maxConvoys=${spatialMaxConvoys}`);
+    logger.info(`Spatial Eye cycle complete (${reason}) in ${Date.now() - started}ms: evaluated=${evaluated}, events=${eventCount}, maxConvoys=${spatialMaxConvoys}, concurrency=${spatialConcurrency}`);
   }
   return { evaluated, eventCount, skipped: false };
 }
