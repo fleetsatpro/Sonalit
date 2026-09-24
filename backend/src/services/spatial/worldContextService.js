@@ -697,14 +697,12 @@ async function buildWorldContext(opts) {
   }
 
   const alertObservations = alertRows.map(function(a) {
-    return baseObservation({
+    return {
       id: 'sonalit:alert:' + a.id,
       entityType: 'alert',
       source: 'sonalit-alerts',
       sourceReference: a.id,
-      latitude: 0,
-      longitude: 0,
-      observedAt: a.created_at,
+      observedAt: iso(a.created_at),
       status: a.severity,
       attributes: {
         type: a.type,
@@ -717,7 +715,7 @@ async function buildWorldContext(opts) {
       provenance: { sourceName: 'Sonalit Alert System', sourceReference: a.id, observationType: 'operational_alert' },
       coverage: { complete: true, bounded: true, queryScope: 'organisation-scoped unresolved alerts' },
       quality: { state: 'good', freshnessClass: classifyOperationalFreshness(a.created_at, now), reason: 'alert state; coordinate fields are intentionally absent' }
-    }, now, { interpretationConfidence: 1, operationalConfidence: 0.95 });
+    };
   });
 
   const relations = [];
@@ -813,7 +811,7 @@ async function buildWorldContext(opts) {
       });
 
       relations.push({
-        predicate: zr.inside ? 'NEAR_INCIDENT' : 'HAZARD_NEAR_ROUTE',
+        predicate: zr.inside ? 'WITHIN' : 'HAZARD_NEAR_ROUTE',
         fromId: v.id,
         toId: 'sonalit:risk_zone:' + z.id,
         fromType: 'vehicle',
