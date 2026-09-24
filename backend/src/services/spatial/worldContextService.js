@@ -1113,8 +1113,8 @@ async function buildWorldContext(opts) {
     });
   });
 
-  if (resolvedCenter && movement.length) {
-    movement.slice(0, Math.min(50, movement.length)).forEach(function(ac) {
+  if (resolvedCenter && movement.some(e => e.entityType === 'aircraft')) {
+    movement.filter(e => e.entityType === 'aircraft').slice(0, 50).forEach(function(ac) {
       const d = distanceM(resolvedCenter.latitude, resolvedCenter.longitude, ac.latitude, ac.longitude);
       if (d > boundedRadiusM) return;
       const bearing = bearingDeg(resolvedCenter.latitude, resolvedCenter.longitude, ac.latitude, ac.longitude);
@@ -1460,7 +1460,7 @@ async function buildWorldContext(opts) {
     layerHealth,
     provenance: [
       { sourceName: 'Sonalit Tracking', attribution: 'Organisation-scoped operational telemetry' },
-      ...(movement.length ? [{ sourceName: 'OpenSky Network', attribution: 'OpenSky Network', license: 'OpenSky Network terms' }] : []),
+      ...(movement.some(e => e.source === 'opensky') ? [{ sourceName: 'OpenSky Network', attribution: 'OpenSky Network', license: 'OpenSky Network terms' }] : []),
       ...(environment.length ? [{ sourceName: 'Open-Meteo', attribution: 'Open-Meteo', license: 'Open-Meteo terms' }] : []),
       ...(movement.some(e => e.source === 'kpler-ais') ? [{ sourceName: 'Kpler AIS', attribution: 'Kpler AIS' }] : []),
       ...(traffic.some(e => e.source === 'mapbox-traffic') ? [{ sourceName: 'Mapbox Traffic', attribution: 'Mapbox Traffic' }] : []),
