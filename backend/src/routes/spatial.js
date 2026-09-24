@@ -20,6 +20,7 @@ const { asyncHandler } = require('../middleware/error');
 const {
   getAircraftInBbox,
   getProviderHealth,
+  validateBbox,
 } = require('../services/spatial/openskyGateway');
 const { buildWorldContext } = require('../services/spatial/worldContextService');
 
@@ -98,10 +99,16 @@ router.post(
     let bbox = null;
     if (body.bbox) {
       if (Array.isArray(body.bbox) && body.bbox.length === 4) {
-        bbox = body.bbox.map(Number);
-        if (bbox.some((n) => !Number.isFinite(n))) bbox = null;
+        bbox = validateBbox(body.bbox);
+        if (!bbox) {
+          return res.status(400).json({
+            error: 'Invalid bbox. Use [west,south,east,north] with valid coordinates and area ≤ 25 deg²',
+          });
+        }
       } else if (typeof body.bbox === 'string') {
         bbox = parseBbox(body.bbox);
+      } else {
+        return res.status(400).json({ error: 'Invalid bbox' });
       }
     }
 
