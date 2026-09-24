@@ -86,8 +86,6 @@ async function cycle(reason) {
   if (stopping) return;
   const started = Date.now();
   try {
-    let spatialEvaluated = 0;
-    let spatialEvents = 0;
     let mesh = [];
     try { mesh = await runNewsMesh(); } catch (error) { logger.warn(`News Mesh cycle failed: ${error.message}`); }
 
@@ -128,7 +126,7 @@ async function cycle(reason) {
     const synth = agents.reduce((sum, x) => sum + Number(x.synthesis?.synthesized || 0), 0);
     const translated = agents.reduce((sum, x) => sum + Number(x.translation?.translated || 0), 0);
     const pdfReady = pdfs.filter(x => x.status === 'ready').length;
-    logger.info(`Intelligence worker cycle complete (${reason}) in ${Date.now() - started}ms: spatial_convoys=${spatialEvaluated}, spatial_events=${spatialEvents}, orgs=${result?.organizations ?? 0}, mesh_seen=${meshSeen}, mesh_inserted=${meshInserted}, discovered=${discovered}, ingested=${ingested}, translated=${translated}, synthesized=${synth}, publication_pdfs_ready=${pdfReady}, regional_seen=${regionalSeen}, regional_inserted=${regionalInserted}, incident_alerts=${alertCount}`);
+    logger.info(`Intelligence worker cycle complete (${reason}) in ${Date.now() - started}ms: orgs=${result?.organizations ?? 0}, mesh_seen=${meshSeen}, mesh_inserted=${meshInserted}, discovered=${discovered}, ingested=${ingested}, translated=${translated}, synthesized=${synth}, publication_pdfs_ready=${pdfReady}, regional_seen=${regionalSeen}, regional_inserted=${regionalInserted}, incident_alerts=${alertCount}`);
   } catch (error) {
     logger.error(`Intelligence worker cycle failed (${reason}): ${error.message}`);
   }
