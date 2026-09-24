@@ -412,8 +412,10 @@ async function persistSpatialEvents(db, events, options) {
       (evidenceText ? ': ' + evidenceText : '') +
       ' [spatial-event:' + event.eventKey + ']').slice(0, 500);
 
-    if (event.subjectType === 'vehicle') {
-      const rawVehicleId = String(event.subjectId).replace(/^sonalit:vehicle:/, '');
+    if (event.subjectType === 'vehicle' || (event.subjectType === 'convoy' && event.convoyId)) {
+      const rawVehicleId = event.subjectType === 'vehicle'
+        ? String(event.subjectId).replace(/^sonalit:vehicle:/, '')
+        : null;
       const alertResult = await db(
         'INSERT INTO alerts (vehicle_id,convoy_id,type,severity,message,created_by,org_id,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),NOW()) RETURNING id',
         [
