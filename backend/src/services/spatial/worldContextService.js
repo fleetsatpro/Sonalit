@@ -1112,7 +1112,17 @@ async function buildWorldContext(opts) {
     const trafficResults = await Promise.allSettled([
       spatialProviderManager.query('mapbox-traffic', { points: sampled, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }),
       spatialProviderManager.query('tomtom-traffic-flow', { points: sampled, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }),
-      (externalBbox || bbox) ? spatialProviderManager.query('tomtom-traffic-incidents', { bbox: externalBbox || bbox, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }) : Promise.resolve({ observations: [], health: { status: 'UNAVAILABLE' } })
+      routeQueryPlan?.aois?.length
+        ? queryAcrossAois(
+            spatialProviderManager,
+            'tomtom-traffic-incidents',
+            routeQueryPlan,
+            { maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal },
+            { concurrency: Math.min(3, Number(process.env.SPATIAL_EYE_PROVIDER_CONCURRENCY || 3)) }
+          )
+        : (bbox
+          ? spatialProviderManager.query('tomtom-traffic-incidents', { bbox, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal })
+          : Promise.resolve({ observations: [], health: { status: 'UNAVAILABLE' }, coverage: { complete: false } }))
     ]);
     const flow = trafficResults[0], tomtomFlow = trafficResults[1], incident = trafficResults[2], statuses = [];
     if (flow.status === 'fulfilled') { traffic.push.apply(traffic, flow.value.observations || []); statuses.push(flow.value.health?.status || 'UNKNOWN'); }
@@ -1129,8 +1139,17 @@ async function buildWorldContext(opts) {
       warnings.push(providerFailureWarning('traffic_tomtom_flow', error));
       uncertainty.push('TomTom traffic flow feed unavailable: ' + String(error?.failureClass || 'unknown') + '.');
     }
-    if (incident.status === 'fulfilled') { traffic.push.apply(traffic, incident.value.observations || []); statuses.push(incident.value.health?.status || 'UNKNOWN'); }
-    else {
+    let trafficCoverageComplete = true;
+    for (const result of [flow, tomtomFlow, incident]) {
+      if (result.status === 'fulfilled' && result.value?.coverage?.complete === false) trafficCoverageComplete = false;
+      if (result.status !== 'fulfilled') trafficCoverageComplete = false;
+    }
+
+    if (incident.status === 'fulfilled') {
+      traffic.push.apply(traffic, incident.value.observations || []);
+      statuses.push(incident.value.health?.status || 'UNKNOWN');
+      if (Array.isArray(incident.value.warnings)) warnings.push(...incident.value.warnings);
+    } else {
       statuses.push('UNAVAILABLE');
       const error = incident.reason;
       warnings.push(providerFailureWarning('traffic_tomtom_incidents', error));
@@ -1141,7 +1160,15 @@ async function buildWorldContext(opts) {
     else if (status === 'STALE' || status === 'PARTIAL') layersPartial.push('traffic');
     else layersUnavailable.push('traffic');
     if (!traffic.length && status === 'AUTH_REQUIRED') warnings.push('Traffic provider credentials are not configured.');
-    layerHealth.push({ layerId: 'traffic', status, recordCount: traffic.length, reason: traffic.length ? undefined : 'No usable external traffic observation.' });
+    layerHealth.push({
+      layerId: 'traffic',
+      status: trafficCoverageComplete && status !== 'PARTIAL' ? status : 'PARTIAL',
+      recordCount: traffic.length,
+      coverageComplete: trafficCoverageComplete,
+      routeCoverageRatio: routeQueryPlan?.coverageRatio,
+      aoisPlanned: routeQueryPlan?.aois?.length,
+      reason: traffic.length ? undefined : 'No usable external traffic observation.'
+    });
   }
   if (layers.includes('infrastructure')) {
     infrastructureRaw.checkpoints.forEach(function(cp) { infrastructure.push(checkpointObservation(cp, now)); });
