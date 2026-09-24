@@ -98,6 +98,7 @@ describe('spatial event lifecycle', () => {
     const context = {
       coverage: { layersUnavailable: [], layersPartial: ['maritime'] },
       layerHealth: [{ layerId: 'maritime', status: 'PARTIAL', coverageComplete: true }],
+      providerCoverage: { 'kpler-ais': { complete: true } },
       providerHealth: { 'kpler-ais': { status: 'PARTIAL', lastErrorClass: null } },
       mission: { convoyId: 'c1' },
       operational: { vehicles: [{ id: 'v1' }] },
@@ -159,6 +160,7 @@ describe('spatial event lifecycle', () => {
       operational: { vehicles: [{ id: 'v1' }] },
       coverage: { layersUnavailable: [], layersPartial: [] },
       layerHealth: [],
+      providerCoverage: {},
       providerHealth: {},
       dataHealth: { ok: true, readErrors: [] },
     };
@@ -205,6 +207,7 @@ describe('spatial event lifecycle', () => {
       operational: { vehicles: [{ id: 'v1' }] },
       coverage: { layersUnavailable: [], layersPartial: [] },
       layerHealth: [{ layerId: 'traffic', status: 'LIVE' }],
+      providerCoverage: { 'tomtom-traffic-incidents': { complete: true } },
       providerHealth: { 'tomtom-traffic-incidents': { status: 'LIVE', lastErrorClass: null } },
       dataHealth: { ok: true, readErrors: [] },
     };
