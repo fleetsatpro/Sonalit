@@ -218,6 +218,28 @@ function makeDb() {
     }
     if (sql.includes('FROM geofences')) return { rows: [] };
     if (sql.includes('FROM shipments')) return { rows: [] };
+    if (sql.includes('FROM guardian_devices gd')) {
+      return { rows: [{
+        id: '00000000-0000-0000-0000-000000000005',
+        name: 'Guardian Alpha',
+        status: 'active',
+        panic_active: false,
+        assignment_type: 'vehicle',
+        assignment_id: VEHICLE,
+        last_lat: -1.2915,
+        last_lng: 36.8310,
+        last_speed: 4,
+        last_seen: '2026-09-24T12:00:18.000Z',
+        last_fix_at: '2026-09-24T12:00:17.000Z',
+        officer_name: 'Officer Alpha',
+        officer_phone: '+254700000001',
+        battery_level: 81,
+        signal_strength: 77,
+        health_recorded_at: '2026-09-24T12:00:16.000Z',
+        heading: 90,
+        heading_at: '2026-09-24T12:00:17.000Z'
+      }] };
+    }
     if (sql.includes('FROM risk_zones')) {
       return { rows: [{
         id: 'rz-1',
@@ -278,6 +300,28 @@ describe('world context integration assembly', () => {
       if (sql.includes('FROM checkpoints')) return { rows: [] };
       if (sql.includes('FROM geofences')) return { rows: [] };
       if (sql.includes('FROM shipments')) return { rows: [] };
+    if (sql.includes('FROM guardian_devices gd')) {
+      return { rows: [{
+        id: '00000000-0000-0000-0000-000000000005',
+        name: 'Guardian Alpha',
+        status: 'active',
+        panic_active: false,
+        assignment_type: 'vehicle',
+        assignment_id: VEHICLE,
+        last_lat: -1.2915,
+        last_lng: 36.8310,
+        last_speed: 4,
+        last_seen: '2026-09-24T12:00:18.000Z',
+        last_fix_at: '2026-09-24T12:00:17.000Z',
+        officer_name: 'Officer Alpha',
+        officer_phone: '+254700000001',
+        battery_level: 81,
+        signal_strength: 77,
+        health_recorded_at: '2026-09-24T12:00:16.000Z',
+        heading: 90,
+        heading_at: '2026-09-24T12:00:17.000Z'
+      }] };
+    }
       if (sql.includes('FROM risk_zones')) return { rows: [] };
       if (sql.includes('FROM intel_alerts')) return { rows: [] };
       if (sql.includes('FROM incidents')) return { rows: [] };
@@ -319,12 +363,13 @@ describe('world context integration assembly', () => {
     expect(ctx.environment).toHaveLength(1);
     expect(ctx.movement.some(e => e.entityType === 'aircraft')).toBe(true);
     expect(ctx.movement.some(e => e.entityType === 'vessel')).toBe(true);
-    expect(ctx.movement.some(e => e.entityType === 'vessel')).toBe(true);
+    expect(ctx.infrastructure.some(e => e.entityType === 'guardian_device')).toBe(true);
+    expect(ctx.relations.some(r => r.fromType === 'guardian_device' && r.toType === 'vehicle' && r.predicate === 'NEAR')).toBe(true);
     expect(ctx.traffic.some(e => e.entityType === 'traffic_segment')).toBe(true);
     expect(ctx.traffic.some(e => e.entityType === 'traffic_hazard')).toBe(true);
     expect(ctx.hazards.some(e => e.entityType === 'natural_hazard')).toBe(true);
     expect(ctx.coverage.layersSucceeded).toEqual(expect.arrayContaining(['maritime','traffic','hazards']));
-    expect(ctx.infrastructure).toHaveLength(1);
+    expect(ctx.infrastructure.length).toBeGreaterThanOrEqual(2);
     expect(ctx.security.length).toBeGreaterThanOrEqual(2);
     expect(ctx.security.some(e => e.entityType === 'intelligence_alert')).toBe(true);
 
