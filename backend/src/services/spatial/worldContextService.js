@@ -956,8 +956,11 @@ async function buildWorldContext(opts) {
   const boundedRadiusM = Math.max(1000, Math.min(Number(input.radiusM) || 25000, 250000));
   const externalRadiusM = Math.min(boundedRadiusM, MAX_EXTERNAL_RADIUS_M);
   const maxEntitiesPerLayer = Math.max(1, Math.min(250, Number(input.maxEntitiesPerLayer) || 100));
-  const bbox = input.bbox || (resolvedCenter ? bboxFromCenterRadius(resolvedCenter.latitude, resolvedCenter.longitude, externalRadiusM) : null);
-  const routeQueryPlan = !input.bbox && routeInfo.route.length >= 2
+  const hasRouteGeometry = routeInfo.route.length >= 2;
+  const bbox = input.bbox || (!hasRouteGeometry && resolvedCenter
+    ? bboxFromCenterRadius(resolvedCenter.latitude, resolvedCenter.longitude, externalRadiusM)
+    : null);
+  const routeQueryPlan = !input.bbox && hasRouteGeometry
     ? planRouteQueries(routeInfo.route, {
         maxAoiAreaDeg2: Number(process.env.SPATIAL_EYE_MAX_AOI_AREA_DEG2) || 20,
         maxAois: Number(process.env.SPATIAL_EYE_MAX_AOIS) || 8,
