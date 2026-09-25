@@ -47,3 +47,10 @@ Not copied: GEV visual identity, media, bundled datasets, Pinokio tooling.
 - The Sonalit adapter uses an explicit allowlist of CelesTrak groups.
 - CelesTrak catalog data is not treated as evidence of imaging capability or tasking rights.
 - SGP4 propagation is optional; when unavailable, Sonalit reports the catalog without fabricating ground positions.
+
+## satellite.js
+
+- https://www.npmjs.com/package/satellite.js
+- MIT license.
+- Production dependency used for TLE-based SGP4/SDP4 propagation and coordinate conversion.
+- Sonalit records propagated positions as modelled orbital positions, not live satellite telemetry.
