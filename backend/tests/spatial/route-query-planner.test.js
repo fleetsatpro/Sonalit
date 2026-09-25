@@ -4,6 +4,7 @@ const {
   planRouteQueries,
   adaptiveSamplePoints,
   queryAcrossAois,
+  planRouteQueries,
 } = require('../../src/services/spatial/routeQueryPlanner');
 
 describe('bounded route query planner', () => {
@@ -131,6 +132,27 @@ describe('bounded route query planner', () => {
     expect(new Set(result.observations.map(x => x.id))).toEqual(
       new Set(['aoi-0', 'aoi-3'])
     );
+  });
+
+  test('does not overstate coverage when AOI route intervals overlap', async () => {
+    const manager = {
+      query: jest.fn(async () => ({
+        observations: [],
+        health: { status: 'LIVE' },
+        coverage: { complete: true }
+      }))
+    };
+    const result = await queryAcrossAois(manager, 'opensky', {
+      routeLengthKm: 300,
+      coverageRatio: 1,
+      aois: [
+        { id: 'a1', bbox: [0,0,1,1], routeStartKm: 0, routeEndKm: 200 },
+        { id: 'a2', bbox: [1,0,2,1], routeStartKm: 100, routeEndKm: 300 }
+      ]
+    }, { orgId: 'org-a', maxRecords: 10 }, { concurrency: 2 });
+
+    expect(result.coverage.routeLengthCoveredM).toBe(300000);
+    expect(result.coverage.routeCoverageRatio).toBe(1);
   });
 
   test('does not call incomplete bounded-route coverage complete', async () => {
