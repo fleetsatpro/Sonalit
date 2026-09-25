@@ -52,5 +52,5 @@ Not copied: GEV visual identity, media, bundled datasets, Pinokio tooling.
 
 - https://www.npmjs.com/package/satellite.js
 - MIT license.
-- Production dependency used for TLE-based SGP4/SDP4 propagation and coordinate conversion.
+- Production dependency (`satellite.js` 6.0.2) used for TLE-based SGP4/SDP4 propagation and coordinate conversion.
 - Sonalit records propagated positions as modelled orbital positions, not live satellite telemetry.
