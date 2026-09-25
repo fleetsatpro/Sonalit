@@ -446,7 +446,6 @@ function buildCrossLayerFusionRelations({
   hazardNearM = DEFAULT_HAZARD_NEAR_M,
   hazardProximityM = DEFAULT_HAZARD_PROXIMITY_M,
   satelliteRouteNearM = DEFAULT_SATELLITE_ROUTE_NEAR_M,
-  cameraNearM = DEFAULT_CAMERA_NEAR_M,
 } = {}) {
   const relations = [
     ...buildHazardCameraRelations(hazards, cameras, now, cameraNearM),
