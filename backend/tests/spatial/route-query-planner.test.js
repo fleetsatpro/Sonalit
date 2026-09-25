@@ -100,6 +100,39 @@ describe('bounded route query planner', () => {
     expect(result.observations.filter(x => x.id.startsWith('aoi-1')).length).toBe(5);
   });
 
+  test('enforces a global result cap while preserving route-spread observations', async () => {
+    const manager = {
+      query: jest.fn(async (_provider, args) => ({
+        observations: [{ id: 'aoi-' + String(args.bbox[0]) }],
+        health: { status: 'LIVE' },
+        coverage: { complete: true }
+      }))
+    };
+    const plan = {
+      routeLengthKm: 400,
+      coverageRatio: 1,
+      aois: [
+        { bbox: [0,0,1,1], coverageWeightKm: 100 },
+        { bbox: [1,0,2,1], coverageWeightKm: 100 },
+        { bbox: [2,0,3,1], coverageWeightKm: 100 },
+        { bbox: [3,0,4,1], coverageWeightKm: 100 }
+      ]
+    };
+
+    const result = await queryAcrossAois(
+      manager,
+      'opensky',
+      plan,
+      { orgId: 'org-a', maxRecords: 2 },
+      { concurrency: 4 }
+    );
+
+    expect(result.observations).toHaveLength(2);
+    expect(new Set(result.observations.map(x => x.id))).toEqual(
+      new Set(['aoi-0', 'aoi-3'])
+    );
+  });
+
   test('aggregates AOI responses, dedupes observations, and reports partial coverage', async () => {
     const manager = {
       query: jest.fn()
