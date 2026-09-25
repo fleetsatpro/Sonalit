@@ -145,7 +145,7 @@ describe('spatial event lifecycle', () => {
       confidence: 0.8,
       operationalConfidence: 0.7,
       evidence: [{ metric: 'distance_m', value: 100 }],
-      sourceReferences: ['tomtom:1'],
+      sourceReferences: ['tomtom-traffic-incidents:inc-1'],
       uncertainty: [],
       status: 'open',
       observedAt: new Date().toISOString(),
@@ -157,7 +157,7 @@ describe('spatial event lifecycle', () => {
     expect(db.open.get('TRAFFIC_CLOSURE:vehicle:v1:road-1').confidence).toBe(0.9);
   });
 
-  test('allows recurring occurrence alerts to use distinct event identities', async () => {
+  test('keeps recurring occurrence events distinct while cooldown suppresses duplicate alerts', async () => {
     const db = dbStub();
     const context = {
       subject: { kind: 'convoy', id: 'c1' },
