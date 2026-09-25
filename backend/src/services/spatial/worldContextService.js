@@ -17,7 +17,7 @@ const EARTH_R = 6371000;
 const LIVE_MS = 45000;
 const DELAYED_MS = 300000;
 const MAX_EXTERNAL_RADIUS_M = 100000;
-const ALLOWED_LAYERS = new Set(['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts']);
+const ALLOWED_LAYERS = new Set(['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts','cameras']);
 
 function num(v) {
   if (v == null || v === '') return null;
@@ -873,7 +873,7 @@ async function buildWorldContext(opts) {
   }
 
   const now = Date.now();
-  const requested = Array.isArray(input.layers) ? input.layers : ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts'];
+  const requested = Array.isArray(input.layers) ? input.layers : ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts','cameras'];
   const layers = Array.from(new Set(requested.filter(function(l) {
     return typeof l === 'string' && ALLOWED_LAYERS.has(l);
   }).slice(0, 10)));
@@ -972,6 +972,7 @@ async function buildWorldContext(opts) {
   const environment = [];
   const traffic = [];
   const hazards = [];
+  const surveillance = [];
   const infrastructure = [];
   const security = [];
   const layerHealth = [];
@@ -1174,6 +1175,64 @@ async function buildWorldContext(opts) {
       coverageComplete
     });
   }
+  if (layers.includes('cameras') && (bbox || routeQueryPlan?.aois?.length || resolvedCenter)) {
+    try {
+      const result = routeQueryPlan?.aois?.length
+        ? await queryAcrossAois(
+            spatialProviderManager,
+            'cctv',
+            routeQueryPlan,
+            { orgId, maxRecords: maxEntitiesPerLayer, requestId: input.requestId, signal: input.signal },
+            { concurrency: Math.min(3, Number(process.env.SPATIAL_EYE_PROVIDER_CONCURRENCY || 3)) }
+          )
+        : await spatialProviderManager.query('cctv', {
+            bbox,
+            center: resolvedCenter,
+            radiusM: externalRadiusM,
+            orgId,
+            maxRecords: maxEntitiesPerLayer,
+            requestId: input.requestId,
+            signal: input.signal
+          });
+
+      surveillance.push.apply(surveillance, (result.observations || []).slice(0, maxEntitiesPerLayer));
+      const rawStatus = result.health?.status || 'UNKNOWN';
+      const status = result.coverage?.complete === false && (rawStatus === 'LIVE' || rawStatus === 'DELAYED')
+        ? 'PARTIAL'
+        : rawStatus;
+      providerCoverage.cctv = Object.assign({}, result.coverage || {}, {
+        complete: result.coverage?.complete === true
+      });
+      if (status === 'LIVE' || status === 'DELAYED' || status === 'PARTIAL' || status === 'STALE' || status === 'UNKNOWN') layersSucceeded.push('cameras');
+      else layersUnavailable.push('cameras');
+      layerHealth.push({
+        layerId:'cameras',
+        status,
+        lastSuccessAt:result.health?.lastSuccessAt,
+        lastAttemptAt:result.health?.lastAttemptAt,
+        recordCount:result.health?.recordCount,
+        acceptedCount:result.health?.acceptedCount,
+        rejectedCount:result.health?.rejectedCount,
+        coverageComplete:result.coverage?.complete === true,
+        routeCoverageRatio:result.coverage?.routeCoverageRatio,
+        aoisPlanned:result.coverage?.aoisPlanned,
+        aoisSucceeded:result.coverage?.aoisSucceeded,
+        aoisFailed:result.coverage?.aoisFailed,
+        reason:result.health?.lastErrorMessage
+      });
+      if (Array.isArray(result.warnings)) warnings.push(...result.warnings);
+    } catch (error) {
+      const failureStatus = providerFailureStatus(error);
+      const failureWarning = providerFailureWarning('cameras', error);
+      if (failureStatus === 'COVERAGE_LIMITED') layersPartial.push('cameras');
+      else layersUnavailable.push('cameras');
+      warnings.push('cameras_layer_unavailable');
+      if (failureWarning !== 'cameras_layer_unavailable') warnings.push(failureWarning);
+      uncertainty.push('CCTV provider unavailable: ' + String(error?.failureClass || 'unknown') + '.');
+      layerHealth.push({ layerId:'cameras', status:failureStatus, reason:String(error?.message || 'CCTV provider failed.') });
+    }
+  }
+
   if (layers.includes('hazards') && (bbox || routeQueryPlan?.aois?.length)) {
     try {
       const result = routeQueryPlan?.aois?.length
@@ -1734,6 +1793,41 @@ async function buildWorldContext(opts) {
 
 
   const externalRelations = [];
+
+  // A camera relation is a geometry statement, not a visual-detection claim.
+  // Visibility is only asserted when the target point falls inside the camera
+  // pose/FOV/range model supplied by the camera provider.
+  const cameraEntities = surveillance.filter(e => e && e.entityType === 'camera');
+  for (const camera of cameraEntities) {
+    const cameraModel = camera.attributes?.camera || camera;
+    for (const vehicle of operationalVehicles) {
+      const target = { latitude: Number(vehicle.latitude), longitude: Number(vehicle.longitude) };
+      const relation = require('./cctv/spatialCameraGeometry').pointInViewshed(cameraModel, target);
+      if (!relation.visible) continue;
+      externalRelations.push({
+        predicate:'VISIBLE_TO_CAMERA',
+        fromId:vehicle.id,
+        toId:camera.id,
+        fromType:'vehicle',
+        toType:'camera',
+        distanceM:Math.round(relation.distanceM),
+        confidence:Number(camera.observationConfidence || 0.5),
+        operationalConfidence:Number(camera.operationalConfidence || camera.observationConfidence || 0.5) * (cameraModel.pose?.confidence === 'verified' ? 1 : 0.8),
+        observedAt:camera.observedAt || null,
+        derivedAt:new Date(now).toISOString(),
+        evidence:[
+          { metric:'viewshed_membership', value:true },
+          { metric:'camera_pose_confidence', value:cameraModel.pose?.confidence || 'unknown' },
+          { metric:'distance_m', value:Math.round(relation.distanceM) },
+          { metric:'bearing_deg', value:relation.bearingDeg }
+        ],
+        sourceReferences:[String(camera.sourceReference || camera.id)],
+        uncertainty:['Geometric viewshed membership does not prove the camera acquired a usable frame of the vehicle.'],
+        actionable:false
+      });
+    }
+  }
+
   const routeObservation = routeInfo.route.length >= 2 ? routeInfo.route : [];
   const trafficEntities = traffic || [];
   const hazardEntities = hazards || [];
@@ -1942,7 +2036,7 @@ async function buildWorldContext(opts) {
   }
 
   relations.push.apply(relations, externalRelations);
-  const allEntities = operationalVehicles.concat(movement, environment, traffic, hazards, infrastructure, security);
+  const allEntities = operationalVehicles.concat(movement, environment, traffic, hazards, surveillance, infrastructure, security);
   const missionRouteCoords = routeInfo.route.map(function(p) { return [p.lng, p.lat]; });
 
   const context = {
@@ -1973,6 +2067,7 @@ async function buildWorldContext(opts) {
     movement,
     traffic,
     hazards,
+    cameras: surveillance,
     infrastructure,
     security,
     correlations,
@@ -1994,6 +2089,7 @@ async function buildWorldContext(opts) {
       ...(traffic.some(e => e.source === 'mapbox-traffic') ? [{ sourceName: 'Mapbox Traffic', attribution: 'Mapbox Traffic' }] : []),
       ...(traffic.some(e => e.source === 'tomtom-traffic') ? [{ sourceName: 'TomTom Traffic', attribution: 'TomTom Traffic' }] : []),
       ...(hazards.length ? [{ sourceName: 'NASA EONET', attribution: 'NASA EONET' }] : []),
+      ...(surveillance.length ? [{ sourceName: 'CCTV catalog', attribution: 'Camera provider catalog; media access remains allowlist-controlled' }] : []),
       ...(security.length ? [{ sourceName: 'Sonalit Risk/Incident Systems', attribution: 'Organisation-scoped internal records' }] : [])
     ],
     freshness: {

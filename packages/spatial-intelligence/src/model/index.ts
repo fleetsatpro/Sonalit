@@ -12,3 +12,13 @@ export {
   buildQuality,
   isValidLatLon,
 } from './observation.js';
+
+
+export type {
+  SpatialCameraPose,
+  SpatialCameraViewshed,
+  SpatialCameraMedia,
+  SpatialCameraHealth,
+  SpatialCamera,
+  SpatialObservationCameraContract,
+} from './spatialCamera.js';
