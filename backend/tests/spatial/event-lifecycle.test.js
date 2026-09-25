@@ -47,8 +47,8 @@ function dbStub() {
       const key = params[11];
       const row = open.get(key);
       if (!row) return { rows: [] };
-      row.confidence = Number(params[3]);
-      row.operational_confidence = Number(params[4]);
+      row.confidence = Number(params[2]);
+      row.operational_confidence = Number(params[3]);
       row.last_seen_at = new Date().toISOString();
       return { rows: [row] };
     }
