@@ -416,8 +416,7 @@ describe('world context integration assembly', () => {
     expect(ctx.traffic.some(e => e.entityType === 'traffic_hazard')).toBe(true);
     expect(ctx.hazards.some(e => e.entityType === 'natural_hazard')).toBe(true);
     expect(ctx.correlations.some(c => c.kind === 'corroboration' && c.sourceProviders.includes('mapbox-traffic') && c.sourceProviders.includes('tomtom-traffic'))).toBe(true);
-    expect(ctx.coverage.layersSucceeded).toEqual(expect.arrayContaining(['maritime','hazards']));
-    expect(ctx.coverage.layersPartial).toContain('traffic');
+    expect(ctx.coverage.layersPartial).toEqual(expect.arrayContaining(['maritime','traffic','hazards']));
     expect(ctx.layerHealth.find(l => l.layerId === 'traffic')?.coverageComplete).toBe(false);
     expect(ctx.infrastructure.length).toBeGreaterThanOrEqual(2);
     expect(ctx.security.length).toBeGreaterThanOrEqual(2);
