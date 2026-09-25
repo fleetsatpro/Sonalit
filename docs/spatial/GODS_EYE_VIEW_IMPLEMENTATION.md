@@ -188,7 +188,7 @@ Aircraft, AIS, NASA EONET hazards and TomTom traffic incidents use the route AOI
 
 Spatial events are divided into stateful conditions and point-in-time occurrences. Stateful conditions are refreshed rather than duplicated on every evaluation. Automatic resolution is permitted only when the current request has authoritative, sufficiently fresh provider coverage; provider failure, stale data, missing samples and incomplete route coverage cannot be interpreted as evidence that a condition disappeared.
 
-Spatial event rows retain last_seen_at and resolution_reason. Linked Sonalit alerts are reconciled with the event lifecycle, and spatial alert identity is persisted in alert metadata to protect against concurrent duplicate emissions.
+Spatial event rows retain last_seen_at and resolution_reason. Linked Sonalit alerts are reconciled with the event lifecycle, and spatial alert identity is persisted in alert metadata to protect against concurrent duplicate emissions. Recurring occurrence events use their time-bucketed event identity for alert identity, while stateful conditions use their stable condition key.
 
 The continuous Spatial Eye evaluator runs as a separate cadence within the existing intelligence worker rather than creating a second scheduler. Convoy evaluation is keyset-paged and bounded by configurable cycle size and concurrency so later organisations/convoys are not starved by a permanently fixed top-N query.
 
@@ -209,6 +209,7 @@ The spatial runtime exposes bounded controls through environment variables:
 - SPATIAL_EYE_PROVIDER_CONCURRENCY — bounded concurrent route-AOI provider calls.
 - SPATIAL_EYE_MAX_AOI_AREA_DEG2 — maximum geographic area of a generated provider AOI.
 - SPATIAL_EYE_MAX_AOIS — maximum route AOIs per world-context provider query.
+- route planning also hard-caps each AOI's route span and segment density internally (300 km / 25 km by default), keeping the planner bounded even for long or sparsely-vertexed routes.
 - SPATIAL_PROVIDER_<PROVIDER>_MAX_PER_MINUTE — process-level provider budget.
 - SPATIAL_PROVIDER_<PROVIDER>_MAX_CONCURRENT — process-level provider concurrency.
 - SPATIAL_PROVIDER_<PROVIDER>_TENANT_MAX_PER_MINUTE — per-tenant provider budget.
