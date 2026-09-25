@@ -297,6 +297,7 @@ function createDefaultSpatialProviderManager() {
   const { getNaturalHazards, getProviderHealth: eonetHealth } = require('./nasaEonetGateway');
   const { getEarthquakes, getProviderHealth: usgsHealth } = require('./usgsEarthquakeGateway');
   const { getFireDetections, getProviderHealth: firmsHealth } = require('./nasaFirmsGateway');
+  const { getSatellites, getProviderHealth: celestrakHealth } = require('./celestrakGateway');
   const { getCameras, getProviderHealth: cctvHealth } = require('./cctvGateway');
 
   const queryOrUnavailable = (module, key, providerName) => {
@@ -386,6 +387,13 @@ function createDefaultSpatialProviderManager() {
     health: healthOrUnknown({ getProviderHealth: firmsHealth }, 'getProviderHealth'),
     capabilities: ['fire_hotspot', 'natural_hazard', 'earth_observation', 'bbox', 'near_real_time'],
     ...budgets('SPATIAL_PROVIDER_NASA_FIRMS', 20, 2),
+  });
+
+  manager.register('celestrak', {
+    query: queryOrUnavailable({ getSatellites }, 'getSatellites', 'CelesTrak'),
+    health: healthOrUnknown({ getProviderHealth: celestrakHealth }, 'getProviderHealth'),
+    capabilities: ['satellite', 'orbit', 'gp', 'sgp4', 'non_imaging'],
+    ...budgets('SPATIAL_PROVIDER_CELESTRAK', 30, 2),
   });
 
   manager.register('nasa-eonet', {

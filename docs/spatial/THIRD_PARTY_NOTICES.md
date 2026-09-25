@@ -39,3 +39,11 @@ Not copied: GEV visual identity, media, bundled datasets, Pinokio tooling.
 - VIIRS active-fire hotspot detections through the FIRMS Area API.
 - NASA_FIRMS_MAP_KEY is required by the provider; Sonalit returns AUTH_REQUIRED when it is absent rather than substituting synthetic hazard data.
 - Attribution/provenance is preserved on each hotspot observation.
+
+## CelesTrak
+
+- https://celestrak.org/
+- GP/NORAD public orbital-element catalog used for bounded satellite/orbital enrichment.
+- The Sonalit adapter uses an explicit allowlist of CelesTrak groups.
+- CelesTrak catalog data is not treated as evidence of imaging capability or tasking rights.
+- SGP4 propagation is optional; when unavailable, Sonalit reports the catalog without fabricating ground positions.
