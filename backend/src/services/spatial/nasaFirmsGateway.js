@@ -105,7 +105,7 @@ function normalizeDetection(row,receivedAt){
       observationType:'viirs_active_fire_hotspot',
       sourceReference
     },
-    coverage:{complete:false,bounded:true,queryScope:'NASA FIRMS VIIRS hotspot detections within requested bbox'},
+    coverage:{complete:result.observations.length < limit,bounded:true,queryScope:'NASA FIRMS VIIRS hotspot detections within requested bbox'},
     quality:{
       state:observedAt?'good':'unknown',
       freshnessClass:observedAt?'LIVE':'UNKNOWN',
@@ -190,7 +190,7 @@ async function getFireDetections({bbox,maxRecords=100,signal}={}){
   const fresh=cache.get(key);
   if(fresh){
     health.cacheHits++;
-    return {observations:fresh.value.slice(0,clampInt(maxRecords,1,250,100)),health:getProviderHealth(),coverage:{complete:false,bounded:true,queryScope:'NASA FIRMS cached hotspot detections'},cache:{hit:true,ageMs:Date.now()-fresh.createdAt}};
+    return {observations:fresh.value.slice(0,clampInt(maxRecords,1,250,100)),health:getProviderHealth(),coverage:{complete:fresh.value.length < clampInt(maxRecords,1,250,100),bounded:true,queryScope:'NASA FIRMS cached hotspot detections'},cache:{hit:true,ageMs:Date.now()-fresh.createdAt}};
   }
   if(inflight.has(key)){health.dedupeHits++;return inflight.get(key);}
   const task=(async()=>{
