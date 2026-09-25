@@ -448,6 +448,9 @@ importers:
       sharp:
         specifier: ^0.35.3
         version: 0.35.3(@types/node@22.19.19)
+      satellite.js:
+        specifier: ^6.0.2
+        version: 6.0.2
       socket.io:
         specifier: ^4.7.2
         version: 4.8.3(bufferutil@4.1.0)(utf-8-validate@5.0.10)
@@ -11210,6 +11213,9 @@ packages:
         optional: true
       use-sync-external-store:
         optional: true
+  satellite.js@6.0.2:
+    resolution: {integrity: sha512-XWKxtqVF5xiJ1xAeiYeT/oSSzsukoCLWvk6nO/WFy4un0M3g4djAU9TAtOCqJLtYW9vxx9pkPJ1L9ITOc607GA==}
+
 
 snapshots:
 
@@ -23026,3 +23032,6 @@ snapshots:
       '@types/react': 18.3.29
       react: 18.3.1
       use-sync-external-store: 1.6.0(react@18.3.1)
+
+  satellite.js@6.0.2: {}
+
