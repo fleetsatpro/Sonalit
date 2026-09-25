@@ -128,15 +128,45 @@ async function fetchProvider(bbox,signal){
   const source=encodeURIComponent(String(process.env.NASA_FIRMS_SOURCE||DEFAULT_SOURCE).trim());
   const area=bbox.join(',');
   const url=BASE_URL+'/'+encodeURIComponent(key)+'/'+source+'/'+encodeURIComponent(area)+'/1';
+
   const controller=new AbortController();
-  const timer=setTimeout(()=>controller.abort(),10_000);
+  let timedOut=false;
+  const onAbort=()=>{
+    controller.abort(signal?.reason || new Error('cancelled'));
+  };
+  if(signal){
+    if(signal.aborted) onAbort();
+    else signal.addEventListener('abort',onAbort,{once:true});
+  }
+  const timer=setTimeout(()=>{
+    timedOut=true;
+    controller.abort(new Error('provider timeout'));
+  },10_000);
+
   let response;
   try{
-    response=await fetch(url,{method:'GET',headers:{Accept:'text/csv'},signal:signal||controller.signal});
+    response=await fetch(url,{
+      method:'GET',
+      headers:{Accept:'text/csv'},
+      signal:controller.signal
+    });
   }catch(error){
-    if(controller.signal.aborted){const e=new Error('NASA FIRMS request timed out');e.failureClass='timeout';throw e;}
+    if(timedOut){
+      const e=new Error('NASA FIRMS request timed out');
+      e.failureClass='timeout';
+      throw e;
+    }
+    if(signal?.aborted){
+      const e=new Error('NASA FIRMS request cancelled');
+      e.failureClass='cancelled';
+      throw e;
+    }
     throw error;
-  }finally{clearTimeout(timer);}
+  }finally{
+    clearTimeout(timer);
+    if(signal) signal.removeEventListener('abort',onAbort);
+  }
+
   if(!response.ok){
     const e=new Error('NASA FIRMS HTTP '+response.status);
     e.failureClass=response.status===429?'rate_limited':(response.status===401||response.status===403?'auth_required':'http_error');
@@ -146,10 +176,8 @@ async function fetchProvider(bbox,signal){
   const rows=parseCsv(text);
   if(!rows.length)return {observations:[],rejected:0};
   const receivedAt=new Date().toISOString();
-  let rejected=0;
   const observations=rows.map(row=>normalizeDetection(row,receivedAt)).filter(Boolean);
-  rejected=rows.length-observations.length;
-  return {observations,rejected};
+  return {observations,rejected:rows.length-observations.length};
 }
 
 async function getFireDetections({bbox,maxRecords=100,signal}={}){
