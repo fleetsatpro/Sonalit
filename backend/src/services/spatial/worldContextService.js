@@ -1110,7 +1110,11 @@ async function buildWorldContext(opts) {
     environment.push.apply(environment, Array.from(environmentById.values()));
 
     const attemptedSamples = points.length;
-    const coverageComplete = successfulSamples === attemptedSamples && environment.length >= successfulSamples;
+    const freshnessComplete = statuses.length === attemptedSamples &&
+      statuses.every(s => s === 'LIVE' || s === 'DELAYED');
+    const coverageComplete = successfulSamples === attemptedSamples &&
+      environment.length >= successfulSamples &&
+      freshnessComplete;
     const hasLive = statuses.includes('LIVE');
     const hasDelayed = statuses.includes('DELAYED');
     let status;
