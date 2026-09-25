@@ -329,6 +329,13 @@ function mergeSafe(candidates, options) {
     for (let i = 0; i < out.length; i++) {
       if (overlapRatio(out[i].bbox, candidate.bbox) < options.mergeOverlapRatio) continue;
 
+      const routeGapKm = Math.max(
+        0,
+        Math.max(out[i].routeStartKm, candidate.routeStartKm) -
+          Math.min(out[i].routeEndKm, candidate.routeEndKm)
+      );
+      if (routeGapKm > options.maxSegmentKm * 1.5) continue;
+
       const union = mergeBbox(out[i].bbox, candidate.bbox);
       if (bboxAreaDeg2(union) > options.maxAoiAreaDeg2) continue;
 
