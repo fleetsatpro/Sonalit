@@ -156,6 +156,42 @@ describe('spatial event lifecycle', () => {
     expect(db.open.get('TRAFFIC_CLOSURE:vehicle:v1:road-1').confidence).toBe(0.9);
   });
 
+  test('allows recurring occurrence alerts to use distinct event identities', async () => {
+    const db = dbStub();
+    const context = {
+      subject: { kind: 'convoy', id: 'c1' },
+      mission: { convoyId: 'c1' },
+      operational: { vehicles: [{ id: 'v1' }] },
+      coverage: { layersUnavailable: [], layersPartial: [] },
+      layerHealth: [],
+      providerCoverage: {},
+      providerHealth: {},
+      dataHealth: { ok: true, readErrors: [] },
+    };
+    const first = {
+      eventKey: 'POSITION_JUMP:vehicle:v1:100',
+      eventType: 'POSITION_JUMP',
+      subjectType: 'vehicle',
+      subjectId: 'v1',
+      convoyId: 'c1',
+      confidence: 0.9,
+      operationalConfidence: 0.8,
+      evidence: [{ metric: 'implied_speed_kmh', value: 190 }],
+      sourceReferences: ['gps_logs:v1'],
+      uncertainty: [],
+      status: 'resolved',
+      observedAt: new Date().toISOString(),
+    };
+    const second = Object.assign({}, first, {
+      eventKey: 'POSITION_JUMP:vehicle:v1:101',
+    });
+
+    await persistSpatialEvents(db, [first], { orgId: 'org-1', context });
+    await persistSpatialEvents(db, [second], { orgId: 'org-1', context });
+
+    expect(db.calls.filter(x => x.sql.startsWith('INSERT INTO alerts'))).toHaveLength(2);
+  });
+
   test('suppresses repeated occurrence alerts while retaining separate event records', async () => {
     const db = dbStub();
     const context = {
