@@ -478,8 +478,7 @@ async function queryAcrossAois(manager, provider, plan, baseArgs = {}, options =
     Array.from({ length: Math.min(concurrency, plan.aois.length) }, worker)
   );
 
-  const observations = [];
-  const seen = new Set();
+  const observationsByAoi = [];
   const statuses = [];
   let succeeded = 0;
   let failed = 0;
@@ -489,6 +488,7 @@ async function queryAcrossAois(manager, provider, plan, baseArgs = {}, options =
   for (const result of results) {
     if (!result || result.status !== 'fulfilled') {
       failed++;
+      observationsByAoi.push([]);
       continue;
     }
 
@@ -497,10 +497,47 @@ async function queryAcrossAois(manager, provider, plan, baseArgs = {}, options =
     statuses.push(String(result.value?.health?.status || 'UNKNOWN').toUpperCase());
     if (result.value?.coverage?.complete !== true) providerIncomplete = true;
 
+    const aoiSeen = new Set();
+    const bucket = [];
     for (const observation of (result.value?.observations || []).slice(0, perAoiMax)) {
-      if (!observation?.id || seen.has(observation.id)) continue;
-      seen.add(observation.id);
-      observations.push(observation);
+      if (!observation?.id || aoiSeen.has(observation.id)) continue;
+      aoiSeen.add(observation.id);
+      bucket.push(observation);
+    }
+    observationsByAoi.push(bucket);
+  }
+
+  // Apply the global output cap after dedupe, but distribute the retained
+  // observations across the route instead of taking the first AOIs first.
+  const maxOutput = Math.max(1, maxRecords);
+  const observations = [];
+  const globalSeen = new Set();
+  if (maxOutput < observationsByAoi.length) {
+    for (let slot = 0; slot < maxOutput; slot++) {
+      const preferredIndex = Math.round(
+        slot * (observationsByAoi.length - 1) / Math.max(1, maxOutput - 1)
+      );
+      for (const index of [preferredIndex, ...Array.from({ length: observationsByAoi.length }, (_, i) => i)]) {
+        const candidate = observationsByAoi[index] || [];
+        const observation = candidate.find(item => item?.id && !globalSeen.has(item.id));
+        if (!observation) continue;
+        globalSeen.add(observation.id);
+        observations.push(observation);
+        break;
+      }
+    }
+  } else {
+    let madeProgress = true;
+    while (observations.length < maxOutput && madeProgress) {
+      madeProgress = false;
+      for (const bucket of observationsByAoi) {
+        if (observations.length >= maxOutput) break;
+        const observation = bucket.find(item => item?.id && !globalSeen.has(item.id));
+        if (!observation) continue;
+        globalSeen.add(observation.id);
+        observations.push(observation);
+        madeProgress = true;
+      }
     }
   }
 
