@@ -59,7 +59,8 @@
     "telegram": "^2.26.22",
     "tesseract.js": "^7.0.0",
     "uuid": "^9.0.0",
-    "winston": "^3.11.0"
+    "winston": "^3.11.0",
+    "satellite.js": "^7.1.0"
   },
   "devDependencies": {
     "jest": "^29.7.0",
