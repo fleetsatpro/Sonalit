@@ -12,7 +12,7 @@ This matrix records where GEV-derived capabilities live in Sonalit. It is a capa
 | Public camera sources | Provider fabric | PARTIAL | File catalog supported; optional TfL JamCam catalog behind explicit environment flag and credentials where required. |
 | Person / face / plate surveillance | XD Live Surveillance | NOT IMPLEMENTED BY DESIGN | No identity extraction or plate/person tracking is introduced by CCTV. |
 | USGS earthquakes | Spatial provider fabric + XD hazard fusion | OPERATIONAL | Public USGS GeoJSON catalog/query adapter; bounded coverage and low operational-confidence semantics. |
-| NASA FIRMS active fire hotspots | Spatial provider fabric + XD hazard fusion | OPERATIONAL (credential-gated) | VIIRS area API adapter; `AUTH_REQUIRED` without `NASA_FIRMS_MAP_KEY`; hotspot detection is not treated as confirmed impact. |
+| NASA FIRMS active fire hotspots | Spatial provider fabric + XD hazard fusion | OPERATIONAL (credential-gated) | VIIRS area API adapter (default NOAA-21 NRT); `AUTH_REQUIRED` without `NASA_FIRMS_MAP_KEY`; hotspot detection is not treated as confirmed impact. |
 | Satellites / orbital layer | Spatial provider fabric | DEFERRED | Next expansion gate after CCTV hardening. |
 
 ## Semantics
