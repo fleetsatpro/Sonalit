@@ -105,7 +105,7 @@ function normalizeDetection(row,receivedAt){
       observationType:'viirs_active_fire_hotspot',
       sourceReference
     },
-    coverage:{complete:result.observations.length < limit,bounded:true,queryScope:'NASA FIRMS VIIRS hotspot detections within requested bbox'},
+    coverage:{complete:false,bounded:true,queryScope:'NASA FIRMS hotspot observation; query completeness is reported by the gateway result'},
     quality:{
       state:observedAt?'good':'unknown',
       freshnessClass:observedAt?'LIVE':'UNKNOWN',
@@ -181,7 +181,13 @@ async function fetchProvider(bbox,signal){
 }
 
 async function getFireDetections({bbox,maxRecords=100,signal}={}){
-  if(!isValidBbox(bbox)){  const configuredKey=String(process.env.NASA_FIRMS_MAP_KEY||'').trim();
+  if(!isValidBbox(bbox)){
+    const e=new Error('Invalid FIRMS bbox');
+    e.failureClass='malformed';
+    throw e;
+  }
+
+  const configuredKey=String(process.env.NASA_FIRMS_MAP_KEY||'').trim();
   if(!configuredKey){
     health.lastAttemptAt=new Date().toISOString();
     health.status='AUTH_REQUIRED';
@@ -192,40 +198,82 @@ async function getFireDetections({bbox,maxRecords=100,signal}={}){
     throw e;
   }
 
-    const e=new Error('Invalid FIRMS bbox');
-    e.failureClass='malformed';
-    throw e;
-  }
   const key=bboxKey(bbox);
+  const limit=clampInt(maxRecords,1,250,100);
   const fresh=cache.get(key);
   if(fresh){
     health.cacheHits++;
-    return {observations:fresh.value.slice(0,clampInt(maxRecords,1,250,100)),health:getProviderHealth(),coverage:{complete:fresh.value.length < clampInt(maxRecords,1,250,100),bounded:true,queryScope:'NASA FIRMS cached hotspot detections'},cache:{hit:true,ageMs:Date.now()-fresh.createdAt}};
+    return {
+      observations:fresh.value.slice(0,limit),
+      health:getProviderHealth(),
+      coverage:{
+        complete:fresh.value.length < limit,
+        bounded:true,
+        queryScope:'NASA FIRMS cached hotspot detections'
+      },
+      cache:{hit:true,ageMs:Date.now()-fresh.createdAt}
+    };
   }
-  if(inflight.has(key)){health.dedupeHits++;return inflight.get(key);}
+  if(inflight.has(key)){
+    health.dedupeHits++;
+    return inflight.get(key);
+  }
+
   const task=(async()=>{
-    health.requestCount++;health.lastAttemptAt=new Date().toISOString();
+    health.requestCount++;
+    health.lastAttemptAt=new Date().toISOString();
     try{
       const result=await runBudgeted(budget,circuit,()=>fetchProvider(bbox,signal));
-      const limit=clampInt(maxRecords,1,250,100);
       const observations=result.observations.slice(0,limit);
       health.status=observations.length?'LIVE':'PARTIAL';
       health.lastSuccessAt=new Date().toISOString();
-      health.lastErrorClass=null;health.lastErrorMessage=null;
-      health.recordCount=result.observations.length;health.acceptedCount=observations.length;health.rejectedCount=result.rejected;
+      health.lastErrorClass=null;
+      health.lastErrorMessage=null;
+      health.recordCount=result.observations.length;
+      health.acceptedCount=observations.length;
+      health.rejectedCount=result.rejected;
       cache.set(key,observations);
-      return {observations,health:getProviderHealth(),coverage:{complete:result.observations.length<limit,bounded:true,queryScope:'NASA FIRMS VIIRS hotspot detections within requested bbox'}};
+      return {
+        observations,
+        health:getProviderHealth(),
+        coverage:{
+          complete:result.observations.length < limit,
+          bounded:true,
+          omittedCount:Math.max(0,result.observations.length-observations.length),
+          queryScope:'NASA FIRMS VIIRS hotspot detections within requested bbox'
+        }
+      };
     }catch(error){
-      health.status=error.failureClass==='auth_required'?'AUTH_REQUIRED':error.failureClass==='rate_limited'?'RATE_LIMITED':'UNAVAILABLE';
-      health.lastErrorClass=error.failureClass||'unknown';health.lastErrorMessage=error.message;
+      health.status=error.failureClass==='auth_required'
+        ? 'AUTH_REQUIRED'
+        : error.failureClass==='rate_limited'
+          ? 'RATE_LIMITED'
+          : 'UNAVAILABLE';
+      health.lastErrorClass=error.failureClass||'unknown';
+      health.lastErrorMessage=error.message;
       const stale=cache.getStale(key);
       if(stale&&Date.now()-stale.createdAt<=300000){
         health.status='STALE';
-        return {observations:stale.value.map(o=>({...o,quality:{...o.quality,state:'stale',freshnessClass:'STALE',reason:'NASA FIRMS unavailable; bounded stale cache served.'}})),health:getProviderHealth(),coverage:{complete:false,bounded:true,queryScope:'NASA FIRMS stale cache'},warnings:['nasa_firms_provider_failed_serving_stale_cache']};
+        return {
+          observations:stale.value.map(o=>({...o,quality:{
+            ...o.quality,
+            state:'stale',
+            freshnessClass:'STALE',
+            reason:'NASA FIRMS unavailable; bounded stale cache served.'
+          }})),
+          health:getProviderHealth(),
+          coverage:{
+            complete:false,
+            bounded:true,
+            queryScope:'NASA FIRMS stale cache'
+          },
+          warnings:['nasa_firms_provider_failed_serving_stale_cache']
+        };
       }
       throw error;
     }
   })();
+
   inflight.set(key,task);
   try{return await task;}finally{inflight.delete(key);}
 }
