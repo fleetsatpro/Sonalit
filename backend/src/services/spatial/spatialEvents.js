@@ -709,6 +709,9 @@ async function persistSpatialEvents(db, events, options) {
         : null;
 
       try {
+        const spatialAlertSemanticKey = eventMode(event.eventType) === 'occurrence'
+          ? 'occurrence:' + event.eventType + ':' + event.subjectType + ':' + String(event.subjectId)
+          : 'condition:' + String(event.eventKey);
         const spatialAlertKey = eventMode(event.eventType) === 'occurrence'
           ? 'occurrence:' + String(event.eventKey)
           : 'condition:' + String(event.eventKey);
@@ -719,7 +722,7 @@ async function persistSpatialEvents(db, events, options) {
         const existingAlert = eventMode(event.eventType) === 'occurrence'
           ? await db(
               'SELECT id FROM alerts WHERE org_id=$1 AND (vehicle_id IS NOT DISTINCT FROM $2::uuid) AND ' +
-              '(convoy_id IS NOT DISTINCT FROM $3::uuid) AND metadata->>\'spatialAlertKey\'=$4 AND ' +
+              '(convoy_id IS NOT DISTINCT FROM $3::uuid) AND metadata->>\'spatialAlertSemanticKey\'=$4 AND ' +
               'deleted_at IS NULL AND resolved_at IS NULL AND created_at > NOW() - INTERVAL \'10 minutes\' LIMIT 1',
               [cfg.orgId, rawVehicleId, event.convoyId || null, spatialAlertKey]
             )
@@ -741,6 +744,7 @@ async function persistSpatialEvents(db, events, options) {
               JSON.stringify({
                 source: 'sonalit-spatial',
                 spatialAlertKey,
+                spatialAlertSemanticKey,
                 spatialEventKey: event.eventKey,
                 eventType: event.eventType,
                 ruleVersion: event.ruleVersion || 'spatial-v2'
