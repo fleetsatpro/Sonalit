@@ -1,4 +1,4 @@
-const { detectSpatialEvents } = require('../../src/services/spatial/spatialEvents');
+const { detectSpatialEvents, sourceProviderFromReferences, providerCanReconcile } = require('../../src/services/spatial/spatialEvents');
 
 function vehicle(overrides) {
   return Object.assign({
@@ -210,6 +210,49 @@ describe('deterministic spatial events', () => {
       environment: []
     });
     expect(events.find(e => e.eventType === 'TRAFFIC_CLOSURE')).toBeUndefined();
+  });
+
+
+  test('routes natural-hazard lifecycle authority by USGS/FIRMS provenance', () => {
+    expect(sourceProviderFromReferences(['usgs:eq:us700000test'])).toBe('usgs-earthquake');
+    expect(sourceProviderFromReferences(['nasa-firms:1.2:3.4:2026-09-25:1500:NOAA-21:VIIRS'])).toBe('nasa-firms');
+    expect(sourceProviderFromReferences(['nasa-eonet:E1'])).toBe('nasa-eonet');
+  });
+
+  test('does not promote low-operational-confidence hazard detections into actionable events', () => {
+    const events = detectSpatialEvents({
+      mission: { convoyId: 'convoy-1' },
+      operational: { vehicles: [vehicle()] },
+      relations: [{
+        predicate: 'NATURAL_HAZARD_NEAR_ROUTE',
+        fromId: 'vehicle-1',
+        toId: 'usgs:eq:us700000test',
+        fromType: 'vehicle',
+        toType: 'natural_hazard',
+        distanceM: 5000,
+        confidence: 0.98,
+        operationalConfidence: 0.22,
+        actionable: false,
+        sourceReferences: ['usgs:eq:us700000test'],
+        uncertainty: ['Detection does not establish operational impact.']
+      }]
+    });
+    expect(events.some(e => e.eventType === 'NATURAL_HAZARD_NEAR_ROUTE')).toBe(false);
+  });
+
+  test('requires source-specific query coverage before external hazard lifecycle reconciliation', () => {
+    const context = {
+      providerHealth: {
+        'usgs-earthquake': { status: 'LIVE' },
+        'nasa-firms': { status: 'LIVE' }
+      },
+      providerCoverage: {
+        'usgs-earthquake': { complete: false },
+        'nasa-firms': { complete: true }
+      }
+    };
+    expect(providerCanReconcile(context, 'NATURAL_HAZARD_NEAR_ROUTE', ['usgs:eq:us700000test'])).toBe(false);
+    expect(providerCanReconcile(context, 'NATURAL_HAZARD_NEAR_ROUTE', ['nasa-firms:test'])).toBe(true);
   });
 
 });
