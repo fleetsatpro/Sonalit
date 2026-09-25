@@ -5,9 +5,10 @@
 import type { SpatialObservation, FreshnessClass } from '../model/observation.js';
 
 export type ProviderFailureClass =
-  | 'timeout' | 'rate_limited' | 'auth_required' | 'http_error'
-  | 'malformed' | 'empty' | 'partial' | 'stale' | 'coverage_limited'
-  | 'cancelled' | 'unknown';
+  | 'timeout' | 'cancelled' | 'rate_limited' | 'auth_required' | 'http_error'
+  | 'malformed' | 'invalid_data' | 'empty' | 'partial' | 'stale'
+  | 'coverage_limited' | 'budget_exhausted' | 'circuit_open'
+  | 'unavailable' | 'unknown';
 
 export interface ProviderHealth {
   providerId: string;
@@ -66,44 +67,59 @@ export interface ProviderBudget {
   maxRequestsPerMinute: number;
   maxRequestsPerDay?: number;
   maxConcurrent?: number;
+  tenantMaxRequestsPerMinute?: number;
+  tenantMaxConcurrent?: number;
   estimatedCostPerRequest?: number;
 }
 
 export const DEFAULT_BUDGETS: Record<string, ProviderBudget> = {
   opensky: {
     providerId: 'opensky',
-    maxRequestsPerMinute: 10,
-    maxRequestsPerDay: 4000,
-    maxConcurrent: 2,
-  },
-  ais: {
-    providerId: 'ais',
-    maxRequestsPerMinute: 6,
-    maxConcurrent: 2,
+    maxRequestsPerMinute: 60,
+    maxConcurrent: 4,
+    tenantMaxRequestsPerMinute: 15,
+    tenantMaxConcurrent: 2,
   },
   weather: {
     providerId: 'weather',
-    maxRequestsPerMinute: 12,
-    maxConcurrent: 3,
+    maxRequestsPerMinute: 120,
+    maxConcurrent: 8,
+    tenantMaxRequestsPerMinute: 30,
+    tenantMaxConcurrent: 2,
   },
   'kpler-ais': {
     providerId: 'kpler-ais',
-    maxRequestsPerMinute: 6,
-    maxConcurrent: 2,
+    maxRequestsPerMinute: 60,
+    maxConcurrent: 4,
+    tenantMaxRequestsPerMinute: 15,
+    tenantMaxConcurrent: 2,
   },
   'mapbox-traffic': {
     providerId: 'mapbox-traffic',
     maxRequestsPerMinute: 60,
-    maxConcurrent: 4,
+    maxConcurrent: 6,
+    tenantMaxRequestsPerMinute: 15,
+    tenantMaxConcurrent: 2,
   },
   'tomtom-traffic-incidents': {
     providerId: 'tomtom-traffic-incidents',
-    maxRequestsPerMinute: 30,
-    maxConcurrent: 3,
+    maxRequestsPerMinute: 60,
+    maxConcurrent: 6,
+    tenantMaxRequestsPerMinute: 15,
+    tenantMaxConcurrent: 2,
+  },
+  'tomtom-traffic-flow': {
+    providerId: 'tomtom-traffic-flow',
+    maxRequestsPerMinute: 60,
+    maxConcurrent: 6,
+    tenantMaxRequestsPerMinute: 15,
+    tenantMaxConcurrent: 2,
   },
   'nasa-eonet': {
     providerId: 'nasa-eonet',
-    maxRequestsPerMinute: 12,
-    maxConcurrent: 2,
+    maxRequestsPerMinute: 30,
+    maxConcurrent: 4,
+    tenantMaxRequestsPerMinute: 7,
+    tenantMaxConcurrent: 2,
   },
 };
