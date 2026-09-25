@@ -303,11 +303,32 @@ function externalObservationClass(observation) {
 
 function trafficState(observation) {
   const attrs = observation?.attributes || {};
+  const entityType = String(observation?.entityType || '').toLowerCase();
+  const category = String(attrs.category || attrs.categoryTitle || '').toLowerCase();
   return {
-    closed: Boolean(attrs.closed),
-    severe: ['severe', 'heavy', 'major'].includes(String(attrs.congestion || attrs.magnitudeOfDelay || '').toLowerCase()),
-    moderate: String(attrs.congestion || '').toLowerCase() === 'moderate'
+    closed: Boolean(attrs.closed) ||
+      category.includes('closure') ||
+      category.includes('closed'),
+    severe: ['severe', 'heavy', 'major'].includes(String(attrs.congestion || attrs.magnitudeOfDelay || '').toLowerCase()) ||
+      category.includes('closure'),
+    moderate: String(attrs.congestion || '').toLowerCase() === 'moderate' ||
+      String(attrs.magnitudeOfDelay || '').toLowerCase() === 'moderate',
+    semanticClass: entityType === 'traffic_segment' || entityType === 'traffic_flow_segment'
+      ? 'flow'
+      : entityType === 'traffic_incident' || entityType === 'traffic_hazard'
+        ? 'incident'
+        : 'traffic'
   };
+}
+
+function trafficCorrelationClass(observation) {
+  return trafficState(observation).semanticClass;
+}
+
+function correlationObservedAt(observation) {
+  const value = observation?.observedAt || observation?.receivedAt;
+  const timestamp = Date.parse(value || '');
+  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
 function correlateExternalObservations(observations, route, now) {
@@ -322,7 +343,7 @@ function correlateExternalObservations(observations, route, now) {
   });
 
   for (const observation of usable) {
-    const key = String(observation.entityType || 'traffic');
+    const key = trafficCorrelationClass(observation);
     if (!sourceGroups.has(key)) sourceGroups.set(key, []);
     sourceGroups.get(key).push(observation);
   }
@@ -341,6 +362,10 @@ function correlateExternalObservations(observations, route, now) {
           Number(b.latitude), Number(b.longitude)
         );
         if (distance > 2500) continue;
+
+        const aTime = correlationObservedAt(a);
+        const bTime = correlationObservedAt(b);
+        if (aTime != null && bTime != null && Math.abs(aTime - bTime) > 15 * 60 * 1000) continue;
 
         const key = [a.id, b.id].sort().join('|');
         if (seen.has(key)) continue;
