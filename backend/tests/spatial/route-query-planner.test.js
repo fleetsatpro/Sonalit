@@ -4,7 +4,6 @@ const {
   planRouteQueries,
   adaptiveSamplePoints,
   queryAcrossAois,
-  planRouteQueries,
 } = require('../../src/services/spatial/routeQueryPlanner');
 
 describe('bounded route query planner', () => {
