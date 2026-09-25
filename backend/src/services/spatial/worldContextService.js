@@ -994,6 +994,32 @@ async function buildWorldContext(opts) {
       }
     : null;
 
+  if (routeQueryPlan && routeQueryPlan.aois.length === 0) {
+    const routeBoundLayers = [
+      ['aircraft', 'opensky'],
+      ['weather', 'weather'],
+      ['maritime', 'kpler-ais'],
+      ['traffic', 'traffic'],
+      ['hazards', 'nasa-eonet']
+    ];
+    for (const [layerId, providerId] of routeBoundLayers) {
+      if (!layers.includes(layerId)) continue;
+      layersPartial.push(layerId);
+      providerCoverage[providerId] = { complete: false, queryScope: 'no provider-safe route AOI was available' };
+      layerHealth.push({
+        layerId,
+        status: 'COVERAGE_LIMITED',
+        recordCount: 0,
+        acceptedCount: 0,
+        rejectedCount: 0,
+        coverageComplete: false,
+        reason: 'Route geometry could not be represented by a provider-safe AOI within configured spatial bounds; centre fallback is intentionally disabled.'
+      });
+      warnings.push(layerId + '_route_coverage_limited');
+    }
+    uncertainty.push('Route external intelligence was not queried because no provider-safe route AOI could be constructed.');
+  }
+
   if (layers.includes('aircraft') && (bbox || routeQueryPlan?.aois?.length)) {
     try {
       const result = routeQueryPlan?.aois?.length
