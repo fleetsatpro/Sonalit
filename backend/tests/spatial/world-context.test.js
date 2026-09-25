@@ -145,6 +145,62 @@ jest.mock('../../src/services/spatial/tomtomTrafficGateway', () => ({
   getProviderHealth: jest.fn().mockReturnValue({ status: 'LIVE' })
 }));
 
+jest.mock('../../src/services/spatial/usgsEarthquakeGateway', () => ({
+  getEarthquakes: jest.fn().mockResolvedValue({
+    observations: [{
+      id: 'usgs:eq:test-1',
+      entityType: 'natural_hazard',
+      source: 'usgs-earthquake',
+      sourceReference: 'test-1',
+      latitude: -1.29,
+      longitude: 36.835,
+      observedAt: '2026-09-24T11:59:30.000Z',
+      receivedAt: '2026-09-24T12:00:20.000Z',
+      observationConfidence: 0.98,
+      interpretationConfidence: 0.98,
+      operationalConfidence: 0.22,
+      confidence: 0.98,
+      status: 'review',
+      attributes: { hazardType: 'earthquake', magnitude: 5.2, severity: 'moderate' },
+      provenance: { sourceName: 'USGS Earthquake Hazards Program', sourceReference: 'test-1' },
+      coverage: { complete: false, queryScope: 'bbox' },
+      quality: { state: 'good', freshnessClass: 'LIVE' },
+      uncertainty: ['Detection does not establish route or fleet impact.']
+    }],
+    health: { status: 'LIVE', recordCount: 1, acceptedCount: 1, rejectedCount: 0 },
+    coverage: { complete: false, queryScope: 'bbox' }
+  }),
+  getProviderHealth: jest.fn().mockReturnValue({ status: 'LIVE' })
+}));
+
+jest.mock('../../src/services/spatial/nasaFirmsGateway', () => ({
+  getFireDetections: jest.fn().mockResolvedValue({
+    observations: [{
+      id: 'nasa-firms:test-fire-1',
+      entityType: 'natural_hazard',
+      source: 'nasa-firms',
+      sourceReference: 'test-fire-1',
+      latitude: -1.30,
+      longitude: 36.84,
+      observedAt: '2026-09-24T11:58:00.000Z',
+      receivedAt: '2026-09-24T12:00:20.000Z',
+      observationConfidence: 0.85,
+      interpretationConfidence: 0.94,
+      operationalConfidence: 0.20,
+      confidence: 0.85,
+      status: 'detected',
+      attributes: { hazardType: 'fire_hotspot', satellite: 'VIIRS_NOAA21_NRT' },
+      provenance: { sourceName: 'NASA FIRMS', sourceReference: 'test-fire-1' },
+      coverage: { complete: false, queryScope: 'bbox' },
+      quality: { state: 'good', freshnessClass: 'LIVE' },
+      uncertainty: ['Hotspot detection does not establish confirmed fire impact.']
+    }],
+    health: { status: 'LIVE', recordCount: 1, acceptedCount: 1, rejectedCount: 0 },
+    coverage: { complete: false, queryScope: 'bbox' }
+  }),
+  getProviderHealth: jest.fn().mockReturnValue({ status: 'LIVE' })
+}));
+
 jest.mock('../../src/services/spatial/nasaEonetGateway', () => ({
   getNaturalHazards: jest.fn().mockResolvedValue({
     observations: [{
@@ -174,6 +230,8 @@ const { getCurrentWeather } = require('../../src/services/spatial/weatherGateway
 const { getVesselsInBbox } = require('../../src/services/spatial/kplerAisGateway');
 const { getTrafficAtPoints } = require('../../src/services/spatial/mapboxTrafficGateway');
 const { getTrafficIncidents, getTrafficFlowAtPoints } = require('../../src/services/spatial/tomtomTrafficGateway');
+const { getEarthquakes } = require('../../src/services/spatial/usgsEarthquakeGateway');
+const { getFireDetections } = require('../../src/services/spatial/nasaFirmsGateway');
 const { getNaturalHazards } = require('../../src/services/spatial/nasaEonetGateway');
 const { buildWorldContext } = require('../../src/services/spatial/worldContextService');
 
@@ -398,6 +456,8 @@ describe('world context integration assembly', () => {
       getTrafficAtPoints.mock.calls,
       getTrafficFlowAtPoints.mock.calls,
       getTrafficIncidents.mock.calls,
+      getEarthquakes.mock.calls,
+      getFireDetections.mock.calls,
       getNaturalHazards.mock.calls
     ]) {
       expect(calls.length).toBeGreaterThan(0);
@@ -415,6 +475,10 @@ describe('world context integration assembly', () => {
     expect(ctx.traffic.some(e => e.entityType === 'traffic_segment')).toBe(true);
     expect(ctx.traffic.some(e => e.entityType === 'traffic_hazard')).toBe(true);
     expect(ctx.hazards.some(e => e.entityType === 'natural_hazard')).toBe(true);
+    expect(ctx.hazards.some(e => e.source === 'usgs-earthquake')).toBe(true);
+    expect(ctx.hazards.some(e => e.source === 'nasa-firms')).toBe(true);
+    expect(ctx.hazards.find(e => e.source === 'usgs-earthquake')?.operationalConfidence).toBeLessThan(0.5);
+    expect(ctx.hazards.find(e => e.source === 'nasa-firms')?.operationalConfidence).toBeLessThan(0.5);
     expect(ctx.correlations.some(c => c.kind === 'corroboration' && c.sourceProviders.includes('mapbox-traffic') && c.sourceProviders.includes('tomtom-traffic'))).toBe(true);
     expect(ctx.coverage.layersPartial).toEqual(expect.arrayContaining(['maritime','traffic','hazards']));
     expect(ctx.layerHealth.find(l => l.layerId === 'traffic')?.coverageComplete).toBe(false);
