@@ -1024,6 +1024,7 @@ async function buildWorldContext(opts) {
       return spatialProviderManager.query('weather', {
         latitude: p.latitude,
         longitude: p.longitude,
+        orgId,
         requestId: input.requestId,
         signal: input.signal
       });
@@ -1120,10 +1121,10 @@ async function buildWorldContext(opts) {
             spatialProviderManager,
             'nasa-eonet',
             routeQueryPlan,
-            { maxRecords: maxEntitiesPerLayer, signal: input.signal },
+            { orgId, maxRecords: maxEntitiesPerLayer, signal: input.signal },
             { concurrency: Math.min(3, Number(process.env.SPATIAL_EYE_PROVIDER_CONCURRENCY || 3)) }
           )
-        : await spatialProviderManager.query('nasa-eonet', { bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal });
+        : await spatialProviderManager.query('nasa-eonet', { bbox, orgId, maxRecords: maxEntitiesPerLayer, signal: input.signal });
 
       hazards.push.apply(hazards, (result.observations || []).slice(0, maxEntitiesPerLayer));
       const status = result.health?.status || 'UNKNOWN';
@@ -1167,10 +1168,10 @@ async function buildWorldContext(opts) {
             spatialProviderManager,
             'kpler-ais',
             routeQueryPlan,
-            { maxRecords: maxEntitiesPerLayer, signal: input.signal },
+            { orgId, maxRecords: maxEntitiesPerLayer, signal: input.signal },
             { concurrency: Math.min(3, Number(process.env.SPATIAL_EYE_PROVIDER_CONCURRENCY || 3)) }
           )
-        : await spatialProviderManager.query('kpler-ais', { bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal });
+        : await spatialProviderManager.query('kpler-ais', { bbox, orgId, maxRecords: maxEntitiesPerLayer, signal: input.signal });
 
       movement.push.apply(movement, (result.observations || []).slice(0, maxEntitiesPerLayer));
       const status = result.health?.status || 'UNKNOWN';
@@ -1225,18 +1226,18 @@ async function buildWorldContext(opts) {
     ));
     const sampled = Array.from(pointMap.values()).slice(0, 16);
     const trafficResults = await Promise.allSettled([
-      spatialProviderManager.query('mapbox-traffic', { points: sampled, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }),
-      spatialProviderManager.query('tomtom-traffic-flow', { points: sampled, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }),
+      spatialProviderManager.query('mapbox-traffic', { points: sampled, orgId, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }),
+      spatialProviderManager.query('tomtom-traffic-flow', { points: sampled, orgId, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }),
       routeQueryPlan?.aois?.length
         ? queryAcrossAois(
             spatialProviderManager,
             'tomtom-traffic-incidents',
             routeQueryPlan,
-            { maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal },
+            { orgId, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal },
             { concurrency: Math.min(3, Number(process.env.SPATIAL_EYE_PROVIDER_CONCURRENCY || 3)) }
           )
         : (bbox
-          ? spatialProviderManager.query('tomtom-traffic-incidents', { bbox, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal })
+          ? spatialProviderManager.query('tomtom-traffic-incidents', { bbox, orgId, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal })
           : Promise.resolve({ observations: [], health: { status: 'UNAVAILABLE' }, coverage: { complete: false } }))
     ]);
     const flow = trafficResults[0], tomtomFlow = trafficResults[1], incident = trafficResults[2], statuses = [];
