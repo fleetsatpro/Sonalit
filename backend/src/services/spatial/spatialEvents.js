@@ -726,7 +726,7 @@ async function persistSpatialEvents(db, events, options) {
               'SELECT id FROM alerts WHERE org_id=$1 AND (vehicle_id IS NOT DISTINCT FROM $2::uuid) AND ' +
               '(convoy_id IS NOT DISTINCT FROM $3::uuid) AND metadata->>\'spatialAlertSemanticKey\'=$4 AND ' +
               'deleted_at IS NULL AND resolved_at IS NULL AND created_at > NOW() - INTERVAL \'10 minutes\' LIMIT 1',
-              [cfg.orgId, rawVehicleId, event.convoyId || null, spatialAlertKey]
+              [cfg.orgId, rawVehicleId, event.convoyId || null, spatialAlertSemanticKey]
             )
           : { rows: [] };
 
@@ -734,7 +734,7 @@ async function persistSpatialEvents(db, events, options) {
         if (!existingAlert.rows?.length) {
           alertResult = await db(
             'INSERT INTO alerts (vehicle_id,convoy_id,type,severity,message,created_by,org_id,metadata,created_at,updated_at) ' +
-            'VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,NOW(),NOW()) RETURNING id',
+            'VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,NOW(),NOW()) ON CONFLICT DO NOTHING RETURNING id',
             [
               rawVehicleId,
               event.convoyId || null,
