@@ -552,6 +552,10 @@ async function queryAcrossAois(manager, provider, plan, baseArgs = {}, options =
   const queryCoverageRatio = totalRouteKm > 0
     ? Math.min(1, succeededWeightKm / totalRouteKm)
     : 0;
+  const plannedRouteCoverageRatio = Math.min(1, Math.max(0, Number(plan.coverageRatio ?? 0)));
+  const plannedCoverageComplete = plannedRouteCoverageRatio >= 0.999999;
+  const queryComplete = failed === 0 && !providerIncomplete && succeeded === plan.aois.length;
+  const complete = queryComplete && plannedCoverageComplete;
 
   return {
     observations,
@@ -562,18 +566,21 @@ async function queryAcrossAois(manager, provider, plan, baseArgs = {}, options =
       rejectedCount: 0,
     },
     coverage: {
-      complete: failed === 0 && !providerIncomplete && succeeded === plan.aois.length,
+      complete,
+      queryComplete,
+      plannedCoverageComplete,
       routeCoverageRatio: queryCoverageRatio,
-      plannedRouteCoverageRatio: plan.coverageRatio,
+      plannedRouteCoverageRatio,
       routeLengthCoveredM: Math.round(succeededWeightKm * 1000),
       aoisPlanned: plan.aois.length,
       aoisSucceeded: succeeded,
       aoisFailed: failed,
       queryScope: 'bounded route AOIs',
     },
-    warnings: (failed || providerIncomplete)
-      ? ['route_aoi_partial_coverage']
-      : [],
+    warnings: [
+      ...(failed || providerIncomplete ? ['route_aoi_partial_coverage'] : []),
+      ...(!plannedCoverageComplete ? ['route_plan_budget_limited'] : [])
+    ],
   };
 }
 
