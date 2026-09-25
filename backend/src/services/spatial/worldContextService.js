@@ -997,9 +997,7 @@ async function buildWorldContext(opts) {
   if (routeQueryPlan && routeQueryPlan.aois.length === 0) {
     const routeBoundLayers = [
       ['aircraft', 'opensky'],
-      ['weather', 'weather'],
       ['maritime', 'kpler-ais'],
-      ['traffic', 'traffic'],
       ['hazards', 'nasa-eonet']
     ];
     for (const [layerId, providerId] of routeBoundLayers) {
@@ -1137,7 +1135,7 @@ async function buildWorldContext(opts) {
     else layersUnavailable.push('weather');
 
     if (failedSamples.length) {
-      warnings.push('weather_partial_coverage');
+      warnings.push(successfulSamples ? 'weather_partial_coverage' : 'weather_layer_unavailable');
       uncertainty.push(
         'Weather coverage is incomplete: ' +
         String(successfulSamples) + '/' + String(attemptedSamples) +
