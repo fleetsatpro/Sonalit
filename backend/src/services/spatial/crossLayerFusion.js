@@ -184,7 +184,7 @@ function isModelledSatellite(satellite) {
     attrs.telemetryLive === false;
 }
 
-function buildHazardCameraRelations(hazards, cameras, now) {
+function buildHazardCameraRelations(hazards, cameras, now, nearM = DEFAULT_CAMERA_NEAR_M) {
   const relations = [];
 
   for (const hazard of Array.isArray(hazards) ? hazards : []) {
@@ -203,7 +203,7 @@ function buildHazardCameraRelations(hazards, cameras, now) {
       ) * 1000;
 
       const maxRange = cameraRangeM(camera);
-      if (distance > Math.max(maxRange, DEFAULT_CAMERA_NEAR_M)) continue;
+      if (distance > Math.max(maxRange, Number(nearM) || DEFAULT_CAMERA_NEAR_M)) continue;
 
       const view = pointInViewshed(
         normalizeCameraModel(camera),
@@ -446,9 +446,10 @@ function buildCrossLayerFusionRelations({
   hazardNearM = DEFAULT_HAZARD_NEAR_M,
   hazardProximityM = DEFAULT_HAZARD_PROXIMITY_M,
   satelliteRouteNearM = DEFAULT_SATELLITE_ROUTE_NEAR_M,
+  cameraNearM = DEFAULT_CAMERA_NEAR_M,
 } = {}) {
   const relations = [
-    ...buildHazardCameraRelations(hazards, cameras, now),
+    ...buildHazardCameraRelations(hazards, cameras, now, cameraNearM),
     ...buildHazardRouteRelations(hazards, route, routeId, corridorId, corridorWidthKm, now, hazardNearM),
     ...buildSatelliteRouteRelations(satellites, route, routeId, now, satelliteRouteNearM),
     ...buildVehicleHazardRelations(vehicles, hazards, now, hazardNearM, hazardProximityM),
