@@ -46,8 +46,20 @@ export interface ProviderResult {
   health: ProviderHealth;
   coverage: {
     complete: boolean;
+    queryComplete?: boolean;
+    plannedCoverageComplete?: boolean;
+    routeCoverageRatio?: number;
+    plannedRouteCoverageRatio?: number;
+    routeLengthCoveredM?: number;
+    aoisPlanned?: number;
+    aoisSucceeded?: number;
+    aoisFailed?: number;
+    sampleCount?: number;
+    successfulSamples?: number;
+    failedSamples?: number;
     omittedCount?: number;
     queryScope: string;
+    [key: string]: unknown;
   };
   cache?: { hit: boolean; ageMs?: number };
 }
