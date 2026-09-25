@@ -169,6 +169,12 @@ jest.mock('../../src/services/spatial/nasaEonetGateway', () => ({
   getProviderHealth: jest.fn().mockReturnValue({ status: 'LIVE' })
 }));
 
+const { getAircraftInBbox } = require('../../src/services/spatial/openskyGateway');
+const { getCurrentWeather } = require('../../src/services/spatial/weatherGateway');
+const { getVesselsInBbox } = require('../../src/services/spatial/kplerAisGateway');
+const { getTrafficAtPoints } = require('../../src/services/spatial/mapboxTrafficGateway');
+const { getTrafficIncidents, getTrafficFlowAtPoints } = require('../../src/services/spatial/tomtomTrafficGateway');
+const { getNaturalHazards } = require('../../src/services/spatial/nasaEonetGateway');
 const { buildWorldContext } = require('../../src/services/spatial/worldContextService');
 
 const ORG = '00000000-0000-0000-0000-000000000001';
@@ -384,6 +390,19 @@ describe('world context integration assembly', () => {
       requestId: 'test-world-1',
       persistEvents: false
     });
+
+    for (const calls of [
+      getAircraftInBbox.mock.calls,
+      getCurrentWeather.mock.calls,
+      getVesselsInBbox.mock.calls,
+      getTrafficAtPoints.mock.calls,
+      getTrafficFlowAtPoints.mock.calls,
+      getTrafficIncidents.mock.calls,
+      getNaturalHazards.mock.calls
+    ]) {
+      expect(calls.length).toBeGreaterThan(0);
+      expect(calls.every(args => args[0]?.orgId === ORG)).toBe(true);
+    }
 
     expect(ctx.subject.orgId).toBe(ORG);
     expect(ctx.mission.convoyId).toBe(CONVOY);
