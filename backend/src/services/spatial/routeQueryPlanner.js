@@ -246,25 +246,32 @@ function buildAoiCandidates(route, options) {
   if (dense.length < 2) return [];
 
   const candidates = [];
+  const denseDistances = cumulativeKm(dense);
+  dense.forEach((point, index) => { point._denseIndex = index; });
   let chunk = [dense[0]];
 
   function emit(points) {
     if (points.length < 2) return;
-    const chunkLengthKm = routeLengthKm(points);
+    const fromIndex = points[0]._denseIndex;
+    const toIndex = points[points.length - 1]._denseIndex;
+    const routeStartKm = denseDistances[fromIndex];
+    const routeEndKm = denseDistances[toIndex];
+    const chunkLengthKm = Math.max(0, routeEndKm - routeStartKm);
     const boxes = splitWrappedBbox(bboxForPoints(points, options.paddingM));
     if (!boxes.length) return;
 
-    const weightPerBox = chunkLengthKm / boxes.length;
     for (let i = 0; i < boxes.length; i++) {
       const bbox = boxes[i];
       if (bboxAreaDeg2(bbox) > options.maxAoiAreaDeg2) {
         return false;
       }
       candidates.push({
-        fromIndex: points[0]._denseIndex,
-        toIndex: points[points.length - 1]._denseIndex,
+        fromIndex,
+        toIndex,
+        routeStartKm,
+        routeEndKm,
         routeLengthKm: chunkLengthKm,
-        coverageWeightKm: weightPerBox,
+        coverageWeightKm: chunkLengthKm,
         bbox,
       });
     }
@@ -330,8 +337,10 @@ function mergeSafe(candidates, options) {
         bbox: union,
         fromIndex: Math.min(out[i].fromIndex, candidate.fromIndex),
         toIndex: Math.max(out[i].toIndex, candidate.toIndex),
-        routeLengthKm: Math.max(out[i].routeLengthKm, candidate.routeLengthKm),
-        coverageWeightKm: out[i].coverageWeightKm + candidate.coverageWeightKm,
+        routeStartKm: Math.min(out[i].routeStartKm, candidate.routeStartKm),
+        routeEndKm: Math.max(out[i].routeEndKm, candidate.routeEndKm),
+        routeLengthKm: Math.max(out[i].routeEndKm, candidate.routeEndKm) - Math.min(out[i].routeStartKm, candidate.routeStartKm),
+        coverageWeightKm: Math.max(out[i].routeEndKm, candidate.routeEndKm) - Math.min(out[i].routeStartKm, candidate.routeStartKm),
       };
       merged = true;
       break;
@@ -340,6 +349,36 @@ function mergeSafe(candidates, options) {
   }
 
   return out;
+}
+
+function intervalCoverageKm(candidates) {
+  const intervals = (Array.isArray(candidates) ? candidates : [])
+    .map(c => [
+      Number(c.routeStartKm ?? 0),
+      Number(c.routeEndKm ?? c.routeStartKm ?? 0)
+    ])
+    .filter(([start, end]) => Number.isFinite(start) && Number.isFinite(end) && end > start)
+    .sort((a, b) => a[0] - b[0]);
+
+  let total = 0;
+  let start = null;
+  let end = null;
+  for (const interval of intervals) {
+    if (start == null) {
+      start = interval[0];
+      end = interval[1];
+      continue;
+    }
+    if (interval[0] <= end) {
+      end = Math.max(end, interval[1]);
+      continue;
+    }
+    total += end - start;
+    start = interval[0];
+    end = interval[1];
+  }
+  if (start != null) total += end - start;
+  return total;
 }
 
 function selectBoundedCoverage(candidates, maxAois) {
@@ -396,11 +435,9 @@ function planRouteQueries(routeInput, options = {}) {
     bboxAreaDeg2(candidate.bbox) <= opts.maxAoiAreaDeg2
   );
 
-  const preCapWeight = candidates.reduce((sum, c) => sum + Number(c.coverageWeightKm || 0), 0);
+  const preCapWeight = intervalCoverageKm(candidates);
   const selected = selectBoundedCoverage(candidates, opts.maxAois);
-  const coveredKm = Math.min(totalKm, selected.reduce(
-    (sum, c) => sum + Number(c.coverageWeightKm || 0), 0
-  ));
+  const coveredKm = Math.min(totalKm, intervalCoverageKm(selected));
 
   return {
     mode: selected.length > 1 ? 'multi_aoi' : selected.length === 1 ? 'single_aoi' : 'center_only',
@@ -414,6 +451,8 @@ function planRouteQueries(routeInput, options = {}) {
       bbox: candidate.bbox,
       fromIndex: candidate.fromIndex,
       toIndex: candidate.toIndex,
+      routeStartKm: Number(candidate.routeStartKm || 0),
+      routeEndKm: Number(candidate.routeEndKm || 0),
       routeLengthKm: Number(candidate.routeLengthKm || 0),
       coverageWeightKm: Number(candidate.coverageWeightKm || 0),
     })),
@@ -483,7 +522,7 @@ async function queryAcrossAois(manager, provider, plan, baseArgs = {}, options =
   let succeeded = 0;
   let failed = 0;
   let providerIncomplete = false;
-  let succeededWeightKm = 0;
+  const succeededCandidates = [];
 
   for (const result of results) {
     if (!result || result.status !== 'fulfilled') {
@@ -493,7 +532,10 @@ async function queryAcrossAois(manager, provider, plan, baseArgs = {}, options =
     }
 
     succeeded++;
-    succeededWeightKm += result.coverageWeightKm;
+    succeededCandidates.push({
+      routeStartKm: Number(plan.aois[results.indexOf(result)]?.routeStartKm || 0),
+      routeEndKm: Number(plan.aois[results.indexOf(result)]?.routeEndKm || 0)
+    });
     statuses.push(String(result.value?.health?.status || 'UNKNOWN').toUpperCase());
     if (result.value?.coverage?.complete !== true) providerIncomplete = true;
 
@@ -554,6 +596,7 @@ async function queryAcrossAois(manager, provider, plan, baseArgs = {}, options =
       : rawStatus;
 
   const totalRouteKm = Number(plan.routeLengthKm || 0);
+  const succeededWeightKm = intervalCoverageKm(succeededCandidates);
   const queryCoverageRatio = totalRouteKm > 0
     ? Math.min(1, succeededWeightKm / totalRouteKm)
     : 0;
