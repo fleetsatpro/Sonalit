@@ -11,7 +11,7 @@ const {
 } = require('./externalProviderUtils');
 
 const BASE_URL='https://firms.modaps.eosdis.nasa.gov/api/area/csv';
-const DEFAULT_SOURCE='VIIRS_SNPP_NRT';
+const DEFAULT_SOURCE='VIIRS_NOAA21_NRT';
 const cache=new BoundedTtlCache(120_000,64);
 const circuit=new CircuitBreaker(5,60_000);
 const budget=new RequestBudget(20,2);
@@ -181,7 +181,17 @@ async function fetchProvider(bbox,signal){
 }
 
 async function getFireDetections({bbox,maxRecords=100,signal}={}){
-  if(!isValidBbox(bbox)){
+  if(!isValidBbox(bbox)){  const configuredKey=String(process.env.NASA_FIRMS_MAP_KEY||'').trim();
+  if(!configuredKey){
+    health.lastAttemptAt=new Date().toISOString();
+    health.status='AUTH_REQUIRED';
+    health.lastErrorClass='auth_required';
+    health.lastErrorMessage='NASA FIRMS MAP_KEY is not configured';
+    const e=new Error('NASA FIRMS MAP_KEY is not configured');
+    e.failureClass='auth_required';
+    throw e;
+  }
+
     const e=new Error('Invalid FIRMS bbox');
     e.failureClass='malformed';
     throw e;
