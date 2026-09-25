@@ -61,6 +61,7 @@ function dbStub() {
       try {
         const metadata = JSON.parse(params[7] || '{}');
         if (metadata.spatialAlertKey) spatialAlertKeys.add(metadata.spatialAlertKey);
+        if (metadata.spatialAlertSemanticKey) spatialAlertKeys.add(metadata.spatialAlertSemanticKey);
       } catch (_) {}
       return { rows: [{ id: 'alert-' + nextId++ }] };
     }
@@ -189,7 +190,8 @@ describe('spatial event lifecycle', () => {
     await persistSpatialEvents(db, [first], { orgId: 'org-1', context });
     await persistSpatialEvents(db, [second], { orgId: 'org-1', context });
 
-    expect(db.calls.filter(x => x.sql.startsWith('INSERT INTO alerts'))).toHaveLength(2);
+    expect(db.calls.filter(x => x.sql.startsWith('INSERT INTO alerts'))).toHaveLength(1);
+    expect(db.calls.filter(x => x.sql.startsWith('INSERT INTO spatial_events'))).toHaveLength(2);
   });
 
   test('suppresses repeated occurrence alerts while retaining separate event records', async () => {
