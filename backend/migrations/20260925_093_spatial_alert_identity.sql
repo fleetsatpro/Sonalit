@@ -16,7 +16,7 @@ WHERE a.id <> b.id
   AND b.metadata->>'source' = 'sonalit-spatial'
   AND a.metadata->>'spatialAlertKey' IS NOT NULL
   AND a.metadata->>'spatialAlertKey' = b.metadata->>'spatialAlertKey'
-  AND a.created_at > b.created_at;
+  AND (a.created_at > b.created_at OR (a.created_at = b.created_at AND a.id::text > b.id::text));
 
 CREATE UNIQUE INDEX IF NOT EXISTS alerts_open_spatial_identity
   ON alerts(org_id, (metadata->>'spatialAlertKey'))
