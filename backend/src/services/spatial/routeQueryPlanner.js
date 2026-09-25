@@ -541,12 +541,17 @@ async function queryAcrossAois(manager, provider, plan, baseArgs = {}, options =
     }
   }
 
-  const status = statuses.includes('LIVE') ? 'LIVE'
+  const rawStatus = statuses.includes('LIVE') ? 'LIVE'
     : statuses.includes('DELAYED') ? 'DELAYED'
     : statuses.includes('PARTIAL') ? 'PARTIAL'
     : statuses.includes('STALE') ? 'STALE'
     : failed ? 'UNAVAILABLE'
     : 'UNKNOWN';
+  const status = failed === plan.aois.length
+    ? 'UNAVAILABLE'
+    : (failed > 0 || providerIncomplete)
+      ? 'PARTIAL'
+      : rawStatus;
 
   const totalRouteKm = Number(plan.routeLengthKm || 0);
   const queryCoverageRatio = totalRouteKm > 0
