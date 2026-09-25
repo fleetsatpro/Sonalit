@@ -113,7 +113,7 @@ function normalizeFeature(feature, receivedAt){
       observationType:'earthquake_catalog_geojson',
       sourceReference:id
     },
-    coverage:{complete:result.observations.length < limit,bounded:true,queryScope:'USGS earthquake events within requested bbox/time window'},
+    coverage:{complete:false,bounded:true,queryScope:'USGS earthquake event observation; query completeness is reported by the gateway result'},
     quality:{
       state:f === 'LIVE' ? 'good' : f === 'DELAYED' ? 'degraded' : f === 'STALE' ? 'stale' : 'unknown',
       freshnessClass:f,
