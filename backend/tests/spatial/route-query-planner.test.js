@@ -133,6 +133,29 @@ describe('bounded route query planner', () => {
     );
   });
 
+  test('does not call incomplete bounded-route coverage complete', async () => {
+    const manager = {
+      query: jest.fn(async () => ({
+        observations: [{ id: 'obs-1' }],
+        health: { status: 'LIVE' },
+        coverage: { complete: true }
+      }))
+    };
+    const result = await queryAcrossAois(manager, 'opensky', {
+      routeLengthKm: 400,
+      coverageRatio: 0.5,
+      aois: [
+        { id: 'a1', bbox: [0,0,1,1], coverageWeightKm: 100 },
+        { id: 'a2', bbox: [1,0,2,1], coverageWeightKm: 100 }
+      ]
+    }, { orgId: 'org-a', maxRecords: 10 }, { concurrency: 2 });
+
+    expect(result.coverage.queryComplete).toBe(true);
+    expect(result.coverage.plannedCoverageComplete).toBe(false);
+    expect(result.coverage.complete).toBe(false);
+    expect(result.warnings).toContain('route_plan_budget_limited');
+  });
+
   test('aggregates AOI responses, dedupes observations, and reports partial coverage', async () => {
     const manager = {
       query: jest.fn()
