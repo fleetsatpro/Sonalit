@@ -50,13 +50,13 @@ class SpatialProviderManager {
     const maxConcurrent = envInt(descriptor.budgetEnv?.maxConcurrent, descriptor.maxConcurrent ?? 8, 1, 256);
     const tenantMaxPerMinute = envInt(
       descriptor.budgetEnv?.tenantMaxPerMinute,
-      descriptor.tenantMaxPerMinute ?? Math.max(1, Math.floor((descriptor.maxPerMinute ?? 120) / 4)),
+      descriptor.tenantMaxPerMinute ?? Math.max(1, Math.floor(maxPerMinute / 4)),
       1,
       10_000,
     );
     const tenantMaxConcurrent = envInt(
       descriptor.budgetEnv?.tenantMaxConcurrent,
-      descriptor.tenantMaxConcurrent ?? Math.max(1, Math.min(descriptor.maxConcurrent ?? 8, 2)),
+      descriptor.tenantMaxConcurrent ?? Math.max(1, Math.min(maxConcurrent, 2)),
       1,
       256,
     );
