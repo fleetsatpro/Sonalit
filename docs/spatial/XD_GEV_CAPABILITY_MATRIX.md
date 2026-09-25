@@ -11,8 +11,8 @@ This matrix records where GEV-derived capabilities live in Sonalit. It is a capa
 | CCTV viewshed geometry | XD Live Surveillance | OPERATIONAL | FOV/range/heading geometry can say a target is geometrically visible; it cannot claim image acquisition. |
 | Public camera sources | Provider fabric | PARTIAL | File catalog supported; optional TfL JamCam catalog behind explicit environment flag and credentials where required. |
 | Person / face / plate surveillance | XD Live Surveillance | NOT IMPLEMENTED BY DESIGN | No identity extraction or plate/person tracking is introduced by CCTV. |
-| USGS earthquakes | Spatial provider fabric | DEFERRED | Not part of this CCTV transfer. |
-| NASA FIRMS active fires | Spatial provider fabric | DEFERRED | Not part of this CCTV transfer. |
+| USGS earthquakes | Spatial provider fabric + XD hazard fusion | OPERATIONAL | Public USGS GeoJSON catalog/query adapter; bounded coverage and low operational-confidence semantics. |
+| NASA FIRMS active fire hotspots | Spatial provider fabric + XD hazard fusion | OPERATIONAL (credential-gated) | VIIRS area API adapter (default NOAA-21 NRT); `AUTH_REQUIRED` without `NASA_FIRMS_MAP_KEY`; hotspot detection is not treated as confirmed impact. |
 | Satellites / orbital layer | Spatial provider fabric | DEFERRED | Next expansion gate after CCTV hardening. |
 
 ## Semantics
@@ -30,3 +30,7 @@ The optional TfL JamCam catalog uses TfL's public Unified API surface. TfL state
 ## Operational rule
 
 XD Live Surveillance remains the operational authority. External CCTV enriches the canonical world state; it does not overwrite Sonalit telemetry, incidents, convoy state, e-lock state or evidence records.
+
+## Hazard sensor semantics
+
+USGS earthquake observations and NASA FIRMS hotspot observations are external detections. They are not automatically converted into road closure, damage, route disruption, fleet exposure, or other operational-impact assertions. World Context records source-specific health and provenance and reports the composite hazard layer as partial whenever one or more sensors are unavailable, rate-limited, credential-gated, stale, or coverage-bounded.

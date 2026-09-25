@@ -24,3 +24,18 @@ Not copied: GEV visual identity, media, bundled datasets, Pinokio tooling.
 
 - Already a Sonalit dependency (`cesium@^1.141.0`)
 - Apache-2.0
+
+
+## USGS Earthquake Hazards Program
+
+- https://earthquake.usgs.gov/
+- Programmatic earthquake catalog / GeoJSON feed.
+- Source observations remain attributed to USGS and are represented as external hazard detections.
+- No API key is required for the public query path used by Sonalit.
+
+## NASA FIRMS
+
+- https://firms.modaps.eosdis.nasa.gov/
+- VIIRS active-fire hotspot detections through the FIRMS Area API.
+- NASA_FIRMS_MAP_KEY is required by the provider; Sonalit returns AUTH_REQUIRED when it is absent rather than substituting synthetic hazard data.
+- Attribution/provenance is preserved on each hotspot observation.

@@ -78,8 +78,7 @@ const EVENT_AUTHORITY_LAYER = Object.freeze({
 
 const EVENT_AUTHORITY_PROVIDER = Object.freeze({
   VESSEL_APPROACHING_DESTINATION: 'kpler-ais',
-  NATURAL_HAZARD_NEAR_ROUTE: 'nasa-eonet',
-  ENVIRONMENTAL_DETERIORATION: 'weather'
+    ENVIRONMENTAL_DETERIORATION: 'weather'
 });
 
 function sourceProviderFromReferences(references) {
@@ -96,6 +95,10 @@ function sourceProviderFromReferences(references) {
     if (ref === 'open-meteo' || ref.startsWith('open-meteo:')) return 'weather';
     if (ref === 'weather' || ref.startsWith('weather:')) return 'weather';
     if (ref === 'nasa-eonet' || ref.startsWith('nasa-eonet:') || ref.startsWith('eonet:')) return 'nasa-eonet';
+    if (ref === 'usgs-earthquake' || ref.startsWith('usgs-earthquake:') || ref.startsWith('usgs:eq:')) return 'usgs-earthquake';
+    if (ref === 'nasa-firms' || ref.startsWith('nasa-firms:')) return 'nasa-firms';
+    if (ref === 'usgs-earthquake' || ref.startsWith('usgs-earthquake:') || ref.startsWith('usgs:eq:')) return 'usgs-earthquake';
+    if (ref === 'nasa-firms' || ref.startsWith('nasa-firms:')) return 'nasa-firms';
     if (ref === 'opensky' || ref.startsWith('opensky:')) return 'opensky';
   }
   return null;

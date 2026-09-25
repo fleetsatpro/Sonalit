@@ -1234,55 +1234,155 @@ async function buildWorldContext(opts) {
   }
 
   if (layers.includes('hazards') && (bbox || routeQueryPlan?.aois?.length)) {
-    try {
-      const result = routeQueryPlan?.aois?.length
-        ? await queryAcrossAois(
+    const hazardProviders = [
+      ['nasa-eonet', 'NASA EONET'],
+      ['usgs-earthquake', 'USGS Earthquake Hazards Program'],
+      ['nasa-firms', 'NASA FIRMS']
+    ];
+    const providerMax = Math.max(1, Math.ceil(maxEntitiesPerLayer / hazardProviders.length));
+    const hazardResults = await Promise.allSettled(hazardProviders.map(([providerId]) =>
+      routeQueryPlan?.aois?.length
+        ? queryAcrossAois(
             spatialProviderManager,
-            'nasa-eonet',
+            providerId,
             routeQueryPlan,
-            { orgId, maxRecords: maxEntitiesPerLayer, signal: input.signal },
+            { orgId, maxRecords: providerMax, signal: input.signal },
             { concurrency: Math.min(3, Number(process.env.SPATIAL_EYE_PROVIDER_CONCURRENCY || 3)) }
           )
-        : await spatialProviderManager.query('nasa-eonet', { bbox, orgId, maxRecords: maxEntitiesPerLayer, signal: input.signal });
+        : spatialProviderManager.query(providerId, {
+            bbox,
+            orgId,
+            maxRecords: providerMax,
+            signal: input.signal
+          })
+    ));
 
-      hazards.push.apply(hazards, (result.observations || []).slice(0, maxEntitiesPerLayer));
-      const rawStatus = result.health?.status || 'UNKNOWN';
-      const status = result.coverage?.complete === false &&
+    const hazardStatuses = [];
+    let usableProviders = 0;
+    let completeProviders = 0;
+    let unavailableProviders = 0;
+
+    hazardResults.forEach((settled, index) => {
+      const providerId = hazardProviders[index][0];
+      const providerName = hazardProviders[index][1];
+
+      if (settled.status === 'rejected') {
+        const error = settled.reason;
+        const failureStatus = providerFailureStatus(error);
+        const warning = providerFailureWarning(providerId.replace(/[^a-z0-9]+/gi, '_'), error);
+        unavailableProviders += 1;
+        hazardStatuses.push(failureStatus);
+        providerCoverage[providerId] = {
+          complete:false,
+          queryScope: 'provider request failed',
+          unavailable:true
+        };
+        warnings.push(providerId + '_unavailable');
+        if (warning) warnings.push(warning);
+        uncertainty.push(providerName + ' unavailable: ' + String(error?.failureClass || 'unknown') + '.');
+        layerHealth.push({
+          layerId:'hazards:' + providerId,
+          providerId,
+          status:failureStatus,
+          recordCount:0,
+          acceptedCount:0,
+          rejectedCount:0,
+          coverageComplete:false,
+          reason:String(error?.message || (providerName + ' provider failed.'))
+        });
+        return;
+      }
+
+      const result=settled.value || {};
+      const observations=Array.isArray(result.observations) ? result.observations : [];
+      hazards.push.apply(hazards, observations.slice(0, providerMax));
+
+      const rawStatus=String(result.health?.status || 'UNKNOWN').toUpperCase();
+      const status=result.coverage?.complete === false &&
         (rawStatus === 'LIVE' || rawStatus === 'DELAYED')
         ? 'PARTIAL'
         : rawStatus;
-      providerCoverage['nasa-eonet'] = Object.assign({}, result.coverage || {}, {
-        complete: result.coverage?.complete === true,
+      const coverageComplete=result.coverage?.complete === true;
+      const hasUsableData=observations.length > 0;
+
+      if(hasUsableData) usableProviders += 1;
+      if(coverageComplete && ['LIVE','DELAYED'].includes(rawStatus)) completeProviders += 1;
+      if(['UNAVAILABLE','AUTH_REQUIRED','RATE_LIMITED','COVERAGE_LIMITED'].includes(status)) unavailableProviders += 1;
+      hazardStatuses.push(status);
+
+      providerCoverage[providerId]=Object.assign({},result.coverage || {},{
+        complete:coverageComplete
       });
-      if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('hazards');
-      else if (status === 'STALE' || status === 'PARTIAL') layersPartial.push('hazards');
-      else layersUnavailable.push('hazards');
       layerHealth.push({
-        layerId: 'hazards',
+        layerId:'hazards:' + providerId,
+        providerId,
         status,
-        lastSuccessAt: result.health?.lastSuccessAt,
-        lastAttemptAt: result.health?.lastAttemptAt,
-        recordCount: result.health?.recordCount,
-        acceptedCount: result.health?.acceptedCount,
-        rejectedCount: result.health?.rejectedCount,
-        coverageComplete: result.coverage?.complete === true,
-        routeCoverageRatio: result.coverage?.routeCoverageRatio,
-        aoisPlanned: result.coverage?.aoisPlanned,
-        aoisSucceeded: result.coverage?.aoisSucceeded,
-        aoisFailed: result.coverage?.aoisFailed,
-        reason: result.health?.lastErrorMessage
+        lastSuccessAt:result.health?.lastSuccessAt,
+        lastAttemptAt:result.health?.lastAttemptAt,
+        recordCount:result.health?.recordCount ?? observations.length,
+        acceptedCount:result.health?.acceptedCount ?? observations.length,
+        rejectedCount:result.health?.rejectedCount,
+        coverageComplete,
+        routeCoverageRatio:result.coverage?.routeCoverageRatio,
+        aoisPlanned:result.coverage?.aoisPlanned,
+        aoisSucceeded:result.coverage?.aoisSucceeded,
+        aoisFailed:result.coverage?.aoisFailed,
+        reason:result.health?.lastErrorMessage
       });
-      if (Array.isArray(result.warnings)) warnings.push(...result.warnings);
-    } catch (error) {
-      const failureStatus = providerFailureStatus(error);
-      const failureWarning = providerFailureWarning('hazards', error);
-      if (failureStatus === 'COVERAGE_LIMITED') layersPartial.push('hazards');
-      else layersUnavailable.push('hazards');
-      warnings.push('hazards_layer_unavailable');
-      if (failureWarning !== 'hazards_layer_unavailable') warnings.push(failureWarning);
-      uncertainty.push('Natural hazard provider unavailable: ' + String(error?.failureClass || 'unknown') + '.');
-      layerHealth.push({ layerId: 'hazards', status: failureStatus, reason: String(error?.message || 'NASA EONET external event provider failed.') });
+
+      if(Array.isArray(result.warnings)) warnings.push(...result.warnings);
+      if(status === 'AUTH_REQUIRED') {
+        warnings.push(providerId + '_credentials_required');
+      }
+    });
+
+    const totalProviders=hazardProviders.length;
+    const allUnavailable=unavailableProviders >= totalProviders;
+    const fullyCovered=completeProviders === totalProviders && usableProviders === totalProviders;
+    const aggregateStatus=allUnavailable
+      ? (hazardStatuses.includes('AUTH_REQUIRED') ? 'AUTH_REQUIRED' : 'UNAVAILABLE')
+      : fullyCovered
+        ? 'LIVE'
+        : hazardStatuses.some(s => s === 'LIVE' || s === 'DELAYED' || s === 'STALE' || s === 'PARTIAL')
+          ? 'PARTIAL'
+          : hazardStatuses.some(s => s === 'AUTH_REQUIRED')
+            ? 'AUTH_REQUIRED'
+            : 'UNAVAILABLE';
+
+    if(aggregateStatus === 'LIVE' || aggregateStatus === 'DELAYED') layersSucceeded.push('hazards');
+    else if(aggregateStatus === 'STALE' || aggregateStatus === 'PARTIAL') layersPartial.push('hazards');
+    else layersUnavailable.push('hazards');
+
+    if(!fullyCovered) {
+      uncertainty.push('Hazard coverage is a multi-provider composite. A successful earthquake or hotspot detection does not establish route impact, damage, closure or fleet exposure.');
     }
+    if(!usableProviders) {
+      warnings.push('hazards_no_usable_provider_data');
+    }
+
+    providerCoverage.hazards={
+      complete:fullyCovered,
+      providers:hazardProviders.map(([providerId]) => providerId),
+      providerCount:totalProviders,
+      usableProviders,
+      unavailableProviders,
+      routeCoverageRatio:routeQueryPlan?.coverageRatio,
+      queryScope:routeQueryPlan?.aois?.length ? 'planned route AOIs' : 'requested bbox'
+    };
+    layerHealth.push({
+      layerId:'hazards',
+      status:aggregateStatus,
+      recordCount:hazards.length,
+      acceptedCount:hazards.length,
+      coverageComplete:fullyCovered,
+      providerCount:totalProviders,
+      usableProviders,
+      unavailableProviders,
+      reason:unavailableProviders
+        ? 'At least one external hazard source is unavailable, rate-limited or credential-gated.'
+        : undefined
+    });
+    hazards.splice(maxEntitiesPerLayer);
   }
   if (layers.includes('maritime') && (bbox || routeQueryPlan?.aois?.length)) {
     try {
