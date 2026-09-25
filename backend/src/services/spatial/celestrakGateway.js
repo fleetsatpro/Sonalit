@@ -415,7 +415,54 @@ function toObservation(record, position, generatedAt) {
   };
 }
 
+async function getSatelliteCatalog(options = {}) {
+  const now = new Date().toISOString();
+  const group = selectedGroup(options.group);
+  health = { ...health, lastAttemptAt: now, group, propagatorAvailable: Boolean(getSatelliteJs()) };
+
+  try {
+    const result = await fetchCatalog(group, options);
+    const records = result.records.map(row => normaliseRecord(row, group)).filter(Boolean);
+    const propagatorAvailable = Boolean(getSatelliteJs());
+
+    health = {
+      ...health,
+      status: records.length && propagatorAvailable ? 'LIVE' : (records.length ? 'PARTIAL' : 'UNAVAILABLE'),
+      lastSuccessAt: result.error ? health.lastSuccessAt : now,
+      lastErrorClass: result.error ? String(result.error.failureClass || 'unknown') : null,
+      lastErrorMessage: result.error ? String(result.error.message || result.error) : null,
+      recordCount: records.length,
+      acceptedCount: records.length,
+      rejectedCount: Math.max(0, result.records.length - records.length),
+      propagatorAvailable
+    };
+
+    return {
+      catalog: records,
+      health: { ...health },
+      coverage: {
+        complete: !result.error,
+        bounded: true,
+        queryScope: 'CelesTrak TLE group ' + group + ' catalog',
+        catalogCount: records.length
+      },
+      warnings: result.error ? ['satellite_catalog_stale_fallback'] : []
+    };
+  } catch (error) {
+    health = {
+      ...health,
+      status: 'UNAVAILABLE',
+      lastAttemptAt: now,
+      lastErrorClass: String(error?.failureClass || 'unknown'),
+      lastErrorMessage: String(error?.message || error),
+      propagatorAvailable: Boolean(getSatelliteJs())
+    };
+    throw error;
+  }
+}
+
 async function getSatellites(options = {}) {
+  if (options && options.mode === 'catalog') return getSatelliteCatalog(options);
   const now = new Date().toISOString();
   const group = selectedGroup(options.group);
   const maxRecords = clampInt(options.maxRecords ?? DEFAULT_MAX_RECORDS, 1, 200, DEFAULT_MAX_RECORDS);
@@ -534,5 +581,6 @@ module.exports = {
   normaliseRecord,
   propagateSatellite,
   getSatellites,
-  getProviderHealth
+  getProviderHealth,
+  getSatelliteCatalog
 };

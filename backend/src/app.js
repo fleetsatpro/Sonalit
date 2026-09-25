@@ -209,7 +209,7 @@ app.get("/metrics", async (req, res) => {
 // ─── Routes ───────────────────────────────────────────────────────────────────
 ["auth", "vehicles", "convoys", "alerts", "messages", "analytics", "geofences", "devices",
   "incidents", "rules", "gps", "sensors", "ai", "apikeys", "reports", "documents", "webhooks", "guardian", "realtime", "admin",
-  "fuel", "shifts", "traffic", "spatial", "cctv"]
+  "fuel", "shifts", "traffic", "spatial", "satellites", "cctv"]
   .forEach(r => app.use("/api/v1/" + r, require("./routes/" + r)));
 
 // 4D-geofence corridor writes: POST /api/v1/convoys/:id/corridor (the "Plan
