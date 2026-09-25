@@ -17,7 +17,7 @@ const EARTH_R = 6371000;
 const LIVE_MS = 45000;
 const DELAYED_MS = 300000;
 const MAX_EXTERNAL_RADIUS_M = 100000;
-const ALLOWED_LAYERS = new Set(['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts','cameras']);
+const ALLOWED_LAYERS = new Set(['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts','cameras','satellites']);
 
 function num(v) {
   if (v == null || v === '') return null;
@@ -973,6 +973,7 @@ async function buildWorldContext(opts) {
   const traffic = [];
   const hazards = [];
   const surveillance = [];
+  const satellites = [];
   const infrastructure = [];
   const security = [];
   const layerHealth = [];
@@ -1383,6 +1384,68 @@ async function buildWorldContext(opts) {
         : undefined
     });
     hazards.splice(maxEntitiesPerLayer);
+  }
+  if (layers.includes('satellites') && (bbox || routeInfo.route.length >= 2 || resolvedCenter)) {
+    try {
+      const satelliteBbox = bbox || (routeInfo.route.length >= 2
+        ? bboxFromRoute(routeInfo.route, Math.min(externalRadiusM, 50000))
+        : (resolvedCenter ? bboxFromCenterRadius(resolvedCenter.latitude, resolvedCenter.longitude, externalRadiusM) : null));
+      const result = await spatialProviderManager.query('celestrak', {
+        bbox: satelliteBbox,
+        center: resolvedCenter || undefined,
+        radiusM: externalRadiusM,
+        group: input.satelliteGroup,
+        maxRecords: Math.min(40, maxEntitiesPerLayer),
+        at: input.satelliteAt,
+        orgId,
+        requestId: input.requestId,
+        signal: input.signal
+      });
+      satellites.push.apply(satellites, (result.observations || []).slice(0, Math.min(40, maxEntitiesPerLayer)));
+      const rawStatus = String(result.health?.status || 'UNKNOWN').toUpperCase();
+      const status = rawStatus === 'LIVE' || rawStatus === 'DELAYED' || rawStatus === 'MODELLED'
+        ? (rawStatus === 'LIVE' || rawStatus === 'DELAYED' ? rawStatus : 'PARTIAL')
+        : rawStatus;
+      providerCoverage.celestrak = Object.assign({}, result.coverage || {}, {
+        complete: result.coverage?.complete === true,
+        propagatorAvailable: Boolean(result.health?.propagatorAvailable)
+      });
+      if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('satellites');
+      else if (status === 'PARTIAL' || status === 'STALE' || status === 'MODELLED' || status === 'UNKNOWN') layersPartial.push('satellites');
+      else layersUnavailable.push('satellites');
+      layerHealth.push({
+        layerId: 'satellites',
+        providerId: 'celestrak',
+        status,
+        lastSuccessAt: result.health?.lastSuccessAt,
+        lastAttemptAt: result.health?.lastAttemptAt,
+        recordCount: result.health?.recordCount ?? result.coverage?.catalogCount ?? satellites.length,
+        acceptedCount: result.health?.acceptedCount ?? satellites.length,
+        rejectedCount: result.health?.rejectedCount ?? 0,
+        coverageComplete: result.coverage?.complete === true,
+        propagatorAvailable: Boolean(result.health?.propagatorAvailable),
+        catalogCount: result.coverage?.catalogCount,
+        propagatedCount: result.coverage?.propagatedCount,
+        reason: result.health?.lastErrorMessage || (!result.health?.propagatorAvailable
+          ? 'Orbital catalog is available but SGP4 propagation is not installed.'
+          : 'Orbital positions are modelled from GP/TLE elements.')
+      });
+      if (Array.isArray(result.warnings)) warnings.push(...result.warnings);
+      if (!result.health?.propagatorAvailable) {
+        uncertainty.push('Satellite catalog presence is known, but no ground position is exposed because an SGP4 propagator is unavailable; imaging/tasking capability is not inferred.');
+      } else if (satellites.length) {
+        uncertainty.push('Satellite positions are SGP4-propagated from CelesTrak GP/TLE elements. They are modelled orbital positions, not live telemetry or imaging observations.');
+      }
+    } catch (error) {
+      const failureStatus = providerFailureStatus(error);
+      const warning = providerFailureWarning('satellites', error);
+      if (failureStatus === 'COVERAGE_LIMITED') layersPartial.push('satellites');
+      else layersUnavailable.push('satellites');
+      warnings.push('satellites_layer_unavailable');
+      if (warning !== 'satellites_layer_unavailable') warnings.push(warning);
+      uncertainty.push('CelesTrak satellite provider unavailable: ' + String(error?.failureClass || 'unknown') + '.');
+      layerHealth.push({ layerId: 'satellites', providerId: 'celestrak', status: failureStatus, coverageComplete: false, reason: String(error?.message || 'Satellite provider failed.') });
+    }
   }
   if (layers.includes('maritime') && (bbox || routeQueryPlan?.aois?.length)) {
     try {
@@ -2136,7 +2199,7 @@ async function buildWorldContext(opts) {
   }
 
   relations.push.apply(relations, externalRelations);
-  const allEntities = operationalVehicles.concat(movement, environment, traffic, hazards, surveillance, infrastructure, security);
+  const allEntities = operationalVehicles.concat(movement, environment, traffic, hazards, surveillance, satellites, infrastructure, security);
   const missionRouteCoords = routeInfo.route.map(function(p) { return [p.lng, p.lat]; });
 
   const context = {
@@ -2168,6 +2231,7 @@ async function buildWorldContext(opts) {
     traffic,
     hazards,
     cameras: surveillance,
+    satellites,
     infrastructure,
     security,
     correlations,
@@ -2190,6 +2254,7 @@ async function buildWorldContext(opts) {
       ...(traffic.some(e => e.source === 'tomtom-traffic') ? [{ sourceName: 'TomTom Traffic', attribution: 'TomTom Traffic' }] : []),
       ...(hazards.length ? [{ sourceName: 'NASA EONET', attribution: 'NASA EONET' }] : []),
       ...(surveillance.length ? [{ sourceName: 'CCTV catalog', attribution: 'Camera provider catalog; media access remains allowlist-controlled' }] : []),
+      ...(satellites.length ? [{ sourceName: 'CelesTrak', attribution: 'CelesTrak GP/NORAD catalog' }] : []),
       ...(security.length ? [{ sourceName: 'Sonalit Risk/Incident Systems', attribution: 'Organisation-scoped internal records' }] : [])
     ],
     freshness: {
