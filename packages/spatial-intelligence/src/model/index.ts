@@ -22,3 +22,11 @@ export type {
   SpatialCamera,
   SpatialObservationCameraContract,
 } from './spatialCamera.js';
+
+
+export type {
+  SpatialSatelliteTle,
+  SpatialSatelliteOrbit,
+  SpatialSatellite,
+  SpatialSatelliteObservation,
+} from './spatialSatellite.js';
