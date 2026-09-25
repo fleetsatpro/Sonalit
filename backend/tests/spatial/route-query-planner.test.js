@@ -183,7 +183,7 @@ describe('bounded route query planner', () => {
     expect(result.coverage.aoisSucceeded).toBe(1);
     expect(result.coverage.aoisFailed).toBe(1);
     expect(result.coverage.complete).toBe(false);
-    expect(result.health.status).toBe('LIVE');
+    expect(result.health.status).toBe('PARTIAL');
     expect(result.warnings).toContain('route_aoi_partial_coverage');
   });
 });
