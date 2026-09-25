@@ -74,7 +74,7 @@ describe('CelesTrak satellite/orbital adapter', () => {
       TLE_LINE2: ISS_TLE_2
     }, 'stations');
 
-    const position = propagateSatellite(satellite, new Date('2019-06-05T12:13:20.080032Z'));
+    const position = propagateSatellite(satellite, new Date('2019-06-05T12:12:58.000032Z'));
     expect(position).toBeTruthy();
     expect(Number.isFinite(position.latitude)).toBe(true);
     expect(Number.isFinite(position.longitude)).toBe(true);
