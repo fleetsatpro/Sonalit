@@ -38,7 +38,7 @@ describe('spatial vehicle telemetry transitions', () => {
     expect(recovered.previousFreshnessClass).toBe('STALE');
     expect(recovered.recoveredFreshness).toBe(true);
 
-    const continuouslyFresh = makeVehicle(row(now, 60_000), null, { route: [], widthKm: 2 }, [], now);
+    const continuouslyFresh = makeVehicle(row(now, 30_000), null, { route: [], widthKm: 2 }, [], now);
     expect(continuouslyFresh.previousFreshnessClass).toBe('LIVE');
     expect(continuouslyFresh.recoveredFreshness).toBe(false);
   });
