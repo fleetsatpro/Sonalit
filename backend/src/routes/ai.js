@@ -752,6 +752,7 @@ async function toolGetWorldContext(input, context) {
     relations: (ctx.relations || []).slice(0, 150),
     correlations: (ctx.correlations || []).slice(0, 75),
     events: (ctx.events || []).slice(0, 75),
+    lifecycle: ctx.lifecycle || { resolvedEventIds: [], resolvedEventKeys: [] },
     environment: (ctx.environment || []).slice(0, 30),
     movement: (ctx.movement || []).slice(0, 50),
     infrastructure: (ctx.infrastructure || []).slice(0, 100),
