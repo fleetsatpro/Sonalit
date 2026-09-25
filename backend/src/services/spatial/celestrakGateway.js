@@ -36,6 +36,7 @@ let health = {
   acceptedCount: 0,
   rejectedCount: 0,
   propagatorAvailable: false,
+  dataMode: 'modelled',
   group: DEFAULT_GROUP
 };
 
@@ -192,7 +193,7 @@ function normaliseRecord(record, group) {
       meanAnomalyDeg: finiteOrNull(record.MEAN_ANOMALY ?? record.meanAnomaly),
       bstar: finiteOrNull(record.BSTAR ?? record.bstar)
     },
-    propagatorAvailable: true,
+    propagatorAvailable: Boolean(getSatelliteJs()),
     imagingClaim: false,
     taskingClaim: false,
     nonImagingSemantics: true,
