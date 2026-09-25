@@ -481,8 +481,14 @@ function detectSpatialEvents(context, options) {
       ? String(relation.fromId)
       : String(context && context.mission && context.mission.convoyId || relation.fromId);
 
+    const correlationIdentity = relation.sourceAgreement === 'corroborated' &&
+      Array.isArray(relation.correlationIds) &&
+      relation.correlationIds.length
+      ? 'correlation:' + relation.correlationIds.slice().sort().join(',')
+      : String(relation.toId);
+
     events.push({
-      eventKey: type + ':' + String(relation.fromId) + ':' + String(relation.toId),
+      eventKey: type + ':' + String(relation.fromId) + ':' + correlationIdentity,
       eventType: type,
       subjectType,
       subjectId,
