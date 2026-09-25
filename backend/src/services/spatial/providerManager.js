@@ -295,6 +295,8 @@ function createDefaultSpatialProviderManager() {
     getProviderHealth: tomtomHealth,
   } = require('./tomtomTrafficGateway');
   const { getNaturalHazards, getProviderHealth: eonetHealth } = require('./nasaEonetGateway');
+  const { getEarthquakes, getProviderHealth: usgsHealth } = require('./usgsEarthquakeGateway');
+  const { getFireDetections, getProviderHealth: firmsHealth } = require('./nasaFirmsGateway');
   const { getCameras, getProviderHealth: cctvHealth } = require('./cctvGateway');
 
   const queryOrUnavailable = (module, key, providerName) => {
@@ -370,6 +372,20 @@ function createDefaultSpatialProviderManager() {
     capabilities: ['traffic', 'flow', 'point'],
     quotaKey: 'tomtom-traffic',
     ...budgets('SPATIAL_PROVIDER_TOMTOM', 60, 6),
+  });
+
+  manager.register('usgs-earthquake', {
+    query: queryOrUnavailable({ getEarthquakes }, 'getEarthquakes', 'USGS Earthquake'),
+    health: healthOrUnknown({ getProviderHealth: usgsHealth }, 'getProviderHealth'),
+    capabilities: ['earthquake', 'natural_hazard', 'seismic', 'bbox', 'live'],
+    ...budgets('SPATIAL_PROVIDER_USGS_EARTHQUAKE', 30, 2),
+  });
+
+  manager.register('nasa-firms', {
+    query: queryOrUnavailable({ getFireDetections }, 'getFireDetections', 'NASA FIRMS'),
+    health: healthOrUnknown({ getProviderHealth: firmsHealth }, 'getProviderHealth'),
+    capabilities: ['fire_hotspot', 'natural_hazard', 'earth_observation', 'bbox', 'near_real_time'],
+    ...budgets('SPATIAL_PROVIDER_NASA_FIRMS', 20, 2),
   });
 
   manager.register('nasa-eonet', {
