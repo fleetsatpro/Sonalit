@@ -2,7 +2,13 @@ import type { SpatialSatelliteObservation } from '../model/spatialSatellite.js';
 
 export type SatelliteLodTier = 'point' | 'label' | 'detail' | 'hidden';
 
-export interface SatelliteGeoJsonPointFeature {\n  type: 'Feature';\n  geometry: { type: 'Point'; coordinates: [number, number] };\n  properties: Record<string, unknown>;\n}\n\nexport interface SatelliteLodBudget {
+export interface SatelliteGeoJsonPointFeature {
+  type: 'Feature';
+  geometry: { type: 'Point'; coordinates: [number, number] };
+  properties: Record<string, unknown>;
+}
+
+export interface SatelliteLodBudget {
   maxPoints: number;
   maxLabels: number;
   maxDetails: number;
