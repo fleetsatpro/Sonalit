@@ -10,7 +10,8 @@ const {
   bearingDeg,
 } = require('./relationEngine');
 const { projectOntoRoute, haversineKm } = require('../geofence/corridor');
-const { detectSpatialEvents, persistSpatialEvents } = require('./spatialEvents');
+const { planRouteQueries, queryAcrossAois } = require('./routeQueryPlanner');
+const { detectSpatialEvents, persistSpatialEvents, reconcileSpatialEvents } = require('./spatialEvents');
 
 const EARTH_R = 6371000;
 const LIVE_MS = 45000;
@@ -91,6 +92,47 @@ function routeLengthKm(route) {
     total += haversineKm(route[i].lat, route[i].lng, route[i + 1].lat, route[i + 1].lng);
   }
   return total;
+}
+
+function routeBearingDeg(a, b) {
+  return bearingDeg(a.lat, a.lng, b.lat, b.lng);
+}
+
+function angularDeltaDeg(a, b) {
+  return Math.abs((((Number(b) - Number(a)) + 540) % 360) - 180);
+}
+
+function sampleRoutePoints(route, maxPoints = 8) {
+  if (!Array.isArray(route) || route.length < 2) return [];
+  const cap = Math.max(2, Math.min(16, Number(maxPoints) || 8));
+  const lengthKm = routeLengthKm(route);
+
+  let turns = 0;
+  for (let i = 1; i < route.length - 1; i++) {
+    const previousBearing = routeBearingDeg(route[i - 1], route[i]);
+    const nextBearing = routeBearingDeg(route[i], route[i + 1]);
+    if (angularDeltaDeg(previousBearing, nextBearing) >= 30) turns += 1;
+  }
+
+  let target = Math.ceil(lengthKm / 80) + 1;
+  if (turns >= 3) target += 1;
+  if (turns >= 7) target += 1;
+  target = Math.max(3, Math.min(cap, target));
+
+  const points = [];
+  for (let i = 0; i < target; i++) {
+    const index = Math.round((route.length - 1) * i / Math.max(1, target - 1));
+    const point = route[index];
+    if (!point) continue;
+    points.push({ latitude: Number(point.lat), longitude: Number(point.lng) });
+  }
+
+  const unique = new Map();
+  for (const point of points) {
+    const key = point.latitude.toFixed(4) + ',' + point.longitude.toFixed(4);
+    unique.set(key, point);
+  }
+  return Array.from(unique.values());
 }
 
 function bboxFromRoute(route, paddingM) {
@@ -247,6 +289,130 @@ function providerFailureStatus(error) {
   if (failureClass === 'timeout') return 'UNAVAILABLE';
   if (failureClass === 'coverage_limited') return 'COVERAGE_LIMITED';
   return 'UNAVAILABLE';
+}
+
+function externalObservationClass(observation) {
+  const type = String(observation?.entityType || '').toLowerCase();
+  if (type.startsWith('traffic_')) return 'traffic';
+  if (type === 'natural_hazard') return 'hazard';
+  if (type === 'vessel') return 'maritime';
+  if (type === 'aircraft') return 'aircraft';
+  if (type === 'weather') return 'weather';
+  return null;
+}
+
+function trafficState(observation) {
+  const attrs = observation?.attributes || {};
+  const entityType = String(observation?.entityType || '').toLowerCase();
+  const category = String(attrs.category || attrs.categoryTitle || '').toLowerCase();
+  return {
+    closed: Boolean(attrs.closed) ||
+      category.includes('closure') ||
+      category.includes('closed'),
+    severe: ['severe', 'heavy', 'major'].includes(String(attrs.congestion || attrs.magnitudeOfDelay || '').toLowerCase()) ||
+      category.includes('closure'),
+    moderate: String(attrs.congestion || '').toLowerCase() === 'moderate' ||
+      String(attrs.magnitudeOfDelay || '').toLowerCase() === 'moderate',
+    semanticClass: entityType === 'traffic_segment' || entityType === 'traffic_flow_segment'
+      ? 'flow'
+      : entityType === 'traffic_incident' || entityType === 'traffic_hazard'
+        ? 'incident'
+        : 'traffic'
+  };
+}
+
+function trafficCorrelationClass(observation) {
+  return trafficState(observation).semanticClass;
+}
+
+function correlationObservedAt(observation) {
+  const value = observation?.observedAt || observation?.receivedAt;
+  const timestamp = Date.parse(value || '');
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function correlateExternalObservations(observations, route, now) {
+  const sourceGroups = new Map();
+  const usable = (Array.isArray(observations) ? observations : []).filter(function(observation) {
+    return observation &&
+      observation.source &&
+      observation.id &&
+      Number.isFinite(Number(observation.latitude)) &&
+      Number.isFinite(Number(observation.longitude)) &&
+      externalObservationClass(observation) === 'traffic';
+  });
+
+  for (const observation of usable) {
+    const key = trafficCorrelationClass(observation);
+    if (!sourceGroups.has(key)) sourceGroups.set(key, []);
+    sourceGroups.get(key).push(observation);
+  }
+
+  const correlations = [];
+  const seen = new Set();
+  for (const observationsForType of sourceGroups.values()) {
+    for (let i = 0; i < observationsForType.length; i++) {
+      for (let j = i + 1; j < observationsForType.length; j++) {
+        const a = observationsForType[i];
+        const b = observationsForType[j];
+        if (String(a.source) === String(b.source)) continue;
+
+        const distance = distanceM(
+          Number(a.latitude), Number(a.longitude),
+          Number(b.latitude), Number(b.longitude)
+        );
+        if (distance > 2500) continue;
+
+        const aTime = correlationObservedAt(a);
+        const bTime = correlationObservedAt(b);
+        if (aTime != null && bTime != null && Math.abs(aTime - bTime) > 15 * 60 * 1000) continue;
+
+        const key = [a.id, b.id].sort().join('|');
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        const aState = trafficState(a);
+        const bState = trafficState(b);
+        const agreement = aState.closed === bState.closed &&
+          (aState.severe === bState.severe || (!aState.severe && !bState.severe));
+
+        const routeDistanceA = Array.isArray(route) && route.length >= 2
+          ? projectOntoRoute(route, Number(a.latitude), Number(a.longitude)).crossTrackKm * 1000
+          : null;
+        const routeDistanceB = Array.isArray(route) && route.length >= 2
+          ? projectOntoRoute(route, Number(b.latitude), Number(b.longitude)).crossTrackKm * 1000
+          : null;
+
+        correlations.push({
+          id: 'spatial-correlation:' + key,
+          kind: agreement ? 'corroboration' : 'source_disagreement',
+          entityType: 'traffic',
+          observationIds: [String(a.id), String(b.id)],
+          sourceProviders: [String(a.source), String(b.source)],
+          distanceM: Math.round(distance),
+          routeDistanceM: routeDistanceA == null || routeDistanceB == null
+            ? null
+            : Math.round(Math.min(routeDistanceA, routeDistanceB)),
+          confidence: agreement
+            ? Math.min(Number(a.observationConfidence || 0.5), Number(b.observationConfidence || 0.5)) * 0.9
+            : Math.min(Number(a.observationConfidence || 0.5), Number(b.observationConfidence || 0.5)) * 0.55,
+          observedAt: [a.observedAt, b.observedAt].filter(Boolean).sort().pop() || null,
+          derivedAt: new Date(now).toISOString(),
+          evidence: [
+            { metric: 'source_pair', value: String(a.source) + ' vs ' + String(b.source) },
+            { metric: 'distance_m', value: Math.round(distance) },
+            { metric: 'state_agreement', value: agreement }
+          ],
+          uncertainty: agreement
+            ? ['The sources are spatially proximate and semantically aligned; they may still represent different road features.']
+            : ['Provider observations are proximate but materially disagree on closure/severity state; identity matching is not guaranteed.'],
+          status: agreement ? 'corroborated' : 'unresolved_disagreement'
+        });
+      }
+    }
+  }
+
+  return correlations;
 }
 
 function providerFailureWarning(layer, error) {
@@ -554,6 +720,7 @@ function makeVehicle(row, mission, routeInfo, checkpoints, now) {
     })
     .sort(function(a,b) { return Date.parse(b.observedAt) - Date.parse(a.observedAt); });
 
+  const previousFreshness = previous ? classifyOperationalFreshness(previous.observedAt, now) : 'UNKNOWN';
   const gapMs = previous && observedAt ? Math.max(0, Date.parse(observedAt) - Date.parse(previous.observedAt)) : null;
   const impliedKmh = previous && lat != null && lng != null && gapMs > 0
     ? distanceM(previous.lat, previous.lng, lat, lng) / (gapMs / 3600000)
@@ -667,7 +834,12 @@ function makeVehicle(row, mission, routeInfo, checkpoints, now) {
   obs.impliedSpeedKmh = Number.isFinite(impliedKmh) ? Math.round(impliedKmh * 100) / 100 : null;
   obs.headingDeltaDeg = headingDelta;
   obs.stationaryDurationMs = speedKmh <= 2 && previous && gapMs != null && distanceM(previous.lat, previous.lng, lat, lng) <= 75 ? gapMs : 0;
-  obs.recoveredFreshness = freshness === 'LIVE' || freshness === 'DELAYED';
+  obs.previousFreshnessClass = previousFreshness;
+  obs.recoveredFreshness = Boolean(
+    previous &&
+    previousFreshness === 'STALE' &&
+    (freshness === 'LIVE' || freshness === 'DELAYED')
+  );
   obs.speedKmh = speedKmh;
   obs.sourceReferences = sourceReferences;
   obs.uncertainty = freshness === 'STALE' ? ['Current vehicle position is stale.'] : [];
@@ -681,8 +853,20 @@ function makeVehicle(row, mission, routeInfo, checkpoints, now) {
 async function buildWorldContext(opts) {
   const input = opts || {};
   const orgId = input.orgId;
-  const db = input.db;
-  if (!orgId || !db) {
+  const rawDb = input.db;
+  const spatialReadErrors = [];
+  const db = async function trackedSpatialDb(sql, params) {
+    try {
+      return await rawDb(sql, params || []);
+    } catch (error) {
+      spatialReadErrors.push({
+        message: String(error?.message || error),
+        code: error?.code || null,
+      });
+      throw error;
+    }
+  };
+  if (!orgId || !rawDb) {
     const error = new Error('Organisation context and database are required');
     error.statusCode = 403;
     throw error;
@@ -772,10 +956,18 @@ async function buildWorldContext(opts) {
   const boundedRadiusM = Math.max(1000, Math.min(Number(input.radiusM) || 25000, 250000));
   const externalRadiusM = Math.min(boundedRadiusM, MAX_EXTERNAL_RADIUS_M);
   const maxEntitiesPerLayer = Math.max(1, Math.min(250, Number(input.maxEntitiesPerLayer) || 100));
-  const bbox = input.bbox || (resolvedCenter ? bboxFromCenterRadius(resolvedCenter.latitude, resolvedCenter.longitude, externalRadiusM) : null);
-  const routeBbox = bboxFromRoute(routeInfo.route, Math.max(10000, routeInfo.widthKm * 1000));
-  const externalBbox = routeBbox && ((routeBbox[2] - routeBbox[0]) * (routeBbox[3] - routeBbox[1]) <= 25) ? routeBbox : bbox;
-
+  const hasRouteGeometry = routeInfo.route.length >= 2;
+  const bbox = input.bbox || (!hasRouteGeometry && resolvedCenter
+    ? bboxFromCenterRadius(resolvedCenter.latitude, resolvedCenter.longitude, externalRadiusM)
+    : null);
+  const routeQueryPlan = !input.bbox && hasRouteGeometry
+    ? planRouteQueries(routeInfo.route, {
+        maxAoiAreaDeg2: Number(process.env.SPATIAL_EYE_MAX_AOI_AREA_DEG2) || 20,
+        maxAois: Number(process.env.SPATIAL_EYE_MAX_AOIS) || 8,
+        maxSamples: Math.min(16, maxEntitiesPerLayer),
+        paddingM: Math.max(10000, routeInfo.widthKm * 1000)
+      })
+    : null;
   const movement = [];
   const environment = [];
   const traffic = [];
@@ -783,30 +975,89 @@ async function buildWorldContext(opts) {
   const infrastructure = [];
   const security = [];
   const layerHealth = [];
+  const providerCoverage = {};
   const warnings = [];
   const uncertainty = [];
   const layersSucceeded = [];
   const layersPartial = [];
   const layersUnavailable = [];
+  const routeCoverage = routeQueryPlan
+    ? {
+        mode: routeQueryPlan.mode,
+        reason: routeQueryPlan.reason,
+        aoisPlanned: routeQueryPlan.aois.length,
+        maxAois: routeQueryPlan.maxAois,
+        segmentsPlanned: routeQueryPlan.segmentsPlanned,
+        routeLengthKm: routeQueryPlan.routeLengthKm,
+        routeLengthCoveredM: routeQueryPlan.routeLengthCoveredM,
+        coverageRatio: routeQueryPlan.coverageRatio
+      }
+    : null;
 
-  if (layers.includes('aircraft') && bbox) {
+  if (routeQueryPlan && routeQueryPlan.aois.length === 0) {
+    const routeBoundLayers = [
+      ['aircraft', 'opensky'],
+      ['maritime', 'kpler-ais'],
+      ['hazards', 'nasa-eonet']
+    ];
+    for (const [layerId, providerId] of routeBoundLayers) {
+      if (!layers.includes(layerId)) continue;
+      layersPartial.push(layerId);
+      providerCoverage[providerId] = { complete: false, queryScope: 'no provider-safe route AOI was available' };
+      layerHealth.push({
+        layerId,
+        status: 'COVERAGE_LIMITED',
+        recordCount: 0,
+        acceptedCount: 0,
+        rejectedCount: 0,
+        coverageComplete: false,
+        reason: 'Route geometry could not be represented by a provider-safe AOI within configured spatial bounds; centre fallback is intentionally disabled.'
+      });
+      warnings.push(layerId + '_route_coverage_limited');
+    }
+    uncertainty.push('Route external intelligence was not queried because no provider-safe route AOI could be constructed.');
+  }
+
+  if (layers.includes('aircraft') && (bbox || routeQueryPlan?.aois?.length)) {
     try {
-      const result = await spatialProviderManager.query('opensky', { bbox: bbox, orgId: orgId, requestId: input.requestId, signal: input.signal });
-      movement.push.apply(movement, (result.observations || []).slice(0, Math.max(1, Math.min(250, Number(input.maxEntitiesPerLayer) || 100))));
-      const status = result.health?.status || 'UNKNOWN';
+      const result = routeQueryPlan?.aois?.length
+        ? await queryAcrossAois(
+            spatialProviderManager,
+            'opensky',
+            routeQueryPlan,
+            { orgId, maxRecords: maxEntitiesPerLayer, requestId: input.requestId, signal: input.signal },
+            { concurrency: Math.min(4, Number(process.env.SPATIAL_EYE_PROVIDER_CONCURRENCY || 3)) }
+          )
+        : await spatialProviderManager.query('opensky', { bbox, orgId, requestId: input.requestId, signal: input.signal });
+
+      movement.push.apply(movement, (result.observations || []).slice(0, maxEntitiesPerLayer));
+      const rawStatus = result.health?.status || 'UNKNOWN';
+      const status = result.coverage?.complete === false &&
+        (rawStatus === 'LIVE' || rawStatus === 'DELAYED')
+        ? 'PARTIAL'
+        : rawStatus;
+      providerCoverage.opensky = Object.assign({}, result.coverage || {}, {
+        complete: result.coverage?.complete === true,
+      });
       if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('aircraft');
       else if (status === 'STALE' || status === 'PARTIAL') layersPartial.push('aircraft');
       else layersUnavailable.push('aircraft');
       layerHealth.push({
         layerId: 'aircraft',
-        status: status,
+        status,
         lastSuccessAt: result.health?.lastSuccessAt,
         lastAttemptAt: result.health?.lastAttemptAt,
         recordCount: result.health?.recordCount,
         acceptedCount: result.health?.acceptedCount,
         rejectedCount: result.health?.rejectedCount,
+        coverageComplete: result.coverage?.complete === true,
+        routeCoverageRatio: result.coverage?.routeCoverageRatio,
+        aoisPlanned: result.coverage?.aoisPlanned,
+        aoisSucceeded: result.coverage?.aoisSucceeded,
+        aoisFailed: result.coverage?.aoisFailed,
         reason: result.health?.lastErrorMessage
       });
+      if (Array.isArray(result.warnings)) warnings.push(...result.warnings);
     } catch (error) {
       const failureStatus = providerFailureStatus(error);
       const failureWarning = providerFailureWarning('aircraft', error);
@@ -818,46 +1069,151 @@ async function buildWorldContext(opts) {
       layerHealth.push({ layerId: 'aircraft', status: failureStatus, reason: String(error?.message || 'External movement provider failed.') });
     }
   }
-
   if (layers.includes('weather') && resolvedCenter) {
-    const points = [resolvedCenter];
-    if (routeInfo.route.length >= 3) points.push(routeInfo.route[Math.floor((routeInfo.route.length - 1) / 2)]);
-    if (routeInfo.route.length >= 2) points.push(routeInfo.route[routeInfo.route.length - 1]);
-    const unique = new Map();
-    points.slice(0, 3).forEach(function(p) {
-      const key = Number(p.latitude ?? p.lat).toFixed(3) + ',' + Number(p.longitude ?? p.lng).toFixed(3);
-      unique.set(key, { latitude: Number(p.latitude ?? p.lat), longitude: Number(p.longitude ?? p.lng) });
-    });
-    const results = await Promise.allSettled(Array.from(unique.values()).map(function(p) {
-      return spatialProviderManager.query('weather', { latitude: p.latitude, longitude: p.longitude, requestId: input.requestId, signal: input.signal });
+    const sampled = routeQueryPlan?.samplePoints?.length
+      ? routeQueryPlan.samplePoints.slice(0, 8)
+      : routeInfo.route.length >= 2
+        ? sampleRoutePoints(routeInfo.route, 8)
+        : [{ latitude: resolvedCenter.latitude, longitude: resolvedCenter.longitude }];
+    const points = sampled.length ? sampled : [resolvedCenter];
+    const results = await Promise.allSettled(points.map(function(p) {
+      return spatialProviderManager.query('weather', {
+        latitude: p.latitude,
+        longitude: p.longitude,
+        orgId,
+        requestId: input.requestId,
+        signal: input.signal
+      });
     }));
+
     const environmentById = new Map();
-    results.forEach(function(r) {
-      if (r.status !== 'fulfilled') return;
-      for (const observation of (r.value.observations || [])) {
+    let successfulSamples = 0;
+    const failedSamples = [];
+    const statuses = [];
+
+    results.forEach(function(result, index) {
+      if (result.status === 'rejected') {
+        failedSamples.push({
+          index,
+          failureClass: String(result.reason?.failureClass || result.reason?.class || 'unknown'),
+          message: String(result.reason?.message || result.reason || 'weather sample failed')
+        });
+        return;
+      }
+      successfulSamples += 1;
+      statuses.push(String(result.value?.health?.status || 'UNKNOWN').toUpperCase());
+      for (const observation of (result.value.observations || [])) {
         if (observation && observation.id) environmentById.set(observation.id, observation);
       }
     });
-    environment.push.apply(environment, Array.from(environmentById.values()));
-    if (environment.length) {
-      layersSucceeded.push('weather');
-      layerHealth.push({ layerId: 'weather', status: environment.some(e => e.quality?.freshnessClass === 'LIVE') ? 'LIVE' : 'DELAYED', recordCount: environment.length });
-    } else {
-      layersUnavailable.push('weather');
-      uncertainty.push('Weather provider returned no usable observation.');
-      layerHealth.push({ layerId: 'weather', status: 'UNAVAILABLE', reason: 'No usable weather observation.' });
-    }
-  }
 
-  if (layers.includes('hazards') && bbox) {
+    environment.push.apply(environment, Array.from(environmentById.values()));
+
+    const attemptedSamples = points.length;
+    const freshnessComplete = statuses.length === attemptedSamples &&
+      statuses.every(s => s === 'LIVE' || s === 'DELAYED');
+    const coverageComplete = successfulSamples === attemptedSamples &&
+      environment.length >= successfulSamples &&
+      freshnessComplete;
+    const hasLive = statuses.includes('LIVE');
+    const hasDelayed = statuses.includes('DELAYED');
+    let status;
+    if (!successfulSamples) {
+      status = failedSamples.length
+        ? providerFailureStatus({ failureClass: failedSamples[0].failureClass })
+        : 'UNAVAILABLE';
+    } else if (!coverageComplete) {
+      status = 'PARTIAL';
+    } else if (hasLive) {
+      status = 'LIVE';
+    } else if (hasDelayed) {
+      status = 'DELAYED';
+    } else if (statuses.includes('STALE')) {
+      status = 'STALE';
+    } else {
+      status = 'PARTIAL';
+    }
+
+    if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('weather');
+    else if (status === 'STALE' || status === 'PARTIAL') layersPartial.push('weather');
+    else layersUnavailable.push('weather');
+
+    if (failedSamples.length) {
+      warnings.push(successfulSamples ? 'weather_partial_coverage' : 'weather_layer_unavailable');
+      uncertainty.push(
+        'Weather coverage is incomplete: ' +
+        String(successfulSamples) + '/' + String(attemptedSamples) +
+        ' route samples succeeded.'
+      );
+      for (const failure of failedSamples.slice(0, 3)) {
+        warnings.push('weather_provider_' + failure.failureClass);
+      }
+    }
+
+    providerCoverage.weather = {
+      complete: coverageComplete,
+      sampleCount: attemptedSamples,
+      successfulSamples,
+      failedSamples: failedSamples.length
+    };
+    layerHealth.push({
+      layerId: 'weather',
+      status,
+      lastSuccessAt: environment.length
+        ? environment.map(e => e.receivedAt).filter(Boolean).sort().pop()
+        : undefined,
+      recordCount: environment.length,
+      acceptedCount: environment.length,
+      rejectedCount: 0,
+      reason: failedSamples.length
+        ? failedSamples.map(f => f.failureClass + ': ' + f.message).join('; ')
+        : undefined,
+      sampleCount: attemptedSamples,
+      successfulSamples,
+      failedSamples: failedSamples.length,
+      coverageComplete
+    });
+  }
+  if (layers.includes('hazards') && (bbox || routeQueryPlan?.aois?.length)) {
     try {
-      const result = await spatialProviderManager.query('nasa-eonet', { bbox: externalBbox || bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal });
-      hazards.push.apply(hazards, result.observations || []);
-      const status = result.health?.status || 'UNKNOWN';
+      const result = routeQueryPlan?.aois?.length
+        ? await queryAcrossAois(
+            spatialProviderManager,
+            'nasa-eonet',
+            routeQueryPlan,
+            { orgId, maxRecords: maxEntitiesPerLayer, signal: input.signal },
+            { concurrency: Math.min(3, Number(process.env.SPATIAL_EYE_PROVIDER_CONCURRENCY || 3)) }
+          )
+        : await spatialProviderManager.query('nasa-eonet', { bbox, orgId, maxRecords: maxEntitiesPerLayer, signal: input.signal });
+
+      hazards.push.apply(hazards, (result.observations || []).slice(0, maxEntitiesPerLayer));
+      const rawStatus = result.health?.status || 'UNKNOWN';
+      const status = result.coverage?.complete === false &&
+        (rawStatus === 'LIVE' || rawStatus === 'DELAYED')
+        ? 'PARTIAL'
+        : rawStatus;
+      providerCoverage['nasa-eonet'] = Object.assign({}, result.coverage || {}, {
+        complete: result.coverage?.complete === true,
+      });
       if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('hazards');
       else if (status === 'STALE' || status === 'PARTIAL') layersPartial.push('hazards');
       else layersUnavailable.push('hazards');
-      layerHealth.push({ layerId: 'hazards', status, lastSuccessAt: result.health?.lastSuccessAt, lastAttemptAt: result.health?.lastAttemptAt, recordCount: result.health?.recordCount, acceptedCount: result.health?.acceptedCount, rejectedCount: result.health?.rejectedCount, reason: result.health?.lastErrorMessage });
+      layerHealth.push({
+        layerId: 'hazards',
+        status,
+        lastSuccessAt: result.health?.lastSuccessAt,
+        lastAttemptAt: result.health?.lastAttemptAt,
+        recordCount: result.health?.recordCount,
+        acceptedCount: result.health?.acceptedCount,
+        rejectedCount: result.health?.rejectedCount,
+        coverageComplete: result.coverage?.complete === true,
+        routeCoverageRatio: result.coverage?.routeCoverageRatio,
+        aoisPlanned: result.coverage?.aoisPlanned,
+        aoisSucceeded: result.coverage?.aoisSucceeded,
+        aoisFailed: result.coverage?.aoisFailed,
+        reason: result.health?.lastErrorMessage
+      });
+      if (Array.isArray(result.warnings)) warnings.push(...result.warnings);
     } catch (error) {
       const failureStatus = providerFailureStatus(error);
       const failureWarning = providerFailureWarning('hazards', error);
@@ -869,17 +1225,47 @@ async function buildWorldContext(opts) {
       layerHealth.push({ layerId: 'hazards', status: failureStatus, reason: String(error?.message || 'NASA EONET external event provider failed.') });
     }
   }
-
-  if (layers.includes('maritime') && bbox) {
+  if (layers.includes('maritime') && (bbox || routeQueryPlan?.aois?.length)) {
     try {
-      const result = await spatialProviderManager.query('kpler-ais', { bbox: externalBbox || bbox, maxRecords: maxEntitiesPerLayer, signal: input.signal });
-      movement.push.apply(movement, (result.observations || []).slice(0, Math.max(1, Math.min(250, Number(maxEntitiesPerLayer) || 100))));
-      const status = result.health?.status || 'UNKNOWN';
+      const result = routeQueryPlan?.aois?.length
+        ? await queryAcrossAois(
+            spatialProviderManager,
+            'kpler-ais',
+            routeQueryPlan,
+            { orgId, maxRecords: maxEntitiesPerLayer, signal: input.signal },
+            { concurrency: Math.min(3, Number(process.env.SPATIAL_EYE_PROVIDER_CONCURRENCY || 3)) }
+          )
+        : await spatialProviderManager.query('kpler-ais', { bbox, orgId, maxRecords: maxEntitiesPerLayer, signal: input.signal });
+
+      movement.push.apply(movement, (result.observations || []).slice(0, maxEntitiesPerLayer));
+      const rawStatus = result.health?.status || 'UNKNOWN';
+      const status = result.coverage?.complete === false &&
+        (rawStatus === 'LIVE' || rawStatus === 'DELAYED')
+        ? 'PARTIAL'
+        : rawStatus;
+      providerCoverage['kpler-ais'] = Object.assign({}, result.coverage || {}, {
+        complete: result.coverage?.complete === true,
+      });
       if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('maritime');
       else if (status === 'STALE' || status === 'PARTIAL') layersPartial.push('maritime');
       else layersUnavailable.push('maritime');
-      layerHealth.push({ layerId: 'maritime', status, lastSuccessAt: result.health?.lastSuccessAt, lastAttemptAt: result.health?.lastAttemptAt, recordCount: result.health?.recordCount, acceptedCount: result.health?.acceptedCount, rejectedCount: result.health?.rejectedCount, reason: result.health?.lastErrorMessage });
+      layerHealth.push({
+        layerId: 'maritime',
+        status,
+        lastSuccessAt: result.health?.lastSuccessAt,
+        lastAttemptAt: result.health?.lastAttemptAt,
+        recordCount: result.health?.recordCount,
+        acceptedCount: result.health?.acceptedCount,
+        rejectedCount: result.health?.rejectedCount,
+        coverageComplete: result.coverage?.complete === true,
+        routeCoverageRatio: result.coverage?.routeCoverageRatio,
+        aoisPlanned: result.coverage?.aoisPlanned,
+        aoisSucceeded: result.coverage?.aoisSucceeded,
+        aoisFailed: result.coverage?.aoisFailed,
+        reason: result.health?.lastErrorMessage
+      });
       if (status === 'AUTH_REQUIRED') warnings.push('Maritime AIS provider credentials are not configured.');
+      if (Array.isArray(result.warnings)) warnings.push(...result.warnings);
     } catch (error) {
       const failureStatus = providerFailureStatus(error);
       const failureWarning = providerFailureWarning('maritime', error);
@@ -891,52 +1277,102 @@ async function buildWorldContext(opts) {
       layerHealth.push({ layerId: 'maritime', status: failureStatus, reason: String(error?.message || 'External maritime movement provider failed.') });
     }
   }
-
   if (layers.includes('traffic') && resolvedCenter) {
-    const samplePoints = [resolvedCenter];
-    if (routeInfo.route.length >= 2) {
-      const sampleCount = Math.min(8, routeInfo.route.length);
-      for (let i = 0; i < sampleCount; i++) {
-        const p = routeInfo.route[Math.round((routeInfo.route.length - 1) * i / Math.max(1, sampleCount - 1))];
-        samplePoints.push({ latitude: p.lat, longitude: p.lng });
-      }
-    }
+    const samplePoints = routeQueryPlan?.samplePoints?.length
+      ? routeQueryPlan.samplePoints.slice(0, 16)
+      : routeInfo.route.length >= 2
+        ? sampleRoutePoints(routeInfo.route, 16)
+        : [{ latitude: resolvedCenter.latitude, longitude: resolvedCenter.longitude }];
     const pointMap = new Map();
-    samplePoints.forEach(p => pointMap.set(Number(p.latitude).toFixed(4)+','+Number(p.longitude).toFixed(4), p));
+    pointMap.set(
+      Number(resolvedCenter.latitude).toFixed(4) + ',' + Number(resolvedCenter.longitude).toFixed(4),
+      resolvedCenter,
+    );
+    samplePoints.forEach(p => pointMap.set(
+      Number(p.latitude).toFixed(4) + ',' + Number(p.longitude).toFixed(4),
+      p,
+    ));
     const sampled = Array.from(pointMap.values()).slice(0, 16);
     const trafficResults = await Promise.allSettled([
-      spatialProviderManager.query('mapbox-traffic', { points: sampled, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }),
-      spatialProviderManager.query('tomtom-traffic-flow', { points: sampled, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }),
-      (externalBbox || bbox) ? spatialProviderManager.query('tomtom-traffic-incidents', { bbox: externalBbox || bbox, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }) : Promise.resolve({ observations: [], health: { status: 'UNAVAILABLE' } })
+      spatialProviderManager.query('mapbox-traffic', { points: sampled, orgId, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }),
+      spatialProviderManager.query('tomtom-traffic-flow', { points: sampled, orgId, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal }),
+      routeQueryPlan?.aois?.length
+        ? queryAcrossAois(
+            spatialProviderManager,
+            'tomtom-traffic-incidents',
+            routeQueryPlan,
+            { orgId, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal },
+            { concurrency: Math.min(3, Number(process.env.SPATIAL_EYE_PROVIDER_CONCURRENCY || 3)) }
+          )
+        : (bbox
+          ? spatialProviderManager.query('tomtom-traffic-incidents', { bbox, orgId, maxRecords: Number(input.maxEntitiesPerLayer) || 100, signal: input.signal })
+          : Promise.resolve({ observations: [], health: { status: 'UNAVAILABLE' }, coverage: { complete: false } }))
     ]);
     const flow = trafficResults[0], tomtomFlow = trafficResults[1], incident = trafficResults[2], statuses = [];
-    if (flow.status === 'fulfilled') { traffic.push.apply(traffic, flow.value.observations || []); statuses.push(flow.value.health?.status || 'UNKNOWN'); }
+    if (flow.status === 'fulfilled') {
+      traffic.push.apply(traffic, flow.value.observations || []);
+      statuses.push(flow.value.health?.status || 'UNKNOWN');
+      providerCoverage['mapbox-traffic'] = Object.assign({}, flow.value.coverage || {}, {
+        complete: flow.value.coverage?.complete === true,
+      });
+    }
     else {
       statuses.push('UNAVAILABLE');
       const error = flow.reason;
       warnings.push(providerFailureWarning('traffic_mapbox', error));
       uncertainty.push('Mapbox traffic feed unavailable: ' + String(error?.failureClass || 'unknown') + '.');
     }
-    if (tomtomFlow.status === 'fulfilled') { traffic.push.apply(traffic, tomtomFlow.value.observations || []); statuses.push(tomtomFlow.value.health?.status || 'UNKNOWN'); }
+    if (tomtomFlow.status === 'fulfilled') {
+      traffic.push.apply(traffic, tomtomFlow.value.observations || []);
+      statuses.push(tomtomFlow.value.health?.status || 'UNKNOWN');
+      providerCoverage['tomtom-traffic-flow'] = Object.assign({}, tomtomFlow.value.coverage || {}, {
+        complete: tomtomFlow.value.coverage?.complete === true,
+      });
+    }
     else {
       statuses.push('UNAVAILABLE');
       const error = tomtomFlow.reason;
       warnings.push(providerFailureWarning('traffic_tomtom_flow', error));
       uncertainty.push('TomTom traffic flow feed unavailable: ' + String(error?.failureClass || 'unknown') + '.');
     }
-    if (incident.status === 'fulfilled') { traffic.push.apply(traffic, incident.value.observations || []); statuses.push(incident.value.health?.status || 'UNKNOWN'); }
-    else {
+    let trafficCoverageComplete = true;
+    for (const result of [flow, tomtomFlow, incident]) {
+      if (result.status !== 'fulfilled' || result.value?.coverage?.complete !== true) {
+        trafficCoverageComplete = false;
+      }
+    }
+
+    if (incident.status === 'fulfilled') {
+      traffic.push.apply(traffic, incident.value.observations || []);
+      statuses.push(incident.value.health?.status || 'UNKNOWN');
+      providerCoverage['tomtom-traffic-incidents'] = Object.assign({}, incident.value.coverage || {}, {
+        complete: incident.value.coverage?.complete === true,
+      });
+      if (Array.isArray(incident.value.warnings)) warnings.push(...incident.value.warnings);
+    } else {
       statuses.push('UNAVAILABLE');
       const error = incident.reason;
       warnings.push(providerFailureWarning('traffic_tomtom_incidents', error));
       uncertainty.push('TomTom traffic incident feed unavailable: ' + String(error?.failureClass || 'unknown') + '.');
     }
-    const status = statuses.includes('LIVE') ? 'LIVE' : statuses.includes('DELAYED') ? 'DELAYED' : statuses.includes('STALE') ? 'STALE' : statuses.includes('PARTIAL') ? 'PARTIAL' : statuses.includes('AUTH_REQUIRED') ? 'AUTH_REQUIRED' : 'UNAVAILABLE';
+    const rawTrafficStatus = statuses.includes('LIVE') ? 'LIVE' : statuses.includes('DELAYED') ? 'DELAYED' : statuses.includes('STALE') ? 'STALE' : statuses.includes('PARTIAL') ? 'PARTIAL' : statuses.includes('AUTH_REQUIRED') ? 'AUTH_REQUIRED' : 'UNAVAILABLE';
+    const status = trafficCoverageComplete || !traffic.length
+      ? rawTrafficStatus
+      : (rawTrafficStatus === 'AUTH_REQUIRED' || rawTrafficStatus === 'UNAVAILABLE' ? rawTrafficStatus : 'PARTIAL');
+
     if (status === 'LIVE' || status === 'DELAYED') layersSucceeded.push('traffic');
     else if (status === 'STALE' || status === 'PARTIAL') layersPartial.push('traffic');
     else layersUnavailable.push('traffic');
     if (!traffic.length && status === 'AUTH_REQUIRED') warnings.push('Traffic provider credentials are not configured.');
-    layerHealth.push({ layerId: 'traffic', status, recordCount: traffic.length, reason: traffic.length ? undefined : 'No usable external traffic observation.' });
+    layerHealth.push({
+      layerId: 'traffic',
+      status,
+      recordCount: traffic.length,
+      coverageComplete: trafficCoverageComplete,
+      routeCoverageRatio: routeQueryPlan?.coverageRatio,
+      aoisPlanned: routeQueryPlan?.aois?.length,
+      reason: traffic.length ? undefined : 'No usable external traffic observation.'
+    });
   }
   if (layers.includes('infrastructure')) {
     infrastructureRaw.checkpoints.forEach(function(cp) { infrastructure.push(checkpointObservation(cp, now)); });
@@ -1347,7 +1783,11 @@ async function buildWorldContext(opts) {
           { metric: 'route_distance_m', value: routeDistanceKm == null ? null : Math.round(routeDistanceKm * 1000), source: 'sonalit-corridor' },
           { metric: 'relative_direction', value: relative || 'unknown', source: 'sonalit-geometry' }
         ],
-        sourceReferences: [String(entity.sourceReference || entity.id)],
+        sourceReferences: [
+          String(entity.source || ''),
+          String(entity.source || '') + ':' + String(entity.entityType || 'observation'),
+          String(entity.sourceReference || entity.id)
+        ].filter(Boolean),
         uncertainty: entity.quality?.reason ? [entity.quality.reason] : [],
         relevance,
         actionable: Number(entity.operationalConfidence || 0.5) >= 0.65
@@ -1415,7 +1855,11 @@ async function buildWorldContext(opts) {
           { metric: 'route_distance_m', value: Math.round(routeDistanceKm * 1000), source: 'sonalit-corridor' },
           { metric: 'source_observation', value: entity.id, source: entity.source }
         ],
-        sourceReferences: [String(entity.sourceReference || entity.id)],
+        sourceReferences: [
+          String(entity.source || ''),
+          String(entity.source || '') + ':' + String(entity.entityType || 'observation'),
+          String(entity.sourceReference || entity.id)
+        ].filter(Boolean),
         uncertainty: entity.quality?.reason ? [entity.quality.reason] : [],
         relevance: contextRelevance({
           distanceM: routeDistanceKm * 1000,
@@ -1446,7 +1890,11 @@ async function buildWorldContext(opts) {
         observedAt: entity.observedAt || null,
         derivedAt: new Date(now).toISOString(),
         evidence: [{ metric: 'route_distance_m', value: Math.round(routeDistanceKm * 1000), source: 'sonalit-corridor' }],
-        sourceReferences: [String(entity.sourceReference || entity.id)],
+        sourceReferences: [
+          String(entity.source || ''),
+          String(entity.source || '') + ':' + String(entity.entityType || 'observation'),
+          String(entity.sourceReference || entity.id)
+        ].filter(Boolean),
         uncertainty: entity.quality?.reason ? [entity.quality.reason] : [],
         relevance: contextRelevance({
           distanceM: routeDistanceKm * 1000,
@@ -1457,6 +1905,39 @@ async function buildWorldContext(opts) {
         }),
         actionable: Number(entity.operationalConfidence || entity.observationConfidence || 0.5) >= 0.65
       });
+    }
+  }
+
+  const correlations = correlateExternalObservations(traffic, routeInfo.route, now);
+  const correlationByObservation = new Map();
+  for (const correlation of correlations) {
+    for (const observationId of correlation.observationIds || []) {
+      if (!correlationByObservation.has(observationId)) correlationByObservation.set(observationId, []);
+      correlationByObservation.get(observationId).push(correlation);
+    }
+  }
+
+  for (const relation of externalRelations) {
+    const linked = correlationByObservation.get(String(relation.toId)) || [];
+    if (!linked.length) continue;
+    relation.correlationIds = linked.map(correlation => correlation.id);
+    relation.sourceAgreement = linked.some(correlation => correlation.kind === 'corroboration')
+      ? 'corroborated'
+      : linked.some(correlation => correlation.kind === 'source_disagreement')
+        ? 'disputed'
+        : 'unresolved';
+    relation.correlationEvidence = linked.map(correlation => ({
+      kind: correlation.kind,
+      id: correlation.id,
+      providers: correlation.sourceProviders
+    }));
+    if (relation.sourceAgreement === 'corroborated') {
+      relation.operationalConfidence = Math.min(1, Number(relation.operationalConfidence || 0) * 1.05);
+    } else if (relation.sourceAgreement === 'disputed') {
+      relation.operationalConfidence = Math.min(1, Number(relation.operationalConfidence || 0) * 0.75);
+      relation.uncertainty = (relation.uncertainty || []).concat(
+        'Independent external sources disagree on the correlated traffic condition.'
+      );
     }
   }
 
@@ -1475,7 +1956,8 @@ async function buildWorldContext(opts) {
       center: resolvedCenter || undefined,
       radiusM: boundedRadiusM,
       queryScope: bbox ? 'bbox:' + bbox.join(',') : 'operational-mission-context',
-      corridorKm: mission ? routeInfo.widthKm : undefined
+      corridorKm: mission ? routeInfo.widthKm : undefined,
+      routeQueryPlan: routeQueryPlan || undefined
     },
     mission: mission ? Object.assign(mission, {
       route: { coordinates: missionRouteCoords, lengthKm: routeInfo.lengthKm },
@@ -1493,13 +1975,17 @@ async function buildWorldContext(opts) {
     hazards,
     infrastructure,
     security,
+    correlations,
     coverage: {
       layersRequested: layers,
       layersSucceeded: Array.from(new Set(layersSucceeded)),
       layersPartial: Array.from(new Set(layersPartial)),
-      layersUnavailable: Array.from(new Set(layersUnavailable))
+      layersUnavailable: Array.from(new Set(layersUnavailable)),
+      route: routeCoverage || undefined
     },
     layerHealth,
+    providerCoverage,
+    providerHealth: spatialProviderManager.getHealthSnapshot(),
     provenance: [
       { sourceName: 'Sonalit Tracking', attribution: 'Organisation-scoped operational telemetry' },
       ...(movement.some(e => e.source === 'opensky') ? [{ sourceName: 'OpenSky Network', attribution: 'OpenSky Network', license: 'OpenSky Network terms' }] : []),
@@ -1519,7 +2005,11 @@ async function buildWorldContext(opts) {
         : undefined
     },
     uncertainty,
-    warnings
+    warnings,
+    dataHealth: {
+      ok: spatialReadErrors.length === 0,
+      readErrors: spatialReadErrors
+    }
   };
 
   const events = detectSpatialEvents(context, { now: now });
@@ -1528,9 +2018,10 @@ async function buildWorldContext(opts) {
       const persisted = await persistSpatialEvents(db, events, {
         orgId: orgId,
         userId: input.userId || null,
-        publish: input.publish || null
+        publish: input.publish || null,
+        context: context
       });
-      context.events = (persisted.created || []).map(function(row) {
+      context.events = (persisted.created || []).concat(persisted.updated || []).map(function(row) {
         return {
           id: row.id,
           eventKey: row.event_key,
@@ -1553,8 +2044,20 @@ async function buildWorldContext(opts) {
           status: row.status
         };
       });
+
+      // Reconcile only after the current evaluation has been durably persisted.
+      // Resolution is conservative: spatialEvents.js refuses it when current
+      // provider coverage, freshness, or operational DB health is insufficient.
+      const resolved = await reconcileSpatialEvents(db, context, events, {
+        orgId: orgId,
+        userId: input.userId || null
+      });
+      context.lifecycle = {
+        resolvedEventIds: (resolved || []).map(function(row) { return row.id; }),
+        resolvedEventKeys: (resolved || []).map(function(row) { return row.event_key; })
+      };
     } catch (_) {
-      warnings.push('Spatial event persistence failed; context remains available.');
+      warnings.push('Spatial event persistence/reconciliation failed; context remains available.');
       context.events = events;
     }
   } else {
@@ -1588,5 +2091,8 @@ module.exports = {
   bboxFromRoute,
   normaliseRoute,
   distanceM,
+  correlateExternalObservations,
+  sampleRoutePoints,
+  makeVehicle,
   getSpatialProviderHealth
 };

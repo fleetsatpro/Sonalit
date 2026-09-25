@@ -11,66 +11,85 @@ const { query } = require('../config/database');
 const logger = require('../utils/logger');
 
 const intervalMs = Math.max(5, Number(process.env.INTEL_COLLECTION_INTERVAL_MINUTES || 5)) * 60 * 1000;
+const spatialIntervalMs = Math.max(15, Number(process.env.SPATIAL_EYE_INTERVAL_SECONDS || 60)) * 1000;
 const spatialMaxConvoys = Math.max(1, Math.min(100, Number(process.env.SPATIAL_EYE_MAX_CONVOYS_PER_CYCLE || 25)));
+const spatialConcurrency = Math.max(1, Math.min(6, Number(process.env.SPATIAL_EYE_CONCURRENCY || 3)));
 let stopping = false;
 let timer = null;
+let spatialTimer = null;
+let spatialRunning = false;
+let spatialCursor = { orgId: null, convoyId: null };
 
-async function evaluateSpatialEye() {
+async function evaluateSpatialEye(reason = 'scheduled') {
+  if (spatialRunning || stopping) return { evaluated: 0, eventCount: 0, skipped: true };
+  spatialRunning = true;
   let evaluated = 0;
   let eventCount = 0;
+  const started = Date.now();
   try {
-    const orgs = await query(
-      "SELECT DISTINCT org_id FROM convoys WHERE org_id IS NOT NULL AND status = 'active' AND deleted_at IS NULL ORDER BY org_id LIMIT 500"
-    );
-    for (const org of orgs.rows || []) {
-      if (!org?.org_id) continue;
-      const convoys = await withOrg(org.org_id, (client) => client.query(
-        "SELECT id FROM convoys WHERE org_id = $1 AND status = 'active' AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT $2",
-        [org.org_id, spatialMaxConvoys]
-      ));
-      for (const row of convoys.rows || []) {
+    const cursor = spatialCursor.orgId && spatialCursor.convoyId
+      ? { orgId: spatialCursor.orgId, convoyId: spatialCursor.convoyId }
+      : null;
+    const baseSql = "SELECT id, org_id FROM convoys " +
+      "WHERE org_id IS NOT NULL AND status = 'active' AND deleted_at IS NULL ";
+    const page = cursor
+      ? await query(
+          baseSql +
+          "AND (org_id > $1 OR (org_id = $1 AND id > $2)) ORDER BY org_id, id LIMIT $3",
+          [cursor.orgId, cursor.convoyId, spatialMaxConvoys]
+        )
+      : await query(baseSql + "ORDER BY org_id, id LIMIT $1", [spatialMaxConvoys]);
+
+    let rows = page.rows || [];
+    if (!rows.length && cursor) {
+      spatialCursor = { orgId: null, convoyId: null };
+      const wrapped = await query(baseSql + "ORDER BY org_id, id LIMIT $1", [spatialMaxConvoys]);
+      rows = wrapped.rows || [];
+    }
+    if (!rows.length) return { evaluated: 0, eventCount: 0, skipped: false };
+
+    const selected = rows.slice(0, spatialMaxConvoys);
+    const last = selected[selected.length - 1];
+    spatialCursor = last
+      ? { orgId: String(last.org_id), convoyId: String(last.id) }
+      : { orgId: null, convoyId: null };
+
+    for (let offset = 0; offset < selected.length; offset += spatialConcurrency) {
+      const batch = selected.slice(offset, offset + spatialConcurrency);
+      await Promise.all(batch.map(async (row) => {
+        if (!row?.org_id || !row?.id) return;
         try {
           const context = await buildWorldContext({
-            orgId: org.org_id,
+            orgId: row.org_id,
             userId: null,
-            db: (sql, params) => withOrg(org.org_id, (scopedClient) => scopedClient.query(sql, params)),
+            db: (sql, params) => withOrg(row.org_id, (scopedClient) => scopedClient.query(sql, params)),
             subject: { kind: 'convoy', id: String(row.id) },
             layers: ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts'],
             maxEntitiesPerLayer: 100,
-            requestId: 'spatial-eye-' + reasonToken(),
+            requestId: 'spatial-eye:' + reason + ':' + String(row.id),
             persistEvents: true,
             publish
           });
           evaluated += 1;
           eventCount += Array.isArray(context.events) ? context.events.length : 0;
         } catch (error) {
-          logger.warn(`Spatial Eye convoy evaluation failed org=${org.org_id} convoy=${row.id}: ${error.message}`);
+          logger.warn(`Spatial Eye convoy evaluation failed org=${row.org_id} convoy=${row.id}: ${error.message}`);
         }
-      }
+      }));
     }
   } catch (error) {
     logger.warn(`Spatial Eye global evaluation failed: ${error.message}`);
+  } finally {
+    spatialRunning = false;
+    logger.info(`Spatial Eye cycle complete (${reason}) in ${Date.now() - started}ms: evaluated=${evaluated}, events=${eventCount}, maxConvoys=${spatialMaxConvoys}, concurrency=${spatialConcurrency}`);
   }
-  return { evaluated, eventCount };
-}
-function reasonToken() {
-  return Math.random().toString(36).slice(2, 10);
+  return { evaluated, eventCount, skipped: false };
 }
 
 async function cycle(reason) {
   if (stopping) return;
   const started = Date.now();
   try {
-    let spatialEvaluated = 0;
-    let spatialEvents = 0;
-    try {
-      const spatial = await evaluateSpatialEye();
-      spatialEvaluated = spatial.evaluated;
-      spatialEvents = spatial.eventCount;
-    } catch (error) {
-      logger.warn(`Spatial Eye cycle failed: ${error.message}`);
-    }
-
     let mesh = [];
     try { mesh = await runNewsMesh(); } catch (error) { logger.warn(`News Mesh cycle failed: ${error.message}`); }
 
@@ -111,10 +130,18 @@ async function cycle(reason) {
     const synth = agents.reduce((sum, x) => sum + Number(x.synthesis?.synthesized || 0), 0);
     const translated = agents.reduce((sum, x) => sum + Number(x.translation?.translated || 0), 0);
     const pdfReady = pdfs.filter(x => x.status === 'ready').length;
-    logger.info(`Intelligence worker cycle complete (${reason}) in ${Date.now() - started}ms: spatial_convoys=${spatialEvaluated}, spatial_events=${spatialEvents}, orgs=${result?.organizations ?? 0}, mesh_seen=${meshSeen}, mesh_inserted=${meshInserted}, discovered=${discovered}, ingested=${ingested}, translated=${translated}, synthesized=${synth}, publication_pdfs_ready=${pdfReady}, regional_seen=${regionalSeen}, regional_inserted=${regionalInserted}, incident_alerts=${alertCount}`);
+    logger.info(`Intelligence worker cycle complete (${reason}) in ${Date.now() - started}ms: orgs=${result?.organizations ?? 0}, mesh_seen=${meshSeen}, mesh_inserted=${meshInserted}, discovered=${discovered}, ingested=${ingested}, translated=${translated}, synthesized=${synth}, publication_pdfs_ready=${pdfReady}, regional_seen=${regionalSeen}, regional_inserted=${regionalInserted}, incident_alerts=${alertCount}`);
   } catch (error) {
     logger.error(`Intelligence worker cycle failed (${reason}): ${error.message}`);
   }
+}
+
+function scheduleSpatial() {
+  if (stopping) return;
+  spatialTimer = setTimeout(async () => {
+    await evaluateSpatialEye('scheduled');
+    scheduleSpatial();
+  }, spatialIntervalMs);
 }
 
 function schedule() {
@@ -129,6 +156,7 @@ async function shutdown(signal) {
   if (stopping) return;
   stopping = true;
   if (timer) clearTimeout(timer);
+  if (spatialTimer) clearTimeout(spatialTimer);
   logger.info(`Intelligence worker shutting down (${signal})`);
   try {
     const { pool } = require('../config/database');
@@ -141,13 +169,15 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
 (async () => {
-  logger.info(`Intelligence worker online; collection cadence=${intervalMs / 60000}m; news mesh + synthesis agents enabled`);
+  logger.info(`Intelligence worker online; collection cadence=${intervalMs / 60000}m; spatial cadence=${spatialIntervalMs / 1000}s; news mesh + synthesis agents enabled`);
   try {
     const context = await query(`SELECT current_user, session_user, current_setting('app.current_org_id', true) AS rls_org, (SELECT count(*)::int FROM users WHERE deleted_at IS NULL) AS visible_users`);
     logger.info(`Intelligence worker DB context: current_user=${context.rows[0]?.current_user} session_user=${context.rows[0]?.session_user} rls_org=${context.rows[0]?.rls_org || 'unset'} visible_users=${context.rows[0]?.visible_users ?? 0}`);
   } catch (error) {
     logger.warn(`Intelligence worker DB context probe failed: ${error.message}`);
   }
+  await evaluateSpatialEye('startup');
   await cycle('startup');
+  scheduleSpatial();
   schedule();
 })();

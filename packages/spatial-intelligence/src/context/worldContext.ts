@@ -38,6 +38,10 @@ export interface WorldContextLayerHealth {
   acceptedCount?: number;
   rejectedCount?: number;
   freshnessMs?: number;
+  sampleCount?: number;
+  successfulSamples?: number;
+  failedSamples?: number;
+  coverageComplete?: boolean;
   reason?: string;
 }
 
@@ -58,6 +62,22 @@ export interface WorldContextEvidence {
   source?: string;
 }
 
+export interface WorldContextCorrelation {
+  id: string;
+  kind: 'corroboration' | 'source_disagreement' | string;
+  entityType: string;
+  observationIds: string[];
+  sourceProviders: string[];
+  distanceM?: number | null;
+  routeDistanceM?: number | null;
+  confidence: number;
+  observedAt?: string | null;
+  derivedAt: string;
+  evidence: WorldContextEvidence[];
+  uncertainty: string[];
+  status: string;
+}
+
 export interface WorldContextRelation {
   predicate: WorldContextRelationPredicate | string;
   fromId: string;
@@ -74,6 +94,13 @@ export interface WorldContextRelation {
   evidence?: WorldContextEvidence[];
   sourceReferences?: string[];
   uncertainty?: string[];
+  correlationIds?: string[];
+  sourceAgreement?: 'corroborated' | 'disputed' | 'unresolved';
+  correlationEvidence?: Array<{
+    kind: string;
+    id: string;
+    providers: string[];
+  }>;
   relevance?: {
     score: number;
     components: Record<string, number>;
@@ -129,6 +156,7 @@ export interface WorldContextOperationalVehicle extends SpatialObservation {
   headingDeltaDeg?: number | null;
   stationaryDurationMs?: number | null;
   recoveredFreshness?: boolean;
+  previousFreshnessClass?: 'LIVE' | 'DELAYED' | 'STALE' | 'UNKNOWN';
   routeState?: {
     relation: string;
     crossTrackKm?: number | null;
@@ -172,11 +200,29 @@ export interface WorldContextResult {
     radiusM?: number;
     queryScope: string;
     corridorKm?: number;
+    routeQueryPlan?: {
+      mode: 'center_only' | 'single_aoi' | 'multi_aoi' | string;
+      reason: string;
+      maxAois: number;
+      segmentsPlanned: number;
+      routeLengthKm: number;
+      routeLengthCoveredM: number;
+      coverageRatio: number;
+      aois: Array<{
+        id: string;
+        bbox: [number, number, number, number];
+        fromIndex: number;
+        toIndex: number;
+        routeLengthKm: number;
+      }>;
+      samplePoints: Array<{ latitude: number; longitude: number }>;
+    };
   };
   mission?: WorldContextMission;
   operational?: WorldContextOperational;
   entities: SpatialObservation[];
   relations: WorldContextRelation[];
+  correlations: WorldContextCorrelation[];
   environment: SpatialObservation[];
   movement: SpatialObservation[];
   traffic: SpatialObservation[];
@@ -184,13 +230,49 @@ export interface WorldContextResult {
   infrastructure: SpatialObservation[];
   security: SpatialObservation[];
   events?: SpatialEvent[];
+  lifecycle?: {
+    resolvedEventIds: string[];
+    resolvedEventKeys: string[];
+  };
   coverage: {
     layersRequested: string[];
     layersSucceeded: string[];
     layersPartial: string[];
     layersUnavailable: string[];
+    route?: {
+      mode: string;
+      reason: string;
+      aoisPlanned: number;
+      maxAois: number;
+      segmentsPlanned: number;
+      routeLengthKm: number;
+      routeLengthCoveredM: number;
+      coverageRatio: number;
+    };
   };
   layerHealth: WorldContextLayerHealth[];
+  providerCoverage?: Record<string, {
+    complete: boolean;
+    routeCoverageRatio?: number;
+    routeLengthCoveredM?: number;
+    aoisPlanned?: number;
+    aoisSucceeded?: number;
+    aoisFailed?: number;
+    sampleCount?: number;
+    successfulSamples?: number;
+    failedSamples?: number;
+    [key: string]: unknown;
+  }>;
+  providerHealth?: Record<string, {
+    provider?: string;
+    capabilities?: string[];
+    status?: string;
+    reason?: string;
+    lastSuccessAt?: string | null;
+    lastAttemptAt?: string | null;
+    manager?: Record<string, unknown>;
+    [key: string]: unknown;
+  }>;
   provenance: Array<{ sourceName: string; attribution?: string; license?: string }>;
   freshness: {
     oldestObservedAt?: string;
@@ -198,6 +280,10 @@ export interface WorldContextResult {
   };
   uncertainty: string[];
   warnings: string[];
+  dataHealth?: {
+    ok: boolean;
+    readErrors: Array<{ message: string; code?: string | null }>;
+  };
 }
 
 export function suggestContextRadiusM(opts: {

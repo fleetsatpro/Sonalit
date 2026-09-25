@@ -1,5 +1,7 @@
 'use strict';
 
+const logger = require('../../utils/logger');
+
 /**
  * Deterministic spatial-event detector + persistence bridge.
  * Uses the existing Sonalit alert contract; it does not create a second
@@ -33,6 +35,162 @@ function severityFor(type) {
   if (type === 'ENVIRONMENTAL_DETERIORATION') return 'medium';
   if (type === 'STALE_TELEMETRY' || type === 'GPS_GAP') return 'medium';
   return 'low';
+}
+
+
+const EVENT_MODES = Object.freeze({
+  stateful: new Set([
+    'CORRIDOR_EXIT',
+    'ROUTE_DEVIATION',
+    'STALE_TELEMETRY',
+    'GPS_GAP',
+    'UNEXPECTED_STOP',
+    'LONG_DWELL',
+    'CHECKPOINT_APPROACH',
+    'INCIDENT_NEAR_CONVOY',
+    'HAZARD_NEAR_ROUTE',
+    'EXTERNAL_INCIDENT_NEAR_ROUTE',
+    'EXTERNAL_HAZARD_NEAR_ROUTE',
+    'TRAFFIC_CLOSURE',
+    'TRAFFIC_CONGESTION',
+    'VESSEL_APPROACHING_DESTINATION',
+    'NATURAL_HAZARD_NEAR_ROUTE',
+    'ENVIRONMENTAL_DETERIORATION'
+  ]),
+  occurrence: new Set([
+    'CORRIDOR_REENTRY',
+    'TELEMETRY_RECOVERED',
+    'POSITION_JUMP',
+    'HEADING_ANOMALY',
+    'CHECKPOINT_PASS'
+  ])
+});
+
+const EVENT_AUTHORITY_LAYER = Object.freeze({
+  EXTERNAL_INCIDENT_NEAR_ROUTE: 'traffic',
+  EXTERNAL_HAZARD_NEAR_ROUTE: 'traffic',
+  TRAFFIC_CLOSURE: 'traffic',
+  TRAFFIC_CONGESTION: 'traffic',
+  VESSEL_APPROACHING_DESTINATION: 'maritime',
+  NATURAL_HAZARD_NEAR_ROUTE: 'hazards',
+  ENVIRONMENTAL_DETERIORATION: 'weather'
+});
+
+const EVENT_AUTHORITY_PROVIDER = Object.freeze({
+  VESSEL_APPROACHING_DESTINATION: 'kpler-ais',
+  NATURAL_HAZARD_NEAR_ROUTE: 'nasa-eonet',
+  ENVIRONMENTAL_DETERIORATION: 'weather'
+});
+
+function sourceProviderFromReferences(references) {
+  const values = Array.isArray(references) ? references : [];
+  for (const value of values) {
+    const ref = String(value || '').trim().toLowerCase();
+    if (ref === 'mapbox-traffic' || ref.startsWith('mapbox-traffic:')) return 'mapbox-traffic';
+    if (ref === 'tomtom-traffic-flow' || ref.startsWith('tomtom-traffic-flow:')) return 'tomtom-traffic-flow';
+    if (ref === 'tomtom-traffic-incidents' || ref.startsWith('tomtom-traffic-incidents:')) return 'tomtom-traffic-incidents';
+    if (ref === 'tomtom:traffic-flow' || ref.startsWith('tomtom:traffic-flow:') || ref.startsWith('tomtom-traffic:traffic_flow_segment')) return 'tomtom-traffic-flow';
+    if (ref === 'tomtom:traffic-incident' || ref.startsWith('tomtom:traffic-incident:') || ref.startsWith('tomtom-traffic:traffic_incident') ||
+        ref === 'tomtom:traffic-hazard' || ref.startsWith('tomtom:traffic-hazard:') || ref.startsWith('tomtom-traffic:traffic_hazard')) return 'tomtom-traffic-incidents';
+    if (ref === 'kpler-ais' || ref.startsWith('kpler-ais:') || ref.startsWith('kpler:')) return 'kpler-ais';
+    if (ref === 'open-meteo' || ref.startsWith('open-meteo:')) return 'weather';
+    if (ref === 'weather' || ref.startsWith('weather:')) return 'weather';
+    if (ref === 'nasa-eonet' || ref.startsWith('nasa-eonet:') || ref.startsWith('eonet:')) return 'nasa-eonet';
+    if (ref === 'opensky' || ref.startsWith('opensky:')) return 'opensky';
+  }
+  return null;
+}
+
+function providerCanReconcile(context, eventType, sourceReferences) {
+  const provider = EVENT_AUTHORITY_PROVIDER[eventType] || sourceProviderFromReferences(sourceReferences);
+  if (!provider) return true;
+
+  const providerHealth = context && context.providerHealth && context.providerHealth[provider];
+  const providerCoverage = context && context.providerCoverage && context.providerCoverage[provider];
+
+  // Reconciliation is based on the current query, not merely the provider's
+  // process-wide health. A LIVE provider can still have failed AOIs/samples
+  // for this specific mission request.
+  if (!providerCoverage || providerCoverage.complete !== true) return false;
+
+  if (!providerHealth) return false;
+  const status = String(providerHealth.status || '').toUpperCase();
+  if (['LIVE', 'DELAYED'].includes(status)) return true;
+  return status === 'PARTIAL' && !providerHealth.lastErrorClass;
+}
+
+function eventMode(type) {
+  if (EVENT_MODES.occurrence.has(type)) return 'occurrence';
+  return 'stateful';
+}
+
+function eventRequiresFreshExternalAuthority(type) {
+  return Boolean(EVENT_AUTHORITY_LAYER[type]);
+}
+
+function layerCanReconcile(context, eventType) {
+  const layerId = EVENT_AUTHORITY_LAYER[eventType];
+  if (!layerId) return true;
+
+  const coverage = context && context.coverage || {};
+  if (Array.isArray(coverage.layersUnavailable) && coverage.layersUnavailable.includes(layerId)) return false;
+
+  const health = (context && context.layerHealth || []).find(function(item) {
+    return item && item.layerId === layerId;
+  });
+  if (!health) return false;
+
+  const status = String(health.status || '').toUpperCase();
+  if (['LIVE', 'DELAYED'].includes(status)) return true;
+  // PARTIAL is safe for automatic resolution only when the layer explicitly
+  // proves the queried coverage was complete. Otherwise a missing observation
+  // may simply be a coverage hole or failed sample.
+  if (status === 'PARTIAL') {
+    return health.coverageComplete === true &&
+      !(Number(health.failedSamples) > 0);
+  }
+  return false;
+}
+
+async function resolveLinkedSpatialAlerts(db, orgId, spatialEventKey, resolutionReason, userId) {
+  if (!db || !orgId || !spatialEventKey) return [];
+  try {
+    const result = await db(
+      'UPDATE alerts SET resolved_at=NOW(),updated_at=NOW() ' +
+      'WHERE org_id=$1 AND metadata->>\'spatialEventKey\'=$2 AND resolved_at IS NULL AND deleted_at IS NULL ' +
+      'RETURNING id',
+      [orgId, spatialEventKey],
+    );
+    return result.rows || [];
+  } catch (error) {
+    logger.warn('Spatial linked alert resolution failed: ' + String(error?.message || error));
+    return [];
+  }
+}
+
+function eventCanAutoResolve(context, eventType, sourceReferences) {
+  if (!EVENT_MODES.stateful.has(eventType)) return false;
+  if (eventRequiresFreshExternalAuthority(eventType)) {
+    const sourceProvider = EVENT_AUTHORITY_PROVIDER[eventType] || sourceProviderFromReferences(sourceReferences);
+    if (sourceProvider) {
+      // Once provenance identifies the authoritative source, do not let an
+      // unrelated sibling feed (e.g. Mapbox) block reconciliation of a
+      // TomTom-derived condition.
+      return providerCanReconcile(context, eventType, sourceReferences);
+    }
+    return layerCanReconcile(context, eventType);
+  }
+
+  // Internal conditions are only reconciled when the evaluated operational
+  // context is present AND its critical spatial reads succeeded. A swallowed
+  // DB failure must never look like "the condition disappeared".
+  return Boolean(
+    context &&
+    context.dataHealth &&
+    context.dataHealth.ok === true &&
+    ((context.mission && context.mission.convoyId) ||
+      (context.operational && Array.isArray(context.operational.vehicles) && context.operational.vehicles.length))
+  );
 }
 
 function alertTypeFor(type) {
@@ -99,7 +257,7 @@ function makeEvent(input) {
     sourceReferences: input.sourceReferences || vehicle.sourceReferences || [],
     uncertainty: input.uncertainty || vehicle.uncertainty || [],
     ruleVersion: 'spatial-v2',
-    status: 'open',
+    status: eventMode(type) === 'occurrence' ? 'resolved' : 'open',
     resolvesEventKey: input.resolvesEventKey || null,
   };
 }
@@ -136,6 +294,7 @@ function detectSpatialEvents(context, options) {
         type: 'CORRIDOR_REENTRY',
         vehicle,
         convoyId,
+        eventKey: 'CORRIDOR_REENTRY:vehicle:' + String(vehicle.id) + ':' + Math.floor(now / cfg.eventBucketMs),
         previousState: 'OUTSIDE_CORRIDOR',
         newState: 'WITHIN_CORRIDOR',
         severity: 'low',
@@ -186,6 +345,7 @@ function detectSpatialEvents(context, options) {
         type: 'TELEMETRY_RECOVERED',
         vehicle,
         convoyId,
+        eventKey: 'TELEMETRY_RECOVERED:vehicle:' + String(vehicle.id) + ':' + Math.floor(now / cfg.eventBucketMs),
         severity: 'low',
         previousState: 'STALE',
         newState: 'LIVE',
@@ -235,6 +395,7 @@ function detectSpatialEvents(context, options) {
         type: 'HEADING_ANOMALY',
         vehicle,
         convoyId,
+        eventKey: 'HEADING_ANOMALY:vehicle:' + String(vehicle.id) + ':' + Math.floor(now / (10 * 60 * 1000)),
         severity: 'medium',
         evidence: [
           { metric: 'heading_delta_deg', value: headingDelta },
@@ -321,8 +482,14 @@ function detectSpatialEvents(context, options) {
       ? String(relation.fromId)
       : String(context && context.mission && context.mission.convoyId || relation.fromId);
 
+    const correlationIdentity = relation.sourceAgreement === 'corroborated' &&
+      Array.isArray(relation.correlationIds) &&
+      relation.correlationIds.length
+      ? 'correlation:' + relation.correlationIds.slice().sort().join(',')
+      : String(relation.toId);
+
     events.push({
-      eventKey: type + ':' + String(relation.fromId) + ':' + String(relation.toId),
+      eventKey: type + ':' + String(relation.fromId) + ':' + correlationIdentity,
       eventType: type,
       subjectType,
       subjectId,
@@ -335,9 +502,12 @@ function detectSpatialEvents(context, options) {
       severity: relation.severity || 'high',
       confidence: clamp01(relation.confidence == null ? 0.7 : relation.confidence),
       operationalConfidence: clamp01(relation.operationalConfidence == null ? 0.7 : relation.operationalConfidence),
-      evidence: relation.evidence || [],
+      evidence: (relation.evidence || []).concat(
+        relation.correlationEvidence || []
+      ),
       sourceReferences: relation.sourceReferences || [],
       uncertainty: relation.uncertainty || [],
+
       ruleVersion: 'spatial-v2',
       status: 'open'
     });
@@ -372,41 +542,167 @@ function detectSpatialEvents(context, options) {
   return events;
 }
 
+
+async function reconcileSpatialEvents(db, context, events, options) {
+  const cfg = options || {};
+  if (!db || !cfg.orgId || !context) return [];
+
+  const mission = context.mission || null;
+  const operationalVehicles = context.operational && Array.isArray(context.operational.vehicles)
+    ? context.operational.vehicles
+    : [];
+  const convoyId = mission && mission.convoyId ? String(mission.convoyId) : null;
+  if (!convoyId && !operationalVehicles.length) return [];
+
+  const subjectIds = [];
+  if (context.subject && context.subject.id) subjectIds.push(String(context.subject.id));
+  for (const vehicle of operationalVehicles) {
+    if (vehicle && vehicle.id) subjectIds.push(String(vehicle.id));
+  }
+  const uniqueSubjectIds = [...new Set(subjectIds)];
+  if (!uniqueSubjectIds.length) return [];
+
+  const rowsResult = await db(
+    'SELECT id,event_key,event_type,subject_type,subject_id,convoy_id,source_references FROM spatial_events ' +
+    'WHERE org_id=$1 AND status=\'open\' AND (convoy_id=$2 OR subject_id = ANY($3::text[]))',
+    [cfg.orgId, convoyId, uniqueSubjectIds],
+  );
+  const openEvents = rowsResult.rows || [];
+  const activeKeys = new Set((events || []).map(function(event) {
+    return String(event.eventKey);
+  }));
+  const resolved = [];
+
+  for (const row of openEvents) {
+    const eventType = String(row.event_type || '');
+    const sourceReferences = Array.isArray(row.source_references)
+      ? row.source_references
+      : (typeof row.source_references === 'string'
+        ? (() => { try { return JSON.parse(row.source_references); } catch (_) { return []; } })()
+        : []);
+    if (!eventCanAutoResolve(context, eventType, sourceReferences)) continue;
+    if (activeKeys.has(String(row.event_key))) continue;
+
+    const result = await db(
+      'UPDATE spatial_events SET status=\'resolved\',resolved_at=NOW(),resolved_by=$1,resolution_reason=$2,updated_at=NOW(),last_seen_at=COALESCE(last_seen_at,updated_at) ' +
+      'WHERE org_id=$3 AND id=$4 AND status=\'open\' RETURNING id,event_key',
+      [
+        cfg.userId || null,
+        eventRequiresFreshExternalAuthority(eventType)
+          ? 'Fresh authoritative spatial layer no longer reports the condition.'
+          : 'Fresh mission evaluation no longer reports the condition.',
+        cfg.orgId,
+        row.id,
+      ],
+    );
+    const resolvedRows = result.rows || [];
+    resolved.push.apply(resolved, resolvedRows);
+    await resolveLinkedSpatialAlerts(
+      db,
+      cfg.orgId,
+      String(row.event_key),
+      eventRequiresFreshExternalAuthority(eventType)
+        ? 'Spatial event resolved from fresh authoritative source.'
+        : 'Spatial event resolved from fresh mission evaluation.',
+      cfg.userId || null
+    );
+  }
+
+  return resolved;
+}
+
 async function persistSpatialEvents(db, events, options) {
   const cfg = options || {};
-  if (!db || !cfg.orgId || !Array.isArray(events)) return { created: [], resolved: [] };
+  if (!db || !cfg.orgId || !Array.isArray(events)) return { created: [], updated: [], resolved: [] };
 
   const created = [];
+  const updated = [];
   const resolved = [];
 
   for (const event of events) {
     if (event.resolvesEventKey) {
       const resolvedRows = await db(
-        'UPDATE spatial_events SET status=\'resolved\', resolved_at=NOW(), resolved_by=$1, updated_at=NOW() WHERE org_id=$2 AND event_key=$3 AND status=\'open\' RETURNING id,event_key',
-        [cfg.userId || null, cfg.orgId, event.resolvesEventKey]
+        'UPDATE spatial_events SET status=\'resolved\',resolved_at=NOW(),resolved_by=$1,resolution_reason=$2,updated_at=NOW() ' +
+        'WHERE org_id=$3 AND event_key=$4 AND status=\'open\' RETURNING id,event_key',
+        [
+          cfg.userId || null,
+          'Explicit resolving transition emitted by the spatial event detector.',
+          cfg.orgId,
+          event.resolvesEventKey
+        ]
       );
       resolved.push.apply(resolved, resolvedRows.rows || []);
+      await resolveLinkedSpatialAlerts(
+        db,
+        cfg.orgId,
+        String(event.resolvesEventKey),
+        'Spatial resolving transition acknowledged by the detector.',
+        cfg.userId || null
+      );
     }
 
-    const result = await db(
+    const insert = await db(
       'INSERT INTO spatial_events ' +
-      '(org_id,event_key,event_type,subject_type,subject_id,convoy_id,related_entities,previous_state,new_state,observed_at,detected_at,severity,confidence,operational_confidence,evidence,source_references,uncertainty,rule_version,status) ' +
-      'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,\'open\') ' +
+      '(org_id,event_key,event_type,subject_type,subject_id,convoy_id,related_entities,previous_state,new_state,observed_at,detected_at,severity,confidence,operational_confidence,evidence,source_references,uncertainty,rule_version,status,last_seen_at) ' +
+      'VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,NOW()) ' +
       'ON CONFLICT (org_id,event_key) WHERE status=\'open\' DO NOTHING RETURNING *',
       [
-        cfg.orgId, event.eventKey, event.eventType, event.subjectType, event.subjectId,
-        event.convoyId || null, JSON.stringify(event.relatedEntities || []),
-        event.previousState || null, event.newState || null, event.observedAt || null,
-        event.detectedAt || new Date().toISOString(), event.severity || 'medium',
-        clamp01(event.confidence), clamp01(event.operationalConfidence),
-        JSON.stringify(event.evidence || []), JSON.stringify(event.sourceReferences || []),
-        JSON.stringify(event.uncertainty || []), event.ruleVersion || 'spatial-v2'
+        cfg.orgId,
+        event.eventKey,
+        event.eventType,
+        event.subjectType,
+        event.subjectId,
+        event.convoyId || null,
+        JSON.stringify(event.relatedEntities || []),
+        event.previousState || null,
+        event.newState || null,
+        event.observedAt || null,
+        event.detectedAt || new Date().toISOString(),
+        event.severity || 'medium',
+        clamp01(event.confidence),
+        clamp01(event.operationalConfidence),
+        JSON.stringify(event.evidence || []),
+        JSON.stringify(event.sourceReferences || []),
+        JSON.stringify(event.uncertainty || []),
+        event.ruleVersion || 'spatial-v2',
+        event.status || (eventMode(event.eventType) === 'occurrence' ? 'resolved' : 'open'),
       ]
     );
 
-    const row = result.rows && result.rows[0];
+    let row = insert.rows && insert.rows[0];
+    const wasCreated = Boolean(row);
+
+    if (!row) {
+      const refreshed = await db(
+        'UPDATE spatial_events SET ' +
+        'observed_at=$1,updated_at=NOW(),last_seen_at=NOW(),severity=$2,confidence=$3,operational_confidence=$4,' +
+        'related_entities=$5,new_state=$6,evidence=$7,source_references=$8,uncertainty=$9,rule_version=$10 ' +
+        'WHERE org_id=$11 AND event_key=$12 AND status=\'open\' RETURNING *',
+        [
+          event.observedAt || null,
+          event.severity || 'medium',
+          clamp01(event.confidence),
+          clamp01(event.operationalConfidence),
+          JSON.stringify(event.relatedEntities || []),
+          event.newState || null,
+          JSON.stringify(event.evidence || []),
+          JSON.stringify(event.sourceReferences || []),
+          JSON.stringify(event.uncertainty || []),
+          event.ruleVersion || 'spatial-v2',
+          cfg.orgId,
+          event.eventKey,
+        ]
+      );
+      row = refreshed.rows && refreshed.rows[0];
+    }
+
     if (!row) continue;
-    created.push(row);
+    if (wasCreated) created.push(row);
+    else updated.push(row);
+
+    // Occurrence events are already resolved in the spatial_events ledger, but
+    // still create the normal Sonalit alert exactly once at first persistence.
+    if (!wasCreated) continue;
 
     const alertType = alertTypeFor(event.eventType);
     const evidenceText = (event.evidence || []).slice(0, 3).map(function(e) {
@@ -420,52 +716,101 @@ async function persistSpatialEvents(db, events, options) {
       const rawVehicleId = event.subjectType === 'vehicle'
         ? String(event.subjectId).replace(/^sonalit:vehicle:/, '')
         : null;
-      const alertResult = await db(
-        'INSERT INTO alerts (vehicle_id,convoy_id,type,severity,message,created_by,org_id,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),NOW()) RETURNING id',
-        [
-          rawVehicleId,
-          event.convoyId || null,
-          alertType,
-          event.severity || 'medium',
-          message,
-          cfg.userId || null,
-          cfg.orgId
-        ]
-      );
 
-      if (typeof cfg.publish === 'function') {
-        try {
-          cfg.publish('org#' + cfg.orgId, {
-            type: 'spatial.event',
-            eventId: row.id,
-            eventType: event.eventType,
-            eventKey: event.eventKey,
-            subjectId: event.subjectId,
-            convoyId: event.convoyId || null,
-            severity: event.severity,
-            confidence: event.confidence
-          });
-          if (alertResult.rows && alertResult.rows[0]) {
+      try {
+        const spatialAlertSemanticKey = eventMode(event.eventType) === 'occurrence'
+          ? 'occurrence:' + event.eventType + ':' + event.subjectType + ':' + String(event.subjectId)
+          : 'condition:' + String(event.eventKey);
+        const spatialAlertKey = eventMode(event.eventType) === 'occurrence'
+          ? 'occurrence:' + String(event.eventKey)
+          : 'condition:' + String(event.eventKey);
+
+        // Occurrence events intentionally use time-bucketed event identities.
+        // Suppress duplicate operational alerts for the same semantic event
+        // during a short cooldown without suppressing the spatial-event ledger.
+        const existingAlert = eventMode(event.eventType) === 'occurrence'
+          ? await db(
+              'SELECT id FROM alerts WHERE org_id=$1 AND (vehicle_id IS NOT DISTINCT FROM $2::uuid) AND ' +
+              '(convoy_id IS NOT DISTINCT FROM $3::uuid) AND (metadata->>\'spatialAlertSemanticKey\'=$4 OR metadata->>\'spatialAlertKey\'=$4) AND ' +
+              'deleted_at IS NULL AND resolved_at IS NULL AND created_at > NOW() - INTERVAL \'10 minutes\' LIMIT 1',
+              [cfg.orgId, rawVehicleId, event.convoyId || null, spatialAlertSemanticKey]
+            )
+          : { rows: [] };
+
+        let alertResult = { rows: [] };
+        if (!existingAlert.rows?.length) {
+          alertResult = await db(
+            'INSERT INTO alerts (vehicle_id,convoy_id,type,severity,message,created_by,org_id,metadata,created_at,updated_at) ' +
+            'VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,NOW(),NOW()) ON CONFLICT DO NOTHING RETURNING id',
+            [
+              rawVehicleId,
+              event.convoyId || null,
+              alertType,
+              event.severity || 'medium',
+              message,
+              cfg.userId || null,
+              cfg.orgId,
+              JSON.stringify({
+                source: 'sonalit-spatial',
+                spatialAlertKey,
+                spatialAlertSemanticKey,
+                spatialEventKey: event.eventKey,
+                eventType: event.eventType,
+                ruleVersion: event.ruleVersion || 'spatial-v2'
+              })
+            ]
+          );
+        }
+
+        if (typeof cfg.publish === 'function') {
+          try {
             cfg.publish('org#' + cfg.orgId, {
-              type: 'alert.new',
-              alertId: alertResult.rows[0].id,
-              vehicleId: rawVehicleId,
+              type: 'spatial.event',
+              eventId: row.id,
+              eventType: event.eventType,
+              eventKey: event.eventKey,
+              subjectId: event.subjectId,
               convoyId: event.convoyId || null,
-              alertType: alertType,
               severity: event.severity,
-              message: message
+              confidence: event.confidence
             });
-          }
-        } catch (_) {}
+            if (alertResult.rows && alertResult.rows[0]) {
+              cfg.publish('org#' + cfg.orgId, {
+                type: 'alert.new',
+                alertId: alertResult.rows[0].id,
+                vehicleId: rawVehicleId,
+                convoyId: event.convoyId || null,
+                alertType: alertType,
+                severity: event.severity,
+                message: message
+              });
+            }
+          } catch (_) {}
+        }
+      } catch (alertError) {
+        // Event state is authoritative; downstream alert delivery is best-effort.
+        // The event remains persisted and can be replayed/reconciled later.
+        logger.warn('Spatial alert bridge failed: ' + String(alertError?.message || alertError));
       }
     }
   }
 
-  return { created: created, resolved: resolved };
+  const lifecycleResolved = await reconcileSpatialEvents(db, cfg.context || null, events, cfg);
+  resolved.push.apply(resolved, lifecycleResolved);
+
+  return { created, updated, resolved };
 }
 
 module.exports = {
   detectSpatialEvents,
   persistSpatialEvents,
-  DEFAULTS
+  reconcileSpatialEvents,
+  DEFAULTS,
+  EVENT_MODES,
+  EVENT_AUTHORITY_LAYER,
+  eventMode,
+  eventCanAutoResolve,
+  layerCanReconcile,
+  providerCanReconcile,
+  sourceProviderFromReferences
 };

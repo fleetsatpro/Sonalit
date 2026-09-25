@@ -70,6 +70,62 @@ describe('spatial provider manager', () => {
     expect(classifyFailure(results[1].reason)).toBe('timeout');
   });
 
+  test('enforces per-tenant request budgets without consuming the global provider budget on tenant throttling', async () => {
+    const manager = new SpatialProviderManager();
+    const query = jest.fn().mockResolvedValue({ observations: [] });
+    manager.register('tenant-limited', {
+      query,
+      maxPerMinute: 10,
+      maxConcurrent: 2,
+      tenantMaxPerMinute: 2,
+      tenantMaxConcurrent: 1,
+    });
+
+    await manager.query('tenant-limited', { orgId: 'org-a' });
+    await manager.query('tenant-limited', { orgId: 'org-a' });
+    await expect(manager.query('tenant-limited', { orgId: 'org-a' }))
+      .rejects.toMatchObject({ failureClass: 'rate_limited', code: 'TENANT_BUDGET_EXHAUSTED' });
+
+    await manager.query('tenant-limited', { orgId: 'org-b' });
+    expect(query).toHaveBeenCalledTimes(3);
+
+    const health = manager.getHealthSnapshot()['tenant-limited'];
+    expect(health.manager.requestCount).toBe(3);
+    expect(health.manager.failureCount).toBe(0);
+    expect(health.manager.tenantBucketCount).toBe(2);
+  });
+
+  test('shares provider-family quota across sibling capabilities', async () => {
+    const manager = new SpatialProviderManager();
+    const first = jest.fn().mockResolvedValue({ observations: [] });
+    const second = jest.fn().mockResolvedValue({ observations: [] });
+
+    manager.register('family-a', {
+      query: first,
+      maxPerMinute: 2,
+      maxConcurrent: 2,
+      tenantMaxPerMinute: 2,
+      tenantMaxConcurrent: 2,
+      quotaKey: 'shared-family',
+    });
+    manager.register('family-b', {
+      query: second,
+      maxPerMinute: 2,
+      maxConcurrent: 2,
+      tenantMaxPerMinute: 2,
+      tenantMaxConcurrent: 2,
+      quotaKey: 'shared-family',
+    });
+
+    await manager.query('family-a', { orgId: 'org-a' });
+    await manager.query('family-b', { orgId: 'org-a' });
+    await expect(manager.query('family-a', { orgId: 'org-a' }))
+      .rejects.toMatchObject({ failureClass: 'rate_limited' });
+
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
   test('rejects duplicate provider registration', () => {
     const manager = new SpatialProviderManager();
     manager.register('duplicate', { query: async () => ({}) });

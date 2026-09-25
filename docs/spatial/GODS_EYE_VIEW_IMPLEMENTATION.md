@@ -168,3 +168,52 @@ Sonalit now also exposes NASA GIBS true-colour Earth-observation imagery as a na
 
 Operational Sonalit vehicle GPS, routes, corridors, security records and alert authority remain the system's operational source of truth.
 
+
+
+## Route-aware query planning
+
+God's Eye View now plans long route/corridor queries as bounded provider-safe AOIs rather than collapsing an oversized route envelope back to the convoy centre. The canonical route query planner provides:
+
+- bounded multi-AOI partitioning
+- adaptive route samples
+- provider-safe AOI area limits
+- maximum AOI count and bounded concurrency
+- antimeridian-safe splitting
+- observation deduplication across overlapping AOIs
+- route coverage ratio and route distance coverage
+
+Aircraft, AIS, NASA EONET hazards and TomTom traffic incidents use the route AOI plan when route geometry exists. Traffic flow and weather use the same route-aware adaptive sample strategy.
+
+## Event lifecycle and truth preservation
+
+Spatial events are divided into stateful conditions and point-in-time occurrences. Stateful conditions are refreshed rather than duplicated on every evaluation. Automatic resolution is permitted only when the current request has authoritative, sufficiently fresh provider coverage; provider failure, stale data, missing samples and incomplete route coverage cannot be interpreted as evidence that a condition disappeared.
+
+Spatial event rows retain last_seen_at and resolution_reason. Linked Sonalit alerts are reconciled with the event lifecycle, and spatial alert identity is persisted in alert metadata to protect against concurrent duplicate emissions. Recurring occurrence events use their time-bucketed event identity for alert identity, while stateful conditions use their stable condition key.
+
+The continuous Spatial Eye evaluator runs as a separate cadence within the existing intelligence worker rather than creating a second scheduler. Convoy evaluation is keyset-paged and bounded by configurable cycle size and concurrency so later organisations/convoys are not starved by a permanently fixed top-N query.
+
+## Tenant and provider quota controls
+
+The provider fabric now supports both process-level provider-family budgets and per-tenant budgets. Capabilities sharing a provider family (for example TomTom traffic flow and incidents) share a quota bucket while preserving capability-specific health and failure state. Spatial requests carry organisation context into the provider fabric so one tenant cannot consume an entire in-process provider budget.
+
+World Context exposes both process/provider health and the current request's provider coverage. Event reconciliation uses the latter when source provenance identifies an external authority, preventing a globally healthy provider from being mistaken for complete coverage of the current mission query.
+
+
+## Runtime controls
+
+The spatial runtime exposes bounded controls through environment variables:
+
+- SPATIAL_EYE_INTERVAL_SECONDS — cadence for continuous convoy spatial evaluation (minimum 15 seconds).
+- SPATIAL_EYE_MAX_CONVOYS_PER_CYCLE — maximum active convoys evaluated in one spatial cycle.
+- SPATIAL_EYE_CONCURRENCY — bounded concurrent convoy evaluations.
+- SPATIAL_EYE_PROVIDER_CONCURRENCY — bounded concurrent route-AOI provider calls.
+- SPATIAL_EYE_MAX_AOI_AREA_DEG2 — maximum geographic area of a generated provider AOI.
+- SPATIAL_EYE_MAX_AOIS — maximum route AOIs per world-context provider query.
+- route planning also hard-caps each AOI's route span and segment density internally (300 km / 25 km by default), keeping the planner bounded even for long or sparsely-vertexed routes.
+- SPATIAL_PROVIDER_<PROVIDER>_MAX_PER_MINUTE — process-level provider budget.
+- SPATIAL_PROVIDER_<PROVIDER>_MAX_CONCURRENT — process-level provider concurrency.
+- SPATIAL_PROVIDER_<PROVIDER>_TENANT_MAX_PER_MINUTE — per-tenant provider budget.
+- SPATIAL_PROVIDER_<PROVIDER>_TENANT_MAX_CONCURRENT — per-tenant provider concurrency.
+- SPATIAL_PROVIDER_MAX_TENANT_BUCKETS — maximum retained in-process tenant quota buckets.
+
+The controls are hard-bounded by the application. Environment variables cannot request unlimited spatial area, AOIs, concurrency, or entity counts.

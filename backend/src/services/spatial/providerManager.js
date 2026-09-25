@@ -26,9 +26,16 @@ function classifyFailure(error) {
   return FAILURE_CLASSES.has(value) ? value : 'unknown';
 }
 
+function tenantIdFromArgs(args) {
+  if (!args || typeof args !== 'object') return null;
+  const value = args.orgId ?? args.tenantId ?? args.tenant?.orgId;
+  return value == null || value === '' ? null : String(value);
+}
+
 class SpatialProviderManager {
   constructor() {
     this.providers = new Map();
+    this.quotaFamilies = new Map();
   }
 
   register(name, descriptor) {
@@ -38,10 +45,41 @@ class SpatialProviderManager {
     }
     if (this.providers.has(name)) throw new Error('Spatial provider already registered: ' + name);
 
-    const budget = new RequestBudget(
-      envInt(descriptor.budgetEnv?.maxPerMinute, descriptor.maxPerMinute ?? 120, 1, 10_000),
-      envInt(descriptor.budgetEnv?.maxConcurrent, descriptor.maxConcurrent ?? 8, 1, 256),
+    const quotaKey = String(descriptor.quotaKey || name);
+    const maxPerMinute = envInt(descriptor.budgetEnv?.maxPerMinute, descriptor.maxPerMinute ?? 120, 1, 10_000);
+    const maxConcurrent = envInt(descriptor.budgetEnv?.maxConcurrent, descriptor.maxConcurrent ?? 8, 1, 256);
+    const tenantMaxPerMinute = envInt(
+      descriptor.budgetEnv?.tenantMaxPerMinute,
+      descriptor.tenantMaxPerMinute ?? Math.max(1, Math.floor(maxPerMinute / 4)),
+      1,
+      10_000,
     );
+    const tenantMaxConcurrent = envInt(
+      descriptor.budgetEnv?.tenantMaxConcurrent,
+      descriptor.tenantMaxConcurrent ?? Math.max(1, Math.min(maxConcurrent, 2)),
+      1,
+      256,
+    );
+    let quota = this.quotaFamilies.get(quotaKey);
+    if (!quota) {
+      quota = {
+        budget: new RequestBudget(maxPerMinute, maxConcurrent),
+        maxPerMinute,
+        maxConcurrent,
+        tenantMaxPerMinute,
+        tenantMaxConcurrent,
+        tenantBudgets: new Map(),
+        tenantBudgetLastUsedAt: new Map(),
+      };
+      this.quotaFamilies.set(quotaKey, quota);
+    } else if (
+      quota.maxPerMinute !== maxPerMinute ||
+      quota.maxConcurrent !== maxConcurrent ||
+      quota.tenantMaxPerMinute !== tenantMaxPerMinute ||
+      quota.tenantMaxConcurrent !== tenantMaxConcurrent
+    ) {
+      throw new Error('Spatial provider quota family configuration mismatch: ' + quotaKey);
+    }
     const circuit = new CircuitBreaker(
       envInt(descriptor.budgetEnv?.failureThreshold, descriptor.failureThreshold ?? 6, 1, 100),
       envInt(descriptor.budgetEnv?.cooldownMs, descriptor.cooldownMs ?? 30_000, 1_000, 600_000),
@@ -50,9 +88,14 @@ class SpatialProviderManager {
     this.providers.set(name, {
       name,
       query: descriptor.query,
+      tenantMaxPerMinute,
+      quotaKey,
+      tenantMaxConcurrent,
+      quota,
+      tenantBudgets: quota.tenantBudgets,
+      tenantBudgetLastUsedAt: quota.tenantBudgetLastUsedAt,
       health: typeof descriptor.health === 'function' ? descriptor.health : () => ({ status: 'UNKNOWN' }),
       capabilities: Array.isArray(descriptor.capabilities) ? [...new Set(descriptor.capabilities)] : [],
-      budget,
       circuit,
       requestCount: 0,
       successCount: 0,
@@ -81,6 +124,34 @@ class SpatialProviderManager {
     }
 
     const now = Date.now();
+    const tenantId = tenantIdFromArgs(args);
+    let tenantBudget = null;
+    if (tenantId) {
+      tenantBudget = provider.tenantBudgets.get(tenantId);
+      if (!tenantBudget) {
+        if (provider.tenantBudgets.size >= Number(process.env.SPATIAL_PROVIDER_MAX_TENANT_BUCKETS || 10_000)) {
+          let oldestId = null;
+          let oldestAt = Infinity;
+          for (const [id, at] of provider.tenantBudgetLastUsedAt.entries()) {
+            if (at < oldestAt) { oldestAt = at; oldestId = id; }
+          }
+          if (oldestId) {
+            provider.tenantBudgets.delete(oldestId);
+            provider.tenantBudgetLastUsedAt.delete(oldestId);
+          }
+        }
+        tenantBudget = new RequestBudget(provider.quota.tenantMaxPerMinute, provider.quota.tenantMaxConcurrent);
+        provider.tenantBudgets.set(tenantId, tenantBudget);
+      }
+      provider.tenantBudgetLastUsedAt.set(tenantId, now);
+      if (!tenantBudget.canRequest(now)) {
+        const error = new Error('Spatial provider tenant budget exhausted: ' + name);
+        error.failureClass = 'rate_limited';
+        error.code = 'TENANT_BUDGET_EXHAUSTED';
+        throw error;
+      }
+    }
+
     if (!provider.circuit.canRequest(now)) {
       const error = new Error('Spatial provider circuit is open: ' + name);
       error.failureClass = 'circuit_open';
@@ -90,7 +161,7 @@ class SpatialProviderManager {
       throw error;
     }
 
-    if (!provider.budget.canRequest(now)) {
+    if (!provider.quota.budget.canRequest(now)) {
       const error = new Error('Spatial provider budget exhausted: ' + name);
       error.failureClass = 'rate_limited';
       provider.lastFailure = 'budget_exhausted';
@@ -99,7 +170,8 @@ class SpatialProviderManager {
       throw error;
     }
 
-    provider.budget.begin(now);
+    provider.quota.budget.begin(now);
+    if (tenantBudget) tenantBudget.begin(now);
     provider.requestCount += 1;
 
     try {
@@ -119,7 +191,8 @@ class SpatialProviderManager {
       if (!error.failureClass) error.failureClass = failureClass;
       throw error;
     } finally {
-      provider.budget.end();
+      provider.quota.budget.end();
+      if (tenantBudget) tenantBudget.end();
     }
   }
 
@@ -148,12 +221,12 @@ class SpatialProviderManager {
       }
       const effectiveStatus = provider.circuit.state === 'OPEN'
         ? 'UNAVAILABLE'
-        : provider.budget.remaining() === 0
+        : provider.quota.budget.remaining() === 0
           ? 'RATE_LIMITED'
           : upstream.status || 'UNKNOWN';
       const effectiveReason = provider.circuit.state === 'OPEN'
         ? 'Provider circuit is open after repeated failures.'
-        : provider.budget.remaining() === 0
+        : provider.quota.budget.remaining() === 0
           ? 'Provider request budget is exhausted.'
           : upstream.reason;
       out[provider.name] = {
@@ -163,8 +236,11 @@ class SpatialProviderManager {
         status: effectiveStatus,
         ...(effectiveReason ? { reason: effectiveReason } : {}),
         manager: {
-          activeRequests: provider.budget.active,
-          rateLimitRemaining: provider.budget.remaining(),
+          activeRequests: provider.quota.budget.active,
+          rateLimitRemaining: provider.quota.budget.remaining(),
+          tenantBucketCount: provider.tenantBudgets.size,
+          tenantMaxPerMinute: provider.quota.tenantMaxPerMinute,
+          tenantMaxConcurrent: provider.quota.tenantMaxConcurrent,
           requestCount: provider.requestCount,
           successCount: provider.successCount,
           failureCount: provider.failureCount,
@@ -181,8 +257,8 @@ class SpatialProviderManager {
 
   reset() {
     for (const provider of this.providers.values()) {
-      provider.budget.timestamps.length = 0;
-      provider.budget.active = 0;
+      provider.quota.budget.timestamps.length = 0;
+      provider.quota.budget.active = 0;
       provider.circuit.success();
       provider.requestCount = 0;
       provider.successCount = 0;
@@ -190,6 +266,15 @@ class SpatialProviderManager {
       provider.lastFailure = null;
       provider.lastFailureAt = null;
       provider.lastSuccessAt = null;
+      provider.tenantBudgets.clear();
+      provider.tenantBudgetLastUsedAt.clear();
+    }
+    for (const quota of this.quotaFamilies.values()) {
+      quota.budget.timestamps.length = 0;
+      quota.budget.active = 0;
+      quota.tenantBudgets.clear();
+      quota.tenantBudgetLastUsedAt.clear();
+
     }
   }
 }
@@ -267,6 +352,7 @@ function createDefaultSpatialProviderManager() {
     query: queryOrUnavailable({ getTrafficIncidents }, 'getTrafficIncidents', 'TomTom Traffic'),
     health: healthOrUnknown({ getProviderHealth: tomtomHealth }, 'getProviderHealth'),
     capabilities: ['traffic', 'incident', 'bbox'],
+    quotaKey: 'tomtom-traffic',
     ...budgets('SPATIAL_PROVIDER_TOMTOM', 60, 6),
   });
 
@@ -274,6 +360,7 @@ function createDefaultSpatialProviderManager() {
     query: queryOrUnavailable({ getTrafficFlowAtPoints }, 'getTrafficFlowAtPoints', 'TomTom Traffic Flow'),
     health: healthOrUnknown({ getProviderHealth: tomtomHealth }, 'getProviderHealth'),
     capabilities: ['traffic', 'flow', 'point'],
+    quotaKey: 'tomtom-traffic',
     ...budgets('SPATIAL_PROVIDER_TOMTOM', 60, 6),
   });
 
