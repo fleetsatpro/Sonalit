@@ -115,6 +115,10 @@ describe('spatial event lifecycle', () => {
         'tomtom-traffic-incidents': { status: 'LIVE', lastErrorClass: null },
         'mapbox-traffic': { status: 'UNAVAILABLE', lastErrorClass: 'timeout' },
       },
+      providerCoverage: {
+        'tomtom-traffic-incidents': { complete: true },
+        'mapbox-traffic': { complete: false },
+      },
       mission: { convoyId: 'c1' },
       operational: { vehicles: [{ id: 'v1' }] },
       dataHealth: { ok: true, readErrors: [] },
