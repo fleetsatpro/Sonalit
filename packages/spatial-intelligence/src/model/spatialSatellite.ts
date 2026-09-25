@@ -35,9 +35,16 @@ export interface SpatialSatellite {
   uncertainty: string[];
 }
 
-export interface SpatialSatelliteObservation extends SpatialObservation {
+export type SpatialSatelliteObservation = SpatialObservation & {
   entityType: 'satellite';
-  attributes: SpatialSatellite & {
+  attributes: Record<string, unknown> & {
+    id: string;
+    name: string;
+    noradCatalogId: number;
     positionMode: 'SGP4_PROPAGATED';
+    propagatorAvailable: boolean;
+    imagingClaim: false;
+    taskingClaim: false;
+    nonImagingSemantics: true;
   };
-}
+};
