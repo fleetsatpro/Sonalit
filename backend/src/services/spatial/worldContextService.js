@@ -979,7 +979,11 @@ async function buildWorldContext(opts) {
         : await spatialProviderManager.query('opensky', { bbox, orgId, requestId: input.requestId, signal: input.signal });
 
       movement.push.apply(movement, (result.observations || []).slice(0, maxEntitiesPerLayer));
-      const status = result.health?.status || 'UNKNOWN';
+      const rawStatus = result.health?.status || 'UNKNOWN';
+      const status = result.coverage?.complete === false &&
+        (rawStatus === 'LIVE' || rawStatus === 'DELAYED')
+        ? 'PARTIAL'
+        : rawStatus;
       providerCoverage.opensky = Object.assign({}, result.coverage || {}, {
         complete: result.coverage?.complete === true,
       });
@@ -1127,7 +1131,11 @@ async function buildWorldContext(opts) {
         : await spatialProviderManager.query('nasa-eonet', { bbox, orgId, maxRecords: maxEntitiesPerLayer, signal: input.signal });
 
       hazards.push.apply(hazards, (result.observations || []).slice(0, maxEntitiesPerLayer));
-      const status = result.health?.status || 'UNKNOWN';
+      const rawStatus = result.health?.status || 'UNKNOWN';
+      const status = result.coverage?.complete === false &&
+        (rawStatus === 'LIVE' || rawStatus === 'DELAYED')
+        ? 'PARTIAL'
+        : rawStatus;
       providerCoverage['nasa-eonet'] = Object.assign({}, result.coverage || {}, {
         complete: result.coverage?.complete === true,
       });
@@ -1174,7 +1182,11 @@ async function buildWorldContext(opts) {
         : await spatialProviderManager.query('kpler-ais', { bbox, orgId, maxRecords: maxEntitiesPerLayer, signal: input.signal });
 
       movement.push.apply(movement, (result.observations || []).slice(0, maxEntitiesPerLayer));
-      const status = result.health?.status || 'UNKNOWN';
+      const rawStatus = result.health?.status || 'UNKNOWN';
+      const status = result.coverage?.complete === false &&
+        (rawStatus === 'LIVE' || rawStatus === 'DELAYED')
+        ? 'PARTIAL'
+        : rawStatus;
       providerCoverage['kpler-ais'] = Object.assign({}, result.coverage || {}, {
         complete: result.coverage?.complete === true,
       });
