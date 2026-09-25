@@ -18,8 +18,8 @@ const CATALOG_CACHE_TTL_MS = 10 * 60 * 1000;
 
 const cache = new BoundedTtlCache(CATALOG_CACHE_TTL_MS, 32);
 const circuit = new CircuitBreaker(
-  clampInt(process.env.SPATIAL_CELESTRAK_FAILURE_THRESHOLD, 6, 1, 100, 6),
-  clampInt(process.env.SPATIAL_CELESTRAK_COOLDOWN_MS, 30_000, 1_000, 600_000, 30_000)
+  clampInt(process.env.SPATIAL_CELESTRAK_FAILURE_THRESHOLD, 1, 100, 6),
+  clampInt(process.env.SPATIAL_CELESTRAK_COOLDOWN_MS, 1_000, 600_000, 30_000)
 );
 
 let satelliteJs;
