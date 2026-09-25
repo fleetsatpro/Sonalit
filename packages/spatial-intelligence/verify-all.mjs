@@ -118,6 +118,7 @@ test('satellite LOD refuses a live-telemetry or imaging-claimed object', () => {
   live.attributes.imagingClaim = true;
   live.attributes.positionSource = 'telemetry';
   assert.equal(selectSatellitesForLod([live], 20_000_000).length, 0);
+  assert.equal(satelliteGeoJson(live), null);
 });
 
 console.log('Spatial package verification complete.');
