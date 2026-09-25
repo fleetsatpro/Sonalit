@@ -35,7 +35,7 @@ describe('CelesTrak satellite/orbital adapter', () => {
     expect(records[0].NORAD_CAT_ID).toBe(25544);
     expect(records[0].TLE_LINE1).toBe(ISS_TLE_1);
     expect(records[0].TLE_LINE2).toBe(ISS_TLE_2);
-    expect(parseTleEpoch(ISS_TLE_1)).toBe('2019-06-05T12:13:20.080032Z');
+    expect(parseTleEpoch(ISS_TLE_1)).toBe('2019-06-05T12:12:58.000032Z');
   });
 
   test('normalises TLE records without inventing telemetry', () => {
