@@ -710,7 +710,7 @@ async function persistSpatialEvents(db, events, options) {
 
       try {
         const spatialAlertKey = eventMode(event.eventType) === 'occurrence'
-          ? 'occurrence:' + event.eventType + ':' + event.subjectType + ':' + String(event.subjectId)
+          ? 'occurrence:' + String(event.eventKey)
           : 'condition:' + String(event.eventKey);
 
         // Occurrence events intentionally use time-bucketed event identities.
