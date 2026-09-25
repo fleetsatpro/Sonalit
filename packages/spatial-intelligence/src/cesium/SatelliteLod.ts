@@ -2,7 +2,7 @@ import type { SpatialSatelliteObservation } from '../model/spatialSatellite.js';
 
 export type SatelliteLodTier = 'point' | 'label' | 'detail' | 'hidden';
 
-export interface SatelliteLodBudget {
+export interface SatelliteGeoJsonPointFeature {\n  type: 'Feature';\n  geometry: { type: 'Point'; coordinates: [number, number] };\n  properties: Record<string, unknown>;\n}\n\nexport interface SatelliteLodBudget {
   maxPoints: number;
   maxLabels: number;
   maxDetails: number;
@@ -18,7 +18,7 @@ export interface SatelliteLodOptions {
 export interface SatelliteLodItem {
   satellite: SpatialSatelliteObservation;
   tier: Exclude<SatelliteLodTier, 'hidden'>;
-  feature: GeoJSON.Feature<GeoJSON.Point, Record<string, unknown>>;
+  feature: SatelliteGeoJsonPointFeature;
   caption: string;
 }
 
@@ -72,7 +72,7 @@ export function classifySatelliteLod(
   return 'hidden';
 }
 
-function featureForSatellite(satellite: SpatialSatelliteObservation): GeoJSON.Feature<GeoJSON.Point, Record<string, unknown>> {
+function featureForSatellite(satellite: SpatialSatelliteObservation): SatelliteGeoJsonPointFeature {
   return {
     type: 'Feature',
     geometry: {
