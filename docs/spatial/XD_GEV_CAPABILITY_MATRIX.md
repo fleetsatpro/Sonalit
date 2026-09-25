@@ -13,7 +13,7 @@ This matrix records where GEV-derived capabilities live in Sonalit. It is a capa
 | Person / face / plate surveillance | XD Live Surveillance | NOT IMPLEMENTED BY DESIGN | No identity extraction or plate/person tracking is introduced by CCTV. |
 | USGS earthquakes | Spatial provider fabric + XD hazard fusion | OPERATIONAL | Public USGS GeoJSON catalog/query adapter; bounded coverage and low operational-confidence semantics. |
 | NASA FIRMS active fire hotspots | Spatial provider fabric + XD hazard fusion | OPERATIONAL (credential-gated) | VIIRS area API adapter (default NOAA-21 NRT); `AUTH_REQUIRED` without `NASA_FIRMS_MAP_KEY`; hotspot detection is not treated as confirmed impact. |
-| Satellites / orbital layer | Spatial provider fabric | DEFERRED | Next expansion gate after CCTV hardening. |
+| Satellites / orbital catalog | Spatial provider fabric + XD World Context | OPERATIONAL (catalog; modelled positions optional) | CelesTrak GP/NORAD catalog is allowlisted and bounded; spatial observations require an available SGP4 propagator. |
 
 ## Semantics
 
@@ -34,3 +34,9 @@ XD Live Surveillance remains the operational authority. External CCTV enriches t
 ## Hazard sensor semantics
 
 USGS earthquake observations and NASA FIRMS hotspot observations are external detections. They are not automatically converted into road closure, damage, route disruption, fleet exposure, or other operational-impact assertions. World Context records source-specific health and provenance and reports the composite hazard layer as partial whenever one or more sensors are unavailable, rate-limited, credential-gated, stale, or coverage-bounded.
+
+## Satellite/orbital semantics
+
+CelesTrak catalog presence is not evidence of imaging capability, sensor modality, tasking rights, collection activity, or operator control. Without an available SGP4 propagator, Sonalit withholds latitude/longitude rather than inventing a ground position. When propagation is available, positions are classified as MODELLED and carry explicit uncertainty: they are derived from GP/TLE orbital elements, not live telemetry.
+
+The satellite layer is bounded to an allowlisted CelesTrak group and a maximum of 40 spatial observations in World Context. It does not introduce named-person tracking, facial recognition, plate tracking, or automatic satellite imaging claims.
