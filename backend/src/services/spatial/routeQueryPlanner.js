@@ -543,8 +543,14 @@ async function queryAcrossAois(manager, provider, plan, baseArgs = {}, options =
       routeStartKm: Number(plan.aois[results.indexOf(result)]?.routeStartKm || 0),
       routeEndKm: Number(plan.aois[results.indexOf(result)]?.routeEndKm || 0)
     });
-    statuses.push(String(result.value?.health?.status || 'UNKNOWN').toUpperCase());
-    if (result.value?.coverage?.complete !== true) providerIncomplete = true;
+    const resultStatus = String(result.value?.health?.status || 'UNKNOWN').toUpperCase();
+    statuses.push(resultStatus);
+    if (
+      result.value?.coverage?.complete !== true ||
+      !['LIVE', 'DELAYED'].includes(resultStatus)
+    ) {
+      providerIncomplete = true;
+    }
 
     const aoiSeen = new Set();
     const bucket = [];
