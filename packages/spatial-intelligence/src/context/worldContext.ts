@@ -51,6 +51,9 @@ export type WorldContextRelationPredicate =
   | 'ON_ROUTE' | 'OFF_ROUTE' | 'WITHIN_CORRIDOR' | 'OUTSIDE_CORRIDOR'
   | 'NEAR_CHECKPOINT' | 'CHECKPOINT_APPROACH' | 'CHECKPOINT_PASSED'
   | 'NEAR_INCIDENT' | 'HAZARD_NEAR_ROUTE'
+  | 'HAZARD_IN_CAMERA_VIEWSHED' | 'HAZARD_NEAR_CAMERA'
+  | 'HAZARD_ON_ROUTE_CORRIDOR' | 'SATELLITE_NEAR_ROUTE'
+  | 'VEHICLE_IN_HAZARD_PROXIMITY' | 'VEHICLE_NEAR_HAZARD'
   | 'NEAR_TRAFFIC' | 'TRAFFIC_CONGESTION' | 'TRAFFIC_CLOSURE'
   | 'EXTERNAL_INCIDENT_NEAR_ROUTE' | 'EXTERNAL_HAZARD_NEAR_ROUTE' | 'NATURAL_HAZARD_NEAR_ROUTE'
   | 'NEAR_MARITIME' | 'APPROACHING_DESTINATION' | 'VESSEL_APPROACHING_DESTINATION'
@@ -229,6 +232,8 @@ export interface WorldContextResult {
   hazards: SpatialObservation[];
   infrastructure: SpatialObservation[];
   security: SpatialObservation[];
+  cameras?: SpatialObservation[];
+  satellites?: SpatialObservation[];
   events?: SpatialEvent[];
   lifecycle?: {
     resolvedEventIds: string[];
