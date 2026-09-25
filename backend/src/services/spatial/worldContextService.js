@@ -11,7 +11,7 @@ const {
 } = require('./relationEngine');
 const { projectOntoRoute, haversineKm } = require('../geofence/corridor');
 const { planRouteQueries, queryAcrossAois } = require('./routeQueryPlanner');
-const { detectSpatialEvents, persistSpatialEvents } = require('./spatialEvents');
+const { detectSpatialEvents, persistSpatialEvents, reconcileSpatialEvents } = require('./spatialEvents');
 
 const EARTH_R = 6371000;
 const LIVE_MS = 45000;
@@ -1976,8 +1976,20 @@ async function buildWorldContext(opts) {
           status: row.status
         };
       });
+
+      // Reconcile only after the current evaluation has been durably persisted.
+      // Resolution is conservative: spatialEvents.js refuses it when current
+      // provider coverage, freshness, or operational DB health is insufficient.
+      const resolved = await reconcileSpatialEvents(db, context, events, {
+        orgId: orgId,
+        userId: input.userId || null
+      });
+      context.lifecycle = {
+        resolvedEventIds: (resolved || []).map(function(row) { return row.id; }),
+        resolvedEventKeys: (resolved || []).map(function(row) { return row.event_key; })
+      };
     } catch (_) {
-      warnings.push('Spatial event persistence failed; context remains available.');
+      warnings.push('Spatial event persistence/reconciliation failed; context remains available.');
       context.events = events;
     }
   } else {
