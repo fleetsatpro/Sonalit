@@ -89,8 +89,9 @@ function sourceProviderFromReferences(references) {
     if (ref === 'mapbox-traffic' || ref.startsWith('mapbox-traffic:')) return 'mapbox-traffic';
     if (ref === 'tomtom-traffic-flow' || ref.startsWith('tomtom-traffic-flow:')) return 'tomtom-traffic-flow';
     if (ref === 'tomtom-traffic-incidents' || ref.startsWith('tomtom-traffic-incidents:')) return 'tomtom-traffic-incidents';
-    if (ref.startsWith('tomtom-traffic:traffic_flow_segment')) return 'tomtom-traffic-flow';
-    if (ref.startsWith('tomtom-traffic:traffic_incident') || ref.startsWith('tomtom-traffic:traffic_hazard')) return 'tomtom-traffic-incidents';
+    if (ref === 'tomtom:traffic-flow' || ref.startsWith('tomtom:traffic-flow:') || ref.startsWith('tomtom-traffic:traffic_flow_segment')) return 'tomtom-traffic-flow';
+    if (ref === 'tomtom:traffic-incident' || ref.startsWith('tomtom:traffic-incident:') || ref.startsWith('tomtom-traffic:traffic_incident') ||
+        ref === 'tomtom:traffic-hazard' || ref.startsWith('tomtom:traffic-hazard:') || ref.startsWith('tomtom-traffic:traffic_hazard')) return 'tomtom-traffic-incidents';
     if (ref === 'kpler-ais' || ref.startsWith('kpler-ais:') || ref.startsWith('kpler:')) return 'kpler-ais';
     if (ref === 'open-meteo' || ref.startsWith('open-meteo:')) return 'weather';
     if (ref === 'weather' || ref.startsWith('weather:')) return 'weather';
