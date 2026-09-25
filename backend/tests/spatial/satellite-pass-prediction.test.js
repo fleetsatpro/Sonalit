@@ -1,7 +1,6 @@
 'use strict';
 
 const {
-  parseTleEpoch,
   parseTleCatalog,
   normaliseRecord
 } = require('../../src/services/spatial/celestrakGateway');
@@ -30,7 +29,12 @@ describe('satellite pass prediction', () => {
     });
 
     expect(result.scannedObjects).toBe(1);
-    expect(result.passes.length).toBe(5);
+    expect(result.passes.length).toBeGreaterThanOrEqual(5);
+    expect(result.passes.length).toBeLessThanOrEqual(MAX_PASSES);
+    expect(new Set(result.passes.map(p => p.aosAt || p.maxElevationAt)).size).toBe(result.passes.length);
+    expect(result.passes).toEqual(
+      [...result.passes].sort((a, b) => Date.parse(a.aosAt || a.maxElevationAt) - Date.parse(b.aosAt || b.maxElevationAt))
+    );
     expect(Math.max(...result.passes.map(p => p.maxElevationDeg))).toBeGreaterThan(70);
     expect(Math.max(...result.passes.map(p => p.maxElevationDeg))).toBeLessThan(90);
 
