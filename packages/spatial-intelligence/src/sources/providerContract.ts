@@ -134,4 +134,11 @@ export const DEFAULT_BUDGETS: Record<string, ProviderBudget> = {
     tenantMaxRequestsPerMinute: 7,
     tenantMaxConcurrent: 2,
   },
+  cctv: {
+    providerId: 'cctv',
+    maxRequestsPerMinute: 60,
+    maxConcurrent: 4,
+    tenantMaxRequestsPerMinute: 15,
+    tenantMaxConcurrent: 2,
+  },
 };
