@@ -141,4 +141,18 @@ export const DEFAULT_BUDGETS: Record<string, ProviderBudget> = {
     tenantMaxRequestsPerMinute: 15,
     tenantMaxConcurrent: 2,
   },
+  'usgs-earthquake': {
+    providerId: 'usgs-earthquake',
+    maxRequestsPerMinute: 30,
+    maxConcurrent: 2,
+    tenantMaxRequestsPerMinute: 8,
+    tenantMaxConcurrent: 1,
+  },
+  'nasa-firms': {
+    providerId: 'nasa-firms',
+    maxRequestsPerMinute: 20,
+    maxConcurrent: 2,
+    tenantMaxRequestsPerMinute: 5,
+    tenantMaxConcurrent: 1,
+  },
 };
