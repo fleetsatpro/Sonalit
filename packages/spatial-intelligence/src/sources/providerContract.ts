@@ -155,4 +155,11 @@ export const DEFAULT_BUDGETS: Record<string, ProviderBudget> = {
     tenantMaxRequestsPerMinute: 5,
     tenantMaxConcurrent: 1,
   },
+  celestrak: {
+    providerId: 'celestrak',
+    maxRequestsPerMinute: 30,
+    maxConcurrent: 2,
+    tenantMaxRequestsPerMinute: 8,
+    tenantMaxConcurrent: 1,
+  },
 };
