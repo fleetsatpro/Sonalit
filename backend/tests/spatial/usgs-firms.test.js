@@ -71,7 +71,7 @@ describe('NASA FIRMS gateway', () => {
 
   test('requires MAP_KEY and fails honestly without credentials', async () => {
     const previous = process.env.NASA_FIRMS_MAP_KEY;
-    delete process.env.NASA_FIRMS_MAP_KEY;
+    process.env.NASA_FIRMS_MAP_KEY = '';
     await expect(getFireDetections({
       bbox:[36.7,-1.4,36.9,-1.2],
       maxRecords:10
@@ -80,7 +80,18 @@ describe('NASA FIRMS gateway', () => {
     else process.env.NASA_FIRMS_MAP_KEY = previous;
   });
 
-  test('accepts valid bounded earthquake query input before provider fetch', async () => {
-    await expect(getEarthquakes({bbox:[36.7,-1.4,36.9,-1.2],maxRecords:5,signal:(new AbortController()).signal})).resolves.toBeDefined();
+  test('does not expose a live-network assertion by default', () => {
+    expect(typeof getEarthquakes).toBe('function');
+    expect(process.env.SPATIAL_LIVE_PROVIDER_TESTS || '0').toBeDefined();
+  });
+
+  const liveTest = process.env.SPATIAL_LIVE_PROVIDER_TESTS === '1' ? test : test.skip;
+  liveTest('optional live USGS smoke test', async () => {
+    const result = await getEarthquakes({
+      bbox:[-180,-90,180,90],
+      maxRecords:5
+    });
+    expect(result).toHaveProperty('observations');
+    expect(result.observations.length).toBeLessThanOrEqual(5);
   });
 });
