@@ -295,6 +295,7 @@ function createDefaultSpatialProviderManager() {
     getProviderHealth: tomtomHealth,
   } = require('./tomtomTrafficGateway');
   const { getNaturalHazards, getProviderHealth: eonetHealth } = require('./nasaEonetGateway');
+  const { getCameras, getProviderHealth: cctvHealth } = require('./cctvGateway');
 
   const queryOrUnavailable = (module, key, providerName) => {
     if (typeof module[key] === 'function') return module[key];
@@ -318,6 +319,13 @@ function createDefaultSpatialProviderManager() {
       maxPerMinute: prefix + '_MAX_PER_MINUTE',
       maxConcurrent: prefix + '_MAX_CONCURRENT',
     },
+  });
+
+  manager.register('cctv', {
+    query: queryOrUnavailable({ getCameras }, 'getCameras', 'CCTV'),
+    health: healthOrUnknown({ getProviderHealth: cctvHealth }, 'getProviderHealth'),
+    capabilities: ['camera', 'cctv', 'viewshed', 'public_media'],
+    ...budgets('SPATIAL_PROVIDER_CCTV', 60, 4),
   });
 
   manager.register('opensky', {
