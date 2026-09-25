@@ -219,6 +219,51 @@ describe('spatial event lifecycle', () => {
     expect(db.calls.filter(x => x.sql.startsWith('INSERT INTO spatial_events')).length).toBe(2);
   });
 
+  test('coalesces corroborated provider observations into one stateful condition key', () => {
+    const events = detectSpatialEvents({
+      mission: { convoyId: 'c1' },
+      operational: { vehicles: [{ id: 'v1', quality: { freshnessClass: 'LIVE' }, sourceReferences: ['vehicles:v1'] }] },
+      relations: [
+        {
+          predicate: 'TRAFFIC_CLOSURE',
+          fromId: 'v1',
+          toId: 'mapbox:traffic:1',
+          fromType: 'vehicle',
+          toType: 'traffic_segment',
+          confidence: 0.8,
+          operationalConfidence: 0.8,
+          sourceReferences: ['mapbox-traffic', 'mapbox-traffic:traffic_segment'],
+          correlationIds: ['spatial-correlation:shared'],
+          sourceAgreement: 'corroborated',
+          correlationEvidence: [{ kind: 'corroboration', id: 'spatial-correlation:shared', providers: ['mapbox-traffic', 'tomtom-traffic'] }],
+          evidence: [],
+          uncertainty: [],
+          actionable: true,
+        },
+        {
+          predicate: 'TRAFFIC_CLOSURE',
+          fromId: 'v1',
+          toId: 'tomtom:traffic-flow:1',
+          fromType: 'vehicle',
+          toType: 'traffic_flow_segment',
+          confidence: 0.8,
+          operationalConfidence: 0.8,
+          sourceReferences: ['tomtom-traffic-flow', 'tomtom-traffic-flow:traffic_flow_segment'],
+          correlationIds: ['spatial-correlation:shared'],
+          sourceAgreement: 'corroborated',
+          correlationEvidence: [{ kind: 'corroboration', id: 'spatial-correlation:shared', providers: ['mapbox-traffic', 'tomtom-traffic'] }],
+          evidence: [],
+          uncertainty: [],
+          actionable: true,
+        },
+      ],
+    }, { now: Date.now() });
+
+    const trafficEvents = events.filter(e => e.eventType === 'TRAFFIC_CLOSURE');
+    expect(trafficEvents).toHaveLength(2);
+    expect(trafficEvents[0].eventKey).toBe(trafficEvents[1].eventKey);
+  });
+
   test('does not reconcile internal events when critical spatial reads failed', () => {
     const context = {
       mission: { convoyId: 'c1' },
