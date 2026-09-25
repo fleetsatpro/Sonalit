@@ -97,6 +97,8 @@ function sourceProviderFromReferences(references) {
     if (ref === 'nasa-eonet' || ref.startsWith('nasa-eonet:') || ref.startsWith('eonet:')) return 'nasa-eonet';
     if (ref === 'usgs-earthquake' || ref.startsWith('usgs-earthquake:') || ref.startsWith('usgs:eq:')) return 'usgs-earthquake';
     if (ref === 'nasa-firms' || ref.startsWith('nasa-firms:')) return 'nasa-firms';
+    if (ref === 'usgs-earthquake' || ref.startsWith('usgs-earthquake:') || ref.startsWith('usgs:eq:')) return 'usgs-earthquake';
+    if (ref === 'nasa-firms' || ref.startsWith('nasa-firms:')) return 'nasa-firms';
     if (ref === 'opensky' || ref.startsWith('opensky:')) return 'opensky';
   }
   return null;
