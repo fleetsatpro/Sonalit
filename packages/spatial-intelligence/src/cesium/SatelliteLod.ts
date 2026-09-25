@@ -141,6 +141,6 @@ export function selectSatellitesForLod(
 
 export function satelliteGeoJson(
   satellite: SpatialSatelliteObservation,
-): SatelliteGeoJsonPointFeature {
-  return featureForSatellite(satellite);
+): SatelliteGeoJsonPointFeature | null {
+  return isModelledSatellite(satellite) ? featureForSatellite(satellite) : null;
 }
