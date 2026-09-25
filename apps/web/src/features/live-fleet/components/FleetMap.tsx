@@ -206,7 +206,7 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
     queryFn: ({ signal }) => fetchWorldContext({
       center: { latitude: worldViewport!.latitude, longitude: worldViewport!.longitude },
       radiusM: worldViewport!.radiusM,
-      layers: ['aircraft', 'maritime', 'traffic', 'hazards'],
+      layers: ['aircraft', 'maritime', 'traffic', 'hazards', 'satellites'],
       maxEntitiesPerLayer: 75,
       signal,
     }),
