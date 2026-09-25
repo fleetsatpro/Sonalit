@@ -230,6 +230,10 @@ export interface WorldContextResult {
   infrastructure: SpatialObservation[];
   security: SpatialObservation[];
   events?: SpatialEvent[];
+  lifecycle?: {
+    resolvedEventIds: string[];
+    resolvedEventKeys: string[];
+  };
   coverage: {
     layersRequested: string[];
     layersSucceeded: string[];
