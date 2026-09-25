@@ -37,6 +37,10 @@ USGS earthquake observations and NASA FIRMS hotspot observations are external de
 
 ## Satellite/orbital semantics
 
-CelesTrak catalog presence is not evidence of imaging capability, sensor modality, tasking rights, collection activity, or operator control. Without an available SGP4 propagator, Sonalit withholds latitude/longitude rather than inventing a ground position. When propagation is available, positions are classified as MODELLED and carry explicit uncertainty: they are derived from GP/TLE orbital elements, not live telemetry.
+CelesTrak catalog presence is not evidence of imaging capability, sensor modality, tasking rights, collection activity, or operator control. The production orbital path uses satellite.js TLE parsing/SGP4 propagation; positions are classified as MODELLED and carry explicit uncertainty because they are derived from GP/TLE orbital elements, not live telemetry. If satellite.js cannot be loaded, Sonalit withholds latitude/longitude rather than fabricating a ground position.
 
 The satellite layer is bounded to an allowlisted CelesTrak group and a maximum of 40 spatial observations in World Context. It does not introduce named-person tracking, facial recognition, plate tracking, or automatic satellite imaging claims.
+
+### TLE catalog limitation
+
+CelesTrak documents that TLE formats only support five-digit catalog numbers. Sonalit therefore treats this TLE-backed phase as bounded orbital coverage for the allowlisted groups; six-digit objects require a future OMM JSON/CSV-capable path rather than silent truncation or omission being interpreted as global coverage.
