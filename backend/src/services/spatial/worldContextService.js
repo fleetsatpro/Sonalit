@@ -12,6 +12,7 @@ const {
 const { projectOntoRoute, haversineKm } = require('../geofence/corridor');
 const { planRouteQueries, queryAcrossAois } = require('./routeQueryPlanner');
 const { detectSpatialEvents, persistSpatialEvents, reconcileSpatialEvents } = require('./spatialEvents');
+const { buildCrossLayerFusionRelations } = require('./crossLayerFusion');
 
 const EARTH_R = 6371000;
 const LIVE_MS = 45000;
@@ -2164,6 +2165,25 @@ async function buildWorldContext(opts) {
       });
     }
   }
+
+  // Gate 3: explicit cross-layer fusion is derived only after every layer has
+  // been normalised and the existing operational relations have been emitted.
+  // The fusion engine is deliberately geometry-only and preserves non-claims.
+  externalRelations.push.apply(externalRelations, buildCrossLayerFusionRelations({
+    vehicles: operationalVehicles,
+    cameras: surveillance,
+    hazards: hazardEntities,
+    satellites,
+    route: routeObservation,
+    routeId: routeTarget,
+    corridorId: corridorTarget,
+    corridorWidthKm: routeInfo.widthKm,
+    now: new Date(now).toISOString(),
+    cameraNearM: Number(process.env.SPATIAL_FUSION_CAMERA_NEAR_M) || undefined,
+    hazardNearM: Number(process.env.SPATIAL_FUSION_HAZARD_NEAR_M) || undefined,
+    hazardProximityM: Number(process.env.SPATIAL_FUSION_HAZARD_PROXIMITY_M) || undefined,
+    satelliteRouteNearM: Number(process.env.SPATIAL_FUSION_SATELLITE_ROUTE_NEAR_M) || undefined
+  }));
 
   const correlations = correlateExternalObservations(traffic, routeInfo.route, now);
   const correlationByObservation = new Map();
