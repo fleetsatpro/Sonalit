@@ -141,6 +141,6 @@ export function selectSatellitesForLod(
 
 export function satelliteGeoJson(
   satellite: SpatialSatelliteObservation,
-): GeoJSON.Feature<GeoJSON.Point, Record<string, unknown>> {
+): SatelliteGeoJsonPointFeature {
   return featureForSatellite(satellite);
 }
