@@ -322,6 +322,8 @@ async function predictPasses({ providerManager, options = {} } = {}) {
   };
 }
 
+const predictPassesAsync = predictPasses;
+
 module.exports = {
   DEFAULT_WINDOW_HOURS,
   DEFAULT_HORIZON_DEG,
@@ -330,5 +332,6 @@ module.exports = {
   MAX_PASSES,
   MAX_OBJECTS,
   predictPasses,
+  predictPassesAsync,
   predictPassesForRecords
 };

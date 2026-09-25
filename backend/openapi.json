@@ -2502,26 +2502,6 @@
         }
       }
     },
-    "/api/v1/satellites": {
-      "get": {
-        "operationId": "get_api_v1_satellites",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/v1/satellites/passes": {
-      "get": {
-        "operationId": "get_api_v1_satellites_passes",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
     "/api/v1/convoys/{id}/corridor/replay": {
       "get": {
         "operationId": "get_api_v1_convoys_id_corridor_replay",
