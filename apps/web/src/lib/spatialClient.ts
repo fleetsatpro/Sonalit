@@ -24,6 +24,11 @@ export interface SpatialWorldEntity {
     reason?: string
   }
   provenance?: Record<string, unknown>
+  positionSource?: string
+  telemetryLive?: boolean
+  imagingClaim?: boolean
+  taskingClaim?: boolean
+  uncertainty?: string[]
 }
 
 export interface SpatialRelation {
@@ -60,6 +65,8 @@ export interface SpatialWorldContext {
   hazards?: SpatialWorldEntity[]
   infrastructure?: SpatialWorldEntity[]
   security?: SpatialWorldEntity[]
+  cameras?: SpatialWorldEntity[]
+  satellites?: SpatialWorldEntity[]
   relations?: SpatialRelation[]
   coverage?: {
     layersRequested?: string[]
@@ -94,7 +101,7 @@ export async function fetchWorldContext(input: WorldContextQuery): Promise<Spati
       lat: input.center.latitude,
       lng: input.center.longitude,
       radiusM: Math.min(Math.max(input.radiusM, 1000), 250000),
-      layers: (input.layers ?? ['aircraft', 'maritime', 'hazards']).join(','),
+      layers: (input.layers ?? ['aircraft', 'maritime', 'hazards', 'satellites']).join(','),
       maxEntitiesPerLayer: Math.min(Math.max(input.maxEntitiesPerLayer ?? 75, 1), 250),
       ...(input.subject ? { subject: JSON.stringify(input.subject) } : {}),
     },
@@ -108,11 +115,12 @@ export function externalWorldFeatures(context: SpatialWorldContext | undefined):
     ...(context?.movement ?? []),
     ...(context?.traffic ?? []),
     ...(context?.hazards ?? []),
+    ...(context?.satellites ?? []),
   ]
 
   const features = observations
     .filter((item) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude))
-    .filter((item) => ['aircraft', 'vessel', 'natural_hazard', 'traffic_incident', 'traffic_hazard', 'traffic_segment'].includes(item.entityType))
+    .filter((item) => ['aircraft', 'vessel', 'natural_hazard', 'traffic_incident', 'traffic_hazard', 'traffic_segment', 'satellite'].includes(item.entityType))
     .map((item) => ({
       type: 'Feature' as const,
       geometry: {
@@ -128,6 +136,13 @@ export function externalWorldFeatures(context: SpatialWorldContext | undefined):
         freshness: item.quality?.freshnessClass ?? 'UNKNOWN',
         observedAt: item.observedAt ?? null,
         confidence: item.observationConfidence ?? item.operationalConfidence ?? null,
+        telemetryLive: item.telemetryLive ?? (item.entityType === 'satellite' ? false : null),
+        imagingClaim: item.imagingClaim ?? (item.entityType === 'satellite' ? false : null),
+        taskingClaim: item.taskingClaim ?? (item.entityType === 'satellite' ? false : null),
+        positionSource: item.positionSource ?? (item.entityType === 'satellite' ? 'modelled' : null),
+        caption: item.entityType === 'satellite'
+          ? 'modelled orbital position (not live telemetry; not an imaging claim)'
+          : undefined,
       },
     }))
 
