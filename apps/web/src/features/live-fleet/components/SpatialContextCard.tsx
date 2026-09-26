@@ -89,7 +89,7 @@ function freshnessLabel(v?: string) {
 }
 
 function titleCase(value: string) {
-  return value.replace(/_/g, ' ').replace(/\\b\\w/g, function(m) { return m.toUpperCase() })
+  return value.replace(/_/g, ' ').replace(/\b\w/g, function(m) { return m.toUpperCase() })
 }
 
 function fmtDistance(m?: number | null) {
@@ -152,7 +152,7 @@ export default function SpatialContextCard({ vehicleId }: { vehicleId: string })
   const checkpoint = current?.nearbyCheckpoints?.find(function(cp) { return !cp.passed }) || current?.nearbyCheckpoints?.[0]
   const cameras = data.cameras || []
   const satellites = data.satellites || []
-  const hasLive = Boolean(current) || data.traffic?.length || data.hazards?.length || data.environment?.length
+  const hasLive = Boolean(current || data.traffic?.length || data.hazards?.length || data.environment?.length)
   const hasModelled = satellites.length > 0
   const fusionRelations = (data.relations || [])
     .filter(function(r) { return FUSION_PREDICATES.includes(r.predicate) })
