@@ -206,7 +206,7 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
     queryFn: ({ signal }) => fetchWorldContext({
       center: { latitude: worldViewport!.latitude, longitude: worldViewport!.longitude },
       radiusM: worldViewport!.radiusM,
-      layers: ['aircraft', 'maritime', 'traffic', 'hazards', 'satellites'],
+      layers: ['aircraft', 'maritime', 'traffic', 'hazards', 'satellites', 'cameras'],
       maxEntitiesPerLayer: 75,
       signal,
     }),
@@ -339,6 +339,9 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
   }, [mapReady, riskZones])
 
 
+  // XD external-signal treatment: every signal gets a restrained atmospheric
+  // underlay plus a crisp core. Geometry remains geometry; styling never upgrades
+  // modelled orbital positions into telemetry or acquisition claims.
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
@@ -352,12 +355,15 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
     }
     map.addSource(sourceId, { type: 'geojson', data })
     map.addLayer({
-      id: 'spatial-world-points',
+      id: 'spatial-world-glow',
       type: 'circle',
       source: sourceId,
       paint: {
-        'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 3, 7, 5, 12, 7],
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 10, 7, 15, 12, 22],
         'circle-color': ['match', ['get', 'kind'],
+          'satellite', '#c4b5fd',
+          'spatial_camera', '#5eead4',
+          'camera', '#5eead4',
           'aircraft', '#60a5fa',
           'vessel', '#22d3ee',
           'natural_hazard', '#ef4444',
@@ -366,9 +372,53 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
           'traffic_segment', '#eab308',
           '#94a3b8',
         ],
-        'circle-opacity': ['match', ['get', 'freshness'], 'LIVE', 0.95, 'DELAYED', 0.75, 'STALE', 0.45, 0.55],
-        'circle-stroke-color': '#0b1020',
-        'circle-stroke-width': 1.5,
+        'circle-opacity': ['match', ['get', 'kind'],
+          'satellite', 0.13,
+          'spatial_camera', 0.12,
+          'camera', 0.12,
+          0.08,
+        ],
+        'circle-blur': 1,
+      },
+    })
+    map.addLayer({
+      id: 'spatial-world-points',
+      type: 'circle',
+      source: sourceId,
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 3.2, 7, 5.2, 12, 7.5],
+        'circle-color': ['match', ['get', 'kind'],
+          'satellite', '#c4b5fd',
+          'spatial_camera', '#5eead4',
+          'camera', '#5eead4',
+          'aircraft', '#60a5fa',
+          'vessel', '#22d3ee',
+          'natural_hazard', '#ef4444',
+          'traffic_incident', '#f59e0b',
+          'traffic_hazard', '#f97316',
+          'traffic_segment', '#eab308',
+          '#94a3b8',
+        ],
+        'circle-opacity': ['match', ['get', 'freshness'],
+          'LIVE', 0.95,
+          'DELAYED', 0.75,
+          'STALE', 0.45,
+          'MODELLED', 0.38,
+          0.55,
+        ],
+        'circle-stroke-color': ['match', ['get', 'kind'],
+          'satellite', '#7c6ee6',
+          'spatial_camera', '#2dd4bf',
+          'camera', '#2dd4bf',
+          'aircraft', '#172554',
+          'vessel', '#083344',
+          'natural_hazard', '#450a0a',
+          'traffic_incident', '#451a03',
+          'traffic_hazard', '#431407',
+          'traffic_segment', '#422006',
+          '#0b1020',
+        ],
+        'circle-stroke-width': ['match', ['get', 'kind'], 'satellite', 1.25, 'spatial_camera', 1.5, 'camera', 1.5, 1.35],
       },
     })
     map.addLayer({
@@ -384,7 +434,12 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
         'text-allow-overlap': false,
       },
       paint: {
-        'text-color': '#dbeafe',
+        'text-color': ['match', ['get', 'kind'],
+          'satellite', '#ddd6fe',
+          'spatial_camera', '#99f6e4',
+          'camera', '#99f6e4',
+          '#dbeafe',
+        ],
         'text-halo-color': '#05070d',
         'text-halo-width': 1.25,
       },
@@ -484,7 +539,7 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
           onClick={() => setWorldSpatialOn(v => !v)}
           title={worldSpatialOn ? 'Hide external world intelligence' : 'Show external world intelligence'}
           aria-label={worldSpatialOn ? 'Hide external world intelligence' : 'Show external world intelligence'}
-          style={{ width: 34, height: 34, borderRadius: 7, background: worldSpatialOn ? 'rgba(56,189,248,.16)' : 'rgba(8,11,20,.92)', border: `1px solid ${worldSpatialOn ? 'rgba(56,189,248,.55)' : 'rgba(255,255,255,.11)'}`, color: worldSpatialOn ? '#38bdf8' : '#7a7e8a', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          style={{ width: 34, height: 34, borderRadius: 9, background: worldSpatialOn ? 'rgba(196,181,253,.15)' : 'rgba(8,11,20,.92)', border: `1px solid ${worldSpatialOn ? 'rgba(196,181,253,.58)' : 'rgba(255,255,255,.11)'}`, color: worldSpatialOn ? '#c4b5fd' : '#7a7e8a', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: worldSpatialOn ? '0 0 18px rgba(196,181,253,.16), inset 0 0 12px rgba(196,181,253,.06)' : 'none', transition: 'all .18s ease' }}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
         </button>
@@ -513,34 +568,51 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
         }} style={{ width: 34, height: 34, borderRadius: 7, background: 'rgba(8,11,20,.92)', border: '1px solid rgba(255,255,255,.11)', color: '#7a7e8a', fontFamily: 'IBM Plex Mono,monospace', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>⊕</button>
       </div>
 
-      {/* layer legend */}
-      <div style={{ position: 'absolute', right: 56, top: 14, zIndex: 500, display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {worldSpatialOn && (
-          <div style={{ background: 'rgba(8,11,20,.92)', border: `1px solid ${worldError ? 'rgba(239,68,68,.35)' : 'rgba(56,189,248,.3)'}`, borderRadius: 5, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 5 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: worldError ? '#ef4444' : '#38bdf8', opacity: .9 }} />
-            <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 9, color: worldError ? '#ef4444' : '#38bdf8' }}>
-              {worldError ? 'world context unavailable' : worldFetching ? 'world context updating' : String(externalWorldFeatures(worldContext).features.length) + ' external'}
-            </span>
+      {/* XD glass world-context legend */}
+      <div style={{ position: 'absolute', right: 56, top: 14, zIndex: 500, width: 228, maxWidth: 'calc(100vw - 90px)', background: 'linear-gradient(180deg, rgba(9,13,22,.88), rgba(7,10,17,.78))', border: '1px solid rgba(196,181,253,.18)', boxShadow: '0 14px 40px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.06)', backdropFilter: 'blur(14px)', borderRadius: 10, padding: '10px 11px', color: '#dfe0db' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <div>
+            <div style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, letterSpacing: '.14em', color: '#a7a0bd' }}>XD WORLD CONTEXT</div>
+            <div style={{ marginTop: 2, fontFamily: 'Barlow Condensed,sans-serif', fontSize: 12, fontWeight: 700, letterSpacing: '.02em', color: '#f1f5f9' }}>Spatial signal fabric</div>
           </div>
-        )}
-        {geoCount > 0 && (
-          <div style={{ background: 'rgba(8,11,20,.92)', border: '1px solid rgba(34,211,238,.3)', borderRadius: 5, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 5 }}>
-            <div style={{ width: 8, height: 8, borderRadius: 2, border: '1.5px dashed #22d3ee', opacity: .85 }} />
-            <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 9, color: '#22d3ee' }}>{geoCount} zones</span>
+          <div style={{ width: 7, height: 7, borderRadius: '50%', background: worldError ? '#ef4444' : worldFetching ? '#f59e0b' : '#5eead4', boxShadow: worldError ? '0 0 10px rgba(239,68,68,.55)' : worldFetching ? '0 0 10px rgba(245,158,11,.45)' : '0 0 10px rgba(94,234,212,.45)' }} />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#c4b5fd', boxShadow: '0 0 10px rgba(196,181,253,.35)' }} />
+            <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, color: '#cbd5e1' }}>ORBITAL</span>
           </div>
-        )}
-        {riskCount > 0 && (
-          <div style={{ background: 'rgba(8,11,20,.92)', border: '1px solid rgba(239,68,68,.3)', borderRadius: 5, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 5 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', opacity: .85 }} />
-            <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 9, color: '#ef4444' }}>{riskCount} risk zones</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#5eead4', boxShadow: '0 0 10px rgba(94,234,212,.35)' }} />
+            <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, color: '#cbd5e1' }}>CAMERAS</span>
           </div>
-        )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#60a5fa' }} />
+            <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, color: '#cbd5e1' }}>AIR / SEA</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#f59e0b' }} />
+            <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, color: '#cbd5e1' }}>TRAFFIC / HAZARD</span>
+          </div>
+        </div>
+
+        <div style={{ height: 1, background: 'rgba(255,255,255,.06)', margin: '3px 0 7px' }} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, color: worldError ? '#ef4444' : '#94a3b8' }}>
+            {worldError ? 'WORLD CONTEXT UNAVAILABLE' : worldFetching ? 'SYNCING EXTERNAL SIGNALS' : String(externalWorldFeatures(worldContext).features.length) + ' SIGNALS IN VIEW'}
+          </span>
+          {geoCount > 0 || riskCount > 0 ? <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, color: '#22d3ee' }}>{geoCount + riskCount} LOCAL ZONES</span> : null}
+        </div>
+        <div style={{ marginTop: 6, fontFamily: 'IBM Plex Mono,monospace', fontSize: 7.5, lineHeight: 1.45, color: '#6f7480' }}>
+          Modelled orbital ≠ live telemetry · geometry ≠ visual acquisition · operational GPS remains authority.
+        </div>
       </div>
 
       {/* coords */}
-      <div style={{ position: 'absolute', bottom: 14, left: 14, zIndex: 500, background: 'rgba(8,11,20,.85)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 4, padding: '3px 10px', display: 'flex', alignItems: 'center', gap: 6 }}>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#7a7e8a" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-        <span ref={coordsRef} style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 9, color: '#7a7e8a' }}>hover for coords</span>
+      <div style={{ position: 'absolute', bottom: 14, left: 14, zIndex: 500, background: 'rgba(8,11,20,.64)', border: '1px solid rgba(255,255,255,.07)', borderRadius: 7, padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 6, backdropFilter: 'blur(10px)', boxShadow: '0 8px 24px rgba(0,0,0,.2)' }}>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#8f96a3" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        <span ref={coordsRef} style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8.5, color: '#8f96a3' }}>hover for coords</span>
       </div>
     </div>
   )

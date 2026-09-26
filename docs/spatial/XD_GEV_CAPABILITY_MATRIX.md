@@ -44,3 +44,13 @@ The satellite layer is bounded to an allowlisted CelesTrak group and a maximum o
 ### TLE catalog limitation
 
 CelesTrak documents that TLE formats only support five-digit catalog numbers. Sonalit therefore treats this TLE-backed phase as bounded orbital coverage for the allowlisted groups; six-digit objects require a future OMM JSON/CSV-capable path rather than silent truncation or omission being interpreted as global coverage.
+
+## XD spatial UI polish (feat/xd-spatial-ui-polish)
+
+| Surface | Upgrade |
+|---|---|
+| FleetMap spatial layers | Glow underlay + kind-coloured cores (orbital violet, camera teal) |
+| World Context legend | Glass panel, layer key, modelled-only footer |
+| SpatialContextCard | Premium metric strip, orbital/camera sections, fusion relations |
+| Semantics | Unchanged — modelled ≠ telemetry; geometry ≠ acquisition |
+
