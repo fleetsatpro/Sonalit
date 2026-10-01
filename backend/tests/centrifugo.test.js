@@ -34,14 +34,14 @@ describe('centrifugo publish()', () => {
       expect.stringContaining('/api/publish'),
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({ 'Authorization': 'apikey secret-key' }),
+        headers: expect.objectContaining({ 'X-API-Key': 'secret-key' }),
       })
     );
   });
 
   test('logs warning on non-ok response', async () => {
     process.env.CENTRIFUGO_API_KEY = 'secret-key';
-    mockFetch.mockResolvedValueOnce({ ok: false, status: 503 });
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 503, text: jest.fn().mockResolvedValue('service unavailable') });
     const { publish } = require('../src/realtime/centrifugo');
     const { warn } = require('../src/utils/logger');
     await publish('test-channel', {});
