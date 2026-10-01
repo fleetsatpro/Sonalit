@@ -316,7 +316,7 @@ html, body, #root, * {
   --d-orange:#4de1a3; --d-og:rgba(77,225,163,.12); --d-oglow:rgba(77,225,163,.42);
   --d-t1:#f1f8ed; --d-t2:#9eae9c; --d-t3:#607060; --d-t4:#344034;
 }
-:root[data-theme="ivory"] {
+:root[data-theme="daylight"] {
   --d-void:#fbfaf6; --d-carbon:#f3f1eb; --d-deep:#ebe9e2; --d-well:#fffefb; --d-surf:#f7f5ef; --d-lift:#e8e6df; --d-lift2:#d9d7d0;
   --d-rim:rgba(39,45,53,.09); --d-rim2:rgba(39,45,53,.15); --d-rim3:rgba(39,45,53,.25);
   --d-sig:#167a69; --d-sig2:#126556; --d-sig3:#0f5448; --d-sg:rgba(22,122,105,.12); --d-sg2:rgba(22,122,105,.06); --d-sglow:rgba(22,122,105,.34);
