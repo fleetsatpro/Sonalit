@@ -25,6 +25,19 @@ import UpdateAvailableToast from './components/UpdateAvailableToast.js';
 
 initOtel();
 initSentry();
+// Apply the persisted theme before React mounts to avoid a dark-theme flash.
+// This is intentionally defensive: corrupted local storage must never block boot.
+try {
+  const persisted = window.localStorage.getItem('sonalit-ui');
+  if (persisted) {
+    const parsed = JSON.parse(persisted) as { state?: { theme?: string } };
+    const theme = parsed.state?.theme;
+    if (theme) document.documentElement.setAttribute('data-theme', theme);
+  }
+} catch {
+  // Keep the CSS default when persisted UI state is unavailable or malformed.
+}
+
 
 if ('serviceWorker' in navigator) {
   let reloading = false;
