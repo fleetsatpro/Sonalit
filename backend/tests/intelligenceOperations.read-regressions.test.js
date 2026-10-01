@@ -8,18 +8,18 @@ jest.mock('../src/middleware/auth', () => ({
     req.user = { id: '00000000-0000-0000-0000-000000000001', org_id: '00000000-0000-0000-0000-000000000002', role: 'admin' };
     next();
   },
-}));
+}), { virtual: true });
 
 jest.mock('../src/utils/orgScopedDb', () => ({
   attachOrgDb: (req, _res, next) => {
     req.db = mockDbQuery;
     next();
   },
-}));
+}), { virtual: true });
 
 jest.mock('../src/middleware/error', () => ({
   asyncHandler: fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next),
-}));
+}), { virtual: true });
 
 describe('intelligence operations read endpoints', () => {
   let app;
