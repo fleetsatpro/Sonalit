@@ -7,6 +7,7 @@ import {
   Loader2, Package, Share2, Truck,
 } from 'lucide-react';
 import type { LatLng, TrailPoint } from '../components/PortalMap';
+import { CENTRIFUGO_WS_URL } from '../lib/realtimeEndpoint';
 
 const PortalMap = lazy(() => import('../components/PortalMap'));
 
