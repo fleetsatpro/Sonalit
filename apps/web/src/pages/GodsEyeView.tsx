@@ -10,10 +10,12 @@ import {
   Layers3,
   Orbit,
   RadioTower,
+  RefreshCcw,
   Satellite,
   Ship,
   ShieldCheck,
   TriangleAlert,
+  Video,
   X,
 } from 'lucide-react'
 import { api } from '../lib/api.js'
@@ -69,7 +71,11 @@ export default function GodsEyeView() {
   const [selected, setSelected] = useState<LiveVehicle | null>(null)
   const [selectedExternalId, setSelectedExternalId] = useState<string | null>(null)
   const [visibleLayers, setVisibleLayers] = useState<Set<WorldContextLayer>>(() => new Set(WORLD_CONTEXT_LAYERS))
+  const [activeLayer, setActiveLayer] = useState<WorldContextLayer>('aircraft')
   const [clock, setClock] = useState(() => new Date())
+  const [cameraFrameUrl, setCameraFrameUrl] = useState<string | null>(null)
+  const [cameraFrameState, setCameraFrameState] = useState<'idle' | 'loading' | 'ready' | 'unavailable'>('idle')
+  const cameraFrameUrlRef = useRef<string | null>(null)
 
   const allVehicles = useMemo(() => groups.flatMap(g => g.vehicles), [groups])
   const members = useMemo(() => allVehicles.map(toGlobeMember), [allVehicles])
@@ -97,9 +103,9 @@ export default function GodsEyeView() {
     queryKey: ['gev-3d-world-context', worldViewport.latitude, worldViewport.longitude, worldViewport.radiusM],
     queryFn: ({ signal }: { signal: AbortSignal }) => fetchWorldContext({
       center: { latitude: worldViewport.latitude, longitude: worldViewport.longitude },
-      radiusM: Math.min(100000, worldViewport.radiusM),
+      radiusM: Math.min(250000, Math.max(1000, worldViewport.radiusM)),
       layers: [...WORLD_CONTEXT_LAYERS],
-      maxEntitiesPerLayer: 75,
+      maxEntitiesPerLayer: 250,
       signal,
     }),
     enabled: view === '3D',
@@ -108,9 +114,62 @@ export default function GodsEyeView() {
     retry: 1,
   })
 
+  const cameraQuery = useQuery({
+    queryKey: ['gev-cctv-aoi', worldViewport.latitude, worldViewport.longitude, worldViewport.radiusM],
+    enabled: view === '3D' && visibleLayers.has('cameras'),
+    queryFn: async ({ signal }: { signal: AbortSignal }) => {
+      const response = await api.get<{
+        data: Array<{
+          id: string
+          entityType: string
+          source?: string
+          sourceReference?: string
+          latitude: number
+          longitude: number
+          altitudeM?: number | null
+          observedAt?: string | null
+          receivedAt?: string | null
+          observationConfidence?: number
+          operationalConfidence?: number | null
+          confidence?: number
+          status?: string
+          attributes?: Record<string, unknown>
+          provenance?: Record<string, unknown>
+          quality?: { state?: string; freshnessClass?: string; reason?: string }
+        }>
+        warnings?: string[]
+        health?: Record<string, unknown>
+        coverage?: Record<string, unknown>
+      }>('/cctv/cameras', {
+        signal,
+        params: {
+          lat: worldViewport.latitude,
+          lng: worldViewport.longitude,
+          radiusM: Math.min(250000, Math.max(1000, worldViewport.radiusM)),
+          limit: 250,
+        },
+      })
+      return response.data
+    },
+    staleTime: 15000,
+    refetchInterval: 30000,
+    retry: 1,
+  })
+
+  const cameraAoiEntities = useMemo(() => (cameraQuery.data?.data ?? []) as SpatialWorldEntity[], [cameraQuery.data])
+
   const externalEntities = useMemo(
-    () => worldContextEntities(worldContext).filter(entity => !['vehicle', 'guardian_device'].includes(entity.entityType)),
-    [worldContext],
+    () => {
+      const candidates = [...worldContextEntities(worldContext), ...cameraAoiEntities]
+        .filter(entity => !['vehicle', 'guardian_device'].includes(entity.entityType))
+      const seen = new Set<string>()
+      return candidates.filter(entity => {
+        if (seen.has(entity.id)) return false
+        seen.add(entity.id)
+        return true
+      })
+    },
+    [worldContext, cameraAoiEntities],
   )
   const renderableExternalEntities = useMemo(
     () => externalEntities.filter(entity => {
@@ -143,6 +202,17 @@ export default function GodsEyeView() {
     [externalEntities, selectedExternalId],
   )
 
+  const activeLayerEntities = useMemo(
+    () => renderableExternalEntities
+      .filter(entity => spatialEntityLayer(entity) === activeLayer)
+      .sort((a, b) => {
+        const ad = Math.hypot(Number(a.latitude) - worldViewport.latitude, Number(a.longitude) - worldViewport.longitude)
+        const bd = Math.hypot(Number(b.latitude) - worldViewport.latitude, Number(b.longitude) - worldViewport.longitude)
+        return ad - bd
+      }),
+    [renderableExternalEntities, activeLayer, worldViewport.latitude, worldViewport.longitude],
+  )
+
   const { data: zones = [] } = useQuery<RiskZone[]>({
     queryKey: ['gev-riskzones'],
     queryFn: async () => {
@@ -161,7 +231,37 @@ export default function GodsEyeView() {
   })
 
   const syncState = worldError ? 'degraded' : worldFetching ? 'sync' : 'live'
-  const topEntities = useMemo(() => renderableExternalEntities.slice(0, 10), [renderableExternalEntities])
+  const topEntities = useMemo(() => activeLayerEntities.slice(0, 12), [activeLayerEntities])
+
+  useEffect(() => {
+    if (!selectedExternal || selectedExternal.entityType !== 'camera') {
+      if (cameraFrameUrlRef.current) {
+        URL.revokeObjectURL(cameraFrameUrlRef.current)
+        cameraFrameUrlRef.current = null
+      }
+      setCameraFrameUrl(null)
+      setCameraFrameState('idle')
+    }
+  }, [selectedExternal])
+
+  const loadCameraFrame = async (cameraId: string) => {
+    setCameraFrameState('loading')
+    try {
+      const response = await api.get<Blob>(`/cctv/${encodeURIComponent(cameraId)}/frame`, { responseType: 'blob' })
+      if (cameraFrameUrlRef.current) URL.revokeObjectURL(cameraFrameUrlRef.current)
+      const url = URL.createObjectURL(response.data)
+      cameraFrameUrlRef.current = url
+      setCameraFrameUrl(url)
+      setCameraFrameState('ready')
+    } catch {
+      setCameraFrameState('unavailable')
+      setCameraFrameUrl(null)
+    }
+  }
+
+  useEffect(() => () => {
+    if (cameraFrameUrlRef.current) URL.revokeObjectURL(cameraFrameUrlRef.current)
+  }, [])
 
   return (
     <div className="gev-shell">
@@ -240,12 +340,15 @@ export default function GodsEyeView() {
                     aria-pressed={view === '3D' && visibleLayers.has(layer)}
                     aria-disabled={view !== '3D'}
                     disabled={view !== '3D'}
-                    onClick={() => setVisibleLayers(current => {
-                      const next = new Set(current)
-                      if (next.has(layer)) next.delete(layer)
-                      else next.add(layer)
-                      return next
-                    })}
+                    onClick={() => {
+                      setActiveLayer(layer)
+                      setVisibleLayers(current => {
+                        const next = new Set(current)
+                        if (next.has(layer)) next.delete(layer)
+                        else next.add(layer)
+                        return next
+                      })
+                    }}
                   >
                     <Icon size={15} />
                     <span className="gev-rail-tag">{layerCounts[layer] > 99 ? '99+' : layerCounts[layer]}</span>
@@ -278,10 +381,27 @@ export default function GodsEyeView() {
 
             <div className="gev-layer-grid">
               {WORLD_CONTEXT_LAYERS.map(layer => (
-                <div className="gev-layer" key={layer} title={layerMeta[layer].label}>
+                <button
+                  type="button"
+                  className="gev-layer"
+                  key={layer}
+                  title={`${layerMeta[layer].label} · ${visibleLayers.has(layer) ? 'visible' : 'hidden'}`}
+                  aria-pressed={activeLayer === layer}
+                  onClick={() => setActiveLayer(layer)}
+                >
                   <span>{layerMeta[layer].short}</span><span>{layerCounts[layer]}</span>
-                </div>
+                </button>
               ))}
+            </div>
+            <div className="gev-aoi-console">
+              <div>
+                <div className="gev-aoi-eyebrow">Active intelligence lane</div>
+                <div className="gev-aoi-title">{layerMeta[activeLayer].label}</div>
+                <div className="gev-aoi-meta">AOI radius {Math.round(worldViewport.radiusM / 1000)} km · {topEntities.length} indexed</div>
+              </div>
+              <button type="button" className="gev-aoi-refresh" onClick={() => { void cameraQuery.refetch(); }} aria-label={activeLayer === 'cameras' ? 'Refresh camera area of interest' : 'Refresh spatial layer'} title="Refresh active area of interest">
+                <RefreshCcw size={13} className={cameraQuery.isFetching ? 'gev-spin' : ''} />
+              </button>
             </div>
           </section>
 
@@ -290,7 +410,7 @@ export default function GodsEyeView() {
               <div>
                 <div className="gev-panel-eyebrow">Entity intelligence</div>
                 <div className="gev-panel-title">{selectedExternal ? 'Selected external signal' : selected ? 'Selected operational entity' : 'World signal index'}</div>
-                <div className="gev-panel-meta">{view === '3D' ? 'Pick a signal on the globe to inspect provenance and freshness.' : 'Select a vehicle to inspect live operational state.'}</div>
+                <div className="gev-panel-meta">{view === '3D' ? `${layerMeta[activeLayer].label}: select a signal to inspect its provenance, freshness and available capabilities.` : 'Select a vehicle to inspect live operational state.'}</div>
               </div>
               {(selectedExternal || selected) && (
                 <button type="button" className="gev-close" onClick={() => { setSelectedExternalId(null); setSelected(null) }} aria-label="Close selection"><X size={14} /></button>
@@ -308,6 +428,21 @@ export default function GodsEyeView() {
                     <div className="gev-mini"><div className="gev-mini-label">Altitude</div><span className="gev-mini-value">{selectedExternal.altitudeM != null ? Math.round(selectedExternal.altitudeM / 10) * 10 + ' m' : 'GROUND'}</span></div>
                     <div className="gev-mini"><div className="gev-mini-label">Confidence</div><span className="gev-mini-value">{selectedExternal.observationConfidence != null ? Math.round(selectedExternal.observationConfidence * 100) + '%' : '—'}</span></div>
                   </div>
+                  {(selectedExternal.entityType === 'camera') && (
+                    <div className="gev-camera-action">
+                      {cameraFrameUrl ? (
+                        <img src={cameraFrameUrl} alt={`Current frame from ${String(selectedExternal.attributes?.name ?? selectedExternal.id)}`} className="gev-camera-frame" />
+                      ) : (
+                        <div className="gev-camera-frame-empty">
+                          <Video size={18} />
+                          <span>{cameraFrameState === 'unavailable' ? 'VERIFIED FRAME UNAVAILABLE' : 'NO FRAME LOADED'}</span>
+                        </div>
+                      )}
+                      <button type="button" className="gev-camera-load" onClick={() => void loadCameraFrame(selectedExternal.id)} disabled={cameraFrameState === 'loading'}>
+                        <Video size={13} /> {cameraFrameState === 'loading' ? 'FETCHING VERIFIED FRAME…' : cameraFrameState === 'ready' ? 'REFRESH VERIFIED FRAME' : 'REQUEST VERIFIED FRAME'}
+                      </button>
+                    </div>
+                  )}
                   <div className="gev-detail-callout" style={{ marginTop: 9, border: '1px solid rgba(184,166,255,.10)', borderRadius: 10 }}>
                     <div className="gev-detail-label">{selectedExternal.entityType === 'satellite' ? 'Modelled orbital position' : selectedExternal.entityType === 'spatial_camera' || selectedExternal.entityType === 'camera' ? 'Camera geometry' : selectedExternal.telemetryLive === true ? 'Live external telemetry' : 'External observation'}</div>
                     <div className="gev-detail-note">{selectedExternal.entityType === 'satellite' ? 'Not live telemetry · not an imaging or tasking claim.' : selectedExternal.entityType === 'spatial_camera' || selectedExternal.entityType === 'camera' ? 'Geometry only · no person-tracking claim.' : 'Source and quality controls remain visible to the operator.'}</div>
@@ -338,6 +473,15 @@ export default function GodsEyeView() {
                     </div>
                   </div>
                   <div className="gev-external-list">
+                    {activeLayer === 'cameras' && (
+                      <div className="gev-camera-aoi-status">
+                        <div className="gev-camera-aoi-title"><Camera size={12} /> CAMERAS IN CURRENT AOI</div>
+                        <div className="gev-camera-aoi-value">{cameraQuery.isFetching ? 'QUERYING' : cameraAoiEntities.length}</div>
+                        <div className="gev-camera-aoi-note">
+                          {cameraQuery.error ? 'Camera catalog unavailable for this area.' : cameraAoiEntities.length ? 'Source-backed catalog entries only. Geometry and media are reported independently.' : 'No source-backed camera catalog entries were returned for this area.'}
+                        </div>
+                      </div>
+                    )}
                     {topEntities.map(entity => (
                       <button key={entity.id} type="button" className="gev-external-row" onClick={() => setSelectedExternalId(entity.id)}>
                         <span className="gev-external-mark" />
@@ -358,6 +502,14 @@ export default function GodsEyeView() {
           </aside>
 
           <div className="gev-bottom-ribbon">
+            <div className="gev-ribbon gev-ribbon-capabilities">
+              <span className="gev-ribbon-item"><strong>{layerMeta[activeLayer].short}</strong> ACTIVE</span>
+              <span className="gev-ribbon-sep" />
+              <span className="gev-ribbon-item">AOI <strong>{Math.round(worldViewport.radiusM / 1000)} KM</strong></span>
+              <span className="gev-ribbon-sep" />
+              <span className="gev-ribbon-item">CAM <strong>{cameraAoiEntities.length}</strong></span>
+              {cameraQuery.data?.warnings?.length ? <><span className="gev-ribbon-sep" /><span className="gev-ribbon-item" data-tone="amber">CAMERA CATALOG WARNINGS</span></> : null}
+            </div>
             <div className="gev-ribbon">
               <span className="gev-ribbon-item"><Focus size={11} /> Mode <strong>{view}</strong></span>
               <span className="gev-ribbon-sep" />
