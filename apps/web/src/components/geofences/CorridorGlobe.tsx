@@ -41,7 +41,7 @@ export default function CorridorGlobe({convoyId,route,corridorKm,members,zones=[
  const toggleSwarm=()=>{if(agentsOpen){setAgentsOpen(false);return;}setAgentsOpen(true);if(convoyId)void swarm.refetch();};
  const dimensionCopy=DIMENSION_COPY[dimension];
  return <div className={`${fill?'h-full':'h-[520px]'} relative overflow-hidden bg-[#05070b] text-white font-sans antialiased`}>
-  {activeView==='2D'?<CorridorOperationalMap route={route} members={members} zones={zones} focusId={focusId} onSelect={onSelect} mapMode="dark"/>:<CorridorWorldScene route={route} corridorKm={corridorKm} members={members} zones={zones} ceilingM={ceilingM} focusId={focusId} trail={trail} onSelect={onSelect} fill globalView={isGev}/>}
+  {activeView==='2D'?<CorridorOperationalMap route={route} members={members} zones={zones} focusId={focusId} onSelect={onSelect} mapMode="dark"/>:<CorridorWorldScene route={route} corridorKm={corridorKm} members={members} zones={zones} ceilingM={ceilingM} focusId={focusId} trail={trail} onSelect={onSelect} onExternalSelect={onExternalSelect} selectedExternalId={selectedExternalId} worldEntities={worldEntities} onViewportChange={onViewportChange} fill globalView={isGev}/>}
 
   <div className="pointer-events-none absolute inset-x-0 top-0 z-20 px-3 pt-3"><div className="pointer-events-auto flex flex-wrap items-start justify-between gap-2">
     <div className="max-w-[72vw] rounded-2xl border border-white/10 bg-[#05070c]/92 px-3.5 py-2.5 shadow-2xl backdrop-blur-2xl">
