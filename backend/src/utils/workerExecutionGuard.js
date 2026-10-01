@@ -60,44 +60,42 @@ async function startAdvisoryLeader(key, {
   }
 
   async function run() {
-    while (!stopped) {
-      try {
-        const leadership = await tryAcquireAdvisoryLeadership(key);
-        if (!leadership) {
-          logger?.info?.(`Advisory leader busy: key=${key}; retrying in ${retryMs}ms`);
-          await sleep(retryMs);
-          continue;
-        }
-
-        current = leadership;
-        logger?.info?.(`Advisory leader acquired: key=${key}`);
-        let lostResolve;
-        const lost = new Promise((resolve) => { lostResolve = resolve; });
-        const onError = (error) => lostResolve(error instanceof Error ? error : new Error(String(error)));
-        currentLostResolve = lostResolve;
-
-        leadership.client.once('error', onError);
-        try {
-          await onAcquire?.(leadership);
-          await lost;
-        } finally {
-          leadership.client.removeListener?.('error', onError);
-          if (currentLostResolve === lostResolve) currentLostResolve = null;
-        }
-
-        if (!stopped) {
-          logger?.warn?.(`Advisory leader lost: key=${key}; re-electing`);
-          await onLose?.();
-        }
-        await leadership.release();
-        current = null;
-      } catch (error) {
-        current = null;
-        logger?.warn?.(`Advisory leader loop failed: key=${key}; ${error.message}`);
-        if (!stopped) await sleep(retryMs);
+  while (!stopped) {
+    let leadership = null;
+    let lostResolve = null;
+    let onError = null;
+    try {
+      leadership = await tryAcquireAdvisoryLeadership(key);
+      if (!leadership) {
+        logger?.info?.(`Advisory leader busy: key=${key}; retrying in ${retryMs}ms`);
+        await sleep(retryMs);
+        continue;
       }
+
+      current = leadership;
+      logger?.info?.(`Advisory leader acquired: key=${key}`);
+      const lost = new Promise((resolve) => { lostResolve = resolve; });
+      currentLostResolve = lostResolve;
+      onError = (error) => lostResolve(error instanceof Error ? error : new Error(String(error)));
+      leadership.client.once('error', onError);
+
+      await onAcquire?.(leadership);
+      await lost;
+      if (!stopped) {
+        logger?.warn?.(`Advisory leader lost: key=${key}; re-electing`);
+        await onLose?.();
+      }
+    } catch (error) {
+      logger?.warn?.(`Advisory leader loop failed: key=${key}; ${error.message}`);
+      if (!stopped) await sleep(retryMs);
+    } finally {
+      if (leadership?.client && onError) leadership.client.removeListener?.('error', onError);
+      if (currentLostResolve === lostResolve) currentLostResolve = null;
+      if (leadership) await leadership.release?.();
+      if (current === leadership) current = null;
     }
   }
+}
 
   const promise = run();
   return { stop, promise };
