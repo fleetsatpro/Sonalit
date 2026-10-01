@@ -106,7 +106,7 @@ export default function GodsEyeView() {
             </div>
           </>
         ) : (
-          <CorridorGlobe route={[]} corridorKm={1} members={members} zones={zones} fill />
+          <CorridorGlobe route={[]} corridorKm={1} members={members} zones={zones} fill surface="gev" fixedView="3D" />
         )}
 
         {selected && view === '2D' && (
