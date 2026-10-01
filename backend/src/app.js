@@ -503,7 +503,7 @@ try {
   }
   cron.schedule("0 * * * *", () => rollPartitions().catch(err => logger.error("Partition roller error: " + err.message)));
   cron.schedule("0 3 * * *", () => archiveOldPartitions().catch(err => logger.error("Partition archival error: " + err.message)));
-  rollPartitions().catch(err => logger.warn("Partition roller startup run: " + err.message));
+  if (isFenceActive()) rollPartitions().catch(err => logger.warn("Partition roller startup run: " + err.message));
   logger.info("Partition roller scheduled (hourly, T3.2) + archival (daily 03:00, T6.5)");
 } catch (e) { logger.warn("Partition roller not started: " + e.message); }
 
@@ -553,7 +553,7 @@ try {
     await dbQuery("REFRESH MATERIALIZED VIEW CONCURRENTLY risk_zone_stats");
   }
   cron.schedule("*/10 * * * *", () => refreshRiskZoneStats().catch(err => logger.error("Risk zone stats refresh error: " + err.message)));
-  refreshRiskZoneStats().catch(err => logger.warn("Risk zone stats startup refresh: " + err.message));
+  if (isFenceActive()) refreshRiskZoneStats().catch(err => logger.warn("Risk zone stats startup refresh: " + err.message));
   logger.info("Risk zone stats refresh scheduled (every 10 min)");
 } catch (e) { logger.warn("Risk zone stats refresh not scheduled: " + e.message); }
 
@@ -565,7 +565,7 @@ try {
   const cron = require("node-cron");
   const { runOsintSweep } = require("./utils/riskOsint");
   cron.schedule("0 */2 * * *", () => runOsintSweep().catch(err => logger.error("Risk Intel OSINT sweep error: " + err.message)));
-  runOsintSweep().catch(err => logger.warn("Risk Intel OSINT startup sweep: " + err.message));
+  if (isFenceActive()) runOsintSweep().catch(err => logger.warn("Risk Intel OSINT startup sweep: " + err.message));
   logger.info("Risk Intel OSINT sweep scheduled (every 2 hours)");
 } catch (e) { logger.warn("Risk Intel OSINT sweep not scheduled: " + e.message); }
 
@@ -579,7 +579,7 @@ try {
   const cron = require("node-cron");
   const { runCollectionFabric } = require("./utils/collectionFabric");
   cron.schedule("*/30 * * * *", () => runCollectionFabric().catch(err => logger.error("Intelligence Collection Fabric error: " + err.message)));
-  runCollectionFabric().catch(err => logger.warn("Intelligence Collection Fabric startup run: " + err.message));
+  if (isFenceActive()) runCollectionFabric().catch(err => logger.warn("Intelligence Collection Fabric startup run: " + err.message));
   logger.info("Intelligence Collection Fabric scheduled (every 30 minutes)");
 } catch (e) { logger.warn("Intelligence Collection Fabric not scheduled: " + e.message); }
 
