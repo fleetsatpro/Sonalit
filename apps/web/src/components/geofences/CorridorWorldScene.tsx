@@ -716,7 +716,7 @@ export default function CorridorWorldScene({
 
   if (initFailed) {
     return (
-      <div className={`${fill ? 'h-full' : 'h-[520px]'} grid place-items-center bg-[#080b12] text-center`}>
+      <div className={`spatial-globe-shell ${fill ? 'h-full' : 'h-[520px]'} grid place-items-center bg-[#080b12] text-center`}>
         <div className="max-w-sm px-6">
           <TriangleAlert className="mx-auto mb-3 text-amber-400" size={26} />
           <p className="text-sm font-semibold text-white">3D world renderer failed to initialize</p>
@@ -727,22 +727,22 @@ export default function CorridorWorldScene({
   }
 
   return (
-    <div className={`${fill ? 'h-full' : 'h-[520px]'} relative overflow-hidden bg-[#080b12]`}>
+    <div className={`cesium-world-surface ${fill ? 'h-full' : 'h-[520px]'} relative overflow-hidden bg-[#080b12]`}>
       <div ref={boxRef} className="absolute inset-0" />
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3">
-        <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-[#070a10]/86 p-1 backdrop-blur-xl">
+      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3 spatial-cesium-chrome">
+        <div className="spatial-map-control pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-[#070a10]/86 p-1 backdrop-blur-xl">
           <button type="button" onClick={() => setMode('dark')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'dark' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Dark map" aria-pressed={mode === 'dark'}><MapIcon size={15} /></button>
           <button type="button" onClick={() => setMode('satellite')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'satellite' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Satellite map" aria-pressed={mode === 'satellite'}><Satellite size={15} /></button>
           <button type="button" onClick={() => setMode('hybrid')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'hybrid' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Hybrid map" aria-pressed={mode === 'hybrid'}><Layers size={15} /></button>
           <span className="ml-1 max-w-[280px] truncate border-l border-white/10 pl-2 pr-2 text-[10px] font-bold font-mono text-neutral-400">{mapStatus}</span>
         </div>
-        <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-[#070a10]/86 p-1 backdrop-blur-xl">
+        <div className="spatial-map-control pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-[#070a10]/86 p-1 backdrop-blur-xl">
           <button type="button" onClick={recenter} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label="Recenter world"><Crosshair size={15} /></button>
           <button type="button" onClick={() => { const viewer = viewerRef.current; if (!viewer || viewer.isDestroyed()) return; const points = fitPoints(route, liveMembers, trail, zones, worldEntities); if (points.length === 1) { const only = singleWorldPoint(liveMembers, zones, worldEntities); if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, Math.max(2200, only.altitudeM + 2200)), duration: 0.8 }); } else if (points.length >= 2) viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), { duration: 0.8, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), Math.max(1800, corridorKm * 900)) }); }} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label={globalView ? 'Fit world' : 'Fit corridor'}><Target size={15} /></button>
           <button type="button" onClick={() => setCreditsOpen(v => !v)} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label="Map information" aria-expanded={creditsOpen}><Signal size={15} /></button>
         </div>
       </div>
-      <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap items-center gap-2">
+      <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap items-center gap-2 spatial-cesium-status">
         <span className="rounded-lg border border-white/10 bg-[#070a10]/84 px-2.5 py-1.5 text-[10px] font-bold font-mono text-neutral-300 backdrop-blur-xl">{liveMembers.length} DEVICE{liveMembers.length === 1 ? '' : 'S'} VISIBLE</span>
         {terrainReady && <span className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.08] px-2.5 py-1.5 text-[10px] font-bold font-mono text-emerald-300 backdrop-blur-xl">WORLD TERRAIN</span>}
         {focusId && <span className="rounded-lg border border-violet-500/25 bg-violet-500/[0.09] px-2.5 py-1.5 text-[10px] font-bold font-mono text-violet-300 backdrop-blur-xl">FOCUS · {liveMembers.find(m => m.id === focusId)?.name ?? focusId.slice(0, 8)}</span>}
