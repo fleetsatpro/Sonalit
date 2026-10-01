@@ -2,7 +2,7 @@ import { jwtVerify, createRemoteJWKSet, importSPKI, type JWTPayload } from 'jose
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { config } from '../config.js';
 import { AuthError } from '../lib/errors.js';
-import { tenantContext } from '../db.js';
+import { tenantContext, query } from '../db.js';
 
 export interface RequestUser { sub: string; org_id: string; role: string; }
 declare module 'fastify' { interface FastifyRequest { user?: RequestUser; } }
@@ -40,8 +40,13 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply):
     const org_id = typeof payload.org_id === 'string' ? payload.org_id : '';
     const role = typeof payload.role === 'string' ? payload.role : '';
     if (!sub || !org_id || !role) throw new AuthError('Token missing required claims');
-    request.user = { sub, org_id, role };
-    tenantContext.enterWith(org_id);
+    const live = (await query<{ id: string; org_id: string; role: string; status: string }>(
+      'SELECT id, org_id, role, status FROM users WHERE id = $1 AND deleted_at IS NULL',
+      [sub],
+    ))[0];
+    if (!live || live.status !== 'active' || live.org_id !== org_id) throw new Error('Token tenant/session is no longer active');
+    request.user = { sub, org_id: live.org_id, role: live.role };
+    tenantContext.enterWith(live.org_id);
   } catch (err) {
     if (err instanceof AuthError) throw err;
     throw new AuthError('Token invalid or expired');
