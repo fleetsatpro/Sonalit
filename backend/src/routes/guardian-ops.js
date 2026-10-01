@@ -37,6 +37,7 @@ router.get('/devices', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `SELECT gd.*, fo.name AS officer_name, fo.badge_number, fo.status AS officer_status
@@ -59,6 +60,7 @@ router.get('/devices/:id', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `SELECT gd.*, fo.id AS officer_id, fo.name AS officer_name, fo.badge_number,
@@ -87,6 +89,7 @@ router.patch('/devices/:id/telemetry', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `UPDATE guardian_devices SET
@@ -169,6 +172,7 @@ router.get('/devices/:id/command-history', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `SELECT * FROM device_commands WHERE device_id = $1 AND org_id = $2
@@ -196,6 +200,7 @@ router.post('/devices/:id/commands', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const deviceCheck = await client.query(
         `SELECT id, fcm_token FROM guardian_devices WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
@@ -260,6 +265,7 @@ router.post(
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
+        await client.query('SET LOCAL ROLE sonalit_app');
         await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
         const deviceCheck = await client.query(
           `SELECT id, fcm_token FROM guardian_devices WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
@@ -405,6 +411,7 @@ router.get('/captures/recent', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         // command_id is TEXT here and device_commands.id is UUID — compare as
@@ -565,6 +572,7 @@ router.post('/commands/broadcast', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const devices = await client.query(
         `SELECT id FROM guardian_devices WHERE org_id = $1 AND deleted_at IS NULL ${whereActive}`,
@@ -600,6 +608,7 @@ router.get('/command-queue', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `SELECT dc.*, gd.name AS device_name, fo.name AS officer_name
@@ -662,6 +671,7 @@ router.post('/devices/:id/approve', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `UPDATE guardian_devices SET status = 'enrolled', updated_at = NOW()
@@ -706,6 +716,7 @@ router.post('/commands/:commandId/ack', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `UPDATE device_commands SET
@@ -742,6 +753,7 @@ router.get('/devices/:deviceId/commands/pending', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `SELECT id, command, payload, issued_at, ttl_hours
@@ -770,6 +782,7 @@ router.post('/devices/:deviceId/ws-token', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `SELECT id FROM guardian_devices WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
