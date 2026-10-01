@@ -273,3 +273,81 @@ html, body, #root, * {
 .d-clip {
   clip-path: polygon(0 0, calc(100% - 13px) 0, 100% 13px, 100% 100%, 0 100%);
 }
+
+
+/* ── Sonalit multi-theme system ─────────────────────────────────────────
+   Theme changes are presentation-only: operational semantics, status colors,
+   map layers, telemetry meaning and permissions are intentionally untouched.
+   All themes expose the same token contract so a component cannot accidentally
+   become theme-specific. */
+:root[data-theme="obsidian"] {
+  --d-void:#030711; --d-carbon:#060b18; --d-deep:#0a1120; --d-well:#0d1428;
+  --d-surf:#101a30; --d-lift:#16213a; --d-lift2:#1c2a48;
+  --d-rim:rgba(140,170,255,.09); --d-rim2:rgba(140,170,255,.17); --d-rim3:rgba(140,170,255,.32);
+  --d-sig:#22e8ff; --d-sig2:#17b8cc; --d-sig3:#128a9c; --d-sg:rgba(34,232,255,.13); --d-sg2:rgba(34,232,255,.07); --d-sglow:rgba(34,232,255,.6);
+  --d-orange:#8b6bff; --d-og:rgba(139,107,255,.14); --d-oglow:rgba(139,107,255,.6);
+  --d-t1:#eaf2ff; --d-t2:#7c8aae; --d-t3:#3e4a6b; --d-t4:#1a2338;
+}
+:root[data-theme="arctic"] {
+  --d-void:#f7fbff; --d-carbon:#f1f6fb; --d-deep:#e9f1f8; --d-well:#ffffff; --d-surf:#f5f9fd; --d-lift:#e5eef7; --d-lift2:#d7e4f0;
+  --d-rim:rgba(18,43,69,.08); --d-rim2:rgba(18,43,69,.14); --d-rim3:rgba(18,43,69,.25);
+  --d-sig:#087ea4; --d-sig2:#086b8a; --d-sig3:#075873; --d-sg:rgba(8,126,164,.12); --d-sg2:rgba(8,126,164,.06); --d-sglow:rgba(8,126,164,.35);
+  --d-orange:#4263eb; --d-og:rgba(66,99,235,.11); --d-oglow:rgba(66,99,235,.35);
+  --d-t1:#102033; --d-t2:#52667b; --d-t3:#8497aa; --d-t4:#c6d3df;
+}
+:root[data-theme="graphite"] {
+  --d-void:#0d0f12; --d-carbon:#121519; --d-deep:#171b20; --d-well:#1b2026; --d-surf:#20262d; --d-lift:#28303a; --d-lift2:#333d48;
+  --d-rim:rgba(201,215,230,.08); --d-rim2:rgba(201,215,230,.15); --d-rim3:rgba(201,215,230,.27);
+  --d-sig:#8cc8ff; --d-sig2:#5ca8e8; --d-sig3:#3b82c4; --d-sg:rgba(140,200,255,.12); --d-sg2:rgba(140,200,255,.06); --d-sglow:rgba(140,200,255,.45);
+  --d-orange:#b7c7ff; --d-og:rgba(183,199,255,.10); --d-oglow:rgba(183,199,255,.35);
+  --d-t1:#f0f4f8; --d-t2:#9ba8b6; --d-t3:#5c6977; --d-t4:#303942;
+}
+:root[data-theme="copper"] {
+  --d-void:#100b08; --d-carbon:#17100d; --d-deep:#201611; --d-well:#271b15; --d-surf:#302119; --d-lift:#3a281e; --d-lift2:#493227;
+  --d-rim:rgba(242,184,132,.09); --d-rim2:rgba(242,184,132,.17); --d-rim3:rgba(242,184,132,.30);
+  --d-sig:#f0b36b; --d-sig2:#d99046; --d-sig3:#b96f31; --d-sg:rgba(240,179,107,.13); --d-sg2:rgba(240,179,107,.06); --d-sglow:rgba(240,179,107,.45);
+  --d-orange:#e67e4f; --d-og:rgba(230,126,79,.13); --d-oglow:rgba(230,126,79,.45);
+  --d-t1:#fff2e8; --d-t2:#c3a99a; --d-t3:#795f51; --d-t4:#49372e;
+}
+:root[data-theme="signal"] {
+  --d-void:#050b07; --d-carbon:#08120c; --d-deep:#0d1a11; --d-well:#112116; --d-surf:#162a1b; --d-lift:#1d3622; --d-lift2:#29462e;
+  --d-rim:rgba(190,238,92,.09); --d-rim2:rgba(190,238,92,.17); --d-rim3:rgba(190,238,92,.30);
+  --d-sig:#b7ed4a; --d-sig2:#8dcc2d; --d-sig3:#6da41f; --d-sg:rgba(183,237,74,.14); --d-sg2:rgba(183,237,74,.07); --d-sglow:rgba(183,237,74,.48);
+  --d-orange:#4de1a3; --d-og:rgba(77,225,163,.12); --d-oglow:rgba(77,225,163,.42);
+  --d-t1:#f1f8ed; --d-t2:#9eae9c; --d-t3:#607060; --d-t4:#344034;
+}
+:root[data-theme="ivory"] {
+  --d-void:#fbfaf6; --d-carbon:#f3f1eb; --d-deep:#ebe9e2; --d-well:#fffefb; --d-surf:#f7f5ef; --d-lift:#e8e6df; --d-lift2:#d9d7d0;
+  --d-rim:rgba(39,45,53,.09); --d-rim2:rgba(39,45,53,.15); --d-rim3:rgba(39,45,53,.25);
+  --d-sig:#167a69; --d-sig2:#126556; --d-sig3:#0f5448; --d-sg:rgba(22,122,105,.12); --d-sg2:rgba(22,122,105,.06); --d-sglow:rgba(22,122,105,.34);
+  --d-orange:#245bff; --d-og:rgba(36,91,255,.10); --d-oglow:rgba(36,91,255,.32);
+  --d-t1:#1c252d; --d-t2:#5d6872; --d-t3:#8c959c; --d-t4:#c9cdd0;
+}
+
+/* Bridge legacy utility classes into the theme contract. This deliberately
+   targets only neutral UI utilities; red/amber/green status utilities remain
+   semantic and therefore do not change with appearance. */
+:root[data-theme] body { background:var(--d-void); color:var(--d-t1); }
+:root[data-theme] .bg-slate-950, :root[data-theme] .bg-slate-900,
+:root[data-theme] .bg-slate-800, :root[data-theme] .bg-slate-700,
+:root[data-theme] .bg-slate-600 { background-color:var(--d-well) !important; }
+:root[data-theme] .bg-slate-800\/50, :root[data-theme] .bg-slate-900\/50 { background-color:color-mix(in srgb,var(--d-well) 70%,transparent) !important; }
+:root[data-theme] .border-slate-700, :root[data-theme] .border-slate-600,
+:root[data-theme] .border-slate-500 { border-color:var(--d-rim2) !important; }
+:root[data-theme] .text-white, :root[data-theme] .text-slate-100,
+:root[data-theme] .text-slate-200, :root[data-theme] .text-slate-300 { color:var(--d-t1) !important; }
+:root[data-theme] .text-slate-400, :root[data-theme] .text-slate-500 { color:var(--d-t2) !important; }
+:root[data-theme] .text-slate-600 { color:var(--d-t3) !important; }
+:root[data-theme] .bg-orange-600, :root[data-theme] .bg-orange-500 { background-color:var(--d-orange) !important; }
+:root[data-theme] .hover\:bg-orange-700:hover, :root[data-theme] .hover\:bg-orange-500:hover { background-color:color-mix(in srgb,var(--d-orange) 86%,#000) !important; }
+:root[data-theme] .text-orange-400, :root[data-theme] .text-orange-300 { color:var(--d-orange) !important; }
+:root[data-theme] .border-orange-500, :root[data-theme] .border-orange-600 { border-color:var(--d-orange) !important; }
+:root[data-theme] input, :root[data-theme] select, :root[data-theme] textarea { color:var(--d-t1); background-color:var(--d-well); border-color:var(--d-rim2); }
+:root[data-theme] input::placeholder, :root[data-theme] textarea::placeholder { color:var(--d-t3); }
+:root[data-theme] ::selection { background:var(--d-sg); color:var(--d-t1); }
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme] *, :root[data-theme] *::before, :root[data-theme] *::after {
+    scroll-behavior:auto !important;
+  }
+}
