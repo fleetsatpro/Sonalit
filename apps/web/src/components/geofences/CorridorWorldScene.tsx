@@ -302,9 +302,11 @@ export default function CorridorWorldScene({
     // density while keeping mobile GPU pressure bounded.
     viewer.useBrowserRecommendedResolution = false;
     viewer.resolutionScale = compactSurface
-      ? Math.min(Math.max(highDpi, 1.25), 2)
-      : Math.min(Math.max(highDpi, 1.35), 3);
-    viewer.scene.globe.maximumScreenSpaceError = compactSurface ? 1.75 : 1.0;
+      ? Math.min(Math.max(highDpi, 1.35), 2.5)
+      : Math.min(Math.max(highDpi, 1.5), 4);
+    // Presentation tier: prioritize raster/detail density on GEV desktop displays.
+    // The scale remains bounded by the physical device pixel ratio.
+    viewer.scene.globe.maximumScreenSpaceError = compactSurface ? 1.25 : 0.75;
     viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#06101a');
     viewer.scene.globe.dynamicAtmosphereLighting = true;
     viewer.scene.globe.dynamicAtmosphereLightingFromSun = true;
