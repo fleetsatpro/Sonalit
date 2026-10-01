@@ -517,8 +517,13 @@ CREATE OR REPLACE FUNCTION tenant_harden_org_from_device() RETURNS trigger
 LANGUAGE plpgsql AS $tenant$
 DECLARE parent_org UUID;
 BEGIN
-  SELECT org_id INTO parent_org FROM guardian_devices WHERE id = NEW.device_id;
-  IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_device'; END IF;
+  IF NEW.device_id IS NOT NULL THEN
+    SELECT org_id INTO parent_org FROM guardian_devices WHERE id = NEW.device_id;
+    IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_device'; END IF;
+  ELSE
+    parent_org := NULLIF(current_setting('app.current_org_id', true), '')::uuid;
+  END IF;
+  IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_required'; END IF;
   IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
   NEW.org_id := parent_org;
   RETURN NEW;
@@ -652,6 +657,14 @@ FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_device();
 DROP TRIGGER IF EXISTS tenant_harden_device_command_events ON device_command_events;
 CREATE TRIGGER tenant_harden_device_command_events BEFORE INSERT OR UPDATE ON device_command_events
 FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_command_event();
+
+DROP TRIGGER IF EXISTS tenant_harden_guardian_captures ON guardian_captures;
+CREATE TRIGGER tenant_harden_guardian_captures BEFORE INSERT OR UPDATE ON guardian_captures
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_device();
+
+DROP TRIGGER IF EXISTS tenant_harden_guardian_capture_events ON guardian_capture_events;
+CREATE TRIGGER tenant_harden_guardian_capture_events BEFORE INSERT OR UPDATE ON guardian_capture_events
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_device();
 
 DROP TRIGGER IF EXISTS tenant_harden_guardian_audit_log ON guardian_audit_log;
 
