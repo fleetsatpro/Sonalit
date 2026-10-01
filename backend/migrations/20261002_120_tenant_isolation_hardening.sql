@@ -199,8 +199,9 @@ CREATE INDEX IF NOT EXISTS idx_api_keys_org ON api_keys(org_id) WHERE org_id IS 
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 2. Tenant RLS gate.
---    A RESTRICTIVE policy is additive and cannot weaken an existing policy.
---    FORCE RLS makes the rule apply to table-owner sessions too.
+-- A RESTRICTIVE policy is additive: existing permission policies may continue
+-- to express role/resource rules, but none can widen the tenant boundary.
+-- FORCE RLS also closes table-owner bypasses.
 -- ─────────────────────────────────────────────────────────────────────────────
 DO $$
 DECLARE
@@ -223,29 +224,16 @@ BEGIN
       )
   LOOP
     EXECUTE format('ALTER TABLE %I.%I ENABLE ROW LEVEL SECURITY', r.schema_name, r.table_name);
-
-    -- Credential bootstrap lookups (token/email presented before tenant context
-    -- exists) must remain owner-accessible. They still receive the restrictive
-    -- policy for authenticated sonalit_app requests, but are deliberately not
-    -- FORCEd so exact-match bootstrap queries can resolve the tenant.
-    IF r.table_name NOT IN (
-      'users','guardian_devices','portal_tokens','client_magic_links',
-      'cargo_clients','telemetry_ingest_keys','tracking_qr_codes',
-      'tracking_sessions','field_devices','field_sessions','field_agent_pins',
-      'cfo_login_attempts','guardian_command_nonces'
-    ) THEN
-      EXECUTE format('ALTER TABLE %I.%I FORCE ROW LEVEL SECURITY', r.schema_name, r.table_name);
-    END IF;
+    EXECUTE format('ALTER TABLE %I.%I FORCE ROW LEVEL SECURITY', r.schema_name, r.table_name);
 
     EXECUTE format('DROP POLICY IF EXISTS tenant_isolation_hardening ON %I.%I', r.schema_name, r.table_name);
+    EXECUTE format('DROP POLICY IF EXISTS tenant_isolation_hardening_write ON %I.%I', r.schema_name, r.table_name);
+    EXECUTE format('DROP POLICY IF EXISTS tenant_isolation_base ON %I.%I', r.schema_name, r.table_name);
+
     IF r.table_name = 'risk_zones' THEN
       EXECUTE format(
-        'CREATE POLICY tenant_isolation_hardening ON %I.%I AS RESTRICTIVE FOR SELECT, DELETE, UPDATE
-           USING (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid OR org_id IS NULL)',
-        r.schema_name, r.table_name
-      );
-      EXECUTE format(
-        'CREATE POLICY tenant_isolation_hardening_write ON %I.%I AS RESTRICTIVE FOR INSERT
+        'CREATE POLICY tenant_isolation_hardening ON %I.%I AS RESTRICTIVE FOR ALL
+           USING (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid OR org_id IS NULL)
            WITH CHECK (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)',
         r.schema_name, r.table_name
       );
@@ -279,58 +267,142 @@ END $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 3. Parent-derived tenant invariants.
--- Child records inherit the authoritative parent's org_id inside the database.
--- A tenant A session therefore cannot attach a tenant B child by guessing an ID:
--- the parent lookup is itself RLS-scoped, and the restrictive policy rejects a
--- mismatched org on INSERT/UPDATE.
+-- Children cannot attach a row from another tenant: the trigger resolves the
+-- authoritative parent and overwrites/checks NEW.org_id before the RLS policy
+-- evaluates the write.
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_vehicle() RETURNS trigger
-LANGUAGE plpgsql AS $
-DECLARE v_org UUID;
+LANGUAGE plpgsql AS $$
+DECLARE parent_org UUID;
 BEGIN
-  IF NEW.vehicle_id IS NULL THEN
-    v_org := NULLIF(current_setting('app.current_org_id', true), '')::uuid;
-  ELSE
-    SELECT org_id INTO v_org FROM vehicles WHERE id = NEW.vehicle_id;
-  END IF;
-  IF v_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_vehicle'; END IF;
-  NEW.org_id := v_org;
+  SELECT org_id INTO parent_org FROM vehicles WHERE id = NEW.vehicle_id;
+  IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_vehicle'; END IF;
+  IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
+  NEW.org_id := parent_org;
   RETURN NEW;
-END $;
+END $$;
 
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_convoy() RETURNS trigger
-LANGUAGE plpgsql AS $
-DECLARE v_org UUID;
+LANGUAGE plpgsql AS $$
+DECLARE parent_org UUID;
 BEGIN
-  IF NEW.convoy_id IS NULL THEN
-    v_org := NULLIF(current_setting('app.current_org_id', true), '')::uuid;
-  ELSE
-    SELECT org_id INTO v_org FROM convoys WHERE id = NEW.convoy_id;
-  END IF;
-  IF v_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_convoy'; END IF;
-  NEW.org_id := v_org;
+  SELECT org_id INTO parent_org FROM convoys WHERE id = NEW.convoy_id;
+  IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_convoy'; END IF;
+  IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
+  NEW.org_id := parent_org;
   RETURN NEW;
-END $;
+END $$;
+
+CREATE OR REPLACE FUNCTION tenant_harden_org_from_checkpoint() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE parent_org UUID;
+BEGIN
+  IF NEW.convoy_id IS NOT NULL THEN
+    SELECT org_id INTO parent_org FROM convoys WHERE id = NEW.convoy_id;
+  END IF;
+  IF parent_org IS NULL AND NEW.shipment_id IS NOT NULL THEN
+    SELECT org_id INTO parent_org FROM shipments WHERE id = NEW.shipment_id;
+  END IF;
+  IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_checkpoint_parent'; END IF;
+  IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
+  NEW.org_id := parent_org;
+  RETURN NEW;
+END $$;
+
+CREATE OR REPLACE FUNCTION tenant_harden_org_from_trip() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE parent_org UUID;
+BEGIN
+  IF NEW.convoy_id IS NOT NULL THEN
+    SELECT org_id INTO parent_org FROM convoys WHERE id = NEW.convoy_id;
+  END IF;
+  IF parent_org IS NULL AND NEW.shipment_id IS NOT NULL THEN
+    SELECT org_id INTO parent_org FROM shipments WHERE id = NEW.shipment_id;
+  END IF;
+  IF parent_org IS NULL AND NEW.vehicle_id IS NOT NULL THEN
+    SELECT org_id INTO parent_org FROM vehicles WHERE id = NEW.vehicle_id;
+  END IF;
+  IF parent_org IS NULL AND NEW.driver_id IS NOT NULL THEN
+    SELECT org_id INTO parent_org FROM drivers WHERE id = NEW.driver_id;
+  END IF;
+  IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_trip_parent'; END IF;
+  IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
+  NEW.org_id := parent_org;
+  RETURN NEW;
+END $$;
+
+CREATE OR REPLACE FUNCTION tenant_harden_org_from_invoice() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE parent_org UUID;
+BEGIN
+  IF NEW.shipment_id IS NOT NULL THEN SELECT org_id INTO parent_org FROM shipments WHERE id = NEW.shipment_id; END IF;
+  IF parent_org IS NULL AND NEW.trip_id IS NOT NULL THEN SELECT org_id INTO parent_org FROM trips WHERE id = NEW.trip_id; END IF;
+  IF parent_org IS NULL AND NEW.created_by IS NOT NULL THEN SELECT org_id INTO parent_org FROM users WHERE id = NEW.created_by; END IF;
+  IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_invoice_parent'; END IF;
+  IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
+  NEW.org_id := parent_org;
+  RETURN NEW;
+END $$;
+
+CREATE OR REPLACE FUNCTION tenant_harden_org_from_expense() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE parent_org UUID;
+BEGIN
+  IF NEW.trip_id IS NOT NULL THEN SELECT org_id INTO parent_org FROM trips WHERE id = NEW.trip_id; END IF;
+  IF parent_org IS NULL AND NEW.vehicle_id IS NOT NULL THEN SELECT org_id INTO parent_org FROM vehicles WHERE id = NEW.vehicle_id; END IF;
+  IF parent_org IS NULL AND NEW.driver_id IS NOT NULL THEN SELECT org_id INTO parent_org FROM drivers WHERE id = NEW.driver_id; END IF;
+  IF parent_org IS NULL AND NEW.recorded_by IS NOT NULL THEN SELECT org_id INTO parent_org FROM users WHERE id = NEW.recorded_by; END IF;
+  IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_expense_parent'; END IF;
+  IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
+  NEW.org_id := parent_org;
+  RETURN NEW;
+END $$;
+
+CREATE OR REPLACE FUNCTION tenant_harden_org_from_driver_event() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE parent_org UUID;
+BEGIN
+  IF NEW.driver_id IS NOT NULL THEN SELECT org_id INTO parent_org FROM drivers WHERE id = NEW.driver_id; END IF;
+  IF parent_org IS NULL AND NEW.vehicle_id IS NOT NULL THEN SELECT org_id INTO parent_org FROM vehicles WHERE id = NEW.vehicle_id; END IF;
+  IF parent_org IS NULL AND NEW.trip_id IS NOT NULL THEN SELECT org_id INTO parent_org FROM trips WHERE id = NEW.trip_id; END IF;
+  IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_driver_event_parent'; END IF;
+  IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
+  NEW.org_id := parent_org;
+  RETURN NEW;
+END $$;
 
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_device() RETURNS trigger
-LANGUAGE plpgsql AS $
-DECLARE v_org UUID;
+LANGUAGE plpgsql AS $$
+DECLARE parent_org UUID;
 BEGIN
-  SELECT org_id INTO v_org FROM guardian_devices WHERE id = NEW.device_id;
-  IF v_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_device'; END IF;
-  NEW.org_id := v_org;
+  SELECT org_id INTO parent_org FROM guardian_devices WHERE id = NEW.device_id;
+  IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_device'; END IF;
+  IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
+  NEW.org_id := parent_org;
   RETURN NEW;
-END $;
+END $$;
 
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_geofence() RETURNS trigger
-LANGUAGE plpgsql AS $
-DECLARE v_org UUID;
+LANGUAGE plpgsql AS $$
+DECLARE parent_org UUID;
 BEGIN
-  SELECT org_id INTO v_org FROM geofences WHERE id = NEW.geofence_id;
-  IF v_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_geofence'; END IF;
-  NEW.org_id := v_org;
+  SELECT org_id INTO parent_org FROM geofences WHERE id = NEW.geofence_id;
+  IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_geofence'; END IF;
+  IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
+  NEW.org_id := parent_org;
   RETURN NEW;
-END $;
+END $$;
+
+CREATE OR REPLACE FUNCTION tenant_harden_org_from_user() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE parent_org UUID;
+BEGIN
+  SELECT org_id INTO parent_org FROM users WHERE id = NEW.user_id;
+  IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_user'; END IF;
+  IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
+  NEW.org_id := parent_org;
+  RETURN NEW;
+END $$;
 
 DROP TRIGGER IF EXISTS tenant_harden_sensor_logs ON sensor_logs;
 CREATE TRIGGER tenant_harden_sensor_logs BEFORE INSERT OR UPDATE ON sensor_logs
@@ -352,40 +424,25 @@ DROP TRIGGER IF EXISTS tenant_harden_convoy_assignments ON convoy_assignments;
 CREATE TRIGGER tenant_harden_convoy_assignments BEFORE INSERT OR UPDATE ON convoy_assignments
 FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_convoy();
 
-CREATE OR REPLACE FUNCTION tenant_harden_org_from_checkpoint() RETURNS trigger
-LANGUAGE plpgsql AS $
-DECLARE
-  convoy_org UUID;
-  shipment_org UUID;
-  current_org UUID := NULLIF(current_setting('app.current_org_id', true), '')::uuid;
-BEGIN
-  IF NEW.convoy_id IS NOT NULL THEN
-    SELECT org_id INTO convoy_org FROM convoys WHERE id = NEW.convoy_id;
-    IF convoy_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_convoy'; END IF;
-  END IF;
-  IF NEW.shipment_id IS NOT NULL THEN
-    SELECT org_id INTO shipment_org FROM shipments WHERE id = NEW.shipment_id;
-    IF shipment_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_shipment'; END IF;
-  END IF;
-  IF convoy_org IS NOT NULL AND shipment_org IS NOT NULL AND convoy_org <> shipment_org THEN
-    RAISE EXCEPTION 'tenant_scope_parent_mismatch';
-  END IF;
-  NEW.org_id := COALESCE(convoy_org, shipment_org, current_org);
-  IF NEW.org_id IS NULL THEN RAISE EXCEPTION 'tenant_scope_required'; END IF;
-  RETURN NEW;
-END $;
-
 DROP TRIGGER IF EXISTS tenant_harden_checkpoints ON checkpoints;
 CREATE TRIGGER tenant_harden_checkpoints BEFORE INSERT OR UPDATE ON checkpoints
 FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_checkpoint();
 
 DROP TRIGGER IF EXISTS tenant_harden_trips ON trips;
 CREATE TRIGGER tenant_harden_trips BEFORE INSERT OR UPDATE ON trips
-FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_vehicle();
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_trip();
 
-DROP TRIGGER IF EXISTS tenant_harden_devices ON devices;
-CREATE TRIGGER tenant_harden_devices BEFORE INSERT OR UPDATE ON devices
-FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_vehicle();
+DROP TRIGGER IF EXISTS tenant_harden_invoices ON invoices;
+CREATE TRIGGER tenant_harden_invoices BEFORE INSERT OR UPDATE ON invoices
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_invoice();
+
+DROP TRIGGER IF EXISTS tenant_harden_expenses ON expenses;
+CREATE TRIGGER tenant_harden_expenses BEFORE INSERT OR UPDATE ON expenses
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_expense();
+
+DROP TRIGGER IF EXISTS tenant_harden_driver_events ON driver_events;
+CREATE TRIGGER tenant_harden_driver_events BEFORE INSERT OR UPDATE ON driver_events
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_driver_event();
 
 DROP TRIGGER IF EXISTS tenant_harden_convoy_trucks ON convoy_trucks;
 CREATE TRIGGER tenant_harden_convoy_trucks BEFORE INSERT OR UPDATE ON convoy_trucks
@@ -422,6 +479,10 @@ FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_device();
 DROP TRIGGER IF EXISTS tenant_harden_field_reports ON field_reports;
 CREATE TRIGGER tenant_harden_field_reports BEFORE INSERT OR UPDATE ON field_reports
 FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_device();
+
+DROP TRIGGER IF EXISTS tenant_harden_notifications ON notifications;
+CREATE TRIGGER tenant_harden_notifications BEFORE INSERT OR UPDATE ON notifications
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_user();
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 3. Fail-closed inserts for the high-risk legacy child tables.
