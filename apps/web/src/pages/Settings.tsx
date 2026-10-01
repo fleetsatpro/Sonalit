@@ -6,7 +6,6 @@ import { Settings as SettingsIcon, Key, Shield, Copy, Trash2, Plus, X, MessageCi
 import { GuardianConvoySettings } from '../components/GuardianConvoySettings.js';
 import { HandoverOfficerSettings } from '../components/HandoverOfficerSettings.js';
 import { ThemePicker } from '../components/ThemePicker.js';
-import { THEME_META, SONALIT_THEMES, useUIStore } from '../stores/ui.js';
 
 interface ApiKey {
   id: string;
