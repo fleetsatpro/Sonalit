@@ -2,8 +2,14 @@ const winston = require('winston');
 
 const { combine, timestamp, printf, colorize, errors } = winston.format;
 
+function serializeMessage(message) {
+  if (typeof message === 'string') return message;
+  if (message instanceof Error) return message.stack || message.message;
+  try { return JSON.stringify(message); } catch { return String(message); }
+}
+
 const logFormat = printf(({ level, message, timestamp: ts, stack }) => {
-  return `${ts} [${level}]: ${stack || message}`;
+  return `${ts} [${level}]: ${stack || serializeMessage(message)}`;
 });
 
 const logger = winston.createLogger({
