@@ -33,7 +33,7 @@ function applyTheme(theme: Theme) {
   document.documentElement.style.colorScheme = meta.mode;
 }
 
-function normalizeTheme(value: unknown): Theme {
+export function normalizeTheme(value: unknown): Theme {
   if (value === 'dark') return 'obsidian';
   if (value === 'light') return 'ivory';
   return THEMES.some((theme) => theme.id === value) ? value as Theme : DEFAULT_THEME;
