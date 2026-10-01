@@ -27,21 +27,38 @@ describe('centrifugo publish()', () => {
 
   test('POSTs to /api/publish with correct headers when API key is set', async () => {
     process.env.CENTRIFUGO_API_KEY = 'secret-key';
-    mockFetch.mockResolvedValueOnce({ ok: true });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ result: {} }) });
     const { publish } = require('../src/realtime/centrifugo');
     await publish('vehicle:update', { vehicleId: 'v1' });
     expect(mockFetch).toHaveBeenCalledWith(
       expect.stringContaining('/api/publish'),
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({ 'Authorization': 'apikey secret-key' }),
+        headers: expect.objectContaining({ 'X-API-Key': 'secret-key' }),
       })
     );
   });
 
+  test('passes a bounded request timeout', async () => {
+    process.env.CENTRIFUGO_API_KEY = 'secret-key';
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ result: {} }) });
+    const { publish } = require('../src/realtime/centrifugo');
+    await publish('test-channel', {});
+    expect(mockFetch.mock.calls[0][1].signal).toBeDefined();
+  });
+
+  test('logs warning on Centrifugo API-level error', async () => {
+    process.env.CENTRIFUGO_API_KEY = 'secret-key';
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ error: { code: 108, message: 'unauthorized' } }) });
+    const { publish } = require('../src/realtime/centrifugo');
+    const { warn } = require('../src/utils/logger');
+    await publish('test-channel', {});
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('unauthorized'));
+  });
+
   test('logs warning on non-ok response', async () => {
     process.env.CENTRIFUGO_API_KEY = 'secret-key';
-    mockFetch.mockResolvedValueOnce({ ok: false, status: 503 });
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({}) });
     const { publish } = require('../src/realtime/centrifugo');
     const { warn } = require('../src/utils/logger');
     await publish('test-channel', {});
