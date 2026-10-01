@@ -68,6 +68,32 @@ test('org B sees only its own vehicle', async () => {
 // org_isolation policy. Assert it via the catalog (schema-independent — no seed
 // row needed, so this doesn't depend on the drivers DDL which lives outside the
 // tracked migrations).
+test('every tenant-bearing base table is FORCE-RLS protected', async () => {
+  const { rows } = await pool.query(`
+    SELECT c.relname AS table_name,
+           c.relforcerowsecurity,
+           EXISTS (
+             SELECT 1 FROM pg_policies p
+             WHERE p.schemaname='public'
+               AND p.tablename=c.relname
+               AND p.policyname='tenant_isolation_hardening'
+               AND p.permissive='RESTRICTIVE'
+           ) AS has_restrictive_tenant_policy
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid=c.relnamespace
+     WHERE n.nspname='public'
+       AND c.relkind='r'
+       AND c.relname <> 'runtime_diagnostics'
+       AND EXISTS (
+         SELECT 1 FROM pg_attribute a
+         WHERE a.attrelid=c.oid AND a.attname='org_id' AND NOT a.attisdropped
+       )
+     ORDER BY c.relname
+  `);
+  const failures = rows.filter(r => !r.relforcerowsecurity || !r.has_restrictive_tenant_policy);
+  expect(failures).toEqual([]);
+});
+
 test('drivers table has RLS enabled with an org_isolation policy', async () => {
   if (skip()) return;
   const rls = await pool.query(
