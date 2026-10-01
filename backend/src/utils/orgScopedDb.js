@@ -10,6 +10,7 @@
  */
 const { pool } = require('../config/database');
 const logger = require('./logger');
+const { normalizeOrgId, runWithOrgContext } = require('./tenantContext');
 
 async function withOrg(orgId, fn) {
   const client = await pool.connect();
@@ -36,16 +37,20 @@ async function withOrg(orgId, fn) {
  * Call this after authenticate() in the middleware chain.
  */
 function attachOrgDb(req, _res, next) {
-  const orgId = req.user && req.user.org_id;
-  if (!orgId) { next(); return; }
+  const orgId = normalizeOrgId(req.user && req.user.org_id);
+  if (!orgId) {
+    logger.warn(`Tenant scope missing for authenticated request: ${req.method} ${req.originalUrl || req.url}`);
+    return _res.status(403).json({ error: 'tenant_scope_required' });
+  }
 
-  // Single-query helper
+  // Single-query helper. The ambient context additionally protects legacy
+  // helpers that still call config/database.query() after authentication.
   req.db = (text, params) => withOrg(orgId, client => client.query(text, params));
 
   // Multi-query transaction helper
   req.dbTx = (fn) => withOrg(orgId, fn);
 
-  next();
+  return runWithOrgContext(orgId, next);
 }
 
 module.exports = { withOrg, attachOrgDb };
