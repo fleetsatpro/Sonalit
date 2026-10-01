@@ -123,39 +123,44 @@ router.post('/login', async (req, res, next) => {
     if (!convoy_id || typeof convoy_id !== 'string' || !convoy_id.trim())
       return res.status(400).json({ error: 'convoy_id is required' });
 
-    // Resolve convoy by UUID or name (case-insensitive)
-    const convoyResult = await query(
-      `SELECT id, name, status, route_origin, route_destination, org_id
-       FROM convoys
-       WHERE (id::text = $1 OR LOWER(name) = LOWER($1))
-         AND deleted_at IS NULL
-       LIMIT 1`,
-      [convoy_id.trim()]
-    );
-    if (!convoyResult.rows.length)
-      return res.status(200).json({ success: false, error: 'Convoy not found' });
-
-    const convoy = convoyResult.rows[0];
-
-    const userResult = await query(
-      `SELECT u.id, u.name, u.email, u.org_id, u.status, u.password_hash
-       FROM users u
-       WHERE LOWER(u.email) = LOWER($1)
-         AND EXISTS (
-           SELECT 1 FROM convoy_cfos cc WHERE cc.cfo_user_id = u.id AND cc.convoy_id = $2
-         )
-         AND u.deleted_at IS NULL
-       LIMIT 1`,
-      [cfo_id.trim(), convoy.id]
+    // Resolve the CFO + convoy relationship as one credential check.
+    // Do not reveal whether either identifier exists. The join requires the CFO,
+    // convoy, membership, and organization to agree before any convoy metadata
+    // is returned or a session token can be minted.
+    const authResult = await query(
+      `SELECT u.id, u.name, u.email, u.org_id, u.status, u.password_hash,
+              c.id AS convoy_id, c.name AS convoy_name, c.route_origin, c.route_destination,
+              c.status AS convoy_status
+         FROM users u
+         JOIN convoy_cfos cc
+           ON cc.cfo_user_id = u.id
+          AND cc.org_id = u.org_id
+         JOIN convoys c
+           ON c.id = cc.convoy_id
+          AND c.org_id = u.org_id
+        WHERE LOWER(u.email) = LOWER($1)
+          AND (c.id::text = $2 OR LOWER(c.name) = LOWER($2))
+          AND u.deleted_at IS NULL
+          AND c.deleted_at IS NULL
+        LIMIT 1`,
+      [cfo_id.trim(), convoy_id.trim()]
     );
 
     const dummyHash = '$2a$10$dummyhashtopreventtimingattacks00000000000';
-    const hashToCompare = userResult.rows[0]?.password_hash || dummyHash;
-    const valid = userResult.rows.length > 0 && await bcrypt.compare(pin, hashToCompare);
+    const hashToCompare = authResult.rows[0]?.password_hash || dummyHash;
+    const valid = authResult.rows.length > 0 && await bcrypt.compare(pin, hashToCompare);
 
     if (!valid) return res.status(200).json({ success: false, error: 'Invalid credentials' });
 
-    const user = userResult.rows[0];
+    const user = authResult.rows[0];
+    const convoy = {
+      id: user.convoy_id,
+      name: user.convoy_name,
+      status: user.convoy_status,
+      route_origin: user.route_origin,
+      route_destination: user.route_destination,
+      org_id: user.org_id,
+    };
     if (user.status !== 'active')
       return res.status(200).json({ success: false, error: 'Account is not active' });
 
@@ -182,7 +187,7 @@ router.post('/login', async (req, res, next) => {
       : (user.name || '?').slice(0, 2).toUpperCase();
 
     const token = jwt.sign(
-      { id: user.id, org_id: user.org_id || convoy.org_id, name: user.name, convoy_id: convoy.id },
+      { id: user.id, org_id: user.org_id, name: user.name, convoy_id: convoy.id },
       process.env.JWT_SECRET,
       { expiresIn: '12h' }
     );
