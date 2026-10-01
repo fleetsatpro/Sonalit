@@ -381,33 +381,83 @@ function AppearanceSection() {
   const theme = useUIStore((s) => s.theme);
   const setTheme = useUIStore((s) => s.setTheme);
 
+  const themes = [
+    { id: 'dark' as const, name: 'Command Dark', meta: 'Original Sonalit control room', tone: 'dark' },
+    { id: 'light' as const, name: 'Command Light', meta: 'Original daylight mode', tone: 'light' },
+    { id: 'obsidian' as const, name: 'Obsidian Command', meta: 'Deep black · cyan · violet', tone: 'dark' },
+    { id: 'arctic' as const, name: 'Arctic Signal', meta: 'Ice white · blue · cyan', tone: 'light' },
+    { id: 'graphite' as const, name: 'Graphite Pro', meta: 'Neutral graphite · electric blue', tone: 'dark' },
+    { id: 'copper' as const, name: 'Copper Dusk', meta: 'Warm field operations', tone: 'dark' },
+    { id: 'signal' as const, name: 'Signal Lime', meta: 'High-visibility operations', tone: 'dark' },
+    { id: 'ivory' as const, name: 'Ivory Daylight', meta: 'Bright command workspace', tone: 'light' },
+  ];
+
   return (
     <SectionCard title="Appearance" icon={<Palette size={16} className="text-orange-400" />}>
-      <div className="space-y-2">
-        <label className="block text-xs text-slate-400 mb-1">Theme</label>
-        <div className="flex gap-2">
-          {(['dark', 'light'] as const).map((opt) => (
-            <button
-              key={opt}
-              onClick={() => setTheme(opt)}
-              className={`flex-1 text-sm px-3 py-2 rounded border transition-colors capitalize ${
-                theme === opt
-                  ? 'bg-orange-600 border-orange-500 text-white'
-                  : 'bg-slate-900 border-slate-600 text-slate-300 hover:border-slate-500'
-              }`}
-            >
-              {opt}
-            </button>
-          ))}
+      <div className="space-y-3">
+        <div>
+          <p className="text-sm font-medium">Interface theme</p>
+          <p className="text-xs text-slate-400 mt-1">
+            Changes the visual system across Sonalit without changing operational data, permissions, routes, or workflows.
+          </p>
         </div>
-        <p className="text-xs text-slate-500 pt-1">
-          Applies to the sidebar, top bar, and dashboard cards immediately and is remembered on this device.
+
+        <div
+          className="grid grid-cols-1 sm:grid-cols-2 gap-3"
+          role="radiogroup"
+          aria-label="Sonalit interface theme"
+        >
+          {themes.map((opt) => {
+            const selected = theme === opt.id;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => setTheme(opt.id)}
+                className={`group relative overflow-hidden rounded-xl border p-3 text-left transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-orange-500/70 ${
+                  selected
+                    ? 'border-orange-400 ring-1 ring-orange-400/50 bg-orange-500/10'
+                    : 'border-slate-700 bg-slate-900 hover:border-slate-500'
+                }`}
+              >
+                <span className={`mb-3 block h-14 rounded-lg border border-black/10 bg-gradient-to-br ${
+                  opt.tone === 'light' ? 'from-white via-slate-100 to-slate-300' : 'from-slate-950 via-slate-900 to-slate-700'
+                }`}>
+                  <span className={`block w-1/2 h-full rounded-lg opacity-80 ${
+                    opt.id === 'copper' ? 'bg-orange-500/50' :
+                    opt.id === 'signal' ? 'bg-lime-400/50' :
+                    opt.id === 'arctic' ? 'bg-cyan-400/50' :
+                    opt.id === 'ivory' ? 'bg-blue-500/30' :
+                    opt.id === 'graphite' ? 'bg-blue-400/40' :
+                    'bg-violet-500/40'
+                  }`} />
+                </span>
+                <span className="flex items-center justify-between gap-2">
+                  <span>
+                    <span className="block text-sm font-semibold">{opt.name}</span>
+                    <span className="block text-[11px] text-slate-400 mt-0.5">{opt.meta}</span>
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    className={`h-4 w-4 rounded-full border-2 shrink-0 ${
+                      selected ? 'border-orange-400 bg-orange-400 shadow-[inset_0_0_0_3px_rgba(15,23,42,1)]' : 'border-slate-500'
+                    }`}
+                  />
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <p className="text-[11px] text-slate-500 pt-1">
+          Your selection is stored locally on this device. Reduced-motion preferences remain respected.
         </p>
       </div>
     </SectionCard>
   );
 }
-
 function WhatsAppSection() {
   const qc = useQueryClient();
   const [form, setForm] = useState({ phone_number_id: '', access_token: '', verify_token: '', business_id: '', active: false });
