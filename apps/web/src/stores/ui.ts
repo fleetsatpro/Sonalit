@@ -17,7 +17,7 @@ export const THEMES: ReadonlyArray<{
   accent: string;
 }> = [
   { id: 'obsidian', name: 'Obsidian Command', descriptor: 'Deep command-room contrast', mode: 'dark', accent: '#b8a6ff' },
-  { id: 'arctic', name: 'Arctic Signal', descriptor: 'Cool analytical operations', mode: 'dark', accent: '#67e8f9' },
+  { id: 'arctic', name: 'Arctic Signal', descriptor: 'Cool analytical operations', mode: 'light', accent: '#0b7cff' },
   { id: 'graphite', name: 'Graphite Pro', descriptor: 'Neutral executive control', mode: 'dark', accent: '#aeb9c8' },
   { id: 'copper', name: 'Copper Dusk', descriptor: 'Warm field operations', mode: 'dark', accent: '#f6a46a' },
   { id: 'signal', name: 'Signal Lime', descriptor: 'High-visibility tactical', mode: 'dark', accent: '#d9ff69' },
