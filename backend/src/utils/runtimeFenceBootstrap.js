@@ -183,11 +183,7 @@ async function claimInChild() {
       }
 
       if (current.owner_id && current.owner_id !== ownerId && !stale && takeover) {
-        console.warn(
-          controlledRailwayReplacement
-            ? "SONALIT runtime fence: Railway replacement deployment " + railwayDeploymentId + " taking over from active owner " + current.owner_id
-            : "SONALIT runtime fence: takeover requested; replacing active owner " + current.owner_id
-        );
+        console.warn("SONALIT runtime fence: takeover requested; replacing active owner " + current.owner_id);
       }
 
       await client.query(`
