@@ -12,6 +12,7 @@ const { publish } = require('../realtime/centrifugo');
 const requireIdempotencyKey = require('../middleware/idempotency');
 const { COMMAND_SIGNING_SECRET, signCommand } = require('../utils/commandSigning');
 const captureVision = require('../utils/captureVision');
+const { getOrgId } = require('../utils/tenantContext');
 const { runWithOrgContext } = require('../utils/tenantContext');
 
 // ─── Integrity age thresholds per command type (T1.4) ────────────────────────
@@ -451,12 +452,15 @@ async function ensureTables() {
 /**
  * Fire-and-forget audit log insert. Never throws — errors are caught and logged.
  */
-function auditLog(actor_type, actor_id, action, target_type, target_id, payload, ip) {
+function auditLog(actor_type, actor_id, action, target_type, target_id, payload, ip, explicitOrgId = null) {
+  const orgId = explicitOrgId || getOrgId();
+  if (!orgId) return;
   query(
     `INSERT INTO guardian_audit_log
-       (actor_type, actor_id, action, target_type, target_id, payload, ip_address)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+       (org_id, actor_type, actor_id, action, target_type, target_id, payload, ip_address)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
     [
+      orgId,
       actor_type,
       actor_id || null,
       action,
@@ -610,7 +614,7 @@ async function runPanicEscalationJob() {
         escalated_at: new Date().toISOString(),
       });
 
-      auditLog('system', null, 'panic_escalated', 'panic_event', row.id, { escalation_level: nextLevel }, null);
+      auditLog('system', null, 'panic_escalated', 'panic_event', row.id, { escalation_level: nextLevel }, null, row.org_id);
       logger.warn(`PANIC escalated: id=${row.id} device=${row.device_name} level=${nextLevel}`);
 
       // Notify org admins/dispatchers with a phone number on file, fire-and-forget.
@@ -1015,7 +1019,7 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
     }
 
     logger.info(`Guardian device enrolled: ${device.id} name="${name}"`);
-    auditLog('device', null, 'enroll', 'device', device.id, { name, android_id }, req.ip);
+    auditLog('device', null, 'enroll', 'device', device.id, { name, android_id }, req.ip, orgId);
 
     const certPin = process.env.GUARDIAN_CERT_PIN || null;
     const { orgId: newOrgId, officerId: newOfficerId } = await resolveOrgOfficer(device.id, name);
