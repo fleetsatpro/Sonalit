@@ -39,13 +39,13 @@ const X_ACCOUNT_MONITORS={
 
 const GOOGLE_RSS=(q,gl='KE',hl='en-KE')=>`https://news.google.com/rss/search?q=${encodeURIComponent(`${q} when:1d`)}&hl=${encodeURIComponent(hl)}&gl=${encodeURIComponent(gl)}&ceid=${encodeURIComponent(`${gl}:${hl.split('-')[0]}`)}`;
 const RSS_FEEDS=[
- {name:'KNA Kenya',url:'https://www.kenyanews.go.ke/feed',country_code:'KE',reliability:78},
+ {name:'KNA Kenya',url:'https://www.kenyanews.go.ke/feed',fallback_url:GOOGLE_RSS('site:kenyanews.go.ke Kenya security OR accident OR protest'),country_code:'KE',reliability:78},
  {name:'Nation Kenya',url:GOOGLE_RSS('site:nation.africa Kenya security OR accident OR protest'),country_code:'KE',reliability:82},
  {name:'Standard Kenya',url:'https://www.standardmedia.co.ke/rss/kenya.php',country_code:'KE',reliability:80},
  {name:'KBC Kenya',url:'https://kbc.co.ke/feed',country_code:'KE',reliability:80},
- {name:'K24 Kenya',url:'https://k24.digital/feed',country_code:'KE',reliability:72},
+ {name:'K24 Kenya',url:'https://k24.digital/feed',fallback_url:GOOGLE_RSS('site:k24.digital Kenya incident OR police OR accident OR protest'),country_code:'KE',reliability:72},
  {name:'Capital FM Kenya',url:'https://capitalfm.co.ke/news/feed',country_code:'KE',reliability:76},
- {name:'Tuko Kenya',url:'https://www.tuko.co.ke/?service=rss',country_code:'KE',reliability:68},
+ {name:'Tuko Kenya',url:'https://www.tuko.co.ke/?service=rss',fallback_url:GOOGLE_RSS('site:tuko.co.ke Kenya security OR incident OR accident OR protest'),country_code:'KE',reliability:68},
  {name:'Citizen Digital Kenya',url:GOOGLE_RSS('site:citizen.digital Kenya incident OR police OR accident OR protest'),country_code:'KE',reliability:74},
  {name:'Kenyans.co.ke',url:GOOGLE_RSS('site:kenyans.co.ke Kenya security OR incident OR protest'),country_code:'KE',reliability:70},
  {name:'Business Daily Africa',url:GOOGLE_RSS('site:businessdailyafrica.com Kenya transport OR port OR border OR disruption'),country_code:'KE',reliability:78},
@@ -100,17 +100,17 @@ const RSS_FEEDS=[
  {name:'Puntland Post',url:'https://puntlandpost.net/feed',country_code:'SO',reliability:68},
 
  {name:'ENA Ethiopia',url:GOOGLE_RSS('site:ena.et Ethiopia security OR conflict OR accident','ET','en-ET'),country_code:'ET',reliability:82},
- {name:'Addis Standard',url:'https://addisstandard.com/feed',country_code:'ET',reliability:78},
+ {name:'Addis Standard',url:'https://addisstandard.com/feed',fallback_url:GOOGLE_RSS('site:addisstandard.com Ethiopia security OR incident OR conflict OR accident','ET','en-ET'),country_code:'ET',reliability:78},
  {name:'Ethiopia Insight',url:'https://www.ethiopia-insight.com/feed',country_code:'ET',reliability:72},
- {name:'The Reporter Ethiopia',url:'https://www.thereporterethiopia.com/feed',country_code:'ET',reliability:74},
- {name:'Zehabesha Ethiopia',url:'https://zehabesha.com/feed',country_code:'ET',reliability:62},
+ {name:'The Reporter Ethiopia',url:'https://www.thereporterethiopia.com/feed',fallback_url:GOOGLE_RSS('site:thereporterethiopia.com Ethiopia security OR incident OR conflict','ET','en-ET'),country_code:'ET',reliability:74},
+ {name:'Zehabesha Ethiopia',url:'https://zehabesha.com/feed',fallback_url:GOOGLE_RSS('site:zehabesha.com Ethiopia security OR incident OR conflict','ET','en-ET'),country_code:'ET',reliability:62},
 
  {name:'Actualite.cd DRC',url:'https://actualite.cd/feed',country_code:'CD',reliability:78},
  {name:'Radio Okapi DRC',url:'https://www.radiookapi.net/feed',country_code:'CD',reliability:84},
  {name:'Kivu Times DRC',url:GOOGLE_RSS('site:theeastafrican.co.ke DRC Goma Bukavu conflict','CD','en-KE'),country_code:'CD',reliability:68},
 
  {name:'Radio Dabanga Sudan',url:'https://www.dabangasudan.org/en/feed',country_code:'SD',reliability:82},
- {name:'Sudan Tribune',url:'https://sudantribune.com/feed',country_code:'SD',reliability:76},
+ {name:'Sudan Tribune',url:'https://sudantribune.com/feed',fallback_url:GOOGLE_RSS('site:sudantribune.com Sudan security OR conflict OR incident','SD','en-SD'),country_code:'SD',reliability:76},
  {name:'Sudan War Monitor',url:GOOGLE_RSS('Sudan conflict security Darfur Khartoum','SD','en-SD'),country_code:'SD',reliability:68}
 ];
 
@@ -127,10 +127,40 @@ async function materializeAlert(orgId,source,o){if(!o?.id)return false;const tex
 
 function xQueryForCountry(code){const country=EA_COUNTRIES[code];const geo=country.terms.map(v=>`"${v}"`).join(' OR ');const accounts=(X_ACCOUNT_MONITORS[code]||[]).map(a=>`from:${a}`).join(' OR ');return accounts?`((${geo}) OR (${accounts})) (${INCIDENT_QUERY}) -is:retweet`:`(${geo}) (${INCIDENT_QUERY}) -is:retweet`;}
 async function fetchX(code){const token=process.env.X_BEARER_TOKEN||process.env.TWITTER_BEARER_TOKEN;if(!token)return[];const q=xQueryForCountry(code),p=new URLSearchParams({query:q,max_results:'100',sort_order:'recency','tweet.fields':'created_at,lang,author_id,public_metrics,context_annotations,geo,entities'});const r=await timeoutFetch(`https://api.x.com/2/tweets/search/recent?${p}`,{headers:{Authorization:`Bearer ${token}`}});if(!r.ok)throw new Error(`X ${EA_COUNTRIES[code].name} HTTP ${r.status}`);const d=await r.json();return(d.data||[]).map(t=>({external_id:`x:${t.id}`,text:t.text,title:clean(t.text,700),published_at:t.created_at,observed_at:t.created_at,language:t.lang,country_code:code,url:`https://x.com/i/web/status/${t.id}`,credibility:45,raw_metadata:{author_id:t.author_id,public_metrics:t.public_metrics,context_annotations:t.context_annotations,geo:t.geo}}));}
-async function fetchGdelt(){const q=`(${EA_CODES.map(c=>EA_COUNTRIES[c].terms.slice(0,5).map(v=>`"${v}"`).join(' OR ')).join(' OR ')}) (${INCIDENT_QUERY})`;const url=`https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(q)}&mode=artlist&maxrecords=${MAX_ITEMS}&timespan=1h&format=json`;const r=await timeoutFetch(url);if(!r.ok)throw new Error(`GDELT HTTP ${r.status}`);const d=await r.json();return(d.articles||[]).map(a=>({external_id:a.url?`gdelt:${sha(a.url)}`:null,title:a.title,body:a.title,url:a.url,published_at:a.seendate?parseDate(String(a.seendate).replace(/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/,'$1-$2-$3T$4:$5:$6Z')):null,language:a.language||null,country_code:detectCountry(`${a.title||''} ${a.domain||''}`),credibility:72,raw_metadata:{domain:a.domain,tone:a.tone,sourcecountry:a.sourcecountry}}));}
+let gdeltUnavailableUntil=0;
+const GDELT_COOLDOWN_MS=15*60*1000;
+const GDELT_FALLBACK_FEED={name:'Google News East Africa Incident Discovery',url:GOOGLE_RSS('(Kenya OR Uganda OR Tanzania OR Rwanda OR Burundi OR Somalia OR Ethiopia OR South Sudan OR DRC OR Sudan) (attack OR conflict OR violence OR kidnapping OR ambush OR unrest OR clash OR protest)','KE','en-KE'),country_code:null,reliability:68};
+async function fetchGdelt(){
+  if(Date.now()<gdeltUnavailableUntil) return fetchRss(GDELT_FALLBACK_FEED);
+  const q=`(${EA_CODES.map(c=>EA_COUNTRIES[c].terms.slice(0,5).map(v=>`"${v}"`).join(' OR ')).join(' OR ')}) (${INCIDENT_QUERY})`;
+  const url=`https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(q)}&mode=artlist&maxrecords=${MAX_ITEMS}&timespan=1h&format=json`;
+  try{
+    const r=await timeoutFetch(url);
+    if(!r.ok) throw new Error(`GDELT HTTP ${r.status}`);
+    const d=await r.json();
+    gdeltUnavailableUntil=0;
+    return(d.articles||[]).map(a=>({external_id:a.url?`gdelt:${sha(a.url)}`:null,title:a.title,body:a.title,url:a.url,published_at:a.seendate?parseDate(String(a.seendate).replace(/(\\d{4})(\\d{2})(\\d{2})(\\d{2})(\\d{2})(\\d{2})/,'$1-$2-$3T$4:$5:$6Z')):null,language:a.language||null,country_code:detectCountry(`${a.title||''} ${a.domain||''}`),credibility:72,raw_metadata:{domain:a.domain,tone:a.tone,sourcecountry:a.sourcecountry}}));
+  }catch(e){
+    gdeltUnavailableUntil=Date.now()+GDELT_COOLDOWN_MS;
+    logger.info(`Regional Incident Fabric: GDELT unavailable (${e.message}); using Google News fallback for ${GDELT_COOLDOWN_MS/60000}m`);
+    return fetchRss(GDELT_FALLBACK_FEED);
+  }
+}
 function rssText(v){if(v==null)return'';if(typeof v==='string')return v;if(typeof v==='object')return v['#text']||v['__cdata']||v.value||v.text||'';return String(v);}
 function rssLink(v){if(v==null)return null;if(typeof v==='string')return v;if(Array.isArray(v))return rssLink(v[0]);if(typeof v==='object')return v.href||v['#text']||v.url||null;return String(v);}
-async function fetchRss(feed){const r=await timeoutFetch(feed.url,{headers:{Accept:'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9,*/*;q=0.1'}});if(!r.ok)throw new Error(`${feed.name} HTTP ${r.status}`);const x=xmlParser.parse(await r.text()),raw=x?.rss?.channel?.item||x?.feed?.entry||[],items=Array.isArray(raw)?raw:[raw];return items.slice(0,MAX_ITEMS).map(i=>{const title=clean(rssText(i.title),700),body=clean(rssText(i.description)||rssText(i.summary)||rssText(i.content)||title,7000),link=rssLink(i.link),published=parseDate(rssText(i.pubDate)||rssText(i.published)||rssText(i.updated));return{external_id:i.guid?`rss:${rssText(i.guid)}`:(i.id?`rss:${rssText(i.id)}`:(link?`rss:${sha(link)}`:null)),title,body,text:body,url:link,published_at:published,language:rssText(i.language)||null,country_code:feed.country_code,credibility:feed.reliability,raw_metadata:{feed:feed.name,feed_url:feed.url}};}).filter(i=>{const c=detectCountry(`${i.title} ${i.body}`,i.country_code);return c!==null;});}
+async function fetchRss(feed){
+  async function fetchOne(url,sourceName){
+    const r=await timeoutFetch(url,{headers:{Accept:'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9,*/*;q=0.1','User-Agent':'Sonalit-RiskIntel/1.0'}});
+    if(!r.ok) throw new Error(`${sourceName} HTTP ${r.status}`);
+    const x=xmlParser.parse(await r.text()),raw=x?.rss?.channel?.item||x?.feed?.entry||[],items=Array.isArray(raw)?raw:[raw];
+    return items.slice(0,MAX_ITEMS).map(i=>{const title=clean(rssText(i.title),700),body=clean(rssText(i.description)||rssText(i.summary)||rssText(i.content)||title,7000),link=rssLink(i.link),published=parseDate(rssText(i.pubDate)||rssText(i.published)||rssText(i.updated));return{external_id:i.guid?`rss:${rssText(i.guid)}`:(i.id?`rss:${rssText(i.id)}`:(link?`rss:${sha(link)}`:null)),title,body,text:body,url:link,published_at:published,language:rssText(i.language)||null,country_code:feed.country_code,credibility:feed.reliability,raw_metadata:{feed:feed.name,feed_url:url,primary_feed_url:feed.url,fallback_used:url!==feed.url}};}).filter(i=>{const c=detectCountry(`${i.title} ${i.body}`,i.country_code);return c!==null;});
+  }
+  try{return await fetchOne(feed.url,feed.name);}catch(primaryError){
+    if(!feed.fallback_url) throw primaryError;
+    logger.info(`Regional Incident Fabric: RSS ${feed.name} primary unavailable (${primaryError.message}); using Google News fallback`);
+    return fetchOne(feed.fallback_url,feed.name);
+  }
+}
 async function fetchTelegram(entry,since){let messages=await telegramMtproto.fetchChannelMessages(entry.channel,since),via='mtproto';if(!messages.length&&!telegramMtproto.isConfigured()){messages=await telegramMtproto.fetchPublicChannelPreview(entry.channel,since);via='public-preview';}return messages.map(m=>({external_id:`telegram:${entry.channel}:${m.id}`,text:m.text,title:clean(m.text,700),published_at:new Date(m.postedAt).toISOString(),observed_at:new Date(m.postedAt).toISOString(),url:`https://t.me/${entry.channel}/${String(m.id).split('/').pop()}`,country_code:entry.country_code,credibility:Number(entry.reliability)||35,raw_metadata:{channel:entry.channel,collection_mode:via}}));}
 async function fetchWhatsAppFeeds(){let feeds=[];try{feeds=JSON.parse(process.env.RISK_INTEL_WHATSAPP_FEEDS||'[]')}catch{}const out=[];for(const feed of Array.isArray(feeds)?feeds.slice(0,30):[]){if(!feed?.url)continue;try{const r=await timeoutFetch(feed.url,{headers:{Accept:'application/json, application/rss+xml, application/xml'}});if(!r.ok)throw new Error(`HTTP ${r.status}`);const text=await r.text();let payload=null;try{payload=JSON.parse(text)}catch{}if(Array.isArray(payload))for(const item of payload.slice(0,MAX_ITEMS))out.push({...item,country_code:item.country_code||feed.country_code,credibility:Number(item.credibility)||Number(feed.reliability)||35,raw_metadata:{...(item.raw_metadata||{}),transport:'whatsapp-authorized-feed',feed:feed.name||feed.url}});else{const x=xmlParser.parse(text),raw=x?.rss?.channel?.item||x?.feed?.entry||[],items=Array.isArray(raw)?raw:[raw];for(const i of items.slice(0,MAX_ITEMS))out.push({external_id:i.guid?`whatsapp:${rssText(i.guid)}`:null,title:clean(rssText(i.title),700),body:clean(rssText(i.description)||rssText(i.summary)||rssText(i.content),7000),url:rssLink(i.link),published_at:parseDate(rssText(i.pubDate)||rssText(i.published)||rssText(i.updated)),country_code:feed.country_code,credibility:Number(feed.reliability)||35,raw_metadata:{transport:'whatsapp-authorized-feed',feed:feed.name||feed.url}});}}catch(e){logger.warn(`Regional Incident Fabric: WhatsApp feed ${feed.name||feed.url} failed: ${e.message}`);}}return out.filter(i=>detectCountry(`${i.title||''} ${i.body||i.text||''}`,i.country_code));}
 async function collectProvider(orgId,spec,items){const source=await ensureSource(orgId,spec);let inserted=0,alerts=0;for(const item of items.slice(0,MAX_ITEMS)){const o=await persistObservation(orgId,source,item);if(!o)continue;inserted++;if(await materializeAlert(orgId,source,o))alerts++;}return{provider:spec.provider,name:spec.name,seen:items.length,inserted,alerts,status:'success'};}
