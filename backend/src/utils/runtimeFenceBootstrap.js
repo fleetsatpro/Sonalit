@@ -23,14 +23,94 @@ const takeover = String(process.env.SONALIT_FENCE_TAKEOVER || "").toLowerCase() 
 const railwayDeploymentId = process.env.RAILWAY_DEPLOYMENT_ID || null;
 const isRailwayPrimary = isProduction && Boolean(railwayDeploymentId && process.env.RAILWAY_SERVICE_ID);
 const FENCE_STALE_SECONDS = Math.max(30, Number(process.env.SONALIT_FENCE_STALE_SECONDS || 60));
-const FENCE_HEARTBEAT_MS = Math.max(10_000, Number(process.env.SONALIT_FENCE_HEARTBEAT_MS || 15_000));
+const FENCE_HEARTBEAT_MS = Math.max(1_000, Number(process.env.SONALIT_FENCE_HEARTBEAT_MS || 5_000));
+const CANDIDATE_EXIT_CODE = 79;
+let fenceActive = !isProduction || isStandby;
+let fenceCandidate = false;
+let fenceClient = null;
+const deferredCronSchedules = [];
+const activeCronTasks = [];
+let cronGateInstalled = false;
 
 function shouldTakeOver({ takeoverRequested, incomingDeploymentId, currentDeploymentId }) {
   if (takeoverRequested) return true;
-  // Railway starts a replacement deployment before retiring the old one. The
-  // deployment ID lets us allow that controlled handover while still rejecting
-  // a second active replica from the same deployment.
   return Boolean(incomingDeploymentId) && currentDeploymentId !== incomingDeploymentId;
+}
+
+function classifyFenceStart({
+  production,
+  standby,
+  takeoverRequested,
+  incomingDeploymentId,
+  currentOwner,
+  currentDeploymentId,
+  stale,
+}) {
+  if (!production || standby) return 'bypass';
+  if (!currentOwner || stale || takeoverRequested) return 'active';
+  if (incomingDeploymentId && currentDeploymentId !== incomingDeploymentId) return 'candidate';
+  return 'refuse';
+}
+
+function installCronGate() {
+  if (cronGateInstalled || !isProduction || isStandby || isClaimChild) return;
+  const Module = require('module');
+  const originalLoad = Module._load;
+  Module._load = function sonalitFenceAwareLoad(request, parent, isMain) {
+    const loaded = originalLoad.call(this, request, parent, isMain);
+    if (request !== 'node-cron' || loaded.__sonalitFenceWrapped) return loaded;
+    const wrapped = Object.assign({}, loaded);
+    wrapped.schedule = function guardedSchedule(expression, callback, options) {
+      const spec = { expression, callback, options };
+      if (fenceCandidate && !fenceActive) {
+        deferredCronSchedules.push(spec);
+        return {
+          start() {},
+          stop() {},
+          destroy() {},
+          execute(...args) { return fenceActive ? callback(...args) : undefined; },
+        };
+      }
+      const task = loaded.schedule(expression, (...args) => {
+        if (!fenceActive) return undefined;
+        return callback(...args);
+      }, options);
+      activeCronTasks.push(task);
+      return task;
+    };
+    Object.defineProperty(wrapped, '__sonalitFenceWrapped', { value: true });
+    return wrapped;
+  };
+  cronGateInstalled = true;
+}
+
+function stopActiveCronTasks() {
+  while (activeCronTasks.length) {
+    const task = activeCronTasks.pop();
+    try { task.stop?.(); } catch (_) {}
+    try { task.destroy?.(); } catch (_) {}
+  }
+}
+
+function activateDeferredCron() {
+  if (!deferredCronSchedules.length) return;
+  const Module = require('module');
+  const originalLoad = Module._load;
+  const cron = originalLoad.call(Module, 'node-cron', module, false);
+  const schedules = deferredCronSchedules.splice(0);
+  for (const { expression, callback, options } of schedules) {
+    const task = cron.schedule(expression, (...args) => {
+      if (!fenceActive) return undefined;
+      return callback(...args);
+    }, options);
+    activeCronTasks.push(task);
+  }
+}
+
+function deactivateFence() {
+  fenceActive = false;
+  fenceCandidate = false;
+  stopActiveCronTasks();
 }
 
 async function claimInChild() {
@@ -80,20 +160,29 @@ async function claimInChild() {
       `);
       const current = rows[0] || {};
       const stale = !current.owner_id || current.age_seconds == null || Number(current.age_seconds) >= FENCE_STALE_SECONDS;
-      const controlledRailwayReplacement = isRailwayPrimary && shouldTakeOver({
-        takeoverRequested: false,
+      const startMode = classifyFenceStart({
+        production: isProduction,
+        standby: isStandby,
+        takeoverRequested: takeover,
         incomingDeploymentId: railwayDeploymentId,
+        currentOwner: current.owner_id,
         currentDeploymentId: current.deployment_id || null,
+        stale,
       });
-      const canTakeOver = takeover || controlledRailwayReplacement;
 
-      if (current.owner_id && current.owner_id !== ownerId && !stale && !canTakeOver) {
+      if (startMode === 'candidate') {
+        console.warn('SONALIT runtime fence: Railway replacement is entering quiescent health-check mode before takeover');
+        process.exitCode = CANDIDATE_EXIT_CODE;
+        return;
+      }
+
+      if (startMode === 'refuse') {
         console.error(`SONALIT runtime fence: active runtime ${current.owner_id} already owns the lease; refusing split-brain startup`);
         process.exitCode = 78;
         return;
       }
 
-      if (current.owner_id && current.owner_id !== ownerId && !stale && canTakeOver) {
+      if (current.owner_id && current.owner_id !== ownerId && !stale && takeover) {
         console.warn(
           controlledRailwayReplacement
             ? "SONALIT runtime fence: Railway replacement deployment " + railwayDeploymentId + " taking over from active owner " + current.owner_id
@@ -123,7 +212,14 @@ async function claimInChild() {
 if (isClaimChild) {
   claimInChild().finally(() => process.exit(process.exitCode || 0));
 } else if (isStandby || !isProduction || process.env.NODE_ENV === "test") {
-  module.exports = { enabled: false, standby: isStandby, shouldTakeOver };
+  module.exports = {
+    enabled: false,
+    standby: isStandby,
+    shouldTakeOver,
+    classifyFenceStart,
+    isFenceActive: () => true,
+    promoteFromHealthcheck: async () => false,
+  };
 } else {
   const childEnv = {
     ...process.env,
@@ -135,16 +231,21 @@ if (isClaimChild) {
     stdio: "inherit",
   });
 
-  if (claim.error || claim.status !== 0) {
+  if (claim.error || (claim.status !== 0 && claim.status !== CANDIDATE_EXIT_CODE)) {
     console.error(`SONALIT runtime fence: refusing application startup (claim status=${claim.status ?? "error"})`);
     process.exit(claim.status || 78);
   }
+
+  fenceCandidate = claim.status === CANDIDATE_EXIT_CODE;
+  fenceActive = !fenceCandidate;
+  installCronGate();
 
   const client = new Client({
     connectionString: process.env.DATABASE_URL,
     connectionTimeoutMillis: 10_000,
     application_name: `sonalit-active-fence:${ownerId}`,
   });
+  fenceClient = client;
   let heartbeatTimer;
   let stopping = false;
 
@@ -165,8 +266,47 @@ if (isClaimChild) {
 
   client.on("error", err => {
     console.error(`SONALIT runtime fence: PostgreSQL connection lost: ${err.message || String(err)}`);
-    process.exit(78);
+    if (fenceActive) process.exit(78);
   });
+
+  async function promoteFromHealthcheck(req) {
+    if (!fenceCandidate || !fenceClient) return fenceActive;
+    const host = String(req?.headers?.host || '').toLowerCase().split(':')[0];
+    if (host !== 'healthcheck.railway.app') return false;
+
+    await fenceClient.query("SELECT pg_advisory_lock(hashtext('sonalit-runtime-fence'))");
+    try {
+      const { rows } = await fenceClient.query(`
+        SELECT owner_id, deployment_id,
+               EXTRACT(EPOCH FROM (NOW() - heartbeat_at)) AS age_seconds
+        FROM sonalit_runtime_fence
+        WHERE id = 1
+        FOR UPDATE
+      `);
+      const current = rows[0] || {};
+      const stale = !current.owner_id || current.age_seconds == null || Number(current.age_seconds) >= FENCE_STALE_SECONDS;
+      const controlledReplacement = !stale && current.deployment_id !== railwayDeploymentId;
+      if (current.owner_id && current.owner_id !== ownerId && !stale && !controlledReplacement) {
+        return false;
+      }
+
+      await fenceClient.query(`
+        UPDATE sonalit_runtime_fence
+        SET owner_id = $1,
+            acquired_at = NOW(),
+            heartbeat_at = NOW(),
+            deployment_id = $2
+        WHERE id = 1
+      `, [ownerId, railwayDeploymentId]);
+
+      fenceCandidate = false;
+      fenceActive = true;
+      activateDeferredCron();
+      return true;
+    } finally {
+      await fenceClient.query("SELECT pg_advisory_unlock(hashtext('sonalit-runtime-fence'))");
+    }
+  }
 
   client.connect()
     .then(() => {
@@ -179,6 +319,7 @@ if (isClaimChild) {
           `, [ownerId]);
           if (rowCount !== 1) {
             console.error("SONALIT runtime fence: ownership was lost; terminating active runtime");
+            deactivateFence();
             process.exit(78);
           }
         } catch (err) {
@@ -195,5 +336,13 @@ if (isClaimChild) {
       process.exit(78);
     });
 
-  module.exports = { enabled: true, ownerId, takeover, staleSeconds: FENCE_STALE_SECONDS, deploymentId: railwayDeploymentId };
+  module.exports = {
+    enabled: true,
+    ownerId,
+    takeover,
+    staleSeconds: FENCE_STALE_SECONDS,
+    deploymentId: railwayDeploymentId,
+    isFenceActive: () => fenceActive,
+    promoteFromHealthcheck,
+  };
 }
