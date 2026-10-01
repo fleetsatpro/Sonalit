@@ -47,7 +47,7 @@ function applyTheme(theme: Theme) {
   }
 }
 
-function normalizeTheme(value: unknown): Theme {
+export function normalizeTheme(value: unknown): Theme {
   if (value === 'dark') return 'obsidian';
   if (value === 'light') return 'ivory';
   return isTheme(value) ? value : DEFAULT_THEME;
