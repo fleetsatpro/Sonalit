@@ -5,7 +5,7 @@ import { useAuthStore, getAccessToken } from '../stores/auth.js';
 import { Settings as SettingsIcon, Key, Shield, Copy, Trash2, Plus, X, MessageCircle, Palette } from 'lucide-react';
 import { GuardianConvoySettings } from '../components/GuardianConvoySettings.js';
 import { HandoverOfficerSettings } from '../components/HandoverOfficerSettings.js';
-import { useUIStore } from '../stores/ui.js';
+import { THEMES, useUIStore } from '../stores/ui.js';
 
 interface ApiKey {
   id: string;
@@ -378,39 +378,51 @@ interface WhatsAppConfig {
 }
 
 function AppearanceSection() {
-  const theme = useUIStore((state) => state.theme);
-  const setTheme = useUIStore((state) => state.setTheme);
-  const themes = [
-    { id: 'obsidian' as const, name: 'Obsidian Command', description: 'Deep-space control room', swatch: 'theme-swatch-obsidian' },
-    { id: 'arctic' as const, name: 'Arctic Signal', description: 'Cool analytical console', swatch: 'theme-swatch-arctic' },
-    { id: 'graphite' as const, name: 'Graphite Pro', description: 'Neutral executive control', swatch: 'theme-swatch-graphite' },
-    { id: 'copper' as const, name: 'Copper Dusk', description: 'Warm field operations', swatch: 'theme-swatch-copper' },
-    { id: 'signal' as const, name: 'Signal Lime', description: 'High-visibility NOC', swatch: 'theme-swatch-signal' },
-    { id: 'ivory' as const, name: 'Ivory Daylight', description: 'Bright field/tablet mode', swatch: 'theme-swatch-ivory' },
-  ];
+  const theme = useUIStore((s) => s.theme);
+  const setTheme = useUIStore((s) => s.setTheme);
 
   return (
     <SectionCard title="Appearance" icon={<Palette size={16} className="text-orange-400" />}>
-      <div className="space-y-3">
+      <div className="space-y-4">
         <div>
-          <p className="text-sm font-medium text-slate-200">Workspace theme</p>
-          <p className="text-xs text-slate-500 mt-1">Changes presentation only. Fleet state, alerts, permissions and operational meaning remain unchanged.</p>
+          <p className="text-sm font-medium">Operator interface</p>
+          <p className="text-xs text-slate-400 mt-1">
+            Choose the visual environment for Sonalit. Operational data, permissions, alerts and workflows are unchanged.
+          </p>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2" role="radiogroup" aria-label="Workspace theme">
-          {themes.map((item) => (
-            <button key={item.id} type="button" role="radio" aria-checked={theme === item.id}
-              onClick={() => setTheme(item.id)}
-              className={`sonalit-theme-choice ${theme === item.id ? 'is-selected' : ''}`}>
-              <span className={`sonalit-theme-swatch ${item.swatch}`} aria-hidden="true" />
-              <span className="min-w-0 text-left">
-                <span className="block text-sm font-semibold text-slate-200">{item.name}</span>
-                <span className="block text-xs text-slate-500 mt-0.5">{item.description}</span>
-              </span>
-              <span className="sonalit-theme-check" aria-hidden="true">{theme === item.id ? '✓' : ''}</span>
-            </button>
-          ))}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2" role="radiogroup" aria-label="Sonalit interface theme">
+          {THEMES.map((opt) => {
+            const selected = theme === opt.id;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => setTheme(opt.id)}
+                className={`sonalit-theme-choice ${selected ? 'is-selected' : ''}`}
+              >
+                <span className={`sonalit-theme-swatch theme-swatch-${opt.id}`} aria-hidden="true" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold truncate">{opt.name}</span>
+                  <span className="block text-[11px] text-slate-400 mt-0.5">{opt.description}</span>
+                </span>
+                <span className="sonalit-theme-check" aria-hidden={!selected}>{selected ? '✓' : ''}</span>
+              </button>
+            );
+          })}
         </div>
-        <p className="text-xs text-slate-500">Saved automatically on this device and restored before the app mounts to avoid a theme flash.</p>
+
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-700/70 bg-slate-900/60 px-3 py-2.5">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold">Current theme</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              {THEMES.find((opt) => opt.id === theme)?.name ?? 'Obsidian Command'} · saved on this device
+            </p>
+          </div>
+          <span className="shrink-0 text-[10px] uppercase tracking-[0.16em] text-slate-500">Appearance</span>
+        </div>
       </div>
     </SectionCard>
   );
