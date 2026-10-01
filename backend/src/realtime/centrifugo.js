@@ -14,7 +14,7 @@ async function publish(channel, data) {
   try {
     const resp = await fetch(`${CENTRIFUGO_URL}/api/publish`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `apikey ${CENTRIFUGO_API_KEY}` },
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': CENTRIFUGO_API_KEY },
       body: JSON.stringify({ channel, data }),
     });
     if (!resp.ok) logger.warn(`Centrifugo publish failed: ${resp.status} on ${channel}`);
