@@ -68,6 +68,18 @@ describe('centrifugo publish()', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('channel not allowed'));
   });
 
+  test('normalizes a legacy websocket URL for HTTP API publishing', async () => {
+    process.env.CENTRIFUGO_API_KEY = 'secret-key';
+    process.env.CENTRIFUGO_URL = 'wss://rt.sonalit.io/connection/websocket';
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ result: {} }) });
+    const { publish } = require('../src/realtime/centrifugo');
+    await publish('test-channel', {});
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://rt.sonalit.io/api/publish',
+      expect.any(Object)
+    );
+  });
+
   test('logs warning on non-ok response', async () => {
     process.env.CENTRIFUGO_API_KEY = 'secret-key';
     mockFetch.mockResolvedValueOnce({ ok: false, status: 503 });
