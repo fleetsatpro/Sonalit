@@ -369,6 +369,7 @@ router.get('/convoy/:convoy_id/overview', clientAuth, asyncHandler(async (req, r
             (SELECT GREATEST(0, COUNT(DISTINCT ccl2.client_id) - 1)
              FROM cargo_client_links ccl2
              WHERE ccl2.convoy_id = c.id
+               AND ccl2.org_id = c.org_id
             ) AS coload_count,
             (SELECT COUNT(*) FROM alerts a WHERE a.convoy_id = c.id AND a.resolved_at IS NULL) AS exception_count
      FROM convoys c
