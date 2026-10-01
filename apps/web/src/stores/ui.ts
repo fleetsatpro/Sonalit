@@ -10,6 +10,7 @@ function applyTheme(theme: Theme) {
   const root = document.documentElement;
   const definition = getTheme(theme);
   root.setAttribute('data-theme', definition.id);
+  root.classList.toggle('dark', definition.mode === 'dark');
   root.style.colorScheme = definition.mode;
 
   const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
