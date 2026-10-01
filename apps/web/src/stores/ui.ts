@@ -14,6 +14,7 @@ export const THEME_META: Record<Theme, { label: string; description: string; pre
 };
 
 const DEFAULT_THEME: Theme = 'obsidian';
+const isTheme = (value: unknown): value is Theme => typeof value === 'string' && (SONALIT_THEMES as readonly string[]).includes(value);
 
 // The theme field existed here before but nothing ever applied it — no
 // component read useUIStore.theme, so switching it had zero visible effect.
@@ -51,6 +52,11 @@ export const useUIStore = create<UIState>()(
     }),
     {
       name: 'sonalit-ui',
+      version: 2,
+      migrate: (persisted: unknown) => {
+        const state = persisted as { theme?: unknown } | null;
+        return { theme: isTheme(state?.theme) ? state!.theme : DEFAULT_THEME };
+      },
       // Only theme is worth remembering across sessions — sidebarOpen should
       // keep re-deriving from viewport width on each load (its original
       // behavior), not get stuck on whatever it was last closed/opened to.
