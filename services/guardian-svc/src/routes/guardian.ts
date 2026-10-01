@@ -7,6 +7,7 @@ import { getJs } from '../nats.js';
 import { StringCodec } from 'nats';
 import { NotFoundError, AuthError } from '../lib/errors.js';
 import { deviceAuthHook } from '../middleware/deviceAuth.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const EnrollSchema = z.object({
   device_id: z.string().min(1).max(255),
@@ -145,18 +146,20 @@ export const guardianRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // Issue a command to a device (operator-facing, not device-facing — no device auth here).
-  app.post('/v4/guardian/commands', async (req, reply) => {
+  app.post('/v4/guardian/commands', { preHandler: requireAuth }, async (req, reply) => {
     const body = CommandSchema.parse(req.body);
+    const orgId = req.user?.org_id;
+    if (!orgId) throw new AuthError('tenant scope missing');
     const device = await queryOne<{ id: string }>(
-      'SELECT id FROM guardian_devices WHERE id=$1 AND deleted_at IS NULL',
-      [body.device_id],
+      'SELECT id FROM guardian_devices WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL',
+      [body.device_id, orgId],
     );
     if (!device) throw new NotFoundError('Device not found');
 
     const [cmd] = await query<{ id: string; command_type: string; status: string }>(
-      `INSERT INTO device_commands (id, device_id, command_type, params, status)
-       VALUES ($1,$2,$3,$4,'pending') RETURNING id, command_type, status, created_at`,
-      [randomUUID(), body.device_id, body.command_type, JSON.stringify(body.params ?? {})],
+      `INSERT INTO device_commands (id, org_id, device_id, command_type, params, status)
+       VALUES ($1,$2,$3,$4,$5,'pending') RETURNING id, command_type, status, created_at`,
+      [randomUUID(), orgId, body.device_id, body.command_type, JSON.stringify(body.params ?? {})],
     );
     return reply.code(201).send(cmd);
   });
@@ -174,9 +177,9 @@ export const guardianRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // List enrolled devices (operator-facing).
-  app.get('/v4/guardian/devices', async (req, reply) => {
-    const orgId = req.headers['x-org-id'] as string | undefined;
-    if (!orgId) throw new AuthError('x-org-id header required');
+  app.get('/v4/guardian/devices', { preHandler: requireAuth }, async (req, reply) => {
+    const orgId = req.user?.org_id;
+    if (!orgId) throw new AuthError('tenant scope missing');
 
     const devices = await query(
       `SELECT id, device_id, name, status, platform, app_version,
@@ -190,13 +193,15 @@ export const guardianRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // Approve/activate a pending device (operator-facing).
-  app.post('/v4/guardian/devices/:id/approve', async (req, reply) => {
+  app.post('/v4/guardian/devices/:id/approve', { preHandler: requireAuth }, async (req, reply) => {
     const { id } = req.params as { id: string };
+    const orgId = req.user?.org_id;
+    if (!orgId) throw new AuthError('tenant scope missing');
     const device = await queryOne<{ id: string; status: string }>(
       `UPDATE guardian_devices SET status='enrolled', updated_at=NOW()
-       WHERE id=$1 AND status='pending' AND deleted_at IS NULL
+       WHERE id=$1 AND org_id=$2 AND status='pending' AND deleted_at IS NULL
        RETURNING id, status`,
-      [id],
+      [id, orgId],
     );
     if (!device) throw new NotFoundError('Device not found or not in pending state');
     return reply.send(device);
@@ -209,8 +214,10 @@ export const guardianRoutes: FastifyPluginAsync = async (app) => {
     name: z.string().max(255).optional(),
   });
 
-  app.patch('/v4/guardian/devices/:id', async (req, reply) => {
+  app.patch('/v4/guardian/devices/:id', { preHandler: requireAuth }, async (req, reply) => {
     const { id } = req.params as { id: string };
+    const orgId = req.user?.org_id;
+    if (!orgId) throw new AuthError('tenant scope missing');
     const body = AssignDeviceSchema.parse(req.body);
     const sets: string[] = [];
     const params: unknown[] = [];
@@ -218,14 +225,14 @@ export const guardianRoutes: FastifyPluginAsync = async (app) => {
     if (body.assignment_id !== undefined) { params.push(body.assignment_id); sets.push(`assignment_id = $${params.length}`); }
     if (body.name !== undefined) { params.push(body.name); sets.push(`name = $${params.length}`); }
     if (!sets.length) {
-      const d = await queryOne('SELECT * FROM guardian_devices WHERE id=$1 AND deleted_at IS NULL', [id]);
+      const d = await queryOne('SELECT * FROM guardian_devices WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL', [id, orgId]);
       if (!d) throw new NotFoundError('Device not found');
       return reply.send(d);
     }
     params.push(id);
     const device = await queryOne(
-      `UPDATE guardian_devices SET ${sets.join(', ')}, updated_at=NOW() WHERE id=$${params.length} AND deleted_at IS NULL RETURNING *`,
-      params,
+      `UPDATE guardian_devices SET ${sets.join(', ')}, updated_at=NOW() WHERE id=${params.length} AND org_id=${params.length + 1} AND deleted_at IS NULL RETURNING *`,
+      [...params, id, orgId],
     );
     if (!device) throw new NotFoundError('Device not found');
     return reply.send(device);
