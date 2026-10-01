@@ -111,8 +111,12 @@ async function drainPulseWork(reason) {
 
 async function shutdown() {
   logger.info('Notification/email workers shutting down');
-  await drainPulseWork('shutdown');
+  const drained = await drainPulseWork('shutdown');
   await advisoryLeader?.stop?.().catch(() => {});
+  if (!drained) {
+    logger.error('Notification worker shutdown drain timed out; exiting without closing the pool');
+    process.exit(78);
+  }
   await Promise.all([fanoutWorker.close().catch(() => {}), resendWorker.close().catch(() => {})]);
   await pool.end().catch(() => {});
   process.exit(0);
