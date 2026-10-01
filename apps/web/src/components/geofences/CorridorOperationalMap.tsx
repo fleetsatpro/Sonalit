@@ -6,6 +6,7 @@ import { Crosshair, Minus, Plus, ShieldAlert, Target, Truck } from 'lucide-react
 import { SAT_STYLE } from '../../lib/mapStyles.js';
 import type { GlobeMember, LatLng, RiskZone } from './CorridorWorldScene.js';
 import '../../styles/spatial-command.css';
+import { spatialPixelRatio, spatialCanvasContextAttributes } from '../../lib/spatialRendering.js';
 
 const CENTER = { longitude: 36.8219, latitude: -1.2921, zoom: 5.5 };
 const XD_VECTOR_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
@@ -115,7 +116,7 @@ export default function CorridorOperationalMap({ route, members, zones = [], foc
   const context = focused ? deviceContext(focused) : '';
   const initial = members.find(m => m.lat != null && m.lng != null);
   const initialView = initial ? { longitude: initial.lng!, latitude: initial.lat!, zoom: 9 } : CENTER;
-  const pixelRatio = typeof window === 'undefined' ? 1 : Math.min(window.devicePixelRatio || 1, 2.25);
+  const pixelRatio = spatialPixelRatio();
   const positionedCount = members.filter(m => m.lat != null && m.lng != null).length;
 
   useEffect(() => {
@@ -177,7 +178,7 @@ export default function CorridorOperationalMap({ route, members, zones = [], foc
           touchZoomRotate
           pixelRatio={pixelRatio}
           maxCanvasSize={[8192, 8192]}
-          canvasContextAttributes={{ antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: false, contextType: 'webgl2' }}
+          canvasContextAttributes={spatialCanvasContextAttributes}
         >
           <ScaleControl position="bottom-left" unit="metric" maxWidth={120} />
           <AttributionControl position="bottom-right" compact />
