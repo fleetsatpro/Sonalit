@@ -137,11 +137,20 @@ export async function startOffline(id: OfflineIdentity): Promise<boolean> {
     return false;
   }
 
-  const previous = await db.sync_meta.get('session:userId');
-  if (typeof previous?.value === 'string' && previous.value !== id.userId) {
+  const previous = await db.sync_meta.get('session:identity');
+  if (previous?.value && typeof previous.value === 'object') {
+    const prev = previous.value as { userId?: unknown; orgId?: unknown };
+    if (typeof prev.userId === 'string' && (prev.userId !== id.userId || prev.orgId !== id.orgId)) {
+      // A tenant change is a hard security boundary. Unlike a normal logout,
+      // there is no safe reason to retain unsent work from the previous org on
+      // a shared device where it could later be surfaced or replayed.
+      await purgeUserData(prev.userId, { keepUnsyncedOutbox: false });
+    }
+  } else if (typeof previous?.value === 'string' && previous.value !== id.userId) {
     await purgeUserData(previous.value);
   }
-  await db.sync_meta.put({ key: 'session:userId', value: id.userId });
+  await db.sync_meta.put({ key: 'session:identity', value: { userId: id.userId, orgId: id.orgId } });
+  await db.sync_meta.delete('session:userId');
 
   identity = id;
   blocked = null;
@@ -178,6 +187,7 @@ export async function stopOffline({ purge = true }: { purge?: boolean } = {}): P
   if (purge && id && available) {
     try {
       await purgeUserData(id.userId);
+      await db.sync_meta.delete('session:identity');
       await db.sync_meta.delete('session:userId');
     } catch { /* a failed purge must not block sign-out */ }
   }
