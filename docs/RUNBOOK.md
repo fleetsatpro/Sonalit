@@ -11,6 +11,10 @@ Returns 200 when healthy, 503 when database is unreachable or a partition is mis
 
 ## Deployment
 
+### Railway Centrifugo service contract
+
+The Sonalit API/worker services publish to Centrifugo over Railway private networking at `http://centrifugo.railway.internal:8000`. `CENTRIFUGO_API_KEY` must reference `${{centrifugo.CENTRIFUGO_HTTP_API_KEY}}`. The Centrifugo service must declare the `risk` channel namespace because Risk Intel publishes on `risk:updates:<org_id>`; otherwise Centrifugo returns error 102 (`unknown channel`).
+
 ### Backend (Railway)
 
 1. Push to `main` branch — Railway auto-deploys.
@@ -43,7 +47,7 @@ See `backend/.env.example` for the full list. Critical variables:
 | `REDIS_URL` | Yes (prod) | BullMQ + rate-limit state |
 | `JWT_SECRET` | Yes | Min 32 bytes; generated randomly if absent (breaks sessions on restart) |
 | `CENTRIFUGO_API_URL` | Yes (real-time) | e.g. `https://rt.sonalit.io` |
-| `CENTRIFUGO_API_KEY` | Yes (real-time) | HTTP API key for publish |
+| `CENTRIFUGO_API_KEY` | Yes (real-time) | Must reference Centrifugo's `CENTRIFUGO_HTTP_API_KEY`; this is the HTTP publish credential, not the client-token key. |
 | `CENTRIFUGO_TOKEN_HMAC_SECRET` | Yes (real-time) | WS connection JWT signing key |
 | `IMEI_PEPPER` | Yes | GDPR; never rotate without hash backfill |
 | `SENTRY_DSN` | No | Backend error reporting; omit to disable |
