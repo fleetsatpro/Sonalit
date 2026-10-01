@@ -177,7 +177,11 @@ export default function GodsEyeView() {
   const topEntities = useMemo(() => renderableExternalEntities.slice(0, 10), [renderableExternalEntities])
 
   return (
-    <div className="gev-shell">
+    <div
+      className="gev-shell"
+      data-overview-collapsed={!overviewOpen}
+      data-intelligence-collapsed={!intelligenceOpen}
+    >
       <header className="gev-topbar">
         <div className="gev-brand">
           <div className="gev-brand-mark" aria-hidden="true"><Globe2 size={18} /></div>
