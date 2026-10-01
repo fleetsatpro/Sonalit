@@ -270,6 +270,8 @@ export default function CorridorWorldScene({
         fullscreenButton: false,
         requestRenderMode: true,
         maximumRenderTimeChange: Infinity,
+        scene3DOnly: true,
+        contextOptions: { webgl: { alpha: true, antialias: true } },
       });
     } catch {
       setInitFailed(true);
@@ -292,7 +294,8 @@ export default function CorridorWorldScene({
     viewer.scene.highDynamicRange = true;
     viewer.scene.postProcessStages.fxaa.enabled = true;
     viewer.scene.msaaSamples = compactSurface ? 2 : 4;
-    viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, compactSurface ? 1.5 : 2);
+    viewer.useBrowserRecommendedResolution = false;
+    viewer.resolutionScale = compactSurface ? 1.5 : 2;
     setMapStatus(TOKEN ? 'CESIUM + ESRI · LIVE' : 'ESRI FALLBACK · ION TOKEN NOT EXPOSED');
 
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
