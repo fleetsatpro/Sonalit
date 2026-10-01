@@ -6,8 +6,8 @@ This matrix records where GEV-derived capabilities live in Sonalit. It is a capa
 |---|---|---|---|
 | Canonical spatial observation model | Spatial Intelligence | OPERATIONAL | Shared SpatialObservation contract with freshness, provenance, coverage and confidence. |
 | Multi-provider World Context | XD + Intelligence Centre | OPERATIONAL | Canonical provider fabric feeds World Context. |
-| CCTV camera registry | XD Live Surveillance | OPERATIONAL (catalog) | First-class camera observations, pose, viewshed, health and provenance. |
-| CCTV media | XD Live Surveillance | PARTIAL / SAFE-FALLBACK | Only camera-id mediated retrieval; allowlist + HTTPS + private-address/DNS checks; synthetic frame when no approved feed exists. |
+| CCTV camera registry | XD Live Surveillance + GEV | OPERATIONAL (source-backed catalog) | First-class camera observations, pose, viewshed, health and provenance. Production does not inject sample cameras. |
+| CCTV media | XD Live Surveillance + GEV | SOURCE-DEPENDENT | Only camera-id mediated retrieval; allowlist + HTTPS + private-address/DNS checks. Missing/unavailable media produces an explicit API error; no synthetic image is emitted. |
 | CCTV viewshed geometry | XD Live Surveillance | OPERATIONAL | FOV/range/heading geometry can say a target is geometrically visible; it cannot claim image acquisition. |
 | Public camera sources | Provider fabric | PARTIAL | File catalog supported; optional TfL JamCam catalog behind explicit environment flag and credentials where required. |
 | Person / face / plate surveillance | XD Live Surveillance | NOT IMPLEMENTED BY DESIGN | No identity extraction or plate/person tracking is introduced by CCTV. |
@@ -19,7 +19,7 @@ This matrix records where GEV-derived capabilities live in Sonalit. It is a capa
 
 Nearest-camera ranking does not imply visual acquisition. A camera is linked to a target with VISIBLE_TO_CAMERA only when the target point satisfies the camera's declared geometric viewshed. Estimated camera pose lowers operational confidence and keeps the relation non-actionable.
 
-Sample Kenya cameras are development fixtures only. Their coordinates are not asserted as real CCTV installations, their pose is explicitly estimated, and their media is explicitly synthetic.
+GEV camera coverage is source-backed only. The camera AOI query returns only configured/provider catalog entries with provenance; an empty AOI is a genuine no-coverage result, not a generated fixture.
 
 External camera media is never accepted from a client-supplied URL. Server-side catalog entries must pass the CCTV host allowlist and SSRF checks before media retrieval.
 
@@ -50,6 +50,8 @@ CelesTrak documents that TLE formats only support five-digit catalog numbers. So
 | Surface | Upgrade |
 |---|---|
 | FleetMap spatial layers | Glow underlay + kind-coloured cores (orbital violet, camera teal) |
+| GEV spatial layers | High-DPI command surface with operator-toggleable layer rail, active-layer index and viewport-linked entity list |
+| GEV CCTV | AOI-linked camera catalog query, source/provenance detail, verified-frame request when a real frame source exists |
 | World Context legend | Glass panel, layer key, modelled-only footer |
 | SpatialContextCard | Premium metric strip, orbital/camera sections, fusion relations |
 | Semantics | Unchanged — modelled ≠ telemetry; geometry ≠ acquisition |
