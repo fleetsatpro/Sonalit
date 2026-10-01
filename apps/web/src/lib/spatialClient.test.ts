@@ -51,9 +51,6 @@ describe('externalWorldFeatures', () => {
     expect(result.features.find(f => f.properties.kind === 'aircraft')?.properties.label).toBe('KEN123')
     expect(result.features.find(f => f.properties.kind === 'natural_hazard')?.properties.freshness).toBe('UNKNOWN')
   })
-})
-
-
   it('normalises the complete 11-layer world fabric and preserves modelled orbital altitude metadata', () => {
     const satellite = {
       id: 'celestrak:25544',
@@ -85,3 +82,5 @@ describe('externalWorldFeatures', () => {
     expect(spatialEntityLayer(satellite)).toBe('satellites')
     expect(externalWorldFeatures(context).features.find(f => f.properties.kind === 'satellite')?.properties.freshness).toBe('MODELLED')
   })
+
+})
