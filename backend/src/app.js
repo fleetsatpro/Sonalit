@@ -57,7 +57,7 @@ const { healthCheck: dbHealth, query: dbQuery } = require("./config/database");
 const { healthCheck: redisHealth } = require("./config/redis");
 const requestId = require("./middleware/requestId");
 const csrf = require("./middleware/csrf");
-const { isFenceActive, promoteFromHealthcheck } = require("./utils/runtimeFenceBootstrap");
+const { isFenceActive } = require("./utils/runtimeFenceBootstrap");
 
 if (!process.env.DATABASE_URL) logger.warn("DATABASE_URL not set — set it in Railway so the database works");
 if (!process.env.JWT_SECRET) {
@@ -159,17 +159,6 @@ app.get("/health", async (req, res) => {
     const mem = process.memoryUsage();
     if (!db || !redis) {
       return res.status(503).json({ status: "error", database: db ? "ok" : "error", redis });
-    }
-    if (!isFenceActive()) {
-      try {
-        const promoted = await promoteFromHealthcheck(req);
-        if (!promoted) {
-          return res.status(503).json({ status: "warming", database: "ok", redis, partitions_ok, error: "runtime handover in progress" });
-        }
-      } catch (handoverError) {
-        logger.warn("Railway runtime handover health gate failed: " + handoverError.message);
-        return res.status(503).json({ status: "warming", database: "ok", redis, partitions_ok, error: "runtime handover unavailable" });
-      }
     }
     const status = partitions_ok ? "ok" : "degraded";
     res.status(200).json({
