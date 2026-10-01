@@ -7,7 +7,8 @@ const { generateMissingPublicationPdfs } = require('../services/intelligencePubl
 const { buildWorldContext } = require('../services/spatial/worldContextService');
 const { withOrg } = require('../utils/orgScopedDb');
 const { publish } = require('../realtime/centrifugo');
-const { query } = require('../config/database');
+const { query, pool } = require('../config/database');
+const { withAdvisoryLock } = require('../utils/workerExecutionGuard');
 const logger = require('../utils/logger');
 
 const intervalMs = Math.max(5, Number(process.env.INTEL_COLLECTION_INTERVAL_MINUTES || 5)) * 60 * 1000;
@@ -19,8 +20,10 @@ let timer = null;
 let spatialTimer = null;
 let spatialRunning = false;
 let spatialCursor = { orgId: null, convoyId: null };
+let activeCyclePromise = null;
+let activeSpatialPromise = null;
 
-async function evaluateSpatialEye(reason = 'scheduled') {
+async function evaluateSpatialEyeUnsafe(reason = 'scheduled') {
   if (spatialRunning || stopping) return { evaluated: 0, eventCount: 0, skipped: true };
   spatialRunning = true;
   let evaluated = 0;
@@ -86,7 +89,18 @@ async function evaluateSpatialEye(reason = 'scheduled') {
   return { evaluated, eventCount, skipped: false };
 }
 
-async function cycle(reason) {
+async function evaluateSpatialEye(reason = 'scheduled') {
+  if (stopping) return { evaluated: 0, eventCount: 0, skipped: true };
+  const guarded = await withAdvisoryLock('sonalit:intelligence:spatial-eye', function () {
+    return evaluateSpatialEyeUnsafe(reason);
+  });
+  if (!guarded.locked) {
+    logger.info('Spatial Eye cycle skipped (' + reason + '): another intelligence worker owns the cluster lock');
+    return { evaluated: 0, eventCount: 0, skipped: true, reason: 'cluster_run_in_progress' };
+  }
+  return guarded.value;
+}
+async function cycleUnsafe(reason) {
   if (stopping) return;
   const started = Date.now();
   try {
@@ -136,19 +150,34 @@ async function cycle(reason) {
   }
 }
 
+async function cycle(reason) {
+  if (stopping) return;
+  const guarded = await withAdvisoryLock('sonalit:intelligence:cycle', function () {
+    return cycleUnsafe(reason);
+  });
+  if (!guarded.locked) {
+    logger.info('Intelligence worker cycle skipped (' + reason + '): another worker owns the cluster lock');
+    return;
+  }
+  return guarded.value;
+}
 function scheduleSpatial() {
   if (stopping) return;
-  spatialTimer = setTimeout(async () => {
-    await evaluateSpatialEye('scheduled');
-    scheduleSpatial();
+  spatialTimer = setTimeout(() => {
+    activeSpatialPromise = evaluateSpatialEye('scheduled')
+      .catch(error => logger.warn(`Spatial Eye scheduled run failed: ${error.message}`))
+      .finally(() => { activeSpatialPromise = null; });
+    activeSpatialPromise.finally(() => scheduleSpatial());
   }, spatialIntervalMs);
 }
 
 function schedule() {
   if (stopping) return;
-  timer = setTimeout(async () => {
-    await cycle('scheduled');
-    schedule();
+  timer = setTimeout(() => {
+    activeCyclePromise = cycle('scheduled')
+      .catch(error => logger.warn(`Intelligence scheduled cycle failed: ${error.message}`))
+      .finally(() => { activeCyclePromise = null; });
+    activeCyclePromise.finally(() => schedule());
   }, intervalMs);
 }
 
@@ -158,10 +187,14 @@ async function shutdown(signal) {
   if (timer) clearTimeout(timer);
   if (spatialTimer) clearTimeout(spatialTimer);
   logger.info(`Intelligence worker shutting down (${signal})`);
-  try {
-    const { pool } = require('../config/database');
-    await pool.end();
-  } catch (_) {}
+  const running = [activeCyclePromise, activeSpatialPromise].filter(Boolean);
+  if (running.length) {
+    await Promise.race([
+      Promise.allSettled(running),
+      new Promise(resolve => setTimeout(resolve, 20000))
+    ]);
+  }
+  await pool.end().catch(() => {});
   process.exit(0);
 }
 
