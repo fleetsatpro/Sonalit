@@ -116,12 +116,20 @@ async function resolveOrgOfficer(deviceId, badgeName) {
   try {
     const devRow = await query(`SELECT org_id FROM guardian_devices WHERE id = $1`, [deviceId]);
     orgId = devRow.rows[0]?.org_id ?? null;
-    const offRow = await query(
-      `SELECT id FROM field_officers
-       WHERE (device_id = $1 OR badge_number = $2)
-       ORDER BY (device_id = $1) DESC LIMIT 1`,
-      [deviceId, badgeName || null]
-    );
+
+    const offRow = orgId
+      ? await query(
+          `SELECT id FROM field_officers
+             WHERE (device_id = $1 OR (badge_number = $2 AND org_id = $3))
+             ORDER BY (device_id = $1) DESC LIMIT 1`,
+          [deviceId, badgeName || null, orgId],
+        )
+      : await query(
+          `SELECT id FROM field_officers
+             WHERE device_id = $1
+             ORDER BY id LIMIT 1`,
+          [deviceId],
+        );
     officerId = offRow.rows[0]?.id ?? null;
   } catch (e) {
     logger.warn(`resolveOrgOfficer failed for ${deviceId}: ${e.message}`);
@@ -698,18 +706,28 @@ async function deviceAuth(req, res, next) {
  * the same officer in every device list.
  */
 async function linkOfficerDevice(officer, deviceId) {
+  const deviceCheck = await query(
+    `SELECT org_id FROM guardian_devices WHERE id = $1 AND deleted_at IS NULL`,
+    [deviceId],
+  );
+  const deviceOrg = deviceCheck.rows[0]?.org_id ?? null;
+  if (!deviceOrg || (officer.org_id && String(officer.org_id) !== String(deviceOrg))) {
+    throw new Error('tenant_scope_parent_mismatch');
+  }
+
   if (officer.device_id && officer.device_id !== deviceId) {
     await query(
-      `UPDATE guardian_devices SET status = 'revoked', deleted_at = NOW(), updated_at = NOW()
-       WHERE id = $1 AND deleted_at IS NULL`,
-      [officer.device_id]
+      `UPDATE guardian_devices
+         SET status = 'revoked', deleted_at = NOW(), updated_at = NOW()
+       WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
+      [officer.device_id, officer.org_id]
     );
     logger.info(`Retired stale device ${officer.device_id} for officer ${officer.id} (now ${deviceId})`);
   }
   if (officer.device_id !== deviceId) {
     await query(
-      `UPDATE field_officers SET device_id = $1, updated_at = NOW() WHERE id = $2`,
-      [deviceId, officer.id]
+      `UPDATE field_officers SET device_id = $1, updated_at = NOW() WHERE id = $2 AND org_id = $3`,
+      [deviceId, officer.id, officer.org_id]
     );
   }
 }
