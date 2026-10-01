@@ -1,26 +1,24 @@
 'use strict';
 
-const { SAMPLE_CAMERAS, getCameraCatalog } = require('../../src/services/spatial/cctv/cctvCatalog');
+const { normalizeRecord, getCameraCatalog } = require('../../src/services/spatial/cctv/cctvCatalog');
 const { pointInViewshed, rankNearest } = require('../../src/services/spatial/cctv/spatialCameraGeometry');
 const { assertSafeUrl, hostMatches } = require('../../src/services/spatial/cctv/cctvAllowlist');
 const { getFrame } = require('../../src/services/spatial/cctv/cctvMediaProxy');
 
 describe('spatial CCTV capability', () => {
-  test('ships at least three explicitly-labelled Kenya sample cameras', () => {
-    expect(SAMPLE_CAMERAS.length).toBeGreaterThanOrEqual(3);
-    expect(SAMPLE_CAMERAS.every(c => c.attributes?.catalogClass === 'sample')).toBe(true);
-    expect(SAMPLE_CAMERAS.every(c => c.attributes?.operational === false)).toBe(true);
+  test('does not create camera entities from missing source identity', () => {
+    expect(normalizeRecord({ latitude: -1.2, longitude: 36.8 }, 0)).toBeNull();
   });
 
-  test('loads the deterministic sample catalog without claiming live media', async () => {
+  test('catalog contains only source-backed cameras', async () => {
     const rows = await getCameraCatalog();
-    expect(rows.length).toBeGreaterThanOrEqual(5);
-    expect(rows.filter(c => c.source === 'sonalit-cctv-sample')).toHaveLength(5);
-    expect(rows.some(c => c.media?.kind === 'synthetic')).toBe(true);
+    expect(rows.every(c => c.source !== 'sonalit-cctv-sample')).toBe(true);
+    expect(rows.every(c => c.media?.kind !== 'synthetic')).toBe(true);
+    expect(rows.every(c => c.attributes?.operational !== false)).toBe(true);
   });
 
   test('asserts geometry visibility only when target is inside heading/FOV/range', () => {
-    const camera = SAMPLE_CAMERAS[0];
+    const camera = normalizeRecord({ id:'test-camera', latitude:-1.286389, longitude:36.817223, headingDeg:110, horizontalFovDeg:80, maxRangeM:3000, pose:{confidence:'verified'} }, 0);
     const visible = pointInViewshed(camera, {
       latitude: camera.pose.latitude,
       longitude: camera.pose.longitude + 0.01
@@ -36,10 +34,14 @@ describe('spatial CCTV capability', () => {
 
   test('nearest ranking is deterministic and can enforce viewshed membership', () => {
     const target = { latitude: SAMPLE_CAMERAS[0].pose.latitude, longitude: SAMPLE_CAMERAS[0].pose.longitude + 0.005 };
-    const ranked = rankNearest(SAMPLE_CAMERAS, target, 3, false);
+    const cameras = [
+      normalizeRecord({ id:'c1', latitude:-1.286389, longitude:36.817223, headingDeg:110, horizontalFovDeg:80, maxRangeM:3000 }, 0),
+      normalizeRecord({ id:'c2', latitude:-1.292066, longitude:36.821946, headingDeg:275, horizontalFovDeg:90, maxRangeM:3000 }, 1),
+      normalizeRecord({ id:'c3', latitude:-1.301417, longitude:36.789109, headingDeg:35, horizontalFovDeg:75, maxRangeM:3500 }, 2),
+    ].filter(Boolean); const ranked = rankNearest(cameras, target, 3, false);
     expect(ranked).toHaveLength(3);
     expect(ranked[0].relation.distanceM).toBeLessThanOrEqual(ranked[1].relation.distanceM);
-    expect(rankNearest(SAMPLE_CAMERAS, target, 10, true).every(x => x.relation.visible)).toBe(true);
+    expect(rankNearest(cameras, target, 10, true).every(x => x.relation.visible)).toBe(true);
   });
 
   test('SSRF guard blocks private/reserved targets, requires explicit IP allowlisting, and rejects non-HTTPS URLs', async () => {
@@ -52,10 +54,7 @@ describe('spatial CCTV capability', () => {
     expect(hostMatches('cam.video.example.com', 'video.example.com')).toBe(true);
   });
 
-  test('frame endpoint falls back to a labelled synthetic frame when no approved media exists', async () => {
-    const frame = await getFrame(SAMPLE_CAMERAS[0]);
-    expect(frame.synthetic).toBe(true);
-    expect(frame.contentType).toBe('image/svg+xml');
-    expect(frame.buffer.toString('utf8')).toContain('SONALIT CCTV');
-  });
-});
+  test('frame access fails honestly when no approved media exists', async () => {
+    const camera = normalizeRecord({ id:'no-media', latitude:0, longitude:0, name:'No Media' }, 0);
+    await expect(getFrame(camera)).rejects.toMatchObject({ failureClass:'media_unavailable' });
+  });});
