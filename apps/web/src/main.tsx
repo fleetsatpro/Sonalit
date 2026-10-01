@@ -4,6 +4,10 @@ import './index.css';
 // margin-left: var(--d-rail-w) rule silently collapsed to 0 on non-Dashboard
 // pages, letting the outlet render underneath the sidebar.
 import './styles/dashboard.css';
+// Bootstrap the persisted console theme before any route renders. Settings is
+// lazy-loaded, so relying on its module import would leave first paint on the
+// default palette after a reload.
+import './stores/ui.js';
 import './styles/intelligence-centre-3d.css';
 import './styles/intelligence-centre-command.css';
 // Public marketing site design system. Every rule is scoped under
