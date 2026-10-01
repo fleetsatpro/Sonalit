@@ -98,10 +98,15 @@ function scheduleClientPulse() {
 async function drainPulseWork(reason) {
   if (pulseTimer) clearInterval(pulseTimer);
   pulseTimer = null;
+  let drained = true;
   if (activePulsePromise) {
-    await Promise.race([activePulsePromise, new Promise(resolve => setTimeout(resolve, 20000))]);
+    drained = await Promise.race([
+      activePulsePromise.then(() => true, () => true),
+      new Promise(resolve => setTimeout(() => resolve(false), 20000))
+    ]);
   }
-  logger.info(`CDS Client Pulse scheduler quiesced (${reason})`);
+  logger.info(`CDS Client Pulse scheduler quiesced (${reason}); drained=${drained}`);
+  return drained;
 }
 
 async function shutdown() {
@@ -125,7 +130,11 @@ process.on('SIGTERM', shutdown);
       logger.info('Notification worker client-pulse leader active');
     },
     onLose: async () => {
-      await drainPulseWork('leadership loss');
+      const drained = await drainPulseWork('leadership loss');
+      if (!drained) {
+        logger.error('Notification worker could not drain Client Pulse after leader loss; exiting fail-closed');
+        process.exit(78);
+      }
     }
   });
   advisoryLeader.promise.catch(error => {
