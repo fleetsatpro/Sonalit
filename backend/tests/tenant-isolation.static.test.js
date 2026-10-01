@@ -37,10 +37,9 @@ describe('tenant isolation regression guards', () => {
     for (const root of ROOTS.slice(0, 2)) {
       for (const file of filesUnder(root)) {
         const source = fs.readFileSync(file, 'utf8');
-        if (/\bpool\.query\s*\(/.test(source)) {
-          const allowedGlobalMaintenance =
-            /pool\.query\s*\(\s*['\`][^'\`]*REFRESH MATERIALIZED VIEW/i.test(source);
-          if (!allowedGlobalMaintenance) {
+        for (const line of source.split(/\\r?\\n/)) {
+          if (!/\\bpool\\.query\\s*\\(/.test(line)) continue;
+          if (!/pool\\.query\\s*\\(\\s*['\`][^'\`]*REFRESH MATERIALIZED VIEW/i.test(line)) {
             violations.push(path.relative(path.join(__dirname, '..'), file));
           }
         }
@@ -119,6 +118,13 @@ describe('tenant isolation regression guards', () => {
     expect(source).toMatch(/authenticatedDevice\.org_id/);
     expect(source).toMatch(/DEVICE_SCOPE_MISMATCH/);
     expect(source).toMatch(/withOrgContext\(org_id/);
+  });
+
+
+  test('realtime authorization never falls back from tenant to user identity', () => {
+    const realtime = fs.readFileSync(path.join(__dirname, '../src/routes/realtime.js'), 'utf8');
+    expect(realtime).toContain("if (!req.user?.org_id)");
+    expect(realtime).not.toContain("req.user.org_id ?? req.user.id");
   });
 
 });
