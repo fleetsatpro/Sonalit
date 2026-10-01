@@ -11,6 +11,7 @@ import './styles/intelligence-centre-command.css';
 // rather than in the marketing components because scripts/prerender.tsx has to
 // import that component tree outside Vite, where a CSS import would throw.
 import './styles/marketing.css';
+import './styles/sonalit-themes.css';
 import './i18n/index.js';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
