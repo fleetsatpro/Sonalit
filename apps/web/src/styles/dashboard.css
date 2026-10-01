@@ -351,3 +351,226 @@ html, body, #root, * {
     scroll-behavior:auto !important;
   }
 }
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SONALIT THEME SYSTEM
+   Themes are semantic token sets. Operational meaning never changes:
+   --d-sig = primary signal, --d-fire = critical, --d-warn = caution,
+   --d-ok = healthy. Only visual presentation changes.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root[data-theme="arctic-signal"] {
+  --d-font: 'Sora', system-ui, sans-serif;
+  --d-void: #eef4f8;
+  --d-carbon: #f7fafc;
+  --d-deep: #e8f0f5;
+  --d-well: #ffffff;
+  --d-surf: #f1f6f9;
+  --d-lift: #e1ebf2;
+  --d-lift2: #d3e0e9;
+  --d-rim: rgba(15, 39, 56, .09);
+  --d-rim2: rgba(15, 39, 56, .16);
+  --d-rim3: rgba(15, 39, 56, .28);
+  --d-sig: #0b7cff;
+  --d-sig2: #0966d2;
+  --d-sig3: #084d9d;
+  --d-sg: rgba(11,124,255,.12);
+  --d-sg2: rgba(11,124,255,.06);
+  --d-sglow: rgba(11,124,255,.42);
+  --d-orange: #e05a18;
+  --d-og: rgba(224,90,24,.11);
+  --d-oglow: rgba(224,90,24,.38);
+  --d-fire: #c9253d;
+  --d-fg: rgba(201,37,61,.10);
+  --d-fglow: rgba(201,37,61,.35);
+  --d-warn: #a45a00;
+  --d-wg: rgba(164,90,0,.10);
+  --d-ok: #087f5b;
+  --d-okg: rgba(8,127,91,.09);
+  --d-purple: #7048c8;
+  --d-t1: #102331;
+  --d-t2: #4c6676;
+  --d-t3: #78909f;
+  --d-t4: #b9cbd5;
+  --d-map-bg: #dce8ee;
+  --d-topbar-bg: rgba(247,250,252,.90);
+  --d-shadow: 0 14px 40px rgba(20,55,75,.10);
+  --d-grid: rgba(20,70,90,.08);
+}
+
+:root[data-theme="graphite-pro"] {
+  --d-void: #111315;
+  --d-carbon: #17191c;
+  --d-deep: #1d2024;
+  --d-well: #22262a;
+  --d-surf: #292e33;
+  --d-lift: #30363d;
+  --d-lift2: #3a424b;
+  --d-rim: rgba(232,238,242,.08);
+  --d-rim2: rgba(232,238,242,.15);
+  --d-rim3: rgba(232,238,242,.27);
+  --d-sig: #9ca8ff;
+  --d-sig2: #7f8cf0;
+  --d-sig3: #6672cf;
+  --d-sg: rgba(156,168,255,.13);
+  --d-sg2: rgba(156,168,255,.07);
+  --d-sglow: rgba(156,168,255,.46);
+  --d-orange: #f2a35d;
+  --d-og: rgba(242,163,93,.13);
+  --d-oglow: rgba(242,163,93,.42);
+  --d-fire: #ff667c;
+  --d-fg: rgba(255,102,124,.13);
+  --d-fglow: rgba(255,102,124,.46);
+  --d-warn: #e5bd67;
+  --d-wg: rgba(229,189,103,.12);
+  --d-ok: #58d6aa;
+  --d-okg: rgba(88,214,170,.11);
+  --d-purple: #c49aff;
+  --d-t1: #f0f3f5;
+  --d-t2: #a5afb8;
+  --d-t3: #68727b;
+  --d-t4: #424a52;
+  --d-map-bg: #1b2024;
+  --d-topbar-bg: rgba(23,25,28,.91);
+  --d-shadow: 0 16px 42px rgba(0,0,0,.26);
+  --d-grid: rgba(220,230,235,.06);
+}
+
+:root[data-theme="copper-dusk"] {
+  --d-void: #100b09;
+  --d-carbon: #18110e;
+  --d-deep: #211713;
+  --d-well: #291d18;
+  --d-surf: #32241e;
+  --d-lift: #3d2b23;
+  --d-lift2: #4b342a;
+  --d-rim: rgba(255,220,198,.08);
+  --d-rim2: rgba(255,220,198,.16);
+  --d-rim3: rgba(255,220,198,.28);
+  --d-sig: #ff9b54;
+  --d-sig2: #e47c38;
+  --d-sig3: #bb6028;
+  --d-sg: rgba(255,155,84,.13);
+  --d-sg2: rgba(255,155,84,.07);
+  --d-sglow: rgba(255,155,84,.50);
+  --d-orange: #ff6d3b;
+  --d-og: rgba(255,109,59,.14);
+  --d-oglow: rgba(255,109,59,.50);
+  --d-fire: #ff536e;
+  --d-fg: rgba(255,83,110,.14);
+  --d-fglow: rgba(255,83,110,.48);
+  --d-warn: #e6bd58;
+  --d-wg: rgba(230,189,88,.12);
+  --d-ok: #65d3a2;
+  --d-okg: rgba(101,211,162,.11);
+  --d-purple: #d39aff;
+  --d-t1: #fff1e8;
+  --d-t2: #c4a99a;
+  --d-t3: #80695d;
+  --d-t4: #4f3c34;
+  --d-map-bg: #17100d;
+  --d-topbar-bg: rgba(24,17,14,.92);
+  --d-shadow: 0 16px 44px rgba(0,0,0,.30);
+  --d-grid: rgba(255,210,180,.06);
+}
+
+:root[data-theme="signal-lime"] {
+  --d-void: #080b07;
+  --d-carbon: #0e120c;
+  --d-deep: #151a11;
+  --d-well: #1a2114;
+  --d-surf: #222a19;
+  --d-lift: #2b351f;
+  --d-lift2: #374328;
+  --d-rim: rgba(222,255,155,.09);
+  --d-rim2: rgba(222,255,155,.18);
+  --d-rim3: rgba(222,255,155,.31);
+  --d-sig: #c8ff4a;
+  --d-sig2: #a7dc2e;
+  --d-sig3: #83ae20;
+  --d-sg: rgba(200,255,74,.13);
+  --d-sg2: rgba(200,255,74,.07);
+  --d-sglow: rgba(200,255,74,.52);
+  --d-orange: #ffad4a;
+  --d-og: rgba(255,173,74,.13);
+  --d-oglow: rgba(255,173,74,.45);
+  --d-fire: #ff5361;
+  --d-fg: rgba(255,83,97,.14);
+  --d-fglow: rgba(255,83,97,.48);
+  --d-warn: #ffd34e;
+  --d-wg: rgba(255,211,78,.12);
+  --d-ok: #76f0ae;
+  --d-okg: rgba(118,240,174,.11);
+  --d-purple: #d2a0ff;
+  --d-t1: #eff8df;
+  --d-t2: #aebd98;
+  --d-t3: #6c7a5b;
+  --d-t4: #414c35;
+  --d-map-bg: #10150d;
+  --d-topbar-bg: rgba(14,18,12,.92);
+  --d-shadow: 0 16px 44px rgba(0,0,0,.30);
+  --d-grid: rgba(220,255,160,.06);
+}
+
+:root[data-theme="ivory-daylight"] {
+  --d-void: #f4f2ed;
+  --d-carbon: #fbfaf7;
+  --d-deep: #efeee8;
+  --d-well: #ffffff;
+  --d-surf: #f5f4ef;
+  --d-lift: #e8e7df;
+  --d-lift2: #dbd9d0;
+  --d-rim: rgba(28,37,35,.09);
+  --d-rim2: rgba(28,37,35,.16);
+  --d-rim3: rgba(28,37,35,.28);
+  --d-sig: #0f766e;
+  --d-sig2: #0d625c;
+  --d-sig3: #0a504b;
+  --d-sg: rgba(15,118,110,.12);
+  --d-sg2: rgba(15,118,110,.06);
+  --d-sglow: rgba(15,118,110,.38);
+  --d-orange: #c45b21;
+  --d-og: rgba(196,91,33,.11);
+  --d-oglow: rgba(196,91,33,.36);
+  --d-fire: #b4233b;
+  --d-fg: rgba(180,35,59,.10);
+  --d-fglow: rgba(180,35,59,.34);
+  --d-warn: #946200;
+  --d-wg: rgba(148,98,0,.10);
+  --d-ok: #277a4f;
+  --d-okg: rgba(39,122,79,.09);
+  --d-purple: #6d4bc1;
+  --d-t1: #182522;
+  --d-t2: #53645f;
+  --d-t3: #81908b;
+  --d-t4: #b7c0bc;
+  --d-map-bg: #e5e1d7;
+  --d-topbar-bg: rgba(251,250,247,.92);
+  --d-shadow: 0 14px 38px rgba(43,48,43,.10);
+  --d-grid: rgba(40,55,50,.07);
+}
+
+/* Shared theme polish. Keep portal tokens isolated: portal pages use --p-*.
+   This layer only affects the operator shell and components already using
+   the --d-* design system. */
+html[data-theme] body {
+  background: var(--d-void);
+  color: var(--d-t1);
+}
+html[data-theme] ::selection {
+  background: var(--d-sg);
+  color: var(--d-t1);
+}
+html[data-theme] :focus-visible {
+  outline: 2px solid var(--d-orange);
+  outline-offset: 2px;
+}
+.command-header,
+.command-theatre,
+.d-card {
+  box-shadow: var(--d-shadow);
+}
+.command-map-panel__canvas {
+  background: var(--d-map-bg);
+}
