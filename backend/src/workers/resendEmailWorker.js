@@ -53,7 +53,7 @@ async function resolvePanicContext(panicId) {
      AND v.org_id=p.org_id
      AND v.deleted_at IS NULL
     LEFT JOIN convoys c
-      ON c.id=v.assigned_convoy_id AND c.deleted_at IS NULL
+      ON c.id=v.assigned_convoy_id AND c.org_id=p.org_id AND c.deleted_at IS NULL
     LEFT JOIN LATERAL (
       SELECT c2.id, c2.name, c2.region, c2.status, c2.route_origin, c2.route_destination, c2.client_id
       FROM convoy_cfos cc
