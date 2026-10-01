@@ -39,12 +39,12 @@ interface CreateApiKeyPayload {
 
 const AVAILABLE_SCOPES = ['read:fleet', 'write:fleet', 'read:incidents', 'write:incidents', 'read:reports', 'admin'];
 
-const INPUT_CLS = 'w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:border-orange-500';
+const INPUT_CLS = 'settings-input w-full rounded-lg px-3 py-2 text-sm focus:outline-none';
 
 function SectionCard({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 space-y-4">
-      <div className="flex items-center gap-2 border-b border-slate-700 pb-3">
+    <div className="settings-card rounded-xl p-5 space-y-4">
+      <div className="settings-card__header flex items-center gap-2 pb-3">
         {icon}
         <h2 className="font-semibold">{title}</h2>
       </div>
@@ -380,17 +380,19 @@ interface WhatsAppConfig {
 function AppearanceSection() {
   const theme = useUIStore((s) => s.theme);
   const setTheme = useUIStore((s) => s.setTheme);
+  const active = THEME_META[theme];
 
   return (
-    <SectionCard title="Appearance" icon={<Palette size={16} className="text-orange-400" />}>
-      <div className="space-y-3">
+    <SectionCard title="Appearance" icon={<Palette size={16} className="settings-accent" />}>
+      <div className="settings-appearance">
         <div>
-          <p className="text-sm font-medium text-slate-200">Console theme</p>
-          <p className="text-xs text-slate-500 mt-1">
-            Changes presentation only. Fleet state, telemetry, alerts, permissions and operational semantics remain unchanged.
+          <p className="settings-title">Console theme</p>
+          <p className="settings-help">
+            Presentation only. Fleet state, telemetry, alerts, permissions and operational semantics remain unchanged.
           </p>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" role="radiogroup" aria-label="Console theme">
+
+        <div className="settings-theme-grid" role="radiogroup" aria-label="Console theme">
           {SONALIT_THEMES.map((opt) => {
             const meta = THEME_META[opt];
             const selected = theme === opt;
@@ -400,34 +402,31 @@ function AppearanceSection() {
                 type="button"
                 role="radio"
                 aria-checked={selected}
-                aria-label={meta.label}
                 onClick={() => setTheme(opt)}
-                className={`group relative overflow-hidden rounded-xl border p-3 text-left transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--d-orange)] ${selected
-                  ? 'border-orange-500 bg-slate-800'
-                  : 'border-slate-700 bg-slate-900 hover:border-slate-500'}`}
+                className={`settings-theme-option ${selected ? 'is-selected' : ''}`}
               >
-                <span
-                  aria-hidden="true"
-                  className="mb-3 block h-14 rounded-lg border border-white/10 shadow-inner"
-                  style={{ background: meta.preview }}
-                />
-                <span className="flex items-center justify-between gap-2">
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold text-slate-200 truncate">{meta.label}</span>
-                    <span className="mt-1 block text-[11px] leading-4 text-slate-500">{meta.description}</span>
+                <span className="settings-theme-preview" data-preview-theme={opt} aria-hidden="true">
+                  <span className="settings-theme-preview__top" />
+                  <span className="settings-theme-preview__map">
+                    <i /><i /><i />
                   </span>
-                  <span
-                    aria-hidden="true"
-                    className={`h-2.5 w-2.5 shrink-0 rounded-full border ${selected ? 'bg-orange-500 border-orange-400 shadow-[0_0_10px_var(--d-oglow)]' : 'border-slate-500'}`}
-                  />
+                  <span className="settings-theme-preview__rail" />
+                  <span className="settings-theme-preview__signal" />
                 </span>
+                <span className="settings-theme-copy">
+                  <span className="settings-theme-name">{meta.label}</span>
+                  <span className="settings-theme-description">{meta.description}</span>
+                </span>
+                <span className="settings-theme-check" aria-hidden="true">{selected ? '✓' : ''}</span>
               </button>
             );
           })}
         </div>
-        <div className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-900 px-3 py-2">
-          <span className="text-xs text-slate-500">Active</span>
-          <span className="text-xs font-semibold text-slate-200">{THEME_META[theme].label}</span>
+
+        <div className="settings-theme-active">
+          <span className="settings-theme-active__signal" style={{ background: active.accent }} />
+          <span><strong>{active.label}</strong> active</span>
+          <span className="settings-theme-active__mode">{active.density}</span>
         </div>
       </div>
     </SectionCard>
