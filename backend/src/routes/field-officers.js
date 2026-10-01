@@ -105,6 +105,7 @@ router.get('/:id', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `SELECT fo.*,
@@ -147,6 +148,7 @@ router.get('/:id/activity', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `SELECT * FROM officer_activity_events
@@ -171,6 +173,7 @@ router.post('/:id/assign-convoy', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       // Validate convoy belongs to same org
       const convoy = await client.query(
@@ -213,6 +216,7 @@ router.delete('/:id/unassign-convoy', async (req, res, next) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
       await client.query("SELECT set_config('app.current_org_id', $1, true)", [orgId]);
       const { rows } = await client.query(
         `UPDATE field_officers
