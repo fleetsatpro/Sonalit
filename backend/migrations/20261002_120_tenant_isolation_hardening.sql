@@ -284,12 +284,21 @@ BEGIN
     ) INTO has_permissive;
 
     IF NOT has_permissive THEN
-      EXECUTE format(
-        'CREATE POLICY tenant_isolation_base ON %I.%I AS PERMISSIVE FOR ALL
-           USING (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)
-           WITH CHECK (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)',
-        r.schema_name, r.table_name
-      );
+      IF r.table_name = 'risk_zones' THEN
+        EXECUTE format(
+          'CREATE POLICY tenant_isolation_base ON %I.%I AS PERMISSIVE FOR ALL
+             USING (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid OR org_id IS NULL)
+             WITH CHECK (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)',
+          r.schema_name, r.table_name
+        );
+      ELSE
+        EXECUTE format(
+          'CREATE POLICY tenant_isolation_base ON %I.%I AS PERMISSIVE FOR ALL
+             USING (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)
+             WITH CHECK (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)',
+          r.schema_name, r.table_name
+        );
+      END IF;
     END IF;
   END LOOP;
 END $tenant$;
