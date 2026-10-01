@@ -323,6 +323,15 @@ BEGIN
     EXECUTE format('DROP POLICY IF EXISTS tenant_isolation_hardening_write ON %I.%I', r.schema_name, r.table_name);
     EXECUTE format('DROP POLICY IF EXISTS tenant_isolation_base ON %I.%I', r.schema_name, r.table_name);
 
+    BEGIN
+      EXECUTE format(
+        'GRANT USAGE, SELECT ON SEQUENCE %s TO sonalit_app',
+        quote_ident(r.schema_name) || '.' || quote_ident(pg_get_serial_sequence(format('%I.%I', r.schema_name, r.table_name), 'id'))
+      );
+    EXCEPTION WHEN undefined_object OR invalid_parameter_value THEN
+      NULL;
+    END;
+
     IF r.table_name = 'risk_zones' THEN
       EXECUTE format(
         'CREATE POLICY tenant_isolation_hardening ON %I.%I AS RESTRICTIVE FOR ALL
