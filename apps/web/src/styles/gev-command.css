@@ -1271,7 +1271,7 @@
    daylight surfaces rather than a dark console with recoloured accents.
  */
 :root[data-theme="arctic"] .gev-shell,
-:root[data-theme="ivory"] .gev-shell {
+:root[data-theme="daylight"] .gev-shell {
   --gev-bg: var(--d-void);
   --gev-panel: color-mix(in srgb, var(--d-well) 90%, transparent);
   --gev-panel-solid: var(--d-well);
@@ -1285,71 +1285,71 @@
   --gev-cyan: var(--d-sig);
 }
 :root[data-theme="arctic"] .gev-shell,
-:root[data-theme="ivory"] .gev-shell {
+:root[data-theme="daylight"] .gev-shell {
   background:
     radial-gradient(900px 520px at 50% 45%, color-mix(in srgb, var(--d-orange) 8%, transparent), transparent 62%),
     linear-gradient(180deg, var(--d-void), var(--d-deep));
 }
 :root[data-theme="arctic"] .gev-topbar,
-:root[data-theme="ivory"] .gev-topbar,
+:root[data-theme="daylight"] .gev-topbar,
 :root[data-theme="arctic"] .gev-panel,
-:root[data-theme="ivory"] .gev-panel,
+:root[data-theme="daylight"] .gev-panel,
 :root[data-theme="arctic"] .gev-rail,
-:root[data-theme="ivory"] .gev-rail,
+:root[data-theme="daylight"] .gev-rail,
 :root[data-theme="arctic"] .gev-ribbon,
-:root[data-theme="ivory"] .gev-ribbon {
+:root[data-theme="daylight"] .gev-ribbon {
   background: color-mix(in srgb, var(--d-well) 92%, transparent) !important;
   color: var(--d-t1);
   box-shadow: 0 20px 60px rgba(15,23,42,.10), inset 0 1px 0 rgba(255,255,255,.8);
 }
 :root[data-theme="arctic"] .gev-stage,
-:root[data-theme="ivory"] .gev-stage {
+:root[data-theme="daylight"] .gev-stage {
   background: var(--d-deep);
 }
 :root[data-theme="arctic"] .gev-stage::after,
-:root[data-theme="ivory"] .gev-stage::after {
+:root[data-theme="daylight"] .gev-stage::after {
   background: linear-gradient(180deg, rgba(255,255,255,.35), transparent 18%, transparent 82%, rgba(15,23,42,.06));
 }
 :root[data-theme="arctic"] .gev-shell .gev-segment,
-:root[data-theme="ivory"] .gev-shell .gev-segment,
+:root[data-theme="daylight"] .gev-shell .gev-segment,
 :root[data-theme="arctic"] .gev-shell .gev-stat,
-:root[data-theme="ivory"] .gev-shell .gev-stat,
+:root[data-theme="daylight"] .gev-shell .gev-stat,
 :root[data-theme="arctic"] .gev-shell .gev-layer,
-:root[data-theme="ivory"] .gev-shell .gev-layer,
+:root[data-theme="daylight"] .gev-shell .gev-layer,
 :root[data-theme="arctic"] .gev-shell .gev-mini,
-:root[data-theme="ivory"] .gev-shell .gev-mini,
+:root[data-theme="daylight"] .gev-shell .gev-mini,
 :root[data-theme="arctic"] .gev-shell .gev-external-row,
-:root[data-theme="ivory"] .gev-shell .gev-external-row {
+:root[data-theme="daylight"] .gev-shell .gev-external-row {
   background: color-mix(in srgb, var(--d-surf) 88%, transparent) !important;
   border-color: var(--d-rim) !important;
   color: var(--d-t1);
 }
 :root[data-theme="arctic"] .gev-shell .gev-stat-label,
-:root[data-theme="ivory"] .gev-shell .gev-stat-label,
+:root[data-theme="daylight"] .gev-shell .gev-stat-label,
 :root[data-theme="arctic"] .gev-shell .gev-layer span:first-child,
-:root[data-theme="ivory"] .gev-shell .gev-layer span:first-child,
+:root[data-theme="daylight"] .gev-shell .gev-layer span:first-child,
 :root[data-theme="arctic"] .gev-shell .gev-entity-kicker,
-:root[data-theme="ivory"] .gev-shell .gev-entity-kicker,
+:root[data-theme="daylight"] .gev-shell .gev-entity-kicker,
 :root[data-theme="arctic"] .gev-shell .gev-external-meta,
-:root[data-theme="ivory"] .gev-shell .gev-external-meta,
+:root[data-theme="daylight"] .gev-shell .gev-external-meta,
 :root[data-theme="arctic"] .gev-shell .gev-footnote,
-:root[data-theme="ivory"] .gev-shell .gev-footnote {
+:root[data-theme="daylight"] .gev-shell .gev-footnote {
   color: var(--d-t2) !important;
 }
 :root[data-theme="arctic"] .gev-shell .gev-stat-value,
-:root[data-theme="ivory"] .gev-shell .gev-stat-value,
+:root[data-theme="daylight"] .gev-shell .gev-stat-value,
 :root[data-theme="arctic"] .gev-shell .gev-layer span:last-child,
-:root[data-theme="ivory"] .gev-shell .gev-layer span:last-child,
+:root[data-theme="daylight"] .gev-shell .gev-layer span:last-child,
 :root[data-theme="arctic"] .gev-shell .gev-mini-value,
-:root[data-theme="ivory"] .gev-shell .gev-mini-value,
+:root[data-theme="daylight"] .gev-shell .gev-mini-value,
 :root[data-theme="arctic"] .gev-shell .gev-external-name,
-:root[data-theme="ivory"] .gev-shell .gev-external-name {
+:root[data-theme="daylight"] .gev-shell .gev-external-name {
   color: var(--d-t1) !important;
 }
 :root[data-theme="arctic"] .gev-shell .gev-segment[aria-pressed="true"],
-:root[data-theme="ivory"] .gev-shell .gev-segment[aria-pressed="true"],
+:root[data-theme="daylight"] .gev-shell .gev-segment[aria-pressed="true"],
 :root[data-theme="arctic"] .gev-shell .gev-rail-button[aria-pressed="true"],
-:root[data-theme="ivory"] .gev-shell .gev-rail-button[aria-pressed="true"] {
+:root[data-theme="daylight"] .gev-shell .gev-rail-button[aria-pressed="true"] {
   background: color-mix(in srgb, var(--d-orange) 10%, var(--d-well)) !important;
   color: var(--d-orange) !important;
   border-color: color-mix(in srgb, var(--d-orange) 35%, transparent) !important;

@@ -58,8 +58,10 @@ export const SONALIT_THEMES = [
 export type SonalitTheme = typeof SONALIT_THEMES[number]['id'];
 
 export function normalizeTheme(value: unknown): SonalitTheme {
+  // Legacy aliases are normalized here so every consumer (bootstrap, store,
+  // Settings and tests) converges on one persisted production identity.
   if (value === 'dark') return 'obsidian';
-  if (value === 'light') return 'daylight';
+  if (value === 'light' || value === 'ivory') return 'daylight';
   return SONALIT_THEMES.some((theme) => theme.id === value)
     ? value as SonalitTheme
     : 'obsidian';

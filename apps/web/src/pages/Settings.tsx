@@ -392,60 +392,42 @@ function AppearanceSection() {
           </p>
         </div>
 
-        <div
-          className="grid grid-cols-1 sm:grid-cols-2 gap-3"
-          role="radiogroup"
-          aria-label="Sonalit interface theme"
-        >
+        <div className="son-theme-picker" role="radiogroup" aria-label="Sonalit interface theme">
           {SONALIT_THEMES.map((option) => {
             const selected = theme === option.id;
+            const preview = `linear-gradient(135deg, ${option.swatches[0]}, ${option.swatches[2]}, ${option.swatches[3]})`;
+
             return (
               <button
                 key={option.id}
                 type="button"
                 role="radio"
                 aria-checked={selected}
+                className="son-theme-option"
+                data-selected={selected}
+                data-theme-preview={option.id}
                 onClick={() => setTheme(option.id)}
-                className={`theme-option group relative overflow-hidden rounded-xl border p-3 text-left transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--d-sig)] ${selected ? 'theme-option-active' : ''}`}
               >
-                <span
-                  className="absolute inset-x-0 top-0 h-1"
-                  style={{ backgroundColor: option.accent }}
-                  aria-hidden="true"
-                />
-                <span className="flex items-center gap-3 pt-1">
-                  <span
-                    className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border"
-                    style={{
-                      borderColor: `${option.accent}66`,
-                      backgroundColor: option.mode === 'light' ? '#f7f8f5' : '#11161d',
-                    }}
-                    aria-hidden="true"
-                  >
-                    <span
-                      className="h-4 w-4 rounded-full"
-                      style={{
-                        backgroundColor: option.accent,
-                        boxShadow: `0 0 16px ${option.accent}66`,
-                      }}
-                    />
+                <span className="son-theme-preview" aria-hidden="true" style={{ background: preview }}>
+                  <span className="son-theme-preview-bar" />
+                  <span className="son-theme-preview-grid">
+                    <span /><span /><span /><span />
                   </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold text-slate-200">{option.name}</span>
-                    <span className="block mt-0.5 text-[11px] leading-4 text-slate-500">{option.description}</span>
-                  </span>
-                  {selected && (
-                    <span className="ml-auto shrink-0 text-[10px] font-bold uppercase tracking-wider text-d-sig">
-                      Active
-                    </span>
-                  )}
+                  <span className="son-theme-preview-line" />
                 </span>
+
+                <span className="son-theme-option-copy">
+                  <span className="son-theme-option-name">{option.name}</span>
+                  <span className="son-theme-option-desc">{option.description}</span>
+                </span>
+
+                <span className="son-theme-check" aria-hidden="true">✓</span>
               </button>
             );
           })}
         </div>
 
-        <p className="text-[11px] leading-4 text-slate-500">
+        <p className="son-theme-note">
           Saved locally on this device. Geospatial canvases retain their deliberate high-contrast treatment in light themes.
         </p>
       </div>
