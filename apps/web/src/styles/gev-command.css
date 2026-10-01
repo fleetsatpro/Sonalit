@@ -1130,3 +1130,136 @@
 @media (prefers-reduced-motion: reduce) {
   .gev-shell::before { display: none; }
 }
+
+
+/* 2026 command-grade finish: depth, optical hierarchy and high-DPI restraint. */
+.gev-shell {
+  --gev-hairline: rgba(224,232,246,.12);
+  --gev-specular: rgba(255,255,255,.065);
+  --gev-depth: 0 32px 96px rgba(0,0,0,.44);
+  background:
+    radial-gradient(980px 540px at 52% 42%, rgba(88,74,164,.11), transparent 62%),
+    radial-gradient(680px 360px at 84% 12%, rgba(34,186,210,.055), transparent 68%),
+    radial-gradient(620px 340px at 12% 88%, rgba(53,205,159,.035), transparent 72%),
+    linear-gradient(180deg, #03060b 0%, #04070d 100%);
+}
+
+.gev-shell::before {
+  background:
+    linear-gradient(90deg, transparent 49.92%, rgba(126,144,173,.025) 50%, transparent 50.08%),
+    linear-gradient(rgba(255,255,255,.011) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.009) 1px, transparent 1px);
+  background-size: 100% 100%, 96px 96px, 96px 96px;
+  mask-image: radial-gradient(ellipse at 50% 46%, #000 0%, #000 55%, transparent 100%);
+  opacity: .22;
+}
+
+.gev-stage {
+  background:
+    radial-gradient(ellipse at 50% 50%, rgba(86,94,143,.06), transparent 54%),
+    #02050a;
+}
+
+.gev-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 18;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.018), transparent 12%, transparent 88%, rgba(0,0,0,.22)),
+    radial-gradient(ellipse at center, transparent 53%, rgba(0,0,0,.34) 100%);
+}
+
+.gev-topbar,
+.gev-panel,
+.gev-rail,
+.gev-ribbon {
+  box-shadow: var(--gev-depth), inset 0 1px 0 var(--gev-specular);
+}
+
+.gev-panel,
+.gev-rail,
+.gev-ribbon {
+  border-color: var(--gev-hairline);
+  backdrop-filter: blur(28px) saturate(150%);
+}
+
+.gev-panel,
+.gev-rail {
+  background:
+    linear-gradient(180deg, rgba(10,16,26,.79), rgba(4,8,14,.68));
+}
+
+.gev-panel-head {
+  background: linear-gradient(180deg, rgba(255,255,255,.022), transparent);
+}
+
+.gev-stat,
+.gev-layer,
+.gev-mini,
+.gev-external-row {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+}
+
+.gev-stat-value,
+.gev-mini-value,
+.gev-external-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.gev-stat-value {
+  text-shadow: 0 0 24px rgba(184,166,255,.08);
+}
+
+.gev-external-row:hover,
+.gev-external-row:focus-visible {
+  border-color: rgba(184,166,255,.24);
+  background:
+    radial-gradient(260px 90px at 0% 50%, rgba(184,166,255,.065), transparent 72%),
+    rgba(184,166,255,.028);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.045),
+    0 14px 34px rgba(0,0,0,.18);
+}
+
+.gev-rail-button:not(:disabled):hover {
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.055),
+    0 10px 26px rgba(0,0,0,.18);
+}
+
+.gev-rail-button[aria-pressed="true"] {
+  border: 1px solid rgba(184,166,255,.15);
+}
+
+@media (min-width: 1440px) {
+  .gev-topbar { padding-inline: 22px; }
+  .gev-panel-head { padding: 17px 18px 14px; }
+  .gev-stat-grid { gap: 7px; padding: 11px 13px 13px; }
+  .gev-layer-grid { gap: 6px; padding-inline: 13px; padding-bottom: 13px; }
+  .gev-right-panel { width: 382px; }
+  .gev-overview-panel { width: min(478px, calc(100vw - 500px)); }
+}
+
+@media (min-width: 1920px) {
+  .gev-topbar { height: 82px; flex-basis: 82px; }
+  .gev-workspace { height: calc(100% - 82px); }
+  .gev-title { font-size: 25px; }
+  .gev-panel { border-radius: 19px; }
+  .gev-right-panel { width: 414px; }
+  .gev-overview-panel { width: 510px; }
+}
+
+@media (max-width: 860px) {
+  .gev-stage::after { opacity: .52; }
+  .gev-panel { box-shadow: 0 18px 48px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.045); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gev-health-dot,
+  .gev-status-orbit span,
+  .gev-signal-dot { animation: none !important; }
+  .gev-shell::before,
+  .gev-stage::after { opacity: 0 !important; }
+}
