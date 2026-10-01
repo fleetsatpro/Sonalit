@@ -1,42 +1,20 @@
-const THEMES = new Set(['obsidian', 'arctic', 'graphite', 'copper', 'signal', 'daylight']);
-const LIGHT_THEMES = new Set(['arctic', 'daylight']);
+import { getTheme, normalizeTheme } from '../styles/themes.js';
 
-function readPersistedTheme(): string | null {
+function readPersistedTheme(): ReturnType<typeof normalizeTheme> {
   try {
     const raw = localStorage.getItem('sonalit-ui');
-    if (!raw) return null;
+    if (!raw) return 'obsidian';
     const parsed = JSON.parse(raw) as { state?: { theme?: unknown } };
-    return typeof parsed.state?.theme === 'string' ? parsed.state.theme : null;
+    return normalizeTheme(parsed.state?.theme);
   } catch {
-    return null;
+    return 'obsidian';
   }
 }
 
-const persisted = readPersistedTheme();
-const theme = persisted === 'dark'
-  ? 'obsidian'
-  : persisted === 'light'
-    ? 'daylight'
-    : persisted && THEMES.has(persisted)
-      ? persisted
-      : 'obsidian';
-
+const theme = readPersistedTheme();
 const root = document.documentElement;
-root.setAttribute('data-theme', theme);
-root.classList.toggle('dark', !LIGHT_THEMES.has(theme));
-root.style.colorScheme = LIGHT_THEMES.has(theme) ? 'light' : 'dark';
-
-
-const THEME_CHROME: Record<string, string> = {
-  obsidian: '#030711',
-  arctic: '#f7fbff',
-  graphite: '#0d0f12',
-  copper: '#100b08',
-  signal: '#050b07',
-  daylight: '#fbfaf6',
-};
-
-document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute(
-  'content',
-  THEME_CHROME[theme] ?? THEME_CHROME.obsidian,
-);
+const definition = getTheme(theme);
+root.setAttribute('data-theme', definition.id);
+root.classList.toggle('dark', definition.mode === 'dark');
+root.style.colorScheme = definition.mode;
+document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute('content', definition.chrome);
