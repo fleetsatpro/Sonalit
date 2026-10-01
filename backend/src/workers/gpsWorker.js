@@ -208,7 +208,6 @@ async function processGPS(job) {
     detectBehaviourEvents(orgId, driverId, vehicle_id, currentFix, prevFix)
       .then(events => storeBehaviourEvents(orgId, events))
       .catch(err => logger.warn(`behaviourDetector error: ${err.message}`));
-  }
 
     logger.info(`GPS processed: vehicle=${vehicle_id} org=${orgId} lat=${lat} lng=${lng} speed=${speed}`);
   });
