@@ -6,6 +6,7 @@ import { query, pool } from '../db.js';
 import { redis } from '../redis.js';
 import { withCircuitBreaker, CircuitOpenError } from '../lib/circuit-breaker.js';
 import type { AiDecision } from '../db.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const SESSION_MAX_MESSAGES = 10;
 const SESSION_TTL_S = 3600;
@@ -30,15 +31,15 @@ interface SessionMessage {
   content: string;
 }
 
-async function getSessionMessages(sessionId: string): Promise<SessionMessage[]> {
-  const raw = await redis.get(`ai:session:${sessionId}`);
+async function getSessionMessages(orgId: string, userId: string, sessionId: string): Promise<SessionMessage[]> {
+  const raw = await redis.get(`ai:session:${orgId}:${userId}:${sessionId}`);
   if (!raw) return [];
   return JSON.parse(raw) as SessionMessage[];
 }
 
-async function saveSessionMessages(sessionId: string, messages: SessionMessage[]): Promise<void> {
+async function saveSessionMessages(orgId: string, userId: string, sessionId: string, messages: SessionMessage[]): Promise<void> {
   const trimmed = messages.slice(-SESSION_MAX_MESSAGES);
-  await redis.setex(`ai:session:${sessionId}`, SESSION_TTL_S, JSON.stringify(trimmed));
+  await redis.setex(`ai:session:${orgId}:${userId}:${sessionId}`, SESSION_TTL_S, JSON.stringify(trimmed));
 }
 
 async function callDecisionFabric(orgId: string, userId: string, command: string, history: SessionMessage[], authorization?: string): Promise<any> {
@@ -76,12 +77,14 @@ async function storeDecision(orgId: string, userId: string, userQuery: string, r
 }
 
 export async function aiRoutes(app: FastifyInstance): Promise<void> {
+  app.addHook('preHandler', requireAuth);
   app.post('/v4/ai/query', async (req: FastifyRequest, reply: FastifyReply) => {
     const body = QuerySchema.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'Invalid request', issues: body.error.issues });
     const { query: userQuery, context } = body.data;
-    const orgId = (req.headers['x-org-id'] as string) ?? 'unknown';
-    const userId = (req.headers['x-user-id'] as string) ?? 'unknown';
+    const orgId = req.user?.org_id;
+    const userId = req.user?.sub;
+    if (!orgId || !userId) return reply.code(401).send({ error: 'tenant_scope_required' });
     setSseHeaders(reply);
     try {
       const result = await callDecisionFabric(orgId, userId, context ? `Context:\n${context}\n\nQuery:\n${userQuery}` : userQuery, [], req.headers.authorization as string | undefined);
@@ -103,7 +106,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
     const orgId = (req.headers['x-org-id'] as string) ?? 'unknown';
     const userId = (req.headers['x-user-id'] as string) ?? 'unknown';
     let history: SessionMessage[] = [];
-    try { history = await getSessionMessages(sessionId); } catch (err) { req.log.warn({ err }, 'Copilot session read failed; starting fresh'); }
+    try { history = await getSessionMessages(orgId, userId, sessionId); } catch (err) { req.log.warn({ err }, 'Copilot session read failed; starting fresh'); }
     history.push({ role: 'user', content: message });
     setSseHeaders(reply);
     reply.raw.write(`data: ${JSON.stringify({ session_id: sessionId })}\n\n`);
@@ -115,7 +118,7 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
       reply.raw.write('data: [DONE]\n\n');
       reply.raw.end();
       history.push({ role: 'assistant', content: answer });
-      try { await saveSessionMessages(sessionId, history); } catch (err) { req.log.warn({ err }, 'Failed to persist Copilot session'); }
+      try { await saveSessionMessages(orgId, userId, sessionId, history); } catch (err) { req.log.warn({ err }, 'Failed to persist Copilot session'); }
       return;
     } catch (err) {
       req.log.error({ err }, 'Unified Copilot request failed');
@@ -125,10 +128,8 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/v4/ai/decisions', async (req: FastifyRequest, reply: FastifyReply) => {
-    const org_id = (req.headers['x-org-id'] as string | undefined)?.trim();
-    if (!org_id) {
-      return reply.code(401).send({ error: 'x-org-id header required' });
-    }
+    const org_id = req.user?.org_id;
+    if (!org_id) return reply.code(401).send({ error: 'tenant_scope_required' });
 
     const parsed = DecisionsQuerySchema.safeParse(req.query);
     if (!parsed.success) {
