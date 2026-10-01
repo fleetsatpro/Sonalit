@@ -54,8 +54,9 @@ export const useUIStore = create<UIState>()(
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
       setTheme: (theme) => {
-        applyTheme(theme);
-        set({ theme });
+        const normalized = normalizeTheme(theme);
+        applyTheme(normalized);
+        set({ theme: normalized });
       },
     }),
     {
