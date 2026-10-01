@@ -15,6 +15,7 @@ export async function withOrgContext<T>(
   orgId: string,
   fn: (client: PoolClient) => Promise<T>,
 ): Promise<T> {
+  return tenantContext.run(orgId, async () => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -29,6 +30,7 @@ export async function withOrgContext<T>(
   } finally {
     client.release();
   }
+  });
 }
 
 export async function query<T extends object = object>(
