@@ -8,7 +8,7 @@ const { buildWorldContext } = require('../services/spatial/worldContextService')
 const { withOrg } = require('../utils/orgScopedDb');
 const { publish } = require('../realtime/centrifugo');
 const { query, pool } = require('../config/database');
-const { withAdvisoryLock } = require('../utils/workerExecutionGuard');
+const { withAdvisoryLock, startAdvisoryLeader } = require('../utils/workerExecutionGuard');
 const logger = require('../utils/logger');
 
 const intervalMs = Math.max(5, Number(process.env.INTEL_COLLECTION_INTERVAL_MINUTES || 5)) * 60 * 1000;
@@ -22,6 +22,7 @@ let spatialRunning = false;
 let spatialCursor = { orgId: null, convoyId: null };
 let activeCyclePromise = null;
 let activeSpatialPromise = null;
+let advisoryLeader = null;
 
 async function evaluateSpatialEyeUnsafe(reason = 'scheduled') {
   if (spatialRunning || stopping) return { evaluated: 0, eventCount: 0, skipped: true };
@@ -181,12 +182,11 @@ function schedule() {
   }, intervalMs);
 }
 
-async function shutdown(signal) {
-  if (stopping) return;
-  stopping = true;
+async function drainActiveWork(reason) {
   if (timer) clearTimeout(timer);
   if (spatialTimer) clearTimeout(spatialTimer);
-  logger.info(`Intelligence worker shutting down (${signal})`);
+  timer = null;
+  spatialTimer = null;
   const running = [activeCyclePromise, activeSpatialPromise].filter(Boolean);
   if (running.length) {
     await Promise.race([
@@ -194,6 +194,15 @@ async function shutdown(signal) {
       new Promise(resolve => setTimeout(resolve, 20000))
     ]);
   }
+  logger.info(`Intelligence worker quiesced (${reason})`);
+}
+
+async function shutdown(signal) {
+  if (stopping) return;
+  stopping = true;
+  logger.info(`Intelligence worker shutting down (${signal})`);
+  await drainActiveWork(signal);
+  await advisoryLeader?.stop?.().catch(() => {});
   await pool.end().catch(() => {});
   process.exit(0);
 }
@@ -209,8 +218,26 @@ process.on('SIGINT', () => shutdown('SIGINT'));
   } catch (error) {
     logger.warn(`Intelligence worker DB context probe failed: ${error.message}`);
   }
-  await evaluateSpatialEye('startup');
-  await cycle('startup');
-  scheduleSpatial();
-  schedule();
+
+  advisoryLeader = await startAdvisoryLeader('sonalit:intelligence:leader', {
+    retryMs: 15000,
+    logger,
+    onAcquire: async () => {
+      stopping = false;
+      logger.info('Intelligence worker leader active');
+      await evaluateSpatialEye('startup');
+      await cycle('startup');
+      scheduleSpatial();
+      schedule();
+    },
+    onLose: async () => {
+      stopping = true;
+      await drainActiveWork('leadership loss');
+      stopping = false;
+    }
+  });
+  advisoryLeader.promise.catch(error => {
+    logger.error(`Intelligence advisory leader loop stopped unexpectedly: ${error.message}`);
+    if (!stopping) void shutdown('LEADER_LOOP_FAILURE');
+  });
 })();
