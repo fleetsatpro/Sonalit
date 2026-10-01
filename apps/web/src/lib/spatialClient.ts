@@ -146,6 +146,7 @@ export function worldContextEntities(context: SpatialWorldContext | undefined): 
     ...(context?.infrastructure ?? []),
     ...(context?.cameras ?? []),
     ...(context?.satellites ?? []),
+    ...(context?.entities ?? []),
   ]
   const seen = new Set<string>()
   return buckets.filter((item) => {
