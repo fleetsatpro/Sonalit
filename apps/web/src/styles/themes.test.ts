@@ -18,6 +18,7 @@ describe('Sonalit theme contract', () => {
   it('migrates legacy dark/light values without accepting arbitrary persisted values', () => {
     expect(normalizeTheme('dark')).toBe('obsidian');
     expect(normalizeTheme('light')).toBe('daylight');
+    expect(normalizeTheme('ivory')).toBe('daylight');
     expect(normalizeTheme('signal')).toBe('signal');
     expect(normalizeTheme('not-a-theme')).toBe('obsidian');
     expect(normalizeTheme(null)).toBe('obsidian');
