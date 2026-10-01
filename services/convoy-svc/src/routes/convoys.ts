@@ -6,7 +6,6 @@ import { requireAuth } from '../middleware/auth.js';
 import { getJs } from '../nats.js';
 import { StringCodec } from 'nats';
 import { NotFoundError, AuthError, ValidationError } from '../lib/errors.js';
-import { requireAuth } from '../middleware/auth.js';
 
 const ConvoyStatus = z.enum(['draft', 'planned', 'active', 'completed', 'cancelled']);
 
@@ -40,7 +39,6 @@ type PatchableCol = 'name' | 'description' | 'timezone' | 'start_date' | 'end_da
 const sc = StringCodec();
 
 export const convoysRoutes: FastifyPluginAsync = async (app) => {
-  app.addHook('preHandler', requireAuth);
   app.addHook('preHandler', requireAuth);
   app.get('/v4/convoys', async (req, reply) => {
     const org_id = req.user?.org_id;
