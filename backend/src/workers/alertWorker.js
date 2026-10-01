@@ -251,8 +251,6 @@ async function processAlert(job) {
 
   // Fire configured geofence actions for geofence/corridor alerts
   await fireGeofenceActions(job, alert, type, severity, vehicle_id, message);
-}
-
   });
 }
 
