@@ -57,9 +57,8 @@
    properties rather than hardcoding them, so overriding them here is
    enough to re-theme the whole dashboard chrome (Rail, Topbar, cards,
    etc.) with no per-component changes. data-theme is set on <html> by
-   stores/ui.ts's setTheme(). Note: pages built with hardcoded Tailwind
-   classes (e.g. bg-slate-800) rather than these variables won't respond
-   to this — that's a separate, larger migration. */
+   stores/ui.ts's setTheme(). The global theme-system.css layer also bridges
+   the mature Tailwind utility surfaces used by older pages. */
 :root[data-theme="light"] {
   --d-void: #ffffff;
   --d-carbon: #f8fafc;
