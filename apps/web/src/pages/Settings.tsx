@@ -5,8 +5,7 @@ import { useAuthStore, getAccessToken } from '../stores/auth.js';
 import { Settings as SettingsIcon, Key, Shield, Copy, Trash2, Plus, X, MessageCircle, Palette } from 'lucide-react';
 import { GuardianConvoySettings } from '../components/GuardianConvoySettings.js';
 import { HandoverOfficerSettings } from '../components/HandoverOfficerSettings.js';
-import { useUIStore } from '../stores/ui.js';
-import { SONALIT_THEMES } from '../styles/themes.js';
+import { THEMES, useUIStore } from '../stores/ui.js';
 
 interface ApiKey {
   id: string;
@@ -384,71 +383,40 @@ function AppearanceSection() {
 
   return (
     <SectionCard title="Appearance" icon={<Palette size={16} className="text-orange-400" />}>
-      <div className="space-y-4">
-        <div>
-          <p className="text-sm font-semibold text-slate-200">Interface theme</p>
-          <p className="text-xs text-slate-500 mt-1">
-            Presentation only — operational data, permissions, status meaning and workflows never change with appearance.
-          </p>
-        </div>
-
-        <div
-          className="grid grid-cols-1 sm:grid-cols-2 gap-3"
-          role="radiogroup"
-          aria-label="Sonalit interface theme"
-        >
-          {SONALIT_THEMES.map((option) => {
-            const selected = theme === option.id;
-            return (
-              <button
-                key={option.id}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => setTheme(option.id)}
-                className={`theme-option group relative overflow-hidden rounded-xl border p-3 text-left transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--d-sig)] ${selected ? 'theme-option-active' : ''}`}
-              >
-                <span
-                  className="absolute inset-x-0 top-0 h-1"
-                  style={{ backgroundColor: option.accent }}
-                  aria-hidden="true"
-                />
-                <span className="flex items-center gap-3 pt-1">
-                  <span
-                    className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border"
-                    style={{
-                      borderColor: `${option.accent}66`,
-                      backgroundColor: option.mode === 'light' ? '#f7f8f5' : '#11161d',
-                    }}
-                    aria-hidden="true"
-                  >
-                    <span
-                      className="h-4 w-4 rounded-full"
-                      style={{
-                        backgroundColor: option.accent,
-                        boxShadow: `0 0 16px ${option.accent}66`,
-                      }}
-                    />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold text-slate-200">{option.name}</span>
-                    <span className="block mt-0.5 text-[11px] leading-4 text-slate-500">{option.description}</span>
-                  </span>
-                  {selected && (
-                    <span className="ml-auto shrink-0 text-[10px] font-bold uppercase tracking-wider text-d-sig">
-                      Active
-                    </span>
-                  )}
+      <div className="son-theme-picker" role="radiogroup" aria-label="Application theme">
+        {THEMES.map((option) => {
+          const selected = theme === option.id;
+          return (
+            <button
+              key={option.id}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              className="son-theme-option"
+              data-selected={selected}
+              data-theme-preview={option.id}
+              onClick={() => setTheme(option.id)}
+            >
+              <span className="son-theme-preview" aria-hidden="true">
+                <span className="son-theme-preview-bar" />
+                <span className="son-theme-preview-grid">
+                  <span /><span /><span /><span />
                 </span>
-              </button>
-            );
-          })}
-        </div>
-
-        <p className="text-[11px] leading-4 text-slate-500">
-          Saved locally on this device. Geospatial canvases retain their deliberate high-contrast treatment in light themes.
-        </p>
+                <span className="son-theme-preview-line" />
+              </span>
+              <span className="son-theme-option-copy">
+                <span className="son-theme-option-name">{option.name}</span>
+                <span className="son-theme-option-desc">{option.descriptor}</span>
+              </span>
+              <span className="son-theme-check" aria-hidden="true">{selected ? '✓' : ''}</span>
+            </button>
+          );
+        })}
       </div>
+      <p className="son-theme-note">
+        Changes the visual system across Sonalit and is remembered on this device. Operational data,
+        alert semantics, provenance and workflow behaviour are unchanged.
+      </p>
     </SectionCard>
   );
 }
