@@ -21,5 +21,7 @@ const theme = persisted === 'dark'
       ? persisted
       : 'obsidian';
 
-document.documentElement.setAttribute('data-theme', theme);
-document.documentElement.style.colorScheme = LIGHT_THEMES.has(theme) ? 'light' : 'dark';
+const root = document.documentElement;
+root.setAttribute('data-theme', theme);
+root.classList.toggle('dark', !LIGHT_THEMES.has(theme));
+root.style.colorScheme = LIGHT_THEMES.has(theme) ? 'light' : 'dark';
