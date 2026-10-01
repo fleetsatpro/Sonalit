@@ -203,7 +203,7 @@ export default function GodsEyeView() {
               ))}
             </div>
             <div style={{ marginTop: 8, paddingTop: 7, borderTop: '1px solid rgba(255,255,255,.06)', fontFamily: 'IBM Plex Mono,monospace', fontSize: 7.5, lineHeight: 1.5, color: '#707783' }}>
-              Viewport-linked sync · max external radius 100 km · 3D altitude retained for aircraft/orbital modelled positions.
+              Viewport-linked sync · provider coverage and query limits remain explicit · 3D altitude retained for aircraft/orbital modelled positions.
             </div>
             </div>
           </>
