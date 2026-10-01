@@ -36,10 +36,10 @@ export interface RiskZone {
 type MapMode = 'dark' | 'satellite' | 'hybrid';
 
 const TOKEN = (import.meta.env['VITE_CESIUM_ION_TOKEN'] as string | undefined)?.trim() ?? '';
-const STREET_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
-const SATELLITE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
-const ROADS_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}';
-const PLACES_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
+const STREET_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
+const SATELLITE_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+const ROADS_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}';
+const PLACES_URL = 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
 const MODEL_URL = (import.meta.env['VITE_SONALIT_VEHICLE_MODEL_URL'] as string | undefined)?.trim() ?? '';
 
 const STATUS_COLOR: Record<string, string> = {
@@ -287,7 +287,8 @@ export default function CorridorWorldScene({
       });
     }
     const compactSurface = window.matchMedia?.('(max-width: 900px)').matches ?? false;
-    const highDpi = window.devicePixelRatio || 1;
+    const highDpi = Math.max(1, window.devicePixelRatio || 1);
+    const highFidelity = !compactSurface;
     viewer.scene.globe.enableLighting = true;
     viewer.scene.globe.showGroundAtmosphere = true;
     viewer.scene.globe.depthTestAgainstTerrain = true;
@@ -295,12 +296,16 @@ export default function CorridorWorldScene({
     viewer.scene.fog.density = 0.00002;
     viewer.scene.highDynamicRange = true;
     viewer.scene.postProcessStages.fxaa.enabled = true;
-    viewer.scene.msaaSamples = compactSurface ? 2 : 4;
+    viewer.scene.globe.showSkirts = false;
+    viewer.scene.globe.tileCacheSize = highFidelity ? 1200 : 500;
+    viewer.scene.msaaSamples = viewer.scene.msaaSupported ? (highFidelity ? 8 : 2) : 1;
     // GEV is a presentation-grade spatial surface: preserve high-DPI raster
     // density while keeping mobile GPU pressure bounded.
     viewer.useBrowserRecommendedResolution = false;
-    viewer.resolutionScale = Math.min(highDpi, compactSurface ? 1.75 : 2.5);
-    viewer.scene.globe.maximumScreenSpaceError = compactSurface ? 2 : 1.15;
+    viewer.resolutionScale = compactSurface
+      ? Math.min(Math.max(highDpi, 1.25), 2)
+      : Math.min(Math.max(highDpi, 1.35), 3);
+    viewer.scene.globe.maximumScreenSpaceError = compactSurface ? 1.75 : 1.0;
     viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#06101a');
     viewer.scene.globe.dynamicAtmosphereLighting = true;
     viewer.scene.globe.dynamicAtmosphereLightingFromSun = true;
