@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { query } from '../db.js';
+import { requireAuth } from '../middleware/auth.js';
 import { AuthError } from '../lib/errors.js';
 
 const DateRangeSchema = z.object({
@@ -11,9 +12,10 @@ const DateRangeSchema = z.object({
 });
 
 export const analyticsRoutes: FastifyPluginAsync = async (app) => {
+  app.addHook('preHandler', requireAuth);
   app.get('/v4/analytics/gps-events', async (req, reply) => {
-    const org_id = (req.headers['x-org-id'] as string | undefined)?.trim();
-    if (!org_id) throw new AuthError('x-org-id header required');
+    const org_id = req.user?.org_id;
+    if (!org_id) throw new AuthError('tenant scope missing');
     const { from, to } = DateRangeSchema.parse(req.query);
     const rows = await query(
       `SELECT time_bucket('1 hour', time) AS hour, COUNT(*) AS event_count
@@ -26,8 +28,8 @@ export const analyticsRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.get('/v4/analytics/alerts-by-type', async (req, reply) => {
-    const org_id = (req.headers['x-org-id'] as string | undefined)?.trim();
-    if (!org_id) throw new AuthError('x-org-id header required');
+    const org_id = req.user?.org_id;
+    if (!org_id) throw new AuthError('tenant scope missing');
     const { from, to } = DateRangeSchema.parse(req.query);
     const rows = await query(
       `SELECT type, severity, COUNT(*) AS count
@@ -42,8 +44,8 @@ export const analyticsRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.get('/v4/analytics/summary', async (req, reply) => {
-    const org_id = (req.headers['x-org-id'] as string | undefined)?.trim();
-    if (!org_id) throw new AuthError('x-org-id header required');
+    const org_id = req.user?.org_id;
+    if (!org_id) throw new AuthError('tenant scope missing');
     const { from, to } = DateRangeSchema.parse(req.query);
     const [gps] = await query<{ total: string }>(
       `SELECT COUNT(*)::text AS total FROM gps_fixes
@@ -66,8 +68,8 @@ export const analyticsRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.get('/v4/analytics/executive-summary', async (req, reply) => {
-    const org_id = (req.headers['x-org-id'] as string | undefined)?.trim();
-    if (!org_id) throw new AuthError('x-org-id header required');
+    const org_id = req.user?.org_id;
+    if (!org_id) throw new AuthError('tenant scope missing');
     const weekly = await query(
       `SELECT DATE_TRUNC('week', time) AS week, COUNT(*) AS gps_events
        FROM gps_fixes
