@@ -7,13 +7,13 @@ const ROOTS = [
   path.join(__dirname, '../src/workers'),
 ];
 
-function filesUnder(root) {
+function filesUnder(root, extensions = ['.js']) {
   const out = [];
   if (!fs.existsSync(root)) return out;
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
     const p = path.join(root, entry.name);
     if (entry.isDirectory()) out.push(...filesUnder(p));
-    else if (entry.name.endsWith('.js')) out.push(p);
+    else if (extensions.includes(path.extname(entry.name))) out.push(p);
   }
   return out;
 }
@@ -79,7 +79,7 @@ describe('tenant isolation regression guards', () => {
         if (!service.isDirectory()) continue;
         const routesRoot = path.join(serviceRoot, service.name, 'src');
         for (const scopeRoot of ['routes', 'middleware']) {
-          for (const file of filesUnder(path.join(routesRoot, scopeRoot))) {
+          for (const file of filesUnder(path.join(routesRoot, scopeRoot), ['.js', '.ts'])) {
             const source = fs.readFileSync(file, 'utf8');
             if (/x-org-id|x-org-id header required|headers\[['"]x-org-id['"]\]/i.test(source)) {
               violations.push(path.relative(path.join(__dirname, '../..'), file));
@@ -125,6 +125,25 @@ describe('tenant isolation regression guards', () => {
     const realtime = fs.readFileSync(path.join(__dirname, '../src/routes/realtime.js'), 'utf8');
     expect(realtime).toContain("if (!req.user?.org_id)");
     expect(realtime).not.toContain("req.user.org_id ?? req.user.id");
+  });
+
+
+  test('v4 service routes do not call raw pool.query directly', () => {
+    const violations = [];
+    const servicesRoot = path.join(__dirname, '../../services');
+    if (!fs.existsSync(servicesRoot)) return;
+    for (const service of fs.readdirSync(servicesRoot, { withFileTypes: true })) {
+      if (!service.isDirectory()) continue;
+      for (const scope of ['routes', 'middleware']) {
+        for (const file of filesUnder(path.join(servicesRoot, service.name, 'src', scope), ['.js', '.ts'])) {
+          const source = fs.readFileSync(file, 'utf8');
+          if (/\bpool\.query\s*\(/.test(source)) {
+            violations.push(path.relative(path.join(__dirname, '../..'), file));
+          }
+        }
+      }
+    }
+    expect(violations).toEqual([]);
   });
 
 });
