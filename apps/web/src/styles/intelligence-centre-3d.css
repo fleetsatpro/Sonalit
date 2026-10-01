@@ -8,3 +8,151 @@
 @media(max-width:780px){.ic-commandbar{padding:7px 11px}.ic-command-brand{min-width:0}.ic-command-actions .ic-secure{display:none}.ic-module-intro{min-width:200px}.ic-module{min-width:210px}.ic-module-current{display:none}.ic-module-context{overflow:auto;white-space:nowrap}.icx-root{padding:9px 10px 25px}.icx-top{padding:12px}.icx-top-status{display:none}.icx-brand{font-size:18px}.icx-top-actions .icx-system-readout{display:none}.icx-scope{grid-template-columns:1fr 1fr}.icx-scope-identity,.icx-search{grid-column:1/-1}.icx-nav button{min-width:94px}.icx-command-hero{grid-template-columns:1fr;min-height:430px}.icx-hero-copy{padding:30px 24px}.icx-command-orbit{min-height:145px}.orbit-ring.r1{width:180px;height:180px}.orbit-ring.r2{width:135px;height:135px}.orbit-ring.r3{width:94px;height:94px}.orbit-core{width:90px;height:90px}.orbit-core b{font-size:27px}.icx-metric-rail{grid-template-columns:1fr 1fr}.icx-row{grid-template-columns:19px minmax(0,1fr) 13px}.icx-row-tags,.icx-row-age{display:none}.icx-quality-grid{grid-template-columns:1fr 1fr}.icx-atlas-grid{grid-template-columns:1fr 1fr}.icx-panel-head{padding:10px}.icx-view-head{align-items:flex-start;gap:10px}.icx-view-head h2{font-size:23px}.icx-full-map{height:56vh}}
 @media(max-width:480px){.icx-scope{grid-template-columns:1fr}.icx-scope-identity,.icx-search{grid-column:auto}.icx-hero-copy h1{font-size:39px}.icx-hero-pills{display:grid;grid-template-columns:1fr}.icx-quality-grid{grid-template-columns:1fr 1fr}.icx-atlas-grid{grid-template-columns:1fr}.ic-module-context{display:none}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}.orbit-ring{transform:none}}
+
+
+/* ── Console theme bridge ────────────────────────────────────────────────
+   Intelligence Centre is a specialist surface, but it still participates in
+   the global appearance contract. These overrides alter presentation only;
+   collection, provenance, severity and scoping semantics remain untouched.
+ */
+:root[data-theme="arctic"] .sonalit-intelligence-shell,
+:root[data-theme="ivory"] .sonalit-intelligence-shell {
+  --ic-bg: var(--d-void);
+  --ic-surface: var(--d-well);
+  --ic-surface2: var(--d-surf);
+  --ic-line: var(--d-rim2);
+  --ic-line2: var(--d-rim3);
+  --ic-text: var(--d-t1);
+  --ic-muted: var(--d-t2);
+  --ic-faint: var(--d-t3);
+  --ic-accent: var(--d-sig);
+  background: var(--d-void) !important;
+  color: var(--d-t1) !important;
+}
+:root[data-theme="arctic"] .sonalit-intelligence-shell *,
+:root[data-theme="ivory"] .sonalit-intelligence-shell * {
+  border-color: var(--d-rim2);
+}
+:root[data-theme="arctic"] .ic-commandbar,
+:root[data-theme="ivory"] .ic-commandbar,
+:root[data-theme="arctic"] .ic-modulebar,
+:root[data-theme="ivory"] .ic-modulebar,
+:root[data-theme="arctic"] .ic-module-context,
+:root[data-theme="ivory"] .ic-module-context,
+:root[data-theme="arctic"] .icx-root,
+:root[data-theme="ivory"] .icx-root {
+  background: var(--d-void) !important;
+}
+:root[data-theme="arctic"] .ic-commandbar,
+:root[data-theme="ivory"] .ic-commandbar,
+:root[data-theme="arctic"] .ic-modulebar,
+:root[data-theme="ivory"] .ic-modulebar,
+:root[data-theme="arctic"] .ic-module,
+:root[data-theme="ivory"] .ic-module,
+:root[data-theme="arctic"] .ic-module.active,
+:root[data-theme="ivory"] .ic-module.active,
+:root[data-theme="arctic"] .icx-top,
+:root[data-theme="ivory"] .icx-top,
+:root[data-theme="arctic"] .icx-scope,
+:root[data-theme="ivory"] .icx-scope,
+:root[data-theme="arctic"] .icx-nav,
+:root[data-theme="ivory"] .icx-nav,
+:root[data-theme="arctic"] .icx-command-hero,
+:root[data-theme="ivory"] .icx-command-hero,
+:root[data-theme="arctic"] .icx-panel,
+:root[data-theme="ivory"] .icx-panel {
+  background: var(--d-well) !important;
+  color: var(--d-t1);
+  box-shadow: 0 16px 45px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.8);
+}
+:root[data-theme="arctic"] .icx-metric-rail,
+:root[data-theme="ivory"] .icx-metric-rail,
+:root[data-theme="arctic"] .in-strip,
+:root[data-theme="ivory"] .in-strip,
+:root[data-theme="arctic"] .ia-metrics,
+:root[data-theme="ivory"] .ia-metrics {
+  background: var(--d-rim2) !important;
+}
+:root[data-theme="arctic"] .icx-metric-rail>div,
+:root[data-theme="ivory"] .icx-metric-rail>div,
+:root[data-theme="arctic"] .in-metric,
+:root[data-theme="ivory"] .in-metric,
+:root[data-theme="arctic"] .ia-metrics>div,
+:root[data-theme="ivory"] .ia-metrics>div,
+:root[data-theme="arctic"] .in-section,
+:root[data-theme="ivory"] .in-section,
+:root[data-theme="arctic"] .ia-feed,
+:root[data-theme="ivory"] .ia-feed,
+:root[data-theme="arctic"] .ia-side,
+:root[data-theme="ivory"] .ia-side {
+  background: var(--d-well) !important;
+  color: var(--d-t1);
+}
+:root[data-theme="arctic"] .icx-brand,
+:root[data-theme="ivory"] .icx-brand,
+:root[data-theme="arctic"] .icx-panel-title b,
+:root[data-theme="ivory"] .icx-panel-title b,
+:root[data-theme="arctic"] .icx-row-main b,
+:root[data-theme="ivory"] .icx-row-main b,
+:root[data-theme="arctic"] .in-card h3,
+:root[data-theme="ivory"] .in-card h3,
+:root[data-theme="arctic"] .ia-alert h3,
+:root[data-theme="ivory"] .ia-alert h3 {
+  color: var(--d-t1) !important;
+}
+:root[data-theme="arctic"] .ic-command-eyebrow,
+:root[data-theme="ivory"] .ic-command-eyebrow,
+:root[data-theme="arctic"] .icx-eyebrow,
+:root[data-theme="ivory"] .icx-eyebrow,
+:root[data-theme="arctic"] .ic-kicker,
+:root[data-theme="ivory"] .ic-kicker {
+  color: var(--d-orange) !important;
+}
+:root[data-theme="arctic"] .icx-scope select,
+:root[data-theme="ivory"] .icx-scope select,
+:root[data-theme="arctic"] .icx-search,
+:root[data-theme="ivory"] .icx-search,
+:root[data-theme="arctic"] .in-search,
+:root[data-theme="ivory"] .in-search,
+:root[data-theme="arctic"] .in-controls button,
+:root[data-theme="ivory"] .in-controls button,
+:root[data-theme="arctic"] .ia-scope-control,
+:root[data-theme="ivory"] .ia-scope-control,
+:root[data-theme="arctic"] .ia-cat-control,
+:root[data-theme="ivory"] .ia-cat-control {
+  background: var(--d-surf) !important;
+  color: var(--d-t1) !important;
+  border-color: var(--d-rim2) !important;
+}
+:root[data-theme="arctic"] .icx-hero-copy h1 em,
+:root[data-theme="ivory"] .icx-hero-copy h1 em,
+:root[data-theme="arctic"] .icx-command-status strong,
+:root[data-theme="ivory"] .icx-command-status strong,
+:root[data-theme="arctic"] .ic-module.active .ic-module-index,
+:root[data-theme="ivory"] .ic-module.active .ic-module-index {
+  color: var(--d-orange) !important;
+}
+:root[data-theme="graphite"] .sonalit-intelligence-shell,
+:root[data-theme="copper"] .sonalit-intelligence-shell,
+:root[data-theme="signal"] .sonalit-intelligence-shell {
+  background: var(--d-void) !important;
+}
+:root[data-theme="graphite"] .sonalit-intelligence-shell .ic-commandbar,
+:root[data-theme="graphite"] .sonalit-intelligence-shell .ic-modulebar,
+:root[data-theme="graphite"] .sonalit-intelligence-shell .icx-top,
+:root[data-theme="graphite"] .sonalit-intelligence-shell .icx-scope,
+:root[data-theme="graphite"] .sonalit-intelligence-shell .icx-command-hero,
+:root[data-theme="copper"] .sonalit-intelligence-shell .ic-commandbar,
+:root[data-theme="copper"] .sonalit-intelligence-shell .ic-modulebar,
+:root[data-theme="copper"] .sonalit-intelligence-shell .icx-top,
+:root[data-theme="copper"] .sonalit-intelligence-shell .icx-scope,
+:root[data-theme="copper"] .sonalit-intelligence-shell .icx-command-hero,
+:root[data-theme="signal"] .sonalit-intelligence-shell .ic-commandbar,
+:root[data-theme="signal"] .sonalit-intelligence-shell .ic-modulebar,
+:root[data-theme="signal"] .sonalit-intelligence-shell .icx-top,
+:root[data-theme="signal"] .sonalit-intelligence-shell .icx-scope,
+:root[data-theme="signal"] .sonalit-intelligence-shell .icx-command-hero {
+  background: var(--d-well) !important;
+  color: var(--d-t1);
+  border-color: var(--d-rim2) !important;
+}
