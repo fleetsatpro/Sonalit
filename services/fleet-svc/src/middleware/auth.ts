@@ -94,6 +94,7 @@ export async function requireAuth(
     }
 
     request.user = { sub, org_id: orgId, role };
+    tenantContext.enterWith(orgId);
   } catch (err) {
     if (err instanceof AuthError) {
       await reply.status(err.statusCode).send({ code: err.code, message: err.message });
