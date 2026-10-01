@@ -81,9 +81,26 @@ function stopActiveCronTasks() {
   }
 }
 
-function deactivateFence() {
+let fenceShutdownStarted = false;
+
+async function deactivateFence() {
+  if (fenceShutdownStarted) return;
+  fenceShutdownStarted = true;
   fenceActive = false;
   stopActiveCronTasks();
+
+  const workers = Array.isArray(global._workers) ? [...global._workers] : [];
+  global._workers = [];
+  await Promise.race([
+    Promise.all(
+      workers.map((worker) => Promise.resolve(worker?.close?.()).catch(() => {}))
+    ),
+    new Promise((resolve) => setTimeout(resolve, 2_000)),
+  ]);
+
+  try {
+    if (global._server?.close) global._server.close();
+  } catch (_) {}
 }
 
 async function claimInChild() {
@@ -241,7 +258,7 @@ if (isClaimChild) {
 
   client.on("error", err => {
     console.error(`SONALIT runtime fence: PostgreSQL connection lost: ${err.message || String(err)}`);
-    if (fenceActive) process.exit(78);
+    if (fenceActive) void deactivateFence().finally(() => process.exit(78));
   });
 
   client.connect()
@@ -255,12 +272,12 @@ if (isClaimChild) {
           `, [ownerId]);
           if (rowCount !== 1) {
             console.error("SONALIT runtime fence: ownership was lost; terminating active runtime");
-            deactivateFence();
+            await deactivateFence();
             process.exit(78);
           }
         } catch (err) {
           console.error(`SONALIT runtime fence: heartbeat failed: ${err.message || String(err)}`);
-          deactivateFence();
+          await deactivateFence();
           process.exit(78);
         }
       }, FENCE_HEARTBEAT_MS);
@@ -270,7 +287,7 @@ if (isClaimChild) {
     })
     .catch(err => {
       console.error(`SONALIT runtime fence: heartbeat connection failed: ${err.message || String(err)}`);
-      process.exit(78);
+      void deactivateFence().finally(() => process.exit(78));
     });
 
   module.exports = {
