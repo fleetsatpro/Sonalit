@@ -14,6 +14,15 @@ BEGIN
   IF to_regclass('public.convoy_assignments') IS NOT NULL THEN
     ALTER TABLE convoy_assignments ADD COLUMN IF NOT EXISTS org_id UUID;
   END IF;
+  IF to_regclass('public.convoy_waypoints') IS NOT NULL THEN
+    ALTER TABLE convoy_waypoints ADD COLUMN IF NOT EXISTS org_id UUID;
+  END IF;
+  IF to_regclass('public.convoy_seals') IS NOT NULL THEN
+    ALTER TABLE convoy_seals ADD COLUMN IF NOT EXISTS org_id UUID;
+  END IF;
+  IF to_regclass('public.convoy_route_waypoints') IS NOT NULL THEN
+    ALTER TABLE convoy_route_waypoints ADD COLUMN IF NOT EXISTS org_id UUID;
+  END IF;
   IF to_regclass('public.checkpoints') IS NOT NULL THEN
     ALTER TABLE checkpoints ADD COLUMN IF NOT EXISTS org_id UUID;
   END IF;
@@ -95,6 +104,21 @@ UPDATE convoy_assignments ca
 SET org_id = c.org_id
 FROM convoys c
 WHERE ca.convoy_id = c.id AND ca.org_id IS NULL AND c.org_id IS NOT NULL;
+
+UPDATE convoy_waypoints w
+SET org_id = c.org_id
+FROM convoys c
+WHERE w.convoy_id = c.id AND w.org_id IS NULL;
+
+UPDATE convoy_seals s
+SET org_id = c.org_id
+FROM convoys c
+WHERE s.convoy_id = c.id AND s.org_id IS NULL;
+
+UPDATE convoy_route_waypoints w
+SET org_id = c.org_id
+FROM convoys c
+WHERE w.convoy_id = c.id AND w.org_id IS NULL;
 
 UPDATE checkpoints cp
 SET org_id = COALESCE(
@@ -286,6 +310,8 @@ BEGIN
       'field_devices',
       'field_sessions',
       'field_agent_pins',
+      'enrollment_codes',
+      'convoy_codes',
       'cfo_login_attempts',
       'guardian_command_nonces'
     ) THEN
@@ -611,7 +637,7 @@ DECLARE
   t TEXT;
 BEGIN
   FOREACH t IN ARRAY ARRAY[
-    'convoy_assignments','checkpoints','trips','invoices','expenses',
+    'convoy_assignments','convoy_waypoints','convoy_seals','convoy_route_waypoints','checkpoints','trips','invoices','expenses',
     'driver_events','geofence_actions','sensor_logs','api_keys','documents',
     'fuel_logs','convoy_trucks','convoy_cfos','convoy_cfo_truck_assignments',
     'convoy_truck_photos','convoy_daily_reports','device_locations',
