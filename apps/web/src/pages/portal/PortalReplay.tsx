@@ -1,3 +1,4 @@
+import { spatialPixelRatio, spatialCanvasContextAttributes } from '../../lib/spatialRendering.js';
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import maplibregl from 'maplibre-gl';
@@ -65,6 +66,9 @@ export default function PortalReplay(): React.ReactElement {
       container: mapRef.current,
       style: MAP_STYLE,
       center: [points[0]!.lng, points[0]!.lat],
+      pixelRatio: spatialPixelRatio(),
+      maxCanvasSize: [8192, 8192],
+      canvasContextAttributes: spatialCanvasContextAttributes,
       zoom: 10,
       attributionControl: false,
     });
