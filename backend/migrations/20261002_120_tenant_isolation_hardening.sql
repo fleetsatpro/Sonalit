@@ -224,7 +224,28 @@ BEGIN
       )
   LOOP
     EXECUTE format('ALTER TABLE %I.%I ENABLE ROW LEVEL SECURITY', r.schema_name, r.table_name);
-    EXECUTE format('ALTER TABLE %I.%I FORCE ROW LEVEL SECURITY', r.schema_name, r.table_name);
+
+    -- Bootstrap credentials are looked up before a tenant is known. They are
+    -- intentionally NOT FORCEd so the exact-match bootstrap lookup can resolve
+    -- the tenant. After authentication, all downstream access uses
+    -- sonalit_app + app.current_org_id and therefore still hits RLS.
+    IF r.table_name NOT IN (
+      'users',
+      'guardian_devices',
+      'portal_tokens',
+      'cargo_clients',
+      'client_magic_links',
+      'telemetry_ingest_keys',
+      'tracking_qr_codes',
+      'tracking_sessions',
+      'field_devices',
+      'field_sessions',
+      'field_agent_pins',
+      'cfo_login_attempts',
+      'guardian_command_nonces'
+    ) THEN
+      EXECUTE format('ALTER TABLE %I.%I FORCE ROW LEVEL SECURITY', r.schema_name, r.table_name);
+    END IF;
 
     EXECUTE format('DROP POLICY IF EXISTS tenant_isolation_hardening ON %I.%I', r.schema_name, r.table_name);
     EXECUTE format('DROP POLICY IF EXISTS tenant_isolation_hardening_write ON %I.%I', r.schema_name, r.table_name);
@@ -235,6 +256,14 @@ BEGIN
         'CREATE POLICY tenant_isolation_hardening ON %I.%I AS RESTRICTIVE FOR ALL
            USING (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid OR org_id IS NULL)
            WITH CHECK (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)',
+        r.schema_name, r.table_name
+      );
+      -- Global intelligence rows (org_id IS NULL) are intentionally readable,
+      -- but tenant-created rows can never be NULL. This compensates for any
+      -- older permissive policy that only allowed exact-tenant rows.
+      EXECUTE format(
+        'CREATE POLICY tenant_global_risk_read ON %I.%I AS PERMISSIVE FOR SELECT
+           USING (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid OR org_id IS NULL)',
         r.schema_name, r.table_name
       );
     ELSE
@@ -275,8 +304,13 @@ CREATE OR REPLACE FUNCTION tenant_harden_org_from_vehicle() RETURNS trigger
 LANGUAGE plpgsql AS $tenant$
 DECLARE parent_org UUID;
 BEGIN
-  SELECT org_id INTO parent_org FROM vehicles WHERE id = NEW.vehicle_id;
-  IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_vehicle'; END IF;
+  IF NEW.vehicle_id IS NOT NULL THEN
+    SELECT org_id INTO parent_org FROM vehicles WHERE id = NEW.vehicle_id;
+    IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_vehicle'; END IF;
+  ELSE
+    parent_org := NULLIF(current_setting('app.current_org_id', true), '')::uuid;
+  END IF;
+  IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_required'; END IF;
   IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
   NEW.org_id := parent_org;
   RETURN NEW;
@@ -286,8 +320,13 @@ CREATE OR REPLACE FUNCTION tenant_harden_org_from_convoy() RETURNS trigger
 LANGUAGE plpgsql AS $tenant$
 DECLARE parent_org UUID;
 BEGIN
-  SELECT org_id INTO parent_org FROM convoys WHERE id = NEW.convoy_id;
-  IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_convoy'; END IF;
+  IF NEW.convoy_id IS NOT NULL THEN
+    SELECT org_id INTO parent_org FROM convoys WHERE id = NEW.convoy_id;
+    IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_convoy'; END IF;
+  ELSE
+    parent_org := NULLIF(current_setting('app.current_org_id', true), '')::uuid;
+  END IF;
+  IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_required'; END IF;
   IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
   NEW.org_id := parent_org;
   RETURN NEW;
