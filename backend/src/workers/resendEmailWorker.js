@@ -24,7 +24,6 @@ async function processEmail(job) {
     await query(`UPDATE email_notifications SET status=$2, last_error=$3, failed_at=CASE WHEN $2='failed' THEN NOW() ELSE failed_at END, updated_at=NOW() WHERE id=$1`, [id, retryable ? 'delivery_delayed' : 'failed', String(err.message || err).slice(0, 2000)]);
     if (retryable) throw err; logger.error(`Permanent Resend email failure: notification=${id} error=${err.message}`);
   }
-}
   });
 }
 
