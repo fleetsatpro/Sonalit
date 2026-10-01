@@ -553,4 +553,296 @@ BEGIN
   END LOOP;
 END $tenant$;
 
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 4. Cross-tenant relationship invariants.
+-- The org_id on a child row must agree with every tenant-bearing parent it
+-- references. These checks prevent a tenant from binding an otherwise-valid
+-- tenant-A row to a tenant-B user/device/vehicle by guessed UUID.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION tenant_harden_validate_relationships() RETURNS trigger
+LANGUAGE plpgsql AS $tenant$
+DECLARE
+  expected_org UUID;
+  parent_org UUID;
+BEGIN
+  -- Convoy assignments: convoy + vehicle
+  IF TG_TABLE_NAME = 'convoy_assignments' THEN
+    SELECT org_id INTO parent_org FROM vehicles WHERE id = NEW.vehicle_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+
+  -- Shipments: convoy + vehicle + driver
+  ELSIF TG_TABLE_NAME = 'shipments' THEN
+    IF NEW.convoy_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM convoys WHERE id = NEW.convoy_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+    IF NEW.vehicle_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM vehicles WHERE id = NEW.vehicle_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+    IF NEW.driver_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM drivers WHERE id = NEW.driver_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+
+  -- Trips: convoy + shipment + vehicle + driver
+  ELSIF TG_TABLE_NAME = 'trips' THEN
+    IF NEW.convoy_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM convoys WHERE id = NEW.convoy_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+    IF NEW.shipment_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM shipments WHERE id = NEW.shipment_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+    SELECT org_id INTO parent_org FROM vehicles WHERE id = NEW.vehicle_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    IF NEW.driver_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM drivers WHERE id = NEW.driver_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+
+  -- Invoice / expense secondary ownership
+  ELSIF TG_TABLE_NAME = 'invoices' THEN
+    IF NEW.shipment_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM shipments WHERE id = NEW.shipment_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+    IF NEW.trip_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM trips WHERE id = NEW.trip_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+  ELSIF TG_TABLE_NAME = 'expenses' THEN
+    IF NEW.trip_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM trips WHERE id = NEW.trip_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+    IF NEW.vehicle_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM vehicles WHERE id = NEW.vehicle_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+    IF NEW.driver_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM drivers WHERE id = NEW.driver_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+
+  -- Driver event: driver + vehicle + trip
+  ELSIF TG_TABLE_NAME = 'driver_events' THEN
+    IF NEW.driver_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM drivers WHERE id = NEW.driver_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+    IF NEW.vehicle_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM vehicles WHERE id = NEW.vehicle_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+    IF NEW.trip_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM trips WHERE id = NEW.trip_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+
+  -- Communications
+  ELSIF TG_TABLE_NAME = 'messages' THEN
+    SELECT org_id INTO parent_org FROM channels WHERE id = NEW.channel_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    IF NEW.sender_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM users WHERE id = NEW.sender_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+
+  ELSIF TG_TABLE_NAME = 'channel_members' THEN
+    SELECT org_id INTO parent_org FROM channels WHERE id = NEW.channel_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    SELECT org_id INTO parent_org FROM users WHERE id = NEW.user_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+
+  ELSIF TG_TABLE_NAME = 'message_attachments' THEN
+    IF NEW.message_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM messages WHERE id = NEW.message_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+    SELECT org_id INTO parent_org FROM users WHERE id = NEW.uploader_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+
+  -- Cargo owner portal relationships
+  ELSIF TG_TABLE_NAME = 'cargo_client_links' THEN
+    SELECT org_id INTO parent_org FROM cargo_clients WHERE id = NEW.client_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    SELECT org_id INTO parent_org FROM convoys WHERE id = NEW.convoy_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    IF NEW.shipment_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM shipments WHERE id = NEW.shipment_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+
+  ELSIF TG_TABLE_NAME = 'client_notification_prefs' THEN
+    SELECT org_id INTO parent_org FROM cargo_clients WHERE id = NEW.client_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    IF NEW.convoy_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM convoys WHERE id = NEW.convoy_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+
+  ELSIF TG_TABLE_NAME = 'proof_of_delivery' THEN
+    SELECT org_id INTO parent_org FROM convoys WHERE id = NEW.convoy_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    IF NEW.shipment_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM shipments WHERE id = NEW.shipment_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+
+  ELSIF TG_TABLE_NAME = 'portal_documents' THEN
+    SELECT org_id INTO parent_org FROM convoys WHERE id = NEW.convoy_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+
+  -- Guardian command / evidence graph
+  ELSIF TG_TABLE_NAME = 'panic_events' THEN
+    SELECT org_id INTO parent_org FROM guardian_devices WHERE id = NEW.device_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    IF NEW.resolved_by IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM users WHERE id = NEW.resolved_by;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+
+  ELSIF TG_TABLE_NAME = 'device_commands' THEN
+    SELECT org_id INTO parent_org FROM guardian_devices WHERE id = NEW.device_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    IF NEW.issued_by IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM users WHERE id = NEW.issued_by;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+
+  ELSIF TG_TABLE_NAME = 'convoy_cfos' THEN
+    SELECT org_id INTO parent_org FROM convoys WHERE id = NEW.convoy_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    SELECT org_id INTO parent_org FROM users WHERE id = NEW.cfo_user_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    IF NEW.guardian_device_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM guardian_devices WHERE id = NEW.guardian_device_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+
+  ELSIF TG_TABLE_NAME = 'convoy_cfo_truck_assignments' THEN
+    SELECT org_id INTO parent_org FROM convoys WHERE id = NEW.convoy_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    SELECT org_id INTO parent_org FROM users WHERE id = NEW.cfo_user_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    SELECT org_id INTO parent_org FROM convoy_trucks WHERE id = NEW.convoy_truck_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+
+  ELSIF TG_TABLE_NAME = 'convoy_truck_photos' THEN
+    SELECT org_id INTO parent_org FROM convoys WHERE id = NEW.convoy_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    SELECT org_id INTO parent_org FROM convoy_trucks WHERE id = NEW.convoy_truck_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    SELECT org_id INTO parent_org FROM users WHERE id = NEW.cfo_user_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    IF NEW.guardian_device_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM guardian_devices WHERE id = NEW.guardian_device_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+
+  ELSIF TG_TABLE_NAME = 'convoy_handovers' THEN
+    SELECT org_id INTO parent_org FROM convoys WHERE id = NEW.convoy_id;
+    IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    IF NEW.convoy_truck_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM convoy_trucks WHERE id = NEW.convoy_truck_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+    IF NEW.handed_over_by_user_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM users WHERE id = NEW.handed_over_by_user_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+
+  ELSIF TG_TABLE_NAME = 'route_analyses' THEN
+    IF NEW.convoy_id IS NOT NULL THEN
+      SELECT org_id INTO parent_org FROM convoys WHERE id = NEW.convoy_id;
+      IF parent_org IS NULL OR parent_org <> NEW.org_id THEN RAISE EXCEPTION 'tenant_scope_parent_mismatch'; END IF;
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END $tenant$;
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_convoy_assignments ON convoy_assignments;
+CREATE TRIGGER tenant_relationship_guard_convoy_assignments AFTER INSERT OR UPDATE ON convoy_assignments
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_shipments ON shipments;
+CREATE TRIGGER tenant_relationship_guard_shipments AFTER INSERT OR UPDATE ON shipments
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_trips ON trips;
+CREATE TRIGGER tenant_relationship_guard_trips AFTER INSERT OR UPDATE ON trips
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_invoices ON invoices;
+CREATE TRIGGER tenant_relationship_guard_invoices AFTER INSERT OR UPDATE ON invoices
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_expenses ON expenses;
+CREATE TRIGGER tenant_relationship_guard_expenses AFTER INSERT OR UPDATE ON expenses
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_driver_events ON driver_events;
+CREATE TRIGGER tenant_relationship_guard_driver_events AFTER INSERT OR UPDATE ON driver_events
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_messages ON messages;
+CREATE TRIGGER tenant_relationship_guard_messages AFTER INSERT OR UPDATE ON messages
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_channel_members ON channel_members;
+CREATE TRIGGER tenant_relationship_guard_channel_members AFTER INSERT OR UPDATE ON channel_members
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_message_attachments ON message_attachments;
+CREATE TRIGGER tenant_relationship_guard_message_attachments AFTER INSERT OR UPDATE ON message_attachments
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_cargo_client_links ON cargo_client_links;
+CREATE TRIGGER tenant_relationship_guard_cargo_client_links AFTER INSERT OR UPDATE ON cargo_client_links
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_client_notification_prefs ON client_notification_prefs;
+CREATE TRIGGER tenant_relationship_guard_client_notification_prefs AFTER INSERT OR UPDATE ON client_notification_prefs
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_proof_of_delivery ON proof_of_delivery;
+CREATE TRIGGER tenant_relationship_guard_proof_of_delivery AFTER INSERT OR UPDATE ON proof_of_delivery
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_portal_documents ON portal_documents;
+CREATE TRIGGER tenant_relationship_guard_portal_documents AFTER INSERT OR UPDATE ON portal_documents
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_panic_events ON panic_events;
+CREATE TRIGGER tenant_relationship_guard_panic_events AFTER INSERT OR UPDATE ON panic_events
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_device_commands ON device_commands;
+CREATE TRIGGER tenant_relationship_guard_device_commands AFTER INSERT OR UPDATE ON device_commands
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_convoy_cfos ON convoy_cfos;
+CREATE TRIGGER tenant_relationship_guard_convoy_cfos AFTER INSERT OR UPDATE ON convoy_cfos
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_convoy_cfo_truck_assignments ON convoy_cfo_truck_assignments;
+CREATE TRIGGER tenant_relationship_guard_convoy_cfo_truck_assignments AFTER INSERT OR UPDATE ON convoy_cfo_truck_assignments
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_convoy_truck_photos ON convoy_truck_photos;
+CREATE TRIGGER tenant_relationship_guard_convoy_truck_photos AFTER INSERT OR UPDATE ON convoy_truck_photos
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_convoy_handovers ON convoy_handovers;
+CREATE TRIGGER tenant_relationship_guard_convoy_handovers AFTER INSERT OR UPDATE ON convoy_handovers
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
+DROP TRIGGER IF EXISTS tenant_relationship_guard_route_analyses ON route_analyses;
+CREATE TRIGGER tenant_relationship_guard_route_analyses AFTER INSERT OR UPDATE ON route_analyses
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_validate_relationships();
+
 COMMIT;
