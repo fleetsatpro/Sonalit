@@ -34,7 +34,7 @@ describe('centrifugo publish()', () => {
       expect.stringContaining('/api/publish'),
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({ 'Authorization': 'apikey secret-key' }),
+        headers: expect.objectContaining({ 'X-API-Key': 'secret-key' }),
       })
     );
   });
