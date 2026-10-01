@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Pool, types } = require('pg');
 const logger = require('../utils/logger');
-const { getOrgId } = require('../utils/tenantContext');
+const { getOrgId, getTenantDbClient } = require('../utils/tenantContext');
 
 // pg returns NUMERIC/DECIMAL columns (type OID 1700) as strings to preserve
 // arbitrary precision. This app treats those columns (speed, fuel_level,
@@ -60,13 +60,16 @@ async function tenantQuery(orgId, text, params) {
 async function query(text, params) {
   const start = Date.now();
   const orgId = getOrgId();
+  const activeClient = getTenantDbClient();
   try {
-    // Once an authenticated tenant exists, the legacy query helper becomes
-    // tenant-bound automatically. This closes the most dangerous historical
-    // failure mode: owner-role queries accidentally bypassing RLS.
-    const result = orgId
-      ? await tenantQuery(orgId, text, params)
-      : await pool.query(text, params);
+    // If already inside withOrg(), reuse that transaction instead of opening a
+    // second connection. This preserves transaction atomicity and prevents a
+    // nested legacy helper from observing pre-commit state on another client.
+    const result = activeClient && orgId
+      ? await activeClient.query(text, params)
+      : orgId
+        ? await tenantQuery(orgId, text, params)
+        : await pool.query(text, params);
     const duration = Date.now() - start;
     if (duration > 1000) {
       logger.warn(`Slow query detected (${duration}ms): ${text.substring(0, 100)}`);
