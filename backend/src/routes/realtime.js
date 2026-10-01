@@ -32,7 +32,11 @@ router.post('/subscription-token', (req, res) => {
   }
 
   const orgId = String(req.user.org_id ?? req.user.id);
-  if (channel !== `org#${orgId}`) {
+  const allowedChannels = new Set([
+    `org#${orgId}`,
+    `risk:updates:${orgId}`,
+  ]);
+  if (!allowedChannels.has(channel)) {
     return res.status(403).json({ error: 'Not authorized for this channel' });
   }
 
