@@ -9,6 +9,20 @@ import api from './api';
 // apps/web already uses successfully.
 
 let client = null;
+const DEFAULT_WS_URL = 'wss://centrifugo-production-c103.up.railway.app/connection/websocket';
+const LEGACY_WS_HOSTS = new Set(['rt.sonalit.io', 'centrifugo.sonalit.io']);
+
+function resolveWsUrl(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return DEFAULT_WS_URL;
+  try {
+    const parsed = new URL(value);
+    return LEGACY_WS_HOSTS.has(parsed.hostname.toLowerCase()) ? DEFAULT_WS_URL : value;
+  } catch (_) {
+    return DEFAULT_WS_URL;
+  }
+}
+
 
 // One Subscription per channel, fanned out to every registered handler —
 // mirrors apps/web's lib/centrifuge.ts so multiple components can share a
@@ -22,7 +36,7 @@ async function fetchConnectionToken() {
 
 export function getCentrifuge() {
   if (!client) {
-    client = new Centrifuge(import.meta.env.VITE_CENTRIFUGO_URL || 'wss://rt.sonalit.io/connection/websocket', {
+    client = new Centrifuge(resolveWsUrl(import.meta.env.VITE_CENTRIFUGO_URL), {
       getToken: fetchConnectionToken,
     });
     client.connect();

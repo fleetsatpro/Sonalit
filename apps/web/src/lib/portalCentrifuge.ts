@@ -5,6 +5,8 @@
  */
 import { Centrifuge, type PublicationContext } from 'centrifuge';
 
+import { CENTRIFUGO_WS_URL } from './realtimeEndpoint.js';
+
 const API = (import.meta.env['VITE_API_BASE_URL'] as string | undefined) ?? '/api/v1';
 
 let client: Centrifuge | null = null;
@@ -31,7 +33,7 @@ async function fetchPortalSubToken(channel: string): Promise<string> {
 export function getPortalCentrifuge(): Centrifuge {
   if (!client) {
     client = new Centrifuge(
-      (import.meta.env['VITE_CENTRIFUGO_URL'] as string | undefined) ?? 'wss://rt.sonalit.io/connection/websocket',
+      CENTRIFUGO_WS_URL,
       { getToken: fetchPortalToken },
     );
     client.connect();
