@@ -68,8 +68,7 @@ interface SealData {
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const API_BASE = (import.meta.env['VITE_API_BASE_URL'] as string | undefined) ?? '/api/v1';
-const WS_URL   = (import.meta.env['VITE_CENTRIFUGO_URL'] as string | undefined)
-  ?? 'wss://rt.sonalit.io/connection/websocket';
+const WS_URL = CENTRIFUGO_WS_URL;
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
