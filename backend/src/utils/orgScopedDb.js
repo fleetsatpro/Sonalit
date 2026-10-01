@@ -15,26 +15,26 @@ const { normalizeOrgId, runWithOrgContext } = require('./tenantContext');
 async function withOrg(orgId, fn) {
   const normalized = normalizeOrgId(orgId);
   if (!normalized) throw new Error('invalid_org_id');
-  return runWithOrgContext(normalized, async () => {
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      // Switch to non-superuser role so RLS org_isolation policies are enforced
-      // even when the session connects as a PostgreSQL superuser.
-      await client.query('SET LOCAL ROLE sonalit_app');
-      // SET LOCAL applies only within this transaction — safe with connection pooling.
-      await client.query('SELECT set_config($1, $2, true)', ['app.current_org_id', normalized]);
-      const result = await fn(client);
-      await client.query('COMMIT');
-      return result;
-    } catch (err) {
-      try { await client.query('ROLLBACK'); } catch (_) {}
-      throw err;
-    } finally {
-      client.release();
-    }
-  });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // Switch to non-superuser role so RLS org_isolation policies are enforced
+    // even when the pool's underlying session user is privileged.
+    await client.query('SET LOCAL ROLE sonalit_app');
+    await client.query('SELECT set_config($1, $2, true)', ['app.current_org_id', normalized]);
+    // Carry both tenant and client so nested legacy query() calls reuse this
+    // transaction instead of opening an unscoped secondary connection.
+    const result = await runWithOrgContext(normalized, () => fn(client), client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    throw err;
+  } finally {
+    client.release();
+  }
 }
+
 /**
  * Attaches req.db and req.dbTx to every authenticated request.
  * Call this after authenticate() in the middleware chain.
