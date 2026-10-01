@@ -120,10 +120,6 @@ FROM users u
 WHERE al.actor_id = u.id AND al.org_id IS NULL;
 
 ALTER TABLE IF EXISTS api_keys ADD COLUMN IF NOT EXISTS org_id UUID;
-UPDATE api_keys k
-SET org_id = u.org_id
-FROM users u
-WHERE k.org_id IS NULL AND k.created_by = u.id;
 
 ALTER TABLE IF EXISTS audit_logs ADD COLUMN IF NOT EXISTS org_id UUID;
 UPDATE audit_logs a
@@ -148,7 +144,7 @@ ALTER TABLE IF EXISTS convoy_codes ADD COLUMN IF NOT EXISTS org_id UUID;
 UPDATE convoy_codes cc
 SET org_id = c.org_id
 FROM convoys c
-WHERE cc.convoy_code IS NOT NULL AND c.id::text = cc.convoy_code AND cc.org_id IS NULL;
+WHERE cc.code = c.id::text AND cc.org_id IS NULL;
 
 -- ---------------------------------------------------------------------------
 -- 2. Parent-derived org triggers. These turn missing org_id into a DB-side
