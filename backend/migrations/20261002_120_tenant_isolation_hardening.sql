@@ -272,7 +272,7 @@ END $$;
 -- evaluates the write.
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_vehicle() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql AS $tenant$$
 DECLARE parent_org UUID;
 BEGIN
   SELECT org_id INTO parent_org FROM vehicles WHERE id = NEW.vehicle_id;
@@ -283,7 +283,7 @@ BEGIN
 END $$;
 
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_convoy() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql AS $tenant$$
 DECLARE parent_org UUID;
 BEGIN
   SELECT org_id INTO parent_org FROM convoys WHERE id = NEW.convoy_id;
@@ -294,7 +294,7 @@ BEGIN
 END $$;
 
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_checkpoint() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql AS $tenant$$
 DECLARE parent_org UUID;
 BEGIN
   IF NEW.convoy_id IS NOT NULL THEN
@@ -310,7 +310,7 @@ BEGIN
 END $$;
 
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_trip() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql AS $tenant$$
 DECLARE parent_org UUID;
 BEGIN
   IF NEW.convoy_id IS NOT NULL THEN
@@ -332,7 +332,7 @@ BEGIN
 END $$;
 
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_invoice() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql AS $tenant$$
 DECLARE parent_org UUID;
 BEGIN
   IF NEW.shipment_id IS NOT NULL THEN SELECT org_id INTO parent_org FROM shipments WHERE id = NEW.shipment_id; END IF;
@@ -345,7 +345,7 @@ BEGIN
 END $$;
 
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_expense() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql AS $tenant$$
 DECLARE parent_org UUID;
 BEGIN
   IF NEW.trip_id IS NOT NULL THEN SELECT org_id INTO parent_org FROM trips WHERE id = NEW.trip_id; END IF;
@@ -359,7 +359,7 @@ BEGIN
 END $$;
 
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_driver_event() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql AS $tenant$$
 DECLARE parent_org UUID;
 BEGIN
   IF NEW.driver_id IS NOT NULL THEN SELECT org_id INTO parent_org FROM drivers WHERE id = NEW.driver_id; END IF;
@@ -372,7 +372,7 @@ BEGIN
 END $$;
 
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_device() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql AS $tenant$$
 DECLARE parent_org UUID;
 BEGIN
   SELECT org_id INTO parent_org FROM guardian_devices WHERE id = NEW.device_id;
@@ -383,7 +383,7 @@ BEGIN
 END $$;
 
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_geofence() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql AS $tenant$$
 DECLARE parent_org UUID;
 BEGIN
   SELECT org_id INTO parent_org FROM geofences WHERE id = NEW.geofence_id;
@@ -394,7 +394,7 @@ BEGIN
 END $$;
 
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_user() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql AS $tenant$$
 DECLARE parent_org UUID;
 BEGIN
   SELECT org_id INTO parent_org FROM users WHERE id = NEW.user_id;
