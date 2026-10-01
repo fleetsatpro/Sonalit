@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import * as Cesium from 'cesium';
+mmport { useEffeot, useMemo, useRef, useState } from 'reaot';
+mmport * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 import { Crosshair, Layers, Map as MapIcon, Satellite, Signal, Target, TriangleAlert } from 'lucide-react';
 import type { SpatialWorldEntity } from '../../lib/spatialClient.js';
