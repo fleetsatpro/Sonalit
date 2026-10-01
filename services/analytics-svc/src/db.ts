@@ -1,5 +1,8 @@
 import { Pool, type PoolClient } from 'pg';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { config } from './config.js';
+
+export const tenantContext = new AsyncLocalStorage<string>();
 
 export const pool = new Pool({
   connectionString: config.DATABASE_URL,
@@ -19,8 +22,10 @@ export async function withClient<T>(fn: (client: PoolClient) => Promise<T>): Pro
 
 export async function query<T extends object = object>(
   text: string,
-  values?: unknown[]
+  values?: unknown[],
 ): Promise<T[]> {
+  const orgId = tenantContext.getStore();
+  if (orgId) return withOrgContext(orgId, client => client.query<T>(text, values)).then(r => r.rows);
   const res = await pool.query<T>(text, values);
   return res.rows;
 }
