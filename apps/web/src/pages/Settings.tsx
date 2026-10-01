@@ -5,7 +5,7 @@ import { useAuthStore, getAccessToken } from '../stores/auth.js';
 import { Settings as SettingsIcon, Key, Shield, Copy, Trash2, Plus, X, MessageCircle, Palette } from 'lucide-react';
 import { GuardianConvoySettings } from '../components/GuardianConvoySettings.js';
 import { HandoverOfficerSettings } from '../components/HandoverOfficerSettings.js';
-import { useUIStore } from '../stores/ui.js';
+import { THEME_META, SONALIT_THEMES, useUIStore } from '../stores/ui.js';
 
 interface ApiKey {
   id: string;
@@ -383,26 +383,52 @@ function AppearanceSection() {
 
   return (
     <SectionCard title="Appearance" icon={<Palette size={16} className="text-orange-400" />}>
-      <div className="space-y-2">
-        <label className="block text-xs text-slate-400 mb-1">Theme</label>
-        <div className="flex gap-2">
-          {(['dark', 'light'] as const).map((opt) => (
-            <button
-              key={opt}
-              onClick={() => setTheme(opt)}
-              className={`flex-1 text-sm px-3 py-2 rounded border transition-colors capitalize ${
-                theme === opt
-                  ? 'bg-orange-600 border-orange-500 text-white'
-                  : 'bg-slate-900 border-slate-600 text-slate-300 hover:border-slate-500'
-              }`}
-            >
-              {opt}
-            </button>
-          ))}
+      <div className="space-y-3">
+        <div>
+          <p className="text-sm font-medium text-slate-200">Console theme</p>
+          <p className="text-xs text-slate-500 mt-1">
+            Changes presentation only. Fleet state, telemetry, alerts, permissions and operational semantics remain unchanged.
+          </p>
         </div>
-        <p className="text-xs text-slate-500 pt-1">
-          Applies to the sidebar, top bar, and dashboard cards immediately and is remembered on this device.
-        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" role="radiogroup" aria-label="Console theme">
+          {SONALIT_THEMES.map((opt) => {
+            const meta = THEME_META[opt];
+            const selected = theme === opt;
+            return (
+              <button
+                key={opt}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                aria-label={meta.label}
+                onClick={() => setTheme(opt)}
+                className={`group relative overflow-hidden rounded-xl border p-3 text-left transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--d-orange)] ${selected
+                  ? 'border-orange-500 bg-slate-800'
+                  : 'border-slate-700 bg-slate-900 hover:border-slate-500'}`}
+              >
+                <span
+                  aria-hidden="true"
+                  className="mb-3 block h-14 rounded-lg border border-white/10 shadow-inner"
+                  style={{ background: meta.preview }}
+                />
+                <span className="flex items-center justify-between gap-2">
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-slate-200 truncate">{meta.label}</span>
+                    <span className="mt-1 block text-[11px] leading-4 text-slate-500">{meta.description}</span>
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    className={`h-2.5 w-2.5 shrink-0 rounded-full border ${selected ? 'bg-orange-500 border-orange-400 shadow-[0_0_10px_var(--d-oglow)]' : 'border-slate-500'}`}
+                  />
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-900 px-3 py-2">
+          <span className="text-xs text-slate-500">Active</span>
+          <span className="text-xs font-semibold text-slate-200">{THEME_META[theme].label}</span>
+        </div>
       </div>
     </SectionCard>
   );
