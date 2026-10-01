@@ -4,10 +4,14 @@ import {
   Activity,
   Camera,
   Car,
+  ChevronLeft,
+  ChevronRight,
   CloudSun,
   Focus,
   Globe2,
   Layers3,
+  Maximize2,
+  Minimize2,
   Orbit,
   RadioTower,
   Satellite,
@@ -69,7 +73,16 @@ export default function GodsEyeView() {
   const [selected, setSelected] = useState<LiveVehicle | null>(null)
   const [selectedExternalId, setSelectedExternalId] = useState<string | null>(null)
   const [visibleLayers, setVisibleLayers] = useState<Set<WorldContextLayer>>(() => new Set(WORLD_CONTEXT_LAYERS))
+  const [overviewOpen, setOverviewOpen] = useState(true)
+  const [intelligenceOpen, setIntelligenceOpen] = useState(true)
   const [clock, setClock] = useState(() => new Date())
+
+  const chromeExpanded = overviewOpen || intelligenceOpen
+  const toggleAllChrome = () => {
+    const nextOpen = !chromeExpanded
+    setOverviewOpen(nextOpen)
+    setIntelligenceOpen(nextOpen)
+  }
 
   const allVehicles = useMemo(() => groups.flatMap(g => g.vehicles), [groups])
   const members = useMemo(() => allVehicles.map(toGlobeMember), [allVehicles])
@@ -256,48 +269,84 @@ export default function GodsEyeView() {
             <div className="gev-status-orbit" title={worldError ? 'World context degraded' : 'World context available'}><span /></div>
           </aside>
 
-          <section className="gev-panel gev-overview-panel" aria-label="World picture overview">
+          <section
+            className="gev-panel gev-overview-panel"
+            data-collapsed={!overviewOpen}
+            aria-label="World picture overview"
+          >
             <div className="gev-panel-head">
-              <div>
+              <div className="gev-panel-heading-copy">
                 <div className="gev-panel-eyebrow">World picture</div>
                 <div className="gev-panel-title">{view === '3D' ? 'Immersive spatial fabric' : 'Operational world canvas'}</div>
                 <div className="gev-panel-meta">11 intelligence layers · external provenance retained · local telemetry remains authoritative</div>
               </div>
-              <div className="gev-signal" data-state={syncState}>
-                <span className="gev-signal-dot" />
-                {worldError ? 'Degraded' : worldFetching ? 'Syncing' : 'Connected'}
+              <div className="gev-panel-head-actions">
+                <div className="gev-signal" data-state={syncState}>
+                  <span className="gev-signal-dot" />
+                  {worldError ? 'Degraded' : worldFetching ? 'Syncing' : 'Connected'}
+                </div>
+                <button
+                  type="button"
+                  className="gev-panel-toggle"
+                  onClick={() => setOverviewOpen(open => !open)}
+                  aria-expanded={overviewOpen}
+                  aria-controls="gev-world-picture-content"
+                  aria-label={overviewOpen ? 'Collapse world picture' : 'Expand world picture'}
+                  title={overviewOpen ? 'Collapse world picture' : 'Expand world picture'}
+                >
+                  {overviewOpen ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}
+                </button>
               </div>
             </div>
 
-            <div className="gev-stat-grid">
-              <div className="gev-stat"><span className="gev-stat-label">Entities</span><span className="gev-stat-value">{counts.all}</span></div>
-              <div className="gev-stat"><span className="gev-stat-label">Positioned</span><span className="gev-stat-value" data-tone="green">{positionedVehicles.length}</span></div>
-              <div className="gev-stat"><span className="gev-stat-label">External</span><span className="gev-stat-value" data-tone="violet">{renderableExternalEntities.length}</span></div>
-              <div className="gev-stat"><span className="gev-stat-label">Risk zones</span><span className="gev-stat-value" data-tone="amber">{zones.length}</span></div>
-            </div>
+            <div className="gev-panel-content" id="gev-world-picture-content" hidden={!overviewOpen}>
+              <div className="gev-stat-grid">
+                <div className="gev-stat"><span className="gev-stat-label">Entities</span><span className="gev-stat-value">{counts.all}</span></div>
+                <div className="gev-stat"><span className="gev-stat-label">Positioned</span><span className="gev-stat-value" data-tone="green">{positionedVehicles.length}</span></div>
+                <div className="gev-stat"><span className="gev-stat-label">External</span><span className="gev-stat-value" data-tone="violet">{renderableExternalEntities.length}</span></div>
+                <div className="gev-stat"><span className="gev-stat-label">Risk zones</span><span className="gev-stat-value" data-tone="amber">{zones.length}</span></div>
+              </div>
 
-            <div className="gev-layer-grid">
-              {WORLD_CONTEXT_LAYERS.map(layer => (
-                <div className="gev-layer" key={layer} title={layerMeta[layer].label}>
-                  <span>{layerMeta[layer].short}</span><span>{layerCounts[layer]}</span>
-                </div>
-              ))}
+              <div className="gev-layer-grid">
+                {WORLD_CONTEXT_LAYERS.map(layer => (
+                  <div className="gev-layer" key={layer} title={layerMeta[layer].label}>
+                    <span>{layerMeta[layer].short}</span><span>{layerCounts[layer]}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </section>
 
-          <aside className="gev-panel gev-right-panel" aria-label="Entity intelligence">
+          <aside
+            className="gev-panel gev-right-panel"
+            data-collapsed={!intelligenceOpen}
+            aria-label="Entity intelligence"
+          >
             <div className="gev-panel-head">
-              <div>
+              <div className="gev-panel-heading-copy">
                 <div className="gev-panel-eyebrow">Entity intelligence</div>
                 <div className="gev-panel-title">{selectedExternal ? 'Selected external signal' : selected ? 'Selected operational entity' : 'World signal index'}</div>
                 <div className="gev-panel-meta">{view === '3D' ? 'Pick a signal on the globe to inspect provenance and freshness.' : 'Select a vehicle to inspect live operational state.'}</div>
               </div>
-              {(selectedExternal || selected) && (
-                <button type="button" className="gev-close" onClick={() => { setSelectedExternalId(null); setSelected(null) }} aria-label="Close selection"><X size={14} /></button>
-              )}
+              <div className="gev-panel-head-actions">
+                {(selectedExternal || selected) && (
+                  <button type="button" className="gev-close" onClick={() => { setSelectedExternalId(null); setSelected(null) }} aria-label="Close selection" title="Clear selection"><X size={14} /></button>
+                )}
+                <button
+                  type="button"
+                  className="gev-panel-toggle"
+                  onClick={() => setIntelligenceOpen(open => !open)}
+                  aria-expanded={intelligenceOpen}
+                  aria-controls="gev-entity-intelligence-content"
+                  aria-label={intelligenceOpen ? 'Collapse entity intelligence' : 'Expand entity intelligence'}
+                  title={intelligenceOpen ? 'Collapse entity intelligence' : 'Expand entity intelligence'}
+                >
+                  {intelligenceOpen ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
+                </button>
+              </div>
             </div>
 
-            <div className="gev-right-body">
+            <div className="gev-right-body" id="gev-entity-intelligence-content" hidden={!intelligenceOpen}>
               {selectedExternal ? (
                 <div className="gev-entity-hero">
                   <div className="gev-entity-kicker">External entity</div>
@@ -366,6 +415,18 @@ export default function GodsEyeView() {
               <span className="gev-ribbon-item">Signals <strong>{renderableExternalEntities.length}</strong></span>
               <span className="gev-ribbon-sep" />
               <span className="gev-ribbon-item">UTC <strong>{formatUtcClock(clock)}</strong></span>
+              <span className="gev-ribbon-sep" />
+              <button
+                type="button"
+                className="gev-ribbon-action"
+                onClick={toggleAllChrome}
+                aria-expanded={chromeExpanded}
+                aria-label={chromeExpanded ? 'Collapse command chrome' : 'Expand command chrome'}
+                title={chromeExpanded ? 'Collapse command chrome' : 'Expand command chrome'}
+              >
+                {chromeExpanded ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
+                <span>{chromeExpanded ? 'Focus map' : 'Show panels'}</span>
+              </button>
             </div>
           </div>
         </div>
