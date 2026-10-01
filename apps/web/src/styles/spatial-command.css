@@ -25,6 +25,9 @@
   position: relative;
   isolation: isolate;
   font-family: 'Barlow', 'Inter', system-ui, sans-serif;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   background:
     radial-gradient(1200px 520px at 8% -10%, rgba(196,181,253,.07), transparent 58%),
     radial-gradient(900px 420px at 100% 0%, rgba(94,234,212,.04), transparent 55%),
@@ -189,6 +192,13 @@
 .spatial-view-button:active,
 .spatial-control:active {
   transform: translateY(1px);
+}
+
+.spatial-panel,
+.spatial-control-rail,
+.spatial-cesium-chrome,
+.spatial-legend {
+  -webkit-backdrop-filter: blur(24px) saturate(145%);
 }
 
 .spatial-panel {
@@ -368,8 +378,39 @@
 }
 
 .spatial-canvas canvas,
-.spatial-map-surface canvas {
+.spatial-map-surface canvas,
+.spatial-surface canvas {
   image-rendering: auto;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.spatial-surface[data-spatial-surface='gev'],
+.spatial-map-surface[data-spatial-surface='fleet-2d'] {
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.035);
+}
+
+.spatial-surface[data-spatial-surface='gev']::after,
+.spatial-map-surface[data-spatial-surface='fleet-2d']::after {
+  height: 2px;
+  opacity: .55;
+  background: linear-gradient(90deg, transparent 0%, rgba(196,181,253,.2) 20%, rgba(94,234,212,.16) 52%, rgba(52,211,153,.2) 80%, transparent 100%);
+}
+
+@media (min-resolution: 2dppx) {
+  .spatial-surface,
+  .spatial-map-surface {
+    --sp-line-strong: rgba(196,181,253,.34);
+  }
+}
+
+@media (prefers-contrast: more) {
+  .spatial-command,
+  .spatial-surface,
+  .spatial-map-surface {
+    --sp-line: rgba(255,255,255,.18);
+    --sp-line-strong: rgba(196,181,253,.46);
+  }
 }
 
 .spatial-command button:focus-visible,
