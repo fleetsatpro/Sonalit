@@ -68,7 +68,12 @@ export const useUIStore = create<UIState>()(
     }),
     {
       name: 'sonalit-ui',
+      version: 2,
       partialize: (s) => ({ theme: s.theme }),
+      migrate: (persistedState) => {
+        const state = persistedState as { theme?: unknown } | null;
+        return { theme: normalizeTheme(state?.theme) };
+      },
       onRehydrateStorage: () => (state) => {
         if (state) {
           const normalized = normalizeTheme(state.theme);
