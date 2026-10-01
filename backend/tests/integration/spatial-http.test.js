@@ -61,7 +61,7 @@ describeIfDb('spatial HTTP integration', () => {
     pool = new Pool({ connectionString: process.env.DATABASE_URL });
     await pool.query(
       'INSERT INTO users (id,email,name,password_hash,role,status,org_id) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO UPDATE SET org_id=EXCLUDED.org_id,status=EXCLUDED.status',
-      [USER_A, 'spatial-http-a@sonalit.test', 'Spatial HTTP A', 'x', 'admin', 'active', ORG_A],
+      [USER_A, 'spatial-http-a@sonalit.test', 'Spatial HTTP A', 'x', 'operator', 'active', ORG_A],
     );
     await pool.query(
       'INSERT INTO convoys (id,name,region,status,org_id,route_origin,route_destination,departure_time) VALUES ($1,$2,$3,$4,$5,$6,$7,NOW()) ON CONFLICT (id) DO UPDATE SET org_id=EXCLUDED.org_id,status=EXCLUDED.status',
