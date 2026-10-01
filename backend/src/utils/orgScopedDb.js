@@ -13,9 +13,13 @@ const logger = require('./logger');
 const { normalizeOrgId, runWithOrgContext } = require('./tenantContext');
 
 async function withOrg(orgId, fn) {
+  const normalized = normalizeOrgId(orgId);
+  if (!normalized) throw new Error('invalid_org_id');
+  return runWithOrgContext(normalized, async () => {
   const normalized = String(orgId ?? '').trim();
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)) {
     throw new Error('invalid_org_id');
+  });
   }
   const client = await pool.connect();
   try {
