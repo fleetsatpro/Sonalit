@@ -12,7 +12,7 @@ function filesUnder(root, extensions = ['.js']) {
   if (!fs.existsSync(root)) return out;
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
     const p = path.join(root, entry.name);
-    if (entry.isDirectory()) out.push(...filesUnder(p));
+    if (entry.isDirectory()) out.push(...filesUnder(p, extensions));
     else if (extensions.includes(path.extname(entry.name))) out.push(p);
   }
   return out;
@@ -37,7 +37,7 @@ describe('tenant isolation regression guards', () => {
     for (const root of ROOTS.slice(0, 2)) {
       for (const file of filesUnder(root)) {
         const source = fs.readFileSync(file, 'utf8');
-        for (const line of source.split(/\\r?\\n/)) {
+        for (const line of source.split(/\r?\n/)) {
           if (!/\\bpool\\.query\\s*\\(/.test(line)) continue;
           if (!/pool\\.query\\s*\\(\\s*['\`][^'\`]*REFRESH MATERIALIZED VIEW/i.test(line)) {
             violations.push(path.relative(path.join(__dirname, '..'), file));
