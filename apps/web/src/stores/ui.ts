@@ -23,6 +23,7 @@ const isTheme = (value: unknown): value is Theme => typeof value === 'string' &&
 function applyTheme(theme: Theme) {
   if (typeof document !== 'undefined') {
     document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.style.colorScheme = theme === 'arctic' || theme === 'ivory' ? 'light' : 'dark';
   }
 }
 
