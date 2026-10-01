@@ -171,6 +171,17 @@ function statusLabel(member: GlobeMember) {
   return `${member.officer_name ? `${member.officer_name} · ` : ''}${member.name}${state && state !== 'observed' ? ` · ${state}` : ''}`;
 }
 
+function singleWorldPoint(liveMembers: GlobeMember[], zones: RiskZone[], worldEntities: SpatialWorldEntity[]) {
+  const member = liveMembers.find(m => m.lat != null && m.lng != null);
+  if (member) return { lat: member.lat!, lng: member.lng!, altitudeM: 6 };
+  const zone = zones[0];
+  if (zone) return { lat: zone.lat, lng: zone.lng, altitudeM: 0 };
+  const external = worldEntities.find(e => Number.isFinite(e.latitude) && Number.isFinite(e.longitude));
+  if (external) return { lat: external.latitude, lng: external.longitude, altitudeM: externalAltitude(external) ?? 0 };
+  return null;
+}
+
+
 export default function CorridorWorldScene({
   route,
   corridorKm,
@@ -584,8 +595,8 @@ export default function CorridorWorldScene({
     ].join('|');
     if (globalFitSignatureRef.current === globalSignature) return;
     if (points.length === 1) {
-      const only = [...liveMembers.filter(m => m.lat != null && m.lng != null), ...zones][0];
-      if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, 2200), duration: 0.9 });
+      const only = singleWorldPoint(liveMembers, zones, worldEntities);
+      if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, Math.max(2200, only.altitudeM + 2200)), duration: 0.9 });
     } else {
       viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), {
         duration: 1.15,
@@ -605,8 +616,8 @@ export default function CorridorWorldScene({
     }
     const points = fitPoints(route, liveMembers, trail, zones, worldEntities);
     if (points.length === 1) {
-      const only = [...liveMembers.filter(m => m.lat != null && m.lng != null), ...zones][0];
-      if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, 2200), duration: 0.8 });
+      const only = singleWorldPoint(liveMembers, zones, worldEntities);
+      if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, Math.max(2200, only.altitudeM + 2200)), duration: 0.8 });
     } else if (points.length >= 2) {
       viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), { duration: 0.8, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), Math.max(1800, corridorKm * 900)) });
     }
