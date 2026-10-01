@@ -20,7 +20,8 @@ describe('runtime fence deployment handover policy', () => {
     })).toBe(false);
   });
 
-  test('does not auto-takeover a fresh legacy lease without deployment identity', () => {
+
+  test('does not auto-takeover a legacy lease with no deployment identity', () => {
     expect(shouldTakeOver({
       takeoverRequested: false,
       incomingDeploymentId: 'new-deployment',
