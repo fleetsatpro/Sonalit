@@ -70,38 +70,6 @@ const queryClient = new QueryClient({
   },
 });
 
-let hydratedOrgId = useAuthStore.getState().user?.org_id ?? null;
-window.addEventListener('storage', (event) => {
-  if (event.key !== 'sonalit-auth') return;
-  try {
-    const previousTenantId = useAuthStore.getState().user?.org_id ?? null;
-    const parsed = event.newValue ? JSON.parse(event.newValue) : null;
-    const nextTenantId = parsed?.state?.user?.org_id ?? null;
-    if (previousTenantId && nextTenantId && previousTenantId !== nextTenantId) {
-      // Never let a tab continue rendering tenant-A cache with tenant-B
-      // identity. The tab is reloaded after dropping its in-memory token;
-      // auth bootstrap will establish the only tenant identity it can safely use.
-      queryClient.clear();
-      setAccessToken(null);
-      window.location.reload();
-    } else if (previousTenantId && !nextTenantId && getAccessToken()) {
-      queryClient.clear();
-      setAccessToken(null);
-      window.location.reload();
-    }
-  } catch {
-    // Malformed storage data must never alter the authenticated session.
-  }
-});
-
-useAuthStore.subscribe((state) => {
-  const nextOrgId = state.user?.org_id ?? null;
-  if (nextOrgId === hydratedOrgId) return;
-  hydratedOrgId = nextOrgId;
-  // Never let cached query data survive an authentication/tenant boundary.
-  queryClient.clear();
-});
-
 let lastTenantId = useAuthStore.getState().user?.org_id ?? null;
 
 // Tenant boundary is also a browser-cache boundary. Clear all TanStack Query
