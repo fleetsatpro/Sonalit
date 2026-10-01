@@ -20,6 +20,7 @@ export async function withOrgContext<T>(
   try {
     // SET LOCAL only takes effect inside an explicit transaction block.
     await client.query('BEGIN');
+    await client.query(`SET LOCAL app.current_org_id = $1`, [orgId]);
     await client.query(`SET LOCAL app.org_id = $1`, [orgId]);
     const result = await fn(client);
     await client.query('COMMIT');
