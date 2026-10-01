@@ -399,6 +399,7 @@ function AppearanceSection() {
         >
           {SONALIT_THEMES.map((option) => {
             const selected = theme === option.id;
+            const [base, surface, accent, secondary] = option.swatches;
             return (
               <button
                 key={option.id}
@@ -406,39 +407,62 @@ function AppearanceSection() {
                 role="radio"
                 aria-checked={selected}
                 onClick={() => setTheme(option.id)}
-                className={`theme-option group relative overflow-hidden rounded-xl border p-3 text-left transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--d-sig)] ${selected ? 'theme-option-active' : ''}`}
+                className="group relative overflow-hidden rounded-xl border p-3 text-left transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--d-sig)]"
+                style={{
+                  borderColor: selected ? option.accent : 'var(--son-theme-border)',
+                  background: selected
+                    ? `color-mix(in srgb, ${option.accent} 7%, var(--son-theme-surface))`
+                    : 'var(--son-theme-surface)',
+                  boxShadow: selected
+                    ? `0 0 0 1px color-mix(in srgb, ${option.accent} 16%, transparent), 0 14px 32px rgba(0,0,0,.12)`
+                    : 'none',
+                }}
               >
                 <span
                   className="absolute inset-x-0 top-0 h-1"
-                  style={{ backgroundColor: option.accent }}
+                  style={{ background: `linear-gradient(90deg, ${accent}, ${secondary})` }}
                   aria-hidden="true"
                 />
-                <span className="flex items-center gap-3 pt-1">
+
+                <span className="flex items-start gap-3 pt-1">
                   <span
-                    className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border"
+                    className="relative h-[58px] w-[84px] shrink-0 overflow-hidden rounded-lg border"
                     style={{
-                      borderColor: `${option.accent}66`,
-                      backgroundColor: option.mode === 'light' ? '#f7f8f5' : '#11161d',
+                      background: base,
+                      borderColor: `${option.accent}55`,
+                      boxShadow: `inset 0 1px 0 rgba(255,255,255,.12), 0 8px 20px rgba(0,0,0,.08)`,
                     }}
                     aria-hidden="true"
                   >
+                    <span className="absolute inset-x-0 top-0 h-2" style={{ background: surface }} />
                     <span
-                      className="h-4 w-4 rounded-full"
-                      style={{
-                        backgroundColor: option.accent,
-                        boxShadow: `0 0 16px ${option.accent}66`,
-                      }}
+                      className="absolute left-2 right-2 top-4 h-2 rounded"
+                      style={{ background: `color-mix(in srgb, ${option.accent} 72%, ${surface})` }}
                     />
+                    <span className="absolute left-2 right-6 top-8 h-1.5 rounded" style={{ background: `${option.accent}66` }} />
+                    <span className="absolute left-2 right-4 bottom-3 h-1 rounded" style={{ background: accent, boxShadow: `0 0 8px ${accent}88` }} />
                   </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold text-slate-200">{option.name}</span>
-                    <span className="block mt-0.5 text-[11px] leading-4 text-slate-500">{option.description}</span>
-                  </span>
-                  {selected && (
-                    <span className="ml-auto shrink-0 text-[10px] font-bold uppercase tracking-wider text-d-sig">
-                      Active
+
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2">
+                      <span className="block text-sm font-semibold text-slate-200">{option.name}</span>
+                      {selected && (
+                        <span className="rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[var(--d-void)]" style={{ background: option.accent }}>
+                          Active
+                        </span>
+                      )}
                     </span>
-                  )}
+                    <span className="mt-1 block text-[11px] leading-4 text-slate-500">{option.description}</span>
+                    <span className="mt-2 flex gap-1" aria-hidden="true">
+                      {[base, surface, accent, secondary].map((swatch) => (
+                        <span
+                          key={swatch}
+                          className="h-2.5 w-7 rounded-full border"
+                          style={{ background: swatch, borderColor: 'rgba(255,255,255,.14)' }}
+                        />
+                      ))}
+                    </span>
+                  </span>
                 </span>
               </button>
             );
