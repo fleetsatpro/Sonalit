@@ -25,7 +25,6 @@ function applyTheme(theme: Theme) {
   if (typeof document !== 'undefined') {
     const meta = THEME_META[theme];
     document.documentElement.setAttribute('data-theme', theme);
-    document.documentElement.style.colorScheme = theme === 'arctic' || theme === 'ivory' ? 'light' : 'dark';
     document.documentElement.style.colorScheme = meta.density;
   }
 }
