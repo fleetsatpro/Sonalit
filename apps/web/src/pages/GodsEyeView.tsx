@@ -1,6 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Globe2, Layers3, RadioTower, Orbit } from 'lucide-react'
+import {
+  Activity,
+  Camera,
+  Car,
+  CloudSun,
+  Focus,
+  Globe2,
+  Layers3,
+  Orbit,
+  RadioTower,
+  Satellite,
+  Ship,
+  ShieldCheck,
+  TriangleAlert,
+  X,
+} from 'lucide-react'
 import { api } from '../lib/api.js'
 import { fetchWorldContext, spatialEntityLayer, WORLD_CONTEXT_LAYERS, worldContextEntities } from '../lib/spatialClient.js'
 import type { WorldContextLayer } from '../lib/spatialClient.js'
@@ -9,8 +24,23 @@ import FleetMap from '../features/live-fleet/components/FleetMap.js'
 import CorridorGlobe from '../components/geofences/CorridorGlobe.js'
 import type { GlobeMember, RiskZone } from '../components/geofences/CorridorWorldScene.js'
 import type { LiveVehicle } from '../features/live-fleet/types/fleet.js'
+import '../styles/gev-command.css'
 
 type View = '2D' | '3D'
+
+const layerMeta: Record<WorldContextLayer, { short: string; label: string; icon: typeof Globe2 }> = {
+  aircraft: { short: 'AIR', label: 'Aircraft', icon: Activity },
+  weather: { short: 'WX', label: 'Weather', icon: CloudSun },
+  maritime: { short: 'SEA', label: 'Maritime', icon: Ship },
+  traffic: { short: 'TRF', label: 'Traffic', icon: Car },
+  hazards: { short: 'HAZ', label: 'Hazards', icon: TriangleAlert },
+  security: { short: 'SEC', label: 'Security', icon: ShieldCheck },
+  infrastructure: { short: 'INF', label: 'Infrastructure', icon: Layers3 },
+  incidents: { short: 'INC', label: 'Incidents', icon: TriangleAlert },
+  alerts: { short: 'ALT', label: 'Alerts', icon: RadioTower },
+  cameras: { short: 'CAM', label: 'Cameras', icon: Camera },
+  satellites: { short: 'ORB', label: 'Satellites', icon: Satellite },
+}
 
 function toGlobeMember(v: LiveVehicle): GlobeMember {
   return {
@@ -29,11 +59,17 @@ function toGlobeMember(v: LiveVehicle): GlobeMember {
   }
 }
 
+function formatUtcClock(date: Date) {
+  return date.toISOString().slice(11, 19) + 'Z'
+}
+
 export default function GodsEyeView() {
   const { groups, counts } = useLiveFleet()
-  const [view, setView] = useState<View>('2D')
+  const [view, setView] = useState<View>('3D')
   const [selected, setSelected] = useState<LiveVehicle | null>(null)
   const [selectedExternalId, setSelectedExternalId] = useState<string | null>(null)
+  const [clock, setClock] = useState(() => new Date())
+
   const allVehicles = useMemo(() => groups.flatMap(g => g.vehicles), [groups])
   const members = useMemo(() => allVehicles.map(toGlobeMember), [allVehicles])
   const initialWorldCenter = useMemo(() => {
@@ -45,11 +81,16 @@ export default function GodsEyeView() {
     )
     return { latitude: total.latitude / positioned.length, longitude: total.longitude / positioned.length }
   }, [allVehicles])
-  const [worldViewport, setWorldViewport] = useState({ ...initialWorldCenter, radiusM: 100000 })
 
-  const positionedVehicles = useMemo(() => allVehicles.filter(v => v.lat != null && v.lng != null), [allVehicles])
+  const [worldViewport, setWorldViewport] = useState({ ...initialWorldCenter, radiusM: 100000 })
   const worldViewportRef = useRef(worldViewport)
   worldViewportRef.current = worldViewport
+  const positionedVehicles = useMemo(() => allVehicles.filter(v => v.lat != null && v.lng != null), [allVehicles])
+
+  useEffect(() => {
+    const id = window.setInterval(() => setClock(new Date()), 1000)
+    return () => window.clearInterval(id)
+  }, [])
 
   const { data: worldContext, isFetching: worldFetching, isError: worldError } = useQuery({
     queryKey: ['gev-3d-world-context', worldViewport.latitude, worldViewport.longitude, worldViewport.radiusM],
@@ -65,24 +106,37 @@ export default function GodsEyeView() {
     refetchInterval: 30000,
     retry: 1,
   })
-  const externalEntities = useMemo(() => worldContextEntities(worldContext).filter((entity) => !['vehicle', 'guardian_device'].includes(entity.entityType)), [worldContext])
+
+  const externalEntities = useMemo(
+    () => worldContextEntities(worldContext).filter(entity => !['vehicle', 'guardian_device'].includes(entity.entityType)),
+    [worldContext],
+  )
+  const renderableExternalEntities = useMemo(
+    () => externalEntities.filter(entity => Number.isFinite(entity.latitude) && Number.isFinite(entity.longitude)),
+    [externalEntities],
+  )
+
   useEffect(() => {
     if (view !== '3D' || positionedVehicles.length === 0) return
     const current = worldViewportRef.current
-    const looksLikeFallback = current.latitude === 35.5 && current.longitude === 1.2
-    if (looksLikeFallback) setWorldViewport({ ...initialWorldCenter, radiusM: 100000 })
+    if (current.latitude === 35.5 && current.longitude === 1.2) {
+      setWorldViewport({ ...initialWorldCenter, radiusM: 100000 })
+    }
   }, [view, positionedVehicles.length, initialWorldCenter])
 
-  const renderableExternalEntities = useMemo(() => externalEntities.filter((entity) => Number.isFinite(entity.latitude) && Number.isFinite(entity.longitude)), [externalEntities])
-  const selectedExternal = useMemo(() => externalEntities.find((entity) => entity.id === selectedExternalId) ?? null, [externalEntities, selectedExternalId])
   const layerCounts = useMemo(() => {
-    const counts = Object.fromEntries(WORLD_CONTEXT_LAYERS.map(layer => [layer, 0])) as Record<WorldContextLayer, number>
+    const result = Object.fromEntries(WORLD_CONTEXT_LAYERS.map(layer => [layer, 0])) as Record<WorldContextLayer, number>
     for (const entity of externalEntities) {
       const layer = spatialEntityLayer(entity)
-      if (layer) counts[layer] += 1
+      if (layer) result[layer] += 1
     }
-    return counts
+    return result
   }, [externalEntities])
+
+  const selectedExternal = useMemo(
+    () => externalEntities.find(entity => entity.id === selectedExternalId) ?? null,
+    [externalEntities, selectedExternalId],
+  )
 
   const { data: zones = [] } = useQuery<RiskZone[]>({
     queryKey: ['gev-riskzones'],
@@ -101,62 +155,51 @@ export default function GodsEyeView() {
     refetchInterval: 60_000,
   })
 
+  const syncState = worldError ? 'degraded' : worldFetching ? 'sync' : 'live'
+  const topEntities = useMemo(() => renderableExternalEntities.slice(0, 10), [renderableExternalEntities])
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, background: '#05070d', color: '#dfe0db', fontFamily: "'Barlow', Inter, system-ui, sans-serif", overflow: 'hidden' }}>
-      <header style={{ height: 58, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12, padding: '0 16px', background: '#080b14', borderBottom: '1px solid rgba(196,181,253,.16)', zIndex: 1000 }}>
-        <div style={{ width: 34, height: 34, borderRadius: 10, display: 'grid', placeItems: 'center', background: 'rgba(196,181,253,.12)', border: '1px solid rgba(196,181,253,.25)', color: '#c4b5fd' }}>
-          <Globe2 size={18} />
-        </div>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 16, fontWeight: 700, letterSpacing: '.08em', color: '#f1f5f9' }}>GOD'S EYE VIEW</div>
-          <div style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8.5, letterSpacing: '.12em', color: '#8f96a3' }}>GLOBAL SPATIAL PICTURE · SONALIT OPERATIONAL AUTHORITY</div>
+    <div className="gev-shell">
+      <header className="gev-topbar">
+        <div className="gev-brand">
+          <div className="gev-brand-mark" aria-hidden="true"><Globe2 size={18} /></div>
+          <div className="gev-brand-copy">
+            <div className="gev-kicker">SONALIT · SPATIAL COMMAND</div>
+            <div className="gev-title">GOD'S EYE VIEW</div>
+            <div className="gev-subtitle">Global spatial picture · operational authority · provenance visible</div>
+          </div>
         </div>
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, padding: 4, borderRadius: 9, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.07)' }}>
-          <button onClick={() => setView('2D')} aria-pressed={view === '2D'} style={{ display: 'flex', alignItems: 'center', gap: 6, height: 32, padding: '0 11px', borderRadius: 7, border: 'none', cursor: 'pointer', background: view === '2D' ? 'rgba(196,181,253,.16)' : 'transparent', color: view === '2D' ? '#ede9fe' : '#7a7e8a', fontFamily: 'IBM Plex Mono,monospace', fontSize: 9, fontWeight: 700, letterSpacing: '.08em' }}><Layers3 size={13}/> WORLD 2D</button>
-          <button onClick={() => setView('3D')} aria-pressed={view === '3D'} style={{ display: 'flex', alignItems: 'center', gap: 6, height: 32, padding: '0 11px', borderRadius: 7, border: 'none', cursor: 'pointer', background: view === '3D' ? 'rgba(196,181,253,.16)' : 'transparent', color: view === '3D' ? '#ede9fe' : '#7a7e8a', fontFamily: 'IBM Plex Mono,monospace', fontSize: 9, fontWeight: 700, letterSpacing: '.08em' }}><Orbit size={13}/> XD 3D / 8D</button>
+        <div className="gev-topcenter" role="group" aria-label="View mode">
+          <button type="button" className="gev-segment" aria-pressed={view === '2D'} onClick={() => setView('2D')}>
+            <Layers3 size={13} /> World 2D
+          </button>
+          <button type="button" className="gev-segment" aria-pressed={view === '3D'} onClick={() => setView('3D')}>
+            <Orbit size={13} /> Immersive 3D
+          </button>
+        </div>
+
+        <div className="gev-topright">
+          <div className="gev-health">
+            <span className="gev-health-dot" />
+            <span className="gev-health-label">Operational link</span>
+          </div>
+          <div className="gev-clock" aria-label="UTC time">
+            <span>UTC {formatUtcClock(clock)}</span>
+            <span>{worldViewport.latitude.toFixed(3)}° · {worldViewport.longitude.toFixed(3)}°</span>
+          </div>
         </div>
       </header>
 
-      <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-        {view === '2D' ? (
-          <>
+      <main className="gev-workspace">
+        <section className="gev-stage" aria-label="Sonalit God’s Eye View map">
+          {view === '2D' ? (
             <FleetMap
               vehicles={allVehicles}
               selectedId={selected?.id ?? null}
-              onSelect={v => setSelected(v)}
+              onSelect={vehicle => { setSelected(vehicle); setSelectedExternalId(null) }}
             />
-            <div style={{ position: 'absolute', left: 14, top: 14, zIndex: 700, width: 255, pointerEvents: 'none', background: 'rgba(5,7,13,.86)', border: '1px solid rgba(196,181,253,.16)', borderRadius: 12, padding: '10px 12px', boxShadow: '0 18px 45px rgba(0,0,0,.35)', backdropFilter: 'blur(14px)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, color: '#b8aef1', letterSpacing: '.14em' }}>GEV LAYERS</span>
-                <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, color: '#8f96a3' }}>11 REQUESTED</span>
-              </div>
-              <div style={{ marginTop: 7, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5 }}>
-                {[
-                  ['AIR', '#60a5fa', 'Aircraft'],
-                  ['WX', '#a7f3d0', 'Weather'],
-                  ['SEA', '#22d3ee', 'Maritime'],
-                  ['TRF', '#eab308', 'Traffic'],
-                  ['HAZ', '#ef4444', 'Hazards'],
-                  ['SEC', '#fb923c', 'Security'],
-                  ['INF', '#cbd5e1', 'Infrastructure'],
-                  ['INC', '#fb7185', 'Incidents'],
-                  ['ALT', '#f0abfc', 'Alerts'],
-                  ['CAM', '#5eead4', 'Cameras'],
-                  ['ORB', '#c4b5fd', 'Satellites'],
-                ].map(([k,c,label]) => <span key={k} title={label} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: 'IBM Plex Mono,monospace', fontSize: 7.5, color: '#cbd5e1' }}><i style={{ width: 7, height: 7, borderRadius: '50%', background: c }} />{k}</span>)}
-              </div>
-              <div style={{ marginTop: 8, paddingTop: 7, borderTop: '1px solid rgba(255,255,255,.06)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <RadioTower size={11} color="#16c784" />
-                <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 7.5, color: '#7a7e8a' }}>{counts.all} operational entities · {counts.officers} Guardian positions</span>
-              </div>
-            </div>
-            <div style={{ position: 'absolute', right: 14, bottom: 14, zIndex: 700, pointerEvents: 'none', fontFamily: 'IBM Plex Mono,monospace', fontSize: 7.5, color: '#6f7480', background: 'rgba(5,7,13,.78)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 8, padding: '6px 8px' }}>
-              External observations enrich the world picture; they do not replace Sonalit telemetry, convoy state or evidence.
-            </div>
-          </>
-        ) : (
-          <>
+          ) : (
             <CorridorGlobe
               route={[]}
               corridorKm={1}
@@ -165,90 +208,148 @@ export default function GodsEyeView() {
               fill
               surface="gev"
               fixedView="3D"
+              showChrome={false}
               worldEntities={renderableExternalEntities}
               selectedExternalId={selectedExternalId}
-              onExternalSelect={id => { setSelectedExternalId(id); if (id) setSelected(null) }}
+              onExternalSelect={id => { setSelectedExternalId(id); setSelected(null) }}
               onSelect={id => { setSelectedExternalId(null); setSelected(id ? allVehicles.find(v => v.id === id) ?? null : null) }}
               onViewportChange={setWorldViewport}
             />
-            <div style={{ position: 'absolute', left: 14, top: 14, zIndex: 700, width: 300, maxHeight: 'calc(100% - 28px)', overflow: 'auto', pointerEvents: 'auto', background: 'rgba(5,7,13,.9)', border: '1px solid rgba(196,181,253,.16)', borderRadius: 12, padding: '11px 12px', boxShadow: '0 18px 45px rgba(0,0,0,.4)', backdropFilter: 'blur(14px)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, color: '#b8aef1', letterSpacing: '.14em' }}>3D WORLD FABRIC</span>
-              <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, color: worldError ? '#f87171' : worldFetching ? '#fbbf24' : '#6ee7b7' }}>
-                {worldError ? 'DEGRADED' : worldFetching ? 'SYNCING' : 'LIVE'}
-              </span>
+          )}
+        </section>
+
+        <div className="gev-chrome">
+          <aside className="gev-left-rail" aria-label="World context layers">
+            <div className="gev-rail">
+              <div className="gev-layer-label">{view}</div>
+              {WORLD_CONTEXT_LAYERS.map(layer => {
+                const meta = layerMeta[layer]
+                const Icon = meta.icon
+                return (
+                  <button key={layer} type="button" className="gev-rail-button" title={meta.label} aria-label={meta.label} aria-pressed={view === '3D' && layerCounts[layer] > 0}>
+                    <Icon size={15} />
+                    <span className="gev-rail-tag">{layerCounts[layer] > 99 ? '99+' : layerCounts[layer]}</span>
+                  </button>
+                )
+              })}
             </div>
-            <div style={{ marginTop: 7, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5 }}>
-              <div style={{ background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 7, padding: 7 }}>
-                <span style={{ display: 'block', fontSize: 7, color: '#5f6572' }}>3D SIGNALS</span>
-                <b style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 12, color: '#f1f5f9' }}>{renderableExternalEntities.length}</b>
+            <div className="gev-status-orbit" title={worldError ? 'World context degraded' : 'World context available'}><span /></div>
+          </aside>
+
+          <section className="gev-panel gev-overview-panel" aria-label="World picture overview">
+            <div className="gev-panel-head">
+              <div>
+                <div className="gev-panel-eyebrow">World picture</div>
+                <div className="gev-panel-title">{view === '3D' ? 'Immersive spatial fabric' : 'Operational world canvas'}</div>
+                <div className="gev-panel-meta">11 intelligence layers · external provenance retained · local telemetry remains authoritative</div>
               </div>
-              <div style={{ background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 7, padding: 7 }}>
-                <span style={{ display: 'block', fontSize: 7, color: '#5f6572' }}>DEVICES</span>
-                <b style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 12, color: '#16c784' }}>{members.filter(m => m.lat != null && m.lng != null).length}</b>
-              </div>
-              <div style={{ background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 7, padding: 7 }}>
-                <span style={{ display: 'block', fontSize: 7, color: '#5f6572' }}>ALERT DATA</span>
-                <b style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 12, color: '#f0abfc' }}>{layerCounts.alerts}</b>
+              <div className="gev-signal" data-state={syncState}>
+                <span className="gev-signal-dot" />
+                {worldError ? 'Degraded' : worldFetching ? 'Syncing' : 'Connected'}
               </div>
             </div>
-            <div style={{ marginTop: 9, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 4 }}>
+
+            <div className="gev-stat-grid">
+              <div className="gev-stat"><span className="gev-stat-label">Entities</span><span className="gev-stat-value">{counts.all}</span></div>
+              <div className="gev-stat"><span className="gev-stat-label">Positioned</span><span className="gev-stat-value" data-tone="green">{positionedVehicles.length}</span></div>
+              <div className="gev-stat"><span className="gev-stat-label">External</span><span className="gev-stat-value" data-tone="violet">{renderableExternalEntities.length}</span></div>
+              <div className="gev-stat"><span className="gev-stat-label">Risk zones</span><span className="gev-stat-value" data-tone="amber">{zones.length}</span></div>
+            </div>
+
+            <div className="gev-layer-grid">
               {WORLD_CONTEXT_LAYERS.map(layer => (
-                <div key={layer} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '5px 6px', borderRadius: 6, background: 'rgba(255,255,255,.025)', border: '1px solid rgba(255,255,255,.045)' }}>
-                  <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 7, letterSpacing: '.05em', color: '#a7acb6' }}>{layer.toUpperCase()}</span>
-                  <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 7, color: '#dfe0db' }}>{layerCounts[layer]}</span>
+                <div className="gev-layer" key={layer} title={layerMeta[layer].label}>
+                  <span>{layerMeta[layer].short}</span><span>{layerCounts[layer]}</span>
                 </div>
               ))}
             </div>
-            <div style={{ marginTop: 8, paddingTop: 7, borderTop: '1px solid rgba(255,255,255,.06)', fontFamily: 'IBM Plex Mono,monospace', fontSize: 7.5, lineHeight: 1.5, color: '#707783' }}>
-              Viewport-linked sync · max external radius 100 km · 3D altitude retained for aircraft/orbital modelled positions.
-            </div>
-            </div>
-          </>
-        )}
+          </section>
 
-        {selectedExternal && view === '3D' && (
-          <div style={{ position: 'absolute', right: 14, bottom: 14, zIndex: 800, width: 315, background: 'rgba(5,7,13,.95)', border: '1px solid rgba(196,181,253,.16)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.5)', pointerEvents: 'auto' }}>
-            <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, color: '#b8aef1', letterSpacing: '.12em' }}>GEV EXTERNAL ENTITY</span>
-              <button onClick={() => setSelectedExternalId(null)} aria-label="Close external entity card" style={{ background: 'none', border: 'none', color: '#7a7e8a', cursor: 'pointer' }}>×</button>
+          <aside className="gev-panel gev-right-panel" aria-label="Entity intelligence">
+            <div className="gev-panel-head">
+              <div>
+                <div className="gev-panel-eyebrow">Entity intelligence</div>
+                <div className="gev-panel-title">{selectedExternal ? 'Selected external signal' : selected ? 'Selected operational entity' : 'World signal index'}</div>
+                <div className="gev-panel-meta">{view === '3D' ? 'Pick a signal on the globe to inspect provenance and freshness.' : 'Select a vehicle to inspect live operational state.'}</div>
+              </div>
+              {(selectedExternal || selected) && (
+                <button type="button" className="gev-close" onClick={() => { setSelectedExternalId(null); setSelected(null) }} aria-label="Close selection"><X size={14} /></button>
+              )}
             </div>
-            <div style={{ padding: '12px' }}>
-              <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 17, fontWeight: 700, color: '#f1f5f9' }}>
-                {String(selectedExternal.attributes?.callsign ?? selectedExternal.attributes?.name ?? selectedExternal.attributes?.title ?? selectedExternal.id)}
-              </div>
-              <div style={{ marginTop: 3, fontFamily: 'IBM Plex Mono,monospace', fontSize: 8.5, color: '#8f96a3' }}>
-                {spatialEntityLayer(selectedExternal)?.toUpperCase() ?? selectedExternal.entityType.toUpperCase()} · {selectedExternal.source ?? 'UNKNOWN SOURCE'}
-              </div>
-              <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 5 }}>
-                <div style={{ background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 7, padding: 7 }}><span style={{ display: 'block', fontSize: 7, color: '#5f6572' }}>FRESHNESS</span><b style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 9, color: '#dfe0db' }}>{selectedExternal.quality?.freshnessClass ?? 'UNKNOWN'}</b></div>
-                <div style={{ background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 7, padding: 7 }}><span style={{ display: 'block', fontSize: 7, color: '#5f6572' }}>ALTITUDE</span><b style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 9, color: '#c4b5fd' }}>{selectedExternal.altitudeM != null ? Math.round(selectedExternal.altitudeM / 10) * 10 + ' m' : 'GROUND'}</b></div>
-                <div style={{ background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 7, padding: 7 }}><span style={{ display: 'block', fontSize: 7, color: '#5f6572' }}>CONF</span><b style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 9, color: '#6ee7b7' }}>{selectedExternal.observationConfidence != null ? Math.round(selectedExternal.observationConfidence * 100) + '%' : '—'}</b></div>
-              </div>
-              <div style={{ marginTop: 9, padding: '8px 9px', borderRadius: 8, background: 'rgba(196,181,253,.045)', border: '1px solid rgba(196,181,253,.09)', fontFamily: 'IBM Plex Mono,monospace', fontSize: 7.5, lineHeight: 1.55, color: '#9ca3af' }}>
-                {selectedExternal.entityType === 'satellite' ? 'MODELLED ORBITAL POSITION · NOT LIVE TELEMETRY · NOT AN IMAGING OR TASKING CLAIM' : selectedExternal.entityType === 'spatial_camera' || selectedExternal.entityType === 'camera' ? 'CAMERA GEOMETRY ONLY · NOT PERSON TRACKING' : selectedExternal.telemetryLive === true ? 'LIVE EXTERNAL TELEMETRY' : 'EXTERNAL OBSERVATION · SOURCE/QUALITY CONTROLS REMAIN VISIBLE'}
-              </div>
+
+            <div className="gev-right-body">
+              {selectedExternal ? (
+                <div className="gev-entity-hero">
+                  <div className="gev-entity-kicker">External entity</div>
+                  <div className="gev-entity-title">{String(selectedExternal.attributes?.callsign ?? selectedExternal.attributes?.name ?? selectedExternal.attributes?.title ?? selectedExternal.id)}</div>
+                  <div className="gev-entity-sub">{String(spatialEntityLayer(selectedExternal)?.toUpperCase() ?? selectedExternal.entityType.toUpperCase())} · {String(selectedExternal.source ?? 'UNKNOWN SOURCE')}</div>
+                  <div className="gev-mini-grid">
+                    <div className="gev-mini"><div className="gev-mini-label">Freshness</div><span className="gev-mini-value">{selectedExternal.quality?.freshnessClass ?? 'UNKNOWN'}</span></div>
+                    <div className="gev-mini"><div className="gev-mini-label">Altitude</div><span className="gev-mini-value">{selectedExternal.altitudeM != null ? Math.round(selectedExternal.altitudeM / 10) * 10 + ' m' : 'GROUND'}</span></div>
+                    <div className="gev-mini"><div className="gev-mini-label">Confidence</div><span className="gev-mini-value">{selectedExternal.observationConfidence != null ? Math.round(selectedExternal.observationConfidence * 100) + '%' : '—'}</span></div>
+                  </div>
+                  <div className="gev-detail-callout" style={{ marginTop: 9, border: '1px solid rgba(184,166,255,.10)', borderRadius: 10 }}>
+                    <div className="gev-detail-label">{selectedExternal.entityType === 'satellite' ? 'Modelled orbital position' : selectedExternal.entityType === 'spatial_camera' || selectedExternal.entityType === 'camera' ? 'Camera geometry' : selectedExternal.telemetryLive === true ? 'Live external telemetry' : 'External observation'}</div>
+                    <div className="gev-detail-note">{selectedExternal.entityType === 'satellite' ? 'Not live telemetry · not an imaging or tasking claim.' : selectedExternal.entityType === 'spatial_camera' || selectedExternal.entityType === 'camera' ? 'Geometry only · no person-tracking claim.' : 'Source and quality controls remain visible to the operator.'}</div>
+                  </div>
+                </div>
+              ) : selected ? (
+                <div className="gev-entity-hero">
+                  <div className="gev-entity-kicker">Sonalit operational entity</div>
+                  <div className="gev-entity-title">{selected.registration}</div>
+                  <div className="gev-entity-sub">{selected.convoy_name ?? 'Standalone'} · {selected.status.toUpperCase()}</div>
+                  <div className="gev-mini-grid">
+                    <div className="gev-mini"><div className="gev-mini-label">Speed</div><span className="gev-mini-value">{Math.round(selected.speed_kmh)} km/h</span></div>
+                    <div className="gev-mini"><div className="gev-mini-label">Fix age</div><span className="gev-mini-value">{selected.secondsAgo < 60 ? Math.round(selected.secondsAgo) + ' s' : Math.round(selected.secondsAgo / 60) + ' m'}</span></div>
+                    <div className="gev-mini"><div className="gev-mini-label">Position</div><span className="gev-mini-value">{selected.lat != null ? 'OBSERVED' : 'NO FIX'}</span></div>
+                  </div>
+                  <div className="gev-detail-note" style={{ marginTop: 11 }}>Sonalit operational telemetry remains the authoritative vehicle/device position. External world context is enrichment only.</div>
+                </div>
+              ) : (
+                <>
+                  <div className="gev-entity-hero">
+                    <div className="gev-entity-kicker">Live index</div>
+                    <div className="gev-entity-title">{renderableExternalEntities.length} signals in view</div>
+                    <div className="gev-entity-sub">VIEWPORT-LINKED · PROVENANCE PRESERVED</div>
+                    <div className="gev-mini-grid">
+                      <div className="gev-mini"><div className="gev-mini-label">Operational</div><span className="gev-mini-value">{counts.all}</span></div>
+                      <div className="gev-mini"><div className="gev-mini-label">Guardian</div><span className="gev-mini-value">{counts.officers}</span></div>
+                      <div className="gev-mini"><div className="gev-mini-label">Coverage</div><span className="gev-mini-value">{WORLD_CONTEXT_LAYERS.length}/11</span></div>
+                    </div>
+                  </div>
+                  <div className="gev-external-list">
+                    {topEntities.map(entity => (
+                      <button key={entity.id} type="button" className="gev-external-row" onClick={() => setSelectedExternalId(entity.id)}>
+                        <span className="gev-external-mark" />
+                        <span className="gev-external-copy">
+                          <span className="gev-external-name">{String(entity.attributes?.callsign ?? entity.attributes?.name ?? entity.attributes?.title ?? entity.id)}</span>
+                          <span className="gev-external-meta">{String(spatialEntityLayer(entity)?.replace('_', ' ') ?? entity.entityType)} · {String(entity.source ?? 'source unknown')}</span>
+                        </span>
+                        <span className="gev-external-value">{entity.quality?.freshnessClass ?? '—'}</span>
+                      </button>
+                    ))}
+                    {!topEntities.length && <div className="gev-detail-note">No external entities are currently renderable in this viewport.</div>}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="gev-footnote">{view === '3D' ? '3D fidelity is adaptive to display density. Orbital positions are modelled; camera geometry is not visual acquisition.' : '2D is optimized for operational scanning. External observations never replace convoy state, evidence, or GPS authority.'}</div>
+          </aside>
+
+          <div className="gev-bottom-ribbon">
+            <div className="gev-ribbon">
+              <span className="gev-ribbon-item"><Focus size={11} /> Mode <strong>{view}</strong></span>
+              <span className="gev-ribbon-sep" />
+              <span className="gev-ribbon-item">Viewport <strong>{Math.round(worldViewport.radiusM / 1000)} km</strong></span>
+              <span className="gev-ribbon-sep" />
+              <span className="gev-ribbon-item">Signals <strong>{renderableExternalEntities.length}</strong></span>
+              <span className="gev-ribbon-sep" />
+              <span className="gev-ribbon-item">UTC <strong>{formatUtcClock(clock)}</strong></span>
             </div>
           </div>
-        )}
-        {selected && view === '2D' && (
-          <div style={{ position: 'absolute', right: 12, bottom: 12, zIndex: 800, width: 280, background: 'rgba(5,7,13,.95)', border: '1px solid rgba(196,181,253,.16)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.5)', pointerEvents: 'auto' }}>
-            <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, color: '#b8aef1', letterSpacing: '.12em' }}>GEV OPERATIONAL ENTITY</span>
-              <button onClick={() => setSelected(null)} aria-label="Close entity card" style={{ background: 'none', border: 'none', color: '#7a7e8a', cursor: 'pointer' }}>×</button>
-            </div>
-            <div style={{ padding: '12px' }}>
-              <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 18, fontWeight: 700, color: '#f1f5f9' }}>{selected.registration}</div>
-              <div style={{ marginTop: 3, fontFamily: 'IBM Plex Mono,monospace', fontSize: 9, color: '#7a7e8a' }}>{selected.convoy_name ?? 'Standalone'} · {selected.status.toUpperCase()}</div>
-              <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 5 }}>
-                <div style={{ background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 7, padding: 7 }}><span style={{ display: 'block', fontSize: 7, color: '#5f6572' }}>SPEED</span><b style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 12, color: '#e8a830' }}>{Math.round(selected.speed_kmh)}</b><small style={{ fontSize: 7, color: '#6f7480' }}> km/h</small></div>
-                <div style={{ background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 7, padding: 7 }}><span style={{ display: 'block', fontSize: 7, color: '#5f6572' }}>HEADING</span><b style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 12, color: '#c4b5fd' }}>{selected.heading == null ? '—' : Math.round(selected.heading) + '°'}</b></div>
-                <div style={{ background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 7, padding: 7 }}><span style={{ display: 'block', fontSize: 7, color: '#5f6572' }}>LAST FIX</span><b style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 10, color: selected.secondsAgo > 1800 ? '#ef4444' : '#16c784' }}>{selected.secondsAgo}s</b></div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+        </div>
+      </main>
     </div>
   )
 }

@@ -230,7 +230,7 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
   // init map
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
-    const m = new maplibregl.Map({ container: containerRef.current, style: DARK_STYLE, center: [35.5, 1.2], zoom: 5, attributionControl: false, transformRequest: trafficTransformRequest })
+    const m = new maplibregl.Map({ container: containerRef.current, style: DARK_STYLE, center: [35.5, 1.2], zoom: 5, attributionControl: false, pixelRatio: Math.min(window.devicePixelRatio || 1, 2), transformRequest: trafficTransformRequest })
     m.on('style.load', () => {
       setMapReady(true)
       syncWorldViewport()
