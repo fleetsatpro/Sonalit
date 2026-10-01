@@ -273,3 +273,430 @@ html, body, #root, * {
 .d-clip {
   clip-path: polygon(0 0, calc(100% - 13px) 0, 100% 13px, 100% 100%, 0 100%);
 }
+
+
+/* ───────────────────────────────────────────────────────────────────────────
+   Spatial Command / GEV high-end visual system
+   Scoped so existing operational surfaces remain stable while GEV, XD Live
+   Surveillance and the global spatial map share one precision visual language.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+.gev-shell,
+.spatial-globe-shell {
+  --sp-void: #03050b;
+  --sp-carbon: #060912;
+  --sp-deep: #0a1020;
+  --sp-well: #0e1627;
+  --sp-surf: #121c31;
+  --sp-lift: #17243d;
+  --sp-line: rgba(158, 175, 255, .11);
+  --sp-line-strong: rgba(158, 175, 255, .20);
+  --sp-ink: #eef4ff;
+  --sp-sub: #a7b1c7;
+  --sp-muted: #65718c;
+  --sp-violet: #9d8cff;
+  --sp-cyan: #67e8f9;
+  --sp-ok: #34e0a1;
+  --sp-warn: #f5c451;
+  --sp-fire: #ff627a;
+  position: relative;
+  isolation: isolate;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-variant-numeric: tabular-nums;
+}
+
+.gev-shell {
+  background:
+    radial-gradient(circle at 18% -10%, rgba(157, 140, 255, .09), transparent 30%),
+    radial-gradient(circle at 86% 10%, rgba(103, 232, 249, .055), transparent 26%),
+    linear-gradient(180deg, var(--sp-deep), var(--sp-void));
+}
+
+.gev-shell::before,
+.gev-shell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.gev-shell::before {
+  z-index: 5;
+  opacity: .18;
+  background-image:
+    linear-gradient(rgba(157,140,255,.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(157,140,255,.045) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: linear-gradient(to bottom, rgba(0,0,0,.7), transparent 86%);
+}
+
+.gev-shell::after {
+  z-index: 6;
+  background:
+    radial-gradient(circle at 50% 44%, transparent 0 48%, rgba(0,0,0,.16) 76%, rgba(0,0,0,.55) 100%),
+    linear-gradient(180deg, transparent 0 82%, rgba(2,5,11,.38));
+}
+
+.gev-shell > * {
+  position: relative;
+  z-index: 10;
+}
+
+.gev-topbar {
+  background:
+    linear-gradient(180deg, rgba(18, 28, 49, .96), rgba(8, 13, 24, .96)) !important;
+  border-bottom: 1px solid var(--sp-line-strong) !important;
+  box-shadow: inset 0 -1px 0 rgba(255,255,255,.025), 0 10px 28px rgba(0,0,0,.22) !important;
+  backdrop-filter: blur(18px) saturate(125%);
+}
+
+.gev-topbar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(157,140,255,.55), rgba(103,232,249,.42), transparent);
+  opacity: .9;
+  pointer-events: none;
+}
+
+.gev-topbar .gev-brand-mark {
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.10),
+    0 0 0 1px rgba(157,140,255,.08),
+    0 8px 20px rgba(0,0,0,.20) !important;
+}
+
+.gev-topbar .gev-title {
+  font-family: 'Michroma', var(--d-font) !important;
+  letter-spacing: .13em !important;
+  text-shadow: 0 0 22px rgba(157,140,255,.15);
+}
+
+.gev-topbar .gev-subtitle {
+  color: var(--sp-muted) !important;
+  letter-spacing: .16em !important;
+}
+
+.gev-mode-switch {
+  background: linear-gradient(180deg, rgba(255,255,255,.065), rgba(255,255,255,.025)) !important;
+  border: 1px solid var(--sp-line-strong) !important;
+  border-radius: 12px !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05) !important;
+}
+
+.gev-mode-button {
+  position: relative;
+  overflow: hidden;
+  transition: background .18s ease, color .18s ease, transform .18s ease !important;
+  border: 1px solid transparent !important;
+}
+
+.gev-mode-button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent, rgba(255,255,255,.08), transparent);
+  transform: translateX(-120%);
+  transition: transform .42s ease;
+  pointer-events: none;
+}
+
+.gev-mode-button:hover::before {
+  transform: translateX(120%);
+}
+
+.gev-mode-button:hover {
+  transform: translateY(-1px);
+  color: var(--sp-ink) !important;
+}
+
+.gev-mode-button.is-active {
+  background: linear-gradient(180deg, rgba(157,140,255,.18), rgba(157,140,255,.075)) !important;
+  border-color: rgba(157,140,255,.28) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 0 0 1px rgba(157,140,255,.06) !important;
+  color: var(--sp-ink) !important;
+}
+
+.gev-stage {
+  position: relative;
+  min-height: 0;
+  background: #02050b;
+}
+
+.gev-panel,
+.gev-detail-card,
+.gev-mode-switch {
+  -webkit-backdrop-filter: blur(18px) saturate(130%);
+  backdrop-filter: blur(18px) saturate(130%);
+}
+
+.gev-panel {
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(18,28,49,.88), rgba(7,11,20,.92)) !important;
+  border: 1px solid var(--sp-line-strong) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.055),
+    inset 0 0 0 1px rgba(157,140,255,.018),
+    0 16px 48px rgba(0,0,0,.26) !important;
+}
+
+.gev-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(157,140,255,.06), transparent 24%, transparent 76%, rgba(103,232,249,.045)),
+    linear-gradient(180deg, rgba(255,255,255,.03), transparent 16%);
+}
+
+.gev-panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+.gev-panel .gev-kicker,
+.gev-detail-card .gev-kicker {
+  font-family: 'Space Mono', var(--d-font-mono) !important;
+  font-weight: 700 !important;
+  letter-spacing: .18em !important;
+  color: #bdb4ff !important;
+}
+
+.gev-panel .gev-metric-grid {
+  gap: 7px !important;
+}
+
+.gev-panel .gev-metric {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(255,255,255,.052), rgba(255,255,255,.018)) !important;
+  border: 1px solid rgba(158,175,255,.10) !important;
+  border-radius: 9px !important;
+  transition: border-color .18s ease, transform .18s ease, background .18s ease !important;
+}
+
+.gev-panel .gev-metric::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.12), transparent);
+  pointer-events: none;
+}
+
+.gev-panel .gev-metric:hover {
+  transform: translateY(-1px);
+  border-color: rgba(157,140,255,.22) !important;
+  background: linear-gradient(180deg, rgba(157,140,255,.075), rgba(255,255,255,.018)) !important;
+}
+
+.gev-panel .gev-value {
+  font-family: 'Space Mono', var(--d-font-mono) !important;
+  font-weight: 700 !important;
+  color: var(--sp-ink) !important;
+  letter-spacing: -.025em;
+}
+
+.gev-layer-row {
+  border-color: rgba(158,175,255,.075) !important;
+  background: linear-gradient(180deg, rgba(255,255,255,.026), rgba(255,255,255,.014)) !important;
+  transition: background .16s ease, border-color .16s ease !important;
+}
+
+.gev-layer-row:hover {
+  border-color: rgba(157,140,255,.20) !important;
+  background: linear-gradient(180deg, rgba(157,140,255,.055), rgba(255,255,255,.014)) !important;
+}
+
+.gev-layer-count {
+  font-family: 'Space Mono', var(--d-font-mono) !important;
+  color: var(--sp-ink) !important;
+}
+
+.gev-detail-card {
+  background: linear-gradient(180deg, rgba(18,28,49,.94), rgba(7,11,20,.96)) !important;
+  border: 1px solid var(--sp-line-strong) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.055),
+    0 18px 52px rgba(0,0,0,.34) !important;
+}
+
+.gev-detail-card .gev-detail-title {
+  font-family: 'Michroma', var(--d-font) !important;
+  font-weight: 700 !important;
+  letter-spacing: .08em !important;
+  color: var(--sp-ink) !important;
+}
+
+.gev-detail-card .gev-detail-metric {
+  background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.018)) !important;
+  border-color: rgba(158,175,255,.085) !important;
+  border-radius: 9px !important;
+}
+
+.gev-provenance-note {
+  border-color: rgba(158,175,255,.08) !important;
+  background: rgba(4,8,15,.76) !important;
+  color: #75819a !important;
+  backdrop-filter: blur(10px);
+}
+
+.spatial-globe-shell {
+  background:
+    radial-gradient(circle at 50% 42%, rgba(103,232,249,.04), transparent 42%),
+    #03060d !important;
+}
+
+.spatial-globe-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  background:
+    linear-gradient(rgba(103,232,249,.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(103,232,249,.018) 1px, transparent 1px);
+  background-size: 84px 84px;
+  mask-image: radial-gradient(circle at center, black 0 42%, transparent 88%);
+}
+
+.spatial-globe-shell > .cesium-viewer,
+.spatial-globe-shell canvas {
+  image-rendering: auto;
+  text-rendering: optimizeLegibility;
+}
+
+.spatial-globe-shell canvas {
+  filter: saturate(1.06) contrast(1.035);
+}
+
+.spatial-globe-shell .cesium-viewer-bottom,
+.spatial-globe-shell .cesium-viewer-cesiumWidgetContainer {
+  font-family: 'Space Mono', var(--d-font-mono) !important;
+}
+
+.spatial-globe-shell .spatial-map-control {
+  background: linear-gradient(180deg, rgba(18,28,49,.88), rgba(7,11,20,.92)) !important;
+  border-color: var(--sp-line-strong) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.045), 0 12px 30px rgba(0,0,0,.24) !important;
+  backdrop-filter: blur(16px) saturate(130%);
+}
+
+.spatial-globe-shell .spatial-map-control button {
+  transition: transform .16s ease, background .16s ease, color .16s ease !important;
+}
+
+.spatial-globe-shell .spatial-map-control button:hover {
+  transform: translateY(-1px);
+  background: rgba(157,140,255,.085) !important;
+  color: var(--sp-ink) !important;
+}
+
+.spatial-globe-shell .spatial-map-control button[aria-pressed="true"] {
+  background: rgba(157,140,255,.14) !important;
+  color: #d7d0ff !important;
+  box-shadow: inset 0 0 0 1px rgba(157,140,255,.16) !important;
+}
+
+.spatial-globe-shell .spatial-status-chip {
+  background: rgba(4,8,15,.78) !important;
+  border-color: rgba(158,175,255,.10) !important;
+  color: var(--sp-sub) !important;
+  backdrop-filter: blur(12px);
+}
+
+.spatial-map-shell {
+  position: relative;
+  isolation: isolate;
+  background: #03060d;
+}
+
+.spatial-map-shell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  background:
+    linear-gradient(180deg, rgba(2,5,11,.25), transparent 16%, transparent 84%, rgba(2,5,11,.35)),
+    radial-gradient(circle at 50% 48%, transparent 46%, rgba(2,5,11,.28) 100%);
+}
+
+.spatial-map-shell [class*="maplibregl-ctrl"] {
+  filter: saturate(.9);
+}
+
+.spatial-map-shell .spatial-map-control {
+  border-color: rgba(158,175,255,.17) !important;
+  background: linear-gradient(180deg, rgba(18,28,49,.88), rgba(7,11,20,.94)) !important;
+}
+
+@media (min-resolution: 2dppx) {
+  .gev-shell,
+  .spatial-globe-shell,
+  .spatial-map-shell {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+  }
+
+  .spatial-globe-shell canvas {
+    filter: saturate(1.08) contrast(1.04);
+  }
+}
+
+@media (max-width: 900px) {
+  .gev-topbar {
+    height: 54px !important;
+    padding-inline: 11px !important;
+  }
+
+  .gev-topbar .gev-subtitle {
+    display: none !important;
+  }
+
+  .gev-panel {
+    width: min(292px, calc(100vw - 24px)) !important;
+  }
+
+  .gev-detail-card {
+    width: min(320px, calc(100vw - 24px)) !important;
+  }
+
+  .gev-provenance-note {
+    display: none !important;
+  }
+}
+
+@media (max-width: 600px) {
+  .gev-topbar {
+    gap: 8px !important;
+  }
+
+  .gev-topbar .gev-title {
+    font-size: 13px !important;
+    letter-spacing: .10em !important;
+  }
+
+  .gev-mode-button {
+    min-width: 0 !important;
+    padding-inline: 9px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gev-shell *,
+  .spatial-globe-shell *,
+  .spatial-map-shell * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
