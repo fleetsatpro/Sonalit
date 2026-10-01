@@ -2,6 +2,7 @@ import maplibregl from 'maplibre-gl';
 import { useEffect, useRef, useState } from 'react';
 
 import { STREET_STYLE, SAT_STYLE } from '../../lib/mapStyles.js';
+import { spatialPixelRatio, spatialCanvasContextAttributes } from '../../lib/spatialRendering.js';
 
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -100,6 +101,9 @@ export function LiveFleetMap({ trips, selectedId, onSelect, track }: LiveFleetMa
       container: holder.current,
       style: STREET_STYLE,
       center: [37.9, -1.1],
+      pixelRatio: spatialPixelRatio(),
+      maxCanvasSize: [8192, 8192],
+      canvasContextAttributes: spatialCanvasContextAttributes,
       zoom: 5,
       attributionControl: { compact: true },
     });
