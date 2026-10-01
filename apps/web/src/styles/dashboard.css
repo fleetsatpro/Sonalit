@@ -60,43 +60,98 @@
    stores/ui.ts's setTheme(). Note: pages built with hardcoded Tailwind
    classes (e.g. bg-slate-800) rather than these variables won't respond
    to this — that's a separate, larger migration. */
-:root[data-theme="light"] {
-  --d-void: #ffffff;
-  --d-carbon: #f8fafc;
-  --d-deep: #f1f5f9;
-  --d-well: #e9edf2;
-  --d-surf: #e2e8f0;
-  --d-lift: #d8e0ea;
-  --d-lift2: #cbd6e3;
-
+/* ── Theme system ─────────────────────────────────────────────────────────
+   Theme changes are token-only: operational meaning, status semantics, layout,
+   routes and data remain unchanged. Legacy dark/light values are preserved so
+   existing persisted preferences continue to work. */ 
+:root[data-theme="light"],
+:root[data-theme="arctic"],
+:root[data-theme="ivory"] {
+  --d-void: #f7f9fc;
+  --d-carbon: #eef2f7;
+  --d-deep: #e7ecf3;
+  --d-well: #dde4ed;
+  --d-surf: #d4dde8;
+  --d-lift: #c9d4e1;
+  --d-lift2: #bcc9d8;
   --d-rim: rgba(15,23,42,.08);
   --d-rim2: rgba(15,23,42,.14);
   --d-rim3: rgba(15,23,42,.26);
-
-  --d-sig: #16a34a;
-  --d-sig2: #15803d;
-  --d-sig3: #166534;
-  --d-sg: rgba(34,197,94,.15);
-  --d-sg2: rgba(34,197,94,.08);
-  --d-sglow: rgba(34,197,94,.5);
-
-  --d-orange: #ea580c;
-  --d-og: rgba(234,88,12,.14);
-  --d-oglow: rgba(234,88,12,.5);
-
-  --d-fire: #dc2626;
-  --d-fg: rgba(220,38,38,.12);
-  --d-fglow: rgba(220,38,38,.45);
-  --d-warn: #b45309;
-  --d-wg: rgba(180,83,9,.12);
-  --d-ok: #4d7c0f;
-  --d-okg: rgba(77,124,15,.10);
-  --d-purple: #7e22ce;
-
-  --d-t1: #0f172a;
-  --d-t2: #475569;
-  --d-t3: #94a3b8;
-  --d-t4: #cbd5e1;
+  --d-sig: #087f9b;
+  --d-sig2: #096b82;
+  --d-sig3: #07566a;
+  --d-sg: rgba(8,127,155,.14);
+  --d-sg2: rgba(8,127,155,.07);
+  --d-sglow: rgba(8,127,155,.45);
+  --d-orange: #c6530a;
+  --d-og: rgba(198,83,10,.12);
+  --d-oglow: rgba(198,83,10,.42);
+  --d-fire: #c5222f;
+  --d-fg: rgba(197,34,47,.12);
+  --d-fglow: rgba(197,34,47,.4);
+  --d-warn: #9a5a00;
+  --d-wg: rgba(154,90,0,.11);
+  --d-ok: #28783f;
+  --d-okg: rgba(40,120,63,.1);
+  --d-purple: #7040a8;
+  --d-t1: #101827;
+  --d-t2: #4c5b70;
+  --d-t3: #8795a8;
+  --d-t4: #c0cad6;
+}
+:root[data-theme="arctic"] {
+  --d-void: #f3f9fb; --d-carbon: #e8f2f5; --d-deep: #dcecf1;
+  --d-well: #d3e5ea; --d-surf: #c7dce3; --d-lift: #b8d1da; --d-lift2: #a8c7d2;
+  --d-rim: rgba(6,47,63,.09); --d-rim2: rgba(6,47,63,.16); --d-rim3: rgba(6,47,63,.28);
+  --d-sig: #007f9b; --d-sig2: #00667e; --d-sig3: #005268;
+  --d-sg: rgba(0,127,155,.14); --d-sg2: rgba(0,127,155,.07); --d-sglow: rgba(0,127,155,.45);
+  --d-orange: #d35b16; --d-og: rgba(211,91,22,.12); --d-oglow: rgba(211,91,22,.42);
+  --d-t1: #08212a; --d-t2: #45626d; --d-t3: #849da7; --d-t4: #bdcfd5;
+}
+:root[data-theme="ivory"] {
+  --d-void: #fcfaf5; --d-carbon: #f5f0e7; --d-deep: #ece6da;
+  --d-well: #e2dbce; --d-surf: #d8d0c2; --d-lift: #c9c0b0; --d-lift2: #b9af9e;
+  --d-rim: rgba(47,39,27,.09); --d-rim2: rgba(47,39,27,.16); --d-rim3: rgba(47,39,27,.28);
+  --d-sig: #16776d; --d-sig2: #126258; --d-sig3: #0d5149;
+  --d-sg: rgba(22,119,109,.13); --d-sg2: rgba(22,119,109,.07); --d-sglow: rgba(22,119,109,.42);
+  --d-orange: #b45309; --d-og: rgba(180,83,9,.12); --d-oglow: rgba(180,83,9,.4);
+  --d-t1: #241f18; --d-t2: #635a4d; --d-t3: #9d9487; --d-t4: #c9c0b2;
+}
+:root[data-theme="obsidian"] {
+  --d-void: #020304; --d-carbon: #07090b; --d-deep: #0b0f12;
+  --d-well: #101519; --d-surf: #151c21; --d-lift: #1c262c; --d-lift2: #26343b;
+  --d-rim: rgba(214,237,242,.08); --d-rim2: rgba(214,237,242,.15); --d-rim3: rgba(214,237,242,.28);
+  --d-sig: #24e5d2; --d-sig2: #13b7a7; --d-sig3: #0d8e82;
+  --d-sg: rgba(36,229,210,.13); --d-sg2: rgba(36,229,210,.06); --d-sglow: rgba(36,229,210,.5);
+  --d-orange: #9b7cff; --d-og: rgba(155,124,255,.13); --d-oglow: rgba(155,124,255,.5);
+  --d-t1: #edf7f7; --d-t2: #879a9f; --d-t3: #46565b; --d-t4: #253237;
+}
+:root[data-theme="graphite"] {
+  --d-void: #0b0d10; --d-carbon: #101318; --d-deep: #161a20;
+  --d-well: #1b2027; --d-surf: #222831; --d-lift: #2a313b; --d-lift2: #343d49;
+  --d-rim: rgba(234,241,248,.09); --d-rim2: rgba(234,241,248,.16); --d-rim3: rgba(234,241,248,.28);
+  --d-sig: #63b3ff; --d-sig2: #3d92e5; --d-sig3: #2876c4;
+  --d-sg: rgba(99,179,255,.13); --d-sg2: rgba(99,179,255,.06); --d-sglow: rgba(99,179,255,.5);
+  --d-orange: #ffb15c; --d-og: rgba(255,177,92,.12); --d-oglow: rgba(255,177,92,.45);
+  --d-t1: #f3f6fa; --d-t2: #9ca7b5; --d-t3: #596574; --d-t4: #303944;
+}
+:root[data-theme="copper"] {
+  --d-void: #100b08; --d-carbon: #17100c; --d-deep: #201711;
+  --d-well: #281c15; --d-surf: #32231a; --d-lift: #3d2a20; --d-lift2: #4b3427;
+  --d-rim: rgba(255,238,222,.09); --d-rim2: rgba(255,238,222,.16); --d-rim3: rgba(255,238,222,.28);
+  --d-sig: #ffb36b; --d-sig2: #e58b43; --d-sig3: #b86b2f;
+  --d-sg: rgba(255,179,107,.13); --d-sg2: rgba(255,179,107,.06); --d-sglow: rgba(255,179,107,.5);
+  --d-orange: #f26a3d; --d-og: rgba(242,106,61,.13); --d-oglow: rgba(242,106,61,.48);
+  --d-t1: #fff4eb; --d-t2: #c5a996; --d-t3: #806657; --d-t4: #4a382e;
+}
+:root[data-theme="signal"] {
+  --d-void: #050805; --d-carbon: #0a1009; --d-deep: #101710;
+  --d-well: #172019; --d-surf: #1f2b20; --d-lift: #29382a; --d-lift2: #354635;
+  --d-rim: rgba(231,255,225,.09); --d-rim2: rgba(231,255,225,.16); --d-rim3: rgba(231,255,225,.3);
+  --d-sig: #c7f34b; --d-sig2: #9fce30; --d-sig3: #7aa51e;
+  --d-sg: rgba(199,243,75,.14); --d-sg2: rgba(199,243,75,.06); --d-sglow: rgba(199,243,75,.5);
+  --d-orange: #ff8757; --d-og: rgba(255,135,87,.13); --d-oglow: rgba(255,135,87,.48);
+  --d-t1: #f1f8eb; --d-t2: #a8b8a0; --d-t3: #64715e; --d-t4: #35402f;
 }
 
 /* ── System-wide font override ─────────────────────────────────────────
