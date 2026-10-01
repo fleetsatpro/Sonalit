@@ -75,7 +75,7 @@ let lastTenantId = useAuthStore.getState().user?.org_id ?? null;
 // Tenant boundary is also a browser-cache boundary. Clear all TanStack Query
 // state when authentication changes organization so data fetched under tenant A
 // can never remain visible while tenant B is mounted, even briefly.
-const unsubscribeTenant = useAuthStore.subscribe((state) => {
+useAuthStore.subscribe((state) => {
   const nextTenantId = state.user?.org_id ?? null;
   if (nextTenantId === lastTenantId) return;
   lastTenantId = nextTenantId;
