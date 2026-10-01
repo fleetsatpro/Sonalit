@@ -68,6 +68,7 @@ export default function GodsEyeView() {
   const [view, setView] = useState<View>('3D')
   const [selected, setSelected] = useState<LiveVehicle | null>(null)
   const [selectedExternalId, setSelectedExternalId] = useState<string | null>(null)
+  const [activeLayer, setActiveLayer] = useState<WorldContextLayer | 'all'>('all')
   const [clock, setClock] = useState(() => new Date())
 
   const allVehicles = useMemo(() => groups.flatMap(g => g.vehicles), [groups])
@@ -112,8 +113,10 @@ export default function GodsEyeView() {
     [worldContext],
   )
   const renderableExternalEntities = useMemo(
-    () => externalEntities.filter(entity => Number.isFinite(entity.latitude) && Number.isFinite(entity.longitude)),
-    [externalEntities],
+    () => externalEntities
+      .filter(entity => Number.isFinite(entity.latitude) && Number.isFinite(entity.longitude))
+      .filter(entity => activeLayer === 'all' || spatialEntityLayer(entity) === activeLayer),
+    [externalEntities, activeLayer],
   )
 
   useEffect(() => {
@@ -221,12 +224,12 @@ export default function GodsEyeView() {
         <div className="gev-chrome">
           <aside className="gev-left-rail" aria-label="World context layers">
             <div className="gev-rail">
-              <div className="gev-layer-label">{view}</div>
+              <button type="button" className="gev-layer-label gev-layer-all" aria-pressed={activeLayer === 'all'} onClick={() => { setActiveLayer('all'); setSelectedExternalId(null) }}>ALL · {view}</button>
               {WORLD_CONTEXT_LAYERS.map(layer => {
                 const meta = layerMeta[layer]
                 const Icon = meta.icon
                 return (
-                  <button key={layer} type="button" className="gev-rail-button" title={meta.label} aria-label={meta.label} aria-pressed={view === '3D' && layerCounts[layer] > 0}>
+                  <button key={layer} type="button" className="gev-rail-button" title={`${meta.label} · ${layerCounts[layer]} in view`} aria-label={`${meta.label} · ${layerCounts[layer]} in view`} aria-pressed={activeLayer === layer} onClick={() => { setActiveLayer(current => current === layer ? 'all' : layer); setSelectedExternalId(null) }}>
                     <Icon size={15} />
                     <span className="gev-rail-tag">{layerCounts[layer] > 99 ? '99+' : layerCounts[layer]}</span>
                   </button>
@@ -241,7 +244,7 @@ export default function GodsEyeView() {
               <div>
                 <div className="gev-panel-eyebrow">World picture</div>
                 <div className="gev-panel-title">{view === '3D' ? 'Immersive spatial fabric' : 'Operational world canvas'}</div>
-                <div className="gev-panel-meta">11 intelligence layers · external provenance retained · local telemetry remains authoritative</div>
+                <div className="gev-panel-meta">11 intelligence layers · {activeLayer === 'all' ? 'all layers visible' : `${layerMeta[activeLayer].label} isolated`} · local telemetry remains authoritative</div>
               </div>
               <div className="gev-signal" data-state={syncState}>
                 <span className="gev-signal-dot" />
