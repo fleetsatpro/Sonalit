@@ -59,12 +59,23 @@ router.get('/:id/frame', asyncHandler(async (req,res) => {
   const cameras = await getCameraCatalog();
   const camera = cameras.find(item => String(item.id) === id);
   if (!camera) return res.status(404).json({ error:'Camera not found' });
-  const frame = await getFrame(camera);
-  res.setHeader('Content-Type', frame.contentType);
-  res.setHeader('Cache-Control', 'public, max-age=5, stale-while-revalidate=20');
-  res.setHeader('X-Sonalit-CCTV-Synthetic', frame.synthetic ? 'true' : 'false');
-  res.setHeader('X-Sonalit-Source', camera.provenance?.sourceName || camera.source || 'cctv');
-  return res.end(frame.buffer);
+  try {
+    const frame = await getFrame(camera);
+    res.setHeader('Content-Type', frame.contentType);
+    res.setHeader('Cache-Control', 'public, max-age=5, stale-while-revalidate=20');
+    res.setHeader('X-Sonalit-CCTV-Synthetic', 'false');
+    res.setHeader('X-Sonalit-Source', camera.provenance?.sourceName || camera.source || 'cctv');
+    return res.end(frame.buffer);
+  } catch (error) {
+    const failureClass = String(error?.failureClass || 'unknown');
+    const status = failureClass === 'not_found' ? 404 : failureClass === 'media_unavailable' ? 424 : 502;
+    return res.status(status).json({
+      error: 'Verified camera frame unavailable',
+      reason: error?.message || 'No approved media source is available',
+      failureClass,
+      camera_id: camera.id,
+    });
+  }
 }));
 
 router.get('/:id', asyncHandler(async (req,res) => {
