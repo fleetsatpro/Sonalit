@@ -1,19 +1,43 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-type Theme = 'dark' | 'light';
+export type Theme =
+  | 'obsidian'
+  | 'arctic'
+  | 'graphite'
+  | 'copper'
+  | 'signal'
+  | 'ivory';
 
-// The theme field existed here before but nothing ever applied it — no
-// component read useUIStore.theme, so switching it had zero visible effect.
-// Setting data-theme on <html> is what dashboard.css's light-mode variable
-// overrides key off; doing it here (not in a component effect) means it
-// takes effect the instant setTheme is called and right after persisted
-// state rehydrates, with no extra wiring needed in main.tsx.
+export const THEMES: ReadonlyArray<{
+  id: Theme;
+  name: string;
+  descriptor: string;
+  mode: 'dark' | 'light';
+  accent: string;
+}> = [
+  { id: 'obsidian', name: 'Obsidian Command', descriptor: 'Deep command-room contrast', mode: 'dark', accent: '#b8a6ff' },
+  { id: 'arctic', name: 'Arctic Signal', descriptor: 'Cool analytical operations', mode: 'dark', accent: '#67e8f9' },
+  { id: 'graphite', name: 'Graphite Pro', descriptor: 'Neutral executive control', mode: 'dark', accent: '#aeb9c8' },
+  { id: 'copper', name: 'Copper Dusk', descriptor: 'Warm field operations', mode: 'dark', accent: '#f6a46a' },
+  { id: 'signal', name: 'Signal Lime', descriptor: 'High-visibility tactical', mode: 'dark', accent: '#d9ff69' },
+  { id: 'ivory', name: 'Ivory Daylight', descriptor: 'Bright field / daylight', mode: 'light', accent: '#0b8f72' },
+];
+
+const DEFAULT_THEME: Theme = 'obsidian';
+
 function applyTheme(theme: Theme) {
-  if (typeof document !== 'undefined') {
-    document.documentElement.setAttribute('data-theme', theme);
-  }
+  if (typeof document === 'undefined') return;
+  const meta = THEMES.find((item) => item.id === theme) ?? THEMES[0];
+  document.documentElement.setAttribute('data-theme', meta.id);
+  document.documentElement.style.colorScheme = meta.mode;
 }
+
+function normalizeTheme(value: unknown): Theme {
+  return THEMES.some((theme) => theme.id === value) ? value as Theme : DEFAULT_THEME;
+}
+
+applyTheme(DEFAULT_THEME);
 
 type UIState = {
   sidebarOpen: boolean;
@@ -23,7 +47,6 @@ type UIState = {
   setTheme: (theme: Theme) => void;
 };
 
-// T4.6: Default sidebar open on md+ screens, closed on mobile.
 const defaultSidebarOpen = typeof window !== 'undefined'
   ? window.matchMedia('(min-width: 768px)').matches
   : false;
@@ -32,20 +55,25 @@ export const useUIStore = create<UIState>()(
   persist(
     (set) => ({
       sidebarOpen: defaultSidebarOpen,
-      theme: 'dark',
+      theme: DEFAULT_THEME,
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
-      setTheme: (theme) => { applyTheme(theme); set({ theme }); },
+      setTheme: (theme) => {
+        const normalized = normalizeTheme(theme);
+        applyTheme(normalized);
+        set({ theme: normalized });
+      },
     }),
     {
       name: 'sonalit-ui',
-      // Only theme is worth remembering across sessions — sidebarOpen should
-      // keep re-deriving from viewport width on each load (its original
-      // behavior), not get stuck on whatever it was last closed/opened to.
       partialize: (s) => ({ theme: s.theme }),
       onRehydrateStorage: () => (state) => {
-        if (state) applyTheme(state.theme);
+        if (state) {
+          const normalized = normalizeTheme(state.theme);
+          if (normalized !== state.theme) state.setTheme(normalized);
+          else applyTheme(normalized);
+        }
       },
-    }
-  )
+    },
+  ),
 );
