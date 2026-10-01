@@ -30,7 +30,7 @@ describe('centrifugo publish()', () => {
     process.env.CENTRIFUGO_API_KEY = 'secret-key';
     process.env.CENTRIFUGO_API_URL = 'http://centrifugo.railway.internal:8000';
     process.env.CENTRIFUGO_URL = 'wss://rt.sonalit.io/connection/websocket';
-    mockFetch.mockResolvedValueOnce({ ok: true });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ result: {} }) });
     const { publish } = require('../src/realtime/centrifugo');
     await publish('vehicle:update', { vehicleId: 'v1' });
     expect(mockFetch).toHaveBeenCalledWith(
@@ -44,7 +44,7 @@ describe('centrifugo publish()', () => {
 
   test('POSTs to /api/publish with correct headers when API key is set', async () => {
     process.env.CENTRIFUGO_API_KEY = 'secret-key';
-    mockFetch.mockResolvedValueOnce({ ok: true });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ result: {} }) });
     const { publish } = require('../src/realtime/centrifugo');
     await publish('vehicle:update', { vehicleId: 'v1' });
     expect(mockFetch).toHaveBeenCalledWith(
@@ -54,6 +54,18 @@ describe('centrifugo publish()', () => {
         headers: expect.objectContaining({ 'Authorization': 'apikey secret-key' }),
       })
     );
+  });
+
+  test('logs warning when Centrifugo returns an application-level error with HTTP 200', async () => {
+    process.env.CENTRIFUGO_API_KEY = 'secret-key';
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ error: { code: 105, message: 'channel not allowed' } }),
+    });
+    const { publish } = require('../src/realtime/centrifugo');
+    const { warn } = require('../src/utils/logger');
+    await publish('test-channel', {});
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('channel not allowed'));
   });
 
   test('logs warning on non-ok response', async () => {
