@@ -28,7 +28,7 @@ describe('runtime fence deployment handover policy', () => {
     })).toBe(false);
   });
 
-  test('classifies a Railway replacement as quiescent candidate mode', () => {
+  test('classifies a newer Railway deployment as an active controlled replacement', () => {
     expect(classifyFenceStart({
       production: true,
       standby: false,
@@ -37,7 +37,7 @@ describe('runtime fence deployment handover policy', () => {
       currentOwner: 'old-owner',
       currentDeploymentId: 'old-deployment',
       stale: false,
-    })).toBe('candidate');
+    })).toBe('active');
   });
 
   test('refuses a second replica from the same deployment', () => {
