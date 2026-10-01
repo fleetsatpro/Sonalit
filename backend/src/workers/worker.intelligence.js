@@ -188,13 +188,15 @@ async function drainActiveWork(reason) {
   timer = null;
   spatialTimer = null;
   const running = [activeCyclePromise, activeSpatialPromise].filter(Boolean);
+  let drained = true;
   if (running.length) {
-    await Promise.race([
-      Promise.allSettled(running),
-      new Promise(resolve => setTimeout(resolve, 20000))
+    drained = await Promise.race([
+      Promise.allSettled(running).then(() => true),
+      new Promise(resolve => setTimeout(() => resolve(false), 20000))
     ]);
   }
-  logger.info(`Intelligence worker quiesced (${reason})`);
+  logger.info(`Intelligence worker quiesced (${reason}); drained=${drained}`);
+  return drained;
 }
 
 async function shutdown(signal) {
@@ -232,7 +234,11 @@ process.on('SIGINT', () => shutdown('SIGINT'));
     },
     onLose: async () => {
       stopping = true;
-      await drainActiveWork('leadership loss');
+      const drained = await drainActiveWork('leadership loss');
+      if (!drained) {
+        logger.error('Intelligence worker could not drain after leader loss; exiting fail-closed');
+        process.exit(78);
+      }
       stopping = false;
     }
   });
