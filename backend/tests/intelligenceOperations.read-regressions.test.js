@@ -3,24 +3,6 @@
 const request = require('supertest');
 const mockDbQuery = jest.fn();
 
-jest.mock('../src/middleware/auth', () => ({
-  authenticate: (req, _res, next) => {
-    req.user = { id: '00000000-0000-0000-0000-000000000001', org_id: '00000000-0000-0000-0000-000000000002', role: 'admin' };
-    next();
-  },
-}), { virtual: true });
-
-jest.mock('../src/utils/orgScopedDb', () => ({
-  attachOrgDb: (req, _res, next) => {
-    req.db = mockDbQuery;
-    next();
-  },
-}), { virtual: true });
-
-jest.mock('../src/middleware/error', () => ({
-  asyncHandler: fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next),
-}), { virtual: true });
-
 describe('intelligence operations read endpoints', () => {
   let app;
 
@@ -32,6 +14,15 @@ describe('intelligence operations read endpoints', () => {
     const router = require('../src/routes/intelligenceOperations');
     app = express();
     app.use(express.json());
+    app.use((req, _res, next) => {
+      req.user = {
+        id: '00000000-0000-0000-0000-000000000001',
+        org_id: '00000000-0000-0000-0000-000000000002',
+        role: 'admin',
+      };
+      req.db = mockDbQuery;
+      next();
+    });
     app.use('/intelligence', router);
     app.use((err, _req, res, _next) => res.status(err.status || 500).json({ error: err.message }));
   });
