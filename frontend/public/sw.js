@@ -39,13 +39,15 @@ self.addEventListener('fetch', (event) => {
 // tenant-scoped sync in page context. Never replay historical bearer tokens here.
 self.addEventListener('sync', (event) => {
   if (event.tag === SYNC_TAG) {
-    event.waitUntil(
-      indexedDB.deleteDatabase('fleetops-offline').then(() => {
-        const clients = self.clients.matchAll().then(list =>
-          list.forEach(client => client.postMessage({ type: 'LEGACY_SYNC_RETIRED' }))
-        );
-        return clients;
-      }).catch(() => undefined)
-    );
+    event.waitUntil(new Promise((resolve) => {
+      const request = indexedDB.deleteDatabase('fleetops-offline');
+      request.onsuccess = async () => {
+        const clients = await self.clients.matchAll();
+        clients.forEach(client => client.postMessage({ type: 'LEGACY_SYNC_RETIRED' }));
+        resolve();
+      };
+      request.onerror = () => resolve();
+      request.onblocked = () => resolve();
+    }));
   }
 });
