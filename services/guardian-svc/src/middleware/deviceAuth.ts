@@ -3,6 +3,7 @@ import { verify } from '@node-rs/argon2';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { query } from '../db.js';
 import { config } from '../config.js';
+import { tenantContext } from '../db.js';
 
 export interface DeviceContext {
   id: string;
@@ -81,6 +82,8 @@ export async function deviceAuthHook(
   const integrityAgeSeconds = candidate.integrity_checked_at
     ? (Date.now() - new Date(candidate.integrity_checked_at).getTime()) / 1000
     : Infinity;
+
+  tenantContext.enterWith(candidate.org_id);
 
   request.device = {
     id: candidate.id,
