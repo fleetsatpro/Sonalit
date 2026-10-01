@@ -206,7 +206,7 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
     queryFn: ({ signal }) => fetchWorldContext({
       center: { latitude: worldViewport!.latitude, longitude: worldViewport!.longitude },
       radiusM: worldViewport!.radiusM,
-      layers: ['aircraft', 'maritime', 'traffic', 'hazards', 'satellites', 'cameras'],
+      layers: ['aircraft', 'weather', 'maritime', 'traffic', 'hazards', 'security', 'infrastructure', 'incidents', 'alerts', 'cameras', 'satellites'],
       maxEntitiesPerLayer: 75,
       signal,
     }),
@@ -370,6 +370,14 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
           'traffic_incident', '#f59e0b',
           'traffic_hazard', '#f97316',
           'traffic_segment', '#eab308',
+          'weather', '#a7f3d0',
+          'incident', '#fb7185',
+          'alert', '#f0abfc',
+          'risk_zone', '#f87171',
+          'checkpoint', '#34d399',
+          'shipment_location', '#67e8f9',
+          'security', '#fb923c',
+          'infrastructure', '#cbd5e1',
           '#94a3b8',
         ],
         'circle-opacity': ['match', ['get', 'kind'],
@@ -397,6 +405,14 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
           'traffic_incident', '#f59e0b',
           'traffic_hazard', '#f97316',
           'traffic_segment', '#eab308',
+          'weather', '#a7f3d0',
+          'incident', '#fb7185',
+          'alert', '#f0abfc',
+          'risk_zone', '#f87171',
+          'checkpoint', '#34d399',
+          'shipment_location', '#67e8f9',
+          'security', '#fb923c',
+          'infrastructure', '#cbd5e1',
           '#94a3b8',
         ],
         'circle-opacity': ['match', ['get', 'freshness'],
@@ -416,6 +432,14 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
           'traffic_incident', '#451a03',
           'traffic_hazard', '#431407',
           'traffic_segment', '#422006',
+          'weather', '#064e3b',
+          'incident', '#4c0519',
+          'alert', '#4a044e',
+          'risk_zone', '#450a0a',
+          'checkpoint', '#064e3b',
+          'shipment_location', '#083344',
+          'security', '#431407',
+          'infrastructure', '#1e293b',
           '#0b1020',
         ],
         'circle-stroke-width': ['match', ['get', 'kind'], 'satellite', 1.25, 'spatial_camera', 1.5, 'camera', 1.5, 1.35],
@@ -572,8 +596,8 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
       <div style={{ position: 'absolute', right: 56, top: 14, zIndex: 500, width: 228, maxWidth: 'calc(100vw - 90px)', background: 'linear-gradient(180deg, rgba(9,13,22,.88), rgba(7,10,17,.78))', border: '1px solid rgba(196,181,253,.18)', boxShadow: '0 14px 40px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.06)', backdropFilter: 'blur(14px)', borderRadius: 10, padding: '10px 11px', color: '#dfe0db' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8 }}>
           <div>
-            <div style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, letterSpacing: '.14em', color: '#a7a0bd' }}>XD WORLD CONTEXT</div>
-            <div style={{ marginTop: 2, fontFamily: 'Barlow Condensed,sans-serif', fontSize: 12, fontWeight: 700, letterSpacing: '.02em', color: '#f1f5f9' }}>Spatial signal fabric</div>
+            <div style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, letterSpacing: '.14em', color: '#a7a0bd' }}>GEV · XD WORLD CONTEXT</div>
+            <div style={{ marginTop: 2, fontFamily: 'Barlow Condensed,sans-serif', fontSize: 12, fontWeight: 700, letterSpacing: '.02em', color: '#f1f5f9' }}>Global spatial signal fabric</div>
           </div>
           <div style={{ width: 7, height: 7, borderRadius: '50%', background: worldError ? '#ef4444' : worldFetching ? '#f59e0b' : '#5eead4', boxShadow: worldError ? '0 0 10px rgba(239,68,68,.55)' : worldFetching ? '0 0 10px rgba(245,158,11,.45)' : '0 0 10px rgba(94,234,212,.45)' }} />
         </div>

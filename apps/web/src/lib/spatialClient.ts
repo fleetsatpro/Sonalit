@@ -114,17 +114,22 @@ export function externalWorldFeatures(context: SpatialWorldContext | undefined):
   const observations = [
     ...(context?.movement ?? []),
     ...(context?.traffic ?? []),
+    ...(context?.environment ?? []),
     ...(context?.hazards ?? []),
+    ...(context?.security ?? []),
+    ...(context?.incidents ?? []),
+    ...(context?.operational?.alerts ?? []),
+    ...((context?.infrastructure ?? []).filter((e) => e.entityType !== 'spatial_camera' && e.entityType !== 'camera')),
     ...(context?.satellites ?? []),
     ...(context?.cameras ?? []),
-    ...((context?.infrastructure ?? []).filter((e) => e.entityType === 'spatial_camera' || e.entityType === 'camera')),
   ]
 
   const features = observations
     .filter((item) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude))
     .filter((item) => [
       'aircraft', 'vessel', 'natural_hazard', 'traffic_incident', 'traffic_hazard', 'traffic_segment',
-      'satellite', 'spatial_camera', 'camera',
+      'weather', 'incident', 'alert', 'risk_zone', 'checkpoint', 'shipment_location', 'security',
+      'satellite', 'spatial_camera', 'camera', 'infrastructure',
     ].includes(item.entityType))
     .map((item) => {
       const isSat = item.entityType === 'satellite'
