@@ -813,10 +813,10 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
 
       // Dedup: return existing if already enrolled with this android device id
       const existing = await query(
-        `SELECT id, token, status FROM guardian_devices
-         WHERE android_id = $1 AND deleted_at IS NULL
+        `SELECT id, token, status, org_id FROM guardian_devices
+         WHERE android_id = $1 AND org_id = $2 AND deleted_at IS NULL
          ORDER BY enrolled_at DESC LIMIT 1`,
-        [device_id]
+        [device_id, orgId]
       );
       if (existing.rows[0]) {
         const dev = existing.rows[0];
@@ -918,6 +918,9 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
     // comes from a one-time, tenant-scoped enrollment code.
     let enrollmentCodeId = null;
     let enrollmentOrgId = null;
+    if (!enrollment_code || !enrollment_code.trim()) {
+      return res.status(403).json({ error: 'Tenant-scoped enrollment code required' });
+    }
     if (enrollment_code && enrollment_code.trim()) {
       const codeRow = await query(
         `SELECT id, org_id
@@ -951,13 +954,14 @@ router.post('/enroll', enrollLimiter, async (req, res, next) => {
         `SELECT id, token, status, enrolled_at, org_id
            FROM guardian_devices
           WHERE deleted_at IS NULL
+            AND org_id = $3
             AND (
               ($1::TEXT IS NOT NULL AND imei_hash = $1)
               OR ($2::TEXT IS NOT NULL AND android_id = $2)
             )
           ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END, enrolled_at DESC
           LIMIT 1`,
-        [safeImei, safeAndroidId]
+        [safeImei, safeAndroidId, enrollmentOrgId]
       );
       if (r.rows.length) existingDev = r.rows[0];
     }
