@@ -223,7 +223,19 @@ BEGIN
       )
   LOOP
     EXECUTE format('ALTER TABLE %I.%I ENABLE ROW LEVEL SECURITY', r.schema_name, r.table_name);
-    EXECUTE format('ALTER TABLE %I.%I FORCE ROW LEVEL SECURITY', r.schema_name, r.table_name);
+
+    -- Credential bootstrap lookups (token/email presented before tenant context
+    -- exists) must remain owner-accessible. They still receive the restrictive
+    -- policy for authenticated sonalit_app requests, but are deliberately not
+    -- FORCEd so exact-match bootstrap queries can resolve the tenant.
+    IF r.table_name NOT IN (
+      'users','guardian_devices','portal_tokens','client_magic_links',
+      'cargo_clients','telemetry_ingest_keys','tracking_qr_codes',
+      'tracking_sessions','field_devices','field_sessions','field_agent_pins',
+      'cfo_login_attempts','guardian_command_nonces'
+    ) THEN
+      EXECUTE format('ALTER TABLE %I.%I FORCE ROW LEVEL SECURITY', r.schema_name, r.table_name);
+    END IF;
 
     EXECUTE format('DROP POLICY IF EXISTS tenant_isolation_hardening ON %I.%I', r.schema_name, r.table_name);
     IF r.table_name = 'risk_zones' THEN
@@ -276,7 +288,11 @@ CREATE OR REPLACE FUNCTION tenant_harden_org_from_vehicle() RETURNS trigger
 LANGUAGE plpgsql AS $
 DECLARE v_org UUID;
 BEGIN
-  SELECT org_id INTO v_org FROM vehicles WHERE id = NEW.vehicle_id;
+  IF NEW.vehicle_id IS NULL THEN
+    v_org := NULLIF(current_setting('app.current_org_id', true), '')::uuid;
+  ELSE
+    SELECT org_id INTO v_org FROM vehicles WHERE id = NEW.vehicle_id;
+  END IF;
   IF v_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_vehicle'; END IF;
   NEW.org_id := v_org;
   RETURN NEW;
@@ -286,7 +302,11 @@ CREATE OR REPLACE FUNCTION tenant_harden_org_from_convoy() RETURNS trigger
 LANGUAGE plpgsql AS $
 DECLARE v_org UUID;
 BEGIN
-  SELECT org_id INTO v_org FROM convoys WHERE id = NEW.convoy_id;
+  IF NEW.convoy_id IS NULL THEN
+    v_org := NULLIF(current_setting('app.current_org_id', true), '')::uuid;
+  ELSE
+    SELECT org_id INTO v_org FROM convoys WHERE id = NEW.convoy_id;
+  END IF;
   IF v_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_convoy'; END IF;
   NEW.org_id := v_org;
   RETURN NEW;
@@ -332,13 +352,40 @@ DROP TRIGGER IF EXISTS tenant_harden_convoy_assignments ON convoy_assignments;
 CREATE TRIGGER tenant_harden_convoy_assignments BEFORE INSERT OR UPDATE ON convoy_assignments
 FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_convoy();
 
+CREATE OR REPLACE FUNCTION tenant_harden_org_from_checkpoint() RETURNS trigger
+LANGUAGE plpgsql AS $
+DECLARE
+  convoy_org UUID;
+  shipment_org UUID;
+  current_org UUID := NULLIF(current_setting('app.current_org_id', true), '')::uuid;
+BEGIN
+  IF NEW.convoy_id IS NOT NULL THEN
+    SELECT org_id INTO convoy_org FROM convoys WHERE id = NEW.convoy_id;
+    IF convoy_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_convoy'; END IF;
+  END IF;
+  IF NEW.shipment_id IS NOT NULL THEN
+    SELECT org_id INTO shipment_org FROM shipments WHERE id = NEW.shipment_id;
+    IF shipment_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_shipment'; END IF;
+  END IF;
+  IF convoy_org IS NOT NULL AND shipment_org IS NOT NULL AND convoy_org <> shipment_org THEN
+    RAISE EXCEPTION 'tenant_scope_parent_mismatch';
+  END IF;
+  NEW.org_id := COALESCE(convoy_org, shipment_org, current_org);
+  IF NEW.org_id IS NULL THEN RAISE EXCEPTION 'tenant_scope_required'; END IF;
+  RETURN NEW;
+END $;
+
 DROP TRIGGER IF EXISTS tenant_harden_checkpoints ON checkpoints;
 CREATE TRIGGER tenant_harden_checkpoints BEFORE INSERT OR UPDATE ON checkpoints
-FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_convoy();
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_checkpoint();
 
 DROP TRIGGER IF EXISTS tenant_harden_trips ON trips;
 CREATE TRIGGER tenant_harden_trips BEFORE INSERT OR UPDATE ON trips
-FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_convoy();
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_vehicle();
+
+DROP TRIGGER IF EXISTS tenant_harden_devices ON devices;
+CREATE TRIGGER tenant_harden_devices BEFORE INSERT OR UPDATE ON devices
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_vehicle();
 
 DROP TRIGGER IF EXISTS tenant_harden_convoy_trucks ON convoy_trucks;
 CREATE TRIGGER tenant_harden_convoy_trucks BEFORE INSERT OR UPDATE ON convoy_trucks
