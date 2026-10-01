@@ -20,6 +20,14 @@ const isTheme = (value: unknown): value is Theme => typeof value === 'string' &&
 // Setting data-theme on <html> is the single bridge between persisted UI state
 // and the dashboard token system. This keeps theme changes immediate and
 // prevents individual screens from owning appearance state.
+function normalizeTheme(theme: unknown): Theme {
+  if (theme === 'light') return 'ivory-daylight';
+  if (theme === 'dark' || typeof theme !== 'string' || !THEME_OPTIONS.some((item) => item.id === theme)) {
+    return 'obsidian-command';
+  }
+  return theme as Theme;
+}
+
 function applyTheme(theme: Theme) {
   if (typeof document !== 'undefined') {
     const root = document.documentElement;
@@ -49,7 +57,7 @@ export const useUIStore = create<UIState>()(
       theme: DEFAULT_THEME,
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
-      setTheme: (theme) => { applyTheme(theme); set({ theme }); },
+      setTheme: (theme) => { const next = normalizeTheme(theme); applyTheme(next); set({ theme: next }); },
     }),
     {
       name: 'sonalit-ui',
@@ -63,7 +71,7 @@ export const useUIStore = create<UIState>()(
       // behavior), not get stuck on whatever it was last closed/opened to.
       partialize: (s) => ({ theme: s.theme }),
       onRehydrateStorage: () => (state) => {
-        if (state) applyTheme(state.theme);
+        if (state) { const next = normalizeTheme(state.theme); applyTheme(next); if (next !== state.theme) state.setTheme(next); }
       },
     }
   )
