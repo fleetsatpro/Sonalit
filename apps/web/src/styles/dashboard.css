@@ -60,7 +60,7 @@
    stores/ui.ts's setTheme(). Note: pages built with hardcoded Tailwind
    classes (e.g. bg-slate-800) rather than these variables won't respond
    to this — that's a separate, larger migration. */
-:root[data-theme="light"] {
+:root[data-theme="legacy-light"] {
   --d-void: #ffffff;
   --d-carbon: #f8fafc;
   --d-deep: #f1f5f9;
@@ -98,6 +98,21 @@
   --d-t3: #94a3b8;
   --d-t4: #cbd5e1;
 }
+
+
+/* ── Sonalit operator themes ───────────────────────────────────────────── */
+:root[data-theme="obsidian"]{color-scheme:dark}
+:root[data-theme="arctic"]{color-scheme:light;--d-void:#f5f8fc;--d-carbon:#edf2f8;--d-deep:#e7edf5;--d-well:#fff;--d-surf:#f7f9fc;--d-lift:#eef3f8;--d-lift2:#e2e9f2;--d-rim:rgba(25,52,82,.10);--d-rim2:rgba(25,52,82,.16);--d-rim3:rgba(25,52,82,.28);--d-sig:#087ea4;--d-sig2:#0b6786;--d-sig3:#0d5872;--d-sg:rgba(8,126,164,.13);--d-sg2:rgba(8,126,164,.07);--d-sglow:rgba(8,126,164,.35);--d-orange:#3158b8;--d-og:rgba(49,88,184,.12);--d-oglow:rgba(49,88,184,.30);--d-fire:#c5223f;--d-fg:rgba(197,34,63,.11);--d-fglow:rgba(197,34,63,.34);--d-warn:#9a5b00;--d-wg:rgba(154,91,0,.11);--d-ok:#157347;--d-okg:rgba(21,115,71,.10);--d-purple:#7a4bb2;--d-t1:#102235;--d-t2:#52677d;--d-t3:#8295aa;--d-t4:#c7d2df}
+:root[data-theme="graphite"]{color-scheme:dark;--d-void:#090b10;--d-carbon:#0d1016;--d-deep:#11151c;--d-well:#171b23;--d-surf:#1b2029;--d-lift:#222934;--d-lift2:#2b3340;--d-rim:rgba(191,211,232,.09);--d-rim2:rgba(191,211,232,.15);--d-rim3:rgba(191,211,232,.27);--d-sig:#58b8ff;--d-sig2:#3b91d3;--d-sig3:#2e70a3;--d-sg:rgba(88,184,255,.12);--d-sg2:rgba(88,184,255,.06);--d-sglow:rgba(88,184,255,.46);--d-orange:#a78bfa;--d-og:rgba(167,139,250,.12);--d-oglow:rgba(167,139,250,.45);--d-fire:#ff5572;--d-fg:rgba(255,85,114,.13);--d-fglow:rgba(255,85,114,.45);--d-warn:#f4c95d;--d-wg:rgba(244,201,93,.12);--d-ok:#51e2a4;--d-okg:rgba(81,226,164,.10);--d-purple:#d28cff;--d-t1:#edf5ff;--d-t2:#8d9bad;--d-t3:#5b6675;--d-t4:#303844}
+:root[data-theme="copper"]{color-scheme:dark;--d-void:#100b08;--d-carbon:#160f0b;--d-deep:#1b120d;--d-well:#211710;--d-surf:#291c13;--d-lift:#332219;--d-lift2:#3d291e;--d-rim:rgba(255,215,177,.10);--d-rim2:rgba(255,215,177,.17);--d-rim3:rgba(255,215,177,.29);--d-sig:#ff9b54;--d-sig2:#e47a35;--d-sig3:#b85e25;--d-sg:rgba(255,155,84,.13);--d-sg2:rgba(255,155,84,.07);--d-sglow:rgba(255,155,84,.45);--d-orange:#ffd166;--d-og:rgba(255,209,102,.13);--d-oglow:rgba(255,209,102,.45);--d-fire:#ff5d5d;--d-fg:rgba(255,93,93,.14);--d-fglow:rgba(255,93,93,.48);--d-warn:#ffd166;--d-wg:rgba(255,209,102,.13);--d-ok:#70e0a0;--d-okg:rgba(112,224,160,.10);--d-purple:#d19aff;--d-t1:#fff4e9;--d-t2:#b99b83;--d-t3:#806b5b;--d-t4:#4a382c}
+:root[data-theme="signal"]{color-scheme:dark;--d-void:#070c09;--d-carbon:#0b110d;--d-deep:#0d1511;--d-well:#101a14;--d-surf:#142018;--d-lift:#1b2a21;--d-lift2:#23352a;--d-rim:rgba(211,255,143,.09);--d-rim2:rgba(211,255,143,.16);--d-rim3:rgba(211,255,143,.28);--d-sig:#c7ff4d;--d-sig2:#9ed62f;--d-sig3:#75a91f;--d-sg:rgba(199,255,77,.13);--d-sg2:rgba(199,255,77,.07);--d-sglow:rgba(199,255,77,.48);--d-orange:#5eead4;--d-og:rgba(94,234,212,.12);--d-oglow:rgba(94,234,212,.42);--d-fire:#ff5f6d;--d-fg:rgba(255,95,109,.14);--d-fglow:rgba(255,95,109,.48);--d-warn:#ffd166;--d-wg:rgba(255,209,102,.12);--d-ok:#8cff9e;--d-okg:rgba(140,255,158,.10);--d-purple:#d4a5ff;--d-t1:#efffe5;--d-t2:#9db092;--d-t3:#62735c;--d-t4:#33402f}
+:root[data-theme="ivory"]{color-scheme:light;--d-void:#f8f7f3;--d-carbon:#f1f0eb;--d-deep:#e9e8e2;--d-well:#fff;--d-surf:#fbfaf7;--d-lift:#f0efe9;--d-lift2:#e5e3db;--d-rim:rgba(31,41,38,.10);--d-rim2:rgba(31,41,38,.16);--d-rim3:rgba(31,41,38,.27);--d-sig:#0f766e;--d-sig2:#0d665f;--d-sig3:#0a554f;--d-sg:rgba(15,118,110,.12);--d-sg2:rgba(15,118,110,.06);--d-sglow:rgba(15,118,110,.30);--d-orange:#b45309;--d-og:rgba(180,83,9,.12);--d-oglow:rgba(180,83,9,.28);--d-fire:#b4233d;--d-fg:rgba(180,35,61,.11);--d-fglow:rgba(180,35,61,.30);--d-warn:#a15c00;--d-wg:rgba(161,92,0,.10);--d-ok:#237a4b;--d-okg:rgba(35,122,75,.09);--d-purple:#7548a8;--d-t1:#17211e;--d-t2:#5b6a65;--d-t3:#8c9994;--d-t4:#c9d0cc}
+:root[data-theme="dark"]{color-scheme:dark}:root[data-theme="light"]{color-scheme:light}
+.sonalit-theme-option{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;width:100%;min-height:92px;padding:12px;border:1px solid var(--d-rim2);border-radius:12px;background:linear-gradient(145deg,var(--d-surf),var(--d-well));color:var(--d-t1);text-align:left;cursor:pointer;transition:border-color .18s ease,box-shadow .18s ease,transform .18s ease,background-color .18s ease}
+.sonalit-theme-option:hover{border-color:var(--d-rim3);transform:translateY(-1px)}.sonalit-theme-option:focus-visible{outline:2px solid var(--d-sig);outline-offset:2px}.sonalit-theme-option.is-selected{border-color:var(--d-sig);box-shadow:0 0 0 1px var(--d-sig),0 10px 28px var(--d-sg2)}
+.sonalit-theme-swatch{display:grid;grid-template-columns:repeat(2,14px);grid-template-rows:repeat(2,14px);gap:2px;padding:3px;border:1px solid var(--d-rim2);border-radius:7px;background:var(--d-deep)}.sonalit-theme-swatch span{display:block;border-radius:2px}.sonalit-theme-check{width:20px;height:20px;display:grid;place-items:center;border-radius:50%;border:1px solid var(--d-rim2);color:var(--d-sig);font-size:12px;font-weight:800}.sonalit-theme-option.is-selected .sonalit-theme-check{background:var(--d-sg);border-color:var(--d-sig)}
+.d-main-col .bg-slate-950{background-color:var(--d-void)!important}.d-main-col .bg-slate-900{background-color:var(--d-carbon)!important}.d-main-col .bg-slate-800{background-color:var(--d-well)!important}.d-main-col .bg-slate-700{background-color:var(--d-lift)!important}.d-main-col .bg-slate-600{background-color:var(--d-lift2)!important}.d-main-col .border-slate-700{border-color:var(--d-rim2)!important}.d-main-col .border-slate-600{border-color:var(--d-rim3)!important}.d-main-col .text-slate-200,.d-main-col .text-slate-300{color:var(--d-t1)!important}.d-main-col .text-slate-400,.d-main-col .text-slate-500{color:var(--d-t2)!important}.d-main-col .text-slate-600,.d-main-col .text-slate-700{color:var(--d-t3)!important}.d-main-col .text-white{color:var(--d-t1)!important}.d-main-col .bg-orange-600{background-color:var(--d-orange)!important}.d-main-col .text-orange-400,.d-main-col .text-orange-300{color:var(--d-orange)!important}.d-main-col .border-orange-500{border-color:var(--d-orange)!important}.d-main-col .focus\\:border-orange-500:focus{border-color:var(--d-orange)!important}.d-main-col .hover\\:bg-orange-700:hover{background-color:var(--d-orange)!important}
+html,body,#root{background:var(--d-void)}
 
 /* ── System-wide font override ─────────────────────────────────────────
    Forces Inter everywhere, including on the ~60 components that set
@@ -272,4 +287,82 @@ html, body, #root, * {
 /* ── Clip-corner card accent ─────────────────────────────────────────── */
 .d-clip {
   clip-path: polygon(0 0, calc(100% - 13px) 0, 100% 13px, 100% 100%, 0 100%);
+}
+
+
+/* ── Sonalit multi-theme system ─────────────────────────────────────────
+   Theme changes are presentation-only: operational semantics, status colors,
+   map layers, telemetry meaning and permissions are intentionally untouched.
+   All themes expose the same token contract so a component cannot accidentally
+   become theme-specific. */
+:root[data-theme="obsidian"] {
+  --d-void:#030711; --d-carbon:#060b18; --d-deep:#0a1120; --d-well:#0d1428;
+  --d-surf:#101a30; --d-lift:#16213a; --d-lift2:#1c2a48;
+  --d-rim:rgba(140,170,255,.09); --d-rim2:rgba(140,170,255,.17); --d-rim3:rgba(140,170,255,.32);
+  --d-sig:#22e8ff; --d-sig2:#17b8cc; --d-sig3:#128a9c; --d-sg:rgba(34,232,255,.13); --d-sg2:rgba(34,232,255,.07); --d-sglow:rgba(34,232,255,.6);
+  --d-orange:#8b6bff; --d-og:rgba(139,107,255,.14); --d-oglow:rgba(139,107,255,.6);
+  --d-t1:#eaf2ff; --d-t2:#7c8aae; --d-t3:#3e4a6b; --d-t4:#1a2338;
+}
+:root[data-theme="arctic"] {
+  --d-void:#f7fbff; --d-carbon:#f1f6fb; --d-deep:#e9f1f8; --d-well:#ffffff; --d-surf:#f5f9fd; --d-lift:#e5eef7; --d-lift2:#d7e4f0;
+  --d-rim:rgba(18,43,69,.08); --d-rim2:rgba(18,43,69,.14); --d-rim3:rgba(18,43,69,.25);
+  --d-sig:#087ea4; --d-sig2:#086b8a; --d-sig3:#075873; --d-sg:rgba(8,126,164,.12); --d-sg2:rgba(8,126,164,.06); --d-sglow:rgba(8,126,164,.35);
+  --d-orange:#4263eb; --d-og:rgba(66,99,235,.11); --d-oglow:rgba(66,99,235,.35);
+  --d-t1:#102033; --d-t2:#52667b; --d-t3:#8497aa; --d-t4:#c6d3df;
+}
+:root[data-theme="graphite"] {
+  --d-void:#0d0f12; --d-carbon:#121519; --d-deep:#171b20; --d-well:#1b2026; --d-surf:#20262d; --d-lift:#28303a; --d-lift2:#333d48;
+  --d-rim:rgba(201,215,230,.08); --d-rim2:rgba(201,215,230,.15); --d-rim3:rgba(201,215,230,.27);
+  --d-sig:#8cc8ff; --d-sig2:#5ca8e8; --d-sig3:#3b82c4; --d-sg:rgba(140,200,255,.12); --d-sg2:rgba(140,200,255,.06); --d-sglow:rgba(140,200,255,.45);
+  --d-orange:#b7c7ff; --d-og:rgba(183,199,255,.10); --d-oglow:rgba(183,199,255,.35);
+  --d-t1:#f0f4f8; --d-t2:#9ba8b6; --d-t3:#5c6977; --d-t4:#303942;
+}
+:root[data-theme="copper"] {
+  --d-void:#100b08; --d-carbon:#17100d; --d-deep:#201611; --d-well:#271b15; --d-surf:#302119; --d-lift:#3a281e; --d-lift2:#493227;
+  --d-rim:rgba(242,184,132,.09); --d-rim2:rgba(242,184,132,.17); --d-rim3:rgba(242,184,132,.30);
+  --d-sig:#f0b36b; --d-sig2:#d99046; --d-sig3:#b96f31; --d-sg:rgba(240,179,107,.13); --d-sg2:rgba(240,179,107,.06); --d-sglow:rgba(240,179,107,.45);
+  --d-orange:#e67e4f; --d-og:rgba(230,126,79,.13); --d-oglow:rgba(230,126,79,.45);
+  --d-t1:#fff2e8; --d-t2:#c3a99a; --d-t3:#795f51; --d-t4:#49372e;
+}
+:root[data-theme="signal"] {
+  --d-void:#050b07; --d-carbon:#08120c; --d-deep:#0d1a11; --d-well:#112116; --d-surf:#162a1b; --d-lift:#1d3622; --d-lift2:#29462e;
+  --d-rim:rgba(190,238,92,.09); --d-rim2:rgba(190,238,92,.17); --d-rim3:rgba(190,238,92,.30);
+  --d-sig:#b7ed4a; --d-sig2:#8dcc2d; --d-sig3:#6da41f; --d-sg:rgba(183,237,74,.14); --d-sg2:rgba(183,237,74,.07); --d-sglow:rgba(183,237,74,.48);
+  --d-orange:#4de1a3; --d-og:rgba(77,225,163,.12); --d-oglow:rgba(77,225,163,.42);
+  --d-t1:#f1f8ed; --d-t2:#9eae9c; --d-t3:#607060; --d-t4:#344034;
+}
+:root[data-theme="ivory"] {
+  --d-void:#fbfaf6; --d-carbon:#f3f1eb; --d-deep:#ebe9e2; --d-well:#fffefb; --d-surf:#f7f5ef; --d-lift:#e8e6df; --d-lift2:#d9d7d0;
+  --d-rim:rgba(39,45,53,.09); --d-rim2:rgba(39,45,53,.15); --d-rim3:rgba(39,45,53,.25);
+  --d-sig:#167a69; --d-sig2:#126556; --d-sig3:#0f5448; --d-sg:rgba(22,122,105,.12); --d-sg2:rgba(22,122,105,.06); --d-sglow:rgba(22,122,105,.34);
+  --d-orange:#245bff; --d-og:rgba(36,91,255,.10); --d-oglow:rgba(36,91,255,.32);
+  --d-t1:#1c252d; --d-t2:#5d6872; --d-t3:#8c959c; --d-t4:#c9cdd0;
+}
+
+/* Bridge legacy utility classes into the theme contract. This deliberately
+   targets only neutral UI utilities; red/amber/green status utilities remain
+   semantic and therefore do not change with appearance. */
+:root[data-theme] body { background:var(--d-void); color:var(--d-t1); }
+:root[data-theme] .bg-slate-950, :root[data-theme] .bg-slate-900,
+:root[data-theme] .bg-slate-800, :root[data-theme] .bg-slate-700,
+:root[data-theme] .bg-slate-600 { background-color:var(--d-well) !important; }
+:root[data-theme] .bg-slate-800\/50, :root[data-theme] .bg-slate-900\/50 { background-color:color-mix(in srgb,var(--d-well) 70%,transparent) !important; }
+:root[data-theme] .border-slate-700, :root[data-theme] .border-slate-600,
+:root[data-theme] .border-slate-500 { border-color:var(--d-rim2) !important; }
+:root[data-theme] .text-white, :root[data-theme] .text-slate-100,
+:root[data-theme] .text-slate-200, :root[data-theme] .text-slate-300 { color:var(--d-t1) !important; }
+:root[data-theme] .text-slate-400, :root[data-theme] .text-slate-500 { color:var(--d-t2) !important; }
+:root[data-theme] .text-slate-600 { color:var(--d-t3) !important; }
+:root[data-theme] .bg-orange-600, :root[data-theme] .bg-orange-500 { background-color:var(--d-orange) !important; }
+:root[data-theme] .hover\:bg-orange-700:hover, :root[data-theme] .hover\:bg-orange-500:hover { background-color:color-mix(in srgb,var(--d-orange) 86%,#000) !important; }
+:root[data-theme] .text-orange-400, :root[data-theme] .text-orange-300 { color:var(--d-orange) !important; }
+:root[data-theme] .border-orange-500, :root[data-theme] .border-orange-600 { border-color:var(--d-orange) !important; }
+:root[data-theme] input, :root[data-theme] select, :root[data-theme] textarea { color:var(--d-t1); background-color:var(--d-well); border-color:var(--d-rim2); }
+:root[data-theme] input::placeholder, :root[data-theme] textarea::placeholder { color:var(--d-t3); }
+:root[data-theme] ::selection { background:var(--d-sg); color:var(--d-t1); }
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme] *, :root[data-theme] *::before, :root[data-theme] *::after {
+    scroll-behavior:auto !important;
+  }
 }
