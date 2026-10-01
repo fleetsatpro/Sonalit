@@ -4,6 +4,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { STREET_STYLE, SAT_STYLE } from '../../../lib/mapStyles.js'
 import { geoCircle } from '../../../lib/geoMath.js'
 import { CONTINENT_VIEWS } from '../utils/map.js'
+import { spatialPixelRatio, spatialCanvasContextAttributes } from '../../../lib/spatialRendering.js'
 import { LEVEL_COLOR } from '../utils/colors.js'
 import MapPopup from './MapPopup.js'
 import type { RiskZone, Continent } from '../types/risk.js'
@@ -82,6 +83,9 @@ export default function RiskMap({ zones, activeCont, activeZoneId, heatVisible, 
       center: [20, 10],
       zoom: 1.3,
       attributionControl: false,
+      pixelRatio: spatialPixelRatio(),
+      maxCanvasSize: [8192, 8192],
+      canvasContextAttributes: spatialCanvasContextAttributes,
     })
     m.addControl(new maplibregl.AttributionControl({ compact: true }))
     m.on('load', () => setMapReady(true))

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { spatialPixelRatio, spatialCanvasContextAttributes } from '../lib/spatialRendering.js';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -126,6 +127,9 @@ export default function PortalMap({
       container: containerRef.current,
       style: MAP_STYLE,
       center: [34, -1],
+      pixelRatio: spatialPixelRatio(),
+      maxCanvasSize: [8192, 8192],
+      canvasContextAttributes: spatialCanvasContextAttributes,
       zoom: 5,
       attributionControl: false,
     });

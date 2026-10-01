@@ -1,3 +1,4 @@
+import { spatialPixelRatio, spatialCanvasContextAttributes } from '../../lib/spatialRendering.js'
 import React, { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -291,6 +292,9 @@ const TacticalMap = React.memo(function TacticalMap({ fill = false }: { fill?: b
       container: mapContainer.current,
       style: STREET_STYLE,
       center: EA_CENTER, zoom: EA_ZOOM, attributionControl: false,
+      pixelRatio: spatialPixelRatio(),
+      maxCanvasSize: [8192, 8192],
+      canvasContextAttributes: spatialCanvasContextAttributes,
       transformRequest: trafficTransformRequest,
     });
     map.on('error', () => {});

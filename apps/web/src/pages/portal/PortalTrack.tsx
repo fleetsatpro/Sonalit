@@ -3,6 +3,7 @@ import { useNavigate, useParams } from '@tanstack/react-router';
 import { AlertTriangle, ArrowLeft, Clock, MapPin, Shield, Truck } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { spatialPixelRatio, spatialCanvasContextAttributes } from '../../lib/spatialRendering.js';
 import {
   PortalShell, Badge, ProgressBar, RouteRibbon, MapShell,
   TruckRow, EscortPanel, fmtDateTime,
@@ -141,6 +142,9 @@ function TrackMap({ convoyId, vehicles }: { convoyId: string; vehicles: Vehicle[
       container: containerRef.current,
       style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
       center: [first.current_lng!, first.current_lat!],
+      pixelRatio: spatialPixelRatio(),
+      maxCanvasSize: [8192, 8192],
+      canvasContextAttributes: spatialCanvasContextAttributes,
       zoom: located.length > 1 ? 7 : 10,
       attributionControl: false,
     });
