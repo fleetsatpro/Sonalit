@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-type Theme = 'dark' | 'light';
+export const SONALIT_THEMES = ['dark', 'light', 'obsidian', 'arctic', 'graphite', 'copper', 'signal', 'ivory'] as const;
+export type Theme = typeof SONALIT_THEMES[number];
 
 // The theme field existed here before but nothing ever applied it — no
 // component read useUIStore.theme, so switching it had zero visible effect.
