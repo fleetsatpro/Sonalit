@@ -360,7 +360,7 @@ html, body, #root, * {
    --d-ok = healthy. Only visual presentation changes.
    ═══════════════════════════════════════════════════════════════════════ */
 
-:root[data-theme="arctic-signal"] {
+:root[data-theme="arctic"] {
   --d-font: 'Sora', system-ui, sans-serif;
   --d-void: #eef4f8;
   --d-carbon: #f7fafc;
@@ -399,7 +399,7 @@ html, body, #root, * {
   --d-grid: rgba(20,70,90,.08);
 }
 
-:root[data-theme="graphite-pro"] {
+:root[data-theme="graphite"] {
   --d-void: #111315;
   --d-carbon: #17191c;
   --d-deep: #1d2024;
@@ -437,7 +437,7 @@ html, body, #root, * {
   --d-grid: rgba(220,230,235,.06);
 }
 
-:root[data-theme="copper-dusk"] {
+:root[data-theme="copper"] {
   --d-void: #100b09;
   --d-carbon: #18110e;
   --d-deep: #211713;
@@ -475,7 +475,7 @@ html, body, #root, * {
   --d-grid: rgba(255,210,180,.06);
 }
 
-:root[data-theme="signal-lime"] {
+:root[data-theme="signal"] {
   --d-void: #080b07;
   --d-carbon: #0e120c;
   --d-deep: #151a11;
@@ -513,7 +513,7 @@ html, body, #root, * {
   --d-grid: rgba(220,255,160,.06);
 }
 
-:root[data-theme="ivory-daylight"] {
+:root[data-theme="ivory"] {
   --d-void: #f4f2ed;
   --d-carbon: #fbfaf7;
   --d-deep: #efeee8;
