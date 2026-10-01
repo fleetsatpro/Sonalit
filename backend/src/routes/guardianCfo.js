@@ -541,17 +541,19 @@ router.post('/login', optionalDeviceAuth, cfoLoginLimiter, async (req, res, next
 
     if (!deviceId) {
       const newDevice = await query(
-        `INSERT INTO guardian_devices (name, status, assignment_type, assignment_id)
-         VALUES ($1, 'active', 'user', $2)
+        `INSERT INTO guardian_devices (name, status, assignment_type, assignment_id, org_id)
+         VALUES ($1, 'active', 'user', $2, $3)
          RETURNING id, token`,
-        [`CFO-${user.name}`, user.id]
+        [`CFO-${user.name}`, user.id, user.org_id]
       );
       deviceId = newDevice.rows[0].id;
       deviceToken = newDevice.rows[0].token;
     } else {
       await query(
-        `UPDATE guardian_devices SET assignment_id = $1, assignment_type = 'user', updated_at = NOW() WHERE id = $2`,
-        [user.id, deviceId]
+        `UPDATE guardian_devices
+           SET assignment_id = $1, assignment_type = 'user', org_id = $3, updated_at = NOW()
+         WHERE id = $2 AND org_id = $3`,
+        [user.id, deviceId, user.org_id]
       );
     }
 
