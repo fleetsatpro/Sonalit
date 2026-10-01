@@ -22,7 +22,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("String", "API_BASE_URL", "\"https://sonalit-production.up.railway.app/api/v1\"")
-        buildConfigField("String", "CENTRIFUGO_URL", "\"wss://centrifugo.sonalit.io/connection/websocket\"")
+        buildConfigField("String", "CENTRIFUGO_URL", "\"wss://centrifugo-production-c103.up.railway.app/connection/websocket\"")
     }
 
     signingConfigs {
