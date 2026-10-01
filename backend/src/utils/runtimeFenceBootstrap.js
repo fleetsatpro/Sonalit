@@ -33,7 +33,7 @@ let cronGateInstalled = false;
 
 function shouldTakeOver({ takeoverRequested, incomingDeploymentId, currentDeploymentId }) {
   if (takeoverRequested) return true;
-  return Boolean(incomingDeploymentId) && currentDeploymentId !== incomingDeploymentId;
+  return Boolean(incomingDeploymentId && currentDeploymentId) && currentDeploymentId !== incomingDeploymentId;
 }
 
 function classifyFenceStart({
@@ -47,7 +47,7 @@ function classifyFenceStart({
 }) {
   if (!production || standby) return 'bypass';
   if (!currentOwner || stale || takeoverRequested) return 'active';
-  if (incomingDeploymentId && currentDeploymentId !== incomingDeploymentId) return 'active';
+  if (incomingDeploymentId && currentDeploymentId && currentDeploymentId !== incomingDeploymentId) return 'active';
   return 'refuse';
 }
 
@@ -160,7 +160,7 @@ async function claimInChild() {
       }
 
       if (current.owner_id && current.owner_id !== ownerId && !stale && (takeover || controlledRailwayReplacement)) {
-        console.warn(
+        console.log(
           controlledRailwayReplacement
             ? "SONALIT runtime fence: Railway replacement deployment " + railwayDeploymentId + " taking over from active owner " + current.owner_id
             : "SONALIT runtime fence: takeover requested; replacing active owner " + current.owner_id
