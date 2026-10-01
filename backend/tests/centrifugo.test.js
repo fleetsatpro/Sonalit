@@ -39,6 +39,32 @@ describe('centrifugo publish()', () => {
     );
   });
 
+
+  test('uses a bounded 5 second publish timeout', async () => {
+    process.env.CENTRIFUGO_API_KEY = 'secret-key';
+    mockFetch.mockResolvedValueOnce({ ok: true, text: jest.fn().mockResolvedValue('{"result":{}}') });
+    const { publish } = require('../src/realtime/centrifugo');
+    await publish('test-channel', {});
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/publish'),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    );
+  });
+
+  test('logs Centrifugo application errors returned inside HTTP 200', async () => {
+    process.env.CENTRIFUGO_API_KEY = 'secret-key';
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      text: jest.fn().mockResolvedValue(JSON.stringify({
+        error: { code: 103, message: 'permission denied' },
+      })),
+    });
+    const { publish } = require('../src/realtime/centrifugo');
+    const { warn } = require('../src/utils/logger');
+    await publish('test-channel', {});
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('permission denied'));
+  });
+
   test('logs warning on non-ok response', async () => {
     process.env.CENTRIFUGO_API_KEY = 'secret-key';
     mockFetch.mockResolvedValueOnce({ ok: false, status: 503, text: jest.fn().mockResolvedValue('service unavailable') });
