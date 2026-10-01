@@ -156,3 +156,21 @@ test('tenant A cannot attach tenant B CFO or device to tenant A convoy', async (
     [CONVOY_A, USER_B, DEV_B]
   ))).rejects.toThrow(/tenant_scope_parent_mismatch|tenant_scope/i);
 });
+
+
+test('sonalit_app sees zero tenant rows when tenant context is unset', async () => {
+  if (skip()) return;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SET LOCAL ROLE sonalit_app');
+    const result = await client.query(
+      'SELECT id FROM vehicles WHERE id IN ($1,$2)',
+      [VEH_A, VEH_B],
+    );
+    expect(result.rows).toHaveLength(0);
+    await client.query('ROLLBACK');
+  } finally {
+    client.release();
+  }
+});
