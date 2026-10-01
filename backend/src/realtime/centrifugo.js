@@ -6,7 +6,7 @@ function normalizeCentrifugoUrl(raw) {
   return `http://${value}`;
 }
 
-const CENTRIFUGO_URL = normalizeCentrifugoUrl(process.env.CENTRIFUGO_URL);
+const CENTRIFUGO_URL = normalizeCentrifugoUrl(process.env.CENTRIFUGO_API_URL || process.env.CENTRIFUGO_URL);
 const CENTRIFUGO_API_KEY = process.env.CENTRIFUGO_API_KEY || '';
 
 async function publish(channel, data) {
@@ -14,10 +14,15 @@ async function publish(channel, data) {
   try {
     const resp = await fetch(`${CENTRIFUGO_URL}/api/publish`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `apikey ${CENTRIFUGO_API_KEY}` },
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': CENTRIFUGO_API_KEY },
       body: JSON.stringify({ channel, data }),
     });
-    if (!resp.ok) logger.warn(`Centrifugo publish failed: ${resp.status} on ${channel}`);
+    if (!resp.ok) {
+      const body = typeof resp.text === 'function'
+        ? await resp.text().catch(() => '')
+        : '';
+      logger.warn(`Centrifugo publish failed: ${resp.status} on ${channel}${body ? ` — ${body.slice(0, 300)}` : ''}`);
+    }
   } catch (err) {
     logger.warn(`Centrifugo publish error: ${err.message}`);
   }
