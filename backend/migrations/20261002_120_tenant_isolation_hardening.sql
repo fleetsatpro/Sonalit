@@ -338,6 +338,17 @@ BEGIN
            USING (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid OR org_id IS NULL)',
         r.schema_name, r.table_name
       );
+      EXECUTE format(
+        'CREATE POLICY tenant_risk_update ON %I.%I AS RESTRICTIVE FOR UPDATE
+           USING (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)
+           WITH CHECK (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)',
+        r.schema_name, r.table_name
+      );
+      EXECUTE format(
+        'CREATE POLICY tenant_risk_delete ON %I.%I AS RESTRICTIVE FOR DELETE
+           USING (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)',
+        r.schema_name, r.table_name
+      );
     ELSE
       EXECUTE format(
         'CREATE POLICY tenant_isolation_hardening ON %I.%I AS RESTRICTIVE FOR ALL
