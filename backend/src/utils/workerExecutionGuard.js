@@ -46,11 +46,14 @@ async function startAdvisoryLeader(key, {
   let stopped = false;
   let current = null;
   let stoppingPromise = null;
+  let currentLostResolve = null;
 
   async function stop() {
     if (stoppingPromise) return stoppingPromise;
     stoppingPromise = (async () => {
       stopped = true;
+      currentLostResolve?.(new Error('advisory leader stopped'));
+      currentLostResolve = null;
       await current?.release?.();
     })();
     return stoppingPromise;
@@ -71,6 +74,7 @@ async function startAdvisoryLeader(key, {
         let lostResolve;
         const lost = new Promise((resolve) => { lostResolve = resolve; });
         const onError = (error) => lostResolve(error instanceof Error ? error : new Error(String(error)));
+        currentLostResolve = lostResolve;
 
         leadership.client.once('error', onError);
         try {
@@ -78,6 +82,7 @@ async function startAdvisoryLeader(key, {
           await lost;
         } finally {
           leadership.client.removeListener?.('error', onError);
+          if (currentLostResolve === lostResolve) currentLostResolve = null;
         }
 
         if (!stopped) {
