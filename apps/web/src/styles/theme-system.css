@@ -141,7 +141,8 @@ html[data-theme] body {
   transition: background-color .22s ease, color .22s ease;
 }
 
-html[data-theme] .bg-slate-950 { background-color: var(--son-theme-bg) !important; }\nhtml[data-theme] .bg-slate-900 { background-color: var(--son-theme-surface) !important; }
+html[data-theme] .bg-slate-950 { background-color: var(--son-theme-bg) !important; }
+html[data-theme] .bg-slate-900 { background-color: var(--son-theme-surface) !important; }
 html[data-theme] .bg-slate-800 { background-color: var(--son-theme-surface-2) !important; }
 html[data-theme] .bg-slate-700 { background-color: color-mix(in srgb, var(--son-theme-surface-2) 78%, var(--son-theme-bg)) !important; }
 html[data-theme] .border-slate-700,
@@ -172,6 +173,30 @@ html[data-theme] .hover\\:bg-orange-700:hover { background-color: var(--son-them
   --gev-amber: var(--son-theme-warning);
   --gev-red: var(--son-theme-danger);
 }
+
+:root[data-theme="arctic"] .gev-shell {
+  background:
+    radial-gradient(circle at 48% 44%, rgba(22,119,255,.08), transparent 34%),
+    radial-gradient(circle at 82% 16%, rgba(17,166,199,.08), transparent 28%),
+    linear-gradient(180deg, #f7fbff 0%, #e9f1f5 100%);
+  color: var(--son-theme-text);
+}
+:root[data-theme="arctic"] .gev-shell .gev-topbar,
+:root[data-theme="arctic"] .gev-shell .gev-panel,
+:root[data-theme="arctic"] .gev-shell .gev-rail,
+:root[data-theme="arctic"] .gev-shell .gev-ribbon {
+  background: rgba(255,255,255,.82);
+  box-shadow: 0 24px 70px rgba(16,57,75,.10), inset 0 1px 0 rgba(255,255,255,.95);
+}
+:root[data-theme="arctic"] .gev-shell .gev-stage { background: #edf4f7; }
+:root[data-theme="arctic"] .gev-shell .gev-external-name,
+:root[data-theme="arctic"] .gev-shell .gev-title,
+:root[data-theme="arctic"] .gev-shell .gev-panel-title,
+:root[data-theme="arctic"] .gev-shell .gev-entity-title { color: #10212a; text-shadow: none; }
+:root[data-theme="arctic"] .gev-shell .gev-subtitle,
+:root[data-theme="arctic"] .gev-shell .gev-panel-meta,
+:root[data-theme="arctic"] .gev-shell .gev-footnote,
+:root[data-theme="arctic"] .gev-shell .gev-external-meta { color: #5b737e; }
 
 :root[data-theme="ivory"] .gev-shell {
   background:
