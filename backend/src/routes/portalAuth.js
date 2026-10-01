@@ -14,6 +14,7 @@ const rateLimit = require('express-rate-limit');
 const { query } = require('../config/database');
 const { asyncHandler } = require('../middleware/error');
 const { clientAuth } = require('../middleware/clientAuth');
+const logger = require('../utils/logger');
 
 // Rate limit: 5 requests / 15 min / IP for magic-link requests
 const requestLinkLimiter = rateLimit({
@@ -80,7 +81,7 @@ router.post('/request-link', requestLinkLimiter, asyncHandler(async (req, res) =
 
     const rawToken = crypto.randomBytes(32).toString('hex');
     const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
     await query(
       `INSERT INTO client_magic_links (org_id, client_id, token_hash, expires_at)
@@ -94,12 +95,11 @@ router.post('/request-link', requestLinkLimiter, asyncHandler(async (req, res) =
     const sent = await sendMagicLinkEmail(email, magicLink).catch(() => false);
 
     if (!sent) {
-      // No email provider — return the link directly so it can be used immediately.
-      // In production, configure RESEND_API_KEY or SMTP_HOST to send real emails.
-      return res.json({
-        message: 'Email delivery not configured. Use the link below to log in.',
-        _link: magicLink,
-      });
+      // Never return a live authentication token to the requester. Doing so would
+      // turn a temporary email-provider outage/misconfiguration into an account
+      // takeover primitive: anyone could request another person's email and receive
+      // their login credential in the HTTP response.
+      logger.warn(`Portal magic-link delivery unavailable for configured client ${client_id}`);
     }
   }
 
@@ -113,10 +113,16 @@ router.post('/verify', asyncHandler(async (req, res) => {
 
   const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
 
+  // Consume the credential atomically. A SELECT followed by UPDATE is raceable:
+  // two concurrent verifications could both observe an unused token. The single
+  // conditional UPDATE makes the magic link genuinely one-time.
   const linkResult = await query(
-    `SELECT id, client_id, org_id, expires_at, used_at
-       FROM client_magic_links
-      WHERE token_hash = $1`,
+    `UPDATE client_magic_links
+        SET used_at = NOW()
+      WHERE token_hash = $1
+        AND used_at IS NULL
+        AND expires_at > NOW()
+      RETURNING id, client_id, org_id, expires_at, used_at`,
     [tokenHash],
   );
 
@@ -126,20 +132,16 @@ router.post('/verify', asyncHandler(async (req, res) => {
 
   const link = linkResult.rows[0];
 
-  if (link.used_at || new Date(link.expires_at) < new Date()) {
-    return res.status(401).json({ error: 'Invalid or expired link' });
-  }
-
-  // Mark as used
-  await query(
-    `UPDATE client_magic_links SET used_at = NOW() WHERE id = $1`,
-    [link.id],
-  );
-
   // Load linked convoy_ids
   const linksResult = await query(
-    `SELECT convoy_id FROM cargo_client_links WHERE client_id = $1`,
-    [link.client_id],
+    `SELECT ccl.convoy_id
+       FROM cargo_client_links ccl
+       JOIN convoys c ON c.id = ccl.convoy_id
+      WHERE ccl.client_id = $1
+        AND ccl.org_id = $2
+        AND c.org_id = $2
+        AND c.deleted_at IS NULL`,
+    [link.client_id, link.org_id],
   );
   const convoy_ids = linksResult.rows.map(r => r.convoy_id);
 
