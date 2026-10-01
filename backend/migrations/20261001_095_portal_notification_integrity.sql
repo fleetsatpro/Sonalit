@@ -1,13 +1,14 @@
 -- Portal notification preference integrity.
--- Preserve the newest global preference per client/org, then enforce a
--- transaction-safe uniqueness boundary for future global saves.
+-- client_notification_prefs intentionally has no created_at column, so existing
+-- duplicate global rows are reconciled deterministically by retaining the
+-- lexicographically smallest UUID before enforcing the new unique boundary.
 BEGIN;
 
 WITH ranked AS (
   SELECT id,
          ROW_NUMBER() OVER (
            PARTITION BY client_id, org_id
-           ORDER BY created_at DESC NULLS LAST, id DESC
+           ORDER BY id ASC
          ) AS rn
   FROM client_notification_prefs
   WHERE convoy_id IS NULL
