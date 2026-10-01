@@ -12,6 +12,7 @@ const { publish } = require('../realtime/centrifugo');
 const requireIdempotencyKey = require('../middleware/idempotency');
 const { COMMAND_SIGNING_SECRET, signCommand } = require('../utils/commandSigning');
 const captureVision = require('../utils/captureVision');
+const { runWithOrgContext } = require('../utils/tenantContext');
 
 // ─── Integrity age thresholds per command type (T1.4) ────────────────────────
 const INTEGRITY_MAX_AGE = {
@@ -670,8 +671,12 @@ async function deviceAuth(req, res, next) {
       return res.status(403).json({ error: `Device is ${device.status}` });
     }
 
+    if (!device.org_id) {
+      return res.status(403).json({ error: 'device_tenant_scope_required' });
+    }
+
     req.device = device;
-    next();
+    return runWithOrgContext(device.org_id, next);
   } catch (err) {
     logger.error(`deviceAuth error: ${err.message}`);
     next(err);
