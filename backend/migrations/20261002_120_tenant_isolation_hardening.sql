@@ -9,7 +9,7 @@ BEGIN;
 -- 1. Add tenant columns to legacy child/infrastructure tables and derive them
 --    only from an authoritative tenant-bearing parent. Never guess an org.
 -- ─────────────────────────────────────────────────────────────────────────────
-DO $$
+DO $tenant$
 BEGIN
   IF to_regclass('public.convoy_assignments') IS NOT NULL THEN
     ALTER TABLE convoy_assignments ADD COLUMN IF NOT EXISTS org_id UUID;
@@ -203,7 +203,7 @@ CREATE INDEX IF NOT EXISTS idx_api_keys_org ON api_keys(org_id) WHERE org_id IS 
 -- to express role/resource rules, but none can widen the tenant boundary.
 -- FORCE RLS also closes table-owner bypasses.
 -- ─────────────────────────────────────────────────────────────────────────────
-DO $$
+DO $tenant$
 DECLARE
   r RECORD;
   has_permissive BOOLEAN;
@@ -487,7 +487,7 @@ FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_user();
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 3. Fail-closed inserts for the high-risk legacy child tables.
 -- ─────────────────────────────────────────────────────────────────────────────
-DO $$
+DO $tenant$
 DECLARE
   t TEXT;
 BEGIN
