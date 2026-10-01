@@ -455,3 +455,82 @@
     transition: none !important;
   }
 }
+
+
+/* Shared premium spatial finish — keeps GEV, XD and fleet surfaces visually coherent. */
+.spatial-command,
+.spatial-surface,
+.spatial-map-surface {
+  --sp-glass: rgba(5, 9, 16, .68);
+  --sp-edge-hi: rgba(226, 235, 247, .14);
+  background:
+    radial-gradient(900px 420px at 50% 45%, rgba(94,234,212,.025), transparent 62%),
+    radial-gradient(800px 420px at 15% 0%, rgba(196,181,253,.045), transparent 65%),
+    var(--sp-bg);
+}
+
+.spatial-header {
+  box-shadow:
+    0 22px 65px rgba(0,0,0,.30),
+    inset 0 1px 0 rgba(255,255,255,.055);
+}
+
+.spatial-panel {
+  border-color: var(--sp-edge-hi) !important;
+  background:
+    radial-gradient(420px 160px at 100% 0%, rgba(196,181,253,.055), transparent 70%),
+    linear-gradient(180deg, rgba(10,15,24,.79), rgba(5,8,14,.68)) !important;
+  box-shadow:
+    0 30px 90px rgba(0,0,0,.38),
+    inset 0 1px 0 rgba(255,255,255,.055) !important;
+  backdrop-filter: blur(26px) saturate(150%) !important;
+}
+
+.spatial-panel:hover {
+  border-color: rgba(196,181,253,.17) !important;
+}
+
+.spatial-control-rail {
+  padding: 5px;
+  gap: 5px;
+  border-color: rgba(226,235,247,.11);
+  background: rgba(4,8,14,.72);
+  box-shadow: 0 24px 60px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.055);
+  backdrop-filter: blur(24px) saturate(150%);
+}
+
+.spatial-control {
+  width: 40px !important;
+  height: 40px !important;
+  border-radius: 11px !important;
+}
+
+.spatial-legend {
+  border-color: rgba(226,235,247,.12) !important;
+  background:
+    radial-gradient(320px 140px at 0% 0%, rgba(94,234,212,.045), transparent 70%),
+    linear-gradient(180deg, rgba(8,12,20,.82), rgba(4,8,14,.68)) !important;
+  box-shadow: 0 28px 70px rgba(0,0,0,.40), inset 0 1px 0 rgba(255,255,255,.055) !important;
+}
+
+.spatial-coordinate {
+  border-color: rgba(226,235,247,.095) !important;
+  background: rgba(4,8,14,.66) !important;
+  box-shadow: 0 16px 42px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+.spatial-surface canvas,
+.spatial-map-surface canvas {
+  image-rendering: auto;
+  filter: saturate(1.035) contrast(1.012);
+}
+
+@media (min-width: 1800px) {
+  .spatial-panel { border-radius: 18px !important; }
+  .spatial-control { width: 42px !important; height: 42px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spatial-surface canvas,
+  .spatial-map-surface canvas { filter: none; }
+}
