@@ -1,9 +1,13 @@
 const logger = require('../utils/logger');
 
 function normalizeCentrifugoUrl(raw) {
-  const value = String(raw || 'http://localhost:8000').trim().replace(/\/$/, '');
+  let value = String(raw || 'http://localhost:8000').trim().replace(/\/$/, '');
+  if (/^wss?:\/\//i.test(value)) {
+    value = value.replace(/^wss:\/\//i, 'https://').replace(/^ws:\/\//i, 'http://');
+    value = value.replace(/\/connection\/websocket(?:\/)?$/i, '');
+  }
   if (/^https?:\/\//i.test(value)) return value;
-  return `http://${value}`;
+  return 'http://' + value;
 }
 
 // Publish API traffic must use an HTTP origin reachable from the backend container.
