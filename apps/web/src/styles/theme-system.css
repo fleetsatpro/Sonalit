@@ -10,3 +10,60 @@ html[data-theme="dark"]{color-scheme:dark}html[data-theme="light"]{color-scheme:
 html[data-theme]:not([data-theme="dark"]) .bg-slate-950{background-color:var(--d-void)!important}html[data-theme]:not([data-theme="dark"]) .bg-slate-900{background-color:var(--d-deep)!important}html[data-theme]:not([data-theme="dark"]) .bg-slate-800{background-color:var(--d-well)!important}html[data-theme]:not([data-theme="dark"]) .bg-slate-700{background-color:var(--d-lift)!important}html[data-theme]:not([data-theme="dark"]) .border-slate-700{border-color:var(--d-rim2)!important}html[data-theme]:not([data-theme="dark"]) .border-slate-600{border-color:var(--d-rim3)!important}html[data-theme]:not([data-theme="dark"]) .text-slate-500,html[data-theme]:not([data-theme="dark"]) .text-slate-400{color:var(--d-t2)!important}html[data-theme]:not([data-theme="dark"]) .text-slate-300,html[data-theme]:not([data-theme="dark"]) .text-slate-200,html[data-theme]:not([data-theme="dark"]) .text-white{color:var(--d-t1)!important}
 html[data-theme] input,html[data-theme] textarea,html[data-theme] select{color:var(--d-t1);border-color:var(--d-rim2);background-color:var(--d-deep)}html[data-theme] input::placeholder,html[data-theme] textarea::placeholder{color:var(--d-t2);opacity:.72}html[data-theme] :focus-visible{outline:2px solid var(--d-sig);outline-offset:2px}
 .sonalit-theme-choice{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:.75rem;width:100%;min-height:64px;padding:.75rem;border:1px solid var(--d-rim2);border-radius:10px;background:var(--d-deep);color:var(--d-t1);text-align:left;transition:transform .16s ease,border-color .16s ease,background-color .16s ease,box-shadow .16s ease}.sonalit-theme-choice:hover{transform:translateY(-1px);border-color:var(--d-rim3);background:var(--d-well)}.sonalit-theme-choice.is-selected{border-color:var(--d-sig);background:linear-gradient(135deg,var(--d-sg),transparent 72%),var(--d-well);box-shadow:0 0 0 1px var(--d-sg),0 8px 24px rgba(0,0,0,.12)}.sonalit-theme-swatch{width:34px;height:34px;border-radius:9px;border:1px solid rgba(255,255,255,.16);box-shadow:inset 0 0 0 4px rgba(255,255,255,.05)}.theme-swatch-obsidian{background:linear-gradient(135deg,#030711 0 55%,#22e8ff 55% 70%,#8b6bff 70%)}.theme-swatch-arctic{background:linear-gradient(135deg,#071018 0 55%,#69e6e8 55% 70%,#8fb7ff 70%)}.theme-swatch-graphite{background:linear-gradient(135deg,#0b0c0d 0 55%,#d9e2e6 55% 70%,#e7a66c 70%)}.theme-swatch-copper{background:linear-gradient(135deg,#100b09 0 55%,#5ee4c1 55% 70%,#ff9a62 70%)}.theme-swatch-signal{background:linear-gradient(135deg,#050909 0 55%,#b8ff5c 55% 70%,#5fffd0 70%)}.theme-swatch-ivory{background:linear-gradient(135deg,#f5f3ee 0 55%,#147a69 55% 70%,#b45309 70%)}.sonalit-theme-check{min-width:1rem;color:var(--d-sig);font-weight:700}@media (prefers-reduced-motion:reduce){.sonalit-theme-choice{transition:none}}
+
+
+/* ── Utility bridge ───────────────────────────────────────────────────────
+   The application contains mature pages that intentionally use Tailwind's
+   slate/orange utilities. These selectors bridge those legacy presentation
+   tokens into the theme system without touching operational status colours
+   (red/amber/green/emerald) or component behaviour. */
+html[data-theme] body,
+html[data-theme] #root {
+  background: var(--d-void);
+  color: var(--d-t1);
+}
+html[data-theme] .bg-slate-950 { background-color: var(--d-void) !important; }
+html[data-theme] .bg-slate-900 { background-color: var(--d-deep) !important; }
+html[data-theme] .bg-slate-800 { background-color: var(--d-well) !important; }
+html[data-theme] .bg-slate-700 { background-color: var(--d-lift) !important; }
+html[data-theme] .bg-slate-600 { background-color: var(--d-lift2) !important; }
+html[data-theme] .hover\:bg-slate-900:hover { background-color: var(--d-well) !important; }
+html[data-theme] .hover\:bg-slate-800:hover { background-color: var(--d-lift) !important; }
+html[data-theme] .hover\:bg-slate-700:hover { background-color: var(--d-lift2) !important; }
+html[data-theme] .border-slate-800 { border-color: var(--d-rim) !important; }
+html[data-theme] .border-slate-700 { border-color: var(--d-rim2) !important; }
+html[data-theme] .border-slate-600 { border-color: var(--d-rim3) !important; }
+html[data-theme] .border-slate-500 { border-color: var(--d-rim3) !important; }
+html[data-theme] .text-slate-700 { color: var(--d-t3) !important; }
+html[data-theme] .text-slate-600 { color: var(--d-t3) !important; }
+html[data-theme] .text-slate-500 { color: var(--d-t2) !important; }
+html[data-theme] .text-slate-400 { color: var(--d-t2) !important; }
+html[data-theme] .text-slate-300 { color: var(--d-t1) !important; }
+html[data-theme] .text-slate-200 { color: var(--d-t1) !important; }
+html[data-theme] .text-white { color: var(--d-t1) !important; }
+html[data-theme] .text-orange-300 { color: var(--d-sig) !important; }
+html[data-theme] .text-orange-400 { color: var(--d-sig) !important; }
+html[data-theme] .text-orange-500 { color: var(--d-sig) !important; }
+html[data-theme] .text-orange-600 { color: var(--d-sig) !important; }
+html[data-theme] .bg-orange-600 { background-color: var(--d-orange) !important; }
+html[data-theme] .bg-orange-500 { background-color: var(--d-orange) !important; }
+html[data-theme] .border-orange-500 { border-color: var(--d-orange) !important; }
+html[data-theme] .border-orange-600 { border-color: var(--d-orange) !important; }
+html[data-theme] .hover\:bg-orange-700:hover,
+html[data-theme] .hover\:bg-orange-600:hover,
+html[data-theme] .hover\:bg-orange-500:hover,
+html[data-theme] .hover\:bg-orange-400:hover { filter: brightness(1.08); }
+html[data-theme] .hover\:text-orange-300:hover,
+html[data-theme] .hover\:text-orange-400:hover { color: var(--d-sig) !important; }
+html[data-theme] .focus\:border-orange-500:focus { border-color: var(--d-sig) !important; }
+html[data-theme] ::selection {
+  background: var(--d-sg);
+  color: var(--d-t1);
+}
+
+/* Light-mode legibility for legacy utility surfaces. */
+html[data-theme="ivory"] .bg-white { background-color: #ffffff !important; }
+html[data-theme="ivory"] .text-black { color: #182126 !important; }
+html[data-theme="ivory"] .border-white\/10 { border-color: rgba(24,33,38,.10) !important; }
+html[data-theme="ivory"] .bg-white\/\[\.035\] { background-color: rgba(24,33,38,.035) !important; }
+html[data-theme="ivory"] .bg-white\/\[\.07\] { background-color: rgba(24,33,38,.07) !important; }
