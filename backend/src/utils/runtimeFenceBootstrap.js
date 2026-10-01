@@ -20,8 +20,18 @@ const isStandby = String(process.env.SONALIT_STANDBY || "").toLowerCase() === "t
 const isProduction = String(process.env.NODE_ENV || "").toLowerCase() === "production";
 const ownerId = process.env.SONALIT_RUNTIME_ID || `${os.hostname()}:${process.pid}:${crypto.randomUUID()}`;
 const takeover = String(process.env.SONALIT_FENCE_TAKEOVER || "").toLowerCase() === "true";
+const railwayDeploymentId = process.env.RAILWAY_DEPLOYMENT_ID || null;
+const isRailwayPrimary = isProduction && Boolean(railwayDeploymentId && process.env.RAILWAY_SERVICE_ID);
 const FENCE_STALE_SECONDS = Math.max(30, Number(process.env.SONALIT_FENCE_STALE_SECONDS || 60));
 const FENCE_HEARTBEAT_MS = Math.max(10_000, Number(process.env.SONALIT_FENCE_HEARTBEAT_MS || 15_000));
+
+function shouldTakeOver({ takeoverRequested, incomingDeploymentId, currentDeploymentId }) {
+  if (takeoverRequested) return true;
+  // Railway starts a replacement deployment before retiring the old one. The
+  // deployment ID lets us allow that controlled handover while still rejecting
+  // a second active replica from the same deployment.
+  return Boolean(incomingDeploymentId) && currentDeploymentId !== incomingDeploymentId;
+}
 
 async function claimInChild() {
   if (!process.env.DATABASE_URL) {
@@ -42,8 +52,13 @@ async function claimInChild() {
         id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
         owner_id TEXT,
         acquired_at TIMESTAMPTZ,
-        heartbeat_at TIMESTAMPTZ
+        heartbeat_at TIMESTAMPTZ,
+        deployment_id TEXT
       )
+    `);
+    await client.query(`
+      ALTER TABLE sonalit_runtime_fence
+      ADD COLUMN IF NOT EXISTS deployment_id TEXT
     `);
     await client.query(`
       INSERT INTO sonalit_runtime_fence (id)
@@ -55,6 +70,7 @@ async function claimInChild() {
     try {
       const { rows } = await client.query(`
         SELECT owner_id,
+               deployment_id,
                EXTRACT(EPOCH FROM (NOW() - heartbeat_at)) AS age_seconds
         FROM sonalit_runtime_fence
         WHERE id = 1
@@ -62,24 +78,35 @@ async function claimInChild() {
       `);
       const current = rows[0] || {};
       const stale = !current.owner_id || current.age_seconds == null || Number(current.age_seconds) >= FENCE_STALE_SECONDS;
+      const controlledRailwayReplacement = isRailwayPrimary && shouldTakeOver({
+        takeoverRequested: false,
+        incomingDeploymentId: railwayDeploymentId,
+        currentDeploymentId: current.deployment_id || null,
+      });
+      const canTakeOver = takeover || controlledRailwayReplacement;
 
-      if (current.owner_id && current.owner_id !== ownerId && !stale && !takeover) {
+      if (current.owner_id && current.owner_id !== ownerId && !stale && !canTakeOver) {
         console.error(`SONALIT runtime fence: active runtime ${current.owner_id} already owns the lease; refusing split-brain startup`);
         process.exitCode = 78;
         return;
       }
 
-      if (current.owner_id && current.owner_id !== ownerId && !stale && takeover) {
-        console.warn(`SONALIT runtime fence: takeover requested; replacing active owner ${current.owner_id}`);
+      if (current.owner_id && current.owner_id !== ownerId && !stale && canTakeOver) {
+        console.warn(
+          controlledRailwayReplacement
+            ? "SONALIT runtime fence: Railway replacement deployment " + railwayDeploymentId + " taking over from active owner " + current.owner_id
+            : "SONALIT runtime fence: takeover requested; replacing active owner " + current.owner_id
+        );
       }
 
       await client.query(`
         UPDATE sonalit_runtime_fence
         SET owner_id = $1,
             acquired_at = NOW(),
-            heartbeat_at = NOW()
+            heartbeat_at = NOW(),
+            deployment_id = $2
         WHERE id = 1
-      `, [ownerId]);
+      `, [ownerId, railwayDeploymentId]);
     } finally {
       await client.query("SELECT pg_advisory_unlock(hashtext('sonalit-runtime-fence'))");
     }
@@ -94,7 +121,7 @@ async function claimInChild() {
 if (isClaimChild) {
   claimInChild().finally(() => process.exit(process.exitCode || 0));
 } else if (isStandby || !isProduction || process.env.NODE_ENV === "test") {
-  module.exports = { enabled: false, standby: isStandby };
+  module.exports = { enabled: false, standby: isStandby, shouldTakeOver };
 } else {
   const childEnv = {
     ...process.env,
@@ -166,5 +193,5 @@ if (isClaimChild) {
       process.exit(78);
     });
 
-  module.exports = { enabled: true, ownerId, takeover, staleSeconds: FENCE_STALE_SECONDS };
+  module.exports = { enabled: true, ownerId, takeover, staleSeconds: FENCE_STALE_SECONDS, deploymentId: railwayDeploymentId };
 }
