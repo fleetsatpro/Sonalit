@@ -2,6 +2,7 @@ import { jwtVerify, createRemoteJWKSet, importSPKI, type JWTPayload } from 'jose
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { config } from '../config.js';
 import { AuthError } from '../lib/errors.js';
+import { tenantContext } from '../db.js';
 
 export interface RequestUser { sub: string; org_id: string; role: string; }
 declare module 'fastify' { interface FastifyRequest { user?: RequestUser; } }
@@ -40,6 +41,7 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply):
     const role = typeof payload.role === 'string' ? payload.role : '';
     if (!sub || !org_id || !role) throw new AuthError('Token missing required claims');
     request.user = { sub, org_id, role };
+    tenantContext.enterWith(org_id);
   } catch (err) {
     if (err instanceof AuthError) throw err;
     throw new AuthError('Token invalid or expired');
