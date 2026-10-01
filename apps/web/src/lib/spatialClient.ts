@@ -119,10 +119,9 @@ export function externalWorldFeatures(context: SpatialWorldContext | undefined):
     ...(context?.security ?? []),
     ...(context?.incidents ?? []),
     ...(context?.operational?.alerts ?? []),
-    ...(context?.infrastructure ?? []),
+    ...((context?.infrastructure ?? []).filter((e) => e.entityType !== 'spatial_camera' && e.entityType !== 'camera')),
     ...(context?.satellites ?? []),
     ...(context?.cameras ?? []),
-    ...((context?.infrastructure ?? []).filter((e) => e.entityType === 'spatial_camera' || e.entityType === 'camera')),
   ]
 
   const features = observations
