@@ -1,3 +1,4 @@
+import { spatialPixelRatio, spatialCanvasContextAttributes } from '../../../lib/spatialRendering.js'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import maplibregl from 'maplibre-gl'
@@ -231,7 +232,7 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
   // init map
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
-    const m = new maplibregl.Map({ container: containerRef.current, style: DARK_STYLE, center: [35.5, 1.2], zoom: 5, attributionControl: false, pixelRatio: Math.min(window.devicePixelRatio || 1, 2), transformRequest: trafficTransformRequest })
+    const m = new maplibregl.Map({ container: containerRef.current, style: DARK_STYLE, center: [35.5, 1.2], zoom: 5, attributionControl: false, pixelRatio: spatialPixelRatio(), maxCanvasSize: [8192, 8192], canvasContextAttributes: spatialCanvasContextAttributes, transformRequest: trafficTransformRequest })
     m.on('style.load', () => {
       setMapReady(true)
       syncWorldViewport()
