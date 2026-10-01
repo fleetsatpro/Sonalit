@@ -1087,3 +1087,25 @@
   .gev-external-mark::after,
   .gev-status-orbit span { animation: none !important; }
 }
+
+
+.gev-layer-all {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  background: transparent;
+  cursor: pointer;
+  transition: color .18s ease, background .18s ease;
+}
+.gev-layer-all:hover,
+.gev-layer-all[aria-pressed="true"] {
+  color: #e9edf4;
+  background: rgba(184,166,255,.045);
+}
+.gev-layer-all:focus-visible {
+  outline: 1px solid rgba(98,231,255,.65);
+  outline-offset: -2px;
+}
+@media (max-width: 860px) {
+  .gev-layer-all { width: auto; border-bottom: 0; border-right: 1px solid rgba(255,255,255,.06); padding-inline: 9px; }
+}
