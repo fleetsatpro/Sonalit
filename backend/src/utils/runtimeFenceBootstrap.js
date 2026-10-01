@@ -47,6 +47,8 @@ async function claimInChild() {
 
   try {
     await client.connect();
+    // The fence is authoritative in public, matching the migration/schema gate.
+    await client.query("SET search_path TO public");
     await client.query(`
       CREATE TABLE IF NOT EXISTS sonalit_runtime_fence (
         id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
