@@ -5,6 +5,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { Crosshair, Minus, Plus, ShieldAlert, Target, Truck } from 'lucide-react';
 import { SAT_STYLE } from '../../lib/mapStyles.js';
 import type { GlobeMember, LatLng, RiskZone } from './CorridorWorldScene.js';
+import '../../styles/spatial-command.css';
 
 const CENTER = { longitude: 36.8219, latitude: -1.2921, zoom: 5.5 };
 const XD_VECTOR_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
@@ -27,7 +28,7 @@ function bounds(route: LatLng[], members: GlobeMember[]) {
     ...route,
     ...members.filter(m => m.lat != null && m.lng != null).map(m => ({ lat: m.lat!, lng: m.lng! })),
   ];
-  if (pts.length d 2) return null;
+  if (pts.length < 2) return null;
   const lats = pts.map(p => p.lat);
   const lngs = pts.map(p => p.lng);
   const minLng = Math.min(...lngs);
@@ -59,7 +60,7 @@ function deviceContext(member: GlobeMember) {
 }
 
 export default function CorridorOperationalMap({ route, members, zones = [], focusId = null, onSelect, mapMode }: Props) {
-  const mapRef = useRefdMapRef>(null);
+  const mapRef = useRef<MapRef>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const lastFittedKeyRef = useRef<string | null>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -150,7 +151,7 @@ export default function CorridorOperationalMap({ route, members, zones = [], foc
   }, [focusId, focused, mapReady]);
 
   return (
-    <div ref={boxRef} className="relative h-full w-full overflow-hidden bg-[#070a0f]">
+    <div ref={boxRef} className="spatial-map-surface relative h-full w-full overflow-hidden bg-[#070a0f]" data-spatial-surface="corridor-2d">
       <div className="absolute inset-0 [&_.maplibregl-canvas]:brightness-[0.78] [&_.maplibregl-canvas]:contrast-[1.12] [&_.maplibregl-canvas]:saturate-[0.82] [&_.maplibregl-canvas]:will-change-transform">
         <Map
           ref={mapRef}
@@ -241,11 +242,11 @@ export default function CorridorOperationalMap({ route, members, zones = [], foc
       </div>
 
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3">
-        <div className="pointer-events-auto rounded-2xl border border-white/10 bg-[#05070c]/84 px-3 py-2.5 shadow-2xl backdrop-blur-2xl">
+        <div className="spatial-legend pointer-events-auto rounded-2xl border border-white/10 bg-[#05070c]/84 px-3 py-2.5 shadow-2xl backdrop-blur-2xl">
           <div className="flex items-center gap-2 text-[11px] font-bold font-mono uppercase tracking-[0.16em] text-violet-300"><Crosshair size={12} /> XD · 2D OPERATIONAL</div>
           <div className="mt-1 text-[10px] font-semibold font-mono text-neutral-300">OPEN VECTOR · {positionedCount}/{members.length} POSITIONED · DPR {pixelRatio.toFixed(2)}×</div>
         </div>
-        <div className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-white/10 bg-[#05070c]/90 p-1 shadow-2xl backdrop-blur-2xl">
+        <div className="spatial-control-rail pointer-events-auto flex items-center gap-1 rounded-2xl border border-white/10 bg-[#05070c]/90 p-1 shadow-2xl backdrop-blur-2xl">
           <button type="button" onClick={() => fit()} className="grid h-8 w-8 place-items-center rounded-xl text-neutral-300 hover:bg-white/10 hover:text-white" aria-label="Fit world"><Target size={14} /></button>
           <button type="button" onClick={() => mapRef.current?.getMap().zoomIn()} className="grid h-8 w-8 place-items-center rounded-xl text-neutral-300 hover:bg-white/10 hover:text-white" aria-label="Zoom in"><Plus size={14} /></button>
           <button type="button" onClick={() => mapRef.current?.getMap().zoomOut()} className="grid h-8 w-8 place-items-center rounded-xl text-neutral-300 hover:bg-white/10 hover:text-white" aria-label="Zoom out"><Minus size={14} /></button>
