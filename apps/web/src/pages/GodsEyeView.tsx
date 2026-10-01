@@ -68,6 +68,7 @@ export default function GodsEyeView() {
   const [view, setView] = useState<View>('3D')
   const [selected, setSelected] = useState<LiveVehicle | null>(null)
   const [selectedExternalId, setSelectedExternalId] = useState<string | null>(null)
+  const [visibleLayers, setVisibleLayers] = useState<Set<WorldContextLayer>>(() => new Set(WORLD_CONTEXT_LAYERS))
   const [clock, setClock] = useState(() => new Date())
 
   const allVehicles = useMemo(() => groups.flatMap(g => g.vehicles), [groups])
@@ -112,8 +113,12 @@ export default function GodsEyeView() {
     [worldContext],
   )
   const renderableExternalEntities = useMemo(
-    () => externalEntities.filter(entity => Number.isFinite(entity.latitude) && Number.isFinite(entity.longitude)),
-    [externalEntities],
+    () => externalEntities.filter(entity => {
+      if (!Number.isFinite(entity.latitude) || !Number.isFinite(entity.longitude)) return false
+      const layer = spatialEntityLayer(entity)
+      return layer ? visibleLayers.has(layer) : false
+    }),
+    [externalEntities, visibleLayers],
   )
 
   useEffect(() => {
@@ -226,7 +231,22 @@ export default function GodsEyeView() {
                 const meta = layerMeta[layer]
                 const Icon = meta.icon
                 return (
-                  <button key={layer} type="button" className="gev-rail-button" title={meta.label} aria-label={meta.label} aria-pressed={view === '3D' && layerCounts[layer] > 0}>
+                  <button
+                    key={layer}
+                    type="button"
+                    className="gev-rail-button"
+                    title={view === '3D' ? `${meta.label} · ${visibleLayers.has(layer) ? 'visible' : 'hidden'}` : `${meta.label} · 3D only`}
+                    aria-label={meta.label}
+                    aria-pressed={view === '3D' && visibleLayers.has(layer)}
+                    aria-disabled={view !== '3D'}
+                    disabled={view !== '3D'}
+                    onClick={() => setVisibleLayers(current => {
+                      const next = new Set(current)
+                      if (next.has(layer)) next.delete(layer)
+                      else next.add(layer)
+                      return next
+                    })}
+                  >
                     <Icon size={15} />
                     <span className="gev-rail-tag">{layerCounts[layer] > 99 ? '99+' : layerCounts[layer]}</span>
                   </button>
