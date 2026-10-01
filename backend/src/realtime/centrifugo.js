@@ -1,7 +1,13 @@
 const logger = require('../utils/logger');
 
 function normalizeCentrifugoUrl(raw) {
-  const value = String(raw || 'http://localhost:8000').trim().replace(/\/$/, '');
+  let value = String(raw || 'http://localhost:8000').trim().replace(/\/$/, '');
+  // CENTRIFUGO_URL has historically been the browser WebSocket endpoint.
+  // The server API is HTTP, so tolerate ws(s) URLs here for backward compatibility.
+  if (/^wss?:\/\//i.test(value)) {
+    value = value.replace(/^wss:\/\//i, 'https://').replace(/^ws:\/\//i, 'http://');
+    value = value.replace(/\/connection\/websocket(?:\/)?$/i, '');
+  }
   if (/^https?:\/\//i.test(value)) return value;
   return `http://${value}`;
 }
