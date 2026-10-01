@@ -241,18 +241,18 @@ export default function CorridorOperationalMap({ route, members, zones = [], foc
       </div>
 
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3">
-        <div className="pointer-events-auto rounded-2xl border border-white/10 bg-[#05070c]/84 px-3 py-2.5 shadow-2xl backdrop-blur-2xl">
+        <div className="spatial-map-control pointer-events-auto rounded-2xl border border-white/10 bg-[#05070c]/84 px-3 py-2.5 shadow-2xl backdrop-blur-2xl">
           <div className="flex items-center gap-2 text-[11px] font-bold font-mono uppercase tracking-[0.16em] text-violet-300"><Crosshair size={12} /> XD · 2D OPERATIONAL</div>
           <div className="mt-1 text-[10px] font-semibold font-mono text-neutral-300">OPEN VECTOR · {positionedCount}/{members.length} POSITIONED · DPR {pixelRatio.toFixed(2)}×</div>
         </div>
-        <div className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-white/10 bg-[#05070c]/90 p-1 shadow-2xl backdrop-blur-2xl">
+        <div className="spatial-map-control pointer-events-auto flex items-center gap-1 rounded-2xl border border-white/10 bg-[#05070c]/90 p-1 shadow-2xl backdrop-blur-2xl">
           <button type="button" onClick={() => fit()} className="grid h-8 w-8 place-items-center rounded-xl text-neutral-300 hover:bg-white/10 hover:text-white" aria-label="Fit world"><Target size={14} /></button>
           <button type="button" onClick={() => mapRef.current?.getMap().zoomIn()} className="grid h-8 w-8 place-items-center rounded-xl text-neutral-300 hover:bg-white/10 hover:text-white" aria-label="Zoom in"><Plus size={14} /></button>
           <button type="button" onClick={() => mapRef.current?.getMap().zoomOut()} className="grid h-8 w-8 place-items-center rounded-xl text-neutral-300 hover:bg-white/10 hover:text-white" aria-label="Zoom out"><Minus size={14} /></button>
         </div>
       </div>
 
-      <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-xl border border-white/10 bg-[#05070c]/90 px-3 py-2.5 text-center backdrop-blur-xl">
+      <div className="spatial-status-chip pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-xl border border-white/10 bg-[#05070c]/90 px-3 py-2.5 text-center backdrop-blur-xl">
         <div className="flex items-center gap-3 text-[10px] font-bold font-mono uppercase tracking-[0.08em] text-neutral-200">
           <span>{members.length} entities</span>
           <span className="text-emerald-300">{positionedCount} positioned</span>
