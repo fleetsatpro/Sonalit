@@ -63,13 +63,9 @@ async function fireGeofenceActions(job, alert, type, severity, vehicle_id, messa
           .replace(/\{severity\}/g,  severity);
 
         if (action.action_type === 'map_alert') {
-          // geofence_actions don't have org_id; use alert's channel derived from convoy
-          const geoOrgRes = await query(
-            `SELECT c.org_id FROM alerts a JOIN convoys c ON c.id = a.convoy_id WHERE a.id = $1 LIMIT 1`,
-            [alert.id]
-          );
-          const geoOrgId = geoOrgRes.rows[0]?.org_id ?? null;
-          publish(geoOrgId ? `org#${geoOrgId}` : 'geofence:violation', {
+          const geoOrgId = alert.org_id;
+          if (!geoOrgId) throw new Error('geofence action alert missing tenant scope');
+          publish(`org#${geoOrgId}`, {
             type: 'alert.new',
             alertId:      alert.id,
             geofenceName: resolvedName,
