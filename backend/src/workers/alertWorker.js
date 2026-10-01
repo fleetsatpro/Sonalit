@@ -240,7 +240,7 @@ async function processAlert(job) {
 
   const { notificationQueue } = getQueues();
   if (notificationQueue && (severity === 'high' || severity === 'critical')) {
-    await notificationQueue.add('notify', { alertId: alert.id, severity });
+    await notificationQueue.add('notify', { alertId: alert.id, severity, org_id: orgId });
   }
 
   logger.info(`Alert created: id=${alert.id} type=${type} severity=${severity}`);
