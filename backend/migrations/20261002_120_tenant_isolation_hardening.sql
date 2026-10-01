@@ -253,6 +253,117 @@ BEGIN
 END $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- 3. Parent-derived tenant invariants.
+-- Child records inherit the authoritative parent's org_id inside the database.
+-- A tenant A session therefore cannot attach a tenant B child by guessing an ID:
+-- the parent lookup is itself RLS-scoped, and the restrictive policy rejects a
+-- mismatched org on INSERT/UPDATE.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION tenant_harden_org_from_vehicle() RETURNS trigger
+LANGUAGE plpgsql AS $
+DECLARE v_org UUID;
+BEGIN
+  SELECT org_id INTO v_org FROM vehicles WHERE id = NEW.vehicle_id;
+  IF v_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_vehicle'; END IF;
+  NEW.org_id := v_org;
+  RETURN NEW;
+END $;
+
+CREATE OR REPLACE FUNCTION tenant_harden_org_from_convoy() RETURNS trigger
+LANGUAGE plpgsql AS $
+DECLARE v_org UUID;
+BEGIN
+  SELECT org_id INTO v_org FROM convoys WHERE id = NEW.convoy_id;
+  IF v_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_convoy'; END IF;
+  NEW.org_id := v_org;
+  RETURN NEW;
+END $;
+
+CREATE OR REPLACE FUNCTION tenant_harden_org_from_device() RETURNS trigger
+LANGUAGE plpgsql AS $
+DECLARE v_org UUID;
+BEGIN
+  SELECT org_id INTO v_org FROM guardian_devices WHERE id = NEW.device_id;
+  IF v_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_device'; END IF;
+  NEW.org_id := v_org;
+  RETURN NEW;
+END $;
+
+CREATE OR REPLACE FUNCTION tenant_harden_org_from_geofence() RETURNS trigger
+LANGUAGE plpgsql AS $
+DECLARE v_org UUID;
+BEGIN
+  SELECT org_id INTO v_org FROM geofences WHERE id = NEW.geofence_id;
+  IF v_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_geofence'; END IF;
+  NEW.org_id := v_org;
+  RETURN NEW;
+END $;
+
+DROP TRIGGER IF EXISTS tenant_harden_sensor_logs ON sensor_logs;
+CREATE TRIGGER tenant_harden_sensor_logs BEFORE INSERT OR UPDATE ON sensor_logs
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_vehicle();
+
+DROP TRIGGER IF EXISTS tenant_harden_fuel_logs ON fuel_logs;
+CREATE TRIGGER tenant_harden_fuel_logs BEFORE INSERT OR UPDATE ON fuel_logs
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_vehicle();
+
+DROP TRIGGER IF EXISTS tenant_harden_documents ON documents;
+CREATE TRIGGER tenant_harden_documents BEFORE INSERT OR UPDATE ON documents
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_convoy();
+
+DROP TRIGGER IF EXISTS tenant_harden_geofence_actions ON geofence_actions;
+CREATE TRIGGER tenant_harden_geofence_actions BEFORE INSERT OR UPDATE ON geofence_actions
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_geofence();
+
+DROP TRIGGER IF EXISTS tenant_harden_convoy_assignments ON convoy_assignments;
+CREATE TRIGGER tenant_harden_convoy_assignments BEFORE INSERT OR UPDATE ON convoy_assignments
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_convoy();
+
+DROP TRIGGER IF EXISTS tenant_harden_checkpoints ON checkpoints;
+CREATE TRIGGER tenant_harden_checkpoints BEFORE INSERT OR UPDATE ON checkpoints
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_convoy();
+
+DROP TRIGGER IF EXISTS tenant_harden_trips ON trips;
+CREATE TRIGGER tenant_harden_trips BEFORE INSERT OR UPDATE ON trips
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_convoy();
+
+DROP TRIGGER IF EXISTS tenant_harden_convoy_trucks ON convoy_trucks;
+CREATE TRIGGER tenant_harden_convoy_trucks BEFORE INSERT OR UPDATE ON convoy_trucks
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_convoy();
+
+DROP TRIGGER IF EXISTS tenant_harden_convoy_cfos ON convoy_cfos;
+CREATE TRIGGER tenant_harden_convoy_cfos BEFORE INSERT OR UPDATE ON convoy_cfos
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_convoy();
+
+DROP TRIGGER IF EXISTS tenant_harden_cfo_assignments ON convoy_cfo_truck_assignments;
+CREATE TRIGGER tenant_harden_cfo_assignments BEFORE INSERT OR UPDATE ON convoy_cfo_truck_assignments
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_convoy();
+
+DROP TRIGGER IF EXISTS tenant_harden_convoy_photos ON convoy_truck_photos;
+CREATE TRIGGER tenant_harden_convoy_photos BEFORE INSERT OR UPDATE ON convoy_truck_photos
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_convoy();
+
+DROP TRIGGER IF EXISTS tenant_harden_daily_reports ON convoy_daily_reports;
+CREATE TRIGGER tenant_harden_daily_reports BEFORE INSERT OR UPDATE ON convoy_daily_reports
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_convoy();
+
+DROP TRIGGER IF EXISTS tenant_harden_device_locations ON device_locations;
+CREATE TRIGGER tenant_harden_device_locations BEFORE INSERT OR UPDATE ON device_locations
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_device();
+
+DROP TRIGGER IF EXISTS tenant_harden_device_health ON device_health;
+CREATE TRIGGER tenant_harden_device_health BEFORE INSERT OR UPDATE ON device_health
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_device();
+
+DROP TRIGGER IF EXISTS tenant_harden_device_commands ON device_commands;
+CREATE TRIGGER tenant_harden_device_commands BEFORE INSERT OR UPDATE ON device_commands
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_device();
+
+DROP TRIGGER IF EXISTS tenant_harden_field_reports ON field_reports;
+CREATE TRIGGER tenant_harden_field_reports BEFORE INSERT OR UPDATE ON field_reports
+FOR EACH ROW EXECUTE FUNCTION tenant_harden_org_from_device();
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- 3. Fail-closed inserts for the high-risk legacy child tables.
 -- ─────────────────────────────────────────────────────────────────────────────
 DO $$
