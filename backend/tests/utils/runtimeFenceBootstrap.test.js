@@ -101,3 +101,21 @@ describe('runtime fence deployment handover policy', () => {
     })).toBe(true);
   });
 });
+  
+  test('quiesces cron, workers, and HTTP server when fence is lost', async () => {
+    delete global.__sonalitFenceShutdownStarted;
+    const workerA = { close: jest.fn().mockResolvedValue(undefined) };
+    const workerB = { close: jest.fn().mockResolvedValue(undefined) };
+    const server = { close: jest.fn() };
+    global._workers = [workerA, workerB];
+    global._server = server;
+
+    const { deactivateFence, isFenceActive } = require('../../src/utils/runtimeFenceBootstrap');
+    await deactivateFence();
+
+    expect(isFenceActive()).toBe(false);
+    expect(workerA.close).toHaveBeenCalledTimes(1);
+    expect(workerB.close).toHaveBeenCalledTimes(1);
+    expect(server.close).toHaveBeenCalledTimes(1);
+    expect(global._workers).toEqual([]);
+  });
