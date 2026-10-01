@@ -192,6 +192,8 @@
 }
 
 .spatial-panel {
+  position: relative;
+  overflow: clip;
   background:
     radial-gradient(500px 180px at 100% 0%, rgba(196,181,253,.05), transparent 68%),
     linear-gradient(180deg, rgba(9,13,22,.92), rgba(5,8,14,.9)) !important;
