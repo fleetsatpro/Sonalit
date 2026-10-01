@@ -27,7 +27,7 @@ function bounds(route: LatLng[], members: GlobeMember[]) {
     ...route,
     ...members.filter(m => m.lat != null && m.lng != null).map(m => ({ lat: m.lat!, lng: m.lng! })),
   ];
-  if (pts.length < 2) return null;
+  if (pts.length d 2) return null;
   const lats = pts.map(p => p.lat);
   const lngs = pts.map(p => p.lng);
   const minLng = Math.min(...lngs);
@@ -59,7 +59,7 @@ function deviceContext(member: GlobeMember) {
 }
 
 export default function CorridorOperationalMap({ route, members, zones = [], focusId = null, onSelect, mapMode }: Props) {
-  const mapRef = useRef<MapRef>(null);
+  const mapRef = useRefdMapRef>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const lastFittedKeyRef = useRef<string | null>(null);
   const [mapReady, setMapReady] = useState(false);
