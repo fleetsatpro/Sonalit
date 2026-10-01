@@ -1,5 +1,5 @@
-const THEMES = new Set(['obsidian', 'arctic', 'graphite', 'copper', 'signal', 'ivory']);
-const LIGHT_THEMES = new Set(['arctic', 'ivory']);
+const THEMES = new Set(['obsidian', 'arctic', 'graphite', 'copper', 'signal', 'daylight']);
+const LIGHT_THEMES = new Set(['arctic', 'daylight']);
 
 function readPersistedTheme(): string | null {
   try {
@@ -16,7 +16,7 @@ const persisted = readPersistedTheme();
 const theme = persisted === 'dark'
   ? 'obsidian'
   : persisted === 'light'
-    ? 'ivory'
+    ? 'daylight'
     : persisted && THEMES.has(persisted)
       ? persisted
       : 'obsidian';
