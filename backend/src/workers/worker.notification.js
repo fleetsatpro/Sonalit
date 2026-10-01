@@ -121,7 +121,6 @@ process.on('SIGTERM', shutdown);
     retryMs: 15000,
     logger,
     onAcquire: async () => {
-      lastPulseSlot = null;
       scheduleClientPulse();
       logger.info('Notification worker client-pulse leader active');
     },
