@@ -23,6 +23,7 @@ const theme = persisted === 'dark'
 
 const root = document.documentElement;
 root.setAttribute('data-sonalit-theme', theme);
+root.classList.toggle('dark', theme !== 'ivory');
 root.setAttribute('data-theme', theme === 'ivory' ? 'light' : theme);
 root.style.colorScheme = LIGHT_THEMES.has(theme) ? 'light' : 'dark';
 
