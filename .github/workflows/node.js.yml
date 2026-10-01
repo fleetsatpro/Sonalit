@@ -131,6 +131,22 @@ jobs:
           DISABLE_REDIS: "false"
           NODE_ENV: test
 
+      - name: Generate OpenAPI snapshot
+        run: |
+          cp openapi.json /tmp/openapi.committed.json
+          node scripts/generate-openapi.js
+          cp openapi.json /tmp/openapi.generated.json
+          cp /tmp/openapi.committed.json openapi.json
+        working-directory: backend
+
+      - name: Upload generated OpenAPI snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-openapi-${{ github.run_id }}
+          path: /tmp/openapi.generated.json
+          retention-days: 1
+
       - name: OpenAPI drift check
         # Keep the generated contract in the PR gate as well as on main so API
         # route additions cannot merge without their committed specification.
