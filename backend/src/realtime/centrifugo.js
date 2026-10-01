@@ -6,7 +6,7 @@ function normalizeCentrifugoUrl(raw) {
   return `http://${value}`;
 }
 
-const CENTRIFUGO_URL = normalizeCentrifugoUrl(process.env.CENTRIFUGO_URL);
+const CENTRIFUGO_URL = normalizeCentrifugoUrl(process.env.CENTRIFUGO_API_URL || process.env.CENTRIFUGO_URL);
 const CENTRIFUGO_API_KEY = process.env.CENTRIFUGO_API_KEY || '';
 
 async function publish(channel, data) {
