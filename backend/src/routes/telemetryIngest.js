@@ -240,7 +240,7 @@ router.post('/:source/positions', ingestLimiter, ingestAuth, asyncHandler(async 
     clockOffsetMs: driftCount ? Math.round(driftSum / driftCount) : null,
   });
 
-  await query(
+  await req.db(
     `UPDATE telemetry_ingest_keys
         SET last_used_at=NOW(), events_accepted=events_accepted+$2,
             events_rejected=events_rejected+$3, updated_at=NOW()
