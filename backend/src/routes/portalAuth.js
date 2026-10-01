@@ -89,7 +89,23 @@ router.post('/request-link', requestLinkLimiter, asyncHandler(async (req, res) =
       [org_id, client_id, tokenHash, expiresAt],
     );
 
-    const portalUrl = process.env.PORTAL_URL ?? `https://${req.hostname}`;
+    // Never derive an authentication URL from the request Host header. A hostile
+    // Host value could turn the emailed credential into a link to an attacker
+    // controlled origin. Production therefore requires an explicit trusted origin.
+    const configuredPortalUrl = String(process.env.PORTAL_URL || '').trim().replace(/\/$/, '');
+    if (!configuredPortalUrl) {
+      logger.error('Portal magic-link delivery skipped: PORTAL_URL is not configured');
+      return res.json({ message: 'If that email is registered, a login link has been sent.' });
+    }
+    let portalUrl;
+    try {
+      const parsed = new URL(configuredPortalUrl);
+      if (parsed.protocol !== 'https:' && process.env.NODE_ENV === 'production') throw new Error('PORTAL_URL must use HTTPS in production');
+      portalUrl = parsed.toString().replace(/\/$/, '');
+    } catch (err) {
+      logger.error('Portal magic-link delivery skipped: invalid PORTAL_URL');
+      return res.json({ message: 'If that email is registered, a login link has been sent.' });
+    }
     const magicLink = `${portalUrl}/portal/login?token=${rawToken}`;
 
     const sent = await sendMagicLinkEmail(email, magicLink).catch(() => false);
