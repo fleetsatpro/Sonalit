@@ -69,6 +69,7 @@ test('org B sees only its own vehicle', async () => {
 // row needed, so this doesn't depend on the drivers DDL which lives outside the
 // tracked migrations).
 test('every tenant-bearing base table is FORCE-RLS protected', async () => {
+  if (skip()) return;
   const { rows } = await pool.query(`
     SELECT c.relname AS table_name,
            c.relforcerowsecurity,
@@ -116,6 +117,7 @@ test('drivers table has RLS enabled with an org_isolation policy', async () => {
 
 
 test('bootstrap credential tables retain RLS but are allowed unforced lookup', async () => {
+  if (skip()) return;
   const { rows } = await pool.query(`
     SELECT c.relname AS table_name, c.relrowsecurity
       FROM pg_class c
