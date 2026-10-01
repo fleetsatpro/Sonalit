@@ -571,4 +571,4 @@ async function recomputeZoneLevels(zones) {
   return changed;
 }
 
-module.exports = { runOsintSweep, isSweeping };
+module.exports = { runOsintSweep, isSweeping, parseModelJsonArray };
