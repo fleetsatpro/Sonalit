@@ -34,6 +34,7 @@ export async function requireAuth(req: FastifyRequest, reply: FastifyReply): Pro
     const role = typeof payload.role === 'string' ? payload.role : null;
     if (!sub || !org_id || !role) throw new Error('missing required claims');
     req.user = { sub, org_id, role };
+    tenantContext.enterWith(org_id);
   } catch {
     await reply.code(401).send({ code: 'UNAUTHENTICATED', message: 'Token invalid or expired' });
   }
