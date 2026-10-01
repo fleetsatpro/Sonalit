@@ -581,6 +581,9 @@ importers:
       fastify:
         specifier: ^5.2.1
         version: 5.8.5
+      jose:
+        specifier: ^5.9.6
+        version: 5.10.0
       ioredis:
         specifier: ^5.4.2
         version: 5.10.1
@@ -715,6 +718,9 @@ importers:
       fastify:
         specifier: ^5.2.1
         version: 5.8.5
+      jose:
+        specifier: ^5.9.6
+        version: 5.10.0
       pg:
         specifier: ^8.13.3
         version: 8.21.0
@@ -891,6 +897,9 @@ importers:
       fastify:
         specifier: ^5.2.1
         version: 5.8.5
+      jose:
+        specifier: ^5.9.6
+        version: 5.10.0
       nats:
         specifier: ^2.29.2
         version: 2.29.3
@@ -958,6 +967,9 @@ importers:
       fastify:
         specifier: ^5.2.1
         version: 5.8.5
+      jose:
+        specifier: ^5.9.6
+        version: 5.10.0
       nats:
         specifier: ^2.29.2
         version: 2.29.3
@@ -1116,6 +1128,9 @@ importers:
       fastify:
         specifier: ^5.2.1
         version: 5.8.5
+      jose:
+        specifier: ^5.9.6
+        version: 5.10.0
       nats:
         specifier: ^2.29.2
         version: 2.29.3
@@ -1177,6 +1192,9 @@ importers:
       fastify:
         specifier: ^5.2.1
         version: 5.8.5
+      jose:
+        specifier: ^5.9.6
+        version: 5.10.0
       firebase-admin:
         specifier: ^13.0.2
         version: 13.10.0
@@ -1320,6 +1338,9 @@ importers:
       fastify:
         specifier: ^5.2.1
         version: 5.8.5
+      jose:
+        specifier: ^5.9.6
+        version: 5.10.0
       nats:
         specifier: ^2.29.2
         version: 2.29.3
