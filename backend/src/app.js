@@ -694,7 +694,7 @@ if (!process.env.GENERATE_OPENAPI && process.env.NODE_ENV !== 'test') {
   });
 }
 
-if (!process.env.GENERATE_OPENAPI)
+if (!process.env.GENERATE_OPENAPI && isFenceActive())
   dbQuery(
     `INSERT INTO guardian_config (key, value_int, updated_at) VALUES ('cfo_module_enabled', 1, NOW())
      ON CONFLICT (key) DO UPDATE SET value_int = 1, updated_at = NOW()`
@@ -702,7 +702,7 @@ if (!process.env.GENERATE_OPENAPI)
 
 // ─── Workers (in-process only when ENABLE_INPROCESS_WORKERS=true, T3.1) ──────
 // In production, workers run as separate processes via worker.*.js entrypoints.
-if (process.env.ENABLE_INPROCESS_WORKERS === "true" && process.env.REDIS_URL && process.env.DISABLE_REDIS !== "true") {
+if (isFenceActive() && process.env.ENABLE_INPROCESS_WORKERS === "true" && process.env.REDIS_URL && process.env.DISABLE_REDIS !== "true") {
   try {
     const { startGPSWorker } = require("./workers/gpsWorker");
     const { startAlertWorker } = require("./workers/alertWorker");
@@ -742,6 +742,7 @@ if (process.env.ENABLE_INPROCESS_WORKERS === "true" && process.env.REDIS_URL && 
 // Railway dashboard changes. Opt out with DISABLE_INPROCESS_CONVOY_REPORT_WORKER=true
 // once/if a dedicated worker service is deployed (npm run start:worker:report).
 if (
+  isFenceActive() &&
   !global._workers?.length &&
   process.env.REDIS_URL &&
   process.env.DISABLE_REDIS !== "true" &&
