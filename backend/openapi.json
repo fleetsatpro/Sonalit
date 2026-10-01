@@ -2502,7 +2502,7 @@
         }
       }
     },
-    "/api/v1/satellites": {
+    "/api/v1/satellites/": {
       "get": {
         "operationId": "get_api_v1_satellites",
         "responses": {
@@ -2515,6 +2515,46 @@
     "/api/v1/satellites/passes": {
       "get": {
         "operationId": "get_api_v1_satellites_passes",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cctv/cameras": {
+      "get": {
+        "operationId": "get_api_v1_cctv_cameras",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cctv/nearest": {
+      "get": {
+        "operationId": "get_api_v1_cctv_nearest",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cctv/{id}/frame": {
+      "get": {
+        "operationId": "get_api_v1_cctv_id_frame",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cctv/{id}": {
+      "get": {
+        "operationId": "get_api_v1_cctv_id",
         "responses": {
           "200": {
             "description": "OK"

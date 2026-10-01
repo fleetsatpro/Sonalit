@@ -103,6 +103,16 @@ const ALERT_TYPE_MAP = {
   mechanical: 'incident', security: 'incident', communication: 'no_signal',
 };
 const SEVERITY_MAP = { low: 'info', medium: 'warning', high: 'critical', critical: 'critical' };
+const NOTIFICATION_EVENTS = new Set(['departure', 'checkpoint', 'delay', 'arrival', 'incident', 'delivered']);
+const NOTIFICATION_CHANNELS = new Set(['email', 'sms', 'whatsapp']);
+const MAX_NOTIFICATION_PREFERENCES = 6;
+function validateNotificationList(value, allowed, label) {
+  if (!Array.isArray(value) || value.length > MAX_NOTIFICATION_PREFERENCES) return { error: `${label} must be an array with at most ${MAX_NOTIFICATION_PREFERENCES} values` };
+  const unique = [...new Set(value)];
+  if (unique.length !== value.length) return { error: `${label} must not contain duplicates` };
+  if (unique.some(item => typeof item !== 'string' || !allowed.has(item))) return { error: `Invalid ${label} value` };
+  return { value: unique };
+}
 
 router.get('/convoy/:convoy_id/exceptions', clientAuth, asyncHandler(async (req, res) => {
   if (!checkAccess(req.client, req.params.convoy_id, res)) return;
@@ -144,9 +154,13 @@ router.get('/notifications', clientAuth, asyncHandler(async (req, res) => {
 router.put('/notifications', clientAuth, asyncHandler(async (req, res) => {
   const { client_id, org_id } = req.client;
   const { convoy_id, events, channels } = req.body;
-  if (!Array.isArray(events) || !Array.isArray(channels)) {
-    return res.status(400).json({ error: 'events and channels must be arrays' });
+  const eventValidation = validateNotificationList(events, NOTIFICATION_EVENTS, 'events');
+  const channelValidation = validateNotificationList(channels, NOTIFICATION_CHANNELS, 'channels');
+  if (eventValidation.error || channelValidation.error) {
+    return res.status(400).json({ error: eventValidation.error || channelValidation.error });
   }
+  const normalizedEvents = eventValidation.value;
+  const normalizedChannels = channelValidation.value;
   if (convoy_id && !req.client.convoy_ids.includes(convoy_id)) {
     return res.status(403).json({ error: 'Not authorised for this convoy' });
   }
@@ -160,18 +174,17 @@ router.put('/notifications', clientAuth, asyncHandler(async (req, res) => {
        VALUES ($1,$2,$3,$4,$5)
        ON CONFLICT (client_id, convoy_id) DO UPDATE SET events = EXCLUDED.events, channels = EXCLUDED.channels
        RETURNING convoy_id, events, channels`,
-      [client_id, org_id, convoy_id, events, channels],
+      [client_id, org_id, convoy_id, normalizedEvents, normalizedChannels],
     );
     row = r.rows[0];
   } else {
-    await query(
-      `DELETE FROM client_notification_prefs WHERE client_id = $1 AND org_id = $2 AND convoy_id IS NULL`,
-      [client_id, org_id],
-    );
     const r = await query(
       `INSERT INTO client_notification_prefs (client_id, org_id, convoy_id, events, channels)
-       VALUES ($1,$2,NULL,$3,$4) RETURNING convoy_id, events, channels`,
-      [client_id, org_id, events, channels],
+       VALUES ($1,$2,NULL,$3,$4)
+       ON CONFLICT (client_id, org_id) WHERE convoy_id IS NULL
+       DO UPDATE SET events = EXCLUDED.events, channels = EXCLUDED.channels
+       RETURNING convoy_id, events, channels`,
+      [client_id, org_id, normalizedEvents, normalizedChannels],
     );
     row = r.rows[0];
   }
@@ -356,6 +369,7 @@ router.get('/convoy/:convoy_id/overview', clientAuth, asyncHandler(async (req, r
             (SELECT GREATEST(0, COUNT(DISTINCT ccl2.client_id) - 1)
              FROM cargo_client_links ccl2
              WHERE ccl2.convoy_id = c.id
+               AND ccl2.org_id = c.org_id
             ) AS coload_count,
             (SELECT COUNT(*) FROM alerts a WHERE a.convoy_id = c.id AND a.resolved_at IS NULL) AS exception_count
      FROM convoys c

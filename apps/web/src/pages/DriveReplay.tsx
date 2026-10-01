@@ -237,6 +237,7 @@ function CesiumDrive({ points, snapped, provider, confidence }:
     applyCamera(start);
 
     const total = Cesium.JulianDate.secondsDifference(stop, start) || 1;
+    let disposed = false;
     const onTick = () => {
       // A tick can still be dispatched while the viewer is being torn down.
       if (viewer.isDestroyed()) return;
@@ -256,11 +257,11 @@ function CesiumDrive({ points, snapped, provider, confidence }:
       });
     };
     viewer.clock.onTick.addEventListener(onTick);
-    // React runs effect cleanups in declaration order, so the viewer-init effect
-    // above has ALREADY destroyed the viewer by the time this runs on unmount.
-    // Touching viewer.clock then reads _cesiumWidget.clock off an undefined
-    // widget — "Cannot read properties of undefined (reading 'clock')".
-    return () => { if (!viewer.isDestroyed()) viewer.clock.onTick.removeEventListener(onTick); };
+    // The viewer-init effect above may already have destroyed the viewer when
+    // this cleanup runs. Its destroy() path removes Cesium listeners, so this
+    // cleanup only marks the callback disposed and deliberately avoids touching
+    // viewer.clock.
+    return () => { disposed = true; };
   }, [points]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setMultiplier = (m: number) => {

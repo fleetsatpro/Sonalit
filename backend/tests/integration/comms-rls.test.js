@@ -35,8 +35,8 @@ beforeAll(async () => {
   // Seed two org owners + one channel per org (superuser bypasses RLS).
   await pool.query(
     `INSERT INTO users (id, email, name, role, org_id, status, password_hash) VALUES
-       ($1, 'a-rls@ex.test', 'A Admin', 'admin', $3, 'active', 'x'),
-       ($2, 'b-rls@ex.test', 'B Admin', 'admin', $4, 'active', 'x')
+       ($1, 'a-rls@ex.test', 'A Operator', 'operator', $3, 'active', 'x'),
+       ($2, 'b-rls@ex.test', 'B Operator', 'operator', $4, 'active', 'x')
      ON CONFLICT (id) DO NOTHING`,
     [USER_A, USER_B, ORG_A, ORG_B],
   );

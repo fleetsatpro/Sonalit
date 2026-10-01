@@ -42,9 +42,12 @@ describe('spatial CCTV capability', () => {
     expect(rankNearest(SAMPLE_CAMERAS, target, 10, true).every(x => x.relation.visible)).toBe(true);
   });
 
-  test('SSRF guard blocks clear private targets and non-HTTPS URLs', async () => {
+  test('SSRF guard blocks private/reserved targets, requires explicit IP allowlisting, and rejects non-HTTPS URLs', async () => {
     await expect(assertSafeUrl('http://127.0.0.1/frame.jpg', ['127.0.0.1'])).rejects.toMatchObject({ failureClass:'invalid_data' });
     await expect(assertSafeUrl('https://localhost/frame.jpg', ['localhost'])).rejects.toMatchObject({ failureClass:'invalid_data' });
+    await expect(assertSafeUrl('https://100.64.0.1/frame.jpg', ['100.64.0.1'])).rejects.toMatchObject({ failureClass:'invalid_data' });
+    await expect(assertSafeUrl('https://8.8.8.8/frame.jpg', ['video.example.com'])).rejects.toMatchObject({ failureClass:'invalid_data' });
+    await expect(assertSafeUrl('https://8.8.8.8/frame.jpg', ['8.8.8.8'])).resolves.toBeTruthy();
     await expect(assertSafeUrl('https://example.com/frame.jpg', ['not-example.com'])).rejects.toMatchObject({ failureClass:'invalid_data' });
     expect(hostMatches('cam.video.example.com', 'video.example.com')).toBe(true);
   });

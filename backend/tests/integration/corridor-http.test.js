@@ -67,7 +67,7 @@ beforeAll(async () => {
 
   await pool.query(
     `INSERT INTO users (id, email, name, password_hash, role, status, org_id)
-     VALUES ($1, 'itest-corridor@sonalit.test', 'ITest Ops', 'x', 'admin', 'active', $2)
+     VALUES ($1, 'itest-corridor@sonalit.test', 'ITest Ops', 'x', 'operator', 'active', $2)
      ON CONFLICT (id) DO UPDATE SET status = 'active', org_id = EXCLUDED.org_id`,
     [USER, ORG],
   );

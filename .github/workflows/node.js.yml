@@ -25,6 +25,9 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -112,6 +115,16 @@ jobs:
         env:
           DATABASE_URL: postgresql://sonalit:sonalit@localhost:5432/sonalit_test
 
+      - name: Identity security invariants (SQL)
+        # Database-enforced business invariants must be tested at the database
+        # boundary, including concurrency-safe protection of the last active
+        # administrator in an organisation.
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -f backend/tests/sql/identity_invariants.sql
+        env:
+          DATABASE_URL: postgresql://sonalit:sonalit@localhost:5432/sonalit_test
+
       - name: Backend integration tests
         run: pnpm --filter fleetops-backend exec jest --testPathPattern=integration --no-coverage --runInBand --forceExit
         env:
@@ -122,7 +135,8 @@ jobs:
           NODE_ENV: test
 
       - name: OpenAPI drift check
-        if: github.ref == 'refs/heads/main'
+        # Keep the generated contract in the PR gate as well as on main so API
+        # route additions cannot merge without their committed specification.
         run: node scripts/generate-openapi.js --check
         working-directory: backend
         env:
