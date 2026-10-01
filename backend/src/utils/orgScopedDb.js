@@ -13,6 +13,10 @@ const logger = require('./logger');
 const { normalizeOrgId, runWithOrgContext } = require('./tenantContext');
 
 async function withOrg(orgId, fn) {
+  const normalized = String(orgId ?? '').trim();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)) {
+    throw new Error('invalid_org_id');
+  }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -20,8 +24,8 @@ async function withOrg(orgId, fn) {
     // even when the session connects as a PostgreSQL superuser.
     await client.query('SET LOCAL ROLE sonalit_app');
     // SET LOCAL applies only within this transaction — safe with connection pooling
-    await client.query('SELECT set_config($1, $2, true)', ['app.current_org_id', orgId]);
-    const result = await fn(client);
+    await client.query('SELECT set_config($1, $2, true)', ['app.current_org_id', normalized]);
+    const result = await runWithOrgContext(normalized, () => fn(client));
     await client.query('COMMIT');
     return result;
   } catch (err) {
