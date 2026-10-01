@@ -1,19 +1,48 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export const THEMES = ['obsidian', 'arctic', 'graphite', 'copper', 'signal', 'ivory'] as const;
-export type Theme = typeof THEMES[number];
+export type Theme =
+  | 'obsidian'
+  | 'arctic'
+  | 'graphite'
+  | 'copper'
+  | 'signal'
+  | 'ivory';
 
-const LEGACY_THEME_MAP: Record<string, Theme> = { dark: 'obsidian', light: 'ivory' };
+export const THEMES = [
+  { id: 'obsidian', name: 'Obsidian Command', description: 'Holographic dark operations', mode: 'Dark' },
+  { id: 'arctic', name: 'Arctic Signal', description: 'Cool analytical command', mode: 'Dark' },
+  { id: 'graphite', name: 'Graphite Pro', description: 'Neutral executive control', mode: 'Dark' },
+  { id: 'copper', name: 'Copper Dusk', description: 'Warm field operations', mode: 'Dark' },
+  { id: 'signal', name: 'Signal Lime', description: 'High-visibility tactical', mode: 'Dark' },
+  { id: 'ivory', name: 'Ivory Daylight', description: 'Daylight field operations', mode: 'Light' },
+] as const;
 
-function normalizeTheme(theme: string | null | undefined): Theme {
-  if (theme && (THEMES as readonly string[]).includes(theme)) return theme as Theme;
-  return LEGACY_THEME_MAP[theme ?? ''] ?? 'obsidian';
+export type ThemeDefinition = (typeof THEMES)[number];
+
+const LEGACY_THEME_MAP: Record<string, Theme> = {
+  dark: 'obsidian',
+  light: 'ivory',
+};
+
+function isTheme(value: unknown): value is Theme {
+  return typeof value === 'string' && THEMES.some((theme) => theme.id === value);
 }
 
-function applyTheme(theme: string) {
-  if (typeof document !== 'undefined') document.documentElement.setAttribute('data-theme', normalizeTheme(theme));
+function normalizeTheme(value: unknown): Theme {
+  if (isTheme(value)) return value;
+  if (typeof value === 'string' && LEGACY_THEME_MAP[value]) return LEGACY_THEME_MAP[value];
+  return 'obsidian';
 }
+
+function applyTheme(theme: Theme) {
+  if (typeof document !== 'undefined') {
+    document.documentElement.setAttribute('data-theme', theme);
+  }
+}
+
+// Prevent a first-paint flash before persisted Zustand state finishes hydrating.
+applyTheme('obsidian');
 
 type UIState = {
   sidebarOpen: boolean;
@@ -34,18 +63,29 @@ export const useUIStore = create<UIState>()(
       theme: 'obsidian',
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
-      setTheme: (theme) => { applyTheme(theme); set({ theme }); },
+      setTheme: (theme) => {
+        applyTheme(theme);
+        set({ theme });
+      },
     }),
     {
       name: 'sonalit-ui',
+      version: 2,
       partialize: (s) => ({ theme: s.theme }),
+      migrate: (persistedState) => {
+        const state = persistedState as { theme?: unknown } | null;
+        return { theme: normalizeTheme(state?.theme) };
+      },
       onRehydrateStorage: () => (state) => {
         if (state) {
-          const theme = normalizeTheme(state.theme);
-          applyTheme(theme);
-          if (state.theme !== theme) useUIStore.setState({ theme });
-        } else applyTheme('obsidian');
+          const normalized = normalizeTheme(state.theme);
+          if (normalized !== state.theme) {
+            state.setTheme(normalized);
+          } else {
+            applyTheme(normalized);
+          }
+        }
       },
-    }
-  )
+    },
+  ),
 );
