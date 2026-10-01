@@ -33,7 +33,7 @@ async function fetchPortalSubToken(channel: string): Promise<string> {
 export function getPortalCentrifuge(): Centrifuge {
   if (!client) {
     client = new Centrifuge(
-      (import.meta.env['VITE_CENTRIFUGO_URL'] as string | undefined) ?? 'wss://rt.sonalit.io/connection/websocket',
+      CENTRIFUGO_WS_URL,
       { getToken: fetchPortalToken },
     );
     client.connect();
