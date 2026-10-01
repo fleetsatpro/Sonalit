@@ -18,7 +18,9 @@ async function publish(channel, data) {
       body: JSON.stringify({ channel, data }),
     });
     if (!resp.ok) {
-      const body = await resp.text().catch(() => '');
+      const body = typeof resp.text === 'function'
+        ? await resp.text().catch(() => '')
+        : '';
       logger.warn(`Centrifugo publish failed: ${resp.status} on ${channel}${body ? ` — ${body.slice(0, 300)}` : ''}`);
     }
   } catch (err) {
