@@ -7,7 +7,7 @@ import { getJs } from '../nats.js';
 import { StringCodec } from 'nats';
 import { NotFoundError, AuthError } from '../lib/errors.js';
 import { deviceAuthHook } from '../middleware/deviceAuth.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 
 const EnrollSchema = z.object({
   device_id: z.string().min(1).max(255),
@@ -110,6 +110,13 @@ export const guardianRoutes: FastifyPluginAsync = async (app) => {
   app.post('/v4/guardian/panic', { preHandler: deviceAuthHook }, async (req, reply) => {
     const device = req.device!;
     const body = PanicSchema.parse(req.body);
+    if (body.driver_id) {
+      const driver = await queryOne<{ id: string }>(
+        'SELECT id FROM drivers WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL',
+        [body.driver_id, device.org_id],
+      );
+      if (!driver) throw new NotFoundError('Driver not found');
+    }
     const eventId = randomUUID();
 
     await query(
@@ -146,7 +153,7 @@ export const guardianRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // Issue a command to a device (operator-facing, not device-facing — no device auth here).
-  app.post('/v4/guardian/commands', { preHandler: requireAuth }, async (req, reply) => {
+  app.post('/v4/guardian/commands', { preHandler: [requireAuth, requireRole('admin', 'dispatcher', 'operator')] }, async (req, reply) => {
     const body = CommandSchema.parse(req.body);
     const orgId = req.user?.org_id;
     if (!orgId) throw new AuthError('tenant scope missing');
@@ -177,7 +184,7 @@ export const guardianRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // List enrolled devices (operator-facing).
-  app.get('/v4/guardian/devices', { preHandler: requireAuth }, async (req, reply) => {
+  app.get('/v4/guardian/devices', { preHandler: [requireAuth, requireRole('admin', 'dispatcher', 'operator', 'analyst')] }, async (req, reply) => {
     const orgId = req.user?.org_id;
     if (!orgId) throw new AuthError('tenant scope missing');
 
@@ -193,7 +200,7 @@ export const guardianRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // Approve/activate a pending device (operator-facing).
-  app.post('/v4/guardian/devices/:id/approve', { preHandler: requireAuth }, async (req, reply) => {
+  app.post('/v4/guardian/devices/:id/approve', { preHandler: [requireAuth, requireRole('admin', 'dispatcher')] }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const orgId = req.user?.org_id;
     if (!orgId) throw new AuthError('tenant scope missing');
@@ -214,7 +221,7 @@ export const guardianRoutes: FastifyPluginAsync = async (app) => {
     name: z.string().max(255).optional(),
   });
 
-  app.patch('/v4/guardian/devices/:id', { preHandler: requireAuth }, async (req, reply) => {
+  app.patch('/v4/guardian/devices/:id', { preHandler: [requireAuth, requireRole('admin', 'dispatcher')] }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const orgId = req.user?.org_id;
     if (!orgId) throw new AuthError('tenant scope missing');
@@ -229,10 +236,10 @@ export const guardianRoutes: FastifyPluginAsync = async (app) => {
       if (!d) throw new NotFoundError('Device not found');
       return reply.send(d);
     }
-    params.push(id);
+    params.push(id, orgId);
     const device = await queryOne(
-      `UPDATE guardian_devices SET ${sets.join(', ')}, updated_at=NOW() WHERE id=${params.length} AND org_id=${params.length + 1} AND deleted_at IS NULL RETURNING *`,
-      [...params, id, orgId],
+      `UPDATE guardian_devices SET ${sets.join(', ')}, updated_at=NOW() WHERE id=${params.length - 1} AND org_id=${params.length} AND deleted_at IS NULL RETURNING *`,
+      params,
     );
     if (!device) throw new NotFoundError('Device not found');
     return reply.send(device);
