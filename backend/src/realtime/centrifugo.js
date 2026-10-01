@@ -1,8 +1,16 @@
 const logger = require('../utils/logger');
 
+const DEFAULT_CENTRIFUGO_PORT = Number(process.env.CENTRIFUGO_PORT || 8000);
+
 function normalizeCentrifugoUrl(raw) {
-  const value = String(raw || 'http://localhost:8000').trim().replace(/\/$/, '');
+  const value = String(raw || '').trim().replace(/\/$/, '');
+  if (!value) return `http://localhost:${DEFAULT_CENTRIFUGO_PORT}`;
   if (/^https?:\/\//i.test(value)) return value;
+  // Railway RAILWAY_PRIVATE_DOMAIN references are hostname-only. Preserve an
+  // explicitly supplied port, but default the internal Centrifugo API to 8000.
+  if (/(^localhost$|\.railway\.internal$)/i.test(value) && !/:\d+$/.test(value)) {
+    return `http://${value}:${DEFAULT_CENTRIFUGO_PORT}`;
+  }
   return `http://${value}`;
 }
 
@@ -41,4 +49,4 @@ async function publish(channel, data) {
   }
 }
 
-module.exports = { publish };
+module.exports = { publish, normalizeCentrifugoUrl };
