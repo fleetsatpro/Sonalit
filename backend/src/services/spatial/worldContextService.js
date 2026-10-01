@@ -206,13 +206,13 @@ async function getVehicles(db, orgId, convoyId, vehicleId) {
 
   return safeRows(db,
     "SELECT v.id::text AS id,v.registration,v.type,v.region,v.status,v.latitude,v.longitude,v.heading,v.speed,v.last_ping,v.driver_id,v.assigned_convoy_id::text AS assigned_convoy_id," +
-    " lg.lat AS gps_lat,lg.lng AS gps_lng,lg.heading AS gps_heading,lg.speed AS gps_speed,lg.accuracy AS gps_accuracy,lg.timestamp AS gps_at," +
-    " prev.lat AS prev_lat,prev.lng AS prev_lng,prev.heading AS prev_heading,prev.speed AS prev_speed,prev.timestamp AS prev_at," +
+    " lg.lat AS gps_lat,lg.lng AS gps_lng,NULL::float AS gps_heading,lg.speed AS gps_speed,NULL::float AS gps_accuracy,lg.timestamp AS gps_at," +
+    " prev.lat AS prev_lat,prev.lng AS prev_lng,NULL::float AS prev_heading,prev.speed AS prev_speed,prev.timestamp AS prev_at," +
     " COALESCE(history.recent_points, '[]'::json) AS recent_points" +
     " FROM vehicles v" +
-    " LEFT JOIN LATERAL (SELECT lat,lng,heading,speed,accuracy,timestamp FROM gps_logs WHERE vehicle_id=v.id ORDER BY timestamp DESC,id DESC LIMIT 1) lg ON true" +
-    " LEFT JOIN LATERAL (SELECT lat,lng,heading,speed,timestamp FROM gps_logs WHERE vehicle_id=v.id ORDER BY timestamp DESC,id DESC OFFSET 1 LIMIT 1) prev ON true" +
-    " LEFT JOIN LATERAL (SELECT json_agg(h ORDER BY h.timestamp DESC) AS recent_points FROM (SELECT lat,lng,heading,speed,timestamp FROM gps_logs WHERE vehicle_id=v.id ORDER BY timestamp DESC,id DESC LIMIT 30) h) history ON true" +
+    " LEFT JOIN LATERAL (SELECT lat,lng,speed,timestamp FROM gps_logs WHERE vehicle_id=v.id ORDER BY timestamp DESC,id DESC LIMIT 1) lg ON true" +
+    " LEFT JOIN LATERAL (SELECT lat,lng,speed,timestamp FROM gps_logs WHERE vehicle_id=v.id ORDER BY timestamp DESC,id DESC OFFSET 1 LIMIT 1) prev ON true" +
+    " LEFT JOIN LATERAL (SELECT json_agg(h ORDER BY h.timestamp DESC) AS recent_points FROM (SELECT lat,lng,speed,timestamp FROM gps_logs WHERE vehicle_id=v.id ORDER BY timestamp DESC,id DESC LIMIT 30) h) history ON true" +
     " WHERE v.org_id=$1 AND v.deleted_at IS NULL AND " + where +
     " ORDER BY v.registration",
     [orgId, vehicleId || convoyId]
@@ -258,7 +258,14 @@ async function getSecurity(db, orgId, convoyId) {
     [orgId, convoyId || null]
   );
   const cdsIncidents = await safeRows(db,
-    "SELECT id::text AS id,convoy_id::text AS convoy_id,incident_number,title,description,severity,status,lat,lng,created_at,updated_at FROM cds_incidents WHERE org_id=$1 AND status NOT IN ('resolved','closed') AND ($2::uuid IS NULL OR convoy_id=$2) ORDER BY created_at DESC LIMIT 100",
+    "SELECT ci.id::text AS id,CASE WHEN $2::uuid IS NULL THEN NULL::text ELSE $2::text END AS convoy_id," +
+    "ci.incident_number,ci.title,ci.description,ci.severity,ci.status,ci.lat,ci.lng,ci.created_at,ci.updated_at " +
+    "FROM cds_incidents ci WHERE ci.org_id=$1 AND ci.status NOT IN ('resolved','closed') AND " +
+    "($2::uuid IS NULL OR EXISTS (" +
+      "SELECT 1 FROM vehicles v " +
+      "WHERE v.id=ci.vehicle_id AND v.org_id=$1 AND v.deleted_at IS NULL AND " +
+      "(v.assigned_convoy_id=$2 OR EXISTS (SELECT 1 FROM convoy_assignments ca WHERE ca.convoy_id=$2 AND ca.vehicle_id=v.id))" +
+    ")) ORDER BY ci.created_at DESC LIMIT 100",
     [orgId, convoyId || null]
   );
   const intelAlerts = await safeRows(db,
