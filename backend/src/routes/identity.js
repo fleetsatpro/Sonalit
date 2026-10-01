@@ -159,6 +159,12 @@ router.patch('/identity/users/:id', auditLog('identity_users'), async (req, res)
     req.auditAfter = updated.rows[0];
     res.json({ data: updated.rows[0] });
   } catch (err) {
+    if (err && err.code === 'P0001' && String(err.message || '').startsWith('last_active_admin_protected')) {
+      return res.status(409).json({
+        error: 'last_admin_protected',
+        message: 'The organisation must retain at least one active administrator.',
+      });
+    }
     logger.error(`PATCH /auth/identity/users/:id error: ${err.message}`);
     res.status(500).json({ error: 'identity_user_update_failed' });
   }
