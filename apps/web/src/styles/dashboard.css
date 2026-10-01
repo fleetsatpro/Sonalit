@@ -323,19 +323,23 @@ html, body, #root, * {
   --d-t1:#1c252d; --d-t2:#5d6872; --d-t3:#8c959c; --d-t4:#c9cdd0;
 }
 
-/* Bridge legacy utility classes into the theme contract. This deliberately
-   targets only neutral UI utilities; red/amber/green status utilities remain
-   semantic and therefore do not change with appearance. */
+/* Bridge legacy utility classes into the theme contract. Preserve the
+   original neutral elevation ladder so cards, wells and page backgrounds
+   retain depth in every theme. Red/amber/green utilities remain semantic. */
 :root[data-theme] body { background:var(--d-void); color:var(--d-t1); }
-:root[data-theme] .bg-slate-950, :root[data-theme] .bg-slate-900,
-:root[data-theme] .bg-slate-800, :root[data-theme] .bg-slate-700,
-:root[data-theme] .bg-slate-600 { background-color:var(--d-well) !important; }
-:root[data-theme] .bg-slate-800\/50, :root[data-theme] .bg-slate-900\/50 { background-color:color-mix(in srgb,var(--d-well) 70%,transparent) !important; }
-:root[data-theme] .border-slate-700, :root[data-theme] .border-slate-600,
-:root[data-theme] .border-slate-500 { border-color:var(--d-rim2) !important; }
+:root[data-theme] .bg-slate-950 { background-color:var(--d-void) !important; }
+:root[data-theme] .bg-slate-900 { background-color:var(--d-carbon) !important; }
+:root[data-theme] .bg-slate-800 { background-color:var(--d-well) !important; }
+:root[data-theme] .bg-slate-700 { background-color:var(--d-surf) !important; }
+:root[data-theme] .bg-slate-600 { background-color:var(--d-lift) !important; }
+:root[data-theme] .bg-slate-800\/50 { background-color:color-mix(in srgb,var(--d-well) 70%,transparent) !important; }
+:root[data-theme] .bg-slate-900\/50 { background-color:color-mix(in srgb,var(--d-carbon) 70%,transparent) !important; }
+:root[data-theme] .border-slate-700 { border-color:var(--d-rim2) !important; }
+:root[data-theme] .border-slate-600, :root[data-theme] .border-slate-500 { border-color:var(--d-rim3) !important; }
 :root[data-theme] .text-white, :root[data-theme] .text-slate-100,
-:root[data-theme] .text-slate-200, :root[data-theme] .text-slate-300 { color:var(--d-t1) !important; }
-:root[data-theme] .text-slate-400, :root[data-theme] .text-slate-500 { color:var(--d-t2) !important; }
+:root[data-theme] .text-slate-200 { color:var(--d-t1) !important; }
+:root[data-theme] .text-slate-300, :root[data-theme] .text-slate-400,
+:root[data-theme] .text-slate-500 { color:var(--d-t2) !important; }
 :root[data-theme] .text-slate-600 { color:var(--d-t3) !important; }
 :root[data-theme] .bg-orange-600, :root[data-theme] .bg-orange-500 { background-color:var(--d-orange) !important; }
 :root[data-theme] .hover\:bg-orange-700:hover, :root[data-theme] .hover\:bg-orange-500:hover { background-color:color-mix(in srgb,var(--d-orange) 86%,#000) !important; }
