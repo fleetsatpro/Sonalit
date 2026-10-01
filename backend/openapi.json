@@ -2502,7 +2502,7 @@
         }
       }
     },
-    "/api/v1/satellites": {
+    "/api/v1/satellites/": {
       "get": {
         "operationId": "get_api_v1_satellites",
         "responses": {
