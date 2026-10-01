@@ -56,7 +56,7 @@ beforeAll(async () => {
   );
 
   await pool.query(
-    'INSERT INTO vehicles (id, type, registration, region, status, org_id) VALUES ($1,$3,$5,$7,$9,$3),($2,$4,$6,$8,$10,$4) ON CONFLICT (id) DO UPDATE SET org_id=EXCLUDED.org_id, registration=EXCLUDED.registration, status=''idle''',
+    'INSERT INTO vehicles (id, type, registration, region, status, org_id) VALUES ($1,$3,$5,$7,$9,$11),($2,$4,$6,$8,$10,$12) ON CONFLICT (id) DO UPDATE SET org_id=EXCLUDED.org_id, registration=EXCLUDED.registration, status=''idle''',
     [VEH_A, VEH_B, 'SUV', 'SUV', 'DEEP-ORG-A', 'DEEP-ORG-B', 'TEST', 'TEST', 'idle', 'idle', ORG_A, ORG_B]
   );
 
