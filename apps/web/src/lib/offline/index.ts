@@ -218,7 +218,7 @@ export async function getOfflineStatus(): Promise<OfflineStatus> {
 
   return {
     ...base,
-    queue: await counts(identity.userId),
+    queue: await counts(identity.userId, identity.orgId),
     gpsBuffered: await bufferedCount(identity.userId),
   };
 }
