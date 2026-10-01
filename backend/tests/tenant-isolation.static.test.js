@@ -146,4 +146,11 @@ describe('tenant isolation regression guards', () => {
     expect(violations).toEqual([]);
   });
 
+  test('offline mutation creation cannot override active tenant identity', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../../apps/web/src/lib/offline/index.ts'), 'utf8');
+    expect(source).toContain('offline_identity_mismatch');
+    expect(source).toContain('input.ownerUserId !== identity.userId');
+    expect(source).toContain('input.ownerOrgId !== identity.orgId');
+  });
+
 });
