@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { randomUUID, randomBytes, createHmac } from 'node:crypto';
 import { query } from '../db.js';
+import { requireAuth } from '../middleware/auth.js';
 import { NotFoundError, AuthError } from '../lib/errors.js';
 
 const WebhookSchema = z.object({
@@ -16,9 +17,10 @@ type PatchableCol = 'url' | 'events' | 'active';
 
 
 export const webhooksRoutes: FastifyPluginAsync = async (app) => {
+  app.addHook('preHandler', requireAuth);
   app.get('/v4/webhooks', async (req, reply) => {
-    const orgId = (req.headers['x-org-id'] as string | undefined)?.trim();
-    if (!orgId) throw new AuthError('x-org-id header required');
+    const orgId = req.user?.org_id;
+    if (!orgId) throw new AuthError('tenant scope missing');
 
     const rows = await query(
       `SELECT id, url, events, active, created_at
@@ -29,8 +31,8 @@ export const webhooksRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post('/v4/webhooks', async (req, reply) => {
-    const orgId = (req.headers['x-org-id'] as string | undefined)?.trim();
-    if (!orgId) throw new AuthError('x-org-id header required');
+    const orgId = req.user?.org_id;
+    if (!orgId) throw new AuthError('tenant scope missing');
 
     const body = WebhookSchema.parse(req.body);
     const secret = randomBytes(32).toString('hex');
@@ -46,8 +48,8 @@ export const webhooksRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.get('/v4/webhooks/:id', async (req, reply) => {
-    const orgId = (req.headers['x-org-id'] as string | undefined)?.trim();
-    if (!orgId) throw new AuthError('x-org-id header required');
+    const orgId = req.user?.org_id;
+    if (!orgId) throw new AuthError('tenant scope missing');
     const { id } = req.params as { id: string };
 
     const [row] = await query(
@@ -60,8 +62,8 @@ export const webhooksRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.patch('/v4/webhooks/:id', async (req, reply) => {
-    const orgId = (req.headers['x-org-id'] as string | undefined)?.trim();
-    if (!orgId) throw new AuthError('x-org-id header required');
+    const orgId = req.user?.org_id;
+    if (!orgId) throw new AuthError('tenant scope missing');
     const { id } = req.params as { id: string };
 
     const body = WebhookSchema.partial().parse(req.body);
@@ -88,8 +90,8 @@ export const webhooksRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.delete('/v4/webhooks/:id', async (req, reply) => {
-    const orgId = (req.headers['x-org-id'] as string | undefined)?.trim();
-    if (!orgId) throw new AuthError('x-org-id header required');
+    const orgId = req.user?.org_id;
+    if (!orgId) throw new AuthError('tenant scope missing');
     const { id } = req.params as { id: string };
 
     await query(
