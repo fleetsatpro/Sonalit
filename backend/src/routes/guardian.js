@@ -2802,10 +2802,10 @@ router.post('/enrollment-codes', authenticate, async (req, res, next) => {
     const code = bytes.toString('base64').replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 12).padEnd(12, 'A');
 
     const result = await query(
-      `INSERT INTO enrollment_codes (code, expires_at, created_by)
-       VALUES ($1, NOW() + ($2 || ' minutes')::INTERVAL, $3)
+      `INSERT INTO enrollment_codes (org_id, code, expires_at, created_by)
+       VALUES ($1, $2, NOW() + ($3 || ' minutes')::INTERVAL, $4)
        RETURNING id, code, expires_at`,
-      [code, expiresInMinutes, req.user.id]
+      [req.user.org_id, code, expiresInMinutes, req.user.id]
     );
 
     const row = result.rows[0];
@@ -2917,10 +2917,10 @@ router.post('/convoy-codes', authenticate, async (req, res, next) => {
     const code = bytes.toString('base64').replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 6).padEnd(6, 'A');
 
     const result = await query(
-      `INSERT INTO convoy_codes (code, created_by, max_members, expires_at)
-       VALUES ($1, $2, $3, NOW() + ($4 || ' hours')::INTERVAL)
+      `INSERT INTO convoy_codes (code, created_by, max_members, expires_at, org_id)
+       VALUES ($1, $2, $3, NOW() + ($4 || ' hours')::INTERVAL, $5)
        RETURNING code, expires_at`,
-      [code, req.user.id, maxMembers, expiresInHours]
+      [code, req.user.id, maxMembers, expiresInHours, req.user.org_id]
     );
 
     const row = result.rows[0];
@@ -2948,7 +2948,7 @@ router.get('/convoy-codes', authenticate, async (req, res, next) => {
        LEFT JOIN guardian_devices gd ON gd.convoy_code = cc.code AND gd.deleted_at IS NULL
        WHERE (cc.expires_at IS NULL OR cc.expires_at > NOW()) AND cc.active = true
        GROUP BY cc.code, cc.max_members, cc.expires_at, cc.active, cc.created_at, u.name
-       ORDER BY cc.created_at DESC`
+       ORDER BY cc.created_at DESC`, [req.user.org_id]
     );
     res.json({ data: result.rows });
   } catch (err) {
