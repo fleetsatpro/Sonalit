@@ -6,7 +6,6 @@ import { requireAuth } from '../middleware/auth.js';
 import { getJs } from '../nats.js';
 import { StringCodec } from 'nats';
 import { NotFoundError, AuthError } from '../lib/errors.js';
-import { requireAuth } from '../middleware/auth.js';
 
 const CreateReportSchema = z.object({
   type: z.enum(['convoy', 'fleet', 'driver']),
@@ -22,7 +21,6 @@ const ListSchema = z.object({
 });
 
 export const reportsRoutes: FastifyPluginAsync = async (app) => {
-  app.addHook('preHandler', requireAuth);
   app.addHook('preHandler', requireAuth);
   app.get('/v4/reports', async (req, reply) => {
     const org_id = req.user!.org_id;
