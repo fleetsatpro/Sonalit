@@ -6,6 +6,7 @@ import { Settings as SettingsIcon, Key, Shield, Copy, Trash2, Plus, X, MessageCi
 import { GuardianConvoySettings } from '../components/GuardianConvoySettings.js';
 import { HandoverOfficerSettings } from '../components/HandoverOfficerSettings.js';
 import { useUIStore } from '../stores/ui.js';
+import { SONALIT_THEMES, type SonalitTheme } from '../theme/themes.js';
 
 interface ApiKey {
   id: string;
@@ -382,26 +383,43 @@ function AppearanceSection() {
   const setTheme = useUIStore((s) => s.setTheme);
 
   return (
-    <SectionCard title="Appearance" icon={<Palette size={16} className="text-orange-400" />}>
-      <div className="space-y-2">
-        <label className="block text-xs text-slate-400 mb-1">Theme</label>
-        <div className="flex gap-2">
-          {(['dark', 'light'] as const).map((opt) => (
-            <button
-              key={opt}
-              onClick={() => setTheme(opt)}
-              className={`flex-1 text-sm px-3 py-2 rounded border transition-colors capitalize ${
-                theme === opt
-                  ? 'bg-orange-600 border-orange-500 text-white'
-                  : 'bg-slate-900 border-slate-600 text-slate-300 hover:border-slate-500'
-              }`}
-            >
-              {opt}
-            </button>
-          ))}
+    <SectionCard title="Appearance" icon={<Palette size={16} className="text-d-sig" />}>
+      <div className="space-y-4">
+        <div>
+          <div className="text-sm font-semibold text-d-t1">Operator theme</div>
+          <p className="text-xs text-d-t2 mt-1">
+            Changes the visual system only. Fleet state, evidence, permissions, spatial semantics and operational workflows remain unchanged.
+          </p>
         </div>
-        <p className="text-xs text-slate-500 pt-1">
-          Applies to the sidebar, top bar, and dashboard cards immediately and is remembered on this device.
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" role="radiogroup" aria-label="Sonalit operator theme">
+          {SONALIT_THEMES.map((option) => {
+            const selected = theme === option.id;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => setTheme(option.id as SonalitTheme)}
+                className={`sonalit-theme-option ${selected ? 'is-selected' : ''}`}
+              >
+                <span className="sonalit-theme-swatch" aria-hidden="true">
+                  {option.preview.map((color) => <span key={color} style={{ backgroundColor: color }} />)}
+                </span>
+                <span className="min-w-0 text-left">
+                  <span className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-d-t1 truncate">{option.name}</span>
+                    <span className="text-[9px] uppercase tracking-[.14em] text-d-t3">{option.mode}</span>
+                  </span>
+                  <span className="block mt-1 text-[11px] leading-4 text-d-t2">{option.description}</span>
+                </span>
+                <span className="sonalit-theme-check" aria-hidden="true">{selected ? '✓' : ''}</span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[10px] text-d-t3">
+          Saved locally on this device. Theme changes are instant and do not require a reload.
         </p>
       </div>
     </SectionCard>
