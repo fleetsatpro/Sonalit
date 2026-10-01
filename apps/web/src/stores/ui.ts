@@ -17,11 +17,9 @@ const DEFAULT_THEME: Theme = 'obsidian';
 const isTheme = (value: unknown): value is Theme => typeof value === 'string' && (SONALIT_THEMES as readonly string[]).includes(value);
 
 // The theme field existed here before but nothing ever applied it — no
-// component read useUIStore.theme, so switching it had zero visible effect.
-// Setting data-theme on <html> is what dashboard.css's light-mode variable
-// overrides key off; doing it here (not in a component effect) means it
-// takes effect the instant setTheme is called and right after persisted
-// state rehydrates, with no extra wiring needed in main.tsx.
+// Setting data-theme on <html> is the single bridge between persisted UI state
+// and the dashboard token system. This keeps theme changes immediate and
+// prevents individual screens from owning appearance state.
 function applyTheme(theme: Theme) {
   if (typeof document !== 'undefined') {
     document.documentElement.setAttribute('data-theme', theme);
@@ -55,7 +53,7 @@ export const useUIStore = create<UIState>()(
       version: 2,
       migrate: (persisted: unknown) => {
         const state = persisted as { theme?: unknown } | null;
-        return { theme: isTheme(state?.theme) ? state!.theme : DEFAULT_THEME };
+        return { theme: isTheme(state?.theme) ? state?.theme : DEFAULT_THEME };
       },
       // Only theme is worth remembering across sessions — sidebarOpen should
       // keep re-deriving from viewport width on each load (its original
