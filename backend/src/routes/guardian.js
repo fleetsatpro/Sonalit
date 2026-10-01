@@ -2828,8 +2828,8 @@ router.get('/enrollment-codes', authenticate, async (req, res, next) => {
       `SELECT ec.id, ec.code, ec.expires_at, ec.created_at,
               u.name AS created_by_name
        FROM enrollment_codes ec
-       LEFT JOIN users u ON u.id = ec.created_by
-       WHERE ec.used_at IS NULL AND ec.expires_at > NOW()
+       LEFT JOIN users u ON u.id = ec.created_by AND u.org_id = ec.org_id
+       WHERE ec.org_id = $1 AND ec.used_at IS NULL AND ec.expires_at > NOW()
        ORDER BY ec.created_at DESC`
     );
     res.json({ data: result.rows });
@@ -2944,9 +2944,10 @@ router.get('/convoy-codes', authenticate, async (req, res, next) => {
               u.name AS created_by_name,
               COUNT(gd.id) AS current_members
        FROM convoy_codes cc
-       LEFT JOIN users u ON u.id = cc.created_by
-       LEFT JOIN guardian_devices gd ON gd.convoy_code = cc.code AND gd.deleted_at IS NULL
-       WHERE (cc.expires_at IS NULL OR cc.expires_at > NOW()) AND cc.active = true
+       LEFT JOIN users u ON u.id = cc.created_by AND u.org_id = cc.org_id
+       LEFT JOIN guardian_devices gd ON gd.convoy_code = cc.code AND gd.org_id = cc.org_id AND gd.deleted_at IS NULL
+       WHERE cc.org_id = $1
+         AND (cc.expires_at IS NULL OR cc.expires_at > NOW()) AND cc.active = true
        GROUP BY cc.code, cc.max_members, cc.expires_at, cc.active, cc.created_at, u.name
        ORDER BY cc.created_at DESC`, [req.user.org_id]
     );
