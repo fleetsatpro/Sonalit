@@ -16,6 +16,21 @@ function applyTheme(theme: Theme) {
   if (themeColor) themeColor.content = definition.chrome;
 }
 
+function readPersistedTheme(): Theme {
+  if (typeof window === 'undefined') return 'obsidian';
+  try {
+    const raw = window.localStorage.getItem('sonalit-ui');
+    if (!raw) return 'obsidian';
+    const parsed = JSON.parse(raw) as { state?: { theme?: unknown } };
+    return normalizeTheme(parsed?.state?.theme);
+  } catch {
+    return 'obsidian';
+  }
+}
+
+const initialTheme = readPersistedTheme();
+applyTheme(initialTheme);
+
 type UIState = {
   sidebarOpen: boolean;
   theme: Theme;
@@ -32,7 +47,7 @@ export const useUIStore = create<UIState>()(
   persist(
     (set) => ({
       sidebarOpen: defaultSidebarOpen,
-      theme: 'obsidian',
+      theme: initialTheme,
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
       setTheme: (theme) => {
@@ -43,7 +58,7 @@ export const useUIStore = create<UIState>()(
     {
       name: 'sonalit-ui',
       partialize: (s) => ({ theme: s.theme }),
-      version: 2,
+      version: 3,
       migrate: (persistedState) => ({
         ...(persistedState as Partial<UIState>),
         theme: normalizeTheme((persistedState as Partial<UIState>)?.theme),
