@@ -25,7 +25,6 @@ export async function withOrgContext<T>(
     await client.query('BEGIN');
     await client.query('SET LOCAL ROLE sonalit_app');
     await client.query(`SELECT set_config('app.current_org_id', $1, true)`, [orgId]);
-    await client.query(`SET LOCAL app.org_id = $1`, [orgId]);
     const result = await fn(client);
     await client.query('COMMIT');
     return result;
