@@ -59,6 +59,21 @@ describe('centrifugo publish()', () => {
     );
   });
 
+  test('normalizes a legacy websocket URL for HTTP API publishing', async () => {
+    process.env.CENTRIFUGO_API_KEY = 'secret-key';
+    process.env.CENTRIFUGO_URL = 'wss://rt.sonalit.io/connection/websocket';
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ result: {} }) });
+    const { publish } = require('../src/realtime/centrifugo');
+    await publish('test-channel', {});
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://rt.sonalit.io/api/publish',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ 'X-API-Key': 'secret-key' }),
+      })
+    );
+  });
+
   test('logs Centrifugo application errors returned with HTTP 200', async () => {
     process.env.CENTRIFUGO_API_KEY = 'secret-key';
     mockFetch.mockResolvedValueOnce({
