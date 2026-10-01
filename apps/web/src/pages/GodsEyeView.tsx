@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Globe2, Layers3, Satellite, RadioTower, Eye, Orbit, TriangleAlert } from 'lucide-react'
+import { Globe2, Layers3, RadioTower, Orbit } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { useLiveFleet } from '../features/live-fleet/hooks/useLiveFleet.js'
 import FleetMap from '../features/live-fleet/components/FleetMap.js'
@@ -81,16 +81,19 @@ export default function GodsEyeView() {
                 <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, color: '#b8aef1', letterSpacing: '.14em' }}>GEV LAYERS</span>
                 <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, color: '#8f96a3' }}>11 REQUESTED</span>
               </div>
-              <div style={{ marginTop: 7, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+              <div style={{ marginTop: 7, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5 }}>
                 {[
                   ['AIR', '#60a5fa', 'Aircraft'],
-                  ['SEA', '#22d3ee', 'Maritime'],
                   ['WX', '#a7f3d0', 'Weather'],
+                  ['SEA', '#22d3ee', 'Maritime'],
+                  ['TRF', '#eab308', 'Traffic'],
                   ['HAZ', '#ef4444', 'Hazards'],
-                  ['CAM', '#5eead4', 'Cameras'],
-                  ['ORB', '#c4b5fd', 'Satellites'],
+                  ['SEC', '#fb923c', 'Security'],
+                  ['INF', '#cbd5e1', 'Infrastructure'],
                   ['INC', '#fb7185', 'Incidents'],
                   ['ALT', '#f0abfc', 'Alerts'],
+                  ['CAM', '#5eead4', 'Cameras'],
+                  ['ORB', '#c4b5fd', 'Satellites'],
                 ].map(([k,c,label]) => <span key={k} title={label} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: 'IBM Plex Mono,monospace', fontSize: 7.5, color: '#cbd5e1' }}><i style={{ width: 7, height: 7, borderRadius: '50%', background: c }} />{k}</span>)}
               </div>
               <div style={{ marginTop: 8, paddingTop: 7, borderTop: '1px solid rgba(255,255,255,.06)', display: 'flex', alignItems: 'center', gap: 6 }}>
