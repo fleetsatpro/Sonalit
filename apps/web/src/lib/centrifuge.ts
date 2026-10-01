@@ -4,6 +4,7 @@ import { Centrifuge, type Subscription, type PublicationContext } from 'centrifu
 import { api } from './api.js';
 import { fieldAuthHeaders } from './fieldSession.js';
 import { reportRealtimeState } from './offline/connectivity.js';
+import { CENTRIFUGO_WS_URL } from './realtimeEndpoint.js';
 
 let client: Centrifuge | null = null;
 
