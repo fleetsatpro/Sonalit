@@ -9,6 +9,7 @@ import FleetMap from '../features/live-fleet/components/FleetMap.js'
 import CorridorGlobe from '../components/geofences/CorridorGlobe.js'
 import type { GlobeMember, RiskZone } from '../components/geofences/CorridorWorldScene.js'
 import type { LiveVehicle } from '../features/live-fleet/types/fleet.js'
+import '../styles/spatial-command.css'
 
 type View = '2D' | '3D'
 
@@ -102,19 +103,20 @@ export default function GodsEyeView() {
   })
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, background: '#05070d', color: '#dfe0db', fontFamily: "'Barlow', Inter, system-ui, sans-serif", overflow: 'hidden' }}>
-      <header style={{ height: 58, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12, padding: '0 16px', background: '#080b14', borderBottom: '1px solid rgba(196,181,253,.16)', zIndex: 1000 }}>
-        <div style={{ width: 34, height: 34, borderRadius: 10, display: 'grid', placeItems: 'center', background: 'rgba(196,181,253,.12)', border: '1px solid rgba(196,181,253,.25)', color: '#c4b5fd' }}>
+    <div className="spatial-command" data-gev-density="quiet" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, background: '#05070d', color: '#dfe0db', fontFamily: "'Sora', Inter, system-ui, sans-serif", overflow: 'hidden' }}>
+      <header className="spatial-header" style={{ height: 58, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12, padding: '0 16px', background: '#080b14', borderBottom: '1px solid rgba(196,181,253,.16)', zIndex: 1000 }}>
+        <div className="spatial-brand-mark" style={{ width: 34, height: 34, borderRadius: 10, display: 'grid', placeItems: 'center', background: 'rgba(196,181,253,.12)', border: '1px solid rgba(196,181,253,.25)', color: '#c4b5fd' }}>
           <Globe2 size={18} />
         </div>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontFamily: "'Barlow Condensed',sans-serif", fontSize: 16, fontWeight: 700, letterSpacing: '.08em', color: '#f1f5f9' }}>GOD'S EYE VIEW</div>
-          <div style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8.5, letterSpacing: '.12em', color: '#8f96a3' }}>GLOBAL SPATIAL PICTURE · SONALIT OPERATIONAL AUTHORITY</div>
+        <div className="spatial-brand">
+          <div className="spatial-brand-kicker">GLOBAL SPATIAL PICTURE · SONALIT OPERATIONAL AUTHORITY</div>
+          <div className="spatial-brand-title">GOD'S EYE VIEW</div>
         </div>
+        <span className="spatial-live-indicator">LIVE PICTURE</span>
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, padding: 4, borderRadius: 9, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.07)' }}>
-          <button onClick={() => setView('2D')} aria-pressed={view === '2D'} style={{ display: 'flex', alignItems: 'center', gap: 6, height: 32, padding: '0 11px', borderRadius: 7, border: 'none', cursor: 'pointer', background: view === '2D' ? 'rgba(196,181,253,.16)' : 'transparent', color: view === '2D' ? '#ede9fe' : '#7a7e8a', fontFamily: 'IBM Plex Mono,monospace', fontSize: 9, fontWeight: 700, letterSpacing: '.08em' }}><Layers3 size={13}/> WORLD 2D</button>
-          <button onClick={() => setView('3D')} aria-pressed={view === '3D'} style={{ display: 'flex', alignItems: 'center', gap: 6, height: 32, padding: '0 11px', borderRadius: 7, border: 'none', cursor: 'pointer', background: view === '3D' ? 'rgba(196,181,253,.16)' : 'transparent', color: view === '3D' ? '#ede9fe' : '#7a7e8a', fontFamily: 'IBM Plex Mono,monospace', fontSize: 9, fontWeight: 700, letterSpacing: '.08em' }}><Orbit size={13}/> XD 3D / 8D</button>
+        <div className="spatial-view-switch" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, padding: 4, borderRadius: 9, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.07)' }}>
+          <button className="spatial-view-button" data-active={view === '2D'} onClick={() => setView('2D')} aria-pressed={view === '2D'}><Layers3 size={13}/><span>WORLD 2D</span></button>
+          <button className="spatial-view-button" data-active={view === '3D'} onClick={() => setView('3D')} aria-pressed={view === '3D'}><Orbit size={13}/><span>WORLD 3D</span></button>
         </div>
       </header>
 
@@ -126,10 +128,10 @@ export default function GodsEyeView() {
               selectedId={selected?.id ?? null}
               onSelect={v => setSelected(v)}
             />
-            <div style={{ position: 'absolute', left: 14, top: 14, zIndex: 700, width: 255, pointerEvents: 'none', background: 'rgba(5,7,13,.86)', border: '1px solid rgba(196,181,253,.16)', borderRadius: 12, padding: '10px 12px', boxShadow: '0 18px 45px rgba(0,0,0,.35)', backdropFilter: 'blur(14px)' }}>
+            <div className="spatial-panel" style={{ position: 'absolute', left: 14, top: 14, zIndex: 700, width: 255, pointerEvents: 'none', background: 'rgba(5,7,13,.86)', border: '1px solid rgba(196,181,253,.16)', borderRadius: 12, padding: '10px 12px', boxShadow: '0 18px 45px rgba(0,0,0,.35)', backdropFilter: 'blur(14px)' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, color: '#b8aef1', letterSpacing: '.14em' }}>GEV LAYERS</span>
-                <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, color: '#8f96a3' }}>11 REQUESTED</span>
+                <span className="spatial-panel-header">WORLD FABRIC</span>
+                <span className="spatial-panel-subtitle">11 LAYERS</span>
               </div>
               <div style={{ marginTop: 7, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5 }}>
                 {[
@@ -151,7 +153,7 @@ export default function GodsEyeView() {
                 <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 7.5, color: '#7a7e8a' }}>{counts.all} operational entities · {counts.officers} Guardian positions</span>
               </div>
             </div>
-            <div style={{ position: 'absolute', right: 14, bottom: 14, zIndex: 700, pointerEvents: 'none', fontFamily: 'IBM Plex Mono,monospace', fontSize: 7.5, color: '#6f7480', background: 'rgba(5,7,13,.78)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 8, padding: '6px 8px' }}>
+            <div className="spatial-footnote" style={{ position: 'absolute', right: 14, bottom: 14, zIndex: 700, pointerEvents: 'none', fontFamily: 'IBM Plex Mono,monospace', fontSize: 7.5, color: '#6f7480', background: 'rgba(5,7,13,.78)', border: '1px solid rgba(255,255,255,.06)', borderRadius: 8, padding: '6px 8px' }}>
               External observations enrich the world picture; they do not replace Sonalit telemetry, convoy state or evidence.
             </div>
           </>
@@ -171,9 +173,9 @@ export default function GodsEyeView() {
               onSelect={id => { setSelectedExternalId(null); setSelected(id ? allVehicles.find(v => v.id === id) ?? null : null) }}
               onViewportChange={setWorldViewport}
             />
-            <div style={{ position: 'absolute', left: 14, top: 14, zIndex: 700, width: 300, maxHeight: 'calc(100% - 28px)', overflow: 'auto', pointerEvents: 'auto', background: 'rgba(5,7,13,.9)', border: '1px solid rgba(196,181,253,.16)', borderRadius: 12, padding: '11px 12px', boxShadow: '0 18px 45px rgba(0,0,0,.4)', backdropFilter: 'blur(14px)' }}>
+            <div className="spatial-panel" style={{ position: 'absolute', left: 14, top: 14, zIndex: 700, width: 300, maxHeight: 'calc(100% - 28px)', overflow: 'auto', pointerEvents: 'auto', background: 'rgba(5,7,13,.9)', border: '1px solid rgba(196,181,253,.16)', borderRadius: 12, padding: '11px 12px', boxShadow: '0 18px 45px rgba(0,0,0,.4)', backdropFilter: 'blur(14px)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, color: '#b8aef1', letterSpacing: '.14em' }}>3D WORLD FABRIC</span>
+              <span className="spatial-panel-header">3D WORLD FABRIC</span>
               <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, color: worldError ? '#f87171' : worldFetching ? '#fbbf24' : '#6ee7b7' }}>
                 {worldError ? 'DEGRADED' : worldFetching ? 'SYNCING' : 'LIVE'}
               </span>
@@ -208,9 +210,9 @@ export default function GodsEyeView() {
         )}
 
         {selectedExternal && view === '3D' && (
-          <div style={{ position: 'absolute', right: 14, bottom: 14, zIndex: 800, width: 315, background: 'rgba(5,7,13,.95)', border: '1px solid rgba(196,181,253,.16)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.5)', pointerEvents: 'auto' }}>
+          <div className="spatial-panel" style={{ position: 'absolute', right: 14, bottom: 14, zIndex: 800, width: 315, background: 'rgba(5,7,13,.95)', border: '1px solid rgba(196,181,253,.16)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.5)', pointerEvents: 'auto' }}>
             <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, color: '#b8aef1', letterSpacing: '.12em' }}>GEV EXTERNAL ENTITY</span>
+              <span className="spatial-panel-header">GEV EXTERNAL ENTITY</span>
               <button onClick={() => setSelectedExternalId(null)} aria-label="Close external entity card" style={{ background: 'none', border: 'none', color: '#7a7e8a', cursor: 'pointer' }}>×</button>
             </div>
             <div style={{ padding: '12px' }}>
@@ -232,9 +234,9 @@ export default function GodsEyeView() {
           </div>
         )}
         {selected && view === '2D' && (
-          <div style={{ position: 'absolute', right: 12, bottom: 12, zIndex: 800, width: 280, background: 'rgba(5,7,13,.95)', border: '1px solid rgba(196,181,253,.16)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.5)', pointerEvents: 'auto' }}>
+          <div className="spatial-panel" style={{ position: 'absolute', right: 12, bottom: 12, zIndex: 800, width: 280, background: 'rgba(5,7,13,.95)', border: '1px solid rgba(196,181,253,.16)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.5)', pointerEvents: 'auto' }}>
             <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(255,255,255,.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, color: '#b8aef1', letterSpacing: '.12em' }}>GEV OPERATIONAL ENTITY</span>
+              <span className="spatial-panel-header">GEV OPERATIONAL ENTITY</span>
               <button onClick={() => setSelected(null)} aria-label="Close entity card" style={{ background: 'none', border: 'none', color: '#7a7e8a', cursor: 'pointer' }}>×</button>
             </div>
             <div style={{ padding: '12px' }}>
