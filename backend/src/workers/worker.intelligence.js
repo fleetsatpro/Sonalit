@@ -231,8 +231,15 @@ process.on('SIGINT', () => shutdown('SIGINT'));
     onAcquire: async () => {
       stopping = false;
       logger.info('Intelligence worker leader active');
-      await evaluateSpatialEye('startup');
-      await cycle('startup');
+      activeCyclePromise = (async () => {
+        await evaluateSpatialEye('startup');
+        await cycle('startup');
+      })();
+      try {
+        await activeCyclePromise;
+      } finally {
+        activeCyclePromise = null;
+      }
       scheduleSpatial();
       schedule();
     },
