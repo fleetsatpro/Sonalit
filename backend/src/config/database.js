@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { Pool, types } = require('pg');
 const logger = require('../utils/logger');
+const { getOrgId } = require('../utils/tenantContext');
 
 // pg returns NUMERIC/DECIMAL columns (type OID 1700) as strings to preserve
 // arbitrary precision. This app treats those columns (speed, fuel_level,
@@ -39,10 +40,33 @@ pool.on('connect', () => {
   logger.info(`New PostgreSQL client connected${process.env.INTEL_ORG_ID ? `; RLS org=${process.env.INTEL_ORG_ID}` : ''}`);
 });
 
+async function tenantQuery(orgId, text, params) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SET LOCAL ROLE sonalit_app');
+    await client.query('SELECT set_config($1, $2, true)', ['app.current_org_id', orgId]);
+    const result = await client.query(text, params);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 async function query(text, params) {
   const start = Date.now();
+  const orgId = getOrgId();
   try {
-    const result = await pool.query(text, params);
+    // Once an authenticated tenant exists, the legacy query helper becomes
+    // tenant-bound automatically. This closes the most dangerous historical
+    // failure mode: owner-role queries accidentally bypassing RLS.
+    const result = orgId
+      ? await tenantQuery(orgId, text, params)
+      : await pool.query(text, params);
     const duration = Date.now() - start;
     if (duration > 1000) {
       logger.warn(`Slow query detected (${duration}ms): ${text.substring(0, 100)}`);
