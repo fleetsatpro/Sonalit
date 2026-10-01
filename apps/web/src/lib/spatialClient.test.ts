@@ -80,6 +80,15 @@ describe('externalWorldFeatures', () => {
     expect(WORLD_CONTEXT_LAYERS).toHaveLength(11)
     expect(new Set(entities.map(entity => entity.id)).size).toBe(11)
     expect(spatialEntityLayer(satellite)).toBe('satellites')
+    const layerSamples = [
+      ['aircraft', 'aircraft'], ['weather', 'weather'], ['vessel', 'maritime'],
+      ['traffic_flow_segment', 'traffic'], ['natural_hazard', 'hazards'], ['risk_zone', 'security'],
+      ['facility', 'infrastructure'], ['incident', 'incidents'], ['alert', 'alerts'],
+      ['spatial_camera', 'cameras'], ['satellite', 'satellites'],
+    ] as const
+    for (const [entityType, layer] of layerSamples) {
+      expect(spatialEntityLayer({ ...satellite, id: entityType, entityType })).toBe(layer)
+    }
     expect(externalWorldFeatures(context).features.find(f => f.properties.kind === 'satellite')?.properties.freshness).toBe('MODELLED')
   })
 
