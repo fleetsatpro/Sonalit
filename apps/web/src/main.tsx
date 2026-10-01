@@ -4,6 +4,7 @@ import './index.css';
 // margin-left: var(--d-rail-w) rule silently collapsed to 0 on non-Dashboard
 // pages, letting the outlet render underneath the sidebar.
 import './styles/dashboard.css';
+import './styles/theme-system.css';
 import './styles/intelligence-centre-3d.css';
 import './styles/intelligence-centre-command.css';
 // Public marketing site design system. Every rule is scoped under
