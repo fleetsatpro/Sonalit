@@ -38,8 +38,8 @@ describe('tenant isolation regression guards', () => {
       for (const file of filesUnder(root)) {
         const source = fs.readFileSync(file, 'utf8');
         for (const line of source.split(/\r?\n/)) {
-          if (!/\\bpool\\.query\\s*\\(/.test(line)) continue;
-          if (!/pool\\.query\\s*\\(\\s*['\`][^'\`]*REFRESH MATERIALIZED VIEW/i.test(line)) {
+          if (!/\bpool\.query\s*\(/.test(line)) continue;
+          if (!/pool\.query\s*\(\s*['\`][^'\`]*REFRESH MATERIALIZED VIEW/i.test(line)) {
             violations.push(path.relative(path.join(__dirname, '..'), file));
           }
         }
