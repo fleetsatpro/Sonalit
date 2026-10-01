@@ -321,19 +321,6 @@ BEGIN
   END LOOP;
 END $$;
 
--- Do not accidentally turn service-wide diagnostics/configuration into a
--- tenant table through the generic reconciliation above. Diagnostics are made
--- tenant-aware at the application boundary in the same security patch.
-ALTER TABLE IF EXISTS runtime_diagnostics ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS runtime_diagnostics FORCE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS tenant_isolation ON runtime_diagnostics;
-CREATE POLICY tenant_isolation ON runtime_diagnostics
-  USING (
-    org_id IS NOT NULL
-    AND org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid
-  )
-  WITH CHECK (
-    org_id = NULLIF(current_setting('app.current_org_id', true), '')::uuid
-  );
-
+-- runtime_diagnostics is intentionally service-wide for writers; tenant-facing
+-- reads are filtered in routes/runtimeDiagnostics.js.
 COMMIT;
