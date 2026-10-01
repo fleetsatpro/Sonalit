@@ -209,6 +209,7 @@ if (isClaimChild) {
     standby: isStandby,
     shouldTakeOver,
     classifyFenceStart,
+    deactivateFence,
     isFenceActive: () => true,
   };
 } else {
