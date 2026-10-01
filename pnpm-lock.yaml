@@ -1401,7 +1401,7 @@ importers:
         version: 10.3.0
       '@node-rs/argon2':
         specifier: ^2.0.0
-        version: 2.0.0
+        version: 2.0.2
       '@opentelemetry/api':
         specifier: ^1.9.0
         version: 1.9.1
