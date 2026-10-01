@@ -15,6 +15,7 @@ describe('centrifugo publish()', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     delete process.env.CENTRIFUGO_API_KEY;
+    delete process.env.CENTRIFUGO_API_URL;
     // Force module re-evaluation with new env
     jest.resetModules();
   });
@@ -23,6 +24,22 @@ describe('centrifugo publish()', () => {
     const { publish } = require('../src/realtime/centrifugo');
     await publish('test-channel', { foo: 1 });
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test('prefers the dedicated HTTP API URL over the legacy URL', async () => {
+    process.env.CENTRIFUGO_API_KEY = 'secret-key';
+    process.env.CENTRIFUGO_API_URL = 'http://centrifugo.railway.internal:8000';
+    process.env.CENTRIFUGO_URL = 'wss://rt.sonalit.io/connection/websocket';
+    mockFetch.mockResolvedValueOnce({ ok: true });
+    const { publish } = require('../src/realtime/centrifugo');
+    await publish('vehicle:update', { vehicleId: 'v1' });
+    expect(mockFetch).toHaveBeenCalledWith(
+      'http://centrifugo.railway.internal:8000/api/publish',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ 'Authorization': 'apikey secret-key' }),
+      })
+    );
   });
 
   test('POSTs to /api/publish with correct headers when API key is set', async () => {
