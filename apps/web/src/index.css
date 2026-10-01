@@ -25,21 +25,21 @@
 
 /* ── Portal design tokens ─────────────────────────────────────────────────── */
 :root {
-  --p-bg:        #070b16;
-  --p-surface:   #0e1626;
-  --p-surface2:  #0b1120;
-  --p-border:    rgba(255,255,255,0.07);
+  --p-bg:        var(--d-void);
+  --p-surface:   var(--d-well);
+  --p-surface2:  var(--d-deep);
+  --p-border:    var(--d-rim);
   --p-orange:    #f97316;
   --p-orange2:   #ea6c10;
-  --p-text:      #e2e8f0;
-  --p-muted:     rgba(226,232,240,0.45);
+  --p-text:      var(--d-t1);
+  --p-muted:     var(--d-t2);
   --p-mono:      'IBM Plex Mono', 'Courier New', monospace;
   --p-sans:      'Archivo', system-ui, sans-serif;
 }
 
 body {
-  background: #050813;
-  color: #e2e8f0;
+  background: var(--d-void);
+  color: var(--d-t1);
   font-family: var(--p-sans);
 }
 
