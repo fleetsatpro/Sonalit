@@ -1,5 +1,5 @@
-const THEMES = new Set(['obsidian', 'arctic', 'graphite', 'copper', 'signal', 'daylight']);
-const LIGHT_THEMES = new Set(['arctic', 'daylight']);
+const THEMES = new Set(['obsidian', 'arctic', 'graphite', 'copper', 'signal', 'ivory', 'daylight']);
+const LIGHT_THEMES = new Set(['arctic', 'ivory', 'daylight']);
 
 function readPersistedTheme(): string | null {
   try {
@@ -21,5 +21,20 @@ const theme = persisted === 'dark'
       ? persisted
       : 'obsidian';
 
-document.documentElement.setAttribute('data-theme', theme);
-document.documentElement.style.colorScheme = LIGHT_THEMES.has(theme) ? 'light' : 'dark';
+const root = document.documentElement;
+root.setAttribute('data-theme', theme);
+root.classList.toggle('dark', !LIGHT_THEMES.has(theme));
+root.style.colorScheme = LIGHT_THEMES.has(theme) ? 'light' : 'dark';
+
+const themeChrome: Record<string, string> = {
+  obsidian: '#030711',
+  arctic: '#f4f8fc',
+  graphite: '#0e1012',
+  copper: '#130f0d',
+  signal: '#090d09',
+  ivory: '#f8f7f2',
+  daylight: '#f8f7f2',
+};
+
+const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+if (themeColor) themeColor.content = themeChrome[theme] ?? themeChrome.obsidian;
