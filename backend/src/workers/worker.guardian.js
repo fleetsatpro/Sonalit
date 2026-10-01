@@ -1,6 +1,7 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
 const { Worker } = require('bullmq');
 const { query } = require('../config/database');
+const { withOrg } = require('../utils/orgScopedDb');
 const logger = require('../utils/logger');
 
 function startGuardianWorkers() {
@@ -18,12 +19,13 @@ function startGuardianWorkers() {
 
   const deviceWorker = new Worker('device', async (job) => {
     if (job.name === 'device:ping') {
-      const { device_id, officer_id, org_id } = job.data;
-      await query(
+      const { device_id, org_id } = job.data;
+      if (!org_id) throw new Error('device:ping missing org_id');
+      await withOrg(org_id, () => query(
         `INSERT INTO device_commands (org_id, device_id, command, status, expires_at)
          VALUES ($1, $2, 'request_location', 'pending', NOW() + INTERVAL '1 hour')`,
         [org_id, device_id]
-      );
+      ));
       logger.info(`device:ping queued request_location for device ${device_id}`);
     }
 
@@ -34,23 +36,26 @@ function startGuardianWorkers() {
            AND gd.deleted_at IS NULL AND gd.status = 'active'`
       );
       for (const device of rows) {
-        const rule = await query(
+        if (!device.org_id) continue;
+        await withOrg(device.org_id, async () => {
+          const rule = await query(
           `SELECT id FROM alert_rules WHERE org_id = $1 AND trigger = 'signal_lost' AND enabled = true LIMIT 1`,
           [device.org_id]
         );
-        if (!rule.rows.length) continue;
-        const recent = await query(
+          if (!rule.rows.length) return;
+          const recent = await query(
           `SELECT id FROM device_commands WHERE device_id = $1 AND command = 'trigger_siren'
            AND created_at > NOW() - INTERVAL '30 minutes' LIMIT 1`,
           [device.id]
         );
-        if (recent.rows.length) continue;
-        await query(
-          `INSERT INTO device_commands (org_id, device_id, command, status, expires_at)
-           VALUES ($1, $2, 'trigger_siren', 'pending', NOW() + INTERVAL '1 hour')`,
-          [device.org_id, device.id]
-        );
-        logger.info(`heartbeat_check: trigger_siren issued for offline device ${device.id}`);
+          if (recent.rows.length) return;
+          await query(
+            `INSERT INTO device_commands (org_id, device_id, command, status, expires_at)
+             VALUES ($1, $2, 'trigger_siren', 'pending', NOW() + INTERVAL '1 hour')`,
+            [device.org_id, device.id]
+          );
+          logger.info(`heartbeat_check: trigger_siren issued for offline device ${device.id} org=${device.org_id}`);
+        });
       }
     }
   }, { connection });
@@ -58,10 +63,19 @@ function startGuardianWorkers() {
   const knoxWorker = new Worker('knox', async (job) => {
     if (job.name === 'knox:finalize_recording') {
       const { session_id } = job.data;
-      await query(
-        `UPDATE knox_remote_sessions SET status = 'ended' WHERE id = $1 AND status != 'ended'`,
+      const owner = await query(
+        `SELECT gd.org_id
+           FROM knox_remote_sessions k
+           JOIN guardian_devices gd ON gd.id = k.device_id
+          WHERE k.id = $1`,
         [session_id]
       );
+      const orgId = owner.rows[0]?.org_id;
+      if (!orgId) throw new Error('Knox session has no tenant scope');
+      await withOrg(orgId, () => query(
+        `UPDATE knox_remote_sessions SET status = 'ended' WHERE id = $1 AND status != 'ended'`,
+        [session_id]
+      ));
       logger.info(`Knox session ${session_id} finalized`);
     }
   }, { connection });
