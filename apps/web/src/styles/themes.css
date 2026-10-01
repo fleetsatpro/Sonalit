@@ -1,0 +1,248 @@
+/* Sonalit system theme layer.
+ * Theme tokens are presentation-only: operational colors (fire/warn/ok),
+ * geometry, telemetry semantics, permissions and workflows remain unchanged.
+ * data-theme is owned by stores/ui.ts.
+ */
+
+:root {
+  color-scheme: dark;
+  --s-theme-bg: #050813;
+  --s-theme-surface: #0b1120;
+  --s-theme-surface-2: #101a30;
+  --s-theme-surface-3: #16213a;
+  --s-theme-border: rgba(140,170,255,.14);
+  --s-theme-border-strong: rgba(140,170,255,.26);
+  --s-theme-text: #eaf2ff;
+  --s-theme-muted: #7c8aae;
+  --s-theme-accent: #22e8ff;
+  --s-theme-accent-strong: #17b8cc;
+  --s-theme-accent-contrast: #031016;
+  --s-theme-focus: #8b6bff;
+  --s-theme-input: #0b1120;
+  --s-theme-shadow: 0 18px 55px rgba(0,0,0,.28);
+  --s-theme-glow: rgba(34,232,255,.16);
+}
+
+:root[data-theme="arctic"] {
+  color-scheme: light;
+  --s-theme-bg: #edf3f7;
+  --s-theme-surface: #ffffff;
+  --s-theme-surface-2: #f5f8fa;
+  --s-theme-surface-3: #e7eef3;
+  --s-theme-border: rgba(20,43,58,.12);
+  --s-theme-border-strong: rgba(20,43,58,.22);
+  --s-theme-text: #122431;
+  --s-theme-muted: #536a77;
+  --s-theme-accent: #087f8c;
+  --s-theme-accent-strong: #066b75;
+  --s-theme-accent-contrast: #ffffff;
+  --s-theme-focus: #3867d6;
+  --s-theme-input: #ffffff;
+  --s-theme-shadow: 0 16px 42px rgba(35,65,82,.12);
+  --s-theme-glow: rgba(8,127,140,.12);
+}
+
+:root[data-theme="graphite"] {
+  color-scheme: dark;
+  --s-theme-bg: #101214;
+  --s-theme-surface: #171a1d;
+  --s-theme-surface-2: #1d2125;
+  --s-theme-surface-3: #252a2f;
+  --s-theme-border: rgba(231,238,242,.10);
+  --s-theme-border-strong: rgba(231,238,242,.19);
+  --s-theme-text: #edf1f2;
+  --s-theme-muted: #9aa5aa;
+  --s-theme-accent: #d5dde0;
+  --s-theme-accent-strong: #ffffff;
+  --s-theme-accent-contrast: #101214;
+  --s-theme-focus: #91a4ad;
+  --s-theme-input: #111416;
+  --s-theme-shadow: 0 18px 55px rgba(0,0,0,.35);
+  --s-theme-glow: rgba(213,221,224,.08);
+}
+
+:root[data-theme="copper"] {
+  color-scheme: dark;
+  --s-theme-bg: #140e0b;
+  --s-theme-surface: #201512;
+  --s-theme-surface-2: #2a1c17;
+  --s-theme-surface-3: #35241e;
+  --s-theme-border: rgba(255,185,139,.13);
+  --s-theme-border-strong: rgba(255,185,139,.24);
+  --s-theme-text: #fff1e9;
+  --s-theme-muted: #bda79b;
+  --s-theme-accent: #ff9b66;
+  --s-theme-accent-strong: #ff7a45;
+  --s-theme-accent-contrast: #1c0e08;
+  --s-theme-focus: #ffcc80;
+  --s-theme-input: #1b120f;
+  --s-theme-shadow: 0 18px 55px rgba(0,0,0,.34);
+  --s-theme-glow: rgba(255,155,102,.14);
+}
+
+:root[data-theme="signal"] {
+  color-scheme: dark;
+  --s-theme-bg: #090d08;
+  --s-theme-surface: #111711;
+  --s-theme-surface-2: #182018;
+  --s-theme-surface-3: #202b1f;
+  --s-theme-border: rgba(217,255,105,.13);
+  --s-theme-border-strong: rgba(217,255,105,.25);
+  --s-theme-text: #f2f7e9;
+  --s-theme-muted: #9eab91;
+  --s-theme-accent: #d9ff69;
+  --s-theme-accent-strong: #bde64c;
+  --s-theme-accent-contrast: #101509;
+  --s-theme-focus: #8ef0cb;
+  --s-theme-input: #0d130d;
+  --s-theme-shadow: 0 18px 55px rgba(0,0,0,.32);
+  --s-theme-glow: rgba(217,255,105,.12);
+}
+
+:root[data-theme="daylight"] {
+  color-scheme: light;
+  --s-theme-bg: #f6f4ef;
+  --s-theme-surface: #fffdfa;
+  --s-theme-surface-2: #f0ede6;
+  --s-theme-surface-3: #e7e2d8;
+  --s-theme-border: rgba(35,32,27,.12);
+  --s-theme-border-strong: rgba(35,32,27,.23);
+  --s-theme-text: #24211d;
+  --s-theme-muted: #6f6a61;
+  --s-theme-accent: #bf5a20;
+  --s-theme-accent-strong: #9e4818;
+  --s-theme-accent-contrast: #ffffff;
+  --s-theme-focus: #246b75;
+  --s-theme-input: #fffdfa;
+  --s-theme-shadow: 0 16px 42px rgba(55,48,38,.12);
+  --s-theme-glow: rgba(191,90,32,.10);
+}
+
+/* Global canvas and form primitives. */
+html[data-theme] body {
+  background: var(--s-theme-bg);
+  color: var(--s-theme-text);
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+html[data-theme] input,
+html[data-theme] textarea,
+html[data-theme] select {
+  background-color: var(--s-theme-input);
+  color: var(--s-theme-text);
+  border-color: var(--s-theme-border-strong);
+}
+
+html[data-theme] input::placeholder,
+html[data-theme] textarea::placeholder {
+  color: var(--s-theme-muted);
+}
+
+html[data-theme] input:focus,
+html[data-theme] textarea:focus,
+html[data-theme] select:focus,
+html[data-theme] button:focus-visible,
+html[data-theme] a:focus-visible {
+  outline: 2px solid var(--s-theme-focus);
+  outline-offset: 2px;
+}
+
+/* Theme the common Tailwind portal primitives without changing semantic status
+ * colors. This makes existing hard-coded pages participate immediately while
+ * preserving their layout and component contracts. */
+html[data-theme] .bg-slate-950,
+html[data-theme] .bg-slate-900,
+html[data-theme] .bg-slate-800 {
+  background-color: var(--s-theme-surface) !important;
+}
+
+html[data-theme] .bg-slate-700,
+html[data-theme] .bg-slate-600 {
+  background-color: var(--s-theme-surface-3) !important;
+}
+
+html[data-theme] .border-slate-800,
+html[data-theme] .border-slate-700,
+html[data-theme] .border-slate-600,
+html[data-theme] .border-slate-500 {
+  border-color: var(--s-theme-border) !important;
+}
+
+html[data-theme] .text-white,
+html[data-theme] .text-slate-100,
+html[data-theme] .text-slate-200,
+html[data-theme] .text-slate-300 {
+  color: var(--s-theme-text) !important;
+}
+
+html[data-theme] .text-slate-400,
+html[data-theme] .text-slate-500 {
+  color: var(--s-theme-muted) !important;
+}
+
+/* Neutral hover surfaces. Signal/status hues are deliberately excluded. */
+html[data-theme] .hover\:bg-slate-800:hover,
+html[data-theme] .hover\:bg-slate-700:hover,
+html[data-theme] .hover\:bg-slate-600:hover {
+  background-color: var(--s-theme-surface-3) !important;
+}
+
+/* Existing dashboard token bridge. Each named theme has a coherent dashboard
+ * palette; red/amber/green/purple remain reserved for operational status. */
+:root[data-theme="arctic"] {
+  --d-void: #edf3f7; --d-carbon: #f7fafb; --d-deep: #eef4f7;
+  --d-well: #e7eef3; --d-surf: #ffffff; --d-lift: #f8fbfc; --d-lift2: #e2ebf0;
+  --d-rim: rgba(20,43,58,.08); --d-rim2: rgba(20,43,58,.13); --d-rim3: rgba(20,43,58,.22);
+  --d-sig: #087f8c; --d-sig2: #066b75; --d-sig3: #05545c;
+  --d-sg: rgba(8,127,140,.13); --d-sg2: rgba(8,127,140,.07); --d-sglow: rgba(8,127,140,.42);
+  --d-orange: #3867d6; --d-og: rgba(56,103,214,.12); --d-oglow: rgba(56,103,214,.42);
+  --d-t1: #122431; --d-t2: #536a77; --d-t3: #8397a3; --d-t4: #c8d4db;
+}
+:root[data-theme="graphite"] {
+  --d-void: #101214; --d-carbon: #141719; --d-deep: #171a1d;
+  --d-well: #1d2125; --d-surf: #23282d; --d-lift: #2a3035; --d-lift2: #333a40;
+  --d-rim: rgba(231,238,242,.08); --d-rim2: rgba(231,238,242,.12); --d-rim3: rgba(231,238,242,.22);
+  --d-sig: #d5dde0; --d-sig2: #b8c3c8; --d-sig3: #9aa8ae;
+  --d-sg: rgba(213,221,224,.10); --d-sg2: rgba(213,221,224,.06); --d-sglow: rgba(213,221,224,.28);
+  --d-orange: #91a4ad; --d-og: rgba(145,164,173,.10); --d-oglow: rgba(145,164,173,.30);
+  --d-t1: #edf1f2; --d-t2: #9aa5aa; --d-t3: #68747a; --d-t4: #3b4348;
+}
+:root[data-theme="copper"] {
+  --d-void: #140e0b; --d-carbon: #1a110e; --d-deep: #201512;
+  --d-well: #2a1c17; --d-surf: #302019; --d-lift: #39271f; --d-lift2: #463027;
+  --d-rim: rgba(255,185,139,.08); --d-rim2: rgba(255,185,139,.13); --d-rim3: rgba(255,185,139,.24);
+  --d-sig: #ff9b66; --d-sig2: #ff7a45; --d-sig3: #d95e31;
+  --d-sg: rgba(255,155,102,.13); --d-sg2: rgba(255,155,102,.07); --d-sglow: rgba(255,155,102,.38);
+  --d-orange: #ffcc80; --d-og: rgba(255,204,128,.10); --d-oglow: rgba(255,204,128,.30);
+  --d-t1: #fff1e9; --d-t2: #bda79b; --d-t3: #79665d; --d-t4: #493b35;
+}
+:root[data-theme="signal"] {
+  --d-void: #090d08; --d-carbon: #0d130d; --d-deep: #111711;
+  --d-well: #182018; --d-surf: #1e291c; --d-lift: #26331f; --d-lift2: #304027;
+  --d-rim: rgba(217,255,105,.08); --d-rim2: rgba(217,255,105,.13); --d-rim3: rgba(217,255,105,.25);
+  --d-sig: #d9ff69; --d-sig2: #bde64c; --d-sig3: #92bd32;
+  --d-sg: rgba(217,255,105,.12); --d-sg2: rgba(217,255,105,.06); --d-sglow: rgba(217,255,105,.34);
+  --d-orange: #8ef0cb; --d-og: rgba(142,240,203,.10); --d-oglow: rgba(142,240,203,.28);
+  --d-t1: #f2f7e9; --d-t2: #9eab91; --d-t3: #65705d; --d-t4: #3a4335;
+}
+:root[data-theme="daylight"] {
+  --d-void: #f6f4ef; --d-carbon: #fbf9f4; --d-deep: #f2efe8;
+  --d-well: #e7e2d8; --d-surf: #fffdfa; --d-lift: #f0ede6; --d-lift2: #ddd7cb;
+  --d-rim: rgba(35,32,27,.08); --d-rim2: rgba(35,32,27,.13); --d-rim3: rgba(35,32,27,.23);
+  --d-sig: #246b75; --d-sig2: #1d5961; --d-sig3: #17474e;
+  --d-sg: rgba(36,107,117,.12); --d-sg2: rgba(36,107,117,.06); --d-sglow: rgba(36,107,117,.35);
+  --d-orange: #bf5a20; --d-og: rgba(191,90,32,.11); --d-oglow: rgba(191,90,32,.30);
+  --d-t1: #24211d; --d-t2: #6f6a61; --d-t3: #9d978d; --d-t4: #cec8bd;
+}
+
+/* The legacy "light" selection remains supported as an alias for a refined
+ * neutral daylight treatment, so old persisted users are not stranded. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --s-theme-bg: #f7f8f7; --s-theme-surface: #ffffff; --s-theme-surface-2: #f1f4f3;
+  --s-theme-surface-3: #e6ece9; --s-theme-border: rgba(22,42,34,.12);
+  --s-theme-border-strong: rgba(22,42,34,.22); --s-theme-text: #17231e;
+  --s-theme-muted: #5e6f67; --s-theme-accent: #13795b; --s-theme-accent-strong: #0e624a;
+  --s-theme-accent-contrast: #ffffff; --s-theme-focus: #2864d7; --s-theme-input: #ffffff;
+  --s-theme-shadow: 0 16px 42px rgba(34,55,46,.12); --s-theme-glow: rgba(19,121,91,.10);
+}
