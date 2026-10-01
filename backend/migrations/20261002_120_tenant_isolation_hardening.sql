@@ -82,51 +82,45 @@ FROM convoys c
 WHERE ca.convoy_id = c.id AND ca.org_id IS NULL AND c.org_id IS NOT NULL;
 
 UPDATE checkpoints cp
-SET org_id = COALESCE(s.org_id, c.org_id)
-FROM shipments s
-LEFT JOIN convoys c ON c.id = cp.convoy_id
-WHERE cp.id IS NOT NULL
-  AND cp.org_id IS NULL
-  AND (s.id = cp.shipment_id OR (cp.shipment_id IS NULL AND c.id IS NOT NULL));
+SET org_id = COALESCE(
+  (SELECT s.org_id FROM shipments s WHERE s.id = cp.shipment_id),
+  (SELECT c.org_id FROM convoys c WHERE c.id = cp.convoy_id)
+)
+WHERE cp.org_id IS NULL;
 
 UPDATE trips t
-SET org_id = COALESCE(c.org_id, s.org_id, v.org_id, d.org_id)
-FROM convoys c
-FULL OUTER JOIN shipments s ON false
-FULL OUTER JOIN vehicles v ON false
-FULL OUTER JOIN drivers d ON false
-WHERE t.org_id IS NULL
-  AND (
-    c.id = t.convoy_id
-    OR s.id = t.shipment_id
-    OR v.id = t.vehicle_id
-    OR d.id = t.driver_id
-  );
+SET org_id = COALESCE(
+  (SELECT c.org_id FROM convoys c WHERE c.id = t.convoy_id),
+  (SELECT s.org_id FROM shipments s WHERE s.id = t.shipment_id),
+  (SELECT v.org_id FROM vehicles v WHERE v.id = t.vehicle_id),
+  (SELECT d.org_id FROM drivers d WHERE d.id = t.driver_id)
+)
+WHERE t.org_id IS NULL;
 
 UPDATE invoices i
-SET org_id = COALESCE(s.org_id, t.org_id, u.org_id)
-FROM shipments s
-FULL OUTER JOIN trips t ON false
-FULL OUTER JOIN users u ON false
-WHERE i.org_id IS NULL
-  AND (s.id = i.shipment_id OR t.id = i.trip_id OR u.id = i.created_by);
+SET org_id = COALESCE(
+  (SELECT s.org_id FROM shipments s WHERE s.id = i.shipment_id),
+  (SELECT t.org_id FROM trips t WHERE t.id = i.trip_id),
+  (SELECT u.org_id FROM users u WHERE u.id = i.created_by)
+)
+WHERE i.org_id IS NULL;
 
 UPDATE expenses e
-SET org_id = COALESCE(t.org_id, v.org_id, d.org_id, u.org_id)
-FROM trips t
-FULL OUTER JOIN vehicles v ON false
-FULL OUTER JOIN drivers d ON false
-FULL OUTER JOIN users u ON false
-WHERE e.org_id IS NULL
-  AND (t.id = e.trip_id OR v.id = e.vehicle_id OR d.id = e.driver_id OR u.id = e.recorded_by);
+SET org_id = COALESCE(
+  (SELECT t.org_id FROM trips t WHERE t.id = e.trip_id),
+  (SELECT v.org_id FROM vehicles v WHERE v.id = e.vehicle_id),
+  (SELECT d.org_id FROM drivers d WHERE d.id = e.driver_id),
+  (SELECT u.org_id FROM users u WHERE u.id = e.recorded_by)
+)
+WHERE e.org_id IS NULL;
 
 UPDATE driver_events de
-SET org_id = COALESCE(d.org_id, v.org_id, t.org_id)
-FROM drivers d
-FULL OUTER JOIN vehicles v ON false
-FULL OUTER JOIN trips t ON false
-WHERE de.org_id IS NULL
-  AND (d.id = de.driver_id OR v.id = de.vehicle_id OR t.id = de.trip_id);
+SET org_id = COALESCE(
+  (SELECT d.org_id FROM drivers d WHERE d.id = de.driver_id),
+  (SELECT v.org_id FROM vehicles v WHERE v.id = de.vehicle_id),
+  (SELECT t.org_id FROM trips t WHERE t.id = de.trip_id)
+)
+WHERE de.org_id IS NULL;
 
 UPDATE geofence_actions ga
 SET org_id = g.org_id
