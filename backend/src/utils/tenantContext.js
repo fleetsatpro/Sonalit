@@ -21,10 +21,18 @@ function getOrgId() {
   return storage.getStore()?.orgId ?? null;
 }
 
-function runWithOrgContext(orgId, fn) {
+function runWithOrgContext(orgId, fn, client = null) {
   const normalized = normalizeOrgId(orgId);
   if (!normalized) throw new Error('invalid_org_id');
-  return storage.run({ orgId: normalized }, fn);
+  const parent = storage.getStore();
+  return storage.run({
+    orgId: normalized,
+    client: client || parent?.client || null,
+  }, fn);
 }
 
-module.exports = { normalizeOrgId, getOrgId, runWithOrgContext };
+function getTenantDbClient() {
+  return storage.getStore()?.client ?? null;
+}
+
+module.exports = { normalizeOrgId, getOrgId, getTenantDbClient, runWithOrgContext };
