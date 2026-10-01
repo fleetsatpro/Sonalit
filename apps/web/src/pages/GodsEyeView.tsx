@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Globe2, Layers3, RadioTower, Orbit } from 'lucide-react'
 import { api } from '../lib/api.js'
@@ -47,6 +47,10 @@ export default function GodsEyeView() {
   }, [allVehicles])
   const [worldViewport, setWorldViewport] = useState({ ...initialWorldCenter, radiusM: 100000 })
 
+  const positionedVehicles = useMemo(() => allVehicles.filter(v => v.lat != null && v.lng != null), [allVehicles])
+  const worldViewportRef = useRef(worldViewport)
+  worldViewportRef.current = worldViewport
+
   const { data: worldContext, isFetching: worldFetching, isError: worldError } = useQuery({
     queryKey: ['gev-3d-world-context', worldViewport.latitude, worldViewport.longitude, worldViewport.radiusM],
     queryFn: ({ signal }: { signal: AbortSignal }) => fetchWorldContext({
@@ -62,6 +66,13 @@ export default function GodsEyeView() {
     retry: 1,
   })
   const externalEntities = useMemo(() => worldContextEntities(worldContext).filter((entity) => !['vehicle', 'guardian_device'].includes(entity.entityType)), [worldContext])
+  useEffect(() => {
+    if (view !== '3D' || positionedVehicles.length === 0) return
+    const current = worldViewportRef.current
+    const looksLikeFallback = current.latitude === 35.5 && current.longitude === 1.2
+    if (looksLikeFallback) setWorldViewport({ ...initialWorldCenter, radiusM: 100000 })
+  }, [view, positionedVehicles.length, initialWorldCenter])
+
   const renderableExternalEntities = useMemo(() => externalEntities.filter((entity) => Number.isFinite(entity.latitude) && Number.isFinite(entity.longitude)), [externalEntities])
   const selectedExternal = useMemo(() => externalEntities.find((entity) => entity.id === selectedExternalId) ?? null, [externalEntities, selectedExternalId])
   const layerCounts = useMemo(() => {
