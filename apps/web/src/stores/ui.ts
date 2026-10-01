@@ -1,7 +1,19 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-type Theme = 'dark' | 'light';
+export const SONALIT_THEMES = ['obsidian','arctic','graphite','copper','signal','ivory'] as const;
+export type Theme = typeof SONALIT_THEMES[number];
+
+export const THEME_META: Record<Theme, { label: string; description: string; preview: string; density: 'dark' | 'light' }> = {
+  obsidian: { label: 'Obsidian Command', description: 'Deep-space command console with cyan/violet instrumentation.', preview: 'linear-gradient(135deg,#030711,#22e8ff,#8b6bff)', density: 'dark' },
+  arctic: { label: 'Arctic Signal', description: 'Bright analytical control room with cool blue telemetry accents.', preview: 'linear-gradient(135deg,#f7fbff,#1677ff,#11a6c7)', density: 'light' },
+  graphite: { label: 'Graphite Pro', description: 'Neutral executive console with restrained blue signal accents.', preview: 'linear-gradient(135deg,#101216,#657080,#dbe5f0)', density: 'dark' },
+  copper: { label: 'Copper Dusk', description: 'Warm field-operations palette with copper and ember instrumentation.', preview: 'linear-gradient(135deg,#120d0a,#d97735,#f0b36b)', density: 'dark' },
+  signal: { label: 'Signal Lime', description: 'High-visibility tactical console for fast operational scanning.', preview: 'linear-gradient(135deg,#07100b,#a7e83b,#22c55e)', density: 'dark' },
+  ivory: { label: 'Ivory Daylight', description: 'Daylight field console tuned for bright environments and tablets.', preview: 'linear-gradient(135deg,#fffdf8,#245bff,#0e8f72)', density: 'light' },
+};
+
+const DEFAULT_THEME: Theme = 'obsidian';
 
 // The theme field existed here before but nothing ever applied it — no
 // component read useUIStore.theme, so switching it had zero visible effect.
@@ -32,7 +44,7 @@ export const useUIStore = create<UIState>()(
   persist(
     (set) => ({
       sidebarOpen: defaultSidebarOpen,
-      theme: 'dark',
+      theme: DEFAULT_THEME,
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
       setTheme: (theme) => { applyTheme(theme); set({ theme }); },
