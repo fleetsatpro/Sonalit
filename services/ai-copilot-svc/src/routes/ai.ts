@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { config } from '../config.js';
-import { query, pool } from '../db.js';
+import { query } from '../db.js';
 import { redis } from '../redis.js';
 import { withCircuitBreaker, CircuitOpenError } from '../lib/circuit-breaker.js';
 import type { AiDecision } from '../db.js';
@@ -69,7 +69,7 @@ function setSseHeaders(reply: FastifyReply): void {
 }
 
 async function storeDecision(orgId: string, userId: string, userQuery: string, response: string): Promise<void> {
-  await pool.query(
+  await query(
     `INSERT INTO ai_decisions (id, org_id, user_id, query, response, created_at)
      VALUES ($1, $2, $3, $4, $5, NOW())`,
     [randomUUID(), orgId, userId, userQuery, response]
@@ -103,8 +103,9 @@ export async function aiRoutes(app: FastifyInstance): Promise<void> {
     if (!body.success) return reply.code(400).send({ error: 'Invalid request', issues: body.error.issues });
     const { message, session_id } = body.data;
     const sessionId = session_id ?? randomUUID();
-    const orgId = (req.headers['x-org-id'] as string) ?? 'unknown';
-    const userId = (req.headers['x-user-id'] as string) ?? 'unknown';
+    const orgId = req.user?.org_id;
+    const userId = req.user?.sub;
+    if (!orgId || !userId) return reply.code(401).send({ error: 'tenant_scope_required' });
     let history: SessionMessage[] = [];
     try { history = await getSessionMessages(orgId, userId, sessionId); } catch (err) { req.log.warn({ err }, 'Copilot session read failed; starting fresh'); }
     history.push({ role: 'user', content: message });
