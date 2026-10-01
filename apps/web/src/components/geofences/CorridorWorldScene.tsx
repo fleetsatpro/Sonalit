@@ -1,9 +1,10 @@
-mmport { useEffeot, useMemo, useRef, useState } from 'reaot';
-mmport * as Cesium from 'cesium';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 import { Crosshair, Layers, Map as MapIcon, Satellite, Signal, Target, TriangleAlert } from 'lucide-react';
 import type { SpatialWorldEntity } from '../../lib/spatialClient.js';
 import { spatialEntityLayer } from '../../lib/spatialClient.js';
+import '../../styles/spatial-command.css';
 
 export interface LatLng { lat: number; lng: number }
 export interface GlobeMember {
@@ -286,6 +287,7 @@ export default function CorridorWorldScene({
       });
     }
     const compactSurface = window.matchMedia?.('(max-width: 900px)').matches ?? false;
+    const highDpi = window.devicePixelRatio || 1;
     viewer.scene.globe.enableLighting = true;
     viewer.scene.globe.showGroundAtmosphere = true;
     viewer.scene.globe.depthTestAgainstTerrain = true;
@@ -295,7 +297,8 @@ export default function CorridorWorldScene({
     viewer.scene.postProcessStages.fxaa.enabled = true;
     viewer.scene.msaaSamples = compactSurface ? 2 : 4;
     viewer.useBrowserRecommendedResolution = false;
-    viewer.resolutionScale = compactSurface ? 1.5 : 2;
+    viewer.resolutionScale = Math.min(highDpi, compactSurface ? 1.75 : 2.5);
+    viewer.scene.globe.maximumScreenSpaceError = compactSurface ? 2 : 1.25;
     setMapStatus(TOKEN ? 'CESIUM + ESRI · LIVE' : 'ESRI FALLBACK · ION TOKEN NOT EXPOSED');
 
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
@@ -730,10 +733,10 @@ export default function CorridorWorldScene({
   }
 
   return (
-    <div className={`${fill ? 'h-full' : 'h-[520px]'} relative overflow-hidden bg-[#080b12]`}>
+    <div data-spatial-surface="cesium-world" className={`spatial-surface ${fill ? 'h-full' : 'h-[520px]'} relative overflow-hidden bg-[#080b12]`}>
       <div ref={boxRef} className="absolute inset-0" />
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3">
-        <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-[#070a10]/86 p-1 backdrop-blur-xl">
+        <div className="spatial-control-rail pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-[#070a10]/86 p-1 backdrop-blur-xl">
           <button type="button" onClick={() => setMode('dark')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'dark' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Dark map" aria-pressed={mode === 'dark'}><MapIcon size={15} /></button>
           <button type="button" onClick={() => setMode('satellite')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'satellite' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Satellite map" aria-pressed={mode === 'satellite'}><Satellite size={15} /></button>
           <button type="button" onClick={() => setMode('hybrid')} className={`grid h-8 w-8 place-items-center rounded-lg ${mode === 'hybrid' ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-white'}`} aria-label="Hybrid map" aria-pressed={mode === 'hybrid'}><Layers size={15} /></button>
@@ -745,13 +748,13 @@ export default function CorridorWorldScene({
           <button type="button" onClick={() => setCreditsOpen(v => !v)} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label="Map information" aria-expanded={creditsOpen}><Signal size={15} /></button>
         </div>
       </div>
-      <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap items-center gap-2">
+      <div className="spatial-cesium-chrome pointer-events-none absolute bottom-3 left-3 flex flex-wrap items-center gap-2">
         <span className="rounded-lg border border-white/10 bg-[#070a10]/84 px-2.5 py-1.5 text-[10px] font-bold font-mono text-neutral-300 backdrop-blur-xl">{liveMembers.length} DEVICE{liveMembers.length === 1 ? '' : 'S'} VISIBLE</span>
         {terrainReady && <span className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.08] px-2.5 py-1.5 text-[10px] font-bold font-mono text-emerald-300 backdrop-blur-xl">WORLD TERRAIN</span>}
         {focusId && <span className="rounded-lg border border-violet-500/25 bg-violet-500/[0.09] px-2.5 py-1.5 text-[10px] font-bold font-mono text-violet-300 backdrop-blur-xl">FOCUS · {liveMembers.find(m => m.id === focusId)?.name ?? focusId.slice(0, 8)}</span>}
       </div>
       {creditsOpen && (
-        <div className="absolute bottom-3 right-3 max-w-xs rounded-xl border border-white/10 bg-[#070a10]/92 p-3 text-[10px] leading-relaxed text-neutral-400 shadow-2xl backdrop-blur-xl">
+        <div className="spatial-cesium-chrome absolute bottom-3 right-3 max-w-xs rounded-xl border border-white/10 bg-[#070a10]/92 p-3 text-[10px] leading-relaxed text-neutral-400 shadow-2xl backdrop-blur-xl">
           <p className="font-semibold text-neutral-200">World surface</p>
           <p className="mt-1">Operational map tiles: Esri / OpenStreetMap contributors. Cesium terrain and buildings are enabled when the configured Ion token permits them.</p>
         </div>
