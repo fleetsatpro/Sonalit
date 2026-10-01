@@ -6,7 +6,16 @@ function normalizeCentrifugoUrl(raw) {
   return `http://${value}`;
 }
 
-const CENTRIFUGO_URL = normalizeCentrifugoUrl(process.env.CENTRIFUGO_URL);
+// Publish API traffic must use an HTTP origin reachable from the backend container.
+// Prefer the explicitly named API URL, then the legacy URL, then Railway's
+// injected private-domain reference for the Centrifugo service.
+const CENTRIFUGO_URL = normalizeCentrifugoUrl(
+  process.env.CENTRIFUGO_API_URL
+  || process.env.CENTRIFUGO_URL
+  || (process.env.RAILWAY_SERVICE_CENTRIFUGO_URL
+    ? `http://${process.env.RAILWAY_SERVICE_CENTRIFUGO_URL}:8000`
+    : 'http://centrifugo.railway.internal:8000')
+);
 const CENTRIFUGO_API_KEY = process.env.CENTRIFUGO_API_KEY || '';
 
 async function publish(channel, data) {
