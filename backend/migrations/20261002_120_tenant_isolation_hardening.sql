@@ -213,7 +213,7 @@ BEGIN
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public'
-      AND c.relkind = 'r'
+      AND c.relkind IN ('r','p')
       AND c.relname NOT IN ('runtime_diagnostics')
       AND EXISTS (
         SELECT 1
@@ -248,6 +248,7 @@ BEGIN
     END IF;
 
     EXECUTE format('DROP POLICY IF EXISTS tenant_isolation_hardening ON %I.%I', r.schema_name, r.table_name);
+    EXECUTE format('DROP POLICY IF EXISTS tenant_global_risk_read ON %I.%I', r.schema_name, r.table_name);
     EXECUTE format('DROP POLICY IF EXISTS tenant_isolation_hardening_write ON %I.%I', r.schema_name, r.table_name);
     EXECUTE format('DROP POLICY IF EXISTS tenant_isolation_base ON %I.%I', r.schema_name, r.table_name);
 
