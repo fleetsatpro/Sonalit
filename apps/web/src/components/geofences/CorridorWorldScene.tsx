@@ -120,9 +120,13 @@ function fitPoints(route: LatLng[], members: GlobeMember[], trail?: LatLng[], zo
     ...route,
     ...members.filter(m => m.lat != null && m.lng != null).map(m => ({ lat: m.lat!, lng: m.lng! })),
     ...(trail ?? []),
-    ...zones.map(z => ({ lat: z.lat, lng: z.lng })),
-    ...worldEntities.filter(e => Number.isFinite(e.latitude) && Number.isFinite(e.longitude)).map(e => ({ lat: e.latitude, lng: e.longitude })),
-  ].map(p => Cesium.Cartesian3.fromDegrees(p.lng, p.lat, 0));
+    ...zones.map(z => ({ lat: z.lat, lng: z.lng, altitudeM: 0 })),
+    ...worldEntities.filter(e => Number.isFinite(e.latitude) && Number.isFinite(e.longitude)).map(e => ({
+      lat: e.latitude,
+      lng: e.longitude,
+      altitudeM: externalAltitude(e) ?? 0,
+    })),
+  ].map(p => Cesium.Cartesian3.fromDegrees(p.lng, p.lat, p.altitudeM));
 }
 
 function vehicleSvg(color: string, selected: boolean) {
@@ -209,7 +213,7 @@ export default function CorridorWorldScene({
   const externalSelectRef = useRef(onExternalSelect);
   const onViewportChangeRef = useRef(onViewportChange);
   const fittedRouteSignatureRef = useRef<string | null>(null);
-  const globalFittedRef = useRef(false);
+  const globalFitSignatureRef = useRef<string | null>(null);
   const [mode, setMode] = useState<MapMode>('dark');
   const [mapStatus, setMapStatus] = useState('LIVE WORLD SURFACE');
   const [terrainReady, setTerrainReady] = useState(false);
@@ -563,17 +567,22 @@ export default function CorridorWorldScene({
       offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), Math.max(1800, corridorKm * 900)),
     });
     fittedRouteSignatureRef.current = routeSignature;
-  }, [route, routeSignature, liveMembers, trail, zones, corridorKm]);
+  }, [route, routeSignature, liveMembers, trail, zones, worldEntities, corridorKm]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed() || !globalView || route.length >= 2) return;
     const points = fitPoints([], liveMembers, trail, zones, worldEntities);
     if (!points.length) {
-      globalFittedRef.current = false;
+      globalFitSignatureRef.current = null;
       return;
     }
-    if (globalFittedRef.current) return;
+    const globalSignature = [
+      liveMembers.map(m => m.id).sort().join(','),
+      zones.map(z => z.zone_id ?? '').sort().join(','),
+      worldEntities.map(e => e.id).sort().join(','),
+    ].join('|');
+    if (globalFitSignatureRef.current === globalSignature) return;
     if (points.length === 1) {
       const only = [...liveMembers.filter(m => m.lat != null && m.lng != null), ...zones][0];
       if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, 2200), duration: 0.9 });
@@ -583,7 +592,7 @@ export default function CorridorWorldScene({
         offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), 2400),
       });
     }
-    globalFittedRef.current = true;
+    globalFitSignatureRef.current = globalSignature;
   }, [globalView, route.length, liveMembers, trail, zones, worldEntities]);
 
   const recenter = () => {
@@ -594,7 +603,7 @@ export default function CorridorWorldScene({
       viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(member.lng, member.lat, 2200), orientation: { heading: Cesium.Math.toRadians(Number(member.heading) || 0), pitch: Cesium.Math.toRadians(-62), roll: 0 }, duration: 0.8 });
       return;
     }
-    const points = fitPoints(route, liveMembers, trail, zones);
+    const points = fitPoints(route, liveMembers, trail, zones, worldEntities);
     if (points.length === 1) {
       const only = [...liveMembers.filter(m => m.lat != null && m.lng != null), ...zones][0];
       if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, 2200), duration: 0.8 });
@@ -712,7 +721,7 @@ export default function CorridorWorldScene({
         </div>
         <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-[#070a10]/86 p-1 backdrop-blur-xl">
           <button type="button" onClick={recenter} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label="Recenter world"><Crosshair size={15} /></button>
-          <button type="button" onClick={() => { const viewer = viewerRef.current; if (!viewer || viewer.isDestroyed()) return; const points = fitPoints(route, liveMembers, trail, zones); if (points.length === 1) { const only = [...liveMembers.filter(m => m.lat != null && m.lng != null), ...zones][0]; if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, 2200), duration: 0.8 }); } else if (points.length >= 2) viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), { duration: 0.8, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), Math.max(1800, corridorKm * 900)) }); }} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label={globalView ? 'Fit world' : 'Fit corridor'}><Target size={15} /></button>
+          <button type="button" onClick={() => { const viewer = viewerRef.current; if (!viewer || viewer.isDestroyed()) return; const points = fitPoints(route, liveMembers, trail, zones, worldEntities); if (points.length === 1) { const only = [...liveMembers.filter(m => m.lat != null && m.lng != null), ...zones][0]; if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, 2200), duration: 0.8 }); } else if (points.length >= 2) viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), { duration: 0.8, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), Math.max(1800, corridorKm * 900)) }); }} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label={globalView ? 'Fit world' : 'Fit corridor'}><Target size={15} /></button>
           <button type="button" onClick={() => setCreditsOpen(v => !v)} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label="Map information" aria-expanded={creditsOpen}><Signal size={15} /></button>
         </div>
       </div>
