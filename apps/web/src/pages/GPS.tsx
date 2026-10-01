@@ -16,8 +16,7 @@ function useIsMobile() {
   return mobile
 }
 
-export default function GPS({ surface = 'gps' }: { surface?: 'gps' | 'gev' } = {}) {
-  const isGev = surface === 'gev'
+export default function GPS() {
   const { groups, counts } = useLiveFleet()
   const isMobile = useIsMobile()
 
@@ -65,10 +64,7 @@ export default function GPS({ surface = 'gps' }: { surface?: 'gps' | 'gev' } = {
         {/* page id */}
         <div style={{ padding: '0 16px', borderRight: '1px solid rgba(255,255,255,.06)', height: '100%', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e8a830" strokeWidth="2"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5" fill="#e8a830" stroke="none"/></svg>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 600, letterSpacing: '.06em' }}>{isGev ? "GOD'S EYE VIEW" : 'LIVE FLEET'}</span>
-            {isGev && <span style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 8, fontWeight: 700, letterSpacing: '.12em', color: '#c4b5fd', background: 'rgba(196,181,253,.09)', border: '1px solid rgba(196,181,253,.22)', borderRadius: 4, padding: '3px 7px' }}>GLOBAL WORLD FABRIC</span>}
-          </div>
+          <span style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 15, fontWeight: 600, letterSpacing: '.06em' }}>LIVE FLEET</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'IBM Plex Mono, monospace', fontSize: 9, fontWeight: 600, letterSpacing: '.12em', color: '#16c784', background: 'rgba(22,199,132,.08)', border: '1px solid rgba(22,199,132,.18)', borderRadius: 3, padding: '2px 8px' }}>
             <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#16c784', animation: 'lf-ldot 1.8s ease-in-out infinite' }} />
             LIVE
