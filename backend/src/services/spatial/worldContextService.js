@@ -898,8 +898,8 @@ async function buildWorldContext(opts) {
   let vehicleRows = [];
   let mission = null;
   let routeInfo = { route: [], widthKm: 2, active: false, lengthKm: 0 };
-  let infrastructureRaw = { checkpoints: [], geofences: [], shipments: [] };
-  let securityRaw = { riskZones: [], incidents: [] };
+  let infrastructureRaw = { checkpoints: [], geofences: [], cdsGeofences: [], shipments: [], guardianDevices: [] };
+  let securityRaw = { riskZones: [], incidents: [], intelAlerts: [] };
   let alertRows = [];
 
   if (missionRow) {
