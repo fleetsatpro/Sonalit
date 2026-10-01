@@ -57,6 +57,7 @@ const { healthCheck: dbHealth, query: dbQuery } = require("./config/database");
 const { healthCheck: redisHealth } = require("./config/redis");
 const requestId = require("./middleware/requestId");
 const csrf = require("./middleware/csrf");
+const { isFenceActive } = require("./utils/runtimeFenceBootstrap");
 
 if (!process.env.DATABASE_URL) logger.warn("DATABASE_URL not set — set it in Railway so the database works");
 if (!process.env.JWT_SECRET) {
@@ -138,6 +139,14 @@ app.use(express.urlencoded({ extended: true }));
 app.use(csrf);
 app.use(morgan(":method :url :status :res[content-length] - :response-time ms reqId=:req[x-request-id]", { stream: { write: m => logger.info(m.trim()) } }));
 
+// During a Railway zero-downtime replacement, the new deployment boots before
+// it is routed. It may answer the platform health probe, but it must not expose
+// operational mutations while it is still waiting for the database runtime fence.
+app.use((req, res, next) => {
+  if (req.path === "/health" || isFenceActive()) return next();
+  return res.status(503).json({ status: "warming", error: "runtime handover in progress" });
+});
+
 // ─── Health & metrics ─────────────────────────────────────────────────────────
 app.get("/health", async (req, res) => {
   try {
@@ -148,8 +157,11 @@ app.get("/health", async (req, res) => {
       if (ph.rows.length) partitions_ok = false;
     } catch (_) {}
     const mem = process.memoryUsage();
-    const status = (db && partitions_ok) ? "ok" : "degraded";
-    res.status(db ? 200 : 503).json({
+    if (!db || !redis) {
+      return res.status(503).json({ status: "error", database: db ? "ok" : "error", redis });
+    }
+    const status = partitions_ok ? "ok" : "degraded";
+    res.status(200).json({
       status,
       database: db ? "ok" : "error",
       redis,
@@ -480,7 +492,7 @@ try {
   }
   cron.schedule("0 * * * *", () => rollPartitions().catch(err => logger.error("Partition roller error: " + err.message)));
   cron.schedule("0 3 * * *", () => archiveOldPartitions().catch(err => logger.error("Partition archival error: " + err.message)));
-  rollPartitions().catch(err => logger.warn("Partition roller startup run: " + err.message));
+  if (isFenceActive()) rollPartitions().catch(err => logger.warn("Partition roller startup run: " + err.message));
   logger.info("Partition roller scheduled (hourly, T3.2) + archival (daily 03:00, T6.5)");
 } catch (e) { logger.warn("Partition roller not started: " + e.message); }
 
@@ -530,7 +542,7 @@ try {
     await dbQuery("REFRESH MATERIALIZED VIEW CONCURRENTLY risk_zone_stats");
   }
   cron.schedule("*/10 * * * *", () => refreshRiskZoneStats().catch(err => logger.error("Risk zone stats refresh error: " + err.message)));
-  refreshRiskZoneStats().catch(err => logger.warn("Risk zone stats startup refresh: " + err.message));
+  if (isFenceActive()) refreshRiskZoneStats().catch(err => logger.warn("Risk zone stats startup refresh: " + err.message));
   logger.info("Risk zone stats refresh scheduled (every 10 min)");
 } catch (e) { logger.warn("Risk zone stats refresh not scheduled: " + e.message); }
 
@@ -542,7 +554,7 @@ try {
   const cron = require("node-cron");
   const { runOsintSweep } = require("./utils/riskOsint");
   cron.schedule("0 */2 * * *", () => runOsintSweep().catch(err => logger.error("Risk Intel OSINT sweep error: " + err.message)));
-  runOsintSweep().catch(err => logger.warn("Risk Intel OSINT startup sweep: " + err.message));
+  if (isFenceActive()) runOsintSweep().catch(err => logger.warn("Risk Intel OSINT startup sweep: " + err.message));
   logger.info("Risk Intel OSINT sweep scheduled (every 2 hours)");
 } catch (e) { logger.warn("Risk Intel OSINT sweep not scheduled: " + e.message); }
 
@@ -556,7 +568,7 @@ try {
   const cron = require("node-cron");
   const { runCollectionFabric } = require("./utils/collectionFabric");
   cron.schedule("*/30 * * * *", () => runCollectionFabric().catch(err => logger.error("Intelligence Collection Fabric error: " + err.message)));
-  runCollectionFabric().catch(err => logger.warn("Intelligence Collection Fabric startup run: " + err.message));
+  if (isFenceActive()) runCollectionFabric().catch(err => logger.warn("Intelligence Collection Fabric startup run: " + err.message));
   logger.info("Intelligence Collection Fabric scheduled (every 30 minutes)");
 } catch (e) { logger.warn("Intelligence Collection Fabric not scheduled: " + e.message); }
 
@@ -671,7 +683,7 @@ if (!process.env.GENERATE_OPENAPI && process.env.NODE_ENV !== 'test') {
   });
 }
 
-if (!process.env.GENERATE_OPENAPI)
+if (!process.env.GENERATE_OPENAPI && isFenceActive())
   dbQuery(
     `INSERT INTO guardian_config (key, value_int, updated_at) VALUES ('cfo_module_enabled', 1, NOW())
      ON CONFLICT (key) DO UPDATE SET value_int = 1, updated_at = NOW()`
@@ -679,7 +691,7 @@ if (!process.env.GENERATE_OPENAPI)
 
 // ─── Workers (in-process only when ENABLE_INPROCESS_WORKERS=true, T3.1) ──────
 // In production, workers run as separate processes via worker.*.js entrypoints.
-if (process.env.ENABLE_INPROCESS_WORKERS === "true" && process.env.REDIS_URL && process.env.DISABLE_REDIS !== "true") {
+if (isFenceActive() && process.env.ENABLE_INPROCESS_WORKERS === "true" && process.env.REDIS_URL && process.env.DISABLE_REDIS !== "true") {
   try {
     const { startGPSWorker } = require("./workers/gpsWorker");
     const { startAlertWorker } = require("./workers/alertWorker");
@@ -719,6 +731,7 @@ if (process.env.ENABLE_INPROCESS_WORKERS === "true" && process.env.REDIS_URL && 
 // Railway dashboard changes. Opt out with DISABLE_INPROCESS_CONVOY_REPORT_WORKER=true
 // once/if a dedicated worker service is deployed (npm run start:worker:report).
 if (
+  isFenceActive() &&
   !global._workers?.length &&
   process.env.REDIS_URL &&
   process.env.DISABLE_REDIS !== "true" &&

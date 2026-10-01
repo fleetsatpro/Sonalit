@@ -14,8 +14,15 @@ const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
 
+const isProduction = String(process.env.NODE_ENV || '').toLowerCase() === 'production'
+  || String(process.env.RAILWAY_ENVIRONMENT_NAME || '').toLowerCase() === 'production';
+
 if (!process.env.DATABASE_URL) {
-  console.warn('[db-migrate] DATABASE_URL not set — skipping');
+  if (isProduction) {
+    console.error('[db-migrate] FATAL: DATABASE_URL is required in production — refusing to start without a database');
+    process.exit(78);
+  }
+  console.warn('[db-migrate] DATABASE_URL not set — skipping outside production');
   process.exit(0);
 }
 
