@@ -9,7 +9,24 @@ describe('Centrifugo publish client', () => {
     if (originalUrl == null) delete process.env.CENTRIFUGO_URL; else process.env.CENTRIFUGO_URL = originalUrl;
     if (originalApiUrl == null) delete process.env.CENTRIFUGO_API_URL; else process.env.CENTRIFUGO_API_URL = originalApiUrl;
     if (originalKey == null) delete process.env.CENTRIFUGO_API_KEY; else process.env.CENTRIFUGO_API_KEY = originalKey;
+    delete process.env.CENTRIFUGO_PORT;
     jest.resetModules();
+  });
+
+  test('normalizes a Railway private hostname to the Centrifugo API port', () => {
+    process.env.CENTRIFUGO_PORT = '8000';
+    const { normalizeCentrifugoUrl } = require('../../src/realtime/centrifugo');
+    expect(normalizeCentrifugoUrl('centrifugo.railway.internal')).toBe(
+      'http://centrifugo.railway.internal:8000'
+    );
+    expect(normalizeCentrifugoUrl('centrifugo.railway.internal:9100')).toBe(
+      'http://centrifugo.railway.internal:9100'
+    );
+  });
+
+  test('preserves explicit HTTPS URLs without inventing a port', () => {
+    const { normalizeCentrifugoUrl } = require('../../src/realtime/centrifugo');
+    expect(normalizeCentrifugoUrl('https://rt.example.com')).toBe('https://rt.example.com');
   });
 
   test('uses X-API-Key and the canonical API URL', async () => {
