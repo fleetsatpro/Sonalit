@@ -94,7 +94,7 @@ const RSS_FEEDS=[
  {name:'Hot in Juba',url:'https://hotinjuba.com/feed',country_code:'SS',reliability:60},
 
  {name:'Shabelle Somalia',url:'https://shabellemedia.com/feed',country_code:'SO',reliability:78},
- {name:'SONNA Somalia',url:'https://sonna.so/en/feed',country_code:'SO',reliability:80},
+ {name:'SONNA Somalia',url:'https://sonna.so/en/feed',fallback_url:GOOGLE_RSS('site:sonna.so Somalia security OR attack OR accident OR incident','SO','en-SO'),country_code:'SO',reliability:80},
  {name:'Hiiraan Online',url:GOOGLE_RSS('site:hiiraan.com Somalia security OR attack OR accident','SO','en-SO'),country_code:'SO',reliability:78},
  {name:'Garowe Online',url:GOOGLE_RSS('site:garoweonline.com Somalia security OR Puntland OR incident','SO','en-SO'),country_code:'SO',reliability:78},
  {name:'Puntland Post',url:'https://puntlandpost.net/feed',country_code:'SO',reliability:68},
@@ -105,7 +105,7 @@ const RSS_FEEDS=[
  {name:'The Reporter Ethiopia',url:'https://www.thereporterethiopia.com/feed',fallback_url:GOOGLE_RSS('site:thereporterethiopia.com Ethiopia security OR incident OR conflict','ET','en-ET'),country_code:'ET',reliability:74},
  {name:'Zehabesha Ethiopia',url:'https://zehabesha.com/feed',fallback_url:GOOGLE_RSS('site:zehabesha.com Ethiopia security OR incident OR conflict','ET','en-ET'),country_code:'ET',reliability:62},
 
- {name:'Actualite.cd DRC',url:'https://actualite.cd/feed',country_code:'CD',reliability:78},
+ {name:'Actualite.cd DRC',url:'https://actualite.cd/feed',fallback_url:GOOGLE_RSS('site:actualite.cd DRC Goma Bukavu security OR conflict OR incident','CD','en-CD'),country_code:'CD',reliability:78},
  {name:'Radio Okapi DRC',url:'https://www.radiookapi.net/feed',country_code:'CD',reliability:84},
  {name:'Kivu Times DRC',url:GOOGLE_RSS('site:theeastafrican.co.ke DRC Goma Bukavu conflict','CD','en-KE'),country_code:'CD',reliability:68},
 
