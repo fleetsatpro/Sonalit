@@ -182,4 +182,4 @@ async function runRegionalIncidentSweep(orgId){const started=Date.now(),results=
  return{region:'EAST_AFRICA',duration_ms:Date.now()-started,results,totalSeen:results.reduce((s,r)=>s+(r.seen||0),0),totalInserted:results.reduce((s,r)=>s+(r.inserted||0),0),totalAlerts:results.reduce((s,r)=>s+(r.alerts||0),0)};
 }
 async function runRegionalIncidentSweepAll(){const{rows:orgs}=await query(`SELECT DISTINCT org_id FROM users WHERE org_id IS NOT NULL AND deleted_at IS NULL`);const results=[];for(const{org_id}of orgs){try{results.push(await runRegionalIncidentSweep(org_id));}catch(e){logger.warn(`Regional Incident Fabric: org=${org_id} failed: ${e.message}`);results.push({region:'EAST_AFRICA',status:'failed',error:e.message});}}return results;}
-module.exports={runRegionalIncidentSweep,runRegionalIncidentSweepAll,EA_CODES,EA_COUNTRIES,X_ACCOUNT_MONITORS,RSS_FEEDS,DEFAULT_TELEGRAM,category,severity,detectCountry};
+module.exports={runRegionalIncidentSweep,runRegionalIncidentSweepAll,EA_CODES,EA_COUNTRIES,X_ACCOUNT_MONITORS,RSS_FEEDS,DEFAULT_TELEGRAM,category,severity,detectCountry,fetchRss};
