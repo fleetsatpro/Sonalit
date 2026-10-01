@@ -1,7 +1,7 @@
 process.env.NODE_ENV = 'test';
 delete process.env.SONALIT_STANDBY;
 
-const { shouldTakeOver } = require('../../src/utils/runtimeFenceBootstrap');
+const { shouldTakeOver, classifyFenceStart } = require('../../src/utils/runtimeFenceBootstrap');
 
 describe('runtime fence deployment handover policy', () => {
   test('allows a new Railway deployment to replace an older deployment', () => {
@@ -26,6 +26,54 @@ describe('runtime fence deployment handover policy', () => {
       incomingDeploymentId: null,
       currentDeploymentId: 'existing-owner',
     })).toBe(false);
+  });
+
+  test('classifies a Railway replacement as quiescent candidate mode', () => {
+    expect(classifyFenceStart({
+      production: true,
+      standby: false,
+      takeoverRequested: false,
+      incomingDeploymentId: 'new-deployment',
+      currentOwner: 'old-owner',
+      currentDeploymentId: 'old-deployment',
+      stale: false,
+    })).toBe('candidate');
+  });
+
+  test('refuses a second replica from the same deployment', () => {
+    expect(classifyFenceStart({
+      production: true,
+      standby: false,
+      takeoverRequested: false,
+      incomingDeploymentId: 'same-deployment',
+      currentOwner: 'old-owner',
+      currentDeploymentId: 'same-deployment',
+      stale: false,
+    })).toBe('refuse');
+  });
+
+  test('takes over when the existing lease is stale', () => {
+    expect(classifyFenceStart({
+      production: true,
+      standby: false,
+      takeoverRequested: false,
+      incomingDeploymentId: 'new-deployment',
+      currentOwner: 'old-owner',
+      currentDeploymentId: 'old-deployment',
+      stale: true,
+    })).toBe('active');
+  });
+
+  test('standby never claims the active fence', () => {
+    expect(classifyFenceStart({
+      production: true,
+      standby: true,
+      takeoverRequested: false,
+      incomingDeploymentId: 'standby-deployment',
+      currentOwner: 'active-owner',
+      currentDeploymentId: 'active-deployment',
+      stale: false,
+    })).toBe('bypass');
   });
 
   test('preserves explicit manual takeover', () => {
