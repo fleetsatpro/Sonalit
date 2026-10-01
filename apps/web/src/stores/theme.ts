@@ -69,9 +69,11 @@ function applyTheme(theme: ThemeId) {
 function readInitialTheme(): ThemeId {
   if (typeof window === 'undefined') return 'dark';
   const raw = window.localStorage.getItem('sonalit-theme');
-  if (!raw) return 'dark';
+  const legacyRaw = window.localStorage.getItem('sonalit-ui');
+  const candidate = raw ?? legacyRaw;
+  if (!candidate) return 'dark';
   try {
-    const parsed = JSON.parse(raw) as { state?: { theme?: string } };
+    const parsed = JSON.parse(candidate) as { state?: { theme?: string } };
     const theme = parsed.state?.theme;
     if (theme && THEME_OPTIONS.some((option) => option.id === theme)) return theme as ThemeId;
     return theme ? LEGACY_THEME_MAP[theme] ?? 'dark' : 'dark';
