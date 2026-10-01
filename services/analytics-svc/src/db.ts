@@ -25,7 +25,6 @@ export async function query<T extends object = object>(
   values?: unknown[],
 ): Promise<T[]> {
   const orgId = tenantContext.getStore();
-  if (orgId) return withOrgContext(orgId, client => client.query<T>(text, values)).then(r => r.rows);
-  const res = await pool.query<T>(text, values);
-  return res.rows;
+  if (!orgId) throw new Error(`analytics-svc tenant query attempted without tenant context: ${text.slice(0, 120)}`);
+  return withOrgContext(orgId, client => client.query<T>(text, values)).then(r => r.rows);
 }
