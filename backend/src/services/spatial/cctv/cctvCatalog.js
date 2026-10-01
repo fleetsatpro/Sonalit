@@ -2,38 +2,15 @@
 
 const fs = require('node:fs/promises');
 
-const SAMPLE_CAMERAS = [
-  { id:'sample-ke-nbo-01', name:'Kenya corridor sample 01', corridor:'NBO-MSA', latitude:-1.286389, longitude:36.817223, headingDeg:110, horizontalFovDeg:80, maxRangeM:3000 },
-  { id:'sample-ke-nbo-02', name:'Kenya corridor sample 02', corridor:'NBO-MSA', latitude:-1.292066, longitude:36.821946, headingDeg:275, horizontalFovDeg:90, maxRangeM:3000 },
-  { id:'sample-ke-nbo-03', name:'Kenya corridor sample 03', corridor:'NBO-MSA', latitude:-1.301417, longitude:36.789109, headingDeg:35, horizontalFovDeg:75, maxRangeM:3500 },
-  { id:'sample-ke-nbo-04', name:'Kenya corridor sample 04', corridor:'NBO-KGL', latitude:-1.267629, longitude:36.810769, headingDeg:195, horizontalFovDeg:85, maxRangeM:2500 },
-  { id:'sample-ke-nbo-05', name:'Kenya corridor sample 05', corridor:'NBO-KGL', latitude:-1.251962, longitude:36.848725, headingDeg:320, horizontalFovDeg:85, maxRangeM:2500 },
-].map((x) => ({
-  id:x.id, entityType:'camera', source:'sonalit-cctv-sample', sourceReference:x.id,
-  name:x.name, pose:{ latitude:x.latitude, longitude:x.longitude, altitudeM:null, headingDeg:x.headingDeg, pitchDeg:null, rollDeg:null, confidence:'estimated' },
-  viewshed:{ horizontalFovDeg:x.horizontalFovDeg, verticalFovDeg:null, maxRangeM:x.maxRangeM, minRangeM:0 },
-  media:{ kind:'synthetic', url:null, frameUrl:null, available:true, publicSource:false },
-  health:{ status:'UNKNOWN', reason:'Development sample; no operational feed asserted.' },
-  provenance:{
-    sourceName:'Sonalit CCTV sample catalog',
-    observationType:'development_sample',
-    sourceReference:x.id,
-    attribution:'Sonalit — sample geometry only'
-  },
-  privacy:{ plateTracking:false, personTracking:false, faceRecognition:false },
-  attributes:{
-    name:x.name, corridor:x.corridor, catalogClass:'sample',
-    operational:false, poseStatus:'estimated', mediaStatus:'synthetic-only'
-  }
-}));
-
 function normalizeRecord(raw, index) {
   if (!raw || typeof raw !== 'object') return null;
   const latitude = Number(raw.latitude ?? raw.lat);
   const longitude = Number(raw.longitude ?? raw.lon ?? raw.lng);
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
       latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
-  const id = String(raw.id ?? raw.cameraId ?? ('catalog-camera-' + index));
+  const sourceId = raw.id ?? raw.cameraId;
+  if (sourceId == null || String(sourceId).trim() === '') return null;
+  const id = String(sourceId);
   const mediaUrl = raw.media?.url ?? raw.mediaUrl ?? raw.url ?? raw.videoUrl ?? raw.imageUrl ?? null;
   const heading = raw.pose?.headingDeg ?? raw.headingDeg;
   const fov = Number(raw.viewshed?.horizontalFovDeg ?? raw.horizontalFovDeg ?? 90);
@@ -56,10 +33,10 @@ function normalizeRecord(raw, index) {
       minRangeM:Number(raw.viewshed?.minRangeM || 0)
     },
     media:{
-      kind: ['image','video','mjpeg','synthetic'].includes(String(raw.media?.kind || raw.mediaKind)) ? String(raw.media?.kind || raw.mediaKind) : (mediaUrl ? 'video' : 'synthetic'),
+      kind: ['image','video','mjpeg'].includes(String(raw.media?.kind || raw.mediaKind)) ? String(raw.media?.kind || raw.mediaKind) : (mediaUrl ? 'video' : 'none'),
       url:mediaUrl ? String(mediaUrl) : null,
       frameUrl:raw.media?.frameUrl ? String(raw.media.frameUrl) : null,
-      available:Boolean(mediaUrl) || String(raw.media?.kind) === 'synthetic',
+      available:Boolean(mediaUrl),
       publicSource:Boolean(raw.media?.publicSource ?? raw.publicSource ?? Boolean(mediaUrl))
     },
     health:{
@@ -100,7 +77,7 @@ function extractTflMedia(properties) {
   const frame = urls.find(x => /image|jpeg|jpg|still|snapshot/.test(x.key));
   const video = urls.find(x => /video|stream|mp4|m3u8|clip/.test(x.key));
   return {
-    kind:video ? 'video' : frame ? 'image' : 'synthetic',
+    kind:video ? 'video' : frame ? 'image' : 'none',
     url:(video || frame)?.value || null,
     frameUrl:frame?.value || null
   };
@@ -141,10 +118,10 @@ async function loadTflCatalog() {
 
 async function getCameraCatalog() {
   const [fileRows, tflRows] = await Promise.all([loadFileCatalog(), loadTflCatalog().catch(() => [])]);
-  const all = fileRows.concat(tflRows, SAMPLE_CAMERAS);
+  const all = fileRows.concat(tflRows);
   const unique = new Map();
   for (const row of all) unique.set(String(row.id), row);
   return Array.from(unique.values());
 }
 
-module.exports = { SAMPLE_CAMERAS, normalizeRecord, loadFileCatalog, loadTflCatalog, getCameraCatalog };
+module.exports = { normalizeRecord, loadFileCatalog, loadTflCatalog, getCameraCatalog };
