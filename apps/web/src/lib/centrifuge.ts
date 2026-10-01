@@ -42,7 +42,7 @@ async function fetchSubscriptionToken(channel: string): Promise<string> {
 
 export function getCentrifuge(): Centrifuge {
   if (!client) {
-    client = new Centrifuge(import.meta.env['VITE_CENTRIFUGO_URL'] ?? 'wss://rt.sonalit.io/connection/websocket', {
+    client = new Centrifuge(CENTRIFUGO_WS_URL, {
       getToken: fetchConnectionToken,
     });
 
