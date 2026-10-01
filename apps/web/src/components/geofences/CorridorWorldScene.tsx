@@ -285,6 +285,7 @@ export default function CorridorWorldScene({
       });
     }
     const compactSurface = window.matchMedia?.('(max-width: 900px)').matches ?? false;
+    const highDpi = window.devicePixelRatio || 1;
     viewer.scene.globe.enableLighting = true;
     viewer.scene.globe.showGroundAtmosphere = true;
     viewer.scene.globe.depthTestAgainstTerrain = true;
@@ -293,7 +294,11 @@ export default function CorridorWorldScene({
     viewer.scene.highDynamicRange = true;
     viewer.scene.postProcessStages.fxaa.enabled = true;
     viewer.scene.msaaSamples = compactSurface ? 2 : 4;
-    viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, compactSurface ? 1.5 : 2);
+    // High-density displays get true multi-sample rendering without allowing
+    // extreme DPRs to explode GPU memory. The cap is deliberately higher on
+    // desktop because GEV is a presentation-grade spatial surface.
+    viewer.resolutionScale = Math.min(highDpi, compactSurface ? 1.75 : 2.5);
+    viewer.scene.globe.maximumScreenSpaceError = compactSurface ? 2 : 1.25;
     setMapStatus(TOKEN ? 'CESIUM + ESRI · LIVE' : 'ESRI FALLBACK · ION TOKEN NOT EXPOSED');
 
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
