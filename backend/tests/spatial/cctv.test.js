@@ -33,7 +33,7 @@ describe('spatial CCTV capability', () => {
   });
 
   test('nearest ranking is deterministic and can enforce viewshed membership', () => {
-    const target = { latitude: SAMPLE_CAMERAS[0].pose.latitude, longitude: SAMPLE_CAMERAS[0].pose.longitude + 0.005 };
+    const target = { latitude: -1.286389, longitude: 36.817223 + 0.005 };
     const cameras = [
       normalizeRecord({ id:'c1', latitude:-1.286389, longitude:36.817223, headingDeg:110, horizontalFovDeg:80, maxRangeM:3000 }, 0),
       normalizeRecord({ id:'c2', latitude:-1.292066, longitude:36.821946, headingDeg:275, horizontalFovDeg:90, maxRangeM:3000 }, 1),
@@ -57,4 +57,5 @@ describe('spatial CCTV capability', () => {
   test('frame access fails honestly when no approved media exists', async () => {
     const camera = normalizeRecord({ id:'no-media', latitude:0, longitude:0, name:'No Media' }, 0);
     await expect(getFrame(camera)).rejects.toMatchObject({ failureClass:'media_unavailable' });
-  });});
+  });
+});
