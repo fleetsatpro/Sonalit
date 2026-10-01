@@ -5,16 +5,6 @@ const { assertSafeUrl, allowedHostsFromEnv } = require('./cctvAllowlist');
 const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_REDIRECTS = 2;
 
-function syntheticFrame(camera, reason) {
-  const name = String(camera?.name || camera?.id || 'camera').replace(/[<&>]/g, '');
-  const note = String(reason || 'No public frame source configured').replace(/[<&>]/g, '');
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">' +
-    '<rect width="960" height="540" fill="#111"/><text x="40" y="250" fill="#fff" font-size="34" font-family="sans-serif">SONALIT CCTV — SYNTHETIC</text>' +
-    '<text x="40" y="305" fill="#aaa" font-size="24" font-family="sans-serif">' + name + '</text>' +
-    '<text x="40" y="350" fill="#f4b400" font-size="20" font-family="sans-serif">' + note + '</text></svg>';
-  return { buffer:Buffer.from(svg), contentType:'image/svg+xml', synthetic:true };
-}
-
 async function fetchApproved(url, options = {}) {
   const allowed = Array.isArray(options.allowedHosts) && options.allowedHosts.length
     ? options.allowedHosts : allowedHostsFromEnv();
@@ -54,14 +44,10 @@ async function fetchApproved(url, options = {}) {
 }
 
 async function getFrame(camera, options = {}) {
-  if (!camera) return syntheticFrame(null, 'Camera not found');
+  if (!camera) throw Object.assign(new Error('Camera not found'), { failureClass:'not_found' });
   const mediaUrl = camera.media?.frameUrl || (camera.media?.kind === 'image' ? camera.media?.url : null);
-  if (!mediaUrl) return syntheticFrame(camera, camera.media?.publicSource ? 'Public camera frame unavailable' : 'No approved public frame source');
-  try {
-    return await fetchApproved(mediaUrl, options);
-  } catch (error) {
-    return syntheticFrame(camera, 'Approved source unavailable: ' + String(error?.failureClass || 'unknown'));
-  }
+  if (!mediaUrl) throw Object.assign(new Error('No approved camera frame source is configured'), { failureClass:'media_unavailable' });
+  return fetchApproved(mediaUrl, options);
 }
 
-module.exports = { MAX_BYTES, syntheticFrame, fetchApproved, getFrame };
+module.exports = { MAX_BYTES, fetchApproved, getFrame };
