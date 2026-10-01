@@ -150,14 +150,40 @@ function rssText(v){if(v==null)return'';if(typeof v==='string')return v;if(typeo
 function rssLink(v){if(v==null)return null;if(typeof v==='string')return v;if(Array.isArray(v))return rssLink(v[0]);if(typeof v==='object')return v.href||v['#text']||v.url||null;return String(v);}
 async function fetchRss(feed){
   async function fetchOne(url,sourceName){
-    const r=await timeoutFetch(url,{headers:{Accept:'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9,*/*;q=0.1','User-Agent':'Sonalit-RiskIntel/1.0'}});
-    if(!r.ok) throw new Error(`${sourceName} HTTP ${r.status}`);
-    const x=xmlParser.parse(await r.text()),raw=x?.rss?.channel?.item||x?.feed?.entry||[],items=Array.isArray(raw)?raw:[raw];
-    return items.slice(0,MAX_ITEMS).map(i=>{const title=clean(rssText(i.title),700),body=clean(rssText(i.description)||rssText(i.summary)||rssText(i.content)||title,7000),link=rssLink(i.link),published=parseDate(rssText(i.pubDate)||rssText(i.published)||rssText(i.updated));return{external_id:i.guid?`rss:${rssText(i.guid)}`:(i.id?`rss:${rssText(i.id)}`:(link?`rss:${sha(link)}`:null)),title,body,text:body,url:link,published_at:published,language:rssText(i.language)||null,country_code:feed.country_code,credibility:feed.reliability,raw_metadata:{feed:feed.name,feed_url:url,primary_feed_url:feed.url,fallback_used:url!==feed.url}};}).filter(i=>{const c=detectCountry(`${i.title} ${i.body}`,i.country_code);return c!==null;});
+    const r=await timeoutFetch(url,{headers:{
+      Accept:'application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9,*/*;q=0.1',
+      'User-Agent':'Sonalit-RiskIntel/1.0'
+    }});
+    if(!r.ok) throw new Error(\`${sourceName} HTTP ${r.status}\`);
+    const text=await r.text();
+    const contentType=String(r.headers?.get?.('content-type')||'').toLowerCase();
+    if(/^\\s*<(?:!doctype\\s+)?html\\b/i.test(text) || contentType.includes('text/html')) {
+      throw new Error(\`${sourceName} returned HTML instead of RSS/XML\`);
+    }
+    const x=xmlParser.parse(text),raw=x?.rss?.channel?.item||x?.feed?.entry||[],items=Array.isArray(raw)?raw:[raw];
+    const parsed=items.slice(0,MAX_ITEMS).map(i=>{
+      const title=clean(rssText(i.title),700);
+      const body=clean(rssText(i.description)||rssText(i.summary)||rssText(i.content)||title,7000);
+      const link=rssLink(i.link);
+      const published=parseDate(rssText(i.pubDate)||rssText(i.published)||rssText(i.updated));
+      return {
+        external_id:i.guid?\`rss:${rssText(i.guid)}\`:(i.id?\`rss:${rssText(i.id)}\`:(link?\`rss:${sha(link)}\`:null)),
+        title,body,text:body,url:link,published_at:published,language:rssText(i.language)||null,
+        country_code:feed.country_code,credibility:feed.reliability,
+        raw_metadata:{feed:feed.name,feed_url:url,primary_feed_url:feed.url,fallback_used:url!==feed.url}
+      };
+    }).filter(i=>detectCountry(\`${i.title} ${i.body}\`,i.country_code)!==null);
+    // A blocked feed can respond 200 with an empty/challenge document. Treat that
+    // as unavailable when a configured fallback exists instead of silently
+    // converting an upstream outage into a healthy-but-empty source.
+    if(url===feed.url && feed.fallback_url && parsed.length===0) {
+      throw new Error(\`${sourceName} primary feed returned no usable items\`);
+    }
+    return parsed;
   }
   try{return await fetchOne(feed.url,feed.name);}catch(primaryError){
     if(!feed.fallback_url) throw primaryError;
-    logger.info(`Regional Incident Fabric: RSS ${feed.name} primary unavailable (${primaryError.message}); using Google News fallback`);
+    logger.info(\`Regional Incident Fabric: RSS ${feed.name} primary unavailable (${primaryError.message}); using Google News fallback\`);
     return fetchOne(feed.fallback_url,feed.name);
   }
 }
