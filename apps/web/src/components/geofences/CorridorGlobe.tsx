@@ -9,7 +9,7 @@ import type { SpatialWorldEntity } from '../../lib/spatialClient.js';
 
 export type { LatLng, GlobeMember, RiskZone };
 type Surface = 'corridor' | 'gev';
-type Props = { convoyId?: string; route: LatLng[]; corridorKm: number; members: GlobeMember[]; zones?: RiskZone[]; ceilingM?: number; focusId?: string | null; trail?: LatLng[]; onSelect?: (id: string | null) => void; onExternalSelect?: (id: string | null) => void; selectedExternalId?: string | null; worldEntities?: SpatialWorldEntity[]; onViewportChange?: (viewport: { latitude: number; longitude: number; radiusM: number }) => void; fill?: boolean; surface?: Surface; fixedView?: View };
+type Props = { convoyId?: string; route: LatLng[]; corridorKm: number; members: GlobeMember[]; zones?: RiskZone[]; ceilingM?: number; focusId?: string | null; trail?: LatLng[]; onSelect?: (id: string | null) => void; onExternalSelect?: (id: string | null) => void; selectedExternalId?: string | null; worldEntities?: SpatialWorldEntity[]; onViewportChange?: (viewport: { latitude: number; longitude: number; radiusM: number }) => void; fill?: boolean; surface?: Surface; fixedView?: View; showChrome?: boolean };
 type View = '2D' | '3D';
 type SwarmResponse = { version:string; generated_at:string; provider_fabric:{ open_source:Array<{slot:number;label:string;model:string;configured:boolean}>; gpt_oss_120b:boolean; anthropic_last_resort:boolean; order:string[] }; agents:Array<{id:string;dimension:string;name:string;provider:string;status:string;finding:string;confidence:number;risks?:unknown[];evidence_gaps?:string[]}>; arbiter:{posture:string;summary:string;material_findings?:string[];material_gaps?:string[];confidence:number;next_review:string;dissent?:string[];provider:string} };
 const DIMENSIONS:{key:XdDimension;icon:typeof Crosshair}[]=[{key:'SPACE',icon:Crosshair},{key:'TIME',icon:Timer},{key:'IDENTITY',icon:Truck},{key:'MOTION',icon:Gauge},{key:'INTEGRITY',icon:ShieldCheck},{key:'SECURITY',icon:Eye},{key:'EVIDENCE',icon:DatabaseZap},{key:'FUTURE',icon:Waypoints}];
@@ -25,7 +25,7 @@ const DIMENSION_COPY:Record<XdDimension,{title:string;body:string}>={
 };
 function context(member?:GlobeMember|null){const m=member as (GlobeMember&{convoy_name?:string|null;client_name?:string|null})|undefined;return{convoy:m?.convoy_name??null,client:m?.client_name??null};}
 
-export default function CorridorGlobe({convoyId,route,corridorKm,members,zones=[],ceilingM=0,focusId=null,trail,onSelect,onExternalSelect,selectedExternalId=null,worldEntities=[],onViewportChange,fill=false,surface='corridor',fixedView}:Props){
+export default function CorridorGlobe({convoyId,route,corridorKm,members,zones=[],ceilingM=0,focusId=null,trail,onSelect,onExternalSelect,selectedExternalId=null,worldEntities=[],onViewportChange,fill=false,surface='corridor',fixedView,showChrome=true}:Props){
  const[view,setView]=useState<View>(fixedView ?? '2D'),[dimension,setDimension]=useState<XdDimension>('SPACE'),[agentsOpen,setAgentsOpen]=useState(false),[entityOpen,setEntityOpen]=useState(true);
  const activeView=fixedView ?? view;
  const isGev=surface==='gev';
@@ -43,6 +43,7 @@ export default function CorridorGlobe({convoyId,route,corridorKm,members,zones=[
  return <div className={`${fill?'h-full':'h-[520px]'} relative overflow-hidden bg-[#05070b] text-white font-sans antialiased`}>
   {activeView==='2D'?<CorridorOperationalMap route={route} members={members} zones={zones} focusId={focusId} onSelect={onSelect} mapMode="dark"/>:<CorridorWorldScene route={route} corridorKm={corridorKm} members={members} zones={zones} ceilingM={ceilingM} focusId={focusId} trail={trail} onSelect={onSelect} onExternalSelect={onExternalSelect} selectedExternalId={selectedExternalId} worldEntities={worldEntities} onViewportChange={onViewportChange} fill globalView={isGev}/>}
 
+  {showChrome && (
   <div className="pointer-events-none absolute inset-x-0 top-0 z-20 px-3 pt-3"><div className="pointer-events-auto flex flex-wrap items-start justify-between gap-2">
     <div className="max-w-[72vw] rounded-2xl border border-white/10 bg-[#05070c]/92 px-3.5 py-2.5 shadow-2xl backdrop-blur-2xl">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><div className="flex items-center gap-2"><span className="grid h-7 w-7 place-items-center rounded-lg bg-violet-500/15 text-violet-300"><ScanSearch size={14}/></span><span className="text-[14px] font-bold tracking-[0.06em]"> {isGev?"GOD'S EYE VIEW":"XD LIVE SURVEILLANCE"}</span></div><span className="text-[10px] font-bold font-mono uppercase tracking-[0.14em] text-neutral-300">{isGev?'GLOBAL SPATIAL PICTURE':'8D WORLD CONTROL'}</span><span className="h-1.5 w-1.5 rounded-full bg-emerald-400"/><span className="text-[10px] font-bold font-mono text-emerald-300">{live.length} POSITIONED</span><span className="text-[10px] font-semibold font-mono text-neutral-400">{snapshot.agents.length} DETERMINISTIC</span></div>
@@ -58,6 +59,8 @@ export default function CorridorGlobe({convoyId,route,corridorKm,members,zones=[
       <button type="button" onClick={()=>setEntityOpen(v=>!v)} aria-pressed={entityOpen} className={`grid h-8 w-8 place-items-center rounded-xl ${entityOpen?'bg-violet-400/10 text-violet-200':'text-neutral-400 hover:bg-white/10 hover:text-white'}`} aria-label="Toggle entity intelligence"><Truck size={14}/></button>
     </div>
   </div></div>
+
+  )}
 
   <aside className="pointer-events-none absolute inset-y-0 left-0 z-20 flex w-[60px] flex-col justify-center px-2 pt-16 pb-14"><div className="pointer-events-auto rounded-2xl border border-white/10 bg-[#05070c]/90 p-1.5 shadow-2xl backdrop-blur-2xl"><div className="mb-1 grid h-7 place-items-center rounded-xl text-[9px] font-bold font-mono tracking-widest text-neutral-300">8D</div>{DIMENSIONS.map(({key,icon:Icon})=><button key={key} type="button" onClick={()=>setDimension(key)} title={`${key} · ${DIMENSION_COPY[key].title}`} aria-label={`${key} · ${DIMENSION_COPY[key].title}`} aria-pressed={dimension===key} className={`mb-1 grid h-9 w-full place-items-center rounded-xl transition ${dimension===key?'bg-violet-500/15 text-violet-200 ring-1 ring-violet-400/20':'text-neutral-400 hover:bg-white/5 hover:text-white'}`}><Icon size={15}/></button>)}</div></aside>
 
