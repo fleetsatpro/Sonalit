@@ -5,7 +5,7 @@ import { useAuthStore, getAccessToken } from '../stores/auth.js';
 import { Settings as SettingsIcon, Key, Shield, Copy, Trash2, Plus, X, MessageCircle, Palette } from 'lucide-react';
 import { GuardianConvoySettings } from '../components/GuardianConvoySettings.js';
 import { HandoverOfficerSettings } from '../components/HandoverOfficerSettings.js';
-import { useUIStore } from '../stores/ui.js';
+import { THEME_OPTIONS, useThemeStore } from '../stores/theme.js';
 
 interface ApiKey {
   id: string;
@@ -378,31 +378,69 @@ interface WhatsAppConfig {
 }
 
 function AppearanceSection() {
-  const theme = useUIStore((s) => s.theme);
-  const setTheme = useUIStore((s) => s.setTheme);
+  const theme = useThemeStore((state) => state.theme);
+  const setTheme = useThemeStore((state) => state.setTheme);
 
   return (
     <SectionCard title="Appearance" icon={<Palette size={16} className="text-orange-400" />}>
-      <div className="space-y-2">
-        <label className="block text-xs text-slate-400 mb-1">Theme</label>
-        <div className="flex gap-2">
-          {(['dark', 'light'] as const).map((opt) => (
-            <button
-              key={opt}
-              onClick={() => setTheme(opt)}
-              className={`flex-1 text-sm px-3 py-2 rounded border transition-colors capitalize ${
-                theme === opt
-                  ? 'bg-orange-600 border-orange-500 text-white'
-                  : 'bg-slate-900 border-slate-600 text-slate-300 hover:border-slate-500'
-              }`}
-            >
-              {opt}
-            </button>
-          ))}
+      <div className="space-y-4">
+        <div>
+          <p className="text-sm font-medium text-slate-200">Interface theme</p>
+          <p className="text-xs text-slate-500 mt-1">
+            Changes the visual system across Sonalit without changing operational meaning, data, permissions, or workflows.
+          </p>
         </div>
-        <p className="text-xs text-slate-500 pt-1">
-          Applies to the sidebar, top bar, and dashboard cards immediately and is remembered on this device.
-        </p>
+
+        <div
+          className="grid grid-cols-1 sm:grid-cols-2 gap-3"
+          role="radiogroup"
+          aria-label="Sonalit interface theme"
+        >
+          {THEME_OPTIONS.map((option) => {
+            const selected = theme === option.id;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                aria-label={option.name}
+                onClick={() => setTheme(option.id)}
+                className={`group relative overflow-hidden rounded-xl border p-3 text-left transition-all duration-200 ${
+                  selected
+                    ? 'border-orange-400/70 ring-1 ring-orange-400/30'
+                    : 'border-slate-700 hover:border-slate-500'
+                }`}
+              >
+                <div
+                  className="h-16 rounded-lg border border-black/10 shadow-inner"
+                  style={{
+                    background: `linear-gradient(135deg, ${option.preview[0]} 0%, ${option.preview[1]} 62%, ${option.preview[2]} 100%)`,
+                  }}
+                />
+                <div className="mt-3 flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold">{option.name}</p>
+                    <p className="mt-1 text-[11px] leading-4 text-slate-500">{option.description}</p>
+                  </div>
+                  <span
+                    className="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full ring-2 ring-white/10"
+                    style={{ backgroundColor: option.accent }}
+                    aria-hidden="true"
+                  />
+                </div>
+                <div className="mt-3 flex items-center gap-2 text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                  <span>{option.mode}</span>
+                  {selected && <span className="text-orange-400">Active</span>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2.5 text-[11px] leading-5 text-slate-500">
+          Theme preference is stored locally on this device. Operational status colors remain reserved for fleet and incident semantics.
+        </div>
       </div>
     </SectionCard>
   );
