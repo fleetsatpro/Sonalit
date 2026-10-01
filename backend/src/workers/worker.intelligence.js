@@ -203,8 +203,12 @@ async function shutdown(signal) {
   if (stopping) return;
   stopping = true;
   logger.info(`Intelligence worker shutting down (${signal})`);
-  await drainActiveWork(signal);
+  const drained = await drainActiveWork(signal);
   await advisoryLeader?.stop?.().catch(() => {});
+  if (!drained) {
+    logger.error('Intelligence worker shutdown drain timed out; exiting without closing the pool');
+    process.exit(78);
+  }
   await pool.end().catch(() => {});
   process.exit(0);
 }
