@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { query } from '../db.js';
+import { requireAuth } from '../middleware/auth.js';
 import { getJs } from '../nats.js';
 import { StringCodec } from 'nats';
 import { NotFoundError } from '../lib/errors.js';
@@ -20,6 +21,7 @@ const ListSchema = z.object({
 });
 
 export const reportsRoutes: FastifyPluginAsync = async (app) => {
+  app.addHook('preHandler', requireAuth);
   app.get('/v4/reports', async (req, reply) => {
     const org_id = (req.headers['x-org-id'] as string) ?? '';
     const q = ListSchema.parse(req.query);
