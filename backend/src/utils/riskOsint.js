@@ -341,19 +341,39 @@ async function fetchAllTelegramMessages(channels) {
   return candidates;
 }
 
-const TELEGRAM_REWRITE_MAX_MESSAGES = 40;
+const TELEGRAM_REWRITE_MAX_MESSAGES = 20;
+
+function parseModelJsonArray(raw) {
+  const value = String(raw || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {}
+  const start = value.indexOf('[');
+  const end = value.lastIndexOf(']');
+  if (start < 0 || end <= start) return [];
+  try {
+    const parsed = JSON.parse(value.slice(start, end + 1));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    return [];
+  }
+}
 async function rewriteAndLocateTelegramMessages(candidates) {
   if (!candidates.length) return [];
   const batch = candidates.slice(0, TELEGRAM_REWRITE_MAX_MESSAGES);
   const list = batch.map((c, i) => `${i}. [channel: ${c.channel}] ${c.text}`).join('\n');
   const response = await aiClient.createMessage({
-    model: MODEL, max_tokens: 4000,
+    model: MODEL, max_tokens: 5000,
     system: 'You are an OSINT security analyst. Respond with raw JSON only — no markdown fences, no commentary.',
     messages: [{ role: 'user', content: `For EACH numbered raw Telegram post: rewrite it as one factual sentence; extract the most specific real place (city/town/region plus country) or null; classify severity high/medium/low. Posts:\n${list}\nReply ONLY with a JSON array of exactly ${batch.length} objects: [{"i":0,"text":"...","place":"City, Country"|null,"level":"high"|"medium"|"low"}]` }],
   });
-  const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('').trim().replace(/^```(json)?/i, '').replace(/```$/, '').trim();
-  let parsed;
-  try { parsed = JSON.parse(text); } catch { logger.warn(`Risk Intel OSINT: Telegram rewrite response unparseable: ${text.slice(0, 300)}`); return []; }
+  const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
+  const parsed = parseModelJsonArray(text);
+  if (!parsed.length) {
+    logger.warn(`Risk Intel OSINT: Telegram rewrite response unparseable: ${text.slice(0, 300)}`);
+    return [];
+  }
   if (!Array.isArray(parsed)) return [];
   return parsed.map(item => {
     const src = batch[item?.i];
