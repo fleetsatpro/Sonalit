@@ -10,6 +10,9 @@ function applyTheme(theme: Theme) {
   const root = document.documentElement;
   const definition = getTheme(theme);
   root.setAttribute('data-theme', definition.id);
+  // Keep Tailwind class-based dark variants synchronized with the selected
+  // presentation mode. Light themes must not retain the dark class from index.html.
+  root.classList.toggle('dark', definition.mode === 'dark');
   root.style.colorScheme = definition.mode;
 
   const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
