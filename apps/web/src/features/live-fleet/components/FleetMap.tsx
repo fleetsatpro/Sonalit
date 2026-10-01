@@ -1,5 +1,5 @@
-mmport { useEffect, useRef, useState } from 'react'
-mmport { useQuery } from '@tanstack/react-query'
+import { useEffect, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { api } from '../../../lib/api.js'
@@ -8,6 +8,7 @@ import {
   bboxFromMap, useTrafficIncidents, useTrafficStatus,
 } from '../../../lib/trafficLayer.js'
 import type { LiveVehicle, LiveStatus } from '../types/fleet.js'
+import '../../../styles/spatial-command.css'
 import { externalWorldFeatures, fetchWorldContext, WORLD_CONTEXT_LAYERS } from '../../../lib/spatialClient.js'
 
 const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
@@ -47,7 +48,7 @@ const EARTH_OBSERVATION_STYLE: maplibregl.StyleSpecification = {
   layers: [{ id: 'earth-layer', type: 'raster', source: 'earth' }],
 }
 
-const STATUS_COLOR: RecorddLiveStatus, string> = {
+const STATUS_COLOR: Record<LiveStatus, string> = {
   move: '#16c784', idle: '#f59e0b', stop: '#475569', offline: '#3e4252', sos: '#ef4444',
 }
 
@@ -64,7 +65,7 @@ interface RiskZone {
 type GeoRing = [number, number][]
 type GeoFC = {
   type: 'FeatureCollection'
-  features: Arrayd{ type: 'Feature'; geometry: { type: 'Polygon'; coordinates: GeoRing[] }; properties: Record<string, string> }>
+  features: Array<{ type: 'Feature'; geometry: { type: 'Polygon'; coordinates: GeoRing[] }; properties: Record<string, string> }>
 }
 
 function circlePolygon(lat: number, lng: number, radiusM: number): GeoRing {
@@ -554,11 +555,11 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
   const riskCount = riskZones?.length ?? 0
 
   return (
-    <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+    <div className="spatial-map-surface" data-spatial-surface="fleet-2d" style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%', background: '#05070d' }} />
 
       {/* top-right controls */}
-      <div style={{ position: 'absolute', right: 14, top: 14, zIndex: 500, display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div className="spatial-control-rail" style={{ position: 'absolute', right: 14, top: 14, zIndex: 500, display: 'flex', flexDirection: 'column', gap: 4 }}>
         <button
           onClick={() => setWorldSpatialOn(v => !v)}
           title={worldSpatialOn ? 'Hide external world intelligence' : 'Show external world intelligence'}
@@ -593,7 +594,7 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
       </div>
 
       {/* XD glass world-context legend */}
-      <div style={{ position: 'absolute', right: 56, top: 14, zIndex: 500, width: 228, maxWidth: 'calc(100vw - 90px)', background: 'linear-gradient(180deg, rgba(9,13,22,.88), rgba(7,10,17,.78))', border: '1px solid rgba(196,181,253,.18)', boxShadow: '0 14px 40px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.06)', backdropFilter: 'blur(14px)', borderRadius: 10, padding: '10px 11px', color: '#dfe0db' }}>
+      <div className="spatial-legend" style={{ position: 'absolute', right: 56, top: 14, zIndex: 500, width: 228, maxWidth: 'calc(100vw - 90px)', background: 'linear-gradient(180deg, rgba(9,13,22,.88), rgba(7,10,17,.78))', border: '1px solid rgba(196,181,253,.18)', boxShadow: '0 14px 40px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.06)', backdropFilter: 'blur(14px)', borderRadius: 10, padding: '10px 11px', color: '#dfe0db' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8 }}>
           <div>
             <div style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, letterSpacing: '.14em', color: '#a7a0bd' }}>GEV · XD WORLD CONTEXT</div>
@@ -634,7 +635,7 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
       </div>
 
       {/* coords */}
-      <div style={{ position: 'absolute', bottom: 14, left: 14, zIndex: 500, background: 'rgba(8,11,20,.64)', border: '1px solid rgba(255,255,255,.07)', borderRadius: 7, padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 6, backdropFilter: 'blur(10px)', boxShadow: '0 8px 24px rgba(0,0,0,.2)' }}>
+      <div className="spatial-coordinate" style={{ position: 'absolute', bottom: 14, left: 14, zIndex: 500, background: 'rgba(8,11,20,.64)', border: '1px solid rgba(255,255,255,.07)', borderRadius: 7, padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 6, backdropFilter: 'blur(10px)', boxShadow: '0 8px 24px rgba(0,0,0,.2)' }}>
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#8f96a3" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
         <span ref={coordsRef} style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8.5, color: '#8f96a3' }}>hover for coords</span>
       </div>
