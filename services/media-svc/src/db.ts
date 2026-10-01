@@ -17,8 +17,15 @@ export async function withOrgContext<T>(
 ): Promise<T> {
   const client = await pool.connect();
   try {
-    await client.query(`SET LOCAL app.org_id = $1`, [orgId]);
-    return await fn(client);
+    await client.query('BEGIN');
+    await client.query('SET LOCAL ROLE sonalit_app');
+    await client.query(`SELECT set_config('app.current_org_id', $1, true)`, [orgId]);
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    throw err;
   } finally {
     client.release();
   }
@@ -29,7 +36,6 @@ export async function query<T extends object = object>(
   values?: unknown[],
 ): Promise<T[]> {
   const orgId = tenantContext.getStore();
-  if (orgId) return withOrgContext(orgId, client => client.query<T>(text, values)).then(r => r.rows);
-  const res = await pool.query<T>(text, values);
-  return res.rows;
+  if (!orgId) throw new Error(`media-svc tenant query attempted without tenant context: ${text.slice(0, 120)}`);
+  return withOrgContext(orgId, client => client.query<T>(text, values)).then(r => r.rows);
 }
