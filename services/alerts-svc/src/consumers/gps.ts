@@ -226,8 +226,8 @@ async function evaluateRules(fix: GpsFix): Promise<void> {
 
     if ((rule.condition_type === 'geofence_enter' || rule.condition_type === 'geofence_exit') && rule.geofence_id) {
       const [geofence] = await query<Geofence>(
-        `SELECT id,min_lat,max_lat,min_lon,max_lon FROM geofences WHERE id=$1 AND deleted_at IS NULL`,
-        [rule.geofence_id],
+        `SELECT id,min_lat,max_lat,min_lon,max_lon FROM geofences WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL`,
+        [rule.geofence_id, fix.org_id],
       );
       legacyInside = geofence ? isInsideBoundingBox(fix.lat, fix.lon, geofence) : undefined;
       data = { ...baseData, geofence: { id: rule.geofence_id, inside: legacyInside } };
