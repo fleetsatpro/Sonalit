@@ -5,6 +5,13 @@ import type { SonalitTheme } from '../styles/themes.js';
 
 export type Theme = SonalitTheme;
 
+function normalizeTheme(value: unknown): Theme {
+  if (value === 'light') return 'daylight';
+  if (value === 'dark') return 'obsidian';
+  const valid: SonalitTheme[] = ['obsidian', 'arctic', 'graphite', 'copper', 'signal', 'daylight'];
+  return valid.includes(value as SonalitTheme) ? value as SonalitTheme : 'obsidian';
+}
+
 // The theme field existed here before but nothing ever applied it — no
 // component read useUIStore.theme, so switching it had zero visible effect.
 // Setting data-theme on <html> is what dashboard.css's light-mode variable
@@ -13,7 +20,7 @@ export type Theme = SonalitTheme;
 // state rehydrates, with no extra wiring needed in main.tsx.
 function applyTheme(theme: Theme) {
   if (typeof document !== 'undefined') {
-    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.setAttribute('data-theme', normalizeTheme(theme));
   }
 }
 
@@ -46,7 +53,11 @@ export const useUIStore = create<UIState>()(
       // behavior), not get stuck on whatever it was last closed/opened to.
       partialize: (s) => ({ theme: s.theme }),
       onRehydrateStorage: () => (state) => {
-        if (state) applyTheme(state.theme);
+        if (state) {
+          const normalized = normalizeTheme(state.theme);
+          if (normalized !== state.theme) state.setTheme(normalized);
+          else applyTheme(normalized);
+        }
       },
     }
   )
