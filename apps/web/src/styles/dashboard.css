@@ -143,6 +143,18 @@
   --d-t1:#17201d; --d-t2:#59655f; --d-t3:#8b948f; --d-t4:#c7cbc7;
 }
 
+html[data-theme="arctic"] body,
+html[data-theme="daylight"] body { background: var(--d-void); color: var(--d-t1); }
+html[data-theme="graphite"] body,
+html[data-theme="copper"] body,
+html[data-theme="signal"] body,
+html[data-theme="obsidian"] body { background: var(--d-void); color: var(--d-t1); }
+
+html[data-theme] ::selection {
+  background: var(--d-sg);
+  color: var(--d-t1);
+}
+
 /* Common legacy Tailwind chrome follows the selected surface tokens. These
    overrides intentionally exclude semantic status colors (red/amber/green). */
 :root[data-theme] .bg-slate-950 { background-color: var(--d-void) !important; }
