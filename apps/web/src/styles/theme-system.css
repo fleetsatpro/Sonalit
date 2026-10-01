@@ -141,7 +141,8 @@ html[data-theme] body {
   transition: background-color .22s ease, color .22s ease;
 }
 
-html[data-theme] .bg-slate-950 { background-color: var(--son-theme-bg) !important; }\nhtml[data-theme] .bg-slate-900 { background-color: var(--son-theme-surface) !important; }
+html[data-theme] .bg-slate-950 { background-color: var(--son-theme-bg) !important; }
+html[data-theme] .bg-slate-900 { background-color: var(--son-theme-surface) !important; }
 html[data-theme] .bg-slate-800 { background-color: var(--son-theme-surface-2) !important; }
 html[data-theme] .bg-slate-700 { background-color: color-mix(in srgb, var(--son-theme-surface-2) 78%, var(--son-theme-bg)) !important; }
 html[data-theme] .border-slate-700,
@@ -153,8 +154,8 @@ html[data-theme] .text-slate-400,
 html[data-theme] .text-slate-500 { color: var(--son-theme-muted) !important; }
 html[data-theme] .text-orange-400 { color: var(--son-theme-accent) !important; }
 html[data-theme] .bg-orange-600 { background-color: var(--son-theme-accent) !important; color: var(--son-theme-bg) !important; }
-html[data-theme] .hover\\:bg-orange-500:hover,
-html[data-theme] .hover\\:bg-orange-700:hover { background-color: var(--son-theme-accent) !important; }
+html[data-theme] .hover\:bg-orange-500:hover,
+html[data-theme] .hover\:bg-orange-700:hover { background-color: var(--son-theme-accent) !important; }
 
 .gev-shell {
   --gev-bg: var(--son-theme-bg);
