@@ -74,7 +74,7 @@ BEGIN
   IF to_regclass('public.notifications') IS NOT NULL THEN
     ALTER TABLE notifications ADD COLUMN IF NOT EXISTS org_id UUID;
   END IF;
-END $$;
+END $tenant$;
 
 UPDATE convoy_assignments ca
 SET org_id = c.org_id
@@ -263,7 +263,7 @@ BEGIN
       );
     END IF;
   END LOOP;
-END $$;
+END $tenant$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 3. Parent-derived tenant invariants.
@@ -272,7 +272,7 @@ END $$;
 -- evaluates the write.
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_vehicle() RETURNS trigger
-LANGUAGE plpgsql AS $tenant$$
+LANGUAGE plpgsql AS $tenant$
 DECLARE parent_org UUID;
 BEGIN
   SELECT org_id INTO parent_org FROM vehicles WHERE id = NEW.vehicle_id;
@@ -280,10 +280,10 @@ BEGIN
   IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
   NEW.org_id := parent_org;
   RETURN NEW;
-END $$;
+END $tenant$;
 
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_convoy() RETURNS trigger
-LANGUAGE plpgsql AS $tenant$$
+LANGUAGE plpgsql AS $tenant$
 DECLARE parent_org UUID;
 BEGIN
   SELECT org_id INTO parent_org FROM convoys WHERE id = NEW.convoy_id;
@@ -291,10 +291,10 @@ BEGIN
   IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
   NEW.org_id := parent_org;
   RETURN NEW;
-END $$;
+END $tenant$;
 
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_checkpoint() RETURNS trigger
-LANGUAGE plpgsql AS $tenant$$
+LANGUAGE plpgsql AS $tenant$
 DECLARE parent_org UUID;
 BEGIN
   IF NEW.convoy_id IS NOT NULL THEN
@@ -307,10 +307,10 @@ BEGIN
   IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
   NEW.org_id := parent_org;
   RETURN NEW;
-END $$;
+END $tenant$;
 
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_trip() RETURNS trigger
-LANGUAGE plpgsql AS $tenant$$
+LANGUAGE plpgsql AS $tenant$
 DECLARE parent_org UUID;
 BEGIN
   IF NEW.convoy_id IS NOT NULL THEN
@@ -329,10 +329,10 @@ BEGIN
   IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
   NEW.org_id := parent_org;
   RETURN NEW;
-END $$;
+END $tenant$;
 
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_invoice() RETURNS trigger
-LANGUAGE plpgsql AS $tenant$$
+LANGUAGE plpgsql AS $tenant$
 DECLARE parent_org UUID;
 BEGIN
   IF NEW.shipment_id IS NOT NULL THEN SELECT org_id INTO parent_org FROM shipments WHERE id = NEW.shipment_id; END IF;
@@ -342,10 +342,10 @@ BEGIN
   IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
   NEW.org_id := parent_org;
   RETURN NEW;
-END $$;
+END $tenant$;
 
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_expense() RETURNS trigger
-LANGUAGE plpgsql AS $tenant$$
+LANGUAGE plpgsql AS $tenant$
 DECLARE parent_org UUID;
 BEGIN
   IF NEW.trip_id IS NOT NULL THEN SELECT org_id INTO parent_org FROM trips WHERE id = NEW.trip_id; END IF;
@@ -356,10 +356,10 @@ BEGIN
   IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
   NEW.org_id := parent_org;
   RETURN NEW;
-END $$;
+END $tenant$;
 
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_driver_event() RETURNS trigger
-LANGUAGE plpgsql AS $tenant$$
+LANGUAGE plpgsql AS $tenant$
 DECLARE parent_org UUID;
 BEGIN
   IF NEW.driver_id IS NOT NULL THEN SELECT org_id INTO parent_org FROM drivers WHERE id = NEW.driver_id; END IF;
@@ -369,10 +369,10 @@ BEGIN
   IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
   NEW.org_id := parent_org;
   RETURN NEW;
-END $$;
+END $tenant$;
 
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_device() RETURNS trigger
-LANGUAGE plpgsql AS $tenant$$
+LANGUAGE plpgsql AS $tenant$
 DECLARE parent_org UUID;
 BEGIN
   SELECT org_id INTO parent_org FROM guardian_devices WHERE id = NEW.device_id;
@@ -380,10 +380,10 @@ BEGIN
   IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
   NEW.org_id := parent_org;
   RETURN NEW;
-END $$;
+END $tenant$;
 
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_geofence() RETURNS trigger
-LANGUAGE plpgsql AS $tenant$$
+LANGUAGE plpgsql AS $tenant$
 DECLARE parent_org UUID;
 BEGIN
   SELECT org_id INTO parent_org FROM geofences WHERE id = NEW.geofence_id;
@@ -391,10 +391,10 @@ BEGIN
   IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
   NEW.org_id := parent_org;
   RETURN NEW;
-END $$;
+END $tenant$;
 
 CREATE OR REPLACE FUNCTION tenant_harden_org_from_user() RETURNS trigger
-LANGUAGE plpgsql AS $tenant$$
+LANGUAGE plpgsql AS $tenant$
 DECLARE parent_org UUID;
 BEGIN
   SELECT org_id INTO parent_org FROM users WHERE id = NEW.user_id;
@@ -402,7 +402,7 @@ BEGIN
   IF NEW.org_id IS NOT NULL AND NEW.org_id <> parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
   NEW.org_id := parent_org;
   RETURN NEW;
-END $$;
+END $tenant$;
 
 DROP TRIGGER IF EXISTS tenant_harden_sensor_logs ON sensor_logs;
 CREATE TRIGGER tenant_harden_sensor_logs BEFORE INSERT OR UPDATE ON sensor_logs
@@ -502,6 +502,6 @@ BEGIN
       EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON public.%I(org_id)', 'idx_tenant_' || t, t);
     END IF;
   END LOOP;
-END $$;
+END $tenant$;
 
 COMMIT;
