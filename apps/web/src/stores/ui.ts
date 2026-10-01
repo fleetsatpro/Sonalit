@@ -22,7 +22,10 @@ const isTheme = (value: unknown): value is Theme => typeof value === 'string' &&
 // prevents individual screens from owning appearance state.
 function applyTheme(theme: Theme) {
   if (typeof document !== 'undefined') {
-    document.documentElement.setAttribute('data-theme', theme);
+    const root = document.documentElement;
+    root.setAttribute('data-theme', theme);
+    const option = THEME_OPTIONS.find((item) => item.id === theme);
+    root.style.colorScheme = option?.mode ?? 'dark';
   }
 }
 
