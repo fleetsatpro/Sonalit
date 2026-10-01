@@ -5,7 +5,8 @@ import { query } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { getJs } from '../nats.js';
 import { StringCodec } from 'nats';
-import { NotFoundError, AuthError } from '../lib/errors.js';
+import { NotFoundError, AuthError, ValidationError } from '../lib/errors.js';
+import { requireAuth } from '../middleware/auth.js';
 
 const ConvoyStatus = z.enum(['draft', 'planned', 'active', 'completed', 'cancelled']);
 
@@ -40,6 +41,7 @@ const sc = StringCodec();
 
 export const convoysRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', requireAuth);
+  app.addHook('preHandler', requireAuth);
   app.get('/v4/convoys', async (req, reply) => {
     const org_id = req.user?.org_id;
     if (!org_id) throw new AuthError('tenant scope missing');
@@ -61,6 +63,22 @@ export const convoysRoutes: FastifyPluginAsync = async (app) => {
     if (!org_id) throw new AuthError('tenant scope missing');
     const body = CreateConvoySchema.parse(req.body);
     const id = randomUUID();
+
+    if (body.vehicle_ids.length) {
+      const vehicles = await query<{ id: string }>(
+        'SELECT id FROM vehicles WHERE id = ANY($1::uuid[]) AND org_id = $2 AND deleted_at IS NULL',
+        [body.vehicle_ids, org_id],
+      );
+      if (vehicles.length !== body.vehicle_ids.length) throw new ValidationError('One or more vehicles do not belong to this organization');
+    }
+    if (body.driver_ids.length) {
+      const drivers = await query<{ id: string }>(
+        'SELECT id FROM drivers WHERE id = ANY($1::uuid[]) AND org_id = $2 AND deleted_at IS NULL',
+        [body.driver_ids, org_id],
+      );
+      if (drivers.length !== body.driver_ids.length) throw new ValidationError('One or more drivers do not belong to this organization');
+    }
+
     const [convoy] = await query(
       `INSERT INTO convoys (id, org_id, name, description, timezone, start_date, end_date,
        seal_count_per_truck, notes, status)
@@ -131,6 +149,11 @@ export const convoysRoutes: FastifyPluginAsync = async (app) => {
     }
 
     if (vehicle_ids !== undefined) {
+      const vehicles = await query<{ id: string }>(
+        'SELECT id FROM vehicles WHERE id = ANY($1::uuid[]) AND org_id = $2 AND deleted_at IS NULL',
+        [vehicle_ids, org_id],
+      );
+      if (vehicles.length !== vehicle_ids.length) throw new ValidationError('One or more vehicles do not belong to this organization');
       // Atomic replacement: delete then insert in a single client round-trip via CTE.
       await query(
         `WITH del AS (DELETE FROM convoy_vehicles WHERE convoy_id=$1)
@@ -140,6 +163,11 @@ export const convoysRoutes: FastifyPluginAsync = async (app) => {
       );
     }
     if (driver_ids !== undefined) {
+      const drivers = await query<{ id: string }>(
+        'SELECT id FROM drivers WHERE id = ANY($1::uuid[]) AND org_id = $2 AND deleted_at IS NULL',
+        [driver_ids, org_id],
+      );
+      if (drivers.length !== driver_ids.length) throw new ValidationError('One or more drivers do not belong to this organization');
       await query(
         `WITH del AS (DELETE FROM convoy_drivers WHERE convoy_id=$1)
          INSERT INTO convoy_drivers (convoy_id, driver_id)
