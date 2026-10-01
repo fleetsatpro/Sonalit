@@ -2522,6 +2522,46 @@
         }
       }
     },
+    "/api/v1/cctv/cameras": {
+      "get": {
+        "operationId": "get_api_v1_cctv_cameras",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cctv/nearest": {
+      "get": {
+        "operationId": "get_api_v1_cctv_nearest",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cctv/{id}/frame": {
+      "get": {
+        "operationId": "get_api_v1_cctv_id_frame",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/cctv/{id}": {
+      "get": {
+        "operationId": "get_api_v1_cctv_id",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/convoys/{id}/corridor/replay": {
       "get": {
         "operationId": "get_api_v1_convoys_id_corridor_replay",
