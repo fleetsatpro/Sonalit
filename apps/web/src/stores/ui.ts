@@ -1,35 +1,45 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { getTheme, normalizeTheme, type SonalitTheme } from '../styles/themes.js';
 
-export type Theme = SonalitTheme;
+export type Theme =
+  | 'obsidian'
+  | 'arctic'
+  | 'graphite'
+  | 'copper'
+  | 'signal'
+  | 'ivory';
+
+export const THEMES: ReadonlyArray<{
+  id: Theme;
+  name: string;
+  descriptor: string;
+  mode: 'dark' | 'light';
+  accent: string;
+}> = [
+  { id: 'obsidian', name: 'Obsidian Command', descriptor: 'Deep command-room contrast', mode: 'dark', accent: '#b8a6ff' },
+  { id: 'arctic', name: 'Arctic Signal', descriptor: 'Cool analytical operations', mode: 'light', accent: '#0b7cff' },
+  { id: 'graphite', name: 'Graphite Pro', descriptor: 'Neutral executive control', mode: 'dark', accent: '#aeb9c8' },
+  { id: 'copper', name: 'Copper Dusk', descriptor: 'Warm field operations', mode: 'dark', accent: '#f6a46a' },
+  { id: 'signal', name: 'Signal Lime', descriptor: 'High-visibility tactical', mode: 'dark', accent: '#d9ff69' },
+  { id: 'ivory', name: 'Ivory Daylight', descriptor: 'Bright field / daylight', mode: 'light', accent: '#0b8f72' },
+];
+
+const DEFAULT_THEME: Theme = 'obsidian';
 
 function applyTheme(theme: Theme) {
   if (typeof document === 'undefined') return;
-
-  const root = document.documentElement;
-  const definition = getTheme(theme);
-  root.setAttribute('data-theme', definition.id);
-  root.style.colorScheme = definition.mode;
-
-  const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-  if (themeColor) themeColor.content = definition.chrome;
+  const meta = THEMES.find((item) => item.id === theme) ?? THEMES[0];
+  document.documentElement.setAttribute('data-theme', meta.id);
+  document.documentElement.style.colorScheme = meta.mode;
 }
 
-function readPersistedTheme(): Theme {
-  if (typeof window === 'undefined') return 'obsidian';
-  try {
-    const raw = window.localStorage.getItem('sonalit-ui');
-    if (!raw) return 'obsidian';
-    const parsed = JSON.parse(raw) as { state?: { theme?: unknown } };
-    return normalizeTheme(parsed?.state?.theme);
-  } catch {
-    return 'obsidian';
-  }
+export function normalizeTheme(value: unknown): Theme {
+  if (value === 'dark') return 'obsidian';
+  if (value === 'light') return 'ivory';
+  return THEMES.some((theme) => theme.id === value) ? value as Theme : DEFAULT_THEME;
 }
 
-const initialTheme = readPersistedTheme();
-applyTheme(initialTheme);
+applyTheme(DEFAULT_THEME);
 
 type UIState = {
   sidebarOpen: boolean;
@@ -47,27 +57,29 @@ export const useUIStore = create<UIState>()(
   persist(
     (set) => ({
       sidebarOpen: defaultSidebarOpen,
-      theme: initialTheme,
+      theme: DEFAULT_THEME,
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
       setTheme: (theme) => {
-        applyTheme(theme);
-        set({ theme });
+        const normalized = normalizeTheme(theme);
+        applyTheme(normalized);
+        set({ theme: normalized });
       },
     }),
     {
       name: 'sonalit-ui',
+      version: 2,
       partialize: (s) => ({ theme: s.theme }),
-      version: 3,
-      migrate: (persistedState) => ({
-        ...(persistedState as Partial<UIState>),
-        theme: normalizeTheme((persistedState as Partial<UIState>)?.theme),
-      }),
+      migrate: (persistedState) => {
+        const state = persistedState as { theme?: unknown } | null;
+        return { theme: normalizeTheme(state?.theme) };
+      },
       onRehydrateStorage: () => (state) => {
-        if (!state) return;
-        const theme = normalizeTheme(state.theme);
-        if (theme !== state.theme) state.setTheme(theme);
-        else applyTheme(theme);
+        if (state) {
+          const normalized = normalizeTheme(state.theme);
+          if (normalized !== state.theme) state.setTheme(normalized);
+          else applyTheme(normalized);
+        }
       },
     },
   ),
