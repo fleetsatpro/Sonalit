@@ -351,3 +351,147 @@ html, body, #root, * {
     scroll-behavior:auto !important;
   }
 }
+
+
+/* ── Premium Sonalit theme contract ─────────────────────────────────────
+   Presentation-only layer. Operational state, telemetry meaning, status
+   semantics, permissions, routes and workflows remain unchanged.
+   Keep semantic alert/status tokens independent from neutral surfaces. */
+:root {
+  --theme-body: var(--d-void);
+  --theme-input: var(--d-deep);
+  --theme-overlay: rgba(3, 7, 17, .78);
+}
+
+:root[data-theme="arctic"] {
+  --d-void:#f4f8fc; --d-carbon:#edf3f8; --d-deep:#e4edf4; --d-well:#dce7ef;
+  --d-surf:#f8fbfd; --d-lift:#ffffff; --d-lift2:#d2dee8;
+  --d-rim:rgba(15,45,65,.10); --d-rim2:rgba(15,45,65,.16); --d-rim3:rgba(15,45,65,.28);
+  --d-sig:#0b7898; --d-sig2:#08627d; --d-sig3:#084e65;
+  --d-sg:rgba(11,120,152,.12); --d-sg2:rgba(11,120,152,.07); --d-sglow:rgba(11,120,152,.45);
+  --d-orange:#3156a8; --d-og:rgba(49,86,168,.12); --d-oglow:rgba(49,86,168,.40);
+  --d-t1:#0b1722; --d-t2:#526777; --d-t3:#8497a5; --d-t4:#c2d0d9;
+  --theme-body:#f4f8fc; --theme-input:#ffffff; --theme-overlay:rgba(11,23,34,.34);
+}
+:root[data-theme="graphite"] {
+  --d-void:#0e1012; --d-carbon:#151719; --d-deep:#1b1e21; --d-well:#202428;
+  --d-surf:#262b2f; --d-lift:#2d3338; --d-lift2:#383f45;
+  --d-rim:rgba(235,242,247,.08); --d-rim2:rgba(235,242,247,.14); --d-rim3:rgba(235,242,247,.25);
+  --d-sig:#7dd3fc; --d-sig2:#38bdf8; --d-sig3:#0284c7;
+  --d-sg:rgba(125,211,252,.12); --d-sg2:rgba(125,211,252,.06); --d-sglow:rgba(125,211,252,.45);
+  --d-orange:#d1d5db; --d-og:rgba(209,213,219,.10); --d-oglow:rgba(209,213,219,.35);
+  --d-t1:#f5f7f8; --d-t2:#9aa4ac; --d-t3:#626c73; --d-t4:#3c444a;
+  --theme-body:#0e1012; --theme-input:#1b1e21;
+}
+:root[data-theme="copper"] {
+  --d-void:#130f0d; --d-carbon:#191310; --d-deep:#211914; --d-well:#2a201b;
+  --d-surf:#32261f; --d-lift:#3d3028; --d-lift2:#4b3a30;
+  --d-rim:rgba(255,225,207,.08); --d-rim2:rgba(255,225,207,.14); --d-rim3:rgba(255,225,207,.25);
+  --d-sig:#67e8c5; --d-sig2:#2dd4aa; --d-sig3:#15967b;
+  --d-sg:rgba(103,232,197,.12); --d-sg2:rgba(103,232,197,.06); --d-sglow:rgba(103,232,197,.45);
+  --d-orange:#ff9f68; --d-og:rgba(255,159,104,.13); --d-oglow:rgba(255,159,104,.48);
+  --d-t1:#fff3eb; --d-t2:#b9a59a; --d-t3:#77665d; --d-t4:#4b3c35;
+  --theme-body:#130f0d; --theme-input:#211914;
+}
+:root[data-theme="signal"] {
+  --d-void:#090d09; --d-carbon:#0d120d; --d-deep:#121812; --d-well:#171e16;
+  --d-surf:#1c241b; --d-lift:#253022; --d-lift2:#303d2c;
+  --d-rim:rgba(224,255,172,.08); --d-rim2:rgba(224,255,172,.15); --d-rim3:rgba(224,255,172,.28);
+  --d-sig:#d8ff5f; --d-sig2:#b6e63f; --d-sig3:#82ae25;
+  --d-sg:rgba(216,255,95,.13); --d-sg2:rgba(216,255,95,.06); --d-sglow:rgba(216,255,95,.48);
+  --d-orange:#65e6a8; --d-og:rgba(101,230,168,.12); --d-oglow:rgba(101,230,168,.42);
+  --d-t1:#f2f8e9; --d-t2:#a4b095; --d-t3:#69745f; --d-t4:#414a3b;
+  --theme-body:#090d09; --theme-input:#121812;
+}
+:root[data-theme="daylight"] {
+  --d-void:#f8f7f2; --d-carbon:#f1f0ea; --d-deep:#e8e7df; --d-well:#deded5;
+  --d-surf:#fbfaf6; --d-lift:#ffffff; --d-lift2:#d3d4ca;
+  --d-rim:rgba(26,38,34,.10); --d-rim2:rgba(26,38,34,.17); --d-rim3:rgba(26,38,34,.29);
+  --d-sig:#0f766e; --d-sig2:#0d625c; --d-sig3:#0b514c;
+  --d-sg:rgba(15,118,110,.12); --d-sg2:rgba(15,118,110,.06); --d-sglow:rgba(15,118,110,.42);
+  --d-orange:#c2410c; --d-og:rgba(194,65,12,.12); --d-oglow:rgba(194,65,12,.40);
+  --d-fire:#b4233c; --d-fg:rgba(180,35,60,.09); --d-fglow:rgba(180,35,60,.25);
+  --d-warn:#9a6400; --d-wg:rgba(154,100,0,.09); --d-ok:#18734d; --d-okg:rgba(24,115,77,.08);
+  --d-purple:#7a4da0; --d-t1:#17201d; --d-t2:#59655f; --d-t3:#8b948f; --d-t4:#c7cbc7;
+  --theme-body:#f8f7f2; --theme-input:#fffdf9; --theme-overlay:rgba(23,32,29,.34);
+}
+:root[data-theme="obsidian"] {
+  --theme-body:var(--d-void); --theme-input:var(--d-deep);
+}
+html, body, #root {
+  background:var(--theme-body);
+  color:var(--d-t1);
+}
+html[data-theme] {
+  color-scheme: dark;
+}
+html[data-theme="arctic"],
+html[data-theme="daylight"] {
+  color-scheme: light;
+}
+body {
+  transition:background-color .2s ease,color .2s ease;
+}
+
+/* Bridge legacy Tailwind neutral chrome into the token contract. Semantic
+   red/amber/green/blue status utilities are intentionally not remapped. */
+:root[data-theme] .bg-slate-950 { background-color:var(--d-void)!important; }
+:root[data-theme] .bg-slate-900 { background-color:var(--d-carbon)!important; }
+:root[data-theme] .bg-slate-800 { background-color:var(--d-well)!important; }
+:root[data-theme] .bg-slate-700 { background-color:var(--d-surf)!important; }
+:root[data-theme] .bg-slate-600 { background-color:var(--d-lift)!important; }
+:root[data-theme] .border-slate-700 { border-color:var(--d-rim2)!important; }
+:root[data-theme] .border-slate-600 { border-color:var(--d-rim3)!important; }
+:root[data-theme] .text-slate-100,
+:root[data-theme] .text-slate-200 { color:var(--d-t1)!important; }
+:root[data-theme] .text-slate-300,
+:root[data-theme] .text-slate-400 { color:var(--d-t2)!important; }
+:root[data-theme] .text-slate-500,
+:root[data-theme] .text-slate-600 { color:var(--d-t3)!important; }
+:root[data-theme] .bg-gray-800 { background-color:var(--d-well)!important; }
+:root[data-theme] .bg-gray-700 { background-color:var(--d-surf)!important; }
+:root[data-theme] [class~="hover:bg-slate-700"]:hover { background-color:var(--d-surf)!important; }
+:root[data-theme] [class~="hover:bg-slate-600"]:hover { background-color:var(--d-lift)!important; }
+:root[data-theme] [class~="hover:border-slate-500"]:hover { border-color:var(--d-rim3)!important; }
+
+:root[data-theme] input:not([type="checkbox"]):not([type="radio"]),
+:root[data-theme] select,
+:root[data-theme] textarea {
+  background-color:var(--theme-input);
+  color:var(--d-t1);
+  border-color:var(--d-rim2);
+}
+:root[data-theme] input::placeholder,
+:root[data-theme] textarea::placeholder { color:var(--d-t3); }
+
+.theme-option {
+  background:var(--d-deep);
+  border-color:var(--d-rim2);
+}
+.theme-option:hover { border-color:var(--d-rim3); }
+.theme-option-active {
+  border-color:color-mix(in srgb,var(--d-sig) 72%,transparent);
+  background:var(--d-sg2);
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--d-sig) 18%,transparent), 0 12px 30px rgba(0,0,0,.10);
+}
+
+:root[data-theme="arctic"] .command-map-panel__canvas,
+:root[data-theme="daylight"] .command-map-panel__canvas {
+  background:#0b1320;
+}
+
+/* Preserve a dark, legible geospatial canvas in light UI themes: the map
+   is an operational visualization surface, not a decorative theme surface. */
+:root[data-theme="arctic"] .cesium-viewer,
+:root[data-theme="daylight"] .cesium-viewer {
+  color-scheme:dark;
+}
+
+:root[data-theme] :where(button,a,input,select,textarea):focus-visible {
+  outline:2px solid color-mix(in srgb,var(--d-sig) 72%,transparent);
+  outline-offset:2px;
+}
+
+@media (prefers-reduced-motion:reduce) {
+  body { transition:none; }
+}
