@@ -1,5 +1,5 @@
-const THEMES = new Set(['obsidian', 'arctic', 'graphite', 'copper', 'signal', 'ivory', 'daylight']);
-const LIGHT_THEMES = new Set(['arctic', 'ivory', 'daylight']);
+const THEMES = new Set(['obsidian', 'arctic', 'graphite', 'copper', 'signal', 'daylight']);
+const LIGHT_THEMES = new Set(['arctic', 'daylight']);
 
 function readPersistedTheme(): string | null {
   try {
@@ -32,7 +32,6 @@ const themeChrome: Record<string, string> = {
   graphite: '#0e1012',
   copper: '#130f0d',
   signal: '#090d09',
-  ivory: '#f8f7f2',
   daylight: '#f8f7f2',
 };
 
