@@ -27,14 +27,14 @@ async function migrate(): Promise<void> {
       UPDATE convoy_drivers cd SET org_id=c.org_id FROM convoys c WHERE c.id=cd.convoy_id AND cd.org_id IS NULL;
       UPDATE convoy_cfos cc SET org_id=c.org_id FROM convoys c WHERE c.id=cc.convoy_id AND cc.org_id IS NULL;
 
-      CREATE OR REPLACE FUNCTION tenant_convoy_join() RETURNS trigger LANGUAGE plpgsql AS $
+      CREATE OR REPLACE FUNCTION tenant_convoy_join() RETURNS trigger LANGUAGE plpgsql AS $tenant$
       DECLARE parent_org UUID;
       BEGIN
         SELECT org_id INTO parent_org FROM convoys WHERE id=NEW.convoy_id;
         IF parent_org IS NULL THEN RAISE EXCEPTION 'tenant_scope_missing_convoy'; END IF;
         IF NEW.org_id IS NOT NULL AND NEW.org_id<>parent_org THEN RAISE EXCEPTION 'tenant_scope_mismatch'; END IF;
         NEW.org_id:=parent_org; RETURN NEW;
-      END $;
+      END $tenant$;
 
       DROP TRIGGER IF EXISTS tenant_convoy_vehicles ON convoy_vehicles;
       CREATE TRIGGER tenant_convoy_vehicles BEFORE INSERT OR UPDATE ON convoy_vehicles
@@ -46,7 +46,7 @@ async function migrate(): Promise<void> {
       CREATE TRIGGER tenant_convoy_cfos BEFORE INSERT OR UPDATE ON convoy_cfos
         FOR EACH ROW EXECUTE FUNCTION tenant_convoy_join();
 
-      DO $
+      DO $tenant$
       DECLARE t text;
       BEGIN
         FOREACH t IN ARRAY ARRAY['convoys','convoy_vehicles','convoy_drivers','convoy_cfos'] LOOP
@@ -61,7 +61,7 @@ async function migrate(): Promise<void> {
             USING (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)
             WITH CHECK (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)', t);
         END LOOP;
-      END $;
+      END $tenant$;
     `);
     await client.query('COMMIT');
     process.stdout.write('convoy-svc migrations complete\n');
