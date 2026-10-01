@@ -20,6 +20,24 @@ describe('runtime fence deployment handover policy', () => {
     })).toBe(false);
   });
 
+
+  test('does not auto-takeover a legacy lease with no deployment identity', () => {
+    expect(shouldTakeOver({
+      takeoverRequested: false,
+      incomingDeploymentId: 'new-deployment',
+      currentDeploymentId: null,
+    })).toBe(false);
+    expect(classifyFenceStart({
+      production: true,
+      standby: false,
+      takeoverRequested: false,
+      incomingDeploymentId: 'new-deployment',
+      currentOwner: 'old-owner',
+      currentDeploymentId: null,
+      stale: false,
+    })).toBe('refuse');
+  });
+
   test('does not enable automatic takeover outside Railway', () => {
     expect(shouldTakeOver({
       takeoverRequested: false,
