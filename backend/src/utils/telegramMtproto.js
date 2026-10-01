@@ -11,11 +11,13 @@ let connectPromise = null;
 let sessionDisabled = false;
 
 function isConfigured() {
-  return !sessionDisabled && !!(
-    process.env.TELEGRAM_API_ID
-    && process.env.TELEGRAM_API_HASH
-    && process.env.TELEGRAM_SESSION_STRING
-  );
+  return !sessionDisabled
+    && String(process.env.TELEGRAM_ENABLE_MTPROTO || '').toLowerCase() === 'true'
+    && !!(
+      process.env.TELEGRAM_API_ID
+      && process.env.TELEGRAM_API_HASH
+      && process.env.TELEGRAM_SESSION_STRING
+    );
 }
 
 function isAuthKeyDuplicated(error) {
