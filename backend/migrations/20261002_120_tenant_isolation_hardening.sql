@@ -226,12 +226,25 @@ BEGIN
     EXECUTE format('ALTER TABLE %I.%I FORCE ROW LEVEL SECURITY', r.schema_name, r.table_name);
 
     EXECUTE format('DROP POLICY IF EXISTS tenant_isolation_hardening ON %I.%I', r.schema_name, r.table_name);
-    EXECUTE format(
-      'CREATE POLICY tenant_isolation_hardening ON %I.%I AS RESTRICTIVE FOR ALL
-         USING (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)
-         WITH CHECK (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)',
-      r.schema_name, r.table_name
-    );
+    IF r.table_name = 'risk_zones' THEN
+      EXECUTE format(
+        'CREATE POLICY tenant_isolation_hardening ON %I.%I AS RESTRICTIVE FOR SELECT, DELETE, UPDATE
+           USING (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid OR org_id IS NULL)',
+        r.schema_name, r.table_name
+      );
+      EXECUTE format(
+        'CREATE POLICY tenant_isolation_hardening_write ON %I.%I AS RESTRICTIVE FOR INSERT
+           WITH CHECK (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)',
+        r.schema_name, r.table_name
+      );
+    ELSE
+      EXECUTE format(
+        'CREATE POLICY tenant_isolation_hardening ON %I.%I AS RESTRICTIVE FOR ALL
+           USING (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)
+           WITH CHECK (org_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::uuid)',
+        r.schema_name, r.table_name
+      );
+    END IF;
 
     SELECT EXISTS (
       SELECT 1
