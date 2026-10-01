@@ -70,6 +70,15 @@ const queryClient = new QueryClient({
   },
 });
 
+let hydratedOrgId = useAuthStore.getState().user?.org_id ?? null;
+useAuthStore.subscribe((state) => {
+  const nextOrgId = state.user?.org_id ?? null;
+  if (nextOrgId === hydratedOrgId) return;
+  hydratedOrgId = nextOrgId;
+  // Never let cached query data survive an authentication/tenant boundary.
+  queryClient.clear();
+});
+
 let lastTenantId = useAuthStore.getState().user?.org_id ?? null;
 
 // Tenant boundary is also a browser-cache boundary. Clear all TanStack Query
