@@ -154,9 +154,9 @@ export async function getEntry(id: string): Promise<OutboxEntry | undefined> {
   return db.outbox.get(id);
 }
 
-export async function listForUser(userId: string, orgId?: string): Promise<OutboxEntry[]> {
+export async function listForUser(userId: string, orgId: string): Promise<OutboxEntry[]> {
   const rows = await db.outbox.where('ownerUserId').equals(userId).toArray();
-  const scoped = orgId ? rows.filter(e => e.ownerOrgId === orgId) : rows;
+  const scoped = rows.filter(e => e.ownerOrgId === orgId);
   return scoped.sort(compareForDrain);
 }
 
