@@ -54,7 +54,7 @@ function parseSubject(raw) {
 
 function parseLayers(raw, fallback) {
   if (!Array.isArray(raw)) return fallback;
-  return raw.filter(l => typeof l === 'string').slice(0, 10);
+  return raw.filter(l => typeof l === 'string').slice(0, 11);
 }
 
 function parseCenter(raw) {

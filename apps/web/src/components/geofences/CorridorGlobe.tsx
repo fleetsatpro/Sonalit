@@ -7,7 +7,8 @@ import CorridorOperationalMap from './CorridorOperationalMap.js';
 import { runXdSurveillanceAgents, type XdDimension } from './xdSurveillanceAgents.js';
 
 export type { LatLng, GlobeMember, RiskZone };
-type Props = { convoyId?: string; route: LatLng[]; corridorKm: number; members: GlobeMember[]; zones?: RiskZone[]; ceilingM?: number; focusId?: string | null; trail?: LatLng[]; onSelect?: (id: string | null) => void; fill?: boolean };
+type Surface = 'corridor' | 'gev';
+type Props = { convoyId?: string; route: LatLng[]; corridorKm: number; members: GlobeMember[]; zones?: RiskZone[]; ceilingM?: number; focusId?: string | null; trail?: LatLng[]; onSelect?: (id: string | null) => void; fill?: boolean; surface?: Surface; fixedView?: View };
 type View = '2D' | '3D';
 type SwarmResponse = { version:string; generated_at:string; provider_fabric:{ open_source:Array<{slot:number;label:string;model:string;configured:boolean}>; gpt_oss_120b:boolean; anthropic_last_resort:boolean; order:string[] }; agents:Array<{id:string;dimension:string;name:string;provider:string;status:string;finding:string;confidence:number;risks?:unknown[];evidence_gaps?:string[]}>; arbiter:{posture:string;summary:string;material_findings?:string[];material_gaps?:string[];confidence:number;next_review:string;dissent?:string[];provider:string} };
 const DIMENSIONS:{key:XdDimension;icon:typeof Crosshair}[]=[{key:'SPACE',icon:Crosshair},{key:'TIME',icon:Timer},{key:'IDENTITY',icon:Truck},{key:'MOTION',icon:Gauge},{key:'INTEGRITY',icon:ShieldCheck},{key:'SECURITY',icon:Eye},{key:'EVIDENCE',icon:DatabaseZap},{key:'FUTURE',icon:Waypoints}];
@@ -23,8 +24,10 @@ const DIMENSION_COPY:Record<XdDimension,{title:string;body:string}>={
 };
 function context(member?:GlobeMember|null){const m=member as (GlobeMember&{convoy_name?:string|null;client_name?:string|null})|undefined;return{convoy:m?.convoy_name??null,client:m?.client_name??null};}
 
-export default function CorridorGlobe({convoyId,route,corridorKm,members,zones=[],ceilingM=0,focusId=null,trail,onSelect,fill=false}:Props){
- const[view,setView]=useState<View>('2D'),[dimension,setDimension]=useState<XdDimension>('SPACE'),[agentsOpen,setAgentsOpen]=useState(false),[entityOpen,setEntityOpen]=useState(true);
+export default function CorridorGlobe({convoyId,route,corridorKm,members,zones=[],ceilingM=0,focusId=null,trail,onSelect,fill=false,surface='corridor',fixedView}:Props){
+ const[view,setView]=useState<View>(fixedView ?? '2D'),[dimension,setDimension]=useState<XdDimension>('SPACE'),[agentsOpen,setAgentsOpen]=useState(false),[entityOpen,setEntityOpen]=useState(true);
+ const activeView=fixedView ?? view;
+ const isGev=surface==='gev';
  const live=useMemo(()=>members.filter(m=>m.lat!=null&&m.lng!=null),[members]);
  const snapshot=useMemo(()=>runXdSurveillanceAgents(route,members,zones),[route,members,zones]);
  const focused=focusId?members.find(m=>m.id===focusId):null, idContext=context(focused);
@@ -37,18 +40,20 @@ export default function CorridorGlobe({convoyId,route,corridorKm,members,zones=[
  const toggleSwarm=()=>{if(agentsOpen){setAgentsOpen(false);return;}setAgentsOpen(true);if(convoyId)void swarm.refetch();};
  const dimensionCopy=DIMENSION_COPY[dimension];
  return <div className={`${fill?'h-full':'h-[520px]'} relative overflow-hidden bg-[#05070b] text-white font-sans antialiased`}>
-  {view==='2D'?<CorridorOperationalMap route={route} members={members} zones={zones} focusId={focusId} onSelect={onSelect} mapMode="dark"/>:<CorridorWorldScene route={route} corridorKm={corridorKm} members={members} zones={zones} ceilingM={ceilingM} focusId={focusId} trail={trail} onSelect={onSelect} fill/>}
+  {activeView==='2D'?<CorridorOperationalMap route={route} members={members} zones={zones} focusId={focusId} onSelect={onSelect} mapMode="dark"/>:<CorridorWorldScene route={route} corridorKm={corridorKm} members={members} zones={zones} ceilingM={ceilingM} focusId={focusId} trail={trail} onSelect={onSelect} fill globalView={isGev}/>}
 
   <div className="pointer-events-none absolute inset-x-0 top-0 z-20 px-3 pt-3"><div className="pointer-events-auto flex flex-wrap items-start justify-between gap-2">
     <div className="max-w-[72vw] rounded-2xl border border-white/10 bg-[#05070c]/92 px-3.5 py-2.5 shadow-2xl backdrop-blur-2xl">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><div className="flex items-center gap-2"><span className="grid h-7 w-7 place-items-center rounded-lg bg-violet-500/15 text-violet-300"><ScanSearch size={14}/></span><span className="text-[14px] font-bold tracking-[0.06em]">XD LIVE SURVEILLANCE</span></div><span className="text-[10px] font-bold font-mono uppercase tracking-[0.14em] text-neutral-300">8D WORLD CONTROL</span><span className="h-1.5 w-1.5 rounded-full bg-emerald-400"/><span className="text-[10px] font-bold font-mono text-emerald-300">{live.length} POSITIONED</span><span className="text-[10px] font-semibold font-mono text-neutral-400">{snapshot.agents.length} DETERMINISTIC</span></div>
-      <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[10px] font-semibold font-mono text-neutral-400"><span>FACTS · FORECASTS SEPARATE</span><span>·</span><span>MAP {view}</span>{swarm.data?.generated_at&&<><span>·</span><span>SWARM {new Date(swarm.data.generated_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}</span></>}</div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><div className="flex items-center gap-2"><span className="grid h-7 w-7 place-items-center rounded-lg bg-violet-500/15 text-violet-300"><ScanSearch size={14}/></span><span className="text-[14px] font-bold tracking-[0.06em]"> {isGev?"GOD'S EYE VIEW":"XD LIVE SURVEILLANCE"}</span></div><span className="text-[10px] font-bold font-mono uppercase tracking-[0.14em] text-neutral-300">{isGev?'GLOBAL SPATIAL PICTURE':'8D WORLD CONTROL'}</span><span className="h-1.5 w-1.5 rounded-full bg-emerald-400"/><span className="text-[10px] font-bold font-mono text-emerald-300">{live.length} POSITIONED</span><span className="text-[10px] font-semibold font-mono text-neutral-400">{snapshot.agents.length} DETERMINISTIC</span></div>
+      <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[10px] font-semibold font-mono text-neutral-400"><span>FACTS · FORECASTS SEPARATE</span><span>·</span><span>MAP {activeView}</span>{swarm.data?.generated_at&&<><span>·</span><span>SWARM {new Date(swarm.data.generated_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}</span></>}</div>
     </div>
     <div className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-white/10 bg-[#05070c]/92 p-1 shadow-2xl backdrop-blur-2xl">
-      <button type="button" onClick={()=>setView('2D')} aria-pressed={view==='2D'} className={`rounded-xl px-3 py-1.5 text-[11px] font-bold font-mono ${view==='2D'?'bg-white/12 text-white':'text-neutral-400 hover:text-white'}`}>2D</button>
-      <button type="button" onClick={()=>setView('3D')} aria-pressed={view==='3D'} className={`rounded-xl px-3 py-1.5 text-[11px] font-bold font-mono ${view==='3D'?'bg-violet-500/15 text-violet-200':'text-neutral-400 hover:text-white'}`}>3D</button>
-      <span className="mx-1 h-5 w-px bg-white/10"/>
-      <button type="button" onClick={toggleSwarm} disabled={swarm.isFetching||!convoyId} aria-pressed={agentsOpen} className={`inline-flex h-8 items-center gap-1.5 rounded-xl px-3 text-[10px] font-bold font-mono ${swarm.isFetching?'bg-cyan-400/10 text-cyan-200':'text-neutral-300 hover:bg-cyan-400/10 hover:text-cyan-200'}`} title={!convoyId?'Select a convoy first':'Run open-weight-first surveillance swarm'}>{swarm.isFetching?<Loader2 size={13} className="animate-spin"/>:agentsOpen?<X size={12}/>:<Play size={12}/>} {agentsOpen?'CLOSE':'SWARM'}</button>
+      {!fixedView&&<>
+      <button type="button" onClick={()=>setView('2D')} aria-pressed={activeView==='2D'} className={`rounded-xl px-3 py-1.5 text-[11px] font-bold font-mono ${activeView==='2D'?'bg-white/12 text-white':'text-neutral-400 hover:text-white'}`}>2D</button>
+      <button type="button" onClick={()=>setView('3D')} aria-pressed={activeView==='3D'} className={`rounded-xl px-3 py-1.5 text-[11px] font-bold font-mono ${activeView==='3D'?'bg-violet-500/15 text-violet-200':'text-neutral-400 hover:text-white'}`}>3D</button>
+      </>}
+      {convoyId&&<><span className="mx-1 h-5 w-px bg-white/10"/>
+      <button type="button" onClick={toggleSwarm} disabled={swarm.isFetching} aria-pressed={agentsOpen} className={`inline-flex h-8 items-center gap-1.5 rounded-xl px-3 text-[10px] font-bold font-mono ${swarm.isFetching?'bg-cyan-400/10 text-cyan-200':'text-neutral-300 hover:bg-cyan-400/10 hover:text-cyan-200'}`} title="Run open-weight-first surveillance swarm">{swarm.isFetching?<Loader2 size={13} className="animate-spin"/>:agentsOpen?<X size={12}/>:<Play size={12}/>} {agentsOpen?'CLOSE':'SWARM'}</button></>}
       <button type="button" onClick={()=>setEntityOpen(v=>!v)} aria-pressed={entityOpen} className={`grid h-8 w-8 place-items-center rounded-xl ${entityOpen?'bg-violet-400/10 text-violet-200':'text-neutral-400 hover:bg-white/10 hover:text-white'}`} aria-label="Toggle entity intelligence"><Truck size={14}/></button>
     </div>
   </div></div>

@@ -1,6 +1,6 @@
 'use strict';
 
-const { classifyOperationalFreshness } = require('../src/services/spatial/worldContextService');
+const { classifyOperationalFreshness, normaliseWorldContextLayers } = require('../src/services/spatial/worldContextService');
 
 describe('world-context operational freshness', () => {
   const now = Date.parse('2026-09-24T00:00:00.000Z');
@@ -8,6 +8,18 @@ describe('world-context operational freshness', () => {
   test('does not invent freshness for missing or invalid timestamps', () => {
     expect(classifyOperationalFreshness(null, now)).toBe('UNKNOWN');
     expect(classifyOperationalFreshness('not-a-date', now)).toBe('UNKNOWN');
+  });
+
+  test('preserves the full supported GEV layer set without duplicates', () => {
+    const layers = normaliseWorldContextLayers([
+      'aircraft', 'weather', 'maritime', 'traffic', 'hazards', 'security',
+      'infrastructure', 'incidents', 'alerts', 'cameras', 'satellites',
+      'satellites', 'unsupported'
+    ]);
+    expect(layers).toEqual([
+      'aircraft', 'weather', 'maritime', 'traffic', 'hazards', 'security',
+      'infrastructure', 'incidents', 'alerts', 'cameras', 'satellites'
+    ]);
   });
 
   test('classifies recent, delayed, and stale telemetry', () => {

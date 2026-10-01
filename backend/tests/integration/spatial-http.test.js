@@ -113,6 +113,22 @@ describeIfDb('spatial HTTP integration', () => {
     expect(openSky).toHaveBeenCalledTimes(1);
   });
 
+  test('passes the complete supported layer budget through the HTTP boundary', async () => {
+    const res = await request(app)
+      .get('/api/v1/spatial/world-context/convoy/' + CONVOY_A)
+      .set('Authorization', 'Bearer ' + token)
+      .query({
+        lat: -1.29,
+        lng: 36.82,
+        radiusM: 25000,
+        layers: 'unsupported-01,unsupported-02,unsupported-03,unsupported-04,unsupported-05,unsupported-06,unsupported-07,unsupported-08,unsupported-09,unsupported-10,aircraft',
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.data.coverage.layersRequested).toContain('aircraft');
+    expect(res.body.data.coverage.layersSucceeded).toContain('aircraft');
+    expect(openSky).toHaveBeenCalledTimes(1);
+  });
+
   test('returns 404 for a cross-tenant convoy without revealing its existence', async () => {
     const res = await request(app)
       .get('/api/v1/spatial/world-context/convoy/' + CONVOY_B)
