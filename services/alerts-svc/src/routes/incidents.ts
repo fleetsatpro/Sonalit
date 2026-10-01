@@ -1,3 +1,4 @@
+import { requireAuth } from '../middleware/auth.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
@@ -59,6 +60,7 @@ function requireOrgId(request: FastifyRequest, reply: FastifyReply): string {
 }
 
 export async function incidentRoutes(app: FastifyInstance): Promise<void> {
+  app.addHook('preHandler', requireAuth);
   app.get('/v4/incidents', async (request, reply) => {
     const orgId = requireOrgId(request, reply);
     if (!orgId) return;
