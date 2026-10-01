@@ -16,20 +16,21 @@ export async function withOrgContext<T>(
   fn: (client: PoolClient) => Promise<T>,
 ): Promise<T> {
   return tenantContext.run(orgId, async () => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    await client.query('SET LOCAL ROLE sonalit_app');
-    await client.query(`SELECT set_config('app.current_org_id', $1, true)`, [orgId]);
-    const result = await fn(client);
-    await client.query('COMMIT');
-    return result;
-  } catch (err) {
-    try { await client.query('ROLLBACK'); } catch (_) {}
-    throw err;
-  } finally {
-    client.release();
-  }
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE sonalit_app');
+      await client.query(`SELECT set_config('app.current_org_id', $1, true)`, [orgId]);
+      const result = await fn(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (err) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+      throw err;
+    } finally {
+      client.release();
+    }
+  });
 }
 
 export async function query<T extends object = object>(
@@ -43,5 +44,4 @@ export async function query<T extends object = object>(
   }
   const result = await pool.query<T>(text, values);
   return result.rows;
-  });
 }
