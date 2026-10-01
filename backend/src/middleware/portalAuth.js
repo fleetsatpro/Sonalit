@@ -6,6 +6,7 @@
 const crypto = require('crypto');
 const { query } = require('../config/database');
 const { withOrg } = require('../utils/orgScopedDb');
+const { runWithOrgContext } = require('../utils/tenantContext');
 const logger = require('../utils/logger');
 
 async function portalAuth(req, res, next) {
@@ -96,7 +97,7 @@ async function portalAuth(req, res, next) {
       };
     }
 
-    next();
+    return runWithOrgContext(row.org_id, next);
   } catch (err) {
     logger.error(`portalAuth middleware error: ${err.message}`);
     next(err);
