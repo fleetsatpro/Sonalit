@@ -14,6 +14,7 @@ const fs = require('fs');
 const { Worker } = require('bullmq');
 const { pool, query } = require('../config/database');
 const { publish } = require('../realtime/centrifugo');
+const { withOrg } = require('../utils/orgScopedDb');
 const { generateDailyReport, generateArchiveReport } = require('../utils/convoyPdfGenerator');
 const logger = require('../utils/logger');
 
@@ -24,6 +25,17 @@ function getRedisConnection() {
     port: parseInt(url.port) || 6379,
     password: url.password || process.env.REDIS_PASSWORD || undefined,
   };
+}
+
+async function withConvoyOrg(convoyId, fn) {
+  if (!convoyId) throw new Error('convoy_id is required');
+  const owner = await query(
+    'SELECT org_id FROM convoys WHERE id = $1 AND deleted_at IS NULL',
+    [convoyId],
+  );
+  const orgId = owner.rows[0]?.org_id;
+  if (!orgId) throw new Error(`Convoy ${convoyId} has no tenant scope`);
+  return withOrg(orgId, () => fn(orgId));
 }
 
 // ─── R2 Upload Helper ─────────────────────────────────────────────────────────
@@ -197,20 +209,22 @@ async function recountPhotos(convoy_id, report_date) {
 // ─── Job Handlers ─────────────────────────────────────────────────────────────
 
 async function handleCheckProgress({ convoy_id, report_date }) {
-  const counts = await recountPhotos(convoy_id, report_date);
-  if (counts?.status === 'complete') {
-    logger.info(`[convoyReport] ${convoy_id} ${report_date} complete — queuing generateReport`);
-    // Re-enqueue self as generateReport so it flows to PDF generation
-    const { getQueues } = require('../config/queue');
-    const { convoyReportQueue } = getQueues();
-    if (convoyReportQueue) {
-      await convoyReportQueue.add('generateReport', { convoy_id, report_date });
+  return withConvoyOrg(convoy_id, async () => {
+    const counts = await recountPhotos(convoy_id, report_date);
+    if (counts?.status === 'complete') {
+      logger.info(`[convoyReport] ${convoy_id} ${report_date} complete — queuing generateReport`);
+      const { getQueues } = require('../config/queue');
+      const { convoyReportQueue } = getQueues();
+      if (convoyReportQueue) {
+        await convoyReportQueue.add('generateReport', { convoy_id, report_date });
+      }
     }
-  }
+  });
 }
 
 async function handleGenerateReport({ convoy_id, report_date, force }) {
-  const { convoy, trucks, cfos, photos, report, cfoPhotos, waypoints, namedWaypoints, handovers } = await fetchReportData(convoy_id, report_date);
+  return withConvoyOrg(convoy_id, async (orgId) => {
+    const { convoy, trucks, cfos, photos, report, cfoPhotos, waypoints, namedWaypoints, handovers } = await fetchReportData(convoy_id, report_date);
   if (!convoy) throw new Error(`Convoy ${convoy_id} not found`);
   if (!report) {
     logger.warn(`[convoyReport] No daily report row for ${convoy_id} ${report_date} — running recount`);
@@ -252,9 +266,6 @@ async function handleGenerateReport({ convoy_id, report_date, force }) {
     }
   }
 
-  const orgRow = await query(`SELECT org_id FROM convoys WHERE id = $1`, [convoy_id]);
-  const orgId = orgRow.rows[0]?.org_id || convoy_id;
-
   try {
     await query(
       `UPDATE convoy_daily_reports
@@ -287,10 +298,12 @@ async function handleGenerateReport({ convoy_id, report_date, force }) {
 
   publish(`convoy.report.ready.${orgId}`, { convoy_id, report_date, pdf_url: pdfUrl });
   logger.info(`[convoyReport] report marked generated for ${convoy_id}/${report_date}`);
+  });
 }
 
 async function handleGenerateArchive({ convoy_id }) {
-  const convoy = (await query(
+  return withConvoyOrg(convoy_id, async (orgId) => {
+    const convoy = (await query(
     `SELECT c.*, cl.name AS client_name, cl.company AS client_company
      FROM convoys c LEFT JOIN cargo_clients cl ON cl.id = c.client_id
      WHERE c.id = $1`,
@@ -350,24 +363,27 @@ async function handleGenerateArchive({ convoy_id }) {
     }
   }
 
-  await query(
-    `UPDATE convoys SET archive_pdf_url = $1, updated_at = NOW() WHERE id = $2`,
-    [pdfUrl, convoy_id]
-  );
-  logger.info(`[convoyArchive] Archive report processed for ${convoy_id}`);
+    await query(
+      `UPDATE convoys SET archive_pdf_url = $1, updated_at = NOW() WHERE id = $2 AND org_id = $3`,
+      [pdfUrl, convoy_id, orgId]
+    );
+    logger.info(`[convoyArchive] Archive report processed for ${convoy_id} org=${orgId}`);
+  });
 }
 
 async function handleScheduledRecount() {
   const active = await query(
-    `SELECT DISTINCT cdr.convoy_id, cdr.report_date
+    `SELECT DISTINCT cdr.convoy_id, cdr.report_date, c.org_id
      FROM convoy_daily_reports cdr
      JOIN convoys c ON c.id = cdr.convoy_id
      WHERE c.status = 'active' AND cdr.status IN ('pending','partial')
-       AND cdr.report_date >= CURRENT_DATE - INTERVAL '3 days'`,
-    []
+       AND cdr.report_date >= CURRENT_DATE - INTERVAL '3 days'
+       AND c.org_id IS NOT NULL`,
   );
   logger.info(`[convoyReport] scheduledRecount: ${active.rows.length} reports to recheck`);
-  await Promise.allSettled(active.rows.map(r => recountPhotos(r.convoy_id, String(r.report_date).slice(0, 10))));
+  await Promise.allSettled(active.rows.map(r =>
+    withOrg(r.org_id, () => recountPhotos(r.convoy_id, String(r.report_date).slice(0, 10)))
+  ));
 }
 
 // ─── Worker Startup ───────────────────────────────────────────────────────────
