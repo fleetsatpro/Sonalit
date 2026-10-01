@@ -39,6 +39,25 @@ describe('centrifugo publish()', () => {
     );
   });
 
+  test('uses a bounded publish timeout', async () => {
+    process.env.CENTRIFUGO_API_KEY = 'secret-key';
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ result: {} }) });
+    const { publish } = require('../src/realtime/centrifugo');
+    await publish('test-channel', {});
+    expect(mockFetch.mock.calls[0][1].signal).toBeDefined();
+  });
+
+  test('logs application-level Centrifugo errors returned with HTTP 200', async () => {
+    process.env.CENTRIFUGO_API_KEY = 'secret-key';
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ error: { code: 105, message: 'channel not allowed' } }),
+    });
+    const { publish } = require('../src/realtime/centrifugo');
+    const { warn } = require('../src/utils/logger');
+    await publish('test-channel', {});
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('channel not allowed'));
+  });
   test('logs warning on non-ok response', async () => {
     process.env.CENTRIFUGO_API_KEY = 'secret-key';
     mockFetch.mockResolvedValueOnce({ ok: false, status: 503, text: jest.fn().mockResolvedValue('service unavailable') });
