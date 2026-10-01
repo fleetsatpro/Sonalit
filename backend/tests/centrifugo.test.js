@@ -27,7 +27,7 @@ describe('centrifugo publish()', () => {
 
   test('POSTs to /api/publish with correct headers when API key is set', async () => {
     process.env.CENTRIFUGO_API_KEY = 'secret-key';
-    mockFetch.mockResolvedValueOnce({ ok: true });
+    mockFetch.mockResolvedValueOnce({ ok: true, text: jest.fn().mockResolvedValue('') });
     const { publish } = require('../src/realtime/centrifugo');
     await publish('vehicle:update', { vehicleId: 'v1' });
     expect(mockFetch).toHaveBeenCalledWith(
