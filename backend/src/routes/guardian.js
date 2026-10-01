@@ -744,15 +744,34 @@ async function linkOfficerDevice(officer, deviceId) {
  */
 router.post('/recover', enrollLimiter, async (req, res, next) => {
   try {
-    const { device_id } = req.body; // ANDROID_ID, same value enroll sends
+    const { device_id, enrollment_code } = req.body; // ANDROID_ID + tenant-scoped recovery credential
     if (!device_id) {
       return res.status(400).json({ error: 'device_id is required' });
     }
+    if (!enrollment_code || !String(enrollment_code).trim()) {
+      return res.status(403).json({ error: 'Tenant-scoped enrollment code required' });
+    }
+
+    const codeResult = await query(
+      `SELECT id, org_id
+         FROM enrollment_codes
+        WHERE code = $1
+          AND org_id IS NOT NULL
+          AND used_at IS NULL
+          AND expires_at > NOW()
+        LIMIT 1`,
+      [String(enrollment_code).trim().toUpperCase()]
+    );
+    const code = codeResult.rows[0];
+    if (!code) return res.status(403).json({ error: 'Invalid or expired enrollment code' });
+
     const result = await query(
       `SELECT id, token, status, org_id FROM guardian_devices
-       WHERE android_id = $1 AND deleted_at IS NULL
+       WHERE android_id = $1
+         AND org_id = $2
+         AND deleted_at IS NULL
        ORDER BY enrolled_at DESC LIMIT 1`,
-      [device_id]
+      [device_id, code.org_id]
     );
     const dev = result.rows[0];
     if (!dev) return res.status(404).json({ error: 'unknown_device' });
