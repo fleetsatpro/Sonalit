@@ -28,6 +28,7 @@ const FENCE_STALE_SECONDS = Math.max(30, Number(process.env.SONALIT_FENCE_STALE_
 const FENCE_HEARTBEAT_MS = Math.max(1_000, Number(process.env.SONALIT_FENCE_HEARTBEAT_MS || 5_000));
 let fenceActive = !isProduction || isStandby;
 let fenceClient = null;
+let fenceShutdownStarted = false;
 const activeCronTasks = [];
 let cronGateInstalled = false;
 
@@ -81,9 +82,24 @@ function stopActiveCronTasks() {
   }
 }
 
-function deactivateFence() {
+async function deactivateFence() {
+  if (fenceShutdownStarted) return;
+  fenceShutdownStarted = true;
   fenceActive = false;
   stopActiveCronTasks();
+
+  // A fence loss is a hard ownership transition: no background worker may keep
+  // producing side effects after another deployment has become authoritative.
+  const workers = Array.isArray(global._workers) ? [...global._workers] : [];
+  global._workers = [];
+  await Promise.race([
+    Promise.all(workers.map((worker) => Promise.resolve(worker?.close?.()).catch(() => {}))),
+    new Promise(resolve => setTimeout(resolve, 2_000)),
+  ]);
+
+  try {
+    if (global._server?.close) global._server.close();
+  } catch (_) {}
 }
 
 async function claimInChild() {
@@ -160,7 +176,7 @@ async function claimInChild() {
       }
 
       if (current.owner_id && current.owner_id !== ownerId && !stale && (takeover || controlledRailwayReplacement)) {
-        console.warn(
+        console.info(
           controlledRailwayReplacement
             ? "SONALIT runtime fence: Railway replacement deployment " + railwayDeploymentId + " taking over from active owner " + current.owner_id
             : "SONALIT runtime fence: takeover requested; replacing active owner " + current.owner_id
@@ -255,12 +271,12 @@ if (isClaimChild) {
           `, [ownerId]);
           if (rowCount !== 1) {
             console.error("SONALIT runtime fence: ownership was lost; terminating active runtime");
-            deactivateFence();
+            await deactivateFence();
             process.exit(78);
           }
         } catch (err) {
           console.error(`SONALIT runtime fence: heartbeat failed: ${err.message || String(err)}`);
-          deactivateFence();
+          await deactivateFence();
           process.exit(78);
         }
       }, FENCE_HEARTBEAT_MS);
