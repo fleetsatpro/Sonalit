@@ -878,3 +878,57 @@
     transition-duration: .001ms !important;
   }
 }
+
+
+/* Extreme-fidelity GEV presentation tier */
+.gev-shell {
+  --gev-hairline: linear-gradient(90deg, transparent, rgba(184,166,255,.34), rgba(98,231,255,.18), transparent);
+  text-rendering: geometricPrecision;
+  font-kerning: normal;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.gev-topbar,.gev-panel,.gev-rail,.gev-ribbon,.gev-segment,.gev-health {
+  box-shadow: 0 24px 80px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.055), inset 0 -1px 0 rgba(0,0,0,.24);
+}
+.gev-panel,.gev-rail { position: relative; }
+.gev-topbar::after,.gev-panel::after,.gev-rail::after {
+  content:""; position:absolute; left:12px; right:12px; top:0; height:1px;
+  background:var(--gev-hairline); opacity:.72; pointer-events:none;
+}
+.gev-topbar {
+  background:radial-gradient(500px 120px at 16% 0%,rgba(184,166,255,.055),transparent 72%),
+    radial-gradient(440px 120px at 86% 0%,rgba(98,231,255,.035),transparent 72%),
+    linear-gradient(180deg,rgba(8,12,20,.985),rgba(6,10,17,.93));
+  backdrop-filter:blur(26px) saturate(150%);
+}
+.gev-panel,.gev-rail {
+  background:radial-gradient(420px 180px at 100% 0%,rgba(184,166,255,.055),transparent 68%),
+    linear-gradient(180deg,rgba(10,15,24,.91),rgba(5,9,15,.86));
+  backdrop-filter:blur(28px) saturate(155%);
+}
+.gev-stat,.gev-layer,.gev-mini,.gev-external-row,.gev-entity-hero {
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.035),0 8px 24px rgba(0,0,0,.10);
+}
+.gev-stat:hover,.gev-layer:hover,.gev-external-row:hover {
+  border-color:rgba(184,166,255,.20);
+  background:linear-gradient(180deg,rgba(184,166,255,.055),rgba(255,255,255,.018));
+}
+.gev-stat-value,.gev-entity-title,.gev-panel-title { text-shadow:0 0 22px rgba(255,255,255,.045); }
+.gev-external-row { min-height:44px; }
+.gev-close:focus-visible,.gev-segment:focus-visible,.gev-rail-button:focus-visible,.gev-external-row:focus-visible {
+  outline:2px solid rgba(184,166,255,.76); outline-offset:2px; box-shadow:0 0 0 5px rgba(184,166,255,.09);
+}
+@media (min-width:1440px) {
+  .gev-topbar { height:76px; flex-basis:76px; padding-inline:24px; }
+  .gev-workspace { height:calc(100% - 76px); }
+  .gev-title { font-size:23px; }
+  .gev-panel-title { font-size:17px; }
+  .gev-overview-panel { left:94px; top:18px; }
+  .gev-right-panel { right:18px; top:18px; bottom:18px; width:390px; }
+  .gev-left-rail { left:18px; top:18px; bottom:18px; }
+  .gev-bottom-ribbon { left:94px; right:426px; bottom:18px; }
+}
+@media (min-resolution:2dppx) {
+  .gev-shell { --gev-line:rgba(205,218,238,.12); }
+  .gev-panel,.gev-rail,.gev-topbar { box-shadow:0 28px 100px rgba(0,0,0,.40),inset 0 1px 0 rgba(255,255,255,.065); }
+}
