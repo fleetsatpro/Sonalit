@@ -1,6 +1,6 @@
 import { StringCodec } from 'nats';
 import { getJs } from '../nats.js';
-import { query } from '../db.js';
+import { query, withOrgContext } from '../db.js';
 import { randomUUID, createHmac } from 'node:crypto';
 import pino from 'pino';
 
@@ -67,32 +67,34 @@ export async function startAlertsConsumer(): Promise<void> {
     try {
       const event = JSON.parse(sc.decode(msg.data)) as { org_id: string; type: string };
 
-      const webhooks = await query<{ id: string; url: string; secret: string; events: string }>(
-        `SELECT id, url, secret, events
-         FROM webhooks
-         WHERE org_id=$1 AND active=true AND deleted_at IS NULL`,
-        [event.org_id],
-      );
+      if (!event.org_id) throw new Error('notification event missing tenant scope');
 
-      const deliveries: Promise<void>[] = [];
-      for (const wh of webhooks) {
-        const events: string[] = JSON.parse(wh.events) as string[];
-        if (!events.includes('alert.new') && !events.includes('*')) continue;
-
-        const outboxId = randomUUID();
-        // Insert outbox row in same operation as the ack — ensures at-least-once delivery.
-        await query(
-          `INSERT INTO outbox (id, webhook_id, payload, status, attempts)
-           VALUES ($1,$2,$3,'pending',0)`,
-          [outboxId, wh.id, JSON.stringify(event)],
+      await withOrgContext(event.org_id, async () => {
+        const webhooks = await query<{ id: string; url: string; secret: string; events: string }>(
+          `SELECT id, url, secret, events
+           FROM webhooks
+           WHERE org_id=$1 AND active=true AND deleted_at IS NULL`,
+          [event.org_id],
         );
 
-        // Await delivery before acking the NATS message, so a crash before delivery
-        // causes NATS to redeliver (idempotent due to outbox upsert).
-        deliveries.push(deliverWithRetry(outboxId, wh.id, wh.url, wh.secret, event));
-      }
+        const deliveries: Promise<void>[] = [];
+        for (const wh of webhooks) {
+          const events: string[] = JSON.parse(wh.events) as string[];
+          if (!events.includes('alert.new') && !events.includes('*')) continue;
 
-      await Promise.allSettled(deliveries);
+          const outboxId = randomUUID();
+          await query(
+            `INSERT INTO outbox (id, org_id, webhook_id, payload, status, attempts)
+             VALUES ($1,$2,$3,$4,'pending',0)`,
+            [outboxId, event.org_id, wh.id, JSON.stringify(event)],
+          );
+
+          deliveries.push(deliverWithRetry(outboxId, wh.id, wh.url, wh.secret, event));
+        }
+
+        await Promise.allSettled(deliveries);
+      });
+
       msg.ack();
     } catch (err) {
       log.error({ err }, 'Alerts consumer error');
