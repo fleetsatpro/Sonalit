@@ -914,9 +914,6 @@ async function buildWorldContext(opts) {
       estimatedArrival: iso(missionRow.estimated_arrival)
     };
     routeInfo = await getRoute(db, orgId, missionRow.id);
-    infrastructureRaw = await getInfrastructure(db, orgId, missionRow.id);
-    securityRaw = await getSecurity(db, orgId, missionRow.id);
-    alertRows = await getAlerts(db, orgId, missionRow.id);
     vehicleRows = await getVehicles(db, orgId, missionRow.id, null);
   } else if (subject.kind === 'vehicle') {
     vehicleRows = await getVehicles(db, orgId, null, String(subject.id));
@@ -935,11 +932,21 @@ async function buildWorldContext(opts) {
           estimatedArrival: iso(missionRow.estimated_arrival)
         };
         routeInfo = await getRoute(db, orgId, missionRow.id);
-        infrastructureRaw = await getInfrastructure(db, orgId, missionRow.id);
-        securityRaw = await getSecurity(db, orgId, missionRow.id);
-        alertRows = await getAlerts(db, orgId, missionRow.id);
       }
     }
+  }
+
+  // Global GEV has no convoy subject, but org-native spatial layers still have
+  // explicit org-wide query semantics. Load them whenever requested so a global
+  // world surface does not silently degrade to external providers only.
+  if (layers.includes('infrastructure')) {
+    infrastructureRaw = await getInfrastructure(db, orgId, mission?.convoyId || null);
+  }
+  if (layers.includes('security') || layers.includes('incidents')) {
+    securityRaw = await getSecurity(db, orgId, mission?.convoyId || null);
+  }
+  if (layers.includes('alerts')) {
+    alertRows = await getAlerts(db, orgId, mission?.convoyId || null);
   }
 
   const operationalVehicles = vehicleRows.map(function(row) {

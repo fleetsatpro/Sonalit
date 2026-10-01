@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 import { Crosshair, Layers, Map as MapIcon, Satellite, Signal, Target, TriangleAlert } from 'lucide-react';
+import type { SpatialWorldEntity } from '../../lib/spatialClient.js';
+import { spatialEntityLayer } from '../../lib/spatialClient.js';
 
 export interface LatLng { lat: number; lng: number }
 export interface GlobeMember {
@@ -53,18 +55,78 @@ const RISK_COLOR: Record<string, string> = {
   medium: '#eab308',
   low: '#84cc16',
 };
+const WORLD_LAYER_COLOR: Record<string, string> = {
+  aircraft: '#60a5fa', weather: '#a7f3d0', maritime: '#22d3ee', traffic: '#eab308',
+  hazards: '#ef4444', security: '#fb923c', infrastructure: '#cbd5e1', incidents: '#fb7185',
+  alerts: '#f0abfc', cameras: '#5eead4', satellites: '#c4b5fd',
+};
+
+const ABSOLUTE_ALTITUDE_TYPES = new Set(['aircraft', 'satellite']);
+
+function haversineMeters(aLat: number, aLng: number, bLat: number, bLng: number) {
+  const r = 6371000;
+  const p1 = Cesium.Math.toRadians(aLat);
+  const p2 = Cesium.Math.toRadians(bLat);
+  const dLat = p2 - p1;
+  const dLng = Cesium.Math.toRadians(bLng - aLng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dLng / 2) ** 2;
+  return r * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(Math.max(0, 1 - h)));
+}
+
+function cameraViewport(viewer: Cesium.Viewer) {
+  const rectangle = viewer.camera.computeViewRectangle(viewer.scene.globe.ellipsoid);
+  if (rectangle) {
+    const center = Cesium.Rectangle.center(rectangle);
+    const corners = [[rectangle.south, rectangle.west], [rectangle.south, rectangle.east], [rectangle.north, rectangle.west], [rectangle.north, rectangle.east]] as const;
+    const centerLat = Cesium.Math.toDegrees(center.latitude);
+    const centerLng = Cesium.Math.toDegrees(center.longitude);
+    const radius = Math.max(...corners.map(([lat, lng]) => haversineMeters(centerLat, centerLng, Cesium.Math.toDegrees(lat), Cesium.Math.toDegrees(lng)))) * 1.2;
+    return { latitude: centerLat, longitude: centerLng, radiusM: Math.min(100000, Math.max(10000, Number.isFinite(radius) ? radius : 25000)) };
+  }
+  const cartographic = viewer.camera.positionCartographic;
+  if (!cartographic) return null;
+  return { latitude: Cesium.Math.toDegrees(cartographic.latitude), longitude: Cesium.Math.toDegrees(cartographic.longitude), radiusM: 50000 };
+}
+
+function externalLabel(item: SpatialWorldEntity) {
+  const attrs = item.attributes ?? {};
+  const value = attrs.callsign ?? attrs.name ?? attrs.title ?? attrs.categoryTitle ?? attrs.description ?? attrs.label ?? item.id;
+  const freshness = item.quality?.freshnessClass ?? (item.entityType === 'satellite' ? 'MODELLED' : 'UNKNOWN');
+  return String(value) + ' · ' + String(freshness);
+}
+
+function externalAltitude(item: SpatialWorldEntity) {
+  const type = String(item.entityType || '').toLowerCase();
+  const value = Number(item.altitudeM ?? item.attributes?.altitudeM);
+  return ABSOLUTE_ALTITUDE_TYPES.has(type) && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function externalCaption(item: SpatialWorldEntity) {
+  const type = String(item.entityType || '').toLowerCase();
+  if (type === 'satellite') return 'MODELLED ORBITAL POSITION · NOT LIVE TELEMETRY · NOT AN IMAGING OR TASKING CLAIM';
+  if (type === 'spatial_camera' || type === 'camera') return 'CAMERA INFRASTRUCTURE · GEOMETRY ONLY · NOT PERSON TRACKING';
+  if (item.telemetryLive === true) return 'LIVE EXTERNAL TELEMETRY';
+  const freshness = item.quality?.freshnessClass;
+  return freshness ? String(freshness) + ' EXTERNAL OBSERVATION' : 'EXTERNAL WORLD OBSERVATION';
+}
+
 
 function css(hex: string, alpha = 1) {
   return Cesium.Color.fromCssColorString(hex).withAlpha(alpha);
 }
 
-function fitPoints(route: LatLng[], members: GlobeMember[], trail?: LatLng[], zones: RiskZone[] = []) {
+function fitPoints(route: LatLng[], members: GlobeMember[], trail?: LatLng[], zones: RiskZone[] = [], worldEntities: SpatialWorldEntity[] = []) {
   return [
     ...route,
     ...members.filter(m => m.lat != null && m.lng != null).map(m => ({ lat: m.lat!, lng: m.lng! })),
     ...(trail ?? []),
-    ...zones.map(z => ({ lat: z.lat, lng: z.lng })),
-  ].map(p => Cesium.Cartesian3.fromDegrees(p.lng, p.lat, 0));
+    ...zones.map(z => ({ lat: z.lat, lng: z.lng, altitudeM: 0 })),
+    ...worldEntities.filter(e => Number.isFinite(e.latitude) && Number.isFinite(e.longitude)).map(e => ({
+      lat: e.latitude,
+      lng: e.longitude,
+      altitudeM: externalAltitude(e) ?? 0,
+    })),
+  ].map(p => Cesium.Cartesian3.fromDegrees(p.lng, p.lat, p.altitudeM));
 }
 
 function vehicleSvg(color: string, selected: boolean) {
@@ -109,6 +171,17 @@ function statusLabel(member: GlobeMember) {
   return `${member.officer_name ? `${member.officer_name} · ` : ''}${member.name}${state && state !== 'observed' ? ` · ${state}` : ''}`;
 }
 
+function singleWorldPoint(liveMembers: GlobeMember[], zones: RiskZone[], worldEntities: SpatialWorldEntity[]) {
+  const member = liveMembers.find(m => m.lat != null && m.lng != null);
+  if (member) return { lat: member.lat!, lng: member.lng!, altitudeM: 6 };
+  const zone = zones[0];
+  if (zone) return { lat: zone.lat, lng: zone.lng, altitudeM: 0 };
+  const external = worldEntities.find(e => Number.isFinite(e.latitude) && Number.isFinite(e.longitude));
+  if (external) return { lat: external.latitude, lng: external.longitude, altitudeM: externalAltitude(external) ?? 0 };
+  return null;
+}
+
+
 export default function CorridorWorldScene({
   route,
   corridorKm,
@@ -118,6 +191,10 @@ export default function CorridorWorldScene({
   focusId = null,
   trail,
   onSelect,
+  onExternalSelect,
+  selectedExternalId = null,
+  worldEntities = [],
+  onViewportChange,
   fill = false,
   globalView = false,
 }: {
@@ -129,18 +206,25 @@ export default function CorridorWorldScene({
   focusId?: string | null;
   trail?: LatLng[];
   onSelect?: (id: string | null) => void;
+  onExternalSelect?: (id: string | null) => void;
+  selectedExternalId?: string | null;
+  worldEntities?: SpatialWorldEntity[];
+  onViewportChange?: (viewport: { latitude: number; longitude: number; radiusM: number }) => void;
   fill?: boolean;
   globalView?: boolean;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<Cesium.Viewer | null>(null);
   const entityMapRef = useRef<Map<string, Cesium.Entity>>(new globalThis.Map());
+  const externalEntityMapRef = useRef<Map<string, Cesium.Entity>>(new globalThis.Map());
   const currentRef = useRef<Map<string, Cesium.Cartesian3>>(new globalThis.Map());
   const targetRef = useRef<Map<string, Cesium.Cartesian3>>(new globalThis.Map());
   const headingRef = useRef<Map<string, number>>(new globalThis.Map());
   const selectRef = useRef(onSelect);
+  const externalSelectRef = useRef(onExternalSelect);
+  const onViewportChangeRef = useRef(onViewportChange);
   const fittedRouteSignatureRef = useRef<string | null>(null);
-  const globalFittedRef = useRef(false);
+  const globalFitSignatureRef = useRef<string | null>(null);
   const [mode, setMode] = useState<MapMode>('dark');
   const [mapStatus, setMapStatus] = useState('LIVE WORLD SURFACE');
   const [terrainReady, setTerrainReady] = useState(false);
@@ -148,6 +232,8 @@ export default function CorridorWorldScene({
   const [creditsOpen, setCreditsOpen] = useState(false);
 
   selectRef.current = onSelect;
+  externalSelectRef.current = onExternalSelect;
+  onViewportChangeRef.current = onViewportChange;
 
   const height = Math.max(200, ceilingM || Math.min(1800, Math.max(700, corridorKm * 500)));
   const liveMembers = useMemo(() => members.filter(m => m.lat != null && m.lng != null), [members]);
@@ -191,6 +277,12 @@ export default function CorridorWorldScene({
     }
 
     viewerRef.current = viewer;
+    if (globalView) {
+      viewer.camera.setView({
+        destination: Cesium.Cartesian3.fromDegrees(20, 0, 13000000),
+        orientation: { heading: 0, pitch: Cesium.Math.toRadians(-35), roll: 0 },
+      });
+    }
     const compactSurface = window.matchMedia?.('(max-width: 900px)').matches ?? false;
     viewer.scene.globe.enableLighting = true;
     viewer.scene.globe.showGroundAtmosphere = true;
@@ -209,8 +301,13 @@ export default function CorridorWorldScene({
       const id = picked?.id?.id;
       if (typeof id === 'string' && id.startsWith('dev:')) {
         selectRef.current?.(id.slice(4));
+        externalSelectRef.current?.(null);
+      } else if (typeof id === 'string' && id.startsWith('ext:')) {
+        selectRef.current?.(null);
+        externalSelectRef.current?.(id.slice(4));
       } else {
         selectRef.current?.(null);
+        externalSelectRef.current?.(null);
       }
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
@@ -243,6 +340,12 @@ export default function CorridorWorldScene({
       if (changed) viewer.scene.requestRender();
     };
     viewer.scene.preRender.addEventListener(preRender);
+    const syncViewport = () => {
+      if (viewer.isDestroyed()) return;
+      const viewport = cameraViewport(viewer);
+      if (viewport) onViewportChangeRef.current?.(viewport);
+    };
+    viewer.camera.moveEnd.addEventListener(syncViewport);
 
     const resize = () => {
       if (viewer.isDestroyed()) return;
@@ -283,7 +386,9 @@ export default function CorridorWorldScene({
       observer.disconnect();
       handler.destroy();
       viewer.scene.preRender.removeEventListener(preRender);
+      viewer.camera.moveEnd.removeEventListener(syncViewport);
       entityMapRef.current.clear();
+      externalEntityMapRef.current.clear();
       currentRef.current.clear();
       targetRef.current.clear();
       headingRef.current.clear();
@@ -472,35 +577,40 @@ export default function CorridorWorldScene({
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed() || route.length < 2) return;
     if (fittedRouteSignatureRef.current === routeSignature) return;
-    const points = fitPoints(route, liveMembers, trail, zones);
+    const points = fitPoints(route, liveMembers, trail, zones, worldEntities);
     if (points.length < 2) return;
     viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), {
       duration: 1.15,
       offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), Math.max(1800, corridorKm * 900)),
     });
     fittedRouteSignatureRef.current = routeSignature;
-  }, [route, routeSignature, liveMembers, trail, zones, corridorKm]);
+  }, [route, routeSignature, liveMembers, trail, zones, worldEntities, corridorKm]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed() || !globalView || route.length >= 2) return;
-    const points = fitPoints([], liveMembers, trail, zones);
+    const points = fitPoints([], liveMembers, trail, zones, worldEntities);
     if (!points.length) {
-      globalFittedRef.current = false;
+      globalFitSignatureRef.current = null;
       return;
     }
-    if (globalFittedRef.current) return;
+    const globalSignature = [
+      liveMembers.map(m => m.id).sort().join(','),
+      zones.map(z => z.zone_id ?? '').sort().join(','),
+      worldEntities.map(e => e.id).sort().join(','),
+    ].join('|');
+    if (globalFitSignatureRef.current === globalSignature) return;
     if (points.length === 1) {
-      const only = [...liveMembers.filter(m => m.lat != null && m.lng != null), ...zones][0];
-      if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, 2200), duration: 0.9 });
+      const only = singleWorldPoint(liveMembers, zones, worldEntities);
+      if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, Math.max(2200, only.altitudeM + 2200)), duration: 0.9 });
     } else {
       viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), {
         duration: 1.15,
         offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), 2400),
       });
     }
-    globalFittedRef.current = true;
-  }, [globalView, route.length, liveMembers, trail, zones]);
+    globalFitSignatureRef.current = globalSignature;
+  }, [globalView, route.length, liveMembers, trail, zones, worldEntities]);
 
   const recenter = () => {
     const viewer = viewerRef.current;
@@ -510,14 +620,99 @@ export default function CorridorWorldScene({
       viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(member.lng, member.lat, 2200), orientation: { heading: Cesium.Math.toRadians(Number(member.heading) || 0), pitch: Cesium.Math.toRadians(-62), roll: 0 }, duration: 0.8 });
       return;
     }
-    const points = fitPoints(route, liveMembers, trail, zones);
+    const points = fitPoints(route, liveMembers, trail, zones, worldEntities);
     if (points.length === 1) {
-      const only = [...liveMembers.filter(m => m.lat != null && m.lng != null), ...zones][0];
-      if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, 2200), duration: 0.8 });
+      const only = singleWorldPoint(liveMembers, zones, worldEntities);
+      if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, Math.max(2200, only.altitudeM + 2200)), duration: 0.8 });
     } else if (points.length >= 2) {
       viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), { duration: 0.8, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), Math.max(1800, corridorKm * 900)) });
     }
   };
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+    const renderable = worldEntities.filter((item) => spatialEntityLayer(item) && Number.isFinite(item.latitude) && Number.isFinite(item.longitude));
+    const incoming = new Set(renderable.map((item) => `ext:${item.id}`));
+
+    viewer.entities.values.filter((entity) => entity.id.startsWith('ext:')).forEach((entity) => {
+      if (!incoming.has(entity.id)) {
+        viewer.entities.remove(entity);
+        externalEntityMapRef.current.delete(entity.id.slice(4));
+      }
+    });
+
+    for (const item of renderable) {
+      const layer = spatialEntityLayer(item);
+      if (!layer) continue;
+      const id = `ext:${item.id}`;
+      const color = WORLD_LAYER_COLOR[layer] ?? '#94a3b8';
+      const selected = item.id === selectedExternalId;
+      const type = String(item.entityType || '').toLowerCase();
+      const altitude = externalAltitude(item);
+      const position = Cesium.Cartesian3.fromDegrees(item.longitude, item.latitude, altitude ?? 0);
+      const ground = Cesium.Cartesian3.fromDegrees(item.longitude, item.latitude, 0);
+      const label = externalLabel(item);
+      const existing = externalEntityMapRef.current.get(item.id);
+      const pointSize = selected ? 16 : (type === 'satellite' || type === 'aircraft' ? 10 : 8);
+      const maxLabelDistance = type === 'satellite' ? 30000000 : 3500000;
+      const point = new Cesium.PointGraphics({
+        pixelSize: pointSize,
+        color: css(color, item.quality?.freshnessClass === 'MODELLED' ? 0.58 : 0.92),
+        outlineColor: selected ? Cesium.Color.WHITE : css(color, 0.9),
+        outlineWidth: selected ? 3 : 1,
+        heightReference: altitude == null ? Cesium.HeightReference.CLAMP_TO_GROUND : Cesium.HeightReference.NONE,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      });
+      const labelGraphic = new Cesium.LabelGraphics({
+        text: label,
+        font: selected ? '700 12px sans-serif' : '600 10px sans-serif',
+        fillColor: css(color, 0.98),
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 3,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        pixelOffset: new Cesium.Cartesian2(0, -18),
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        distanceDisplayCondition: new Cesium.DistanceDisplayCondition(0, maxLabelDistance),
+        showBackground: true,
+        backgroundColor: css('#05070d', 0.82),
+        backgroundPadding: new Cesium.Cartesian2(6, 3),
+      });
+      const visuals: Cesium.Entity.ConstructorOptions = {
+        id,
+        position: new Cesium.ConstantPositionProperty(position),
+        point,
+        label: labelGraphic,
+        properties: new Cesium.PropertyBag({
+          entityId: item.id, layer, entityType: item.entityType, source: item.source ?? 'unknown',
+          freshness: item.quality?.freshnessClass ?? 'UNKNOWN', observedAt: item.observedAt ?? null,
+          sourceReference: item.sourceReference ?? null, altitudeM: altitude, caption: externalCaption(item),
+          telemetryLive: item.telemetryLive ?? null, imagingClaim: item.imagingClaim ?? null, taskingClaim: item.taskingClaim ?? null,
+        }),
+      };
+      if (altitude != null && altitude > 5000 && (type === 'satellite' || type === 'aircraft')) {
+        visuals.polyline = { positions: [ground, position], width: selected ? 2.5 : 1, material: css(color, selected ? 0.42 : 0.2) };
+      }
+      if (type === 'natural_hazard' || type === 'risk_zone') {
+        const radiusKm = Number(item.attributes?.radius_km ?? item.attributes?.radiusKm);
+        if (Number.isFinite(radiusKm) && radiusKm > 0) {
+          visuals.ellipse = { semiMajorAxis: Math.max(100, radiusKm * 1000), semiMinorAxis: Math.max(100, radiusKm * 1000), height: 4, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, material: css(color, 0.05), outline: true, outlineColor: css(color, 0.38) };
+        }
+      }
+      if (existing) {
+        existing.position = visuals.position;
+        existing.point = point;
+        existing.label = labelGraphic;
+        existing.properties = visuals.properties;
+        existing.polyline = visuals.polyline;
+        existing.ellipse = visuals.ellipse;
+      } else {
+        const entity = viewer.entities.add(visuals);
+        externalEntityMapRef.current.set(item.id, entity);
+      }
+    }
+    viewer.scene.requestRender();
+  }, [worldEntities, selectedExternalId]);
 
   if (initFailed) {
     return (
@@ -543,7 +738,7 @@ export default function CorridorWorldScene({
         </div>
         <div className="pointer-events-auto flex items-center gap-1 rounded-xl border border-white/10 bg-[#070a10]/86 p-1 backdrop-blur-xl">
           <button type="button" onClick={recenter} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label="Recenter world"><Crosshair size={15} /></button>
-          <button type="button" onClick={() => { const viewer = viewerRef.current; if (!viewer || viewer.isDestroyed()) return; const points = fitPoints(route, liveMembers, trail, zones); if (points.length === 1) { const only = [...liveMembers.filter(m => m.lat != null && m.lng != null), ...zones][0]; if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, 2200), duration: 0.8 }); } else if (points.length >= 2) viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), { duration: 0.8, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), Math.max(1800, corridorKm * 900)) }); }} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label={globalView ? 'Fit world' : 'Fit corridor'}><Target size={15} /></button>
+          <button type="button" onClick={() => { const viewer = viewerRef.current; if (!viewer || viewer.isDestroyed()) return; const points = fitPoints(route, liveMembers, trail, zones, worldEntities); if (points.length === 1) { const only = singleWorldPoint(liveMembers, zones, worldEntities); if (only) viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(only.lng, only.lat, Math.max(2200, only.altitudeM + 2200)), duration: 0.8 }); } else if (points.length >= 2) viewer.camera.flyToBoundingSphere(Cesium.BoundingSphere.fromPoints(points), { duration: 0.8, offset: new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-52), Math.max(1800, corridorKm * 900)) }); }} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label={globalView ? 'Fit world' : 'Fit corridor'}><Target size={15} /></button>
           <button type="button" onClick={() => setCreditsOpen(v => !v)} className="grid h-8 w-8 place-items-center rounded-lg text-neutral-400 hover:bg-white/10 hover:text-white" aria-label="Map information" aria-expanded={creditsOpen}><Signal size={15} /></button>
         </div>
       </div>
@@ -558,7 +753,7 @@ export default function CorridorWorldScene({
           <p className="mt-1">Operational map tiles: Esri / OpenStreetMap contributors. Cesium terrain and buildings are enabled when the configured Ion token permits them.</p>
         </div>
       )}
-      {liveMembers.length === 0 && (
+      {!globalView && liveMembers.length === 0 && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center">
           <div className="rounded-xl border border-white/10 bg-[#070a10]/88 px-4 py-3 text-center backdrop-blur-xl">
             <p className="text-xs font-semibold text-neutral-200">NO LIVE DEVICE FIX</p>

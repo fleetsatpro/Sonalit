@@ -8,7 +8,7 @@ import {
   bboxFromMap, useTrafficIncidents, useTrafficStatus,
 } from '../../../lib/trafficLayer.js'
 import type { LiveVehicle, LiveStatus } from '../types/fleet.js'
-import { externalWorldFeatures, fetchWorldContext } from '../../../lib/spatialClient.js'
+import { externalWorldFeatures, fetchWorldContext, WORLD_CONTEXT_LAYERS } from '../../../lib/spatialClient.js'
 
 const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
 
@@ -206,7 +206,7 @@ export default function FleetMap({ vehicles, selectedId, onSelect, trackedId = n
     queryFn: ({ signal }) => fetchWorldContext({
       center: { latitude: worldViewport!.latitude, longitude: worldViewport!.longitude },
       radiusM: worldViewport!.radiusM,
-      layers: ['aircraft', 'weather', 'maritime', 'traffic', 'hazards', 'security', 'infrastructure', 'incidents', 'alerts', 'cameras', 'satellites'],
+      layers: [...WORLD_CONTEXT_LAYERS],
       maxEntitiesPerLayer: 75,
       signal,
     }),

@@ -1,6 +1,13 @@
 import type { AxiosRequestConfig } from 'axios'
 import { api } from './api.js'
 
+export const WORLD_CONTEXT_LAYERS = [
+  'aircraft', 'weather', 'maritime', 'traffic', 'hazards', 'security',
+  'infrastructure', 'incidents', 'alerts', 'cameras', 'satellites',
+] as const
+
+export type WorldContextLayer = typeof WORLD_CONTEXT_LAYERS[number]
+
 export type SpatialSubject =
   | { kind: 'convoy' | 'vehicle' | 'location' | 'route' | 'corridor' | 'incident' | 'checkpoint' | 'port' | 'none'; id?: string; label?: string }
 
@@ -65,6 +72,7 @@ export interface SpatialWorldContext {
   hazards?: SpatialWorldEntity[]
   infrastructure?: SpatialWorldEntity[]
   security?: SpatialWorldEntity[]
+  incidents?: SpatialWorldEntity[]
   cameras?: SpatialWorldEntity[]
   satellites?: SpatialWorldEntity[]
   relations?: SpatialRelation[]
@@ -101,7 +109,7 @@ export async function fetchWorldContext(input: WorldContextQuery): Promise<Spati
       lat: input.center.latitude,
       lng: input.center.longitude,
       radiusM: Math.min(Math.max(input.radiusM, 1000), 250000),
-      layers: (input.layers ?? ['aircraft', 'maritime', 'hazards', 'satellites', 'cameras']).join(','),
+      layers: (input.layers ?? [...WORLD_CONTEXT_LAYERS]).join(','),
       maxEntitiesPerLayer: Math.min(Math.max(input.maxEntitiesPerLayer ?? 75, 1), 250),
       ...(input.subject ? { subject: JSON.stringify(input.subject) } : {}),
     },
@@ -110,27 +118,51 @@ export async function fetchWorldContext(input: WorldContextQuery): Promise<Spati
   return response.data.data
 }
 
-export function externalWorldFeatures(context: SpatialWorldContext | undefined): GeoJSON.FeatureCollection<GeoJSON.Point, Record<string, unknown>> {
-  const observations = [
+export function spatialEntityLayer(item: SpatialWorldEntity): WorldContextLayer | null {
+  const type = String(item.entityType || '').toLowerCase()
+  if (type === 'aircraft') return 'aircraft'
+  if (type === 'weather') return 'weather'
+  if (type === 'vessel') return 'maritime'
+  if (type.startsWith('traffic_') || type === 'traffic') return 'traffic'
+  if (type === 'natural_hazard' || type === 'hazard') return 'hazards'
+  if (['risk_zone', 'security', 'intelligence_alert'].includes(type)) return 'security'
+  if (['incident'].includes(type)) return 'incidents'
+  if (['alert'].includes(type)) return 'alerts'
+  if (['satellite'].includes(type)) return 'satellites'
+  if (['spatial_camera', 'camera'].includes(type)) return 'cameras'
+  if (['checkpoint', 'shipment_location', 'facility', 'geofence', 'guardian_device', 'infrastructure'].includes(type)) return 'infrastructure'
+  return null
+}
+
+export function worldContextEntities(context: SpatialWorldContext | undefined): SpatialWorldEntity[] {
+  const buckets = [
     ...(context?.movement ?? []),
-    ...(context?.traffic ?? []),
     ...(context?.environment ?? []),
+    ...(context?.traffic ?? []),
     ...(context?.hazards ?? []),
     ...(context?.security ?? []),
     ...(context?.incidents ?? []),
     ...(context?.operational?.alerts ?? []),
-    ...((context?.infrastructure ?? []).filter((e) => e.entityType !== 'spatial_camera' && e.entityType !== 'camera')),
-    ...(context?.satellites ?? []),
+    ...(context?.infrastructure ?? []),
     ...(context?.cameras ?? []),
+    ...(context?.satellites ?? []),
+    ...(context?.entities ?? []),
   ]
+  const seen = new Set<string>()
+  return buckets.filter((item) => {
+    const id = String(item?.id ?? '')
+    if (!id || seen.has(id)) return false
+    seen.add(id)
+    return true
+  })
+}
+
+export function externalWorldFeatures(context: SpatialWorldContext | undefined): GeoJSON.FeatureCollection<GeoJSON.Point, Record<string, unknown>> {
+  const observations = worldContextEntities(context)
 
   const features = observations
     .filter((item) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude))
-    .filter((item) => [
-      'aircraft', 'vessel', 'natural_hazard', 'traffic_incident', 'traffic_hazard', 'traffic_segment',
-      'weather', 'incident', 'alert', 'risk_zone', 'checkpoint', 'shipment_location', 'security',
-      'satellite', 'spatial_camera', 'camera', 'infrastructure',
-    ].includes(item.entityType))
+    .filter((item) => spatialEntityLayer(item) !== null)
     .map((item) => {
       const isSat = item.entityType === 'satellite'
       const isCam = item.entityType === 'spatial_camera' || item.entityType === 'camera'
