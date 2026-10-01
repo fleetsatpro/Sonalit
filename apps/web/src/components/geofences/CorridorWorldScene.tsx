@@ -296,9 +296,29 @@ export default function CorridorWorldScene({
     viewer.scene.highDynamicRange = true;
     viewer.scene.postProcessStages.fxaa.enabled = true;
     viewer.scene.msaaSamples = compactSurface ? 2 : 4;
+    // GEV is a presentation-grade spatial surface: preserve high-DPI raster
+    // density while keeping mobile GPU pressure bounded.
     viewer.useBrowserRecommendedResolution = false;
     viewer.resolutionScale = Math.min(highDpi, compactSurface ? 1.75 : 2.5);
-    viewer.scene.globe.maximumScreenSpaceError = compactSurface ? 2 : 1.25;
+    viewer.scene.globe.maximumScreenSpaceError = compactSurface ? 2 : 1.15;
+    viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#06101a');
+    viewer.scene.globe.dynamicAtmosphereLighting = true;
+    viewer.scene.globe.dynamicAtmosphereLightingFromSun = true;
+    viewer.scene.skyAtmosphere.show = true;
+    viewer.scene.skyAtmosphere.brightnessShift = -0.18;
+    viewer.scene.skyAtmosphere.saturationShift = 0.04;
+    viewer.scene.skyAtmosphere.hueShift = -0.01;
+    viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#02050a');
+    viewer.scene.screenSpaceCameraController.inertiaSpin = 0.86;
+    viewer.scene.screenSpaceCameraController.inertiaTranslate = 0.86;
+    viewer.scene.screenSpaceCameraController.inertiaZoom = 0.86;
+    if (!compactSurface) {
+      const bloom = Cesium.PostProcessStageLibrary.createBloomStage();
+      bloom.uniforms.brightness = -0.18;
+      bloom.uniforms.contrast = 128;
+      bloom.uniforms.glowOnly = false;
+      viewer.scene.postProcessStages.add(bloom);
+    }
     setMapStatus(TOKEN ? 'CESIUM + ESRI · LIVE' : 'ESRI FALLBACK · ION TOKEN NOT EXPOSED');
 
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
