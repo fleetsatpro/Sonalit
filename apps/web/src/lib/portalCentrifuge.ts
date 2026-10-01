@@ -5,6 +5,8 @@
  */
 import { Centrifuge, type PublicationContext } from 'centrifuge';
 
+import { CENTRIFUGO_WS_URL } from './realtimeEndpoint.js';
+
 const API = (import.meta.env['VITE_API_BASE_URL'] as string | undefined) ?? '/api/v1';
 
 let client: Centrifuge | null = null;
