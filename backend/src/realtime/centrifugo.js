@@ -14,10 +14,26 @@ async function publish(channel, data) {
   try {
     const resp = await fetch(`${CENTRIFUGO_URL}/api/publish`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `apikey ${CENTRIFUGO_API_KEY}` },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': CENTRIFUGO_API_KEY,
+      },
       body: JSON.stringify({ channel, data }),
+      signal: AbortSignal.timeout(5_000),
     });
-    if (!resp.ok) logger.warn(`Centrifugo publish failed: ${resp.status} on ${channel}`);
+
+    let payload = null;
+    try { payload = await resp.json(); } catch (_) {}
+
+    if (!resp.ok) {
+      logger.warn(`Centrifugo publish failed: HTTP ${resp.status} on ${channel}`);
+      return;
+    }
+    if (payload?.error) {
+      logger.warn(
+        `Centrifugo publish failed: ${payload.error.code || 'unknown'} ${payload.error.message || 'unknown error'} on ${channel}`
+      );
+    }
   } catch (err) {
     logger.warn(`Centrifugo publish error: ${err.message}`);
   }
