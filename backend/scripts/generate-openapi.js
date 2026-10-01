@@ -88,10 +88,35 @@ const spec = {
 const json = JSON.stringify(spec, null, 2) + '\n';
 
 // ─── Write or check ───────────────────────────────────────────────────────────
+function canonicalise(value) {
+  if (Array.isArray(value)) return value.map(canonicalise);
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const key of Object.keys(value).sort()) out[key] = canonicalise(value[key]);
+    return out;
+  }
+  return value;
+}
+
 if (checkMode) {
   let existing = '';
   try { existing = fs.readFileSync(OUT_FILE, 'utf8'); } catch (_) { /* file absent */ }
-  if (existing.trimEnd() !== json.trimEnd()) {
+
+  let upToDate = existing.trimEnd() === json.trimEnd();
+  if (!upToDate && existing) {
+    // JSON object-key order is not part of the OpenAPI data model. The previous
+    // byte-for-byte check reported false drift whenever a path or operation was
+    // inserted in a different order, even though the contract was identical.
+    try {
+      const generatedCanonical = JSON.stringify(canonicalise(spec));
+      const existingCanonical = JSON.stringify(canonicalise(JSON.parse(existing)));
+      upToDate = existingCanonical === generatedCanonical;
+    } catch (_) {
+      upToDate = false;
+    }
+  }
+
+  if (!upToDate) {
     console.error('openapi.json is out of date. Run: node backend/scripts/generate-openapi.js');
     process.exit(1);
   }
