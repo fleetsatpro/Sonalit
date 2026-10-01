@@ -400,7 +400,8 @@ function AppearanceSection() {
                 role="radio"
                 aria-checked={active}
                 onClick={() => setTheme(opt.id)}
-                className={`group relative overflow-hidden rounded-xl border p-3 text-left transition-all ${active ? 'border-orange-500/70 bg-slate-700 shadow-lg' : 'border-slate-600 bg-slate-900 hover:border-slate-500'}`}
+                className={`group relative overflow-hidden rounded-xl border p-3 text-left transition-all ${active ? 'bg-slate-700 shadow-lg' : 'bg-slate-900 hover:border-slate-500'}`}
+                style={active ? { borderColor: `${opt.accent}99`, boxShadow: `0 10px 30px ${opt.accent}1c` } : undefined}
               >
                 <span className="absolute inset-x-0 top-0 h-1" style={{ background: opt.accent }} />
                 <span className="flex items-center gap-3 pt-1">
