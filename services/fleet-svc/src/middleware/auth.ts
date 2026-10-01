@@ -2,6 +2,7 @@ import { jwtVerify, createRemoteJWKSet, importSPKI, type JWTPayload } from 'jose
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { config } from '../config.js';
 import { AuthError } from '../lib/errors.js';
+import { tenantContext } from '../db.js';
 
 export interface RequestUser {
   sub: string;
