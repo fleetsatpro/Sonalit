@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { query } from '../db.js';
+import { requireAuth } from '../middleware/auth.js';
 import { getJs } from '../nats.js';
 import { StringCodec } from 'nats';
 import { NotFoundError, AuthError } from '../lib/errors.js';
@@ -38,9 +39,10 @@ type PatchableCol = 'name' | 'description' | 'timezone' | 'start_date' | 'end_da
 const sc = StringCodec();
 
 export const convoysRoutes: FastifyPluginAsync = async (app) => {
+  app.addHook('preHandler', requireAuth);
   app.get('/v4/convoys', async (req, reply) => {
-    const org_id = (req.headers['x-org-id'] as string | undefined)?.trim();
-    if (!org_id) throw new AuthError('x-org-id header required');
+    const org_id = req.user?.org_id;
+    if (!org_id) throw new AuthError('tenant scope missing');
     const q = ListSchema.parse(req.query);
     const offset = (q.page - 1) * q.limit;
     const params: unknown[] = [org_id, q.limit, offset];
@@ -55,8 +57,8 @@ export const convoysRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post('/v4/convoys', async (req, reply) => {
-    const org_id = (req.headers['x-org-id'] as string | undefined)?.trim();
-    if (!org_id) throw new AuthError('x-org-id header required');
+    const org_id = req.user?.org_id;
+    if (!org_id) throw new AuthError('tenant scope missing');
     const body = CreateConvoySchema.parse(req.body);
     const id = randomUUID();
     const [convoy] = await query(
@@ -76,8 +78,8 @@ export const convoysRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.get('/v4/convoys/:id', async (req, reply) => {
-    const org_id = (req.headers['x-org-id'] as string | undefined)?.trim();
-    if (!org_id) throw new AuthError('x-org-id header required');
+    const org_id = req.user?.org_id;
+    if (!org_id) throw new AuthError('tenant scope missing');
     const { id } = req.params as { id: string };
     const [convoy] = await query('SELECT * FROM convoys WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL', [id, org_id]);
     if (!convoy) throw new NotFoundError('Convoy not found');
@@ -91,8 +93,8 @@ export const convoysRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.patch('/v4/convoys/:id', async (req, reply) => {
-    const org_id = (req.headers['x-org-id'] as string | undefined)?.trim();
-    if (!org_id) throw new AuthError('x-org-id header required');
+    const org_id = req.user?.org_id;
+    if (!org_id) throw new AuthError('tenant scope missing');
     const { id } = req.params as { id: string };
     const body = PatchConvoySchema.parse(req.body);
     const { vehicle_ids, driver_ids, ...fields } = body;
@@ -149,8 +151,8 @@ export const convoysRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.delete('/v4/convoys/:id', async (req, reply) => {
-    const org_id = (req.headers['x-org-id'] as string | undefined)?.trim();
-    if (!org_id) throw new AuthError('x-org-id header required');
+    const org_id = req.user?.org_id;
+    if (!org_id) throw new AuthError('tenant scope missing');
     const { id } = req.params as { id: string };
     await query('UPDATE convoys SET deleted_at=NOW() WHERE id=$1 AND org_id=$2', [id, org_id]);
     return reply.code(204).send();
