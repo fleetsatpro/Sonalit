@@ -5,10 +5,11 @@ import { Crosshair, DatabaseZap, Eye, Gauge, Loader2, Play, ScanSearch, ShieldCh
 import CorridorWorldScene, { type GlobeMember, type LatLng, type RiskZone } from './CorridorWorldScene.js';
 import CorridorOperationalMap from './CorridorOperationalMap.js';
 import { runXdSurveillanceAgents, type XdDimension } from './xdSurveillanceAgents.js';
+import type { SpatialWorldEntity } from '../../lib/spatialClient.js';
 
 export type { LatLng, GlobeMember, RiskZone };
 type Surface = 'corridor' | 'gev';
-type Props = { convoyId?: string; route: LatLng[]; corridorKm: number; members: GlobeMember[]; zones?: RiskZone[]; ceilingM?: number; focusId?: string | null; trail?: LatLng[]; onSelect?: (id: string | null) => void; fill?: boolean; surface?: Surface; fixedView?: View };
+type Props = { convoyId?: string; route: LatLng[]; corridorKm: number; members: GlobeMember[]; zones?: RiskZone[]; ceilingM?: number; focusId?: string | null; trail?: LatLng[]; onSelect?: (id: string | null) => void; onExternalSelect?: (id: string | null) => void; selectedExternalId?: string | null; worldEntities?: SpatialWorldEntity[]; onViewportChange?: (viewport: { latitude: number; longitude: number; radiusM: number }) => void; fill?: boolean; surface?: Surface; fixedView?: View };
 type View = '2D' | '3D';
 type SwarmResponse = { version:string; generated_at:string; provider_fabric:{ open_source:Array<{slot:number;label:string;model:string;configured:boolean}>; gpt_oss_120b:boolean; anthropic_last_resort:boolean; order:string[] }; agents:Array<{id:string;dimension:string;name:string;provider:string;status:string;finding:string;confidence:number;risks?:unknown[];evidence_gaps?:string[]}>; arbiter:{posture:string;summary:string;material_findings?:string[];material_gaps?:string[];confidence:number;next_review:string;dissent?:string[];provider:string} };
 const DIMENSIONS:{key:XdDimension;icon:typeof Crosshair}[]=[{key:'SPACE',icon:Crosshair},{key:'TIME',icon:Timer},{key:'IDENTITY',icon:Truck},{key:'MOTION',icon:Gauge},{key:'INTEGRITY',icon:ShieldCheck},{key:'SECURITY',icon:Eye},{key:'EVIDENCE',icon:DatabaseZap},{key:'FUTURE',icon:Waypoints}];
@@ -24,7 +25,7 @@ const DIMENSION_COPY:Record<XdDimension,{title:string;body:string}>={
 };
 function context(member?:GlobeMember|null){const m=member as (GlobeMember&{convoy_name?:string|null;client_name?:string|null})|undefined;return{convoy:m?.convoy_name??null,client:m?.client_name??null};}
 
-export default function CorridorGlobe({convoyId,route,corridorKm,members,zones=[],ceilingM=0,focusId=null,trail,onSelect,fill=false,surface='corridor',fixedView}:Props){
+export default function CorridorGlobe({convoyId,route,corridorKm,members,zones=[],ceilingM=0,focusId=null,trail,onSelect,onExternalSelect,selectedExternalId=null,worldEntities=[],onViewportChange,fill=false,surface='corridor',fixedView}:Props){
  const[view,setView]=useState<View>(fixedView ?? '2D'),[dimension,setDimension]=useState<XdDimension>('SPACE'),[agentsOpen,setAgentsOpen]=useState(false),[entityOpen,setEntityOpen]=useState(true);
  const activeView=fixedView ?? view;
  const isGev=surface==='gev';
