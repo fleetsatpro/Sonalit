@@ -14,12 +14,10 @@ async function getDB() {
   });
 }
 
-export async function queueOperation(operation, payload, token) {
-  try {
-    const database = await getDB();
-    const tx = database.transaction('queue', 'readwrite');
-    tx.objectStore('queue').add({ operation, payload, token, status: 'pending', createdAt: Date.now() });
-  } catch (err) { console.error('Queue failed:', err); }
+export async function queueOperation() {
+  // Deprecated legacy queue: current apps/web uses the tenant-bound Dexie
+  // outbox. Never persist bearer credentials in the legacy IndexedDB store.
+  throw new Error('Legacy offline queue disabled; use the tenant-scoped outbox.');
 }
 
 export async function getPendingCount() {
