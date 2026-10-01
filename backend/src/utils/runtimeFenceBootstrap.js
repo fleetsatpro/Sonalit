@@ -3,12 +3,14 @@
  *
  * Exactly one production runtime may own the active role at a time. Railway
  * remains the primary; the Docker standby starts with SONALIT_STANDBY=true and
- * therefore never claims the fence. Promotion sets SONALIT_FENCE_TAKEOVER=true
- * only after the primary has been fenced/offline.
+ * therefore never claims the fence. Railway replacements are handed over by
+ * deployment identity; the older runtime self-quiesces as soon as it loses ownership.
  *
  * The claim runs synchronously in a child Node process BEFORE app.js is loaded.
  * That means active cron registration, workers, routes and HTTP listeners cannot
- * start until the process owns the authoritative PostgreSQL runtime lease.
+ * start until the process owns the authoritative PostgreSQL runtime lease. On
+ * Railway, a newer deployment may take the lease from the older deployment, and
+ * the older process immediately disables scheduled work and operational HTTP.
  */
 const os = require("os");
 const crypto = require("crypto");
@@ -58,7 +60,6 @@ function installCronGate() {
     if (request !== 'node-cron' || loaded.__sonalitFenceWrapped) return loaded;
     const wrapped = Object.assign({}, loaded);
     wrapped.schedule = function guardedSchedule(expression, callback, options) {
-      const spec = { expression, callback, options };
       const task = loaded.schedule(expression, (...args) => {
         if (!fenceActive) return undefined;
         return callback(...args);
@@ -82,7 +83,6 @@ function stopActiveCronTasks() {
 
 function deactivateFence() {
   fenceActive = false;
-  fenceCandidate = false;
   stopActiveCronTasks();
 }
 
@@ -260,6 +260,7 @@ if (isClaimChild) {
           }
         } catch (err) {
           console.error(`SONALIT runtime fence: heartbeat failed: ${err.message || String(err)}`);
+          deactivateFence();
           process.exit(78);
         }
       }, FENCE_HEARTBEAT_MS);
