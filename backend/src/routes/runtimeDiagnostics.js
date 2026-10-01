@@ -10,6 +10,12 @@ function adminOnly(req, res, next) {
 
 router.use(adminOnly);
 
+function tenantId(req, res) {
+  const id = req.user?.org_id;
+  if (!id) { res.status(403).json({ error: 'tenant_scope_required' }); return null; }
+  return id;
+}
+
 function tenantScope(req, res) {
   const orgId = req.user?.org_id;
   if (!orgId) { res.status(403).json({ error: 'tenant_scope_required' }); return null; }
@@ -24,6 +30,7 @@ router.get('/summary', async (req, res, next) => {
       query(`SELECT COUNT(*)::int AS n FROM runtime_diagnostics WHERE org_id = $1 AND occurred_at > NOW() - INTERVAL '24 hours'`, [orgId]),
       query(`SELECT level, COUNT(*)::int AS n FROM runtime_diagnostics WHERE org_id = $1 AND occurred_at > NOW() - INTERVAL '24 hours' GROUP BY level ORDER BY level`, [orgId]),
       query(`SELECT event, COUNT(*)::int AS n, MAX(occurred_at) AS last_seen FROM runtime_diagnostics WHERE org_id = $1 AND occurred_at > NOW() - INTERVAL '24 hours' GROUP BY event ORDER BY n DESC, last_seen DESC LIMIT 20`, [orgId]),
+    const orgId = tenantId(req, res); if (!orgId) return;
     ]);
     res.json({
       window: '24h',
