@@ -4,6 +4,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { useQuery } from '@tanstack/react-query';
 import { Play, Pause, SkipBack, Camera, Volume2, Siren, TriangleAlert } from 'lucide-react';
 import { api } from '../lib/api.js';
+import { spatialPixelRatio, spatialCanvasContextAttributes } from '../lib/spatialRendering.js';
 import '../styles/replay.css';
 
 // 4D Ops Replay — a DVR for the whole operation. Scrub a time window and watch
@@ -122,7 +123,7 @@ export default function Replay() {
   // ── build map once ────────────────────────────────────────────────────────
   useEffect(() => {
     if (!mapEl.current || mapRef.current) return;
-    const map = new maplibregl.Map({ container: mapEl.current, style: SAT_STYLE, center: [37, 3], zoom: 5, attributionControl: false });
+    const map = new maplibregl.Map({ container: mapEl.current, style: SAT_STYLE, center: [37, 3], zoom: 5, attributionControl: false, pixelRatio: spatialPixelRatio(), maxCanvasSize: [8192, 8192], canvasContextAttributes: spatialCanvasContextAttributes });
     mapRef.current = map;
     map.on('error', () => {});
     map.on('load', () => {
