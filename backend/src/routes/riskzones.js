@@ -48,7 +48,7 @@ router.post('/', async (req, res, next) => {
 
 router.delete('/:id', async (req, res, next) => {
   try {
-    const result = await req.db('UPDATE risk_zones SET active=false WHERE id=$1 AND (org_id=$2 OR org_id IS NULL) RETURNING id', [req.params.id, req.user.org_id]);
+    const result = await req.db('UPDATE risk_zones SET active=false WHERE id=$1 AND org_id=$2 RETURNING id', [req.params.id, req.user.org_id]);
     if (!result.rows.length) return res.status(404).json({ error: 'Risk zone not found' });
     res.json({ ok: true });
   } catch (err) { next(err); }
