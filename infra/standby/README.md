@@ -31,7 +31,7 @@ Only one production process is allowed to own Sonalit's active runtime fence.
 - `SONALIT_STANDBY=true` keeps the replica fenced and disables cron side effects plus in-process workers.
 - Active production startup claims a lease in the authoritative `sonalit_runtime_fence` table before `app.js` is loaded.
 - The lease is serialized with a PostgreSQL advisory lock and refreshed by heartbeat.
-- A second active runtime refuses to start while the existing lease is fresh.
+- A second active runtime refuses to start while the existing lease is fresh; on Railway, a newer deployment ID is treated as the controlled replacement, while replicas of the same deployment remain fenced.
 - A controlled takeover (`SONALIT_FENCE_TAKEOVER=true`) replaces the recorded owner; the displaced runtime detects loss of ownership and terminates on its next heartbeat.
 - The application fence does not replace operational fencing: public traffic must still be removed from the primary before promotion.
 
