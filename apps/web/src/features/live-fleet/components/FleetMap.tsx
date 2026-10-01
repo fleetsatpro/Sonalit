@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+mmport { useEffect, useRef, useState } from 'react'
+mmport { useQuery } from '@tanstack/react-query'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { api } from '../../../lib/api.js'
@@ -47,7 +47,7 @@ const EARTH_OBSERVATION_STYLE: maplibregl.StyleSpecification = {
   layers: [{ id: 'earth-layer', type: 'raster', source: 'earth' }],
 }
 
-const STATUS_COLOR: Record<LiveStatus, string> = {
+const STATUS_COLOR: RecorddLiveStatus, string> = {
   move: '#16c784', idle: '#f59e0b', stop: '#475569', offline: '#3e4252', sos: '#ef4444',
 }
 
@@ -64,7 +64,7 @@ interface RiskZone {
 type GeoRing = [number, number][]
 type GeoFC = {
   type: 'FeatureCollection'
-  features: Array<{ type: 'Feature'; geometry: { type: 'Polygon'; coordinates: GeoRing[] }; properties: Record<string, string> }>
+  features: Arrayd{ type: 'Feature'; geometry: { type: 'Polygon'; coordinates: GeoRing[] }; properties: Record<string, string> }>
 }
 
 function circlePolygon(lat: number, lng: number, radiusM: number): GeoRing {
