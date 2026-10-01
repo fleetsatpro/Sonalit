@@ -30,7 +30,7 @@ async function getVerificationKey(): Promise<
     return createRemoteJWKSet(new URL(AUTH_JWKS_URI));
   }
 
-  // Dev fallback: read PEM from env or generate ephemeral
+  // Dev fallback: read PEM from env only.
   const pemEnv = process.env['AUTH_PUBLIC_KEY_PEM'];
   if (pemEnv) {
     if (!cachedPublicKey) {
@@ -39,9 +39,10 @@ async function getVerificationKey(): Promise<
     return cachedPublicKey;
   }
 
-  // Absolute last resort for local dev — generate a throwaway key.
-  // Tokens will only verify if they were signed by the same process,
-  // so this only works when auth-svc and fleet-svc share the generated key.
+  if (process.env.NODE_ENV === 'production') {
+    throw new AuthError('AUTH_JWKS_URI or AUTH_PUBLIC_KEY_PEM is required in production');
+  }
+  throw new AuthError('Authentication verification key is not configured');
   const { generateKeyPair } = await import('node:crypto');
   const { privateKey: _pk, publicKey } = await new Promise<{
     privateKey: string;
