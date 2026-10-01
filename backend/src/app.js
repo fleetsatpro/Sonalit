@@ -1,4 +1,5 @@
 require("dotenv").config();
+const crypto = require("crypto");
 const Sentry = require("./instrument");
 
 // ─── Graceful shutdown ────────────────────────────────────────────────────────
@@ -176,7 +177,22 @@ app.get("/health", async (req, res) => {
   } catch (e) { res.status(503).json({ status: "error", error: e.message }); }
 });
 
-app.get("/metrics", async (req, res) => {
+function requireMetricsAuth(req, res, next) {
+  const configured = String(process.env.METRICS_TOKEN || '');
+  if (!configured) {
+    return res.status(503).json({ error: 'metrics_auth_not_configured' });
+  }
+  const header = String(req.headers.authorization || '');
+  const supplied = header.startsWith('Bearer ') ? header.slice(7) : '';
+  const a = Buffer.from(supplied);
+  const b = Buffer.from(configured);
+  if (!a.length || a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    return res.status(401).json({ error: 'metrics_auth_required' });
+  }
+  next();
+}
+
+app.get("/metrics", requireMetricsAuth, async (req, res) => {
   try {
     const mem = process.memoryUsage();
     const uptime = Math.floor(process.uptime());
