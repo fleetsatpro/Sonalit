@@ -1,0 +1,106 @@
+/* Sonalit multi-theme layer. Presentation only: operational state, telemetry,
+   permissions, geometry and data values are intentionally untouched. */
+
+:root {
+  --son-theme-bg: #030711;
+  --son-theme-surface: #0d1428;
+  --son-theme-surface-2: #101a30;
+  --son-theme-surface-3: #16213a;
+  --son-theme-border: rgba(140,170,255,.14);
+  --son-theme-border-strong: rgba(140,170,255,.28);
+  --son-theme-text: #eaf2ff;
+  --son-theme-muted: #7c8aae;
+  --son-theme-faint: #3e4a6b;
+  --son-theme-accent: #22e8ff;
+  --son-theme-accent-strong: #17b8cc;
+  --son-theme-accent-soft: rgba(34,232,255,.12);
+  --son-theme-accent-secondary: #8b6bff;
+  --son-theme-accent-secondary-soft: rgba(139,107,255,.12);
+  --son-theme-focus: rgba(34,232,255,.42);
+  color-scheme: dark;
+}
+:root[data-sonalit-theme="obsidian"] { color-scheme: dark; }
+:root[data-sonalit-theme="arctic"] {
+  --son-theme-bg:#07111a; --son-theme-surface:#0d1b24; --son-theme-surface-2:#10222d; --son-theme-surface-3:#17313e;
+  --son-theme-border:rgba(150,218,235,.16); --son-theme-border-strong:rgba(150,218,235,.30); --son-theme-text:#e8f7fb; --son-theme-muted:#88aab6; --son-theme-faint:#4a6974;
+  --son-theme-accent:#5ee7ff; --son-theme-accent-strong:#2cc5e2; --son-theme-accent-soft:rgba(94,231,255,.13); --son-theme-accent-secondary:#6ea8ff; --son-theme-accent-secondary-soft:rgba(110,168,255,.12); --son-theme-focus:rgba(94,231,255,.42); color-scheme:dark;
+}
+:root[data-sonalit-theme="graphite"] {
+  --son-theme-bg:#0b0e11; --son-theme-surface:#14181c; --son-theme-surface-2:#171c21; --son-theme-surface-3:#20272e;
+  --son-theme-border:rgba(215,225,235,.12); --son-theme-border-strong:rgba(215,225,235,.24); --son-theme-text:#f0f3f5; --son-theme-muted:#9aa7b1; --son-theme-faint:#59656e;
+  --son-theme-accent:#c8d2dc; --son-theme-accent-strong:#9eacb7; --son-theme-accent-soft:rgba(200,210,220,.11); --son-theme-accent-secondary:#8da7bd; --son-theme-accent-secondary-soft:rgba(141,167,189,.12); --son-theme-focus:rgba(200,210,220,.38); color-scheme:dark;
+}
+:root[data-sonalit-theme="copper"] {
+  --son-theme-bg:#110b09; --son-theme-surface:#1b1110; --son-theme-surface-2:#211613; --son-theme-surface-3:#30201a;
+  --son-theme-border:rgba(255,191,153,.14); --son-theme-border-strong:rgba(255,191,153,.28); --son-theme-text:#fff1e8; --son-theme-muted:#b99c8d; --son-theme-faint:#72594d;
+  --son-theme-accent:#ff9d63; --son-theme-accent-strong:#f47b48; --son-theme-accent-soft:rgba(255,157,99,.13); --son-theme-accent-secondary:#f06d42; --son-theme-accent-secondary-soft:rgba(240,109,66,.12); --son-theme-focus:rgba(255,157,99,.42); color-scheme:dark;
+}
+:root[data-sonalit-theme="signal"] {
+  --son-theme-bg:#070b08; --son-theme-surface:#0e150f; --son-theme-surface-2:#111b13; --son-theme-surface-3:#1b2a1e;
+  --son-theme-border:rgba(198,238,178,.14); --son-theme-border-strong:rgba(198,238,178,.28); --son-theme-text:#eff9ee; --son-theme-muted:#91aa91; --son-theme-faint:#536853;
+  --son-theme-accent:#d7ff4f; --son-theme-accent-strong:#a8d62d; --son-theme-accent-soft:rgba(215,255,79,.13); --son-theme-accent-secondary:#62f0b0; --son-theme-accent-secondary-soft:rgba(98,240,176,.12); --son-theme-focus:rgba(215,255,79,.40); color-scheme:dark;
+}
+:root[data-sonalit-theme="ivory"] {
+  --son-theme-bg:#f3f6f4; --son-theme-surface:#fff; --son-theme-surface-2:#f8faf9; --son-theme-surface-3:#e9efec;
+  --son-theme-border:rgba(15,23,42,.10); --son-theme-border-strong:rgba(15,23,42,.18); --son-theme-text:#12201b; --son-theme-muted:#52645d; --son-theme-faint:#8b9b94;
+  --son-theme-accent:#0f766e; --son-theme-accent-strong:#115e59; --son-theme-accent-soft:rgba(15,118,110,.11); --son-theme-accent-secondary:#c2410c; --son-theme-accent-secondary-soft:rgba(194,65,12,.10); --son-theme-focus:rgba(15,118,110,.32); color-scheme:light;
+}
+
+html[data-sonalit-theme] body { background:var(--son-theme-bg); color:var(--son-theme-text); }
+html[data-sonalit-theme] ::selection { background:var(--son-theme-accent-soft); color:var(--son-theme-text); }
+html[data-sonalit-theme] :focus-visible { outline:2px solid var(--son-theme-focus); outline-offset:2px; }
+html[data-sonalit-theme] .d-card { background:var(--son-theme-surface); border-color:var(--son-theme-border); }
+html[data-sonalit-theme] .d-label { color:var(--son-theme-muted); }
+html[data-sonalit-theme] .d-num { color:var(--son-theme-text); }
+
+html[data-sonalit-theme] .bg-slate-950 { background-color:var(--son-theme-bg)!important; }
+html[data-sonalit-theme] .bg-slate-900 { background-color:var(--son-theme-surface)!important; }
+html[data-sonalit-theme] .bg-slate-800 { background-color:var(--son-theme-surface-2)!important; }
+html[data-sonalit-theme] .bg-slate-700 { background-color:var(--son-theme-surface-3)!important; }
+html[data-sonalit-theme] .text-white,
+html[data-sonalit-theme] .text-slate-50,
+html[data-sonalit-theme] .text-slate-100,
+html[data-sonalit-theme] .text-slate-200 { color:var(--son-theme-text)!important; }
+html[data-sonalit-theme] .text-slate-300,
+html[data-sonalit-theme] .text-slate-400 { color:var(--son-theme-muted)!important; }
+html[data-sonalit-theme] .text-slate-500,
+html[data-sonalit-theme] .text-slate-600 { color:var(--son-theme-faint)!important; }
+html[data-sonalit-theme] .border-slate-700 { border-color:var(--son-theme-border)!important; }
+html[data-sonalit-theme] .border-slate-600,
+html[data-sonalit-theme] .border-slate-500 { border-color:var(--son-theme-border-strong)!important; }
+html[data-sonalit-theme] .bg-orange-600,
+html[data-sonalit-theme] .bg-orange-500 { background-color:var(--son-theme-accent)!important; color:var(--son-theme-bg)!important; }
+html[data-sonalit-theme] .hover\\:bg-orange-700:hover,
+html[data-sonalit-theme] .hover\\:bg-orange-600:hover,
+html[data-sonalit-theme] .hover\\:bg-orange-500:hover { background-color:var(--son-theme-accent-strong)!important; }
+html[data-sonalit-theme] .text-orange-400,
+html[data-sonalit-theme] .text-orange-500,
+html[data-sonalit-theme] .text-orange-600 { color:var(--son-theme-accent)!important; }
+html[data-sonalit-theme] .border-orange-500,
+html[data-sonalit-theme] .border-orange-400 { border-color:var(--son-theme-accent)!important; }
+html[data-sonalit-theme] input,
+html[data-sonalit-theme] select,
+html[data-sonalit-theme] textarea { accent-color:var(--son-theme-accent); }
+html[data-sonalit-theme="ivory"] .text-blue-200 { color:#1d4ed8!important; }
+html[data-sonalit-theme="ivory"] .bg-blue-800 { background-color:#dbeafe!important; }
+
+.sonalit-theme-picker { display:grid; gap:14px; }
+.sonalit-theme-picker__intro { display:grid; gap:3px; }
+.sonalit-theme-picker__grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.sonalit-theme-option {
+  position:relative; display:grid; grid-template-columns:1fr auto; min-height:142px; padding:14px; text-align:left;
+  border:1px solid var(--son-theme-border); border-radius:14px; background:linear-gradient(145deg,var(--son-theme-surface),var(--son-theme-surface-2));
+  color:var(--son-theme-text); cursor:pointer; transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;
+}
+.sonalit-theme-option:hover { transform:translateY(-2px); border-color:var(--son-theme-border-strong); box-shadow:0 12px 32px rgba(0,0,0,.16); }
+.sonalit-theme-option[data-active="true"] { border-color:var(--son-theme-accent); box-shadow:0 0 0 1px var(--son-theme-accent),0 14px 38px rgba(0,0,0,.18); }
+.sonalit-theme-option__preview { grid-column:1/-1; height:46px; margin-bottom:12px; border-radius:9px; overflow:hidden; display:flex; border:1px solid rgba(255,255,255,.12); }
+.sonalit-theme-option__swatch { flex:1; }
+.sonalit-theme-option__copy { min-width:0; display:grid; align-content:start; gap:4px; }
+.sonalit-theme-option__name { font-size:13px; font-weight:700; letter-spacing:-.01em; }
+.sonalit-theme-option__description { font-size:11px; line-height:1.45; color:var(--son-theme-muted); max-width:34ch; }
+.sonalit-theme-option__check { width:22px; height:22px; display:grid; place-items:center; border-radius:50%; border:1px solid var(--son-theme-border-strong); color:transparent; }
+.sonalit-theme-option[data-active="true"] .sonalit-theme-option__check { background:var(--son-theme-accent); border-color:var(--son-theme-accent); color:var(--son-theme-bg); }
+.sonalit-theme-picker__status { display:flex; align-items:center; gap:8px; min-height:34px; padding:8px 10px; border:1px solid var(--son-theme-border); border-radius:9px; background:var(--son-theme-accent-soft); color:var(--son-theme-muted); font-size:11px; }
+@media (max-width:720px) { .sonalit-theme-picker__grid { grid-template-columns:1fr; } .sonalit-theme-option { min-height:124px; } }
+@media (prefers-reduced-motion:reduce) { .sonalit-theme-option { transition:none; } .sonalit-theme-option:hover { transform:none; } }
