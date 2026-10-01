@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Globe2, Layers3, RadioTower, Orbit } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { fetchWorldContext, spatialEntityLayer, WORLD_CONTEXT_LAYERS, worldContextEntities } from '../lib/spatialClient.js'
-import type { SpatialWorldEntity, WorldContextLayer } from '../lib/spatialClient.js'
+import type { WorldContextLayer } from '../lib/spatialClient.js'
 import { useLiveFleet } from '../features/live-fleet/hooks/useLiveFleet.js'
 import FleetMap from '../features/live-fleet/components/FleetMap.js'
 import CorridorGlobe from '../components/geofences/CorridorGlobe.js'
@@ -145,21 +145,22 @@ export default function GodsEyeView() {
             </div>
           </>
         ) : (
-          <CorridorGlobe
-            route={[]}
-            corridorKm={1}
-            members={members}
-            zones={zones}
-            fill
-            surface="gev"
-            fixedView="3D"
-            worldEntities={renderableExternalEntities}
-            selectedExternalId={selectedExternalId}
-            onExternalSelect={id => { setSelectedExternalId(id); if (id) setSelected(null) }}
-            onSelect={id => { setSelectedExternalId(null); setSelected(id ? allVehicles.find(v => v.id === id) ?? null : null) }}
-            onViewportChange={setWorldViewport}
-          />
-          <div style={{ position: 'absolute', left: 14, top: 14, zIndex: 700, width: 300, maxHeight: 'calc(100% - 28px)', overflow: 'auto', pointerEvents: 'auto', background: 'rgba(5,7,13,.9)', border: '1px solid rgba(196,181,253,.16)', borderRadius: 12, padding: '11px 12px', boxShadow: '0 18px 45px rgba(0,0,0,.4)', backdropFilter: 'blur(14px)' }}>
+          <>
+            <CorridorGlobe
+              route={[]}
+              corridorKm={1}
+              members={members}
+              zones={zones}
+              fill
+              surface="gev"
+              fixedView="3D"
+              worldEntities={renderableExternalEntities}
+              selectedExternalId={selectedExternalId}
+              onExternalSelect={id => { setSelectedExternalId(id); if (id) setSelected(null) }}
+              onSelect={id => { setSelectedExternalId(null); setSelected(id ? allVehicles.find(v => v.id === id) ?? null : null) }}
+              onViewportChange={setWorldViewport}
+            />
+            <div style={{ position: 'absolute', left: 14, top: 14, zIndex: 700, width: 300, maxHeight: 'calc(100% - 28px)', overflow: 'auto', pointerEvents: 'auto', background: 'rgba(5,7,13,.9)', border: '1px solid rgba(196,181,253,.16)', borderRadius: 12, padding: '11px 12px', boxShadow: '0 18px 45px rgba(0,0,0,.4)', backdropFilter: 'blur(14px)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, color: '#b8aef1', letterSpacing: '.14em' }}>3D WORLD FABRIC</span>
               <span style={{ fontFamily: 'IBM Plex Mono,monospace', fontSize: 8, color: worldError ? '#f87171' : worldFetching ? '#fbbf24' : '#6ee7b7' }}>
@@ -191,8 +192,8 @@ export default function GodsEyeView() {
             <div style={{ marginTop: 8, paddingTop: 7, borderTop: '1px solid rgba(255,255,255,.06)', fontFamily: 'IBM Plex Mono,monospace', fontSize: 7.5, lineHeight: 1.5, color: '#707783' }}>
               Viewport-linked sync · max external radius 100 km · 3D altitude retained for aircraft/orbital modelled positions.
             </div>
-          </div>
-
+            </div>
+          </>
         )}
 
         {selectedExternal && view === '3D' && (
