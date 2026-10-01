@@ -5,12 +5,14 @@ const { createQueues } = require('../config/queue');
 const { startNotificationWorker } = require('./notificationWorker');
 const { startResendEmailWorker } = require('./resendEmailWorker');
 const { dispatchClientPulse } = require('../services/email/clientPulseDispatch.service');
+const { withAdvisoryLock } = require('../utils/workerExecutionGuard');
 
 createQueues();
 const fanoutWorker = startNotificationWorker();
 const resendWorker = startResendEmailWorker();
 let pulseTimer = null;
 let lastPulseSlot = null;
+let activePulsePromise = null;
 
 const PULSE_HOURS_EAT = [0, 4, 8, 12, 16, 20];
 const EAT_OFFSET_MINUTES = 180;
@@ -38,6 +40,8 @@ async function runScheduledClientPulse(now = new Date()) {
 
   const slotKey = `${date}:${String(hour).padStart(2, '0')}:00 EAT`;
   if (slotKey === lastPulseSlot) return { skipped: true, reason: 'slot_already_processed', slotKey };
+  const guarded = await withAdvisoryLock('sonalit:notification:client-pulse', async () => {
+    if (slotKey === lastPulseSlot) return { skipped: true, reason: 'slot_already_processed', slotKey };
   lastPulseSlot = slotKey;
 
   const snapshotAt = new Date(now);
@@ -85,33 +89,36 @@ async function runScheduledClientPulse(now = new Date()) {
   }
 }
 
-function scheduleClientPulse() {
-  if (process.env.CDS_CLIENT_PULSE_ENABLED === 'false') {
+function scheduleClientPulse(){
+  if(process.env.CDS_CLIENT_PULSE_ENABLED==='false'){
     logger.warn('CDS Client Pulse scheduler disabled by CDS_CLIENT_PULSE_ENABLED=false');
     return;
   }
-
-  const tick = async () => {
-    try {
-      await runScheduledClientPulse(new Date());
-    } catch (error) {
-      logger.error(`CDS Client Pulse scheduler tick failed: ${error.message}`);
-    }
+  const tick=()=>{
+    if(activePulsePromise)return;
+    activePulsePromise=runScheduledClientPulse(new Date())
+      .catch(error=>logger.error(`CDS Client Pulse scheduler tick failed: ${error.message}`))
+      .finally(()=>{activePulsePromise=null;});
   };
-
-  void tick();
-  pulseTimer = setInterval(() => { void tick(); }, 15000);
+  tick();
+  pulseTimer=setInterval(tick,15000);
   pulseTimer.unref?.();
   logger.info('CDS Client Pulse scheduler active: 00:00, 04:00, 08:00, 12:00, 16:00, 20:00 EAT');
 }
 
 scheduleClientPulse();
 
-async function shutdown() {
+async function shutdown(){
   logger.info('Notification/email workers shutting down');
-  if (pulseTimer) clearInterval(pulseTimer);
-  await Promise.all([fanoutWorker.close().catch(() => {}), resendWorker.close().catch(() => {})]);
-  await pool.end().catch(() => {});
+  if(pulseTimer)clearInterval(pulseTimer);
+  await Promise.all([fanoutWorker.close().catch(()=>{}),resendWorker.close().catch(()=>{})]);
+  if(activePulsePromise){
+    await Promise.race([
+      activePulsePromise,
+      new Promise(resolve=>setTimeout(resolve,20000))
+    ]);
+  }
+  await pool.end().catch(()=>{});
   process.exit(0);
 }
 process.on('SIGINT', shutdown);
