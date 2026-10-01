@@ -16,12 +16,19 @@ async function publish(channel, data) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-API-Key': CENTRIFUGO_API_KEY },
       body: JSON.stringify({ channel, data }),
+      signal: AbortSignal.timeout(5_000),
     });
+    let payload = null;
+    try { payload = await resp.json(); } catch (_) {}
+
     if (!resp.ok) {
-      const body = typeof resp.text === 'function'
-        ? await resp.text().catch(() => '')
-        : '';
-      logger.warn(`Centrifugo publish failed: ${resp.status} on ${channel}${body ? ` — ${body.slice(0, 300)}` : ''}`);
+      logger.warn(`Centrifugo publish failed: ${resp.status} on ${channel}`);
+      return;
+    }
+    if (payload?.error) {
+      logger.warn(
+        `Centrifugo publish failed: ${payload.error.code || 'unknown'} ${payload.error.message || 'unknown error'} on ${channel}`
+      );
     }
   } catch (err) {
     logger.warn(`Centrifugo publish error: ${err.message}`);
