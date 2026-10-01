@@ -26,7 +26,22 @@ async function publish(channel, data) {
       headers: { 'Content-Type': 'application/json', 'X-API-Key': CENTRIFUGO_API_KEY },
       body: JSON.stringify({ channel, data }),
     });
-    if (!resp.ok) logger.warn(`Centrifugo publish failed: ${resp.status} on ${channel}`);
+
+    let payload = null;
+    try {
+      payload = await resp.json();
+    } catch (_) {
+      // Some proxies/load-balancers may return an empty/non-JSON error body.
+    }
+
+    if (!resp.ok) {
+      logger.warn(`Centrifugo publish failed: HTTP ${resp.status} on ${channel}`);
+      return;
+    }
+
+    if (payload?.error) {
+      logger.warn(`Centrifugo publish rejected: ${payload.error.message || 'unknown error'} (${payload.error.code ?? 'unknown code'}) on ${channel}`);
+    }
   } catch (err) {
     logger.warn(`Centrifugo publish error: ${err.message}`);
   }
