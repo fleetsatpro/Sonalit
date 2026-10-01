@@ -257,7 +257,9 @@ if (isClaimChild) {
 
   client.on("error", err => {
     console.error(`SONALIT runtime fence: PostgreSQL connection lost: ${err.message || String(err)}`);
-    if (fenceActive) process.exit(78);
+    if (fenceActive) {
+      void deactivateFence().finally(() => process.exit(78));
+    }
   });
 
   client.connect()
@@ -286,7 +288,7 @@ if (isClaimChild) {
     })
     .catch(err => {
       console.error(`SONALIT runtime fence: heartbeat connection failed: ${err.message || String(err)}`);
-      process.exit(78);
+      void deactivateFence().finally(() => process.exit(78));
     });
 
   module.exports = {
