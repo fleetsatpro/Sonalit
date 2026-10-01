@@ -284,6 +284,10 @@ export default function CorridorWorldScene({
       });
     }
     const compactSurface = window.matchMedia?.('(max-width: 900px)').matches ?? false;
+    const requestedScale = Number(import.meta.env['VITE_CESIUM_RESOLUTION_SCALE']);
+    const maxScale = Number.isFinite(requestedScale) && requestedScale > 0
+      ? Math.min(requestedScale, compactSurface ? 1.75 : 2.25)
+      : (compactSurface ? 1.75 : 2.25);
     viewer.scene.globe.enableLighting = true;
     viewer.scene.globe.showGroundAtmosphere = true;
     viewer.scene.globe.depthTestAgainstTerrain = true;
@@ -292,7 +296,9 @@ export default function CorridorWorldScene({
     viewer.scene.highDynamicRange = true;
     viewer.scene.postProcessStages.fxaa.enabled = true;
     viewer.scene.msaaSamples = compactSurface ? 2 : 4;
-    viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, compactSurface ? 1.5 : 2);
+    // Render above native 1× on high-DPI displays, while preserving a strict
+    // cap so 3D stays responsive rather than turning resolution into a GPU tax.
+    viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, maxScale);
     setMapStatus(TOKEN ? 'CESIUM + ESRI · LIVE' : 'ESRI FALLBACK · ION TOKEN NOT EXPOSED');
 
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
