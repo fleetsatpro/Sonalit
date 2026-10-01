@@ -452,9 +452,9 @@ async function clearLocalModification(entry: OutboxEntry): Promise<void> {
   }
 }
 
-export async function push(userId: string): Promise<PushSummary> {
+export async function push(userId: string, orgId: string): Promise<PushSummary> {
   const summary: PushSummary = { ...EMPTY_PUSH };
-  const due = await dueEntries(userId);
+  const due = await dueEntries(userId, orgId);
   if (due.length === 0) return summary;
 
   // Already sorted by priority then sequence. Slice the highest-priority window
@@ -524,7 +524,7 @@ export async function runSync(userId: string, orgId: string): Promise<SyncRunSum
     await registerDevice();
 
     // 2. Field work up before state comes down.
-    result.push = await push(userId);
+    result.push = await push(userId, orgId);
 
     // 3. Reconcile.
     result.pull = await pull(userId, orgId);
@@ -545,8 +545,8 @@ export async function runSync(userId: string, orgId: string): Promise<SyncRunSum
   return result;
 }
 
-export async function queueDepth(userId: string): Promise<number> {
-  const c = await counts(userId);
+export async function queueDepth(userId: string, orgId: string): Promise<number> {
+  const c = await counts(userId, orgId);
   return c.pending + c.syncing + c.failedRetryable;
 }
 
