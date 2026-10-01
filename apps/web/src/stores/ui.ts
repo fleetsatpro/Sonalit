@@ -8,6 +8,7 @@ function applyTheme(theme: SonalitTheme) {
   const metaThemeColor = document.querySelector('meta[name="theme-color"]');
   const meta = getSonalitThemeMeta(theme);
   root.setAttribute('data-sonalit-theme', theme);
+  root.classList.toggle('dark', meta.mode === 'dark');
   // Keep the existing light-token path coherent for Ivory while the new layer
   // remains independent for every other theme.
   root.setAttribute('data-theme', theme === 'ivory' ? 'light' : theme);
