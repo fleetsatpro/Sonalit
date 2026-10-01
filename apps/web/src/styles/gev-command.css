@@ -1263,3 +1263,91 @@
   .gev-shell::before,
   .gev-stage::after { opacity: 0 !important; }
 }
+
+.gev-rail-tag-control {
+  min-width: 28px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 2px 4px 2px 5px;
+  border-radius: 999px;
+  color: #7f909f;
+  background: rgba(4,8,14,.86);
+  border: 1px solid rgba(255,255,255,.07);
+  cursor: pointer;
+  transition: color .16s ease, border-color .16s ease, background .16s ease;
+}
+.gev-rail-tag-control:hover {
+  color: #dcecf4;
+  border-color: rgba(98,231,255,.22);
+  background: rgba(98,231,255,.055);
+}
+.gev-rail-tag-control .gev-rail-tag {
+  min-width: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.gev-no-observation-state {
+  margin-bottom: 9px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.065);
+  background:
+    radial-gradient(260px 110px at 0% 0%, rgba(98,231,255,.035), transparent 76%),
+    linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.008));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.035),
+    0 14px 32px rgba(0,0,0,.14);
+}
+.gev-no-observation-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.gev-no-observation-code {
+  min-width: 28px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: rgba(98,231,255,.05);
+  border: 1px solid rgba(98,231,255,.10);
+  color: #8cd9e6;
+  font: 800 8px/1 "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: .12em;
+  text-align: center;
+}
+.gev-no-observation-status {
+  color: #657482;
+  font: 700 7px/1 "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: .12em;
+}
+.gev-no-observation-title {
+  margin-top: 10px;
+  color: #eaf0f5;
+  font: 760 13px/1.1 "Barlow Condensed", sans-serif;
+  letter-spacing: .045em;
+}
+.gev-no-observation-note {
+  margin-top: 7px;
+  max-width: 44ch;
+  color: #71808d;
+  font: 500 8px/1.55 "IBM Plex Mono", ui-monospace, monospace;
+}
+.gev-no-observation-state[data-coverage="UNAVAILABLE"] {
+  border-color: rgba(255,123,123,.11);
+}
+.gev-no-observation-state[data-coverage="UNAVAILABLE"] .gev-no-observation-code,
+.gev-no-observation-state[data-coverage="UNAVAILABLE"] .gev-no-observation-status {
+  color: #e9a3a3;
+}
+.gev-no-observation-state[data-coverage="PARTIAL"] {
+  border-color: rgba(230,189,102,.12);
+}
+.gev-no-observation-state[data-coverage="PARTIAL"] .gev-no-observation-code,
+.gev-no-observation-state[data-coverage="PARTIAL"] .gev-no-observation-status {
+  color: #d9bd7b;
+}
