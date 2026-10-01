@@ -502,7 +502,7 @@ router.post('/login', optionalDeviceAuth, cfoLoginLimiter, async (req, res, next
     }
 
     const userResult = await query(
-      `SELECT id, name, email, role, status, password_hash
+      `SELECT id, name, email, role, status, org_id, password_hash
        FROM users WHERE LOWER(email) = $1 AND role = 'cfo' AND deleted_at IS NULL
        ORDER BY created_at DESC LIMIT 1`,
       [emailClean]
@@ -526,6 +526,9 @@ router.post('/login', optionalDeviceAuth, cfoLoginLimiter, async (req, res, next
     }
 
     const user = userResult.rows[0];
+    if (req.device?.org_id && user.org_id && String(req.device.org_id) !== String(user.org_id)) {
+      return res.status(403).json({ error: 'Device and CFO belong to different organizations' });
+    }
     if (user.status !== 'active') {
       return res.status(403).json({ error: 'Account is not active' });
     }
