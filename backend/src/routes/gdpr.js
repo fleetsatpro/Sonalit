@@ -9,6 +9,7 @@
  */
 const router = require('express').Router();
 const { query } = require('../config/database');
+const { withOrg } = require('../utils/orgScopedDb');
 const { authenticate, authorize } = require('../middleware/auth');
 const logger = require('../utils/logger');
 const crypto = require('crypto');
@@ -71,7 +72,7 @@ router.post('/purge-token/:device_id', authenticate, authorize('admin'), async (
       return res.status(404).json({ error: 'Device not found' });
     }
     const token = crypto.randomBytes(16).toString('hex');
-    purgeTokens.set(token, { device_id, exp: Date.now() + 10 * 60_000 });
+    purgeTokens.set(token, { device_id, org_id: req.user.org_id, exp: Date.now() + 10 * 60_000 });
     logger.warn(`GDPR purge token issued: device=${device_id} by user=${req.user.id}`);
     res.json({ token, expires_in_seconds: 600, device_name: deviceCheck.rows[0].name });
   } catch (err) {
@@ -94,28 +95,25 @@ router.delete('/purge/:device_id', authenticate, authorize('admin'), async (req,
     }
 
     const entry = purgeTokens.get(confirmation_token);
-    if (!entry || entry.device_id !== device_id || entry.exp < Date.now()) {
+    if (!entry || entry.device_id !== device_id || entry.org_id !== req.user.org_id || entry.exp < Date.now()) {
       purgeTokens.delete(confirmation_token);
       return res.status(403).json({ error: 'Invalid or expired confirmation token' });
     }
     purgeTokens.delete(confirmation_token);
 
-    const client = await require('../config/database').pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query(`DELETE FROM device_locations WHERE device_id = $1`, [device_id]);
-      await client.query(`DELETE FROM device_health WHERE device_id = $1`, [device_id]);
-      await client.query(`DELETE FROM panic_events WHERE device_id = $1`, [device_id]);
-      await client.query(`DELETE FROM field_reports WHERE device_id = $1`, [device_id]);
-      await client.query(`DELETE FROM device_commands WHERE device_id = $1`, [device_id]);
-      await client.query(`DELETE FROM guardian_devices WHERE id = $1`, [device_id]);
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+    await withOrg(req.user.org_id, async (client) => {
+      await client.query(`DELETE FROM device_locations WHERE device_id = $1 AND org_id = $2`, [device_id, req.user.org_id]);
+      await client.query(`DELETE FROM device_health WHERE device_id = $1 AND org_id = $2`, [device_id, req.user.org_id]);
+      await client.query(`DELETE FROM panic_events WHERE device_id = $1 AND org_id = $2`, [device_id, req.user.org_id]);
+      await client.query(`DELETE FROM field_reports WHERE device_id = $1 AND org_id = $2`, [device_id, req.user.org_id]);
+      await client.query(`DELETE FROM device_commands WHERE device_id = $1 AND org_id = $2`, [device_id, req.user.org_id]);
+      const deleted = await client.query(`DELETE FROM guardian_devices WHERE id = $1 AND org_id = $2 RETURNING id`, [device_id, req.user.org_id]);
+      if (!deleted.rows.length) {
+        const err = new Error('Device not found');
+        err.code = 'GDPR_DEVICE_NOT_FOUND';
+        throw err;
+      }
+    });
 
     logger.warn(`GDPR hard purge: device=${device_id} all data deleted by user=${req.user.id}`);
     res.json({ ok: true, device_id, purged_at: new Date().toISOString() });
@@ -129,7 +127,7 @@ router.delete('/purge/:device_id', authenticate, authorize('admin'), async (req,
  * Writes a JSONL.GZ object to R2: audit-log-archive/YYYY-MM-DD.jsonl.gz
  * Returns the R2 key on success, null if archiving is disabled or R2 is not configured.
  */
-async function archiveAuditRows(rows) {
+async function archiveAuditRows(rows, orgId) {
   if (!rows.length) return null;
   const {
     R2_ACCOUNT_ID, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET,
@@ -151,7 +149,7 @@ async function archiveAuditRows(rows) {
     credentials: { accessKeyId: R2_ACCESS_KEY, secretAccessKey: R2_SECRET_KEY },
   });
   const today = new Date().toISOString().slice(0, 10);
-  const key = `audit-log-archive/${today}.jsonl.gz`;
+  const key = `audit-log-archive/${orgId}/${today}.jsonl.gz`;
   const jsonl = rows.map(r => JSON.stringify(r)).join('\n');
   const compressed = await gzip(Buffer.from(jsonl, 'utf8'));
   await s3.send(new PutObjectCommand({
@@ -184,7 +182,7 @@ router.post('/run-retention', authenticate, authorize('admin'), async (req, res,
           `SELECT * FROM guardian_audit_log WHERE created_at < NOW() - INTERVAL '365 days'`
         );
         auditRowsToDelete = toArchive.rows;
-        archiveKey = await archiveAuditRows(auditRowsToDelete);
+        archiveKey = await archiveAuditRows(auditRowsToDelete, req.user.org_id);
       }
     } catch (e) {
       logger.warn('gdpr: audit archive check failed: ' + e.message);
