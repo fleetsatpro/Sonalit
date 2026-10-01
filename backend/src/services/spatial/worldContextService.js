@@ -20,6 +20,13 @@ const DELAYED_MS = 300000;
 const MAX_EXTERNAL_RADIUS_M = 100000;
 const ALLOWED_LAYERS = new Set(['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts','cameras','satellites']);
 
+function normaliseWorldContextLayers(requested) {
+  const input = Array.isArray(requested) ? requested : [];
+  return Array.from(new Set(input.filter(function(l) {
+    return typeof l === 'string' && ALLOWED_LAYERS.has(l);
+  }).slice(0, ALLOWED_LAYERS.size)));
+}
+
 function num(v) {
   if (v == null || v === '') return null;
   const n = Number(v);
@@ -882,9 +889,7 @@ async function buildWorldContext(opts) {
 
   const now = Date.now();
   const requested = Array.isArray(input.layers) ? input.layers : ['aircraft','weather','maritime','traffic','hazards','security','infrastructure','incidents','alerts','cameras'];
-  const layers = Array.from(new Set(requested.filter(function(l) {
-    return typeof l === 'string' && ALLOWED_LAYERS.has(l);
-  }).slice(0, 10)));
+  const layers = normaliseWorldContextLayers(requested);
 
   const subject = input.subject || { kind: 'none', id: 'context' };
   const subjectResolution = await resolveSpatialSubject({ db, orgId, subject });
@@ -2382,5 +2387,6 @@ module.exports = {
   correlateExternalObservations,
   sampleRoutePoints,
   makeVehicle,
-  getSpatialProviderHealth
+  getSpatialProviderHealth,
+  normaliseWorldContextLayers
 };
