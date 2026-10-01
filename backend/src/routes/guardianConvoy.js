@@ -479,6 +479,7 @@ router.post('/track', jwtAuth, async (req, res, next) => {
 router.get('/convoy-reports/:convoy_id', jwtAuth, async (req, res, next) => {
   try {
     const { convoy_id } = req.params;
+    if (!assertCfoConvoy(req, res, convoy_id)) return;
     await query(
       `INSERT INTO convoy_reports (org_id, convoy_id, cfo_id, date, status)
        VALUES ($1,$2,$3,CURRENT_DATE,'in_progress')
@@ -613,6 +614,7 @@ router.post('/convoy-reports/:id/eod', jwtAuth, async (req, res, next) => {
 router.post('/seal-verifications', jwtAuth, async (req, res, next) => {
   try {
     const { seal_id, convoy_id, phase, photo_id, status, lat, lng, vehicle_plate, position } = req.body;
+    if (!assertCfoConvoy(req, res, convoy_id)) return;
     if (!seal_id || typeof seal_id !== 'string')
       return res.status(400).json({ error: 'seal_id is required' });
     if (!convoy_id || typeof convoy_id !== 'string')
@@ -658,7 +660,8 @@ router.post('/seal-verifications', jwtAuth, async (req, res, next) => {
 // POST /sos-events — fire SOS panic event
 router.post('/sos-events', jwtAuth, async (req, res, next) => {
   try {
-    const { convoy_id, cfo_id, incident_type, lat, lng, accuracy, timestamp } = req.body;
+    const { convoy_id, incident_type, lat, lng, accuracy, timestamp } = req.body;
+    if (!assertCfoConvoy(req, res, convoy_id)) return;
     if (!convoy_id || typeof convoy_id !== 'string')
       return res.status(400).json({ error: 'convoy_id is required' });
 
@@ -667,7 +670,7 @@ router.post('/sos-events', jwtAuth, async (req, res, next) => {
          (org_id, convoy_id, cfo_id, incident_type, lat, lng, accuracy_m, created_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
       [
-        req.cfo.org_id, convoy_id, cfo_id || req.cfo.id,
+        req.cfo.org_id, convoy_id, req.cfo.id,
         incident_type || 'unspecified',
         lat != null ? lat : null, lng != null ? lng : null,
         accuracy != null ? parseInt(accuracy) : null,
