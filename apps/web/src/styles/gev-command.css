@@ -1382,3 +1382,224 @@
   background: color-mix(in srgb, var(--d-well) 90%, transparent) !important;
   border-color: var(--d-rim2) !important;
 }
+
+
+/* INTERACTION LAYER — collapsible chrome + touch-first map recovery. */
+.gev-shell {
+  overscroll-behavior: none;
+  --gev-touch-target: 44px;
+}
+
+.gev-panel-head-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.gev-panel-heading-copy {
+  min-width: 0;
+}
+
+.gev-panel-toggle,
+.gev-ribbon-action {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.gev-panel-toggle {
+  width: var(--gev-touch-target);
+  height: var(--gev-touch-target);
+  flex: 0 0 var(--gev-touch-target);
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(226,235,247,.075);
+  border-radius: 11px;
+  color: var(--gev-muted);
+  background: rgba(255,255,255,.018);
+  cursor: pointer;
+  transition: color .16s ease, background .16s ease, border-color .16s ease, transform .16s ease, box-shadow .16s ease;
+}
+
+.gev-panel-toggle:hover {
+  color: var(--gev-text);
+  border-color: var(--gev-edge-hi);
+  background: color-mix(in srgb, var(--gev-violet) 7%, transparent);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--gev-violet) 10%, transparent);
+}
+
+.gev-panel-toggle:active,
+.gev-ribbon-action:active {
+  transform: scale(.96);
+}
+
+.gev-panel-content {
+  overflow: hidden;
+}
+
+.gev-panel-content[hidden],
+.gev-right-body[hidden] {
+  display: none;
+}
+
+.gev-overview-panel[data-collapsed="true"] {
+  width: 64px;
+  min-width: 64px;
+}
+
+.gev-overview-panel[data-collapsed="true"] .gev-panel-head {
+  padding: 10px;
+  justify-content: center;
+  border-bottom: 0;
+}
+
+.gev-overview-panel[data-collapsed="true"] .gev-panel-heading-copy,
+.gev-overview-panel[data-collapsed="true"] .gev-signal {
+  display: none;
+}
+
+.gev-right-panel[data-collapsed="true"] {
+  top: 16px;
+  bottom: auto;
+  width: 64px;
+  height: 64px;
+}
+
+.gev-right-panel[data-collapsed="true"] .gev-panel-head {
+  height: 64px;
+  padding: 10px;
+  justify-content: center;
+  border-bottom: 0;
+}
+
+.gev-right-panel[data-collapsed="true"] .gev-panel-heading-copy,
+.gev-right-panel[data-collapsed="true"] .gev-right-body,
+.gev-right-panel[data-collapsed="true"] .gev-footnote,
+.gev-right-panel[data-collapsed="true"] .gev-close {
+  display: none;
+}
+
+.gev-right-panel[data-collapsed="true"] .gev-panel-head-actions {
+  width: 100%;
+  justify-content: center;
+}
+
+.gev-bottom-ribbon {
+  transition: right .22s ease, left .22s ease;
+}
+
+.gev-shell[data-intelligence-collapsed="true"] .gev-bottom-ribbon {
+  right: 16px;
+}
+
+.gev-ribbon-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid rgba(226,235,247,.075);
+  border-radius: 8px;
+  color: var(--gev-copy);
+  background: rgba(255,255,255,.016);
+  font: 700 7px/1 "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color .16s ease, background .16s ease, border-color .16s ease;
+}
+
+.gev-ribbon-action:hover {
+  color: var(--gev-text);
+  border-color: var(--gev-edge-hi);
+  background: color-mix(in srgb, var(--gev-violet) 8%, transparent);
+}
+
+@media (hover: none) {
+  .gev-panel-toggle:hover,
+  .gev-ribbon-action:hover { transform: none; }
+}
+
+@media (max-width: 860px) {
+  .gev-overview-panel[data-collapsed="true"] {
+    left: 10px;
+    right: 10px;
+    width: auto;
+    min-width: 0;
+  }
+
+  .gev-overview-panel[data-collapsed="true"] .gev-panel-head {
+    min-height: 52px;
+    height: 52px;
+    padding: 4px 8px;
+  }
+
+  .gev-overview-panel[data-collapsed="true"] .gev-panel-head-actions,
+  .gev-overview-panel[data-collapsed="true"] .gev-panel-toggle {
+    width: 100%;
+  }
+
+  .gev-overview-panel[data-collapsed="true"] .gev-panel-toggle::after {
+    content: "World picture";
+    margin-left: 6px;
+    font: 700 7px/1 "IBM Plex Mono", ui-monospace, monospace;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+  }
+
+  .gev-right-panel[data-collapsed="true"] {
+    left: 10px;
+    right: 10px;
+    top: auto;
+    bottom: 10px;
+    width: auto;
+    height: 52px;
+  }
+
+  .gev-right-panel[data-collapsed="true"] .gev-panel-head {
+    height: 52px;
+    min-height: 52px;
+    padding: 4px 8px;
+  }
+
+  .gev-right-panel[data-collapsed="true"] .gev-panel-head-actions,
+  .gev-right-panel[data-collapsed="true"] .gev-panel-toggle {
+    width: 100%;
+  }
+
+  .gev-right-panel[data-collapsed="true"] .gev-panel-toggle::before {
+    content: "Entity intelligence";
+    margin-right: 6px;
+    font: 700 7px/1 "IBM Plex Mono", ui-monospace, monospace;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+  }
+
+  .gev-shell[data-intelligence-collapsed="true"] .gev-bottom-ribbon {
+    right: 10px;
+  }
+
+  .gev-ribbon-action {
+    min-height: 32px;
+  }
+}
+
+@media (max-width: 560px) {
+  .gev-panel-toggle {
+    width: 42px;
+    height: 42px;
+    flex-basis: 42px;
+  }
+
+  .gev-ribbon-action span {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gev-panel-toggle,
+  .gev-ribbon-action,
+  .gev-bottom-ribbon { transition: none; }
+}
