@@ -510,6 +510,31 @@ describe('world context integration assembly', () => {
     }
   });
 
+  test('loads org-native spatial layers for global context without a convoy subject', async () => {
+    const { db, calls } = makeDb();
+
+    const ctx = await buildWorldContext({
+      orgId: ORG,
+      db,
+      subject: { kind: 'none', id: 'context' },
+      center: { latitude: -1.29, longitude: 36.83 },
+      radiusM: 100000,
+      layers: ['security', 'infrastructure', 'incidents', 'alerts'],
+      maxEntitiesPerLayer: 75,
+      persistEvents: false
+    });
+
+    expect(ctx.mission).toBeUndefined();
+    expect(ctx.infrastructure.some(entity => entity.entityType === 'guardian_device')).toBe(true);
+    expect(ctx.security.some(entity => entity.entityType === 'risk_zone')).toBe(true);
+    expect(ctx.security.some(entity => entity.entityType === 'intelligence_alert')).toBe(true);
+    expect(ctx.operational.alerts).toEqual([]);
+    expect(calls.some(sql => sql.includes('FROM geofences'))).toBe(true);
+    expect(calls.some(sql => sql.includes('FROM risk_zones'))).toBe(true);
+    expect(calls.some(sql => sql.includes('FROM intel_alerts'))).toBe(true);
+    expect(calls.some(sql => sql.includes('FROM alerts'))).toBe(true);
+  });
+
   test('fails closed when a requested convoy is outside organisation scope', async () => {
     const { db } = makeDb();
     db.mockImplementationOnce(async () => ({ rows: [] }));
